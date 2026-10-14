@@ -3034,9 +3034,10 @@ async def build_dependencies(
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
         lineage=lineage,
-        # Dreamer-only reads (`nora.agent.surface.DREAMER_ONLY_TOOLS`): the
-        # current Rollup build's rows and the Standing head. SELECTs, so no
-        # flag: no tag path is offered either.
+        # The current Rollup build's rows and the Standing head. SELECTs, so no
+        # flag. The Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the
+        # Rollup read is also a tag turn's (`TAG_READABLE_LOOP_TOOLS`), under
+        # the same lineage as the session's.
         rollup=SqlRollupRead(engine),
         standing_head=standing_store,
         # `character_read` (self-growth C4): withheld while `[culture]` is off.

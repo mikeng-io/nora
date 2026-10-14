@@ -20,11 +20,13 @@ Nothing here is reachable from the eval layer as a store. `know()` takes a
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -484,8 +486,41 @@ async def deliver(
     )
 
 
+class Spawned:
+    """Every task the subject's graph spawns from the moment this is built,
+    including what those tasks spawn in turn: the turn a delivered line fired,
+    and nothing the graph was already carrying.
+
+    Wraps `spawn` on THIS subject's own `BackgroundTasks` instance (public
+    surface, the method production calls), so nothing is added to `nora.app`
+    (`design/evaluation/01-boundaries.md` §5(2)) and no other subject is touched.
+    `close()` puts it back.
+    """
+
+    def __init__(self, subject: Subject) -> None:
+        self._background = subject.deps.background
+        self.tasks: list[asyncio.Task[None]] = []
+        spawn = self._background.spawn
+
+        def recording(coro: Any) -> asyncio.Task[None]:
+            task = spawn(coro)
+            self.tasks.append(task)
+            return task
+
+        self._background.spawn = recording  # type: ignore[method-assign]
+
+    def close(self) -> None:
+        with contextlib.suppress(AttributeError):
+            del self._background.spawn
+
+
+def watch(subject: Subject) -> Spawned:
+    """`settle()`'s argument, built BEFORE the line that starts the turn."""
+    return Spawned(subject)
+
+
 async def settle(
-    subject: Subject, *, baseline: int = 0, timeout_seconds: float = 180.0,
+    subject: Subject, *, spawned: Spawned, timeout_seconds: float = 180.0,
 ) -> bool:
     """Wait until every turn the deployment SPAWNED for this case has
     finished. `True` if it settled, `False` on timeout.
@@ -495,36 +530,27 @@ async def settle(
     block on one room. So an entry point that drives the deployment's real
     inbound path has to wait for what that path fired.
 
-    **`baseline` is the count the graph already carried, and it is not
-    optional in practice.** Measured live on the deploy host, 2026-09-21:
-    every `near_miss` case ERRORed with "the turn never settled" against a
-    subject composed from the DEPLOYMENT's config, while passing under the
-    example's. Composition spawns ENDLESS loops into this same set when the
-    deployment enables them — `ComputeJobPoller.run()` (`[compute]`),
-    `VersionAnnouncer.run()`, `heartbeat.run()` — so the set never empties and
-    an absolute "wait for zero" waits for the process to end. `entry.py`'s own
-    note about `[heartbeat]` had spotted one instance of this and treated it
-    as a reason not to enable that flag; it is the general shape, and the
-    general fix is to measure the DELTA this case added.
-
-    Polls `len(deps.background)`, which is `BackgroundTasks.__len__` — PUBLIC
-    surface, deliberately. A `drain()` on `BackgroundTasks` would be tidier and
-    would also be a method added to `nora.app` for evaluation's sake, which is
-    the one thing `design/evaluation/01-boundaries.md` §5(2) forbids. Polling is
-    the cost of not breaking that rule, and it is paid once, here.
+    **It waits on the TASKS the case spawned, not on a count.** The count
+    (`len(deps.background)` against the count read before the line) was this
+    function until 2026-10-15, and it broke the moment a task the graph was
+    already carrying finished mid-turn: the presence pre-flight, once the
+    full-restore sandbox gave its rooms members (`nora.subject.sandbox_roster`),
+    was still reading them when the line arrived, finished during the turn, and
+    the count fell back to the baseline with the turn still running. Three of
+    eight `conversational_recall` turns were then torn down mid-model-call and
+    graded as silence. Endless loops composition spawns (`ComputeJobPoller`,
+    `VersionAnnouncer`, the heartbeat) are not in `spawned`, so they never hold
+    this open; that was the count's reason for a baseline, kept.
     """
-    deadline = asyncio.get_running_loop().time() + timeout_seconds
-    while len(subject.deps.background) > baseline:
-        if asyncio.get_running_loop().time() >= deadline:
-            return False
-        await asyncio.sleep(0.05)
-    return True
-
-
-def pending(subject: Subject) -> int:
-    """How many background tasks the graph is already carrying — `settle()`'s
-    `baseline`, read BEFORE the line that starts the turn."""
-    return len(subject.deps.background)
+    try:
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+        while not all(t.done() for t in list(spawned.tasks)):
+            if asyncio.get_running_loop().time() >= deadline:
+                return False
+            await asyncio.sleep(0.05)
+        return True
+    finally:
+        spawned.close()
 
 
 def silent_failures(subject: Subject) -> float:

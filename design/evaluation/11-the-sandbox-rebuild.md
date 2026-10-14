@@ -34,6 +34,17 @@ measured.** See §1.1.
 > (`tests/unit/test_eval_full_restore.py`), and the rule above still binds
 > within each. Honcho is still not replayed (§3): both assemblies start each
 > draw on an empty workspace, which the corpus declares.
+>
+> **And its rooms have members (2026-10-15, DEC-312).** The sandbox has no
+> signal-cli daemon or Instagram bridge, so every roster read answered
+> `available=False` and every lineage tool (`where_been`, `rollup_read`) said
+> `unavailable`: a Nora who could not look, which production is not. A
+> full-restore subject now reads each room's members from the restored
+> `messages` rows: the people who spoke there in the 90 days before the
+> instant (`nora.subject.sandbox_roster`, `SubjectSpec.recorded_rosters`). The
+> divergence is declared both ways: a member silent for 90 days is missing (a
+> subset, which lineage already treats as safe), and one who spoke and has since
+> left is present.
 
 ## 1. What this replaces, and why twice was not enough
 

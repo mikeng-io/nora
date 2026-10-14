@@ -242,7 +242,8 @@ unit's rooms was `up` throughout. Withheld deviations are counted
 - Never pushed whole into a prompt. Read with `rollup_read(kind, subject,
   interval)` ([30](30-cognition.md) §2), under lineage ([10](10-tiers.md) §3).
 - `where_been` and `routine_read` (DEC-215, the rhythm's forecast) stay the
-  tag path's presence readers. For the Dreamer's adaptors only, under lineage,
+  tag path's presence readers, and `rollup_read` joins them (DEC-312, «As
+  built» below). For the Dreamer's adaptors only, under lineage,
   `rollup_read` supersedes `where_been`'s 90-day cap (`_been_max_days`,
   `nora/agent/tools.py`, clamped again in the store,
   `nora/infra/sql/mobility.py`) and DEC-155's rule that the Dreamer is not granted
@@ -259,10 +260,20 @@ each row with its citation key, a `through` stamp and no coordinate
 outing, tie; the forecasting aggregates stay behind `routine_read` and
 `response` is the Lessons adaptor's. A person resolves among the calling
 room's people; every row passes lineage for that room or is withheld and
-counted. The tool is Dreamer-only (`nora/agent/surface.py`
-`DREAMER_LOOP_TOOLS`), so the tag path keeps `where_been`'s 90 days. A hidden
-message stops contributing when its row is next recomputed, not before, which
-`through` makes visible.
+counted. A hidden message stops contributing when its row is next
+recomputed, not before, which `through` makes visible.
+
+**Amended 2026-10-15 (DEC-312): a person's tag turn reads it too.** Until
+then the tool was Dreamer-only and the tag path kept `where_been`'s 90 days.
+The unified-memory step 0 journeys
+([unified-memory/00](../unified-memory/00-intent.md) «Sequence») showed the
+cost: asked where a group had been together lately, she rebuilt outings from
+four transcript loads, and for a week with none she placed an older outing in
+it. `rollup_read` is now offered on a tag turn (`nora/agent/surface.py`
+`TAG_READABLE_LOOP_TOOLS`), with the same lineage for the bound room. It is
+still not a fire turn's, a sub-agent worker's or a Dreamer adaptor's, and
+`where_been` and `routine_read` keep their own questions (one person's day,
+usual places, the rhythm's forecast).
 
 ## 6. Play sources
 

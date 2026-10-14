@@ -79,7 +79,14 @@ from .relay import Relay
 from .room import Room
 from .shelf_hook import ShelfLoader
 from .subagent_desk import SubagentDesk
-from .surface import DREAMER_LOOP_TOOLS, TAG_ONLY_TOOLS, ToolScope, ToolShelf, ToolSurface
+from .surface import (
+    DREAMER_LOOP_TOOLS,
+    TAG_ONLY_TOOLS,
+    TAG_READABLE_LOOP_TOOLS,
+    ToolScope,
+    ToolShelf,
+    ToolSurface,
+)
 from .tools import (
     COMPUTER_TOOLS,
     DOCUMENT_TOOLS,
@@ -742,7 +749,7 @@ class ToolRegistry:
         """
         return "\n".join(self._digest_lines(
             self.read_only_tools() - {LOADER_TOOL} - TAG_ONLY_TOOLS
-            - self._withheld - DREAMER_LOOP_TOOLS,
+            - self._withheld - (DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS),
         ))
 
     def _digest_lines(
