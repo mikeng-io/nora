@@ -727,3 +727,55 @@ def test_render_presence_members_is_paste_ready():
 def test_render_presence_members_notes_an_empty_result():
     from nora.app.report import render_presence_members
     assert any("No circles" in line for line in render_presence_members([]))
+
+
+# ── nora memory rebuild ──────────────────────────────────────────────────────
+
+async def _index_status(env):
+    from nora.infra.sql import memory_index
+
+    engine = create_sql_engine(env["url"])
+    try:
+        async with engine.connect() as conn:
+            return await memory_index.index_status(conn)
+    finally:
+        await engine.dispose()
+
+
+async def test_memory_rebuild_dry_run_writes_nothing_then_the_rebuild_completes(env, capsys):
+    """design/unified-memory/60-build-step-3.md S4: the dry run counts and
+    writes nothing; the run writes the index and `complete`. Both print
+    counts per kind, never a message's words."""
+    await audit(env, sender=MILES_PHONE, raw=envelope(number=MILES_PHONE),
+                body="the lantern plan", person_id="miles")
+    assert await invoke(env, "memory", "rebuild", "--dry-run") == 0
+    out = capsys.readouterr().out
+    assert "message: would project 1, would drop 0" in out
+    assert "lantern" not in out
+    assert await _index_status(env) == ("never", 0, 0)
+
+    assert await invoke(env, "memory", "rebuild") == 0
+    out = capsys.readouterr().out
+    assert "message: projected 1, dropped 0" in out
+    assert "unprojected: 0" in out
+    assert "lantern" not in out
+    assert await _index_status(env) == ("complete", 0, 0)
+
+
+async def test_memory_rebuild_is_refused_while_another_rebuild_runs(env, capsys):
+    import sqlalchemy as sa
+
+    from nora.infra.sql import memory_index
+
+    engine = create_sql_engine(env["url"])
+    holder = await engine.connect()
+    try:
+        lock = sa.func.pg_try_advisory_lock(memory_index.REBUILD_LOCK_KEY)
+        assert (await holder.execute(sa.select(lock))).scalar_one() is True
+        await holder.commit()
+        assert await invoke(env, "memory", "rebuild") == 1
+        assert "advisory lock" in capsys.readouterr().err
+    finally:
+        await holder.close()
+        await engine.dispose()
+    assert await _index_status(env) == ("never", 0, 0)

@@ -72,7 +72,10 @@ All four are `NOT_RESTORED` (`nora/infra/sql/history.py`): derived, rebuilt by
 `project(conn, kind, source_id)` re-reads the source row on the caller's
 connection and upserts its node and outgoing column edges, or drops them when
 the row is hidden or gone. `reproject_media(conn, sha256)` and
-`drop(conn, kind, ids)` cover media and deletes. `INDEXED_WRITES` maps each
+`drop(conn, kind, ids)` cover media and deletes. A delete removes the node and
+the edges its own projection writes; an edge another entry owns into it (a
+memo's `cites` of a hidden message) stays dangling, exactly as a rebuild
+writes it, and drops itself at the read's join (S4, so live equals rebuild). `INDEXED_WRITES` maps each
 table to its kind, for the architecture test. Every call runs in a savepoint
 (`begin_nested`): a failure queues the row and counts
 `nora_memory_projection_total{kind,outcome="queued"}`, and never undoes the

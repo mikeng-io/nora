@@ -230,6 +230,12 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
+        # Unconditional: every store write projects into the memory index,
+        # so there is always a queue a failed projection may have filled.
+        deps.background.spawn(runtime.memory_drain_loop(
+            deps.audit, deps.metrics,
+            interval_seconds=self.cfg.memory_index.drain_seconds,
+        ))
         # The Dreamer's clock, the SAME conditional shape as the retention
         # sweep above: `[dreamer] enabled = false` (the shipped default — a
         # subsystem does not switch itself on) means composition built no

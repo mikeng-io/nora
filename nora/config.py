@@ -1302,6 +1302,18 @@ class OnlineConfig(BaseModel):
     timeout_seconds: float = Field(default=8.0, gt=0)
 
 
+class MemoryIndexConfig(BaseModel):
+    """The memory index (design/unified-memory/60-build-step-3.md). The index
+    is written by every store's own write whatever this says; `drain_seconds`
+    is how often the nora process re-projects what those writes queued
+    (`nora.app.runtime.memory_drain_loop`). Optional and defaulted, so a
+    `config.toml` without the section keeps loading."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    drain_seconds: float = Field(default=60.0, gt=0)
+
+
 class AnalyticsConfig(BaseModel):
     """The presence analytics substrate — the DERIVED layer (docs/superpowers/
     specs/2026-08-18-presence-analytics-substrate-design), DEC-115.
@@ -4222,6 +4234,8 @@ class Config(BaseModel):
     # (`enabled = false`); off, `nora.analytics` builds and writes nothing
     # (spec §6, Acceptance Criterion 11).
     analytics: AnalyticsConfig = AnalyticsConfig()
+    # Optional and defaulted — see `MemoryIndexConfig`.
+    memory_index: MemoryIndexConfig = MemoryIndexConfig()
     # Optional and defaulted — see `SearchConfig`. Off (inert) unless an operator
     # turns it on AND a Tavily key is present (`api_key_env`, DEC-8/DEC-73); a
     # config.toml without a `[search]` section keeps loading.

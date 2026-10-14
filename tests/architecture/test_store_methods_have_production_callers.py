@@ -280,6 +280,11 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "cancel",
         # `SqlMemoStore.revisions` (DEC-306) shares the name with `SqlLessonStore`'s.
         "revisions",
+        # `SqlRecordStore.drain_index_queue` (memory index S4) shares the name
+        # with `SqlRollupStore`'s: both drain the one queue, from the nora and
+        # the analytics process. Callers: `nora.app.runtime.memory_drain_loop`
+        # and `nora.analytics.runner`.
+        "drain_index_queue",
     }
 )
 

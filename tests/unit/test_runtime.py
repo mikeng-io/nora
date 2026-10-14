@@ -27,6 +27,7 @@ from nora.app.runtime import (
     _slot,
     debounce_sweep_loop,
     dream_loop,
+    memory_drain_loop,
     prune_loop,
     seed_watermarks,
     start_adapters,
@@ -237,6 +238,39 @@ async def test_debounce_sweep_loop_survives_a_failing_sweep():
 
     assert calls["n"] >= 3
     assert metrics.get("nora_errors_total", stage="debounce_sweep") == 1
+
+
+# ---------------------------------------------------------------------------
+# memory_drain_loop
+# ---------------------------------------------------------------------------
+
+
+async def test_memory_drain_loop_keeps_draining_after_a_failing_drain():
+    """It drains on its interval, and a drain that raises is counted and
+    never ends the loop (60-build-step-3 S4)."""
+    kept_draining = asyncio.Event()
+
+    class _Store:
+        calls = 0
+
+        async def drain_index_queue(self) -> int:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("database away")
+            if self.calls >= 3:
+                kept_draining.set()
+            return 1
+
+    store, metrics = _Store(), Metrics()
+    task = asyncio.create_task(memory_drain_loop(store, metrics, interval_seconds=0.01))
+    try:
+        await asyncio.wait_for(kept_draining.wait(), timeout=5.0)
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    assert store.calls >= 3
+    assert metrics.get("nora_errors_total", stage="memory_drain") == 1
 
 
 # ---------------------------------------------------------------------------

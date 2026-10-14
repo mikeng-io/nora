@@ -306,6 +306,46 @@ async def test_the_retention_sweep_is_spawned_when_the_flag_is_on(env, monkeypat
     )
 
 
+async def test_the_memory_index_drain_is_spawned_at_the_configured_interval(env, monkeypatch):
+    """`App.run` spawns `memory_drain_loop` with `[memory_index]
+    drain_seconds` (60-build-step-3 S4): the queue a failed projection fills
+    is drained by the nora process, not only by analytics."""
+    import asyncio
+    import contextlib
+    import tomllib
+
+    import tomli_w
+
+    import nora.__main__ as main_module
+
+    cfg = tomllib.loads(env.read_text())
+    cfg["memory_index"] = {"drain_seconds": 7.5}
+    env.write_text(tomli_w.dumps(cfg))
+    calls: list[dict] = []
+
+    async def _never() -> None:
+        await asyncio.sleep(3600)
+
+    def _spy(*args: object, **kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        return _never()
+
+    monkeypatch.setattr(main_module.runtime, "memory_drain_loop", _spy)
+    app = await build_app(env)
+    try:
+        task = asyncio.create_task(app.run())
+        for _ in range(50):
+            await asyncio.sleep(0.02)
+            if calls:
+                break
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    finally:
+        await app.shutdown()
+    assert calls == [{"interval_seconds": 7.5}]
+
+
 async def _run_briefly_and_record_dream_wiring(env, monkeypatch) -> list[dict]:
     """The `dream_loop` sibling of `_run_briefly_and_record_prune_wiring`
     above — same shape, same reasoning: a spy proves the WIRING (does

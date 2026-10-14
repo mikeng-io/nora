@@ -171,6 +171,13 @@ async def test_a_hidden_message_leaves_with_its_attachments(engine):
     mid = await store.append(message=_message(blobs=(blob,)), person_id="member-a")
     keep = await store.append(message=_message(ts=1100), person_id="member-a")
     assert ("media", f"{mid}:{_SHA}") in await _nodes(engine)
+    # An edge INTO the message that another node owns (a memo's citation).
+    cites = ("memo", "memo-1", "cites", "message", str(mid))
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(MEMORY_EDGE).values(
+            src_kind="memo", src_id="memo-1", rel="cites", dst_kind="message",
+            dst_id=str(mid), provenance="memo_revision.citations",
+        ))
 
     assert await store.hide_message(message_id=mid, now_ms=9000) is True
 
@@ -178,8 +185,12 @@ async def test_a_hidden_message_leaves_with_its_attachments(engine):
     assert ("message", str(mid)) not in nodes
     assert ("media", f"{mid}:{_SHA}") not in nodes
     assert ("message", str(keep)) in nodes, "positive control: the other message stays"
-    assert not {e for e in await _edges(engine) if str(mid) in (e[1], e[4])
-                or e[1].startswith(f"{mid}:")}
+    edges = await _edges(engine)
+    # S4: a delete removes the edges the node owns (out of it and out of its
+    # attachments); the memo's citation is the memo's, and stays dangling,
+    # exactly as a rebuild writes it (it drops itself at a read's join).
+    assert not {e for e in edges if e[1] == str(mid) or e[1].startswith(f"{mid}:")}
+    assert {e for e in edges if e[4] == str(mid)} == {cites}
     async with engine.connect() as conn:
         held = (await conn.execute(
             sa.select(MESSAGES.c.hidden_at).where(MESSAGES.c.id == mid)
