@@ -151,9 +151,15 @@ PINNED: dict[str, tuple[int, str]] = {
     # occasions, so this file is true on any surface (design/instagram-adoption/
     # 19, a public summons). Every sentence moved as written; the opening line
     # was cut at "but". No eval, by operator decision.
-    "identity": (14, "cbc95bd23310c9ccd09e19d9d9532468b9529d5dcd4ea4615ac39b1c52f8e40f"),
+    # v15 (2026-10-13, operator, design/context-plan/10 gaps): «Where you stop»
+    # says a computer she is given to work on is not the closed machine under
+    # her (her tools call it "your own computer"), and what she finds there is
+    # no evidence about her source or what runs her.
+    "identity": (15, "842a208b5e987175995ff8f8545f8616d74ed7e300f8e6543af0caf6feaf73e6"),
     # v1 (2026-09-25): split out of identity.md v13, see above.
-    "belonging": (1, "f1e2b3d69dd3ba80d7962e17ccf554fb3797b387055347936e9954b68a8b7b16"),
+    # v2 (2026-10-12, design/context-plan/11 §6 step 2): its three law lines moved word for word to
+    # rooms/constraints.md.
+    "belonging": (2, "f3ff3a2a543b624fe87aab92446350172539dd986775fd8692e3a59ad96e543a"),
     # v19 (2026-09-10): same room-name removal as identity v8.
     # v20: the REVISION half of the same pass, and the only file that grew.
     # Three positions it did not carry: the dash is a written-register
@@ -183,7 +189,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # give-it-back draft with no 撚/屌/柒 read as soft, laughing it off as the
     # other answer, 撚 inside the stressed word, and a soft verdict with a 屌
     # still soft. The tail offers were already here and were not copied.
-    "voice": (23, "ad3d816363b61113844b24d1d42e7e360d9cb79e0149578178641e9647d6b46d"),
+    # v24 (2026-10-13, operator, design/context-plan/10 gaps): «似人喺 Signal
+    # 打字» named a platform and assumed typing on a spoken turn; now
+    # «似朋友喺 group 度傾偈». The rest of the typing register is the cut's.
+    "voice": (24, "49090de88f668090ce93a4889e129ca0abfc9375516b3465b45a1275727e4e74"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
     # bodies and bumped both versions in their front matter, and never came back
     # here. So the contract held in the direction that matters -- the version a
@@ -191,7 +200,11 @@ PINNED: dict[str, tuple[int, str]] = {
     # Repinned to the version each file already carries; NOT bumped again, because
     # nothing has moved since.
     # v4: dashes out (7), no other change.
-    "silence": (4, "f60ae519df1a0dae7bc24d5c15c6be002e84ff345d4bb13c9f6ac652819d6d6d"),
+    # v5 (2026-10-12, design/context-plan/11 §6 step 2): «when someone called you, you answer» moved
+    # to rooms/constraints.md.
+    # silence v5 was the last: the file dissolved 2026-10-13
+    # (design/context-plan/12 §2) into the participation and proactive headers,
+    # and its «said your piece» line into conduct v40.
     # v26: compression. Three pairs of sections said one thing twice and became
     # one each: what she remembers about a person and what she recommends from
     # it; the three write verbs and what they need; the hedge-free answer in
@@ -256,7 +269,27 @@ PINNED: dict[str, tuple[int, str]] = {
     # opened by translating the vision reading back, item by item, to the
     # person who had sent it. The tool notes were reframed in the same change;
     # this reaches the answers that read only a transcript placeholder.
-    "conduct": (34, "9dac6dfe1c9e64a0c98a2dd8c1a213a0607e73f3cedddf7793846240d58ce648"),
+    # v35 (2026-10-09, operator: «she decides» to say what she is doing before
+    # long work, any kind, not only search): «Getting to an answer» keeps the
+    # no-filler rule for a quick check and adds one line marked as a heads-up
+    # when the work will keep the room waiting (DEC-294's `heads_up`).
+    # v36 (2026-10-09, DEC-306): a «記低» about the group is kept by her
+    # notebook and she says it WILL be kept; the kinds of record gain the memo.
+    # v37 (2026-10-09, review of #781): the keep promise names no time.
+    # v38 (2026-10-12, design/context-plan/11 §6 step 2): every law part moved word for word to
+    # rooms/constraints.md, «What a source does not say» with it; «What you can
+    # actually do» left as a short rewrite there (its text predated the
+    # cognition loop, design/context-plan/10), and the heading over what stayed
+    # is «Where to look first».
+    # v39 (2026-10-13, operator, design/context-plan/10 gap 4): «Getting to an
+    # answer» says when work is handed off to run on its own rather than done
+    # inside the turn, and that the room hears only once it has started;
+    # before, only a tool's first line placed it.
+    # v40 (2026-10-13): «Once you have said your piece, the turn is over», from
+    # the dissolved silence.md, closed Follow the conversation. v41 (2026-10-14)
+    # took it out again: on every turn it cost the participation windows that
+    # should speak (see test_silence_md_is_dissolved). Body back to v39's.
+    "conduct": (41, "b3a4d6434e958e902ea446913eb1ab4564d62e2e0c8ca1fdc7102446f0661e39"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -297,8 +330,10 @@ PINNED: dict[str, tuple[int, str]] = {
     "speech-format": (
         1, "b3c17e1505b551b01f88313e447674ed1f7f6d6bc3700da8d066d2dfd3ea8f63",
     ),
+    # v2 (2026-10-13): «silence.md governs that» named a file that dissolved;
+    # now «saying nothing is the answer, before anything below applies».
     "participation-conduct": (
-        1, "23d144d3431e9844d2688c13ad8228497a9db3ab8f6bcf7f86f269053f3e19b7",
+        2, "7aa8d4dac57a41e81c541bca78b098996625e703a5869e22b22d664ee258fe5b",
     ),
     # v9 (2026-09-10): R-14 restated around the ROOM rather than the summons.
     # The file is served to four occasions and named only two ways a turn can
@@ -319,13 +354,23 @@ PINNED: dict[str, tuple[int, str]] = {
     # verbatim, to rooms/pictures.md. It is room-chat mechanics (placeholders,
     # the transcript, the full reading) and core/ also reaches the public
     # summons, where a live dry-run trace carried it. Nothing else moved.
-    "constraints": (12, "b5dece41a71da212b0d9e1c47899e769c0efb83f6876fa54da0458e638a8a4ac"),
+    # v13 (2026-10-12, design/context-plan/11 §6 step 2): «Other people stay
+    # private» states the real location boundary (what her location tools
+    # answer, never routed round when they refuse) and that records never leave
+    # as data (design/context-plan/13).
+    "constraints": (13, "eb71a2acd9b663cdcadac1b9f8e5191acf02242e6b0140ce3347536e666c392c"),
+    # v1 (2026-10-12, design/context-plan/11 §6 step 2): room-constraints, the law moved out of
+    # conduct.md, belonging.md, pictures.md and silence.md; order 42, right
+    # after constraints.
+    "room-constraints": (1, "cebd1eae47e49ce4d8593288db03bc8c9c54485169e572e116429c98be90cb8b"),
     # v1 (2026-09-26): split out of constraints.md v11, see above. Body is
     # byte-identical to the section it was; loaded for the four room occasions
     # only, immediately before constraints (order 38).
     # v2 (2026-09-26, operator): whoever sent it is looking at the thing
     # itself; the description is for her eyes, not to read back.
-    "pictures": (2, "b4e07054e67027d63ce254615890f2e7d2dc7d911e00c9f58bcf5b798ce59817"),
+    # v3 (2026-10-12, design/context-plan/11 §6 step 2): its three law parts moved to
+    # rooms/constraints.md; what is left is when to look again.
+    "pictures": (3, "3169fa3d26a2adfb03b371953a21b61d1847a9a8e6b57deccd1d1edd01171a2d"),
     # The public summons files (design/instagram-adoption/19), v1 (2026-09-25):
     # drafted for the operator to rewrite, loaded only on `applies_to="summons"`.
     # identity and constraints gained `summons` in `applies_to` and the public
@@ -356,9 +401,13 @@ PINNED: dict[str, tuple[int, str]] = {
     # does not make them clickable); not finding a source is not a finding.
     # v7 (2026-09-26): names as plain words, never an @handle.
     # v8 (2026-09-26, operator): under 300 characters; a longer one is not posted.
-    "public-conduct": (8, "b9fd8db16d4d6b19cec8591c3f22d7136e268ac93f7fb3e3e583a424533e45a7"),
+    # v9 (2026-10-12, design/context-plan/11 §6 step 2): its nine law parts moved word for word to
+    # public/constraints.md.
+    # public-conduct v10 (2026-10-13): the length number left for the summons head.
+    "public-conduct": (10, "1bab9ef7cca89be95c6b8c1f53351acad72075d07bfe8a384cdbb3b1d5b0b6da"),
+    # v2 (2026-10-12, design/context-plan/11 §6 step 2): gains public/conduct.md's nine law parts.
     "public-constraints": (
-        1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
+        2, "04533c61a9bdebafa288e7a3710dc43f9aabbc342527f75dcfb32c6444cb71d5",
     ),
 }
 
@@ -389,10 +438,11 @@ def test_the_served_section_has_not_moved_without_the_version_moving(name: str):
         f"{pinned_version}. If you bumped it deliberately, update PINNED to "
         f"({section.version}, {section.sha256!r})."
     )
-    if not pinned_sha:
-        pytest.skip(
-            f"{name} has no sha pinned yet — record {section.sha256!r} to arm it"
-        )
+    # An empty pin fails rather than skips: a skip read as green and left the
+    # file ungoverned (found 2026-10-13, when a botched edit pinned "").
+    assert pinned_sha, (
+        f"{name} has no sha pinned; record {section.sha256!r} to arm it"
+    )
     assert section.sha256 == pinned_sha, (
         f"{name}.md's SERVED SECTION changed but `version: {section.version}` "
         f"did not.\n"
@@ -429,7 +479,7 @@ def test_the_pinned_sha_is_the_digest_of_what_the_prompt_actually_carries():
     )
     served = store.get(applies_to="tag").doctrine_text
     sections = _sections()
-    for name in ("conduct", "identity", "constraints", "silence", "voice"):
+    for name in ("conduct", "identity", "constraints", "voice"):
         at = served.index(f'name="{name}"')
         start = served.rindex("<section ", 0, at)
         end = served.index("</section>", start) + len("</section>")

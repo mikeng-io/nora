@@ -22,7 +22,11 @@ repair that changes more than whitespace is code writing content the model
 did not, and a silent repair makes the refusal rate unreadable. The repairs,
 all of them: trailing whitespace, `\\r\\n`, blank lines (all dropped: the
 normalised body has none, as §4.7's conformant body has none), `*`/`+`
-bullets to `-`, heading case.
+bullets to `-`, heading case. One repair writes content, decided 2026-10-09:
+an attributed line's `(<names>)` is completed from the rendered sender when
+only one person can have said it (left out with a single cited sender, or a
+first name exactly one cited sender extends), because who wrote a message is
+code's fact, not the model's.
 
 What it does not check, stated rather than discovered:
 
@@ -74,6 +78,9 @@ RULES: frozenset[str] = frozenset({
     "unknown_section", "section_order", "missing_section", "not_a_line",
     "uncited", "unknown_id", "cites_nora", "misattributed", "unknown_owner",
     "bad_date", "unknown_rollup_key",
+    # A memo body's `## Superseded` written by the model (`nora.domain.memo`):
+    # code renders it from the revision chain.
+    "code_written",
 })
 
 _WEEKDAYS: tuple[str, ...] = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -97,6 +104,9 @@ _NAMED = re.compile(r"^(?P<content>.+) \((?P<names>[^()]*)\)$")
 _FROM_MEMORY = re.compile(r"^(?P<what>.+) \(as of (?P<date>[^()]+)\)$")
 _FOLDED = re.compile(r"^(?P<title>.+?): (?P<closing>.+) \(folded (?P<date>[^()]+)\)$")
 _OWED_SPLIT = " -> "
+#: A sender a `(<names>)` slot cannot hold: `_NAMED` splits on the comma and
+#: takes no parenthesis, so such a name is never filled in by code.
+_UNHOLDABLE_NAME = re.compile(r"[,()]")
 #: A date-shaped run anywhere in the body, loose on purpose so a malformed one
 #: (`2026-9-27`) is found and refused rather than skipped.
 _DATE_LIKE = re.compile(
@@ -339,14 +349,18 @@ def resolve_positions(
     return _POSITIONAL.sub(_group, text)
 
 
-def _canonical_heading(name: str) -> str | None:
+def _canonical_heading(name: str, schema: tuple[str, ...] = SECTIONS) -> str | None:
     folded = name.casefold()
-    return next((h for h in SECTIONS if h.casefold() == folded), None)
+    return next((h for h in schema if h.casefold() == folded), None)
 
 
-def _split(text: str) -> list[tuple[str, list[str]]]:
-    """Headings and their raw list items, with the whitespace repairs applied.
-    Refuses `unknown_section`, `section_order` and `not_a_line`."""
+def split_sections(
+    text: str, *, schema: tuple[str, ...] = SECTIONS,
+) -> list[tuple[str, list[str]]]:
+    """Headings and their raw list items, with the whitespace repairs applied,
+    held to `schema`'s headings in `schema`'s order (a note's `SECTIONS` by
+    default; a memo body passes its own, `nora.domain.memo`). Refuses
+    `unknown_section`, `section_order` and `not_a_line`."""
     sections: list[tuple[str, list[str]]] = []
     for raw in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         line = raw.rstrip()
@@ -355,18 +369,18 @@ def _split(text: str) -> list[tuple[str, list[str]]]:
         if line.startswith("#"):
             m = _HEADING.match(line)
             hashes, name = (m.group(1), m.group(2)) if m else ("", "")
-            heading = _canonical_heading(name) if hashes == "##" else None
+            heading = _canonical_heading(name, schema) if hashes == "##" else None
             if heading is None:
                 raise NoteBodyError(
                     "unknown_section",
                     f"{line!r} is not one of the headings "
-                    f"{', '.join('## ' + h for h in SECTIONS)}",
+                    f"{', '.join('## ' + h for h in schema)}",
                 )
-            if sections and SECTIONS.index(heading) <= SECTIONS.index(sections[-1][0]):
+            if sections and schema.index(heading) <= schema.index(sections[-1][0]):
                 raise NoteBodyError(
                     "section_order",
                     f"## {heading} comes after ## {sections[-1][0]}; each heading "
-                    f"appears once, in the order {', '.join(SECTIONS)}",
+                    f"appears once, in the order {', '.join(schema)}",
                 )
             sections.append((heading, []))
             continue
@@ -421,6 +435,7 @@ def _ids(item: str, heading: str) -> tuple[str, tuple[int, ...], tuple[str, ...]
 def _check_ids(
     ids: tuple[int, ...], item: str, rendered: Mapping[int, ShownMessage], carried: frozenset[int],
     keys: tuple[str, ...] = (), known_keys: frozenset[str] = frozenset(),
+    *, may_cite_nora: bool = False,
 ) -> None:
     for key in keys:
         if key not in known_keys:
@@ -438,7 +453,7 @@ def _check_ids(
                     f"{item!r} cites [{i}], a message this write was not shown "
                     f"and the note did not already cite",
                 )
-        elif row.is_nora:
+        elif row.is_nora and not may_cite_nora:
             raise NoteBodyError(
                 "cites_nora",
                 f"{item!r} cites [{i}], one of Nora's own messages; a note is "
@@ -541,6 +556,34 @@ def _check_due(due: str, item: str) -> None:
         )
 
 
+def _full_sender(name: str, senders: tuple[str, ...]) -> str:
+    """`name` as the one cited sender it is the first word of (`Tyler` for a
+    rendered `Tyler Cortez`); unchanged when it is a sender already, or when
+    no sender, or more than one, starts with it."""
+    if name in senders:
+        return name
+    matches = [s for s in senders if s.split(" ", 1)[0] == name]
+    return matches[0] if len(matches) == 1 else name
+
+
+def cited_line(
+    heading: str, item: str, shown: Shown, *, may_cite_nora: bool = False,
+) -> NoteLine:
+    """One `<claim> [<ids>]` line under `heading`, held to the grammar every
+    Register line shares (12-schemas §2): absolute dates, ending in the ids and
+    Rollup keys it rests on, each one this write was shown or carries. A line
+    may cite one of Nora's own messages only where `may_cite_nora` says so (a
+    memo, which may keep what she found or said; never a note). The memo
+    body's parser (`nora.domain.memo.parse_memo_body`) is its caller."""
+    _check_dates(item)
+    _rest, ids, keys = _ids(item, heading)
+    _check_ids(
+        ids, item, {m.id: m for m in shown.rendered}, shown.carried, keys,
+        shown.rollup_keys, may_cite_nora=may_cite_nora,
+    )
+    return NoteLine(text=item, ids=ids, rollup_keys=keys)
+
+
 def _line(
     heading: str, item: str, shown: Shown, rendered: Mapping[int, ShownMessage],
 ) -> NoteLine:
@@ -594,12 +637,40 @@ def _line(
 
     m = _NAMED.match(rest)
     names = tuple(n.strip() for n in m.group("names").split(",")) if m else ()
+    content = m.group("content") if m is not None else rest
+    # Who said it, when only one person can have: a line that leaves `(<names>)`
+    # out while every rendered message it cites is ONE sender's, or writes a
+    # first name exactly one cited sender extends, is completed from the
+    # rendered `from` (6 of 14 live `note_create` calls, 2026-10-02..09, were
+    # refused for exactly this and rewritten on the next round). Several cited
+    # senders stay a refusal that lists them: who said a line is the model's
+    # judgement, not every author it cites. A sender a `(<names>)` slot cannot
+    # hold (a comma or a parenthesis) is never filled in.
+    cited = [rendered[i] for i in ids if i in rendered and not rendered[i].is_nora]
+    senders = tuple(dict.fromkeys(s.sender for s in cited))
+    holdable = tuple(s for s in senders if not _UNHOLDABLE_NAME.search(s))
+    completed = False
+    if not names or not all(names):
+        if len(senders) == 1 and holdable == senders:
+            names, completed = senders, True
+        elif senders:
+            raise NoteBodyError(
+                "misattributed",
+                f"under ## {heading}, {item!r} names nobody; it ends `(<names>) [<ids>]`, "
+                f"naming who said it among: {', '.join(senders)}",
+            )
+    elif holdable:
+        expanded = tuple(dict.fromkeys(_full_sender(n, holdable) for n in names))
+        if expanded != names:
+            names, completed = expanded, True
     if not names or not all(names):
         raise NoteBodyError(
             "misattributed",
             f"under ## {heading}, {item!r} names nobody; it ends `(<names>) [<ids>]`",
         )
-    content = m.group("content") if m is not None else rest
+    if completed:
+        cite = _CITED.match(item)
+        item = f"{content} ({', '.join(names)}) [{cite.group('ids') if cite else ''}]"
     if heading == "Ruled out" and ": " not in content:
         raise NoteBodyError(
             "not_a_line",
@@ -639,7 +710,7 @@ def parse_note_body(text: str, *, shown: Shown, require_open: bool = False) -> N
     least one line there (§4.1). Elsewhere an empty `## Open` means «nothing
     left open as of this revision».
     """
-    split = _split(text)
+    split = split_sections(text)
     present = dict(split)
     missing = [h for h in REQUIRED if h not in present]
     if missing:

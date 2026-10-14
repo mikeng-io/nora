@@ -61,6 +61,7 @@ from nora.agent.telemetry import (
 )
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
+from nora.agent.video_desk import VideoDesk
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import (
     build_grounder,
@@ -81,6 +82,7 @@ from nora.app.cognition_wiring import (
     read_surface,
     require_session_hook,
     units_with_home_rooms,
+    upcoming_reader,
 )
 from nora.app.cognition_wiring import (
     agenda_skills as cognition_agenda_skills,
@@ -93,6 +95,7 @@ from nora.app.memory_routing import (
     build_workspace_router,
     workspaces_of_person,
 )
+from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
 from nora.app.otp import OtpService
 from nora.app.source_health import AdapterHealthRecorder
 from nora.app.subagent_backend import SubagentBackend
@@ -121,6 +124,8 @@ from nora.domain.ports import (
     DiscordPresenceSource,
     DreamAdaptor,
     EngagePolicy,
+    ExternalFilesSource,
+    ImageGenerator,
     MemoryStore,
     PlatformAdapter,
     RecordStore,
@@ -139,6 +144,7 @@ from nora.domain.speech_markup import normalise as normalise_for_speech
 from nora.domain.stimuli import WakeHook, WakePolicy
 from nora.domain.subagent import SUBAGENT_KIND
 from nora.domain.tool_call_log import ToolCallLogStore
+from nora.domain.video import VIDEO_KIND
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.pipeline import EngagementPipeline
@@ -150,6 +156,7 @@ from nora.engagement.subagents_context import SubagentsContextReader
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.computer.probe import ComputerdProbe
+from nora.infra.google.auth import GoogleCredentials
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
@@ -169,6 +176,7 @@ from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
+from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
@@ -253,7 +261,7 @@ from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
 from nora.policy import Policy, PolicyError, load_policy
 from nora.tag import Debounce
-from nora.web.games import PulseGamesClient
+from nora.web.games import PULSE_API_BASE, PulseGamesClient
 
 from .agent_runner import LiveAgentRunner
 from .announce import AnnouncementTarget, VersionAnnouncer
@@ -263,7 +271,6 @@ from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
 from .fire import (
     FirePath,
-    gathering_occasion,
     lost_job_occasion,
     proactive_occasion,
     relay_occasion,
@@ -379,6 +386,7 @@ def _build_wake_evaluator(
     metrics: Metrics, on_wake: WakeHook | None,
     session_units: Callable[[], Collection[str]] | None = None,
     floors_ready: bool = True,
+    upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None,
 ) -> WakeEvaluator:
     """The cognition loop's wake evaluator (design/cognition-loop/20 §3): every
     wake starts a session through `on_wake`."""
@@ -405,6 +413,7 @@ def _build_wake_evaluator(
         on_wake=on_wake,
         session_units=session_units,
         floors_ready=floors_ready,
+        upcoming=upcoming,
     )
 
 
@@ -915,6 +924,47 @@ def _computer_token(cfg: Config) -> str:
     return token
 
 
+def google_credentials(cfg: Config, *, metrics: Any) -> GoogleCredentials | None:
+    """Nora's ONE Google identity (`[google]`, design/external-files §4), or
+    None. Built when a Google service is switched on (shared files today) and
+    all three values `[google]` names are in the environment (DEC-8). A value
+    missing is None and a warning naming the variable, never its value: the
+    Google services then answer `unavailable`, never the boot. Every service
+    gets THIS object and asks it for a token for its own scope; none sees the
+    secrets."""
+    if not cfg.external_files.enabled:
+        return None
+    names = (cfg.google.client_id_env, cfg.google.client_secret_env,
+             cfg.google.refresh_token_env)
+    values = [os.environ.get(name, "").strip() for name in names]
+    missing = [name for name, value in zip(names, values, strict=True) if not value]
+    if missing:
+        log.warning(
+            "[google] %s unset; every Google service answers unavailable (run "
+            "scripts/google_auth.py, put the values in .env)", ", ".join(missing),
+        )
+        return None
+    client_id, client_secret, refresh_token = values
+    return GoogleCredentials(
+        client_id=client_id, client_secret=client_secret,
+        refresh_token=refresh_token, metrics=metrics,
+    )
+
+
+def external_files_source(
+    cfg: Config, *, google: GoogleCredentials | None,
+) -> ExternalFilesSource | None:
+    """The shared-file source the open tool reads through
+    (design/external-files/00-design.md §4), or None: `[external_files]` off,
+    or no Google identity (`google_credentials`). None answers the open
+    `unavailable`; recording a link as a handle needs none of this."""
+    if not cfg.external_files.enabled or google is None:
+        return None
+    from nora.infra.external_files.google_drive import GoogleDriveSource
+
+    return GoogleDriveSource(credentials=google)
+
+
 #: Every Character adaptor that is not the room fold, by name (budgets, grants).
 CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
     CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_UNIT_ADAPTOR_NAME,
@@ -1179,8 +1229,8 @@ class Dependencies:
     # several, which is the whole reason a unit-keyed adaptor could not
     # ride the per-scope schedule.
     unit_scopes: Callable[[], Sequence[str]]
-    # The SAME `GatheringService` built above alongside `event_store`/
-    # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
+    # The SAME `GatheringService` built above alongside `event_store` and
+    # already threaded to `ToolRegistry(events=events)` —
     # exposed here too so `nora.web.api.register_web_routes`'s read-only
     # `/app/v1/events(/{id})` pair serves from the identical instance the
     # agent's event tools use, rather than a second `GatheringService` over the
@@ -1228,6 +1278,103 @@ class Dependencies:
     # `nora/__main__.py` mounts `/app/v1/otp/*` behind `otp_api_token`.
     otp: OtpService | None = None
     otp_api_token: str = ""
+    # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`): `None` unless
+    # `[image_gen] enabled` and at least one lane's token is set with
+    # `keepalive = true`. `nora/__main__.py` starts it; the eval subject,
+    # which composes the same graph, does not.
+    oauth_keepalive: OAuthKeepalive | None = None
+
+
+def _image_gen_wiring(
+    cfg: Config,
+    metrics: Metrics,
+    environ: Mapping[str, str],
+    *,
+    state_dir: Path,
+) -> tuple[ImageGenerator | None, OAuthKeepalive | None]:
+    """The `generate_image` provider and the OAuth keepalive ([image_gen]).
+
+    Off: `(None, None)`, and the tool answers `unavailable` (R-5/R-27). On,
+    EVERY OAuth lane whose bootstrap token is set gets one lane object
+    (DEC-308), whichever `provider` is selected; the selected one is also
+    the adapter's, the SAME object, so the keeper and a call share one
+    refresh lock and never both spend a rotating token. Each lane with
+    `keepalive = true` is registered with the one keeper, which
+    `nora/__main__.py` starts (the eval subject composes this graph too and
+    must not refresh the deployment's tokens). The state files live in the
+    repo-tree state dir `./state/signal-cli` already uses (container-
+    writable; the host-immutable `.env` holds only the bootstrap tokens).
+    """
+    if not cfg.image_gen.enabled:
+        return None, None
+    from nora.infra.image_gen import (
+        OpenAICodexOAuth,
+        XaiOAuth,
+        build_image_generator,
+    )
+
+    image_generator: ImageGenerator | None
+    xai_cfg = cfg.image_gen.xai
+    codex_cfg = cfg.image_gen.openai_codex
+    xai_token = environ.get(xai_cfg.refresh_token_env, "")
+    codex_token = environ.get(codex_cfg.refresh_token_env, "")
+    xai_lane = XaiOAuth(
+        refresh_token=xai_token,
+        state_file=state_dir / "xai-oauth.json",
+        timeout_seconds=xai_cfg.timeout_seconds,
+    ) if xai_token else None
+    # DEC-304: the env var holds only the BOOTSTRAP token; the rotating
+    # one lives in the state file beside xAI's.
+    codex_lane = OpenAICodexOAuth(
+        bootstrap_refresh_token=codex_token,
+        state_file=state_dir / "openai-codex-oauth.json",
+    ) if codex_token else None
+    if cfg.image_gen.provider == "openai_codex":
+        token_env = codex_cfg.refresh_token_env
+        image_generator = build_image_generator(
+            provider="openai_codex",
+            oauth=codex_lane,
+            model=codex_cfg.model,
+            responses_model=codex_cfg.responses_model,
+            standard_quality=codex_cfg.standard_quality,
+            high_quality=codex_cfg.high_quality,
+            timeout_seconds=codex_cfg.timeout_seconds,
+            max_reference_images=codex_cfg.max_reference_images,
+        ) if codex_lane is not None else None
+        selected_token = codex_token
+    else:
+        token_env = xai_cfg.refresh_token_env
+        image_generator = build_image_generator(
+            provider=cfg.image_gen.provider,
+            oauth=xai_lane,
+            model=xai_cfg.model,
+            quality_model=xai_cfg.quality_model,
+            timeout_seconds=xai_cfg.timeout_seconds,
+            max_reference_images=xai_cfg.max_reference_images,
+        ) if xai_lane is not None else None
+        selected_token = xai_token
+    if not selected_token:
+        log.warning(
+            "image_gen enabled but %s is unset — generate_image stays unavailable",
+            token_env,
+        )
+    elif image_generator is None:
+        # M6: unknown provider (or unconstructable lane) degrades
+        # the tool, never crashes the daemon.
+        log.warning(
+            "image_gen enabled but provider %r could not be built — "
+            "generate_image stays unavailable",
+            cfg.image_gen.provider,
+        )
+    keeper = OAuthKeepalive(metrics)
+    kept: tuple[tuple[KeptLane | None, bool, float], ...] = (
+        (xai_lane, xai_cfg.keepalive, xai_cfg.refresh_interval_hours),
+        (codex_lane, codex_cfg.keepalive, codex_cfg.refresh_interval_hours),
+    )
+    for lane, wanted, hours in kept:
+        if lane is not None and wanted:
+            keeper.register(lane, KeepaliveTiming(interval_seconds=hours * 3600.0))
+    return image_generator, (keeper if keeper.lanes else None)
 
 
 def wall_clock() -> datetime:
@@ -1574,6 +1721,11 @@ async def build_dependencies(
     note_store: SqlNoteStore | None = (
         SqlNoteStore(engine) if cfg.notes.enabled else None
     )
+    # The memo tier (DEC-306): what a unit settled and keeps. No flag: only a
+    # Cognition session writes a memo (`[cognition] enabled`), and with none
+    # kept every read renders nothing. ONE instance for the tag and fire
+    # `<memos>`, `memo_read` and the session's verbs.
+    memo_store = SqlMemoStore(engine)
 
     # Resolved here, not inside AdapterRegistry — the same convention every
     # other `*_env` secret (the LLM key, the route key) follows: composition.py
@@ -2026,6 +2178,7 @@ async def build_dependencies(
         # which is what the note index is scoped by. Handing it a different
         # Policy would scope the read to a unit ingest never admitted.
         notes=note_store,
+        memos=memo_store,
         policy=allowlist,
         # Standing's READ half. `None` while `[standing] enabled = false`, the
         # shipped default, so `<standing>` renders nothing. Unlike `notes`
@@ -2153,26 +2306,22 @@ async def build_dependencies(
     #
     # The proactive occasion (design/dreamer-agent-loop/39 D12, DEC-162)
     # needs the SAME runner shape for the same reason — its act turn may end
-    # in silence — so the one auto-runner is built when EITHER occasion is
-    # wired and handed to `FirePath` under both names. The act turn is wired
-    # when `policy.toml` names a home room (39 D2); its rows are written by the
-    # Cognition session's `remind` (DEC-277).
+    # in silence — so both are built by `_auto_runner` below, each with its own
+    # reasoning effort. The act turn is wired when `policy.toml` names a home
+    # room (39 D2); its rows are written by the Cognition session's `remind`
+    # (DEC-277).
     proactive_homes = allowlist.home_rooms()
-    participation_runner: LiveAgentRunner | None = None
-    if cfg.participation.enabled or proactive_homes:
-        participation_runner = LiveAgentRunner(
+
+    def _auto_runner(
+        effort: str, source: str, *, max_tokens: int | None = None,
+    ) -> LiveAgentRunner:
+        return LiveAgentRunner(
             models=factory.ModelSource(
                 client=client,
                 spec=factory.ModelSpec(
-                    model=tier.model, max_tokens=tier.max_tokens,
+                    model=tier.model, max_tokens=max_tokens or tier.max_tokens,
                     temperature=tier.temperature,
-                    # `[participation]`'s own, never the tag lane's — see the
-                    # field's note: silence is this occasion's default, and
-                    # more reasoning measurably produces more of it.
-                    reasoning_effort=str(_reasoning_effort(
-                        cfg.participation.reasoning_effort,
-                        source="[participation] reasoning_effort",
-                    )),
+                    reasoning_effort=str(_reasoning_effort(effort, source=source)),
                     tool_choice=tool_choice.AFTER_SPEAKING,
                 ),
             ),
@@ -2180,6 +2329,26 @@ async def build_dependencies(
             skills_dir=cfg.doctrine.dir.parent / "skills",
             agent_name=cfg.agent.name,
             metrics=metrics,
+        )
+
+    # `[participation]`'s own effort, never the tag lane's — see the field's
+    # note: silence is this occasion's default, and more reasoning measurably
+    # produces more of it.
+    participation_runner: LiveAgentRunner | None = None
+    if cfg.participation.enabled:
+        participation_runner = _auto_runner(
+            cfg.participation.reasoning_effort, "[participation] reasoning_effort",
+        )
+    # The proactive act turn's runner: the same `auto` shape, its OWN effort
+    # (`ProactiveConfig`, design/cognition-loop/35 §3.4). It shared the
+    # participation runner until 2026-10-12, and the two fail in opposite
+    # directions: at `none` a proactive turn spoke on every case where
+    # silence was right.
+    proactive_runner: LiveAgentRunner | None = None
+    if proactive_homes:
+        proactive_runner = _auto_runner(
+            cfg.proactive.reasoning_effort, "[proactive] reasoning_effort",
+            max_tokens=cfg.proactive.max_tokens,
         )
     # The public Instagram summons' runner (design/instagram-adoption/19,
     # `nora.app.summons`): the SAME `AFTER_SPEAKING` shape as the
@@ -2215,12 +2384,9 @@ async def build_dependencies(
         total_tokens=tier.limits.total_tokens,
     )
 
-    # §9's caps as the DOMAIN value, extracted to a variable (not built inline
-    # at the `ToolRegistry(...)` call below the way it was before Events) so
-    # `GatheringService` and `ToolRegistry` share the exact SAME `ReminderCaps` —
-    # an event's linked reminder must respect the identical anti-runaway caps
-    # a manually requested one does, and two separately constructed instances
-    # read as "the same value" only by coincidence of both reading `cfg.reminders`.
+    # §9's caps as the DOMAIN value, built once so every reminder writer (the
+    # tag path's `ToolRegistry` and the Cognition session) holds the exact SAME
+    # `ReminderCaps`, not two instances equal only by both reading `cfg.reminders`.
     reminder_caps = ReminderCaps(**cfg.reminders.model_dump())
     # `GatheringService` (Gathering module design spec): the ONE use-case layer for
     # Gathering business rules. `event_store` REUSES `engine` for the same reason
@@ -2244,8 +2410,6 @@ async def build_dependencies(
 
     events = GatheringService(
         store=event_store,
-        reminders=reminders,
-        reminder_caps=reminder_caps,
         route_source=route_client,
         honcho=memory,
         ai_peer=cfg.memory.ai_peer,
@@ -2578,41 +2742,24 @@ async def build_dependencies(
     # present → build the lane (the same keyless-`enabled` gate `route` uses).
     # Off (or tokenless) leaves the `generate_image` tool answering
     # `unavailable` — never a crash, never `nothing_found` (R-5/R-27). The
-    # access-token state file lives in the same repo-tree state dir
-    # `./state/signal-cli` already uses (container-writable, host-immutable
-    # `.env` holds only the refresh token).
-    image_generator = None
-    image_refs_allowed = False
+    # state files live in the same repo-tree state dir `./state/signal-cli`
+    # already uses (container-writable, host-immutable `.env` holds only the
+    # bootstrap refresh tokens).
+    #
+    # DEC-308: EVERY OAuth lane whose token is set gets its lane object, not
+    # only the selected provider's, and each is registered with the one
+    # keepalive so no login dies idle. The selected lane's object is the SAME
+    # one the adapter holds: one asyncio lock, so the keeper and a call never
+    # both spend a rotating token. `nora/__main__.py` starts the keeper; the
+    # eval subject composes the same graph and never does.
+    image_refs_allowed = (
+        cfg.image_gen.enabled and cfg.image_gen.allow_reference_images
+    )
     # Image custody (Miles 2026-08-26): generated images are stored in Nora's
     # OWN blob_store (rustfs) and sent as platform attachments.
-    if cfg.image_gen.enabled:
-        image_refs_allowed = cfg.image_gen.allow_reference_images
-        xai_cfg = cfg.image_gen.xai
-        refresh_token = os.environ.get(xai_cfg.refresh_token_env, "")
-        if refresh_token:
-            from nora.infra.image_gen import build_image_generator
-            state_file = Path("/app/state/xai-oauth.json")
-            image_generator = build_image_generator(
-                provider=cfg.image_gen.provider,
-                refresh_token=refresh_token,
-                state_file=state_file,
-                model=xai_cfg.model,
-                quality_model=xai_cfg.quality_model,
-                timeout_seconds=xai_cfg.timeout_seconds,
-            )
-            if image_generator is None:
-                # M6: unknown provider (or unconstructable lane) degrades
-                # the tool, never crashes the daemon.
-                log.warning(
-                    "image_gen enabled but provider %r could not be built — "
-                    "generate_image stays unavailable",
-                    cfg.image_gen.provider,
-                )
-        else:
-            log.warning(
-                "image_gen enabled but %s is unset — generate_image stays unavailable",
-                xai_cfg.refresh_token_env,
-            )
+    image_generator, oauth_keepalive = _image_gen_wiring(
+        cfg, metrics, os.environ, state_dir=Path("/app/state"),
+    )
     # Sender-generated link previews ([preview]). Keyless, so `enabled` is the
     # whole gate. Off is the shipped default and is not a
     # degradation: a reply carrying a link goes out with no card, exactly as
@@ -2685,8 +2832,39 @@ async def build_dependencies(
     # plug an adapter into. Until one is assigned here the poller below is
     # never built: wired, idle.
     # `kind -> ComputeBackend`: the poller resolves a row's backend by its `kind`
-    # (design/subagent §6). Empty today; step 2 registers the sub-agent worker here.
+    # (design/subagent §6). `[video_gen]` registers the video backend just below; the
+    # sub-agent worker is registered once the tool registry exists.
     compute_backends: dict[str, ComputeBackend] = {}
+    # Video generation ([video_gen], design/video-generation): enabled AND the key named by
+    # `[video_gen.minimax_cn] api_key_env` present builds the MiniMax CN backend, registered
+    # under `VIDEO_KIND` for the poller, and the desk `video_create` calls. The config refuses
+    # `enabled` without `[compute] enabled`. Enabled without the key builds nothing: the
+    # registry withholds the tool and this warns, never a crash (R-5/R-27).
+    video_desk: VideoDesk | None = None
+    if cfg.video_gen.enabled:
+        video_cfg = cfg.video_gen.minimax_cn
+        video_key = os.environ.get(video_cfg.api_key_env, "")
+        if video_key:
+            from nora.infra.video_gen import MiniMaxVideoBackend
+            video_backend = MiniMaxVideoBackend(
+                api_key=video_key, model=video_cfg.model,
+                resolution=cfg.video_gen.resolution,
+                duration_seconds=cfg.video_gen.duration_seconds, ratio=cfg.video_gen.ratio,
+                metrics=metrics, host=video_cfg.host,
+                timeout_seconds=video_cfg.timeout_seconds,
+                reference_seconds=cfg.video_gen.reference_seconds,
+            )
+            compute_backends[VIDEO_KIND] = video_backend
+            video_desk = VideoDesk(
+                jobs=compute_jobs, backend=video_backend, clock=clock,
+                tz=cfg.analytics.tz_name,
+                max_per_room_per_day=cfg.video_gen.max_clips_per_room_per_day,
+            )
+        else:
+            log.warning(
+                "[video_gen] enabled but %s is unset; video_create is withheld",
+                video_cfg.api_key_env,
+            )
     # Nora's computer (design/sandbox-runtime, DEC-243): `ComputerdRuntime`,
     # built ONLY when `[computer] enabled`. Off leaves it `None` and every
     # computer tool answers `unavailable` (R-5). `ComputerToolSettings` is the
@@ -2755,7 +2933,13 @@ async def build_dependencies(
         )
     games_client = None
     if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
-        games_client = PulseGamesClient(token=pulse_api_token)
+        # The base URL names a private tailnet host, so the deployment states it
+        # in `.env` (`PULSE_API_BASE`); the identifier scrub (#767) left only a
+        # placeholder in the source.
+        games_client = PulseGamesClient(
+            token=pulse_api_token,
+            base_url=os.environ.get("PULSE_API_BASE") or PULSE_API_BASE,
+        )
     # DEC-105: the cross-room relay. It does NOT send — it occasions a fire
     # turn into the destination (DEC-99's ruling), so R-1b's three links hold
     # and the relayed message is audited into the room it lands in.
@@ -2846,7 +3030,20 @@ async def build_dependencies(
         documents=document_service if cfg.documents.enabled else None,
     ) if cfg.subagent.enabled else None
     tool_registry = ToolRegistry(
+        # `[external_files]` (ships off): the source a shared file link is
+        # opened through; None answers the open `unavailable`.
+        external_files=external_files_source(
+            cfg, google=google_credentials(cfg, metrics=metrics),
+        ),
         subagent=subagent_desk,
+        video=video_desk,
+        video_ref_kinds=frozenset(
+            kind for kind, allowed in (
+                ("image", cfg.video_gen.allow_reference_images),
+                ("video", cfg.video_gen.allow_reference_video),
+                ("audio", cfg.video_gen.allow_reference_audio),
+            ) if allowed
+        ),
         # `[record_query] enabled` (ships off): without the read the registry
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
@@ -2858,6 +3055,8 @@ async def build_dependencies(
         standing_head=standing_store,
         # `character_read` (self-growth C4): withheld while `[culture]` is off.
         culture=culture_reader,
+        # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
+        memos=memo_store,
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),
@@ -2917,9 +3116,9 @@ async def build_dependencies(
         computer_exports=computer_exports,
         artifact_link_base=cfg.documents.public_url,
         browser=browser,
-        # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
-        # `GatheringService` was built with above — see that variable's own
-        # comment for why they must not be two separately constructed copies.
+        # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance the
+        # Cognition session is built with — see that variable's own comment for
+        # why they must not be two separately constructed copies.
         # `nora.agent` may not import `nora.config` (import-linter's "only app
         # and __main__ read config"), so THAT construction is the conversion
         # point: `RemindersConfig`'s fields are `ReminderCaps`'s fields, and
@@ -2995,7 +3194,8 @@ async def build_dependencies(
         log.warning(
             "[compute] enabled = true but no ComputeBackend is registered (the "
             "per-job container backend was retired, design/sandbox-runtime "
-            "decision 4; `[subagent] enabled` registers the sub-agent worker); the "
+            "decision 4; `[subagent] enabled` registers the sub-agent worker, `[video_gen]` "
+            "the video backend); the "
             "compute-job poller stays idle. Set enabled = false."
         )
     if presence_store is not None:
@@ -3097,6 +3297,7 @@ async def build_dependencies(
         rosters=rosters,
         preview_source=preview_source,
         slots=slots,
+        clock=clock,
         tool_call_log_store=tool_call_log_store,
         reasoning_strip_store=reasoning_strip_store,
         tag_trace_store=tag_trace_store,
@@ -3136,6 +3337,11 @@ async def build_dependencies(
     # below, once `fire_path` exists.
     lost_jobs = await compute_poller_recover(
         store=compute_jobs, metrics=metrics, now=clock(),
+        # A video row's handle is the provider's task id, not memory: when the video backend
+        # is wired its pending rows are polled again rather than swept as lost.
+        durable_kinds=(
+            frozenset({VIDEO_KIND}) if VIDEO_KIND in compute_backends else frozenset()
+        ),
     )
     # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
     # otherwise every deployment on the shipped default (`enabled = false`)
@@ -3204,12 +3410,12 @@ async def build_dependencies(
             # The reminder-derived Event registry (DEC-139,
             # design/event-abstraction/04): kind -> factory, wired here at
             # the composition root so the domain type stays free of app
-            # wiring. Today the registry has exactly the two kinds whose
-            # Events are PRODUCED BY a due Reminder row; compute/relay/
-            # lost-job call speak directly and are not registry entries.
+            # wiring. The registry holds the kinds whose Events are PRODUCED
+            # BY a due Reminder row; compute/relay/lost-job call speak
+            # directly and are not registry entries. An event no longer owns
+            # a reminder (DEC-303): a reminder is a person's or Nora's own.
             event_registry={
                 "reminder": reminder_occasion,
-                "gathering": gathering_occasion,
                 # The proactive act turn (39 D4): a row the Cognition session's `remind` writes
                 # (the decide turn did before 2026-10-03), built `person_id=None`. Registered
                 # unconditionally — a row of this kind can only exist if a writer
@@ -3270,11 +3476,12 @@ async def build_dependencies(
             # its unit reads through — two readers each carrying their own
             # idea of a room's unit is the DEC-105 violation.
             notes=note_store,
+            memos=memo_store,
             policy=allowlist,
             # The participation occasion's own runner (§4) — None whenever the
             # occasion is disabled, which is also exactly when no participation
             # Event can reach `speak` (no policy marks one, no trigger exists).
-            participation_runner=participation_runner if cfg.participation.enabled else None,
+            participation_runner=participation_runner,
             # The proactive act turn's runner (39 D12): the same auto-runner,
             # under its own name. Gated on a HOME ROOM existing, not on the
             # adaptor being wired (audit 2026-09-09): a proactive row written
@@ -3282,7 +3489,7 @@ async def build_dependencies(
             # off, the screen below admits it, and a fire path with no runner
             # would fail every such row `failed_error`. The row's existence
             # condition is the home room; so is the runner's.
-            proactive_runner=participation_runner if proactive_homes else None,
+            proactive_runner=proactive_runner,
             # The §10.6 shadow mirror: wired only when the operator turned BOTH
             # the occasion AND the review surface on — a mirrored determination
             # always cleared the room opt-in and the enabled gate first. The
@@ -3407,6 +3614,9 @@ async def build_dependencies(
         compute_poller = ComputeJobPoller(
             store=compute_jobs, backends=compute_backends,
             documents=document_service if cfg.documents.enabled else None,
+            # A finished clip's bytes are kept where a generated image's are (DEC-138): the
+            # same blob store and media index, so `media_search` / `media_send` reach it.
+            blobs=blobs, media=media_objects,
             # `speak`, NOT `run`: the same reason `VersionAnnouncer` above
             # takes `fire_path.speak` rather than the reminder-shaped `run`.
             speak=fire_path.speak,
@@ -3631,6 +3841,7 @@ async def build_dependencies(
     cognition_runner: CognitionSessionRunner | None = None
     #: The units a session can run for (a home room each); only they are woken.
     cognition_session_units: Collection[str] | None = None
+    cognition_upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None
     if cfg.dreamer.enabled:
         # THE CULTURE TIER (design/culture-tier, DEC-182..185). An account of
         # how each room works and why, folded from that room's own messages
@@ -4136,6 +4347,19 @@ async def build_dependencies(
                 cognition_unit_rooms.setdefault(conv.unit, set()).update(
                     (conv.platform, cid) for cid in conv.ids
                 )
+            if cfg.cognition.upcoming_days > 0:
+                upcoming_rooms: dict[str, list[tuple[str, str, Collection[str]]]] = {}
+                for conv in allowlist.conversations:
+                    upcoming_rooms.setdefault(conv.unit, []).append(
+                        (conv.platform, conv.primary_id, conv.ids),
+                    )
+                cognition_upcoming = upcoming_reader(
+                    _open_events, lambda unit: upcoming_rooms.get(unit, []),
+                    days=cfg.cognition.upcoming_days,
+                    room_proactive=lambda platform, cid: allowlist.proactive_allowed(
+                        platform=platform, conversation_id=cid,
+                    ),
+                )
             # The policy's label for each of those ids (m5): the prompt calls a
             # room by it and never by the conversation id.
             cognition_room_labels: dict[tuple[str, str], str] = {
@@ -4152,6 +4376,7 @@ async def build_dependencies(
                 # session must be grounded with the tool off.
                 records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
                 note_index=_note_index, events_in=_room_events,
+                memo_index=lambda unit: memo_store.kept(unit=unit),
                 lineage=lineage,
                 unit_rooms=lambda unit: cognition_unit_rooms.get(unit, set()),
                 ai_display_name=cfg.doctrine.display_name,
@@ -4201,6 +4426,7 @@ async def build_dependencies(
                     store=SqlCognitionStore(engine), stimulus_store=stimulus_store,
                     note_titles=_note_titles, open_events_in=_open_events,
                     notes=note_store, events=events, standing=standing_store,
+                    memos=memo_store,
                     reminders=reminders, ai_peer=cfg.memory.ai_peer,
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
@@ -4248,6 +4474,7 @@ async def build_dependencies(
                 None if cognition_session_units is None else (lambda: cognition_session_units)
             ),
             floors_ready="time" in agenda_skills.by_kind,
+            upcoming=cognition_upcoming,
         )
         if cognition_runner is not None:
             cognition_shutdown = CognitionShutdown(
@@ -4337,6 +4564,7 @@ async def build_dependencies(
         ),
         otp=otp,
         otp_api_token=otp_api_token,
+        oauth_keepalive=oauth_keepalive,
     )
 
 

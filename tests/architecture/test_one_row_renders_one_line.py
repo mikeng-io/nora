@@ -88,7 +88,8 @@ _COLLAPSERS = _DIRECT_COLLAPSERS | {"render_rows"}
 #: becomes a formality.
 _NOT_A_LINE = {
     (
-        "nora/agent/prefill.py", "build_tag_message", 'escape(ctx.message.body)',
+        "nora/agent/prefill.py", "build_tag_message",
+        'escape(render_file_links(ctx.message.body))',
     ): (
         "`<tag_message>`: the message she is answering, whole, between its own "
         "tags. Same shape and same reason as `<replying_to>` above, which it "

@@ -897,6 +897,52 @@ async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_r
         await deps.background.cancel_all()
 
 
+async def test_video_off_builds_nothing_and_withholds_the_tool(cfg, no_build_stamp):
+    """`[video_gen] enabled = false`, the shipped default: no backend, no tool."""
+    assert cfg.video_gen.enabled is False
+    deps = await build_dependencies(cfg)
+    try:
+        registry = deps.engagement._tool_registry
+        assert "video_create" in registry._withheld and registry._video is None
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_video_on_without_its_key_boots_and_withholds_the_tool(
+    cfg, monkeypatch, no_build_stamp,
+):
+    """Enabled with the key unset is a wiring gap: boot goes on, the tool is withheld, and
+    no backend is registered with the poller. Never a crash."""
+    monkeypatch.delenv("MINIMAX_CN_API_KEY", raising=False)
+    on = override_config(cfg, {"compute.enabled": True, "video_gen.enabled": True,
+                               "heartbeat.enabled": False})
+    deps = await build_dependencies(on)
+    try:
+        registry = deps.engagement._tool_registry
+        assert "video_create" in registry._withheld and registry._video is None
+        assert _spawned(deps, "ComputeJobPoller.run") == []
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_video_on_with_its_key_registers_its_backend_under_its_kind(
+    cfg, monkeypatch, no_build_stamp,
+):
+    from nora.infra.video_gen import MiniMaxVideoBackend
+
+    monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-key")
+    on = override_config(cfg, {"compute.enabled": True, "video_gen.enabled": True,
+                               "heartbeat.enabled": False})
+    deps = await build_dependencies(on)
+    try:
+        registry = deps.engagement._tool_registry
+        assert "video_create" not in registry._withheld and registry._video is not None
+        (poller,) = _spawned(deps, "ComputeJobPoller.run")
+        assert isinstance(poller._backends["video"], MiniMaxVideoBackend)
+    finally:
+        await deps.background.cancel_all()
+
+
 def _resolved_module_name(rel: Path) -> str:
     """The dotted module name `nora/<rel>` would have at import time, e.g.
     `infra/sql/migrations_runner.py` -> `nora.infra.sql.migrations_runner`."""
@@ -1413,6 +1459,29 @@ async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_s
         await deps.background.cancel_all()
 
 
+
+async def test_the_proactive_runner_thinks_at_its_own_effort(cfg, tmp_path):
+    """design/cognition-loop/35 §3.4: the proactive act turn reasons at
+    `[proactive] reasoning_effort`, not `[participation]`'s. They shared one
+    runner, and at `none` a proactive turn spoke on every case where silence
+    was right. With participation ON, the two runners are distinct and each
+    carries its own effort."""
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True, "heartbeat.enabled": True,
+        "participation.enabled": True, "participation.reasoning_effort": "none",
+        "proactive.reasoning_effort": "low",
+    }))
+    try:
+        (loop,) = _spawned(deps, "HeartbeatLoop.run")
+        path = loop._fire.__self__
+        assert path._proactive_runner is not path._participation_runner
+        assert path._proactive_runner._models._spec.reasoning_effort == "low"
+        assert path._participation_runner._models._spec.reasoning_effort == "none"
+        assert path._proactive_runner._models._spec.max_tokens == cfg.proactive.max_tokens
+    finally:
+        await deps.background.cancel_all()
+
 async def test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off(
     cfg, tmp_path,
 ):
@@ -1733,7 +1802,8 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     wired = off.cognition_runner._read_only_tools
     assert {"note_read", "about", "where_been", "event_search"} <= wired
     assert {"rollup_read", "standing_read"} <= wired                    # PR B, DEC-246
-    assert not {"memo_read", "social_items"} & wired  # not built yet
+    assert "memo_read" in wired                                         # DEC-306
+    assert "social_items" not in wired  # not built yet
     # Built for a real room they are real, read-only tools, and only wired ones.
     built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])
     names = {t.tool_name for t in built}

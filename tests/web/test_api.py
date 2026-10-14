@@ -10,7 +10,6 @@ from nora.app.gatherings import GatheringService
 from nora.domain.gatherings import RSVPResponse
 from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, WireState
-from nora.domain.reminders import ReminderCaps
 from nora.persons import Persons
 from nora.testing import FakeMemoryStore, FakeRecordStore
 from nora.testing.gatherings import FakeGatheringStore
@@ -36,8 +35,6 @@ def _fake_events() -> GatheringService:
     `register_web_routes` receives a real `GatheringService` instance."""
     return GatheringService(
         store=FakeGatheringStore(),
-        reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(),
         route_source=None,
         honcho=None,
         ai_peer="nora",
@@ -108,10 +105,10 @@ async def test_doctrine_route_returns_the_shipped_sections_in_order(client):
         "identity",
         "belonging",
         "voice",
-        "silence",
         "conduct",
         "pictures",
         "constraints",
+        "room-constraints",
     ]
     assert set(body[0]) == {"name", "description", "version", "body"}
 
@@ -593,8 +590,6 @@ async def client_with_events(aiohttp_client):
     own docstring makes the same commitment for its store-level contract)."""
     events_service = GatheringService(
         store=FakeGatheringStore(),
-        reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(),
         route_source=None,
         honcho=None,
         ai_peer="nora",

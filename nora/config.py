@@ -24,6 +24,7 @@ from pydantic import (
     model_validator,
 )
 
+from nora.domain.external_files import PROVIDERS as EXTERNAL_FILE_PROVIDERS
 from nora.domain.ports import (
     DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
     DREAM_MAX_STORE_CALLS_PER_TICK,
@@ -461,6 +462,32 @@ class EngagementConfig(BaseModel):
     trigger: TriggerConfig
     reactions: ReactionsConfig = ReactionsConfig()
     queue: QueueConfig = QueueConfig()
+
+
+class ProactiveConfig(BaseModel):
+    """The proactive act turn: a reminder Cognition wrote to itself comes due
+    and she decides, in the room, whether anything needs saying
+    (design/cognition-loop/35).
+
+    `reasoning_effort` is this turn's own, NOT `[participation]`'s, which it
+    shared until 2026-10-12. The two fail in opposite directions: a
+    participation turn measured too SILENT with more reasoning, while a
+    proactive turn at `none` spoke on every case where silence was right,
+    restating a plan the room had already settled or a question she had asked
+    minutes earlier. Measured on the proactive_act suite (n=5 per case): `none`
+    stayed silent on 8/40 silence draws, `low` on 32/40, with the speak cases
+    10/10 and 8/10.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reasoning_effort: str = "low"
+    # One call's output ceiling for this turn, NOT `[llm] max_tokens`: reasoning
+    # counts against it, and at `low` one proactive call in 60 overran the
+    # deployment's 8000 and died `PartialReplyError` (eval, 2026-10-12). A cap
+    # is not a reservation, so headroom costs nothing; the turn's
+    # `[llm.limits] output_tokens` (24000 live) still bounds a runaway turn.
+    max_tokens: int = Field(default=20000, gt=0)
 
 
 class ParticipationConfig(BaseModel):
@@ -2867,8 +2894,16 @@ class XaiImageGenConfig(BaseModel):
 
     `model` / `quality_model` mirror the same names Hermes' `image_gen/xai`
     plugin uses (`grok-imagine-image` / `grok-imagine-image-quality`).
-    `refresh_token_env` NAMES the env var holding the long-lived OAuth
-    refresh token (DEC-8) — the value never lands in config.toml.
+    `refresh_token_env` NAMES the env var holding the BOOTSTRAP OAuth
+    refresh token `nora xai-login` writes (DEC-8) — the value never lands in
+    config.toml; the rotating token after it lives in the state file.
+
+    `keepalive` / `refresh_interval_hours`: the daemon refreshes this login
+    on a schedule whenever `[image_gen] enabled` and the token is set,
+    whichever provider is selected (DEC-308, `nora.app.oauth_keepalive`).
+    The interval is bounded to 1-72 h: shorter re-asks a refused login
+    every few minutes, longer pushes the staleness alert (twice the
+    interval) toward the 12 days a login sat dead in 2026-10.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -2877,6 +2912,43 @@ class XaiImageGenConfig(BaseModel):
     quality_model: str = "grok-imagine-image-quality"
     timeout_seconds: float = 90.0
     refresh_token_env: str = "XAI_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+    #: References per call. Unset is xAI's documented limit (5, DEC-307); a value
+    #: may only lower it. The bound is `XAI_MAX_REFERENCE_IMAGES`, pinned by a test.
+    max_reference_images: int | None = Field(default=None, ge=1, le=5)
+    keepalive: bool = True
+    refresh_interval_hours: float = Field(default=24.0, ge=1, le=72)
+
+
+_GptImageQuality = Literal["low", "medium", "high", "auto"]
+
+
+class OpenAICodexImageGenConfig(BaseModel):
+    """`[image_gen.openai_codex]` — gpt-image through the ChatGPT (Codex)
+    subscription lane (DEC-304, design/proposed/29 §11).
+
+    `model` is the image model the `image_generation` tool runs;
+    `responses_model` is the text model that hosts that tool on the Codex
+    backend. `standard_quality` / `high_quality` map the port's
+    `quality="standard"` / `"quality"`. `refresh_token_env` NAMES the env var
+    holding the BOOTSTRAP refresh token `nora openai-codex-login` writes
+    (DEC-8); the rotating token after it lives in the state file.
+    `keepalive` / `refresh_interval_hours` as `[image_gen.xai]` (DEC-308).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model: str = Field(default="gpt-image-2", min_length=1)
+    responses_model: str = Field(default="gpt-5.5", min_length=1)
+    standard_quality: _GptImageQuality = "medium"
+    high_quality: _GptImageQuality = "high"
+    timeout_seconds: float = Field(default=180.0, gt=0)
+    # Names an env var, not a secret.
+    refresh_token_env: str = Field(default="OPENAI_CODEX_REFRESH_TOKEN", min_length=1)
+    #: References per call. Unset is OpenAI's documented limit for gpt-image (16,
+    #: DEC-307); a value may only lower it. The bound is `CODEX_MAX_REFERENCE_IMAGES`.
+    max_reference_images: int | None = Field(default=None, ge=1, le=16)
+    keepalive: bool = True
+    refresh_interval_hours: float = Field(default=24.0, ge=1, le=72)
 
 
 class ImageGenConfig(BaseModel):
@@ -2889,8 +2961,10 @@ class ImageGenConfig(BaseModel):
     crashing the daemon (the DEC-136 RustFS posture).
 
     `provider` is the port selector — the composition root builds the
-    `ImageGenerator` implementation the name selects; the model-facing tool
-    never names a provider.
+    `ImageGenerator` implementation the name selects (`xai`, DEC-137, or
+    `openai_codex`, DEC-304); the model-facing tool never names a provider.
+    It stays a plain string: an unknown name degrades the tool to
+    `unavailable` with a logged warning (M6), it does not stop the daemon.
 
     `allow_reference_images` is the privacy gate for the edits API: reference
     images (a friend's photo) upload to a third-party cloud, so the default
@@ -2908,6 +2982,93 @@ class ImageGenConfig(BaseModel):
     allow_reference_images: bool = False
 
     xai: XaiImageGenConfig = XaiImageGenConfig()
+    openai_codex: OpenAICodexImageGenConfig = OpenAICodexImageGenConfig()
+
+
+class MiniMaxCnVideoGenConfig(BaseModel):
+    """`[video_gen.minimax_cn]`: the MiniMax CN adapter's own knobs (design/video-generation §2).
+
+    `model` is the operator's 2026-10-02 decision; `MiniMax-H3-Max` is the fallback inside
+    that decision if the live API refuses H3 at 15 s (design §7), a config change.
+    `api_key_env` NAMES the env var holding the CN plan key (DEC-8), the same one
+    `[speech.tts]` reads; the value never lands in config.toml.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model: str = "MiniMax-H3"
+    api_key_env: str = "MINIMAX_CN_API_KEY"
+    host: str = "https://api.minimaxi.com"
+    timeout_seconds: float = Field(default=45.0, gt=0)
+
+
+class VideoGenConfig(BaseModel):
+    """The `video_create` tool's gate (design/video-generation, operator 2026-10-02).
+
+    `enabled` defaults **False**: a clip of 15 s at 480P is estimated at about 11% of the
+    weekly quota the CN plan shares with her speech and Hermes, so it never switches itself
+    on. On, it needs `[compute] enabled` (the poller that delivers the clip; refused at load)
+    and the key named by `[video_gen.minimax_cn] api_key_env` (absent: the tool is withheld
+    and a warning logged, never a crash).
+
+    One model, one resolution, one duration, by the operator's decision: `resolution` is
+    `480P` only. `ratio` is explicit, never `adaptive`: the live API refused `adaptive` for a
+    reference task (`aspect ratio "adaptive" is not supported for task ref2va`, 2026-10-02),
+    so it is refused here for every task. `max_clips_per_room_per_day` is the hard cap
+    `video_create` checks in code before a create: clips one room (platform plus conversation)
+    may start per local day, counted from `compute_jobs`; the default of one is a placeholder
+    until the first 15 s clip is measured. It was `max_clips_per_day`, counted over all rooms
+    together until 2026-10-09; the old key is refused at load, naming the new one.
+    `allow_reference_images` is the privacy gate `[image_gen]` has: a reference leaves the box
+    for a third-party cloud. `allow_reference_video` and `allow_reference_audio` are the same
+    gate for a clip and for a voice note or other audio someone sent (amended 2026-10-10), each
+    off by default and separate, since a voice note sent as a reference lends that person's
+    voice to the clip. `reference_seconds` is how much clip, and separately how much audio, one
+    create may send, shared by the references of that kind; each is cut to its share. 6 to 15:
+    the provider refuses a reference under 2 s (so three references need 6) and caps each kind
+    at 15 s in total, and a clip's seconds are billed beside the output's (measured
+    2026-10-10; audio was not billed).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    provider: Literal["minimax_cn"] = "minimax_cn"
+    resolution: Literal["480P"] = "480P"
+    duration_seconds: int = Field(default=15, ge=4, le=15)
+    ratio: str = "3:4"
+    allow_reference_images: bool = False
+    allow_reference_video: bool = False
+    allow_reference_audio: bool = False
+    reference_seconds: float = Field(default=6.0, ge=6.0, le=15.0)
+    max_clips_per_room_per_day: int = Field(default=1, ge=0)
+
+    minimax_cn: MiniMaxCnVideoGenConfig = MiniMaxCnVideoGenConfig()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _old_cap_key_is_refused(cls, data: object) -> object:
+        if isinstance(data, dict) and "max_clips_per_day" in data:
+            raise ValueError(
+                "[video_gen] max_clips_per_day was renamed max_clips_per_room_per_day "
+                "(2026-10-09): the cap now counts each room's clips separately, not all "
+                "rooms together. Rename the key; it is not read under the old name"
+            )
+        return data
+
+    @field_validator("ratio")
+    @classmethod
+    def _ratio_is_explicit(cls, value: str) -> str:
+        text = value.strip()
+        if text.lower() == "adaptive":
+            raise ValueError(
+                '[video_gen] ratio = "adaptive" is refused: the live API rejected it for a '
+                'reference task on 2026-10-02. Name the ratio, e.g. "3:4"'
+            )
+        left, sep, right = text.partition(":")
+        if not (sep and left.isdigit() and right.isdigit() and int(left) and int(right)):
+            raise ValueError(f'[video_gen] ratio must be "W:H", e.g. "3:4"; got {value!r}')
+        return text
 
 
 class MusicConfig(BaseModel):
@@ -3494,6 +3655,9 @@ class CognitionConfig(BaseModel):
     time_floors: list[str] = Field(default_factory=lambda: ["07:00", "00:00"])
     timezone: str = "Asia/Hong_Kong"
     floor_grace_seconds: float = Field(default=3600.0, ge=0)
+    #: DEC-303: with each floor, a room-bound `time` item for every room holding
+    #: an open event that starts within this many days. 0 turns it off.
+    upcoming_days: float = Field(default=3.0, ge=0)
     store_timeout_seconds: float = Field(default=5.0, gt=0)
     #: 30-cognition.md §1: "starting at 12".
     max_items: int = Field(default=12, ge=1)
@@ -3757,6 +3921,70 @@ class DocumentsConfig(BaseModel):
             )
             raise ValueError(msg)
         return f"{parts.scheme}://{parts.netloc}"
+
+
+class GoogleConfig(BaseModel):
+    """Nora's ONE Google identity (operator, 2026-10-10): one Desktop-app
+    OAuth client and one refresh token for her own account (`nora@67.zone`),
+    shared by every Google service she uses (shared files today), never a
+    client or variable per service. Each field NAMES the environment variable
+    that holds the value (DEC-8), never the value. The scopes are declared by
+    each service in code (`nora.infra.google.scopes`) and granted together
+    by `scripts/google_auth.py`. An API KEY (the Maps key under `[route]`) is
+    a different mechanism and stays with its feature
+    (design/external-files/00-design.md §4)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    client_id_env: str = "GOOGLE_OAUTH_CLIENT_ID"
+    client_secret_env: str = "GOOGLE_OAUTH_CLIENT_SECRET"  # noqa: S105 — names an env var, not a secret
+    refresh_token_env: str = "GOOGLE_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+
+
+class ExternalFilesConfig(BaseModel):
+    """Opening a shared file link (design/external-files/00-design.md §4).
+
+    **Ships OFF.** `enabled` is the OPEN tool's switch (S3), and nothing else:
+    recording a link as a `[Google Doc link c41d09]` handle at ingest needs no account,
+    so it happens whatever this says. `sources` names the providers whose
+    adapters are built, in order; each must be one the codebase recognises
+    (`nora.domain.external_files.PROVIDERS`). A second provider is a new
+    adapter and a new entry here. Google's credentials are `[google]`'s,
+    shared with every other Google service."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    sources: list[str] = Field(default_factory=lambda: ["google_drive"])
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_per_source_credentials(cls, data: object) -> object:
+        """The pre-2026-10-11 `[external_files.google_drive]` table held the
+        OAuth env names; they moved to `[google]`. Refused by name rather than
+        by `extra="forbid"`'s generic message, so the fix is in the error."""
+        if isinstance(data, dict) and "google_drive" in data:
+            raise ValueError(
+                "[external_files.google_drive] is gone: Google's OAuth client and "
+                "refresh token are configured once, in the top-level [google] section "
+                "(client_id_env, client_secret_env, refresh_token_env), shared by every "
+                "Google service. Delete [external_files.google_drive] and set [google] "
+                "(see config.example.toml)"
+            )
+        return data
+
+    @field_validator("sources")
+    @classmethod
+    def _known_sources(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(EXTERNAL_FILE_PROVIDERS))
+        if unknown:
+            raise ValueError(
+                f"[external_files] sources names {unknown}; the known providers "
+                f"are {list(EXTERNAL_FILE_PROVIDERS)}"
+            )
+        if len(set(value)) != len(value):
+            raise ValueError("[external_files] sources names a provider twice")
+        return value
 
 
 class LoggingConfig(BaseModel):
@@ -4060,6 +4288,9 @@ class Config(BaseModel):
     # unchanged, and a misconfigured lane degrades the tool to `unavailable`
     # rather than crashing the daemon.
     image_gen: ImageGenConfig = ImageGenConfig()
+    # Optional and defaulted, see `VideoGenConfig`. Ships INERT (`enabled = false`): no
+    # backend is built and the registry withholds `video_create`.
+    video_gen: VideoGenConfig = VideoGenConfig()
     # Optional and defaulted — see `VersionConfig` for why this one defaults ON
     # where every other optional capability defaults off.
     version: VersionConfig = VersionConfig()
@@ -4072,6 +4303,7 @@ class Config(BaseModel):
     # ever evaluated. On, it STILL engages nowhere until a room is opted in via
     # `participation = true` in policy.toml.
     participation: ParticipationConfig = ParticipationConfig()
+    proactive: ProactiveConfig = ProactiveConfig()
     # The Relevance Gate (design/dreamer-agent-loop/36) — the admission call in
     # FRONT of the participation turn. Ships INERT; see the cross-section
     # validator below for why it cannot be enabled on its own.
@@ -4099,6 +4331,10 @@ class Config(BaseModel):
     record_query: RecordQueryConfig = RecordQueryConfig()
     # Optional and defaulted — see `DocumentsConfig`. Ships OFF.
     documents: DocumentsConfig = DocumentsConfig()
+    # Optional and defaulted — see `ExternalFilesConfig`. Ships OFF.
+    external_files: ExternalFilesConfig = ExternalFilesConfig()
+    # Nora's one Google identity, by env-var NAME — see `GoogleConfig`.
+    google: GoogleConfig = GoogleConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig
@@ -4589,6 +4825,18 @@ class Config(BaseModel):
                 "[subagent] enabled = true needs [dreamer] enabled = true (the worker runs "
                 "on the Dreamer's model source) and [compute] enabled = true (the poller "
                 "that delivers its result)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _video_needs_the_poller(self) -> Config:
+        """A clip is delivered by the compute poller, so `[video_gen] enabled = true` needs
+        `[compute] enabled = true`: refused at load, the subagent precedent, rather than found
+        as a clip that renders, is paid for, and is never delivered."""
+        if self.video_gen.enabled and not self.compute.enabled:
+            raise ValueError(
+                "[video_gen] enabled = true needs [compute] enabled = true (the poller that "
+                "delivers the finished clip)"
             )
         return self
 

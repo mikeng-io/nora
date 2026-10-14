@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Test-only fix: a flaky test no longer races its own setup; no runtime behaviour changes.", "details": [], "limitations": []}

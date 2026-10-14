@@ -105,6 +105,10 @@ _SPECS_ONLY = frozenset({
     # same way as the computer runtime above; its tests build through
     # `build_tool_specs` (tests/unit/test_computer_browse_tool.py).
     "browser",
+    # `file_fetch`'s source (design/external-files §4), threaded from the
+    # composition root through `ToolRegistry.build` like `browser`; its tests
+    # build through `build_tool_specs` (tests/unit/test_file_fetch_tool.py).
+    "external_files",
 })
 
 

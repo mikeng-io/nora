@@ -156,8 +156,8 @@
  {
   "name": "audit: the act runner is gated on the home room, not the adaptor",
   "file": "nora/app/composition.py",
-  "old": "            proactive_runner=participation_runner if proactive_homes else None,",
-  "new": "            proactive_runner=participation_runner if proactive_wired else None,",
+  "old": "    if proactive_homes:\n        proactive_runner = _auto_runner(",
+  "new": "    if proactive_homes and cfg.dreamer.enabled:\n        proactive_runner = _auto_runner(",
   "target": "tests/test_composition.py -k a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off"
  },
  {

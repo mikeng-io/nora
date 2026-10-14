@@ -29,6 +29,7 @@ from typing import Any
 import yaml
 from strands_evals import Case, Experiment
 
+from evals import pseudonyms
 from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, ToolRouteGrader, nora_task
 from nora.subject.transport import TRANSPORT_STATES
 
@@ -66,10 +67,17 @@ COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
 #: recoverable, and the operator's own residue moment (a search found several
 #: restaurants, the reply sent two) predates it. The harness refuses the
 #: declaration wherever the chain DOES hold a revision at or before the turn.
-COUNTERFACTUAL_TIERS = frozenset({"culture", "transport", "prior"})
+#:
+#: `lessons` joined 2026-10-09 (operator, design/self-growth/40 §8): the lessons a
+#: unit held, attached at the real moment that TAUGHT them. A lesson is induced
+#: from the episodes it cites, so it cannot exist before them, and the first one
+#: was written 2026-10-08 17:43 UTC: no real moment holds a lesson AND the
+#: situation it bears on. The varied lessons ride in `metadata.lessons` (her own
+#: words, as the live lesson reads), which no other case may state.
+COUNTERFACTUAL_TIERS = frozenset({"culture", "transport", "prior", "lessons"})
 #: Tiers that mean something in one corpus only. `prior` is the standing
-#: fold's; that corpus varies nothing else.
-_TIER_CORPORA = {"prior": frozenset({"standing"})}
+#: fold's; that corpus varies nothing else. `lessons` is the lessons corpus's.
+_TIER_CORPORA = {"prior": frozenset({"standing"}), "lessons": frozenset({"lessons"})}
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +196,21 @@ def _check(name: str, row: dict[str, Any]) -> None:
             "at production's ordinary value for every other case; a case that "
             "changes it is a manipulation and is counted as one"
         )
+    taught = (row.get("metadata") or {}).get("lessons")
+    if taught is not None and (counterfactual or {}).get("varies") != "lessons":
+        raise ValueError(
+            f"{name}: case {row['name']!r} states `metadata.lessons` without being "
+            "a counterfactual that varies `lessons`: a lesson attached to an "
+            "anchored moment is a manipulation and is counted as one"
+        )
+    if (counterfactual or {}).get("varies") == "lessons" and (
+        not isinstance(taught, list) or not taught
+        or not all(isinstance(x, str) and x.strip() for x in taught)
+    ):
+        raise ValueError(
+            f"{name}: case {row['name']!r} varies `lessons` and must state "
+            "`metadata.lessons` as a non-empty list of lesson texts"
+        )
     if varied is not None:
         bad = {k: v for k, v in dict(varied).items() if v not in TRANSPORT_STATES}
         if not varied or bad:
@@ -242,6 +265,10 @@ def _check_fold_case(name: str, row: dict[str, Any]) -> None:
 
 
 def _case(row: dict[str, Any]) -> Case:
+    # Resolved ONCE, here, before anything reads the case (#776): the anchor,
+    # the person, the input, the expectation, every metadata string. The
+    # `name` is not: it is how `--case` selects, and it names no one.
+    row = {**pseudonyms.resolve(row), "name": row["name"]}
     return Case(
         name=str(row["name"]),
         input=str(row.get("input", "")),
@@ -252,7 +279,7 @@ def _case(row: dict[str, Any]) -> Case:
             "snapshot": dict(row.get("snapshot") or {}),
             "parked": dict(row.get("parked") or {}),
             "counterfactual": dict(row.get("counterfactual") or {}),
-            "person": str(row.get("person") or "miles_novak"),
+            "person": str(row.get("person") or pseudonyms.resolve("miles_novak")),
             "mention": bool(row.get("mention", False)),
             "category": row.get("category", ""),
         },
@@ -321,6 +348,12 @@ CORPUS_ENTRY: dict[str, str] = {
     # "did she reply" says nothing about whether the reply described the
     # mascot when asked, or recited it unasked.
     "appearance": "tag",
+    # design/self-growth/40 §8 (L5): what a held lesson does to a reply. A tag,
+    # judged on the ONE behaviour each case's lesson asks for.
+    "lessons": "tag",
+    # design/context-plan/12 §5's character cut: whether an ordinary tag
+    # reply still sounds like her. A tag, judged on the opted-in `personality` criterion.
+    "personality": "tag",
 }
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied
@@ -341,6 +374,10 @@ JUDGED_CORPORA = frozenset({
     "tool_reporting",
     # identity.md v12: its opted-in `appearance` criterion binds with safety.
     "appearance",
+    # L5: its opted-in `lesson_applied` criterion binds with safety.
+    "lessons",
+    # Its opted-in `personality` criterion binds with safety.
+    "personality",
 })
 
 #: Corpora with NO structural reading at all: every case's verdict IS the

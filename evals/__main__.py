@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from evals import pseudonyms
 from evals.backbone import (
     ERROR,
     FAIL,
@@ -65,6 +66,8 @@ from nora.subject.context_filter import exposure
 CORPUS_CLASS: dict[str, str] = {
     "proactive_act": "S1",
     "being_contradicted": "S3",
+    # design/self-growth/40 §8: what a held lesson does to a reply (judged).
+    "lessons": "S3",
     "identity_grounding": "S3",
     "source_scope": "S3",
     # ADR 0015 §4: what she SAYS after a tool returns (judged).
@@ -80,6 +83,8 @@ CORPUS_CLASS: dict[str, str] = {
     "transcript_injection": "S9",
     "presence": "S3",
     "appearance": "S3",
+    # The character cut's instrument: whether an ordinary reply still sounds like her (judged).
+    "personality": "S3",
     # What a WRITE keeps: `carry` is #228's shape (an unrelated pass lost a
     # thread it did not touch), the nearest class the map has. Its `stale`
     # cases are S5-shaped (time misread) — approximate, as this map says.
@@ -581,6 +586,7 @@ def main() -> int:
             # AFTER the rebuild: the sweep reads Honcho's address and the
             # deployment's workspace off the config every subject composes.
             print(f"run {RUN_ID}: every draw gets its own Honcho workspace")
+            print(pseudonyms.status())
             _sweep_stale_workspaces()
 
             if args.print_input:

@@ -28,7 +28,9 @@ from nora.agent.lineage import LineagePolicy
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import CultureRevision, nora_character_key, unit_culture_key
 from nora.domain.documents_context import DocumentsView
+from nora.domain.external_files import render_file_links
 from nora.domain.media_join import MediaJoin
+from nora.domain.memo import Memo, MemoStore
 from nora.domain.models import (
     NormalizedMessage,
     PersonRef,
@@ -114,8 +116,12 @@ class TranscriptInjection:
         computer: ComputerContextReader | None = None,
         documents: DocumentsContextReader | None = None,
         subagents: SubagentsContextReader | None = None,
+        memos: MemoStore | None = None,
     ) -> None:
         self._audit = audit
+        # `<memos>` (DEC-306): the unit's kept memos, unit-wide like `notes`.
+        # `None` renders no block.
+        self._memos_store = memos
         self._memory = memory
         self._persons = persons
         self._context_window = context_window
@@ -242,7 +248,7 @@ class TranscriptInjection:
             presence,
             culture,
             (unit_culture, self_account, lessons),
-            (computer, documents, subagents),
+            (computer, documents, subagents, memos),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._recent_with_character(msg, ref),
@@ -260,6 +266,7 @@ class TranscriptInjection:
                 self._computer(msg),
                 self._documents(msg),
                 self._subagents(msg),
+                self._memos(msg),
             ),
         )
 
@@ -298,6 +305,7 @@ class TranscriptInjection:
             started_at=time.perf_counter(),
             tagger_card=tagger_card,
             notes=notes,
+            memos=memos,
             standing=standing,
             presence=presence,
             culture=culture,
@@ -627,7 +635,7 @@ class TranscriptInjection:
                 "memory", "representation", self._memory.representation(
                     peer_id=self._ai_peer,
                     target=ref.honcho_peer_id,
-                    search_query=msg.body or "",
+                    search_query=render_file_links(msg.body or ""),
                     max_conclusions=self._tagger_card_conclusions,
                     conversation_id=msg.conversation_id,
                 ),
@@ -685,6 +693,36 @@ class TranscriptInjection:
                 "nora_errors_total", stage="standing", platform=msg.platform)
             return None
         return found
+
+    async def _memos(self, msg: NormalizedMessage) -> tuple[Memo, ...]:
+        """The unit's kept memos for `<memos>` (DEC-306), keyed on the UNIT as
+        `_notes` is and for its reason: a memo kept in the group's Signal room
+        is the same group's on Discord. Fail-soft and counted
+        (`stage="memos"`): a thinner prompt beats no reply, and «I could not
+        read them» must not look like «nothing is kept»."""
+        if self._memos_store is None:
+            return ()
+        convo = (
+            self._policy.conversation(msg.platform, msg.conversation_id)
+            if self._policy is not None else None
+        )
+        if convo is None or not convo.unit:
+            # A store wired with no unit to scope it by is a WIRING GAP, not an
+            # empty list: counted, as `_notes` counts it (review of #781).
+            log.warning(
+                "no policy conversation for %s/%s; the memo index cannot be scoped "
+                "to a unit; continuing without it", msg.platform, msg.conversation_id,
+            )
+            self._metrics.inc("nora_errors_total", stage="memos", platform=msg.platform)
+            return ()
+        try:
+            return tuple(await traced_read(
+                "memos", "kept", self._memos_store.kept(unit=convo.unit),
+            ))
+        except Exception:
+            log.exception("memo-index read failed; continuing without it")
+            self._metrics.inc("nora_errors_total", stage="memos", platform=msg.platform)
+            return ()
 
     async def _notes(self, msg: NormalizedMessage) -> tuple[Note, ...]:
         """The standing note index (2026-08-21 note-tier design §5.1).

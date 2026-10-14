@@ -2050,3 +2050,79 @@ def test_prompt_window_defaults_to_20_clamps_to_a_small_read_and_refuses_an_expl
     assert store(prompt_window=8).effective_prompt_window == 8
     with pytest.raises(ValueError, match="prompt_window"):
         store(prompt_window=41)
+
+
+# ------------------------------------------------- [video_gen] (design/video-generation §2)
+def _section_on(text: str, section: str) -> str:
+    head, sep, tail = text.partition(f"\n[{section}]\n")
+    assert sep, f"the template has no [{section}] section"
+    tail, n = re.subn(r"(?m)^enabled = false$", "enabled = true", tail, count=1)
+    assert n == 1, f"the [{section}] section states no `enabled = false`"
+    return head + sep + tail
+
+
+def test_video_gen_ships_off_with_the_operators_settings(toml_path):
+    video = load(toml_path).video_gen
+    assert video.enabled is False and video.allow_reference_images is False
+    assert (video.resolution, video.duration_seconds, video.ratio) == ("480P", 15, "3:4")
+    assert video.max_clips_per_room_per_day == 1
+    assert (video.minimax_cn.model, video.minimax_cn.api_key_env) == (
+        "MiniMax-H3", "MINIMAX_CN_API_KEY")
+    # A clip or a voice note leaves the box like a photo, and a voice note lends a voice:
+    # each kind is off until switched on by itself (amended 2026-10-10).
+    assert video.allow_reference_video is False and video.allow_reference_audio is False
+    assert video.reference_seconds == 6.0
+
+
+@pytest.mark.parametrize("seconds", ["5.0", "15.5"])
+def test_video_gen_reference_seconds_stays_inside_what_the_provider_takes(toml_path, seconds):
+    """Under 6, three references of one kind would each fall below the provider's 2 s floor;
+    over 15, a kind would pass the provider's 15 s total."""
+    text = toml_path.read_text().replace(
+        "reference_seconds = 6.0", f"reference_seconds = {seconds}")
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="reference_seconds"):
+        load(toml_path)
+
+
+def test_video_gen_refuses_the_old_all_rooms_cap_key_naming_the_new_one(toml_path):
+    """2026-10-09: the cap became per room, so the key was renamed. A file that still sets
+    `max_clips_per_day = 2` must not boot as if it meant two clips for the whole house."""
+    head, sep, tail = toml_path.read_text().partition("\n[video_gen]\n")
+    assert sep, "the template has no [video_gen] section"
+    toml_path.write_text(head + sep + "max_clips_per_day = 2\n" + tail)
+    with pytest.raises(ConfigError, match="max_clips_per_room_per_day"):
+        load(toml_path)
+
+
+def test_video_gen_on_with_the_poller_loads(toml_path):
+    text = _section_on(_section_on(toml_path.read_text(), "video_gen"), "compute")
+    toml_path.write_text(text)
+    assert load(toml_path).video_gen.enabled is True
+
+
+def test_video_gen_on_without_the_poller_refuses_to_load(toml_path):
+    toml_path.write_text(_section_on(toml_path.read_text(), "video_gen"))
+    with pytest.raises(ConfigError, match=r"needs \[compute\] enabled"):
+        load(toml_path)
+
+
+@pytest.mark.parametrize(("ratio", "says"), [
+    ("adaptive", "live API rejected it"), ("Adaptive", "live API rejected it"),
+    ("wide", "must be"), ("3:0", "must be"),
+])
+def test_video_gen_refuses_a_ratio_that_is_not_explicit(toml_path, ratio, says):
+    """`adaptive` is refused with the reason (the live API rejected it, 2026-10-02), not
+    only as a malformed value."""
+    text = toml_path.read_text()
+    assert 'ratio = "3:4"' in text
+    toml_path.write_text(text.replace('ratio = "3:4"', f'ratio = "{ratio}"', 1))
+    with pytest.raises(ConfigError, match=says):
+        load(toml_path)
+
+
+def test_video_gen_refuses_a_resolution_other_than_480p(toml_path):
+    text = toml_path.read_text()
+    toml_path.write_text(text.replace('resolution = "480P"', 'resolution = "768P"', 1))
+    with pytest.raises(ConfigError):
+        load(toml_path)

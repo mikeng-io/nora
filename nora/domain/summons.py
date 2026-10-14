@@ -93,7 +93,8 @@ MAX_COMMENT_CHARS = 2200
 #: sentence or two (public/voice.md). The first live reply (2026-09-26) was
 #: 533 characters of five sentences; the operator chose a hard cap, refused
 #: whole rather than cut, since a cut fact-check can say the opposite of the
-#: whole one. public/conduct.md tells her 300, so the cap has headroom.
+#: whole one. The summons head states this number to her (`SummonsHead`);
+#: no doctrine names it (design/context-plan/12 §4).
 PUBLIC_REPLY_MAX_CHARS = 320
 
 #: How many of a post's items she is shown, and every one of them is READ
@@ -592,6 +593,7 @@ def _head(ctx: SummonsContext) -> str:
     now = ctx.now
     return SummonsHead(
         now=now, summoned_by=_who(ctx.summoner), summoned=age(ctx.summoned_at, now),
+        max_chars=PUBLIC_REPLY_MAX_CHARS,
     ).render()
 
 

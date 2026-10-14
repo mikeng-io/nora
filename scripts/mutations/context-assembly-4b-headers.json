@@ -21,11 +21,11 @@
     "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[reminder-the-requesters-name]"
   },
   {
-    "name": "4b: the gathering title is no longer escaped",
+    "name": "4b: the proactive note title is no longer escaped",
     "file": "nora/domain/framing.py",
-    "old": "{_put(str(self.title))}",
-    "new": "{_put(str(self.title), 'system')}",
-    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[gathering-the-title]"
+    "old": "{_put(str(payload['note_title']))}",
+    "new": "{_put(str(payload['note_title']), 'system')}",
+    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[proactive-the-note-title]"
   },
   {
     "name": "4b: the proactive note title is no longer escaped",
@@ -142,8 +142,8 @@
   {
     "name": "4b: a raw field is interpolated in a header (no `_put`)",
     "file": "nora/domain/framing.py",
-    "old": "{_put(str(self.title))}",
-    "new": "{self.title}",
+    "old": "{_put(str(payload['note_title']))}",
+    "new": "{payload['note_title']}",
     "target": "tests/architecture/test_framing_is_one_typed_place.py::test_every_value_in_framing_enters_through_put"
   },
   {
@@ -163,15 +163,8 @@
   {
     "name": "4b: fire.py builds a header inline again (an f-string lambda)",
     "file": "nora/app/fire.py",
-    "old": "header=lambda tagger, now: GatheringHeader(title, tagger).render(),",
-    "new": "header=lambda tagger, now: f\"You are in a group chat. Earlier, {title} was raised by somebody.\",",
-    "target": "tests/architecture/test_framing_is_one_typed_place.py::test_every_fire_kind_has_exactly_one_header_builder"
-  },
-  {
-    "name": "4b: fire.py reverts the gathering header to an inline f-string, BYTE-IDENTICAL (only the architecture test can see it)",
-    "file": "nora/app/fire.py",
-    "old": "header=lambda tagger, now: GatheringHeader(title, tagger).render(),",
-    "new": "header=lambda tagger, now, _e=__import__(\"nora.domain.prompt\", fromlist=[\"escape\"]).escape: (\n            \"You are in a group chat you have been reading all along. Nobody has \"\n            f\"just called you. Earlier, {_e(tagger.name if tagger is not None else '')} asked you to remind the room about \"\n            f\"«{_e(str(title))}», and that time has come — that is why this turn is \"\n            \"happening, and it is the only reason.\\n\"\n            f\"Bring the gathering up to {_e(tagger.name if tagger is not None else '')} and the room now, in your own words. \"\n            \"Do not read the time back at them unless they asked in those terms.\"\n        ),",
+    "old": "header=lambda tagger, now: ProactiveHeader(tuple(rows)).render(),",
+    "new": "header=lambda tagger, now: f\"You are in a group chat. Earlier, {rows[0].text} was raised.\",",
     "target": "tests/architecture/test_framing_is_one_typed_place.py::test_every_fire_kind_has_exactly_one_header_builder"
   },
   {
@@ -191,7 +184,7 @@
   {
     "name": "4b: the summons head is built inline again",
     "file": "nora/domain/summons.py",
-    "old": "    return SummonsHead(\n        now=now, summoned_by=_who(ctx.summoner), summoned=age(ctx.summoned_at, now),\n    ).render()",
+    "old": "    return SummonsHead(\n        now=now, summoned_by=_who(ctx.summoner), summoned=age(ctx.summoned_at, now),\n        max_chars=PUBLIC_REPLY_MAX_CHARS,\n    ).render()",
     "new": "    return f\"You were tagged in a comment under a public Instagram post by {_who(ctx.summoner)}, who wrote to you {age(ctx.summoned_at, now)}.\"",
     "target": "tests/architecture/test_framing_is_one_typed_place.py::test_no_prose_is_built_outside_framing_but_the_allowed_data"
   },
@@ -226,15 +219,15 @@
   {
     "name": "4b fix: a string is passed through the number helper (the placeholder check lists it)",
     "file": "nora/domain/framing.py",
-    "old": "{_put(str(self.title))}",
-    "new": "{_figure(self.title)}",
-    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[gathering-the-title]"
+    "old": "{_put(str(payload['note_title']))}",
+    "new": "{_figure(payload['note_title'])}",
+    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[proactive-the-note-title]"
   },
   {
     "name": "4b fix: a person's value is marked carried, so no escape and the pin sees it",
     "file": "nora/domain/framing.py",
-    "old": "{_put(str(self.title))}",
-    "new": "{_put(str(self.title), 'carried')}",
+    "old": "{_put(str(payload['note_title']))}",
+    "new": "{_put(str(payload['note_title']), 'carried')}",
     "target": "tests/architecture/test_framing_is_one_typed_place.py::test_the_values_not_escaped_are_exactly_the_recorded_ones"
   },
   {

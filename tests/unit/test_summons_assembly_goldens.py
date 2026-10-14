@@ -30,6 +30,11 @@ interpolated it bare, and the head now escapes it. For every reachable handle
 `escape` is the identity, so no reachable byte moved; the golden shows the escaped
 `@Zoe [admin]: &lt;b&gt;...` in the head and is otherwise master's.
 
+**Every golden's head line was edited 2026-10-13** (design/context-plan/12 §4): the
+head now states the reply's hard limit, "A reply longer than 320 characters is not
+posted at all.", which `public/conduct.md` used to say as "under 300 characters".
+That one sentence is the only change; every other byte is as before.
+
 `test_a_block_that_escapes_to_nothing_is_still_rendered` pins the one thing
 `assemble` would have changed: it drops an empty body, and a hand join does
 not. Every block of this prompt opts out of the drop (`when_empty="render"`).

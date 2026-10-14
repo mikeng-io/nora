@@ -80,6 +80,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+from collections.abc import Mapping
 
 import aiohttp
 
@@ -278,6 +279,25 @@ class SignalSender:
             total=max(timeout, ATTACHMENT_TIMEOUT_SECONDS),
         )
 
+    async def _rpc(
+        self, payload: Mapping[str, object], client_timeout: aiohttp.ClientTimeout | None,
+    ) -> tuple[int, str | None, object]:
+        """One POST to signal-cli's JSON-RPC endpoint: the HTTP status, its
+        `Retry-After`, and the body (read only on a 200).
+
+        The wire and nothing else, so every refusal and decoration rule in
+        `send` stays real wherever this is replaced. The eval sandbox replaces
+        it (`nora.subject.sandbox_signal`): it has no signal-cli, and a send
+        that always failed told the model `refused` on every reply.
+        """
+        async with (
+            aiohttp.ClientSession(timeout=client_timeout) as session,
+            session.post(f"{self._base_url}/api/v1/rpc", json=payload) as resp,
+        ):
+            if resp.status != 200:
+                return resp.status, resp.headers.get("Retry-After"), None
+            return resp.status, None, await resp.json()
+
     async def send(
         self,
         target: ConversationTarget,
@@ -349,20 +369,16 @@ class SignalSender:
         # disagree about which kind of send this is.
         timeout = self._attachment_timeout if attachments else self._timeout
         try:
-            async with (
-                aiohttp.ClientSession(timeout=timeout) as session,
-                session.post(f"{self._base_url}/api/v1/rpc", json=payload) as resp,
-            ):
-                if resp.status == 429:
-                    retry_after = _retry_after_seconds(resp.headers.get("Retry-After"))
-                    log.error("send rate-limited: HTTP 429 (conversation=%s, id=%s)",
-                              where, request_id)
-                    return SendResult(ok=False, retryable=True, retry_after=retry_after)
-                if resp.status != 200:
-                    log.error("send failed: HTTP %s (conversation=%s, id=%s)",
-                              resp.status, where, request_id)
-                    return SendResult(ok=False)
-                body = await resp.json()
+            status, retry_after_header, body = await self._rpc(payload, timeout)
+            if status == 429:
+                retry_after = _retry_after_seconds(retry_after_header)
+                log.error("send rate-limited: HTTP 429 (conversation=%s, id=%s)",
+                          where, request_id)
+                return SendResult(ok=False, retryable=True, retry_after=retry_after)
+            if status != 200:
+                log.error("send failed: HTTP %s (conversation=%s, id=%s)",
+                          status, where, request_id)
+                return SendResult(ok=False)
         except TimeoutError:
             # ITS OWN BRANCH, and the log line says the thing the old one hid:
             # a timeout is «I stopped waiting», never «it did not arrive», and

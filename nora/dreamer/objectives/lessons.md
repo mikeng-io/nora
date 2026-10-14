@@ -53,6 +53,7 @@ signal on its own. Write a lesson only for a pattern that holds across several
 episodes, and only when you can say what to do differently. Most sessions
 change nothing, and that is a good outcome.
 
+Never put a message number in a lesson's text; numbers go in `citations`.
 Say a lesson short, as practice: "when someone asks where to eat, name one
 place and why", not "people here like short answers". Write it in the language
 you speak in this group.

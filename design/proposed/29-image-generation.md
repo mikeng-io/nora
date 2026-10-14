@@ -153,9 +153,16 @@ Why A over the alternatives:
   explicit: read the state file; only if it is absent or corrupt, the adapter
   derives an initial access token by refreshing with the `.env` refresh token.
   One secret, one place — no two-source-of-truth restart race.
+  **Superseded 2026-10-09 (DEC-308):** xAI rotates the refresh token on use,
+  so the `.env` token is only a bootstrap and the state file holds the chain,
+  fingerprinted to that bootstrap as the Codex lane's is (§11): a state file
+  from an older login is ignored, so a new `xai-login` takes over. The
+  precedence above let a dead state-file token mask a fresh login.
 - Refresh: standard OIDC `POST /oauth2/token` with `grant_type=refresh_token`,
   reusing the same skew policy Hermes uses (proactive refresh before expiry,
   not on-401). The adapter refreshes lazily under a lock, single-flight, and
+  (since DEC-308, 2026-10-09) the daemon also refreshes it on a schedule,
+  through the same lock, so an idle lane's login does not die unnoticed; and
   **fails closed** to `unavailable` if the refresh_token itself is dead (which
   means: re-run `nora xai-login`, not "retry forever").
 - Refresh flakiness: xAI's refresh endpoint is intermittently blocked by a
@@ -200,7 +207,8 @@ never takes the daemon down" posture DEC-136's RustFS wiring took.
 ## 5. Reference images — supported, via the edits API
 
 xAI's `/v1/images/edits` accepts source images as **public URL / base64 data
-URI / file_id**, up to 3 per request, and supports style transfer and
+URI / file_id**, up to 3 per request (**superseded 2026-10-09**: xAI documents 5,
+and the tool now follows the provider's limit, §12, DEC-307), and supports style transfer and
 multi-turn editing. So the answer to "can she use a reference image, or only a
 prompt?" is: **yes, reference images work.**
 
@@ -347,3 +355,156 @@ design/09-decision-index.md              # DEC-137 row
 | ID | Statement | Enforcing test |
 |---|---|---|
 | DEC-137 | **Image generation is a provider-agnostic port (`ImageGenerator`), never a native binding to xAI/Grok; the first implementation is the xAI subscription lane through Nora's OWN OAuth tokens (Option A — no host Hermes credential proxy).** The port's contract suite is shared by the xAI adapter and a fake; the model-facing tool never names a provider; reference-image editing goes through `/v1/images/edits` gated by `allow_reference_images` (default false); `ImageResult.reason` distinguishes quota/auth/down; reference images are adapter-enforced Nora-held custody handles only. | `tests/contract/test_image_generator_contract.py` (xai + fake params; reason-distinguishes-quota-vs-auth case; external-URL reference rejected), `tests/test_tools.py` (tool docstring contains no provider name), `tests/test_config.py` (unknown `[image_gen]` key is a startup failure; `enabled=false` keeps the tool `unavailable`), `tests/test_composition.py` (provider factory honors config selector) |
+
+## 11. Second provider: OpenAI gpt-image-2 through the Codex lane (2026-10-09, DEC-304)
+
+Operator 2026-10-09: add OpenAI `gpt-image-2` through the ChatGPT subscription,
+the path the `codex` CLI uses, alongside xAI. xAI stays the shipped default and
+its code is untouched; `[image_gen] provider = "openai_codex"` selects the new
+lane (`nora/infra/image_gen/openai_codex_adapter.py`, `openai_codex_oauth.py`).
+
+### 11.1 The wire (measured 2026-10-09 from the Mac, n=1 each)
+
+`POST https://chatgpt.com/backend-api/codex/responses`, headers `Authorization:
+Bearer <access>`, `chatgpt-account-id`, `Accept: text/event-stream`,
+`OpenAI-Beta: responses=experimental`, `originator: codex_cli_rs`; body
+`{model: <responses_model>, instructions, input, tools: [{type:
+"image_generation", model: "gpt-image-2", output_format: "png", size,
+quality}], tool_choice, store: false, stream: true}`. The image is the base64
+`result` of the `response.output_item.done` event whose item type is
+`image_generation_call`. Three probes:
+
+| request | answer |
+|---|---|
+| 1024x1024, `tool_choice: "auto"` | 200 in 31.5 s, 1254x1254 PNG |
+| 1536x1024 low, forced tool, one `input_image` data URI | 200 in 30.9 s, the edit done, 1254x1254 |
+| 1536x1024 low, forced tool | 200 in 30.3 s, 1672x941 at `medium` |
+
+So `tool_choice: {"type": "image_generation"}` and `input_image` data URIs are
+accepted, and size and quality are REQUESTS: the host model sets the tool's
+parameters itself. The adapter maps the aspect to the three gpt-image sizes and
+also names it in the instructions; `ImageSize.tier` is not mapped (ponytail
+comment in the adapter).
+
+**A 200 is not an image.** The host model may answer in text and the stream
+still completes. Only a completed `image_generation_call` whose bytes decode to
+a PNG is `ok`; anything else is `unavailable` (`no_image` / `bad_response`), and
+a moderation failure is `nothing_found` (`refused`).
+
+### 11.2 Credentials: the refresh token rotates
+
+OpenAI's refresh grant (`https://auth.openai.com/oauth/token`, form
+`grant_type=refresh_token`, client `app_EMoamEEZ73f0CkXaXp7hrann`, the Codex
+CLI's) returns a NEW refresh token and the old one dies. §4.1's split (the
+refresh token in immutable `.env`) cannot hold, so:
+
+- `.env` holds only the BOOTSTRAP token a login wrote
+  (`OPENAI_CODEX_REFRESH_TOKEN`, named by `refresh_token_env`, DEC-8). The
+  first refresh spends it.
+- `./state/openai-codex-oauth.json` (0600, atomic writes) holds the access
+  token, the CURRENT refresh token and the sha256 of the bootstrap it grew
+  from. A file whose fingerprint does not match `.env` is an older login's
+  and is ignored, so a new login takes over on the next start with no file to
+  delete. Losing the file means logging in again.
+- A refresh is refused (`state_unwritable`) when the file cannot be written:
+  the rotated token would die with the process.
+- Refreshes take an `flock` beside the state file and re-read it first, so a
+  second process on the host (an eval subject, a CLI) adopts a refresh it did
+  not make instead of spending a dead token.
+- Access tokens live about 10 days (measured `exp - iat` = 240 h), and the
+  account id comes from the access token's own claim, so the state needs no
+  more than those three fields.
+
+Nora holds her OWN login. Sharing a `~/.codex/auth.json` with a codex CLI (the
+Mac's, Hermes') means whichever side refreshes first logs the other out.
+
+**One `.env`, one `./state`.** Two checkouts that share the `.env` token but
+keep separate `./state` directories (a second deployment, an eval sandbox
+with its own state dir) each find no state file and spend the bootstrap: the
+second spend is of a dead token, and may cost the first one its chain. The
+file lock only covers processes that share the state file. A second checkout
+that needs this lane gets its own `nora openai-codex-login` and its own `.env`
+line. Not enforced in code.
+
+A write that fails after the writability check (review of #778) keeps the
+rotation in memory: the next refresh spends the in-memory token, never the
+older file's or the bootstrap, and every call retries the write until one
+lands. A restart before then needs a new login. A caller cancelled
+mid-refresh does not cancel the refresh: it runs shielded to its save.
+
+### 11.3 Login
+
+`nora openai-codex-login` runs the Codex device flow (endpoints read from the
+0.161.0 binary: `/api/accounts/deviceauth/usercode`, `/deviceauth/token`, the
+verification page `/codex/device`, then a PKCE code exchange with
+`redirect_uri=/deviceauth/callback`) and writes the refresh token to `.env`.
+Step 1 was probed live (`{device_auth_id, user_code, interval: "5",
+expires_at}`; a pending poll answers 403 `deviceauth_authorization_pending`);
+the approval, the exchange and the refresh were NOT run live. The fallback is
+`--from-codex-auth <dir>/auth.json` from a dedicated `CODEX_HOME=<dir> codex
+login --device-auth`, then deleting that directory; `~/.codex/auth.json` is
+refused.
+
+### 11.4 What is not built
+
+The image-generation runtime skill has one section per model and none for
+gpt-image-2; it is written (nora-runtime-skill) when the operator switches the
+provider, so a skill loaded on xAI does not carry advice for a model it is not
+using. `image_gen.provider` is not in the drift allowlist of
+`tests/test_env_template.py`: switching the live value means arguing it there.
+
+## 12. The reference limit is the provider's (2026-10-09, DEC-307)
+
+Operator 2026-10-09: «The reference image limit should follow the image
+provider.» Until then `generate_image` took three fixed slots (`reference`,
+`reference_2`, `reference_3`) on every provider, a tool-surface convention
+that was neither xAI's limit nor OpenAI's.
+
+Now each `ImageGenerator` declares `max_reference_images` (a port property),
+the vendor's documented limit unless `[image_gen.<provider>]
+max_reference_images` lowers it (validated `1..vendor` at config load, and
+again in the adapter). The tool takes one list, `reference_images`, states
+the wired provider's number in its description at build time, and refuses a
+call above it as `unavailable` with a note naming the limit, before the
+provider is called. It never truncates: a dropped reference is somebody
+missing from the picture, and nothing downstream would say so.
+
+The parameter is `reference_images`, not `references`: Strands
+(`tools/decorator.py`, `_extract_description_from_docstring`) treats a line
+starting `references:` as a «References:» section header, so the `Args:`
+section stopped there and every argument line after it was sent as
+description text (331 tokens, over Level 3's 320; caught by
+`test_a_rewritten_description_fits_its_level`).
+
+### 12.1 The limits, documented and measured
+
+| provider | documented | measured | limit shipped |
+|---|---|---|---|
+| `xai` (`grok-imagine-image-2.0`, `/v1/images/edits`) | 5: «Use up to five source images for a single image edit» (docs.x.ai, `developers/model-capabilities/images/multi-image-editing`, read 2026-10-09) | not probed: Nora's xAI token was dead that day | 5 |
+| `openai_codex` (`gpt-image-2` hosted by `gpt-5.5`, Codex Responses lane) | 16 for GPT image models on `images/edits`: «For GPT image models, you can provide up to 16 images» (developers.openai.com images edit reference, read 2026-10-09). The Responses `image_generation` tool and the Codex lane publish no limit of their own | 17 accepted and drawn (below) | 16 |
+
+Probe, 2026-10-09 from the Mac, on the operator's `~/.codex/auth.json` read
+only (access token and account id; no refresh was called), n=1 per row:
+forced `image_generation` tool, `gpt-image-2` at `quality: "low"`, N
+distinct 256x256 PNG data URIs (each a different colour with its number), the
+prompt asking for a grid with one tile per reference in order, reproducing
+each colour and number.
+
+| N | HTTP | image | `action` | tiles in the output | host input tokens | seconds |
+|---|---|---|---|---|---|---|
+| 4 | 200 | yes, 1254x1254 | `edit` | 4 of 4, colours right, in order | 2,796 | 29.7 |
+| 8 | 200 | yes, 1774x887 | `edit` | 8 of 8, colours right, in order | 3,226 | 33.2 |
+| 16 | 200 | yes, 1254x1254 | `edit` | 16 of 16, colours right, in order | 3,894 | 39.4 |
+| 17 | 200 | yes, 1402x1122 | `edit` | 17 of 17, colours right, in order | 3,976 | 44.6 |
+
+The colours of tiles 16 and 17 (mint, olive) cannot be inferred from the
+prompt, so the request did carry the 17th image into the result. What this
+does NOT separate: whether `gpt-image-2` received all 17 images or the host
+model passed some of them on as text in its revised prompt. Either way the lane
+accepted 17 and drew all 17, one past the documented 16; the shipped limit is
+the documented number, because one probe past a published limit is not a
+contract, and 16 is already more than a group photo request needs. Reading
+that reopens it: a documented Codex-lane limit, or a refusal at or below 16.
+
+The xAI number is documentation only. Reading that reopens it: a live
+`/v1/images/edits` call with 5 images refused, or one with 6 accepted.

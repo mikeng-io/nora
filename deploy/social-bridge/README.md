@@ -32,6 +32,8 @@ appears on a LAN interface.
 python -m nora.infra.social` — so it tracks `master` the same way the running
 container's bind mounts do: an edit landing on `master` is a deploy here after
 a restart. It reads no `config.toml`; env vars only (`OPENCLI_BIN`,
+`OPENCLI_PROFILE` (default `nora`: every read names Nora's Browser Bridge
+profile, never OpenCLI's default, which is the operator's browser),
 `NORA_SOCIAL_BRIDGE_PORT`, `NORA_SOCIAL_BRIDGE_HOST`). `OPENCLI_BIN` must name
 the real binary (`/home/norty/.local/bin/opencli`) — the systemd USER service
 environment does not carry the interactive shell's PATH, so a bare `opencli`

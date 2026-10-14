@@ -548,6 +548,27 @@ token, the log reads `access token rejected — replace LIFE360_AUTH_TOKEN` and
 backs off rather than falling back to the password, so repeat steps 1–4. Unset
 the variable to go back to password mode.
 
+## 4c-2. "She can't open shared files" — Nora's Google sign-in
+
+Nora has ONE Google identity (`[google]` in `config.toml`, three variables in
+`.env`: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+`GOOGLE_OAUTH_REFRESH_TOKEN`), shared by every Google service she uses
+(shared files today, design/external-files §4). API keys such as the Maps key
+are separate and live with their feature.
+
+- **Every Google service answers `unavailable`** and
+  `nora_google_invalid_grant_total` is rising (or the log says `invalid_grant`):
+  the refresh token is revoked or expired. A consent screen left in Testing
+  expires it after 7 days; set it to In production.
+- **One service answers `unavailable` and the others work**: the log says the
+  sign-in "lacks the scope …". The refresh token was granted without that
+  service's scope (usually a service added since the last sign-in).
+- **The fix for both:** on a machine with a browser, run
+  `uv run python scripts/google_auth.py` with the same client, sign in as
+  `nora@67.zone`, approve every scope it lists, and put the printed token in
+  norty's `.env` as `GOOGLE_OAUTH_REFRESH_TOKEN`. Then recreate the container
+  (nora-deploy): `.env` is read at start.
+
 ## 4d. "The cognition loop is not healthy"
 
 There is no health command and no cognition alert (removed 2026-10-03). Read the rows: `cognition_wake_outcome` (outcome,
@@ -1227,17 +1248,37 @@ host, all systemd **user** services or user installs — none of them is the
 Nora container, and Nora runs fine with all of them down (the tool answers
 `unavailable`). See `ARCHITECTURE.md` §1's browser-boundary note.
 
+The Tailscale address, the OpenCLI profile alias and the host user in the unit
+names below are placeholders; the real ones are on the deploy host
+(`tailscale ip -4`, `systemctl --user list-units '*-desktop*' '*-chrome*'`, `opencli profile list`).
+
 - `nora-social-desktop.service` — `tigervncserver :2 -fg` (Xtigervnc,
   1920x1080, Openbox), VNC bound to the Tailscale interface only
-  (`-interface 100.91.183.127`, port 5902, TLSVnc). Enabled with user
-  lingering, so it starts at boot with no login.
+  (`-interface 100.91.183.127 -localhost=0`, port 5902, `-SecurityTypes VncAuth`:
+  macOS Screen Sharing cannot speak TLSVnc, and Tailscale already encrypts the
+  link; `-localhost=0` must come AFTER `-interface`, which otherwise resets it
+  and binds loopback only). Enabled with user
+  lingering, so it starts at boot with no login. This display is NORA'S
+  ONLY: nothing of the operator's runs on it.
 - `nora-social-chrome.service` — headed Chrome on `DISPLAY=:2`
-  (`--ozone-platform=x11`) with the authenticated profile holding the
-  Instagram and X sessions. The unit has `Requires=`/`After=` on the desktop
+  (`--ozone-platform=x11`) with its OWN data folder,
+  `--user-data-dir=/home/norty/.local/share/nora-browser
+  --profile-directory="Profile 1"`: one profile, signed into Chrome as Nora's
+  own Google account, holding the Instagram, X and LinkedIn sessions and the
+  OpenCLI extension. None of the operator's extensions or sites are in it. Never point it back at `~/.config/google-chrome`:
+  that folder is the operator's browser, and a shared folder means a shared
+  process, encryption key and "last used profile" (split 2026-10-10). The unit has `Requires=`/`After=` on the desktop
   service, so systemd already orders Chrome after `:2` exists.
 - OpenCLI 1.8.7 — installed under `~/.hermes/node`, on PATH as `opencli`;
-  daemon on `localhost:19825`, Browser Bridge extension connected to that
-  Chrome.
+  daemon on `localhost:19825`. ONE daemon serves TWO Chromes, each with the
+  Browser Bridge extension: profile alias `nora` (Nora's Chrome on `:2`) and
+  `miles` (the operator's on `:4`, which another agent of his reads through).
+  `opencli profile use miles` makes the operator's the DEFAULT, so Nora's code
+  never relies on it: the bridge and the session probe pass
+  `--profile nora` on every call (`OPENCLI_PROFILE`, default `nora`), and an
+  unknown or disconnected profile fails with exit 69 rather than falling back.
+  After reinstalling the extension a profile gets a new id: re-alias it with
+  `opencli profile list` and `opencli profile rename <id> nora`.
 - `nora-social-bridge.service` — `python -m nora.infra.social` (unit in
   `deploy/social-bridge/`), the read-only HTTP seam the container calls on
   `http://host.docker.internal:19826` (the docker0 gateway — Nora's container
@@ -1279,6 +1320,12 @@ a read-only probe reports `logged_in=false` for Instagram or X — log in once b
 hand in that Chrome and the session persists in the profile. The VNC password
 lives only in the service's private configuration — never paste it into the
 repo, an issue, or a chat log.
+
+**The operator's desktop is separate.** `miles-desktop.service` (VNC `:4`,
+port 5904, same Tailscale interface, its own password file and xstartup) and
+`miles-chrome.service` (`~/.config/google-chrome`, `Default`) are the
+operator's, not Nora's: host-only units outside this repo. Nothing of Nora's
+reads them, and nothing of the operator's runs on `:2`.
 
 **Are the logins still alive?** `nora-session-probe.timer` (unit in
 `deploy/session-probe/`) checks Chrome's Instagram, X and LinkedIn session

@@ -377,6 +377,21 @@ shadow = false
 # shadow_channel = "1234567890123456789/9876543210987654321"  # required when shadow = true
 # shadow_platform = "discord"              # the mirror's platform
 
+[proactive]
+# The proactive act turn (design/cognition-loop/35): a reminder Cognition wrote
+# to itself comes due and she decides, in the room, whether anything needs
+# saying. Its OWN reasoning budget, not [participation]'s, which it shared
+# until 2026-10-12: the two fail in opposite directions. At `none` a proactive
+# turn spoke on every case where silence was right (8/40 silent on the
+# proactive_act suite); at `low` it stayed silent on 32/40 and still spoke on
+# 8/10 of the cases that needed it.
+reasoning_effort = "low"
+# One call's output ceiling for this turn, replacing [llm] max_tokens here:
+# its reasoning counts against it, and at `low` one call in 60 overran 8000 and
+# was lost as a silent failure. [llm.limits] output_tokens still bounds the
+# whole turn; this only stops one call being cut off mid-reply.
+max_tokens = 20000
+
 [relevance_gate]
 # The Relevance Gate (design/dreamer-agent-loop/36): ONE cheap structured model
 # call, on every quiescence-closed window, deciding whether the burst is worth a
@@ -731,6 +746,18 @@ provider = "xai"
 # conversation's own media window) — never an arbitrary external URL.
 allow_reference_images = false
 
+# OAuth keepalive (DEC-308). With `enabled = true`, the daemon refreshes EVERY
+# OAuth lane whose token env var is set, whichever `provider` is selected, so
+# switching provider (or a call after a quiet fortnight) never meets a dead
+# login: at the earlier of the access token's expiry (minus an hour) and
+# `refresh_interval_hours` after the last refresh. xAI's access token lives
+# ~6 h, so xAI refreshes every ~5 h regardless; Codex's lives ~10 days, so the
+# interval is what keeps it moving. 24 h: on 2026-10-09 an xAI refresh token
+# idle 12 days was refused, and a daily refresh keeps every lane an order of
+# magnitude inside that. `keepalive = false` turns a lane's keeper off (it
+# then refreshes only when a call needs it). Alert: OAuthRefreshStale /
+# OAuthRefreshRefused in deploy/prometheus/rules/nora.yml.
+
 [image_gen.xai]
 # xAI adapter knobs. `model`/`quality_model` mirror the names Hermes'
 # image_gen/xai plugin uses; `refresh_token_env` is resolved by NAME from
@@ -750,6 +777,82 @@ model = "grok-imagine-image-2.0"
 quality_model = "grok-imagine-image-quality"
 refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
 timeout_seconds = 90.0
+# References per generate_image call. Unset = xAI's documented limit, 5
+# (DEC-307); a value may only lower it (1..5, refused at load otherwise).
+# max_reference_images = 5
+keepalive = true
+refresh_interval_hours = 24.0
+
+[image_gen.openai_codex]
+# OpenAI gpt-image through the ChatGPT subscription (the lane the `codex` CLI
+# uses), selected by `provider = "openai_codex"` above (DEC-304, design 29
+# §11). Its model knobs are read only when selected; its login is kept alive
+# whenever its token is set (`keepalive`, above). `responses_model` is the text model that
+# hosts the image tool on the Codex backend. Size and quality are REQUESTS:
+# measured 2026-10-09 the host model chose its own (1536x1024 at low came
+# back 1672x941 at medium).
+#
+# `refresh_token_env` names the env var holding the BOOTSTRAP token that
+# `nora openai-codex-login` writes. OpenAI rotates refresh tokens on use, so
+# the first refresh spends it and the rotated token lives in
+# ./state/openai-codex-oauth.json; losing that file means logging in again.
+# Nora's own ChatGPT login only, never a copy of ~/.codex/auth.json: a shared
+# rotating token logs one side out. For the same reason, two checkouts must not
+# share this `.env` token with separate ./state dirs: each would spend the
+# bootstrap. A second checkout gets its own login.
+model = "gpt-image-2"
+responses_model = "gpt-5.5"
+standard_quality = "medium"
+high_quality = "high"
+refresh_token_env = "OPENAI_CODEX_REFRESH_TOKEN"
+timeout_seconds = 180.0
+# References per generate_image call. Unset = OpenAI's documented gpt-image
+# limit, 16 (DEC-307; one probe on this lane accepted 17, design 29 §12); a
+# value may only lower it (1..16, refused at load otherwise).
+# max_reference_images = 16
+keepalive = true
+refresh_interval_hours = 24.0
+
+# Video generation (`video_create`, design/video-generation, operator 2026-10-02):
+# MiniMax CN, MiniMax-H3, 480P, 15 s. A clip renders for one to three minutes and
+# is delivered later as a LINK through the compute poller, so `enabled = true`
+# needs `[compute] enabled = true` (refused at load otherwise). Off by default:
+# a 15 s clip is estimated at about 11% of the CN plan's weekly quota, which her
+# speech and Hermes share. Enabled without the key below: the tool is withheld.
+[video_gen]
+enabled = false
+provider = "minimax_cn"
+resolution = "480P"                 # the only accepted value
+duration_seconds = 15
+# Explicit, never "adaptive": the live API refused `adaptive` for a reference
+# task (2026-10-02), so the config refuses it for every task.
+ratio = "3:4"
+# Privacy gate, as [image_gen]: a reference image leaves the box for a third-
+# party cloud. Only photos Nora holds (this conversation's, or her canonical
+# picture) can be references, sent as data: URIs, never an external URL.
+allow_reference_images = false
+# The same gate for a clip and for a voice note or other audio someone sent,
+# each separate and off: a voice note sent as a reference lends that person's
+# voice to the clip. Each is fitted with ffmpeg before it is sent (cut, frame
+# rate 24 to 30, size, MP4 or MP3), never refused for its format.
+allow_reference_video = false
+allow_reference_audio = false
+# Seconds of clip, and separately of audio, one create sends, shared by the
+# references of that kind (6 to 15). A clip's seconds are billed beside the
+# output's; audio was not billed (measured 2026-10-10).
+reference_seconds = 6.0
+# Hard cap PER ROOM (platform + conversation) per local day (the tz_name of
+# [analytics]), checked in code before a create and counted from compute_jobs,
+# so a restart does not reset it. A clip the provider failed costs nothing and
+# does not count. 1 is a placeholder until a 15 s clip is measured. Renamed from
+# max_clips_per_day (which counted all rooms together); the old key is refused.
+max_clips_per_room_per_day = 1
+
+[video_gen.minimax_cn]
+model = "MiniMax-H3"                 # fallback inside the decision: "MiniMax-H3-Max"
+api_key_env = "MINIMAX_CN_API_KEY"   # resolved by NAME (DEC-8), the [speech.tts] key
+host = "https://api.minimaxi.com"
+timeout_seconds = 45.0
 
 # Google routing for the `route` tool (DEC-46). The WHOLE SECTION IS OPTIONAL
 # and every key defaults — a config.toml without it behaves as if routing is
@@ -1505,7 +1608,8 @@ horizon_seconds = 5184000
 # Closed episodes one session is handed, the newest.
 batch_limit = 100
 # Render the unit's active lessons as <lessons> on tag and fire turns (L5),
-# after <self>. OFF until its before/after eval: it changes what she reads.
+# after <self>. Off by default: it changes what she reads. The deploy host
+# runs it on since 2026-10-09 (DEC-301, after its before/after eval).
 render = false
 # The correction fast path (L4): a message that speaks to her and reads as an
 # instruction about how she acts ("stop", "唔好", "next time") wakes the unit's
@@ -2084,6 +2188,30 @@ enabled = false
 public_url = ""
 
 
+# Opening a shared file link (design/external-files/00-design.md). A Google Doc,
+# Sheet, Slides or Drive link someone posts is ALWAYS recorded as a handle,
+# `[Google Doc link c41d09]`, whatever this says: recognising a link needs no account and
+# makes no network call. SHIPS OFF: `enabled` is the switch for opening one.
+# On, it also needs the three [google] env vars below set (else opening
+# answers unavailable). `sources` is the providers, in order.
+[external_files]
+enabled = false
+sources = ["google_drive"]
+
+# Nora's ONE Google identity: one Desktop-app OAuth client and one refresh
+# token for her own account (nora@67.zone), shared by every Google service she
+# uses (shared files today); never a client per service. Each key NAMES the env
+# var in `.env` that holds the value (DEC-8). Each service declares its own
+# scope in code; `uv run python scripts/google_auth.py` asks for all of them at
+# once and prints the refresh token. A service whose scope the token lacks is
+# unavailable on its own. API keys (the Maps key under [route]) are a different
+# mechanism and stay with their feature.
+[google]
+client_id_env = "GOOGLE_OAUTH_CLIENT_ID"
+client_secret_env = "GOOGLE_OAUTH_CLIENT_SECRET"
+refresh_token_env = "GOOGLE_OAUTH_REFRESH_TOKEN"
+
+
 [subagent]
 # The sub-agent worker (design/subagent): a background agent that does one objective
 # for Nora in her computer's workspace and reports once, through the compute-job
@@ -2142,6 +2270,11 @@ reply_quiet_seconds = 600
 time_floors = ["07:00", "00:00"]
 timezone = "Asia/Hong_Kong"
 floor_grace_seconds = 3600
+# With each floor, every room holding an open event that starts within this many
+# days gets its own `time` item, bound to that room (DEC-303): the daily look
+# ahead. No event owns a reminder; whether and when the room hears about one is
+# the session's call. 0 turns the look ahead off.
+upcoming_days = 3
 store_timeout_seconds = 5
 # 30-cognition.md §1/§2 starting values.
 max_items = 12

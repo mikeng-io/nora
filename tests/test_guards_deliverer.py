@@ -236,6 +236,20 @@ async def test_leak_blocks_the_reply_and_stays_silent(store, doctrine):
     assert len(await store.recent(conversation_id="g1", limit=10)) == 0     # no audit row
 
 
+async def test_a_reply_quoting_the_transcript_markup_is_refused(store, doctrine):
+    """The DEC-93 recovery delivers a turn's prose through this method; when
+    that prose is a deliberation quoting a row by its `<m n=...>` tag, nothing
+    reaches the group and nothing is recorded as her speech."""
+    sink = SinkSender()
+    m = Metrics()
+    d = _deliverer(store, doctrine, sink, m)
+    draft = 'Thinking it over.\n\n<m n="12">see you at six</m> answered me.\n\n"Six works."'
+    assert await d.deliver(draft, source="recovered") is False
+    assert sink.sent == []
+    assert d.last_outcome == "doctrine_leak"
+    assert len(await store.recent(conversation_id="g1", limit=10)) == 0
+
+
 async def test_send_failure_marks_the_row_failed_and_does_not_retry(store, doctrine):
     sink = SinkSender(succeed=False)
     m = Metrics()
@@ -371,6 +385,32 @@ async def test_a_reply_carrying_an_aci_is_refused(store, doctrine):
 
 async def test_a_key_shaped_string_is_refused(store, doctrine):
     ok, sink, m = await _deliver_text("here you go: sk-abcdefghijklmnop1234567", store, doctrine)
+    assert ok is False and sink.sent == []
+    assert m.get("nora_egress_blocks_total", kind="keylike") == 1
+
+
+async def test_a_key_kept_verbatim_in_a_memo_is_still_refused_in_a_reply(store, doctrine):
+    """DEC-226 (R-18 amended): a memo's `## Kept` line may hold a key-shaped value
+    verbatim (D5, DEC-306), and the memo validator and the store accept it; the
+    reply that quotes it back is still refused at egress, like any key."""
+    from nora.domain.memo import parse_memo_body
+    from nora.domain.note_body import Shown, ShownMessage
+    from nora.testing.memo_store import InMemoryMemoStore
+
+    key = "sk-abcdefghijklmnopqrstuvwx"
+    body = parse_memo_body(
+        f"## Kept\n- the router key is {key} [101]",
+        shown=Shown(rendered=(ShownMessage(101, "P1"),)),
+    )
+    memos = InMemoryMemoStore()
+    memo = await memos.create(
+        unit="u", platform="signal", conversation_id="g1", title="router key",
+        body=body.text, citations=("101",), mode="told", established_by="cognition:u",
+        model=None, now_ms=1,
+    )
+    kept = (await memos.get(unit="u", memo_id=memo.id)).head.body
+    assert key in kept, "positive control: the memo holds the key verbatim"
+    ok, sink, m = await _deliver_text(f"個 router key 係 {key}", store, doctrine)
     assert ok is False and sink.sent == []
     assert m.get("nora_egress_blocks_total", kind="keylike") == 1
 

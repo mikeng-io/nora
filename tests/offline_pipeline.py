@@ -43,7 +43,7 @@ from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.app.assembler import build_assembler, lineage_policy
 from nora.app.dispatch import Dispatcher
-from nora.app.fire import FirePath, gathering_occasion, proactive_occasion, reminder_occasion
+from nora.app.fire import FirePath, proactive_occasion, reminder_occasion
 from nora.app.participation import ParticipationTrigger
 from nora.app.runtime import BackgroundTasks
 from nora.config import Config
@@ -94,6 +94,7 @@ def build_offline_pipeline(
     participation: ParticipationTrigger | None = None,
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
     participation_runner: Any = None,
+    proactive_runner: Any = None,
     participation_clock: Callable[[], float] | None = None,
     participation_opt_in: bool = False,
     participation_gate: RelevanceGate | None = None,
@@ -168,6 +169,8 @@ def build_offline_pipeline(
         # takes.
         quote_window=quote_window,
         presence=presence_reader,
+        # `<memos>` (DEC-306) — `None`: no memo store here, so no block.
+        memos=None,
         # `<culture>` (DEC-207) — `None` here for the fire path's reason
         # below: the eval subject (`nora.subject`) reconstructs a room's real
         # account at a real instant, and this harness has no store to hold one.
@@ -278,6 +281,8 @@ def build_offline_pipeline(
             computer=None,
             # `<documents>`: `None`, the assembler's reason above.
             documents=None,
+            # `<memos>`: `None`, the assembler's reason above.
+            memos=None,
             quote_window=quote_window,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters={adapter.platform: adapter},
@@ -308,7 +313,6 @@ def build_offline_pipeline(
             lineage=lineage_policy(cfg, policy=permissive_policy(), persons=persons),
             event_registry={
                 "reminder": reminder_occasion,
-                "gathering": gathering_occasion,
                 # The proactive act turn (design/dreamer-agent-loop/39 D4),
                 # registered as production registers it.
                 "proactive": proactive_occasion,
@@ -357,12 +361,13 @@ def build_offline_pipeline(
             lessons=None,
             policy=permissive_policy(),
             participation_runner=participation_runner,
-            # The proactive act turn's runner (39 D12): the SAME auto-runner
-            # under its own name, exactly as the composition root hands one
-            # object to both parameters. The act suite drives `FirePath.run`
-            # through `nora.app.eval_support` rather than this seam, so this
-            # is parity with production's kwarg names, not a second drive.
-            proactive_runner=participation_runner,
+            # The proactive act turn's runner: its OWN, as the composition root
+            # builds it (design/cognition-loop/35 §3.4: a separate runner at
+            # `[proactive] reasoning_effort`). It was this harness's
+            # `participation_runner` until the two were split. The act suite
+            # drives `FirePath.run` through `nora.app.eval_support` rather than
+            # this seam, so this is parity with production's kwarg names.
+            proactive_runner=proactive_runner,
             # The §10.6 shadow mirror, mirrored from the composition root's
             # gating (the parity test pins these kwarg NAMES to production's):
             # an offline/eval run can review determinations on the mirror

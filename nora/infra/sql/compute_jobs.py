@@ -105,6 +105,20 @@ class SqlComputeJobStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_job(r) for r in rows]
 
+    async def kind_since(self, *, kind: str, since: Any) -> list[ComputeJob]:
+        # ponytail: no (kind, created_at) index; a day holds a handful of rows of any kind.
+        stmt = (
+            sa.select(COMPUTE_JOBS)
+            .where(
+                COMPUTE_JOBS.c.kind == kind,
+                COMPUTE_JOBS.c.created_at >= ensure_utc_job(since, field="since"),
+            )
+            .order_by(COMPUTE_JOBS.c.created_at.asc(), COMPUTE_JOBS.c.id.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_row_to_job(r) for r in rows]
+
     async def set_checkpoint(self, backend_job_id: str, checkpoint: Any, at: Any) -> bool:
         # ponytail: matched by `backend_job_id` with no index; the table holds a handful of
         # rows a day and only pending ones are touched.
@@ -176,18 +190,25 @@ class SqlComputeJobStore:
             ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery", "lost",
         )
 
-    async def sweep_pending(self, *, now: Any) -> list[ComputeJob]:
+    async def sweep_pending(
+        self, *, now: Any, keep_kinds: frozenset[str] = frozenset(),
+    ) -> list[ComputeJob]:
         return await self._sweep(
             ComputeJobState.PENDING, now,
             "swept at boot: lost track of this job across a restart", "lost",
+            keep_kinds=keep_kinds,
         )
 
     async def _sweep(
         self, state: ComputeJobState, now: Any, error: str, reason: str,
+        *, keep_kinds: frozenset[str] = frozenset(),
     ) -> list[ComputeJob]:
+        where = [COMPUTE_JOBS.c.state == state.value]
+        if keep_kinds:
+            where.append(COMPUTE_JOBS.c.kind.notin_(sorted(keep_kinds)))
         stmt = (
             sa.update(COMPUTE_JOBS)
-            .where(COMPUTE_JOBS.c.state == state.value)
+            .where(*where)
             .values(
                 state=ComputeJobState.FAILED.value,
                 completed_at=ensure_utc_job(now, field="now"),

@@ -54,6 +54,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+from nora.domain.external_files import render_file_links
 from nora.domain.media_join import MediaJoin
 from nora.domain.ports import MemoryStore, RecordStore
 from nora.obs.metrics import Metrics
@@ -121,7 +122,8 @@ async def backfill(
             # FEED FIRST. `set_person_id` below is the marker, and marking a row
             # whose feed did not land would retire it from every future scan —
             # see this module's docstring, point 1.
-            text = (row.body or "").strip()
+            # The file-link handle, never the URL (design/external-files §1).
+            text = render_file_links(row.body or "").strip()
             if text:
                 if not await _feed(memory=memory, peer_id=person.honcho_peer_id,
                                    text=text, conversation_id=row.conversation_id):

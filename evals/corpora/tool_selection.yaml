@@ -295,6 +295,65 @@ cases:
     metadata: {tools: [web_fetch], not_tools: [computer_run, computer_browse]}
     snapshot: *room_a
 
+  # file_fetch (design/external-files §3, S3): a shared document, sheet or
+  # deck link reaches her as a link handle (`[Google Doc link …]`), so the
+  # call is `file_fetch(code=…)`, never `web_fetch` on a sign-in page. The
+  # control below keeps a plain web page with `web_fetch`. The file ids are
+  # synthetic: the eval subject carries the live `[external_files]` and
+  # `[google]` through, so a call reaches Drive and is refused or not found,
+  # and a draw may then try a sibling tool. A grade here reads which tool
+  # was reached for, not whether the file opened (S4 eval, 2026-10-11).
+  - name: route_file_fetch_shared_doc
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我睇下呢份doc講咩，三句講晒 https://docs.google.com/document/d/1SynthDocRoute00000000000/edit?usp=sharing
+    metadata: {tools: [file_fetch], not_tools: [web_fetch, document_read, computer_read]}
+    snapshot: *room_a
+
+  - name: route_file_fetch_shared_sheet
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://docs.google.com/spreadsheets/d/1SynthSheetRoute000000000/edit 張表總共預咗幾多錢？
+    metadata: {tools: [file_fetch], not_tools: [web_fetch, computer_import, web_search]}
+    snapshot: *room_a
+
+  # Putting a shared sheet on her computer to compute on is `computer_import`
+  # with the link (S4, design/external-files §5): the copy is the import
+  # tool's, never `file_fetch` (a read into the reply) and never `web_fetch`.
+  # Same synthetic-id caveat as above: a refused copy can be followed by a
+  # `file_fetch`, which this case grades as a FAIL.
+  - name: route_computer_import_shared_sheet
+    entry: tag
+    expect: reply
+    mention: true
+    input: 將呢張表放上你部電腦，計下每個月平均使咗幾多 https://docs.google.com/spreadsheets/d/1SynthSheetCopyIn00000000/edit
+    metadata: {tools: [computer_import], not_tools: [file_fetch, web_fetch]}
+    snapshot: *room_a
+
+  # A shared PHOTO is looked at, not read: `media_fetch` asks the same
+  # external-files source for the file's bytes (design/external-files §2,
+  # 2026-10-11), so the call is `media_fetch`, never `file_fetch` (text) or
+  # `web_fetch` (a sign-in page). The file id is synthetic, but the eval
+  # subject IS wired to Drive: the call is refused or not found, and a draw
+  # may then fall back to a sibling. A grade reads routing only.
+  - name: route_media_fetch_shared_photo
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢張相影咗咩？ https://drive.google.com/file/d/1SynthPhotoRoute000000000/view
+    metadata: {tools: [media_fetch], not_tools: [web_fetch, file_fetch]}
+    snapshot: *room_a
+
+  - name: route_web_fetch_not_a_shared_file
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢篇講咩？ https://en.wikipedia.org/wiki/Lantau_Island
+    metadata: {tools: [web_fetch], not_tools: [file_fetch]}
+    snapshot: *room_a
+
   # computer_browse (design/browser-runtime 00 §5, ADR 0022, B2): a task that
   # needs a page operated, not read. Offered only under `[computer.browse]`
   # enabled, so these measure only an arm whose deployment config has it on;
@@ -1136,4 +1195,26 @@ cases:
     mention: true
     input: 東京十二月冷唔冷？簡單答我就得
     metadata: {tools: [web_search, weather], not_tools: [subagent_create]}
+    snapshot: *room_a
+
+  # --- «記低» routing (DEC-306): about the group it is kept by her notebook ---
+  # (Cognition writes the memo after the turn, woken by the `keep` cue), about
+  # the speaker it is `remember`'s. ToolRouteGrader needs a tool to expect, so
+  # the group case expects the reply and forbids the two writes the turn must
+  # not make; "she wrote nothing at all" is not expressible as a criterion.
+  # NOT RUN when written: the eval owner runs them on master and the branch.
+  - name: route_keep_group_fact_is_not_remember
+    entry: tag
+    expect: reply
+    mention: true
+    input: 記低 我哋 Airbnb 嘅 wifi 密碼係 orchid-19
+    metadata: {tools: [send_reply], not_tools: [remember, note_create, note_update]}
+    snapshot: *room_a
+
+  - name: route_keep_own_fact_is_remember
+    entry: tag
+    expect: reply
+    mention: true
+    input: 記低 我食素
+    metadata: {tools: [remember], not_tools: [note_create]}
     snapshot: *room_a

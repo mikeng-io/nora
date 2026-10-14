@@ -86,8 +86,8 @@
   {
     "name": "the stale-cover note stops naming the link",
     "file": "nora/agent/tools.py",
-    "old": "                    \"note\": f\"That code is only the cover picture of the item \"\n                            f\"at {stale_link}. If that is the item being asked \"",
-    "new": "                    \"note\": f\"That code is only the cover picture of the item \"\n                            f\"at the link. If that is the item being asked \"",
+    "old": "                        \"note\": f\"That code is only the cover picture of the item \"\n                                f\"at {stale_link}. If that is the item being asked \"",
+    "new": "                        \"note\": f\"That code is only the cover picture of the item \"\n                                f\"at the link. If that is the item being asked \"",
     "target": "tests/test_media_fetch.py -k stale_cover_beside"
   },
   {

@@ -2,14 +2,14 @@
   {
     "name": "linkedin_read's registry lookup is dropped: an X or Instagram link stops naming the tool that reads it",
     "file": "nora/agent/tools.py",
-    "old": "                found = _other_link_owner(text, \"linkedin_read\")",
+    "old": "                found = _other_link_owner(text, \"linkedin_read\", unwired_owners)",
     "new": "                found = None",
     "target": "tests/unit/test_linkedin_tools.py::test_another_network_s_link_names_the_tool_that_reads_it"
   },
   {
     "name": "instagram_read's registry lookup is dropped: instagram_read names no other network again",
     "file": "nora/agent/tools.py",
-    "old": "                found = _other_link_owner(text, \"instagram_read\")",
+    "old": "                found = _other_link_owner(text, \"instagram_read\", unwired_owners)",
     "new": "                found = None",
     "target": "tests/unit/test_link_owners.py::test_every_owner_redirects_every_other_owners_canonical_link"
   },

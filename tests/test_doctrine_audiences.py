@@ -27,9 +27,14 @@ import re
 import pytest
 
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.framing import ParticipationHeader, ProactiveHeader
 
 # `pictures` joined 2026-09-26: split out of constraints.md, room occasions only.
-AUTHORED = ("identity", "belonging", "voice", "conduct", "pictures", "constraints")
+# `room-constraints` joined 2026-10-12: the law moved out of the room files
+# (design/context-plan/11 §6, step 2), room occasions only.
+AUTHORED = (
+    "identity", "belonging", "voice", "conduct", "pictures", "constraints", "room-constraints",
+)
 
 # Every audience of HERS, and exactly what the ASSEMBLY must resolve to.
 #
@@ -65,10 +70,10 @@ AUTHORED = ("identity", "belonging", "voice", "conduct", "pictures", "constraint
 # four parameters over three distinct assemblies — not four independent checks.
 # They stay separate because the divergence is exactly what regression 2 was.
 HER_AUDIENCES: dict[str, tuple[str, ...]] = {
-    "tag": (*AUTHORED, "silence"),
+    "tag": AUTHORED,
     "heartbeat": AUTHORED,
-    "participation": (*AUTHORED, "silence", "participation-conduct"),
-    "proactive": (*AUTHORED, "silence"),
+    "participation": (*AUTHORED, "participation-conduct"),
+    "proactive": AUTHORED,
     # The public summons (design/instagram-adoption/19): who she is and the hard
     # rules from core/, and the public/ files — and nothing written for a room.
     # Strangers read this surface, so belonging, the group voice and room
@@ -187,7 +192,11 @@ MULTI_MESSAGE = "a genuinely separate act"
 # 44 em dashes in the doctrine and 13 more in the prefill block descriptions on
 # every turn, and emitted one in 13 of 22 replies where the humans in the same
 # window emitted none in 18. The sentence is otherwise unchanged.
-SILENCE = "silence is a complete answer, a success rather than a failure"
+# SHORTENED 2026-10-13: silence.md dissolved (design/context-plan/12 §2) and the
+# claim moved into the participation and proactive headers, worded «silence is a
+# complete answer here, not a failure». The needle is the stem both wordings
+# share, and it is now asserted ABSENT from every audience's doctrine.
+SILENCE = "silence is a complete answer"
 
 
 def _bodies(store: DoctrineStore, audience: str) -> str:
@@ -287,29 +296,26 @@ def test_no_audience_of_hers_is_degenerate(doctrine_store, audience: str):
         )
 
 
-def test_silence_reaches_called_and_offered_turns_only(doctrine_store):
-    """silence.md speaks to the three occasions a turn can arrive on — a tag
-    (called: must-speak), a participation turn and a proactive one (both
-    offered: may-speak). A heartbeat turn is OBLIGED to speak, so the may-speak
-    half is false there and the file stays out.
+def test_the_right_to_stay_silent_comes_with_the_offered_turn(doctrine_store):
+    """A participation turn and a proactive one are OFFERED: silence answers them.
+    A heartbeat turn is OBLIGED to speak, so the may-speak claim is false there.
 
-    `proactive` is asserted because `14a55ab8` added it to the file's
-    `applies_to` and nothing checked it; the third occasion is the whole point
-    of that rewrite."""
-    # ROUTING, asserted structurally so it cannot go stale. This is the claim
-    # #168 was filed against, and prose could never have settled it: a rewritten
-    # sentence and a missing section produce the same failure, and pytest elides
-    # the middle of the haystack so the section is invisible either way.
-    for audience in ("tag", "participation", "proactive"):
-        assert 'name="silence"' in doctrine_store.get(applies_to=audience).text, audience
-    assert 'name="silence"' not in doctrine_store.get(applies_to="heartbeat").text
-
-    # CONTENT: the may-speak half must be there to read, and must not reach an
-    # occasion that is obliged to speak.
-    assert SILENCE in _bodies(doctrine_store, "tag")
-    assert SILENCE in _bodies(doctrine_store, "participation")
-    assert SILENCE in _bodies(doctrine_store, "proactive")
-    assert SILENCE not in _bodies(doctrine_store, "heartbeat")
+    Until 2026-10-13 the claim was doctrine (silence.md, `applies_to: [tag,
+    participation, proactive]`), and this test pinned its routing. The file
+    dissolved (design/context-plan/12 §2): what a turn IS belongs with the turn,
+    so the claim now lives only in `ParticipationHeader` and `ProactiveHeader`,
+    and no doctrine any audience reads may carry it, or it reaches the
+    heartbeat, which assembles from the same authored files."""
+    for header in (ParticipationHeader(), ProactiveHeader(rows=())):
+        text = " ".join(header.render().split())
+        assert "silence is a complete answer here, not a failure" in text, header
+    # The base rate is the proactive turn's only (ParticipationHeader's
+    # docstring says why).
+    assert "most turns like this one end that way" in ProactiveHeader(rows=()).render()
+    assert "most turns" not in ParticipationHeader().render()
+    for audience in ("tag", "heartbeat", "participation", "proactive"):
+        assert 'name="silence"' not in doctrine_store.get(applies_to=audience).text
+        assert SILENCE not in _bodies(doctrine_store, audience), audience
 
 
 def test_the_gate_instrument_is_not_in_the_participation_audience(doctrine_store):
@@ -349,7 +355,7 @@ def test_the_gate_instruction_reaches_no_audience_of_hers(doctrine_store):
     gate = doctrine_store.get(applies_to="relevance_gate").text
     assert needle in gate
     assert gate.count("<section ") == 1
-    for hers in ("identity", "belonging", "voice", "silence", "conduct", "pictures",
+    for hers in ("identity", "belonging", "voice", "conduct", "pictures",
                  "constraints"):
         assert f'name="{hers}"' not in gate
 
@@ -402,7 +408,9 @@ def test_the_summons_carries_no_room_media_mechanics(doctrine_store):
     transcript, asking for the full reading) is room-chat mechanics. It lived in
     core/constraints.md until 2026-09-26, so a live dry-run summons carried it
     to a stranger's comment, where there is no transcript and no placeholder.
-    It is rooms/pictures.md now, and every room occasion still gets it."""
+    It is rooms/pictures.md now, and every room occasion still gets it; since
+    2026-10-12 its law half is rooms/constraints.md, the last section of every
+    room occasion."""
     summons = doctrine_store.get(applies_to="summons").text
     assert "What you already know about a picture" not in summons
     assert "transcript" not in summons
@@ -410,5 +418,6 @@ def test_the_summons_carries_no_room_media_mechanics(doctrine_store):
     for audience in ("tag", "heartbeat", "participation", "proactive"):
         doctrine = doctrine_store.get(applies_to=audience)
         assert "# What you already know about a picture" in doctrine.text, audience
+        assert "[image a3f2c1" in doctrine.text, audience
         names = [s.name for s in doctrine.sections]
-        assert names[-2:] == ["pictures", "constraints"], (audience, names)
+        assert names[-3:] == ["pictures", "constraints", "room-constraints"], (audience, names)

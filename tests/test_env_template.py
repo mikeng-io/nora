@@ -25,10 +25,10 @@ def test_config_example_exists_and_parses():
         "analytics", "compute", "computer", "otp",
         "search", "online", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
-        "notes", "culture", "lessons", "standing", "music", "image_gen",
-        "version", "engagement", "participation", "relevance_gate", "reaction",
+        "notes", "culture", "lessons", "standing", "music", "image_gen", "video_gen",
+        "version", "engagement", "participation", "proactive", "relevance_gate", "reaction",
         "doctrine", "dreamer", "cognition", "subagent", "assess", "lineage", "record_query",
-        "documents",
+        "documents", "external_files", "google",
         "identity_file", "policy_file",
         "obs", "evals", "tools",
     }
@@ -245,6 +245,11 @@ _MAY_DIFFER = {
     # `allow_reference_images`: sending an existing image to the provider is a
     # data-egress decision, so the template ships it off.
     "image_gen.allow_reference_images",
+    # `provider`: which subscription lane draws her pictures is the
+    # operator's (2026-10-09: `openai_codex` live); the template keeps the
+    # original default, `xai`. Both lanes' logins are kept alive whichever is
+    # selected (DEC-308), so the choice is a switch, not a migration.
+    "image_gen.provider",
     # `autoplay_prewarm_seconds`: prewarming fetches a track nobody asked for
     # yet. 0.0 is inert; the deployment opted in at 12s (R-64).
     "music.autoplay_prewarm_seconds",

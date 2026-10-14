@@ -1,0 +1,1 @@
+{"type": "fix", "summary": "Nora can open shared Google files: her Google sign-in no longer fails on a compressed token answer.", "details": ["Google compresses its token answer when the client accepts gzip; the answer was read as raw bytes and every refresh failed, so file_fetch answered unavailable."], "limitations": []}

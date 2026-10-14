@@ -208,3 +208,23 @@ def test_deferred_ids_are_sorted():
     deferred_q = [_stimulus(6, conversation_id="room-q"), _stimulus(7, conversation_id="room-q")]
     agenda = build_agenda(kept + deferred_p + deferred_q, home_room=HOME, max_items=1)
     assert agenda.deferred_stimulus_ids == (5, 6, 7, 50)
+
+
+def test_the_look_ahead_binds_to_its_events_room_and_the_floor_to_home():
+    """DEC-303: an `upcoming` time stimulus names the room its event is in and
+    is bound there (the session reads and reminds in that room); the floor,
+    which names none, stays on the home room."""
+    pending = [
+        _stimulus(1, kind="time", item="floor", platform=None, conversation_id=None),
+        _stimulus(2, kind="time", item="upcoming", conversation_id="room-b"),
+    ]
+    items = {item.room: item for item in build_agenda(pending, home_room=HOME).items}
+    assert set(items) == {HOME, Room("signal", "room-b")}
+    ahead = items[Room("signal", "room-b")]
+    assert ahead.kind == "time" and ahead.stimulus_ids == (2,)
+    assert "coming up" in ahead.summary and "room-b" not in ahead.summary
+    # A time stimulus that is not the look ahead never binds to a room it names.
+    other = build_agenda(
+        [_stimulus(3, kind="time", item="floor", conversation_id="room-c")], home_room=HOME,
+    )
+    assert other.items[0].room == HOME

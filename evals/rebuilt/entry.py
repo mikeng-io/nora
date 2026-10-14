@@ -95,7 +95,9 @@ async def participation(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     would have written, and `delivery` reports what the transport then did with
     it. Carried, never collapsed: *she said nothing* and *the wire refused what
     she said* are different facts, and a suite that maps the second onto the
-    first grades a healthy Nora as silent.
+    first grades a healthy Nora as silent. A well-formed Signal send lands in
+    the sandbox (`nora.subject.sandbox_signal`), so `delivery` is `sent` as in
+    production, and `failed` means a real refusal above the wire.
     """
     path = subject.deps.fire_path
     if path is None:

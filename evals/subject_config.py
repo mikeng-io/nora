@@ -53,7 +53,8 @@ SKIP_PREFIX: tuple[str, ...] = (
     # `StartupError: no platform adapter is enabled` in 22 integration tests.
     # `_baseline()` already neutralises the network by pointing
     # `platforms.signal.account` at a placeholder, which is the right shape —
-    # enabled like the deployment, dialling nothing.
+    # enabled like the deployment. That stops the startup lookup only; a SEND
+    # still dialled until `nora.subject.sandbox_signal` made sends land.
     "platforms.signal.account",
     "platforms.signal.base_url",
     "platforms.discord.token_env",
@@ -128,7 +129,12 @@ def _fmt(value: object) -> str:
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return repr(value)
-    return '"' + str(value).replace('"', '\\"') + '"'
+    if isinstance(value, (list, tuple)):
+        # An array stays an array. Quoting its repr turned
+        # `sources = ["google_drive"]` into the STRING "['google_drive']", and
+        # the drift check refused the run (2026-10-11).
+        return "[" + ", ".join(_fmt(item) for item in value) + "]"
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def adopted(deployment_toml: str) -> dict[str, object]:

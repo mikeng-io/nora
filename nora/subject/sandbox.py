@@ -154,7 +154,8 @@ __all__ = [
     "Sandboxed", "SharedDatabaseMutatedError", "SharedDatabaseVersions",
     "SourceRevisionMismatchError", "as_knowledge", "assert_shared_databases_unchanged",
     "close_private_blank_templates", "judge_source", "refuse_if_source_diverges_from_head",
-    "sandbox_as_of", "sandbox_database", "sandbox_from_snapshot", "shared_database_versions",
+    "sandbox_as_of", "sandbox_database", "sandbox_from_snapshot", "seed_lessons",
+    "shared_database_versions",
     "sweep_stale_private_blank_templates",
 ]
 
@@ -788,14 +789,10 @@ def _reminder_seed(reminder: Reminder, *, before_ms: int) -> ReminderSeed:
 def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
     """One `(Note, NoteRevision)` pair as the seed that reproduces it.
 
-    **A note anchored only by entity ids is REFUSED here rather than
-    re-anchored.** `Note.__post_init__` requires `anchor_date` or
-    `anchor_entity_ids`, and `NoteSeed` carries only the first — so such a note
-    would reach `SqlNoteStore.create` with neither and raise `ValueError` from
-    inside the domain, naming a constructor rather than the room the
-    reconstruction came from. Raising here says which note and why. It is not
-    silently dropped: a note missing from the index is invisible, and invisible
-    is indistinguishable from absent.
+    **The anchor goes across whole**: `anchor_date` and `anchor_entity_ids`
+    both, so a note anchored by entity ids alone seeds like any other instead
+    of being refused (it once was, and every case built on such a note
+    errored before the turn ran).
 
     **`id=note.id` — the SOURCE's own id, not left for `know()` to assign
     (issue #158, review).** A reminder seeded alongside keeps this SAME id in
@@ -804,12 +801,6 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
     docstring) would leave nothing in the sandbox agreeing on what a note's id
     even was.
     """
-    if note.anchor_date is None:
-        raise ValueError(
-            f"note {note.id!r} ({note.title!r}) is anchored by entity ids "
-            "alone, and `NoteSeed` can only state an anchor_date — seeding it "
-            "would reach `Note.__post_init__` with no anchor at all"
-        )
     return NoteSeed(
         id=note.id,
         title=note.title,
@@ -818,6 +809,7 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
         uncertainty=note.uncertainty,
         closing_condition=note.closing_condition,
         anchor_date=note.anchor_date,
+        anchor_entity_ids=tuple(note.anchor_entity_ids),
     )
 
 
@@ -986,6 +978,42 @@ async def sandbox_from_snapshot(
             now=subject.deps.clock(),
         ),
     )
+
+
+async def seed_lessons(
+    subject: Subject, case_name: str, lessons: Sequence[str], *, now_ms: int,
+) -> None:
+    """Write the lessons a `lessons` counterfactual attaches into the subject's
+    unit (design/self-growth/40 §8), active, oldest first and a millisecond
+    apart so `<lessons>` renders them in the order stated. Written straight to
+    the store: the case states the lesson as it was held, so the doctrine check
+    a session's write passes is not re-run here."""
+    if not lessons:
+        return
+    from nora.infra.sql import create_sql_engine
+    from nora.infra.sql.lessons import SqlLessonStore
+
+    engine = create_sql_engine(subject.database_url)
+    try:
+        store = SqlLessonStore(engine)
+        held = [x for x in await store.lessons(unit=subject.unit) if x.active]
+        if held:
+            # The snapshot already copied lessons the unit held at the instant
+            # (`Snapshot.lessons`): seeding on top would render both, and the
+            # case would be measuring a unit nobody had.
+            raise ValueError(
+                f"case {case_name!r} attaches lessons at an instant the unit already "
+                f"held {len(held)}; anchor it before the unit's first lesson"
+            )
+        # At the moment's own clock (`now_ms` is the sandbox's frozen instant).
+        base = now_ms - len(lessons)
+        for i, body in enumerate(lessons):
+            await store.create(
+                unit=subject.unit, body=body.strip(), citations=(f"case:{case_name}",),
+                written_at=base + i, established_by="eval-counterfactual",
+            )
+    finally:
+        await engine.dispose()
 
 
 async def seed_documents(subject: Subject, case_name: str, specs: Sequence[dict[str, Any]]) -> None:

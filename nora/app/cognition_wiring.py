@@ -87,7 +87,8 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
                    "status=current) and derived places; counters only. It starts, "
                    "advances and switches no build, and folds nothing. No write.",
     "event_search": "SQL read of the unit's gatherings; counters only. No write.",
-    "memo_read": "not built yet; audit it when it lands.",
+    "memo_read": "SQL SELECT of one memo of the unit and its revisions "
+                 "(`SqlMemoStore.get`, `revisions`); counters only. No write.",
     "character_read": "SQL SELECT of `culture` heads (`CultureReader.head`) of the "
                       "unit's own rooms; counters only. It folds and revises nothing. "
                       "No write.",
@@ -398,6 +399,41 @@ def open_events_reader(
     return read
 
 
+def upcoming_reader(
+    read_events: Callable[[str], Awaitable[Sequence[Gathering]]],
+    unit_rooms: Callable[[str], Collection[tuple[str, str, Collection[str]]]],
+    *, days: float,
+    room_proactive: Callable[[str, str], bool] = lambda platform, conversation_id: True,
+) -> Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]]:
+    """The wake evaluator's `upcoming` seam (DEC-303): the unit's rooms holding
+    an event a session may still move (`open_events_reader`) whose start falls
+    between now and `days` ahead.
+
+    `unit_rooms(unit)` gives each room as `(platform, primary_id, id forms)`:
+    events are read under every id form the room has had, and the room is
+    named ONCE, by the id a send goes to (a retired form fails to send,
+    `Conversation.primary_id`). A room Nora may not reach unasked
+    (`room_proactive` false) is skipped: the look ahead exists for a reminder
+    `remind` would refuse there."""
+    horizon_ms = int(days * 86_400_000)
+
+    async def read(unit: str, now_ms: int) -> Sequence[tuple[str, str]]:
+        found: list[tuple[str, str]] = []
+        for platform, primary_id, forms in sorted(unit_rooms(unit), key=lambda r: r[:2]):
+            if not room_proactive(platform, primary_id):
+                continue
+            for conversation_id in sorted({primary_id, *forms}):
+                starts = [
+                    int(e.when.timestamp() * 1000)
+                    for e in await read_events(conversation_id) if e.when is not None
+                ]
+                if any(now_ms <= at <= now_ms + horizon_ms for at in starts):
+                    found.append((platform, primary_id))
+                    break
+        return found
+    return read
+
+
 def build_cognition_runner(
     *,
     cfg: Any,
@@ -432,6 +468,7 @@ def build_cognition_runner(
     model_route: str,
     budget: Any,
     result_caps: Mapping[str, int],
+    memos: Any = None,
 ) -> Any:
     """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
     with it Strands) is loaded only when a session will actually run."""
@@ -488,7 +525,7 @@ def build_cognition_runner(
     return CognitionSessionRunner(
         store=store, stimulus_store=stimulus_store,
         notes=notes, events=events, standing=standing, reminders=reminders,
-        ai_peer=ai_peer,
+        ai_peer=ai_peer, memos=memos,
         agent_runner=agent_runner, home_rooms=home_rooms,
         read_tools_for=read_tools_for(tools, names=surface.wired),
         read_only_tools=surface.wired,
@@ -536,4 +573,5 @@ __all__ = [
     "read_tools_for",
     "require_session_hook",
     "units_with_home_rooms",
+    "upcoming_reader",
 ]

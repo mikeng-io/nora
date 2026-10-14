@@ -260,7 +260,11 @@ def test_the_owed_and_ruled_out_shapes_the_description_teaches_are_the_validator
     with pytest.raises(NoteBodyError, match="bad_date"):
         parse("## Owed\n- Ada -> book -> tomorrow [7]")
     parse("## Ruled out\n- the pier: too far (Ada) [7]")                    # the shape taught
-    with pytest.raises(NoteBodyError, match="misattributed"):
-        parse("## Ruled out\n- the pier: too far [7]")                      # it takes (names)
+    # It takes (names); left out, code completes them from the cited senders (2026-10-09).
+    completed = parse_note_body(
+        "## Decided\n- go (Ada) [7]\n## Open\n- where [7]\n## Ruled out\n- the pier: too far [7]",
+        shown=shown,
+    )
+    assert completed.text.endswith("- the pier: too far (Ada) [7]")
     text = BLOCK_TYPES["agenda"].description
     assert "-> <due> [<ids>]" in text and "<option>: <reason> (<names>) [<ids>]" in text

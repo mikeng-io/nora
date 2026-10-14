@@ -11,8 +11,10 @@ from .computer_context import ComputerView
 from .culture import CultureRevision
 from .decision_log import DecisionRow
 from .documents_context import DocumentsView
+from .external_files import ExternalFileRef
 from .lineage import RenderRoom
 from .media import MediaBlob, MediaRef
+from .memo import Memo
 from .notes import Note
 from .self_presence import Presence
 from .standing import Standing
@@ -191,6 +193,12 @@ class NormalizedMessage:
     # contention, and a second write to attach custody to an already-inserted
     # row would be a second contender for it. Same INSERT, no extra parameter.
     media_blobs: tuple[MediaBlob, ...] = ()
+    # The shared file links in `body` a provider recognised
+    # (design/external-files/00-design.md §1): produced by
+    # `nora.ingest.stages.external_files`, never by the parser, and written to
+    # `messages.external_files_json` in the same INSERT for `media_blobs`'
+    # reason. No network call made them; the body keeps the URL verbatim.
+    external_files: tuple[ExternalFileRef, ...] = ()
     # SPOKEN, not typed (design/voice-channel/07 §12.2, reversed 2026-09-17).
     # Set only by `nora.web.voice`, the wake path's entry point; every parser
     # leaves it False. It rides the message so the reply can be routed back
@@ -278,6 +286,11 @@ class TranscriptRow:
     # consumes would be an invented contract. `nora.domain.media` is what a
     # retrieval tool would decode it through when one exists.
     media_json: str | None = None
+    # The raw `messages.external_files_json` text: the file links recognised
+    # in this row at ingest, or None. Decoded only by
+    # `nora.domain.external_files` (the code lookup); renderers never read it,
+    # because the in-place handle is rendered from the body itself.
+    external_files_json: str | None = None
     # The IDENTITY-canonical name for this row's sender (`PersonRef.name`), or
     # None when the sender maps to nobody. Set by the context assembler, which
     # is the one place that holds `Persons`; the store never fills it.
@@ -498,6 +511,9 @@ class TagContext:
     # absent. The prompt budget is paid by the per-entry caps in
     # `nora.domain.notes` and by `note_retire`, not here.
     notes: tuple[Note, ...] = ()
+    # The unit's kept memos (DEC-306), the `<memos>` index: unit-wide like
+    # `notes`, filled by the tag and fire assemblers; `()` renders no block.
+    memos: tuple[Memo, ...] = ()
     # Standing (design/dreamer-agent-loop/26-standing.md) — HER OWN position in
     # THIS conversation, folded from the previous turn by the debrief stage.
     #

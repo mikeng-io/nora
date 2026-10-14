@@ -79,6 +79,7 @@ import dataclasses
 import logging
 import time
 from collections.abc import Callable, Coroutine, Mapping
+from datetime import datetime
 from typing import Any
 
 from nora.agent.intent_router import route_intent
@@ -93,6 +94,7 @@ from nora.agent.tools import turn_occasion
 from nora.domain import audience as audience_names
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder
+from nora.domain.external_files import render_file_links
 from nora.domain.ports import (
     EngagementRequest,
     LinkPreviewSource,
@@ -160,6 +162,19 @@ def _outcome_label(trace: TagTrace | None) -> str:
     return label
 
 
+
+def _nothing_answered(handle: Any) -> bool:
+    """Nothing reached the room, OR only a heads-up did and its answer is still
+    owed (`ReplyGuard.reply_still_owed`, DEC-294).
+
+    The three nets below (salvage, the cut-off fallback, DEC-93's recovery)
+    were gated on «nothing delivered». A heads-up sent with `more=true` IS
+    delivered, so before this an answer she then wrote as prose, or a turn cut
+    off mid-work, was dropped while the turn read as `replied` (review of
+    #754, 2026-10-09)."""
+    return (not handle.deliverer.delivered
+            or bool(getattr(handle.guard, "reply_still_owed", False)))
+
 class EngagementPipeline:
     def __init__(
         self,
@@ -193,6 +208,7 @@ class EngagementPipeline:
         tag_trace_store: Any = None,
         debrief_wiring: debrief.Wiring | None = None,
         decisions: DecisionLogRecorder | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
         # SAME platform the tag arrived on. Nora reached a second platform
@@ -223,6 +239,11 @@ class EngagementPipeline:
         # The Nora aiPeer id (Honcho v2, design/24): her replies feed under it.
         self._ai_peer = ai_peer
         self._context_window = context_window
+        # The turn's clock, read for the clock line the way the fire path reads
+        # it (`self._clock().astimezone()`), so the line and the `now` tool
+        # (which reads the same injected clock) state one instant. `None`
+        # falls back to the wall, which is what production's clock is.
+        self._clock = clock
         self._timeout_seconds = timeout_seconds
         self._limits = limits
         self._defer_tools = defer_tools
@@ -723,7 +744,7 @@ class EngagementPipeline:
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer,
-                room=room, question=msg.body,
+                room=room, question=render_file_links(msg.body),
                 context_window=self._context_window, metrics=self._metrics,
                 # DEC-146: the SAME tuple `build_prefill` below renders
                 # `<group_transcript>` from. `who_said` answers out of the window
@@ -760,6 +781,7 @@ class EngagementPipeline:
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name, context_window=self._context_window,
                 catalogue=surface.prompt_catalogue,
+                now=self._clock().astimezone() if self._clock is not None else None,
             )
             tag_message = build_tag_message(
                 ctx, tagger_name=tagger_name, display_name=self._display_name,
@@ -841,7 +863,7 @@ class EngagementPipeline:
                     # would speak words she concluded without the tool.
                     request.occasion != "participation"
                     and stop_reason == "max_tokens"
-                    and not handle.deliverer.delivered
+                    and _nothing_answered(handle)
                     and final_text.strip()
                 )
                 if salvable:
@@ -881,13 +903,15 @@ class EngagementPipeline:
             # a DELIBERATE silence she is allowed (strict-silence, R-4/R-2) and must
             # stay silent. If she already sent something (multi-message cut off
             # mid-stream), `deliverer.delivered` is True and this is skipped — that
-            # is a partial delivery, not a void.
+            # is a partial delivery, not a void. Except a heads-up whose answer
+            # is still owed (`_nothing_answered`): the room was told an answer
+            # is coming, and the cut-off means it is not.
             cut_off_before_reply = (
                 # Occasion-gated like the salvage above: the participation
                 # occasion's exhaustion is silence, never the canned line.
                 request.occasion != "participation"
                 and stop_reason in deliver.BUDGET_STOP_REASONS
-                and not handle.deliverer.delivered
+                and _nothing_answered(handle)
             )
             # The local record of WHICH branch below fires (Task 6):
             # `deliverer.delivered` alone cannot tell "her own words,
@@ -956,7 +980,9 @@ class EngagementPipeline:
             # place. Narrow on purpose:
             #   - `end_turn` ONLY. A budget cut-off is handled above and a
             #     timeout produced no considered ending at all.
-            #   - nothing delivered, so this can never append to a real reply.
+            #   - nothing delivered, so this can never append to a real reply;
+            #     or only a heads-up whose answer is still owed (DEC-294,
+            #     `_nothing_answered`), which is the reply it completes.
             #   - `_EXHAUSTED_FALLBACK` is preferred when both could apply, by
             #     ordering: a cut-off turn is not a deliberate ending.
             #   - it goes through `deliver`, so R-4/R-6/R-18, the Markdown
@@ -985,7 +1011,7 @@ class EngagementPipeline:
                 # unless she WROTE it» — because that string passes R-6 and R-18
                 # trivially and nothing else downstream would stop it.
                 and not handle.guard.cancelled_model_call
-                and not handle.deliverer.delivered
+                and _nothing_answered(handle)
                 and final_text.strip()
                 and await handle.deliverer.deliver(final_text, source="recovered")
             ):
@@ -993,8 +1019,10 @@ class EngagementPipeline:
                 self._metrics.inc("nora_recovered_replies_total", platform=msg.platform)
                 log.warning(
                     "recovered a reply the model wrote WITHOUT calling send_reply "
-                    "(tag=%s, %d chars) — the route is not honouring "
-                    "tool_choice=required", request.tag_id, len(final_text),
+                    "(tag=%s, %d chars, after_heads_up=%s) — without a heads-up "
+                    "the route is not honouring tool_choice=required",
+                    request.tag_id, len(final_text),
+                    bool(getattr(handle.guard, "reply_still_owed", False)),
                 )
 
             # `stop_reason` is threaded rather than dropped (R-23): without it

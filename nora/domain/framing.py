@@ -226,31 +226,6 @@ class ReminderHeader:
 
 
 @dataclass(frozen=True)
-class GatheringHeader:
-    """The situation paragraph for a gathering-notify fire turn (DEC-139).
-
-    Same shape as `ReminderHeader`: nobody called her, and that is not why this
-    turn is happening. `title` arrives from the factory AFTER its payload guard,
-    so it is a `str` here, never a missing key. The requester's name and the
-    title are escaped because everything else a prompt carries is (R-13).
-    """
-
-    title: str
-    tagger: PersonRef | None
-
-    def render(self) -> str:
-        return (
-            "You are in a group chat you have been reading all along. Nobody has "
-            f"just called you. Earlier, {_name(self.tagger)} asked you to remind "
-            f"the room about «{_put(str(self.title))}», and that time has come — "
-            "that is why this turn is happening, and it is the only reason.\n"
-            f"Bring the gathering up to {_name(self.tagger)} and the room now, in "
-            "your own words. Do not read the time back at them unless they asked "
-            "in those terms."
-        )
-
-
-@dataclass(frozen=True)
 class ProactiveHeader:
     """The situation paragraph for a proactive act turn (design/dreamer-agent-
     loop/39 D4, DEC-162).
@@ -258,8 +233,10 @@ class ProactiveHeader:
     Same opening shape as every fire header — nobody called her, and that is not
     why this turn is happening — with the reason clause that is true here and
     nowhere else: SHE decided, earlier, that this was worth raising at about this
-    time. The right to decline is stated here as well as in `silence.md`, for
-    `ParticipationHeader`'s reason: the header is the sentence she reads first.
+    time. The right to decline is stated here, and only here since `silence.md`
+    dissolved (design/context-plan/12 §2, 2026-10-13): what a turn is belongs
+    with the turn. Its base rate («most turns like this one end that way») came
+    from that file.
 
     Times are stamped the way `ReminderHeader` stamps them — the reader's own
     zone, never UTC. The note title is escaped like every other value a prompt
@@ -321,7 +298,8 @@ class ProactiveHeader:
             "(note_read gives you a note's current body; where_is and route are "
             "worth asking now, not earlier) — and decide again. If the thing has "
             "since been settled, or somebody already said it, or it would not "
-            "help, stay silent: silence is a complete answer here, not a failure. "
+            "help, stay silent: silence is a complete answer here, not a failure, "
+            "and most turns like this one end that way. "
             "If it is still worth saying, say it once, briefly, in your own words, "
             "and never as «I set myself a reminder» or «my note says», and never "
             "in the note's own words — the note and the reminder are WHY you are "
@@ -426,9 +404,14 @@ class ParticipationHeader:
     Same opening shape as the other fire headers — nobody called her, and that is
     not why this turn is happening — but the reason clause differs: no one asked
     for anything, earlier or otherwise. The room went quiet and the floor was
-    offered. The right to decline it is stated HERE as well as here rather than
-    only in `silence.md`, because the doctrine can only oblige a model that reads
-    it and the header is the sentence she reads first.
+    offered. The right to decline it is stated HERE, and only here since
+    `silence.md` dissolved (design/context-plan/12 §2, 2026-10-13): what a turn
+    is belongs with the turn, and the header is the sentence she reads first.
+    It does NOT carry that file's base rate («most turns like this one end that
+    way»), unlike `ProactiveHeader`: it never sat in this header, its effect
+    here is unmeasured, and the Relevance Gate has already screened the window
+    before this turn exists. (A drop in windows that should speak, 2026-10-13,
+    was first blamed on it; the cause was a line moved into conduct.md.)
     """
 
     relevance_score: float | None = None
@@ -489,7 +472,6 @@ class AnnouncementHeader:
 #: header written inline at the construction site.
 FIRE_HEADERS: Mapping[str, type[Header]] = {
     "reminder": ReminderHeader,
-    "gathering": GatheringHeader,
     "proactive": ProactiveHeader,
     "compute": ComputeHeader,
     "relay": RelayHeader,
@@ -606,6 +588,17 @@ TAG_HEADER = (
 #: and reply, so the turn that follows begins in her own voice.
 CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
+#: The body of `<spoken_turn>` (design/context-plan/11 §4 layer E): rendered only
+#: when the message she is answering was spoken in a voice channel. The SITUATION,
+#: not a rule list: what she is reading and where the reply goes. What follows
+#: from it (no link read aloud, no list, no GIF, short) is hers to infer; telling
+#: a model what it is reading has measured better here than telling it what to do.
+SPOKEN_TURN = (
+    "This message was spoken aloud in the voice channel and reached you as a "
+    "transcript. Your reply will be said aloud there by a voice: heard once, "
+    "not read."
+)
+
 
 @dataclass(frozen=True)
 class ContextHeader:
@@ -671,17 +664,23 @@ class SummonsHead:
     block, on the premise that nothing a stranger wrote is in the head but a
     username; escaping it means a future path that sets the summoner without that
     filter cannot inject into the first line.
+
+    `max_chars` is the reply's hard limit (`PUBLIC_REPLY_MAX_CHARS`), stated as
+    a fact about this turn: a reply over it is refused whole as `too_long`, and
+    the doctrine names no number (design/context-plan/12 §4).
     """
 
     now: datetime
     summoned_by: str
     summoned: str
+    max_chars: int
 
     def render(self) -> str:
         return (
             "You were tagged in a comment under a public Instagram post. Whatever "
             "you send is posted once, as a public reply to that comment, where "
-            "strangers read it. Saying nothing is a complete answer. It is now "
+            f"strangers read it. A reply longer than {_figure(self.max_chars)} characters "
+            "is not posted at all. Saying nothing is a complete answer. It is now "
             f"{_utc_minute(self.now)} UTC. {_put(self.summoned_by)} tagged "
             f"you {_put(self.summoned, 'system')}. Under each item of the post is "
             "what a reading of it before this turn found, or that it was not read."
@@ -693,7 +692,7 @@ class SummonsHead:
 #: the table and a table row cannot outlive its builder.
 FRAMING: Mapping[str, type] = {
     cls.__name__: cls for cls in (
-        RepeatClause, ReminderHeader, GatheringHeader, ProactiveHeader, ComputeHeader,
+        RepeatClause, ReminderHeader, ProactiveHeader, ComputeHeader,
         RelayHeader, LostJobHeader, ParticipationHeader, AnnouncementHeader,
         RequestBody, ComputeBody, LostJobBody, ContextHeader, ClockLine, SummonsHead,
     )

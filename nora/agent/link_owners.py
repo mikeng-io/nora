@@ -75,6 +75,7 @@ import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ..domain.external_files import recognise as _recognise_file
 from ..domain.instagram_links import parse_link as _parse_instagram_link
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.x_links import parse_link as _parse_x_link
@@ -331,6 +332,17 @@ def _linkedin_claim(text: str) -> LinkClaim | None:
     )
 
 
+def _external_file_claim(text: str) -> LinkClaim | None:
+    """A shared file link (design/external-files §3): the domain's own pure
+    recogniser, so a link recorded as a handle at ingest and a link pasted
+    into a fetcher are claimed by the same rule. `network` is vendor-neutral
+    on purpose: the redirect note names `file_fetch`, never the provider."""
+    ref = _recognise_file(_with_scheme(text))
+    if ref is None:
+        return None
+    return LinkClaim(network="external_files", kind="file", readable=True)
+
+
 #: Instagram (PR 1), X and LinkedIn (PR 2, `design/social-per-network/
 #: 30-link-owner-registry.md` "Migration" step 2). Step 3 (PR 3, this commit):
 #: `instagram_read`, `x_read` and `linkedin_read` in `nora.agent.tools` now
@@ -351,15 +363,30 @@ LINK_OWNERS: tuple[LinkOwner, ...] = (
         network="linkedin", tool="linkedin_read", param="link",
         label="a LinkedIn link", claim=_linkedin_claim,
     ),
+    # design/external-files §3 (S3): a shared file link (a document,
+    # spreadsheet, slides or a stored file) is `file_fetch`'s, so `web_fetch`
+    # points at it instead of fetching a sign-in page. `media_fetch` and
+    # `computer_import` accept it (`LinkInput.accepts`): they take the
+    # file's bytes through the same source, to look at or to copy.
+    LinkOwner(
+        network="external_files", tool="file_fetch", param="link",
+        label="a link to an external file", claim=_external_file_claim,
+    ),
 )
 
 
-def owner_of(text: str) -> tuple[LinkOwner, LinkClaim] | None:
+def owner_of(
+    text: str, *, unwired: frozenset[str] = frozenset(),
+) -> tuple[LinkOwner, LinkClaim] | None:
     """The first owner in `LINK_OWNERS` that claims `text`, or `None`. `text`
     is read exactly as a fetcher's argument arrives — untrimmed, with or
     without a scheme — because each recogniser applies its own
-    `_with_scheme` before its parser sees it."""
+    `_with_scheme` before its parser sees it. An owner whose tool is in
+    `unwired` (it cannot read anything this turn: `file_fetch` with no
+    source) claims nothing."""
     for owner in LINK_OWNERS:
+        if owner.tool in unwired:
+            continue
         claim = owner.claim(text)
         if claim is not None:
             return owner, claim
@@ -399,6 +426,12 @@ class LinkInput:
     not_clause: str = ""
     then: str = ""
     verb: str = ""
+    #: Owner TOOLS whose links this parameter takes as its own rather than
+    #: redirecting: `computer_import` copies a shared file `file_fetch` owns
+    #: (design/external-files §5) and `media_fetch` looks at one that is a
+    #: picture or a video, so a file link reaches their bodies. A tool name,
+    #: never a network.
+    accepts: tuple[str, ...] = ()
 
 
 #: PR 3 ("the owners use the registry"): the slot set `instagram_read`,

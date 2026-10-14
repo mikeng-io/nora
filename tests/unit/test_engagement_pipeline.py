@@ -296,6 +296,7 @@ def _build_pipeline(
     debrief_wiring=None,
     decisions=None,
     defer_tools: bool = False,
+    turn_clock=None,
 ):
     # Always a real (fake) store, never `None`: every scenario below can read
     # `pipeline._tag_trace_store.saved` (mirroring how `pipeline._slots` is
@@ -340,6 +341,7 @@ def _build_pipeline(
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
         decisions=decisions,
+        clock=turn_clock,
         **extra,
     )
     return pipeline, metrics, audit, memory, background
@@ -423,6 +425,22 @@ def _prompt_text(call: dict) -> str:
         for message in call["pre_fill"] for block in message["content"]
     )
 
+
+
+async def test_the_clock_line_states_the_injected_clock():
+    """The tag turn's clock line reads the injected clock, as the fire path's
+    does and as the `now` tool does, so a turn frozen at a past instant (an
+    eval sandbox) states one time everywhere. It read the wall regardless.
+
+    Revert `now=` on the pipeline's `build_prefill` call and this goes RED."""
+    frozen = datetime(2026, 10, 11, 1, 5, tzinfo=UTC)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        turn_clock=lambda: frozen,
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert "Sunday 11 October 2026" in _prompt_text(pipeline._runner.calls[-1])
 
 async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     """The switch, end to end through the pipeline: the model is handed the
@@ -757,6 +775,38 @@ async def test_a_partial_multi_message_turn_is_not_topped_up_by_the_recovery():
 
     assert [t for _target, t in adapter.sent] == ["first"]
     assert metrics.get("nora_recovered_replies_total") == 0
+
+
+async def test_a_heads_up_then_work_then_prose_answer_is_recovered(monkeypatch):
+    """DEC-294's heads-up meets DEC-93. A line sent with `more=true` IS
+    delivered, so the recovery's «nothing delivered» gate used to drop an
+    answer she then wrote as prose, while the turn read as `replied` (review
+    of #754, 2026-10-09). The heads-up owes its answer until a send lands
+    after the work.
+
+    `reply_still_owed` is pinned here: this double hands hooks the tool's raw
+    return, not Strands' envelope, so the guard cannot read `sent` in it. The
+    guard's own reading is proven on the real Strands loop in
+    `tests/integration/test_guards_reply_more.py`; this proves the pipeline
+    honours it."""
+    from nora.agent.guards import ReplyGuard
+
+    monkeypatch.setattr(ReplyGuard, "reply_still_owed", property(lambda _self: True))
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(
+            tool_calls=[("send_reply", {"text": "let me check", "heads_up": True}),
+                        ("now", {})],
+            final_text="it is Thursday",
+        )]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert [t for _target, t in adapter.sent] == ["let me check", "it is Thursday"]
+    assert metrics.get("nora_recovered_replies_total") == 1
 
 
 async def test_a_refused_send_reply_followed_by_prose_is_still_recovered():

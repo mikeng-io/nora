@@ -67,9 +67,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -99,10 +101,10 @@ from nora.domain.decision_log import (
 )
 from nora.domain.documents_context import DocumentsView
 from nora.domain.events import Event, EventFactory
+from nora.domain.external_files import render_file_links
 from nora.domain.framing import (
     ComputeBody,
     ComputeHeader,
-    GatheringHeader,
     LostJobBody,
     LostJobHeader,
     ParticipationHeader,
@@ -111,7 +113,9 @@ from nora.domain.framing import (
     ReminderHeader,
     RequestBody,
 )
+from nora.domain.media import MediaBlob
 from nora.domain.media_join import MediaJoin
+from nora.domain.memo import Memo, MemoStore
 from nora.domain.models import (
     ConversationTarget,
     NormalizedMessage,
@@ -124,8 +128,10 @@ from nora.domain.ports import (
     DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
     CultureReader,
     JobResult,
+    JobStatus,
     LinkPreviewSource,
     MemoryStore,
+    OutboundAttachment,
     PlatformAdapter,
     RecordStore,
     RosterSource,
@@ -231,7 +237,7 @@ SILENT = "silent"
 # The proactive occasion's audience (design/dreamer-agent-loop/39 D4/D12,
 # DEC-162): a `kind="proactive"` reminder row — written by Nora's own decide
 # turn, owed to nobody — coming due. Its doctrine is read at this audience
-# (silence.md's may-speak rule reaches it; the heartbeat's obliged-to-speak
+# (`ProactiveHeader`'s may-speak rule reaches it; the heartbeat's obliged-to-speak
 # reading does not), its failures are labelled apart from the heartbeat's
 # and participation's, and a turn that ends without speaking answers
 # `SILENT`, the same healthy default participation has and the heartbeat
@@ -295,48 +301,6 @@ def reminder_occasion(rows: Sequence[Reminder]) -> Event:
     )
 
 
-def gathering_occasion(rows: Sequence[Reminder]) -> Event:
-    """A gathering's due notify, as the Event it is (DEC-139).
-
-    `kind="gathering"` rows carry the gathering title in
-    `payload["title"]` (denormalized at schedule time —
-    `GatheringService._link_reminder`, design/event-abstraction/05).
-    `body` is that title — the ONE fact she needs to say it back — and the
-    header does the rest, exactly like `reminder_occasion` keeps the
-    requester's own sentence in the body and puts the circumstances in the
-    header.
-
-    A missing `payload["title"]` is a WIRING BUG, not a runtime maybe: the
-    factory raises instead of `KeyError`-ing out of the blue, and the raise
-    lands in the same fail-closed path as an unregistered kind —
-    `HeartbeatLoop._run_turn`'s `_fire` guard resolves the claimed row to
-    FAILED (`failed_error`) immediately, never rendered as a malformed
-    sentence (see design/event-abstraction/04).
-    """
-    row = rows[0]
-    if not isinstance(row.payload, Mapping):
-        raise KeyError(
-            f"kind='gathering' reminder {row.id} has no payload — "
-            "the row was written without its denormalized payload"
-        )
-    title = row.payload.get("title")
-    if not isinstance(title, str):
-        raise KeyError(
-            f"kind='gathering' reminder {row.id} has no string "
-            "payload['title'] — the row was written without its "
-            "denormalized payload"
-        )
-    return Event(
-        platform=row.platform,
-        conversation_id=row.conversation_id,
-        conversation_type=row.conversation_type,
-        person_id=row.requester_person_id,
-        body=title,
-        header=lambda tagger, now: GatheringHeader(title, tagger).render(),
-        kind="gathering",
-    )
-
-
 def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     """A `kind="proactive"` row — Nora's own earlier decision — coming due
     (design/dreamer-agent-loop/39 D4, DEC-162): the ACT turn of the OODA
@@ -385,7 +349,7 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
 
 def compute_occasion(
     job: ComputeJob, result: JobResult, readback: DocumentReadBack | None = None,
-    *, checkpoint: str = "", kept_files: tuple[str, ...] = (),
+    *, checkpoint: str = "", kept_files: tuple[str, ...] = (), kept: MediaBlob | None = None,
 ) -> Event:
     """A finished compute job, as the occasion it is (Nora Compute spec §2)
     — the THIRD `Event`, reusing `FirePath.speak` exactly as
@@ -406,9 +370,23 @@ def compute_occasion(
     `checkpoint` is where a job that stopped had got to, already rendered to plain markdown by
     the one checkpoint renderer (design/subagent §4d); `kept_files` are the files code saw the
     worker keep. Neither is the worker's report, and neither is read from it.
+
+    A result that carries its artifact's bytes (`result.media`, a video clip) is delivered as an
+    ATTACHMENT on her message, and its provider link is neither attached nor put in the body:
+    the room receives the clip, never a link that expires. `kept` is its custody handle when the
+    poller stored it in the library, so the audit row records the clip as Nora-held.
     """
     if readback is None:
         readback = DocumentReadBack(missing=tuple(result.document_ids))
+    attachments: tuple[OutboundAttachment, ...] = ()
+    if result.status is JobStatus.SUCCEEDED and result.media:
+        media_type = result.media_type or "video/mp4"
+        name = kept.sha256[:12] if kept is not None else str(job.id)[:12]
+        ext = mimetypes.guess_extension(media_type) or ".bin"
+        attachments = (OutboundAttachment(
+            content=result.media, media_type=media_type, filename=f"nora-{name}{ext}",
+        ),)
+        result = replace(result, url=None)
     return Event(
         platform=job.platform,
         conversation_id=job.conversation_id,
@@ -420,6 +398,14 @@ def compute_occasion(
         header=lambda tagger, now: ComputeHeader(tagger).render(),
         kind="compute",
         document_urls=tuple(d.url for d in readback.found if d.url),
+        # A finished job's own result link rides with the message, attached by code, only when
+        # its bytes are not attached instead (a video clip that could not be fetched): the body
+        # tells her it is there and not to write it out.
+        attached_urls=(
+            (result.url,) if result.status is JobStatus.SUCCEEDED and result.url else ()
+        ),
+        attachments=attachments,
+        media_blobs=(kept,) if attachments and kept is not None else (),
     )
 
 
@@ -621,6 +607,9 @@ class FirePath:
         # `<documents>` (design/artifact §29): the SAME reader the tag path's assembler
         # holds. `None` while `[documents]` is off.
         documents: DocumentsContextReader | None = None,
+        # `<memos>` (DEC-306): the SAME store the tag path's assembler reads,
+        # keyed on the unit like `notes`. `None` renders no block.
+        memos: MemoStore | None = None,
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -703,6 +692,7 @@ class FirePath:
         # into this one. `None` keeps the tier inert, the pre-wiring shape
         # every test construction site has.
         self._notes = notes
+        self._memos = memos
         self._policy = policy
         # Lineage (design/cognition-loop/10-tiers.md §3): the SAME value the
         # tag path's assembler holds (`nora.app.assembler.lineage_policy`), so
@@ -947,7 +937,7 @@ class FirePath:
         # lookup because the note tier was off would render no decisions block
         # for a reason unrelated to decisions.
         unit: str | None = None
-        if self._notes is not None or self._decisions is not None:
+        if self._notes is not None or self._decisions is not None or self._memos is not None:
             unit = self._unit_for(occasion)
 
         # Issue #210 — read AFTER the transcript, because both reads are
@@ -969,7 +959,7 @@ class FirePath:
             character,
             unit_culture,
             self_account,
-            lessons,
+            (lessons, memos),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -983,7 +973,7 @@ class FirePath:
             self._read_character(occasion, ref, transcript),
             self._read_unit_culture(occasion),
             self._read_self_account(occasion),
-            self._read_lessons(occasion),
+            asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit)),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -1000,6 +990,7 @@ class FirePath:
             self_account=self_account,
             lessons=lessons,
             notes=notes,
+            memos=memos,
             decisions=decisions,
             presence=presence,
             computer=computer,
@@ -1369,6 +1360,21 @@ class FirePath:
             )
             return ()
 
+    async def _read_memos(self, occasion: Event, unit: str | None) -> tuple[Memo, ...]:
+        """The unit's kept memos (DEC-306), `_read_notes` mirrored: no store or
+        no unit renders none; a failed read is counted (`stage="fire_memos"`)
+        and renders none, never «nothing is kept» said with confidence."""
+        if self._memos is None or unit is None:
+            return ()
+        try:
+            return tuple(await self._memos.kept(unit=unit))
+        except Exception:
+            log.exception("fire memo-index read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_memos", platform=occasion.platform,
+            )
+            return ()
+
     async def _read_culture(self, occasion: Event) -> CultureRevision | None:
         """This room's current account, or `None` (design/culture-tier).
 
@@ -1521,9 +1527,9 @@ class FirePath:
 
         Dispatch by KIND, through the reminder-derived registry
         (DEC-139, design/event-abstraction/04): `rows[0].kind` selects the
-        factory that renders the batch's Event. Today that is
-        `"reminder"` → `reminder_occasion` and `"gathering"` →
-        `gathering_occasion`; an UNREGISTERED kind raises inside this call,
+        factory that renders the batch's Event (`"reminder"` →
+        `reminder_occasion`, `"proactive"` → `proactive_occasion`); an
+        UNREGISTERED kind raises inside this call,
         before `speak`, and `HeartbeatLoop._run_turn`'s `_fire` guard
         resolves the claimed rows to FAILED (`failed_error`) immediately —
         never rendered as a malformed sentence, never left FIRING for boot
@@ -1792,14 +1798,9 @@ class FirePath:
                 # of them (DEC-102).
                 nora_sender_id=identity.primary,
                 conversation_id=occasion.conversation_id,
-                # `allowed_mcp` left at its default (empty): `FirePath` has no
-                # `Policy`/allowlist collaborator wired in (unlike
-                # `EngagementPipeline`, which threads `self._policy` — see
-                # final-review Finding 1), so there is no per-conversation MCP
-                # scope available here to pass. Empty is the safe default —
-                # this mirrors the `.build()` call below, which likewise never
-                # passes `allowed_mcp` and so never appends an MCP tool to a
-                # fire turn.
+                # `allowed_mcp` left at its default (empty) on purpose: a fire
+                # turn is an occasion nobody asked for, so it gets no MCP tool,
+                # and the `surface()` call below likewise never passes one.
                 budgets=self._registry.budgets(),
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
                 param_names=self._registry.tool_param_names(),
@@ -1857,6 +1858,23 @@ class FirePath:
                 # the honest state (R-21), not a degraded one.
                 tagger=tagger, self_ids=self_ids,
             )
+            # DEC-74, sourced as the tag path sources it
+            # (`EngagementPipeline`): the room's own `location` flag. Left at
+            # the surface's `False` default, `where_is` held every fire turn to
+            # the strict gate (the subset AND the unnamed-account refusals
+            # DEC-79 waives), so a proactive turn in a `location = true` room
+            # was refused where a tag in the same room answered (Friends,
+            # 2026-09-27). The flag also relaxes `route`, `saved_places` and
+            # parking, as on a tag. No policy, an unlisted room, or a
+            # shadow-held participation turn stays strict: a held turn's text
+            # is posted to the review channel, another room than the one the
+            # check reads.
+            fire_convo = (
+                self._policy.conversation(occasion.platform, occasion.conversation_id)
+                if self._policy is not None
+                and not (occasion.kind == "participation" and self._shadow_channel is not None)
+                else None
+            )
             surface = self._registry.surface(
                 # design/tool-catalogue phase C: `[llm] defer_tools`.
                 defer=self._defer_tools,
@@ -1868,7 +1886,8 @@ class FirePath:
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer, room=room,
-                question=ctx.message.body, context_window=self._context_window,
+                question=render_file_links(ctx.message.body),
+                context_window=self._context_window,
                 metrics=self._metrics,
                 # DEC-146: the same window `build_prefill` renders below. A fire
                 # turn reads a real room's real transcript, so `who_said` works
@@ -1880,6 +1899,7 @@ class FirePath:
                 # is an unbounded loop, and the conversation it would fire into
                 # is this one.
                 fire_turn=True,
+                location_trusted=fire_convo.location if fire_convo is not None else False,
                 # DEC-89: the same carrier `handle`'s `Deliverer` holds. A fire
                 # turn can absolutely recommend a place («你話要我提你訂枱») and
                 # is a message into a real group, so it gets the link behaviour
@@ -1892,6 +1912,10 @@ class FirePath:
             # mint is a no-op and delivery would strip the very links we are delivering.
             for url in occasion.document_urls:
                 handle.links.mint_document(url, published=False)
+            for url in occasion.attached_urls:
+                handle.links.attach(url)
+            for attachment in occasion.attachments:
+                handle.links.carry_media(attachment, occasion.media_blobs)
             now = self._clock().astimezone()
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name,
@@ -2697,7 +2721,7 @@ def _window_query(transcript: Sequence[TranscriptRow]) -> str:
     # then yielded a two-row retrieval key, which is not «the window's newest
     # rows» — it is however many of them she did not write.
     bodies = [
-        row.body.strip() for row in transcript
+        render_file_links(row.body).strip() for row in transcript
         if not row.is_nora and row.body and row.body.strip()
     ]
     return "\n".join(bodies[-_QUERY_ROWS:])[:_QUERY_CHARS]

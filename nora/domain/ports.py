@@ -195,6 +195,10 @@ from nora.domain.computer import RunResult as RunResult
 from nora.domain.computer import StateResult as StateResult
 from nora.domain.culture import CultureRevision as CultureRevision
 from nora.domain.decision_log import DecisionRow as DecisionRow
+from nora.domain.external_files import ExternalFile as ExternalFile
+from nora.domain.external_files import ExternalFileRef as ExternalFileRef
+from nora.domain.external_files import FileBytes as FileBytes
+from nora.domain.external_files import FilePart as FilePart
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
@@ -778,6 +782,18 @@ class RecordStore(Protocol):
         to `unavailable`); a non-positive `limit` answers `[]` without a
         query. Hidden (withdrawn) rows are excluded, as in every transcript
         read."""
+        ...
+
+    async def external_file_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """`media_rows` for shared file links: the rows of ONE conversation
+        whose `external_files_json` is set, sent by somebody other than her,
+        with `ts >= since_ts`, NEWEST first, at most `limit`
+        (design/external-files/00-design.md §1). Raises when the database
+        cannot be read; a non-positive `limit` answers `[]` without a query.
+        Hidden rows are excluded. The one caller is
+        `nora.domain.external_files.resolve_file_code`."""
         ...
 
     async def recent_before(
@@ -1714,6 +1730,11 @@ class JobResult:
     # the files code saw it keep), so a delivery can say where a job that stopped had got to.
     checkpoint: Mapping[str, Any] | None = None
     checkpoint_at: datetime | None = None
+    # The finished artifact's own bytes, when the backend fetched them (a video clip, from the
+    # provider's expiring link): the poller keeps them in the blob store and the media index
+    # and the delivery carries them as an attachment, so `url` never reaches the room.
+    media: bytes | None = field(default=None, repr=False)
+    media_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -2208,6 +2229,39 @@ class LinkPreviewSource(Protocol):
     """
 
     async def preview_for(self, *, url: str) -> LinkPreview | None: ...
+
+
+@runtime_checkable
+class ExternalFilesSource(Protocol):
+    """One file provider, read-only (design/external-files/00-design.md §4).
+
+    `recognise` is PURE: no network, never raises, and it is what ingest
+    records handles with, so recording needs no account. The other three are
+    called only when somebody asks her to open a file (§2) and raise only
+    `nora.domain.external_files.ExternalFileError`, whose `status` is the
+    tool's answer. Nothing here writes, comments or shares: the source file
+    is never changed.
+
+    `part` counts from 1. `fetch_bytes` is for the copy to her computer (§5):
+    the bytes and their media type, a native file exported to its office
+    format. Only bytes leave the adapter; the credential never does. `accept`
+    (media-type prefixes such as `image/`) refuses, as `refused`
+    `NOT_ACCEPTED` with the file's `kind`, any file whose bytes would be of
+    another type, from its metadata alone: nothing is exported or downloaded.
+    Empty takes every type.
+    """
+
+    name: str
+
+    def recognise(self, *, url: str) -> ExternalFileRef | None: ...
+
+    async def describe(self, *, ref: ExternalFileRef) -> ExternalFile: ...
+
+    async def read(self, *, ref: ExternalFileRef, part: int) -> FilePart: ...
+
+    async def fetch_bytes(
+        self, *, ref: ExternalFileRef, accept: tuple[str, ...] = (),
+    ) -> FileBytes: ...
 
 
 @runtime_checkable
@@ -2865,7 +2919,15 @@ class ImageGenerator(Protocol):
     Reference images are custody handles only (`ImageReference.marker_code`
     resolved inside the caller's own conversation) — the adapter refuses an
     external URL (design/proposed/29-image-generation §5.1).
+
+    `max_reference_images` is how many references this provider takes in one
+    call: its vendor's limit, or a lower operator override from its config
+    section. The tool states it and refuses a call above it; the provider is
+    the only thing that knows it (DEC-307, design/proposed/29 §12).
     """
+
+    @property
+    def max_reference_images(self) -> int: ...
 
     async def generate(
         self,

@@ -40,12 +40,14 @@ from ..domain.computer_exports import ComputerExportStore
 from ..domain.computer_leases import ComputerLeases
 from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
+from ..domain.memo import MemoStore
 from ..domain.models import TranscriptRow
 from ..domain.ports import (
     BlobStore,
     BrowserRunner,
     CultureReader,
     DiscordPresenceSource,
+    ExternalFilesSource,
     GifSource,
     MediaDescriptionStore,
     MediaObjectStore,
@@ -86,6 +88,7 @@ from .tools import (
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
     SUBAGENT_TOOLS,
+    VIDEO_TOOLS,
     DocumentPublisher,
     EventsCollaborator,
     ImageGenerator,
@@ -98,6 +101,7 @@ from .tools import (
     hot_tools,
     utc_now,
 )
+from .video_desk import VideoDesk
 from .whereis import Circle, PresenceReader
 
 log = logging.getLogger("nora.agent.registry")
@@ -205,6 +209,8 @@ class ToolRegistry:
         events: EventsCollaborator | None = None,
         notes: NoteCollaborator | None = None,
         note_unit: Callable[[str, str], str | None] | None = None,
+        # `memo_read`'s memo store (DEC-306): `None` withholds it.
+        memos: MemoStore | None = None,
         unit_for: Callable[[str, str], str | None] | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
         # Nora's computer (design/sandbox-runtime, DEC-243): the runtime is
@@ -262,8 +268,19 @@ class ToolRegistry:
         # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools call. Without
         # it the registry withholds them from every turn.
         subagent: SubagentDesk | None = None,
+        # `[video_gen]` wired (ships off): the desk `video_create` calls, and the reference
+        # kinds its gates allow (`image`, `video`, `audio`). Without the desk the registry
+        # withholds the tool from every turn.
+        video: VideoDesk | None = None,
+        video_ref_kinds: frozenset[str] = frozenset(),
+        # `[external_files]` (design/external-files §4, ships off): the one
+        # read-only source a shared file link is opened through, held for the
+        # life of the process like `route`. `None` answers the open
+        # `unavailable`.
+        external_files: ExternalFilesSource | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
+        self._external_files = external_files
         self._record = record
         self._documents = documents
         self._lineage = lineage
@@ -283,12 +300,16 @@ class ToolRegistry:
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
             | (frozenset() if culture is not None else frozenset({"character_read"}))
+            | (frozenset() if memos is not None else frozenset({"memo_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
             | (frozenset() if browser is not None else frozenset({"computer_browse"}))
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
+            | (frozenset() if video is not None else VIDEO_TOOLS)
         )
         self._subagent = subagent
+        self._video = video
+        self._video_ref_kinds = video_ref_kinds
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no
         # key, so the same default-construct argument applies: a required
@@ -443,6 +464,7 @@ class ToolRegistry:
         # past the boundary spec §3 and DEC-105/R-49 both rest on. It takes
         # `(platform, conversation_id)` and may answer `None`.
         self._notes = notes
+        self._memos = memos
         self._note_unit = note_unit
         # ONE resolver for every unit-keyed tool. `note_unit` is its
         # older name and still works; `unit_for` is what a tier outside
@@ -872,6 +894,10 @@ class ToolRegistry:
             question="",
             context_window=40,
             transit_source=self._transit,
+            # `generate_image` states the wired provider's reference limit in
+            # its description (DEC-307); without the generator the portal
+            # would show a description no deployed turn reads.
+            image_generator=self._image_generator,
         )
 
     @property
@@ -1054,7 +1080,7 @@ class ToolRegistry:
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
-            notes=self._notes, note_unit=self._note_unit,
+            notes=self._notes, note_unit=self._note_unit, memos=self._memos,
             unit_for=self._unit_for,
             supplied_unit=supplied_unit,
             links=links,
@@ -1084,6 +1110,8 @@ class ToolRegistry:
             media_store=self._media_store,
             documents=self._documents,
             subagent=self._subagent,
+            video=self._video, video_ref_kinds=self._video_ref_kinds,
+            external_files=self._external_files,
             shelf=shelf,
             on_rows=on_rows,
         )

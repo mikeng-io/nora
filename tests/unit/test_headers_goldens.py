@@ -5,11 +5,15 @@ builders in ONE module, and NOT ONE BYTE the model reads changes.
 **The goldens in `tests/fixtures/context_assembly_step4b_goldens.json` were
 captured from `master` at `15b6ea8b`, BEFORE any builder was touched**, and are
 the criterion. Nothing here regenerates a golden: changing one is a
-model-visible change and belongs in a step that says so. What is compared is the
-whole text each seam produces, never a substring of it:
+model-visible change and belongs in a step that says so (2026-10-13: every summons
+head gained "A reply longer than 320 characters is not posted at all.", the limit
+`public/conduct.md` used to state as 300; design/context-plan/12 §4; and every
+proactive header gained "and most turns like this one end that way.", the base
+rate `silence.md` carried until it dissolved, §2). What is
+compared is the whole text each seam produces, never a substring of it:
 
 * every fire `Event` kind, through its public factory (`reminder_occasion`,
-  `gathering_occasion`, `proactive_occasion`, `compute_occasion`,
+  `proactive_occasion`, `compute_occasion`,
   `relay_occasion`, `lost_job_occasion`, `participation_occasion` and the
   announcer's `_occasion`): the `header(tagger, now)` the turn renders, the
   `body` put to her, the speaker and the kind. Each interpolated field is swept
@@ -70,7 +74,6 @@ from nora.app import announce as announce_module
 from nora.app.announce import AnnouncementTarget
 from nora.app.fire import (
     compute_occasion,
-    gathering_occasion,
     lost_job_occasion,
     participation_occasion,
     proactive_occasion,
@@ -352,30 +355,6 @@ def _stamps_naive() -> Any:
 
 
 # =============================================================================
-# gathering
-# =============================================================================
-
-
-def _gathering(title: str) -> Event:
-    return gathering_occasion([_row(kind="gathering", payload={"title": title})])
-
-
-@_case("gathering-the-title")
-def _gathering_title() -> Any:
-    return _sweep(lambda v: _event(_gathering(v)))
-
-
-@_case("gathering-the-requesters-name")
-def _gathering_name() -> Any:
-    return _sweep(lambda v: _event(_gathering("Friday dinner"), _person(v)))
-
-
-@_case("gathering-no-tagger")
-def _gathering_no_tagger() -> Any:
-    return _event(_gathering("Friday dinner"), None)
-
-
-# =============================================================================
 # proactive
 # =============================================================================
 
@@ -603,7 +582,6 @@ _FIRST = PersonRef(
 def _first_name() -> Any:
     return {
         "reminder": _event(reminder_occasion([_row()]), _FIRST),
-        "gathering": _event(_gathering("Friday dinner"), _FIRST),
         "proactive": _event(_proactive({"note_title": "plan"}), _FIRST),
         "participation": _event(participation_occasion(
             platform="signal", conversation_id="c", relevance_score=0.4), _FIRST),
@@ -630,7 +608,6 @@ def _kitchen_sink() -> Any:
                                               count=4), created_at=T0 - timedelta(days=3))]
     return {
         "reminder": _event(reminder_occasion(rows), who),
-        "gathering": _event(_gathering(HOSTILE["forge"]), who),
         "proactive": _event(_proactive({"note_title": HOSTILE["crlf"]}), who),
         "compute": _event(_compute(_job(task=_mix(5)), JobResult(
             JobStatus.SUCCEEDED, url=_mix(6), summary=_mix(7))), who),
@@ -714,7 +691,7 @@ def _prefill_default() -> Any:
 def _prefill_fire() -> Any:
     who = _person(HOSTILE["nasty"])
     events = {
-        "reminder": reminder_occasion([_row()]), "gathering": _gathering("dinner"),
+        "reminder": reminder_occasion([_row()]),
         "proactive": _proactive({"note_title": "plan"}), "compute": _compute(),
         "relay": _relay(), "lost": lost_job_occasion(_job()),
         "participation": participation_occasion(
@@ -893,7 +870,6 @@ _TURN_EVENTS: dict[str, Callable[[], Event]] = {
                                                    count=4)),
         _row(text="two", created_at=T0 - timedelta(days=1), due_at=T0 + timedelta(days=1)),
     ]),
-    "gathering": lambda: _gathering(HOSTILE["nasty"]),
     "proactive": lambda: _proactive({"note_title": HOSTILE["nasty"]}),
     "compute": lambda: _compute(_job(task=HOSTILE["nasty"]), JobResult(
         JobStatus.SUCCEEDED, url="https://example.test/a?x=1&y=2", summary=HOSTILE["forge"])),
@@ -970,14 +946,14 @@ def test_the_cases_are_deterministic() -> None:
 def test_the_suite_covers_every_kind_an_event_can_have() -> None:
     kinds = {
         ev["kind"]
-        for name in ("reminder-no-tagger", "gathering-no-tagger", "compute-no-tagger",
+        for name in ("reminder-no-tagger", "compute-no-tagger",
                      "lost-job-no-tagger", "participation-the-event-and-its-defaults",
                      "proactive-a-payload-that-names-no-usable-title",
                      "relay-the-requesters-name", "announcement-the-version")
         for ev in _flatten(GOLDEN[name])
     }
     assert kinds == {
-        "reminder", "gathering", "proactive", "compute", "compute_lost", "relay",
+        "reminder", "proactive", "compute", "compute_lost", "relay",
         "participation", "version_announcement",
     }
 

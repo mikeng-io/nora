@@ -10,7 +10,7 @@ edges:
   - {dst: ../sandbox-runtime/00-design.md, rel: depends_on, provenance: asserted}
   - {dst: ../artifact/00-design.md, rel: depends_on, provenance: asserted}
   - {dst: ../cognition-loop/30-cognition.md, rel: depends_on, provenance: asserted}
-  - {dst: ../proposed/33-video-generation.md, rel: relates_to, provenance: asserted}
+  - {dst: ../video-generation/00-design.md, rel: relates_to, provenance: asserted}
 ---
 
 # Sub-agent
@@ -65,7 +65,7 @@ The outbox was built 2026-08-13 for `make_artifact` (DEC-99): launch the
 work, wait about 15 s, and on a slower job write a row so the result arrives
 later through `FirePath.speak`, delivered at most once by a compare-and-set
 claim. Smith was its only worker; the mechanism was always generic. Video
-generation (`design/proposed/33-video-generation.md`) is a second worker
+generation (`design/video-generation/00-design.md`) is a second worker
 waiting for the same outbox, which is why the table stays generic (§6).
 
 ## 3. The tool family

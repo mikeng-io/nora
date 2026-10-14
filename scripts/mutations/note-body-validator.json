@@ -9,7 +9,7 @@
   {
     "name": "section_order: headings accepted in any order and repeated",
     "file": "nora/domain/note_body.py",
-    "old": "            if sections and SECTIONS.index(heading) <= SECTIONS.index(sections[-1][0]):",
+    "old": "            if sections and schema.index(heading) <= schema.index(sections[-1][0]):",
     "new": "            if False:",
     "target": "tests/unit/test_note_body.py::test_a_heading_repeated_or_out_of_order_is_refused"
   },
@@ -65,7 +65,7 @@
   {
     "name": "cites_nora: a line citing Nora's own message is accepted",
     "file": "nora/domain/note_body.py",
-    "old": "        elif row.is_nora:",
+    "old": "        elif row.is_nora and not may_cite_nora:",
     "new": "        elif False:",
     "target": "tests/unit/test_note_body.py::test_a_line_citing_noras_own_message_is_refused"
   },
@@ -79,9 +79,9 @@
   {
     "name": "misattributed: an attributed line naming nobody is accepted",
     "file": "nora/domain/note_body.py",
-    "old": "    if not names or not all(names):",
-    "new": "    if False:",
-    "target": "tests/unit/test_note_body.py::test_a_name_that_wrote_none_of_the_cited_messages_is_refused"
+    "old": "    if not names or not all(names):\n        raise NoteBodyError(",
+    "new": "    if False:\n        raise NoteBodyError(",
+    "target": "tests/unit/test_note_body.py::test_a_missing_or_first_name_attribution_is_completed_only_when_one_person_can_have_said_it"
   },
   {
     "name": "unknown_owner: Nora accepted as an Owed owner",

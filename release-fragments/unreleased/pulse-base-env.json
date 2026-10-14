@@ -1,0 +1,6 @@
+{
+  "type": "fix",
+  "summary": "The game-server lookup reaches the real dashboard again: the container is now handed its address from the deployment's private settings.",
+  "details": [],
+  "limitations": []
+}

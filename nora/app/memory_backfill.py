@@ -68,6 +68,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from nora.domain.external_files import render_file_links
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore
@@ -145,16 +146,19 @@ def _items(row: TranscriptRow) -> list[tuple[str, dict[str, object], int]]:
     (`nora.ingest.stages.memory_feed.run`). Only the LATEST edit survives in
     the transcript, so an edited-twice row replays as its first version plus
     its last."""
-    body = (row.body or "").strip()
+    # The file-link handle, never the URL, as the live feed sends it
+    # (design/external-files §1).
+    body = render_file_links(row.body or "").strip()
     if row.edit is None:
         return [(body, {"ts": row.ts}, row.ts)] if body else []
-    first = (row.edit.was or "").strip()
+    was = render_file_links(row.edit.was or "")
+    first = was.strip()
     out: list[tuple[str, dict[str, object], int]] = []
     if first:
         out.append((first, {"ts": row.ts}, row.ts))
     if body:
         out.append((
-            edit_text(body=body, first_body=row.edit.was),
+            edit_text(body=body, first_body=was),
             {"ts": row.edit.ts, "edit_of_ts": row.ts},
             row.edit.ts,
         ))

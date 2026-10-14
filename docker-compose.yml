@@ -44,7 +44,10 @@ services:
     # HTTP server comes up and every RPC works while signal-cli never opens its
     # websocket to Signal — so not one message is delivered. The host daemon
     # ran that way for two months, and under R-5 it looked like a quiet group.
-    command: ["--account", "+85290000100", "daemon", "--http", "0.0.0.0:18080", "--receive-mode", "on-start"]
+    # The account is the deployment's own phone number, so it lives in `.env`
+    # (`SIGNAL_ACCOUNT`), never in git: the identifier scrub (#767) replaced the
+    # literal here with a pseudonym and signal-cli came up unregistered.
+    command: ["--account", "${SIGNAL_ACCOUNT:?set SIGNAL_ACCOUNT in .env}", "daemon", "--http", "0.0.0.0:18080", "--receive-mode", "on-start"]
     healthcheck:
       # Probes the RUNNING daemon over JSON-RPC. The previous check was
       # `signal-cli --version`, which forks a fresh JVM, prints a string and
@@ -311,6 +314,13 @@ services:
       #   runs here, not in the collector). Found unpassed on 2026-09-30 by the
       #   same check; empty keeps today's behaviour.
       - HKGOV_MAPS_TOKEN=${HKGOV_MAPS_TOKEN:-}
+      #   GOOGLE_OAUTH_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN —
+      #   [google], Nora's ONE Google identity shared by every Google service
+      #   she uses (design/external-files §4). Read only when one is switched
+      #   on; recording a link as a handle needs none of them.
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REFRESH_TOKEN=${GOOGLE_OAUTH_REFRESH_TOKEN:-}
       #   TAVILY_API_KEY / EXA_API_KEY — the `web_search`/`web_fetch` tools.
       #   BOTH are passed and only the one named by `[search.<provider>]
       #   api_key_env` is ever read (DEC-157), so flipping `[search] provider`
@@ -348,6 +358,11 @@ services:
       #   against it. Same OPTIONAL posture: `[image_gen].enabled` in
       #   config.toml PLUS this present is what turns the lane on.
       - XAI_OAUTH_REFRESH_TOKEN=${XAI_OAUTH_REFRESH_TOKEN:-}
+      #   OPENAI_CODEX_REFRESH_TOKEN — the OpenAI Codex image lane's
+      #   BOOTSTRAP token (DEC-304), written by `nora openai-codex-login`.
+      #   The rotating token after it lives in ./state/openai-codex-oauth.json.
+      #   Read only when `[image_gen] provider = "openai_codex"`.
+      - OPENAI_CODEX_REFRESH_TOKEN=${OPENAI_CODEX_REFRESH_TOKEN:-}
       #   DISCORD_BOT_TOKEN     — the Gateway/REST credential for the Discord
       #   adapter ([platforms.discord] enabled, DEC-102). Passed explicitly for
       #   the same reason as every value above: Compose does not inherit host
@@ -377,6 +392,9 @@ services:
       #   composition.py builds no games_client and the games routes answer
       #   503 (R-5-shaped: absent, never a crash or a guessed 200).
       - PULSE_API_TOKEN=${PULSE_API_TOKEN:-}
+      # The Pulse REST base (a private tailnet host), read with the token
+      # above (`nora.app.composition`); unset keeps the source's placeholder.
+      - PULSE_API_BASE=${PULSE_API_BASE:-}
       # The group is in Hong Kong. Without this the container runs UTC, and
       # `nora.agent.prefill._now_line` — which calls `datetime.now().astimezone()`
       # — tells her it is 07:05 when the group's clock says 15:05.
@@ -397,12 +415,13 @@ services:
       # Unset behaves exactly as the old `./data` did. It is a compose-only
       # variable: the process no longer reads it (S3b).
       - ${NORA_DATA_HOST_ROOT:-./data}:/app/data
-      # OAuth state (DEC-137): the xAI access-token state file
-      # (`./state/xai-oauth.json`) lives in the SAME repo-tree state dir
-      # signal-cli's identity keys already use — container-writable (the
-      # access token refreshes through it), while the long-lived refresh
-      # token stays in the host `.env` (immutable, DEC-8). The access token
-      # never rides the `.env` restart race.
+      # OAuth state (DEC-137, DEC-304, DEC-308): `./state/xai-oauth.json` and
+      # `./state/openai-codex-oauth.json` live in the SAME repo-tree state dir
+      # signal-cli's identity keys already use, container-writable. Both
+      # issuers rotate the refresh token on use, so the host `.env`
+      # (immutable, DEC-8) holds only the bootstrap a login wrote and these
+      # files are the ONLY live copy of each chain: losing one means logging
+      # in again. The daemon refreshes both on a schedule (DEC-308).
       - ./state:/app/state
       - ./config.toml:/app/config.toml:ro
       - ./identity.toml:/app/identity.toml:ro

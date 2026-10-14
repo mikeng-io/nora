@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from nora.domain.summons import (
     MAX_ITEMS_SHOWN,
+    PUBLIC_REPLY_MAX_CHARS,
     READING_MAX_CHARS,
     Comment,
     ItemReading,
@@ -108,6 +110,18 @@ def test_the_render_carries_an_age_on_everything_and_says_which_end_is_newest():
     assert "@user3, 57m ago: comment 3" in text
     assert "[the comment that tagged you]" in text
     assert "(4 other comment(s) on this post are not shown)" in text
+
+
+def test_the_turn_states_the_limit_its_reply_is_refused_over():
+    """The limit a reply is refused over (`too_long` in `nora.app.summons`)
+    is told to her by the turn, from the constant itself, and by no doctrine
+    (design/context-plan/12 §4): a number in doctrine drifts from the code,
+    as public/conduct.md's 300 against the cap's 320 did."""
+    head = render_summons(_context()).split("\n", 1)[0]
+    assert f"A reply longer than {PUBLIC_REPLY_MAX_CHARS} characters is not posted at all." in head
+    doctrine = Path(__file__).parents[2] / "nora" / "doctrine"
+    conduct = (doctrine / "public" / "conduct.md").read_text()
+    assert not re.search(r"\d+\s+characters", conduct)
 
 
 def test_everything_a_stranger_wrote_is_inside_a_social_post_block():

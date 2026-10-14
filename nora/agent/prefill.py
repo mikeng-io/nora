@@ -9,7 +9,7 @@ for its own injected XML, with the label replaced by the sentence (#314).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 from ..domain.blocks import (
     BlockKey,
@@ -23,7 +23,14 @@ from ..domain.blocks import (
 from ..domain.decision_log import (
     render_decisions,
 )
-from ..domain.framing import CLOSING_LINE, TAG_HEADER, ClockLine, ContextHeader
+from ..domain.external_files import render_file_links
+from ..domain.framing import (
+    CLOSING_LINE,
+    SPOKEN_TURN,
+    TAG_HEADER,
+    ClockLine,
+    ContextHeader,
+)
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.quote_window import first_by_ts
@@ -37,6 +44,7 @@ from ..language.culture_render import (
 )
 from ..language.documents_render import render_documents
 from ..language.lesson_render import render_lessons
+from ..language.memo_render import render_memos
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
 from ..language.standing_render import render_standing, render_standing_working_set
@@ -159,6 +167,10 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("peer_history", 30, "person"),
     ("people_in_window", 35, "room"),
     ("notes", 40, "unit"),
+    # WHAT THE GROUP SETTLED AND KEEPS (DEC-306): unit-wide like `notes`, right
+    # after them, titles and ids only. Renders only where `TagContext.memos` is
+    # filled.
+    ("memos", 42, "unit"),
     ("loop_decisions", 50, "unit"),
     # CULTURE (#324, rebased 2026-09-22). The catalogue line #324 carried
     # here is gone — #314 made every block say what it is from its own
@@ -204,6 +216,14 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # block is keyed off the same `(platform, conversation_id)` row.
     ("standing_working_set", 65, "room"),
     ("group_transcript", 70, "room"),
+    # HOW THIS TURN REACHED HER, AND HOW HER REPLY WILL (design/context-plan/11
+    # §4 layer E, §6 step 3; 10-doctrine-audit «Spoken turns», C6). Renders only
+    # when the message she is answering was spoken in a voice channel
+    # (`NormalizedMessage.voice`, set only by `nora/web/voice.py`); a typed turn
+    # renders nothing. Last, so it sits directly before the message it describes.
+    # `turn`: it is a fact about one message. Never in the doctrine or the
+    # header, both cached: a voice turn differs in what it IS, not in the law.
+    ("spoken_turn", 75, "turn"),
 )
 
 #: Rendered by `build_tag_message`, in the message AFTER the prefill — declared
@@ -847,6 +867,18 @@ def _presence_block(ctx: TagContext) -> ContextBlock:
     return render_presence(presence)
 
 
+def _spoken_turn_block(ctx: TagContext) -> ContextBlock | None:
+    """`<spoken_turn>` when the message being answered was spoken, else nothing.
+
+    Read off `ctx.message.voice`, the typed field the Discord adapter also
+    routes the reply on (`target.voice`), so the prompt and the delivery cannot
+    disagree about whether this reply will be heard.
+    """
+    if not ctx.message.voice:
+        return None
+    return _block("spoken_turn", body=SPOKEN_TURN)
+
+
 def _standing_block(
     ctx: TagContext, view: DerivedView | None = None,
 ) -> ContextBlock | None:
@@ -1044,6 +1076,7 @@ def build_prefill(
             _peer_history_block(ctx),
             _people_in_window_block(ctx),
             _restamp(_notes_block(ctx, now=clock, view=view)),
+            _restamp(render_memos(ctx.memos, tz=clock.tzinfo or UTC)),
             _restamp(_decisions_block(ctx, now=clock)),
             _restamp(_culture_block(ctx, now=clock, view=view)),
             _restamp(render_unit_culture(ctx.unit_culture, now=clock)),
@@ -1054,6 +1087,7 @@ def build_prefill(
             _restamp(_standing_block(ctx, view)),
             _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
             _transcript_block(ctx, display_name, clock, context_window),
+            _spoken_turn_block(ctx),
         ])
         # WHICH blocks were actually built (non-empty body — `assemble`'s own
         # test, see `_declared`'s docstring for why a block with nothing to
@@ -1137,7 +1171,7 @@ def _replying_to_block(ctx: TagContext, display_name: str) -> str:
     # a PROMPT CHANGE: see `build_tag_message`.
     return ContextBlock(
         name="replying_to", attrs=(("author", _label(parent, display_name)),),
-        body=escape(parent.body or ""),
+        body=escape(render_file_links(parent.body or "")),
     ).render() + "\n"
 
 
@@ -1177,5 +1211,5 @@ def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -
         # work", which carries the meaning and matches neither spelling the
         # framing gate accepts — so the block would have shipped with a marker
         # and a clause the gate could not see, which is the shape #187 collects.
-        body=f"{quoted}{escape(ctx.message.body)}",
+        body=f"{quoted}{escape(render_file_links(ctx.message.body))}",
     ).render()

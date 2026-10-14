@@ -44,6 +44,7 @@ from nora.domain.summons import (
     SUMMONS_MODES,
     SUMMONS_OUTCOMES,
 )
+from nora.domain.video import CLIP_KEEP_OUTCOMES, VIDEO_OUTCOMES
 
 _DEFAULT_BUCKETS: tuple[float, ...] = (0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30)
 
@@ -98,6 +99,23 @@ class _HistogramSpec(NamedTuple):
 # was invisible in the other three): nora_tags_total, nora_replies_total,
 # nora_silent_failures_total, nora_errors_total.
 _COUNTERS: tuple[_CounterSpec, ...] = (
+    # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`). The alert reads
+    # the timestamp gauges below, never these: a rare counter reads empty after
+    # the restarts this process sees every day.
+    _CounterSpec(
+        "nora_oauth_refresh_failures_total",
+        "OAuth refresh attempts that failed, by lane (xai / openai_codex) and "
+        "reason (auth: the issuer refused the refresh token, a new login is "
+        "needed; state_unwritable; down; rate_limited; cloudflare). Counts the "
+        "keeper's attempts and live calls' alike.",
+        ("lane", "reason"),
+    ),
+    _CounterSpec(
+        "nora_oauth_keepalive_restarts_total",
+        "Times a lane's OAuth keepalive loop raised and was restarted by its "
+        "supervisor. Any increment is a bug; the traceback is in the log.",
+        ("lane",),
+    ),
     # Music liveness (2026-09-22). There was NO music metric of any kind
     # before this — not "not collected", never declared — so no alert rule
     # could exist and a wedged controller sat green for days. This is the
@@ -825,9 +843,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # second series counting the same calls would double any tool-volume sum.
     #   ok            — described (see `cached` for hit/miss).
     #   nothing_found — no such image in view here.
-    #   ambiguous     — two in-scope blobs share the handle prefix.
+    #   ambiguous     — two in-scope blobs share the handle prefix, or a blob
+    #                   and a shared file's link handle do.
+    #   refused       — a shared file the source refused (not shared with her,
+    #                   too large, download turned off).
     #   not_an_image  — the handle resolved to a blob NO describer reads (a
-    #                   file). Since DEC-114 this no longer covers voice notes
+    #                   file), or a shared file that is not a picture or video.
+    #                   Since DEC-114 this no longer covers voice notes
     #                   and videos: those are describable modalities, so an
     #                   unconfigured one is `unavailable`, not this.
     #   unavailable   — custody off, the blob was absent/corrupt, the modality
@@ -838,7 +860,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_media_fetch_total",
         "media_fetch calls, by outcome (ok / nothing_found / ambiguous / "
-        "not_an_image / unavailable), whether the description was served "
+        "refused / not_an_image / unavailable), whether the description was served "
         "from the content-hash cache (cached=true/false), and who asked "
         f"(caller={' / '.join(MEDIA_FETCH_CALLERS)}).",
         ("status", "cached", "caller"),
@@ -975,6 +997,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("outcome",),
     ),
     _CounterSpec(
+        "nora_video_jobs_total",
+        "Video clips (`video_create`, design/video-generation) by outcome: at create "
+        + " / ".join(VIDEO_OUTCOMES[:3]) + "; how a started clip ended "
+        + " / ".join(VIDEO_OUTCOMES[3:]) + ". A terminal outcome may count again when "
+        "delivery is deferred by a held room and the next tick polls the same clip.",
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_video_clip_keep_total",
+        "Finished video clips fetched from the provider's expiring link and kept in Nora's "
+        "own storage, by outcome: " + " / ".join(CLIP_KEEP_OUTCOMES) + ". retry leaves the "
+        "row pending for the next tick; too_large, not_mp4 and gave_up deliver the link "
+        "instead of the clip; unstored still attaches the clip but it is not in the library.",
+        ("outcome",),
+    ),
+    _CounterSpec(
         "nora_subagent_checkpoint_unwritten_total",
         "Sub-agent checkpoint updates that found no pending job row to write to (design/subagent "
         "§4d): the row is written after launch, so an early one is expected; the terminal "
@@ -1091,7 +1129,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "appended (a place the reply named had a minted maps link the text did "
         "not carry), document_added (a document was published this turn and its "
         "link was added), stripped (the reply carried a link to one of our "
-        "documents that no tool had handed her).",
+        "documents that no tool had handed her), media_attached (a message reached "
+        "the room carrying media code attached for the turn: a finished video clip).",
         ("outcome",),
     ),
     # DEC-105. `ok` is a message that reached another room; every other value is
@@ -2122,9 +2161,48 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Checks of a one-time code, by outcome (" + " / ".join(OTP_CHECK_OUTCOMES) + ").",
         ("outcome",),
     ),
+    # Nora's one Google identity (`nora.infra.google.auth`, design/external-
+    # files §4, §7): the shared refresh token refused as `invalid_grant`
+    # (revoked, expired, or a Testing-mode consent screen's 7-day expiry).
+    # Counted on its own so a dead sign-in is one alert rather than a week of
+    # `unavailable` from every Google service at once.
+    _CounterSpec(
+        "nora_google_invalid_grant_total",
+        "Refreshes of Nora's one Google refresh token refused as invalid_grant "
+        "(the sign-in is revoked or expired: run scripts/google_auth.py again).",
+        (),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
+    # The OAuth keepalive (DEC-308). Published at registration from the state
+    # file, so a restart does not blank them; absent while no lane is kept
+    # (image generation off, or no token): not applicable, never 0.
+    _GaugeSpec(
+        "nora_oauth_last_refresh_timestamp_seconds",
+        "Unix time of the lane's last SUCCESSFUL token refresh (0: none under "
+        "the current login). `time() - this` past twice the interval means the "
+        "keepalive is not keeping the login alive.",
+        ("lane",),
+    ),
+    _GaugeSpec(
+        "nora_oauth_access_expiry_timestamp_seconds",
+        "Unix time the lane's current access token expires (0: unknown).",
+        ("lane",),
+    ),
+    _GaugeSpec(
+        "nora_oauth_refresh_interval_seconds",
+        "The lane's configured keepalive interval: the longest it goes without "
+        "a refresh. The staleness alert compares against twice this.",
+        ("lane",),
+    ),
+    _GaugeSpec(
+        "nora_oauth_refresh_refused",
+        "1 when the lane's last refresh failed for a reason no retry fixes (the "
+        "issuer refused the refresh token, or the state file is unwritable); 0 "
+        "after a success or at registration.",
+        ("lane",),
+    ),
     # The divergence itself, which IS the failure rather than a proxy for
     # it: nora's belief on one side, the controller's own report on the
     # other. Both 1 = agreement. expected=1 with controller=0 sustained is

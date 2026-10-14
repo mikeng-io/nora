@@ -177,7 +177,6 @@ def test_a_line_citing_noras_own_message_is_refused():
 
 def test_a_name_that_wrote_none_of_the_cited_messages_is_refused():
     assert _refused("## Decided\n- x (Cat) [4815]\n## Open") == "misattributed"
-    assert _refused("## Decided\n- x [4815]\n## Open") == "misattributed"
     # Control: the author of the cited message.
     parse_note_body("## Decided\n- x (Ben) [4815]\n## Open", shown=SHOWN)
     carried = Shown(rendered=SHOWN.rendered, carried=frozenset({9999}), nora_names=SHOWN.nora_names)
@@ -186,6 +185,41 @@ def test_a_name_that_wrote_none_of_the_cited_messages_is_refused():
     # One rendered id is enough to check against, and Nora is never an author.
     assert _refused("## Decided\n- x (Eve) [4815, 9999]\n## Open", shown=carried) == "misattributed"
     assert _refused("## Decided\n- x (Nora) [9999]\n## Open", shown=carried) == "misattributed"
+
+
+def test_a_missing_or_first_name_attribution_is_completed_only_when_one_person_can_have_said_it():
+    """Who wrote a cited rendered message is code's fact: a line that leaves
+    `(<names>)` out while citing ONE sender, or writes a first name exactly one
+    cited sender extends, is completed from the rendered `from`. Several cited
+    senders stay a refusal that lists them; so does a name the slot cannot hold."""
+    full = Shown(rendered=(
+        ShownMessage(5001, "Tyler Cortez", "p_tyler"),
+        ShownMessage(5002, "Avery Walsh", "p_avery"),
+        ShownMessage(5003, "Tyler Lee", "p_tlee"),
+        ShownMessage(5004, "Tyler Cortez", "p_tyler"),
+        ShownMessage(5005, "Amy (work)", "p_amy"),
+        ShownMessage(5006, "Cortez, Tyler", "p_ct"),
+    ))
+    body = parse_note_body("## Decided\n- DLC bought [5001, 5004]\n## Open", shown=full)
+    line = body.sections[0].lines[0]
+    assert line.text == "DLC bought (Tyler Cortez) [5001, 5004]"
+    assert line.person_ids == ("p_tyler",)
+    short = parse_note_body("## Decided\n- DLC bought (Tyler) [5001]\n## Open", shown=full)
+    assert short.sections[0].lines[0].text == "DLC bought (Tyler Cortez) [5001]"
+    # A first name beside the full one is one person, named once.
+    both = parse_note_body("## Decided\n- x (Tyler, Tyler Cortez) [5001]\n## Open", shown=full)
+    assert both.sections[0].lines[0].person_ids == ("p_tyler",)
+    # Two cited senders: who said it is the model's call, and the refusal names them.
+    with pytest.raises(NoteBodyError, match="among: Tyler Cortez, Avery Walsh"):
+        parse_note_body("## Decided\n- DLC bought [5001, 5002]\n## Open", shown=full)
+    # Two cited Tylers: the first name is ambiguous, so it is still refused.
+    assert _refused("## Decided\n- x (Tyler) [5001, 5003]\n## Open", shown=full) == "misattributed"
+    # A sender the slot cannot hold is never filled in.
+    assert _refused("## Decided\n- x [5005]\n## Open", shown=full) == "misattributed"
+    assert _refused("## Decided\n- x [5006]\n## Open", shown=full) == "misattributed"
+    # Carried ids alone cannot fill it: nothing rendered says who wrote them.
+    carried = Shown(rendered=SHOWN.rendered, carried=frozenset({9999}), nora_names=SHOWN.nora_names)
+    assert _refused("## Decided\n- x [9999]\n## Open", shown=carried) == "misattributed"
 
 
 def test_an_owed_owner_outside_the_roster_or_nora_is_refused():
@@ -323,3 +357,37 @@ def test_resolve_positions_maps_each_position_to_the_row_it_showed():
             assert refused.rule == "unknown_id"
         else:
             raise AssertionError(bad)
+
+
+# ---- the memo body (DEC-306, 12-schemas §3): the same line grammar ----------
+
+
+def _memo_refused(text: str) -> str:
+    from nora.domain.memo import parse_memo_body
+
+    with pytest.raises(NoteBodyError) as err:
+        parse_memo_body(text, shown=SHOWN)
+    return err.value.rule
+
+
+def test_a_memo_body_parses_kept_and_conditions_and_may_cite_noras_own_message():
+    from nora.domain.memo import citations_of, parse_memo_body
+
+    text = (
+        "## Kept\n- the deposit is 500, split four ways [4812, 4819]\n"
+        "## Conditions\n- only until 2026-12-31 [4815]"
+    )
+    body = parse_memo_body(text, shown=SHOWN)
+    assert body.text == text
+    assert citations_of(body) == ("4812", "4819", "4815")
+
+
+def test_a_memo_body_breaking_the_schema_is_refused_by_rule():
+    assert _memo_refused("## Kept\n- kept [4812]\n## Superseded\n- old [4812]") == "code_written"
+    assert _memo_refused("## Conditions\n- weekdays [4812]") == "missing_section"
+    assert _memo_refused("## Kept") == "missing_section"
+    assert _memo_refused("## Conditions\n- weekdays [4812]\n## Kept\n- x [4812]") == "section_order"
+    assert _memo_refused("## Decided\n- x [4812]") == "unknown_section"
+    assert _memo_refused("## Kept\n- the code [9999]") == "unknown_id"
+    assert _memo_refused("## Kept\n- the code") == "uncited"
+    assert _memo_refused("## Kept\n- from 2026-02-30 on [4812]") == "bad_date"

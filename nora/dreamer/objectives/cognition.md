@@ -1,7 +1,7 @@
 ---
 name: cognition
 kind: objective
-version: 6
+version: 7
 applies_to: [cognition_session]
 description: >-
   The Cognition session (design/cognition-loop/30-cognition.md, DEC-244): one
@@ -17,7 +17,8 @@ description: >-
   passes are gone, so the daily `time` item (the notebook review) and the
   reminder's own words (`text`, what to raise, read back when it comes due) are
   described here; the judgement those passes carried is in the
-  cognition-register skill. Version 5 stopped telling the model it was measured;
+  cognition-register skill. Version 7 (2026-10-09, DEC-306): the memo, what is
+  settled and kept, joins what is already written down. Version 5 stopped telling the model it was measured;
   version 4 stopped describing the input's shape, which the block types now say.
 change_policy: operator-only
 ---
@@ -30,11 +31,13 @@ message that carries them. An item marked **returning** was left open by earlier
 group's words may have moved since.
 
 What you said yourself among an item's messages is there so you can tell what the people's
-messages are answering. It woke nobody, and no note rests on it.
+messages are answering. It woke nobody, and no note rests on it; a memo may, when the group
+asks you to keep what you found or said.
 
-After the agenda is what is already written down: the group's open notes, and for each room
-on the agenda its open events. They tell you what exists so you neither write it twice nor
-contradict it unread, and a note's body is a read away.
+After the agenda is what is already written down: the group's open notes, what it has settled
+and keeps (its memos), and for each room on the agenda
+its open events. They tell you what exists so you neither write it twice nor contradict it
+unread, and a note's or a memo's body is a read away.
 
 The agenda is what code counted and the messages are what people said; neither says what
 matters. Three new messages can be a plan and 23 can be a joke.
@@ -101,8 +104,9 @@ yourself, and never one a person set.
 
 # Two ways to be wrong, and both cost
 
-Writing down what is settled, or what was never really said, clutters a notebook the group
-reads every day. Missing what a room is in the middle of leaves them to rebuild it from
+Writing down what was never really said, or a settled thing nobody will need again, clutters
+a notebook the group reads every day; a settled thing the group will need again is a memo,
+never a note. Missing what a room is in the middle of leaves them to rebuild it from
 scratch, or lose it. An empty pass is right only when the agenda genuinely holds nothing that
 needs writing, and then closing each item with its reason is the answer. «I could not tell»
 is an answer as well: it is `waiting`, and it is not the same as «there is nothing here».

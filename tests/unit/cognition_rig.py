@@ -20,12 +20,12 @@ from nora.app.cognition_session import (
 from nora.app.gatherings import GatheringService
 from nora.domain.cognition_ground import Grounding, RecordItem
 from nora.domain.cognition_session import Room
-from nora.domain.reminders import ReminderCaps
 from nora.domain.standing import StandingHead
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.testing.cognition_grounding import StaticGrounder
 from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.gatherings import FakeGatheringStore
+from nora.testing.memo_store import InMemoryMemoStore
 from nora.testing.note_store import InMemoryNoteStore
 from nora.testing.reminders import FakeReminderStore
 from nora.testing.standing_store import InMemoryStandingStore
@@ -110,11 +110,11 @@ class Stores:
     notes: InMemoryNoteStore = field(default_factory=InMemoryNoteStore)
     gatherings: FakeGatheringStore = field(default_factory=FakeGatheringStore)
     standing: InMemoryStandingStore = field(default_factory=InMemoryStandingStore)
+    memos: InMemoryMemoStore = field(default_factory=InMemoryMemoStore)
 
     def events(self) -> GatheringService:
         return GatheringService(
-            store=self.gatherings, reminders=self.reminders,
-            reminder_caps=ReminderCaps(), route_source=None, honcho=None,
+            store=self.gatherings, route_source=None, honcho=None,
             ai_peer="nora", now=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
         )
 
@@ -154,7 +154,7 @@ async def session(
         "max_strikes": 3, "clock": lambda: NOW / 1000, "roster_of": _const(ROSTER),
         "nora_names": frozenset({"Nora"}), "metrics": metrics,
         "notes": stores.notes, "events": stores.events(), "standing": stores.standing,
-        "reminders": stores.reminders, "ai_peer": "nora",
+        "reminders": stores.reminders, "ai_peer": "nora", "memos": stores.memos,
         "room_proactive": lambda platform, conversation_id: True,
         "max_pending_per_requester": 20, "remind_min_lead_seconds": 120,
         "remind_max_horizon_days": 30,

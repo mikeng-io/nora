@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Replaces real identifiers in tests, docs and a docstring with the scrub map's pseudonyms; no behaviour a user sees changes.", "details": [], "limitations": []}

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import sys
 from typing import Any
 
@@ -191,6 +192,36 @@ def _shared_processors(secrets: list[str]) -> list[_Processor]:
     ]
 
 
+#: A URL's query string, up to the next space or quote: where a signed link carries its
+#: signature and a provider may carry a key.
+_QUERY = re.compile(r"(https?://[^\s?\"']+)\?[^\s\"']*")
+
+
+class _DropUrlQueries(logging.Filter):
+    """Removes the query string from every URL `httpx` logs. Its own `HTTP Request: GET <url>`
+    line is INFO, on every request any client makes, and a fetched video clip's URL is a signed
+    Aliyun OSS link whose `Signature=` grants the clip to anyone holding it (2026-10-10, review
+    of the clip fetch). The method, host, path and status stay: they are what the line is for.
+    A filter on the LOGGER, not a handler, so every handler (and pytest's capture) gets the
+    redacted record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _QUERY.sub(r"\1", str(a)) if "?" in str(a) else a for a in record.args
+            )
+        elif isinstance(record.msg, str):
+            record.msg = _QUERY.sub(r"\1", record.msg)
+        return True
+
+
+def drop_http_client_url_queries() -> None:
+    """Install `_DropUrlQueries` on the `httpx` logger, once however often it is called."""
+    target = logging.getLogger("httpx")
+    if not any(isinstance(f, _DropUrlQueries) for f in target.filters):
+        target.addFilter(_DropUrlQueries())
+
+
 def setup_logging(*, level: str, format: str, secrets: list[str]) -> None:
     # `format` mirrors LoggingConfig.format (spec C.9's config shape). Only one
     # on-disk format exists today (JSON, now rendered by structlog's
@@ -247,6 +278,7 @@ def setup_logging(*, level: str, format: str, secrets: list[str]) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
     root.addHandler(handler)
+    drop_http_client_url_queries()
 
 
 async def heartbeat(metrics: Any, *, interval: float = 60.0) -> None:

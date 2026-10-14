@@ -528,7 +528,8 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
     # `nora/doctrine/core/identity.md` on 2026-09-17 and `personalization` into
     # `nora/doctrine/rooms/conduct.md` on 2026-09-24, ADR 0016.)
     assert [s.name for s in plugin.get_available_skills(agent)] == [
-        "computer-use", "document-creation", "image-generation", "navigation"]
+        "computer-use", "document-creation", "image-generation", "navigation",
+        "video-generation"]
     ok = asyncio.run(plugin.skills(skill_name="navigation", tool_context=ctx))
     assert "Wayfinding" in ok
 
@@ -552,7 +553,8 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
 
     # Nothing a message named changed the loaded set; only navigation activated.
     assert [s.name for s in plugin.get_available_skills(agent)] == [
-        "computer-use", "document-creation", "image-generation", "navigation"]
+        "computer-use", "document-creation", "image-generation", "navigation",
+        "video-generation"]
     assert plugin.get_activated_skills(agent) == ["navigation"]
 
 

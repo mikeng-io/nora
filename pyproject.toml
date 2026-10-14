@@ -41,6 +41,10 @@ dependencies = [
     # 75KB config. Runtime dependency: the CLI ships in the image.
     "tomlkit>=0.13",
     "jsonschema>=4.26.0",
+    # Reading a shared PDF as text (design/external-files §2, the `pdf` kind).
+    # Pure Python with no dependencies of its own; the stdlib has no PDF
+    # parser, and docx/xlsx/pptx are read with zipfile + ElementTree instead.
+    "pypdf>=6.20.0",
 ]
 
 [project.optional-dependencies]

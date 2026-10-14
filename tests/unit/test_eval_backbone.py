@@ -1242,6 +1242,17 @@ def test_meets_grader_either_needs_something_to_have_happened():
     assert out.label == ERROR, "either says both ANSWERS are acceptable, not that silence is"
 
 
+def test_meets_grader_either_passes_a_turn_that_decided_on_silence():
+    """A proactive act turn that ran and declined the floor (`admitted=True`,
+    nothing said) is one of `either`'s two answers, not a turn that never
+    happened. It was ungradable (proactive_act a10, 2026-10-12). Revert the
+    `admitted is True` clause and this goes RED."""
+    out = meets_grader.evaluate(_meets_data(expect="either", admitted=True))[0]
+    assert out.label == PASS
+    out = meets_grader.evaluate(_meets_data(expect="either", admitted=False))[0]
+    assert out.label == ERROR, "a row the screen cancelled never asked the case's question"
+
+
 def test_meets_grader_a_judge_fail_overrides_a_structural_pass():
     out = meets_grader.evaluate(_meets_data(expect="reply", said=1, judged="FAIL"))[0]
     assert out.label == FAIL, "a reply the judge called wrong is not rescued by having replied"
@@ -1289,3 +1300,25 @@ def test_date_split_passes_either_correct_answer_and_fails_the_misdating():
         "date_split: a note dated 20261017 carries the 20260927 plan's rows [28]",
     ]
     assert backbone._date_split(None, out(), rows) == []
+
+
+def _cited(expect: str, said: tuple[str, ...]) -> tuple[str, ...]:
+    case = SimpleNamespace(expect=expect, metadata={"must_cite": ["三多"]})
+    outcome = backbone._check_the_corpus_assertions(
+        case, Outcome(admitted=None, said=said), rows={},
+    )
+    return outcome.checks_failed
+
+
+def test_a_text_must_cite_does_not_fail_a_silence_the_case_allows():
+    """`either` grades the message if there was one: a silence is a legal
+    answer and has no words to check. It failed every correct silence on
+    proactive_act a10. Revert the `said or ...` guard and this goes RED."""
+    assert _cited("either", ()) == ()
+    assert _cited("silence", ()) == ()
+
+
+def test_a_text_must_cite_still_binds_a_message_and_a_required_reply():
+    assert _cited("either", ("去元朗食",)) != ()
+    assert _cited("either", ("三多 12點",)) == ()
+    assert _cited("speak", ()) != ()

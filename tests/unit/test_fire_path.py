@@ -25,7 +25,6 @@ from nora.app import fire as fire_module
 from nora.app.fire import (
     FirePath,
     compute_occasion,
-    gathering_occasion,
     participation_occasion,
     reminder_occasion,
 )
@@ -1014,65 +1013,25 @@ async def test_a_fire_turn_for_an_unwired_platform_fails_rather_than_speaking(
 
 
 # ---------------------------------------------------------------------------
-# DEC-139 — kind dispatch, registry fail-closed, gathering-notify
+# DEC-139 — kind dispatch, registry fail-closed
 # ---------------------------------------------------------------------------
-
-
-async def test_run_dispatches_a_gathering_row_through_its_factory(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """A `kind="gathering"` row renders through `gathering_occasion` — the
-    registry maps the row's kind to the factory (DEC-139). The model hears
-    the gathering title in the body and the header names the event; the
-    legacy `text` string is NOT what reaches her."""
-    adapter = _FireAdapter()
-    path = _fire_path(
-        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
-        runner=FakeAgentRunner(_send_turns("收到")), adapter=adapter,
-        event_registry={
-            "reminder": reminder_occasion,
-            "gathering": gathering_occasion,
-        },
-    )
-    row = _reminder(
-        text="Event: Dinner", kind="gathering",
-        payload={"title": "Dinner"},
-    )
-
-    outcome = await path.run([row])
-
-    assert outcome == fire_module.SENT
-    # The body the model saw is the payload title, not the legacy text.
-    assert adapter.texts == ["收到"]
-    # The factory's shape, asserted directly: body is the title, kind is
-    # gathering, and the header names the escaped title.
-    ev = gathering_occasion([row])
-    assert ev.kind == "gathering"
-    assert ev.body == "Dinner"
-    assert ev.platform == "signal"
-    header = ev.header(None, T0)
-    assert "«Dinner»" in header
 
 
 async def test_run_dispatches_by_kind_not_by_row_order(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
     """Two kinds due for the same requester+conversation become two turns
-    (the heartbeat's `_by_turn` key includes kind) — and a `kind="gathering"`
-    row must go through `gathering_occasion` regardless of sort order."""
+    (the heartbeat's `_by_turn` key includes kind), whatever the sort order."""
     from nora.app.heartbeat import _by_turn
 
     rows = [
         _reminder(id=uuid.uuid4(), text="買奶", kind="reminder"),
-        _reminder(
-            id=uuid.uuid4(), text="Event: Dinner", kind="gathering",
-            payload={"title": "Dinner"},
-        ),
+        _reminder(id=uuid.uuid4(), text="dinner", kind="proactive"),
     ]
     grouped = _by_turn(rows)
     assert len(grouped) == 2
     kinds = {key[3] for key in grouped}
-    assert kinds == {"reminder", "gathering"}
+    assert kinds == {"reminder", "proactive"}
 
 
 async def test_unregistered_kind_fails_closed(
@@ -1088,29 +1047,6 @@ async def test_unregistered_kind_fails_closed(
 
     with pytest.raises(KeyError, match="no event factory registered"):
         await path.run([_reminder(kind="no_such_kind")])
-
-
-async def test_gathering_row_missing_payload_title_fails_closed(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """The per-kind payload validation (04): a `kind="gathering"` row without
-    `payload["title"]` raises instead of `KeyError`-ing out of the blue, and
-    the raise lands in the same fail-closed path as an unregistered kind."""
-    path = _fire_path(
-        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
-        runner=FakeAgentRunner([ScriptedTurn(final_text="never reached")]),
-        event_registry={
-            "reminder": reminder_occasion,
-            "gathering": gathering_occasion,
-        },
-    )
-
-    with pytest.raises(KeyError, match="has no payload"):
-        await path.run([_reminder(kind="gathering", payload=None)])
-    # A malformed map — title present but not a string — fails the type
-    # guard (design 03: malformed payloads fail observably at fire time).
-    with pytest.raises(KeyError, match="no string payload"):
-        await path.run([_reminder(kind="gathering", payload={"title": 123})])
 
 
 async def test_legacy_reminder_row_still_fires_after_the_kind_columns_land(
@@ -1226,7 +1162,7 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 
 async def _fire_path_with_tiers(
     persons, record_store, memory_store, doctrine_store, metrics, *,
-    notes=None, policy="permissive", culture=None, standing=None,
+    notes=None, policy="permissive", culture=None, standing=None, memos=None,
 ) -> FirePath:
     """`fire_path`'s own builder plus the tier collaborators — same
     model-side-collaborators-are-None shape, for the same reason: these tests
@@ -1239,7 +1175,7 @@ async def _fire_path_with_tiers(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40, limits={},
         timeout_seconds=120.0, clock=lambda: T0,
-        notes=notes, culture=culture, standing=standing,
+        notes=notes, culture=culture, standing=standing, memos=memos,
         policy=permissive_policy() if policy == "permissive" else None,
     )
 
@@ -1564,7 +1500,7 @@ async def test_a_participation_turn_without_a_runner_is_a_wiring_fault(
     ) == 1
 
 
-async def test_the_participation_turn_reads_the_may_speak_doctrine(
+async def test_the_participation_turn_reads_the_participation_doctrine(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
     """The turn runs on the `applies_to="participation"` assembly — never the
@@ -1601,7 +1537,6 @@ async def test_the_participation_turn_reads_the_may_speak_doctrine(
 
     doctrine = calls[-1]["doctrine"]
     names = {section.name for section in doctrine.sections}
-    assert "silence" in names
     assert "participation-conduct" in names, "the ambient-only conduct is missing"
     assert "participation" not in names, "the gate's instruction reached her turn"
     assert doctrine.sha256 != doctrine_store.get(applies_to="tag").sha256, (
@@ -2555,12 +2490,13 @@ async def test_a_proactive_turn_with_no_runner_is_a_counted_wiring_fault(
     ) == 1
 
 
-def test_the_proactive_doctrine_audience_carries_the_may_speak_rule(doctrine_store) -> None:
-    """39 D12: silence.md reaches the proactive audience (an offered floor),
-    and the occasion-neutral files do too — an audience missing any of them
-    would deliver with no persona and no constraints."""
+def test_the_proactive_doctrine_audience_carries_her_doctrine(doctrine_store) -> None:
+    """39 D12: the occasion-neutral files reach the proactive audience; an
+    audience missing any of them would deliver with no persona and no
+    constraints. The may-speak rule silence.md carried here is
+    `ProactiveHeader`'s since the file dissolved (2026-10-13)."""
     text = doctrine_store.get(applies_to="proactive").text
-    for name in ("identity", "voice", "silence", "conduct", "constraints"):
+    for name in ("identity", "voice", "conduct", "constraints"):
         assert f'name="{name}"' in text, name
     assert 'name="participation-conduct"' not in text
 
@@ -3204,3 +3140,97 @@ async def test_a_fire_turn_publishes_the_heartbeat_deadline_not_the_loops(
     await path.run([_reminder()])
 
     assert seen and seen[0] is not None and 6.0 < seen[0] <= 7.0, seen
+
+
+async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """`<memos>` on the fire path (DEC-306), `_read_notes` mirrored: the unit's
+    kept memos, another unit's never, and a failed read counted."""
+    from nora.testing.memo_store import InMemoryMemoStore
+
+    memos = InMemoryMemoStore()
+    for unit in ("nora", "elsewhere"):
+        await memos.create(
+            unit=unit, platform="signal", conversation_id="conv-1", title=f"{unit} wifi",
+            body="## Kept\n- kept [1]", citations=("1",), mode="told",
+            established_by="cognition:u", model=None, now_ms=1,
+        )
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics, memos=memos,
+    )
+    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+    assert [m.title for m in ctx.memos] == ["nora wifi"]
+
+    class _Down:
+        async def kept(self, *, unit: str):
+            raise RuntimeError("db down")
+
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics, memos=_Down(),
+    )
+    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+    assert ctx.memos == ()
+    assert metrics.get("nora_errors_total", stage="fire_memos") == 1
+
+
+@pytest.mark.parametrize("location", [True, False])
+async def test_a_fire_turn_carries_its_rooms_location_trust_into_where_is(
+    persons: Persons, doctrine_store, metrics: Metrics, location: bool,
+) -> None:
+    """DEC-74 on the fire path: the room's `location` flag reaches the tool
+    surface, as it does on a tag. Left at the surface's `False` default,
+    `where_is` refused a proactive turn in a `location = true` room whose
+    roster holds sealed-sender accounts (Friends, 2026-09-27), where a tag in
+    the same room answered."""
+    seen: list[bool] = []
+
+    class _Spy(ToolRegistry):
+        def surface(self, **kw):  # type: ignore[override]
+            seen.append(kw.get("location_trusted", False))
+            return super().surface(**kw)
+
+    room = Conversation(
+        platform="signal", ids=frozenset({"conv-1"}), persons=None,
+        label="Friends", primary_id="conv-1", unit="friends", location=location,
+    )
+    policy = Policy(conversations=(room,), _by_id={("signal", "conv-1"): room})
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        registry=_Spy(), policy=policy, runner=FakeAgentRunner(_send_turns("記得食藥")),
+    )
+
+    await path.run([_reminder()])
+
+    assert seen == [location]
+
+
+async def test_a_shadow_held_participation_turn_stays_strict_in_a_location_room(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A held participation turn's text goes to the review channel, a room
+    other than the one `where_is` checks, so the room's trust is not lent to
+    it."""
+    seen: list[bool] = []
+
+    class _Spy(ToolRegistry):
+        def surface(self, **kw):  # type: ignore[override]
+            seen.append(kw.get("location_trusted", False))
+            return super().surface(**kw)
+
+    room = Conversation(
+        platform="signal", ids=frozenset({"conv-1"}), persons=None,
+        label="Friends", primary_id="conv-1", unit="friends", location=True,
+    )
+    policy = Policy(conversations=(room,), _by_id={("signal", "conv-1"): room})
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        registry=_Spy(), policy=policy, adapter=_FireAdapter(),
+        runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner([ScriptedTurn(final_text="")]),
+        shadow_channel="review-1",
+    )
+
+    await path.speak(_participation())
+
+    assert seen == [False]

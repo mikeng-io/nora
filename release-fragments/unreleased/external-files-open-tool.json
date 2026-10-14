@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "Nora can read a shared document, spreadsheet, slide deck or PDF when somebody asks about a file they sent a link to, once the operator signs in her own read-only account and switches it on.",
+  "details": [
+    "She opens a file only when asked, by the link's handle or a pasted link, and reads it fresh every time: nothing from the file is kept.",
+    "A long file is read in parts, and she says which part she read.",
+    "A file nobody shared with her gets an answer saying to share it with nora@67.zone as a Viewer; a deleted, oversized or download-locked file is said to be so.",
+    "Read-only: she cannot change, comment on or share the file."
+  ],
+  "limitations": [
+    "Off until the operator runs the one-time sign-in, puts the credentials in .env and sets [external_files] enabled = true; until then she says she can't open shared files.",
+    "Slides read as one text, not numbered per slide; images and charts in a file are not read.",
+    "Copying a file to her computer is not built yet."
+  ]
+}

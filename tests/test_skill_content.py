@@ -40,6 +40,10 @@ _SCENARIOS: dict[str, tuple[str, ...]] = {
     # `itinerary` is the TOOL's example and stays there.
     "document-creation": ("trip", "itinerary", "holiday", "flight", "hotel", "tokyo",
                           "budget", "birthday", "旅行", "行程", "報告"),
+    # The video skill is about making ANY clip and judging whether she is in it; a named
+    # occasion or subject is the closed set that fails its neighbour.
+    "video-generation": ("birthday", "dance", "meme", "wedding", "cat", "tiktok",
+                         "生日", "跳舞"),
 }
 
 #: The scenarios that produced #227: a bare hostname and a question about a
@@ -681,11 +685,14 @@ def self_account() -> str:
     # identity.md (true on any surface) and belonging.md (her place in a
     # group, and the two halves that serve a room). The claims pinned below
     # span both, so the fixture is both, in the order a tag assembles them.
+    # Since 2026-10-12 (design/context-plan/11 §6, step 2) its law lines,
+    # among them the W2 caveat below, are rooms/constraints.md, so that is the
+    # third section of it.
     bodies = {s.name: s.body for s in doctrine.sections}
-    missing = {"identity", "belonging"} - set(bodies)
+    missing = {"identity", "belonging", "room-constraints"} - set(bodies)
     if missing:
         raise AssertionError(f"{sorted(missing)} must ship and must apply to the tag path")
-    return bodies["identity"] + "\n" + bodies["belonging"]
+    return "\n".join(bodies[n] for n in ("identity", "belonging", "room-constraints"))
 
 
 def _portal_routes() -> tuple[str, ...]:
@@ -766,6 +773,10 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
     #: pins this the same way it pins `_FakeSearchProvider`/`_GifSource`/
     #: `_FakeSocialProvider`: NO_SHARED_FAKE, not a scaffolding exemption).
     class _ImageGenerator:
+        @property
+        def max_reference_images(self) -> int:
+            return 3
+
         async def generate(self, *, prompt, reference_images=None, size=None,
                             quality=None, reference_resolver=None) -> ImageResult:
             return ImageResult(
@@ -1130,8 +1141,8 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
     import tomllib
 
     assert _flat(
-        "Whether a deployment runs that, or the half above, is a setting you "
-        "cannot read"
+        "Whether a deployment keeps what a room left unsettled across turns, or runs "
+        "the half of you that speaks unasked, is a setting you cannot read"
     ) in _flat(self_account)
 
     # W2, the second half of the same sentence: presence of a block proves ON,

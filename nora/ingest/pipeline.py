@@ -54,6 +54,7 @@ from .stages import edit_gate as edit_gate_stage
 from .stages import edit_media as edit_media_stage
 from .stages import edit_record as edit_record_stage
 from .stages import edit_target as edit_target_stage
+from .stages import external_files as external_files_stage
 from .stages import gate as gate_stage
 from .stages import identity as identity_stage
 from .stages import media as media_stage
@@ -370,6 +371,11 @@ class IngestPipeline:
                 # resolves identity nor reads it for anything else.
                 person=person, language=self._language,
             )
+        # Shared file links become handles in the record (design/external-
+        # files §1): pure, no network, on every platform, and before the audit
+        # so the refs land in the same INSERT as the row.
+        with span("ingest.external_files"):
+            message = await external_files_stage.run(message=message)
         # A reply to an EDITED message quotes the revision's timestamp on
         # Signal; point it at the row the transcript holds before it is
         # written, so every reader resolves the parent as it always has.

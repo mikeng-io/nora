@@ -1,0 +1,9 @@
+{
+  "type": "change",
+  "summary": "Nora's separate instruction about when to stay silent is gone; each turn she was not called into now says so itself.",
+  "details": [
+    "A turn where the room went quiet, or where she comes back to something she decided to raise, already told her that saying nothing is a complete answer; the second now also says most such turns end that way.",
+    "A turn where someone called her is unchanged: she answers."
+  ],
+  "limitations": []
+}

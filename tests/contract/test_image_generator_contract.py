@@ -23,6 +23,8 @@ and report the reason — never guess from the status alone.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 from pathlib import Path
 
@@ -31,7 +33,13 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nora.domain.ports import ImageReference, ImageSize
-from nora.infra.image_gen.xai_adapter import XaiImageGenerator
+from nora.infra.image_gen import build_image_generator
+from nora.infra.image_gen.openai_codex_adapter import (
+    CODEX_MAX_REFERENCE_IMAGES,
+    OpenAICodexImageGenerator,
+)
+from nora.infra.image_gen.openai_codex_oauth import CodexAuth
+from nora.infra.image_gen.xai_adapter import XAI_MAX_REFERENCE_IMAGES, XaiImageGenerator
 from nora.infra.image_gen.xai_oauth import (
     OAuthState,
     XaiOAuth,
@@ -404,6 +412,10 @@ async def oauth_server():
     await server.close()
 
 
+def _sha(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def _oauth(tmp_path: Path, base: str, refresh: str = "rt-boot", **kw):
     return XaiOAuth(
         refresh_token=refresh,
@@ -462,6 +474,7 @@ async def test_expired_state_adopts_rotated_refresh_before_refresh(tmp_path, oau
             "access_token": "at-expired",
             "expires_at": 1,               # long-expired: fresh check fails
             "refresh_token": "rt-rotated",
+            "bootstrap_sha256": _sha("rt-boot"),  # this chain grew from rt-boot
         }),
         encoding="utf-8",
     )
@@ -530,7 +543,10 @@ async def test_refresh_boot_precedence_uses_state_file(tmp_path, oauth_server):
     sf = tmp_path / "xai-oauth.json"
     sf.write_text(
         json.dumps(
-            {"access_token": "cached-token", "expires_at": 2_000_000_000},
+            {
+                "access_token": "cached-token", "expires_at": 2_000_000_000,
+                "refresh_token": "rt-rotated", "bootstrap_sha256": _sha("rt-boot"),
+            },
         ),
         encoding="utf-8",
     )
@@ -582,3 +598,115 @@ async def test_drop_is_not_involved(tmp_path):
     assert result.raw is not None
     assert result.raw == b"hello"
     assert result.media_type == "image/png"
+
+
+# -- the reference limit is the provider's (DEC-307) ------------------------
+
+_PNG = b"\x89PNG\r\n\x1a\n"
+
+
+class _CannedCodexAuth:
+    """The one call the Codex adapter makes on its lane, canned: the image
+    endpoint is under test here, not the rotating refresh chain."""
+
+    async def access_token(self, *, rejected: str = "") -> CodexAuth:
+        return CodexAuth(status="ok", access_token="t", account_id="a")  # noqa: S106
+
+
+def _refs(n: int) -> list[ImageReference]:
+    return [ImageReference(f"{i:06x}") for i in range(n)]
+
+
+async def _resolve(code: str) -> bytes:
+    return _PNG + code.encode()
+
+
+def _uri(i: int) -> str:
+    return "data:image/png;base64," + base64.b64encode(_PNG + f"{i:06x}".encode()).decode()
+
+
+async def test_xai_sends_every_reference_up_to_its_documented_limit(server_factory):
+    """xAI documents five source images per edit; all five travel, in order,
+    in `images` (a single one would travel in `image`)."""
+    captured: list[dict] = []
+
+    async def _edits(request: web.Request) -> web.Response:
+        captured.append(await request.json())
+        return _json({"data": [{"b64_json": "aGVsbG8="}]})
+
+    base = await server_factory(_edits)
+    gen = XaiImageGenerator(
+        oauth=_CannedOAuth(refresh_token="rt", state_file=Path("no-state")),  # noqa: S106
+        base_url=base, timeout_seconds=5.0,
+    )
+    assert gen.max_reference_images == XAI_MAX_REFERENCE_IMAGES == 5
+    result = await gen.generate(
+        prompt="all of us", reference_images=_refs(5), reference_resolver=_resolve,
+    )
+    assert result.status == "ok"
+    assert [img["url"] for img in captured[0]["images"]] == [_uri(i) for i in range(5)]
+
+
+async def test_codex_sends_every_reference_up_to_its_documented_limit():
+    """OpenAI documents sixteen input images for gpt-image; all sixteen travel,
+    in order, as `input_image` parts after the prompt."""
+    captured: list[dict] = []
+    item = {"type": "image_generation_call", "status": "completed",
+            "result": base64.b64encode(_PNG + b"\x00" * 32).decode()}
+    stream = b"data: " + json.dumps(
+        {"type": "response.output_item.done", "item": item}).encode() + b"\n\n"
+
+    async def responses(request: web.Request) -> web.Response:
+        captured.append(await request.json())
+        return web.Response(body=stream, content_type="text/event-stream")
+
+    app = web.Application(client_max_size=64 * 1024 * 1024)
+    app.router.add_post("/responses", responses)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        gen = OpenAICodexImageGenerator(
+            oauth=_CannedCodexAuth(),  # type: ignore[arg-type]
+            base_url=str(server.make_url("/")).rstrip("/"), timeout_seconds=5.0,
+        )
+        assert gen.max_reference_images == CODEX_MAX_REFERENCE_IMAGES == 16
+        result = await gen.generate(
+            prompt="all of us", reference_images=_refs(16), reference_resolver=_resolve,
+        )
+    finally:
+        await server.close()
+    assert result.status == "ok"
+    parts = captured[0]["input"][0]["content"]
+    assert parts[0]["type"] == "input_text"
+    assert [p["image_url"] for p in parts[1:]] == [_uri(i) for i in range(16)]
+
+
+@pytest.mark.parametrize(
+    ("section", "vendor"),
+    [("xai", XAI_MAX_REFERENCE_IMAGES), ("openai_codex", CODEX_MAX_REFERENCE_IMAGES)],
+)
+def test_an_operator_override_only_lowers_the_limit(section, vendor):
+    """`max_reference_images` in a provider's config section lowers its limit
+    and never raises it: the config bound IS the adapter's vendor constant, so
+    neither can move without the other going red here."""
+    from pydantic import ValidationError
+
+    from nora.config import ImageGenConfig
+
+    assert getattr(ImageGenConfig(), section).max_reference_images is None
+    ok = ImageGenConfig.model_validate({section: {"max_reference_images": vendor}})
+    assert getattr(ok, section).max_reference_images == vendor
+    for bad in (0, vendor + 1):
+        with pytest.raises(ValidationError):
+            ImageGenConfig.model_validate({section: {"max_reference_images": bad}})
+
+    def build(**extra):
+        return build_image_generator(
+            provider=section, refresh_token="rt",  # noqa: S106
+            state_file=Path("no-state"), **extra,
+        )
+
+    assert build().max_reference_images == vendor
+    assert build(max_reference_images=2).max_reference_images == 2
+    with pytest.raises(ValueError, match="max_reference_images"):
+        build(max_reference_images=vendor + 1)

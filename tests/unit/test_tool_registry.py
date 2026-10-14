@@ -14,7 +14,13 @@ from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.surface import WORKER_ONLY_TOOLS
-from nora.agent.tools import COMPUTER_TOOLS, LOADER_TOOL, NATIVE_TOOL_BUDGETS, SUBAGENT_TOOLS
+from nora.agent.tools import (
+    COMPUTER_TOOLS,
+    LOADER_TOOL,
+    NATIVE_TOOL_BUDGETS,
+    SUBAGENT_TOOLS,
+    VIDEO_TOOLS,
+)
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
@@ -71,6 +77,7 @@ _ROLLUP = object()
 _STANDING = object()
 #: `character_read`'s culture store, never called.
 _CULTURE = object()
+_MEMOS = object()
 #: The document service, never called: both document tools are offered only when one
 #: is wired (`[documents] enabled`).
 _DOCUMENTS = object()
@@ -160,6 +167,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
+        memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
     ))
     assert {t.tool_name for t in tools} == {
@@ -192,6 +200,8 @@ def test_the_registry_exposes_every_declared_tool():
         # online / playing / in voice right now) — the #248 cross-check.
         "online_now",
         "media_fetch",
+        # design/external-files §3: a shared file link, read as text.
+        "file_fetch",
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
@@ -231,6 +241,8 @@ def test_the_registry_exposes_every_declared_tool():
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
         "note_read", "note_search", "note_create", "note_update",
+        # DEC-306: one kept memo of the unit.
+        "memo_read",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
         # The memory search variant, built for the Dreamer's unit key but
@@ -398,10 +410,15 @@ def test_budgets_match_todays_table():
         # calls inside the loop budget (DEC-56). 8 since 2026-10-02: a document with
         # pictures looks at one per section, and 4 ended a turn before it published.
         "media_fetch": 8,
+        # A file, its next part or two, or a second file (design/external-files §3).
+        "file_fetch": 4,
         # One message can ask for one image, maybe a second take after a bad
         # first; each call is a slow provider round trip on a quota-bounded
         # subscription, so 2 is the honest turn ceiling (DEC-137).
         "generate_image": 2,
+        # design/video-generation: one clip a turn; a second call is a second clip nobody
+        # asked for, spent on a shared weekly quota.
+        "video_create": 2,
         # media_search is a local table read (like recall_lookups); media_send
         # delivers a stored attachment (like send_gif).
         "media_search": 2, "media_send": 2,
@@ -481,6 +498,8 @@ def test_budgets_match_todays_table():
         # meaningful: under one `note_write` an accidental create would spend
         # the revision budget instead.
         "note_read": 3, "note_search": 2, "note_create": 1, "note_update": 2,
+        # `memo_read` is 3 like `note_read` (DEC-306): a couple of memos and a re-read.
+        "memo_read": 3,
         # 1, like `note_create`: one write answers the ask; a second call is the
         # model looping on a tool it should have trusted to have worked (the
         # remember verb's write lane, 2026-08-30).
@@ -540,6 +559,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     )
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
+        memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
     ))
     agent = factory.create_agent(
@@ -556,13 +576,14 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     # wired — but that budget is not a built tool here.
     # And `load_tools` is declared but not handed over: `build()` never
     # defers, and the loader ships only when something is on the shelf.
-    # (this build is the Dreamer path, which the four tag-only `subagent_*` tools and the
+    # (this build is the Dreamer path, which the tag-only `subagent_*` and `video_create` and the
     # worker-only `checkpoint_update` never reach)
     assert set(agent.tool_names) == (
-        set(ToolRegistry().tool_names()) - {LOADER_TOOL, *SUBAGENT_TOOLS, *WORKER_ONLY_TOOLS}
+        set(ToolRegistry().tool_names())
+        - {LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS}
     )
     assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {
-        "skills", LOADER_TOOL, *SUBAGENT_TOOLS, *WORKER_ONLY_TOOLS,
+        "skills", LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS,
     }
     assert "skills" in NATIVE_TOOL_BUDGETS
 
@@ -605,33 +626,59 @@ def test_the_sourcing_priority_lives_in_conduct_not_a_generated_block():
     """E1/DEC-77: the sourcing nudge moved to conduct.md with DEC-150. A
     declared `source_tier` nothing renders is decoration; the gate found the
     model web-searching a fact with a closer source, and the priority now
-    lives in conduct's 'What you can actually do' section."""
+    lives in conduct's 'Where to look first' section."""
     conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
     assert "prefer your own" in conduct
     assert "open web, which is the last resort" in conduct
 
 
-def test_the_closed_world_clause_lives_in_conduct_not_a_generated_block(): # DEC-90
+def test_the_closed_world_clause_lives_in_doctrine_not_a_generated_block(): # DEC-90
     """The list of tools was never stated to be the WHOLE list, and she filled
     the gap: a restaurant answer ended «講清楚我幫你睇埋使唔使訂位» — offering to
     check a booking, which no tool here does and none is planned. DEC-150 moved
-    the rule to conduct.md; it must read exactly as strongly there."""
-    conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
-    assert "That list is the WHOLE of what you can do" in conduct
-    assert "no request you can put in on somebody's behalf" in conduct
-    assert "Never offer, promise or volunteer an action that is not one of those tools" in conduct
+    the rule to conduct.md; it must read exactly as strongly there.
+
+    RE-POINTED 2026-10-12 (design/context-plan/11 §6, step 2): the rule is law
+    and lives in rooms/constraints.md § What you can do. Only its stale parts
+    were dropped («the tool schemas are everything you can do», «no following
+    up later», which predate the cognition loop, the computer and skills,
+    design/context-plan/10); the offer ban, its concrete family and «say plainly
+    they will have to do it themselves» are kept."""
+    law = " ".join(
+        (ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text().split()
+    )
+    assert "Never offer, promise or volunteer an action that your tools and skills do not " \
+           "give you" in law
     # The measured overclaim, and the family it belongs to, named concretely —
     # a rule stated only in the abstract is the one the model reads past.
-    assert "no booking a" in conduct
+    assert "no booking a" in law
+    assert "no phone call" in law
+    assert "say plainly that they will have to do it themselves" in law
+    assert "Never say you have done something that no tool call of yours did" in law
+    conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
+    assert "The tool schemas are everything you can do" not in conduct
+    assert "no following up later" not in law
 
 
 def test_the_closed_world_clause_forbids_offers_not_ignorance():
     """It must not collide with the rule beside it. She may always say she
-    cannot find something out — `constraints.md` and `conduct.md` both insist on
-    it — so the ban is on PROMISED ACTS. The two sentences sit in different
-    files now, which is exactly why they could not contradict before."""
-    conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
-    assert conduct.index("That list is the WHOLE") < conduct.index("prefer your own")
+    cannot find something out — `constraints.md` and `rooms/constraints.md` both
+    insist on it — so the ban is on PROMISED ACTS. Both rules are in the same
+    file now, so this reads them side by side: the offer ban speaks of actions
+    only, and the could-not-check rule is still there and still says to say it."""
+    text = (ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text()
+    paragraphs = [" ".join(p.split()) for p in text.split("\n\n")]
+    offer = [p for p in paragraphs if p.startswith("Never offer, promise or volunteer an action")]
+    broken = "When it comes back broken, say you could not check"
+    could_not_check = [p for p in paragraphs if broken in p]
+    assert len(offer) == 1 and len(could_not_check) == 1
+    # The ban is on acts she has no tool for, never on saying what she could not find out.
+    assert "an action" in offer[0]
+    for word in ("could not check", "do not know", "find out", "我唔知", "我查唔到"):
+        assert word not in offer[0], word
+    # And the honesty rule does not turn into an offer to act.
+    for word in ("offer", "promise", "volunteer"):
+        assert word not in could_not_check[0], word
     constraints = (ROOT / "nora" / "doctrine" / "core" / "constraints.md").read_text()
     assert "我唔知」 and 「我查唔到」 are real" in " ".join(constraints.split())
 
@@ -842,6 +889,8 @@ ACT_VERBS = frozenset({
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.
     "generate_image",
+    # design/video-generation: starts a clip on a provider and writes a job row.
+    "video_create",
     # media_send delivers a stored attachment (an act, like send_gif);
     # media_search is a read.
     "media_send",
@@ -891,6 +940,8 @@ READ_ONLY = frozenset({
     "record_query",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
+    # design/external-files §3: reads a shared file; the account cannot write.
+    "file_fetch",
     "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
     "suggest_venue", "version", "search_gifs",
@@ -898,6 +949,8 @@ READ_ONLY = frozenset({
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",
     "note_read", "note_search",
+    # DEC-306: one kept memo of the unit, a SELECT.
+    "memo_read",
     # design/cognition-loop/25 §5, 50 §2: Dreamer-only SELECTs of the Rollup's
     # current build and of a room's Standing head.
     "rollup_read", "standing_read", "character_read",

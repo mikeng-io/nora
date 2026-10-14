@@ -133,6 +133,8 @@ $$;
 );
 );
 );
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -191,6 +193,8 @@ ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT lesson_pkey PRIMARY KEY (id);
 ADD CONSTRAINT lesson_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT media_objects_pkey PRIMARY KEY (sha256);
+ADD CONSTRAINT memo_pkey PRIMARY KEY (id);
+ADD CONSTRAINT memo_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT message_delete_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
 ADD CONSTRAINT message_delete_pkey PRIMARY KEY (id);
 ADD CONSTRAINT message_edit_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
@@ -316,6 +320,8 @@ ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.lesson
 ALTER TABLE ONLY public.lesson_revision
 ALTER TABLE ONLY public.media_objects
+ALTER TABLE ONLY public.memo
+ALTER TABLE ONLY public.memo_revision
 ALTER TABLE ONLY public.message_delete
 ALTER TABLE ONLY public.message_delete
 ALTER TABLE ONLY public.message_edit
@@ -515,6 +521,16 @@ CONSTRAINT ck_lesson_revision_retired_by CHECK (((state = 'retired'::text) = (re
 CONSTRAINT ck_lesson_revision_retired_by_who CHECK (((retired_by IS NULL) OR (retired_by = ANY (ARRAY['session'::text, 'operator'::text])))),
 CONSTRAINT ck_lesson_revision_seq CHECK ((seq >= 1)),
 CONSTRAINT ck_lesson_revision_state CHECK ((state = ANY (ARRAY['active'::text, 'retired'::text])))
+CONSTRAINT ck_memo_has_a_unit CHECK ((length(btrim(unit)) > 0))
+CONSTRAINT ck_memo_revision_body_ceiling CHECK ((length(body) <= 4000)),
+CONSTRAINT ck_memo_revision_cites_something CHECK ((cardinality(citations) >= 1)),
+CONSTRAINT ck_memo_revision_has_a_body CHECK ((length(btrim(body)) > 0)),
+CONSTRAINT ck_memo_revision_has_a_title CHECK ((length(btrim(title)) > 0)),
+CONSTRAINT ck_memo_revision_mode CHECK ((mode = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text]))),
+CONSTRAINT ck_memo_revision_names_its_writer CHECK ((length(btrim(established_by)) > 0)),
+CONSTRAINT ck_memo_revision_seq CHECK ((seq >= 1)),
+CONSTRAINT ck_memo_revision_state CHECK ((state = ANY (ARRAY['kept'::text, 'withdrawn'::text]))),
+CONSTRAINT ck_memo_revision_title_ceiling CHECK ((length(title) <= 200))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
@@ -684,6 +700,7 @@ CREATE INDEX idx_fact_standing ON public.fact USING btree (unit, subject_id) WHE
 CREATE INDEX idx_instagram_summons_state ON public.instagram_summons USING btree (state, mode);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_lesson_unit ON public.lesson USING btree (unit);
+CREATE INDEX idx_memo_unit ON public.memo USING btree (unit);
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
 CREATE INDEX idx_message_reaction_message ON public.message_reaction USING btree (message_id);
@@ -769,6 +786,8 @@ CREATE TABLE public.language_observation (
 CREATE TABLE public.lesson (
 CREATE TABLE public.lesson_revision (
 CREATE TABLE public.media_objects (
+CREATE TABLE public.memo (
+CREATE TABLE public.memo_revision (
 CREATE TABLE public.message_delete (
 CREATE TABLE public.message_edit (
 CREATE TABLE public.message_reaction (
@@ -908,6 +927,7 @@ CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate US
 CREATE UNIQUE INDEX uq_cognition_wake_outcome_wake ON public.cognition_wake_outcome USING btree (wake_id);
 CREATE UNIQUE INDEX uq_computer_sessions_open_scope ON public.computer_sessions USING btree (scope) WHERE (status = 'open'::text);
 CREATE UNIQUE INDEX uq_lesson_revision_seq ON public.lesson_revision USING btree (lesson_id, seq);
+CREATE UNIQUE INDEX uq_memo_revision_seq ON public.memo_revision USING btree (memo_id, seq);
 CREATE UNIQUE INDEX uq_otp_attempt_ok ON public.otp_attempt USING btree (challenge_id) WHERE ok;
 CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 CREATE UNIQUE INDEX uq_rollup_build_current ON public.rollup_build USING btree (status) WHERE (status = 'current'::text);
@@ -1199,6 +1219,7 @@ body text NOT NULL,
 body text NOT NULL,
 body text NOT NULL,
 body text NOT NULL,
+body text NOT NULL,
 body text,
 body text,
 body text,
@@ -1234,6 +1255,7 @@ circle_id text NOT NULL,
 circle_id text NOT NULL,
 circle_id text NOT NULL,
 citations text[] DEFAULT '{}'::text[] NOT NULL,
+citations text[] NOT NULL,
 citations text[] NOT NULL,
 citations text[] NOT NULL,
 closing_condition text NOT NULL,
@@ -1285,6 +1307,7 @@ conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
@@ -1295,6 +1318,7 @@ corpus text NOT NULL,
 corridor_id integer NOT NULL,
 corridor_id integer,
 created_at bigint NOT NULL
+created_at bigint NOT NULL,
 created_at bigint NOT NULL,
 created_at bigint NOT NULL,
 created_at bigint NOT NULL,
@@ -1371,6 +1395,7 @@ established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
+established_by text NOT NULL,
 established_in text NOT NULL,
 event text NOT NULL,
 event_id uuid NOT NULL,
@@ -1389,6 +1414,7 @@ expired_at timestamp with time zone,
 expired_reason text,
 expires_at bigint
 expires_at timestamp with time zone NOT NULL,
+external_files_json text,
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
 fact_id uuid NOT NULL,
@@ -1474,6 +1500,8 @@ id integer NOT NULL,
 id integer NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1604,6 +1632,7 @@ media_type text DEFAULT ''::text NOT NULL,
 media_type text DEFAULT ''::text NOT NULL,
 media_type text NOT NULL,
 media_type text NOT NULL,
+memo_id uuid NOT NULL,
 mention_at timestamp with time zone,
 mentions_ab integer NOT NULL,
 mentions_ba integer NOT NULL,
@@ -1624,11 +1653,13 @@ mode text NOT NULL,
 mode text NOT NULL,
 mode text NOT NULL,
 mode text NOT NULL,
+mode text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
+model text,
 model text,
 model text,
 model text,
@@ -1748,6 +1779,7 @@ platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
+platform text NOT NULL,
 platform text,
 platform_message_id text,
 pos_id bigint NOT NULL,
@@ -1800,6 +1832,8 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -1904,6 +1938,7 @@ sense text NOT NULL,
 sense text NOT NULL,
 sent_ts bigint NOT NULL,
 seq integer NOT NULL,
+seq integer NOT NULL,
 sequence jsonb NOT NULL,
 sequence jsonb,
 series_anchor_at timestamp with time zone,
@@ -1947,6 +1982,7 @@ started_ts bigint NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
+state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
@@ -2025,6 +2061,7 @@ title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
+title text NOT NULL,
 title text,
 tool text NOT NULL,
 tool_input jsonb NOT NULL,
@@ -2046,6 +2083,7 @@ ts bigint NOT NULL,
 uncertainty text NOT NULL,
 unit text CONSTRAINT signal_unit_not_null NOT NULL,
 unit text DEFAULT ''::text NOT NULL,
+unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
@@ -2139,6 +2177,7 @@ working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 would_have_said text NOT NULL,
 writer text NOT NULL,
+written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,

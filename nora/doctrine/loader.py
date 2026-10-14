@@ -586,8 +586,12 @@ def check_authority_graph(sections: Sequence[DoctrineSection]) -> None:
 # ---------------------------------------------------------------------------
 
 CLASSIFICATION_FILE = "classification.yaml"
-BUCKETS = ("law", "practice", "character")
+BUCKETS = ("law", "practice", "character", "seed")
 LAW = "law"
+#: Who she is, authored and never cut: her name, maker, form (design/context-plan/12
+#: §1, DEC-309). Not law (breaking it lies to nobody) and not grown character, which
+#: Character · Nora replaces; the seed is what Character grows from.
+SEED = "seed"
 
 # Audiences with no unit behind them: the `self` block (Character) and Lessons are
 # per unit, so neither reaches these, and what the doctrine says there about
@@ -607,7 +611,8 @@ class Rule:
     text: str                  # exactly the doctrine text, a substring of the file
     line: int                  # 1-based line in `file` where `text` starts
     reason: str
-    no_unit_surface: bool      # non-law text in a file that also reaches a surface with no unit
+    # cuttable text (not law, not seed) in a file that also reaches a no-unit surface
+    no_unit_surface: bool
 
 
 def rule_digest(text: str) -> str:
@@ -751,7 +756,7 @@ def classify(
                     rules.append(Rule(
                         file=rel, section=heading, bucket=bucket, text=text,
                         line=raw.count("\n", 0, start_at) + 1, reason=reason,
-                        no_unit_surface=no_unit and bucket != LAW,
+                        no_unit_surface=no_unit and bucket not in (LAW, SEED),
                     ))
     for rel in table.keys() - seen:
         problems.append(f"{rel}: in {CLASSIFICATION_FILE}, but no such doctrine file")

@@ -283,9 +283,31 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     measured are deleted with their adaptors, the cognition session owns
     notes and reminders now), plus 2 `tool_selection` cases for `computer_browse`
     (2026-10-07, design/browser-runtime B2: a search box to operate and a page
-    to click through; browse-on arm only); a change to it
+    to click through; browse-on arm only), plus the 5 `lessons` cases
+    (2026-10-09, design/self-growth/40 §8: 4 lessons counterfactuals and a
+    control, the `<lessons>` block's before/after), plus 8 memo routing cases
+    (2026-10-09, DEC-306: 6 `tool_selection_cognition` for the memo verbs and
+    `memo_read`, 2 `tool_selection` for «記低» about the group and about the
+    speaker), plus 3 `tool_selection` cases for `file_fetch` (2026-10-10,
+    design/external-files §3: a shared doc and a shared sheet link opened by
+    their handle, and a plain web page that stays `web_fetch`'s; NOT yet run),
+    plus 1 `tool_selection` case for `computer_import` with a shared file's
+    link (2026-10-11, design/external-files §5: a shared sheet put on her
+    computer to compute on, against `file_fetch`; NOT yet run), plus 1
+    `tool_selection` case for `media_fetch` with a shared photo's link
+    (2026-10-11, design/external-files §2: looked at through the source,
+    against `file_fetch` and `web_fetch`; NOT yet run), plus 2
+    `proactive_act` cases from the 2026-10-11 triple ask (design/cognition-
+    loop/35 §5): a12, her own answer five minutes old, and a13, the group
+    met an hour before the ask, plus the `personality` corpus's 20
+    (2026-10-13, design/context-plan/12 §5: the character cut's instrument,
+    four kinds of ordinary tag turn with a short-reply control each; NOT yet
+    run), plus 2 `lessons` cases (2026-10-13, DEC-311: a lesson that goes
+    ahead of a practice default, and a control whose lesson must not go ahead
+    of a rule);
+    a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 257
-    assert sum(c.active + c.parked for c in totals) == 257
+    assert sum(c.total for c in totals) == 299
+    assert sum(c.active + c.parked for c in totals) == 299
