@@ -499,8 +499,10 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
     unit = row.unit_id or None
     origin_room = None if unit else (room or row.conversation_id)
     at = row.when or row.created_at
-    # The venue by its NAME only: its address and map link locate it, and a
-    # node's text never carries a location (R-28).
+    # The venue by name: the resolved `venue_name`, else the group's own
+    # free-text `venue_text`, which is what was said in the room and takes the
+    # event's scope like that message. Never the resolved address, map link or
+    # coordinates (R-28); the unscoped place hub takes `venue_name` only.
     venue = row.venue_name or row.venue_text
     await _upsert_node(
         conn, kind="event", source_id=source_id, unit=unit, origin_room=origin_room,
@@ -529,21 +531,32 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
     await _entry_edges(conn, "event", source_id, edges)
 
 
-async def _is_a_room(conn: AsyncConnection, owner: str) -> bool:
-    """Whether `owner` is a room's `primary_id`: the Record holds a message
-    of it, or a room's own culture is keyed by it."""
+async def _is_a_unit(conn: AsyncConnection, owner: str) -> bool:
+    """Whether the database PROVES `owner` is a unit, without `policy.toml`
+    (60 §0.1): the unit's own account or Nora's in it exists, or a
+    unit-keyed Notebook row names it. The proof is positive because the
+    negative one cannot be had: a pre-C2b account's room may have no message
+    left (retention) and no culture of its own, and "not seen as a room" then
+    read as "a unit". A unit's person account written before any of these
+    exists is left out until its next revision or a rebuild re-projects it;
+    an account missing from search is a miss, one shown across a unit is a
+    disclosure."""
     found = await conn.execute(sa.select(sa.or_(
-        sa.exists().where(MESSAGES.c.conversation_id == owner),
-        sa.exists().where(CULTURE.c.key == owner),
+        sa.exists().where(CULTURE.c.key.in_([f"{owner}#unit", f"{owner}#nora"])),
+        sa.exists().where(NOTE.c.unit == owner),
+        sa.exists().where(MEMO.c.unit == owner),
+        sa.exists().where(LESSON.c.unit == owner),
+        sa.exists().where(EVENTS.c.unit_id == owner),
     )))
     return bool(found.scalar())
 
 
 async def _project_character(conn: AsyncConnection, source_id: str) -> None:
     form, owner, person = split_culture_key(source_id)
-    if form == "character" and await _is_a_room(conn, owner):
-        # A pre-C2b account keyed by a ROOM (60 §0.8, `character_key`): never
-        # indexed, and dropped if it ever was.
+    if form == "character" and not (owner and await _is_a_unit(conn, owner)):
+        # Indexed only when its owner is provably a unit: a pre-C2b account
+        # keyed by a ROOM (60 §0.8, `character_key`) is never indexed, and
+        # dropped if it ever was.
         await _drop(conn, "character", [source_id])
         return
     row = (await conn.execute(

@@ -324,6 +324,14 @@ class SqlGatheringStore:
             recorded_at=rsvp.responded_at,
         )
         async with self._engine.begin() as conn:
+            # Locked as `update` locks it: the projection below re-reads the
+            # whole event row, and without the lock a concurrent `update`
+            # committing between that read and this commit would have its
+            # node overwritten with the older values (a newly added
+            # `exclude_persons` undone in the index).
+            await conn.execute(
+                sa.select(EVENTS.c.id).where(EVENTS.c.id == rsvp.event_id).with_for_update(),
+            )
             await conn.execute(stmt)
             # The person who answered is someone the event is about.
             await memory_index.project(conn, "event", str(rsvp.event_id))

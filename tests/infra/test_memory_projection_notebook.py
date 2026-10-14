@@ -32,6 +32,7 @@ from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import (
+    CULTURE_REVISION,
     MEMORY_EDGE,
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
@@ -383,6 +384,40 @@ async def test_an_old_room_keyed_person_account_is_never_indexed(engine):
     assert ("character", old_key) not in nodes
     assert not any(n.text == "an old per-room account" for n in nodes.values())
     assert await _edges(engine, "character", old_key) == set()
+
+
+async def test_a_room_keyed_account_with_no_trace_of_its_room_is_never_indexed(engine):
+    """The room has no message left and no culture of its own, so nothing
+    says it is a room; nothing says it is a unit either, and only a proven
+    unit is indexed."""
+    old_key = "g9#character:member-b"
+    await SqlCultureStore(engine).append(
+        key=old_key, body="an orphaned per-room account", written_at=10,
+        established_by="dreamer",
+    )
+    assert ("character", old_key) not in await _nodes(engine)
+    assert await _edges(engine, "character", old_key) == set()
+
+
+async def test_a_character_accounts_exclude_persons_is_copied(engine):
+    """`culture_revision.exclude_persons` exists (`0073_lineage`) but
+    `SqlCultureStore.append` never sets it, so a written account's node holds
+    `[]`; a head that does carry one has it copied onto the node."""
+    store = SqlCultureStore(engine)
+    await store.append(
+        key=unit_culture_key(_UNIT), body="the unit", written_at=5, established_by="dreamer",
+    )
+    key = character_key(_UNIT, "member-b")
+    await store.append(key=key, body="an account", written_at=10, established_by="dreamer")
+    assert (await _nodes(engine))[("character", key)].exclude_persons == []
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.update(CULTURE_REVISION).where(CULTURE_REVISION.c.culture_key == key)
+            .values(exclude_persons=["member-c"])
+        )
+        await memory_index.project(conn, "character", key)
+    assert (await _nodes(engine))[("character", key)].exclude_persons == ["member-c"]
 
 
 async def test_a_failed_notebook_projection_queues_and_the_entry_stands(engine, monkeypatch):
