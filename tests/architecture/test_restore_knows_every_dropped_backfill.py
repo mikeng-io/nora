@@ -23,9 +23,11 @@ ROOT = Path(__file__).resolve().parents[2]
 VERSIONS = ROOT / "nora" / "infra" / "sql" / "migrations" / "versions"
 HISTORY_BEGAN = 68
 
-_DROPPED = re.compile(
-    r'alter_column\(\s*"(?P<table>[a-z_]+)"\s*,\s*"(?P<column>[a-z_]+)"\s*,\s*server_default\s*=\s*None',
-)
+#: An `alter_column(` call whose arguments drop the default, wherever
+#: `server_default=None` sits among them; its first two quoted strings, in
+#: either quote style, are the table and the column.
+_DROPPED = re.compile(r"alter_column\((?P<args>[^)]*?server_default\s*=\s*None)", re.S)
+_NAMES = re.compile(r"""["'](?P<name>[a-z0-9_]+)["']""")
 
 
 def _dropped_backfills() -> set[tuple[str, str]]:
@@ -35,9 +37,21 @@ def _dropped_backfills() -> set[tuple[str, str]]:
         if int(path.name[:4]) <= HISTORY_BEGAN:
             continue
         for m in _DROPPED.finditer(path.read_text()):
-            if m["table"] in copied:
-                found.add((m["table"], m["column"]))
+            names = [n["name"] for n in _NAMES.finditer(m["args"])][:2]
+            if len(names) == 2 and names[0] in copied:
+                found.add((names[0], names[1]))
     return found
+
+
+def test_the_pattern_reads_the_formatting_variants() -> None:
+    for text in (
+        'op.alter_column("t", "c", server_default=None)',
+        "op.alter_column('t', 'c', existing_type=sa.Text, server_default = None)",
+        'op.alter_column(\n    "t",\n    "c",\n    server_default=None,\n)',
+    ):
+        m = _DROPPED.search(text)
+        assert m is not None, text
+        assert [n["name"] for n in _NAMES.finditer(m["args"])][:2] == ["t", "c"], text
 
 
 def test_the_scan_finds_the_known_case() -> None:
