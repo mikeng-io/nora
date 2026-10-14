@@ -34,7 +34,7 @@ _T0 = int(datetime(2026, 9, 1, tzinfo=_HKT).timestamp() * 1000)
 NOW = _T0 + 30 * _DAY
 
 HOME_A = (22.3882, 114.0371)   # primary residence
-HOME_B = (22.3512, 114.0632)   # second residence, ~24 km away
+HOME_B = (22.3512, 114.0632)   # second residence, ~5 km away
 OFFICE = (22.3756, 114.1973)
 
 CFG = RollupConfig(
@@ -100,7 +100,7 @@ def test_the_corrupted_row_keeps_its_links_and_the_displaced_cluster_gets_a_new_
     # Regression 1 — the measured defect. Row 7 holds HOME_B's coordinates
     # (the later cluster overwrote them) but HOME_A's links (the first
     # cluster's backfill). Identity must follow the LINKS: HOME_A keeps id 7
-    # and HOME_B gets a fresh row, so no stay ends up pointing 24 km away.
+    # and HOME_B gets a fresh row, so no stay ends up pointing 5 km away.
     stays = (
         _nights(HOME_A, range(0, 20, 2), place_id=7)
         + _nights(HOME_B, range(1, 20, 2))
