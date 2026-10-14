@@ -2,7 +2,10 @@
 
 Status: **proposed**, 2026-10-15, on the operator's rulings in
 [35](35-persona.md). Nothing is built. The decision row is written when the
-schema lands (nora-decision).
+schema lands (nora-decision). **Amended 2026-10-15 (operator)** on an audit:
+line-to-line citations become links (§3), hypotheses are graded by something
+other than their writer (§3), the build's prerequisites are listed (§4),
+shadow changes no prompt (§6, §8), and the coverage gate fails closed (§6).
 
 ## 0. This reverses "prose, no schema", deliberately
 
@@ -52,59 +55,103 @@ the old one.
 | `part` | text | `identity`, `character`, `hypothesis` |
 | `kind` | text | identity: `name`, `role`, `relationship`, `attribute`, `instruction`, `purpose`, `norm`; character: `trait`; hypothesis: `explanation`. CHECK pairs kind with part. |
 | `text` | text | one claim, prose, at most 300 characters; no message id, no coordinate (R-18/R-28 screen) |
-| `mode` | text | `authored`, `told`, `deduced`, `induced`, `abduced`; allowed per part in §3 |
-| `citations` | text[] | non-empty; each a Record row id, a Rollup key, an episode `response:<id>`, or another line's id |
+| `mode` | text | `told`, `deduced`, `induced`, `abduced`; allowed per part in §3. Authored lines are rendered, never stored |
+| `citations` | text[] | non-empty; each a Record row id, a Rollup key or an episode `response:<id>`. **Never another line's id** (DEC-249: an entry → entry reference is a link, not a citation) |
+| `draws_on` | uuid[] | the lines a `deduced` line rests on, as typed links ([25](25-memory-graph.md) §2); empty otherwise |
 | `told_by` | text | the speaker's person id when `mode = told`, else null |
-| `prediction` | text | required when `mode = abduced`, else null |
-| `state` | text | `current`, `disputed`, `superseded`, `retired`, `refuted` |
-| `verdict` | text | for a hypothesis: `open`, `confirmed`, `refuted` |
+| `prediction` | text | required when `mode = abduced`, else null: the prediction in words |
+| `prediction_observable` | text | required when `mode = abduced`: what would be seen, named so a judge can check it (a count over a Rollup key where it is countable, else a described event) |
+| `prediction_window_end` | bigint | required when `mode = abduced`: when the window closes |
+| `state` | text | `current`, `disputed` (awaiting weighing, one meaning only), `outranked` (lost on precedence), `hidden` (the subject disputed it or said "forget that"), `superseded`, `retired`, `refuted` |
+| `verdict` | text | for a hypothesis: `open`, then `confirmed`, `refuted`, `expired` (window closed, observable never occurred) or `unknown` (the observable could not be read); set by the judge (§3), never by this adaptor |
+| `verdict_by`, `verdict_at` | text, bigint | the judge that set it (code or a named judge model) and when |
 | `supersedes` | uuid | the line it replaces, or null |
 | `support_count` | int | how many distinct citations have supported it over its life |
 | `last_supported_at` | bigint | the newest evidence that supported it |
-| `lineage`, `exclude_persons`, `as_of` | | today's derived-row columns (cognition-loop/10 §3) |
+| `unit`, `exclude_persons`, `as_of` | | today's derived-row columns (cognition-loop/10 §3); scope is the unit ([35](35-persona.md) §3; the `lineage` column stays computed but `[lineage]` stays off) |
 | `written_by_session` | text | the adaptor run that wrote it |
 
-The lines are also index nodes, and their citations, `about` and `supersedes`
-become edges in the same transaction ([25](25-memory-graph.md) §7).
+The lines are also index nodes, and their citations, `about`, `supersedes`
+and `draws_on` become edges inside the write's own `begin()` block
+([25](25-memory-graph.md) §7).
 
 ## 2. The parts, their kinds and their caps
 
 | part | kinds | cap (current lines) | decays |
 |---|---|---|---|
-| identity | `name`, `role`, `relationship`, `attribute`, `instruction` (actors); `purpose`, `norm` (collectives) | 25 | no; replaced only by a later told line or a dispute the adaptor accepts |
+| identity | `name`, `role`, `relationship`, `attribute`, `instruction` (actors); `name`, `purpose`, `norm` (collectives) | 25 | no; replaced only by a later told line or a dispute the adaptor accepts |
 | character | `trait` | 5 | yes: unsupported for 60 days → `retired` at the next session unless re-evidenced |
-| hypothesis | `explanation` | 3 with verdict `open` | refuted → retired; confirmed stays a hypothesis |
+| hypothesis | `explanation` | 3 whose window is still open | refuted → retired; confirmed stays a hypothesis |
+
+**The caps (25 / 5 / 3) and the 60-day decay are starting values** (amended
+2026-10-15), to be sized on data: the line counts and re-support intervals the
+shadow sessions actually produce (00 «Sequence» step 6), not these guesses.
+
+A hypothesis holds its slot until its window closes, whatever its verdict, so
+confirming one early cannot free a slot for another.
 
 `Accounts` (platform identities) are rendered from `identity.toml` and are
-never a line a model writes (30 §3). A collective's members stay the roster's
+never a line a model writes (30 §3). **A collective's names** are `name`
+lines; Culture's `Names and where they came from` section (cognition-loop/12
+§4) is retired into them. A collective's members stay the roster's
 (`room_members`). Over a cap, the write must retire a line in the same call,
 and the refusal says which cap.
 
 ## 3. The reasoning modes, enforced
 
+**This is the one amended "allowed in" table for Persona** (2026-10-15); it
+amends cognition-loop/10 §4 for this tier, and [35](35-persona.md) §1 defers
+to it.
+
 | mode | allowed in | must cite | refused when |
 |---|---|---|---|
-| `authored` | identity | the authored source | never written by the model; rendered from operator files |
-| `told` | identity | the message it was said in | the citation is not a message the session was shown; a `instruction` whose `told_by` is not the subject |
-| `deduced` | identity, character | at least 2 premises, lines or rows | fewer than 2 premises; any premise is `abduced`; any premise is not `current` |
+| `told` | identity | the message it was said in | the citation is not a message the session was shown; the message was said in a room the subject is not listed in ([35](35-persona.md) §3); a `instruction` whose `told_by` is not the subject |
+| `deduced` | identity, character | at least 2 premises: cited Record rows, Rollup keys or episodes, and premise lines linked by `draws_on` | fewer than 2 premises; a line id in `citations`; any premise line is `abduced` or not `current` |
 | `induced` | character | at least 3 instances on at least 2 calendar days, or one Rollup aggregate key | too few instances; all on one day |
 | `abduced` | hypothesis | at least one current `induced` trait it explains, and a `prediction` | no prediction; it explains no induced trait; the prediction names no observable or no window |
+
+**Authored lines** (names and accounts from `identity.toml`) carry no mode:
+`authored` is not one of cognition-loop/10 §4's six modes. They are rendered
+from the operator's files and never written as lines.
 
 A `told` line keeps the verb it was told with: "thinking about Japan" is not
 "went to Japan" (30 §4). Precedence when two current lines conflict: authored >
 told by the subject > told by someone else > deduced > induced. Both stay, the
-lower marked `disputed`, until a later statement settles them.
+lower marked `outranked` (not `disputed`, which means only "awaiting
+weighing"), until a later statement settles them.
 
 **A hypothesis is a question, not a fact.** It renders under "open
 questions", and Nora may ask it. Assent ("yeah") never changes its verdict
-(cognition-loop/10 §4). Each later session tests its prediction against the
-new evidence it was handed and sets `confirmed` or `refuted`, citing the rows.
-The share confirmed is the grounded measure of her abduction.
+(cognition-loop/10 §4).
+
+**It is not graded by its writer** (amended 2026-10-15; the first version had
+each session grade its own predictions). The verdict is set when
+`prediction_window_end` passes, by a judge other than the Persona adaptor:
+code, where `prediction_observable` is countable (a Rollup key, a count of
+response episodes); otherwise a separate judge model given the observable,
+the window and the Record rows inside it, and nothing the adaptor wrote. The
+outcomes stay distinct: `confirmed`, `refuted`, `expired` (the observable
+never occurred in the window) and `unknown` (it could not be read, R-27), and
+`unknown` is never counted as either side. The confirmation rate's
+denominator is **every hypothesis ever written**, retired or not, so a writer
+cannot improve its rate by retiring the ones going badly.
 
 ## 4. The adaptor
 
 The `character-person` adaptor (DEC-290), renamed and widened. The unit,
 room (Culture) and Nora accounts follow the same shape with their own inputs.
+
+**Build prerequisites** (2026-10-15; none exists today):
+
+1. **`Citable` widens** from an id to `id → (ts, person_id, room)`, so the
+   validator can check a citation's day (the induced rule), its speaker (the
+   told and instruction rules) and its room (35 §3).
+2. **Rollup keys and response episodes become citable**: today the validator
+   accepts neither.
+3. **The time zone for "2 calendar days"** is Hong Kong time (HKT, UTC+8),
+   stated in the validator, not taken from the host.
+4. **The stimulus wake is new.** The dream loop wakes on evidence counts and
+   staleness only; a wake on a named stimulus is built here.
 
 **Wakes:** today's rule (`person_wake_batch` = 100 messages, or 7 days stale),
 **plus** at once on a stimulus that names this entity: a `remember`, a
@@ -116,18 +163,22 @@ dispute, or a told line about them by someone else.
 |---|---|---|
 | its own current lines, with handles (`P1`, `P2`, ...) | the previous account, as prose | every current line with part, kind, mode, citations, verdict |
 | the person's new messages | yes | yes |
-| **messages that mention the person** | no | yes, through the index's `mentions` edges |
-| **their response episodes** (how they answered Nora) | no | yes ([50](50-learning-from-acts.md)) |
+| **messages that mention the person** | no | yes, through the index's `mentions` edges, only from rooms the person is listed in ([35](35-persona.md) §3) |
+| **their response episodes** (how they answered Nora) | no | yes ([50](50-learning-from-acts.md)), under the same rule |
 | **their Rollup aggregates** (rhythm, ties) | no | yes, as evidence for induction |
 | open disputes and `remember` items about them | no | yes |
 | the unit's room cultures | yes | yes |
 
 The mentions input is the one that matters most for Honcho parity (§6): today
-the adaptor never sees what others say about a person, which is where
-"Rin is Sam's sister" lives.
+the adaptor is **handed** only the person's own messages. It can reach what
+others say about them only if it thinks to search for it, through Honcho's
+`search_memory` and `about` (`CHARACTER_PERSON_TOOLS`,
+`nora/language/character.py:119-121`), and that is where "Rin is Sam's
+sister" lives. After, those messages are an input, not a search it may skip.
 
-**Tools:** `ask_memory` over the index (replacing Honcho's), the Record
-reads, `lookup_person`, `group_members`. No act verb.
+**Tools:** `ask_memory` over the index (replacing Honcho's `ask_memory` and
+`search_memory`), `about` reading Persona, the Record reads, `lookup_person`,
+`group_members`. No act verb.
 
 **One session, three ordered phases** in the objective:
 
@@ -135,8 +186,9 @@ reads, `lookup_person`, `group_members`. No act verb.
    disputes ([35](35-persona.md) §2).
 2. **Character:** re-judge every trait: keep, merge, retire, or add an
    induced one.
-3. **Hypotheses:** test each open prediction; retire the refuted; propose at
-   most one new explanation.
+3. **Hypotheses:** read the verdicts the judge has set since the last
+   session; retire the refuted; propose at most one new explanation, with its
+   observable and window.
 
 One session rather than three because each phase reads the one before it,
 and three sessions cost three passes over the same input. The reading that
@@ -147,13 +199,16 @@ evidence above 10% on the eval (§7).
 
 ```
 persona_write(entity, ops)
-  op: {"op": "add",     "part", "kind", "text", "mode", "citations", "told_by"?, "prediction"?}
+  op: {"op": "add",     "part", "kind", "text", "mode", "citations", "draws_on"?, "told_by"?,
+                        "prediction"?, "prediction_observable"?, "prediction_window_end"?}
       {"op": "keep",    "line": "P3", "citations"?}        # re-support, refreshes last_supported_at
-      {"op": "revise",  "line": "P3", "text"?, "citations", "mode"?}
+      {"op": "revise",  "line": "P3", "text"?, "citations", "draws_on"?, "mode"?}
       {"op": "retire",  "line": "P3", "why"}
-      {"op": "verdict", "line": "P7", "verdict": "confirmed"|"refuted", "citations"}
 persona_no_change(entity, why)
 ```
+
+There is no `verdict` op (amended 2026-10-15): the adaptor that wrote a
+hypothesis cannot grade it (§3).
 
 Every op is validated against §2 and §3 before any is applied. One refused
 op refuses the call, with each refusal's reason and handle, and nothing is
@@ -174,26 +229,49 @@ open questions: picks short co-op games, maybe because weekday evenings are shor
 </persona>
 ```
 
-No ids, no dates beyond what a line says, `disputed` lines marked as such, and
-the per-account and per-block character caps of today's `<character>` block.
-Lineage decides which lines render in which room ([35](35-persona.md) §3).
+No ids, no dates beyond what a line says, `disputed` lines marked as such,
+`hidden` lines never, and the per-account and per-block character caps of
+today's `<character>` block. A line resting on a message since deleted renders
+as it did, and its evidence view says "a message since deleted"
+([35](35-persona.md) §5).
+
+**Which rooms see it** (amended 2026-10-15; this said lineage decides, and
+lineage is off): the unit is the boundary. A person's block renders in the
+unit's rooms that list them, and in no other unit
+([35](35-persona.md) §3); a collective's block renders in its own room, or in
+every room of the unit for the unit's account.
 
 ## 6. What Honcho knew is re-derived, and that is measured
 
-1. **Shadow first.** The adaptor writes Persona while Honcho keeps running
-   read-only and every prompt is unchanged.
-2. **Coverage, on norty, counts only.** For each person with a peer card,
-   every card line, and a random 50 of their `explicit` conclusions, are
-   judged by a model that did not write the Persona into one of:
-   `covered` (a current Persona line says it), `derivable-missed` (the source
-   message is in the Record and no line says it), `not-worth-keeping`
-   (transient or trivial).
-3. **Pass:** at least 80% of the cards' identity, relationship and
-   instruction lines are `covered`. Every `derivable-missed` line is traced
-   to a missing input or an objective gap and fixed before switching.
-4. **Then the replies.** Node 10's replay: at least 80 recorded tag turns
-   with `peer_card` and `peer_history` against the same turns with
-   `<persona>`, judged blind in pairs. Persona must not lose.
+1. **Shadow first, and shadow changes no prompt** (amended 2026-10-15). The
+   adaptor writes Persona under a **shadow key**; the live Character head
+   keeps rendering, `peer_card` and `peer_history` keep rendering, and
+   Honcho's feed keeps running, until the switch (00 «Sequence» step 8).
+2. **Fix the denominator before measuring.** The card lines and a random 50
+   of each person's `explicit` conclusions are listed first, and the
+   `not-worth-keeping` set is hand-labelled before any Persona is judged. A
+   line the judge later calls `not-worth-keeping` does not leave the
+   denominator unless it was in that pre-labelled set.
+3. **Calibrate the judge.** It is a model that did not write the Persona.
+   Before it judges, it labels 20 hand-labelled lines; it is used only if it
+   agrees on at least 18.
+4. **Coverage, on norty, counts only.** Each listed line is judged into one
+   of: `covered` (a current shadow Persona line says it), `derivable-missed`
+   (the source message is in the Record and no line says it),
+   `not-worth-keeping` (pre-labelled only), or **`error`** (the judge call
+   failed, timed out or returned no label). An `error` is never `covered`.
+5. **Pass:** at least 80% of the cards' identity, relationship and
+   instruction lines are `covered`, **and** at least 60% of the sampled
+   `explicit` conclusions that state a stable fact about the person are
+   `covered`, **and** `error` is under 5% of the judged lines (above that the
+   run is an ERROR, not a FAIL or a PASS, and is rerun). Every
+   `derivable-missed` line is traced to a missing input or an objective gap
+   and fixed before switching.
+6. **Then the replies.** The one replay threshold, used here and in
+   [10](10-honcho-audit.md) §4: at least 80 recorded tag turns with
+   `peer_card` and `peer_history` against the same turns with `<persona>`,
+   judged blind in pairs. The switch passes only if Persona is preferred in
+   at least 55% of the pairs.
 
 89% of Honcho's conclusions are `explicit`, what people said, and those
 messages are in Nora's own Record. The coverage measure is how that claim is
@@ -215,7 +293,9 @@ A `persona` corpus, synthetic people only:
 ## 8. Migration
 
 The one-off backfill ([35](35-persona.md) §4) maps each live Character head to
-`character` lines: the adaptor's first session after the switch rewrites the
-prose head into at most 5 `trait` lines, citing what the prose head cited.
-Until then the prose head renders as it does today. The Culture heads move
-the same way, with `purpose` and `norm` starting empty.
+`character` lines: the adaptor's first **shadow** session rewrites the prose
+head into at most 5 `trait` lines under the shadow key, citing what the prose
+head cited. The prose head keeps rendering until the switch (00 «Sequence»
+step 8), not until the first session. The Culture heads move the same way,
+with `purpose` and `norm` starting empty and `name` lines taken from Culture's
+`Names and where they came from`.

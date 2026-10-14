@@ -2,9 +2,14 @@
 
 Status: **proposed**, 2026-10-14. **Ruled 2026-10-15 in [35](35-persona.md):**
 identity, character and abduced hypotheses are one account, Persona, which
-widens the Character tier; there is no fifth tier. §2, §5 and the
-«only the subject may dispute» rule in §7 are superseded there; §3, §4, §6
-and the rest of §7 stand under Persona.
+widens the Character tier; there is no fifth tier. §2, §5, §7 step 1 («the
+disputed line stops rendering at once», now only for the subject's own
+dispute), §7 step 3 (the retraction cascade, deleted 2026-10-03) and the
+«only the subject may dispute» rule in §7 are superseded there; §8 is
+answered there; §3, §4, §6 and the rest of §7 stand under Persona.
+**Amended 2026-10-15:** the schema, modes and caps that hold are
+[45](45-persona-adaptor.md)'s; this node's tables are kept as the reasoning
+that led to them.
 
 **This node proposes amending DEC-249.** [cognition-loop/05](../cognition-loop/05-data-model.md)
 §1 fixes the Notebook at four tiers, and §2 rules that "per-person facts live
@@ -12,7 +17,8 @@ in Memory" (Honcho) and "the Notebook stores no statement-level provenance".
 With Honcho retired, per-person facts need a home. This node puts them in a
 fifth tier, Identity, which is a change to that ruling, not a reading of it.
 It needs the operator's ruling and its own decision row when it lands
-(nora-decision).
+(nora-decision). *(Superseded by [35](35-persona.md) §1: no fifth tier;
+Persona widens Character, and DEC-249 is amended in §1 and §2 only.)*
 
 ## What the operator asked
 
@@ -60,7 +66,7 @@ differ in every property a tier is cut by:
 | comes from | mostly **listening**: what was authored or told | mostly **watching**: what is done over many instances |
 | reasoning modes | `told`, `deduced` (from authored and told lines) | `induced`; `abduced` only if §5 allows it |
 | changes | rarely, and by a new statement | by drift, and lines decay without re-evidence |
-| written by | the Character adaptor, its sole writer (DEC-249 rule 3: one writer per tier) | the Character adaptor |
+| written by | the Character adaptor, its sole writer (DEC-249 rule 3: one writer per tier) *(superseded by 35: one tier, the Persona adaptor)* | the Character adaptor |
 
 One adaptor writing two tiers is the existing pattern: Cognition writes both
 Register and Standing. **The tag turn never writes Identity** (DEC-249 rule 4:
@@ -105,7 +111,10 @@ citations and its mode.
 Two things a collective's identity might hold are already answered elsewhere,
 and stay there so no question has two homes: its names and their origins are
 Culture's `Names and where they came from` section (cognition-loop/12 §4), and
-its members are the roster, already rendered as the `room_members` block. How
+its members are the roster, already rendered as the `room_members` block.
+*(Amended 2026-10-15: a collective's names now live in Persona as `name`
+identity lines, [45](45-persona-adaptor.md) §2; Culture's `Names and where
+they came from` section is retired into them. The roster stays.)* How
 a room *actually* behaves stays in its Culture. A stated norm in Identity
 and an observed practice in Culture may disagree, and the disagreement is
 itself worth seeing.
@@ -161,7 +170,7 @@ entry citing the message. The tier is the one the statement's question names:
 
 | said | goes to | written by |
 |---|---|---|
-| who someone is ("I'm vegetarian now", "call me Kit") | Identity, `told` | the Character adaptor |
+| who someone is ("I'm vegetarian now", "call me Kit") | Identity, `told` *(now Persona's identity part, 35)* | the Character adaptor *(now the Persona adaptor)* |
 | a settled fact of the unit ("our usual place is X") | Register · memo | Cognition |
 | something open or dated ("Japan in March") | Register · note or event | Cognition |
 
@@ -169,13 +178,16 @@ entry citing the message. The tier is the one the statement's question names:
 
 **Correct.** Nothing is overwritten:
 
-1. The correction is a Record item (`character_dispute`, or the told line
-   itself), and the disputed line stops rendering at once.
+1. The correction is a Record item (`persona_dispute`, or the told line
+   itself), and the disputed line stops rendering at once. *(Superseded by
+   [35](35-persona.md) §2: only the subject's own dispute hides a line at
+   once; anyone else's marks it `disputed` for the next session.)*
 2. The writer's next session re-evidences the line or removes it
    (cognition-loop/50 §4).
-3. Everything whose citations reach it is marked `unsupported` and goes
-   back for re-derivation (the retraction cascade, cognition-loop/80 §4
-   item 1; the citations live with the entries, [25](25-memory-graph.md) §1).
+3. ~~Everything whose citations reach it is marked `unsupported` and goes
+   back for re-derivation (the retraction cascade).~~ *(Superseded: the
+   cascade was deleted 2026-10-03, migrations 0092/0093. Nothing derived is
+   re-marked; [35](35-persona.md) §5.)*
 4. The revision chain keeps what was believed and when it changed.
 
 **Only the subject may dispute a line about themselves** (cognition-loop/50
@@ -186,22 +198,28 @@ statement with content.
 
 **Seeing it.** The portal shows each person the Identity and Character about
 them, with the evidence behind each line (cognition-loop/50 §4).
-`character_dispute` and the citation-edge table are designed and **not
-built**. They are this bundle's build, not new design.
+`persona_dispute` (formerly `character_dispute`) is designed and **not
+built**; it is this bundle's build. The citation-edge table is not: it was
+dropped 2026-10-03 (migration 0093), and the memory index's `memory_edge` is
+read by the retrieval service, not by a cascade ([25](25-memory-graph.md) §1).
 
 ## 8. For the operator
 
+*(All answered 2026-10-15 in [35](35-persona.md).)*
+
 0. The DEC-249 amendment above: per-person facts move from Memory into the
    Notebook. Without it, Identity has no lawful home once Honcho goes.
+   *(Ruled: into Persona, 35 §1.)*
 1. Identity as a fifth Notebook tier (recommended), or sections inside
-   Character.
+   Character. *(Ruled: neither; one Persona account, 35 §1.)*
 2. Abduced lines in Character as marked hypotheses, or abduction kept to
    Register and Standing.
 3. Does the operator override "only the subject may dispute"?
 3a. `Unsure` replaced by explicit per-line modes (§5): a Character schema
    change.
 4. Visibility of a told Identity line: today's lineage rule (its origin room,
-   then the person's rooms in the unit, cognition-loop/50 §5). The prior-art
+   then the person's rooms in the unit, cognition-loop/50 §5). *(Ruled: the
+   unit is the boundary and lineage stays off, 35 §3.)* The prior-art
    review found one person's disclosure surfacing in another's session to be
    the main multi-user risk ([40](40-prior-art.md)).
 5. A watch, not a decision: a stored profile measurably raises a model's

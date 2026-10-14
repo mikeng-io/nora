@@ -125,9 +125,12 @@ readings would waste the reason they were chosen.
 So the order changes:
 
 1. **The text → image slice is built first**, then text → video, then
-   text → audio. Step 0's photo journeys passed on stored readings alone
-   (unified-memory 00 «Sequence»), so nothing has yet shown a visual vector
-   finding what a reading misses. This slice is the measurement that would.
+   text → audio. Step 0 ran 2026-10-15 (00 «Sequence»): 7 of 8 recall cases
+   passed at n=1 on existing tools, and the one failure was a time-scoping
+   misread, not a record that could not be found. So nothing has yet shown a
+   visual vector finding what a stored reading misses, and the multimodal
+   target rests on the operator's ruling, not on a measured recall gap. This
+   slice is the measurement that would show one.
 2. **A multimodal candidate becomes the only embedder** if it holds the
    Cantonese slice within 0.05 of bge-m3 and wins the text → image slice by
    the pass margin above. Media then gets image and video vectors, embedded
@@ -146,6 +149,11 @@ are measured with Nora running.
 
 ## Not decided here
 
-- Graph expansion after the search ([25](25-memory-graph.md), if the operator
-  approves it) is measured in its own arm, after stage 3. Following edges from
-  the seeds is a different retrieval step from reranking them.
+- Graph expansion after the search ([25](25-memory-graph.md) §4; hops are
+  ruled in, operator 2026-10-15) is measured in its own arm, after stage 3:
+  adaptive depth against a fixed two hops on the journey slices. Following
+  edges from the seeds is a different retrieval step from reranking them.
+- **The media backfill's cost.** Before it runs, the count of stored media
+  objects is read and the embed time is extrapolated from the measured
+  per-image cost; the backfill then runs under a throttle (a per-hour budget
+  sized from that count) with Nora running, never as one unbounded batch.

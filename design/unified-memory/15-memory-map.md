@@ -26,21 +26,21 @@ does not need a new topology. It needs three changes to that one:
 
 | store | layer · tier | memory of | indexed as | how it is corrected |
 |---|---|---|---|---|
-| messages, edits, deletes, reactions | Record | what was said | one row per message, its own time | not edited: a delete withdraws it, and the retraction cascade (cognition-loop/80 §4 item 1) reaches everything derived from it |
-| media bytes (`media_objects`) and their readings (`media_descriptions`) | Record | what was shown | the reading as text; a media vector only if [20](20-embedding-bakeoff.md) justifies it | a re-read replaces nothing; a new perception row is added |
+| messages, edits, deletes, reactions | Record | what was said | one row per message, its own time; an edit re-projects it | a platform delete sets `messages.hidden_at`: the message is never quoted, never a hit, and its node is dropped. What was derived from it stays and cites "a message since deleted" ([35](35-persona.md) §5; there is no retraction cascade since 2026-10-03) |
+| media bytes and their readings (`media_objects`: the reading in `title`, `description`, `content`, keyed by `sha256`, no room, UPSERTed) | Record | what was shown | one node per **attachment** `(message, sha256)`, scoped by its message, with the reading copied in; a media vector only if [20](20-embedding-bakeoff.md) justifies it | a re-read UPSERTs the reading, and every attachment of that `sha256` is re-projected. There is no `media_descriptions` table: that module is a cache over `media_objects` and `sticker_index` |
 | stickers (`sticker_index`) | Record | what she can send | no: a send-side catalogue, not a memory of anyone | — |
 | external files | Record (the link only) | that a file was shared, and what was said about it | the link and its message | — (content is never kept, [external-files/00](../external-files/00-design.md)) |
 | presence fixes, polls | Record | where people were | no: raw fixes are read through their episodes | — |
 | social items, play samples (step 5) | Record | what people posted and played | one row per item | withdrawal on delete |
-| face labels, `character_dispute` (designed) | Record | who is in a photo; what a subject disputed | no: they are inputs to derivation | the subject's own Record item |
-| her tool calls and results, decisions, sends | Record | what she did | her sends yes; tool plumbing no | — |
+| face labels, `persona_dispute`, `feedback` (designed) | Record | who is in a photo; who disputed which line; what someone said about her act | disputes and feedback yes, as nodes with their edges; face labels no | the speaker's own Record item |
+| her tool calls and results, decisions, sends; her own artifacts (documents, generated images) | Record | what she did and made | her sends and artifacts yes; tool plumbing no | — |
 | stays, trips, outings, co-locations, a person's day | Rollup · episode | what happened, bounded | one row per episode, with its interval | rebuilt from the Record, never edited |
-| place, rhythm, tie, play profile | Rollup · aggregate | patterns over a window | no: numbers are read by key (`rollup_read`, `where_been`), not by meaning | rebuilt |
-| note, memo, event | Notebook · Register | the state of the unit's affairs | one row per head revision | a later told row supersedes; the revision chain keeps the old |
-| Character (person, room, unit, Nora) | Notebook · Character | what an entity is like | one row per section, so a hit lands on a paragraph, not a whole account | dispute (cognition-loop/50 §4) |
-| **Persona** (widens Character) | Notebook · Persona | who an entity is, what it is like, why | one row per line | [35](35-persona.md) |
+| response and act episodes ([50](50-learning-from-acts.md)) | Rollup · episode | how people answered what she did | one row per episode, `outcome_of` its act | rebuilt |
+| place, rhythm, tie, play profile | Rollup · aggregate | patterns over a window | no node: numbers are read by key (`rollup_read`, `where_been`), not by meaning; `ask_memory` reaches them through the same key reads | rebuilt |
+| note, memo, event | Notebook · Register | the state of the unit's affairs | one row per head revision | a later told row supersedes; the revision chain keeps the old. Notes gain citations in the build (00 «Sequence» step 4) |
+| **Persona** (widens Character: person, room, unit, Nora) | Notebook · Persona | who an entity is, what it is like, why | one row per **line**, so a hit lands on one claim, not a whole account | a dispute ([35](35-persona.md) §2) |
 | Lessons | Notebook · Lessons | how she has learned to act | one row per lesson | the operator's retire on the portal |
-| Standing | Notebook · Standing | where she stands | one row per section | its next fold |
+| Standing | Notebook · Standing | where she stands | one row per section; it stores no citations, so it has no `cites` edges | its next fold |
 | Tension | operator-only | — | **never**: code guarantees she cannot read it (cognition-loop/10 §1), and an index row would break that | — |
 | doctrine, `identity.toml`, config, policy | Authored | what the humans fixed | no: it is served whole and wins over anything derived | edited by hand |
 | a turn's blocks, a portal page | Views | — | no: never stored as data | — |
@@ -48,15 +48,21 @@ does not need a new topology. It needs three changes to that one:
 ## Three rules the index keeps
 
 - **Visibility is the source's, evaluated at read time.** An index row copies
-  its source's lineage `(kind, subject, origin room)` and `exclude_persons`
-  (cognition-loop/05 §3). The search filters by the reader's room **before**
-  ranking, never after (conversational-recall/20).
+  its source's unit, origin room and `exclude_persons` (cognition-loop/05
+  §3). The unit is the read boundary (`[lineage]` stays off, operator
+  2026-10-03; [35](35-persona.md) §3), and evidence about a person counts only
+  if it was said in a room that person is listed in. The search filters by the
+  reader's scope **inside** the scan, before ranking, never after
+  (conversational-recall/20, [25](25-memory-graph.md) §3).
 - **A row is a pointer, not a copy of the truth.** The index holds text for
   matching and the source's id; the answer reads the source's current head.
   A superseded note never answers from a stale index row.
-- **A withdrawal reaches the index.** The retraction cascade already marks
-  derived revisions `unsupported`; the index drops their rows in the same
-  transaction, or a deleted message stays findable by meaning.
+- **A hidden item leaves the index** (operator, 2026-10-15). A message deleted
+  on the platform (`messages.hidden_at`) has its node dropped in the same
+  write that hides it, so it is never found by meaning. Nothing derived from
+  it is withdrawn: there is no retraction cascade (removed 2026-10-03,
+  migrations 0092/0093), and lines that cite it stay, citing "a message since
+  deleted" ([35](35-persona.md) §5).
 
 ## Notes, memos and media are not demoted
 

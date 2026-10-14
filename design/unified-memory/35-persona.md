@@ -4,6 +4,9 @@ Status: **ruled by the operator 2026-10-15**, not built. Supersedes
 [30](30-identity-and-character.md) §2 (Identity as a fifth tier), §5 and the
 dispute rule in §7. 30's schema (§3), precedence (§4), agents as actors (§6)
 and the remember / correct flow (§7) stand, moved under Persona as below.
+**Amended 2026-10-15 (operator)** on an audit: disputes split by who disputes
+(§2), the unit is the read boundary (§3, which described lineage wrongly), a
+deleted message makes nobody forget (§5), and shadow changes no prompt (§4).
 
 ## The rulings
 
@@ -13,8 +16,8 @@ Operator, 2026-10-15, answering 30 §8:
 |---|---|
 | 0, 1. Where per-person facts live once Honcho goes | In the Notebook, as **one account per entity that composes identity and character**. They answer one thing, who this entity is to Nora, and are not split into two tiers. |
 | 2. Abduction | It is the account's **third part**, beside identity and character. The composed account is called **Persona**. |
-| 3. Who may dispute a line | **Anyone**, and how much it counts depends on the context. Weighing it is what Nora learns to do; no fixed rule decides it. |
-| 4. Visibility of what someone told about themselves | Today's lineage rule (§4 below), with the operator asking whether it should be the unit-wide view. Recommendation below. |
+| 3. Who may dispute a line | **Anyone**, and how much it counts depends on the context. Weighing it is what Nora learns to do; no fixed rule decides it. **Except** (2026-10-15): the subject's own dispute hides the line at once (§2). |
+| 4. Visibility of what someone told about themselves | **Ruled 2026-10-15: the unit is the read boundary**, lineage stays off, and evidence about a person counts only if said in a room they are listed in (§3). |
 | 5. Honcho's uncited conclusions | **Dropped.** A one-off backfill script builds the new memory from Nora's own stores. |
 
 ## 1. What Persona is
@@ -25,8 +28,8 @@ and its own way of changing:
 
 | part | answers | modes | changes |
 |---|---|---|---|
-| **Identity** | who or what it is: names, role, relationships, stable attributes, instructions; for a collective, its purpose and stated norms | `authored`, `told`, `deduced` | rarely, and only by a new statement |
-| **Character** | what it is like: how they talk, what they care about, what they reliably do, who they are close to | `induced`, from many instances or a Rollup aggregate | by drift; a line decays without re-evidence |
+| **Identity** | who or what it is: names, role, relationships, stable attributes, instructions; for a collective, its purpose and stated norms | `told`, `deduced`; authored lines (names, accounts from `identity.toml`) are rendered with no mode, never written | rarely, and only by a new statement |
+| **Character** | what it is like: how they talk, what they care about, what they reliably do, who they are close to | `induced`, from many instances or a Rollup aggregate; `deduced` | by drift; a line decays without re-evidence |
 | **Hypotheses** | why it is like that: an explanation of its behaviour | `abduced`, each with a **prediction** later Record rows confirm or refute | retired when refuted; never rendered as fact; goes out as a question; assent never upgrades it |
 
 The sections are 30 §3's (Identity: `Names`, `Accounts`, `Role`,
@@ -34,6 +37,11 @@ The sections are 30 §3's (Identity: `Names`, `Accounts`, `Role`,
 `Norms`) and cognition-loop/12 §4's (Character's sections), plus one
 `Hypotheses` section. `Unsure` goes: what it held becomes either a
 hypothesis or nothing.
+
+**The modes table that holds is [45](45-persona-adaptor.md) §3** (amended
+2026-10-15). This table said Character was `induced` only; 45 allows
+`deduced` in character too, and 45's is kept. `authored` is not one of
+cognition-loop/10 §4's six modes, so an authored line carries no mode.
 
 **Where it sits.** Persona **is the Character tier, widened**, not a fifth
 tier. The Notebook keeps four tiers (Register, Persona, Lessons, Standing), and
@@ -55,22 +63,30 @@ Whether Culture's tables are merged into Persona's or kept and read as
 its character part is a build choice that changes nothing a reader sees; the
 build takes the one with the smaller migration.
 
-## 2. Disputes: anyone, weighed in context
+## 2. Disputes: anyone, weighed in context; the subject's hides at once
 
 30 §7 kept the cognition-loop/50 §4 rule: only the subject may dispute a line
-about themselves. **Ruled otherwise.** Anyone may dispute any line, and a
-dispute is evidence, not a veto:
+about themselves. **Ruled otherwise.** Anyone may dispute any line. Amended
+2026-10-15 (operator): what happens next depends on who disputes.
 
 1. It is a Record item (`persona_dispute`: who disputed which line, citing
    their message), and it raises a stimulus.
-2. The disputed line **keeps rendering**, marked `disputed`, until the writer
-   has weighed it. Under 30 §7 it stopped at once, which was right only
-   while the subject was the only one who could dispute.
-3. The Persona adaptor weighs it in its next session against what the
-   line rests on: who disputed (the subject, someone close to them, someone
-   who was there), what each side cites, and how old each is. It keeps,
-   revises or retires the line, and the revision cites the dispute.
-4. A retired or revised line still runs the retraction cascade (30 §7 step 3).
+2. **A dispute by the subject hides the line at once** (a hard privacy rule,
+   not a weighing): the line is marked `hidden`, stops rendering everywhere,
+   and its index node is dropped, before the adaptor runs. The same holds
+   when the subject says "forget that" about a line. The adaptor's next
+   session may write a revised line, which renders only if it no longer says
+   what was disputed.
+3. **A dispute by anyone else** marks the line `disputed`, which has one
+   meaning: awaiting weighing. It keeps rendering, marked as disputed, until
+   the next session.
+4. The Persona adaptor weighs it in its next session against what the
+   line rests on: who disputed (someone close to the subject, someone who was
+   there), what each side cites, and how old each is. It keeps, revises or
+   retires the line, and the revision cites the dispute.
+5. Nothing else is re-marked. The retraction cascade was deleted 2026-10-03
+   (migrations 0092/0093); lines that drew on a retired line keep their own
+   citations and are re-judged at their next session.
 
 Two limits stay, because they are about what a line is, not who may
 challenge it:
@@ -81,50 +97,69 @@ challenge it:
 - **The subject's own statement about themselves outranks anyone else's**
   (30 §4's precedence). A dispute by another person can retire a line that
   rests on induction; to override the subject's own told line it needs a later
-  statement by the subject.
+  statement by the subject. A line that loses on precedence is `outranked`,
+  its own state, never `disputed` ([45](45-persona-adaptor.md) §3).
 
 How well the adaptor weighs disputes is measured, not assumed: the eval
 carries cases where the subject, a close friend and a bystander dispute the
 same line, and where the dispute is wrong.
 
-## 3. Visibility: the person's rooms, not the whole unit
+## 3. Visibility: the unit is the boundary (operator, 2026-10-15)
 
-The operator asked whether a told identity line should be visible across the
-unit. The two readings:
+The first version of this section compared "today's lineage rule" with a
+unit-wide view, and recommended lineage. Both halves were wrong about today:
+lineage is built but **switched off**, `[lineage] mode = "off"`, marked "do
+not enable" (operator, 2026-10-03, cognition-loop/10 §3), and its table here
+described the rule wrongly. A recommendation resting on a filter that is off
+protects nothing.
 
-| | today's lineage rule (cognition-loop/50 §5) | unit-wide |
+**Ruled (option b):**
+
+1. **The unit is the read boundary**, as it is today: a Persona account
+   renders in the unit's rooms that list the person
+   (`nora/language/character.py:40-47`), and never in another unit. Rooms
+   whose talk must not meet belong in different units (DEC-231). Lineage is
+   **not** re-enabled.
+2. **Evidence about a person counts only if it was said in a room that person
+   is listed in.** This governs the inputs that are new in this bundle:
+   messages that mention the person ([45](45-persona-adaptor.md) §4), lines
+   someone else told about them, and their social episodes
+   ([50](50-learning-from-acts.md) §4). Talk about Kit in a room Kit is not in
+   is not evidence about Kit, is not read by Kit's session, and is not
+   reached from Kit's node ([25](25-memory-graph.md) §4).
+
+| | was proposed (lineage) | ruled (unit boundary + listed-room evidence) |
 |---|---|---|
-| a line told in room A is visible in | A, then **every room of the unit the person is in** | every room of the unit, including ones the person is not in |
-| "Kit is vegetarian", told in the friends room | in the friends room and the game-night room Kit is in | also in a room Kit has never joined |
+| "Kit is vegetarian", told by Kit in the friends room | the friends room, then Kit's other rooms | every room of the unit that lists Kit |
+| "Kit is moving", said by Sam in a room Kit is not in | rooms whose members are a subset of that room's | not evidence about Kit at all |
+| the same person in a second unit | — | a separate account, from that unit's evidence |
 
-**Recommendation: keep today's rule.** A unit holds rooms with different
-members, and a person who told something in their rooms has not told the
-rooms they are not in. The prior-art review found one person's disclosure
-surfacing in another's session to be the main multi-user risk
-([40](40-prior-art.md)). The unit-wide view is right for a **collective's**
-Persona (the unit's purpose is the unit's in every room of it), and that is
-already what a unit account's scope is.
-
-If the operator wants unit-wide for people too, it is one lineage parameter,
-not a schema change.
+The unit-wide view is right for a **collective's** Persona (the unit's
+purpose is the unit's in every room of it), which is already a unit account's
+scope.
 
 ## 4. The one-off backfill
 
 Honcho's conclusions are dropped, not exported. A one-off script, run once
 when the new memory is first deployed, builds everything else from Nora's own
-stores:
+stores. **It runs in shadow** (amended 2026-10-15): Persona is written under a
+shadow key, the live Character head keeps rendering, and Honcho's feed keeps
+running, until the switch (00 «Sequence» step 8). Nothing a prompt carries
+changes before then.
 
 1. **Persona from Character.** Every live Character head (35 person accounts
-   on 2026-10-14) keeps rendering as it does until the Persona adaptor's first
-   session rewrites it into at most 5 `trait` lines citing what the head cited
-   ([45](45-persona-adaptor.md) §8). Nothing is converted by code, because a
-   prose account does not split into lines without a judgement.
+   on 2026-10-14) keeps rendering as it does; the Persona adaptor's first
+   shadow session rewrites it into at most 5 `trait` lines citing what the
+   head cited ([45](45-persona-adaptor.md) §8). Nothing is converted by code,
+   because a prose account does not split into lines without a judgement.
 2. **Identity's authored lines.** `Names` and `Accounts` from `identity.toml`,
    rendered rather than written (30 §3: accounts are never model-written).
 3. **The memory index.** One `project()` over every row of every indexed store
    ([25](25-memory-graph.md) §7), then the embedding worker fills the vectors.
    The same command is the index's rebuild, so the backfill also proves the
-   rebuild.
+   rebuild. It reports how many items it could not project, and until it
+   finishes a search answers `partial`, never `nothing_found`. The media part
+   is counted first and runs under a throttle ([20](20-embedding-bakeoff.md)).
 4. **Told identity lines** are not backfilled from Honcho. They come back as
    people say them again, or as the Persona adaptor deduces them from cited
    Record rows. Until then a person's Identity part is their authored lines
@@ -134,3 +169,17 @@ stores:
 
 The script is idempotent and refuses to run against a database that already
 has Persona rows, so it cannot run twice by accident.
+
+## 5. A deleted message makes nobody forget (operator, 2026-10-15)
+
+A message deleted on the platform sets `messages.hidden_at`. It is hidden:
+never quoted, never a search hit, and its index node is dropped
+([25](25-memory-graph.md) §7). **Lines and entries derived from it stay**, and
+cite it as "a message since deleted". There is no retraction cascade and
+nothing is purged: the cascade, `nora person forget` and the `citation` edge
+table were deleted on 2026-10-03 (migrations 0092/0093; cognition-loop/10 §2
+rule 7, cognition-loop/05 §3, cognition-loop/70 §9), and this ruling does not
+bring them back.
+
+The one exception is the subject's own: a dispute or "forget that" by the
+person a line is about hides that line at once (§2).
