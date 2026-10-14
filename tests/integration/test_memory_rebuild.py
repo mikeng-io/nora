@@ -362,3 +362,95 @@ async def test_a_restored_sandbox_reads_never(pg_url, pg_template):
             assert {n[0] for n in (await _index(restored))[0]} >= {"message", "room"}
         finally:
             await restored.dispose()
+
+
+async def test_a_hub_being_attached_survives_a_concurrent_orphan_drop(pg_url):
+    """Review of #15: transaction A re-attributes a message to P while a hide
+    of P's only other message commits. A holds P's hub (`_hub` locks it), so
+    the hide's orphan drop must leave it; before the lock, the hide dropped P
+    and A committed an `authored_by` edge to a missing hub."""
+    engine = create_sql_engine(pg_url)
+    try:
+        record = SqlRecordStore(engine)
+        m1 = await record.append(message=_message("only", ts=1000), person_id="P")
+        m2 = await record.append(message=_message("other", ts=1100), person_id="Q")
+        a = await engine.connect()
+        try:
+            await a.begin()
+            await a.execute(sa.update(MESSAGES).where(MESSAGES.c.id == m2).values(person_id="P"))
+            await memory_index.project(a, "message", m2)
+            assert await asyncio.wait_for(record.hide_message(message_id=m1, now_ms=9000), 10)
+            await a.commit()
+        finally:
+            await a.close()
+        live = await _index(engine)
+        held = {(n[0], n[1]) for n in live[0]}
+        assert ("person", "P") in held
+        assert ("person", "Q") not in held, "Q lost its only edge in A"
+        await memory_index.rebuild(engine)
+        assert await _index(engine) == live
+    finally:
+        await engine.dispose()
+
+
+async def test_opposing_reattributions_do_not_deadlock(pg_url):
+    """Two transactions move a message each between the same two people in
+    opposite directions, at once. A projection holds the hub it attaches to
+    and only SKIPS a hub another holds, so the one wait possible is on a hub
+    the other already deleted, until that one commits: never a cycle (a
+    Postgres deadlock would raise; a hang would time out)."""
+    engine = create_sql_engine(pg_url)
+    try:
+        record = SqlRecordStore(engine)
+        m1 = await record.append(message=_message("one", ts=1000), person_id="P")
+        m2 = await record.append(message=_message("two", ts=1100), person_id="Q")
+        both_open = asyncio.Barrier(2)
+
+        async def move(mid: int, to: str) -> None:
+            async with engine.begin() as conn:
+                await conn.execute(
+                    sa.update(MESSAGES).where(MESSAGES.c.id == mid).values(person_id=to)
+                )
+                await both_open.wait()
+                await memory_index.project(conn, "message", mid)
+
+        await asyncio.wait_for(asyncio.gather(move(m1, "Q"), move(m2, "P")), 20)
+        live = await _index(engine)
+        held = {(n[0], n[1]) for n in live[0]}
+        assert {("person", "P"), ("person", "Q")} <= held
+        await memory_index.rebuild(engine)
+        assert await _index(engine) == live
+    finally:
+        await engine.dispose()
+
+
+async def test_a_person_known_only_through_a_stay_leaves_with_the_build(pg_url):
+    """Review of #15: a build switch that drops the only episode about a
+    person drops that person's hub too, live, as a rebuild from empty would."""
+    from nora.infra.sql.rollups import SqlRollupStore
+    from nora.infra.sql.schema import PRESENCE_STAYS, ROLLUP_BUILD
+
+    engine = create_sql_engine(pg_url)
+    try:
+        async with engine.begin() as conn:
+            old = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+                code_version="t", params_sha256="", status="current",
+            ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+            new = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+                code_version="t", params_sha256="", status="building",
+            ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+            await conn.execute(sa.insert(PRESENCE_STAYS).values(
+                subject_id="solo", person_id="solo", circle_id="c1", started_ts=1_000_000,
+                ended_ts=2_000_000, lat=0.0, lng=0.0, radius_m=10.0, fix_count=3,
+                build_id=old, lineage=[],
+            ))
+            await memory_index.reproject_episodes(conn)
+        assert ("person", "solo") in {(n[0], n[1]) for n in (await _index(engine))[0]}
+
+        await SqlRollupStore(engine).switch_build(build_id=new)
+        live = await _index(engine)
+        assert live == (set(), set())
+        await memory_index.rebuild(engine)
+        assert await _index(engine) == live
+    finally:
+        await engine.dispose()

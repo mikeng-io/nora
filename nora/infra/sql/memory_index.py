@@ -368,13 +368,16 @@ async def _project_message(conn: AsyncConnection, source_id: str) -> None:
     # Outgoing edges are rewritten whole: a re-attributed message must not keep
     # the edge to nobody it had before. A `during` edge is the episode's, which
     # rewrites it when it is projected (S3), so an edit keeps it.
+    ends: list[tuple[str, str]] = []
     for kind, ids in (("message", [source_id]), ("media", list(wanted))):
         if ids:
-            await conn.execute(sa.delete(MEMORY_EDGE).where(
+            ends += await _delete_edges(conn, sa.and_(
                 MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids),
                 MEMORY_EDGE.c.rel != "during",
             ))
     await _insert_edges(conn, edges)
+    # A re-attributed message may have been its former author's last edge.
+    await _drop_orphans(conn, ends)
 
 
 async def _reproject_media(conn: AsyncConnection, sha256: str) -> None:
@@ -451,7 +454,7 @@ async def _entry_edges(
     for _, _, _, dk, di, _ in edges:
         if dk in ("person", "room", "unit", "nora"):
             await _hub(conn, dk, di, origin_room=di if dk == "room" else None)
-    await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+    ends = await _delete_edges(conn, sa.or_(
         sa.and_(
             MEMORY_EDGE.c.src_kind == kind, MEMORY_EDGE.c.src_id == source_id,
             MEMORY_EDGE.c.rel != "supersedes",
@@ -460,8 +463,10 @@ async def _entry_edges(
             MEMORY_EDGE.c.dst_kind == kind, MEMORY_EDGE.c.dst_id == source_id,
             MEMORY_EDGE.c.rel == "supersedes",
         ),
-    )))
+    ))
     await _insert_edges(conn, edges)
+    # An `about` target the entry no longer names may have no edge left.
+    await _drop_orphans(conn, ends)
 
 
 async def _project_note(conn: AsyncConnection, source_id: str) -> None:
@@ -862,15 +867,16 @@ async def _write_episodes(conn: AsyncConnection, build: int, found: list[_Episod
     persons, and the `during` edges into it."""
     if not found:
         return
+    ends: list[tuple[str, str]] = []
     for kind in dict.fromkeys(e.kind for e in found):
         keys = [e.key for e in found if e.kind == kind]
-        await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+        ends += await _delete_edges(conn, sa.or_(
             sa.and_(MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, keys)),
             sa.and_(
                 MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, keys),
                 MEMORY_EDGE.c.rel == "during",
             ),
-        )))
+        ))
     await _upsert_nodes(conn, [
         _node_values(
             kind=e.kind, source_id=e.key, unit=e.unit, persons=e.persons,
@@ -893,6 +899,7 @@ async def _write_episodes(conn: AsyncConnection, build: int, found: list[_Episod
         if e.kind == "outing":
             edges += await _during(conn, build, e)
     await _insert_edges(conn, edges)
+    await _drop_orphans(conn, ends)
 
 
 async def _during(conn: AsyncConnection, build: int, e: _Episode) -> list[Edge]:
@@ -941,16 +948,17 @@ async def _drop_episodes(conn: AsyncConnection, kind: str, keys: list[str]) -> N
     build holds the same happening under the same key."""
     if not keys:
         return
-    await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+    ends = await _delete_edges(conn, sa.or_(
         sa.and_(MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, keys)),
         sa.and_(
             MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, keys),
             MEMORY_EDGE.c.rel != "cites",
         ),
-    )))
+    ))
     await conn.execute(sa.delete(MEMORY_NODE).where(
         MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, keys),
     ))
+    await _drop_orphans(conn, ends)
 
 
 _PRESENCE: dict[str, sa.Table] = {"stay": PRESENCE_STAYS, "trip": PRESENCE_TRIPS}
@@ -1068,11 +1076,28 @@ async def _hub(
     """An entity node, written the first time an edge needs it: a bare
     endpoint with no text, so it names nobody (a person's name is identity's,
     which a pure projector cannot read, 60 §0.6)."""
-    await conn.execute(
+    await _held_hub(conn, kind, source_id, (
         pg_insert(MEMORY_NODE)
         .values(kind=kind, source_id=source_id, origin_room=origin_room, state="live")
         .on_conflict_do_nothing(constraint="uq_memory_node_kind_source")
-    )
+    ))
+
+
+async def _held_hub(conn: AsyncConnection, kind: str, source_id: str, write: Any) -> None:
+    """Write a hub, then hold it FOR KEY SHARE until the transaction ends, so
+    a concurrent `_drop_orphan_hubs` skips it while the caller attaches its
+    edge. A hub that orphan drop deleted between the write and the lock is
+    written again."""
+    for _ in range(3):
+        await conn.execute(write)
+        held = (await conn.execute(
+            sa.select(MEMORY_NODE.c.id).where(
+                MEMORY_NODE.c.kind == kind, MEMORY_NODE.c.source_id == source_id,
+            ).with_for_update(read=True, key_share=True)
+        )).first()
+        if held is not None:
+            return
+    raise RuntimeError(f"memory index: {kind} hub kept vanishing")
 
 
 async def _named_hub(
@@ -1085,12 +1110,13 @@ async def _named_hub(
         kind=kind, source_id=source_id, text=text or "", state="live",
     )
     if not text:
-        await conn.execute(stmt.on_conflict_do_nothing(constraint="uq_memory_node_kind_source"))
-        return
-    await conn.execute(stmt.on_conflict_do_update(
-        constraint="uq_memory_node_kind_source",
-        set_={"text": stmt.excluded.text, "projected_at": sa.func.clock_timestamp()},
-    ))
+        write = stmt.on_conflict_do_nothing(constraint="uq_memory_node_kind_source")
+    else:
+        write = stmt.on_conflict_do_update(
+            constraint="uq_memory_node_kind_source",
+            set_={"text": stmt.excluded.text, "projected_at": sa.func.clock_timestamp()},
+        )
+    await _held_hub(conn, kind, source_id, write)
 
 
 async def _drop(conn: AsyncConnection, kind: str, ids: list[str]) -> None:
@@ -1126,7 +1152,7 @@ async def _delete(conn: AsyncConnection, kind: str, ids: list[str]) -> None:
     place the two disagreed."""
     if not ids:
         return
-    ends = (await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+    ends = await _delete_edges(conn, sa.or_(
         sa.and_(
             MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids),
             MEMORY_EDGE.c.rel != "supersedes",
@@ -1135,17 +1161,32 @@ async def _delete(conn: AsyncConnection, kind: str, ids: list[str]) -> None:
             MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, ids),
             MEMORY_EDGE.c.rel == "supersedes",
         ),
-    )).returning(MEMORY_EDGE.c.dst_kind, MEMORY_EDGE.c.dst_id))).all()
+    ))
     await conn.execute(sa.delete(MEMORY_NODE).where(
         MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, ids),
     ))
-    # A hub the deleted edges were the last to reach goes too: a rebuild
-    # writes a hub only when an edge needs it, so a live index that kept it
-    # would differ from one rebuilt from empty.
-    for hub_kind in sorted({k for k, _ in ends if k in HUB_KINDS}):
-        await _drop_orphan_hubs(
-            conn, hub_kind, sorted({i for k, i in ends if k == hub_kind}),
-        )
+    await _drop_orphans(conn, ends)
+
+
+async def _delete_edges(conn: AsyncConnection, where: Any) -> list[tuple[str, str]]:
+    """Delete the edges `where` selects; return the hub ends they reached,
+    for `_drop_orphans` once the caller has written its new edges."""
+    rows = (await conn.execute(
+        sa.delete(MEMORY_EDGE).where(where)
+        .returning(MEMORY_EDGE.c.dst_kind, MEMORY_EDGE.c.dst_id)
+    )).all()
+    return [(k, i) for k, i in rows if k in HUB_KINDS]
+
+
+async def _drop_orphans(conn: AsyncConnection, ends: Iterable[tuple[str, str]]) -> None:
+    """A hub the removed edges were the last to reach goes too: a rebuild
+    writes a hub only when an edge needs it, so a live index that kept one
+    would differ from an index rebuilt from empty."""
+    by_kind: dict[str, set[str]] = {}
+    for kind, sid in ends:
+        by_kind.setdefault(kind, set()).add(sid)
+    for kind in sorted(by_kind):
+        await _drop_orphan_hubs(conn, kind, sorted(by_kind[kind]))
 
 
 def _touched() -> Any:
@@ -1161,11 +1202,28 @@ async def _drop_orphan_hubs(
     conn: AsyncConnection, kind: str, ids: list[str] | None = None,
 ) -> int:
     """Hub nodes of `kind` (among `ids`, or all) with no edge in either
-    direction. Returns how many were removed."""
+    direction. Returns how many were removed.
+
+    Two statements, on purpose. The first locks the candidates FOR UPDATE
+    SKIP LOCKED: a hub another transaction holds is being attached to
+    (`_hub` holds it FOR KEY SHARE until that transaction ends, and writes
+    an edge to it), so it is skipped, never waited on, and this can never
+    be one side of a deadlock over hubs. The second re-checks under a fresh
+    READ COMMITTED snapshot, which sees every edge an attacher committed
+    before the lock was granted; an attacher arriving after it waits on the
+    row, finds it gone, and writes it again."""
     where: list[Any] = [MEMORY_NODE.c.kind == kind, ~_touched()]
     if ids is not None:
         where.append(_among(MEMORY_NODE.c.source_id, ids))
-    result = await conn.execute(sa.delete(MEMORY_NODE).where(*where))
+    locked = list((await conn.execute(
+        sa.select(MEMORY_NODE.c.source_id).where(*where)
+        .with_for_update(skip_locked=True)
+    )).scalars())
+    if not locked:
+        return 0
+    result = await conn.execute(sa.delete(MEMORY_NODE).where(
+        MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, locked), ~_touched(),
+    ))
     return int(result.rowcount or 0)
 
 
