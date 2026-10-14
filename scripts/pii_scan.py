@@ -435,6 +435,18 @@ def _tokens_of(value: str) -> tuple[str, ...]:
 # with an underscore cannot be told apart from the author line in LICENSE.
 _PROJECT_TOKENS = {_tokens_of(v) for v in PROJECT_IDENTITY}
 
+# Project identity in TEXT is blanked before denylist matching, like a
+# keep-phrase: matching drops separators, so an owner's name whose letters
+# spell the org stem would otherwise fire inside the org, the domain and the
+# project email (2026-10-14: every `mikeng-io/<slug>` branch was refused).
+# Longest first, and not glued to a letter or digit: `stemFBID` is an app id.
+_PROJECT_RX = re.compile(
+    r"(?<![A-Za-z0-9])(?:"
+    + "|".join(re.escape(v) for v in sorted(PROJECT_IDENTITY, key=len, reverse=True))
+    + r")(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
 
 def phone_forms(digits: str) -> list[str]:
     """E.164 digits plus the bare-local form: the last max(8, n-3) digits,
@@ -1577,7 +1589,7 @@ class Scanner:
     def mask_keep(self, text: str) -> str:
         """Every keep-phrase occurrence blanked to spaces (line breaks kept),
         so offsets and line numbers do not move."""
-        for rx in self.deny.keep:
+        for rx in (*self.deny.keep, _PROJECT_RX):
             text = rx.sub(lambda m: re.sub(r"[^\n]", " ", m.group()), text)
         return text
 
