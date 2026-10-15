@@ -93,7 +93,11 @@ class Decision:
 
 
 def _dim(arm: str) -> int:
+    """The dimension an arm SEARCHES: `dense:x@256` -> 256, and a two-stage
+    arm's index, `rerank:x@256>2048/k50` -> 256 (its 2048 re-ranks only the
+    top k). No dimension sorts last."""
     _, _, dim = arm.rpartition("@")
+    dim = dim.partition(">")[0]
     return int(dim) if dim.isdigit() else 1 << 30
 
 
