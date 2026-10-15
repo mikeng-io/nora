@@ -16,10 +16,11 @@ from typing import Any
 
 import pytest
 
-from evals.retrieval_bakeoff import run
+from evals.retrieval_bakeoff import adapters, run
 from evals.retrieval_bakeoff.adapters import (
     JINA_V5_OMNI_SMALL,
     OFFICIAL,
+    QWEN3VL_DEFAULT_INSTRUCTION_VARIANT,
     QWEN3VL_EMBEDDING_2B,
     EmbedError,
     OfficialEmbedder,
@@ -34,16 +35,39 @@ QWEN, JINA = QWEN3VL_EMBEDDING_2B, JINA_V5_OMNI_SMALL
 # --- the exact strings ---------------------------------------------------------------
 
 
-def test_qwen3vl_wraps_every_text_in_its_default_instruction_and_ends_on_endoftext() -> None:
-    """config_sentence_transformers.json `prompts.default`, chat_template.jinja's
-    system turn plus the generation prompt, and tokenizer.json's appended
-    `<|endoftext|>`, the token that is pooled. The query and the document
-    get the same instruction: the card names no other default."""
-    want = ("<|im_start|>system\nRepresent the user's input.<|im_end|>\n"
-            "<|im_start|>user\n打風嗰晚啲小巴停晒<|im_end|>\n"
+def _qwen_turn(instruction: str, x: str) -> str:
+    return (f"<|im_start|>system\n{instruction}<|im_end|>\n<|im_start|>user\n{x}<|im_end|>\n"
             "<|im_start|>assistant\n<|endoftext|>")
-    assert QWEN.sent("query", "打風嗰晚啲小巴停晒") == want
-    assert QWEN.sent("document", "打風嗰晚啲小巴停晒") == want
+
+
+def test_qwen3vl_gives_a_query_the_vendors_retrieval_instruction() -> None:
+    """QwenLM/Qwen3-VL-Embedding's own retrieval usage (its README's
+    Transformers example, @393e2978, and its MMEB text-to-image eval) gives a
+    QUERY "Retrieve images or text relevant to the user's query."; the
+    tokenizer.json post-processor appends `<|endoftext|>`, the pooled token."""
+    assert QWEN.sent("query", "打風嗰晚啲小巴停晒") == _qwen_turn(
+        "Retrieve images or text relevant to the user's query.", "打風嗰晚啲小巴停晒")
+    assert QWEN.encode["query"] == {
+        "prompt": "Retrieve images or text relevant to the user's query."}
+
+
+def test_qwen3vl_gives_a_document_the_default_instruction() -> None:
+    """config_sentence_transformers.json `prompts.default`, chat_template.jinja's
+    `default_system_message` and the repository script's `default_instruction`."""
+    assert QWEN.sent("document", "打風嗰晚啲小巴停晒") == _qwen_turn(
+        "Represent the user's input.", "打風嗰晚啲小巴停晒")
+    assert QWEN.encode["document"] == QWEN.encode["image"] == {
+        "prompt": "Represent the user's input."}
+
+
+def test_the_default_instruction_variant_is_recorded_under_its_own_label() -> None:
+    """The first Qwen run gave queries the default instruction too; it stays a
+    recorded variant, never the scored arm."""
+    v = QWEN3VL_DEFAULT_INSTRUCTION_VARIANT
+    assert v.label == "qwen3vl-default-instruction" and v.label not in OFFICIAL
+    assert v.sent("query", "x") == _qwen_turn("Represent the user's input.", "x")
+    assert (v.revision, v.image, v.sent("document", "x")) == (
+        QWEN.revision, QWEN.image, QWEN.sent("document", "x"))
 
 
 def test_qwen3vl_wraps_an_image_in_the_same_turn() -> None:
@@ -53,9 +77,7 @@ def test_qwen3vl_wraps_an_image_in_the_same_turn() -> None:
         "<|im_start|>assistant\n<|endoftext|>")
 
 
-def test_qwen3vl_asks_sentence_transformers_for_the_instruction_on_every_role() -> None:
-    assert QWEN.encode == {r: {"prompt": "Represent the user's input."}
-                           for r in ("query", "document", "image")}
+def test_qwen3vl_runs_no_remote_code() -> None:
     assert not QWEN.trust_remote_code
 
 
@@ -119,18 +141,19 @@ class FakeST:
     """A loaded SentenceTransformer as OfficialEmbedder sees it: parameters,
     and an encode whose model appends what it was fed to `fed`."""
 
-    def __init__(self, fmt: OfficialFormat, fed: list[str], *, dtype: str = "torch.float32",
+    def __init__(self, fmt: OfficialFormat, fed: list[str], *, dtype: Any = "torch.float32",
                  feed: Any = None) -> None:
-        self.fmt, self.fed, self.dtype = fmt, fed, dtype
+        self.fmt, self.fed = fmt, fed
+        self.dtypes = [dtype] * 3 if isinstance(dtype, str) else list(dtype)
         self.feed = feed or (lambda fmt, x, kw: fmt.sent(
-            "image" if not isinstance(x, str) else ("query" if kw.get("prompt_name") == "query"
-                                                    else "document"), x if isinstance(x, str)
+            "image" if not isinstance(x, str) else next(
+                r for r in ("query", "document") if fmt.encode[r] == kw), x if isinstance(x, str)
             else ""))
         self.calls: list[tuple[list[Any], dict[str, Any]]] = []
 
     def parameters(self):
-        return iter([type("P", (), {"dtype": self.dtype, "numel": lambda self: 10})()
-                     for _ in range(3)])
+        return iter([type("P", (), {"dtype": d, "numel": lambda self: 10})()
+                     for d in self.dtypes])
 
     def encode(self, xs, *, batch_size, normalize_embeddings, convert_to_numpy, **kw):
         assert normalize_embeddings is False and convert_to_numpy is True
@@ -140,7 +163,7 @@ class FakeST:
         return [[1.0] + [0.0] * (self.fmt.native_dim - 1) for _ in xs]
 
 
-def _emb(fmt: OfficialFormat, *, dtype: str = "float32", st_dtype: str = "torch.float32",
+def _emb(fmt: OfficialFormat, *, dtype: str = "float32", st_dtype: Any = "torch.float32",
          feed: Any = None, snapshot_name: str | None = None) -> tuple[OfficialEmbedder, list]:
     made: list[FakeST] = []
 
@@ -157,7 +180,8 @@ def test_qwen3vl_texts_that_reach_the_model_in_its_format_are_embedded() -> None
     emb, made = _emb(QWEN)
     out = emb.embed_text(["打風", "two bowls of noodles"], "query")
     assert len(out) == 2 and len(out[0]) == 2048
-    assert made[0].calls[0][1] == {"prompt": "Represent the user's input."}
+    assert made[0].calls[0][1] == {
+        "prompt": "Retrieve images or text relevant to the user's query."}
     prov = emb.provenance()
     assert prov["format_checked"]["query"] == 2
     assert prov["loaded_revision"] == QWEN.revision and prov["licence"] == "apache-2.0"
@@ -192,8 +216,8 @@ def test_images_go_in_as_rgb_pictures_under_the_image_role(tmp_path: Path) -> No
     # the tokenizer's appended pooled token missing
     lambda fmt, x, kw: fmt.sent("query", x).removesuffix("<|endoftext|>"),
     # an instruction the card does not use
-    lambda fmt, x, kw: fmt.sent("query", x).replace("Represent the user's input.",
-                                                    "Retrieve relevant documents."),
+    lambda fmt, x, kw: fmt.sent("query", x).replace(
+        "Retrieve images or text relevant to the user's query.", "Represent the user's input."),
 ])
 def test_qwen3vl_a_sequence_not_in_its_format_is_an_error_never_a_vector(wrong) -> None:
     emb, _ = _emb(QWEN, feed=wrong)
@@ -241,6 +265,16 @@ def test_a_model_that_did_not_load_at_the_requested_dtype_is_refused() -> None:
         emb.embed_text(["x"], "query")
 
 
+@pytest.mark.parametrize("mixed", [["torch.bfloat16", "torch.float32", "torch.float32"],
+                                   ["torch.float32", "torch.float32", "torch.bfloat16"]])
+def test_a_model_with_any_parameter_off_the_requested_dtype_is_refused(mixed) -> None:
+    """jina's load measured 902M parameters in bf16 beside its fp32 LoRA:
+    a check that only asks whether float32 is among the dtypes passes that."""
+    emb, _ = _emb(JINA, st_dtype=mixed)
+    with pytest.raises(ValueError, match="bfloat16"):
+        emb.embed_text(["x"], "query")
+
+
 @pytest.mark.parametrize("dtype", ["float16", "fp16", "half"])
 def test_float16_is_refused_for_either_candidate(dtype: str) -> None:
     for fmt in (QWEN, JINA):
@@ -277,3 +311,95 @@ def test_per_query_ranks_name_the_first_relevant_rank_and_errors() -> None:
     ranks = run.first_relevant_ranks(
         {"q1": ["a", "b"], "q2": ["a", "b"], "q3": Errored("timeout")}, labels)
     assert ranks == {"q1": 2, "q2": None, "q3": "ERROR:timeout"}
+
+
+# --- the real loader, against fake libraries ------------------------------------------
+
+
+class _Tok:
+    def decode(self, ids, skip_special_tokens=False):
+        return "".join(chr(i) for i in ids)
+
+
+class _Model:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def forward(self, *args, **kwargs):
+        self.calls += 1
+        return "out"
+
+
+class _T:
+    """The slice of a torch tensor the loader's forward wrapper uses."""
+
+    def __init__(self, rows) -> None:
+        self.rows = rows
+
+    @property
+    def shape(self):
+        return (len(self.rows),)
+
+    def __getitem__(self, i):
+        if isinstance(i, _T):  # a boolean mask
+            return _T([x for x, keep in zip(self.rows, i.rows, strict=True) if keep])
+        r = self.rows[i]
+        return _T(r) if isinstance(r, list) else r
+
+    def __eq__(self, other):
+        return _T([x == other for x in self.rows])
+
+    def tolist(self):
+        return list(self.rows)
+
+
+class _LoadedST:
+    def __init__(self, path, **kw) -> None:
+        self.kw, self.cast = kw, None
+        self.first = type("First", (), {})()
+        self.first.model, self.first.tokenizer = _Model(), _Tok()
+
+    def to(self, dtype):
+        self.cast = dtype
+        return self
+
+    def __getitem__(self, i):
+        return self.first
+
+
+def _load_with_fakes(monkeypatch, fmt: OfficialFormat):
+    import sys
+    import types
+
+    torch = types.ModuleType("torch")
+    torch.float32 = "fake.float32"  # type: ignore[attr-defined]
+    st_mod = types.ModuleType("sentence_transformers")
+    st_mod.SentenceTransformer = _LoadedST  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setitem(sys.modules, "sentence_transformers", st_mod)
+    fed: list[str] = []
+    st = adapters._load_official("/hub/snapshots/x", fmt, "float32", fed)
+    return st, fed
+
+
+def test_the_loader_casts_the_loaded_model_to_the_requested_dtype(monkeypatch) -> None:
+    """Without the cast, jina's base stays bf16 under a result that says fp32."""
+    st, _ = _load_with_fakes(monkeypatch, JINA)
+    assert st.cast == "fake.float32"
+    assert st.kw["model_kwargs"] == {"default_task": "retrieval", "modality": "vision",
+                                     "dtype": "fake.float32"}
+    assert st.kw["trust_remote_code"] is True
+
+
+def test_the_loader_records_every_sequence_the_model_forward_receives(monkeypatch) -> None:
+    """The format check reads what this wrapper records: a model whose
+    forward is not wrapped would be checked against nothing."""
+    st, fed = _load_with_fakes(monkeypatch, JINA)
+    model = st[0].model
+    ids = _T([[ord(c) for c in "Query: ab"], [ord(c) for c in "Query: a!"]])
+    mask = _T([[1] * 9, [1] * 8 + [0]])
+    assert model.forward(input_ids=ids, attention_mask=mask) == "out"
+    assert model.calls == 1
+    assert fed == ["Query: ab", "Query: a"]
+    model.forward(input_ids=_T([[ord("x")] * 2]), attention_mask=_T([[0, 1]]))
+    assert fed[-1].startswith("<left-padded")

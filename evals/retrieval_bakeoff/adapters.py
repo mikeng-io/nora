@@ -29,6 +29,7 @@ The serving paths, as probed on the deploy host 2026-10-15:
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import json
 import math
@@ -47,6 +48,7 @@ __all__ = [
     "JINA_V5_OMNI_SMALL",
     "NO_PREFIX",
     "OFFICIAL",
+    "QWEN3VL_DEFAULT_INSTRUCTION_VARIANT",
     "QWEN3VL_EMBEDDING_2B",
     "EmbedError",
     "Embedder",
@@ -660,14 +662,19 @@ def _library_versions() -> dict[str, Any]:
 # (`OfficialEmbedder`). Read 2026-10-15 from:
 #
 # - Qwen/Qwen3-VL-Embedding-2B @ 9f2f7e71: `config_sentence_transformers.json`
-#   (`prompts.default` = "Represent the user's input.", the default prompt),
-#   `chat_template.jinja` (the same string as `default_system_message`),
-#   `scripts/qwen3_vl_embedding.py` (`default_instruction`, the same again;
-#   last-token pooling, then L2), `1_Pooling/config.json` (`lasttoken`) and
-#   `tokenizer.json`, whose post-processor appends `<|endoftext|>`, the token
-#   that is pooled. One system turn carries the instruction for every input:
-#   the card names no separate query instruction, so query, document and
-#   image all get the default. Matryoshka 64 to 2048 (card).
+#   (`prompts.default` = "Represent the user's input."), `chat_template.jinja`
+#   (the same string as `default_system_message`), `scripts/qwen3_vl_embedding.py`
+#   (`default_instruction`, the same again; last-token pooling, then L2),
+#   `1_Pooling/config.json` (`lasttoken`) and `tokenizer.json`, whose
+#   post-processor appends `<|endoftext|>`, the token that is pooled. The
+#   instruction is a system turn. The Hugging Face card names no query
+#   instruction, but the vendor's own retrieval usage does: the README of
+#   QwenLM/Qwen3-VL-Embedding (@393e2978, its Transformers example) and its
+#   MMEB text-to-image eval give a QUERY "Retrieve images or text relevant to
+#   the user's query." and a document or image the default. That is the
+#   scored format; the default on every role is kept as a recorded variant
+#   (`QWEN3VL_DEFAULT_INSTRUCTION_VARIANT`, the first run). Matryoshka 64 to
+#   2048 (card).
 # - jinaai/jina-embeddings-v5-omni-small @ 950200ab: `config_sentence_transformers.json`
 #   (`Query: ` / `Document: `), `custom_st.py` (text is the prompt plus the
 #   text, no chat template and no special token; an image is the chat
@@ -677,13 +684,20 @@ def _library_versions() -> dict[str, Any]:
 #   Query:/Document: distinction applies to EVERY modality", so a pool image
 #   is a document. Matryoshka 32 to 1024 (`config.json`).
 
-#: Qwen3-VL-Embedding's default instruction, on every input.
+#: Qwen3-VL-Embedding's default instruction: documents and images.
 QWEN3VL_INSTRUCTION = "Represent the user's input."
+#: Its retrieval query instruction (the vendor's README example and MMEB t2i eval).
+QWEN3VL_QUERY_INSTRUCTION = "Retrieve images or text relevant to the user's query."
 #: The run of image tokens collapses to one in a checked sequence: its length
 #: is the image's patch count, which the processor derives from the pixels.
 IMAGE_RUN = "<|vision_start|><|image_pad|><|vision_end|>"
-_QWEN3VL_TURN = ("<|im_start|>system\n" + QWEN3VL_INSTRUCTION + "<|im_end|>\n"
-                 "<|im_start|>user\n{x}<|im_end|>\n<|im_start|>assistant\n<|endoftext|>")
+
+def _qwen3vl_turn(instruction: str) -> str:
+    return ("<|im_start|>system\n" + instruction + "<|im_end|>\n"
+            "<|im_start|>user\n{x}<|im_end|>\n<|im_start|>assistant\n<|endoftext|>")
+
+
+_QWEN3VL_TURN = _qwen3vl_turn(QWEN3VL_INSTRUCTION)
 _IMAGE_PAD_RUN = re.compile(r"(?:<\|image_pad\|>)+")
 
 
@@ -732,12 +746,21 @@ QWEN3VL_EMBEDDING_2B = OfficialFormat(
     revision="9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda",
     licence="apache-2.0",
     native_dim=2048,
-    text={"query": _QWEN3VL_TURN, "document": _QWEN3VL_TURN},
+    text={"query": _qwen3vl_turn(QWEN3VL_QUERY_INSTRUCTION), "document": _QWEN3VL_TURN},
     image=_QWEN3VL_TURN.replace("{x}", IMAGE_RUN),
-    encode={r: {"prompt": QWEN3VL_INSTRUCTION} for r in ("query", "document", "image")},
+    encode={"query": {"prompt": QWEN3VL_QUERY_INSTRUCTION},
+            "document": {"prompt": QWEN3VL_INSTRUCTION}, "image": {"prompt": QWEN3VL_INSTRUCTION}},
     model_kwargs={},
     trust_remote_code=False,
     right_padding_only=False,
+)
+
+#: The first Qwen run (results 20261015T135707Z): the default instruction on
+#: queries too. A recorded variant, never the scored arm.
+QWEN3VL_DEFAULT_INSTRUCTION_VARIANT = dataclasses.replace(
+    QWEN3VL_EMBEDDING_2B, label="qwen3vl-default-instruction",
+    text={"query": _QWEN3VL_TURN, "document": _QWEN3VL_TURN},
+    encode={r: {"prompt": QWEN3VL_INSTRUCTION} for r in ("query", "document", "image")},
 )
 
 JINA_V5_OMNI_SMALL = OfficialFormat(
@@ -777,9 +800,14 @@ class OfficialEmbedder:
     - the snapshot is the pinned commit (its directory is the 40-hex sha),
       loaded from disk with the hub offline, so `trust_remote_code` runs only
       that commit's code;
-    - every parameter is at the requested dtype (jina's own loader keeps its
-      base in bf16 whatever it is passed, so the loaded model is cast; both
-      checkpoints are stored bf16, so float32 is exact);
+    - every parameter is at the requested dtype. Measured 2026-10-15 under
+      transformers 5.4.0: jina's model, loaded through sentence-transformers,
+      through `AutoModel.from_pretrained` or through its remote base class's
+      own `from_pretrained`, each given `dtype` or `torch_dtype` float32,
+      returns its base (902M parameters) in bf16 beside fp32 LoRA weights.
+      The cause is not established. So the loaded model is cast, and the
+      check is equality over every parameter. Both checkpoints are stored
+      bf16, so the cast to float32 is exact;
     - every sequence the model's `forward` receives, decoded, equals
       `OfficialFormat.sent` for its input, as a multiset per call (the
       library sorts a batch by length). Anything else is an `unsupported`
