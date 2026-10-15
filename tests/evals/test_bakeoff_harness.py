@@ -294,6 +294,45 @@ def test_a_set_that_does_not_match_its_lock_refuses_to_load(tmp_path: Path) -> N
         run.load_set(copy)
 
 
+def _relock(root: Path, names: list[str]) -> None:
+    lines = [f"{hashlib.sha256((root / n).read_bytes()).hexdigest()}  {n}" for n in names]
+    (root / "labels.lock").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _per_slice_files(tmp_path: Path) -> Path:
+    """The set in #18's shape: each slice names its items and labels file, and
+    the lock covers more files than the slice reads."""
+    root = tmp_path / "set"
+    shutil.copytree(SET_DIR, root, ignore=shutil.ignore_patterns("results", "*.py"))
+    (root / "media.yaml").rename(root / "images.yaml")
+    (root / "labels.yaml").rename(root / "labels_image.yaml")
+    (root / "texts.yaml").write_text("items: {}\n", encoding="utf-8")
+    the_set = (root / "set.yaml").read_text(encoding="utf-8")
+    (root / "set.yaml").write_text(the_set.replace(
+        "  text_image:\n",
+        "  text_image:\n    items: images.yaml\n    labels: labels_image.yaml\n", 1,
+    ), encoding="utf-8")
+    _relock(root, ["set.yaml", "images.yaml", "texts.yaml", "labels_image.yaml"])
+    return root
+
+
+def test_the_loader_reads_the_files_the_slice_names(tmp_path: Path) -> None:
+    root = _per_slice_files(tmp_path)
+    got = run.load_set(root)
+    assert got.queries == run.load_set(SET_DIR).queries
+    assert set(got.lock) == {"set.yaml", "images.yaml", "texts.yaml", "labels_image.yaml"}
+    (root / "texts.yaml").write_text("items: {changed: 1}\n", encoding="utf-8")
+    with pytest.raises(run.LockMismatchError):  # every locked file, not only the slice's
+        run.load_set(root)
+
+
+def test_a_file_the_slice_reads_but_the_lock_omits_refuses(tmp_path: Path) -> None:
+    root = _per_slice_files(tmp_path)
+    _relock(root, ["set.yaml", "images.yaml"])
+    with pytest.raises(run.LockMismatchError, match=r"labels_image\.yaml"):
+        run.load_set(root)
+
+
 GIB_KIB = 1024 * 1024
 
 

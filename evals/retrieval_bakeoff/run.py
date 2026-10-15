@@ -72,7 +72,6 @@ from evals.retrieval_bakeoff.adapters import (
 from nora.subject import lexical_seed
 
 SET_DIR = Path(__file__).resolve().parent
-LOCKED = ("set.yaml", "media.yaml", "labels.yaml")
 RRF_K = 60
 DEPTH = 50
 BATCH = 16
@@ -138,19 +137,29 @@ def _sha256(path: Path) -> str:
 
 
 def load_set(root: Path = SET_DIR, slice_name: str = "text_image") -> BakeoffSet:
+    """The slice's pool, queries, labels and items, from the files `set.yaml`
+    names for it (`items`, `labels`; a set without them is the first,
+    text-to-image-only format: `media.yaml` and `labels.yaml`). Every file
+    `labels.lock` lists must hash to its line, and every file the slice reads
+    must be listed: an unlocked file is as unlabelled as a changed one."""
     lock: dict[str, str] = {}
     for line in (root / "labels.lock").read_text(encoding="utf-8").splitlines():
         if line.strip():
             digest, name = line.split()
             lock[name] = digest
-    for name in LOCKED:
+    for name, digest in lock.items():
         actual = _sha256(root / name)
-        if lock.get(name) != actual:
-            raise LockMismatchError(f"{name} hashes to {actual}, labels.lock says {lock.get(name)}")
+        if digest != actual:
+            raise LockMismatchError(f"{name} hashes to {actual}, labels.lock says {digest}")
     the_set = yaml.safe_load((root / "set.yaml").read_text(encoding="utf-8"))
-    media = yaml.safe_load((root / "media.yaml").read_text(encoding="utf-8"))
-    labels = yaml.safe_load((root / "labels.yaml").read_text(encoding="utf-8"))
     sl = the_set["slices"][slice_name]
+    items_file = sl.get("items", "media.yaml")
+    labels_file = sl.get("labels", "labels.yaml")
+    unlocked = [n for n in ("set.yaml", items_file, labels_file) if n not in lock]
+    if unlocked:
+        raise LockMismatchError(f"{slice_name} reads {unlocked}, which labels.lock does not list")
+    media = yaml.safe_load((root / items_file).read_text(encoding="utf-8"))
+    labels = yaml.safe_load((root / labels_file).read_text(encoding="utf-8"))
     queries = {q["id"]: Query(q["text"], q["lang"]) for q in sl["queries"]}
     per_query = labels["queries"]
     return BakeoffSet(
