@@ -220,3 +220,57 @@ of CPU for 224 images.
 Not acted on (operator, 2026-10-15): the verdict is recorded, but adopting
 WeMM waits for the four-way comparison, after Qwen3-VL-Embedding-2B and
 jina-v5-omni-small have been measured on the same set.
+
+## Two-stage 256 > 2048 measured (2026-10-16, Qwen3-VL-Embedding-2B Q4_K_M)
+
+The question was whether the approved index design keeps full-2048 quality
+while searching only 256 dimensions. The design stores the full vector as
+`halfvec(2048)`, puts HNSW (`halfvec_cosine_ops`) only on
+`subvector(embedding,1,256)::halfvec(256)`, takes the top k from that index,
+and re-ranks them by full-2048 cosine. On this set it does: no two-stage arm
+lost an item that dense@2048 had in its top 5, on any slice, at any k.
+Results are in `evals/retrieval_bakeoff/results/20261015T171213Z-stage2-qwen3vl-q4-*`.
+The run was at commit 5c650bf6, all three slices, on the Q4_K_M GGUF and
+F16 projector (mradermacher at ac21c878). Every prompt's server token ids
+equalled the official tokenizer's.
+
+Recall@5 as queries, then MRR@10 in thousandths. Every Cantonese and names
+query has exactly one relevant item, and text → image recall@5 is 1.000 in
+every row, so each count is recall@5 times the number of queries:
+
+| arm | text → image | Cantonese | names |
+|---|---|---|---|
+| dense@2048 | 69 of 69, MRR 938 | 54 of 61, MRR 767 | 43 of 48, MRR 821 |
+| dense@256 | 69 of 69, MRR 954 | 53 of 61, MRR 717 | 43 of 48, MRR 810 |
+| rerank k=20 | 69 of 69, MRR 938 | 54 of 61, MRR 767 | 43 of 48, MRR 823 |
+| rerank k=50 | 69 of 69, MRR 938 | 54 of 61, MRR 767 | 43 of 48, MRR 821 |
+| rerank k=100 | 69 of 69, MRR 938 | 54 of 61, MRR 767 | 43 of 48, MRR 821 |
+| hnsw-rerank k=50 | 69 of 69, MRR 938 | 54 of 61, MRR 767 | 43 of 48, MRR 821 |
+
+- **Re-ranking gives back what 256 alone loses.** dense@256 drops one
+  Cantonese query from the top 5 (53/61 against 54/61). Every two-stage arm
+  finds the same 54. The per-language rows, the reading-gap rows and the
+  time-only rows all equal dense@2048 too. The one difference is names at
+  k=20, where MRR@10 is 0.823 against 0.821.
+- **The HNSW approximation cost nothing measurable.** The HNSW arm used
+  pgvector 0.8.6 on Postgres 18.6 with default `m`/`ef_construction`,
+  `hnsw.ef_search` = 50, and `enable_seqscan` off. `EXPLAIN` showed the
+  index scanned on every query, and no candidate set came back short. Its
+  per-query ranks equal the exact arm's.
+- **Latency.** In SQL the two stages take 15 ms p50 and 17 ms p95 per query,
+  and the index search alone takes 7.5–7.6 ms p50. These are client wall
+  times over loopback, for pools of 224–460 items. Embedding the query
+  dominates at 0.36–0.41 s p50 per text on CPU. The server's peak RSS was
+  3.0 GiB (3,129,164 KiB).
+- **`decide()` returns REPLACE.** It holds Cantonese and wins text → image.
+  The winner is `dense:qwen3vl-q4@256`, but only through the unchanged
+  tie-break. On text → image, dense@256 and every two-stage arm tie at 1.000.
+  `_dim` now reads a two-stage arm as searching 256 dimensions, so the
+  dimension does not separate them either, and the arm name decides. The
+  tie-break never reads Cantonese, where dense@256 is one query below the
+  two-stage arms. The fused bm25+Qwen arms are flagged as media-only.
+
+This is a Q4 verdict on 69 / 61 / 48 queries. It shows that the two-stage
+design loses nothing here. It does not show that it would lose nothing at
+Nora's real index size, where an HNSW search over many more vectors is a
+harder approximation.
