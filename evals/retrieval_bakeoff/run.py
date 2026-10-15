@@ -35,7 +35,8 @@ watchdog on:
         --dsn postgresql+asyncpg://postgres@127.0.0.1:55439/bakeoff
 
 The watchdog aborts the run (ERROR, exit 3) when MemAvailable drops below
-3 GiB or swap grows by more than 1 GiB; an aborted run is rerun, never scored.
+3 GiB, swap grows by more than 1 GiB, or less than 1 GiB of swap is left; an
+aborted run is rerun, never scored.
 """
 
 from __future__ import annotations
@@ -484,14 +485,17 @@ def read_meminfo() -> dict[str, int]:
 
 class MemoryWatchdog:
     """Aborts the run when Nora's host runs short: MemAvailable under 3 GiB,
-    or swap grown by more than 1 GiB since the run started. A host it cannot
-    read is refused, not assumed fine."""
+    swap grown by more than 1 GiB since the run started, or under 1 GiB of
+    swap left (a host near the end of its swap cannot grow it by 1 GiB). A
+    host it cannot read is refused, not assumed fine."""
 
     def __init__(self, read: Callable[[], dict[str, int]] | None = None, *,
-                 min_available_kib: int = 3 * GIB_KIB, max_swap_growth_kib: int = GIB_KIB) -> None:
+                 min_available_kib: int = 3 * GIB_KIB, max_swap_growth_kib: int = GIB_KIB,
+                 min_swap_free_kib: int = GIB_KIB) -> None:
         self._read = read or (lambda: read_meminfo())
         self._min = min_available_kib
         self._growth = max_swap_growth_kib
+        self._min_swap_free = min_swap_free_kib
         self.lowest_available_kib: int | None = None
         self._swap0 = self._swap_used(self._sample())
 
@@ -514,6 +518,9 @@ class MemoryWatchdog:
         m = self._sample()
         if m["MemAvailable"] < self._min:
             raise AbortedError(f"MemAvailable {m['MemAvailable']} kB is under {self._min} kB")
+        if m.get("SwapTotal", 0) > 0 and m.get("SwapFree", 0) < self._min_swap_free:
+            raise AbortedError(
+                f"free swap {m.get('SwapFree', 0)} kB is under {self._min_swap_free} kB")
         grown = self._swap_used(m) - self._swap0
         if grown > self._growth:
             raise AbortedError(f"swap grew by {grown} kB, over {self._growth} kB")
