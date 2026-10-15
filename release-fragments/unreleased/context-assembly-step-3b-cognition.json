@@ -1,1 +1,0 @@
-{"type": "none", "reason": "The Cognition session's prompt is built from context-assembly blocks and shows a message by the id its verbs require. The session runs in shadow only (session_mode shadow in the live data, off in the default config), so nothing it reads or writes reaches a room and no user observes the change.", "details": [], "limitations": []}

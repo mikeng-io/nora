@@ -28,10 +28,9 @@ WHAT IT ENFORCES, and the ONE thing it deliberately does not:
 
    Refusing it also bought nothing. The property being defended is «the reported
    version cannot disagree with the running code», and an image with no stamp
-   REPORTS NOTHING: `version` answers `unavailable`, and the announcer finds no
-   manifest and stays quiet. There is no disagreement to prevent. Forcing every
-   config-change rebuild to invent a tag is workflow cost with no safety return,
-   and it made the honest state (an untagged build) unreachable.
+   REPORTS NOTHING: `version` answers `unavailable`. There is no disagreement
+   to prevent. Forcing every config-change rebuild to invent a tag is workflow
+   cost with no safety return, and it made the honest state (an untagged build) unreachable.
 """
 
 from __future__ import annotations
@@ -60,8 +59,8 @@ def main(argv: list[str]) -> int:
             removed = " (removed a stale nora/version.json from this build)"
         print(
             f"no NORA_VERSION: building UNSTAMPED{removed}. `version` will "
-            "answer `unavailable` and no upgrade note will be posted. Use "
-            "`scripts/release.py` for an explicit release."
+            "answer `unavailable`. `scripts/build-image.sh` stamps every build "
+            "it can."
         )
         return 0
     if not MANIFEST.exists():

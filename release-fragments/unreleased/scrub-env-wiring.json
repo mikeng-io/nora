@@ -1,6 +1,0 @@
-{
-  "type": "fix",
-  "summary": "Nora's Signal connection and the game-server lookup work again after the identifier scrub: both now read their real values from the deployment's private settings.",
-  "details": [],
-  "limitations": []
-}

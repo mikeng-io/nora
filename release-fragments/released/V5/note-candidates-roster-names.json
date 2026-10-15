@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "The user-visible fix (note-candidates naming senders by the roster) landed in #544. What remains here is eval-only: the eval path's sandbox rows get sender ids the roster resolves, so an eval run renders the names production renders, and the body instrument grades those names.",
-  "details": [],
-  "limitations": []
-}

@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Eval-harness-only: PR #541 added `standing`/`standing_revision.working_set`, written by the debrief fold, but the eval harness never read it — the standing corpus's residue case (`residue-restaurants-found-two-sent`) grades only `outcome.position`, so it could not see the field the design put its answer in and a confirming eval read 0/5 on nothing. This captures the fold's written working set into its own `Outcome`/`NORA_WORKING_SET` field, shows it to the position judge and `--positions` labelled as a thing SEPARATE from the position, and updates the residue case's `expected_output` to accept the unsent finding in either place. No production code path changes; nothing a room sees differs.",
-  "details": [],
-  "limitations": []
-}

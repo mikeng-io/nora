@@ -42,13 +42,6 @@
     "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[relay-the-platform-it-came-from]"
   },
   {
-    "name": "4b: the announcement's version is no longer escaped",
-    "file": "nora/domain/framing.py",
-    "old": "{_put(self.version)}",
-    "new": "{_put(self.version, 'system')}",
-    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[announcement-the-version]"
-  },
-  {
     "name": "4b: the relay swaps two fields (who asked and where from)",
     "file": "nora/domain/framing.py",
     "old": "f\"has just called you. {_put(self.requester.name)} asked you, over on \"\n            f\"{_put(self.from_platform)}, to pass something on to this room — \"",
@@ -133,10 +126,10 @@
     "target": "tests/architecture/test_framing_is_one_typed_place.py::test_the_values_not_escaped_are_exactly_the_recorded_ones"
   },
   {
-    "name": "4b: a NEW non-escaped value (the announcement version is marked system)",
+    "name": "4b: a NEW non-escaped value (the relay's source platform is marked system)",
     "file": "nora/domain/framing.py",
-    "old": "{_put(self.version)}",
-    "new": "{_put(self.version, 'system')}",
+    "old": "{_put(self.from_platform)}",
+    "new": "{_put(self.from_platform, 'system')}",
     "target": "tests/architecture/test_framing_is_one_typed_place.py::test_the_values_not_escaped_are_exactly_the_recorded_ones"
   },
   {

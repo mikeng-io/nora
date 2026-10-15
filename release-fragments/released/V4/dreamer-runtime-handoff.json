@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Handoff document only (docs/superpowers/specs/2026-08-21-dreamer-runtime-handoff.md). Consolidates ownership of the Dreamer runtime (Phases 2-3 of the substrate plan) with the fact-synthesizer workstream, on the grounds that the fact adaptor is the runtime's first real consumer and the sink contract should be designed against an actual consumer. Records the two Phase 1 findings that generalise to fact rows (the digest is read per run, never cached at construction; hash only text that actually reached the model), the four implementation traps in Phase 2, the deferred three-way re-partition in Phase 3, and the DEC numbering state after two same-day collisions. No code, config, schema or behaviour changes.",
-  "details": [],
-  "limitations": []
-}

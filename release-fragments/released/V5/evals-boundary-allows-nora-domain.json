@@ -1,9 +1,0 @@
-{
-  "type": "fix",
-  "summary": "evals/ may now import nora.domain -- S5's render_transcript_at reaches nora.domain.blocks.render_messages/nora.domain.models directly, which the layered-import contract (both the import-linter contract and its AST-based test backstop) correctly caught as a boundary violation.",
-  "details": [
-    "nora/domain/__init__.py's own docstring: \"framework-free contracts, imports only the standard library\" -- pure types and pure functions, not a collaborator or an assembly seam, so allowing it does not reopen the \"no caller assembles a Nora\" property nora.subject exists to hold (the same reasoning that let nora.subject itself join this allowlist on 2026-09-17).",
-    "Updated both enforcement points: pyproject.toml's \"evals may only reach nora.app, nora.testing and nora.subject\" import-linter contract (renamed, nora.domain removed from forbidden_modules) and tests/test_boundaries.py's EVALS_ALLOWED_NORA_PACKAGES AST-based backstop.",
-    "Found by the full test suite (tests/test_boundaries.py::test_evals_only_imports_nora_app_and_nora_testing), not missed silently -- both enforcement mechanisms did their job."
-  ]
-}

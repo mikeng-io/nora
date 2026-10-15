@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "instagram-bridge is layered: use cases, thin HTTP handlers, a composition root, and a test that pins the import rule.",
-  "details": [],
-  "limitations": [],
-  "reason": "Internal refactor, behaviour-preserving (design/instagram-adoption/17 P8). internal/app holds the use cases (send, send media, react, typing, unsend, members, account, story) and the Session, Messaging and Social ports, which the gateway implements. The use cases apply the session gate, then parse ids, then call a port. The HTTP handlers move to internal/transport/http; each reads the request, calls one use case, and maps its error through the closed domain set. cmd/instagram-bridge/main.go is only the composition root, with the same flags and a single binary, and the Dockerfile builds ./cmd/instagram-bridge. A Go test runs go list -deps and pins the dependency rule from design 16: domain imports only the standard library; app imports only domain and never net/http or instameow; the gateway never imports transport; transport never imports instameow, the gateway or the session files. The response bodies for the account and story routes were checked against P4's shared contract fixtures, generated from the code before this refactor, and every one matches. No route, path, status code or JSON shape changes."
-}

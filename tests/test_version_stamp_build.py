@@ -33,7 +33,6 @@ from nora.infra.version import NOTHING_FOUND, OK, VersionManifest
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT / "scripts" / "gen_version_manifest.py"
 CHECKER = ROOT / "scripts" / "check_version_stamp.py"
-RELEASE = ROOT / "scripts" / "release.py"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None, reason="the generator derives the manifest from git",
@@ -61,13 +60,14 @@ def _commit(repo: Path, name: str, subject: str) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A two-version repository, tagged the way an operator tags one."""
+    """A repository with one old manual tag (V1, annotated) and one release
+    tagged the way release-please tags it: a LIGHTWEIGHT `v6.0.0` on the commit
+    that wrote its `CHANGELOG.md` section (DEC-314)."""
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
     (repo / "nora").mkdir()
     shutil.copy(GENERATOR, repo / "scripts" / GENERATOR.name)
     shutil.copy(CHECKER, repo / "scripts" / CHECKER.name)
-    shutil.copy(RELEASE, repo / "scripts" / RELEASE.name)
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "test@example.invalid")
     _git(repo, "config", "user.name", "Test")
@@ -81,8 +81,27 @@ def repo(tmp_path: Path) -> Path:
     _git(repo, "tag", "-a", "V1", "-m", "The first one.")
     _commit(repo, "b", "feat(reminders): the heartbeat")
     _commit(repo, "c", "fix(fire): the header")
-    _git(repo, "tag", "-a", "V2", "-m", "Reminders — she can hold something for later.")
+    (repo / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+    _git(repo, "add", "CHANGELOG.md")
+    _git(repo, "commit", "-qm", "chore(master): release 6.0.0")
+    _git(repo, "tag", "v6.0.0")
     return repo
+
+
+CHANGELOG = """# Changelog
+
+## [6.0.0](https://github.com/o/r/compare/V1...v6.0.0) (2026-10-16)
+
+
+### Features
+
+* **reminders:** the heartbeat ([abc1234](https://github.com/o/r/commit/abc1234)), closes [#12](https://github.com/o/r/issues/12)
+
+
+### Bug Fixes
+
+* **fire:** the header ([def5678](https://github.com/o/r/commit/def5678))
+"""
 
 
 def _stamp(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -92,11 +111,11 @@ def _stamp(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def test_the_stamp_the_generator_writes_is_the_stamp_the_reader_reads(repo: Path):
     """The whole loop, in one test: git → the file → `VersionManifest`.
 
-    The annotation becomes `notes` (what the announcement relays) and the commit
-    subjects become `changes` (what «what was in V2» reads). Those two must not
-    swap, and nothing else in the suite would notice if they did.
+    The version's CHANGELOG.md section becomes `notes` and the commit subjects
+    become `changes` (what «what was in v6.0.0» reads). Those two must not swap,
+    and nothing else in the suite would notice if they did.
     """
-    done = _stamp(repo, "--version", "V2")
+    done = _stamp(repo, "--version", "v6.0.0")
     assert done.returncode == 0, done.stderr
 
     manifest = VersionManifest(repo / "nora" / "version.json")
@@ -104,16 +123,18 @@ def test_the_stamp_the_generator_writes_is_the_stamp_the_reader_reads(repo: Path
 
     assert current.status == OK
     assert current.entry is not None
-    assert current.entry.version == "V2"
-    assert current.entry.notes == "Reminders — she can hold something for later."
+    assert current.entry.version == "v6.0.0"
+    assert current.entry.notes.startswith("### Features")
+    assert "* **reminders:** the heartbeat, closes #12" in current.entry.notes
+    assert "https://" not in current.entry.notes
     assert set(current.entry.changes) >= {
         "feat(reminders): the heartbeat", "fix(fire): the header",
     }
-    assert manifest.known() == ("V2", "V1")
+    assert manifest.known() == ("v6.0.0", "V1")
 
 
-def test_an_earlier_versions_note_and_subjects_survive_into_the_manifest(repo: Path):
-    _stamp(repo, "--version", "V2")
+def test_an_old_manual_tags_annotation_survives_into_the_manifest(repo: Path):
+    _stamp(repo, "--version", "v6.0.0")
 
     entry = VersionManifest(repo / "nora" / "version.json").lookup("V1").entry
 
@@ -123,27 +144,27 @@ def test_an_earlier_versions_note_and_subjects_survive_into_the_manifest(repo: P
 
 
 def test_a_version_that_was_never_tagged_is_nothing_found(repo: Path):
-    """The generator recorded V1 and V2 and nothing else, so a V9 question is
-    answered from a manifest that really was read — `nothing_found`, not the
-    `unavailable` an unstamped build gives."""
-    _stamp(repo, "--version", "V2")
+    """The generator recorded V1 and v6.0.0 and nothing else, so a v9.0.0
+    question is answered from a manifest that really was read — `nothing_found`,
+    not the `unavailable` an unstamped build gives."""
+    _stamp(repo, "--version", "v6.0.0")
 
     assert VersionManifest(
-        repo / "nora" / "version.json").lookup("V9").status == NOTHING_FOUND
+        repo / "nora" / "version.json").lookup("v9.0.0").status == NOTHING_FOUND
 
 
-def test_the_running_version_may_be_ahead_of_the_newest_tag(repo: Path):
-    """Stamping V3 before V3 is tagged: she knows what she IS (`ok`) and has no
-    record of what was in it (`nothing_found` by name). Two facts, and the
-    manifest must not conflate them by borrowing V2's notes."""
-    _stamp(repo, "--version", "V3")
+def test_a_build_past_the_newest_tag_is_stamped_with_its_distance(repo: Path):
+    """A deploy between releases: `git describe` names it `v6.0.0-1-g<sha>`.
+    She knows what she IS (`ok`) and has no notes for it, and the manifest must
+    not borrow v6.0.0's notes for a build that holds more than v6.0.0."""
+    _commit(repo, "d", "fix: after the release")
+    assert _stamp(repo).returncode == 0
     manifest = VersionManifest(repo / "nora" / "version.json")
 
     assert manifest.current().entry is not None
-    assert manifest.current().entry.version == "V3"
+    assert manifest.current().entry.version.startswith("v6.0.0-1-g")
     assert manifest.current().entry.notes == ""
-    assert manifest.lookup("V3").status == NOTHING_FOUND
-    assert manifest.lookup("V2").status == OK
+    assert manifest.lookup("v6.0.0").status == OK
 
 
 def test_a_dirty_tree_is_refused(repo: Path):
@@ -152,7 +173,7 @@ def test_a_dirty_tree_is_refused(repo: Path):
     dirty wherever it is."""
     (repo / "a").write_text("half a change")
 
-    done = _stamp(repo, "--version", "V2")
+    done = _stamp(repo, "--version", "v6.0.0")
 
     assert done.returncode == 2
     assert "dirty" in done.stderr
@@ -164,7 +185,7 @@ def test_an_untracked_file_the_image_copies_is_dirty(repo: Path):
     image, and no commit describes it."""
     (repo / "nora" / "stray.py").write_text("print('not committed')")
 
-    done = _stamp(repo, "--version", "V2")
+    done = _stamp(repo, "--version", "v6.0.0")
 
     assert done.returncode == 2
     assert "dirty" in done.stderr
@@ -178,7 +199,7 @@ def test_an_untracked_file_outside_the_image_is_not_dirty(repo: Path):
     (repo / ".uacp").mkdir()
     (repo / ".uacp" / "cache").write_text("a tool's cache")
 
-    done = _stamp(repo, "--version", "V2")
+    done = _stamp(repo, "--version", "v6.0.0")
 
     assert done.returncode == 0, done.stderr
     assert (repo / "nora" / "version.json").exists()
@@ -220,8 +241,10 @@ def test_the_image_dirs_are_every_directory_the_dockerfile_copies():
 
 
 def test_a_version_outside_the_scheme_is_refused(repo: Path):
-    """Plain V1/V2/V3 — no semver. Refused rather than silently accepted,
-    because nothing else in the system can match on `v3.1`."""
+    """vX.Y.Z or git describe's form, and nothing else: an old `V3` or a typed
+    `v3.1` is refused rather than silently accepted."""
+    for wrong in ("V3", "v3.1"):
+        assert _stamp(repo, "--version", wrong).returncode == 2, wrong
     done = _stamp(repo, "--version", "v3.1")
 
     assert done.returncode == 2
@@ -232,30 +255,47 @@ def test_the_newest_tag_is_used_when_no_version_is_given(repo: Path):
     assert _stamp(repo).returncode == 0
 
     assert json.loads(
-        (repo / "nora" / "version.json").read_text())["version"] == "V2"
+        (repo / "nora" / "version.json").read_text())["version"] == "v6.0.0"
+
+
+def test_a_tree_with_no_release_tag_is_refused_rather_than_named_after_v1(tmp_path: Path):
+    """Before the first release-please release only `V<n>` tags exist, and
+    `--match 'v[0-9]*'` must not fall back to one of them."""
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "nora").mkdir()
+    shutil.copy(GENERATOR, repo / "scripts" / GENERATOR.name)
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    _git(repo, "config", "user.name", "Test")
+    _git(repo, "config", "commit.gpgsign", "false")
+    _git(repo, "config", "tag.gpgsign", "false")
+    _commit(repo, "a", "feat: the first thing")
+    _git(repo, "tag", "-a", "V1", "-m", "The first one.")
+
+    done = _stamp(repo)
+
+    assert done.returncode == 2
+    assert not (repo / "nora" / "version.json").exists()
 
 
 def _check(repo: Path, arg: str) -> subprocess.CompletedProcess[str]:
     return _run(["python", str(repo / "scripts" / CHECKER.name), arg], repo)
 
 
-def _release(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return _run(["python", str(repo / "scripts" / RELEASE.name), *args], repo)
-
-
 def test_the_build_gate_passes_when_the_stamp_matches(repo: Path):
-    _stamp(repo, "--version", "V2")
+    _stamp(repo, "--version", "v6.0.0")
 
-    assert _check(repo, "V2").returncode == 0
+    assert _check(repo, "v6.0.0").returncode == 0
 
 
 def test_the_build_gate_refuses_a_stamp_that_disagrees_with_the_build(repo: Path):
     """The grounding gate, and the reason "the reported version cannot disagree
     with the running code" is a property rather than an intention: the image is
     never finished if the two strings differ."""
-    _stamp(repo, "--version", "V2")
+    _stamp(repo, "--version", "v6.0.0")
 
-    done = _check(repo, "V3")
+    done = _check(repo, "v6.1.0")
 
     assert done.returncode == 2
     assert "disagrees" in done.stderr
@@ -264,7 +304,7 @@ def test_the_build_gate_refuses_a_stamp_that_disagrees_with_the_build(repo: Path
 def test_the_build_gate_refuses_an_unstamped_context(repo: Path):
     """An unstamped image answers `unavailable` to every version question
     forever, which under R-5 looks exactly like a healthy Nora nobody asked."""
-    done = _check(repo, "V2")
+    done = _check(repo, "v6.0.0")
 
     assert done.returncode == 2
     assert "missing" in done.stderr
@@ -287,7 +327,7 @@ def test_an_unstamped_build_is_allowed_and_leaves_no_stale_stamp(repo: Path):
     somebody reading the build log, so the stale file is deleted.
 
     Both halves asserted: the build proceeds AND the stamp is gone."""
-    _stamp(repo, "--version", "V2")
+    _stamp(repo, "--version", "v6.0.0")
     assert (repo / "nora" / "version.json").exists()
 
     result = _check(repo, "")
@@ -301,7 +341,7 @@ def test_the_build_gate_still_refuses_a_claimed_version_with_no_manifest(repo: P
     """Allowing the unstamped build must not have widened into allowing a build
     that CLAIMS V3 and ships nothing to read — that is the same failure from the
     other side, and it is still a hard stop."""
-    assert _check(repo, "V3").returncode == 2
+    assert _check(repo, "v6.1.0").returncode == 2
 
 
 def test_the_dockerfile_runs_the_gate_with_the_build_argument():
@@ -315,53 +355,3 @@ def test_the_dockerfile_runs_the_gate_with_the_build_argument():
     assert 'python scripts/check_version_stamp.py "$NORA_VERSION"' in dockerfile
     # …after the code it is checking, or it would check an empty directory.
     assert dockerfile.index("COPY nora/") < dockerfile.index("check_version_stamp.py")
-
-
-def test_a_manual_release_tags_the_group_note_and_accumulated_changes(repo: Path):
-    _commit(repo, "after-v2.txt", "fix: keep deployments untagged")
-    notes = repo / "docs" / "releases"
-    notes.mkdir(parents=True)
-    (notes / "V3.md").write_text(
-        "# V3 — Manual releases\n\n"
-        "## Summary\n"
-        "Deployments and releases are now separate operator actions.\n\n"
-        "## Group message\n"
-        "今次係整順咗啲嘢，平時 restart 唔會再扮係新 version。\n",
-        encoding="utf-8",
-    )
-    _git(repo, "add", "docs/releases/V3.md")
-    _git(repo, "commit", "-qm", "docs: prepare V3 release")
-
-    done = _release(repo, "--skip-deploy")
-
-    assert done.returncode == 0, done.stderr
-    assert _run(["git", "rev-parse", "V3^{}"], repo).stdout.strip() == _run(
-        ["git", "rev-parse", "HEAD"], repo).stdout.strip()
-    note = _run(["git", "tag", "-l", "--format=%(contents)", "V3"], repo).stdout
-    assert note.strip() == "今次係整順咗啲嘢，平時 restart 唔會再扮係新 version。"
-    assert "fix: keep deployments untagged" not in note
-
-
-def test_a_manual_release_is_not_refused_by_an_untracked_backup(repo: Path):
-    """V5 could not run this on the deploy host: its checkout always holds
-    untracked backups, and the tag describes only committed files."""
-    (repo / "docs" / "releases").mkdir(parents=True)
-    (repo / "docs" / "releases" / "V3.md").write_text(
-        "# V3\n\n## Summary\nx\n\n## Group message\nV3 出咗。\n", encoding="utf-8")
-    _git(repo, "add", "docs/releases/V3.md")
-    _git(repo, "commit", "-qm", "docs: prepare V3 release")
-    (repo / "config.toml.bak-20260907").write_text("a backup")
-
-    done = _release(repo, "--skip-deploy")
-
-    assert done.returncode == 0, done.stderr
-    assert _run(["git", "tag", "-l", "V3"], repo).stdout.strip() == "V3"
-
-
-def test_a_manual_release_refuses_a_missing_group_note(repo: Path):
-
-    done = _release(repo, "--skip-deploy")
-
-    assert done.returncode == 2
-    assert "release note" in done.stderr
-    assert _run(["git", "tag", "-l", "V3"], repo).stdout == ""

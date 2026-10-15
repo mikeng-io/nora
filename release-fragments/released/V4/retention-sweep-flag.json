@@ -1,5 +1,0 @@
-{
-  "type": "change",
-  "summary": "The conversation record can now be kept in full — the retention sweep is a switch, and Nora's own deployment has it off.",
-  "detail": "Nora trimmed every conversation to its most recent 500 messages, sweeping every five minutes. In a busy group that cap is reached in days, and from then on each new message silently deleted the oldest one — the record looked healthy while being a rolling window rather than a history. `store.prune_enabled` now decides whether the sweep runs at all, and Nora's deployment sets it false, so nothing is deleted from here on. It defaults to true, so an existing configuration behaves exactly as before. Note what this does not fix: messages already evicted are gone, and attachment bytes still have no sweep of their own, so disk is now the thing to watch."
-}

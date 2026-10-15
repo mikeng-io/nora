@@ -1,1 +1,0 @@
-{"type": "none", "reason": "A test-only fix: master was red because a docs test forbade any DESIGN.md, and #572 added a new one. No user sees it.", "details": [], "limitations": []}

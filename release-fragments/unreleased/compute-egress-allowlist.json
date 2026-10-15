@@ -1,1 +1,0 @@
-{"type": "none", "reason": "superseded in the same release: the compute sandbox this allowlist confined was removed in S3b (DEC-254), so no user sees it", "details": [], "limitations": []}

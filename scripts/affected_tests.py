@@ -1,5 +1,5 @@
-"""Change-aware test selection (the fast-test-pass design, spec §3; its release
-note is release-fragments/released/V4/fast-test-pass.json).
+"""Change-aware test selection (the fast-test-pass design, spec §3, released
+in V4).
 
 Takes a base ref, reads the changed paths from git, and decides which pytest
 targets are worth running for *that diff*. This backs BOTH `make test-affected`
@@ -56,10 +56,9 @@ wrong one. The classes, in order:
   touch other `tests/` files (2026-10-02).
 * documentation and data files outside the code trees (`.md` anywhere but
   `nora/`, `evals/`, `scripts/`; any `.md/.txt/.json/.toml/.yaml/.yml` under
-  `docs/`, `design/`, `release-fragments/`): the tests that READ them, found by
-  scanning `tests/` at select time (`_readers`), plus the universal
-  doc-reference scan for a `.md`, plus `tests/test_release_notes.py` under
-  `release-fragments/`. A file read by a shared test helper is `ALL`.
+  `docs/`, `design/`): the tests that READ them, found by scanning `tests/` at
+  select time (`_readers`), plus the universal doc-reference scan for a `.md`.
+  A file read by a shared test helper is `ALL`.
 * ANY path named in the `file` field of a `scripts/mutations/*.json` entry also
   selects `tests/architecture/test_mutation_tables_anchor_to_their_source.py`
   (read from the tables at select time, so a new table is covered with no edit
@@ -73,10 +72,10 @@ wrong one. The classes, in order:
 WHY A SCAN, NOT A TABLE. This file used to keep a table of which tests read
 which `.md`. It listed AGENTS.md, CONTRIBUTING.md and the decision index and
 missed README.md, DESIGN.md, docs/runbook.md, ARCHITECTURE.md, the deploy
-READMEs and release-fragments/README.md: a table is updated by whoever
-remembers, and a test added later that reads a doc leaves it silently stale. A
-cross-check test for the table would only run when selected, and a new test
-file selects only itself. The scan recomputes the answer from the tests as they
+READMEs and the release-fragment README (retired, DEC-314): a table is updated
+by whoever remembers, and a test added later that reads a doc leaves it
+silently stale. A cross-check test for the table would only run when selected,
+and a new test file selects only itself. The scan recomputes the answer from the tests as they
 stand, so a new reader is found without anyone editing this file.
 
 What the scan reads (`_TestFacts`): every string literal in a test module
@@ -130,17 +129,13 @@ NONE = "NONE"
 _CODE_TREE_PREFIXES = ("nora/", "evals/", "scripts/")
 
 # Whole-directory docs trees: a data file under them is looked up in the scan.
-_DOCS_TREE_PREFIXES = ("docs/", "release-fragments/", "design/")
+_DOCS_TREE_PREFIXES = ("docs/", "design/")
 _DATA_EXTENSIONS = frozenset({".md", ".txt", ".json", ".toml", ".yaml", ".yml"})
 
 # tests/architecture/test_doc_references_resolve.py scans every tracked `.md`
 # (`git ls-files "*.md"`), so it reads any doc. The scan finds it too; naming
 # it keeps the floor if that test ever changes how it enumerates.
 _ANY_MD_READER = "tests/architecture/test_doc_references_resolve.py"
-
-# release-fragments/**: JSON fragments are loaded whole by `load_fragments`.
-_RELEASE_FRAGMENTS_PREFIX = "release-fragments/"
-_RELEASE_FRAGMENTS_TARGET = "tests/test_release_notes.py"
 
 _TRAVERSAL_CALLS = frozenset(
     {"glob", "rglob", "iglob", "iterdir", "walk", "listdir", "scandir"},
@@ -453,8 +448,6 @@ def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
             targets.update(readers)
             if path.endswith(".md"):
                 targets.add(_ANY_MD_READER)
-            if path.startswith(_RELEASE_FRAGMENTS_PREFIX):
-                targets.add(_RELEASE_FRAGMENTS_TARGET)
             continue
         return ALL
 

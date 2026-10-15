@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Eval harness only: a sandbox now seeds notes anchored by entity ids alone, and a proactive case's row replaces the seeded copy of itself instead of colliding with it. proactive_act a07 and a12 no longer ERROR before the turn runs. No runtime change.", "details": [], "limitations": []}

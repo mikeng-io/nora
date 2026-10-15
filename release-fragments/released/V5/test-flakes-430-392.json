@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Test-only fix: removes wall-clock flakiness in two tests (#430, #392). No user-visible behaviour change.",
-  "details": [],
-  "limitations": []
-}

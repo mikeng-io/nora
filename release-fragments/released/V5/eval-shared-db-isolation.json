@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Eval-harness hazard fix only: a branch-ahead run no longer migrates the shared nora_eval/nora_eval_blank databases every session on the deploy host reads (it builds a private per-run copy instead), and the source is refused rather than misread when its schema diverges from the branch. Nothing a member of a room can observe.",
-  "details": [],
-  "limitations": []
-}

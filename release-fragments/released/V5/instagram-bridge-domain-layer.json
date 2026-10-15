@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "instagram-bridge has a domain package: typed ids and a closed set of error kinds.",
-  "details": [],
-  "limitations": [],
-  "reason": "Internal refactor, behaviour-preserving (design/instagram-adoption/17 P6). IGID, FBID, the short and long thread ids, ThreadRef and Username become value objects with parsing constructors, so a username can no longer be handed to a call that wants an igid. The handlers parse path and room ids into them at the edge, after the session gate, so every status code and body is unchanged. The closed error set (invalid id, not found, needs a human, unavailable, upstream rejected, unsupported) now drives the status mapping; too-large is a refinement of upstream-rejected, not a seventh kind. No route, path, status or JSON shape changes."
-}

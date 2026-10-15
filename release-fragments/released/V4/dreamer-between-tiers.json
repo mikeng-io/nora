@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs only. Adds design/dreamer-agent-loop/19-between-tiers.md — how the four state tiers are kept apart at write time, why nothing arbitrates at read time, and the render/tool shape facts need. Also records the refuted cross-tier semantic index and corrects the language tier's failure analysis. No code, no behaviour change."
-}

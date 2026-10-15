@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design only: design 41 §7 and DEC-202 record the note tier's duplicate bound — the debrief creates no notes (#451), creation refuses exact duplicates, and a new note-merge adaptor folds what gets through, shadow-first and gated on an eval. Marks R-75, DEC-189, design 27 §2 and AGENTS.md where they are reversed or corrected. No runtime behaviour changes until the build."
-}

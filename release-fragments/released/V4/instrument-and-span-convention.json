@@ -1,1 +1,0 @@
-{"type":"none","reason":"Docs-only: states the repo's instrument (metrics) and span (tracing) convention as eight rules in CLAUDE.md, with the measurement behind each in docs/CONVENTIONS.md and a cross-reference from 02-instrument-blindness.md. No runtime, schema, or behaviour change."}

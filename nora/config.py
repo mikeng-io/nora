@@ -2450,33 +2450,6 @@ class OtpConfig(BaseModel):
     max_per_day: int = Field(default=10, gt=0, le=200)
 
 
-class VersionConfig(BaseModel):
-    """The startup upgrade note (DEC-97, `nora.app.announce`).
-
-    `announce` defaults to TRUE, which is the opposite of `[heartbeat]`,
-    `[presence]` and `[search]` — and the asymmetry is deliberate. Those three
-    ship inert because they reach a service, hold a key, or speak on a timer that
-    a config written before they existed never opted into. This one is gated by
-    something stronger than a flag: an UNSTAMPED BUILD ANNOUNCES NOTHING. A
-    source checkout and any image built without `scripts/build-image.sh` have no
-    `nora/version.json`, so `nora.infra.version.VersionManifest` answers
-    `unavailable` and the composition root never even constructs the announcer.
-    Defaulting it off as well would mean a correctly stamped upgrade goes
-    unannounced because of a line nobody knew to add — the failure this feature
-    exists to remove.
-
-    It is here rather than in `policy.toml` because it is a DEPLOYMENT question
-    ("does this deployment speak on boot"), not a trust one. WHERE she announces
-    is a trust question, and that is read from `policy.toml`'s conversations —
-    the rooms the operator already allowed her into, never a second list here
-    that could silently disagree with the first (DEC-8).
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    announce: bool = True
-
-
 class RemindersConfig(BaseModel):
     """The anti-runaway caps on stored reminders, and the zone a recurrence keeps.
 
@@ -4311,9 +4284,6 @@ class Config(BaseModel):
     # Optional and defaulted, see `VideoGenConfig`. Ships INERT (`enabled = false`): no
     # backend is built and the registry withholds `video_create`.
     video_gen: VideoGenConfig = VideoGenConfig()
-    # Optional and defaulted — see `VersionConfig` for why this one defaults ON
-    # where every other optional capability defaults off.
-    version: VersionConfig = VersionConfig()
     # Optional and defaulted — see `ToolsConfig`. Empty means no MCP server is
     # mounted; a config.toml without a `[tools]` section keeps loading.
     tools: ToolsConfig = ToolsConfig()

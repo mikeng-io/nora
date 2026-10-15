@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design-doc finding only, no code change. Ran design/evaluation/10-the-scenario-map.md §8's own named self-falsification: 20 closed issues drawn at random (seeded, reproducible) from the last 3 months (97-issue pool) and classified into S1-S9. Result: of the 8 that are turn-behavior issues at all, S1/S2/S3/S4/S9 each got 1-2 hits and S5/S6/S7/S8 got zero -- S7 (75 of the current 150 corpus cases) produced zero of eight real incidents, while S2/S4 (near-zero corpus coverage) accounted for half the real incidents. This confirms §2's original claim by an independent method rather than refuting it. Also found a tenth failure shape (#182, a disclosure/redaction-effectiveness gap -- content leaving her that should not, distinct from S9's untrusted-content-entering-her) that the map has no slot for; named rather than absorbed into S9."
-}

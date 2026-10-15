@@ -22,9 +22,9 @@ Under the hood she is a two-layer,
 [Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
 rebuild of a hand-rolled original — `ARCHITECTURE.md` (arc42) is the map;
 `design/00-overview.md` is that rebuild's first plan (Signal only, SQLite),
-kept as history. Her releases are tagged `V1`, `V2`, `V3`…, one
-`docs/releases/V<n>.md` each; the rebuild is not a release number
-(«Versions, and the note she posts after an upgrade», below).
+kept as history. Her releases are `vX.Y.Z` tags and GitHub Releases cut by
+release-please from the commit history (the manual `V1`…`V5` came first;
+«Versions and releases», below).
 
 **Reading order for a newcomer:** this file, then `GLOSSARY.md` (the words
 that mean something specific here), then `ARCHITECTURE.md`. Everything else
@@ -139,7 +139,7 @@ Path ③ is the only way Nora speaks in a room without being asked. The set of
 senders is closed: the tag path and the fire path, plus the summons (⑤), which
 DEC-212 added as a third caller of `deliver.build` that can reach no room's
 adapter (R-1b as amended). Path ③'s occasions are enumerated
-too: a reminder coming due, a gathering's notify, a version announcement, a
+too: a reminder coming due, a gathering's notify, a
 compute job, a relay, and two that the operator grants per room:
 
 - **participation** (design/dreamer-agent-loop/35): an untagged message in a
@@ -479,51 +479,41 @@ docker compose stop nora
 git checkout <ref>
 docker build --network=host -t nora:latest .   # unstamped: she answers «I can't
                                                # check» to 咩version. Use
-                                               # scripts/build-release-image.sh V<n>
-                                               # to rebuild a tagged release.
+                                               # scripts/build-image.sh to stamp
+                                               # it from git describe.
 docker compose up -d --no-build
 ```
 
-### Versions, and the note she posts after an upgrade
+### Versions and releases
 
-Nora's version is **baked into the image at build time** — plain `V1`, `V2`, `V3`, no
-semver (`pyproject.toml`'s `version` is not the release). A tag is made on the deploy host
-by `scripts/release.py`, which pushes it once the deploy verifies (`V2`, made before it did,
-sat on the host alone from 2026-08-12 until V5). Release with the one command rather than
-`docker build` directly:
+Releases are cut on GitHub, never on the deploy host (DEC-314). On every push
+to master, release-please (`.github/workflows/release-please.yml`) reads the
+Conventional Commits merged since the last `vX.Y.Z` tag and keeps one release PR
+open with the next version and its `CHANGELOG.md` section: `feat` is a minor
+bump, `fix`/`security`/`perf`/`change`/`doctrine` a patch, and `!` a major.
+Merging that PR makes the tag and the GitHub Release. The commit subjects are
+the release notes, so nothing else has to be written at release time. The
+procedure is the `nora-release` skill. The first release is `v6.0.0`, after the
+manual `V1`…`V5`.
 
-```bash
-uv run python scripts/render_release_notes.py
-# Review/edit docs/releases/V3.md, then explicitly release it:
-python3 scripts/release.py   # on the deploy host: lock, tag, build, deploy, verify, push
-```
+A deploy is not a release. `scripts/build-image.sh` fetches tags and stamps
+whatever it builds with `git describe --tags --match 'v[0-9]*'`: `v6.1.0` on
+the release commit, `v6.1.0-3-gabc1234` three commits past it. The stamp is
+`nora/version.json` (the running version, plus each release's CHANGELOG notes
+and commit subjects), passed as `--build-arg NORA_VERSION` too. The Dockerfile
+**fails the build** if the stamp is missing or disagrees with the build
+argument, so the version she reports can never be a version she is not running.
+A tree that cannot be stamped honestly (a dirty tree, or no release tag yet)
+builds unstamped and says so. There is no runtime GitHub lookup: the container
+has no git checkout and may not reach github.com, and a release API would
+describe the repository rather than this image.
 
-JSON fragments accumulate user-visible changes between releases. They are
-source material for the manual `docs/releases/V<n>.md` record, not a deploy
-trigger and not an automatic tag. Each feature, fix, behaviour/security change,
-or meaningful limitation adds one fragment at implementation time; internal
-work adds an explicit `type: "none"` fragment. See `release-fragments/README.md`.
-
-That stamps `nora/version.json` from git (the running version, plus each earlier tag's
-annotation and commit subjects), passes the same value as `--build-arg NORA_VERSION`, and
-carries the `--network=host` this host needs. The Dockerfile **fails the build** if the
-stamp is missing or disagrees with the build argument, so the version she reports can
-never be a version she is not running. There is no runtime GitHub lookup: the container
-has no git checkout and may not reach github.com, and a release API would describe the
-repository rather than this image.
-
-Two things follow from that stamp:
-
-- **`nora.000 你而家咩version`** — she reads it off the artifact. Asking about an earlier
-  version (`V2 有咩?`) reads that tag's annotation. A version the manifest has no record
-  of is «there is no such version»; an image built *without* the wrapper has no stamp at
-  all, and she says she can't check rather than claiming she has no versions.
-- **The upgrade note.** On the first boot of a new version she posts the tag's annotation
-  to every group `policy.toml` allows her into — **once, ever, per room** — relayed in her
-  own words rather than pasted. A restart or a crash-loop never repeats it. A version
-  tagged without a message (`git tag V3`, no `-m`) has nothing to relay, so she says
-  nothing; annotate the tag and rebuild. Turn the whole thing off with `[version]
-  announce = false`.
+**`nora.000 你而家咩version`**: she reads it off the artifact. Asking about an
+earlier version (`v6.0.0 有咩?`) reads that release's notes. A version the
+manifest has no record of is «there is no such version». An unstamped image has
+no stamp at all, so she says she can't check rather than claiming she has no
+versions. She posts nothing about a new version: the startup upgrade note was
+retired with DEC-314.
 
 Either way, `.env` supplies `OMNIROUTE_API_KEY` to Compose automatically — nothing needs
 exporting by hand. The record store (the `db` service's volume) is untouched by either

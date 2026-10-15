@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Documentation and gate scope only, from a 2026-09-11 audit that re-verified every open issue against the tree. `nora/language` joins the mypy gate line and costs ZERO errors, so the tier logic living there is type-checked for the first time. AGENTS.md's strict-error table was measuring the import graph rather than each package — it counted `nora/agent`'s errors again in almost every row, which is how `ingest` was recorded as 137 when its own count is zero; it is replaced with own-file numbers. Two stale counts corrected: the note-candidates suite is 18 batches, not ten, and design/27's consumer table still called P1 and P2 unbuilt after both shipped. Nothing a member of a room can observe."
-}

@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Fact tier lands dormant: schema, config, and prompt plumbing with no writer or reader yet, plus the eval judge moved onto a reachable route.",
-  "details": [],
-  "limitations": [],
-  "reason": "Ships migration 0025 (fact_entity/fact_candidate/fact, three tables plus idx_fact_standing) and a [facts] config.toml section (enabled=False by default), six nora_fact_* metric specs, and a <facts> prompt block renderer -- all real DDL/config/code that lands on deploy, but nothing writes a fact yet and the block always renders empty, so there is no user-observable behaviour change. The store (Task 3) is deferred behind another workstream's protocol. Also repoints [evals] judge_model from the deepseek/ direct route (HTTP 402, Insufficient Balance) to ollamacloud/deepseek-v4-pro:0813, which is eval infrastructure and affects no runtime behaviour."
-}

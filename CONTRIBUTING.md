@@ -182,8 +182,10 @@ only in prose grows whatever headings the author remembers. Then:
 title's job (the subject serves `git log --oneline`), and `Test plan` is
 `Gate on the merged tree` — the outcome, not the intention.
 
-Every branch with a user-observable change also carries a release fragment;
-see `release-fragments/README.md` for the schema and the validation commands.
+There is no release fragment. The commit subjects ARE the release notes:
+release-please builds the CHANGELOG and the GitHub Release from the `feat`,
+`fix`, `security`, `perf`, `change` and `doctrine` commits (DEC-314, the
+`nora-release` skill). Write each one so a reader of the changelog can use it.
 
 **Closing an issue.** Use `Closes #N` only when the PR fully resolves it. A
 multi-PR design track stays open across incremental landings — reference it as

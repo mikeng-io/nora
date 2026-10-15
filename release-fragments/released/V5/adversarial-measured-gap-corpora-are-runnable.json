@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "The three adversarial corpora that record doctrine gaps are runnable by name, and repeatable.",
-  "details": [],
-  "limitations": [],
-  "reason": "Eval wiring only; nothing Nora does in a room changes. identity_grounding.yaml, source_scope.yaml and being_contradicted.yaml sat on disk with no code path reading them, so the gaps they record had no live number. Each is now its own suite name on the existing adversarial live path (never a member of the gated `adversarial` corpus, so no deploy gate moves), with --repeat N for a rate that carries its spread, --model/--judge-model/--judge-samples so a run from a dev box measures the deployed aliases, and a fail-closed loader: a suite naming a missing file, or a corpus contributing no cases, now raises instead of passing an empty gate by vacuity."
-}

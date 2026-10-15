@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Adds an eval corpus, a full-restore sandbox mode for it and a judge criterion; the eval harness only, so no Nora behaviour changes.",
-  "details": [],
-  "limitations": []
-}

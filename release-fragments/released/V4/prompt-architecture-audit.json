@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Audit findings document only (docs/superpowers/specs/2026-08-20-prompt-architecture-audit-findings.md). Records what three read-only audits plus live Langfuse/Honcho/DB measurement found about Nora's prompt architecture: refutes request-consistency, history-compaction and context-exhaustion as causes, confirms memory-as-instruction and authority-hierarchy findings, and lists ten actionable items. No code, config, schema or behaviour changes — the items themselves are open work and will carry their own fragments.",
-  "details": [],
-  "limitations": []
-}

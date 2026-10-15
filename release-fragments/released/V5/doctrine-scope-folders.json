@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Doctrine files move into scope folders (core, rooms, instruments); every assembled prompt is byte-identical, so nothing a user sees changes.", "details": [], "limitations": []}

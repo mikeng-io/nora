@@ -80,14 +80,12 @@ async def build_app(config_path: Path) -> App:
         enabled=cfg.obs.errors.enabled,
         dsn_env=cfg.obs.errors.dsn_env,
         environment=cfg.obs.errors.environment,
-        # NO RELEASE, and that is a fact about this deployment rather than an
-        # omission: `scripts/build-image.sh` deliberately builds UNSTAMPED
-        # (`--build-arg NORA_VERSION=`) because "deployments are not releases",
-        # so the running container has neither the env var nor `version.json`.
-        # Sentry therefore groups by environment alone, and "is this new since
-        # the last deploy" is not answerable from an issue. An explicit release
-        # (`scripts/release.py`) does stamp the image, and wiring that value
-        # through is the follow-up that makes regression tracking real.
+        # NO RELEASE yet. `scripts/build-image.sh` now stamps every build it
+        # can with its `git describe` version (DEC-314), but that value is not
+        # passed through, so Sentry groups by environment alone and "is this
+        # new since the last deploy" is not answerable from an issue. Wiring
+        # `nora/version.json`'s `version` through is the follow-up that makes
+        # regression tracking real.
     )
     if cfg.obs.tracing.enabled:
         try:

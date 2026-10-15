@@ -38,5 +38,5 @@ not apply.
      and stays open until the last piece lands. Delete if none. -->
 
 <!-- Commits authored in a Claude Code session carry a `Claude-Session:`
-     footer; every branch with a user-observable change also carries a release
-     fragment (release-fragments/README.md). -->
+     footer. The commit subjects are the release notes (DEC-314): write the
+     user-visible ones as changelog lines. -->

@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Internal observability only: /music slash commands, the now-playing control panel's buttons (skip/pause/resume/stop), and the empty-channel auto-leave now log who acted and the outcome. No user-observable behaviour changed. Prompted by a live incident (2026-08-24) where a Stop-button click fully disconnected an active session with zero trace in nora.log -- everything but exceptions was silent for this whole control surface, so diagnosing it required reading a Discord screenshot instead of the log."
-}

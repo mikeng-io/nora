@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design 42's S0: an eval instrument for note bodies, a note-body validator that nothing calls yet, and two tests pinning today's behaviour. No running path changes, so nobody in a room sees anything different.",
-  "details": [],
-  "limitations": []
-}

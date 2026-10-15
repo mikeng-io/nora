@@ -1,9 +1,0 @@
-{
-  "type": "change",
-  "summary": "Nora's music, event, reminder-list, version and tool-loading tools now explain their results when they return them, instead of in a long description she read on every message.",
-  "details": [
-    "list_reminders, cancel_reminder, the six event tools, the six music tools, version and load_tools were rewritten to ADR 0015. The biggest cuts: play_music 542 to 132 tokens, list_reminders 367 to 74, version 327 to 94, cancel_reminder 275 to 99.",
-    "Every non-ok result from these tools now carries a note on how to report it. A few ok results carry one too, built from what came back: whether a track was queued or started, whether a version has notes, and what a reminder listing holds.",
-    "list_events' status filter and rsvp_event's response are enum types, and the em dashes and example utterances are gone from their text."
-  ]
-}

@@ -1070,31 +1070,24 @@ If the daemon is unreachable, `groups` exits 1 with the two commands to run;
 `pending` still works but loses display names and says so — with no roster to
 correlate against, one person's ids may appear as several entries.
 
-## 8b. "The version note never appeared" (or appeared twice)
+## 8b. "She says the wrong version" (or can't check)
 
-The upgrade note is one turn per room on the boot after a deploy, and R-5 keeps
-every way it can fail OUT of the room — so the counter and the ledger are the
-only evidence. Read them in that order.
+She reads her version off `nora/version.json`, baked by `scripts/build-image.sh`
+from `git describe --tags --match 'v[0-9]*'` (DEC-314). She posts nothing about
+a new version: the startup upgrade note was retired with DEC-314, and
+`version_announcements` is a retired table nothing reads. Read the stamp first:
 
 ```bash
-curl -s localhost:9100/metrics | grep nora_version_announcements_total
-docker exec nora-db psql -U nora -d nora -c \
-  'select * from version_announcements order by announced_at desc limit 10;'
+docker exec nora /app/.venv/bin/python -c \
+  'import json; print(json.load(open("/app/nora/version.json"))["version"])'
+git -C ~/workspace/nora describe --tags --match 'v[0-9]*'
 ```
 
-`status` on the counter says which of these it was:
-
-| status | what happened | what to do |
+| what you see | what happened | what to do |
 |---|---|---|
-| `already_announced` | the version was already taken for that room | nothing — this is R-42 working, and it climbs on every restart |
-| `unavailable` | this image carries no readable build stamp | rebuild with `scripts/build-image.sh V3`. A plain `docker build` (or `docker compose build` with no `NORA_VERSION`) SUCCEEDS and is the normal way to pick up a config change — it just produces an UNSTAMPED image, which announces nothing and answers «I can't check» to «咩version». It is not an error state, it is an untagged build |
-| `no_note` | the tag has no annotation, so there is nothing anybody wrote to relay | `git tag -a V3 -m "…" -f` and rebuild — nothing was claimed, so it will still announce |
-| `deferred` | a tag held the conversation when the sweep ran | nothing — the next boot retries, because nothing was said |
-| `failed_*` | the turn ran and the group heard nothing | the row records which; **it is not retried** (at-most-once, R-42) — announce the next version, or say it yourself |
-
-**Twice is a bug, not a config.** The claim is a primary key, so a repeat means
-the ledger row was deleted or the database was restored from before the
-announcement. Check `version_announcements` before looking anywhere else.
+| no file | the image was built UNSTAMPED: a dirty tree, no release tag reachable, or a plain `docker build` | read the build log's refusal, then rebuild with `scripts/build-image.sh`. Unstamped is not an error state: she answers «I can't check» |
+| `vX.Y.Z-N-g<sha>` | the checkout is N commits past the release | nothing, if that is what is deployed. The release itself is `nora-release` |
+| an older `vX.Y.Z` than GitHub shows | the tag was not fetched when the image was built | `build-image.sh` fetches tags; a failed fetch warns and stamps from local tags. Fetch, then rebuild |
 
 ## 8c. Deferred delivery (`compute_jobs`, idle)
 
@@ -1104,8 +1097,8 @@ per-job container backend were retired in S3b (design/sandbox-runtime decision
 `document_publish`. The outbox, `ComputeJobPoller` and boot recovery are kept as
 the generic deferred-delivery path a future `delegate_task` will use, so the
 evidence below still applies the day something writes a row. R-5 keeps every
-failure of that delivery out of the room, so — exactly as with 8b — the counter
-and the table are the only evidence.
+failure of that delivery out of the room, so the counter and the table are the
+only evidence.
 
 ```bash
 curl -s localhost:9100/metrics | grep nora_compute_jobs_delivered_total
@@ -1122,7 +1115,7 @@ docker exec nora-db psql -U nora -d nora -c \
 | `failed_policy` / `failed_timeout` | the fire turn itself was refused or cut off | same reading as `nora_reminders_fired_total`'s own — §8.1's outcomes, not compute-specific |
 
 **Nothing here is retried.** One job, one delivery, ever — the same
-at-most-once rule reminders and announcements hold.
+at-most-once rule reminders hold.
 
 **`[compute] enabled = true` builds nothing.** No backend adapter ships, so the
 poller is not spawned and composition logs a warning at boot. Set it to `false`.

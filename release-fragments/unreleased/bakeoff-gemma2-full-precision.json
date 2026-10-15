@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Eval-only: the retrieval bake-off can run EmbeddingGemma 2 through sentence-transformers at full precision, and this records that run's result and verdict. Nothing Nora runs or says changes.",
-  "details": [],
-  "limitations": []
-}

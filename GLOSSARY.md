@@ -483,9 +483,9 @@ kind. The files sit in four scope folders — `core/` (wherever she is),
 - **occasion** — WHY a fire turn is happening, as a value (`nora.domain.events.Event`, DEC-139):
   where she speaks, on whose authority, the words put to her, and the header
   that explains the moment. The factories on `nora.app.fire` enumerate them —
-  a reminder coming due, a gathering, a version announcement (DEC-97), a
+  a reminder coming due, a gathering, a
   compute job, a relay, participation (below) and proactive (above). A
-  reminder names its requester; an announcement, a participation turn and a
+  reminder names its requester; a participation turn and a
   proactive turn name NOBODY, which is what stops the turn being refused
   under a rule about a grant it never held.
 - **audience** — which occasion a doctrine file speaks to (`applies_to`):

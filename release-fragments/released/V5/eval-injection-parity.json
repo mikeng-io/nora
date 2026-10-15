@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Eval injection parity: production and the offline/eval harness now build TranscriptInjection through one shared nora.app.assembler.build_assembler, so <standing>/<notes>/<facts> render in evals the same way they do in production.",
-  "details": [],
-  "limitations": [],
-  "reason": "Internal-only: fixes drift between the eval harness and production prompt assembly, with a structural parity test; no production behaviour changes."
-}

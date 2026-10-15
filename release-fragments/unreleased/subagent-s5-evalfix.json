@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Eval harness only: a deployment with [subagent] enabled now composes as an eval subject (compute kept on, the worker is a recorder), no runtime behaviour changes.", "details": [], "limitations": []}

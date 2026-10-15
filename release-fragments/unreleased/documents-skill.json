@@ -1,1 +1,0 @@
-{"type": "none", "reason": "The document tools the skill teaches ship off (`[documents] enabled = false`), so no one can publish a document; the skill only adds a line to her list of skills. Superseded: documents went live on 2026-10-01, and `documents-live` carries the user-facing note.", "details": [], "limitations": []}

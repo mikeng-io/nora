@@ -650,14 +650,15 @@ async def test_a_reminder_whose_requester_left_identity_toml_sends_nothing(
 async def test_an_occasion_nobody_asked_for_still_speaks(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """DEC-79's occasion, on the real turn rather than through a stub.
+    """A person-less occasion (DEC-97's shape), on the real turn rather than
+    through a stub.
 
-    The version announcement names NO person — nobody asked — and the test above
+    Such an occasion names NO person — nobody asked — and the test above
     (`…requester_person_id="ghost"`) shows what §12 does to a turn whose person
     cannot be resolved: it refuses, silently, as `failed_policy`. Those two
-    states are one line apart in `_turn`, so without this the announcement would
-    be refused by a rule about a grant it never held, and every announcer test
-    would still pass (they stub `speak`).
+    states are one line apart in `_turn`, so without this a person-less occasion
+    would be refused by a rule about a grant it never held, and every caller's
+    own test would still pass (they stub `speak`).
 
     `tagger` is therefore `None` here on purpose, and the assertions below pin
     the consequences as ACCEPTED rather than accidental: the turn runs, the group
@@ -669,19 +670,19 @@ async def test_an_occasion_nobody_asked_for_still_speaks(
     path = _fire_path(
         doctrine_store=doctrine_store, persons=persons, metrics=metrics,
         adapter=adapter,
-        runner=FakeAgentRunner(_send_turns("新版本, 而家識講返自己version"),
+        runner=FakeAgentRunner(_send_turns("其實我識講返自己version㗎"),
                                on_call=calls.append),
     )
 
     outcome = await path.speak(Event(
         platform="signal", conversation_id="conv-1", conversation_type="group",
         person_id=None, body="You can ask her which version she is running.",
-        speaker="the people who build you", kind="version_announcement",
-        header=lambda tagger, now: "You have just been restarted on a new version.",
+        speaker="the people who build you", kind="compute_lost",
+        header=lambda tagger, now: "Nobody has just called you.",
     ))
 
     assert outcome == "sent"
-    assert adapter.texts == ["新版本, 而家識講返自己version"]
+    assert adapter.texts == ["其實我識講返自己version㗎"]
     tag_message = calls[-1]["tag_message"]
     assert 'from="the people who build you"' in tag_message
     assert "You can ask her which version she is running." in tag_message
@@ -958,10 +959,10 @@ async def test_a_fire_turn_speaks_on_the_platform_the_occasion_names(
     platform-specific, so a reminder owed in a Discord channel fires there.
 
     `FirePath` held ONE adapter until DEC-102, so every occasion — reminder,
-    version announcement, finished compute job — was spoken into Signal
-    regardless of where it was owed. Under R-42 that is unrecoverable for an
-    announcement: it is CLAIMED for the Discord room and delivered to a Signal
-    one, and the claim bars a second attempt forever.
+    version announcement (retired, DEC-314), finished compute job — was spoken
+    into Signal regardless of where it was owed. For an at-most-once occasion
+    that is unrecoverable: it is CLAIMED for the Discord room and delivered to a
+    Signal one, and the claim bars a second attempt forever.
     """
     signal_adapter = _FireAdapter()
     discord_adapter = _DiscordFireAdapter()

@@ -163,6 +163,17 @@ def test_a_version_name_is_matched_however_it_was_typed(tmp_path: Path):
         assert manifest.lookup(typed).status == OK, typed
 
 
+def test_a_release_version_is_matched_with_or_without_its_v(tmp_path: Path):
+    """Releases are `vX.Y.Z` (DEC-314); «6.0.0» and «V6.0.0» name the same one,
+    and a bare «6» is not «6.0.0»."""
+    manifest = VersionManifest(_write(tmp_path, {
+        "version": "v6.0.0", "versions": [{"version": "v6.0.0"}]}))
+
+    for typed in ("v6.0.0", "V6.0.0", "6.0.0", " 6.0.0 "):
+        assert manifest.lookup(typed).status == OK, typed
+    assert manifest.lookup("6").status == NOTHING_FOUND
+
+
 def test_the_stamp_is_read_once_and_does_not_change_under_a_live_process(
     tmp_path: Path,
 ):

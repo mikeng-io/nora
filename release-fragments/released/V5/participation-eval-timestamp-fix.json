@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Eval-harness fix only, no production behaviour change (#213). `evals/harness.py::run_case` fed the participation suite's untagged, judged line to `group_event`'s bare `ts=1` default (1ms after the epoch); `nora.agent.prefill._age` (rendering a per-row age since 2026-09-10) then printed it as `(20707d ago)`, sorted ABOVE the seeded window by `FakeRecordStore.recent`'s ascending `(ts, id)` sort — on both arms of any comparison run against the suite. The judged line is now stamped at the same real, recent clock read (`now_ms`) the seeded transcript's own base was rebuilt from (replacing the frozen `_SEED_TS_BASE` constant), so it renders last and its age reads in minutes. Nothing here touches `nora/` outside `nora/app/eval_support.py`'s eval-only seed builder."
-}

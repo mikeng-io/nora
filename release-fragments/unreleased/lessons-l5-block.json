@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "L5 of Lessons adds the <lessons> block to her turns behind [lessons] render, which ships off until an eval can measure it, so nothing she reads or says changes.",
-  "details": [],
-  "limitations": []
-}

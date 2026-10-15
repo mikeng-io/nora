@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design only, no code. Names the ambient loop as Nora's second backbone (design/ambient-loop, DEC-176..180): one observe–orient–decide–act loop whose stages are the ingest path, the memory layer, two deciders (participation and proactive) and the fire path. The loop already existed in the tree and had only ever been documented as the proactive adaptor's; design 39 §1 is revised, GLOSSARY gains an `ambient loop` entry, ARCHITECTURE names the two deciders. The bundle writes the contract on each seam and the six cross-stage eval cases that do not yet exist, and re-files the open issues #161, #186, #163, #160, #159, #173 and #189 as seams of one loop rather than defects of separate components. Nothing a member of a room can observe."
-}

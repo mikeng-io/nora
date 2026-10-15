@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design-only: adds 25-knowledge-pipeline.md (five passes end to end, plus bounded multi-hop traversal), adopts pgvector in 23-retrieval, and closes every remaining deferral across the bundle — each open item is now decided, with the reading that would reopen it."
-}

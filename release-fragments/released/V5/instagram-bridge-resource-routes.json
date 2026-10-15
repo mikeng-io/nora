@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Internal only — the addresses Nora uses to talk to the Instagram helper, renamed before anything outside depended on them. They had grown one at a time and were named after actions rather than things: asking who is in a group, asking about an account, and asking for someone's story each had their own made-up address. They are now addressed by the thing they are about — a group, or an account — with the reads hanging off it. The trigger was a proposed fourth address named after which of two upstream services a field happened to come from, which is not a thing at all and would have been the fourth spelling of one noun. Doing it now was free: two of the three addresses had no user yet and the third had exactly one. It also folded what would have been that fourth address into the account it belongs to, so asking about an account now returns everything known about it in one answer, with the response saying plainly which parts came back and which did not — a rate limit and a genuinely empty biography must not look the same. One visible difference for anyone writing against it: leaving the identifier out of the address is now refused by the address itself rather than by the code behind it, which means a redirect or a not-found rather than a bad-request.",
-  "details": [],
-  "limitations": []
-}

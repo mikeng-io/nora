@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs only. Adds design/dreamer-agent-loop/18-flows.md — the language, fact and note tiers traced end to end through nine identical steps each, with a TODAY block per flow naming how the live system differs. No code, no behaviour change."
-}

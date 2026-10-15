@@ -9,8 +9,7 @@
 .PHONY: test test-fast test-affected lint typecheck imports gate full-gate mutate \
         setup hooks schema-parity heads decision-numbers \
         eval-participation eval-adversarial-corpora eval-gate \
-        release-check release-notes release \
-        build build-release up stop logs ps \
+        build up stop logs ps \
         branches
 
 # --- setup (AGENTS.md: a fresh worktree needs this once, or pytest dies at
@@ -136,29 +135,13 @@ eval-source:
 eval-participation:
 	uv run python -m evals participation
 
-# --- release fragments ---
-
-release-check:
-	uv run python scripts/check_release_fragments.py --base origin/master
-
-release-notes:
-	uv run python scripts/render_release_notes.py
-
-release:
-	python3 scripts/release.py
+# Releases are cut on GitHub by release-please (DEC-314, the nora-release
+# skill); there is no release target here.
 
 # --- build / deploy (README.md "Deployment") ---
 
 build:
 	scripts/build-image.sh
-
-# make build-release VERSION=V4
-build-release:
-	@if [ -z "$(VERSION)" ]; then \
-		echo "usage: make build-release VERSION=V<n>" >&2; \
-		exit 2; \
-	fi
-	scripts/build-release-image.sh $(VERSION)
 
 up:
 	docker compose up -d

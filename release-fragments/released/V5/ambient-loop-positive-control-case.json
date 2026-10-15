@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Test only. Adds tests/integration/test_ambient_loop_positive_control.py — the ambient loop's positive-control journey for issue #199, driven through the real stages (gate, participation turn, tag turn, debrief, note-candidates, proactive pass) with a fake clock and scripted models. The four stage-3 assertions are xfail(strict=True) against #199 and go red the moment the marker is removed; the fix itself lands on a parallel branch. The one production-side change is an optional `participation_gate=` parameter on `nora.app.offline.build_offline_pipeline`, `None` by default, so no existing offline or eval run changes behaviour.",
-  "details": [],
-  "limitations": []
-}

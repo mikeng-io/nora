@@ -51,7 +51,7 @@ TYPES = {
     "ops": "operational/deployment toggles on the live stack",
     "doctrine": "Nora's doctrine files (voice/conduct/silence/constraints)",
     "perf": "a change that only affects performance (standard Conventional Commits)",
-    "security": "a security-relevant fix (matches the release-fragment `security` type)",
+    "security": "a security-relevant fix (its own CHANGELOG section, DEC-314)",
 }
 
 TYPES_RE = "|".join(sorted(TYPES))

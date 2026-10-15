@@ -1,12 +1,10 @@
 """`ComputeJobPoller` — a finished compute job, delivered through
-`FirePath.speak`, with no real model call. Mirrors `test_version_announcer.py`'s
-own shape for exercising a `speak`-consuming poller: a stub `speak` that
+`FirePath.speak`, with no real model call. A stub `speak` that
 answers one of §8.1's four outcome strings, a real `ConversationSlots` (its
 `spawn` is a no-op — nothing here ever queues), and a real `Metrics()`.
 
-Neither `tests/unit/test_version_announcer.py` nor `tests/unit/
-test_heartbeat_loop.py` defines a SHARED `fake_slots`/`fake_metrics`
-fixture — both build `ConversationSlots(maxlen=..., spawn=lambda c: None)`
+`tests/unit/test_heartbeat_loop.py` defines no SHARED `fake_slots`/
+`fake_metrics` fixture — it builds `ConversationSlots(maxlen=..., spawn=lambda c: None)`
 and `Metrics()` inline, per test. `fake_slots`/`fake_metrics` below are that
 same construction, lifted into local fixtures once rather than repeated in
 every test in this module — not a third invented double.
@@ -200,7 +198,7 @@ async def test_a_held_slot_defers_the_delivery_and_says_so_in_the_series(
     said, so the row stays PENDING and the next tick tries again.
 
     The counter is the point of this test, not the deferral (which
-    `VersionAnnouncer` established and this poller already did). A deferral
+    the retired version announcer established and this poller already did). A deferral
     that only logs is invisible to whoever is watching `nora_compute_jobs_
     delivered_total`: a slot that never frees looks EXACTLY like a job that
     never finished — both are silence on every series — and that is the one

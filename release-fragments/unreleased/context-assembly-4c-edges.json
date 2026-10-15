@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Internal: three prompt edges the earlier steps recorded are fixed (the reaction picker's speaker field, one first-wins reply resolver, the media summarizer's text in a typed block) and the last context-assembly ledger entry is paid. The model reads a different prompt only for a name carrying a bracket or a colon, a window with a duplicated timestamp that a reply quotes, and every voice note or video summary; no user sees a difference.",
-  "details": [],
-  "limitations": []
-}

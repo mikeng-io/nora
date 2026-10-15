@@ -1,7 +1,0 @@
-{
-  "type": "fix",
-  "summary": "The four model calls that bypass the agent SDK now have a convention and a gate that enforces it.",
-  "details": [
-    "The relevance gate, the debrief, the standing fold and the vision read call the provider directly rather than through Strands. Nothing said what such a client must carry, and the three implementations had three different subsets: no retry on two of them, no finish_reason check on vision, and no token usage on any — so the debrief and the standing fold had exported to Langfuse costing zero tokens since they shipped. An architecture test now discovers every raw call site and requires a bound, a finish_reason read, and a usage annotation, or an explicit exemption with its reason."
-  ]
-}

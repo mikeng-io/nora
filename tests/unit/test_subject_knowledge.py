@@ -188,7 +188,7 @@ async def test_settle_returns_once_the_turn_is_done_though_a_loop_is_still_runni
 
     Composition spawns ENDLESS loops into the same set the turn is spawned
     into — `ComputeJobPoller.run()` when `[compute]` is enabled,
-    `VersionAnnouncer.run()`, `heartbeat.run()`. Waiting for that set to reach
+    `heartbeat.run()`. Waiting for that set to reach
     ZERO is waiting for the process to exit.
     """
     from nora.subject import settle, watch

@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "The public Instagram summons' prompt is now built from declared context-assembly blocks, and every byte the model reads is unchanged, so no one sees a difference.",
-  "details": [],
-  "limitations": []
-}

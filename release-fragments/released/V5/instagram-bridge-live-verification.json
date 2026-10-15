@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "design/instagram-adoption/04-capability-evidence.md gains two measurements: the Instagram session's first real longevity reading (10.5h continuous, zero auth errors, four self-healed socket drops — correcting an earlier report of zero disconnects that was taken minutes after start and then repeated), and a live verification of the bridge daemon against the real account, covering the cookie bootstrap, login, the realtime socket, the /health envelope and the SSE heartbeat, all of which had previously been unit-tested only. Documentation only; no behaviour ships and no service was started.",
-  "details": [],
-  "limitations": []
-}

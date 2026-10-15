@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Self-awareness design: presence is a context block, and her handles are read live.",
-  "details": [],
-  "limitations": [],
-  "reason": "Design documents only (design/self-awareness/02, 05, _index.yaml); nothing Nora does in a room changes. Corrects the bundle against the code: <presence> is a ContextBlock row replacing the bare _where_line string, and on the proactive loop it replaces the existing home_room block rather than duplicating it. Her handles move back into <presence>, read from each adapter's own report of the logged-in account, because the Instagram account was renamed between two days and a config copy would have gone stale silently."
-}

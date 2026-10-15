@@ -1,9 +1,0 @@
-{
-  "type": "change",
-  "summary": "Nora Drop's public links (link shortener + artifact delivery) now live under the web portal's own domain (nora.67.zone/i/**, nora.67.zone/drop/**) instead of a separate domain (nora.example.net) — path-routed at the Cloudflare Tunnel edge, no code merge into the web app. Every already-shared nora.example.net link keeps working: that domain still routes to the same service, which now 301-redirects onto the new one.",
-  "details": [
-    "Cloudflare Tunnel gains two path-scoped ingress rules (nora.67.zone + /i/* or /drop/* -> Drop's public listener), ahead of the portal's own catch-all rule for that hostname — the same 'split by path, not Host header' trick nora.example.net itself already used once.",
-    "deploy/drop/server.py: DROP_PUBLIC_BASE_URL's default moves to https://nora.67.zone (newly-minted links use it immediately); a new DROP_LEGACY_PUBLIC_HOSTNAME check (default nora.example.net, empty string disables it) 301s any request that still arrives on the old host onto the equivalent path on the new one, checked before the link/artifact store is ever consulted."
-  ],
-  "limitations": []
-}

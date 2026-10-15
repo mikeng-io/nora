@@ -1126,7 +1126,12 @@ UQ_REMINDERS_PROACTIVE_OPEN_NOTE = sa.Index(
 )
 
 
-# `version_announcements` — the ledger that makes "announce a version once, ever"
+# RETIRED (DEC-314, 2026-10-16): nothing reads or writes `version_announcements`
+# any more. The startup upgrade note is gone; releases are GitHub Releases cut by
+# release-please. The table and its rows stay in place, unread, until someone
+# chooses the irreversible delete — the `artifacts` precedent below.
+#
+# `version_announcements` — the ledger that made "announce a version once, ever"
 # true across a restart or a crash-loop (DEC-97, R-42).
 #
 # THE PRIMARY KEY IS THE MECHANISM, not bookkeeping. The claim is

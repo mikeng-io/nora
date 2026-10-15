@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Eval harness only: the suite resolves its pseudonymised corpus anchors through a private map on the deploy host (#776); nothing Nora does in a room changes.", "details": [], "limitations": []}

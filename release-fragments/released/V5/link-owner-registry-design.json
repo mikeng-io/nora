@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design only: a proposed node in design/social-per-network for one registry of link owners that web_fetch and media_fetch consult, replacing the Instagram-only hand wiring. Nothing is built, so nothing a member of a room can observe changes.",
-  "details": [],
-  "limitations": []
-}

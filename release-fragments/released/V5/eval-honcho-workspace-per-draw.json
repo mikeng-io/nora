@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Every eval draw reads and writes a Honcho workspace of its own, created empty and deleted when the draw ends.",
-  "details": [],
-  "limitations": [],
-  "reason": "Eval harness only; nothing Nora does in a room changes (issue #462). Every draw used to feed the one shared nora-eval workspace, and the tag path read it back as the tagger card and her self card, so draw 3 of a case read what draws 1 and 2 had said and answered 'third time you've asked', which the judge then graded as fabrication. Draws are now independent: nora.subject.memory_workspace creates <deployment>-eval-<run>-<case>-<nonce> before the subject is composed, the subject composes against it, and it is deleted (sessions first, as Honcho requires) on every exit including a raising one. A startup sweep removes draw workspaces older than six hours that a killed run left behind. Nothing will create, delete or compose against a workspace outside the eval namespace, so production's workspace cannot be reached from this path. Readings of memory-reading corpora (every tag corpus, participation, proactive_act, and dreamer passes that call a memory verb) taken before this change are not comparable with readings taken after it."
-}

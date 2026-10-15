@@ -1,1 +1,0 @@
-{"type":"none","reason":"Design-only: records the silent-match family in design/dreamer-agent-loop/02 — five instances found in one day where a matcher failed to match, or a global failed to reset, and returned a positive-looking result. Also drops the stale count from that node's title."}

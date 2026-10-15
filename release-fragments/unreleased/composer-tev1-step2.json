@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Design evidence only: step 2 of the composer sequence benchmarks off-the-shelf Tev1 (0.8B, 4B) on norty as the prompt composer, both shapes of design/context-plan/15, against what each recorded turn actually did. Scripts and aggregate counts; no runtime change.", "details": [], "limitations": []}

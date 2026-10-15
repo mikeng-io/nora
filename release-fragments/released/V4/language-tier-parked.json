@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design-only: records in 28-language-tier §10 that the language tier's measure verb was built, cold-reviewed and parked by the operator. Captures the blocker (the objective wording the measure needs is pinned byte-for-byte by two tests over a bind-mounted tree, so the fail-closed state is not one the operator can leave), the watermark-burn defect, the recomputed scoring arithmetic behind the corroboration floor, five review findings, and what the review rated clean. No code change; both branches stay unmerged."
-}

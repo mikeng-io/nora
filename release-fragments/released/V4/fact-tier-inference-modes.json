@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Records that the fact tier holds only abduced facts, and what a deduced one would need.",
-  "details": [],
-  "limitations": [],
-  "reason": "Spec text only — no code, no schema, no behaviour change. Names a design gap (fact.source_url is NOT NULL, so a fact warranted by other facts cannot be stored) and the discriminated-warrant shape that would close it, deliberately deferred until the tier has a writer."
-}

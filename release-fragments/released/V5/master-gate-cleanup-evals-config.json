@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Gate cleanup: import-boundary contract rows, evals boundary routing, config template sync, offline test env provisioning.",
-  "details": [],
-  "limitations": [],
-  "reason": "Internal-only: import-linter/pytest/mypy/ruff gate repairs with no user-observable behaviour change."
-}
