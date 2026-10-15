@@ -19,6 +19,10 @@ fixed before it was written. Design source:
 | `labels.yaml` | the `text_image` slice, per query: the relevant items, the hard negatives, both labellers' raw sets, and every disagreement with how it was settled |
 | `labels_text.yaml` | the same for the `cantonese` and `names` slices, which share their labellers |
 | `labels.lock` | sha256 of `set.yaml`, `media.yaml`, `texts.yaml`, `labels.yaml` and `labels_text.yaml` |
+| `run.py` | the harness: loads the locked set, runs each arm fail-closed, scores it, writes one aggregates-only result |
+| `adapters.py` | one embedder per serving path (Ollama, llama-server, sentence-transformers), with each model's prefix and dtype rule |
+| `decide.py` | the decision rule over fused results (design/unified-memory/20 «Slices and margins») |
+| `results/` | one JSON per run: aggregates and provenance, no vector and no text |
 
 `tests/evals/test_bakeoff_set.py` enforces the shape: the three journey slices
 (`text_image`, `cantonese`, `names`) exist, at least 40 queries per slice,

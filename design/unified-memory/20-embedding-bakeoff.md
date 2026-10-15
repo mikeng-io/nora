@@ -107,10 +107,17 @@ on the tag turn's pre-fetch and 2 s in the Cognition session (the main caller,
 **journey slices** are the three that map to conversational-recall's journeys:
 Cantonese and English text, names and titles, and text → image.
 
-**Pass:** a candidate replaces bge-m3 only if hybrid recall@5 on the
-Cantonese slice is within 0.05 (absolute) of bge-m3's, and it beats bge-m3 by
-at least 0.10 recall@5 on another journey slice. Anything inside those
-margins is a tie, and a tie keeps the incumbent. A model that wins images but loses Cantonese text can only be a
+**Pass** (operator ruling 2026-10-15, replacing an absolute +0.10 recall@5
+margin): the baseline is the incumbent's best configuration per slice, the
+highest recall@5 of bge-m3 alone, trigram + bge-m3 and BM25 + bge-m3. A
+candidate replaces bge-m3 only if its hybrid recall@5 on the Cantonese slice
+is within 0.05 (absolute) of the baseline's, and on another journey slice its
+miss rate is at most half the baseline's: (1 − r) ≤ 0.5 × (1 − r_base).
+Anything short of that is a tie, and a tie keeps the incumbent. Why: bge-m3
+over the stored readings measured recall@5 0.928 on text → image (stage 1,
+`evals/retrieval_bakeoff/results/`), so +0.10 was unreachable there; halving
+what is still missed is reachable at any floor and still a large gain. The
+rule is `evals/retrieval_bakeoff/decide.py`. A model that wins images but loses Cantonese text can only be a
 second, media-only embedder, which is a decision for the operator because it
 doubles the index.
 
@@ -132,7 +139,7 @@ So the order changes:
    target rests on the operator's ruling, not on a measured recall gap. This
    slice is the measurement that would show one.
 2. **A multimodal candidate becomes the only embedder** if it holds the
-   Cantonese slice within 0.05 of bge-m3 and wins the text → image slice by
+   Cantonese slice within 0.05 of the baseline and wins the text → image slice by
    the pass margin above. Media then gets image and video vectors, embedded
    from the stored bytes (media custody), alongside its reading.
 3. **If it wins media and loses Cantonese text**, two embedders mean two

@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Eval-only: the retrieval bake-off's harness, adapters and decision rule, the stage-1 floor and EmbeddingGemma 2's stage-2 result on the text-to-image, Cantonese and names slices. Nothing Nora runs or says changes.",
+  "details": [],
+  "limitations": []
+}
