@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Eval-only: the retrieval bake-off gains a checked Qwen3-VL-Embedding-2B Q4_K_M llama-server adapter and two-stage arms (search the leading 256 dimensions, re-rank the top k by full 2048 cosine), exact and through a real HNSW index in a throwaway Postgres. Nothing Nora runs or says changes.",
-  "details": [],
-  "limitations": []
-}
