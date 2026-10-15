@@ -1,9 +1,11 @@
 # Pool and queries for the retrieval bake-off. Rules: PROTOCOL.md.
-version: 2
+version: 3
 slices:
   text_image:
     description: A caption-less photo found by a description of what it shows (design/unified-memory/20,
       conversational-recall dinner journey). Queries written blind, from the images only.
+    items: media.yaml
+    labels: labels.yaml
     pool:
     - img-001
     - img-002
@@ -439,3 +441,1207 @@ slices:
     - id: ti-q69
       lang: mixed
       text: 由高處影落去個城市，中間有個四方形護城河圍住嘅公園
+  cantonese:
+    description: 'A message found by a later question about it: written Cantonese, English, mixed script and
+      romanised Cantonese, with slang, near-duplicates and plans repeated at different times (design/unified-memory/20).
+      Pool and queries synthetic, written by separate fresh sessions.'
+    items: texts.yaml
+    labels: labels_text.yaml
+    as_of: '2026-10-15'
+    pool:
+    - msg-001
+    - msg-002
+    - msg-003
+    - msg-004
+    - msg-005
+    - msg-006
+    - msg-007
+    - msg-008
+    - msg-009
+    - msg-010
+    - msg-011
+    - msg-012
+    - msg-013
+    - msg-014
+    - msg-015
+    - msg-016
+    - msg-017
+    - msg-018
+    - msg-019
+    - msg-020
+    - msg-021
+    - msg-022
+    - msg-023
+    - msg-024
+    - msg-025
+    - msg-026
+    - msg-027
+    - msg-028
+    - msg-029
+    - msg-030
+    - msg-031
+    - msg-032
+    - msg-033
+    - msg-034
+    - msg-035
+    - msg-036
+    - msg-037
+    - msg-038
+    - msg-039
+    - msg-040
+    - msg-041
+    - msg-042
+    - msg-043
+    - msg-044
+    - msg-045
+    - msg-046
+    - msg-047
+    - msg-048
+    - msg-049
+    - msg-050
+    - msg-051
+    - msg-052
+    - msg-053
+    - msg-054
+    - msg-055
+    - msg-056
+    - msg-057
+    - msg-058
+    - msg-059
+    - msg-060
+    - msg-061
+    - msg-062
+    - msg-063
+    - msg-064
+    - msg-065
+    - msg-066
+    - msg-067
+    - msg-068
+    - msg-069
+    - msg-070
+    - msg-071
+    - msg-072
+    - msg-073
+    - msg-074
+    - msg-075
+    - msg-076
+    - msg-077
+    - msg-078
+    - msg-079
+    - msg-080
+    - msg-081
+    - msg-082
+    - msg-083
+    - msg-084
+    - msg-085
+    - msg-086
+    - msg-087
+    - msg-088
+    - msg-089
+    - msg-090
+    - msg-091
+    - msg-092
+    - msg-093
+    - msg-094
+    - msg-095
+    - msg-096
+    - msg-097
+    - msg-098
+    - msg-099
+    - msg-100
+    - msg-101
+    - msg-102
+    - msg-103
+    - msg-104
+    - msg-105
+    - msg-106
+    - msg-107
+    - msg-108
+    - msg-109
+    - msg-110
+    - msg-111
+    - msg-112
+    - msg-113
+    - msg-114
+    - msg-115
+    - msg-116
+    - msg-117
+    - msg-118
+    - msg-119
+    - msg-120
+    - msg-121
+    - msg-122
+    - msg-123
+    - msg-124
+    - msg-125
+    - msg-126
+    - msg-127
+    - msg-128
+    - msg-129
+    - msg-130
+    - msg-131
+    - msg-132
+    - msg-133
+    - msg-134
+    - msg-135
+    - msg-136
+    - msg-137
+    - msg-138
+    - msg-139
+    - msg-140
+    - msg-141
+    - msg-142
+    - msg-143
+    - msg-144
+    - msg-145
+    - msg-146
+    - msg-147
+    - msg-148
+    - msg-149
+    - msg-150
+    - msg-151
+    - msg-152
+    - msg-153
+    - msg-154
+    - msg-155
+    - msg-156
+    - msg-157
+    - msg-158
+    - msg-159
+    - msg-160
+    - msg-161
+    - msg-162
+    - msg-163
+    - msg-164
+    - msg-165
+    - msg-166
+    - msg-167
+    - msg-168
+    - msg-169
+    - msg-170
+    - msg-171
+    - msg-172
+    - msg-173
+    - msg-174
+    - msg-175
+    - msg-176
+    - msg-177
+    - msg-178
+    - msg-179
+    - msg-180
+    - msg-181
+    - msg-182
+    - msg-183
+    - msg-184
+    - msg-185
+    - msg-186
+    - msg-187
+    - msg-188
+    - msg-189
+    - msg-190
+    - msg-191
+    - msg-192
+    - msg-193
+    - msg-194
+    - msg-195
+    - msg-196
+    - msg-197
+    - msg-198
+    - msg-199
+    - msg-200
+    - msg-201
+    - msg-202
+    - msg-203
+    - msg-204
+    - msg-205
+    - msg-206
+    - msg-207
+    - msg-208
+    - msg-209
+    - msg-210
+    - msg-211
+    - msg-212
+    - msg-213
+    - msg-214
+    - msg-215
+    - msg-216
+    - msg-217
+    - msg-218
+    - msg-219
+    - msg-220
+    - msg-221
+    - msg-222
+    - msg-223
+    - msg-224
+    - msg-225
+    - msg-226
+    - msg-227
+    - msg-228
+    - msg-229
+    - msg-230
+    - msg-231
+    - msg-232
+    - msg-233
+    - msg-234
+    - msg-235
+    - msg-236
+    - msg-237
+    - msg-238
+    - msg-239
+    - msg-240
+    - msg-241
+    - msg-242
+    - msg-243
+    - msg-244
+    - msg-245
+    - msg-246
+    - msg-247
+    - msg-248
+    - msg-249
+    - msg-250
+    - msg-251
+    - msg-252
+    - msg-253
+    - msg-254
+    - msg-255
+    - msg-256
+    - msg-257
+    - msg-258
+    - msg-259
+    - msg-260
+    - msg-261
+    - msg-262
+    - msg-263
+    - msg-264
+    - msg-265
+    - msg-266
+    - msg-267
+    - msg-268
+    - msg-269
+    - msg-270
+    - msg-271
+    - msg-272
+    - msg-273
+    - msg-274
+    - msg-275
+    - msg-276
+    - msg-277
+    - msg-278
+    - msg-279
+    - msg-280
+    - msg-281
+    - msg-282
+    - msg-283
+    - msg-284
+    - msg-285
+    - msg-286
+    - msg-287
+    - msg-288
+    - msg-289
+    - msg-290
+    - msg-291
+    - msg-292
+    - msg-293
+    - msg-294
+    - msg-295
+    - msg-296
+    - msg-297
+    - msg-298
+    - msg-299
+    - msg-300
+    - msg-301
+    - msg-302
+    - msg-303
+    - msg-304
+    - msg-305
+    - msg-306
+    - msg-307
+    - msg-308
+    - msg-309
+    - msg-310
+    - msg-311
+    - msg-312
+    - msg-313
+    - msg-314
+    - msg-315
+    - msg-316
+    - msg-317
+    - msg-318
+    - msg-319
+    - msg-320
+    - msg-321
+    - msg-322
+    - msg-323
+    - msg-324
+    - msg-325
+    - msg-326
+    - msg-327
+    - msg-328
+    - msg-329
+    - msg-330
+    - msg-331
+    - msg-332
+    - msg-333
+    - msg-334
+    - msg-335
+    - msg-336
+    - msg-337
+    - msg-338
+    - msg-339
+    - msg-340
+    - msg-341
+    - msg-342
+    - msg-343
+    - msg-344
+    - msg-345
+    - msg-346
+    - msg-347
+    - msg-348
+    - msg-349
+    - msg-350
+    - msg-351
+    - msg-352
+    - msg-353
+    - msg-354
+    - msg-355
+    - msg-356
+    - msg-357
+    - msg-358
+    - msg-359
+    - msg-360
+    - msg-361
+    - msg-362
+    - msg-363
+    - msg-364
+    - msg-365
+    - msg-366
+    - msg-367
+    - msg-368
+    - msg-369
+    - msg-370
+    - msg-371
+    - msg-372
+    - msg-373
+    - msg-374
+    - msg-375
+    - msg-376
+    - msg-377
+    - msg-378
+    - msg-379
+    - msg-380
+    - msg-381
+    - msg-382
+    - msg-383
+    - msg-384
+    - msg-385
+    - msg-386
+    - msg-387
+    - msg-388
+    - msg-389
+    - msg-390
+    - msg-391
+    - msg-392
+    - msg-393
+    - msg-394
+    - msg-395
+    - msg-396
+    - msg-397
+    - msg-398
+    - msg-399
+    - msg-400
+    queries:
+    - id: ca-q01
+      lang: yue
+      text: 七月打風，有人話天文台幾點會升做八號
+    - id: ca-q02
+      lang: en
+      text: in September someone said they'd switch to signal 3 at a certain hour
+    - id: ca-q04
+      lang: en
+      text: someone shocked we still had a black rainstorm this late in the year, couldn't get to work
+    - id: ca-q06
+      lang: en
+      text: the red rainstorm morning when we said just stay home and work
+    - id: ca-q08
+      lang: mixed
+      text: 打風之前大家 panic buying 有人吐槽嗰句
+    - id: ca-q10
+      lang: en
+      text: last Sunday night someone's place had a blackout
+    - id: ca-q11
+      lang: yue
+      text: 上星期六去食火鍋，訂咗五個人位嗰條
+    - id: ca-q12
+      lang: mixed
+      text: hotpot 六個人嗰次，邊個 book 咗枱
+    - id: ca-q13
+      lang: en
+      text: the message saying I needed to pay back 180 dollars after the hotpot
+    - id: ca-q14
+      lang: roman
+      text: luk jyut sik fo wo jau jan wa cin ngo jat baak ng sap man
+    - id: ca-q15
+      lang: mixed
+      text: 十月初又約星期五 hotpot，話去返同一間
+    - id: ca-q16
+      lang: en
+      text: early September, someone asking who's coming to a Friday hotpot
+    - id: ca-q17
+      lang: yue
+      text: 叫外賣薄餅嗰晚叫咗三盒大嘅
+    - id: ca-q18
+      lang: en
+      text: the pizza night in September with two big ones
+    - id: ca-q19
+      lang: yue
+      text: 花紅出咗即刻話去食廚師發辦嗰條
+    - id: ca-q20
+      lang: en
+      text: end of August, got paid and wanted a fancy Japanese dinner
+    - id: ca-q22
+      lang: en
+      text: the ramen place in Tsuen Wan with the hour-long wait
+    - id: ca-q25
+      lang: en
+      text: whose cat was napping on top of their computer
+    - id: ca-q27
+      lang: en
+      text: the dog that threw up twice one morning
+    - id: ca-q29
+      lang: en
+      text: whose dog figured out how to get into the refrigerator
+    - id: ca-q30
+      lang: roman
+      text: sap jyut maau maau jiu zoi heoi zam jat zam
+    - id: ca-q31
+      lang: yue
+      text: 邊個養嗰隻雀識同人打招呼
+    - id: ca-q32
+      lang: en
+      text: the Tsuen Wan line running twenty minutes late in mid September
+    - id: ca-q33
+      lang: mixed
+      text: 東涌綫 late 咗二十分鐘嗰日
+    - id: ca-q35
+      lang: roman
+      text: baat jyut heoi sai kung bik m dou ce, jan taai do
+    - id: ca-q36
+      lang: en
+      text: in June the van to Sai Kung was full so they waited for another
+    - id: ca-q37
+      lang: yue
+      text: 搭計程車俾司機遊車河嗰次好嬲
+    - id: ca-q38
+      lang: en
+      text: last weekend, how often were boats to Lamma running at night
+    - id: ca-q39
+      lang: mixed
+      text: 南丫島 ferry 四十五分鐘一班嗰個
+    - id: ca-q41
+      lang: mixed
+      text: 上個禮拜又話喺佢屋企搞 games 夜嗰條
+    - id: ca-q42
+      lang: yue
+      text: 九月訂咗燒烤場三點嗰個
+    - id: ca-q43
+      lang: en
+      text: the July barbecue booking at 4
+    - id: ca-q44
+      lang: roman
+      text: gau jyut sing kei jat sai kung haang saan, gau dim baa si zaam dang
+    - id: ca-q45
+      lang: en
+      text: this month someone asked about a Sunday Sai Kung hike again
+    - id: ca-q46
+      lang: yue
+      text: 上星期有人提議再上獅子山
+    - id: ca-q49
+      lang: en
+      text: rented a party room big enough for a dozen people
+    - id: ca-q52
+      lang: en
+      text: who got three tickets for the Sunday concert
+    - id: ca-q54
+      lang: en
+      text: my younger brother's birthday dinner booking
+    - id: ca-q56
+      lang: en
+      text: my manager turned down my day off on Friday
+    - id: ca-q57
+      lang: mixed
+      text: 老細 OK 咗我星期五請假嗰次
+    - id: ca-q59
+      lang: roman
+      text: luk jyut uk zyu gaa zou baat baak
+    - id: ca-q63
+      lang: yue
+      text: 今個禮拜有人又訂咗去大阪嘅機票，十二月
+    - id: ca-q66
+      lang: en
+      text: plan to go to Macau next week for pork chop buns
+    - id: ca-q68
+      lang: en
+      text: who had a fever and took sick leave
+    - id: ca-q71
+      lang: en
+      text: the uncle at the next table who drank till he passed out
+    - id: ca-q72
+      lang: en
+      text: someone got stood up for the third time
+    - id: ca-q73
+      lang: mixed
+      text: 六月尾邊個留咗金燕冰室嘅位
+    - id: ca-q75
+      lang: mixed
+      text: 晚飯 push 遲到八點嗰次
+    - id: ca-q76
+      lang: mixed
+      text: 邊個去大阪被 airline 拖咗兩粒鐘
+    - id: ca-q77
+      lang: mixed
+      text: 邊個話睇 horror 戲睇到入咗夢鄉
+    - id: ca-q78
+      lang: mixed
+      text: 今個禮拜約咗去長洲騎 bike
+    - id: ca-q79
+      lang: mixed
+      text: 八月掛三號風球都要上班嗰次
+    - id: ca-q80
+      lang: mixed
+      text: 九月約去西貢爬山，揀咗禮拜六嗰個
+    - id: ca-q82
+      lang: mixed
+      text: AA 制每個夾兩百三嗰次
+    - id: ca-q83
+      lang: mixed
+      text: 九月初邊個部電腦又 boot 唔起
+    - id: ca-q84
+      lang: mixed
+      text: 隻貓絕食唔掂乾糧嗰次
+    - id: ca-q85
+      lang: yue
+      text: 上個禮拜邊個計劃十一月去台南掃街
+    - id: ca-q86
+      lang: yue
+      text: 呢個禮拜有人話睇咗套恐怖片，終於冇失望
+    - id: ca-q88
+      lang: yue
+      text: 呢個月頭有人話喺深水埗買衣料好抵
+    - id: ca-q89
+      lang: yue
+      text: 上個禮拜邊個想大家再上南丫島燒嘢食
+    - id: ca-q90
+      lang: yue
+      text: 上個月有人問中秋有咩好地方望月
+  names:
+    description: A message found by an invented game title, an invented handle or a Hong Kong place name inside
+      it (design/unified-memory/20). The pool is the cantonese pool plus 60 messages about named things.
+    items: texts.yaml
+    labels: labels_text.yaml
+    as_of: '2026-10-15'
+    pool:
+    - msg-001
+    - msg-002
+    - msg-003
+    - msg-004
+    - msg-005
+    - msg-006
+    - msg-007
+    - msg-008
+    - msg-009
+    - msg-010
+    - msg-011
+    - msg-012
+    - msg-013
+    - msg-014
+    - msg-015
+    - msg-016
+    - msg-017
+    - msg-018
+    - msg-019
+    - msg-020
+    - msg-021
+    - msg-022
+    - msg-023
+    - msg-024
+    - msg-025
+    - msg-026
+    - msg-027
+    - msg-028
+    - msg-029
+    - msg-030
+    - msg-031
+    - msg-032
+    - msg-033
+    - msg-034
+    - msg-035
+    - msg-036
+    - msg-037
+    - msg-038
+    - msg-039
+    - msg-040
+    - msg-041
+    - msg-042
+    - msg-043
+    - msg-044
+    - msg-045
+    - msg-046
+    - msg-047
+    - msg-048
+    - msg-049
+    - msg-050
+    - msg-051
+    - msg-052
+    - msg-053
+    - msg-054
+    - msg-055
+    - msg-056
+    - msg-057
+    - msg-058
+    - msg-059
+    - msg-060
+    - msg-061
+    - msg-062
+    - msg-063
+    - msg-064
+    - msg-065
+    - msg-066
+    - msg-067
+    - msg-068
+    - msg-069
+    - msg-070
+    - msg-071
+    - msg-072
+    - msg-073
+    - msg-074
+    - msg-075
+    - msg-076
+    - msg-077
+    - msg-078
+    - msg-079
+    - msg-080
+    - msg-081
+    - msg-082
+    - msg-083
+    - msg-084
+    - msg-085
+    - msg-086
+    - msg-087
+    - msg-088
+    - msg-089
+    - msg-090
+    - msg-091
+    - msg-092
+    - msg-093
+    - msg-094
+    - msg-095
+    - msg-096
+    - msg-097
+    - msg-098
+    - msg-099
+    - msg-100
+    - msg-101
+    - msg-102
+    - msg-103
+    - msg-104
+    - msg-105
+    - msg-106
+    - msg-107
+    - msg-108
+    - msg-109
+    - msg-110
+    - msg-111
+    - msg-112
+    - msg-113
+    - msg-114
+    - msg-115
+    - msg-116
+    - msg-117
+    - msg-118
+    - msg-119
+    - msg-120
+    - msg-121
+    - msg-122
+    - msg-123
+    - msg-124
+    - msg-125
+    - msg-126
+    - msg-127
+    - msg-128
+    - msg-129
+    - msg-130
+    - msg-131
+    - msg-132
+    - msg-133
+    - msg-134
+    - msg-135
+    - msg-136
+    - msg-137
+    - msg-138
+    - msg-139
+    - msg-140
+    - msg-141
+    - msg-142
+    - msg-143
+    - msg-144
+    - msg-145
+    - msg-146
+    - msg-147
+    - msg-148
+    - msg-149
+    - msg-150
+    - msg-151
+    - msg-152
+    - msg-153
+    - msg-154
+    - msg-155
+    - msg-156
+    - msg-157
+    - msg-158
+    - msg-159
+    - msg-160
+    - msg-161
+    - msg-162
+    - msg-163
+    - msg-164
+    - msg-165
+    - msg-166
+    - msg-167
+    - msg-168
+    - msg-169
+    - msg-170
+    - msg-171
+    - msg-172
+    - msg-173
+    - msg-174
+    - msg-175
+    - msg-176
+    - msg-177
+    - msg-178
+    - msg-179
+    - msg-180
+    - msg-181
+    - msg-182
+    - msg-183
+    - msg-184
+    - msg-185
+    - msg-186
+    - msg-187
+    - msg-188
+    - msg-189
+    - msg-190
+    - msg-191
+    - msg-192
+    - msg-193
+    - msg-194
+    - msg-195
+    - msg-196
+    - msg-197
+    - msg-198
+    - msg-199
+    - msg-200
+    - msg-201
+    - msg-202
+    - msg-203
+    - msg-204
+    - msg-205
+    - msg-206
+    - msg-207
+    - msg-208
+    - msg-209
+    - msg-210
+    - msg-211
+    - msg-212
+    - msg-213
+    - msg-214
+    - msg-215
+    - msg-216
+    - msg-217
+    - msg-218
+    - msg-219
+    - msg-220
+    - msg-221
+    - msg-222
+    - msg-223
+    - msg-224
+    - msg-225
+    - msg-226
+    - msg-227
+    - msg-228
+    - msg-229
+    - msg-230
+    - msg-231
+    - msg-232
+    - msg-233
+    - msg-234
+    - msg-235
+    - msg-236
+    - msg-237
+    - msg-238
+    - msg-239
+    - msg-240
+    - msg-241
+    - msg-242
+    - msg-243
+    - msg-244
+    - msg-245
+    - msg-246
+    - msg-247
+    - msg-248
+    - msg-249
+    - msg-250
+    - msg-251
+    - msg-252
+    - msg-253
+    - msg-254
+    - msg-255
+    - msg-256
+    - msg-257
+    - msg-258
+    - msg-259
+    - msg-260
+    - msg-261
+    - msg-262
+    - msg-263
+    - msg-264
+    - msg-265
+    - msg-266
+    - msg-267
+    - msg-268
+    - msg-269
+    - msg-270
+    - msg-271
+    - msg-272
+    - msg-273
+    - msg-274
+    - msg-275
+    - msg-276
+    - msg-277
+    - msg-278
+    - msg-279
+    - msg-280
+    - msg-281
+    - msg-282
+    - msg-283
+    - msg-284
+    - msg-285
+    - msg-286
+    - msg-287
+    - msg-288
+    - msg-289
+    - msg-290
+    - msg-291
+    - msg-292
+    - msg-293
+    - msg-294
+    - msg-295
+    - msg-296
+    - msg-297
+    - msg-298
+    - msg-299
+    - msg-300
+    - msg-301
+    - msg-302
+    - msg-303
+    - msg-304
+    - msg-305
+    - msg-306
+    - msg-307
+    - msg-308
+    - msg-309
+    - msg-310
+    - msg-311
+    - msg-312
+    - msg-313
+    - msg-314
+    - msg-315
+    - msg-316
+    - msg-317
+    - msg-318
+    - msg-319
+    - msg-320
+    - msg-321
+    - msg-322
+    - msg-323
+    - msg-324
+    - msg-325
+    - msg-326
+    - msg-327
+    - msg-328
+    - msg-329
+    - msg-330
+    - msg-331
+    - msg-332
+    - msg-333
+    - msg-334
+    - msg-335
+    - msg-336
+    - msg-337
+    - msg-338
+    - msg-339
+    - msg-340
+    - msg-341
+    - msg-342
+    - msg-343
+    - msg-344
+    - msg-345
+    - msg-346
+    - msg-347
+    - msg-348
+    - msg-349
+    - msg-350
+    - msg-351
+    - msg-352
+    - msg-353
+    - msg-354
+    - msg-355
+    - msg-356
+    - msg-357
+    - msg-358
+    - msg-359
+    - msg-360
+    - msg-361
+    - msg-362
+    - msg-363
+    - msg-364
+    - msg-365
+    - msg-366
+    - msg-367
+    - msg-368
+    - msg-369
+    - msg-370
+    - msg-371
+    - msg-372
+    - msg-373
+    - msg-374
+    - msg-375
+    - msg-376
+    - msg-377
+    - msg-378
+    - msg-379
+    - msg-380
+    - msg-381
+    - msg-382
+    - msg-383
+    - msg-384
+    - msg-385
+    - msg-386
+    - msg-387
+    - msg-388
+    - msg-389
+    - msg-390
+    - msg-391
+    - msg-392
+    - msg-393
+    - msg-394
+    - msg-395
+    - msg-396
+    - msg-397
+    - msg-398
+    - msg-399
+    - msg-400
+    - msg-401
+    - msg-402
+    - msg-403
+    - msg-404
+    - msg-405
+    - msg-406
+    - msg-407
+    - msg-408
+    - msg-409
+    - msg-410
+    - msg-411
+    - msg-412
+    - msg-413
+    - msg-414
+    - msg-415
+    - msg-416
+    - msg-417
+    - msg-418
+    - msg-419
+    - msg-420
+    - msg-421
+    - msg-422
+    - msg-423
+    - msg-424
+    - msg-425
+    - msg-426
+    - msg-427
+    - msg-428
+    - msg-429
+    - msg-430
+    - msg-431
+    - msg-432
+    - msg-433
+    - msg-434
+    - msg-435
+    - msg-436
+    - msg-437
+    - msg-438
+    - msg-439
+    - msg-440
+    - msg-441
+    - msg-442
+    - msg-443
+    - msg-444
+    - msg-445
+    - msg-446
+    - msg-447
+    - msg-448
+    - msg-449
+    - msg-450
+    - msg-451
+    - msg-452
+    - msg-453
+    - msg-454
+    - msg-455
+    - msg-456
+    - msg-457
+    - msg-458
+    - msg-459
+    - msg-460
+    queries:
+    - id: nm-q01
+      lang: en
+      text: someone stuck partway through Pebble Courier last week
+    - id: nm-q02
+      lang: mixed
+      text: Pebble Courier 2 試玩版出咗嗰條
+    - id: nm-q03
+      lang: yue
+      text: 喺旺角機舖比快爆機 Pebble Courier 嗰次
+    - id: nm-q04
+      lang: roman
+      text: bin go joek gau dim da Pebble Courier
+    - id: nm-q05
+      lang: yue
+      text: 有人問竹林特快係咪手機玩嗰隻
+    - id: nm-q06
+      lang: en
+      text: the time someone said they couldn't put down 竹林快遞
+    - id: nm-q07
+      lang: mixed
+      text: Saltmoon Diner 有樣嘢點都拎唔到
+    - id: nm-q08
+      lang: en
+      text: someone saying Saltmoon Diners can be played together
+    - id: nm-q09
+      lang: en
+      text: someone couldn't find Harbor Ghost Tactics when searching the shop
+    - id: nm-q10
+      lang: mixed
+      text: Harbour Ghost Tactics 免費玩嗰個 weekend
+    - id: nm-q11
+      lang: yue
+      text: 星塵菜園續集幾時出
+    - id: nm-q12
+      lang: roman
+      text: sing san coi jyun dai jat bou ho m ho
+    - id: nm-q13
+      lang: yue
+      text: 睇霧港奇譚結局睇到流眼淚
+    - id: nm-q14
+      lang: en
+      text: someone asked if 霧港奇談 was by the same studio
+    - id: nm-q15
+      lang: en
+      text: Lampwick Saga 2 being a lot shorter
+    - id: nm-q16
+      lang: mixed
+      text: Glasswing Rally DX 可以兩個人一齊玩
+    - id: nm-q17
+      lang: en
+      text: Bramblecore music being great
+    - id: nm-q18
+      lang: mixed
+      text: 雲吞星球今晚 server 停嗰日
+    - id: nm-q20
+      lang: mixed
+      text: tofu_wizrd 喺大埔 post 咗張相
+    - id: nm-q22
+      lang: roman
+      text: cat jyut kelp_otter jau mou lai
+    - id: nm-q23
+      lang: mixed
+      text: 有人話多咗個 r 嗰個 kelp_otter 唔係本人
+    - id: nm-q24
+      lang: yue
+      text: mossy_teapot 一個人帶起成隊打 raid
+    - id: nm-q25
+      lang: en
+      text: mossy_teapit dying over and over
+    - id: nm-q26
+      lang: roman
+      text: ferryghost7 gam maan zik bo
+    - id: nm-q27
+      lang: mixed
+      text: rainyday_crab 今個禮拜 meet 位換咗去邊
+    - id: nm-q28
+      lang: en
+      text: rainyday_crab waiting for us at Taikoo Shing
+    - id: nm-q29
+      lang: yue
+      text: lemontea_ice 喺尖沙咀開咗間期間限定舖
+    - id: nm-q30
+      lang: mixed
+      text: pineapplebun_22 陪我打咗成晚機
+    - id: nm-q31
+      lang: roman
+      text: pineapplebun_23 gaa ngo zou pang jau
+    - id: nm-q32
+      lang: en
+      text: quiet_geckoo can't come Friday
+    - id: nm-q33
+      lang: yue
+      text: quiet_gecko 星期五主持 Saltmoon Diner
+    - id: nm-q34
+      lang: mixed
+      text: sleepy_kumquat in Peng Chau, not 長洲
+    - id: nm-q35
+      lang: yue
+      text: sleepy_kumquat 喺長洲食芒果甜品
+    - id: nm-q38
+      lang: en
+      text: harbor_moth's photos from Sai Wan
+    - id: nm-q39
+      lang: yue
+      text: 由堅尼地城行去西環睇日落
+    - id: nm-q41
+      lang: mixed
+      text: Sai Kung 海鮮 dinner 星期六約人嗰次
+    - id: nm-q42
+      lang: en
+      text: last week someone said Sai Kung seafood was pricey
+    - id: nm-q43
+      lang: yue
+      text: 南丫島由榕樹灣出發嗰條易行路線
+    - id: nm-q45
+      lang: en
+      text: the Lamma barbecue where someone got burnt by the sun
+    - id: nm-q47
+      lang: en
+      text: going to Tai O to see the pink dolphins
+    - id: nm-q48
+      lang: mixed
+      text: 喺大澳冇乜 signal 嗰次
+    - id: nm-q50
+      lang: yue
+      text: 邊個喺大圍等人
+    - id: nm-q52
+      lang: mixed
+      text: cycling on 長洲 this week, weather just right
+    - id: nm-q54
+      lang: en
+      text: Sham Shui Po food crawl, hit three places
+    - id: nm-q56
+      lang: en
+      text: meeting at Prince Edward exit B
+    - id: nm-q57
+      lang: roman
+      text: dik si si gei m zip daai jyu saan
+    - id: nm-q58
+      lang: yue
+      text: 淺水灣游水嗰日
+    - id: nm-q59
+      lang: en
+      text: view from the top of Lion Rock
