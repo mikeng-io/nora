@@ -1,0 +1,441 @@
+# Pool and queries for the retrieval bake-off. Rules: PROTOCOL.md.
+version: 2
+slices:
+  text_image:
+    description: A caption-less photo found by a description of what it shows (design/unified-memory/20,
+      conversational-recall dinner journey). Queries written blind, from the images only.
+    pool:
+    - img-001
+    - img-002
+    - img-003
+    - img-004
+    - img-005
+    - img-006
+    - img-007
+    - img-008
+    - img-009
+    - img-010
+    - img-011
+    - img-012
+    - img-013
+    - img-014
+    - img-015
+    - img-016
+    - img-017
+    - img-018
+    - img-019
+    - img-020
+    - img-021
+    - img-022
+    - img-023
+    - img-024
+    - img-025
+    - img-026
+    - img-027
+    - img-028
+    - img-029
+    - img-030
+    - img-031
+    - img-032
+    - img-033
+    - img-034
+    - img-035
+    - img-036
+    - img-037
+    - img-038
+    - img-039
+    - img-040
+    - img-041
+    - img-042
+    - img-043
+    - img-044
+    - img-045
+    - img-046
+    - img-047
+    - img-048
+    - img-049
+    - img-050
+    - img-051
+    - img-052
+    - img-053
+    - img-054
+    - img-055
+    - img-056
+    - img-057
+    - img-058
+    - img-059
+    - img-060
+    - img-061
+    - img-062
+    - img-063
+    - img-064
+    - img-065
+    - img-066
+    - img-067
+    - img-068
+    - img-069
+    - img-070
+    - img-071
+    - img-072
+    - img-073
+    - img-074
+    - img-075
+    - img-076
+    - img-077
+    - img-078
+    - img-079
+    - img-080
+    - img-081
+    - img-082
+    - img-083
+    - img-084
+    - img-085
+    - img-086
+    - img-087
+    - img-088
+    - img-089
+    - img-090
+    - img-091
+    - img-092
+    - img-093
+    - img-094
+    - img-095
+    - img-096
+    - img-097
+    - img-098
+    - img-099
+    - img-100
+    - img-101
+    - img-102
+    - img-103
+    - img-104
+    - img-105
+    - img-106
+    - img-107
+    - img-108
+    - img-109
+    - img-110
+    - img-111
+    - img-112
+    - img-113
+    - img-114
+    - img-115
+    - img-116
+    - img-117
+    - img-118
+    - img-119
+    - img-120
+    - img-121
+    - img-122
+    - img-123
+    - img-124
+    - img-125
+    - img-126
+    - img-127
+    - img-128
+    - img-129
+    - img-130
+    - img-131
+    - img-132
+    - img-133
+    - img-134
+    - img-135
+    - img-136
+    - img-137
+    - img-138
+    - img-139
+    - img-140
+    - img-141
+    - img-142
+    - img-143
+    - img-144
+    - img-145
+    - img-146
+    - img-147
+    - img-148
+    - img-149
+    - img-150
+    - img-151
+    - img-152
+    - img-153
+    - img-154
+    - img-155
+    - img-156
+    - img-157
+    - img-158
+    - img-159
+    - img-160
+    - img-161
+    - img-162
+    - img-163
+    - img-164
+    - img-165
+    - img-166
+    - img-167
+    - img-168
+    - img-169
+    - img-170
+    - img-171
+    - img-172
+    - img-173
+    - img-174
+    - img-175
+    - img-176
+    - img-177
+    - img-178
+    - img-179
+    - img-180
+    - img-181
+    - img-182
+    - img-183
+    - img-184
+    - img-185
+    - img-186
+    - img-187
+    - img-188
+    - img-189
+    - img-190
+    - img-191
+    - img-192
+    - img-193
+    - img-194
+    - img-195
+    - img-196
+    - img-197
+    - img-198
+    - img-199
+    - img-200
+    - img-201
+    - img-202
+    - img-203
+    - img-204
+    - img-205
+    - img-206
+    - img-207
+    - img-208
+    - img-209
+    - img-210
+    - img-211
+    - img-212
+    - img-213
+    - img-214
+    - img-215
+    - img-216
+    - img-217
+    - img-218
+    - img-219
+    - img-220
+    - img-221
+    - img-222
+    - img-223
+    - img-224
+    queries:
+    - id: ti-q01
+      lang: yue
+      text: 搵返嗰張蒸籠入面得四粒小籠包嘅相
+    - id: ti-q02
+      lang: yue
+      text: 一籠小籠包，前面仲有碗雲吞同生菜湯嗰張
+    - id: ti-q03
+      lang: yue
+      text: 竹蒸籠入面三隻透明皮嘅水晶餃
+    - id: ti-q04
+      lang: yue
+      text: 大鑊煮緊餃子，有個漏殼喺度撈，好多蒸氣
+    - id: ti-q05
+      lang: yue
+      text: 生鐵鑊擺喺石砌嘅爐上面，下面見到燒緊柴
+    - id: ti-q06
+      lang: yue
+      text: 一盒急凍雲吞，個蓋結晒霜，盒底印住隻蝦
+    - id: ti-q07
+      lang: yue
+      text: 透明膠袋裝住一個菠蘿包嘅特寫，右下角有日期 2024.11.18
+    - id: ti-q08
+      lang: yue
+      text: 麵包舖架上面一排菠蘿包，有個牌寫兩蚊半一個
+    - id: ti-q09
+      lang: yue
+      text: 玻璃櫃入面一堆葡撻，撻面有啲燶黑
+    - id: ti-q10
+      lang: yue
+      text: 錫紙杯裝住嘅朱古力撻，成盤擺喺黑色焗盤上面
+    - id: ti-q11
+      lang: yue
+      text: 明星海鮮酒家霓虹燈嗰條街，得幾個人過馬路嗰張
+    - id: ti-q12
+      lang: yue
+      text: 一碗沖繩麵，有塊魚板同好多蔥花，排骨肉
+    - id: ti-q13
+      lang: yue
+      text: 沾麵用黑色碗，麵上面蓋住塊大紫菜同半隻蛋
+    - id: ti-q14
+      lang: yue
+      text: 雲吞麵，碗底墊住張 Mister Donut 日文餐紙
+    - id: ti-q15
+      lang: yue
+      text: 壽司擺喺一隻白色四方碟上面，唔係石板
+    - id: ti-q16
+      lang: yue
+      text: 喺港鐵車廂入面影到灣仔站月台，黃色牆
+    - id: ti-q17
+      lang: yue
+      text: 九龍塘站車門開咗，成條車廂好長，有個女仔坐住睇手機
+    - id: ti-q18
+      lang: yue
+      text: 綠色山頂纜車上緊山，左邊有個紅色 DANGER 牌
+    - id: ti-q19
+      lang: yue
+      text: 隻薑黃色貓捲埋一嚿瞓喺白毛巾上面
+    - id: ti-q20
+      lang: yue
+      text: 朗豪坊小巴站牌，隔籬有個用膠紙包住嘅霓虹燈招牌，搭咗竹棚
+    - id: ti-q21
+      lang: yue
+      text: 65號綠色專線小巴路線牌，北角去東區醫院
+    - id: ti-q22
+      lang: yue
+      text: 咖喱飯用藍白間條碟裝，有紅色醃菜，有薯仔紅蘿蔔
+    - id: ti-q23
+      lang: yue
+      text: 廟入面兩個好大嘅黃色塔香並排，吊住紅紙條，平視影
+    - id: ti-q24
+      lang: en
+      text: the cake with a single number 3 candle and little star decorations
+    - id: ti-q25
+      lang: en
+      text: birthday cake where HAPPY BIRTHDAY is piped in chocolate, with tall thin candles and icing
+        roses behind
+    - id: ti-q26
+      lang: en
+      text: letter candles spelling happy birthday in two rows on a frosted cake, almost pitch dark
+    - id: ti-q27
+      lang: en
+      text: plane wing with a red wingtip over snowy ground at sunset
+    - id: ti-q28
+      lang: en
+      text: window shot of a wing with a red circle painted on it and wispy clouds
+    - id: ti-q29
+      lang: en
+      text: the Hong Kong Airlines plane sitting on the runway
+    - id: ti-q30
+      lang: en
+      text: the blue a.testoni tram, number 29
+    - id: ti-q31
+      lang: en
+      text: the corgi standing up on its hind legs smiling
+    - id: ti-q32
+      lang: en
+      text: corgi lying in the sand with its tongue out, a rope next to it
+    - id: ti-q33
+      lang: en
+      text: someone in a green parka walking four dogs on a wet sidewalk
+    - id: ti-q34
+      lang: en
+      text: guy in a dog costume wearing an orange life vest, waving, palm trees behind
+    - id: ti-q35
+      lang: en
+      text: the old sunburst guitar on grey with the cable plugged in and coiled on the floor
+    - id: ti-q36
+      lang: en
+      text: the back of the old guitar showing the two f-holes
+    - id: ti-q37
+      lang: en
+      text: the big black Xbox controller with the coloured buttons
+    - id: ti-q38
+      lang: en
+      text: latte with a heart in the foam surrounded by blue coffee cup stickers
+    - id: ti-q39
+      lang: en
+      text: layered latte in a tall glass with three brown sugar cubes on the saucer
+    - id: ti-q40
+      lang: en
+      text: the Mister Donut bubble milk tea with the red straw
+    - id: ti-q41
+      lang: en
+      text: chocolate-dipped soft serve cone held in a napkin
+    - id: ti-q42
+      lang: en
+      text: croissant on a plate next to a folded newspaper and a white mug
+    - id: ti-q43
+      lang: en
+      text: burger with sweet potato fries and a wooden pick stuck in the bun
+    - id: ti-q44
+      lang: en
+      text: blue tube slide wrapped in red and white tape coming out of a little wooden hut
+    - id: ti-q45
+      lang: en
+      text: beach with a folding chair under a little sunshade, a red cooler and a blue bucket
+    - id: ti-q46
+      lang: en
+      text: night harbour shot with just the ICC tower on the right and a huge orange cloudy sky on the
+        left
+    - id: ti-q47
+      lang: mixed
+      text: 嗰張霓虹燈街好多人過馬路，有個 Koon Nam Wah Bridal 招牌
+    - id: ti-q48
+      lang: mixed
+      text: 由山頂影落去嘅 HK skyline，天啱啱黑、成片藍色
+    - id: ti-q49
+      lang: mixed
+      text: IFC 喺正中間，天好霧，夜景嗰張
+    - id: ti-q50
+      lang: mixed
+      text: 天星小輪喺維港，後面有中銀同起重船，白天陰陰哋
+    - id: ti-q51
+      lang: mixed
+      text: 坐喺天星船頭望住對面泊住嘅 Star Cruises 郵輪
+    - id: ti-q52
+      lang: mixed
+      text: 紅色 peak tram 上緊山，後面霧濛濛
+    - id: ti-q53
+      lang: mixed
+      text: ramen 有粟米同兩舊溏心蛋，碗邊插住幾塊大紫菜
+    - id: ti-q54
+      lang: mixed
+      text: 紅色筷子擺喺碗 ramen 上面，隔籬有碟 sashimi
+    - id: ti-q55
+      lang: mixed
+      text: 圓形黑石板上面三行 sushi roll，其中一行係綠色飛魚子
+    - id: ti-q56
+      lang: mixed
+      text: 長方形黑石板有兩朵三文魚玫瑰，兩邊各有隻白色長碟裝薑同 wasabi
+    - id: ti-q57
+      lang: mixed
+      text: MTR 車廂冇人，對住車窗，紅色扶手，夜晚九點幾影
+    - id: ti-q58
+      lang: mixed
+      text: 油塘站 MTR 車門開咗，見到黃色牆寫住大字
+    - id: ti-q59
+      lang: mixed
+      text: 台北捷運月台，黃色 sign 寫住蘆洲、輔大，旁邊有扶手電梯
+    - id: ti-q60
+      lang: mixed
+      text: 隻貓好似人咁挨住坐喺窗台，前面有個綠色公雞 windmill
+    - id: ti-q61
+      lang: mixed
+      text: 用奶樽餵黑色 BB 貓嗰張
+    - id: ti-q62
+      lang: mixed
+      text: tabby 貓瞓喺灰色 sofa，後面有個芥末黃 cushion
+    - id: ti-q63
+      lang: mixed
+      text: 單車泊喺雙層 rack，最前面係架紅色單車
+    - id: ti-q64
+      lang: mixed
+      text: 兩塊 pancake 擺喺白色紙盒入面
+    - id: ti-q65
+      lang: mixed
+      text: 一疊 pancake 上面有香蕉片，淋咗 caramel，背景黑色欄杆
+    - id: ti-q66
+      lang: mixed
+      text: player piano 上面掛住幅油畫，右邊有兩個銅喇叭
+    - id: ti-q67
+      lang: mixed
+      text: 街邊小食檔，有三兜咖喱汁同一籃魚蛋
+    - id: ti-q68
+      lang: mixed
+      text: 黃色筷子夾起舊骨肉喺湯麵上面嘅 close up
+    - id: ti-q69
+      lang: mixed
+      text: 由高處影落去個城市，中間有個四方形護城河圍住嘅公園
