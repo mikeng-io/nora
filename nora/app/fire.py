@@ -1382,7 +1382,7 @@ class FirePath:
         participation-only while `01-the-adaptor §6` named one consumer; the
         operator widened the tier to every runtime, so a reminder, a gathering
         and a proactive act turn all read the account of the room they are
-        about to speak into. A proactive act turn is keyed on a workspace for
+        about to speak into. A proactive act turn is keyed on a unit for
         its DECISION, but by the time it reaches this path it has chosen one
         room, and `occasion.conversation_id` is that room.
 
