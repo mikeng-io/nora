@@ -207,7 +207,10 @@ index and Honcho's exit are now listed in their order.
 8. **Switch the prompts**: `<persona>` replaces `peer_card`, `peer_history`
    and `<person_account>`.
 9. **Honcho out**: each read replaced or dropped per the audit, the feed and
-   `remember` rerouted, the routing deleted. The Honcho client itself is
+   `remember` rerouted, the routing deleted, and with it the workspace
+   (DEC-214): the unit is the only boundary ([35](35-persona.md) row 6,
+   ruled 2026-10-16); the portal's viewer scope and the proactive act key move
+   to the unit. The Honcho client itself is
    deleted only after the switch has held for 14 days with the gates' readings
    unchanged, so the rollback until then is a config flip.
 10. **Acts get outcomes** ([50](50-learning-from-acts.md)), before:
