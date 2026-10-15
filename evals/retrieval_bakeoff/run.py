@@ -35,7 +35,8 @@ watchdog on:
         --dsn postgresql+asyncpg://postgres@127.0.0.1:55439/bakeoff
 
 The watchdog aborts the run (ERROR, exit 3) when MemAvailable drops below
-3 GiB or swap grows by more than 1 GiB; an aborted run is rerun, never scored.
+3 GiB, swap grows by more than 1 GiB, or less than 1 GiB of swap is left; an
+aborted run is rerun, never scored.
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ import os
 import platform
 import random
 import re
+import resource
 import statistics
 import subprocess
 import sys
@@ -66,6 +68,7 @@ import yaml
 from evals.retrieval_bakeoff.adapters import (
     Embedder,
     EmbedError,
+    HFEmbedder,
     LlamaServerEmbedder,
     OllamaEmbedder,
     check,
@@ -483,14 +486,17 @@ def read_meminfo() -> dict[str, int]:
 
 class MemoryWatchdog:
     """Aborts the run when Nora's host runs short: MemAvailable under 3 GiB,
-    or swap grown by more than 1 GiB since the run started. A host it cannot
-    read is refused, not assumed fine."""
+    swap grown by more than 1 GiB since the run started, or under 1 GiB of
+    swap left (a host near the end of its swap cannot grow it by 1 GiB). A
+    host it cannot read is refused, not assumed fine."""
 
     def __init__(self, read: Callable[[], dict[str, int]] | None = None, *,
-                 min_available_kib: int = 3 * GIB_KIB, max_swap_growth_kib: int = GIB_KIB) -> None:
+                 min_available_kib: int = 3 * GIB_KIB, max_swap_growth_kib: int = GIB_KIB,
+                 min_swap_free_kib: int = GIB_KIB) -> None:
         self._read = read or (lambda: read_meminfo())
         self._min = min_available_kib
         self._growth = max_swap_growth_kib
+        self._min_swap_free = min_swap_free_kib
         self.lowest_available_kib: int | None = None
         self._swap0 = self._swap_used(self._sample())
 
@@ -513,6 +519,9 @@ class MemoryWatchdog:
         m = self._sample()
         if m["MemAvailable"] < self._min:
             raise AbortedError(f"MemAvailable {m['MemAvailable']} kB is under {self._min} kB")
+        if m.get("SwapTotal", 0) > 0 and m.get("SwapFree", 0) < self._min_swap_free:
+            raise AbortedError(
+                f"free swap {m.get('SwapFree', 0)} kB is under {self._min_swap_free} kB")
         grown = self._swap_used(m) - self._swap0
         if grown > self._growth:
             raise AbortedError(f"swap grew by {grown} kB, over {self._growth} kB")
@@ -759,6 +768,30 @@ def _unload(model: str) -> bool:
 LEXICAL = ("lexical:trigram", "lexical:bm25")
 
 
+def gemma_embedder(*, ollama_tag: str = "", hf_repo: str = "", revision: str = "",
+                   dtype: str = "", base_url: str, timeout: float) -> Embedder | None:
+    """Stage 2's EmbeddingGemma 2: an Ollama tag, or a pinned Hugging Face
+    revision through sentence-transformers on CPU at an explicit dtype (the
+    full-precision path; float16 refuses in the adapter). Never both."""
+    if ollama_tag and hf_repo:
+        raise ValueError("--gemma and --gemma-hf are two serving paths; pass one")
+    if hf_repo:
+        if not revision or not dtype:
+            raise ValueError("--gemma-hf needs --gemma-revision and --gemma-dtype")
+        return HFEmbedder(hf_repo, revision=revision, dtype=dtype, native_dim=768)
+    if ollama_tag:
+        return OllamaEmbedder(ollama_tag, native_dim=768, base_url=base_url, timeout=timeout)
+    return None
+
+
+def _cpu_bf16_flags() -> list[str]:
+    try:
+        text = Path("/proc/cpuinfo").read_text()
+    except OSError:
+        return []
+    return sorted({f for f in text.split() if f in ("avx512_bf16", "amx_bf16")})
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -766,6 +799,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--ollama", default="http://127.0.0.1:11434")
     ap.add_argument("--slices", default="text_image,cantonese,names")
     ap.add_argument("--gemma", default="", help="an Ollama tag of EmbeddingGemma 2: stage 2")
+    ap.add_argument("--gemma-hf", default="", help="or its Hugging Face repo, on CPU: stage 2")
+    ap.add_argument("--gemma-revision", default="", help="the HF commit, pinned")
+    ap.add_argument("--gemma-dtype", default="", help="bfloat16 or float32; never float16")
     ap.add_argument("--gemma-dims", default="768,256")
     ap.add_argument("--wemm", default="",
                     help="a llama-server URL serving WeMM-Embedding-2B with its mmproj: stage 2")
@@ -783,8 +819,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     sets = {name: load_set(SET_DIR, name) for name in args.slices.split(",")}
-    stage = "stage2-wemm" if args.wemm else "stage2" if args.gemma else "floor"
-    candidates = [m for m in (args.gemma, args.wemm and args.wemm_name) if m]
+    gemma = gemma_embedder(ollama_tag=args.gemma, hf_repo=args.gemma_hf,
+                           revision=args.gemma_revision, dtype=args.gemma_dtype,
+                           base_url=args.ollama, timeout=args.timeout)
+    stage = "stage2-wemm" if args.wemm else "stage2" if gemma else "floor"
+    candidates = [m for m in (gemma.name if gemma else "", args.wemm and args.wemm_name) if m]
     before = host_sample()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     provenance: dict[str, Any] = {
@@ -792,6 +831,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "nice": os.nice(0), "host_before": before,
         "stage": "1 (lexical) plus the bge-m3 floor"
                  + (f", and 2 (dense: {', '.join(candidates)})" if candidates else ""),
+        "cpu_bf16_flags": _cpu_bf16_flags(),
     }
     arms: dict[str, dict[str, ArmRun]] = {name: {} for name in sets}
     unloaded: dict[str, bool] = {}
@@ -807,16 +847,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             arms[name].update(_text_arms(bge, "bge-m3", the_set, (1024,), timeout=args.timeout,
                                          dog=dog, base=args.ollama))
         unloaded[bge.name] = _unload(bge.name)
-        if args.gemma:
-            gemma = OllamaEmbedder(args.gemma, native_dim=768, base_url=args.ollama,
-                                   timeout=args.timeout)
+        if gemma:
             dims = tuple(int(d) for d in args.gemma_dims.split(","))
             for name, the_set in sets.items():
                 build = _image_arms if the_set.media else _text_arms
                 kw = {"media_dir": args.media_dir} if the_set.media else {}
                 arms[name].update(build(gemma, "gemma2", the_set, dims, timeout=args.timeout,
                                         dog=dog, base=args.ollama, **kw))
-            unloaded[gemma.name] = _unload(gemma.name)
+            if args.gemma:
+                unloaded[gemma.name] = _unload(gemma.name)
         if args.wemm:
             # Served by its own llama-server, which the operator starts and stops.
             wemm = LlamaServerEmbedder(
@@ -845,6 +884,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     provenance["host_after"] = host_sample()
     lowest = (dog.lowest_available_kib or 0) / GIB_KIB
     provenance["watchdog_lowest_mem_available_gib"] = round(lowest, 2)
+    # This process's high-water mark (Linux: KiB); an in-process model's cost.
+    provenance["peak_rss_mib"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)
     worst = 0
     for name, the_set in sets.items():
         slice_arms = arms[name]

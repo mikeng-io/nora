@@ -28,6 +28,8 @@ from evals.retrieval_bakeoff.adapters import (
 from evals.retrieval_bakeoff.run import Errored
 
 SET_DIR = Path(__file__).resolve().parents[2] / "evals" / "retrieval_bakeoff"
+#: A pinned Hugging Face commit, the only revision HFEmbedder accepts.
+SHA = "914f7f89142e33e77833254d9c9b90c3cef7303b"
 
 
 class FakeEmbedder:
@@ -244,21 +246,110 @@ def test_gemma2_prefixes_live_in_the_hf_adapter() -> None:
         sent.append(list(texts))
         return [[1.0] + [0.0] * 767 for _ in texts]
 
-    emb = HFEmbedder("google/embeddinggemma-2", revision="r", dtype="bfloat16",
+    emb = HFEmbedder("google/embeddinggemma-2", revision=SHA, dtype="bfloat16",
                      native_dim=768, encode=encode)
     emb.embed_text(["打風"], "query")
     emb.embed_text(["打風"], "document")
     assert sent == [["task: search result | query: 打風"], ["title: none | text: 打風"]]
 
 
+class FakeST:
+    """What HFEmbedder reads off a loaded SentenceTransformer: its parameters'
+    dtypes, the revision it records, and encode."""
+
+    def __init__(self, dtype: str = "torch.float32", revision: str = SHA) -> None:
+        self.dtype = dtype
+        self.model_card_data = type("Card", (), {"base_model_revision": revision})()
+        self.seen: list[list] = []
+
+    def parameters(self):
+        return iter([type("P", (), {"dtype": self.dtype})() for _ in range(3)])
+
+    def encode(self, xs, normalize_embeddings=False):
+        self.seen.append(list(xs))
+        rows = [[1.0] + [0.0] * 767 for _ in xs]
+        return type("Arr", (), {"tolist": lambda self: rows})()
+
+
+def _hf(st: FakeST, dtype: str = "float32") -> HFEmbedder:
+    return HFEmbedder("google/embeddinggemma-2", revision=SHA, dtype=dtype, native_dim=768,
+                      load=lambda name, revision, dtype: st)
+
+
+def test_hf_loads_at_the_pinned_revision_and_dtype() -> None:
+    emb = _hf(FakeST())
+    assert len(emb.embed_text(["打風"], "query")[0]) == 768
+    assert emb.provenance()["param_dtype"] == "torch.float32"
+
+
+def test_hf_refuses_a_model_whose_parameters_are_not_the_requested_dtype() -> None:
+    """A model_kwargs the library ignores would load the checkpoint's own
+    bfloat16 under a result that says float32."""
+    with pytest.raises(ValueError, match="dtype"):
+        _hf(FakeST(dtype="torch.bfloat16")).embed_text(["打風"], "query")
+
+
+@pytest.mark.parametrize("revision", ["main", "r", SHA[:39], SHA.upper(), SHA + "0"])
+def test_hf_requires_a_pinned_forty_hex_commit(revision: str) -> None:
+    with pytest.raises(ValueError, match="revision"):
+        HFEmbedder("google/embeddinggemma-2", revision=revision, dtype="float32",
+                   native_dim=768, encode=lambda xs: [])
+
+
+def test_hf_refuses_a_model_loaded_at_another_revision() -> None:
+    with pytest.raises(ValueError, match="revision"):
+        _hf(FakeST(revision="0" * 40)).embed_text(["打風"], "query")
+
+
+def test_hf_sends_images_unprefixed(tmp_path: Path) -> None:
+    """Gemma 2's card: prefixes are for text only, media goes in bare."""
+    from PIL import Image
+
+    paths = []
+    for i, colour in enumerate(("red", "blue")):
+        paths.append(tmp_path / f"{i}.jpg")
+        Image.new("RGB", (8, 8), colour).save(paths[-1])
+    st = FakeST()
+    _hf(st).embed_media(paths)
+    assert len(st.seen) == 1 and len(st.seen[0]) == 2
+    assert all(isinstance(x, Image.Image) for x in st.seen[0])
+
+
 @pytest.mark.parametrize("dtype", ["float16", "fp16", "torch.float16", "half"])
 def test_float16_is_refused_at_construction(dtype: str) -> None:
     with pytest.raises(ValueError, match="float16"):
-        HFEmbedder("google/embeddinggemma-2", revision="r", dtype=dtype, native_dim=768,
+        HFEmbedder("google/embeddinggemma-2", revision=SHA, dtype=dtype, native_dim=768,
                    encode=lambda xs: [])
     with pytest.raises(ValueError, match="float16"):
         OllamaEmbedder("embeddinggemma-2:740m", native_dim=768, dtype="F16",
                        transport=FakeTransport(768))
+
+
+def test_stage_two_runs_gemma_through_hf_at_a_pinned_revision_and_explicit_dtype() -> None:
+    emb = run.gemma_embedder(hf_repo="google/embeddinggemma-2", revision=SHA, dtype="float32",
+                             base_url="http://x", timeout=1)
+    assert isinstance(emb, HFEmbedder)
+    prov = emb.provenance()
+    assert (prov["revision"], prov["dtype"], prov["native_dim"]) == (SHA, "float32", 768)
+    assert prov["prefix"]["query"] == GEMMA2_PREFIX.query
+
+
+@pytest.mark.parametrize("kw", [
+    {"hf_repo": "google/embeddinggemma-2", "dtype": "float32"},          # no revision
+    {"hf_repo": "google/embeddinggemma-2", "revision": SHA},             # no dtype
+    {"hf_repo": "google/embeddinggemma-2", "revision": SHA, "dtype": "float16"},
+    {"hf_repo": "google/embeddinggemma-2", "revision": SHA, "dtype": "float32",
+     "ollama_tag": "embeddinggemma-2"},                                  # two paths
+])
+def test_stage_two_refuses_an_unpinned_half_precision_or_ambiguous_gemma(kw: dict) -> None:
+    with pytest.raises(ValueError):
+        run.gemma_embedder(base_url="http://x", timeout=1, **kw)
+
+
+def test_stage_two_still_runs_gemma_through_ollama_and_is_off_by_default() -> None:
+    assert isinstance(run.gemma_embedder(ollama_tag="embeddinggemma-2", base_url="http://x",
+                                         timeout=1), OllamaEmbedder)
+    assert run.gemma_embedder(base_url="http://x", timeout=1) is None
 
 
 def test_ollama_refuses_media_for_a_model_without_vision() -> None:
@@ -452,6 +543,23 @@ def test_the_watchdog_aborts_when_swap_grows_by_more_than_one_gib() -> None:
     reading["SwapFree"] = 9 * GIB_KIB - 1
     with pytest.raises(run.AbortedError, match="swap"):
         dog.check()
+
+
+def test_the_watchdog_aborts_when_free_swap_drops_below_one_gib() -> None:
+    """A host already near the end of its swap cannot grow it by 1 GiB, so
+    the growth rule alone never fires there (norty, 2026-10-15: 0.3 GiB free)."""
+    reading = {"MemAvailable": 8 * GIB_KIB, "SwapTotal": 24 * GIB_KIB, "SwapFree": GIB_KIB}
+    dog = run.MemoryWatchdog(read=lambda: dict(reading))
+    dog.check()
+    reading["SwapFree"] = GIB_KIB - 1
+    with pytest.raises(run.AbortedError, match="free swap"):
+        dog.check()
+
+
+def test_the_watchdog_does_not_abort_a_host_without_swap() -> None:
+    dog = run.MemoryWatchdog(read=lambda: {"MemAvailable": 8 * GIB_KIB,
+                                           "SwapTotal": 0, "SwapFree": 0})
+    dog.check()
 
 
 def test_the_watchdog_refuses_a_host_it_cannot_read() -> None:

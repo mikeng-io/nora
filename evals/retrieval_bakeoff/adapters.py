@@ -32,6 +32,7 @@ import base64
 import hashlib
 import json
 import math
+import re
 import urllib.request
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -355,31 +356,49 @@ class LlamaServerEmbedder:
 
 
 class HFEmbedder:
-    """A sentence-transformers model on CPU, at a pinned revision."""
+    """A sentence-transformers model on CPU, at a pinned commit. What loaded is
+    checked, not assumed: every parameter at the requested dtype, and the
+    revision the library records equal to the pinned one."""
+
+    #: A Hugging Face commit; a branch or tag name can move under a result.
+    REVISION = re.compile(r"[0-9a-f]{40}")
 
     def __init__(self, model: str, *, revision: str, dtype: str, native_dim: int,
-                 encode: Callable[[list[Any]], Sequence[Sequence[float]]] | None = None) -> None:
+                 encode: Callable[[list[Any]], Sequence[Sequence[float]]] | None = None,
+                 load: Callable[[str, str, str], Any] | None = None) -> None:
         _refuse_float16(model, dtype)
+        if not self.REVISION.fullmatch(revision):
+            raise ValueError(f"{model}: revision must be a 40-hex commit sha, not {revision!r}")
         self.name = model
         self.native_dim = native_dim
         self.prefix = prefix_for(model)
         self._revision = revision
         self._dtype = dtype
         self._encode = encode
+        self._load = load or _load_sentence_transformer
+        self._loaded: dict[str, Any] = {}
 
     def _encoder(self) -> Callable[[list[Any]], Sequence[Sequence[float]]]:
         if self._encode is None:
-            # ponytail: imported on first use; the bake-off venv installs it,
-            # the gate never does (P2 proves the load before a run).
-            import torch  # type: ignore[import-not-found]
-            from sentence_transformers import (
-                SentenceTransformer,  # type: ignore[import-not-found]
-            )
-
-            st = SentenceTransformer(
-                self.name, revision=self._revision, device="cpu",
-                model_kwargs={"torch_dtype": getattr(torch, self._dtype)},
-            )
+            st = self._load(self.name, self._revision, self._dtype)
+            dtypes = {str(p.dtype) for p in st.parameters()}
+            if dtypes != {f"torch.{self._dtype}"}:
+                raise ValueError(
+                    f"{self.name}: asked for dtype {self._dtype}, loaded {sorted(dtypes)}")
+            card = getattr(st, "model_card_data", None)
+            loaded = getattr(card, "base_model_revision", None)
+            if loaded != self._revision:
+                raise ValueError(
+                    f"{self.name}: pinned revision {self._revision}, loaded {loaded!r}")
+            first = st[0] if hasattr(st, "__getitem__") else None
+            image = getattr(getattr(first, "processor", None), "image_processor", None)
+            self._loaded = {
+                **_library_versions(),
+                "param_dtype": dtypes.pop(),
+                "loaded_revision": loaded,
+                # The vision budget, as loaded: Ollama's image path is not this one.
+                "image_max_soft_tokens": getattr(image, "max_soft_tokens", None),
+            }
             self._encode = lambda xs: st.encode(xs, normalize_embeddings=False).tolist()
         return self._encode
 
@@ -393,4 +412,29 @@ class HFEmbedder:
 
     def provenance(self) -> dict[str, Any]:
         return {"runtime": "sentence-transformers", "model": self.name, "revision": self._revision,
-                "dtype": self._dtype, "native_dim": self.native_dim, "prefix": self.prefix.record()}
+                "dtype": self._dtype, "native_dim": self.native_dim, "prefix": self.prefix.record(),
+                **self._loaded}
+
+
+def _load_sentence_transformer(model: str, revision: str, dtype: str) -> Any:
+    # ponytail: imported on first use; the bake-off venv installs it, the gate
+    # never does.
+    import sentence_transformers  # type: ignore[import-not-found]
+    import torch  # type: ignore[import-not-found]
+
+    return sentence_transformers.SentenceTransformer(
+        model, revision=revision, device="cpu",
+        model_kwargs={"torch_dtype": getattr(torch, dtype)},
+    )
+
+
+def _library_versions() -> dict[str, Any]:
+    try:
+        import sentence_transformers
+        import torch
+        import transformers  # type: ignore[import-not-found]
+    except ImportError:
+        return {}
+    return {"torch": torch.__version__, "transformers": transformers.__version__,
+            "sentence_transformers": sentence_transformers.__version__,
+            "torch_threads": torch.get_num_threads()}
