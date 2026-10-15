@@ -110,8 +110,10 @@ Cantonese and English text, names and titles, and text → image.
 **Pass** (operator ruling 2026-10-15, replacing an absolute +0.10 recall@5
 margin): the baseline is the incumbent's best configuration per slice, the
 highest recall@5 of bge-m3 alone, trigram + bge-m3 and BM25 + bge-m3. A
-candidate replaces bge-m3 only if its hybrid recall@5 on the Cantonese slice
-is within 0.05 (absolute) of the baseline's, and on another journey slice its
+candidate replaces bge-m3 only if the recall@5 of its best configuration
+(dense or fused) on the Cantonese slice is within 0.05 (absolute) of the
+baseline's (operator ruling 2026-10-15: the hold is judged on the candidate's
+best setup, dense or fused, as `decide.py` does; this sentence said "hybrid"), and on another journey slice its
 miss rate is at most half the baseline's: (1 − r) ≤ 0.5 × (1 − r_base).
 Anything short of that is a tie, and a tie keeps the incumbent. Why: bge-m3
 over the stored readings measured recall@5 0.928 on text → image (stage 1,
@@ -182,3 +184,39 @@ are measured with Nora running.
   objects is read and the embed time is extrapolated from the measured
   per-image cost; the backfill then runs under a throttle (a per-hour budget
   sized from that count) with Nora running, never as one unbounded batch.
+
+## WeMM-2B measured (2026-10-15, Q4_K_M)
+
+Stage 2 for WeMM-Embedding-2B ran on all three journey slices
+(`evals/retrieval_bakeoff/results/20261015T125057Z-*`). It used the community
+**Q4_K_M** GGUF with the BF16 projector, served by llama-server on CPU,
+because the `norty` user is not in the `render` group. The input was the
+model's own template: no instruction, and `<embedding>` appended once by the
+server. Recall@5 for dense WeMM at 2048 / 256 against the incumbent baseline:
+text → image 1.000 / 1.000 (baseline 0.928), Cantonese 0.738 / 0.689 (baseline
+0.770, the hold bar is 0.720), names 0.896 / 0.896 (baseline 0.896).
+
+`decide()` returns **REPLACE**, with `dense:wemm@2048` as the winner. It holds
+Cantonese and wins text → image. At 256, and in every fused WeMM arm,
+Cantonese is not held, so those arms are media-only. The Cantonese hold clears
+its bar by about one query of 61, and the Q4 vectors agree with the bf16
+checkpoint at a mean cosine of 0.976 (min 0.951, 21 items). The verdict is
+therefore a Q4 verdict that a full-precision run could reverse. Cost: 3.9 s
+p50 and 5.1 s p95 per image, 0.20–0.29 s per text, and a peak RSS of
+3.52 GiB (3,691,280 KiB). The peak is the server's lifetime high-water mark
+(`VmHWM`), not a per-request figure, and this server had also served the
+24-item agreement probe. The first run, superseded because its results
+carried no per-query ranks, peaked at 3.16 GiB (3,316,516 KiB).
+
+Full precision, 2026-10-15 (`20261015T123946Z-*`): the HF checkpoint at fp32
+(norty's CPU has no bf16 instructions; text-only load, peak RSS 11.10 GiB,
+11,370 MiB `VmHWM` in a load-stage probe; bitwise equal to the whole fp32
+checkpoint and cosine ≥ 0.99991 to bf16, `20261015T123946Z-wemm-fp32-agreement.json`)
+measured the same recall@5 on Cantonese at 2048 (0.738, two offsetting flips)
+and on names, so `decide()` over fp32 text plus Q4 text → image still returns
+REPLACE for `dense:wemm@2048`. text → image was not re-run at fp32: about 2 h
+of CPU for 224 images.
+
+Not acted on (operator, 2026-10-15): the verdict is recorded, but adopting
+WeMM waits for the four-way comparison, after Qwen3-VL-Embedding-2B and
+jina-v5-omni-small have been measured on the same set.

@@ -150,15 +150,32 @@ def decide(r: Mapping[str, Mapping[str, Score]]) -> Decision:
 
 
 def scores_from_results(paths: Iterable[Path], *, subset: str | None = None,
+                        rename: Mapping[str, str] | None = None,
                         ) -> dict[str, dict[str, Score]]:
     """`decide`'s input from result files, one slice per file, arm names as
     written. `subset` reads an arm's named subset instead of all queries
     (`in_reading_gap`, `outside_reading_gap`). ERROR is the arm's query plus
-    pool errors on the slice, so either one decides ERROR."""
+    pool errors on the slice, so either one decides ERROR.
+
+    `rename` joins one candidate measured through two serving paths into one
+    arm, explicitly: `{"wemm-fp32": "wemm"}` reads `dense:wemm-fp32@2048` as
+    `dense:wemm@2048` (WeMM at fp32 on the text slices, Q4 on text_image,
+    whose files keep each precision in their provenance). A renamed arm that
+    lands on an (arm, slice) another file also measured is refused, never
+    silently overwritten."""
     out: dict[str, dict[str, Score]] = {}
+    renamed: set[tuple[str, str]] = set()
     for path in paths:
         result = json.loads(Path(path).read_text(encoding="utf-8"))
-        for arm, a in result["arms"].items():
+        for written, a in result["arms"].items():
+            arm = written
+            for old, new in (rename or {}).items():
+                arm = arm.replace(old, new)
+            key = (arm, result["slice"])
+            if (arm != written or key in renamed) and result["slice"] in out.get(arm, {}):
+                raise ValueError(f"{arm} on {result['slice']} is measured twice once renamed")
+            if arm != written:
+                renamed.add(key)
             src = a if subset is None else a[subset]
             errors = a["errors"]
             out.setdefault(arm, {})[result["slice"]] = Score(
