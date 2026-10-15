@@ -123,6 +123,23 @@ rule is `evals/retrieval_bakeoff/decide.py`. A model that wins images but loses 
 second, media-only embedder, which is a decision for the operator because it
 doubles the index.
 
+**Several passing** (operator ruling 2026-10-16): when more than one
+candidate arm passes, the winner is the one with the fewest **total misses**
+summed over the three journey slices (text → image, Cantonese, names). A miss
+is a query whose first relevant item is not in the top 5, counted from each
+result's per-query ranks. A remaining tie goes to the lower dimension, and
+a tie on both goes to the arm name in ascending order, so the verdict never
+depends on file order. The per-query ranks are needed only here: when
+several arms pass, one whose result carries none makes the verdict ERROR,
+because its misses are unknown and are never guessed. A single passing arm
+needs no count. A candidate arm measured twice on one slice (two runs loaded
+together) is also ERROR, because the verdict would depend on which file was
+read last; the incumbents and the lexical floors, which every run
+re-measures, may recur. This replaced "the
+best text → image recall@5, then the lower dimension", which on 2026-10-15
+picked WeMM-2B over Qwen3-VL-Embedding-2B for one more image found, despite
+0.15 less Cantonese recall@5 (see the measured note below).
+
 **Stage 2, 2026-10-15: EmbeddingGemma 2, Q8_0 and full precision.** Both
 decide KEEP_BGE_M3, with Gemma flagged media-only. Q8_0 through Ollama
 (`results/20261015T100638Z-stage2-*`): text → image recall@5 1.000, Cantonese
@@ -220,3 +237,136 @@ of CPU for 224 images.
 Not acted on (operator, 2026-10-15): the verdict is recorded, but adopting
 WeMM waits for the four-way comparison, after Qwen3-VL-Embedding-2B and
 jina-v5-omni-small have been measured on the same set.
+
+## Qwen3-VL-Embedding-2B and jina-embeddings-v5-omni-small measured (2026-10-15, fp32)
+
+Two more stage-2 candidates ran on all three journey slices, one model at a
+time, through sentence-transformers on norty's CPU in float32 (both
+checkpoints are stored bf16, so the cast is exact; the CPU has no bf16
+instructions), with `set_dir_clean`, nice 19 and the watchdog on. Scored
+results: `evals/retrieval_bakeoff/results/20261015T165508Z-stage2-qwen3vl-*`
+(from 4dfe55ae) and `20261015T145806Z-stage2-jina5omni-*` (from fb582e90).
+
+- **Qwen3-VL-Embedding-2B** (`9f2f7e71`, Apache-2.0). The instruction is a
+  system turn, then the user turn, the generation prompt and the
+  `<|endoftext|>` its tokenizer appends, which is the pooled token. Last
+  token, then L2; Matryoshka 64 to 2048. A **query** gets "Retrieve images
+  or text relevant to the user's query.", and a document or image gets the
+  default "Represent the user's input.". The Hugging Face card names only
+  the default. The query instruction is the vendor's own retrieval usage:
+  the README of QwenLM/Qwen3-VL-Embedding (@393e2978, its Transformers
+  example) and its MMEB text-to-image eval. It is the documented path, not
+  something tuned on this set.
+- **Recorded variant, not scored:** the first Qwen run
+  (`20261015T135707Z-stage2-qwen3vl-*`, from fb582e90) gave queries the
+  default instruction too (`QWEN3VL_DEFAULT_INSTRUCTION_VARIANT`). Its arms
+  are written as `qwen3vl` in those files. `decide` recognises the variant's
+  recorded format and loads them as `qwen3vl-defaultinst`, so they can sit
+  beside the scored run without replacing it.
+- **jina-embeddings-v5-omni-small** (`950200ab`, **CC-BY-NC-4.0**:
+  non-commercial, so this is a measurement only and could not ship under this
+  licence). The `retrieval` LoRA adapter. Text is `Query: ` or `Document: `
+  plus the text, with no template. A pool image is a document inside the chat
+  template, as its sentence-transformers module builds it. Last token, then
+  L2; Matryoshka 32 to 1024. Under transformers 5.4.0 every load path
+  measured (sentence-transformers, `AutoModel`, and its remote base class's
+  own `from_pretrained`, each given `dtype` or `torch_dtype` float32) returned
+  the base, 902M parameters, in bf16 beside fp32 LoRA weights, for a reason
+  not established; the adapter casts and asserts float32 on every parameter.
+
+The adapter (`adapters.OfficialEmbedder`) decodes every sequence the model
+receives and refuses any that is not the format above: 224 images, 860
+documents and 184 queries (178 set queries, 6 warm-ups) per run passed. The
+M2 guard passed (largest cosine between two different probe images 0.474 for
+Qwen, 0.852 for jina, and no identical vectors among the 224). On the
+noodles check, img-001 ranks first for "two bowls of noodles", 兩碗麵 and
+有兩碗麵嗰張相 at both dimensions in both models, and for Qwen in both its
+scored format and the variant.
+
+Recall@5 against the incumbent baseline (every incumbent arm re-measured
+identical to stage 2's, in all three runs):
+
+| slice | Qwen @2048 / @256 | Qwen variant @2048 / @256 | jina @1024 / @256 | baseline | bar |
+|---|---|---|---|---|---|
+| text → image | **0.9855** / 0.9710 | 0.9493 / 0.9348 | 0.9565 / 0.9203 | 0.9275 | win ≥ 0.9638 |
+| Cantonese | **0.8852** / 0.8361 | 0.8525 / 0.8525 | 0.8525 / 0.8361 | 0.7705 | hold ≥ 0.7205 |
+| names | 0.8958 / 0.8958 | 0.8958 / 0.8750 | 0.8958 / 0.8958 | 0.8958 | win ≥ 0.9479 |
+
+(dense arms; the best fused arm is never higher on text → image or
+Cantonese, and on names reaches 0.9167 for the variant and jina, 0.8958 for
+the scored Qwen.)
+
+`decide()`:
+
+- incumbent + Qwen: **REPLACE, `dense:qwen3vl@2048`**. It holds Cantonese
+  (0.8852, the highest measured) and wins text → image. `dense:qwen3vl@256`
+  passes too. No Qwen arm is media-only.
+- incumbent + the Qwen variant: KEEP_BGE_M3, which is why the variant is not
+  the scored arm. The instruction alone moved text → image from 0.9493 to
+  0.9855.
+- incumbent + jina: KEEP_BGE_M3, no media-only flag. It holds Cantonese, and
+  on text → image stops at 0.9565, about half a query's credit short.
+- **Five-way** (incumbent, EmbeddingGemma 2 `105051Z`, WeMM-2B, Qwen, jina),
+  the comparison the WeMM note above waits for, re-derived from the
+  committed files under the 2026-10-16 ruling (fewest total misses): **REPLACE,
+  `dense:qwen3vl@2048`**, with WeMM read either way (Q4 on every slice, or fp32
+  text plus Q4 text → image through `rename`). Three arms pass the rule:
+
+  | passing arm | text → image | Cantonese | names | total misses (ti + ca + nm) |
+  |---|---|---|---|---|
+  | `dense:qwen3vl@2048` | 0.9855 | 0.8852 | 0.8958 | **12** (0 + 7 + 5) |
+  | `dense:qwen3vl@256` | 0.9710 | 0.8361 | 0.8958 | 17 (2 + 10 + 5) |
+  | `dense:wemm@2048` | 1.000 | 0.7377 | 0.8958 | 21 (0 + 16 + 5) |
+
+  Under the earlier pick (the best text → image recall@5) the same files gave
+  `dense:wemm@2048`. On the reading-gap subset the pick is the same, Qwen at
+  2048 (8 misses, against 13 and 14).
+
+- **Cantonese by language** at the native dimension (bge-m3 / Qwen / jina):
+  en (25) 0.88 / 0.92 / 0.92, mixed (17) 0.82 / 1.00 / 0.94, roman (5)
+  0.20 / 0.20 / 0.20, yue (14) 0.71 / 0.93 / 0.86. The gain is mixed script
+  and written Cantonese. Romanised Cantonese is 0.20 for every model measured.
+- **Time-only subset**: in each of these queries the relevant message and
+  one hard negative say the same thing and differ only in when they were
+  sent, which no arm sees. Their wording still differs (no two texts are
+  identical), so an arm orders the pair by wording, never by the time the
+  query asks about, and both can sit in the top 5. Recall@5 there is
+  therefore no evidence of reading time. Cantonese (n=5) 0.80 / 1.00 / 1.00;
+  names (n=1) 1.00 for all three. Outside it, Cantonese is 0.768 / 0.875 /
+  0.839.
+
+**Agreement with each vendor's other path** (`agreement_official.py`, 29
+items: `results/20261015T173509Z-qwen3vl-agreement.json` for the scored Qwen
+format, `20261015T135628Z-qwen3vl-agreement.json` for the variant, and
+`20261015T145737Z-jina5omni-agreement.json`). Qwen's adapter vectors equal
+the script its model repository ships (qwen3_vl_embedding.py, given the query
+instruction the way the vendor's README passes it) at cosine 1.0000 on every
+item, images included, in both formats. jina's text equals its raw-transformers
+quickstart at 1.0000, but its images do not: 0.82 to 0.90 at 1024 (mean
+0.873). The two paths differ in two ways, and which one causes the gap is
+not shown. The quickstart sends `Document: ` and the image run without the
+chat template that the sentence-transformers module wraps around an image.
+Its `AutoProcessor` also reads `processor_config.json`'s pixel budget
+(65,536 to 16,777,216), where the sentence-transformers module sets
+262,144 to 1,310,720 (`custom_st.py`). On this set's images (sides 223 to
+512 px) that is 112 to 256 vision tokens against 256 to 288, different for
+215 of the 224. The card offers both paths. The scored run keeps the
+sentence-transformers one (`encode_document`). Both paths rank img-001 first
+on all three probes. A text → image score through the quickstart path was
+not measured.
+
+**Cost on norty**, with Nora running, one model resident:
+
+| | per image p50 / p95 | per text p50 (batch 16) | peak RSS |
+|---|---|---|---|
+| Qwen3-VL-Embedding-2B fp32 | 2.48 / 3.27 s | 0.21–0.31 s | 12,771 MiB |
+| jina-v5-omni-small fp32 (vision only, no audio tower) | 2.37 / 2.83 s | 0.05–0.08 s | 6,760 MiB |
+
+The scored Qwen run's lowest MemAvailable was 5.67 GiB. One earlier attempt
+(started at 12.0 GiB available) was aborted by the watchdog when swap grew
+1.31 GB; aborted results are not kept. The variant run went down to
+3.51 GiB. Loading the stored bf16 and casting gave bitwise-identical vectors
+to loading at fp32 directly, at about the same peak RSS (12.5 against
+12.9 GB), so that is not a way to make it fit. Its 2.13B parameters at fp32
+are most of the cost. A production Qwen path would
+need bf16 hardware or a quantised build, measured again.
