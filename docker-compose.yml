@@ -210,8 +210,9 @@ services:
       # `:-` and not `:?`: an operator running `docker compose build` to pick up
       # a config change should not be forced to invent a version. Empty means
       # UNSTAMPED, the gate lets it through, and an unstamped image answers
-      # `unavailable` and announces nothing — which is the honest state for a
-      # build that was never tagged. `scripts/build-image.sh V3` is what stamps.
+      # `unavailable`. What stamps is `scripts/gen_version_manifest.py` plus
+      # this variable set to its `git describe` version (DEC-314): nora-deploy
+      # step 3 and `scripts/build-image.sh` both do it.
       args:
         NORA_VERSION: "${NORA_VERSION:-}"
         # The commit and build time baked into the image for the deploy

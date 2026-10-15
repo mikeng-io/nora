@@ -62,7 +62,7 @@ ssh norty "SHA=$SHA ${LOCK:?set LOCK, step 2} bash -s" > deploy.log 2>&1 <<'EOF'
 set -u
 if pgrep -af 'docker( compose)? (build|up)'; then echo "UNLOCKED_DEPLOY_RUNNING"; exit 75; fi
 cd ~/workspace/nora || exit 1
-git fetch -q origin || { echo "FETCH_FAILED"; exit 2; }
+git fetch -q --tags origin || { echo "FETCH_FAILED"; exit 2; }
 git status -sb | head -1
 AHEAD=$(git rev-list --count origin/master..HEAD)
 DIRTY=$(git status --porcelain --untracked-files=no)
@@ -71,7 +71,8 @@ git merge -q --ff-only origin/master || { echo "FF_FAILED"; exit 4; }
 git merge-base --is-ancestor "$SHA" HEAD || { echo "SHA_NOT_IN_HEAD"; exit 5; }
 git log --oneline -1
 docker network inspect honcho_memory >/dev/null 2>&1 || docker network create --internal honcho_memory  # DEC-259: every `up` naming nora fails without it; --internal keeps nora's default route
-NORA_GIT_SHA=$(git rev-parse HEAD) NORA_BUILT_AT=$(date -u +%FT%TZ) docker compose build nora > /tmp/nora-build.log 2>&1; BUILD_RC=$?
+V=; rm -f nora/version.json; python3 scripts/gen_version_manifest.py && V=$(python3 -c 'import json; print(json.load(open("nora/version.json"))["version"])'); echo "VERSION=${V:-unstamped}"  # DEC-314
+NORA_VERSION=$V NORA_GIT_SHA=$(git rev-parse HEAD) NORA_BUILT_AT=$(date -u +%FT%TZ) docker compose build nora > /tmp/nora-build.log 2>&1; BUILD_RC=$?
 echo "BUILD_RC=$BUILD_RC"; grep -E 'Built|ERROR' /tmp/nora-build.log | tail -n 3
 [ "$BUILD_RC" = 0 ] || exit 6
 cp config.toml /tmp/config.live-check.toml || exit 14   # never bind-mount from the checkout
@@ -90,7 +91,7 @@ EOF
 DEPLOY_RC=$?; echo "DEPLOY_RC=$DEPLOY_RC"; cat deploy.log
 ```
 
-Check: `DEPLOY_RC=0`; `BUILD_RC=0 UP_RC=0 VD_RC=0`; every `nora:latest`
+Check: `DEPLOY_RC=0`; `VERSION=vX.Y.Z[-N-g<sha>]` (`unstamped` deploys by design: read why above); `BUILD_RC=0 UP_RC=0 VD_RC=0`; every `nora:latest`
 container `ok`; the log's last line names this commit. Only a VERIFIED deploy
 is tagged and logged, so a failed one is never a rollback target (step 6). On failure:
 
