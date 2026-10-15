@@ -283,6 +283,7 @@ from .link_owners import LinkClaim, LinkInput, LinkOwner
 from .link_owners import owner_of as _owner_of
 from .link_owners import redirect as _link_redirect
 from .links import LinkCarry
+from .memory_search import MemorySearch, render_packet
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .rollup_read import iso as rollup_iso
@@ -4704,6 +4705,32 @@ def _file_modified(ms: int | None) -> str:
     )
 
 
+#: `ask_memory`'s notes while `[memory_index] enabled` (60 S5). The
+#: description names the statuses; how to read each is here, paid only when
+#: it fires (ADR 0015 §3).
+_INDEX_OK = (
+    "Each item is something said or written here, with the path that linked "
+    "it to the question. Answer from these; an item is evidence, not a fact."
+)
+_INDEX_PARTIAL = (
+    "My memory is still being rebuilt, so this may be incomplete. Use what is "
+    "here; if it is empty, say you can't fully check right now, never that it "
+    "did not happen."
+)
+_INDEX_NOTHING = (
+    "I searched what is remembered here and found nothing on that. Say you "
+    "don't recall it, not that it never happened."
+)
+_INDEX_WITHHELD = (
+    "I found something but can't repeat it here. Answer from what you already "
+    "know, or say you're not sure."
+)
+_INDEX_UNAVAILABLE = (
+    "My memory is not answering. Say you can't check right now, and do not "
+    "say you don't know."
+)
+
+
 def build_tool_specs(
     *,
     store,
@@ -4857,6 +4884,10 @@ def build_tool_specs(
     # `unavailable`; the tool is still offered, so a claimed link has
     # somewhere to go and «I can't open that» is said, not guessed around.
     external_files: ExternalFilesSource | None = None,
+    # `[memory_index] enabled` (design/unified-memory/60 S5): the retrieval
+    # service `ask_memory` answers from instead of Honcho. `None` (the
+    # shipped default, offline, eval) is today's Honcho path, unchanged.
+    memory_search: MemorySearch | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -6162,6 +6193,78 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             result["note"] = note
         return _memory_result(result)
 
+    def _index_room_label(key: str) -> str:
+        """A room key as she reads it: its policy label, else its network."""
+        platform, _, cid = key.partition(":")
+        for r in lineage.rooms if lineage is not None else ():
+            if r.platform == platform and cid in r.ids:
+                return r.label or platform_name(r.platform)
+        return "another room"
+
+    async def _ask_memory_index(
+        search: MemorySearch, ref: PersonRef, level: str, query: str | None,
+        view: RoomView,
+    ) -> dict:
+        """`ask_memory` while `[memory_index] enabled` (design/unified-memory/
+        25 §4, 60 S5): the one retrieval service, scoped to this room's unit
+        from the live policy and this room's live roster, seeded by the
+        question and by the person asked about. Every status carries a note;
+        `unavailable` is any failure, `partial` an index not yet complete."""
+        if lineage is None:
+            _record_room(metrics, "ask_memory", "unavailable", reason="unwired")
+            return {"status": "unavailable", "person": ref.name, "note": _INDEX_UNAVAILABLE}
+        # Fail closed (R-27): anything that raises on the way, the policy's
+        # render of this room, the search, or the packet, is a counted
+        # `unavailable` with its note, never an exception out of the tool.
+        try:
+            target = lineage.render_room(
+                platform=room.platform, conversation_id=bound_conversation_id,
+                live=LiveRoom(
+                    person_ids=frozenset(p.person_id for p in view.people),
+                    unnamed=view.unnamed, available=view.available,
+                    degraded=view.degraded,
+                ),
+            )
+            now = now_fn()
+            found = await search.search(
+                query=(query or question or ref.name)[:500], person_id=ref.person_id,
+                target=target, depth=level, now_ms=int(now.timestamp() * 1000),
+            )
+            if found.status == "unavailable":
+                _record_room(metrics, "ask_memory", "unavailable", reason="index")
+                return {
+                    "status": "unavailable", "person": ref.name, "note": _INDEX_UNAVAILABLE,
+                }
+            items, withheld = render_packet(
+                found.hits, name_of=_rollup_name, room_label=_index_room_label, now=now,
+            )
+        except Exception as exc:  # noqa: BLE001 — «I couldn't check», counted
+            log.warning("ask_memory index path failed (%s)", type(exc).__name__)
+            _record_room(metrics, "ask_memory", "unavailable", reason="error")
+            return {"status": "unavailable", "person": ref.name, "note": _INDEX_UNAVAILABLE}
+        # The status the model is given: `partial` stays `partial` with no
+        # items (an unfinished index is never «nothing found»).
+        _record_room(
+            metrics, "ask_memory",
+            found.status if items or found.status == "partial" else "nothing_found",
+            items=len(items), withheld=withheld, depth=level,
+        )
+        if found.status == "partial":
+            return _memory_result({
+                "status": "partial", "person": ref.name, "answer": items,
+                "withheld": withheld, "partial_view": view.degraded,
+                "note": _INDEX_PARTIAL,
+            })
+        if not items:
+            return {
+                "status": "nothing_found", "person": ref.name, "withheld": withheld,
+                "note": _INDEX_WITHHELD if withheld else _INDEX_NOTHING,
+            }
+        return _memory_result({
+            "status": "ok", "person": ref.name, "answer": items, "withheld": withheld,
+            "partial_view": view.degraded, "note": _INDEX_OK,
+        })
+
     async def ask_memory(
         person: str,
         depth: Literal["minimal", "low", "medium", "high", "max"] = "low",
@@ -6210,6 +6313,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "More than one person here goes by that. Ask which one.",
             }
         ref = matches[0]
+        if memory_search is not None:
+            # `[memory_index] enabled` (60 S5): the index answers, Honcho is
+            # not called. The tool's text is unchanged (a person-free verb is
+            # a later nora-tool PR, 60 §0.7).
+            return await _ask_memory_index(memory_search, ref, level, query, view)
         try:
             # OBSERVER = Nora, OBSERVED = the person (design/24 §4): she reasons
             # from HER model of them. The QUESTION is the tagging message, hers to
@@ -16413,6 +16521,7 @@ def build_tools(
     subagent: SubagentDesk | None = None,
     video: VideoDesk | None = None,
     video_ref_kinds: frozenset[str] = frozenset(),
+    memory_search: MemorySearch | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -16476,5 +16585,6 @@ def build_tools(
         culture=culture,
         subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds,
+        memory_search=memory_search,
     )
     return [adapt(spec) for spec in specs]

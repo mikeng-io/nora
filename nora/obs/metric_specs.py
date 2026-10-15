@@ -22,7 +22,7 @@ from nora.domain.doctrine_check import CHECK_OUTCOMES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
-from nora.domain.memory_index import NODE_KINDS, PROJECTION_OUTCOMES
+from nora.domain.memory_index import NODE_KINDS, PROJECTION_OUTCOMES, SEARCH_STATUSES
 from nora.domain.otp import CHECK_OUTCOMES as OTP_CHECK_OUTCOMES
 from nora.domain.otp import REQUEST_OUTCOMES as OTP_REQUEST_OUTCOMES
 from nora.domain.reasoning_strip import (
@@ -2188,6 +2188,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "store's transaction and put on memory_projection_queue, the store "
         "write kept; lost = the queue write failed too.",
         ("kind", "outcome"),
+    ),
+    # The memory index's read (`nora.agent.memory_search`, design/unified-
+    # memory/25-memory-graph.md §4, 60 S5): one per search, by the status the
+    # caller was given. `partial` is an answer from an index still being
+    # rebuilt or with sources waiting on its queue; `unavailable` an error.
+    _CounterSpec(
+        "nora_memory_search_total",
+        "Memory index searches, by status (" + " / ".join(SEARCH_STATUSES) + "). "
+        "partial = the index is not complete or its projection queue is not "
+        "empty; unavailable = the search failed (fail closed).",
+        ("status",),
     ),
 )
 

@@ -325,6 +325,11 @@ _MAY_DIFFER = {
     # floor is measured (DEC-157 (4)): a fresh operator copying the file gets
     # the more filtered of the two, and picks the other deliberately.
     "search.provider",
+    # `[memory_index] enabled` (S5, design/unified-memory/60): which memory
+    # `ask_memory` answers from is the operator's switch, measured on the
+    # deployment (`conversational_recall`) before it is turned on; the
+    # template ships the Honcho path, OFF.
+    "memory_index.enabled",
     # Per-deployment policy/cost knobs.
     "doctrine.canary",            # deliberately CHANGE-ME in the template
     "presence.retention_days",    # disk and privacy, the operator's call

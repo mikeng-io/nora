@@ -73,6 +73,7 @@ from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
 from .lineage import LineagePolicy
 from .links import LinkCarry
 from .mcp import McpToolGroup
+from .memory_search import MemorySearch
 from .ports import ToolSpec, adapt
 from .reaction import ReactionPicker
 from .relay import Relay
@@ -285,9 +286,14 @@ class ToolRegistry:
         # life of the process like `route`. `None` answers the open
         # `unavailable`.
         external_files: ExternalFilesSource | None = None,
+        # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
+        # the retrieval service `ask_memory` answers from instead of Honcho.
+        # Process-lifetime like `record`; `None` keeps the Honcho path.
+        memory_search: MemorySearch | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
         self._external_files = external_files
+        self._memory_search = memory_search
         self._record = record
         self._documents = documents
         self._lineage = lineage
@@ -1094,6 +1100,7 @@ class ToolRegistry:
             relay=self._relay,
             rooms=self._rooms,
             record=self._record,
+            memory_search=self._memory_search,
             lineage=self._lineage,
             rollup=self._rollup,
             standing_head=self._standing_head,

@@ -1307,11 +1307,17 @@ class MemoryIndexConfig(BaseModel):
     is written by every store's own write whatever this says; `drain_seconds`
     is how often the nora process re-projects what those writes queued
     (`nora.app.runtime.memory_drain_loop`). Optional and defaulted, so a
-    `config.toml` without the section keeps loading."""
+    `config.toml` without the section keeps loading.
+
+    `enabled` (S5) is the READ: on, `ask_memory` answers from the index
+    through `nora.agent.memory_search` and Honcho is not called; off (the
+    default), `ask_memory` is today's Honcho path, unchanged. Undo is this
+    flag and a restart."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     drain_seconds: float = Field(default=60.0, gt=0)
+    enabled: bool = False
 
 
 class AnalyticsConfig(BaseModel):
