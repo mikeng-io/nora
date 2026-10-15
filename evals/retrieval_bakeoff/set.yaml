@@ -1,0 +1,544 @@
+# Pool and queries for the retrieval bake-off. Rules: PROTOCOL.md.
+version: 1
+slices:
+  text_image:
+    description: A caption-less photo found by a description of what it shows (design/unified-memory/20,
+      conversational-recall dinner journey).
+    pool:
+    - img-001
+    - img-002
+    - img-003
+    - img-004
+    - img-005
+    - img-006
+    - img-007
+    - img-008
+    - img-009
+    - img-010
+    - img-011
+    - img-012
+    - img-013
+    - img-014
+    - img-015
+    - img-016
+    - img-017
+    - img-018
+    - img-019
+    - img-020
+    - img-021
+    - img-022
+    - img-023
+    - img-024
+    - img-025
+    - img-026
+    - img-027
+    - img-028
+    - img-029
+    - img-030
+    - img-031
+    - img-032
+    - img-033
+    - img-034
+    - img-035
+    - img-036
+    - img-037
+    - img-038
+    - img-039
+    - img-040
+    - img-041
+    - img-042
+    - img-043
+    - img-044
+    - img-045
+    - img-046
+    - img-047
+    - img-048
+    - img-049
+    - img-050
+    - img-051
+    - img-052
+    - img-053
+    - img-054
+    - img-055
+    - img-056
+    - img-057
+    - img-058
+    - img-059
+    - img-060
+    - img-061
+    - img-062
+    - img-063
+    - img-064
+    - img-065
+    - img-066
+    - img-067
+    - img-068
+    - img-069
+    - img-070
+    - img-071
+    - img-072
+    - img-073
+    - img-074
+    - img-075
+    - img-076
+    - img-077
+    - img-078
+    - img-079
+    - img-080
+    - img-081
+    - img-082
+    - img-083
+    - img-084
+    - img-085
+    - img-086
+    - img-087
+    - img-088
+    - img-089
+    - img-090
+    - img-091
+    - img-092
+    - img-093
+    - img-094
+    - img-095
+    - img-096
+    - img-097
+    - img-098
+    - img-099
+    - img-100
+    - img-101
+    - img-102
+    - img-103
+    - img-104
+    - img-105
+    - img-106
+    - img-107
+    - img-108
+    - img-109
+    - img-110
+    - img-111
+    - img-112
+    - img-113
+    - img-114
+    - img-115
+    - img-116
+    - img-117
+    - img-118
+    - img-119
+    - img-120
+    - img-121
+    - img-122
+    - img-123
+    - img-124
+    - img-125
+    - img-126
+    - img-127
+    - img-128
+    - img-129
+    - img-130
+    - img-131
+    - img-132
+    - img-133
+    - img-134
+    - img-135
+    - img-136
+    - img-137
+    - img-138
+    - img-139
+    - img-140
+    - img-141
+    - img-142
+    - img-143
+    - img-144
+    - img-145
+    - img-146
+    - img-147
+    - img-148
+    - img-149
+    - img-150
+    - img-151
+    - img-152
+    - img-153
+    - img-154
+    - img-155
+    - img-156
+    - img-157
+    - img-158
+    - img-159
+    - img-160
+    - img-161
+    - img-162
+    - img-163
+    - img-164
+    - img-165
+    - img-166
+    - img-167
+    - img-168
+    - img-169
+    - img-170
+    - img-171
+    - img-172
+    - img-173
+    - img-174
+    - img-175
+    - img-176
+    - img-177
+    - img-178
+    - img-179
+    - img-180
+    - img-181
+    - img-182
+    - img-183
+    - img-184
+    - img-185
+    - img-186
+    - img-187
+    - img-188
+    - img-189
+    - img-190
+    - img-191
+    - img-192
+    - img-193
+    - img-194
+    - img-195
+    - img-196
+    - img-197
+    - img-198
+    - img-199
+    - img-200
+    - img-201
+    - img-202
+    - img-203
+    - img-204
+    - img-205
+    - img-206
+    - img-207
+    - img-208
+    - img-209
+    - img-210
+    - img-211
+    - img-212
+    - img-213
+    - img-214
+    - img-215
+    - img-216
+    - img-217
+    - img-218
+    - img-219
+    - img-220
+    - img-221
+    - img-222
+    - img-223
+    - img-224
+    queries:
+    - id: ti-q01
+      lang: yue
+      text: 有冇張四粒小籠包擺喺竹蒸籠、由上面影落去嘅相？
+      reading_gap: true
+    - id: ti-q02
+      lang: en
+      text: that photo of four siu mai sitting in a bamboo steamer
+      reading_gap: true
+    - id: ti-q03
+      lang: mixed
+      text: 啲 har gow 嗰張，得三粒，張皮透明到見到入面
+      reading_gap: false
+    - id: ti-q04
+      lang: yue
+      text: 蛋撻擺喺餅舖玻璃櫃入面，後面見到廚房
+      reading_gap: false
+    - id: ti-q05
+      lang: en
+      text: a baking tray of small tarts, some topped with a spiral of cream
+      reading_gap: false
+    - id: ti-q06
+      lang: yue
+      text: 一個菠蘿包淨係入咗個透明膠袋，冇包裝紙嗰張
+      reading_gap: true
+    - id: ti-q07
+      lang: mixed
+      text: bakery 個櫃入面一盤菠蘿包，前面有張價錢牌
+      reading_gap: false
+    - id: ti-q08
+      lang: en
+      text: birthday cake where the candles themselves spell out the greeting
+      reading_gap: true
+    - id: ti-q09
+      lang: yue
+      text: 個蛋糕面用朱古力字寫住生日快樂，插住幾支蠟燭
+      reading_gap: false
+    - id: ti-q10
+      lang: mixed
+      text: 插住支 3 字蠟燭嗰件 cake
+      reading_gap: false
+    - id: ti-q11
+      lang: en
+      text: coffee with a heart drawn in the milk foam
+      reading_gap: false
+    - id: ti-q12
+      lang: yue
+      text: 白色咖啡杯拉咗片葉，擺喺灰色枱面
+      reading_gap: false
+    - id: ti-q13
+      lang: en
+      text: a frothy coffee in a dainty cup with gold flowers painted on the saucer
+      reading_gap: true
+    - id: ti-q14
+      lang: mixed
+      text: 玻璃杯裝住分咗層嘅 latte，隔籬有三粒方糖
+      reading_gap: false
+    - id: ti-q15
+      lang: yue
+      text: 隻貓瞓喺灰色梳化，個頭挨住個黃色咕𠱸
+      reading_gap: false
+    - id: ti-q16
+      lang: en
+      text: an orange cat curled up in a tight ball, asleep on a towel
+      reading_gap: false
+    - id: ti-q17
+      lang: mixed
+      text: 隻 cat 坐喺窗台望住鏡頭，窗外一片綠色
+      reading_gap: false
+    - id: ti-q18
+      lang: en
+      text: a cat lounging on a wooden step by an open door, flowers and a rooster ornament around it
+      reading_gap: false
+    - id: ti-q19
+      lang: yue
+      text: 有人拎住奶樽餵緊隻黑色BB貓
+      reading_gap: false
+    - id: ti-q20
+      lang: en
+      text: a corgi standing up on its hind legs on a stone path
+      reading_gap: false
+    - id: ti-q21
+      lang: yue
+      text: 隻哥基坐喺沙灘度，旁邊有條藍色狗帶
+      reading_gap: false
+    - id: ti-q22
+      lang: mixed
+      text: 一個人拖住四隻狗行，條街啱啱落完雨濕晒
+      reading_gap: false
+    - id: ti-q23
+      lang: en
+      text: someone dressed up as a dog wearing a life jacket on the grass
+      reading_gap: false
+    - id: ti-q24
+      lang: yue
+      text: 紅色嗰架山頂纜車，喺斜坡上面
+      reading_gap: false
+    - id: ti-q25
+      lang: mixed
+      text: 綠白色嗰架山頂 tram，背後望到落個海港
+      reading_gap: false
+    - id: ti-q26
+      lang: en
+      text: a blue double-decker tram painted with a shoe brand's advert
+      reading_gap: true
+    - id: ti-q27
+      lang: yue
+      text: 綠色叮叮，車身貼滿乘客評語同埋得獎廣告
+      reading_gap: false
+    - id: ti-q28
+      lang: yue
+      text: 地鐵月台道牆係黃色，寫住好大隻毛筆字個站名
+      reading_gap: false
+    - id: ti-q29
+      lang: mixed
+      text: 喺 MTR 車廂入面，架車停咗喺九龍塘
+      reading_gap: false
+    - id: ti-q30
+      lang: en
+      text: inside a Singapore metro carriage with the doors open at a station
+      reading_gap: false
+    - id: ti-q31
+      lang: yue
+      text: 一排綠色小巴泊喺天橋底，後面好多幢好高嘅屋苑
+      reading_gap: false
+    - id: ti-q32
+      lang: mixed
+      text: 65 號綠 van 嘅路線表
+      reading_gap: false
+    - id: ti-q33
+      lang: en
+      text: a crowded shopping street in the rain, everyone under umbrellas
+      reading_gap: false
+    - id: ti-q34
+      lang: yue
+      text: 由山頂望落去嘅夜景，前面有黑色山坡
+      reading_gap: false
+    - id: ti-q35
+      lang: en
+      text: looking down from high up across the harbour at the lit towers of Central at night
+      reading_gap: true
+    - id: ti-q36
+      lang: en
+      text: a night skyline across dark water with one very tall tower at the left edge
+      reading_gap: false
+    - id: ti-q37
+      lang: mixed
+      text: 天陰陰，Star Ferry 喺維港，對岸係中環啲大廈
+      reading_gap: false
+    - id: ti-q38
+      lang: yue
+      text: 坐喺渡海小輪上面影出去，見到一架白色大郵輪
+      reading_gap: false
+    - id: ti-q39
+      lang: en
+      text: plane wing at sunset with a red tip on the winglet
+      reading_gap: false
+    - id: ti-q40
+      lang: yue
+      text: 飛機窗望出去見到機翼，成個天係粉紅橙色
+      reading_gap: true
+    - id: ti-q41
+      lang: mixed
+      text: 架 plane 喺跑道度，機尾係紅黃色
+      reading_gap: false
+    - id: ti-q42
+      lang: yue
+      text: 廟入面天花板吊住一圈圈好大嘅塔香
+      reading_gap: true
+    - id: ti-q43
+      lang: en
+      text: a row of old stone lanterns in front of a red shrine
+      reading_gap: false
+    - id: ti-q44
+      lang: mixed
+      text: 沾麵嗰張：湯同麵分開兩碗上
+      reading_gap: false
+    - id: ti-q45
+      lang: en
+      text: ramen with sweetcorn and a halved soft egg in a black bowl
+      reading_gap: false
+    - id: ti-q46
+      lang: mixed
+      text: 啲 wonton 浮喺清湯度，碗底墊住張日文紙
+      reading_gap: false
+    - id: ti-q47
+      lang: yue
+      text: 一盒盒急凍雲吞，仲未煮
+      reading_gap: false
+    - id: ti-q48
+      lang: en
+      text: dumplings boiling in a big black wok
+      reading_gap: true
+    - id: ti-q49
+      lang: mixed
+      text: 白碟上面一碟煎到金黃嘅 potstickers
+      reading_gap: false
+    - id: ti-q50
+      lang: yue
+      text: 三隻餃子擺喺木碟，上面打橫擺住對筷子
+      reading_gap: false
+    - id: ti-q51
+      lang: en
+      text: two big round pancakes in a takeaway box
+      reading_gap: false
+    - id: ti-q52
+      lang: yue
+      text: 一疊班戟，面頭有香蕉片同一粒士多啤梨
+      reading_gap: false
+    - id: ti-q53
+      lang: mixed
+      text: bubble tea 杯身貼住個黑色 sticker
+      reading_gap: false
+    - id: ti-q54
+      lang: en
+      text: a red fruity drink with dark pearls sunk at the bottom
+      reading_gap: false
+    - id: ti-q55
+      lang: yue
+      text: 隻手拎住雪糕筒，雪糕係粉紅色
+      reading_gap: false
+    - id: ti-q56
+      lang: en
+      text: toasting a marshmallow on a stick in the woods
+      reading_gap: true
+    - id: ti-q57
+      lang: mixed
+      text: 成隻燒鴨擺喺個黑色外賣盒
+      reading_gap: false
+    - id: ti-q58
+      lang: yue
+      text: 咖喱飯，隻碟邊有藍色間條
+      reading_gap: false
+    - id: ti-q59
+      lang: en
+      text: Japanese curry set on a tray with a small bowl of salad and a bowl of soup
+      reading_gap: false
+    - id: ti-q60
+      lang: mixed
+      text: 成碟都係三文魚 sushi，擺喺圓形黑色石板
+      reading_gap: false
+    - id: ti-q61
+      lang: en
+      text: sushi laid out on a white rectangular plate
+      reading_gap: false
+    - id: ti-q62
+      lang: mixed
+      text: 用黃色筷子夾起舊牛肉，下面係碗麵
+      reading_gap: true
+    - id: ti-q63
+      lang: yue
+      text: 一碗麵，面頭有片粉紅色魚蛋同幾舊豬肉，個碗係灰藍色
+      reading_gap: false
+    - id: ti-q64
+      lang: en
+      text: a single line of footprints crossing an empty beach
+      reading_gap: false
+    - id: ti-q65
+      lang: mixed
+      text: 沙灘上面有張黃色 beach chair 同一個紅色 cooler
+      reading_gap: false
+    - id: ti-q66
+      lang: yue
+      text: 沙灘度插住一支魚竿
+      reading_gap: false
+    - id: ti-q67
+      lang: en
+      text: a green mango still hanging on the tree
+      reading_gap: false
+    - id: ti-q68
+      lang: yue
+      text: 白色背景，淨係得一個芒果
+      reading_gap: false
+    - id: ti-q69
+      lang: mixed
+      text: 夜晚一排樹掛滿紅色燈，倒影喺水度
+      reading_gap: false
+    - id: ti-q70
+      lang: en
+      text: fireworks going off over towers that have big balls on them
+      reading_gap: false
+    - id: ti-q71
+      lang: yue
+      text: 煙花圍住一棟好高嘅塔噴出嚟，前面有條橋
+      reading_gap: false
+    - id: ti-q72
+      lang: mixed
+      text: 一個大 blue 色螺旋滑梯
+      reading_gap: false
+    - id: ti-q73
+      lang: en
+      text: a hawker stall with skewers, fish balls and pots of sauce
+      reading_gap: false
+    - id: ti-q74
+      lang: en
+      text: a lone candle flame with blurry dots of light behind
+      reading_gap: false
+    - id: ti-q75
+      lang: yue
+      text: 一個橙色箱用帶吊喺鐵欄度，上面有手寫藍色字
+      reading_gap: false
+    - id: ti-q76
+      lang: en
+      text: a field full of bright orange poppies with hills behind
+      reading_gap: false
+    - id: ti-q77
+      lang: en
+      text: a menu board on the wall with noodle and snack prices in yuan
+      reading_gap: false
+    - id: ti-q78
+      lang: mixed
+      text: 部 laptop 個 mon 全白，乜都冇顯示
+      reading_gap: false
