@@ -113,43 +113,102 @@
     },
     "n": 21
   },
-  "at": "2026-10-15",
   "input_format": {
+    "hf_grid_thw": [
+      [
+        1,
+        22,
+        32
+      ]
+    ],
     "image": "<|im_start|>user<|vision_start|><|image_pad|>*<|vision_end|><|im_end|><embedding>",
-    "image_tokens": {
-      "hf": 182,
-      "hf_grid_thw": [
-        [
-          1,
-          22,
-          32
-        ]
-      ],
-      "llama_server_img001": 182
-    },
+    "image_tokens_hf": 182,
     "instruction": "none (config_sentence_transformers prompts = {})",
-    "llama_server_appends": "<embedding> (the GGUF's EOS); with it also in the prompt, ids ended 248046, 248077, 248077",
+    "template_check": {
+      "checked": "/tokenize, every prompt as sent",
+      "media": [
+        "<|im_start|>",
+        "user",
+        "<",
+        "__",
+        "media",
+        "_u",
+        "EK",
+        "f",
+        "I",
+        "c",
+        "T",
+        "2",
+        "T",
+        "jc",
+        "Fu",
+        "MZ",
+        "ry",
+        "b",
+        "U",
+        "6",
+        "DS",
+        "Q",
+        "pj",
+        "7",
+        "s",
+        "QB",
+        "6",
+        "8",
+        "O",
+        "__",
+        ">",
+        "<|im_end|>",
+        "<embedding>"
+      ],
+      "texts": 13
+    },
     "text": "<|im_start|>user\\n{text}<|im_end|><embedding>",
     "text_ids_equal_hf": true,
     "text_ids_tail": [
       58132,
       248046,
       248077
-    ],
-    "transformers_5_19_drift": {
-      "cos_mean": 0.9852,
-      "cos_min": 0.9607,
-      "note": "5.19 keeps token 198 before <embedding> and the role newline before an image; its vectors vs the pinned 5.2.0 reference"
-    }
+    ]
   },
   "kind": "wemm-probe-and-agreement",
   "model": {
+    "build": "b1-b42b7e6d3",
     "device": "CPU: 'no usable GPU found'; the norty user is not in the render group",
     "gguf": "milkey/wemm-embedding-2b:Q4_K_M (Ollama blob)",
     "gguf_sha256": "46b85372ad4f197cbdb00753e7ed0a1d12b251f20626f92865a044bb733e0dea",
     "mmproj": "DreamBlooms WeMM-Embedding-2B-GGUF projector, BF16",
     "mmproj_sha256": "c7271c975cab83ebd12ce2807e7b77e91134afd9f1658bd4dca986212a60560d",
-    "server": "llama-server b1-b42b7e6d3 (bundled with Ollama 0.40.4), --embedding --pooling last -c 2048 -b 2048 -ub 2048 -t 4 -ngl 0 --parallel 1"
+    "server_cmdline": [
+      "/usr/local/lib/ollama/llama-server",
+      "-m",
+      "/usr/share/ollama/.ollama/models/blobs/sha256-46b85372ad4f197cbdb00753e7ed0a1d12b251f20626f92865a044bb733e0dea",
+      "--mmproj",
+      "/tmp/nora-wemm-bench/mmproj.gguf",
+      "--embedding",
+      "--pooling",
+      "last",
+      "-c",
+      "2048",
+      "-b",
+      "2048",
+      "-ub",
+      "2048",
+      "-t",
+      "4",
+      "-ngl",
+      "0",
+      "--parallel",
+      "1",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "11439"
+    ],
+    "server_memory": {
+      "peak_rss_kib": 3598404,
+      "rss_kib": 3598404
+    }
   },
   "probe": {
     "hf": {
@@ -440,24 +499,49 @@
         ]
       }
     },
-    "queries": "probe-en 'two bowls of noodles'; probe-yue and probe-yue2 Cantonese (not set queries)",
     "target": "img-001"
+  },
+  "q4_item_s": {
+    "ca-q01": 0.274,
+    "ca-q02": 0.275,
+    "ca-q04": 0.306,
+    "ca-q06": 0.26,
+    "ca-q08": 0.252,
+    "img-001": 3.953,
+    "img-002": 3.691,
+    "img-003": 3.98,
+    "img-004": 3.964,
+    "img-005": 4.832,
+    "img-006": 4.291,
+    "img-007": 3.7,
+    "img-008": 3.77,
+    "img-009": 2.408,
+    "img-010": 3.959,
+    "img-012": 5.221,
+    "probe-en": 0.171,
+    "probe-yue": 0.162,
+    "probe-yue2": 0.199,
+    "ti-q01": 0.301,
+    "ti-q02": 0.296,
+    "ti-q03": 0.258,
+    "ti-q04": 0.319,
+    "ti-q05": 0.3
   },
   "reference": {
     "device": "cpu, 4 threads",
     "dtype": "bfloat16",
     "item_s_mean": {
-      "image": 33.1,
-      "text": 2.71
+      "image": 19.48,
+      "text": 1.61
     },
-    "load_s": 9.4,
+    "load_s": 7.0,
     "model": "tencent/WeMM-Embedding-2B",
-    "peak_rss_kib": 4090164,
-    "qwen_vl_utils": "0.0.14",
+    "peak_rss_kib": 4133480,
     "revision": "bbd6cd4bf52cfc6716f752a2df80b2706720bd95",
     "sentence_transformers": "5.7.0",
     "torch": "2.14.1+cpu",
     "transformers": "5.2.0"
   },
-  "schema": 1
+  "schema": 1,
+  "script": "agreement_wemm.py"
 }

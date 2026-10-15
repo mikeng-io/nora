@@ -22,7 +22,8 @@ On the deploy host, from a checkout of this commit:
     nice -n 10 ~/nora-bakeoff-wemm/venv52/bin/python -I agreement_wemm.py gguf /tmp/x.json \\
         http://127.0.0.1:11439 <pid> > results/<stamp>-wemm-probe-agreement.json
 
-Result: `results/20261015T111644Z-wemm-probe-agreement.json`.
+Result: `results/20261015T125057Z-wemm-probe-agreement.json` (reproduces the first
+record, 20261015T111644Z, item for item: mean cosine 0.9755, min 0.9506).
 """
 
 import json

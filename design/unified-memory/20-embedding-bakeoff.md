@@ -188,7 +188,7 @@ are measured with Nora running.
 ## WeMM-2B measured (2026-10-15, Q4_K_M)
 
 Stage 2 for WeMM-Embedding-2B ran on all three journey slices
-(`evals/retrieval_bakeoff/results/20261015T111644Z-*`). It used the community
+(`evals/retrieval_bakeoff/results/20261015T125057Z-*`). It used the community
 **Q4_K_M** GGUF with the BF16 projector, served by llama-server on CPU,
 because the `norty` user is not in the `render` group. The input was the
 model's own template: no instruction, and `<embedding>` appended once by the
@@ -201,7 +201,16 @@ Cantonese and wins text → image. At 256, and in every fused WeMM arm,
 Cantonese is not held, so those arms are media-only. The Cantonese hold clears
 its bar by about one query of 61, and the Q4 vectors agree with the bf16
 checkpoint at a mean cosine of 0.976 (min 0.951, 21 items). The verdict is
-therefore a Q4 verdict that a full-precision run could reverse. Cost: 4.0 s
-p50 and 5.6 s p95 per image, 0.21–0.29 s per text, and a peak RSS of
-3.16 GiB (3,316,516 KiB). The peak is the server's lifetime high-water mark
-(`VmHWM`), not a per-request figure.
+therefore a Q4 verdict that a full-precision run could reverse. Cost: 3.9 s
+p50 and 5.1 s p95 per image, 0.20–0.29 s per text, and a peak RSS of
+3.52 GiB (3,691,280 KiB). The peak is the server's lifetime high-water mark
+(`VmHWM`), not a per-request figure, and this server had also served the
+24-item agreement probe. The first run, superseded because its results
+carried no per-query ranks, peaked at 3.16 GiB (3,316,516 KiB).
+
+Full precision, 2026-10-15 (`20261015T123946Z-*`): the HF checkpoint at fp32
+(norty's CPU has no bf16 instructions; text-only load, 11.4 GB peak RSS)
+measured the same recall@5 on Cantonese at 2048 (0.738, two offsetting flips)
+and on names, so `decide()` over fp32 text plus Q4 text → image still returns
+REPLACE for `dense:wemm@2048`. text → image was not re-run at fp32: about 2 h
+of CPU for 224 images.
