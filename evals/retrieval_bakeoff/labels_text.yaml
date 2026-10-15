@@ -27,23 +27,24 @@ labellers:
       without opening the query author's targets, and froze its raw set before B's output existed
     frozen_at: '2026-10-15T03:18:09Z'
     frozen_at_is: self-reported by A; git does not show that A's set was frozen before B's existed
-    raw_sha256: 0e3bdc59853f20303e36bed627b73ebc95d2e530b46cc5aadb6f507a578b0f8a
+    raw_sha256: 80c09f781118cb33dcd9b10958a952f0c675f650ac9d357958d15be76f99b3ad
   B:
-    who: a fresh agent session, separate from the pool author, the query author and A
+    who: a fresh agent session, separate from the pool author, the query author and A; for ca-q73..ca-q84 and
+      ca-q85..ca-q90 a further fresh session each (second_round, third_round)
     given: PROTOCOL.md's time and relevance rules for text, the pool, the queries with as_of
     not_given: the targets, anyone's notes or labels; no grep, search or retrieval tools
-    raw_sha256: 7f56cb6017dff2cc08aa6cbe4d74c26d4ef82c4fd115c5110450d4bb2a696b96
+    raw_sha256: 698cc3377363b81a43285c2b9625059a18c0db44d6f7733a40e7ee8bd9fff9fa
 hard_negative_review: Proposed by the query author with the failed detail; checked by A against each message
   after A's labels were frozen. Each fails a detail its query states; none dropped. None is in a final relevant
   set.
 agreement_before_reconciliation:
   cantonese:
-    queries: 72
-    identical_sets: 71
-    mean_jaccard: 0.986
-    cohen_kappa_over_query_item_pairs: 0.993
-    query_item_pairs: 28800
-    relevant_to_both: 71
+    queries: 90
+    identical_sets: 89
+    mean_jaccard: 0.989
+    cohen_kappa_over_query_item_pairs: 0.994
+    query_item_pairs: 36000
+    relevant_to_both: 89
     relevant_to_A_only: 1
     relevant_to_B_only: 0
   names:
@@ -55,19 +56,99 @@ agreement_before_reconciliation:
     relevant_to_both: 58
     relevant_to_A_only: 1
     relevant_to_B_only: 0
+second_round:
+  why: The review applied the copied-wording rule to the cantonese slice and withdrew 22 queries, which left
+    mixed at 6, below the per-language minimum of 10. A second, fresh query-author session wrote 12 new mixed
+    queries (ca-q73..ca-q84).
+  author_given: 'the cantonese pool as committed, PROTOCOL.md''s relevance rules for text, a list of message
+    ids already targeted (to avoid), and one explicit instruction: no repeated phrasing from the target, in
+    any script, transliteration included'
+  author_not_given: any earlier or withdrawn query, any label, any arm score
+  labellers: A labelled from the pool and the query texts without opening the author's targets and froze before
+    B's file existed; B was a further fresh session given the pool, the 12 queries and the relevance rules.
+    Their raw sets are part of A's and B's raw sets above.
+  A_frozen_at: '2026-10-15T09:40:04Z'
+  A_round1_raw_sha256: 0e3bdc59853f20303e36bed627b73ebc95d2e530b46cc5aadb6f507a578b0f8a
+  agreement_before_reconciliation:
+    queries: 12
+    identical_sets: 12
+    mean_jaccard: 1.0
+    cohen_kappa_over_query_item_pairs: 1.0
+    query_item_pairs: 4800
+    relevant_to_both: 12
+    relevant_to_A_only: 0
+    relevant_to_B_only: 0
+  copied_wording_check: 'the same line as the review withdrawals, judged by reading each query against its
+    target: ca-q74 and ca-q81 withdrawn, 10 kept'
+third_round:
+  why: Round 2's copied-wording check withdrew ca-q74 and ca-q81, and the review's withdrawals had left yue
+    at 9 of 10. One more fresh query-author session wrote 6 yue queries (ca-q85..ca-q90), with the same inputs
+    and the same explicit instruction as round 2.
+  labellers: A labelled without opening the targets and froze before B's file existed; B was a further fresh
+    session with the same inputs as round 2's B.
+  A_frozen_at: '2026-10-15T09:43:48Z'
+  agreement_before_reconciliation:
+    queries: 6
+    identical_sets: 6
+    mean_jaccard: 1.0
+    cohen_kappa_over_query_item_pairs: 1.0
+    query_item_pairs: 2400
+    relevant_to_both: 6
+    relevant_to_A_only: 0
+    relevant_to_B_only: 0
+  copied_wording_check: 'the same line: ca-q87 withdrawn, 5 kept'
 time_only_queries:
   ca-q16:
   - msg-019
-  ca-q24:
-  - msg-067
   ca-q35:
   - msg-031
   ca-q36:
   - msg-371
+  ca-q78:
+  - msg-105
+  ca-q79:
+  - msg-378
   nm-q22:
   - msg-044
 pii_edits: 6 values matched the private denylist and were replaced with same-meaning alternatives; labels unchanged.
 withdrawn:
+- query: ca-q03
+  slice: cantonese
+  lang: mixed
+  text: 六月黑雨嗰朝有人話冇車搭，返唔到 office
+  raw:
+    A:
+    - msg-187
+    B:
+    - msg-187
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (黑雨 ... 返唔到), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
+- query: ca-q05
+  slice: cantonese
+  lang: yue
+  text: 十月仲出咗熱到要警告嗰日，幾多度
+  raw:
+    A:
+    - msg-083
+    B:
+    - msg-083
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (十月仲 ... 警告), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
+- query: ca-q07
+  slice: cantonese
+  lang: roman
+  text: gau jyut daa fung, jau jan wa gam nin dai ji ci m sai faan gung
+  raw:
+    A:
+    - msg-261
+    B:
+    - msg-261
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (gam nin dai ji ci (今年第二次)), which PROTOCOL.md (Blind
+    for text) forbids. Same line as the names withdrawals, judged by reading the query against its target;
+    no arm score was consulted.'
 - query: ca-q09
   slice: cantonese
   lang: yue
@@ -79,6 +160,69 @@ withdrawn:
   reason: 'A marked msg-266 (a window rattling loudly) relevant; B excluded it. Settled not relevant: the message
     states neither a typhoon nor a night (sent 15:50), so the query''s constraints do not hold in it as written.
     No other message answers the query, so it is withdrawn rather than the rule loosened.'
+- query: ca-q21
+  slice: cantonese
+  lang: roman
+  text: sa tin gaan lai min jiu dang jat go zung tau
+  raw:
+    A:
+    - msg-207
+    B:
+    - msg-207
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (sa tin gaan lai min (沙田間拉麵)), which PROTOCOL.md (Blind
+    for text) forbids. Same line as the names withdrawals, judged by reading the query against its target;
+    no arm score was consulted.'
+- query: ca-q23
+  slice: cantonese
+  lang: yue
+  text: 九月有人問邊個想一齊去大埔食魚蛋
+  raw:
+    A:
+    - msg-029
+    B:
+    - msg-029
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (去大埔食魚蛋 ... 一齊), which PROTOCOL.md (Blind for text)
+    forbids. Same line as the names withdrawals, judged by reading the query against its target; no arm score
+    was consulted.'
+- query: ca-q24
+  slice: cantonese
+  lang: mixed
+  text: 八月尾約人去大澳食 fishball 嗰個
+  raw:
+    A:
+    - msg-300
+    B:
+    - msg-300
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (去大澳食), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
+- query: ca-q26
+  slice: cantonese
+  lang: yue
+  text: 邊個話佢隻貓一朝早嘔咗兩轉
+  raw:
+    A:
+    - msg-290
+    B:
+    - msg-290
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (隻貓 ... 嘔咗兩), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
+- query: ca-q28
+  slice: cantonese
+  lang: mixed
+  text: 邊個屋企隻貓自己打開 fridge，嚇死人
+  raw:
+    A:
+    - msg-245
+    B:
+    - msg-245
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (隻貓 ... 自己 ... 開), which PROTOCOL.md (Blind for text)
+    forbids. Same line as the names withdrawals, judged by reading the query against its target; no arm score
+    was consulted.'
 - query: ca-q34
   slice: cantonese
   lang: yue
@@ -91,6 +235,106 @@ withdrawn:
   reason: 'Withdrawn in review (both labellers had marked it relevant): the query states a detail its message
     does not, the rule that withdrew ca-q09. The query says the train was too packed to get on; msg-366 says
     only that it was packed.'
+- query: ca-q40
+  slice: cantonese
+  lang: en
+  text: the first game night at someone's flat, back in June
+  raw:
+    A:
+    - msg-025
+    B:
+    - msg-025
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (game night at), which PROTOCOL.md (Blind for text)
+    forbids. Same line as the names withdrawals, judged by reading the query against its target; no arm score
+    was consulted.'
+- query: ca-q47
+  slice: cantonese
+  lang: mixed
+  text: 九點半開嗰場 movie，叫人早啲去
+  raw:
+    A:
+    - msg-185
+    B:
+    - msg-185
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (九點半開 ... 早啲), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
+- query: ca-q48
+  slice: cantonese
+  lang: roman
+  text: cat jyut go zoeng hei cat dim bun hoi
+  raw:
+    A:
+    - msg-016
+    B:
+    - msg-016
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (cat dim bun hoi (七點半開)), which PROTOCOL.md (Blind for
+    text) forbids. Same line as the names withdrawals, judged by reading the query against its target; no arm
+    score was consulted.'
+- query: ca-q50
+  slice: cantonese
+  lang: roman
+  text: zou zo gaan party room sap go jan
+  raw:
+    A:
+    - msg-231
+    B:
+    - msg-231
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (zou zo gaan party room (租咗間 party room)), which PROTOCOL.md
+    (Blind for text) forbids. Same line as the names withdrawals, judged by reading the query against its target;
+    no arm score was consulted.'
+- query: ca-q51
+  slice: cantonese
+  lang: yue
+  text: 買咗兩張演唱會門票嗰個
+  raw:
+    A:
+    - msg-244
+    B:
+    - msg-244
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (買咗兩張), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
+- query: ca-q53
+  slice: cantonese
+  lang: mixed
+  text: 佢生日係星期四嗰次，大家夾份買 cake
+  raw:
+    A:
+    - msg-102
+    B:
+    - msg-102
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (佢生日係 ... 夾 ... 買), which PROTOCOL.md (Blind for text)
+    forbids. Same line as the names withdrawals, judged by reading the query against its target; no arm score
+    was consulted.'
+- query: ca-q55
+  slice: cantonese
+  lang: yue
+  text: 阿媽生日嗰餐訂咗幾點
+  raw:
+    A:
+    - msg-318
+    B:
+    - msg-318
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (阿媽生日), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
+- query: ca-q58
+  slice: cantonese
+  lang: yue
+  text: 業主今個禮拜又話加租，加幾多
+  raw:
+    A:
+    - msg-352
+    B:
+    - msg-352
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (又話加租), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
 - query: ca-q60
   slice: cantonese
   lang: en
@@ -103,6 +347,31 @@ withdrawn:
   reason: 'Withdrawn in review (both labellers had marked it relevant): the query states a detail its message
     does not, the rule that withdrew ca-q09. The query says the tooth comes out this week; msg-386 says only
     another dentist visit for the second wisdom tooth, not an extraction.'
+- query: ca-q61
+  slice: cantonese
+  lang: mixed
+  text: 今個禮拜又去 cut 頭，今次 OK 啲
+  raw:
+    A:
+    - msg-217
+    B:
+    - msg-217
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (又去 ... 頭，今次), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
+- query: ca-q62
+  slice: cantonese
+  lang: en
+  text: flight to Japan delayed two hours back in September
+  raw:
+    A:
+    - msg-214
+    B:
+    - msg-214
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (flight to ... delayed ... hours), which PROTOCOL.md
+    (Blind for text) forbids. Same line as the names withdrawals, judged by reading the query against its target;
+    no arm score was consulted.'
 - query: ca-q64
   slice: cantonese
   lang: mixed
@@ -115,6 +384,95 @@ withdrawn:
   reason: 'Withdrawn in review (both labellers had marked it relevant): msg-305 was sent 2026-09-18, so its
     下個月 is October; at as_of 2026-10-15 the query''s 下個月 is November. The time constraint does not hold, the
     rule that withdrew nm-q44, and no other message answers it.'
+- query: ca-q65
+  slice: cantonese
+  lang: roman
+  text: co syun heoi ou mun go ci
+  raw:
+    A:
+    - msg-275
+    B:
+    - msg-275
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (co syun heoi (坐船去)), which PROTOCOL.md (Blind for text)
+    forbids. Same line as the names withdrawals, judged by reading the query against its target; no arm score
+    was consulted.'
+- query: ca-q67
+  slice: cantonese
+  lang: yue
+  text: 八月約星期六去坪洲，要早啲出發
+  raw:
+    A:
+    - msg-035
+    B:
+    - msg-035
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (sing kei luk heoi (星期六去) ... 早), which PROTOCOL.md
+    (Blind for text) forbids. Same line as the names withdrawals, judged by reading the query against its target;
+    no arm score was consulted.'
+- query: ca-q69
+  slice: cantonese
+  lang: roman
+  text: baat jyut jau jiu bei sun jung kaat, mou cin
+  raw:
+    A:
+    - msg-072
+    B:
+    - msg-072
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (jau jiu ... mou cin (又要 ... 冇錢)), which PROTOCOL.md
+    (Blind for text) forbids. Same line as the names withdrawals, judged by reading the query against its target;
+    no arm score was consulted.'
+- query: ca-q70
+  slice: cantonese
+  lang: mixed
+  text: 隔籬枱個 auntie 飲醉咗瞓低
+  raw:
+    A:
+    - msg-099
+    B:
+    - msg-099
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (隔籬枱個), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
+- query: ca-q74
+  slice: cantonese
+  lang: mixed
+  text: 大家 share 錢買 cake，壽星係禮拜三
+  raw:
+    A:
+    - msg-355
+    B:
+    - msg-355
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (錢買 cake (夾錢買蛋糕)), which PROTOCOL.md (Blind for text)
+    forbids. Same line as the names withdrawals, judged by reading the query against its target; no arm score
+    was consulted.'
+- query: ca-q81
+  slice: cantonese
+  lang: mixed
+  text: 七月約禮拜六去長洲，話要趁早避人
+  raw:
+    A:
+    - msg-213
+    B:
+    - msg-213
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (去長洲 ... 趁 ... 早 (heoi coeng zau, jan ... zou)), which
+    PROTOCOL.md (Blind for text) forbids. Same line as the names withdrawals, judged by reading the query against
+    its target; no arm score was consulted.'
+- query: ca-q87
+  slice: cantonese
+  lang: yue
+  text: 呢個禮拜邊個又去咗歌房，搞到凌晨三點
+  raw:
+    A:
+    - msg-154
+    B:
+    - msg-154
+  reason: 'Withdrawn in review: beyond any name and generic words, the query repeats its target''s own wording
+    in the same order, in its script or transliterated (又去咗 ... 三點), which PROTOCOL.md (Blind for text) forbids.
+    Same line as the names withdrawals, judged by reading the query against its target; no arm score was consulted.'
 - query: nm-q19
   slice: names
   lang: en
@@ -298,23 +656,6 @@ queries:
       B:
       - msg-295
     notes_B: msg-256 (Aug) and msg-378 (Jul) are signal 3 outside September.
-  ca-q03:
-    relevant:
-    - msg-187
-    hard_negatives:
-    - msg-241
-    - msg-257
-    hard_negative_fails:
-      msg-241: 十月嗰次，冇講巴士
-      msg-257: 同日但係講 WFH，唔係冇車
-    author_targets:
-    - msg-187
-    raw:
-      A:
-      - msg-187
-      B:
-      - msg-187
-    notes_B: msg-257 is June black rain WFH, no mention of no transport.
   ca-q04:
     relevant:
     - msg-241
@@ -331,23 +672,6 @@ queries:
       - msg-241
       B:
       - msg-241
-  ca-q05:
-    relevant:
-    - msg-083
-    hard_negatives:
-    - msg-017
-    - msg-398
-    hard_negative_fails:
-      msg-017: 係七月，唔係十月
-      msg-398: 六月，冇警告
-    author_targets:
-    - msg-083
-    raw:
-      A:
-      - msg-083
-      B:
-      - msg-083
-    notes_B: msg-017 is July.
   ca-q06:
     relevant:
     - msg-203
@@ -365,23 +689,6 @@ queries:
       B:
       - msg-203
     notes_B: msg-257 is black rain, not red.
-  ca-q07:
-    relevant:
-    - msg-261
-    hard_negatives:
-    - msg-046
-    - msg-021
-    hard_negative_fails:
-      msg-046: 冇講係第二次
-      msg-021: 七月，第一次
-    author_targets:
-    - msg-261
-    raw:
-      A:
-      - msg-261
-      B:
-      - msg-261
-    notes_B: msg-046 and msg-077 are September days off but do not say second time this year.
   ca-q08:
     relevant:
     - msg-314
@@ -560,21 +867,6 @@ queries:
       B:
       - msg-362
     notes_B: msg-249 is October bonus.
-  ca-q21:
-    relevant:
-    - msg-207
-    hard_negatives:
-    - msg-298
-    hard_negative_fails:
-      msg-298: 係荃灣，唔係沙田
-    author_targets:
-    - msg-207
-    raw:
-      A:
-      - msg-207
-      B:
-      - msg-207
-    notes_B: msg-298 is Tsuen Wan.
   ca-q22:
     relevant:
     - msg-298
@@ -589,40 +881,6 @@ queries:
       - msg-298
       B:
       - msg-298
-  ca-q23:
-    relevant:
-    - msg-029
-    hard_negatives:
-    - msg-300
-    - msg-067
-    hard_negative_fails:
-      msg-300: 係大澳，唔係大埔
-      msg-067: 係大澳
-    author_targets:
-    - msg-029
-    raw:
-      A:
-      - msg-029
-      B:
-      - msg-029
-    notes_B: msg-067 is Tai O.
-  ca-q24:
-    relevant:
-    - msg-300
-    hard_negatives:
-    - msg-029
-    - msg-067
-    hard_negative_fails:
-      msg-029: 係大埔
-      msg-067: 係九月，唔係八月尾
-    author_targets:
-    - msg-300
-    raw:
-      A:
-      - msg-300
-      B:
-      - msg-300
-    notes_B: msg-067 is Tai O but sent 09-07, not end of August.
   ca-q25:
     relevant:
     - msg-052
@@ -637,21 +895,6 @@ queries:
       - msg-052
       B:
       - msg-052
-  ca-q26:
-    relevant:
-    - msg-290
-    hard_negatives:
-    - msg-296
-    hard_negative_fails:
-      msg-296: 係狗，唔係貓
-    author_targets:
-    - msg-290
-    raw:
-      A:
-      - msg-290
-      B:
-      - msg-290
-    notes_B: msg-296 is a dog.
   ca-q27:
     relevant:
     - msg-296
@@ -666,21 +909,6 @@ queries:
       - msg-296
       B:
       - msg-296
-  ca-q28:
-    relevant:
-    - msg-245
-    hard_negatives:
-    - msg-146
-    hard_negative_fails:
-      msg-146: 係狗，唔係貓
-    author_targets:
-    - msg-245
-    raw:
-      A:
-      - msg-245
-      B:
-      - msg-245
-    notes_B: msg-146 is a dog.
   ca-q29:
     relevant:
     - msg-146
@@ -822,21 +1050,6 @@ queries:
       - msg-306
       B:
       - msg-306
-  ca-q40:
-    relevant:
-    - msg-025
-    hard_negatives:
-    - msg-101
-    hard_negative_fails:
-      msg-101: October repeat, not June
-    author_targets:
-    - msg-025
-    raw:
-      A:
-      - msg-025
-      B:
-      - msg-025
-    notes_B: msg-101 is October.
   ca-q41:
     relevant:
     - msg-101
@@ -928,35 +1141,6 @@ queries:
       - msg-007
       B:
       - msg-007
-  ca-q47:
-    relevant:
-    - msg-185
-    hard_negatives:
-    - msg-016
-    hard_negative_fails:
-      msg-016: 七點半，唔係九點半
-    author_targets:
-    - msg-185
-    raw:
-      A:
-      - msg-185
-      B:
-      - msg-185
-    notes_B: msg-016 is 7:30.
-  ca-q48:
-    relevant:
-    - msg-016
-    hard_negatives:
-    - msg-185
-    hard_negative_fails:
-      msg-185: 九點半，唔係七點半
-    author_targets:
-    - msg-016
-    raw:
-      A:
-      - msg-016
-      B:
-      - msg-016
   ca-q49:
     relevant:
     - msg-170
@@ -972,35 +1156,6 @@ queries:
       B:
       - msg-170
     notes_B: msg-231 is ten people.
-  ca-q50:
-    relevant:
-    - msg-231
-    hard_negatives:
-    - msg-170
-    hard_negative_fails:
-      msg-170: 十二個人
-    author_targets:
-    - msg-231
-    raw:
-      A:
-      - msg-231
-      B:
-      - msg-231
-  ca-q51:
-    relevant:
-    - msg-244
-    hard_negatives:
-    - msg-155
-    hard_negative_fails:
-      msg-155: 三張，唔係兩張
-    author_targets:
-    - msg-244
-    raw:
-      A:
-      - msg-244
-      B:
-      - msg-244
-    notes_B: msg-155 is three.
   ca-q52:
     relevant:
     - msg-155
@@ -1015,21 +1170,6 @@ queries:
       - msg-155
       B:
       - msg-155
-  ca-q53:
-    relevant:
-    - msg-102
-    hard_negatives:
-    - msg-355
-    hard_negative_fails:
-      msg-355: 星期三，唔係星期四
-    author_targets:
-    - msg-102
-    raw:
-      A:
-      - msg-102
-      B:
-      - msg-102
-    notes_B: msg-355 is Wednesday.
   ca-q54:
     relevant:
     - msg-211
@@ -1044,20 +1184,6 @@ queries:
       - msg-211
       B:
       - msg-211
-  ca-q55:
-    relevant:
-    - msg-318
-    hard_negatives:
-    - msg-211
-    hard_negative_fails:
-      msg-211: 細佬生日，唔係阿媽
-    author_targets:
-    - msg-318
-    raw:
-      A:
-      - msg-318
-      B:
-      - msg-318
   ca-q56:
     relevant:
     - msg-124
@@ -1087,21 +1213,6 @@ queries:
       - msg-066
       B:
       - msg-066
-  ca-q58:
-    relevant:
-    - msg-352
-    hard_negatives:
-    - msg-191
-    hard_negative_fails:
-      msg-191: 六月嗰次 $800，唔係今個禮拜
-    author_targets:
-    - msg-352
-    raw:
-      A:
-      - msg-352
-      B:
-      - msg-352
-    notes_B: msg-191 is June.
   ca-q59:
     relevant:
     - msg-191
@@ -1116,36 +1227,6 @@ queries:
       - msg-191
       B:
       - msg-191
-  ca-q61:
-    relevant:
-    - msg-217
-    hard_negatives:
-    - msg-047
-    hard_negative_fails:
-      msg-047: 六月嗰次，剪得太短
-    author_targets:
-    - msg-217
-    raw:
-      A:
-      - msg-217
-      B:
-      - msg-217
-    notes_B: msg-047 is June.
-  ca-q62:
-    relevant:
-    - msg-214
-    hard_negatives:
-    - msg-364
-    hard_negative_fails:
-      msg-364: Osaka in June, not September
-    author_targets:
-    - msg-214
-    raw:
-      A:
-      - msg-214
-      B:
-      - msg-214
-    notes_B: Fukuoka counts as Japan; msg-364 is June.
   ca-q63:
     relevant:
     - msg-161
@@ -1160,21 +1241,6 @@ queries:
       - msg-161
       B:
       - msg-161
-  ca-q65:
-    relevant:
-    - msg-275
-    hard_negatives:
-    - msg-014
-    hard_negative_fails:
-      msg-014: 坐巴士過橋，唔係坐船
-    author_targets:
-    - msg-275
-    raw:
-      A:
-      - msg-275
-      B:
-      - msg-275
-    notes_B: msg-014 is by bus.
   ca-q66:
     relevant:
     - msg-369
@@ -1190,21 +1256,6 @@ queries:
       B:
       - msg-369
     notes_B: sent Mon 10-12, next week = week of 10-19, consistent with as_of.
-  ca-q67:
-    relevant:
-    - msg-035
-    hard_negatives:
-    - msg-213
-    hard_negative_fails:
-      msg-213: 係長洲，七月
-    author_targets:
-    - msg-035
-    raw:
-      A:
-      - msg-035
-      B:
-      - msg-035
-    notes_B: msg-213 is 長洲.
   ca-q68:
     relevant:
     - msg-333
@@ -1221,35 +1272,6 @@ queries:
       - msg-333
       B:
       - msg-333
-  ca-q69:
-    relevant:
-    - msg-072
-    hard_negatives:
-    - msg-088
-    hard_negative_fails:
-      msg-088: 六月，唔係八月
-    author_targets:
-    - msg-072
-    raw:
-      A:
-      - msg-072
-      B:
-      - msg-072
-    notes_B: msg-088 is June.
-  ca-q70:
-    relevant:
-    - msg-099
-    hard_negatives:
-    - msg-116
-    hard_negative_fails:
-      msg-116: 係阿叔，唔係阿嬸
-    author_targets:
-    - msg-099
-    raw:
-      A:
-      - msg-099
-      B:
-      - msg-099
   ca-q71:
     relevant:
     - msg-116
@@ -1280,6 +1302,253 @@ queries:
       - msg-341
       B:
       - msg-341
+  ca-q73:
+    relevant:
+    - msg-204
+    hard_negatives:
+    - msg-268
+    - msg-135
+    hard_negative_fails:
+      msg-268: 八月取消訂位，唔係六月尾訂
+      msg-135: 十月確認 booking，唔係六月尾
+    author_targets:
+    - msg-204
+    raw:
+      A:
+      - msg-204
+      B:
+      - msg-204
+    notes_B: msg-135 is an October confirmation, not late June; msg-268 is an August cancellation.
+  ca-q75:
+    relevant:
+    - msg-320
+    hard_negatives:
+    - msg-291
+    hard_negative_fails:
+      msg-291: 改到七點，唔係八點
+    author_targets:
+    - msg-320
+    raw:
+      A:
+      - msg-320
+      B:
+      - msg-320
+    notes_B: msg-291 moves dinner to 7pm; msg-309 pushes dinner to the next day.
+  ca-q76:
+    relevant:
+    - msg-364
+    hard_negatives:
+    - msg-214
+    - msg-076
+    - msg-161
+    hard_negative_fails:
+      msg-214: 去福岡，唔係大阪
+      msg-076: 只係訂大阪機票，冇延誤
+      msg-161: 訂十二月大阪機票，冇延誤
+    author_targets:
+    - msg-364
+    raw:
+      A:
+      - msg-364
+      B:
+      - msg-364
+    notes_B: msg-214 is the same delay but to Fukuoka.
+  ca-q77:
+    relevant:
+    - msg-112
+    hard_negatives:
+    - msg-079
+    hard_negative_fails:
+      msg-079: 嗰套鬼片唔錯，冇瞓著
+    author_targets:
+    - msg-112
+    raw:
+      A:
+      - msg-112
+      B:
+      - msg-112
+    notes_B: msg-079 is a horror film that was decent, with no sleeping.
+  ca-q78:
+    relevant:
+    - msg-269
+    hard_negatives:
+    - msg-105
+    hard_negative_fails:
+      msg-105: 六月嗰次，唔係今個禮拜
+    author_targets:
+    - msg-269
+    raw:
+      A:
+      - msg-269
+      B:
+      - msg-269
+    notes_B: msg-105 is a June 長洲 cycling message, not this week.
+  ca-q79:
+    relevant:
+    - msg-256
+    hard_negatives:
+    - msg-378
+    hard_negative_fails:
+      msg-378: 七月嗰次，唔係八月
+    author_targets:
+    - msg-256
+    raw:
+      A:
+      - msg-256
+      B:
+      - msg-256
+    notes_B: msg-378 is July 1, not August; msg-295 is a September signal 3 with no work mentioned.
+  ca-q80:
+    relevant:
+    - msg-085
+    hard_negatives:
+    - msg-215
+    - msg-198
+    - msg-308
+    hard_negative_fails:
+      msg-215: 禮拜日，唔係禮拜六
+      msg-198: 七月嗰次，唔係九月
+      msg-308: 十月講，而且係禮拜日
+    author_targets:
+    - msg-085
+    raw:
+      A:
+      - msg-085
+      B:
+      - msg-085
+    notes_B: msg-215 is the Sunday version; msg-198 (July) and msg-308 (October) are outside September.
+  ca-q82:
+    relevant:
+    - msg-163
+    hard_negatives:
+    - msg-060
+    - msg-192
+    hard_negative_fails:
+      msg-060: 欠一百八，唔係每人兩百三
+      msg-192: 欠一百五，唔係每人兩百三
+    author_targets:
+    - msg-163
+    raw:
+      A:
+      - msg-163
+      B:
+      - msg-163
+  ca-q83:
+    relevant:
+    - msg-189
+    hard_negatives:
+    - msg-270
+    hard_negative_fails:
+      msg-270: 壞嘅係 console，而且係九月尾
+    author_targets:
+    - msg-189
+    raw:
+      A:
+      - msg-189
+      B:
+      - msg-189
+    notes_B: msg-270 is a console on 09-22, not a computer in early September.
+  ca-q84:
+    relevant:
+    - msg-232
+    hard_negatives:
+    - msg-290
+    hard_negative_fails:
+      msg-290: 隻貓係嘔，唔係唔肯食
+    author_targets:
+    - msg-232
+    raw:
+      A:
+      - msg-232
+      B:
+      - msg-232
+    notes_B: msg-290 is a cat vomiting, not refusing food.
+  ca-q85:
+    relevant:
+    - msg-162
+    hard_negatives:
+    - msg-285
+    - msg-305
+    hard_negative_fails:
+      msg-285: 七月講台北，唔係十一月去台南
+      msg-305: 九月講台北，唔係台南
+    author_targets:
+    - msg-162
+    raw:
+      A:
+      - msg-162
+      B:
+      - msg-162
+    notes_B: msg-162 sent 10-09 (last week), "Tainan next month" = November, night market food. msg-285 (Taipei,
+      July) and msg-297/305 (Taipei) are a different city and outside last week.
+  ca-q86:
+    relevant:
+    - msg-079
+    hard_negatives:
+    - msg-112
+    hard_negative_fails:
+      msg-112: 六月嗰次，而且話悶到瞓着
+    author_targets:
+    - msg-079
+    raw:
+      A:
+      - msg-079
+      B:
+      - msg-079
+    notes_B: msg-079 sent 10-12 (this week), horror film "actually decent this time". msg-112 is June and the
+      opposite verdict (boring).
+  ca-q88:
+    relevant:
+    - msg-123
+    hard_negatives:
+    - msg-167
+    hard_negative_fails:
+      msg-167: 七月講去深水埗買嘢，冇講布料平
+    author_targets:
+    - msg-123
+    raw:
+      A:
+      - msg-123
+      B:
+      - msg-123
+    notes_B: msg-123 sent 10-01 (start of October), Sham Shui Po fabric cheap. msg-167 is July and does not
+      mention fabric or price.
+  ca-q89:
+    relevant:
+    - msg-279
+    hard_negatives:
+    - msg-322
+    - msg-070
+    hard_negative_fails:
+      msg-322: 八月講上次燒烤好正，唔係上個禮拜約再去
+      msg-070: 上個禮拜講南丫島船班，唔係燒嘢食
+    author_targets:
+    - msg-279
+    raw:
+      A:
+      - msg-279
+      B:
+      - msg-279
+    notes_B: msg-279 sent 10-11 (last week), Lamma BBQ round two. msg-070 (10-11) is about the Lamma ferry
+      only, no BBQ or proposal to go again; msg-322 is August.
+  ca-q90:
+    relevant:
+    - msg-246
+    hard_negatives:
+    - msg-248
+    - msg-325
+    hard_negative_fails:
+      msg-248: 上個月講燈籠燒咗，唔係問去邊度賞月
+      msg-325: 上個月講月餅送人，唔係賞月地點
+    author_targets:
+    - msg-246
+    raw:
+      A:
+      - msg-246
+      B:
+      - msg-246
+    notes_B: msg-246 sent 09-25, asks where to view the moon at Mid-Autumn. msg-248, msg-325, msg-166, msg-177
+      are Mid-Autumn but not about a moon-viewing spot.
   nm-q01:
     relevant:
     - msg-401

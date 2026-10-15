@@ -856,21 +856,12 @@ slices:
     - id: ca-q02
       lang: en
       text: in September someone said they'd switch to signal 3 at a certain hour
-    - id: ca-q03
-      lang: mixed
-      text: 六月黑雨嗰朝有人話冇車搭，返唔到 office
     - id: ca-q04
       lang: en
       text: someone shocked we still had a black rainstorm this late in the year, couldn't get to work
-    - id: ca-q05
-      lang: yue
-      text: 十月仲出咗熱到要警告嗰日，幾多度
     - id: ca-q06
       lang: en
       text: the red rainstorm morning when we said just stay home and work
-    - id: ca-q07
-      lang: roman
-      text: gau jyut daa fung, jau jan wa gam nin dai ji ci m sai faan gung
     - id: ca-q08
       lang: mixed
       text: 打風之前大家 panic buying 有人吐槽嗰句
@@ -907,30 +898,15 @@ slices:
     - id: ca-q20
       lang: en
       text: end of August, got paid and wanted a fancy Japanese dinner
-    - id: ca-q21
-      lang: roman
-      text: sa tin gaan lai min jiu dang jat go zung tau
     - id: ca-q22
       lang: en
       text: the ramen place in Tsuen Wan with the hour-long wait
-    - id: ca-q23
-      lang: yue
-      text: 九月有人問邊個想一齊去大埔食魚蛋
-    - id: ca-q24
-      lang: mixed
-      text: 八月尾約人去大澳食 fishball 嗰個
     - id: ca-q25
       lang: en
       text: whose cat was napping on top of their computer
-    - id: ca-q26
-      lang: yue
-      text: 邊個話佢隻貓一朝早嘔咗兩轉
     - id: ca-q27
       lang: en
       text: the dog that threw up twice one morning
-    - id: ca-q28
-      lang: mixed
-      text: 邊個屋企隻貓自己打開 fridge，嚇死人
     - id: ca-q29
       lang: en
       text: whose dog figured out how to get into the refrigerator
@@ -961,9 +937,6 @@ slices:
     - id: ca-q39
       lang: mixed
       text: 南丫島 ferry 四十五分鐘一班嗰個
-    - id: ca-q40
-      lang: en
-      text: the first game night at someone's flat, back in June
     - id: ca-q41
       lang: mixed
       text: 上個禮拜又話喺佢屋企搞 games 夜嗰條
@@ -982,78 +955,84 @@ slices:
     - id: ca-q46
       lang: yue
       text: 上星期有人提議再上獅子山
-    - id: ca-q47
-      lang: mixed
-      text: 九點半開嗰場 movie，叫人早啲去
-    - id: ca-q48
-      lang: roman
-      text: cat jyut go zoeng hei cat dim bun hoi
     - id: ca-q49
       lang: en
       text: rented a party room big enough for a dozen people
-    - id: ca-q50
-      lang: roman
-      text: zou zo gaan party room sap go jan
-    - id: ca-q51
-      lang: yue
-      text: 買咗兩張演唱會門票嗰個
     - id: ca-q52
       lang: en
       text: who got three tickets for the Sunday concert
-    - id: ca-q53
-      lang: mixed
-      text: 佢生日係星期四嗰次，大家夾份買 cake
     - id: ca-q54
       lang: en
       text: my younger brother's birthday dinner booking
-    - id: ca-q55
-      lang: yue
-      text: 阿媽生日嗰餐訂咗幾點
     - id: ca-q56
       lang: en
       text: my manager turned down my day off on Friday
     - id: ca-q57
       lang: mixed
       text: 老細 OK 咗我星期五請假嗰次
-    - id: ca-q58
-      lang: yue
-      text: 業主今個禮拜又話加租，加幾多
     - id: ca-q59
       lang: roman
       text: luk jyut uk zyu gaa zou baat baak
-    - id: ca-q61
-      lang: mixed
-      text: 今個禮拜又去 cut 頭，今次 OK 啲
-    - id: ca-q62
-      lang: en
-      text: flight to Japan delayed two hours back in September
     - id: ca-q63
       lang: yue
       text: 今個禮拜有人又訂咗去大阪嘅機票，十二月
-    - id: ca-q65
-      lang: roman
-      text: co syun heoi ou mun go ci
     - id: ca-q66
       lang: en
       text: plan to go to Macau next week for pork chop buns
-    - id: ca-q67
-      lang: yue
-      text: 八月約星期六去坪洲，要早啲出發
     - id: ca-q68
       lang: en
       text: who had a fever and took sick leave
-    - id: ca-q69
-      lang: roman
-      text: baat jyut jau jiu bei sun jung kaat, mou cin
-    - id: ca-q70
-      lang: mixed
-      text: 隔籬枱個 auntie 飲醉咗瞓低
     - id: ca-q71
       lang: en
       text: the uncle at the next table who drank till he passed out
     - id: ca-q72
       lang: en
       text: someone got stood up for the third time
+    - id: ca-q73
+      lang: mixed
+      text: 六月尾邊個留咗金燕冰室嘅位
+    - id: ca-q75
+      lang: mixed
+      text: 晚飯 push 遲到八點嗰次
+    - id: ca-q76
+      lang: mixed
+      text: 邊個去大阪被 airline 拖咗兩粒鐘
+    - id: ca-q77
+      lang: mixed
+      text: 邊個話睇 horror 戲睇到入咗夢鄉
+    - id: ca-q78
+      lang: mixed
+      text: 今個禮拜約咗去長洲騎 bike
+    - id: ca-q79
+      lang: mixed
+      text: 八月掛三號風球都要上班嗰次
+    - id: ca-q80
+      lang: mixed
+      text: 九月約去西貢爬山，揀咗禮拜六嗰個
+    - id: ca-q82
+      lang: mixed
+      text: AA 制每個夾兩百三嗰次
+    - id: ca-q83
+      lang: mixed
+      text: 九月初邊個部電腦又 boot 唔起
+    - id: ca-q84
+      lang: mixed
+      text: 隻貓絕食唔掂乾糧嗰次
+    - id: ca-q85
+      lang: yue
+      text: 上個禮拜邊個計劃十一月去台南掃街
+    - id: ca-q86
+      lang: yue
+      text: 呢個禮拜有人話睇咗套恐怖片，終於冇失望
+    - id: ca-q88
+      lang: yue
+      text: 呢個月頭有人話喺深水埗買衣料好抵
+    - id: ca-q89
+      lang: yue
+      text: 上個禮拜邊個想大家再上南丫島燒嘢食
+    - id: ca-q90
+      lang: yue
+      text: 上個月有人問中秋有咩好地方望月
   names:
     description: A message found by an invented game title, an invented handle or a Hong Kong place name inside
       it (design/unified-memory/20). The pool is the cantonese pool plus 60 messages about named things.

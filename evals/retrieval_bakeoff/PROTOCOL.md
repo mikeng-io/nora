@@ -218,8 +218,8 @@ text alone and is never shown `sent`. A query whose relevant message and one
 of its hard negatives say the same thing and differ only in when they were
 sent is therefore a tie for every arm: no arm can rank the right one first
 except by chance. Those queries are listed in `labels_text.yaml` under
-`time_only_queries` (ca-q16, ca-q24, ca-q35, ca-q36, nm-q22, each with the
-hard negative it ties with), and the harness reports them separately from the
+`time_only_queries` (ca-q16, ca-q35, ca-q36, ca-q78, ca-q79, nm-q22, each
+with the hard negative it ties with), and the harness reports them separately from the
 rest of the slice.
 
 **Blind for text.** The incumbent's floor (lexical or bge-m3) indexes the
