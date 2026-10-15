@@ -91,7 +91,7 @@ EOF
 DEPLOY_RC=$?; echo "DEPLOY_RC=$DEPLOY_RC"; cat deploy.log
 ```
 
-Check: `DEPLOY_RC=0`; `VERSION=vX.Y.Z[-N-g<sha>]`; `BUILD_RC=0 UP_RC=0 VD_RC=0`; every `nora:latest`
+Check: `DEPLOY_RC=0`; `VERSION=vX.Y.Z[-N-g<sha>]` (`unstamped` deploys by design: read why above); `BUILD_RC=0 UP_RC=0 VD_RC=0`; every `nora:latest`
 container `ok`; the log's last line names this commit. Only a VERIFIED deploy
 is tagged and logged, so a failed one is never a rollback target (step 6). On failure:
 
