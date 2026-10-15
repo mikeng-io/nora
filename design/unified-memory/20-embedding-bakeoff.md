@@ -121,6 +121,24 @@ rule is `evals/retrieval_bakeoff/decide.py`. A model that wins images but loses 
 second, media-only embedder, which is a decision for the operator because it
 doubles the index.
 
+**Stage 2, 2026-10-15: EmbeddingGemma 2, Q8_0 and full precision.** Both
+decide KEEP_BGE_M3, with Gemma flagged media-only. Q8_0 through Ollama
+(`results/20261015T100638Z-stage2-*`): text → image recall@5 1.000, Cantonese
+0.7049 against a hold bar of 0.7205. Full precision through
+sentence-transformers (`results/20261015T105051Z-stage2-*`; float32, because
+the host CPU has no bf16 instructions): identical recall@5 on every slice at
+768 and 256, so quantisation was not the miss. Its text vectors match
+Ollama's at cosine ≥ 0.9997. Its image vectors match at only 0.95–0.97
+(`results/20261015T112457Z-agreement-hf-vs-ollama.json`, 5 texts, 4 images).
+The cause is not established. Ollama spends 81–92 tokens per image, against
+the 260–266 the HF run spends at the card's default budget of 280. But a
+budget of 70 (60–63 tokens) agrees no better (0.95–0.98), so the token count
+alone does not explain it. The remaining differences are Q8_0 against float32
+and the two runtimes' image preprocessing. Cost on CPU with Nora running:
+about 3.9 s per image (p50), 17–31 ms per text, 5.08 GiB (5203 MiB) peak
+RSS. That RSS includes the audio encoder: the full 740M parameters were
+loaded, and `config_kwargs={"audio_config": None}` would load 440M.
+
 ## The target is one multimodal embedder (operator, 2026-10-15)
 
 EmbeddingGemma 2 and WeMM-2B are candidates **because** they embed images and
