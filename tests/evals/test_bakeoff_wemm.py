@@ -355,3 +355,74 @@ def test_every_arm_records_the_rank_of_each_querys_first_relevant_item() -> None
     blob = json.dumps(per, ensure_ascii=False)
     for q in the_set.queries.values():
         assert q.text not in blob
+
+
+# --- review round 2 ----------------------------------------------------------------
+
+GOLDEN = Path(__file__).resolve().parents[1] / "fixtures" / "wemm_normaliser_golden.json"
+
+
+def test_the_prompt_matches_wemms_official_tokenizer_on_a_fuzz_corpus() -> None:
+    """Goldens from tokenizer.json and the sentence-transformers template at the
+    pinned revision (evals/retrieval_bakeoff/wemm_normaliser_golden.py): each
+    expected prompt re-encodes to the official ids with the normaliser off, so
+    matching it is matching the model's input."""
+    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    assert golden["tokenizer_sha256"] == adapters.WEMM_TOKENIZER_SHA256
+    wrong = [(c["text"], adapters.wemm_prompt(LlamaServerEmbedder.WRAP.format(x=c["text"])),
+              c["prompt"]) for c in golden["cases"]
+             if adapters.wemm_prompt(LlamaServerEmbedder.WRAP.format(x=c["text"])) != c["prompt"]]
+    assert not wrong, f"{len(wrong)} of {len(golden['cases'])} differ, e.g. {wrong[:3]}"
+
+
+def test_the_normaliser_splits_on_every_added_token_of_the_tokenizer() -> None:
+    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    assert sorted(adapters.WEMM_ADDED_TOKENS) == sorted(golden["added_tokens"])
+    # what lets the split try them in any order
+    tokens = adapters.WEMM_ADDED_TOKENS
+    assert not [(a, b) for a in tokens for b in tokens if a != b and a in b]
+
+
+def test_an_image_prompt_with_a_newline_after_the_role_is_refused(tmp_path: Path) -> None:
+    """WeMM's template puts no newline between the role and a leading image. A
+    marker that starts with one would put it there (the review's N9)."""
+    server = FakeServer(marker="\n<__media_abc__>")
+    with pytest.raises(EmbedError) as e:
+        _llama(server).embed_media([_img(tmp_path)])
+    assert e.value.kind == "unsupported"
+    assert server.embedded == []
+
+
+RESULTS = Path(run.SET_DIR) / "results"
+FP32 = [RESULTS / "20261015T123946Z-stage2-wemm-fp32-cantonese.json",
+        RESULTS / "20261015T123946Z-stage2-wemm-fp32-names.json"]
+Q4 = {s: RESULTS / f"20261015T125057Z-stage2-wemm-{s}.json"
+      for s in ("text_image", "cantonese", "names")}
+
+
+def test_fp32_text_with_q4_images_re_derives_replace_from_the_committed_files() -> None:
+    """Combination B, from the result files alone: fp32 on the text slices,
+    Q4 on text_image (fp32 images were not run), one candidate by an explicit
+    rename. Each arm's precision stays in its file's provenance."""
+    from evals.retrieval_bakeoff.decide import Verdict, decide, scores_from_results
+
+    r = scores_from_results([*FP32, Q4["text_image"]], rename={"wemm-fp32": "wemm"})
+    assert not any("wemm-fp32" in a for a in r)
+    assert set(r["dense:wemm@2048"]) == {"text_image", "cantonese", "names"}
+    d = decide(r)
+    assert (d.verdict, d.winner, d.wins) == (Verdict.REPLACE, "dense:wemm@2048", ("text_image",))
+
+
+def test_combination_a_re_derives_replace_from_the_committed_files() -> None:
+    from evals.retrieval_bakeoff.decide import Verdict, decide, scores_from_results
+
+    d = decide(scores_from_results(Q4.values()))
+    assert (d.verdict, d.winner) == (Verdict.REPLACE, "dense:wemm@2048")
+
+
+def test_a_rename_onto_an_arm_already_measured_on_that_slice_is_refused() -> None:
+    """fp32 and Q4 Cantonese under one name would overwrite each other."""
+    from evals.retrieval_bakeoff.decide import scores_from_results
+
+    with pytest.raises(ValueError, match="dense:wemm@2048"):
+        scores_from_results([FP32[0], Q4["cantonese"]], rename={"wemm-fp32": "wemm"})

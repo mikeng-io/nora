@@ -112,8 +112,8 @@ margin): the baseline is the incumbent's best configuration per slice, the
 highest recall@5 of bge-m3 alone, trigram + bge-m3 and BM25 + bge-m3. A
 candidate replaces bge-m3 only if the recall@5 of its best configuration
 (dense or fused) on the Cantonese slice is within 0.05 (absolute) of the
-baseline's (wording corrected 2026-10-15: this said "hybrid", but the baseline
-already includes bge-m3 alone, and `decide.py` judges every configuration), and on another journey slice its
+baseline's (operator ruling 2026-10-15: the hold is judged on the candidate's
+best setup, dense or fused, as `decide.py` does; this sentence said "hybrid"), and on another journey slice its
 miss rate is at most half the baseline's: (1 − r) ≤ 0.5 × (1 − r_base).
 Anything short of that is a tie, and a tie keeps the incumbent. Why: bge-m3
 over the stored readings measured recall@5 0.928 on text → image (stage 1,
@@ -209,8 +209,14 @@ p50 and 5.1 s p95 per image, 0.20–0.29 s per text, and a peak RSS of
 carried no per-query ranks, peaked at 3.16 GiB (3,316,516 KiB).
 
 Full precision, 2026-10-15 (`20261015T123946Z-*`): the HF checkpoint at fp32
-(norty's CPU has no bf16 instructions; text-only load, 11.4 GB peak RSS)
+(norty's CPU has no bf16 instructions; text-only load, peak RSS 11.10 GiB,
+11,370 MiB `VmHWM` in a load-stage probe; bitwise equal to the whole fp32
+checkpoint and cosine ≥ 0.99991 to bf16, `20261015T123946Z-wemm-fp32-agreement.json`)
 measured the same recall@5 on Cantonese at 2048 (0.738, two offsetting flips)
 and on names, so `decide()` over fp32 text plus Q4 text → image still returns
 REPLACE for `dense:wemm@2048`. text → image was not re-run at fp32: about 2 h
 of CPU for 224 images.
+
+Not acted on (operator, 2026-10-15): the verdict is recorded, but adopting
+WeMM waits for the four-way comparison, after Qwen3-VL-Embedding-2B and
+jina-v5-omni-small have been measured on the same set.

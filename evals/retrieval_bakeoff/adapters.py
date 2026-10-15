@@ -258,7 +258,48 @@ class OllamaEmbedder:
 _WEMM_NEWLINE = re.compile(r"\n(?=\n|\Z)")
 
 
-_WEMM_SPECIAL = re.compile(r"(<\|im_start\|>|<\|im_end\|>)")
+#: tokenizer.json at the pinned revision, and the tokens it adds (all
+#: `normalized: false`, no lstrip/rstrip): the official tokenizer splits on
+#: every one of them before it normalises.
+WEMM_TOKENIZER_SHA256 = "40e444c744512f423da4c8443c47c21e22ff76056ba4e9796a81c04c13a9daf0"
+WEMM_ADDED_TOKENS = (
+    "<|endoftext|>",
+    "<|im_start|>",
+    "<|im_end|>",
+    "<|object_ref_start|>",
+    "<|object_ref_end|>",
+    "<|box_start|>",
+    "<|box_end|>",
+    "<|quad_start|>",
+    "<|quad_end|>",
+    "<|vision_start|>",
+    "<|vision_end|>",
+    "<|vision_pad|>",
+    "<|image_pad|>",
+    "<|video_pad|>",
+    "<tool_call>",
+    "</tool_call>",
+    "<|fim_prefix|>",
+    "<|fim_middle|>",
+    "<|fim_suffix|>",
+    "<|fim_pad|>",
+    "<|repo_name|>",
+    "<|file_sep|>",
+    "<tool_response>",
+    "</tool_response>",
+    "<think>",
+    "</think>",
+    "<|audio_start|>",
+    "<|audio_end|>",
+    "<tts_pad>",
+    "<tts_text_bos>",
+    "<tts_text_eod>",
+    "<tts_text_bos_single>",
+    "<|audio_pad|>",
+    "<embedding>",
+)
+#: No added token contains another, so the alternation's order cannot matter.
+_WEMM_SPECIAL = re.compile("(" + "|".join(re.escape(t) for t in WEMM_ADDED_TOKENS) + ")")
 
 
 def wemm_normalise(text: str) -> str:
@@ -266,8 +307,10 @@ def wemm_normalise(text: str) -> str:
 
 
 def wemm_prompt(wrapped: str) -> str:
-    """A wrapped prompt with every run between special tokens normalised, as
-    the tokenizer does: `user\\n` plus the text is one such run."""
+    """A wrapped prompt with every run between added tokens normalised, as
+    the tokenizer does: `user\\n` plus the text is one such run, cut again at
+    any added token the text itself contains. Matches the official tokenizer
+    on tests/fixtures/wemm_normaliser_golden.json."""
     return "".join(part if _WEMM_SPECIAL.fullmatch(part) else wemm_normalise(part)
                    for part in _WEMM_SPECIAL.split(wrapped))
 
