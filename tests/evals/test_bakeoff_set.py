@@ -11,6 +11,7 @@ bytes live outside the repo and their hash check belongs to the harness.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections import Counter
 from pathlib import Path
@@ -104,7 +105,6 @@ def test_every_query_is_written_and_carries_a_known_language(the_set: dict) -> N
     for qid, (_name, q) in _queries(the_set).items():
         assert isinstance(q.get("text"), str) and q["text"].strip(), f"{qid} has no text"
         assert q.get("lang") in LANGUAGES, f"{qid}: lang {q.get('lang')!r}"
-        assert isinstance(q.get("reading_gap"), bool), f"{qid}: reading_gap is not a bool"
 
 
 def test_every_language_is_represented_in_every_slice(the_set: dict) -> None:
@@ -196,3 +196,45 @@ def test_every_disagreement_is_settled_with_a_reason(the_set: dict, labels: dict
         for iid in a & b:
             assert iid in final, f"{qid}/{iid}: both labellers agree but the label dropped it"
         assert final <= a | b, f"{qid}: a final label neither labeller gave"
+
+
+def test_every_media_item_is_in_a_pool(the_set: dict, media: dict) -> None:
+    """A manifest entry no slice uses is an image nobody labelled against:
+    an arm would embed it and the score would not know it was there."""
+    pooled = {iid for sl in _slices(the_set).values() for iid in sl.get("pool") or []}
+    extra = set(media.get("items") or {}) - pooled
+    assert not extra, f"media.yaml items in no pool: {sorted(extra)}"
+
+
+def test_every_query_has_a_hard_negative_or_says_why_not(the_set: dict, labels: dict) -> None:
+    """Clearing the hard-negative lists must not pass: the harness reports how
+    often an arm ranks one first, and an empty list makes that silently 0."""
+    for qid in _queries(the_set):
+        lab = labels["queries"][qid]
+        if lab.get("hard_negatives"):
+            continue
+        assert str(lab.get("no_hard_negative", "")).strip(), (
+            f"{qid}: no hard negative and no reason why the pool has none"
+        )
+
+
+def raw_digest(raw_sets: dict[str, list[str]]) -> str:
+    """The serialisation PROTOCOL.md documents for `raw_sha256`: one labeller's
+    raw relevant sets over EVERY query it labelled (withdrawn ones included),
+    ids sorted, keys sorted, compact JSON, UTF-8."""
+    canon = {q: sorted(ids) for q, ids in raw_sets.items()}
+    blob = json.dumps(canon, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def test_each_labellers_raw_sha256_recomputes_from_the_committed_raw_sets(labels: dict) -> None:
+    raw: dict[str, dict[str, list[str]]] = {"A": {}, "B": {}}
+    for qid, lab in (labels.get("queries") or {}).items():
+        for who in raw:
+            raw[who][qid] = lab["raw"][who]
+    for w in labels.get("withdrawn") or []:
+        for who in raw:
+            raw[who][w["query"]] = w["raw"][who]
+    for who, sets in raw.items():
+        declared = labels["labellers"][who].get("raw_sha256")
+        assert declared == raw_digest(sets), f"labeller {who}: raw_sha256 does not recompute"

@@ -19,8 +19,33 @@ fixed before it was written. Design source:
 | `labels.lock` | sha256 of `set.yaml`, `media.yaml` and `labels.yaml` |
 
 `tests/evals/test_bakeoff_set.py` enforces the shape: at least 40 queries per
-slice, every label resolves to a pool id, every query has at least one relevant
-item, and the lock matches the three files. A mismatch fails; it never skips.
+slice, every label resolves to a pool id, every media item is in a pool, every
+query has at least one relevant item and at least one hard negative (or a
+stated reason the pool has none), each labeller's `raw_sha256` recomputes from
+the committed raw sets, and the lock matches the three files. A mismatch fails;
+it never skips.
+
+## Blind by construction
+
+The readings are the input of the arm the bake-off measures against (the floor:
+lexical or bge-m3 over a reading). A query written, or a label judged, with the
+readings in view leans toward words the reading already contains, and the floor
+then ties every candidate (measured on this set's first version, 2026-10-15: a
+cross-encoder over readings alone reached recall@5 0.954, so no arm could win
+by the 0.10 margin). So:
+
+- **Queries are written blind.** The query author is a fresh session that
+  sees only the image files and their pool ids: never a reading, a Commons
+  title or description, `media.yaml`, or an earlier version of the set.
+- **Labels are judged blind.** Both labellers see only the images, the pool
+  ids and the queries. Neither sees a reading.
+- **No selection by a floor.** Queries are not chosen, kept or dropped by how
+  a reading-based arm scores them, and the author is not told to aim at what
+  readings miss; either would bias the set against the incumbent. A floor run
+  over the readings is reported with the set as information only.
+- **No hand-judged gap flag.** Which queries a reading cannot answer is
+  derived by the harness from a reading-only lexical run, not judged by a
+  person who has read the readings.
 
 ## The pool
 
@@ -74,7 +99,7 @@ the time.
 
 ## The queries
 
-Written by the author after the pool and its readings are frozen, and before
+Written blind (above) after the pool and its readings are frozen, and before
 any label exists.
 
 - **What the photo shows.** A query describes the photo's visible content the
@@ -88,10 +113,6 @@ any label exists.
   mixed (Cantonese with English nouns, as members write). Each query records
   its language as `yue`, `en` or `mixed`. Each language has at least 10
   queries in a slice.
-- **Reading gaps.** Some queries name a visible detail the reading does not
-  mention (a colour, a count, a position, the light). They carry
-  `reading_gap: true`, set by comparing the query to the frozen reading. These
-  are the queries a visual vector could win and a reading-based arm cannot.
 - A query is frozen once the second labeller has seen it. A disagreement
   settles labels only; it never edits a query.
 
@@ -102,8 +123,8 @@ accept that photo as the one they meant, or as one of them: every constraint
 the query states holds visibly in the image. A constraint the query does not
 state is not required.
 
-- **The image decides, not the reading.** The reading is an aid for finding
-  candidates; where it disagrees with the pixels, the pixels win.
+- **The image decides.** Labellers judge the pixels; they are not shown the
+  readings at all.
 - **Counts, colours, positions, time of day and setting** are constraints when
   the query states them. "Two cups" excludes a photo with three.
 - **Ambiguous by sight** (the labeller cannot tell whether a constraint holds)
@@ -118,21 +139,26 @@ state is not required.
 A hard negative is a pool item that shares the query's subject but fails one
 stated constraint: the same dish in another setting, the same street at night
 instead of by day, a near-identical second shot that differs in the stated
-detail, the same animal in another colour. They are written by the author when
-the query is written, labelled not relevant, and recorded per query as
-`hard_negatives` so the harness can report how often an arm ranks one first.
+detail, the same animal in another colour. Each must be a real near miss: a
+photo a person could plausibly confuse with the target, not merely another
+item of the same broad kind. The query author proposes them with the failed
+detail named; labeller A checks each against the image; they are labelled not
+relevant and recorded per query as `hard_negatives` so the harness can report
+how often an arm ranks one first. Every query has at least one where the pool
+allows; a query without one records why under `no_hard_negative`.
 
 A hard negative that the reconciled labels mark relevant loses the tag; it is
 never both.
 
 ## Labelling
 
-1. **Author (labeller A).** Writes the queries, then marks the relevant items
-   and the hard negatives per query, across the whole pool.
-2. **Independent labeller (labeller B).** A separate agent session with no
-   retrieval tools and no access to the author's notes or labels. It receives
-   only this protocol's Relevance section, the pool (ids, image files,
-   readings) and the queries, and marks every relevant item per query across
+1. **Labeller A.** The set's maintainer marks the relevant items per query
+   across the whole pool, from the images, and freezes the result before B's
+   is seen.
+2. **Labeller B.** A fresh agent session, separate from the query author and
+   from A, with no retrieval tools and no access to anyone's notes or labels.
+   It receives only this protocol's Relevance section, the images with their
+   pool ids, and the queries, and marks every relevant item per query across
    the whole pool, not a top-k list.
 3. **Agreement** is reported before reconciliation: per query, whether the two
    sets are identical, and their Jaccard overlap; over all query-item pairs,
@@ -140,7 +166,13 @@ never both.
 4. **Reconciliation.** Each item on which A and B differ is settled by looking
    at the image against the Relevance rules. Each settlement is logged in
    `labels.yaml` with the item, the two raw labels, the outcome and the reason.
-5. **The lock.** `labels.lock` is written in the same commit as the
+5. **Raw sets and their digest.** Both labellers' raw sets are committed in
+   `labels.yaml` (per query under `raw`, and under `withdrawn` for a withdrawn
+   query). Each labeller's `raw_sha256` is the sha256 of the UTF-8 bytes of
+   `json.dumps({query_id: sorted(ids)}, sort_keys=True, ensure_ascii=False,
+   separators=(",", ":"))` over every query it labelled, withdrawn ones
+   included; the loader test recomputes it.
+6. **The lock.** `labels.lock` is written in the same commit as the
    reconciled labels. Labels change only in a new commit with a new lock, and
    every result cites the lock it was scored against.
 
