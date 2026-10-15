@@ -17,6 +17,10 @@ fixed before it was written. Design source:
 | `media.yaml` | per media item: source, licence, source URL or generator and prompt, sha256, the frozen reading |
 | `labels.yaml` | per query: the relevant items, the hard negatives, both labellers' raw sets, and every disagreement with how it was settled |
 | `labels.lock` | sha256 of `set.yaml`, `media.yaml` and `labels.yaml` |
+| `run.py` | the harness: loads the locked set, runs each arm fail-closed, scores it, writes one aggregates-only result |
+| `adapters.py` | one embedder per serving path (Ollama, llama-server, sentence-transformers), with each model's prefix and dtype rule |
+| `decide.py` | the decision rule over fused results (design/unified-memory/20 «Slices and margins») |
+| `results/` | one JSON per run: aggregates and provenance, no vector and no text |
 
 `tests/evals/test_bakeoff_set.py` enforces the shape: at least 40 queries per
 slice, every label resolves to a pool id, every media item is in a pool, every
