@@ -1,46 +1,138 @@
 """The bake-off's trigram arm is the live seed over nodes the live projector
-wrote, and it never writes into a database that is not a throwaway
+wrote; it writes only into a database that proves it is a throwaway, and a
+load that did not land every node is a failure, never a smaller pool
 (`nora.subject.lexical_seed`)."""
 
 from __future__ import annotations
 
 import asyncio
+import uuid
+from collections.abc import Iterator
 
+import psycopg
 import pytest
 import sqlalchemy as sa
+from alembic import command
 
 from evals.retrieval_bakeoff.run import Media
+from nora.infra.sql import memory_index
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memory_index import _reading
-from nora.infra.sql.schema import MESSAGES
+from nora.infra.sql.migrations_runner import alembic_config, current_revision
+from nora.infra.sql.schema import MEMORY_PROJECTION_QUEUE, MESSAGES
 from nora.subject import lexical_seed
 
 SHA = {n: f"{n:064x}" for n in range(1, 4)}
+POOL = {
+    "img-1": (SHA[1], "Egg tarts", "On a metal tray", ""),
+    "img-2": (SHA[2], "Tram", "A tram on a wet street at night", ""),
+    "img-3": (SHA[3], "點心", "蒸籠入面有四粒小籠包", ""),
+}
 
 
-def test_the_seed_ranks_the_pool_by_the_live_terms(pg_url: str) -> None:
-    lexical_seed.load(pg_url, {
-        "img-1": (SHA[1], "Egg tarts", "On a metal tray", ""),
-        "img-2": (SHA[2], "Tram", "A tram on a wet street at night", ""),
-        "img-3": (SHA[3], "點心", "蒸籠入面有四粒小籠包", ""),
-    })
-    got = lexical_seed.seed(pg_url, {"q-en": "the egg tarts", "q-yue": "小籠包", "q-none": "the"},
+def _url(pg_admin, db: str) -> str:
+    return (f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+            f"@{pg_admin.host}:{pg_admin.port}/{db}")
+
+
+def _create(pg_admin, name: str, template: str | None = None) -> str:
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as c:
+        if template:
+            c.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                      "WHERE datname = %s AND pid <> pg_backend_pid()", (template,))
+            c.execute(f'CREATE DATABASE "{name}" TEMPLATE "{template}"')
+        else:
+            c.execute(f'CREATE DATABASE "{name}"')
+    return name
+
+
+def _drop(pg_admin, name: str) -> None:
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as c:
+        c.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                  "WHERE datname = %s AND pid <> pg_backend_pid()", (name,))
+        c.execute(f'DROP DATABASE IF EXISTS "{name}"')
+
+
+def _tables(pg_admin, db: str) -> set[str]:
+    with psycopg.connect(pg_admin.dsn(db)) as c:
+        return {r[0] for r in c.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")}
+
+
+@pytest.fixture(scope="module")
+def fresh(pg_admin) -> Iterator[str]:
+    """An empty database named for the bake-off, loaded once from nothing."""
+    name = _create(pg_admin, f"bakeoff_{uuid.uuid4().hex}")
+    url = _url(pg_admin, name)
+    lexical_seed.load(url, POOL)
+    yield url
+    _drop(pg_admin, name)
+
+
+@pytest.fixture
+def loaded(pg_admin, pg_template) -> Iterator[str]:
+    """A bake-off database a previous load left behind: at head, marked."""
+    name = _create(pg_admin, f"bakeoff_{uuid.uuid4().hex}", template=pg_template)
+    with psycopg.connect(pg_admin.dsn(name), autocommit=True) as c:
+        c.execute(f"CREATE TABLE {lexical_seed.MARKER} (created_at timestamptz DEFAULT now())")
+    yield _url(pg_admin, name)
+    _drop(pg_admin, name)
+
+
+def test_a_fresh_load_marks_the_database_and_ranks_by_the_live_terms(fresh: str, pg_admin) -> None:
+    assert lexical_seed.MARKER in _tables(pg_admin, fresh.rsplit("/", 1)[1])
+    got = lexical_seed.seed(fresh, {"q-en": "the egg tarts", "q-yue": "小籠包", "q-none": "the"},
                             limit=10)
     assert got["q-en"][0] == SHA[1]
     assert got["q-yue"] == [SHA[3]]
     assert got["q-none"] == []  # no term survives terms_of: nothing, not everything
 
 
-def test_load_replaces_the_bakeoff_room_and_nothing_else(pg_url: str) -> None:
-    lexical_seed.load(pg_url, {"img-1": (SHA[1], "first", "", "")})
-    lexical_seed.load(pg_url, {"img-2": (SHA[2], "second", "", "")})
-    assert lexical_seed.seed(pg_url, {"q": "first"}, limit=10)["q"] == []
-    assert lexical_seed.seed(pg_url, {"q": "second"}, limit=10)["q"] == [SHA[2]]
+def test_load_replaces_the_bakeoff_room_and_nothing_else(loaded: str) -> None:
+    lexical_seed.load(loaded, {"img-1": (SHA[1], "first", "", "")})
+    lexical_seed.load(loaded, {"img-2": (SHA[2], "second", "", "")})
+    assert lexical_seed.seed(loaded, {"q": "first"}, limit=10)["q"] == []
+    assert lexical_seed.seed(loaded, {"q": "second"}, limit=10)["q"] == [SHA[2]]
 
 
-def test_load_refuses_a_database_that_holds_a_message_outside_the_bakeoff(pg_url: str) -> None:
+def test_a_database_not_named_for_the_bakeoff_is_refused_untouched(pg_admin) -> None:
+    name = _create(pg_admin, f"t_{uuid.uuid4().hex}")  # empty: only the name is wrong
+    try:
+        with pytest.raises(lexical_seed.NotAThrowawayDatabaseError, match="bakeoff"):
+            lexical_seed.load(_url(pg_admin, name), POOL)
+        assert _tables(pg_admin, name) == set()
+    finally:
+        _drop(pg_admin, name)
+
+
+def test_a_non_empty_unmarked_database_is_refused_untouched(pg_admin) -> None:
+    name = _create(pg_admin, f"bakeoff_{uuid.uuid4().hex}")
+    try:
+        with psycopg.connect(pg_admin.dsn(name), autocommit=True) as c:
+            c.execute("CREATE TABLE traces (id int PRIMARY KEY, body text)")
+        with pytest.raises(lexical_seed.NotAThrowawayDatabaseError, match="marker"):
+            lexical_seed.load(_url(pg_admin, name), POOL)
+        assert _tables(pg_admin, name) == {"traces"}
+    finally:
+        _drop(pg_admin, name)
+
+
+def test_a_live_database_behind_head_is_refused_before_any_migration(pg_admin) -> None:
+    name = _create(pg_admin, f"bakeoff_{uuid.uuid4().hex}")
+    url = _url(pg_admin, name)
+    try:
+        command.upgrade(alembic_config(url), "0104_external_files")
+        before = current_revision(url)
+        with pytest.raises(lexical_seed.NotAThrowawayDatabaseError):
+            lexical_seed.load(url, POOL)
+        assert current_revision(url) == before == "0104_external_files"
+    finally:
+        _drop(pg_admin, name)
+
+
+def test_a_marked_database_holding_a_foreign_message_is_refused(loaded: str) -> None:
     async def foreign() -> None:
-        engine = create_sql_engine(pg_url)
+        engine = create_sql_engine(loaded)
         async with engine.begin() as conn:
             await conn.execute(sa.insert(MESSAGES).values(
                 platform="signal", conversation_id="a-real-room", conversation_type="group",
@@ -48,8 +140,41 @@ def test_load_refuses_a_database_that_holds_a_message_outside_the_bakeoff(pg_url
         await engine.dispose()
 
     asyncio.run(foreign())
-    with pytest.raises(lexical_seed.NotAThrowawayDatabaseError):
-        lexical_seed.load(pg_url, {"img-1": (SHA[1], "egg tarts", "", "")})
+    with pytest.raises(lexical_seed.NotAThrowawayDatabaseError, match="messages"):
+        lexical_seed.load(loaded, POOL)
+
+
+def test_a_projection_that_fails_fails_the_load(loaded: str, monkeypatch) -> None:
+    """`_guarded` queues a failed projection and carries on; scored, the
+    missing nodes would read as misses (every third failing: recall 0.536
+    to 0.370 with verdict OK, review of #19)."""
+    real = memory_index._PROJECTORS["message"]
+    calls = {"n": 0}
+
+    async def flaky(conn, sid):
+        calls["n"] += 1
+        if calls["n"] % 3 == 0:
+            raise RuntimeError("projector down")
+        return await real(conn, sid)
+
+    monkeypatch.setitem(memory_index._PROJECTORS, "message", flaky)
+    with pytest.raises(lexical_seed.IncompleteLoadError):
+        lexical_seed.load(loaded, POOL)
+
+
+def test_a_projection_left_queued_fails_the_load(loaded: str) -> None:
+    """A queued projection means the index is not what was loaded, even when
+    the node count happens to match."""
+    async def queued() -> None:
+        engine = create_sql_engine(loaded)
+        async with engine.begin() as conn:
+            await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE).values(
+                kind="message", source_id="999999", last_error="RuntimeError"))
+        await engine.dispose()
+
+    asyncio.run(queued())
+    with pytest.raises(lexical_seed.IncompleteLoadError, match="1 projections queued"):
+        lexical_seed.load(loaded, POOL)
 
 
 @pytest.mark.parametrize("fields", [("T", "D", "C"), ("T", "", "C"), ("", "", "C"), ("", "", "")])

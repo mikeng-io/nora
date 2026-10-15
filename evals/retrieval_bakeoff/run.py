@@ -25,13 +25,14 @@ judged: a query is in the gap when no reading-only lexical arm places a
 relevant item in its top 10. Every arm is also scored inside and outside it.
 
 Stage 1 (lexical) plus the bge-m3 floor, on the deploy host, inside a
-throwaway Postgres (never Nora's; `nora.subject.lexical_seed` refuses one
-that holds messages), with the memory watchdog on:
+throwaway Postgres (never Nora's: `nora.subject.lexical_seed` writes only to
+an empty database named `bakeoff*`, which it marks), with the memory
+watchdog on:
 
-    docker run -d --name bakeoff-pg --cpus 2 --memory 2g \\
+    docker run -d --name bakeoff-pg --cpus 2 --memory 2g -e POSTGRES_DB=bakeoff \\
         -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55439:5432 pgvector/pgvector:pg18
     nice -n 10 uv run --with bm25s==0.3.13 python -m evals.retrieval_bakeoff.run \\
-        --dsn postgresql+asyncpg://postgres@127.0.0.1:55439/postgres
+        --dsn postgresql+asyncpg://postgres@127.0.0.1:55439/bakeoff
 
 The watchdog aborts the run (ERROR, exit 3) when MemAvailable drops below
 3 GiB or swap grows by more than 1 GiB; an aborted run is rerun, never scored.
@@ -236,13 +237,43 @@ def embed_texts(embedder: Embedder, items: Mapping[str, str], role: str, *, dim:
         texts = [items[i] for i in chunk]
         _embed_batch(out, chunk, lambda texts=texts: embedder.embed_text(texts, role),
                      embedder.native_dim, dim, timeout)
+    return _accounted(out, ids)
+
+
+def _accounted(out: Embedded, ids: Sequence[str]) -> Embedded:
+    """Every requested id is embedded or an ERROR; one that is neither was
+    lost on the way and is an ERROR too, never absent from the scoring."""
+    for i in ids:
+        if i not in out.vectors and i not in out.errors:
+            out.errors[i] = "lost"
     return out
+
+
+#: Two different images whose vectors agree this closely were not both seen:
+#: a runtime that drops the image embeds only its wrapper prompt (Ollama 0.35
+#: did exactly that with `images` on /api/embed).
+SAME_VECTOR_COSINE = 1 - 1e-6
+
+
+def _same_vector_errors(out: Embedded, shas: Mapping[str, str]) -> None:
+    ids = sorted(out.vectors)
+    same: set[str] = set()
+    for n, a in enumerate(ids):
+        for b in ids[n + 1:]:
+            if shas[a] != shas[b] and sum(
+                x * y for x, y in zip(out.vectors[a], out.vectors[b], strict=True)
+            ) >= SAME_VECTOR_COSINE:
+                same.update((a, b))
+    for i in same:
+        del out.vectors[i]
+        out.errors[i] = "same_vector"
 
 
 def embed_media(embedder: Embedder, items: Mapping[str, tuple[Path, str]], *, dim: int,
                 timeout: float, watchdog: MemoryWatchdog | None = None) -> Embedded:
     """One file per call, each hashed first: bytes that are not the labelled
-    image are an ERROR and never reach the model."""
+    image are an ERROR and never reach the model. Different images that come
+    back with the same vector are ERROR too (`SAME_VECTOR_COSINE`)."""
     out = Embedded()
     for i, (path, sha) in items.items():
         if watchdog is not None:
@@ -256,7 +287,8 @@ def embed_media(embedder: Embedder, items: Mapping[str, tuple[Path, str]], *, di
             continue
         _embed_batch(out, [i], lambda path=path: embedder.embed_media([path]),
                      embedder.native_dim, dim, timeout)
-    return out
+    _same_vector_errors(out, {i: sha for i, (_, sha) in items.items()})
+    return _accounted(out, list(items))
 
 
 # --- ranking ----------------------------------------------------------------------------
@@ -279,8 +311,12 @@ def rank_dense(queries: Embedded, pool: Embedded, depth: int = DEPTH) -> Ranking
     return out
 
 
-def rrf(channels: Sequence[Rankings], *, k: int = RRF_K, depth: int = DEPTH) -> Rankings:
-    out: Rankings = {}
+def rrf_scores(channels: Sequence[Rankings], *, k: int = RRF_K,
+               depth: int = DEPTH) -> dict[str, dict[str, float] | Errored]:
+    """Per query, each pool id's sum over the channels of 1 / (k + rank),
+    rank counted from 1 within each channel's top `depth`. An ERROR in any
+    channel is the query's ERROR."""
+    out: dict[str, dict[str, float] | Errored] = {}
     for qid in dict.fromkeys(q for ch in channels for q in ch):
         ranked = [ch.get(qid, Errored("exception")) for ch in channels]
         err = next((r for r in ranked if isinstance(r, Errored)), None)
@@ -291,7 +327,15 @@ def rrf(channels: Sequence[Rankings], *, k: int = RRF_K, depth: int = DEPTH) -> 
         for r in ranked:
             for pos, pid in enumerate(r[:depth], start=1):  # type: ignore[index]
                 score[pid] += 1.0 / (k + pos)
-        out[qid] = [pid for pid, _ in sorted(score.items(), key=lambda s: (-s[1], s[0]))][:depth]
+        out[qid] = dict(score)
+    return out
+
+
+def rrf(channels: Sequence[Rankings], *, k: int = RRF_K, depth: int = DEPTH) -> Rankings:
+    out: Rankings = {}
+    for qid, score in rrf_scores(channels, k=k, depth=depth).items():
+        out[qid] = score if isinstance(score, Errored) else [
+            pid for pid, _ in sorted(score.items(), key=lambda s: (-s[1], s[0]))][:depth]
     return out
 
 
@@ -402,9 +446,9 @@ class MemoryWatchdog:
     or swap grown by more than 1 GiB since the run started. A host it cannot
     read is refused, not assumed fine."""
 
-    def __init__(self, read: Callable[[], dict[str, int]] = read_meminfo, *,
+    def __init__(self, read: Callable[[], dict[str, int]] | None = None, *,
                  min_available_kib: int = 3 * GIB_KIB, max_swap_growth_kib: int = GIB_KIB) -> None:
-        self._read = read
+        self._read = read or (lambda: read_meminfo())
         self._min = min_available_kib
         self._growth = max_swap_growth_kib
         self.lowest_available_kib: int | None = None
@@ -480,7 +524,9 @@ def _ollama_ps(base: str, model: str) -> dict[str, Any] | None:
 
 def _commit() -> dict[str, Any]:
     head = _quiet(["git", "-C", str(SET_DIR), "rev-parse", "HEAD"])
-    dirty = _quiet(["git", "-C", str(SET_DIR), "status", "--porcelain", "--", "."])
+    # `results/` is the harness's own output, not the set.
+    dirty = _quiet(["git", "-C", str(SET_DIR), "status", "--porcelain", "--", ".",
+                    ":(exclude)results"])
     return {"commit": head, "set_dir_clean": dirty == "" if dirty is not None else None}
 
 
@@ -605,7 +651,8 @@ def _bm25(the_set: BakeoffSet) -> ArmRun:
 def _dense(embedder: OllamaEmbedder, the_set: BakeoffSet, dim: int, timeout: float,
            dog: MemoryWatchdog, base: str) -> ArmRun:
     for _ in range(WARMUPS):
-        embed_texts(embedder, {"warm": "warm up"}, "query", dim=dim, timeout=timeout)
+        embed_texts(embedder, {"warm": "warm up"}, "query", dim=dim, timeout=timeout,
+                    watchdog=dog)
     docs = embed_texts(embedder, {pid: the_set.media[pid].reading for pid in the_set.pool},
                        "document", dim=dim, timeout=timeout, watchdog=dog)
     queries = embed_texts(embedder, {q: v.text for q, v in the_set.queries.items()},
@@ -627,7 +674,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     the_set = load_set(SET_DIR, args.slice)
-    dog = MemoryWatchdog()
     before = host_sample()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     provenance: dict[str, Any] = {
@@ -636,6 +682,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     arms: dict[str, ArmRun] = {}
     try:
+        dog = MemoryWatchdog()
         dog.check()
         arms["lexical:trigram"] = _trigram(args.dsn, the_set)
         dog.check()

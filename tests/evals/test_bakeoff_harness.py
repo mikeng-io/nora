@@ -382,3 +382,146 @@ def test_the_result_holds_aggregates_only_no_text_and_no_vectors() -> None:
     assert set(result["arms"]["lexical:trigram"]["by_lang"]) == {"yue", "en", "mixed"}
     assert result["labels_lock"] == the_set.lock
     assert "reading_gap" in result
+
+
+# --- review round 1 (PR #19) -------------------------------------------------------
+
+
+def test_an_embed_error_from_a_batch_keeps_its_kind_for_every_item() -> None:
+    fake = FakeEmbedder({}, raise_=EmbedError("unsupported"))
+    assert _embed(fake, {"qa": "a", "qb": "b"}).errors == {"qa": "unsupported", "qb": "unsupported"}
+
+
+def test_every_requested_id_is_embedded_or_an_error(monkeypatch, tmp_path: Path) -> None:
+    """The invariant behind every other fail-closed rule: no id can vanish
+    from a batch and be scored as if it never existed."""
+    monkeypatch.setattr(run, "_embed_batch", lambda *a, **k: None)
+    assert _embed(FakeEmbedder({}), {"qa": "a", "qb": "b"}).errors == {"qa": "lost", "qb": "lost"}
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"a")
+    got = run.embed_media(FakeEmbedder({}), {"img-1": (img, hashlib.sha256(b"a").hexdigest())},
+                          dim=4, timeout=5)
+    assert got.errors == {"img-1": "lost"}
+
+
+class SameVector(FakeEmbedder):
+    """A runtime that drops the image and embeds only its wrapper prompt."""
+
+    def __init__(self, vectors: list[list[float]]) -> None:
+        super().__init__({})
+        self.vectors = iter(vectors)
+
+    def embed_media(self, paths):
+        return [next(self.vectors) for _ in paths]
+
+
+def _images(tmp_path: Path, n: int) -> dict[str, tuple[Path, str]]:
+    out = {}
+    for i in range(n):
+        p = tmp_path / f"{i}.jpg"
+        p.write_bytes(bytes([i]) * 10)
+        out[f"img-{i}"] = (p, hashlib.sha256(p.read_bytes()).hexdigest())
+    return out
+
+
+def test_different_images_with_one_vector_are_errors(tmp_path: Path) -> None:
+    v = [0.0, 1.0, 0.3, 0.0]
+    got = run.embed_media(SameVector([v, [1.0, 0, 0, 0], v]), _images(tmp_path, 3),
+                          dim=4, timeout=5)
+    assert got.errors == {"img-0": "same_vector", "img-2": "same_vector"}
+    assert set(got.vectors) == {"img-1"}
+
+
+def test_the_same_image_twice_may_share_its_vector(tmp_path: Path) -> None:
+    images = _images(tmp_path, 1)
+    images["img-0-again"] = images["img-0"]
+    v = [0.0, 1.0, 0.3, 0.0]
+    got = run.embed_media(SameVector([v, v]), images, dim=4, timeout=5)
+    assert got.errors == {}
+
+
+def test_different_images_with_different_vectors_pass(tmp_path: Path) -> None:
+    vs = [[1.0, 0, 0, 0], [0, 1.0, 0, 0], [0, 0, 1.0, 0]]
+    got = run.embed_media(SameVector(vs), _images(tmp_path, 3), dim=4, timeout=5)
+    assert got.errors == {}
+
+
+def test_a_trigram_arm_that_fails_to_load_ranks_every_query_as_an_error(monkeypatch) -> None:
+    def down(*a, **k):
+        raise RuntimeError("projector down")
+
+    monkeypatch.setattr(run.lexical_seed, "load", down)
+    the_set = run.load_set(SET_DIR)
+    arm = run._trigram("postgresql+asyncpg://unused/bakeoff", the_set)
+    assert set(arm.rankings.values()) == {Errored("exception")}
+    assert len(arm.rankings) == len(the_set.queries)
+
+
+def test_one_arm_with_an_error_makes_the_whole_result_error() -> None:
+    the_set = run.load_set(SET_DIR)
+    ok = {q: sorted(the_set.relevant[q]) for q in the_set.queries}
+    broken = dict(ok, **{next(iter(ok)): Errored("timeout")})
+    result = run.evaluate(
+        the_set, {"lexical:trigram": run.ArmRun(ok), "lexical:bm25": run.ArmRun(ok),
+                  "dense:bge-m3": run.ArmRun(broken)},
+        lexical_arms=("lexical:trigram", "lexical:bm25"), provenance={})
+    assert result["arms"]["dense:bge-m3"]["verdict"] == "ERROR"
+    assert result["verdict"] == "ERROR"
+
+
+def test_rrf_ranks_start_at_one() -> None:
+    scores = run.rrf_scores([{"q": ["x", "y"]}, {"q": ["y", "z"]}])["q"]
+    assert scores == pytest.approx({"x": 1 / 61, "y": 1 / 61 + 1 / 62, "z": 1 / 62})
+
+
+def test_a_dense_tie_breaks_on_the_pool_id_ascending() -> None:
+    fake = FakeEmbedder({"q": [1, 0, 0, 0], "d": [1, 0, 0, 0]})
+    q = _embed(fake, {"q1": "q"})
+    pool = run.embed_texts(fake, {"img-b1": "d", "img-a2": "d"}, "document", dim=4, timeout=5)
+    assert run.rank_dense(q, pool)["q1"] == ["img-a2", "img-b1"]
+
+
+def test_the_watchdog_guards_the_warm_ups_too() -> None:
+    class Tripped:
+        lowest_available_kib = 0
+
+        def check(self):
+            raise run.AbortedError("MemAvailable low")
+
+    calls: list[list[str]] = []
+
+    class Counting(FakeEmbedder):
+        def embed_text(self, texts, role):
+            calls.append(list(texts))
+            return super().embed_text(texts, role)
+
+    with pytest.raises(run.AbortedError):
+        run._dense(Counting({"warm up": [1, 0, 0, 0]}), run.load_set(SET_DIR), 4, 5, Tripped(),
+                   "http://unused")
+    assert calls == []  # not even a warm-up reached the model
+
+
+def test_a_host_the_watchdog_cannot_read_writes_an_aborted_result(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    def unreadable():
+        raise FileNotFoundError("/proc/meminfo")
+
+    monkeypatch.setattr(run, "read_meminfo", unreadable)
+    rc = run.main(["--dsn", "postgresql+asyncpg://unused/bakeoff", "--out", str(tmp_path)])
+    assert rc == 3
+    [written] = tmp_path.glob("*-aborted.json")
+    assert json.loads(written.read_text())["verdict"] == "ERROR"
+
+
+def test_set_dir_clean_ignores_the_results_directory(monkeypatch) -> None:
+    seen: list[list[str]] = []
+
+    def quiet(cmd):
+        seen.append(cmd)
+        return ""
+
+    monkeypatch.setattr(run, "_quiet", quiet)
+    run._commit()
+    status = next(c for c in seen if "status" in c)
+    assert ":(exclude)results" in status
