@@ -54,7 +54,10 @@ def _tools(persons: Any, honcho: FakeMemoryStore, search: MemorySearch | None) -
     return tools["ask_memory"]
 
 
-def _build_with(persons: Any, honcho: FakeMemoryStore, search: MemorySearch | None) -> Any:
+def _build_with(
+    persons: Any, honcho: FakeMemoryStore, search: MemorySearch | None,
+    metrics: Metrics | None = None,
+) -> Any:
     room = Room(
         platform="signal", conversation_id=GROUP,
         roster_source=FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)}),
@@ -62,7 +65,8 @@ def _build_with(persons: Any, honcho: FakeMemoryStore, search: MemorySearch | No
     )
     built = build_tools(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=honcho, deliverer=SinkSender(), metrics=Metrics(),
+        persons=persons, honcho=honcho, deliverer=SinkSender(),
+        metrics=metrics or Metrics(),
         room=room, transit_source=_UNREACHABLE_TRANSIT, question="佢鍾唔鍾意踢波",
         context_window=40, lineage=_LINEAGE, memory_search=search,
     )
@@ -137,3 +141,45 @@ async def test_flag_on_withholds_an_item_carrying_an_identifier(persons: Any) ->
     )
     assert result["status"] == "nothing_found" and result["withheld"] == 1
     assert "98765432" not in str(result)
+
+
+async def test_flag_on_a_render_room_that_raises_is_unavailable_with_a_note(
+    persons: Any, monkeypatch: Any,
+) -> None:
+    def boom(self: Any, **_: Any) -> Any:
+        raise RuntimeError("policy")
+
+    monkeypatch.setattr(LineagePolicy, "render_room", boom)
+    metrics = Metrics()
+    result = await _call(
+        _tools(persons, FakeMemoryStore(), MemorySearch(_index(), metrics)),
+        person="Miles", query="football",
+    )
+    assert result["status"] == "unavailable" and result["note"]
+
+
+async def test_flag_on_a_packet_that_raises_is_unavailable_with_a_note(
+    persons: Any, monkeypatch: Any,
+) -> None:
+    import nora.agent.tools as tools_module
+
+    def boom(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("render")
+
+    monkeypatch.setattr(tools_module, "render_packet", boom)
+    result = await _call(
+        _tools(persons, FakeMemoryStore(), MemorySearch(_index(), Metrics())),
+        person="Miles", query="football",
+    )
+    assert result["status"] == "unavailable" and result["note"]
+
+
+async def test_flag_on_partial_with_no_items_is_recorded_as_partial(persons: Any) -> None:
+    metrics = Metrics()
+    index = FakeMemoryIndex(state=IndexState("building", 0))
+    tool = _build_with(persons, FakeMemoryStore(), MemorySearch(index, Metrics()), metrics)
+    result = await _call(tool["ask_memory"], person="Miles", query="football")
+    assert result["status"] == "partial"
+    assert metrics.get("nora_room_lookups_total", tool="ask_memory", status="partial") == 1
+    assert metrics.get(
+        "nora_room_lookups_total", tool="ask_memory", status="nothing_found") == 0

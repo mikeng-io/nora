@@ -256,7 +256,11 @@ async def walk(
         keep(s.node, s.score, (Step(s.node.kind, how="matched"),))
     if person_id and person_id in scope.listed_here:
         for node in await index.about(person_id, scope, limit=SEED_LIMIT):
-            keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),))
+            # The listed-room rule holds for an exact-reference seed too: an
+            # entry about P said in a room that does not list P is not
+            # evidence about P (35 §3).
+            if _listed_room_rule(person_id, node, scope):
+                keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),))
 
     frontier = sorted(reached.values(), key=lambda h: -h.score)[:FRONTIER_WIDTH]
     for _ in range(max(0, min(hops, HOP_CEILING))):
@@ -304,15 +308,14 @@ class MemorySearch:
         self, *, query: str, person_id: str | None, target: RenderRoom, depth: str,
         now_ms: int,
     ) -> MemorySearchResult:
-        scope = scope_for(target)
-        if scope is None:
-            return self._count("unavailable")
-
         def admits(node: IndexedNode) -> bool:
             lineage = Lineage.from_json(node.lineage)
             return section_permits(lineage.section(ROW), target, origin=None)
 
         try:
+            scope = scope_for(target)
+            if scope is None:
+                return self._count("unavailable")
             state = await self._index.index_state()
             hits = await walk(
                 self._index, scope, terms=terms_of(query), person_id=person_id,
@@ -365,11 +368,14 @@ def render_packet(
     items: list[dict[str, Any]] = []
     withheld = 0
     for h in hits:
-        text = render_file_links(h.node.text[:TEXT_CHARS]) if h.node.text else ""
-        places = sorted(p for p in h.places if scan_identifiers(p) is None)
-        if text and scan_identifiers(text) is not None:
+        # Screened WHOLE, before the cut: an identifier straddling
+        # `TEXT_CHARS` would otherwise leave as a fragment the screen cannot
+        # recognise (R-18, PR #16 review).
+        if h.node.text and scan_identifiers(h.node.text) is not None:
             withheld += 1
             continue
+        text = render_file_links(h.node.text[:TEXT_CHARS]) if h.node.text else ""
+        places = sorted(p for p in h.places if scan_identifiers(p) is None)
         item: dict[str, Any] = {"kind": h.node.kind}
         if h.node.at_ms is not None:
             item["age"] = stamp(h.node.at_ms, now)

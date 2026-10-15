@@ -6213,26 +6213,40 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if lineage is None:
             _record_room(metrics, "ask_memory", "unavailable", reason="unwired")
             return {"status": "unavailable", "person": ref.name, "note": _INDEX_UNAVAILABLE}
-        target = lineage.render_room(
-            platform=room.platform, conversation_id=bound_conversation_id,
-            live=LiveRoom(
-                person_ids=frozenset(p.person_id for p in view.people),
-                unnamed=view.unnamed, available=view.available, degraded=view.degraded,
-            ),
-        )
-        now = now_fn()
-        found = await search.search(
-            query=(query or question or ref.name)[:500], person_id=ref.person_id,
-            target=target, depth=level, now_ms=int(now.timestamp() * 1000),
-        )
-        if found.status == "unavailable":
-            _record_room(metrics, "ask_memory", "unavailable", reason="index")
+        # Fail closed (R-27): anything that raises on the way, the policy's
+        # render of this room, the search, or the packet, is a counted
+        # `unavailable` with its note, never an exception out of the tool.
+        try:
+            target = lineage.render_room(
+                platform=room.platform, conversation_id=bound_conversation_id,
+                live=LiveRoom(
+                    person_ids=frozenset(p.person_id for p in view.people),
+                    unnamed=view.unnamed, available=view.available,
+                    degraded=view.degraded,
+                ),
+            )
+            now = now_fn()
+            found = await search.search(
+                query=(query or question or ref.name)[:500], person_id=ref.person_id,
+                target=target, depth=level, now_ms=int(now.timestamp() * 1000),
+            )
+            if found.status == "unavailable":
+                _record_room(metrics, "ask_memory", "unavailable", reason="index")
+                return {
+                    "status": "unavailable", "person": ref.name, "note": _INDEX_UNAVAILABLE,
+                }
+            items, withheld = render_packet(
+                found.hits, name_of=_rollup_name, room_label=_index_room_label, now=now,
+            )
+        except Exception as exc:  # noqa: BLE001 — «I couldn't check», counted
+            log.warning("ask_memory index path failed (%s)", type(exc).__name__)
+            _record_room(metrics, "ask_memory", "unavailable", reason="error")
             return {"status": "unavailable", "person": ref.name, "note": _INDEX_UNAVAILABLE}
-        items, withheld = render_packet(
-            found.hits, name_of=_rollup_name, room_label=_index_room_label, now=now,
-        )
+        # The status the model is given: `partial` stays `partial` with no
+        # items (an unfinished index is never «nothing found»).
         _record_room(
-            metrics, "ask_memory", found.status if items else "nothing_found",
+            metrics, "ask_memory",
+            found.status if items or found.status == "partial" else "nothing_found",
             items=len(items), withheld=withheld, depth=level,
         )
         if found.status == "partial":

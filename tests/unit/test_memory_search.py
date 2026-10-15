@@ -248,3 +248,54 @@ async def test_the_packet_names_people_and_rooms_never_ids_and_screens_identifie
     assert by_kind["message"]["path"] == ["message (matched)"]
     text = str(items)
     assert "98765432" not in text and "signal:b" not in text and "'kit'" not in text
+
+
+# --- review fixes (PR #16) ------------------------------------------------------
+
+
+@pytest.mark.parametrize("ident", ["+85291234567", "3f2a9c1e-8b7d-4e6f-9a01-23456789abcd"])
+def test_an_identifier_across_the_text_cut_withholds_the_item(ident: str) -> None:
+    """R-18: the FULL text is screened, not the truncated one, so an
+    identifier straddling `TEXT_CHARS` never leaves as a fragment."""
+    from nora.agent.egress import scan_identifiers
+    from nora.agent.memory_search import TEXT_CHARS, Hit, Step
+
+    checked = 0
+    for cut in range(2, len(ident) - 1):
+        pad = TEXT_CHARS - cut
+        text = ("x " * pad)[:pad - 1] + " " + ident + " end"
+        assert scan_identifiers(text) is not None  # the whole text carries it
+        node = IndexedNode("message", "m1", text, NOW, origin_room="signal:b")
+        items, withheld = render_packet(
+            [Hit(node, 1.0, (Step("message", how="matched"),))], name_of=str,
+            room_label=str, now=datetime.fromtimestamp(NOW / 1000, UTC),
+        )
+        assert (items, withheld) == ([], 1), cut
+        checked += 1
+    assert checked > 5
+
+
+async def test_an_about_seed_said_in_a_room_not_listing_the_person_is_not_kept() -> None:
+    """The listed-room rule holds for exact-reference seeds too: an entry
+    about Kit scoped to a room that does not list Kit is not evidence about Kit."""
+    index = FakeMemoryIndex(
+        [IndexedNode("event", "e1", "dinner plans", NOW, origin_room="signal:c"),
+         IndexedNode("event", "e2", "picnic", NOW, origin_room="signal:b"),
+         IndexedNode("person", "kit")],
+        [("event", "e1", "about", "person", "kit"), ("event", "e2", "about", "person", "kit")],
+    )
+    hits = await _walk(index, "", person="kit")
+    assert set(hits) == {("event", "e2")}
+
+
+async def test_a_scope_that_raises_is_unavailable_and_counted(monkeypatch) -> None:
+    import nora.agent.memory_search as ms
+
+    def boom(target: RenderRoom) -> None:
+        raise RuntimeError("policy")
+
+    monkeypatch.setattr(ms, "scope_for", boom)
+    metrics = Metrics()
+    found = await _search(FakeMemoryIndex([_msg("1", "ramen")]), metrics=metrics)
+    assert found.status == "unavailable"
+    assert metrics.get("nora_memory_search_total", status="unavailable") == 1
