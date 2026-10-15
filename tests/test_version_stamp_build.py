@@ -355,3 +355,18 @@ def test_the_dockerfile_runs_the_gate_with_the_build_argument():
     assert 'python scripts/check_version_stamp.py "$NORA_VERSION"' in dockerfile
     # …after the code it is checking, or it would check an empty directory.
     assert dockerfile.index("COPY nora/") < dockerfile.index("check_version_stamp.py")
+
+
+def test_a_lightweight_tag_with_no_changelog_section_has_no_notes(repo: Path):
+    """release-please's tags are lightweight. `%(contents)` of a lightweight tag
+    is the COMMIT's message, which nobody wrote as a note about a version, so a
+    tag with no CHANGELOG section must carry empty notes, not that message."""
+    _commit(repo, "e", "fix: a commit message, not a release note")
+    _git(repo, "tag", "v6.0.1")
+
+    assert _stamp(repo, "--version", "v6.0.1").returncode == 0
+    entry = VersionManifest(repo / "nora" / "version.json").lookup("v6.0.1").entry
+
+    assert entry is not None
+    assert entry.notes == ""
+    assert entry.changes == ("fix: a commit message, not a release note",)
