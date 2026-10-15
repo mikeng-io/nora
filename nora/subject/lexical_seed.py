@@ -57,8 +57,8 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import MEDIA_OBJECTS, MEMORY_NODE, MEMORY_PROJECTION_QUEUE, MESSAGES
 
 __all__ = [
-    "MARKER", "ROOM", "IncompleteLoadError", "NotAThrowawayDatabaseError", "Reading", "load",
-    "seed",
+    "MARKER", "ROOM", "IncompleteLoadError", "NotAThrowawayDatabaseError", "Reading", "Said",
+    "load", "seed",
 ]
 
 #: The opt-in a throwaway database carries; only `_claim` creates it.
@@ -76,8 +76,10 @@ _SCOPE = MemoryScope(
     exclude_strict=False, presence_persons=frozenset(),
 )
 
-#: A pool item: its bytes' sha256 and the reading's three fields.
+#: A photo: its bytes' sha256 and the reading's three fields.
 Reading = tuple[str, str, str, str]
+#: A message: when it was sent (epoch ms) and its text.
+Said = tuple[int, str]
 
 
 class NotAThrowawayDatabaseError(RuntimeError):
@@ -88,9 +90,11 @@ class IncompleteLoadError(RuntimeError):
     """A pool item's node did not land; the pool would be silently smaller."""
 
 
-def load(url: str, items: Mapping[str, Reading]) -> None:
+def load(url: str, items: Mapping[str, Reading | Said]) -> None:
     """Migrate `url` to head and make the bake-off's room hold exactly
-    `items` (pool id -> sha256, title, description, content)."""
+    `items`: per pool id, one message, which for a photo (`Reading`) is an
+    empty message attaching it and for a message (`Said`) is its text, sent
+    when it was sent."""
     asyncio.run(_claim(url))
     run_migrations(url)
     asyncio.run(_load(url, items))
@@ -132,7 +136,7 @@ async def _claim(url: str) -> None:
 _OURS = sa.and_(MESSAGES.c.platform == _PLATFORM, MESSAGES.c.conversation_id == _CONVERSATION)
 
 
-async def _load(url: str, items: Mapping[str, Reading]) -> None:
+async def _load(url: str, items: Mapping[str, Reading | Said]) -> None:
     engine = create_sql_engine(url)
     try:
         async with engine.begin() as conn:
@@ -151,58 +155,75 @@ async def _load(url: str, items: Mapping[str, Reading]) -> None:
             )).scalars())
             for mid in old:
                 await memory_index.project(conn, "message", mid)  # gone: dropped
-            for ts, (pid, (sha, title, description, content)) in enumerate(items.items(), 1):
-                reading = {"title": title, "description": description, "content": content}
-                await conn.execute(
-                    pg_insert(MEDIA_OBJECTS)
-                    .values(sha256=sha, media_type="image/jpeg", source="bakeoff",
-                            created_at_ms=ts, **reading)
-                    .on_conflict_do_update(index_elements=[MEDIA_OBJECTS.c.sha256], set_=reading)
-                )
+            photos = 0
+            for n, (pid, item) in enumerate(items.items(), 1):
+                row: dict[str, object] = {"ts": n, "body": ""}
+                if len(item) == 4:
+                    sha, title, description, content = item  # type: ignore[misc]
+                    reading = {"title": title, "description": description, "content": content}
+                    await conn.execute(
+                        pg_insert(MEDIA_OBJECTS)
+                        .values(sha256=sha, media_type="image/jpeg", source="bakeoff",
+                                created_at_ms=n, **reading)
+                        .on_conflict_do_update(index_elements=[MEDIA_OBJECTS.c.sha256],
+                                               set_=reading)
+                    )
+                    row["media_json"] = json.dumps([{"sha256": sha, "media_type": "image/jpeg"}])
+                    photos += 1
+                else:
+                    row["ts"], row["body"] = item  # type: ignore[misc]
                 mid = (await conn.execute(
                     sa.insert(MESSAGES).values(
                         platform=_PLATFORM, conversation_id=_CONVERSATION,
-                        conversation_type="group", sender_id="bakeoff", ts=ts, body="",
-                        platform_message_id=pid,
-                        media_json=json.dumps([{"sha256": sha, "media_type": "image/jpeg"}]),
+                        conversation_type="group", sender_id="bakeoff",
+                        platform_message_id=pid, **row,
                     ).returning(MESSAGES.c.id)
                 )).scalar_one()
                 await memory_index.project(conn, "message", mid)
-            await _require_complete(conn, len(items))
+            await _require_complete(conn, messages=len(items), media=photos)
     finally:
         await engine.dispose()
 
 
-async def _require_complete(conn: AsyncConnection, expected: int) -> None:
+async def _require_complete(conn: AsyncConnection, *, messages: int, media: int) -> None:
     queued = (await conn.execute(
         sa.select(sa.func.count()).select_from(MEMORY_PROJECTION_QUEUE)
     )).scalar_one()
-    nodes = (await conn.execute(
-        sa.select(sa.func.count()).select_from(MEMORY_NODE).where(
-            MEMORY_NODE.c.kind == "media", MEMORY_NODE.c.origin_room == ROOM,
-            MEMORY_NODE.c.state == "live",
-        )
-    )).scalar_one()
-    if queued or nodes != expected:
+    nodes = dict((await conn.execute(
+        sa.select(MEMORY_NODE.c.kind, sa.func.count()).where(
+            MEMORY_NODE.c.origin_room == ROOM, MEMORY_NODE.c.state == "live",
+            MEMORY_NODE.c.kind.in_(("message", "media")),
+        ).group_by(MEMORY_NODE.c.kind)
+    )).tuples().all())
+    got = (nodes.get("message", 0), nodes.get("media", 0))
+    if queued or got != (messages, media):
         raise IncompleteLoadError(
-            f"{nodes} media nodes for {expected} items, {queued} projections queued")
+            f"{got[0]} message and {got[1]} media nodes for {messages} messages and "
+            f"{media} photos, {queued} projections queued")
 
 
 def seed(url: str, queries: Mapping[str, str], *, limit: int) -> dict[str, list[str]]:
-    """Query id -> the sha256 of each attachment the live seed returns for
-    it, best first. An exception propagates: the caller marks the arm's
-    queries ERROR."""
+    """Query id -> the pool ids the live seed returns for it, best first: a
+    message node is its message's item, an attachment its message's photo.
+    An exception propagates: the caller marks the arm's queries ERROR."""
     return asyncio.run(_seed(url, queries, limit))
 
 
 async def _seed(url: str, queries: Mapping[str, str], limit: int) -> dict[str, list[str]]:
     engine = create_sql_engine(url)
     try:
+        async with engine.connect() as conn:
+            pool = {str(i): pid for i, pid in await conn.execute(
+                sa.select(MESSAGES.c.id, MESSAGES.c.platform_message_id).where(_OURS))}
         index = SqlMemoryIndex(engine)
         out: dict[str, list[str]] = {}
         for qid, text in queries.items():
             seeds = await index.seed(terms_of(text), _SCOPE, limit=limit)
-            out[qid] = [s.node.sha256 for s in seeds if s.node.kind == "media" and s.node.sha256]
+            # A message node's source is the message id; an attachment's is
+            # `<message id>:<sha256>` (`memory_index._attachment_id`).
+            ids = [pool[s.node.source_id.partition(":")[0]] for s in seeds
+                   if s.node.kind in ("message", "media")]
+            out[qid] = list(dict.fromkeys(ids))
         return out
     finally:
         await engine.dispose()

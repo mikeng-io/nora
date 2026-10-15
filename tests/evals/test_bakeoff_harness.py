@@ -201,11 +201,19 @@ def test_the_reading_gap_is_a_query_no_lexical_run_finds_in_its_top_ten() -> Non
 
 
 class FakeTransport:
-    def __init__(self, dim: int) -> None:
+    """Ollama's API: /api/show answers `capabilities`, /api/embed one unit
+    vector per input. Records every embed body."""
+
+    def __init__(self, dim: int, capabilities: tuple[str, ...] = ("embedding",)) -> None:
         self.dim = dim
+        self.capabilities = list(capabilities)
         self.bodies: list[dict] = []
+        self.shows = 0
 
     def __call__(self, method, url, body, timeout):
+        if url.endswith("/api/show"):
+            self.shows += 1
+            return {"capabilities": self.capabilities, "details": {}}
         self.bodies.append(body)
         return {"embeddings": [[1.0] + [0.0] * (self.dim - 1) for _ in body["input"]]}
 
@@ -253,15 +261,31 @@ def test_float16_is_refused_at_construction(dtype: str) -> None:
                        transport=FakeTransport(768))
 
 
-def test_ollama_refuses_media_rather_than_embed_the_text_alone() -> None:
-    """Ollama 0.35 answers an `images` field on /api/embed with the text-only
-    vector (probed 2026-10-15): a silent pass of the wrong thing."""
+def test_ollama_refuses_media_for_a_model_without_vision() -> None:
+    """Ollama answers an `images` field on /api/embed with the text-only
+    vector (0.35 and 0.40.4, probed 2026-10-15): a silent pass of the wrong
+    thing, so a model that does not declare vision is never sent media."""
     t = FakeTransport(2048)
     with pytest.raises(EmbedError) as e:
         OllamaEmbedder("milkey/wemm-embedding-2b:Q4_K_M", native_dim=2048,
                        transport=t).embed_media([Path("x.jpg")])
     assert e.value.kind == "unsupported"
     assert t.bodies == []
+
+
+def test_ollama_sends_media_as_image_objects_for_a_vision_model(tmp_path: Path) -> None:
+    """The one shape Ollama 0.40.4 embeds (probed 2026-10-15): an `image`
+    object per input. No prefix: Gemma 2's card puts none on media."""
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"jpeg")
+    t = FakeTransport(768, capabilities=("embedding", "vision", "audio"))
+    emb = OllamaEmbedder("embeddinggemma-2:latest", native_dim=768, transport=t)
+    vecs = emb.embed_media([img, img])
+    assert len(vecs) == 2
+    assert t.bodies == [{"model": "embeddinggemma-2:latest", "truncate": False,
+                         "input": [{"image": "anBlZw=="}, {"image": "anBlZw=="}]}]
+    emb.embed_media([img])
+    assert t.shows == 1  # capabilities read once
 
 
 def test_llama_server_sends_the_recorded_media_shape(tmp_path: Path) -> None:
@@ -497,8 +521,8 @@ def test_the_watchdog_guards_the_warm_ups_too() -> None:
             return super().embed_text(texts, role)
 
     with pytest.raises(run.AbortedError):
-        run._dense(Counting({"warm up": [1, 0, 0, 0]}), run.load_set(SET_DIR), 4, 5, Tripped(),
-                   "http://unused")
+        run._text_arms(Counting({"warm up": [1, 0, 0, 0]}), "fake", run.load_set(SET_DIR), (4,),
+                       timeout=5, dog=Tripped(), base="http://unused")
     assert calls == []  # not even a warm-up reached the model
 
 
@@ -526,3 +550,96 @@ def test_set_dir_clean_ignores_the_results_directory(monkeypatch) -> None:
     run._commit()
     status = next(c for c in seen if "status" in c)
     assert ":(exclude)results" in status
+
+
+# --- stage 2: image vectors -----------------------------------------------------------
+
+
+class ImageFake(FakeEmbedder):
+    """One distinct unit vector per image byte value; queries point at img-1."""
+
+    name = "embeddinggemma-2:latest"
+
+    def embed_text(self, texts, role):
+        return [[0.0, 1.0, 0.0, 0.0] for _ in texts]
+
+    def embed_media(self, paths):
+        out = []
+        for p in paths:
+            b = p.read_bytes()[0]
+            out.append([[1.0, 0, 0, 0], [0, 1.0, 0.5, 0], [0, 0, 0, 1.0]][b])
+        return out
+
+    def provenance(self):
+        return {"model": self.name}
+
+
+def _tiny_set(tmp_path: Path) -> run.BakeoffSet:
+    media = {}
+    for i in range(3):
+        (tmp_path / f"{i}.jpg").write_bytes(bytes([i]) * 4)
+        sha = hashlib.sha256(bytes([i]) * 4).hexdigest()
+        (tmp_path / f"{sha}.jpg").write_bytes(bytes([i]) * 4)
+        media[f"img-{i}"] = run.Media(sha, "", "", "")
+    (tmp_path / f"{media['img-2'].sha256}.jpg").write_bytes(b"tampered")
+    return run.BakeoffSet(
+        slice="text_image", version=1, pool=("img-0", "img-1", "img-2"),
+        queries={"q1": run.Query("the second one", "en")}, relevant={"q1": frozenset({"img-1"})},
+        hard_negatives={"q1": frozenset()}, media=media, lock={})
+
+
+def test_image_arms_embed_once_and_derive_each_matryoshka_dimension(tmp_path: Path) -> None:
+    arms = run._image_arms(ImageFake({}), "gemma2", _tiny_set(tmp_path), (4, 2), timeout=5,
+                           dog=None, base="http://unused", media_dir=tmp_path)
+    assert set(arms) == {"dense:gemma2@4", "dense:gemma2@2"}
+    assert arms["dense:gemma2@4"].rankings["q1"][0] == "img-1"
+    # img-2's bytes do not match its sha256: an ERROR at every dimension.
+    assert arms["dense:gemma2@4"].pool_errors == {"img-2": "hash_mismatch"}
+    assert arms["dense:gemma2@2"].pool_errors == {"img-2": "hash_mismatch"}
+    assert arms["dense:gemma2@2"].provenance["dims"] == 2
+    assert arms["dense:gemma2@2"].provenance["over"] == "the images"
+
+
+def test_a_truncated_embedding_is_renormalised_and_keeps_its_errors() -> None:
+    e = run.Embedded(vectors={"a": [0.6, 0.8, 0.0], "z": [0.0, 0.0, 1.0]}, errors={"b": "timeout"})
+    t = run.truncated(e, 2)
+    assert t.vectors["a"] == pytest.approx([0.6, 0.8])
+    assert t.errors == {"b": "timeout", "z": "zero_vector"}
+
+
+# --- the text slices (#18) ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("slice_name", "pool", "queries"), [
+    ("text_image", 224, 69), ("cantonese", 400, 61), ("names", 460, 48),
+])
+def test_every_slice_loads_under_the_five_file_lock(
+    slice_name: str, pool: int, queries: int,
+) -> None:
+    s = run.load_set(SET_DIR, slice_name)
+    assert (len(s.pool), len(s.queries)) == (pool, queries)
+    assert set(s.lock) == {
+        "set.yaml", "media.yaml", "texts.yaml", "labels.yaml", "labels_text.yaml"}
+    assert all(s.text(pid) for pid in s.pool)  # every item has the text a text arm embeds
+
+
+def test_a_text_slice_carries_its_messages_and_its_time_only_queries() -> None:
+    s = run.load_set(SET_DIR, "cantonese")
+    assert s.media == {}
+    first = s.messages["msg-001"]
+    assert first.sent_ms == 1783795260000  # 2026-07-12 02:41 Hong Kong time
+    assert s.text("msg-001") == first.text
+    assert s.subsets["time_only"] == ("ca-q16", "ca-q35", "ca-q36", "ca-q78", "ca-q79")
+    assert run.load_set(SET_DIR, "names").subsets["time_only"] == ("nm-q22",)
+    assert run.load_set(SET_DIR, "text_image").subsets == {}
+
+
+def test_every_result_reports_the_time_only_queries_apart() -> None:
+    s = run.load_set(SET_DIR, "names")
+    perfect = {q: sorted(s.relevant[q]) for q in s.queries}
+    result = run.evaluate(s, {"lexical:trigram": run.ArmRun(perfect)},
+                          lexical_arms=("lexical:trigram",), provenance={})
+    arm = result["arms"]["lexical:trigram"]
+    assert arm["time_only"]["n_queries"] == 1
+    assert arm["outside_time_only"]["n_queries"] == len(s.queries) - 1
+    assert result["subsets"]["time_only"] == ["nm-q22"]

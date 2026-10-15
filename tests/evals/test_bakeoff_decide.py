@@ -161,3 +161,15 @@ def test_a_reranker_ships_on_lift_and_latency(
     fused = {s: Score(0.5, 0.5, 0) for s in ("text_image", "cantonese", "names")}
     reranked = dict(fused, names=Score(0.5 + lift, 0.5, 0))
     assert rerank_ships(fused, reranked, p95, caller) is ships
+
+
+def test_slice_wins_applies_the_same_bar_to_one_slice() -> None:
+    from evals.retrieval_bakeoff.decide import slice_wins
+
+    r = {**INCUMBENT, "dense:gemma2@768": _arm(0.95, 0.5, 0.5),
+         "dense:gemma2@256": _arm(0.94, 0.5, 0.5)}
+    base, wins = slice_wins(r, "text_image")
+    assert base == 0.90
+    assert wins == {"dense:gemma2@256": False, "dense:gemma2@768": True}
+    with pytest.raises(ValueError, match="ERROR"):
+        slice_wins({**r, "dense:gemma2@768": _arm(0.95, 0.5, 0.5, errors=1)}, "text_image")

@@ -158,7 +158,15 @@ def http_json(method: str, url: str, body: dict[str, Any] | None, timeout: float
 
 
 class OllamaEmbedder:
-    """A tag served by Ollama's /api/embed, text only."""
+    """A tag served by Ollama's /api/embed. Media only for a model whose
+    `/api/show` capabilities include `vision`, as `{"image": <base64>}`
+    inputs: the one shape Ollama 0.40.4 embeds. Its `images` field and a
+    data-URI string are silently ignored (every image gets one vector), so
+    neither is ever sent, and the harness still errors identical vectors.
+
+    Ollama adds no task prefix of its own (0.40.4, embeddinggemma-2: "two
+    bowls of noodles" is 6 prompt tokens bare, 13 with the query prefix), so
+    the adapter's prefix is the only one."""
 
     def __init__(self, model: str, *, native_dim: int, base_url: str = "http://127.0.0.1:11434",
                  dtype: str = "", timeout: float = 120.0, transport: Transport = http_json) -> None:
@@ -171,6 +179,13 @@ class OllamaEmbedder:
         self._dtype = dtype
         self._timeout = timeout
         self._call = transport
+        self._show: dict[str, Any] | None = None
+
+    def _shown(self) -> dict[str, Any]:
+        if self._show is None:
+            self._show = dict(self._call(
+                "POST", f"{self._base}/api/show", {"model": self.name}, self._timeout))
+        return self._show
 
     def embed_text(self, texts: Sequence[str], role: str) -> Sequence[Sequence[float]]:
         body = {
@@ -183,9 +198,15 @@ class OllamaEmbedder:
         return list(resp["embeddings"])
 
     def embed_media(self, paths: Sequence[Path]) -> Sequence[Sequence[float]]:
-        # ponytail: Ollama's embed API takes no media on 0.35; a version that
-        # does gets its probed request shape here, never a guessed one.
-        raise EmbedError("unsupported", "Ollama /api/embed embeds no media on this runtime")
+        if "vision" not in (self._shown().get("capabilities") or ()):
+            raise EmbedError("unsupported", f"{self.name} declares no vision capability")
+        body = {
+            "model": self.name,
+            "input": [{"image": base64.b64encode(p.read_bytes()).decode()} for p in paths],
+            "truncate": False,
+        }
+        resp = self._call("POST", f"{self._base}/api/embed", body, self._timeout)
+        return list(resp["embeddings"])
 
     def provenance(self) -> dict[str, Any]:
         version = self._call("GET", f"{self._base}/api/version", None, self._timeout)
@@ -194,13 +215,19 @@ class OllamaEmbedder:
         digest = next(
             (m.get("digest") for m in tags.get("models", []) if m.get("name") == want), None,
         )
-        show = self._call("POST", f"{self._base}/api/show", {"model": self.name}, self._timeout)
+        show = self._shown()
         details = show.get("details", {})
+        info = show.get("model_info") or {}
         return {
             "runtime": "ollama", "runtime_version": version.get("version"),
             "model": self.name, "digest": digest,
             "family": details.get("family"), "quantization": details.get("quantization_level"),
             "dtype": self._dtype or details.get("quantization_level"),
+            "capabilities": show.get("capabilities"),
+            # What `ollama show` says, beside what the API returns (`native_dim`,
+            # checked on every vector): they differ for embeddinggemma-2.
+            "show_embedding_length": next(
+                (v for k, v in info.items() if k.endswith(".embedding_length")), None),
             "native_dim": self.native_dim,
             "prefix": self.prefix.record(),
         }

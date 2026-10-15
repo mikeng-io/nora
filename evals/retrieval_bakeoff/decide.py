@@ -40,7 +40,7 @@ from pathlib import Path
 
 __all__ = [
     "HOLD", "INCUMBENTS", "JOURNEY", "WIN_MISS_RATIO", "Decision", "Score", "Verdict",
-    "decide", "rerank_ships", "scores_from_results",
+    "decide", "rerank_ships", "scores_from_results", "slice_wins",
 ]
 
 JOURNEY = ("text_image", "cantonese", "names")
@@ -87,11 +87,35 @@ def _finite(x: float | None) -> bool:
     return x is not None and math.isfinite(x)
 
 
+def _halves_the_misses(r_cand: float, r_base: float) -> bool:
+    base_miss = 1 - r_base
+    return base_miss > _EPS and 1 - r_cand <= WIN_MISS_RATIO * base_miss + _EPS
+
+
+def _candidates(r: Mapping[str, Mapping[str, Score]]) -> list[str]:
+    return sorted(a for a in r if a not in INCUMBENTS and not a.startswith("lexical:"))
+
+
+def slice_wins(r: Mapping[str, Mapping[str, Score]], s: str) -> tuple[float, dict[str, bool]]:
+    """One slice's baseline and whether each candidate halves its misses:
+    the WIN half of the rule alone, for a slice measured before the others.
+    Not a decision: `decide` still needs every journey slice. Raises on an
+    ERROR, as `decide` returns one."""
+    arms = (*INCUMBENTS, *_candidates(r))
+    for arm in arms:
+        sc = r.get(arm, {}).get(s)
+        if sc is None or sc.errors or not _finite(sc.recall5):
+            raise ValueError(f"ERROR: {arm} has no clean finite recall@5 on {s}")
+    base = max(float(r[a][s].recall5) for a in INCUMBENTS)  # type: ignore[arg-type]
+    return base, {a: _halves_the_misses(float(r[a][s].recall5), base)  # type: ignore[arg-type]
+                  for a in _candidates(r)}
+
+
 def decide(r: Mapping[str, Mapping[str, Score]]) -> Decision:
     missing = [a for a in INCUMBENTS if a not in r]
     if missing:
         return Decision(Verdict.ERROR, reason=f"no incumbent arm {missing}")
-    candidates = sorted(a for a in r if a not in INCUMBENTS and not a.startswith("lexical:"))
+    candidates = _candidates(r)
     for arm in (*INCUMBENTS, *candidates):
         for s in JOURNEY:
             if s not in r[arm]:
@@ -106,8 +130,7 @@ def decide(r: Mapping[str, Mapping[str, Score]]) -> Decision:
         return float(r[arm][s].recall5)  # type: ignore[arg-type]
 
     def wins_slice(arm: str, s: str) -> bool:
-        base_miss = 1 - base[s]
-        return base_miss > _EPS and 1 - recall(arm, s) <= WIN_MISS_RATIO * base_miss + _EPS
+        return _halves_the_misses(recall(arm, s), base[s])
 
     passing: list[tuple[str, tuple[str, ...]]] = []
     media_only: list[str] = []

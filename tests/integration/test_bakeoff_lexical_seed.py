@@ -83,8 +83,8 @@ def test_a_fresh_load_marks_the_database_and_ranks_by_the_live_terms(fresh: str,
     assert lexical_seed.MARKER in _tables(pg_admin, fresh.rsplit("/", 1)[1])
     got = lexical_seed.seed(fresh, {"q-en": "the egg tarts", "q-yue": "小籠包", "q-none": "the"},
                             limit=10)
-    assert got["q-en"][0] == SHA[1]
-    assert got["q-yue"] == [SHA[3]]
+    assert got["q-en"][0] == "img-1"
+    assert got["q-yue"] == ["img-3"]
     assert got["q-none"] == []  # no term survives terms_of: nothing, not everything
 
 
@@ -92,7 +92,17 @@ def test_load_replaces_the_bakeoff_room_and_nothing_else(loaded: str) -> None:
     lexical_seed.load(loaded, {"img-1": (SHA[1], "first", "", "")})
     lexical_seed.load(loaded, {"img-2": (SHA[2], "second", "", "")})
     assert lexical_seed.seed(loaded, {"q": "first"}, limit=10)["q"] == []
-    assert lexical_seed.seed(loaded, {"q": "second"}, limit=10)["q"] == [SHA[2]]
+    assert lexical_seed.seed(loaded, {"q": "second"}, limit=10)["q"] == ["img-2"]
+
+
+def test_messages_are_seeded_by_their_text_and_ties_go_to_the_newer(loaded: str) -> None:
+    lexical_seed.load(loaded, {
+        "msg-1": (1_000, "打風 聽日唔使返工"),
+        "msg-2": (2_000, "打風 聽日唔使返工"),
+        "msg-3": (3_000, "a tram on a wet street"),
+    })
+    got = lexical_seed.seed(loaded, {"q": "打風"}, limit=10)["q"]
+    assert got == ["msg-2", "msg-1"]  # the live seed's tie-break: newest first
 
 
 def test_a_database_not_named_for_the_bakeoff_is_refused_untouched(pg_admin) -> None:
