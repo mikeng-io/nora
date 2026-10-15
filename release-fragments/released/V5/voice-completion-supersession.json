@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Internal correctness only. The Discord voice session's guard against acting on a track-completion that a skip has already superseded was inert -- it cancelled a handle that does not yet control the work. Driven end to end in production's own configuration (the per-guild lock, and stores that suspend on a database and a network call) the old code and the new one behave identically, because the stale completion blocks on that lock and the late cancellation reaches it in time; no user-visible double advance was demonstrated, so this ships no user-facing claim. Remove the suspension and the old code advances two tracks for one skip while the new one advances one -- the defect is real at this class's boundary and was masked by timing elsewhere. Issue #179.",
-  "details": [],
-  "limitations": []
-}

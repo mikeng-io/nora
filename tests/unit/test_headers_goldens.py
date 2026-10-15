@@ -13,14 +13,14 @@ rate `silence.md` carried until it dissolved, §2). What is
 compared is the whole text each seam produces, never a substring of it:
 
 * every fire `Event` kind, through its public factory (`reminder_occasion`,
-  `proactive_occasion`, `compute_occasion`,
-  `relay_occasion`, `lost_job_occasion`, `participation_occasion` and the
-  announcer's `_occasion`): the `header(tagger, now)` the turn renders, the
-  `body` put to her, the speaker and the kind. Each interpolated field is swept
-  one at a time over hostile values (`[ ] : < & " '`, CRLF, NBSP, U+2028, an
-  emoji, control characters, a forged closing tag, a long string, an empty one)
-  with every other field held at a baseline, so a golden says WHICH field a
-  difference came from; a kitchen-sink case sets them all at once;
+  `proactive_occasion`, `compute_occasion`, `relay_occasion`,
+  `lost_job_occasion` and `participation_occasion`): the `header(tagger, now)`
+  the turn renders, the `body` put to her, the speaker and the kind. Each
+  interpolated field is swept one at a time over hostile values
+  (`[ ] : < & " '`, CRLF, NBSP, U+2028, an emoji, control characters, a forged closing tag, a
+  long string, an empty one) with every other field held at a baseline, so a
+  golden says WHICH field a difference came from; a kitchen-sink case sets them
+  all at once;
 * the reminder's stamps over eight timezones and the instants where a date or an
   offset changes, every recurrence unit at interval 1, 2 and 10, the last and
   the second-last occurrence, and one to many rows;
@@ -70,8 +70,6 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from nora.agent import prefill
-from nora.app import announce as announce_module
-from nora.app.announce import AnnouncementTarget
 from nora.app.fire import (
     compute_occasion,
     lost_job_occasion,
@@ -199,14 +197,6 @@ def _job(**kw: Any) -> ComputeJob:
 
 
 _OK = JobResult(JobStatus.SUCCEEDED, url="https://example.test/a", summary="a heron, drawn")
-
-
-def _announce_target() -> AnnouncementTarget:
-    return AnnouncementTarget(platform="signal", conversation_id="conv-1")
-
-
-def _announcement(version: str = "V9", notes: str = "what is new") -> Event:
-    return announce_module._occasion(version, notes, _announce_target())
 
 
 def _relay(**kw: Any) -> Event:
@@ -547,27 +537,6 @@ def _participation_tagger() -> Any:
 
 
 # =============================================================================
-# the version announcement
-# =============================================================================
-
-
-@_case("announcement-the-version")
-def _announcement_version() -> Any:
-    return _sweep(lambda v: _event(_announcement(version=v), None))
-
-
-@_case("announcement-the-note-is-the-body")
-def _announcement_notes() -> Any:
-    return _sweep(lambda v: _event(_announcement(notes=v), None)["body"])
-
-
-@_case("announcement-ignores-the-tagger")
-def _announcement_tagger() -> Any:
-    event = _announcement()
-    return {"none": event.header(None, T0), "miles": event.header(MILES, T0)}
-
-
-# =============================================================================
 # a person whose first name is not their name
 # =============================================================================
 
@@ -588,7 +557,6 @@ def _first_name() -> Any:
         "compute": _event(_compute(), _FIRST),
         "lost": _event(lost_job_occasion(_job()), _FIRST),
         "relay": _event(_relay(requester=_FIRST), _FIRST),
-        "announcement": _event(_announcement(), _FIRST),
     }
 
 
@@ -614,7 +582,6 @@ def _kitchen_sink() -> Any:
         "compute-failed": _event(_compute(result=JobResult(JobStatus.FAILED, error=_mix(8))), who),
         "relay": _event(_relay(requester=who, from_platform=_mix(9), text=_mix(10)), who),
         "lost": _event(lost_job_occasion(_job(task=_mix(11))), who),
-        "announcement": _event(_announcement(version=_mix(12), notes=_mix(13)), None),
     }
 
 
@@ -696,7 +663,6 @@ def _prefill_fire() -> Any:
         "relay": _relay(), "lost": lost_job_occasion(_job()),
         "participation": participation_occasion(
             platform="signal", conversation_id="c", relevance_score=0.7),
-        "announcement": _announcement(),
     }
     return {
         kind: _texts(prefill.build_prefill(
@@ -880,7 +846,6 @@ _TURN_EVENTS: dict[str, Callable[[], Event]] = {
         platform="signal", conversation_id="conv-1", relevance_score=0.83),
     "participation-no-score": lambda: participation_occasion(
         platform="signal", conversation_id="conv-1"),
-    "announcement": lambda: _announcement(version="V9 <beta>", notes="a < b && c"),
 }
 
 
@@ -949,12 +914,12 @@ def test_the_suite_covers_every_kind_an_event_can_have() -> None:
         for name in ("reminder-no-tagger", "compute-no-tagger",
                      "lost-job-no-tagger", "participation-the-event-and-its-defaults",
                      "proactive-a-payload-that-names-no-usable-title",
-                     "relay-the-requesters-name", "announcement-the-version")
+                     "relay-the-requesters-name")
         for ev in _flatten(GOLDEN[name])
     }
     assert kinds == {
         "reminder", "proactive", "compute", "compute_lost", "relay",
-        "participation", "version_announcement",
+        "participation",
     }
 
 

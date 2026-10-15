@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Adds deploy/instagram-bridge/, a Go daemon that owns the Instagram wire (HTTP + SSE, mirroring whatsapp-bridge). Nothing user-observable changes: the daemon is not in docker-compose.yml, no Nora adapter consumes it yet, and the degradation change that must land before an Instagram adapter can be enabled is still outstanding. The compose service ships as a fragment inside the directory for that reason.",
-  "details": [],
-  "limitations": []
-}

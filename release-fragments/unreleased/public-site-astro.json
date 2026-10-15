@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "The public site is built and containerised but not served yet: nothing a visitor sees changes until the cutover in site/README.md, which carries the user-facing note.",
-  "details": [],
-  "limitations": []
-}

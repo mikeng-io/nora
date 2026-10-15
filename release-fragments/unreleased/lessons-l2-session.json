@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "L2 of Lessons adds the background session that writes lessons, but it ships off behind [lessons] enabled and nothing renders a lesson into any prompt, so nothing she says or does changes.",
-  "details": [],
-  "limitations": []
-}

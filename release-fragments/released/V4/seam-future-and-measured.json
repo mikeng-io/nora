@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design-only: measures bge-m3 against the deployed Ollama instance, correcting 16-open-items (the instrument was bge-m3 and the table reproduces) and 23/24 (retrieval works cross-lingually; the embedder is already running out of process). Adds the future-tier properties of the shared seam. No code change."
-}

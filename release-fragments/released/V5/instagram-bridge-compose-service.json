@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "docker-compose.yml gains the instagram-bridge service, lifted from deploy/instagram-bridge/compose.fragment.yml where its reasoning lives: private nora network publishing nothing, a ./state/instagram bind mount matching signal-cli and whatsapp-bridge so the cURL-paste bootstrap is a file copy rather than a docker cp, and a healthcheck that proves the HTTP layer serves without pretending to prove the Instagram socket is alive. Nothing starts it on its own and the adapter that consumes it is gated behind [platforms.instagram] enabled = false.",
-  "details": [],
-  "limitations": []
-}

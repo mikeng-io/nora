@@ -1,1 +1,0 @@
-{"type":"none","reason":"Internal correctness: conduct.md gained a section on 2026-08-27 without its `version` being bumped, so version 13 named two different documents and `doctrine_versions` — logged on every tag — became unreliable. Bumps conduct to 14 and adds tests/test_doctrine_version_parity.py, which refuses to let a doctrine body move while its version stands still."}

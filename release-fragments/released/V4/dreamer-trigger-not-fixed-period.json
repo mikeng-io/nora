@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs only. States explicitly in design/dreamer-agent-loop/06-trigger.md and D2 that the Dreamer's period is not fixed and the trigger shape is event-driven, rather than leaving it as an implication of per-adaptor conditions. No code, no behaviour change."
-}

@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Eval design records the first baselines taken after per-draw Honcho isolation.",
-  "details": [],
-  "limitations": [],
-  "reason": "Documentation only (design/evaluation/11 §1.9): the tool_reporting and being_contradicted numbers measured on master 3c93cfc7 after #462's fix, replacing the pre-fix references in #444 and #452. Nothing Nora does changes."
-}

@@ -1,1 +1,0 @@
-{"type":"change","summary":"The room's slang entries now share entity identity and supersession with the knowledge store, so two spellings of one term can correct each other instead of both being shown."}

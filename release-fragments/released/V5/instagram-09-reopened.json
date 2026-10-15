@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Design note: the one-social-tool decision is reopened for a per-network split.",
-  "details": [],
-  "limitations": [],
-  "reason": "Design documents only. design/instagram-adoption/09 stated no per-network social tool, ever; the operator has since directed a later split into x_fetch / instagram_fetch / threads_fetch / linkedin_fetch. 09 is marked reopened at its decision and its forbid-list, with 09's two original reasons carried forward as conditions (the model names the network but never the account; one read-only allowlist underneath), so the old line no longer reads as current."
-}

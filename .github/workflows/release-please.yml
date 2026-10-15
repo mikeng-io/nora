@@ -1,0 +1,30 @@
+# Releases (DEC-314). On every push to master, release-please reads the
+# Conventional Commits merged since the last `vX.Y.Z` tag and keeps ONE open
+# release PR — "chore(master): release X.Y.Z" — with the next version and its
+# CHANGELOG.md section. Nothing is released until the operator merges that PR;
+# the merge makes the tag and the GitHub Release. Deploying stays on the host
+# (the nora-deploy skill); `scripts/build-image.sh` stamps the image from the
+# tag. The procedure is the nora-release skill.
+name: release-please
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

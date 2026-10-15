@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs-only: adds the missing DEC-150 (capability drop) row to design/09-decision-index.md (#394), and triages the 15 dangling references pinned in tests/architecture/test_doc_references_resolve.py's _KNOWN_DANGLING as 'not yet triaged' (#422) -- 9 resolved with an in-row 'deleted' reference note or a fixed path, 6 stay pinned (5 sit in DEC-76/DEC-84 rows being edited concurrently on mikeng-io/governance-claims-482, 1 is a prospective path never built). No code changed.",
-  "details": [],
-  "limitations": []
-}

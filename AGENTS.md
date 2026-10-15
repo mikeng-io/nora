@@ -179,6 +179,7 @@ rules were written down and not read at the moment they applied.
 |---|---|
 | starting a change, running the gate, committing, opening or merging a PR | `nora-land` |
 | putting merged code or config live on `norty`, or checking it is live | `nora-deploy` |
+| cutting a release: the release-please PR, the `vX.Y.Z` tag, the GitHub Release | `nora-release` |
 | reading a trace, a metric, a row or a log as evidence | `nora-readback` |
 | confirming a built prompt, doctrine, tool-text or routing fix with the eval suite (find the cause offline first) | `nora-eval` |
 | proving a fix is guarded (revert, watch a named test go red, restore) | `nora-prove-fix` |
@@ -489,18 +490,16 @@ it after every edit instead of `make test-affected` costs an hour a day and buys
 nothing — this file previously named only the serial form, and that is exactly the
 mistake it produced (2026-08-21: eight full gate runs in one session).
 
-## Release fragments
+## Releases
 
-Every branch ADDS a new JSON fragment under `release-fragments/unreleased/`
-(`scripts/check_release_fragments.py` refuses a branch without an added one;
-editing an existing fragment does not count). Features, fixes,
-behaviour/security changes and meaningful limitations get a rendering type;
-internal-only work, docs included, gets `type: "none"` with a reason. The
-fragment is the source for the next version tag's annotation; do not
-reconstruct product notes from commit subjects at release time. Schema:
-`release-fragments/README.md`; validation: `make release-check` (the
-`nora-land` skill has the step). Fragments accumulate across
-ordinary deployments and never create a tag or deploy a release themselves.
+Release notes are the Conventional Commit subjects (DEC-314). release-please
+(`.github/workflows/release-please.yml`) keeps one open release PR on GitHub,
+built from the `feat`/`fix`/`security`/`perf`/`change`/`doctrine` commits merged
+since the last `vX.Y.Z` tag. Merging that PR makes the tag and the GitHub
+Release. Nothing else releases: no release fragments, no hand tags, and no
+announcement to a room. Write each subject as a line a reader of the changelog
+can use. The `nora-release` skill has the procedure. A deploy is not a release:
+`scripts/build-image.sh` stamps whatever it builds with `git describe`.
 
 The schema gate is `tests/infra/test_schema_parity.py`, **not** `alembic check`
 (which is blind to the CHECK constraint and the `ts DESC` index ordering); both

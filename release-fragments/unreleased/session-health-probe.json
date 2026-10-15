@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Host-side session health probe (#628): a systemd timer that watches Chrome's Instagram/X/LinkedIn sessions and keeps the instagram-bridge cookie jar in step; operator tooling, nothing Nora says or does changes.", "details": [], "limitations": []}

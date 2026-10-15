@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Superseded by audio-controller-phase1.json (CN-9, 2026-09-16 audit): this fragment described the stage-1 in-process VoiceSession/DuckSource mixer, which no longer exists — the audio-controller (deploy/voice-sidecar, design/voice-channel/07) now owns the Discord voice connection and performs music ducking under speech itself, over the HTTP control plane. No user-visible claim survives from this fragment separately from the phase-1 one.",
-  "details": [],
-  "limitations": []
-}

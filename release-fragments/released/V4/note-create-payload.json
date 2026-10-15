@@ -1,1 +1,0 @@
-{"type":"none","reason":"Internal: adds NoteCreationProposal, the second payload shape DreamSink.propose accepts for the note tier, so a background pass can start a note that does not exist yet. Unblocks Standing's note proposals. No behaviour changes until a writer uses it."}

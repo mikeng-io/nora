@@ -199,8 +199,8 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     watermark = await last_row_id(subject)
     failures_before = silent_failures(subject)
     # BEFORE the line arrives: what this case fired is every task spawned from
-    # here on, never what the graph already carried (the compute poller, the
-    # version announcer, a pre-flight still reading).
+    # here on, never what the graph already carried (the compute poller, a
+    # pre-flight still reading).
     spawned = watch(subject)
     await deliver(subject, body, now_ms=now_ms, person=case.person, mention=case.mention)
     if not await settle(subject, spawned=spawned):

@@ -1,6 +1,6 @@
 """`ComputeJobPoller` — delivers a finished compute job (Nora Compute spec
-§4) through `FirePath.speak`, mirroring `VersionAnnouncer`'s shape (DEC-97)
-rather than `HeartbeatLoop`'s: there is no `due_at` to compare against,
+§4) through `FirePath.speak`, the pattern DEC-97 established for an occasion
+that is not a reminder, rather than `HeartbeatLoop`'s: there is no `due_at` to compare against,
 every `PENDING` row is a candidate every tick, and "is it done" is answered
 by `ComputeBackend.poll`, not a clock.
 """
@@ -42,8 +42,8 @@ log = logging.getLogger("nora.app.compute_poller")
 BATCH_LIMIT = 50
 
 # `nora_compute_jobs_delivered_total{outcome}`'s one value that is not one of
-# `speak()`'s own §8.1 outcomes — this module's own decision, exactly as
-# `nora.app.announce.DEFERRED` is that module's. A tag holds the conversation,
+# `speak()`'s own §8.1 outcomes — this module's own decision, as the retired
+# version announcer's `DEFERRED` was its own. A tag holds the conversation,
 # so nothing was said and NOTHING WAS CLAIMED: the row stays `PENDING` and the
 # next tick tries again. That makes it the one outcome here that is not
 # terminal, and the reason it needs a counter at all — without one, a slot
@@ -240,8 +240,7 @@ class ComputeJobPoller:
             # `SENT`, never the literal `"sent"`: the string decides the ROW's
             # terminal state, so a typo would record a delivery that never
             # happened — the reason `nora.app.fire` owns these four names
-            # (`fire.SENT`'s own comment) and `nora.app.announce` reads them
-            # from there too.
+            # (`fire.SENT`'s own comment).
             state = ComputeJobState.DONE if outcome == SENT else ComputeJobState.FAILED
             await self._store.mark(
                 job.id, state, completed_at=self._clock(),

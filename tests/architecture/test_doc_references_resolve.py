@@ -26,7 +26,7 @@ per-path guess:
 
   - Only a reference anchored at a real top-level directory (`nora/`,
     `design/`, `docs/`, `tests/`, `evals/`, `deploy/`, `scripts/`,
-    `release-fragments/`, `.github/`) or a known root file counts as a path
+    `.github/`) or a known root file counts as a path
     CLAIM. A bare `doctrine/identity.md` is prose shorthand for a concept
     ("her doctrine"), not a root-relative path — `doctrine/` is not itself a
     top-level directory (the real files live under `nora/doctrine/` and
@@ -87,7 +87,6 @@ _CHECKED_PREFIXES = (
     "tests/",
     "evals/",
     "deploy/",
-    "release-fragments/",
     "scripts/",
     ".github/",
     ".agents/",
@@ -258,6 +257,27 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    (
+        "design/context-assembly/04-every-occasion.md",
+        "nora/app/announce.py",
+    ): (
+        "deleted 2026-10-16 with the manual release scheme and the upgrade "
+        "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
+    ),
+    (
+        "design/media-read-lane/05-decisions-and-index.md",
+        "scripts/render_release_notes.py",
+    ): (
+        "deleted 2026-10-16 with the manual release scheme and the upgrade "
+        "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
+    ),
+    (
+        "design/online-status/04-consumers.md",
+        "scripts/render_release_notes.py",
+    ): (
+        "deleted 2026-10-16 with the manual release scheme and the upgrade "
+        "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
+    ),
     (
         "docs/adr/0014-a-tagged-place-outranks-an-auto-identified-one.md",
         "design/proposed/27-presence-analytics.md",

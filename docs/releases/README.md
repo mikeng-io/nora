@@ -1,16 +1,9 @@
-# Release Records
+# Release Records (archive)
 
-`V<n>.md` is created only when the operator explicitly decides to release.
-It is a curated, standalone account of the accumulated user-visible changes
-since the prior version. It is not a deployment log and is not generated from
-Git commit subjects.
+`V3.md`, `V4.md` and `V5.md` are the records of the manual release scheme:
+hand-written notes, tagged `V<n>` by the retired scripts/release.py.
 
-Use the JSON files in `release-fragments/unreleased/` as source material. They
-accumulate across ordinary merges and deployments until a release is chosen.
-At that point, review and edit the generated draft into this file's `Summary`
-and `Group message` sections. After a successful release, archive the consumed
-fragments under `release-fragments/released/V<n>/`.
-
-Do not create this file, tag a version, or run `scripts/release.py` merely to
-deploy code. `scripts/build-image.sh` is the ordinary unversioned deployment
-path.
+Releases are now cut by release-please on GitHub (DEC-314): the notes are the
+Conventional Commit subjects, collected into the root `CHANGELOG.md` and the
+`vX.Y.Z` GitHub Release when the release PR is merged. Nothing new is written
+here. The procedure is the `nora-release` skill.

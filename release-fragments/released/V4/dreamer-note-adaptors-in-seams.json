@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs only. Threads the note tier's two Dreamer adaptors (curator, revisitor) through the seam nodes in design/dreamer-agent-loop/ — they were present only as roadmap rows despite every seam applying to them. Records what that tier's spec already solved: a declared two-tier trigger, distillation as containment, a data-driven objective, and a counted cap. No code, no behaviour change."
-}

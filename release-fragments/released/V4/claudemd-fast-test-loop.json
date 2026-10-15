@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Documentation only — CLAUDE.md's gate section now points at make test-affected / test-fast for the edit loop and keeps the serial gate as the final check. No code, no behaviour change."
-}

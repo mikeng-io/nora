@@ -1,8 +1,0 @@
-{
-  "type": "change",
-  "summary": "The spoken/typed trigger phrase can now be switched off independently of tagging her, and her reasoning effort has been turned back down to low.",
-  "detail": "[engagement.trigger] gains an `enabled` flag (defaults true, matching every deployment's behaviour before this field existed). Turning it off narrows the engagement policy down to a real @mention or a reply to one of her own messages -- the trigger PHRASE alone stops matching, on every platform. This deployment sets it false: with voice-note transcription now inserting spoken words into the message body, a voice note is one more surface where the phrase could match, and the operator wants only structural addressing (mention/reply) to engage her for now. Separately, [llm].reasoning_effort moves back to \"low\" (operator call, reversing the 2026-08-17 low->high change).",
-  "limitations": [
-    "Disabling the trigger phrase is global, not per-conversation -- there is no policy.toml-level override yet."
-  ]
-}

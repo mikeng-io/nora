@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Internal verification tooling. `scripts/mutate.py` and its tables prove that a fix is guarded by a named test before it is claimed done; nothing about Nora's behaviour changes."
-}

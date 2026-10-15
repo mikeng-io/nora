@@ -3,7 +3,6 @@ receives dependencies. This test pins that property."""
 
 import ast
 import base64
-import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -27,7 +26,6 @@ from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.instagram.media import InstagramMediaSource
 from nora.platform.registry import MediaSourceRegistry
 from nora.platform.signal.media import SignalMediaSource
-from nora.policy import load_policy
 from tests.builders import override_config
 from tests.conftest import RUSTFS_TEST_PASSWORD, RUSTFS_TEST_USER
 
@@ -605,67 +603,6 @@ async def _participation_trigger_of(cfg):
     deps = await build_dependencies(cfg)
     try:
         return deps.participation_trigger
-    finally:
-        await deps.background.cancel_all()
-
-
-async def test_an_unstamped_build_spawns_no_announcer(cfg, no_build_stamp):
-    """The gate that keeps a dev checkout (and any image not built through
-    `scripts/build-image.sh`) quiet — DEC-79.
-
-    `[version] announce` defaults TRUE, so this is the only thing standing
-    between "no stamp" and a boot-time announcement of a version nobody knows.
-    The composition root checks the manifest itself rather than spawning an
-    announcer that would immediately answer `unavailable`: there is nothing to
-    announce, and the warning belongs at boot, once, where an operator reads it.
-
-    Reaching into `background._tasks` for the same reason
-    `test_the_heartbeat_is_wired_to_the_real_fire_path` does: `Dependencies`
-    deliberately exposes neither loop.
-
-    The absent stamp is FORCED, not assumed. This passed for as long as nobody
-    had ever run a real build, and went red the first time one did (V1,
-    2026-08-11): `scripts/build-image.sh` writes `nora/version.json` into the
-    working tree, it is gitignored so it survives unnoticed, and this test then
-    exercised the STAMPED path while claiming to prove the unstamped one. A test
-    whose meaning depends on ambient filesystem state proves whatever the
-    machine happens to be in the mood for.
-    """
-    deps = await build_dependencies(cfg)
-    try:
-        assert not _spawned(deps, "VersionAnnouncer.run")
-    finally:
-        await deps.background.cancel_all()
-
-
-async def test_a_stamped_build_announces_into_every_allowed_room(cfg, tmp_path, monkeypatch):
-    """The other half: a stamped build DOES wire the announcer, at the rooms
-    `policy.toml` allows — not a second list in config.toml (DEC-8).
-
-    Without this the test above passes against a feature that never wires at
-    all, which is the exact shape of a capability that ships inert by accident
-    (DEC-42's `send_reply` cap, DEC-50's `skills` budget).
-    """
-    stamp = tmp_path / "version.json"
-    stamp.write_text(json.dumps({
-        "version": "V3",
-        "versions": [{"version": "V3", "notes": "She can say her own version."}],
-    }))
-    monkeypatch.setattr("nora.infra.version.DEFAULT_MANIFEST_PATH", stamp)
-
-    deps = await build_dependencies(cfg)
-    try:
-        announcers = _spawned(deps, "VersionAnnouncer.run")
-        assert announcers, "the version announcer was not spawned"
-        announcer = announcers[0]
-        # Bound to the REAL fire turn, not a stub — the failure
-        # `test_the_heartbeat_is_wired_to_the_real_fire_path` exists for, on the
-        # second occasion.
-        assert isinstance(announcer._speak.__self__, FirePath)
-        assert [t.conversation_id for t in announcer._targets] == [
-            conv.primary_id for conv in load_policy(cfg.policy_file).conversations
-            if conv.platform == "signal"
-        ]
     finally:
         await deps.background.cancel_all()
 

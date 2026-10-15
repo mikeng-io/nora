@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Internal release engineering: the de-identification map for a prospective public repository, and the dry runs that shaped it. It rewrites history in a copy, never the running deployment, and changes nothing about how Nora behaves."
-}

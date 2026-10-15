@@ -1,9 +1,0 @@
-{
-  "type": "fix",
-  "summary": "Fixed Nora sometimes wrongly saying she can't play music because you're not in a voice channel, when you are.",
-  "details": [
-    "A person mapped to more than one Discord account in identity.toml (this operator has two) had play_music pick an arbitrary one of them to check for a live voice channel -- if that wasn't the account currently connected to voice, Nora refused with \"you're not in the channel\" even though the person plainly was, on their other account.",
-    "The music tools now hand the bridge every Discord account a person has, and it tries each one against who is actually sitting in a voice channel right now, rather than guessing which account is real."
-  ],
-  "limitations": []
-}

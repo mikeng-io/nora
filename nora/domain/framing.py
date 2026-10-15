@@ -7,7 +7,7 @@ Instagram post, what time it is, how the turn opens and ends. They are not
 blocks, because a `ContextBlock` cannot render without an opening tag and giving
 these one would change what the model reads (step 4b of
 `design/context-assembly/04-every-occasion.md` §5 makes them typed, not XML).
-Until 4b they were f-strings in `nora/app/fire.py`, `nora/app/announce.py`,
+Until 4b they were f-strings in `nora/app/fire.py`, the retired version announcer,
 `nora/domain/summons.py` and `nora/agent/prefill.py`, each escaping (or not) its
 own values its own way, and nothing stopped a ninth from being written inline.
 
@@ -430,42 +430,6 @@ class ParticipationHeader:
         )
 
 
-@dataclass(frozen=True)
-class AnnouncementHeader:
-    """The situation paragraph for a version announcement (DEC-79).
-
-    Every clause of the reminder header is false here: nobody asked her to bring
-    anything up, and no time came due. What is true is that she was restarted on a
-    new build and the group has not heard about it.
-
-    The two prohibitions in the last sentence are the ones the operator asked for:
-    the note is RELAYED, not pasted. A release body is markdown written for a
-    changelog, and reading it out verbatim is neither her voice nor a message
-    anyone in a Cantonese group chat wants to receive.
-
-    `version` is escaped for the reason `ReminderHeader` escapes a name: it is
-    operator-authored text reaching a prompt, and this module does not get to
-    assume the build stamp is well-formed just because a gate usually makes it so.
-    """
-
-    version: str
-
-    def render(self) -> str:
-        return (
-            "You are in a group chat you have been reading all along. Nobody has "
-            "just called you, and nobody asked for this. You have just been "
-            f"restarted on a new version of yourself — {_put(self.version)} — and "
-            "these people have not been told yet. That is why this turn is "
-            "happening, and it is the only reason.\n"
-            "What is in tag_message below is the note the people who build you "
-            "wrote about this version. RELAY it: say what is new in your own words, "
-            "the way you would mention it to friends, short. Do not paste it, do "
-            "not read it out as a list, do not translate it line by line, and do "
-            "not claim anything it does not say. If part of it is too technical to "
-            "be worth saying here, leave that part out."
-        )
-
-
 #: kind of fire `Event` -> the ONE builder of its header. A kind absent from here
 #: has no header, and `tests/architecture/test_framing_is_one_typed_place.py`
 #: refuses an `Event` of a kind that is not in it, a kind built twice, and a
@@ -477,7 +441,6 @@ FIRE_HEADERS: Mapping[str, type[Header]] = {
     "relay": RelayHeader,
     "compute_lost": LostJobHeader,
     "participation": ParticipationHeader,
-    "version_announcement": AnnouncementHeader,
 }
 
 
@@ -693,7 +656,7 @@ class SummonsHead:
 FRAMING: Mapping[str, type] = {
     cls.__name__: cls for cls in (
         RepeatClause, ReminderHeader, ProactiveHeader, ComputeHeader,
-        RelayHeader, LostJobHeader, ParticipationHeader, AnnouncementHeader,
+        RelayHeader, LostJobHeader, ParticipationHeader,
         RequestBody, ComputeBody, LostJobBody, ContextHeader, ClockLine, SummonsHead,
     )
 }

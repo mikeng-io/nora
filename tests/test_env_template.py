@@ -26,7 +26,7 @@ def test_config_example_exists_and_parses():
         "search", "online", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
         "notes", "culture", "lessons", "standing", "music", "image_gen", "video_gen",
-        "version", "engagement", "participation", "proactive", "relevance_gate", "reaction",
+        "engagement", "participation", "proactive", "relevance_gate", "reaction",
         "doctrine", "dreamer", "cognition", "subagent", "assess", "lineage", "record_query",
         "documents", "external_files", "google",
         "identity_file", "policy_file",

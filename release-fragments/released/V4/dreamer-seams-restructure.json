@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs only. Restructures design/dreamer-agent-loop/ around five architectural seams (transport, trigger, loop, state, measurement) after four adversarial reviews, and adds the loop node the bundle was named for. No code, no behaviour change."
-}

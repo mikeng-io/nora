@@ -1,9 +1,0 @@
-{
-  "type": "change",
-  "summary": "Nora's location, online-status and reminder tools now explain their results when they return them, instead of in a long description she read on every message.",
-  "details": [
-    "where_is, where_been, online_now and remind were rewritten to ADR 0015. Their descriptions went from 710, 995, 703 and 842 tokens to 91, 160, 79 and 255.",
-    "How to read each status (carry the reading's age, never read coordinates aloud, what 'away' means) now arrives in the result's note, only when that status comes back.",
-    "Fixed choices (where_been's arms, online_now's arms, remind's repeat) are enum types, so an invalid value is refused before the tool runs."
-  ]
-}

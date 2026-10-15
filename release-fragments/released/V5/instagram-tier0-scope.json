@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Design note: who counts as in Nora's rooms for an Instagram story read.",
-  "details": [],
-  "limitations": [],
-  "reason": "Docs only; records operator decisions already matching the code (#402): Tier 0 is anyone listed in a group room on any network; DMs never count (Nora does not accept DMs, not on the roadmap); a persons=\"*\" room counts for nobody."
-}

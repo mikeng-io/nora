@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Governance only: ADR 0017 (agent skills carry the procedures) moves from proposed to accepted on the operator's approval, and nora-land's tool notes name the operator's subagent model rule. Nothing a member of a room can observe.",
-  "details": [],
-  "limitations": []
-}

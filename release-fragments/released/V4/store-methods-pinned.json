@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Test-only; no production code touched. Adds tests/architecture/test_store_methods_have_production_callers.py, which pins every public SQL-store method that nothing under nora/ calls, with a reason and one of three shapes (read_back_affordance / deferred_consumer / defect). TWELVE methods are pinned; two more are known to have no production caller and cannot be proven so here because their names are shared with other stores (tag_traces.recent, turn_verdicts.read). A full audit of the standing, knowledge, language and note tiers also found reverse-direction gaps - columns with no writer, tables with no store, a config key read nowhere - which this file does NOT cover and does not claim to. The reading that survives all of them is that the CONTRACT SUITE was accepted as the completion gate: record_wake has ~15 contract-test call sites and zero production ones, turn_verdicts.read says outright it is 'present for the contract suite', and tag_trace_rederive.rebuild_state has a named test asserting that it raises. A green test measured that the verb WORKS; nothing measured that it is USED. This is NOT a to-do list and explicitly not an instruction to wire them up - most are deliberate read-back affordances with nothing to wire them to.",
-  "details": [],
-  "limitations": []
-}

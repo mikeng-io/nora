@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Test-gate accuracy fix: the decision-index gate now reads the ::selector half of a citation, not just the file path (issue #187 finding 1). No user-observable behaviour changes.",
-  "details": [],
-  "limitations": []
-}

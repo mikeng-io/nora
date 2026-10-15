@@ -124,8 +124,8 @@ class Relay:
         # whether the destination is up has no fail-closed answer but to
         # refuse everything, so an unwired one is a construction error.
         self._transport = transport
-        # `FirePath.speak`, the same callable `VersionAnnouncer` and
-        # `ComputeJobPoller` are given. `None` is the honest not-configured
+        # `FirePath.speak`, the same callable `ComputeJobPoller` is
+        # given. `None` is the honest not-configured
         # state the offline and eval compositions ship in — `send_to` then
         # answers `unavailable`, never a silent no-op.
         self._speak = speak

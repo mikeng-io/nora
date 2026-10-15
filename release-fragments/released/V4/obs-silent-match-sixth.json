@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design-only: adds a sixth instance to 02-instrument-blindness's silent-match family — an edit script that raised and wrote nothing while the ruff/pytest output beside it stayed green about a file it had never changed, leaving a metric label in code and absent from its spec for two review rounds. It is the first instance where the instrument was one of ours rather than one of the code's, and it broadens the family's remedy: for a multi-step edit, verify the edit's own effect, because a suite passing after a no-op is what a suite does. No code change."
-}

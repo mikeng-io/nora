@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Re-anchors 14 mutation-table entries across issue-186-gate-off-the-sdk-transport.json and issue-199-turn-outcome-is-not-a-room-position.json whose literal source anchors had rotted (#426): the #186 gate client moved onto span-based telemetry, and #314 reshaped the #199 debrief render onto typed ContextBlocks, moving the transcript legend into nora/domain/block_types.py. Spec-only; no production code or user-observable behaviour changed.",
-  "details": [],
-  "limitations": []
-}

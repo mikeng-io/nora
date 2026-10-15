@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design document only (docs/superpowers/specs/2026-08-20-reflection-reasoning-continuity-design.md, elaborating Issue #4). Specifies a two-tier reasoning-continuity design — a per-conversation Standing revised in-slot by a debrief stage, plus a Fact tier disposed of by a FactSynthesizer running as an adaptor of the Dreamer — derived from live Langfuse traces, tool observations and nora.log. Revised against the Dreamer-as-an-agent keystone (2026-08-20-dreamer-as-an-agent-design.md): the fact tier is one adaptor of the Dreamer runtime (objective, inputs, output schema, tool subset, sink), not a RoomPortraitSynthesizer-shaped participant working around an append-only consolidator port; the superseded reasoning is left visible in the document. Nothing on the tag path changes. Status is proposed, the fact store's shape is left open, the keystone's open questions on the Dreamer's model, adaptor scheduling and the shared watermark are left open, no code exists and nothing is added to design/09-decision-index.md. No schema, config or behaviour changes. The feature will carry its own fragment when it is implemented.",
-  "details": [],
-  "limitations": []
-}

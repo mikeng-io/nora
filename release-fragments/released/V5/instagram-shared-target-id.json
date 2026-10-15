@@ -1,1 +1,0 @@
-{"type": "none", "reason": "The instagram-bridge passes two more fields of a shared-post card through (target_id, CTA action URLs); nothing reads them yet, so no user sees a change.", "details": [], "limitations": []}

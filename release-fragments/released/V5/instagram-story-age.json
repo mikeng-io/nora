@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "A story item's line now carries how long ago it was posted rather than a raw epoch, and the tier ladder's two self-contradictions are resolved in design/instagram-adoption/. Nothing user-visible ships: the Instagram social backend is inert behind [social.instagram] enabled = false and there is no bridge route for it to call.",
-  "details": [],
-  "limitations": []
-}

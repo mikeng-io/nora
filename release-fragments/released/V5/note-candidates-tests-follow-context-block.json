@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Test-only. Two note-candidates tests read `render_notes`' output as a string; #243 changed it to return a `ContextBlock` (or `None`), so they broke on master the moment #228's second half merged on top. The helper now reads `.body` and asserts the block exists. Nothing a member of a room can observe — and the tests were bound to the real renderer on purpose, which is what made them notice the type change at all."
-}

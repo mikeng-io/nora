@@ -1,9 +1,0 @@
-{
-  "type": "fix",
-  "summary": "An Instagram account written into identity.toml no longer stops Nora starting. The platform's ids were declared in one place and missing from the file parser in another, so the first real block an operator wrote was refused at startup — and a person-mapping error is fatal for every platform at once, so Signal, Discord and WhatsApp went down with it.",
-  "details": [
-    "The two halves each passed their own tests and the whole suite was green. Nothing fed a real account block to the parser: identity.example.toml documents every platform with every block commented out, so a check over that file reads zero accounts for zero platforms and passes on an empty set.",
-    "The new check is derived from the id vocabulary rather than hand-listed, and builds a real one-account file for every platform in it. Adding a platform and forgetting the file model now fails here instead of in a restarting container."
-  ],
-  "limitations": []
-}

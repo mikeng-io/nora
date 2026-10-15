@@ -1,9 +1,0 @@
-{
-  "type": "fix",
-  "summary": "Nora's rule about checking before saying \"you said X\" now covers the conversation already in front of her, not just older history.",
-  "details": [
-    "Her doctrine has long told her to find the line before attributing words to somebody, but it only named looking further back in the conversation or in memory. The messages she was just shown were not covered by that instruction, which is exactly where a wrong attribution happened on 2026-08-28.",
-    "The doctrine now says that conversation counts too, and having read it once is not the same as having checked it."
-  ],
-  "limitations": []
-}

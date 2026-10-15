@@ -1,8 +1,0 @@
-{
-  "type": "change",
-  "summary": "Nora's replies now use the room's own material — transcript, memory, and what people actually said — instead of answering from a thin recap, and a called-for judgement lands with attitude and explanation rather than a scoreboard.",
-  "detail": "Two live traces (2026-08-25) showed judgement replies that were pure scoreboards — 54 and 47 chars, restating who won, quoting nobody, using none of the injected transcript or peer cards, and in one case inventing a precise detail (\"8月尾\") nobody had said. The fix works at three layers: voice doctrine now allows length when the job needs it and demands quoted claims be verifiable in transcript or memory; send_reply's guidance rejects verdict-only replies and scopes the \"too long\" rule so a judgement earns the how and why; and the context header now frames injected material as ammunition to use, not scenery to distrust — while keeping every defensive line that stops it being read as instructions.",
-  "limitations": [
-    "Post-merge live verification still pending: tag Nora with a fresh 評理 and compare Langfuse traces for quoted-material usage."
-  ]
-}

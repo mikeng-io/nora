@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Operational plumbing: deploy/watchdog.sh is deleted. It polled /health for SSE silence, was on no timer and no cron, and even scheduled would have reported only through a failed systemd unit — which is what nobody noticed for the sixteen days nora-egress.service spent in `failed`. PlatformSilent in deploy/prometheus/rules/nora.yml watches the same silence per platform at 900s, alongside five more absences the script never looked at, and reaches the Discord review channel. Nothing user-observable either way."
-}

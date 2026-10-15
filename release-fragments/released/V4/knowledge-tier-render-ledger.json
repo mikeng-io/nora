@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Internal only. Nora now records which remembered facts she actually put in front of herself on a turn, so a later correction can be matched against what she really said rather than against a guess. Nothing about this is visible until the correction loop is built on top of it."
-}

@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Instrumentation only, no behavior change: logs connection.subscribe()'s return value on join and the AudioPlayer's stateChange (especially AutoPaused, with subscriber/playable counts so the log says why), and stops sharing the 'play' event name between command-accepted and Playing-confirmed so the two can't be conflated. Added after a 2026-09-20 incident (guild 100000000000000201) where ffmpeg decoded cleanly the whole time and nothing failed or logged an error, yet no audio reached Discord — none of the existing failure paths (ffmpeg spawn/error/exit, 30s stall watch) cover a subscribe() that doesn't hold.",
-  "details": [],
-  "limitations": []
-}

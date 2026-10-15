@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Amends the unapplied fact-tier migration 0025_fact_tier in place (never deployed, nothing writes facts yet, so no backfill and no 0026). Adds the warrant axis: warrant_kind (source/premises/observation/stated) and fidelity (tentative/proven/deprecated, default tentative) columns, relaxes source_url/source_excerpt to a conditional CHECK, adds supersede_reason, and gives superseded_by a self-referential FOREIGN KEY. Premises are recorded as fact_premise(fact_id, premise_fact_id) junction rows (both FK to fact.id, composite PK, reverse-lookup index), not a premise_ids array column, so which facts depend on a given fact is an indexed query. Mirrored in nora/domain/facts.py and nora/infra/sql/schema.py. Dormant tier, no writer, no code path reachable by users.",
-  "details": [],
-  "limitations": []
-}

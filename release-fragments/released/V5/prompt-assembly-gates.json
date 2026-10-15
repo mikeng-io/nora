@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Architecture gates pinning one transcript renderer and one block injector across every prompt builder.",
-  "details": [],
-  "limitations": [],
-  "reason": "Tests only, no runtime change. #220 shipped ContextBlock/assemble/render_messages and wired one prompt builder of six; these gates measure the remaining five as strict xfails so each conversion turns a named row green (#292). Also adds the whole-turn framing check that the existing prefill tests structurally cannot perform: they read build_prefill()[1], so <tag_message> has never been looked at."
-}

@@ -1,9 +1,0 @@
-{
-  "type": "feature",
-  "summary": "Any voice note now engages Nora directly (VoiceNotePolicy), and the text trigger is re-enabled as the word \"nora\".",
-  "detail": "Operator directive 2026-08-26: 總之任何 Voice Note 都會直入上 Nora 度先囉. A voice note engages her by being a voice note — the engagement gate matches the parser's voice_note flag, not the transcript, so a failed transcription still brings the note to her (R-27: never invent words, never drop the note). The [engagement.trigger] phrase is re-enabled as \"nora\", so a message containing the word (typed or spoken and transcribed) engages her alongside the existing @mention and reply-to-Nora paths.",
-  "limitations": [
-    "VoiceNotePolicy depends on the parser correctly flagging a voice note; signal-cli's JSON-RPC omits the voiceNote field until upstream 2100 ships, so the filename heuristic (signal-<ts>.m4a + audio/* type) stands in for it.",
-    "A voice note that is not transcribed still engages her, but she reads only the bare handle."
-  ]
-}

@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Fixes make test-affected's default base from origin/master (whole branch) to HEAD~1 (latest commit only), so a branch touching nora/dreamer/** or nora/doctrine/** once no longer stays pinned to the full suite for every later commit. Internal iteration-loop tooling only; does not change make gate or any user-observable behavior."
-}

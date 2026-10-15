@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "docs/comments only: answers issue #321 (whether test_env_template.py's three drift checks are superseded by evals/subject_config.materialise()) by tracing that none of the three are covered — materialise() self-heals around a stale/incomplete template rather than requiring the checked-in text to be right, and its allowlist means something different from the checks' _MAY_DIFFER. No behaviour, config value or test outcome changed; the comment block above the three checks and a paragraph in AGENTS.md now state this plainly instead of overclaiming continuous enforcement.",
-  "details": [],
-  "limitations": []
-}

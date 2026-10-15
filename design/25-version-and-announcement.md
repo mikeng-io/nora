@@ -6,6 +6,11 @@ tags: [nora, design, version, release, announcement, r-42, dec-79]
 timestamp: '2026-08-11'
 ---
 
+> **Superseded in part, 2026-10-16 (DEC-314, ADR 0024).** The upgrade note (R-42) and the
+> plain `V<n>` scheme are retired: releases are `vX.Y.Z` tags cut by release-please, and
+> nothing is announced to a room. The build-time stamp and the three-state read below still
+> hold. Read the rest of this file as history.
+
 # Version, and the upgrade note
 
 ## 0. Two questions and one event

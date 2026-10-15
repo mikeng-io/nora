@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Operator tooling only (scripts/migrate_media_to_rustfs.py, run manually from inside the nora container). No behaviour change: [media.rustfs] still ships off, and this script only copies existing filesystem blobs into RustFS, never deletes them or flips the active backend."
-}

@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Design 42 S4a makes the background note pass restate a note's whole body on an update, with a check that no line's evidence is dropped; it deploys only together with S2, S3 and S4b, and the user-facing change is described by S2's fragment.", "details": [], "limitations": []}

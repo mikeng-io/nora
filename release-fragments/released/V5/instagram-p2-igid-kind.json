@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Internal only; nothing a member of a room can observe. The person index gains Persons.instagram_igids(person_id): every Instagram igid (the public/social id) recorded for a person, read by KIND off identity.toml, never mixed with the messaging fbid the way the kind-blind platform_ids lookup is. No caller yet; the social subject index (design/instagram-adoption/17 P3) is the first."
-}

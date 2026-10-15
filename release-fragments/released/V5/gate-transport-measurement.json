@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Eval tooling only: a `--via-sdk` flag on the relevance_gate suite that swaps the transport and nothing else, so the SDK path and the direct one can be compared over the same 40 cases. Nothing a member of a room can observe. The measurement it produced — the SDK path breaches a safety case and costs 2.6x the tokens — is user-observable, and is carried as a `limitations` entry on the fragment for the change that shipped that transport (`model-calls-move-onto-the-sdk`) rather than being lost here. Tracked as issue #186."
-}

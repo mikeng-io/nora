@@ -1,9 +1,0 @@
-{
-  "type": "feature",
-  "summary": "Nora transcribes Cantonese voice notes at ingest via a local SenseVoice endpoint ([speech.stt]), so the words appear in the message body beside the handle instead of an opaque placeholder.",
-  "detail": "A voice note is conversation content, not an attachment description: when [speech.stt] is enabled, the custody stage transcribes the note inline (audio never leaves the box — the endpoint is private-network-only) and the transcript rides the body as [voice note #hex: ...]. Transcription runs server-side through OpenCC so the text arrives in Traditional Chinese, matching her yue-Hant-HK doctrine. A failed transcription still records the note with the bare handle and counts the failure; it never drops the message and never invents words.",
-  "limitations": [
-    "Transcription is gated on the parser's voiceNote flag; a voice note misclassified as audio/ stays on the bare-handle path.",
-    "Transcripts are capped at the same description length limit as sticker descriptions."
-  ]
-}

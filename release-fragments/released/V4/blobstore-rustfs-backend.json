@@ -1,9 +1,0 @@
-{
-  "type": "feature",
-  "summary": "Attachment custody (photos, stickers, voice notes) can now be stored in RustFS, an S3-compatible object store, instead of the local filesystem.",
-  "detail": "[media.rustfs] is a new, off-by-default section: enabling it (endpoint, bucket, credential env vars) swaps FilesystemBlobStore for RustfsBlobStore in the composition root, reusing the same BlobCipher encryption-at-rest and the same BlobStore port, so nothing about the ingest pipeline changes. RustFS already runs in this deployment for the drop link-shortener's own artifacts, so enabling this adds no new container. A misconfigured or unreachable RustFS falls back to the filesystem store rather than crashing the daemon or disabling custody.",
-  "limitations": [
-    "Ships OFF. Enabling it in the real deployment, and migrating the blobs already on the filesystem, are separate operator decisions not made by this change.",
-    "No lifecycle/retention behavior is added for either backend — the operator decision DEC-43 already deferred."
-  ]
-}

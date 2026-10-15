@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "reason": "Documentation only: README, GLOSSARY and ARCHITECTURE brought back in step with the note tier, Standing, participation, the Relevance Gate, the proactive adaptor and the alerting stack; no behaviour changes.",
-  "summary": "README, GLOSSARY and ARCHITECTURE catch up with what shipped.",
-  "details": [],
-  "limitations": []
-}

@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Test-suite reliability only. The compute backend's tests waited by counting event-loop turns instead of by elapsed time, so seven of them failed together whenever the machine was busy. No change to Nora's behaviour."
-}

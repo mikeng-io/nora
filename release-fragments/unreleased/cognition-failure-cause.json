@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Internal: the shadow Cognition session's failure classification, which no user sees, is off by default, and changes nothing until sessions are switched on.",
-  "details": [],
-  "limitations": []
-}

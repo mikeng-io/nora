@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "design/context-assembly S3: the self_card block had two builders -- nora.agent.prefill._self_card_block (TagContext.self_card) and nora.language.proactive._self_card (Recollection.conclusions) -- both hand-constructing ContextBlock(name=\"self_card\", body=render_bullets(conclusions)) from a tuple[str, ...] of the same shape. Diffed on real inputs: byte-identical by construction, so this merges with no eval run, per the design bundle's own acceptance criteria for that case. nora.language.self_card_render.render_self_card is now the one builder both occasions call; each keeps its own order/key stamping. Rendered output for both occasions is byte-identical (confirmed by the full existing test suite, 8635 green); nothing a person or the model sees is different.",
-  "details": [],
-  "limitations": []
-}

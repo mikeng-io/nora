@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Wires the shadow Cognition session into startup behind [cognition] session_mode, which ships off: with it off nothing runs and nothing changes for anyone, and even with it on every write is recorded and none is committed or sent.",
-  "details": [],
-  "limitations": []
-}

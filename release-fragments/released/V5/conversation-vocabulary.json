@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs only. GLOSSARY gains `conversation`, `conversation id` and `scope`, and says which of them `room` is a view of. \"Room\" named four things in prose and two of them key stores differently: the ingest and tag paths key `(platform, conversation_id)` because that is what arrived, a Dreamer adaptor keys `primary_id` because that is what `scopes()` hands it. Both are right for their writer and a store that picks the other matches zero rows on its watermark query, so its adaptor is scheduled and never runs. `Conversation.ids` is a frozenset, so the two keyings are equal only while every conversation holds one id - true of all six today - and nothing compares them, so the divergence would be silent (issue #229). Nothing a member of a room can observe."
-}

@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Nora's canonical look is now the mascot form, in the self-reference design.",
-  "details": [],
-  "limitations": [],
-  "reason": "Design documents and reference images only (design/self-reference/, assets/); nothing Nora does changes, since DEC-193 is designed but not built. The operator replaced the human-form self image with a stylized 3D mascot, sent a written visual identity spec (kept verbatim), and added her social avatar and banner as reference-only images."
-}

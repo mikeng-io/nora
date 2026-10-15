@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design-only: adds design/dreamer-agent-loop/24-embedding-seam.md, the shared retrieval seam across knowledge/note/language tiers, and marks 23-retrieval §6.1 superseded. No code change."
-}
