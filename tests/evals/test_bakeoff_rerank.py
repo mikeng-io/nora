@@ -116,3 +116,12 @@ def test_decide_reads_a_two_stage_arm_as_searching_its_index_dimension():
 def test_an_error_in_the_hnsw_arm_decides_error():
     d = decide.decide({**INCUMBENT, "hnsw-rerank:qwen3vl-q4@256>2048/k50": _arm(0.95, errors=1)})
     assert d.verdict is Verdict.ERROR
+
+
+def test_each_relevant_item_s_rank_is_recorded_so_a_lost_item_re_derives():
+    ranked, _ = run.rank_rerank(QUERY, POOL, search_dim=2, k=5)
+    dense = run.rank_dense(QUERY, POOL)
+    labels = {"q": frozenset({"x", "p3"})}
+    assert run.relevant_ranks(dense, labels) == {"q": {"p3": 3, "x": 1}}
+    assert run.relevant_ranks(ranked, labels) == {"q": {"p3": 2, "x": None}}
+    assert run.relevant_ranks({"q": Errored("timeout")}, labels) == {"q": "ERROR:timeout"}

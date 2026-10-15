@@ -546,6 +546,22 @@ def first_relevant_ranks(rankings: Rankings, labels: Mapping[str, frozenset[str]
     return out
 
 
+def relevant_ranks(rankings: Rankings, labels: Mapping[str, frozenset[str]],
+                   ) -> dict[str, dict[str, int | None] | str]:
+    """Per query id, each relevant pool id's 1-based rank in the arm's top
+    `DEPTH` (None past it), `ERROR:<kind>` if the query errored: so whether
+    an arm LOST an item another arm found re-derives from ids and ranks."""
+    out: dict[str, dict[str, int | None] | str] = {}
+    for q in sorted(labels):
+        r = rankings.get(q, Errored("exception"))
+        if isinstance(r, Errored):
+            out[q] = f"ERROR:{r.kind}"
+            continue
+        pos = {pid: n for n, pid in enumerate(r[:DEPTH], start=1)}
+        out[q] = {pid: pos.get(pid) for pid in sorted(labels[q])}
+    return out
+
+
 def reading_gap(
     lexical: Sequence[Rankings], labels: Mapping[str, frozenset[str]],
 ) -> dict[str, bool | Errored]:
@@ -718,6 +734,7 @@ def evaluate(the_set: BakeoffSet, arms: Mapping[str, ArmRun], *, lexical_arms: S
         s["paired_recall5_minus_reference_ci95"] = None if name == reference else _paired_ci(
             _per_query(arm.rankings, labels, recall_at), ref_recall)
         s["per_query"] = first_relevant_ranks(arm.rankings, labels)
+        s["relevant_ranks"] = relevant_ranks(arm.rankings, labels)
         s["cost"] = arm.cost
         s["provenance"] = arm.provenance
         result_arms[name] = s
