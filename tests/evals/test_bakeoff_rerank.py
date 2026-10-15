@@ -143,3 +143,56 @@ def test_each_relevant_item_s_rank_is_recorded_so_a_lost_item_re_derives():
     assert run.relevant_ranks(dense, labels) == {"q": {"p3": 3, "x": 1}}
     assert run.relevant_ranks(ranked, labels) == {"q": {"p3": 2, "x": None}}
     assert run.relevant_ranks({"q": Errored("timeout")}, labels) == {"q": "ERROR:timeout"}
+
+
+def test_ties_go_to_the_lower_id_in_both_stages():
+    """Stage 1 admits the lowest ids at the k boundary; stage 2 orders equal
+    full cosines by id, not by their stage-1 order. Inserted in reverse."""
+    tie = {i: _unit(1, 0, 0) for i in "gfedcba"}
+    ranked, _ = run.rank_rerank(Embedded(vectors={"q": _unit(1, 0, 0)}), Embedded(vectors=tie),
+                                search_dim=2, k=5)
+    assert ranked["q"] == ["a", "b", "c", "d", "e"]
+    # Full cosine 0.6 for all; prefix cosine falls c, b, a, e, d.
+    full_tie = {i: [0.6, y, math.sqrt(1 - 0.36 - y * y)]
+                for i, y in {"c": 0.0, "b": 0.3, "a": 0.5, "e": 0.6, "d": 0.7}.items()}
+    ranked, _ = run.rank_rerank(Embedded(vectors={"q": [1.0, 0.0, 0.0]}),
+                                Embedded(vectors=full_tie), search_dim=2, k=5)
+    assert ranked["q"] == ["a", "b", "c", "d", "e"]
+
+
+@pytest.mark.parametrize(("ef_search", "want"), [(0, 5), (80, 80)])
+def test_the_hnsw_arm_asks_for_ef_search_at_least_k(monkeypatch, ef_search, want):
+    seen = {}
+
+    def fake(dsn, pool, queries, **kw):
+        seen.update(kw)
+        return {q: list(pool)[:5] for q in queries}, {"stage1": [1.0], "two_stage": [2.0]}, {}
+
+    monkeypatch.setattr(hnsw, "rerank", fake)
+    rr = Rerank(2, 3, hnsw_ks=(5,), dsn="postgresql+asyncpg://h/bakeoff", ef_search=ef_search)
+    run._rerank_arms("m", rr, POOL, QUERY, {}, {}, "the text", "s")
+    assert seen["ef_search"] == want and seen["k"] == 5
+
+
+class _Dummy:
+    name = "dummy"
+
+
+Q, ONE = "http://127.0.0.1:1", "one candidate per run"
+
+
+@pytest.mark.parametrize(("argv", "match"), [
+    (["--qwen", Q, "--gemma", "embeddinggemma-2"], f"{ONE}: --qwen"),
+    (["--qwen", Q, "--wemm", "http://127.0.0.1:2"], f"{ONE}: --qwen"),
+    (["--qwen", Q, "--official", "qwen3vl"], f"{ONE}: --official"),
+    (["--gemma", "embeddinggemma-2", "--official", "qwen3vl"], f"{ONE}: --official"),
+    (["--rerank", "256>2048"], "--rerank needs a 2048-dimension candidate"),
+    (["--gemma", "embeddinggemma-2", "--rerank", "256>2048"], "--rerank needs"),
+], ids=["qwen+gemma", "qwen+wemm", "official+qwen", "official+gemma", "rerank-alone",
+        "rerank+gemma"])
+def test_main_refuses_runs_it_cannot_measure_fairly(monkeypatch, tmp_path, argv, match):
+    monkeypatch.setattr(run, "qwen_embedder", lambda **kw: _Dummy() if kw["llama_url"] else None)
+    monkeypatch.setattr(run, "official_embedder", lambda label, dtype: _Dummy() if label else None)
+    monkeypatch.setattr(run, "host_sample", lambda: pytest.fail("refusal came after the run began"))
+    with pytest.raises(ValueError, match=match):
+        run.main(["--dsn", "postgresql+asyncpg://x/bakeoff", "--out", str(tmp_path), *argv])

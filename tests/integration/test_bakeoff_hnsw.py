@@ -95,3 +95,13 @@ def test_an_unmarked_or_foreign_database_is_refused(pg_admin):
         next(gen, None)
     with pytest.raises(lexical_seed.NotAThrowawayDatabaseError):
         _rerank(url.rsplit("/", 1)[0] + "/nora")
+
+
+def test_stage_one_admits_the_lowest_ids_at_the_k_boundary(dsn):
+    """Equal distances at the boundary: the ORDER BY's `id` decides which
+    are admitted, so a rerun admits the same items."""
+    same = _unit(random.Random(1))
+    pool = {f"t{i:02}": same for i in range(30, 0, -1)}
+    got, _, _ = hnsw.rerank(dsn, pool, {"q": QUERIES["q0"]}, table="bakeoff_hnsw_tie",
+                            search_dim=SEARCH, full_dim=FULL, k=10, ef_search=40)
+    assert got["q"] == [f"t{i:02}" for i in range(1, 11)]

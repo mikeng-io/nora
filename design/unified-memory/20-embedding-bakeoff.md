@@ -2,8 +2,13 @@
 
 Lexical, dense, fused and reranked arms, measured in that order.
 
-Status: **plan**, 2026-10-14. Nothing has been run. This node fixes what is
-compared, on what, and what counts as a pass before any model is downloaded.
+Status: **measuring**, 2026-10-16. Planned 2026-10-14. Stages 1 and 2 have
+run on the three journey slices: lexical, the bge-m3 floor, EmbeddingGemma 2,
+WeMM-2B, Qwen3-VL-Embedding-2B, jina-v5-omni-small, and the two-stage
+256 > 2048 arm. The results are in `evals/retrieval_bakeoff/results/`, and
+each run has a dated section below. The reranker and graph-expansion stages
+have not run, and no candidate has been adopted. The rest of this node is
+the plan: what is compared, on what, and what counts as a pass.
 
 ## Why a bake-off and not a leaderboard
 
@@ -428,6 +433,16 @@ every row, so each count is recall@5 times the number of queries:
   fused bm25+Qwen arms are flagged media-only. The verdict is the same with
   #22's fp32 `qwen3vl` files loaded alongside: fp32 dense@2048 also misses
   12, and the arm names do not collide.
+
+Q4 through llama-server scored higher here than fp32 through Hugging Face
+(the section above). dense@2048 on text → image was 69 of 69 against a
+recall@5 of 0.9855, and dense@256 missed 13 against 17. The cause is not
+established. The two runtimes differ in more than precision: llama.cpp
+against PyTorch kernels, and a different implementation of the image
+preprocessing. The text token ids were checked equal. So this is not evidence
+that Q4 is better. The SQL arm ran before stage 1 ordered equal distances by
+id. Its relevant-item ranks equal the exact arm's on every query, so no tie
+at the k boundary changed what it found.
 
 This is a Q4 verdict on 69 / 61 / 48 queries. It shows that the two-stage
 design loses nothing here. It does not show that it would lose nothing at

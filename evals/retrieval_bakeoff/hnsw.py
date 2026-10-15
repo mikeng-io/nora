@@ -39,9 +39,11 @@ from nora.subject import lexical_seed
 
 __all__ = ["STAGE1_ORDER", "plan_uses_index", "rerank", "short_candidates"]
 
-#: Stage 1's ORDER BY: the index's own expression against the query's.
+#: Stage 1's ORDER BY: the index's own expression against the query's, then
+#: the id, so the item admitted at the k boundary among equal distances is the
+#: same on every run (the exact arm breaks ties the same way).
 STAGE1_ORDER = ("subvector(embedding, 1, {s})::halfvec({s}) "
-                "<=> subvector(%(q)s::text::halfvec({f}), 1, {s})::halfvec({s})")
+                "<=> subvector(%(q)s::text::halfvec({f}), 1, {s})::halfvec({s}), id")
 _SAFE = re.compile(r"[a-z][a-z0-9_]*")
 
 
