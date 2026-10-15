@@ -293,20 +293,29 @@ class HFEmbedder:
         self._revision = revision
         self._dtype = dtype
         self._encode = encode
+        self._loaded: dict[str, Any] = {}
 
     def _encoder(self) -> Callable[[list[Any]], Sequence[Sequence[float]]]:
         if self._encode is None:
             # ponytail: imported on first use; the bake-off venv installs it,
             # the gate never does (P2 proves the load before a run).
+            import sentence_transformers  # type: ignore[import-not-found]
             import torch  # type: ignore[import-not-found]
-            from sentence_transformers import (
-                SentenceTransformer,  # type: ignore[import-not-found]
-            )
+            import transformers  # type: ignore[import-not-found]
 
-            st = SentenceTransformer(
+            st = sentence_transformers.SentenceTransformer(
                 self.name, revision=self._revision, device="cpu",
                 model_kwargs={"torch_dtype": getattr(torch, self._dtype)},
             )
+            image = getattr(getattr(st[0], "processor", None), "image_processor", None)
+            self._loaded = {
+                "torch": torch.__version__, "transformers": transformers.__version__,
+                "sentence_transformers": sentence_transformers.__version__,
+                "torch_threads": torch.get_num_threads(),
+                "param_dtype": str(next(st.parameters()).dtype),
+                # The vision budget, as loaded: Ollama's image path is not this one.
+                "image_max_soft_tokens": getattr(image, "max_soft_tokens", None),
+            }
             self._encode = lambda xs: st.encode(xs, normalize_embeddings=False).tolist()
         return self._encode
 
@@ -320,4 +329,5 @@ class HFEmbedder:
 
     def provenance(self) -> dict[str, Any]:
         return {"runtime": "sentence-transformers", "model": self.name, "revision": self._revision,
-                "dtype": self._dtype, "native_dim": self.native_dim, "prefix": self.prefix.record()}
+                "dtype": self._dtype, "native_dim": self.native_dim, "prefix": self.prefix.record(),
+                **self._loaded}

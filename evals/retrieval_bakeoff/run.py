@@ -49,6 +49,7 @@ import os
 import platform
 import random
 import re
+import resource
 import statistics
 import subprocess
 import sys
@@ -66,6 +67,7 @@ import yaml
 from evals.retrieval_bakeoff.adapters import (
     Embedder,
     EmbedError,
+    HFEmbedder,
     OllamaEmbedder,
     check,
     matryoshka,
@@ -758,6 +760,30 @@ def _unload(model: str) -> bool:
 LEXICAL = ("lexical:trigram", "lexical:bm25")
 
 
+def gemma_embedder(*, ollama_tag: str = "", hf_repo: str = "", revision: str = "",
+                   dtype: str = "", base_url: str, timeout: float) -> Embedder | None:
+    """Stage 2's EmbeddingGemma 2: an Ollama tag, or a pinned Hugging Face
+    revision through sentence-transformers on CPU at an explicit dtype (the
+    full-precision path; float16 refuses in the adapter). Never both."""
+    if ollama_tag and hf_repo:
+        raise ValueError("--gemma and --gemma-hf are two serving paths; pass one")
+    if hf_repo:
+        if not revision or not dtype:
+            raise ValueError("--gemma-hf needs --gemma-revision and --gemma-dtype")
+        return HFEmbedder(hf_repo, revision=revision, dtype=dtype, native_dim=768)
+    if ollama_tag:
+        return OllamaEmbedder(ollama_tag, native_dim=768, base_url=base_url, timeout=timeout)
+    return None
+
+
+def _cpu_bf16_flags() -> list[str]:
+    try:
+        text = Path("/proc/cpuinfo").read_text()
+    except OSError:
+        return []
+    return sorted({f for f in text.split() if f in ("avx512_bf16", "amx_bf16")})
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -765,6 +791,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--ollama", default="http://127.0.0.1:11434")
     ap.add_argument("--slices", default="text_image,cantonese,names")
     ap.add_argument("--gemma", default="", help="an Ollama tag of EmbeddingGemma 2: stage 2")
+    ap.add_argument("--gemma-hf", default="", help="or its Hugging Face repo, on CPU: stage 2")
+    ap.add_argument("--gemma-revision", default="", help="the HF commit, pinned")
+    ap.add_argument("--gemma-dtype", default="", help="bfloat16 or float32; never float16")
     ap.add_argument("--gemma-dims", default="768,256")
     ap.add_argument("--media-dir", type=Path, default=MEDIA_DIR)
     ap.add_argument("--timeout", type=float, default=120.0)
@@ -772,14 +801,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     sets = {name: load_set(SET_DIR, name) for name in args.slices.split(",")}
-    stage = "stage2" if args.gemma else "floor"
+    gemma = gemma_embedder(ollama_tag=args.gemma, hf_repo=args.gemma_hf,
+                           revision=args.gemma_revision, dtype=args.gemma_dtype,
+                           base_url=args.ollama, timeout=args.timeout)
+    stage = "stage2" if gemma else "floor"
     before = host_sample()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     provenance: dict[str, Any] = {
         **_commit(), "host": platform.node(), "python": sys.version.split()[0],
         "nice": os.nice(0), "host_before": before,
         "stage": "1 (lexical) plus the bge-m3 floor"
-                 + (f", and 2 (dense: {args.gemma})" if args.gemma else ""),
+                 + (f", and 2 (dense: {gemma.name})" if gemma else ""),
+        "cpu_bf16_flags": _cpu_bf16_flags(),
     }
     arms: dict[str, dict[str, ArmRun]] = {name: {} for name in sets}
     unloaded: dict[str, bool] = {}
@@ -795,16 +828,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             arms[name].update(_text_arms(bge, "bge-m3", the_set, (1024,), timeout=args.timeout,
                                          dog=dog, base=args.ollama))
         unloaded[bge.name] = _unload(bge.name)
-        if args.gemma:
-            gemma = OllamaEmbedder(args.gemma, native_dim=768, base_url=args.ollama,
-                                   timeout=args.timeout)
+        if gemma:
             dims = tuple(int(d) for d in args.gemma_dims.split(","))
             for name, the_set in sets.items():
                 build = _image_arms if the_set.media else _text_arms
                 kw = {"media_dir": args.media_dir} if the_set.media else {}
                 arms[name].update(build(gemma, "gemma2", the_set, dims, timeout=args.timeout,
                                         dog=dog, base=args.ollama, **kw))
-            unloaded[gemma.name] = _unload(gemma.name)
+            if args.gemma:
+                unloaded[gemma.name] = _unload(gemma.name)
     except AbortedError as e:
         for m in ("bge-m3", args.gemma):
             if m:
@@ -820,6 +852,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     provenance["host_after"] = host_sample()
     lowest = (dog.lowest_available_kib or 0) / GIB_KIB
     provenance["watchdog_lowest_mem_available_gib"] = round(lowest, 2)
+    # This process's high-water mark (Linux: KiB); an in-process model's cost.
+    provenance["peak_rss_mib"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)
     worst = 0
     for name, the_set in sets.items():
         slice_arms = arms[name]

@@ -261,6 +261,33 @@ def test_float16_is_refused_at_construction(dtype: str) -> None:
                        transport=FakeTransport(768))
 
 
+def test_stage_two_runs_gemma_through_hf_at_a_pinned_revision_and_explicit_dtype() -> None:
+    emb = run.gemma_embedder(hf_repo="google/embeddinggemma-2", revision="r", dtype="float32",
+                             base_url="http://x", timeout=1)
+    assert isinstance(emb, HFEmbedder)
+    prov = emb.provenance()
+    assert (prov["revision"], prov["dtype"], prov["native_dim"]) == ("r", "float32", 768)
+    assert prov["prefix"]["query"] == GEMMA2_PREFIX.query
+
+
+@pytest.mark.parametrize("kw", [
+    {"hf_repo": "google/embeddinggemma-2", "dtype": "float32"},          # no revision
+    {"hf_repo": "google/embeddinggemma-2", "revision": "r"},             # no dtype
+    {"hf_repo": "google/embeddinggemma-2", "revision": "r", "dtype": "float16"},
+    {"hf_repo": "google/embeddinggemma-2", "revision": "r", "dtype": "float32",
+     "ollama_tag": "embeddinggemma-2"},                                  # two paths
+])
+def test_stage_two_refuses_an_unpinned_half_precision_or_ambiguous_gemma(kw: dict) -> None:
+    with pytest.raises(ValueError):
+        run.gemma_embedder(base_url="http://x", timeout=1, **kw)
+
+
+def test_stage_two_still_runs_gemma_through_ollama_and_is_off_by_default() -> None:
+    assert isinstance(run.gemma_embedder(ollama_tag="embeddinggemma-2", base_url="http://x",
+                                         timeout=1), OllamaEmbedder)
+    assert run.gemma_embedder(base_url="http://x", timeout=1) is None
+
+
 def test_ollama_refuses_media_for_a_model_without_vision() -> None:
     """Ollama answers an `images` field on /api/embed with the text-only
     vector (0.35 and 0.40.4, probed 2026-10-15): a silent pass of the wrong
