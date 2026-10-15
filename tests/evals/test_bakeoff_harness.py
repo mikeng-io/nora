@@ -300,17 +300,18 @@ def _relock(root: Path, names: list[str]) -> None:
 
 
 def _per_slice_files(tmp_path: Path) -> Path:
-    """The set in #18's shape: each slice names its items and labels file, and
-    the lock covers more files than the slice reads."""
+    """The set with the image slice's files renamed: the loader must follow
+    the names `set.yaml` gives, and check every file the lock lists."""
     root = tmp_path / "set"
     shutil.copytree(SET_DIR, root, ignore=shutil.ignore_patterns("results", "*.py"))
     (root / "media.yaml").rename(root / "images.yaml")
     (root / "labels.yaml").rename(root / "labels_image.yaml")
     (root / "texts.yaml").write_text("items: {}\n", encoding="utf-8")
     the_set = (root / "set.yaml").read_text(encoding="utf-8")
+    assert "    items: media.yaml\n    labels: labels.yaml\n" in the_set
     (root / "set.yaml").write_text(the_set.replace(
-        "  text_image:\n",
-        "  text_image:\n    items: images.yaml\n    labels: labels_image.yaml\n", 1,
+        "    items: media.yaml\n    labels: labels.yaml\n",
+        "    items: images.yaml\n    labels: labels_image.yaml\n", 1,
     ), encoding="utf-8")
     _relock(root, ["set.yaml", "images.yaml", "texts.yaml", "labels_image.yaml"])
     return root
