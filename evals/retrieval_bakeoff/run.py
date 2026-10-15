@@ -66,10 +66,12 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from evals.retrieval_bakeoff.adapters import (
+    OFFICIAL,
     Embedder,
     EmbedError,
     HFEmbedder,
     LlamaServerEmbedder,
+    OfficialEmbedder,
     OllamaEmbedder,
     check,
     matryoshka,
@@ -824,6 +826,23 @@ def wemm_embedder(*, llama_url: str = "", hf_repo: str = "", revision: str = "",
     return None
 
 
+#: Each official-format candidate's Matryoshka dimensions: native, and 256.
+OFFICIAL_DIMS = {"qwen3vl": (2048, 256), "jina5omni": (1024, 256)}
+
+
+def official_embedder(label: str, *, dtype: str) -> OfficialEmbedder | None:
+    """Stage 2's Qwen3-VL-Embedding-2B or jina-embeddings-v5-omni-small, in
+    the format its own files define (`adapters.OfficialFormat`), at its
+    pinned commit and an explicit dtype. One per run: one model resident."""
+    if not label:
+        return None
+    if label not in OFFICIAL:
+        raise ValueError(f"--official must be one of {sorted(OFFICIAL)}, not {label!r}")
+    if not dtype:
+        raise ValueError("--official needs --official-dtype (float32 or bfloat16)")
+    return OfficialEmbedder(OFFICIAL[label], dtype=dtype)
+
+
 def _cpu_bf16_flags() -> list[str]:
     try:
         text = Path("/proc/cpuinfo").read_text()
@@ -857,6 +876,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     help="HF only: load without lm_head and the vision tower (text slices)")
     ap.add_argument("--wemm-pid", type=int, default=None,
                     help="the llama-server pid, for its peak RSS")
+    ap.add_argument("--official", default="", help=f"one of {sorted(OFFICIAL)}: stage 2")
+    ap.add_argument("--official-dtype", default="float32", help="never float16")
     ap.add_argument("--media-dir", type=Path, default=MEDIA_DIR)
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--out", type=Path, default=SET_DIR / "results")
@@ -874,6 +895,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     stage = (f"stage2-{wemm[1]}" if wemm and args.wemm_hf else "stage2-wemm" if wemm
              else "stage2" if gemma else "floor")
     candidates = [m for m in (gemma.name if gemma else "", wemm[0].name if wemm else "") if m]
+    official = official_embedder(args.official, dtype=args.official_dtype)
+    if official and (gemma or wemm):
+        raise ValueError("one candidate per run: --official, or --gemma(-hf) or --wemm(-hf)")
+    if official:
+        stage = f"stage2-{args.official}"
+        candidates.append(official.name)
     before = host_sample()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     provenance: dict[str, Any] = {
@@ -915,6 +942,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 kw = {"media_dir": args.media_dir} if the_set.media else {}
                 arms[name].update(build(emb, label, the_set, dims, timeout=args.timeout,
                                         dog=dog, base=args.ollama, **kw))
+        if official:
+            dims = OFFICIAL_DIMS[args.official]
+            for name, the_set in sets.items():
+                build = _image_arms if the_set.media else _text_arms
+                kw = {"media_dir": args.media_dir} if the_set.media else {}
+                arms[name].update(build(official, args.official, the_set, dims,
+                                        timeout=args.timeout, dog=dog, base=args.ollama, **kw))
     except AbortedError as e:
         for m in ("bge-m3", args.gemma):
             if m:

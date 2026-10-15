@@ -14,11 +14,19 @@ reads out of `results/*.json`, arm names as the harness writes them.
 3. **Pass.** A candidate HOLDS cantonese (recall@5 no more than 0.05 below
    the baseline's) AND WINS text_image or names: its miss rate is at most
    half the baseline's, (1 - r) <= 0.5 * (1 - r_base). A baseline with no
-   misses cannot be beaten. Several passing: the best text_image recall@5,
-   then the lower dimension.
-4. **Media-only.** Wins text_image but does not hold cantonese: flagged for
+   misses cannot be beaten.
+4. **Several passing** (operator ruling 2026-10-16): the fewest TOTAL MISSES
+   summed over the journey slices, where a miss is a query whose first
+   relevant item is not in the top 5 (`per_query`: a rank over 5, none in
+   the top 50, or an errored query); then the lower dimension; then the arm
+   name, so the pick is deterministic. A passing arm whose result carries no
+   per-query ranks on a journey slice decides ERROR: its misses are unknown,
+   never guessed. It replaced "the best text_image recall@5, then the lower
+   dimension", which picked one more image found over 0.15 of Cantonese
+   recall (WeMM-2B over Qwen3-VL-Embedding-2B, design 20).
+5. **Media-only.** Wins text_image but does not hold cantonese: flagged for
    the operator (a second embedder doubles the index), never a REPLACE.
-5. **Otherwise a tie, and a tie keeps bge-m3.**
+6. **Otherwise a tie, and a tie keeps bge-m3.**
 
 Why halve-the-misses (operator, 2026-10-15): the plan's absolute +0.10
 recall@5 margin was unreachable once bge-m3 over the readings measured 0.928
@@ -37,6 +45,7 @@ import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 __all__ = [
     "HOLD", "INCUMBENTS", "JOURNEY", "WIN_MISS_RATIO", "Decision", "Score", "Verdict",
@@ -66,6 +75,9 @@ class Score:
     recall5: float | None
     mrr10: float | None
     errors: int
+    #: Queries whose first relevant item is not in the top 5 (`per_query`);
+    #: None when the result carries no per-query ranks.
+    misses: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +88,8 @@ class Decision:
     media_only: tuple[str, ...] = ()
     baseline: dict[str, float] = field(default_factory=dict)
     reason: str = ""
+    #: Each passing arm's misses summed over the journey slices.
+    misses: dict[str, int] = field(default_factory=dict)
 
 
 def _dim(arm: str) -> int:
@@ -144,9 +158,25 @@ def decide(r: Mapping[str, Mapping[str, Score]]) -> Decision:
     if not passing:
         return Decision(Verdict.KEEP_BGE_M3, media_only=tuple(media_only), baseline=base,
                         reason="no candidate passes both bars; a tie keeps the incumbent")
-    arm, wins = min(passing, key=lambda p: (-recall(p[0], "text_image"), _dim(p[0]), p[0]))
+    if len(passing) == 1:
+        arm, wins = passing[0]
+        return Decision(Verdict.REPLACE, winner=arm, wins=wins, media_only=tuple(media_only),
+                        baseline=base, reason=f"{arm} holds cantonese and wins {', '.join(wins)}")
+    misses: dict[str, int] = {}
+    for arm, _ in passing:
+        per_slice = [r[arm][s].misses for s in JOURNEY]
+        if any(m is None for m in per_slice):
+            unknown = [s for s, m in zip(JOURNEY, per_slice, strict=True) if m is None]
+            return Decision(Verdict.ERROR, media_only=tuple(media_only), baseline=base,
+                            reason=f"{arm} passes but has no per_query ranks on {unknown}: "
+                                   "its misses cannot be counted")
+        misses[arm] = sum(m for m in per_slice if m is not None)
+    arm, wins = min(passing, key=lambda p: (misses[p[0]], _dim(p[0]), p[0]))
     return Decision(Verdict.REPLACE, winner=arm, wins=wins, media_only=tuple(media_only),
-                    baseline=base, reason=f"{arm} holds cantonese and wins {', '.join(wins)}")
+                    baseline=base, misses=misses,
+                    reason=f"{arm} holds cantonese, wins {', '.join(wins)}, and has the "
+                           f"fewest total misses of {len(passing)} passing arms "
+                           f"({misses[arm]})")
 
 
 def scores_from_results(paths: Iterable[Path], *, subset: str | None = None,
@@ -160,29 +190,99 @@ def scores_from_results(paths: Iterable[Path], *, subset: str | None = None,
     `rename` joins one candidate measured through two serving paths into one
     arm, explicitly: `{"wemm-fp32": "wemm"}` reads `dense:wemm-fp32@2048` as
     `dense:wemm@2048` (WeMM at fp32 on the text slices, Q4 on text_image,
-    whose files keep each precision in their provenance). A renamed arm that
-    lands on an (arm, slice) another file also measured is refused, never
-    silently overwritten."""
+    whose files keep each precision in their provenance).
+
+    A file whose arms recorded a known variant's format (`_variant_formats`)
+    has them relabelled first, whatever the caller passes: the first Qwen
+    run's arms, written as `qwen3vl`, load as `qwen3vl-defaultinst`.
+
+    A candidate arm, after both renames, that appears twice for one slice
+    raises ValueError (ERROR): the verdict would otherwise be whichever file
+    was read last. The incumbents and the lexical floors, which every run
+    re-measures, may recur; the last one read is kept."""
     out: dict[str, dict[str, Score]] = {}
-    renamed: set[tuple[str, str]] = set()
     for path in paths:
         result = json.loads(Path(path).read_text(encoding="utf-8"))
+        relabel = _variant_relabel(result)
         for written, a in result["arms"].items():
             arm = written
-            for old, new in (rename or {}).items():
+            for old, new in (*relabel.items(), *(rename or {}).items()):
                 arm = arm.replace(old, new)
-            key = (arm, result["slice"])
-            if (arm != written or key in renamed) and result["slice"] in out.get(arm, {}):
-                raise ValueError(f"{arm} on {result['slice']} is measured twice once renamed")
-            if arm != written:
-                renamed.add(key)
+            floor = arm in INCUMBENTS or arm.startswith("lexical:")
+            if not floor and result["slice"] in out.get(arm, {}):
+                raise ValueError(f"ERROR: {arm} on {result['slice']} is measured twice "
+                                 f"(again in {Path(path).name}); load one run per arm")
             src = a if subset is None else a[subset]
             errors = a["errors"]
             out.setdefault(arm, {})[result["slice"]] = Score(
                 src.get("recall5"), src.get("mrr10"),
                 int(errors.get("queries", 0)) + int(errors.get("pool", 0)),
+                _misses_in(a.get("per_query"), result, subset),
             )
     return out
+
+
+def _variant_formats() -> list[tuple[str, dict[str, str], str]]:
+    """(label as written, the variant's recorded `text` format, the variant's
+    own label) for each format the harness recorded under a reused label."""
+    from evals.retrieval_bakeoff.adapters import (
+        QWEN3VL_DEFAULT_INSTRUCTION_VARIANT,
+        QWEN3VL_EMBEDDING_2B,
+    )
+
+    v = QWEN3VL_DEFAULT_INSTRUCTION_VARIANT
+    return [(QWEN3VL_EMBEDDING_2B.label, dict(v.text), v.label)]
+
+
+def _variant_relabel(result: Mapping[str, Any]) -> dict[str, str]:
+    """{written label: variant label} for a file whose arms recorded a
+    variant's format (only dense arms carry the format; their fused arms
+    share the label and follow)."""
+    out: dict[str, str] = {}
+    for a in result["arms"].values():
+        fmt = (a.get("provenance") or {}).get("format") or {}
+        for written, text, variant in _variant_formats():
+            if fmt.get("label") == written and fmt.get("text") == text:
+                out[written] = variant
+    return out
+
+
+def _subset_queries(result: Mapping[str, Any], subset: str | None) -> set[str] | None:
+    """The query ids a named subset covers (None: all queries). A subset whose
+    list the result does not carry raises KeyError: its misses are unknown."""
+    if subset is None:
+        return None
+    gap = (result.get("reading_gap") or {}).get("queries")
+    subsets = dict(result.get("subsets") or {})
+    named = {"in_reading_gap": gap, "outside_reading_gap": gap, **subsets,
+             **{f"outside_{k}": v for k, v in subsets.items()}}
+    if named.get(subset) is None:
+        raise KeyError(subset)
+    chosen = set(named[subset])
+    if subset.startswith("outside_"):
+        every = {q for a in result["arms"].values() for q in (a.get("per_query") or ())}
+        return every - chosen
+    return chosen
+
+
+def _misses_in(per_query: Mapping[str, int | str | None] | None,
+               result: Mapping[str, Any], subset: str | None) -> int | None:
+    try:
+        only = _subset_queries(result, subset)
+    except KeyError:
+        return None
+    return _misses(per_query, only)
+
+
+def _misses(per_query: Mapping[str, int | str | None] | None,
+            only: set[str] | None) -> int | None:
+    """Queries whose first relevant item is not in the top 5: a rank over 5,
+    None (none in the top 50) or an `ERROR:<kind>`. None without ranks."""
+    if per_query is None:
+        return None
+    return sum(1 for q, rank in per_query.items()
+               if (only is None or q in only)
+               and not (isinstance(rank, int) and not isinstance(rank, bool) and rank <= 5))
 
 
 def rerank_ships(fused: Mapping[str, Score], reranked: Mapping[str, Score],

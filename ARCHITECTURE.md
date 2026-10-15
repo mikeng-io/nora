@@ -387,7 +387,7 @@ workspace's units and a separate one in every other workspace; and, once
 for a room or unit sees only that unit's rooms (without `[units]` reads stay
 unscoped, as before). `nora.app.memory_routing` resolves it once at startup and
 `HonchoClient` routes every call through it; a room the policy places in no
-workspace is refused, never widened.
+workspace is refused, never widened. **Retiring (operator, 2026-10-16):** the workspace goes with Honcho at step 9 of `design/unified-memory/00-intent.md` «Sequence», and the unit becomes the only boundary (`design/unified-memory/35-persona.md` row 6). Until then this describes the code.
 
 **Media is part of the record, not a fourth layer** (DEC-45,
 `design/18-media-custody.md`). An attachment's BYTES live in
