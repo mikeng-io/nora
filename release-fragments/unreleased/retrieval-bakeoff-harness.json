@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Eval-only: the retrieval bake-off's harness, adapters, decision rule and its first stage-1 and bge-m3 floor result on the text-to-image slice. Nothing Nora runs or says changes.",
+  "details": [],
+  "limitations": []
+}
