@@ -66,6 +66,7 @@ import yaml
 from evals.retrieval_bakeoff.adapters import (
     Embedder,
     EmbedError,
+    LlamaServerEmbedder,
     OllamaEmbedder,
     check,
     matryoshka,
@@ -766,20 +767,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--slices", default="text_image,cantonese,names")
     ap.add_argument("--gemma", default="", help="an Ollama tag of EmbeddingGemma 2: stage 2")
     ap.add_argument("--gemma-dims", default="768,256")
+    ap.add_argument("--wemm", default="",
+                    help="a llama-server URL serving WeMM-Embedding-2B with its mmproj: stage 2")
+    ap.add_argument("--wemm-dims", default="2048,256")
+    ap.add_argument("--wemm-name", default="wemm-embedding-2b:Q4_K_M")
+    ap.add_argument("--wemm-model-sha256", default="")
+    ap.add_argument("--wemm-mmproj-sha256", default="")
+    ap.add_argument("--wemm-build", default="")
+    ap.add_argument("--wemm-dtype", default="Q4_K_M (projector BF16)")
+    ap.add_argument("--wemm-pid", type=int, default=None,
+                    help="the llama-server pid, for its peak RSS")
     ap.add_argument("--media-dir", type=Path, default=MEDIA_DIR)
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--out", type=Path, default=SET_DIR / "results")
     args = ap.parse_args(argv)
 
     sets = {name: load_set(SET_DIR, name) for name in args.slices.split(",")}
-    stage = "stage2" if args.gemma else "floor"
+    stage = "stage2-wemm" if args.wemm else "stage2" if args.gemma else "floor"
+    candidates = [m for m in (args.gemma, args.wemm and args.wemm_name) if m]
     before = host_sample()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     provenance: dict[str, Any] = {
         **_commit(), "host": platform.node(), "python": sys.version.split()[0],
         "nice": os.nice(0), "host_before": before,
         "stage": "1 (lexical) plus the bge-m3 floor"
-                 + (f", and 2 (dense: {args.gemma})" if args.gemma else ""),
+                 + (f", and 2 (dense: {', '.join(candidates)})" if candidates else ""),
     }
     arms: dict[str, dict[str, ArmRun]] = {name: {} for name in sets}
     unloaded: dict[str, bool] = {}
@@ -805,6 +817,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arms[name].update(build(gemma, "gemma2", the_set, dims, timeout=args.timeout,
                                         dog=dog, base=args.ollama, **kw))
             unloaded[gemma.name] = _unload(gemma.name)
+        if args.wemm:
+            # Served by its own llama-server, which the operator starts and stops.
+            wemm = LlamaServerEmbedder(
+                args.wemm_name, native_dim=2048, base_url=args.wemm,
+                model_sha256=args.wemm_model_sha256, mmproj_sha256=args.wemm_mmproj_sha256,
+                build=args.wemm_build, dtype=args.wemm_dtype, server_pid=args.wemm_pid,
+                timeout=args.timeout)
+            dims = tuple(int(d) for d in args.wemm_dims.split(","))
+            for name, the_set in sets.items():
+                build = _image_arms if the_set.media else _text_arms
+                kw = {"media_dir": args.media_dir} if the_set.media else {}
+                arms[name].update(build(wemm, "wemm", the_set, dims, timeout=args.timeout,
+                                        dog=dog, base=args.ollama, **kw))
     except AbortedError as e:
         for m in ("bge-m3", args.gemma):
             if m:

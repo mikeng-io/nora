@@ -20,7 +20,8 @@ The serving paths, as probed on the deploy host 2026-10-15:
   vector and refuses an object input, so `embed_media` refuses.
 - `LlamaServerEmbedder`: a native llama-server with `--embedding --pooling
   last` and a multimodal projector, in the request shape recorded in
-  design/conversational-recall/30 (WeMM-2B's image path).
+  design/conversational-recall/30 (WeMM-2B's image path), with WeMM's
+  wrapper as its own template files render it (the class says how).
 - `HFEmbedder`: a sentence-transformers model on CPU, for a model no runtime
   above serves yet (Gemma 2 before Ollama 0.36).
 """
@@ -235,16 +236,43 @@ class OllamaEmbedder:
 
 class LlamaServerEmbedder:
     """A native llama-server started with `--embedding --pooling last` and,
-    for media, `--mmproj` (design/conversational-recall/30)."""
+    for media, `--mmproj` (design/conversational-recall/30).
 
-    #: llama.cpp's default multimodal marker (mtmd), where the image goes.
+    WeMM-Embedding-2B's input is fixed by its own files (tencent/WeMM-Embedding-2B
+    at `bbd6cd4b`: `embedding_chat_template.jinja`, the sentence-transformers
+    template and `tokenizer.json`, tokenized by the transformers 5.2.0 the card
+    pins): one user turn, then the special token `<embedding>` (id 248077) with
+    NO newline before it, because the tokenizer's normalizer strips the newline
+    after `<|im_end|>` and its post-processor appends the token. Before an
+    image the role's newline is dropped as well. Last-token pooling then reads
+    the `<embedding>` position. The model has no query or document instruction
+    (`prompts` is `{}`), so the prefix is empty on both roles.
+
+    The GGUF's EOS is `<embedding>` and llama-server appends it as a special
+    token, so the prompt here stops at `<|im_end|>`: writing `<embedding>` too
+    embeds it twice (measured 2026-10-15, cosine to the HF reference 0.928 on
+    a Cantonese query, 0.968 without the duplicate). `_template_checked`
+    verifies the server's token sequence once, through /tokenize, and refuses
+    a server that does not end it with exactly one `<embedding>`."""
+
+    #: llama.cpp's default multimodal marker (mtmd), where the image goes. mtmd
+    #: wraps a Qwen-VL image in `<|vision_start|>`...`<|vision_end|>` itself.
+    #: A newer server randomises it per start and publishes it as `media_marker`
+    #: in /props (b42b7e6d3, 2026-10-15: the default then fails to tokenize), so
+    #: the marker is read from the server, and the default is only for a server
+    #: whose /props does not name one.
     MEDIA_MARKER = "<__media__>"
-    #: WeMM's wrapper: the user turn, then the embedding token.
-    WRAP = "<|im_start|>user\n{x}<|im_end|>\n<embedding>"
+    #: A text input: the user turn; the server appends `<embedding>` right after.
+    WRAP = "<|im_start|>user\n{x}<|im_end|>"
+    #: An image alone: no newline after the role (the official template).
+    MEDIA_WRAP = "<|im_start|>user{x}<|im_end|>"
+    #: The special token the server must append, last, exactly once.
+    APPENDED = "<embedding>"
 
     def __init__(self, name: str, *, native_dim: int, base_url: str = "http://127.0.0.1:11439",
                  model_sha256: str = "", mmproj_sha256: str = "", build: str = "",
-                 dtype: str = "", timeout: float = 120.0, transport: Transport = http_json) -> None:
+                 dtype: str = "", server_pid: int | None = None, timeout: float = 120.0,
+                 transport: Transport = http_json) -> None:
         if _is_gemma2(name):
             _refuse_float16(name, dtype)
         self.name = name
@@ -253,8 +281,35 @@ class LlamaServerEmbedder:
         self._base = base_url.rstrip("/")
         self._prov = {"model_sha256": model_sha256, "mmproj_sha256": mmproj_sha256,
                       "build": build, "dtype": dtype}
+        self._pid = server_pid
         self._timeout = timeout
         self._call = transport
+        self._marker: str | None = None
+        self._marker_source = ""
+        self._template: dict[str, Any] | None = None
+
+    def _template_checked(self) -> None:
+        """The server's tokens for a wrapped text, read once: they must start
+        at `<|im_start|>` (no BOS) and end `<|im_end|>`, `<embedding>`."""
+        if self._template is not None:
+            return
+        resp = self._call("POST", f"{self._base}/tokenize", {
+            "content": self.WRAP.format(x="x"), "add_special": True, "with_pieces": True,
+        }, self._timeout)
+        pieces = [t.get("piece") if isinstance(t, dict) else None for t in resp.get("tokens", [])]
+        if not (len(pieces) >= 3 and pieces[0] == "<|im_start|>"
+                and pieces[-2:] == ["<|im_end|>", self.APPENDED]):
+            raise EmbedError("unsupported",
+                             f"server tokenizes the wrapper as {pieces[:2]}...{pieces[-3:]}")
+        self._template = {"checked": "/tokenize", "head": pieces[0], "tail": pieces[-2:]}
+
+    def media_marker(self) -> str:
+        if self._marker is None:
+            props = self._call("GET", f"{self._base}/props", None, self._timeout)
+            named = props.get("media_marker") if isinstance(props, dict) else None
+            self._marker = named or self.MEDIA_MARKER
+            self._marker_source = "/props" if named else "default"
+        return self._marker
 
     def _one(self, content: dict[str, Any]) -> list[float]:
         resp = self._call("POST", f"{self._base}/embedding", {"content": content}, self._timeout)
@@ -266,19 +321,37 @@ class LlamaServerEmbedder:
         return list(vec)
 
     def embed_text(self, texts: Sequence[str], role: str) -> Sequence[Sequence[float]]:
+        self._template_checked()
         return [self._one({"prompt_string": self.WRAP.format(x=self.prefix.apply(t, role))})
                 for t in texts]
 
     def embed_media(self, paths: Sequence[Path]) -> Sequence[Sequence[float]]:
+        self._template_checked()
         return [self._one({
-            "prompt_string": self.WRAP.format(x=self.MEDIA_MARKER),
+            "prompt_string": self.MEDIA_WRAP.format(x=self.media_marker()),
             "multimodal_data": [base64.b64encode(p.read_bytes()).decode()],
         }) for p in paths]
 
+    def server_memory(self) -> dict[str, int] | None:
+        """The server's peak and current RSS (kB, `VmHWM`, `VmRSS`), read
+        when called, or None without a pid or a readable /proc entry."""
+        if self._pid is None:
+            return None
+        try:
+            lines = Path(f"/proc/{self._pid}/status").read_text().splitlines()
+        except OSError:
+            return None
+        out = {k: int(v.split()[0]) for k, _, v in (ln.partition(":") for ln in lines)
+               if k in ("VmHWM", "VmRSS")}
+        return {"peak_rss_kib": out.get("VmHWM", 0), "rss_kib": out.get("VmRSS", 0)}
+
     def provenance(self) -> dict[str, Any]:
         return {"runtime": "llama-server", "model": self.name, "native_dim": self.native_dim,
-                **self._prov, "wrap": self.WRAP, "media_marker": self.MEDIA_MARKER,
-                "prefix": self.prefix.record()}
+                **self._prov, "wrap": self.WRAP, "media_wrap": self.MEDIA_WRAP,
+                "media_marker_source": self._marker_source or None,
+                "server_appends": self.APPENDED, "template_check": self._template,
+                "prefix": self.prefix.record(),
+                "server_memory": self.server_memory()}
 
 
 class HFEmbedder:

@@ -288,21 +288,97 @@ def test_ollama_sends_media_as_image_objects_for_a_vision_model(tmp_path: Path) 
     assert t.shows == 1  # capabilities read once
 
 
+class FakeLlamaServer:
+    """llama-server's /props, /tokenize and /embedding. `/tokenize` answers
+    like b42b7e6d3 with WeMM's GGUF: no BOS, and `<embedding>` (the EOS)
+    appended once, unless told otherwise."""
+
+    def __init__(self, *, marker: str | None = None, tail: tuple[str, ...] = ("<embedding>",),
+                 head: tuple[str, ...] = ()) -> None:
+        self.marker = marker
+        self.tail = list(tail)
+        self.head = list(head)
+        self.bodies: list[dict] = []
+        self.props = 0
+        self.tokenized = 0
+
+    def __call__(self, method, url, body, timeout):
+        if url.endswith("/props"):
+            self.props += 1
+            return {"media_marker": self.marker} if self.marker else {"build_info": "b1-x"}
+        if url.endswith("/tokenize"):
+            self.tokenized += 1
+            assert body["add_special"] is True
+            pieces = [*self.head, "<|im_start|>", "user", "\n", "x", "<|im_end|>", *self.tail]
+            return {"tokens": [{"id": i, "piece": p} for i, p in enumerate(pieces)]}
+        self.bodies.append(body)
+        return [{"index": 0, "embedding": [[1.0] + [0.0] * 2047]}]
+
+
 def test_llama_server_sends_the_recorded_media_shape(tmp_path: Path) -> None:
     img = tmp_path / "a.jpg"
     img.write_bytes(b"jpeg")
-    bodies: list[dict] = []
-
-    def transport(method, url, body, timeout):
-        bodies.append(body)
-        return [{"index": 0, "embedding": [[1.0] + [0.0] * 2047]}]
-
-    emb = adapters.LlamaServerEmbedder("wemm-2b", native_dim=2048, transport=transport)
+    server = FakeLlamaServer()  # an older server names no marker
+    emb = adapters.LlamaServerEmbedder("wemm-2b", native_dim=2048, transport=server)
     vec = emb.embed_media([img])
     assert len(vec[0]) == 2048
-    content = bodies[0]["content"]
+    content = server.bodies[0]["content"]
     assert content["multimodal_data"] == ["anBlZw=="]
-    assert "<__media__>" in content["prompt_string"]
+    # WeMM's own template: no newline after the role before a leading image;
+    # the server appends `<embedding>` itself.
+    assert content["prompt_string"] == "<|im_start|>user<__media__><|im_end|>"
+    assert emb.provenance()["media_marker_source"] == "default"
+
+
+def test_llama_server_uses_the_media_marker_the_server_publishes(tmp_path: Path) -> None:
+    """b42b7e6d3 randomises the marker per start and refuses the default
+    ("number of media markers in text (0) does not match number of bitmaps")."""
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"jpeg")
+    server = FakeLlamaServer(marker="<__media_abc__>")
+    emb = adapters.LlamaServerEmbedder("wemm-2b", native_dim=2048, transport=server)
+    emb.embed_media([img, img])
+    assert [b["content"]["prompt_string"] for b in server.bodies] == [
+        "<|im_start|>user<__media_abc__><|im_end|>"] * 2
+    assert server.props == 1
+    assert emb.provenance()["media_marker_source"] == "/props"
+
+
+@pytest.mark.parametrize("role", ["query", "document"])
+def test_llama_server_wraps_wemm_text_exactly_as_its_template_does(role: str) -> None:
+    """tencent/WeMM-Embedding-2B renders a text input as one user turn, then
+    `<embedding>` straight after `<|im_end|>` (its normalizer strips that
+    newline), and has no query or document instruction (`prompts` is {}).
+    The server appends `<embedding>`, so the prompt stops at `<|im_end|>`."""
+    server = FakeLlamaServer()
+    emb = adapters.LlamaServerEmbedder("wemm-embedding-2b:Q4_K_M", native_dim=2048,
+                                       transport=server)
+    emb.embed_text(["兩碗麵"], role)
+    emb.embed_text(["打風"], role)
+    assert [b["content"] for b in server.bodies] == [
+        {"prompt_string": "<|im_start|>user\n兩碗麵<|im_end|>"},
+        {"prompt_string": "<|im_start|>user\n打風<|im_end|>"},
+    ]
+    assert server.tokenized == 1
+    assert emb.provenance()["template_check"]["tail"] == ["<|im_end|>", "<embedding>"]
+
+
+@pytest.mark.parametrize(("tail", "head"), [
+    ((), ()),                              # no `<embedding>` appended: pools `<|im_end|>`
+    (("<embedding>", "<embedding>"), ()),  # appended twice
+    (("<embedding>",), (",",)),            # a BOS in front
+])
+def test_a_server_that_does_not_end_on_one_embedding_token_is_refused(
+        tmp_path: Path, tail: tuple[str, ...], head: tuple[str, ...]) -> None:
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"jpeg")
+    server = FakeLlamaServer(tail=tail, head=head)
+    emb = adapters.LlamaServerEmbedder("wemm-2b", native_dim=2048, transport=server)
+    for call in (lambda: emb.embed_text(["x"], "query"), lambda: emb.embed_media([img])):
+        with pytest.raises(EmbedError) as e:
+            call()
+        assert e.value.kind == "unsupported"
+    assert server.bodies == []
 
 
 # --- the set, the watchdog and the output --------------------------------------------
