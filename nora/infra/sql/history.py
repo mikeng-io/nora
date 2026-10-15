@@ -224,7 +224,6 @@ NOT_RESTORED: dict[str, str] = {
     "fact": "deprecated tier (2026-09-07); table kept, code gone",
     "fact_premise": "deprecated tier (2026-09-07); table kept, code gone",
     "fact_asserter": "deprecated tier (2026-09-07); table kept, code gone",
-    "embedding": "deprecated tier (2026-09-07); table kept, code gone",
     "rendered_claim": "deprecated tier (2026-09-07); table kept, code gone",
     "note_entity": "deprecated chain (2026-09-08); nothing writes it",
     "presence_corridor_speed": (

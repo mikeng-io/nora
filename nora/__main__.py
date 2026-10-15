@@ -233,6 +233,8 @@ class App:
         deps.background.spawn(runtime.memory_drain_loop(
             deps.audit, deps.metrics,
             interval_seconds=self.cfg.memory_index.drain_seconds,
+            # `[memory_index] embed` (65 V1); None while off.
+            embed=deps.memory_embed,
         ))
         # The Dreamer's clock, the SAME conditional shape as the retention
         # sweep above: `[dreamer] enabled = false` (the shipped default — a

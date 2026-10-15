@@ -22,7 +22,12 @@ from nora.domain.doctrine_check import CHECK_OUTCOMES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
-from nora.domain.memory_index import NODE_KINDS, PROJECTION_OUTCOMES, SEARCH_STATUSES
+from nora.domain.memory_index import (
+    EMBED_OUTCOMES,
+    NODE_KINDS,
+    PROJECTION_OUTCOMES,
+    SEARCH_STATUSES,
+)
 from nora.domain.otp import CHECK_OUTCOMES as OTP_CHECK_OUTCOMES
 from nora.domain.otp import REQUEST_OUTCOMES as OTP_REQUEST_OUTCOMES
 from nora.domain.reasoning_strip import (
@@ -2180,6 +2185,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "partial = the index is not complete or its projection queue is not "
         "empty; unavailable = the search failed (fail closed).",
         ("status",),
+    ),
+    # The memory index's embedding worker (`nora.infra.sql.memory_embed`,
+    # design/unified-memory/65-build-step-3-vectors.md V1): one per node it
+    # tried. `ok` is counted, so a failure rate has a denominator.
+    _CounterSpec(
+        "nora_memory_embed_total",
+        "Memory index nodes the embedding worker tried, by outcome ("
+        + " / ".join(EMBED_OUTCOMES) + "). unavailable = the embedder or the "
+        "blob store did not answer (the tick stops); rejected = the input was "
+        "refused or would not decode; empty = nothing to embed; error = any "
+        "other failure of that node. Every failure backs the node off; "
+        "given_up is counted in addition when a failure was the node's last "
+        "allowed attempt.",
+        ("outcome",),
     ),
 )
 

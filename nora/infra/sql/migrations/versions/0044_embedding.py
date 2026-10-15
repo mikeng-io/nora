@@ -20,8 +20,8 @@ no schema" bar still holds for any tier reusing an existing dimension.
 **1024 is MEASURED, not assumed.** `bge-m3:latest` was called on the live
 endpoint on 2026-08-28 and returned 1024 floats. A column built against a
 guessed width fails on the first write, in a background pass nobody is watching.
-The constant lives in `nora.infra.sql.schema` and this file imports it, because
-a literal in two places is a constraint nobody can change.
+The constant lived in `nora.infra.sql.schema` until 0106 dropped the table;
+it is spelled here now.
 
 **HNSW rather than IVFFlat.** IVFFlat needs a training pass over existing rows
 to build its lists, and this table starts EMPTY -- an IVFFlat index built on
@@ -42,7 +42,10 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-from nora.infra.sql.schema import EMBEDDING_DIMENSIONS
+#: bge-m3's width. It was `nora.infra.sql.schema.EMBEDDING_DIMENSIONS` until
+#: `0106_memory_vectors` dropped this table and that name took Qwen3-VL's
+#: 2048: a migration is a frozen statement, so the number lives here now.
+EMBEDDING_DIMENSIONS = 1024
 
 revision = "0044_embedding"
 down_revision = "0043_disputed"

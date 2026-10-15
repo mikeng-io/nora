@@ -87,6 +87,24 @@ EXPECTED_DESC_INDEXES = {
         "platform": False, "conversation_id": False,
         "updated_at": True, "id": True,
     },
+    # memory_node (0106): the embedding worker's pick, fewest failures and
+    # then newest, `(embed_attempts, id DESC)`, the order `embed_pick` asks.
+    "idx_memory_node_unembedded": {"embed_attempts": False, "id": True},
+}
+
+
+# Per expression index: what `pg_get_indexdef` must say. Autogenerate cannot
+# compare an expression index at all (it reports the reflected one as a
+# phantom `remove_index` on every run), so these are excluded from it here and
+# in `migrations/env.py`, and their definition is asserted from the catalogue
+# instead. Both registrations or neither, as for the DESC indexes above.
+EXPECTED_EXPRESSION_INDEXES = {
+    # 0106 (design/unified-memory/65-build-step-3-vectors.md §0): HNSW over the
+    # leading 256 of the 2048 dimensions, cosine.
+    "idx_memory_node_embedding_256": (
+        "CREATE INDEX idx_memory_node_embedding_256 ON public.memory_node USING hnsw "
+        "(((subvector(embedding, 1, 256))::halfvec(256)) halfvec_cosine_ops)"
+    ),
 }
 
 
@@ -480,6 +498,23 @@ def test_desc_index_ordering_from_indoption(migrated, index, expected):
     assert orders == expected
 
 
+@pytest.mark.parametrize("index,expected", sorted(EXPECTED_EXPRESSION_INDEXES.items()))
+def test_expression_index_definition_from_the_catalogue(migrated, index, expected):
+    """An expression index autogenerate skips is asserted here, from the
+    definition Postgres stores, and the metadata declares the same name."""
+    engine = sa.create_engine(sync_url_for(migrated))
+    try:
+        with engine.connect() as conn:
+            actual = conn.execute(sa.text(
+                "SELECT pg_get_indexdef(c.oid) FROM pg_class c WHERE c.relname = :i"
+            ), {"i": index}).scalar_one()
+    finally:
+        engine.dispose()
+    assert actual == expected
+    declared = {i.name for t in METADATA.tables.values() for i in t.indexes}
+    assert index in declared
+
+
 def _metadata_diffs(sync: str) -> list:
     """`compare_metadata` between `schema.py`'s METADATA and a live database.
 
@@ -495,7 +530,10 @@ def _metadata_diffs(sync: str) -> list:
     out.
     """
     def include_object(obj, name, type_, reflected, compare_to) -> bool:
-        return not (type_ == "index" and name in EXPECTED_DESC_INDEXES)
+        return not (
+            type_ == "index"
+            and (name in EXPECTED_DESC_INDEXES or name in EXPECTED_EXPRESSION_INDEXES)
+        )
 
     engine = sa.create_engine(sync)
     try:

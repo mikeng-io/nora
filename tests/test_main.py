@@ -343,7 +343,8 @@ async def test_the_memory_index_drain_is_spawned_at_the_configured_interval(env,
             await task
     finally:
         await app.shutdown()
-    assert calls == [{"interval_seconds": 7.5}]
+    # `[memory_index] embed` is off by default: no embedding worker is handed in.
+    assert calls == [{"interval_seconds": 7.5, "embed": None}]
 
 
 async def _run_briefly_and_record_dream_wiring(env, monkeypatch) -> list[dict]:

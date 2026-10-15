@@ -56,6 +56,15 @@ _DESC_EXPRESSION_INDEXES = frozenset({
     # alone would hide the drift and the ordering both, which is the state the
     # exclusion exists to avoid rather than to create.
     "idx_standing_revision_room_updated",
+    # memory_node's HNSW index over `subvector(embedding, 1, 256)` (0106,
+    # design/unified-memory/65-build-step-3-vectors.md): an expression index,
+    # which autogenerate cannot compare at all. Registered WITH its row in
+    # `tests/infra/test_schema_parity.py`'s `EXPECTED_EXPRESSION_INDEXES`,
+    # which asserts its definition from `pg_get_indexdef`.
+    "idx_memory_node_embedding_256",
+    # The embedding worker's pick index, `(embed_attempts, id DESC)` (0106),
+    # with its row in `EXPECTED_DESC_INDEXES`.
+    "idx_memory_node_unembedded",
 })
 
 

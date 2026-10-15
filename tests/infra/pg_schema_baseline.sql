@@ -139,7 +139,6 @@ $$;
 );
 );
 );
-);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -167,7 +166,6 @@ ADD CONSTRAINT doctrine_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT document_state_pkey PRIMARY KEY (id);
 ADD CONSTRAINT documents_pkey PRIMARY KEY (id);
 ADD CONSTRAINT dream_schedule_state_pkey PRIMARY KEY (adaptor_name, scope_id);
-ADD CONSTRAINT embedding_pkey PRIMARY KEY (kind, row_key);
 ADD CONSTRAINT event_revision_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
 ADD CONSTRAINT event_revision_parent_revision_id_fkey FOREIGN KEY (parent_revision_id) REFERENCES public.event_revision(id);
 ADD CONSTRAINT event_revision_pkey PRIMARY KEY (id);
@@ -300,7 +298,6 @@ ALTER TABLE ONLY public.document_revision
 ALTER TABLE ONLY public.document_state
 ALTER TABLE ONLY public.documents
 ALTER TABLE ONLY public.dream_schedule_state
-ALTER TABLE ONLY public.embedding
 ALTER TABLE ONLY public.event_revision
 ALTER TABLE ONLY public.event_revision
 ALTER TABLE ONLY public.event_revision
@@ -551,6 +548,7 @@ CONSTRAINT ck_memo_revision_title_ceiling CHECK ((length(title) <= 200))
 CONSTRAINT ck_memory_edge_rel CHECK ((rel = ANY (ARRAY['authored_by'::text, 'in_room'::text, 'shared_by'::text, 'attached_to'::text, 'during'::text, 'about'::text, 'cites'::text, 'supersedes'::text, 'tracks'::text, 'closes_into'::text, 'leaves_behind'::text, 'draws_on'::text, 'informed_by'::text, 'disputes'::text, 'feedback_on'::text, 'depicts'::text, 'mentions'::text, 'located_in'::text, 'outcome_of'::text])))
 CONSTRAINT ck_memory_index_state_one_row CHECK (id),
 CONSTRAINT ck_memory_index_state_status CHECK ((status = ANY (ARRAY['never'::text, 'building'::text, 'complete'::text])))
+CONSTRAINT ck_memory_node_embed_input CHECK (((embed_input IS NULL) OR (embed_input = ANY (ARRAY['text'::text, 'bytes'::text])))),
 CONSTRAINT ck_memory_node_has_a_scope CHECK (((kind = ANY (ARRAY['person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text])) OR (unit IS NOT NULL) OR (origin_room IS NOT NULL) OR (cardinality(persons) > 0))),
 CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text]))),
 CONSTRAINT ck_memory_node_state CHECK ((state = ANY (ARRAY['live'::text, 'retired'::text, 'superseded'::text])))
@@ -594,8 +592,6 @@ CONSTRAINT decision_log_verdict_is_known_check CHECK ((verdict = ANY (ARRAY['spo
 CONSTRAINT decision_log_writer_is_known_check CHECK ((writer = ANY (ARRAY['participation'::text, 'proactive_decide'::text, 'proactive_act'::text, 'tag'::text])))
 CONSTRAINT deploy_revision_manifest_status_check CHECK ((manifest_status = ANY (ARRAY['ok'::text, 'absent'::text, 'unreadable'::text])))
 CONSTRAINT doctrine_revision_corpus_check CHECK ((corpus = ANY (ARRAY['doctrine'::text, 'dreamer'::text])))
-CONSTRAINT embedding_model_is_named_check CHECK ((length(btrim(model)) > 0)),
-CONSTRAINT embedding_text_is_present_check CHECK ((length(btrim(text)) > 0))
 CONSTRAINT exchange_observation_act_check CHECK ((act = ANY (ARRAY['insult_trade'::text, 'banter'::text, 'tease'::text, 'callback_joke'::text, 'agreement_ritual'::text, 'disagreement_ritual'::text, 'compliment_exchange'::text]))),
 CONSTRAINT exchange_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT exchange_observation_message_ids_check CHECK ((array_length(message_ids, 1) >= 2)),
@@ -710,8 +706,6 @@ CREATE INDEX idx_doctrine_revision_corpus_loaded ON public.doctrine_revision USI
 CREATE INDEX idx_document_state_latest ON public.document_state USING btree (document_id, id);
 CREATE INDEX idx_documents_creator ON public.documents USING btree (created_by);
 CREATE INDEX idx_documents_room ON public.documents USING btree (platform, conversation_id);
-CREATE INDEX idx_embedding_scope ON public.embedding USING btree (kind, scope);
-CREATE INDEX idx_embedding_v1024 ON public.embedding USING hnsw (v1024 public.vector_cosine_ops);
 CREATE INDEX idx_event_revision_event ON public.event_revision USING btree (event_id, recorded_at);
 CREATE INDEX idx_event_rsvps_event_person ON public.event_rsvps USING btree (event_id, person_id, recorded_at);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
@@ -725,9 +719,11 @@ CREATE INDEX idx_language_observation_scope ON public.language_observation USING
 CREATE INDEX idx_lesson_unit ON public.lesson USING btree (unit);
 CREATE INDEX idx_memo_unit ON public.memo USING btree (unit);
 CREATE INDEX idx_memory_edge_dst ON public.memory_edge USING btree (dst_kind, dst_id);
+CREATE INDEX idx_memory_node_embedding_256 ON public.memory_node USING hnsw (((public.subvector(embedding, 1, 256))::public.halfvec(256)) public.halfvec_cosine_ops);
 CREATE INDEX idx_memory_node_origin_room ON public.memory_node USING btree (origin_room);
 CREATE INDEX idx_memory_node_sha256 ON public.memory_node USING btree (sha256);
 CREATE INDEX idx_memory_node_text_trgm ON public.memory_node USING gin (text public.gin_trgm_ops);
+CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id DESC) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text])));
 CREATE INDEX idx_memory_node_unit ON public.memory_node USING btree (unit);
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
@@ -798,7 +794,6 @@ CREATE TABLE public.document_revision (
 CREATE TABLE public.document_state (
 CREATE TABLE public.documents (
 CREATE TABLE public.dream_schedule_state (
-CREATE TABLE public.embedding (
 CREATE TABLE public.event_revision (
 CREATE TABLE public.event_rsvps (
 CREATE TABLE public.events (
@@ -1424,7 +1419,12 @@ duration_median_ms bigint,
 dwell_ms bigint DEFAULT 0 NOT NULL,
 edits integer NOT NULL,
 eligible_count integer NOT NULL,
-embedded_at bigint NOT NULL,
+embed_attempts integer DEFAULT 0 NOT NULL,
+embed_error text,
+embed_input text,
+embedded_at bigint,
+embedding public.halfvec(2048),
+embedding_model text,
 emoji text NOT NULL,
 ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
@@ -1469,7 +1469,6 @@ field_meta jsonb DEFAULT '{}'::jsonb NOT NULL,
 field_meta jsonb DEFAULT '{}'::jsonb NOT NULL,
 file text NOT NULL,
 files jsonb NOT NULL,
-fingerprint text NOT NULL,
 finished_at timestamp with time zone,
 finished_at timestamp with time zone,
 fired_at timestamp with time zone,
@@ -1606,7 +1605,6 @@ kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
-kind text NOT NULL,
 label text,
 last_activity_at timestamp with time zone NOT NULL,
 last_adjudicated_at bigint,
@@ -1705,7 +1703,6 @@ mode text NOT NULL,
 mode text NOT NULL,
 mode text NOT NULL,
 mode text NOT NULL,
-model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
@@ -1965,7 +1962,6 @@ revisit_at bigint,
 rooms jsonb NOT NULL,
 row_key jsonb NOT NULL,
 row_key text NOT NULL,
-row_key text NOT NULL,
 run_at_ms bigint NOT NULL,
 sample_count integer DEFAULT 0 NOT NULL,
 sample_count integer DEFAULT 0 NOT NULL,
@@ -1974,7 +1970,6 @@ saved_place_id text,
 saved_place_id text,
 saved_place_id text,
 scope text DEFAULT ''::text NOT NULL,
-scope text NOT NULL,
 scope text NOT NULL,
 scope text NOT NULL,
 scope text NOT NULL,
@@ -2114,7 +2109,6 @@ task_sha256 text DEFAULT ''::text NOT NULL,
 text text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
 text text NOT NULL,
-text text NOT NULL,
 through_ms bigint DEFAULT 0 NOT NULL,
 through_stimulus_id bigint CONSTRAINT cognition_wake_through_signal_id_not_null NOT NULL,
 through_stimulus_id bigint NOT NULL,
@@ -2190,7 +2184,6 @@ updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,
 url text NOT NULL,
 url text,
-v1024 public.vector(1024),
 valid_from bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,

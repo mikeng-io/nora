@@ -32,12 +32,21 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 from evals.retrieval_bakeoff.adapters import EmbedError, LlamaServerEmbedder
+from nora.domain.embedder_input import (
+    DOCUMENT_INSTRUCTION,
+    EOT,
+    QUERY_INSTRUCTION,
+    TAIL,
+    head,
+    image_prompt,
+    official_sequence,
+    text_prompt,
+)
 
 __all__ = [
     "EOT", "QWEN3VL_INSTRUCTION", "QWEN3VL_Q4_GGUF", "QWEN3VL_QUERY_INSTRUCTION",
@@ -49,10 +58,10 @@ QWEN3VL_REPO = "Qwen/Qwen3-VL-Embedding-2B"
 QWEN3VL_REVISION = "9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda"
 #: tokenizer.json at that revision (tokenizers 0.22.2, read 2026-10-16).
 QWEN3VL_TOKENIZER_SHA256 = "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a"
-#: The default instruction: documents and images.
-QWEN3VL_INSTRUCTION = "Represent the user's input."
-#: The retrieval query instruction (the vendor's README example and MMEB t2i eval).
-QWEN3VL_QUERY_INSTRUCTION = "Retrieve images or text relevant to the user's query."
+#: The instructions, from the one formatter production uses too
+#: (`nora.domain.embedder_input`), so the bake-off measures what ships.
+QWEN3VL_INSTRUCTION = DOCUMENT_INSTRUCTION
+QWEN3VL_QUERY_INSTRUCTION = QUERY_INSTRUCTION
 #: The GGUF measured, as downloaded and hashed on the deploy host 2026-10-15.
 QWEN3VL_Q4_GGUF = {
     "repo": "mradermacher/Qwen3-VL-Embedding-2B-GGUF",
@@ -62,22 +71,8 @@ QWEN3VL_Q4_GGUF = {
     "mmproj": "Qwen3-VL-Embedding-2B.mmproj-f16.gguf",
     "mmproj_sha256": "521c481325245b7cb043fd33cfd891abf31c1925f504235fb8ca9d6b1dd5eb9d",
 }
-EOT = "<|endoftext|>"
-TAIL = "<|im_end|>\n<|im_start|>assistant\n"
-
 #: A string -> its official token ids, `add_special_tokens=False`.
 OfficialIds = Callable[[str], list[int]]
-
-
-def head(role: str) -> str:
-    instruction = {"query": QWEN3VL_QUERY_INSTRUCTION, "document": QWEN3VL_INSTRUCTION,
-                   "image": QWEN3VL_INSTRUCTION}[role]
-    return "<|im_start|>system\n" + instruction + "<|im_end|>\n<|im_start|>user\n"
-
-
-def official_sequence(text: str, role: str) -> str:
-    """The whole sequence the model reads for a text, end token included."""
-    return head(role) + text + TAIL + EOT
 
 
 def _sha256_stream(path: Path) -> str:
@@ -143,7 +138,7 @@ class QwenLlamaServerEmbedder(LlamaServerEmbedder):
         return [t if isinstance(t, int) else t["id"] for t in resp["tokens"]]
 
     def prompt_for(self, text: str, role: str) -> str:
-        return head(role) + unicodedata.normalize("NFC", text) + TAIL
+        return text_prompt(text, role)
 
     def _text_prompt_checked(self, text: str, role: str) -> str:
         prompt = self.prompt_for(text, role)
@@ -164,7 +159,7 @@ class QwenLlamaServerEmbedder(LlamaServerEmbedder):
     def image_prompt(self) -> str:
         if self._image_prompt is None:
             marker = self.media_marker()
-            prompt = head("image") + marker + TAIL
+            prompt = image_prompt(marker)
             full = self._ids(prompt, True)
             pre, post = self._official(head("image")), self._official(TAIL + EOT)
             if full != [*pre, *self._ids(marker, False), *post]:

@@ -779,3 +779,52 @@ async def test_memory_rebuild_is_refused_while_another_rebuild_runs(env, capsys)
         await holder.close()
         await engine.dispose()
     assert await _index_status(env) == ("never", 0, 0)
+
+
+async def test_memory_rebuild_embeddings_only_clears_vectors_and_reports_counts(env, capsys):
+    """design/unified-memory/65-build-step-3-vectors.md V1: `--embeddings-only`
+    clears vectors (all, or with `--other-models` only another model's) for
+    the worker to backfill, leaves the projection alone, and prints counts,
+    never a message's words. `--dry-run` clears nothing."""
+    import sqlalchemy as sa
+
+    from nora.infra.sql import memory_index
+    from nora.infra.sql.schema import MEMORY_NODE
+
+    await audit(env, sender=MILES_PHONE, raw=envelope(number=MILES_PHONE),
+                body="the lantern plan", person_id="miles")
+    engine = create_sql_engine(env["url"])
+
+    async def vectors() -> list:
+        async with engine.connect() as conn:
+            return list((await conn.execute(
+                sa.select(MEMORY_NODE.c.embedding_model).where(MEMORY_NODE.c.kind == "message")
+            )).scalars())
+
+    try:
+        async with engine.begin() as conn:
+            [item] = await memory_index.embed_pick(conn, limit=5, now_ms=0)
+            assert await memory_index.embed_store(
+                conn, item, vector=[1.0] + [0.0] * 2047, model="another-model+fmt1",
+                now_ms=1, by_bytes=False,
+            )
+
+        assert await invoke(env, "memory", "rebuild", "--embeddings-only", "--dry-run") == 0
+        out = capsys.readouterr().out
+        assert "vectors: would clear 1 (all)" in out and "lantern" not in out
+        assert await vectors() == ["another-model+fmt1"]
+
+        assert await invoke(
+            env, "memory", "rebuild", "--embeddings-only", "--other-models",
+        ) == 0
+        out = capsys.readouterr().out
+        assert "vectors: cleared 1 (of other models)" in out
+        assert "waiting for the worker: 1" in out
+        assert "given up after 8 attempts: 0" in out
+        assert "[memory_index] embed is false" in out
+        assert await vectors() == [None]
+
+        assert await invoke(env, "memory", "rebuild", "--other-models") == 1
+        assert "--other-models applies only with --embeddings-only" in capsys.readouterr().err
+    finally:
+        await engine.dispose()

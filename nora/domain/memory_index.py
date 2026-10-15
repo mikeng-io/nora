@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, get_args
 
 __all__ = [
+    "EMBEDDED_KINDS",
+    "EMBED_INPUTS",
+    "EMBED_OUTCOMES",
     "EPISODE_KINDS",
     "HUB_KINDS",
     "NODE_KINDS",
@@ -24,6 +27,8 @@ __all__ = [
     "PROJECTION_OUTCOMES",
     "RELATIONS",
     "SEARCH_STATUSES",
+    "EmbedInput",
+    "EmbedOutcome",
     "IndexState",
     "IndexedNode",
     "MemoryIndexRead",
@@ -34,6 +39,7 @@ __all__ = [
     "Relation",
     "SearchStatus",
     "Seed",
+    "embeds_bytes",
     "in_scope",
 ]
 
@@ -60,6 +66,42 @@ Relation = Literal[
 RELATIONS: tuple[str, ...] = get_args(Relation)
 
 NODE_STATES: tuple[str, ...] = ("live", "retired", "superseded")
+
+#: The kinds that get a vector (25 §7's «vector» column, 65 §1.4): every
+#: kind with text worth matching by meaning. Never a hub (a hub never seeds,
+#: 60 S5), and never a kind 25 §7 marks lexical only: the Rollup episodes
+#: (outing, stay, trip), whose text is a kind and an interval. Disputes and
+#: feedback, also lexical only there, have no node kind yet.
+EMBEDDED_KINDS: tuple[str, ...] = (
+    "message", "media", "note", "memo", "event", "lesson", "character",
+)
+
+#: `nora_memory_embed_total`'s `outcome`, one per node the embedding worker
+#: tried (65 V1). `ok` stored a vector; `unavailable` the embedder (or the
+#: blob store holding an image's bytes) did not answer, and the tick stops;
+#: `rejected` the embedder refused this input, or its bytes would not
+#: decode; `empty` the node had nothing to embed (no text, no image bytes);
+#: `error` anything else went wrong with this one node. Every failure leaves
+#: the node's vector NULL, counts an attempt and backs the node off.
+#: `given_up` is counted IN ADDITION when a failure is the node's last
+#: allowed attempt: it is never picked again until its input changes or the
+#: operator clears vectors (`nora memory rebuild --embeddings-only`).
+EmbedOutcome = Literal["ok", "unavailable", "rejected", "empty", "error", "given_up"]
+EMBED_OUTCOMES: tuple[str, ...] = get_args(EmbedOutcome)
+
+#: What a node's vector, or its last failed attempt, was made from
+#: (`memory_node.embed_input`): its `text`, or the `bytes` its `sha256` names.
+#: A change to that input, and only that input, clears the vector.
+EmbedInput = Literal["text", "bytes"]
+EMBED_INPUTS: tuple[str, ...] = get_args(EmbedInput)
+
+
+def embeds_bytes(media_type: str) -> bool:
+    """Whether an attachment of `media_type` is embedded from its bytes
+    rather than its reading (65 §1.3): an image, a sticker or a GIF is; a
+    video, a voice note or a document is embedded from its reading's text."""
+    return media_type.strip().lower().startswith("image/")
+
 
 #: `nora_memory_projection_total`'s `outcome`. `ok` projected (or dropped) in
 #: the store's own transaction; `queued` failed, and the source is on

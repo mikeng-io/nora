@@ -138,8 +138,16 @@ class _DrainsIndexQueue(Protocol):
     async def drain_index_queue(self) -> int: ...
 
 
+class _EmbedsIndexNodes(Protocol):
+    """The one method the drain loop's embedding step needs
+    (`nora.infra.sql.memory_embed.MemoryEmbedWorker.run_once`)."""
+
+    async def run_once(self) -> int: ...
+
+
 async def memory_drain_loop(
     store: _DrainsIndexQueue, metrics: Metrics, *, interval_seconds: float,
+    embed: _EmbedsIndexNodes | None = None,
 ) -> None:
     """Re-project what the memory index queued (design/unified-memory/
     60-build-step-3.md S4), `prune_loop`'s shape: sleep, drain, and on
@@ -147,7 +155,12 @@ async def memory_drain_loop(
     looping. The analytics process drains on its own tick; this one covers a
     deployment that runs no analytics. It runs during a `nora memory
     rebuild` too: a drain calls the projector a rebuild calls, which writes
-    the source's current row, so the two converge whichever lands last."""
+    the source's current row, so the two converge whichever lands last.
+
+    `embed` (65-build-step-3-vectors.md V1, `[memory_index] embed`) is the
+    embedding worker: one batch after each drain, so a node re-projected
+    this tick is embedded on it. Its failure is its own
+    (`nora_errors_total{stage=memory_embed}`) and never stops the drain."""
     while True:
         await asyncio.sleep(interval_seconds)
         try:
@@ -157,6 +170,15 @@ async def memory_drain_loop(
         except Exception:
             log.exception("memory index drain failed")
             metrics.inc("nora_errors_total", stage="memory_drain")
+        if embed is None:
+            continue
+        try:
+            embedded = await embed.run_once()
+            if embedded:
+                log.info("memory index embedding tried %d nodes", embedded)
+        except Exception:
+            log.exception("memory index embedding failed")
+            metrics.inc("nora_errors_total", stage="memory_embed")
 
 
 class _SweepsComputerSessions(Protocol):

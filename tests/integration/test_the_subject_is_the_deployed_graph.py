@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 64, (
+    assert len(dataclasses.fields(Dependencies)) == 65, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -93,7 +93,10 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "62 -> 63 on 2026-10-08: `artifacts`, `computer_export`'s record, which the "
         "portal's Artifacts routes list and serve for the viewer's rooms (ADR 0023). "
         "63 -> 64 on 2026-10-09: `oauth_keepalive`, the image OAuth lanes' keeper "
-        "(DEC-308), which `nora/__main__.py` starts and the subject never does."
+        "(DEC-308), which `nora/__main__.py` starts and the subject never does. "
+        "64 -> 65 on 2026-10-16: `memory_embed`, the memory index's embedding worker "
+        "the drain loop runs (None unless `[memory_index] embed`; "
+        "design/unified-memory/65-build-step-3-vectors.md V1)."
     )
 
 
