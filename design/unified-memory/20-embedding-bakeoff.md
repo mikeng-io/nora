@@ -110,8 +110,10 @@ Cantonese and English text, names and titles, and text → image.
 **Pass** (operator ruling 2026-10-15, replacing an absolute +0.10 recall@5
 margin): the baseline is the incumbent's best configuration per slice, the
 highest recall@5 of bge-m3 alone, trigram + bge-m3 and BM25 + bge-m3. A
-candidate replaces bge-m3 only if its hybrid recall@5 on the Cantonese slice
-is within 0.05 (absolute) of the baseline's, and on another journey slice its
+candidate replaces bge-m3 only if the recall@5 of its best configuration
+(dense or fused) on the Cantonese slice is within 0.05 (absolute) of the
+baseline's (wording corrected 2026-10-15: this said "hybrid", but the baseline
+already includes bge-m3 alone, and `decide.py` judges every configuration), and on another journey slice its
 miss rate is at most half the baseline's: (1 − r) ≤ 0.5 × (1 − r_base).
 Anything short of that is a tie, and a tie keeps the incumbent. Why: bge-m3
 over the stored readings measured recall@5 0.928 on text → image (stage 1,
@@ -200,4 +202,6 @@ Cantonese is not held, so those arms are media-only. The Cantonese hold clears
 its bar by about one query of 61, and the Q4 vectors agree with the bf16
 checkpoint at a mean cosine of 0.976 (min 0.951, 21 items). The verdict is
 therefore a Q4 verdict that a full-precision run could reverse. Cost: 4.0 s
-p50 and 5.6 s p95 per image, 0.21–0.29 s per text, and 3.3 GiB peak RSS.
+p50 and 5.6 s p95 per image, 0.21–0.29 s per text, and a peak RSS of
+3.16 GiB (3,316,516 KiB). The peak is the server's lifetime high-water mark
+(`VmHWM`), not a per-request figure.

@@ -33,6 +33,8 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -96,6 +98,18 @@ GEMMA2_PREFIX = Prefix(query="task: search result | query: ", document="title: n
 def _is_gemma2(model: str) -> bool:
     m = model.lower()
     return "embeddinggemma-2" in m or "embeddinggemma2" in m
+
+
+def _is_wemm(model: str) -> bool:
+    return "wemm-embedding" in model.lower()
+
+
+#: WeMM's text input, as llama-server's /tokenize rendered it for this probe
+#: (2026-10-15, ids equal to the HF processor's under transformers 5.2.0): the
+#: HF path must render the same pieces, or it is not the model's embedding.
+WEMM_PROBE = "two bowls of noodles"
+WEMM_PIECES = ("<|im_start|>", "user", "\n", "two", " bowls", " of", " noodles", "<|im_end|>",
+               "<embedding>")
 
 
 def prefix_for(model: str) -> Prefix:
@@ -235,6 +249,37 @@ class OllamaEmbedder:
         }
 
 
+#: WeMM's tokenizer.json normaliser, `Replace(Regex("\\n$"), "")` then NFC,
+#: with Onig's `$` matching at the end of every line: a newline followed by
+#: another newline, or by the end of the text, is dropped. It runs on the text
+#: between special tokens. Checked against the official tokenizer.json
+#: (sha256 40e444c744512f423da4c8443c47c21e22ff76056ba4e9796a81c04c13a9daf0,
+#: tokenizers 0.22.2, 2026-10-15); llama-server applies neither step.
+_WEMM_NEWLINE = re.compile(r"\n(?=\n|\Z)")
+
+
+_WEMM_SPECIAL = re.compile(r"(<\|im_start\|>|<\|im_end\|>)")
+
+
+def wemm_normalise(text: str) -> str:
+    return unicodedata.normalize("NFC", _WEMM_NEWLINE.sub("", text))
+
+
+def wemm_prompt(wrapped: str) -> str:
+    """A wrapped prompt with every run between special tokens normalised, as
+    the tokenizer does: `user\\n` plus the text is one such run."""
+    return "".join(part if _WEMM_SPECIAL.fullmatch(part) else wemm_normalise(part)
+                   for part in _WEMM_SPECIAL.split(wrapped))
+
+
+def _proc_cmdline(pid: int) -> list[str] | None:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return None
+    return [a.decode(errors="replace") for a in raw.split(b"\0") if a]
+
+
 class LlamaServerEmbedder:
     """A native llama-server started with `--embedding --pooling last` and,
     for media, `--mmproj` (design/conversational-recall/30).
@@ -252,9 +297,20 @@ class LlamaServerEmbedder:
     The GGUF's EOS is `<embedding>` and llama-server appends it as a special
     token, so the prompt here stops at `<|im_end|>`: writing `<embedding>` too
     embeds it twice (measured 2026-10-15, cosine to the HF reference 0.928 on
-    a Cantonese query, 0.968 without the duplicate). `_template_checked`
-    verifies the server's token sequence once, through /tokenize, and refuses
-    a server that does not end it with exactly one `<embedding>`."""
+    a Cantonese query, 0.968 without the duplicate).
+
+    What the server would embed is checked, never assumed, and anything else
+    is an `unsupported` ERROR before a vector is asked for:
+
+    - its command line (`/proc/<pid>/cmdline`, recorded) must carry
+      `--embedding` and `--pooling last`, and listen on this URL's port;
+    - every text prompt, exactly as sent, and the image prompt, once, are
+      tokenized twice: with `add_special` the sequence must be the bare one
+      plus exactly one `<embedding>`, the bare one must start
+      `<|im_start|>`, `user` (then `\\n` for text, never for an image) and
+      end `<|im_end|>`;
+    - a text is normalised the way WeMM's tokenizer.json does (`wemm_normalise`)
+      before it is wrapped, because llama-server does not."""
 
     #: llama.cpp's default multimodal marker (mtmd), where the image goes. mtmd
     #: wraps a Qwen-VL image in `<|vision_start|>`...`<|vision_end|>` itself.
@@ -273,7 +329,9 @@ class LlamaServerEmbedder:
     def __init__(self, name: str, *, native_dim: int, base_url: str = "http://127.0.0.1:11439",
                  model_sha256: str = "", mmproj_sha256: str = "", build: str = "",
                  dtype: str = "", server_pid: int | None = None, timeout: float = 120.0,
-                 transport: Transport = http_json) -> None:
+                 transport: Transport = http_json,
+                 read_cmdline: Callable[[int], list[str] | None] = _proc_cmdline,
+                 proc: Path = Path("/proc")) -> None:
         if _is_gemma2(name):
             _refuse_float16(name, dtype)
         self.name = name
@@ -285,24 +343,13 @@ class LlamaServerEmbedder:
         self._pid = server_pid
         self._timeout = timeout
         self._call = transport
+        self._read_cmdline = read_cmdline
+        self._proc = proc
         self._marker: str | None = None
         self._marker_source = ""
-        self._template: dict[str, Any] | None = None
-
-    def _template_checked(self) -> None:
-        """The server's tokens for a wrapped text, read once: they must start
-        at `<|im_start|>` (no BOS) and end `<|im_end|>`, `<embedding>`."""
-        if self._template is not None:
-            return
-        resp = self._call("POST", f"{self._base}/tokenize", {
-            "content": self.WRAP.format(x="x"), "add_special": True, "with_pieces": True,
-        }, self._timeout)
-        pieces = [t.get("piece") if isinstance(t, dict) else None for t in resp.get("tokens", [])]
-        if not (len(pieces) >= 3 and pieces[0] == "<|im_start|>"
-                and pieces[-2:] == ["<|im_end|>", self.APPENDED]):
-            raise EmbedError("unsupported",
-                             f"server tokenizes the wrapper as {pieces[:2]}...{pieces[-3:]}")
-        self._template = {"checked": "/tokenize", "head": pieces[0], "tail": pieces[-2:]}
+        self._cmdline: list[str] | None = None
+        self._checked: set[str] = set()
+        self._media_pieces: list[str] | None = None
 
     def media_marker(self) -> str:
         if self._marker is None:
@@ -311,6 +358,63 @@ class LlamaServerEmbedder:
             self._marker = named or self.MEDIA_MARKER
             self._marker_source = "/props" if named else "default"
         return self._marker
+
+    def _server_checked(self) -> None:
+        """The server's own command line: an embedding run, pooling the last
+        token, on this URL's port. Read once."""
+        if self._cmdline is not None:
+            return
+        if self._pid is None:
+            raise EmbedError("unsupported", "no server pid: its pooling cannot be checked")
+        argv = self._read_cmdline(self._pid)
+        if not argv:
+            raise EmbedError("unsupported", f"cannot read the command line of pid {self._pid}")
+
+        def value(flag: str) -> str | None:
+            for i, a in enumerate(argv):
+                if a == flag and i + 1 < len(argv):
+                    return argv[i + 1]
+                if a.startswith(flag + "="):
+                    return a.split("=", 1)[1]
+            return None
+
+        port = urllib.parse.urlsplit(self._base).port
+        problems = []
+        if not ({"--embedding", "--embeddings"} & set(argv)):
+            problems.append("no --embedding")
+        if value("--pooling") != "last":
+            problems.append(f"--pooling {value('--pooling')!r}, not 'last'")
+        if port is not None and (value("--port") or "8080") != str(port):
+            problems.append(f"--port {value('--port')!r}, not this URL's {port}")
+        if problems:
+            raise EmbedError("unsupported", f"pid {self._pid}: " + "; ".join(problems))
+        self._cmdline = argv
+
+    def _pieces(self, prompt: str, add_special: bool) -> list[str]:
+        resp = self._call("POST", f"{self._base}/tokenize", {
+            "content": prompt, "add_special": add_special, "with_pieces": True,
+        }, self._timeout)
+        return [t.get("piece") if isinstance(t, dict) else None for t in resp.get("tokens", [])]
+
+    def _sequence_checked(self, prompt: str, *, media: bool) -> list[str]:
+        """`prompt`, exactly as it will be embedded: the server's full sequence
+        must be its bare tokens plus one `<embedding>`, and the bare tokens
+        WeMM's turn. Returns the full sequence."""
+        bare = self._pieces(prompt, False)
+        full = self._pieces(prompt, True)
+        head_ok = bare[:2] == ["<|im_start|>", "user"] and (
+            (len(bare) > 2 and bare[2] != "\n") if media else bare[2:3] == ["\n"])
+        if not (full == [*bare, self.APPENDED] and head_ok and bare[-1:] == ["<|im_end|>"]):
+            raise EmbedError("unsupported", f"server sequence {full[:4]}...{full[-3:]} "
+                                            f"is not WeMM's turn plus one {self.APPENDED}")
+        return full
+
+    def _text_prompt(self, text: str) -> str:
+        prompt = wemm_prompt(self.WRAP.format(x=text))
+        if prompt not in self._checked:
+            self._sequence_checked(prompt, media=False)
+            self._checked.add(prompt)
+        return prompt
 
     def _one(self, content: dict[str, Any]) -> list[float]:
         resp = self._call("POST", f"{self._base}/embedding", {"content": content}, self._timeout)
@@ -322,24 +426,27 @@ class LlamaServerEmbedder:
         return list(vec)
 
     def embed_text(self, texts: Sequence[str], role: str) -> Sequence[Sequence[float]]:
-        self._template_checked()
-        return [self._one({"prompt_string": self.WRAP.format(x=self.prefix.apply(t, role))})
-                for t in texts]
+        self._server_checked()
+        prompts = [self._text_prompt(self.prefix.apply(t, role)) for t in texts]
+        return [self._one({"prompt_string": p}) for p in prompts]
 
     def embed_media(self, paths: Sequence[Path]) -> Sequence[Sequence[float]]:
-        self._template_checked()
+        self._server_checked()
+        prompt = self.MEDIA_WRAP.format(x=self.media_marker())
+        if self._media_pieces is None:
+            self._media_pieces = self._sequence_checked(prompt, media=True)
         return [self._one({
-            "prompt_string": self.MEDIA_WRAP.format(x=self.media_marker()),
+            "prompt_string": prompt,
             "multimodal_data": [base64.b64encode(p.read_bytes()).decode()],
         }) for p in paths]
 
     def server_memory(self) -> dict[str, int] | None:
-        """The server's peak and current RSS (kB, `VmHWM`, `VmRSS`), read
-        when called, or None without a pid or a readable /proc entry."""
+        """The server's lifetime peak and current RSS (kB, `VmHWM`, `VmRSS`),
+        read when called, or None without a pid or a readable status file."""
         if self._pid is None:
             return None
         try:
-            lines = Path(f"/proc/{self._pid}/status").read_text().splitlines()
+            lines = (self._proc / str(self._pid) / "status").read_text().splitlines()
         except OSError:
             return None
         out = {k: int(v.split()[0]) for k, _, v in (ln.partition(":") for ln in lines)
@@ -350,22 +457,33 @@ class LlamaServerEmbedder:
         return {"runtime": "llama-server", "model": self.name, "native_dim": self.native_dim,
                 **self._prov, "wrap": self.WRAP, "media_wrap": self.MEDIA_WRAP,
                 "media_marker_source": self._marker_source or None,
-                "server_appends": self.APPENDED, "template_check": self._template,
-                "prefix": self.prefix.record(),
-                "server_memory": self.server_memory()}
+                "server_appends": self.APPENDED, "server_cmdline": self._cmdline,
+                "template_check": {"checked": "/tokenize, every prompt as sent",
+                                   "texts": len(self._checked), "media": self._media_pieces},
+                "normaliser": "wemm_normalise (tokenizer.json sha256 40e444c7...)",
+                "prefix": self.prefix.record(), "server_memory": self.server_memory()}
 
 
 class HFEmbedder:
     """A sentence-transformers model on CPU, at a pinned commit. What loaded is
     checked, not assumed: every parameter at the requested dtype, and the
-    revision the library records equal to the pinned one."""
+    revision the library records equal to the pinned one.
+
+    WeMM-Embedding-2B also has its input checked: the loaded processor must
+    render `WEMM_PROBE` as exactly `WEMM_PIECES`. `text_only` loads it without
+    the two parts a text embedding never reaches (`lm_head`: `embedding()`
+    pools hidden states; `visual`: only image inputs use it), each replaced by
+    a module that raises if called, so its fp32 weights fit on the deploy host
+    (10.1 GiB whole, about 7 GiB without them); a text vector is unchanged,
+    and media refuses."""
 
     #: A Hugging Face commit; a branch or tag name can move under a result.
     REVISION = re.compile(r"[0-9a-f]{40}")
 
     def __init__(self, model: str, *, revision: str, dtype: str, native_dim: int,
                  encode: Callable[[list[Any]], Sequence[Sequence[float]]] | None = None,
-                 load: Callable[[str, str, str], Any] | None = None) -> None:
+                 load: Callable[[str, str, str], Any] | None = None, text_only: bool = False,
+                 pieces: Callable[[Any], list[str]] | None = None) -> None:
         _refuse_float16(model, dtype)
         if not self.REVISION.fullmatch(revision):
             raise ValueError(f"{model}: revision must be a 40-hex commit sha, not {revision!r}")
@@ -375,7 +493,9 @@ class HFEmbedder:
         self._revision = revision
         self._dtype = dtype
         self._encode = encode
-        self._load = load or _load_sentence_transformer
+        self._text_only = text_only
+        self._load = load or (lambda m, r, d: _load_sentence_transformer(m, r, d, text_only))
+        self._pieces = pieces or _st_pieces
         self._loaded: dict[str, Any] = {}
 
     def _encoder(self) -> Callable[[list[Any]], Sequence[Sequence[float]]]:
@@ -390,12 +510,21 @@ class HFEmbedder:
             if loaded != self._revision:
                 raise ValueError(
                     f"{self.name}: pinned revision {self._revision}, loaded {loaded!r}")
+            template: list[str] | None = None
+            if _is_wemm(self.name):
+                template = self._pieces(st)
+                if tuple(template) != WEMM_PIECES:
+                    raise ValueError(f"{self.name}: renders {WEMM_PROBE!r} as {template}, "
+                                     f"not WeMM's {list(WEMM_PIECES)}")
             first = st[0] if hasattr(st, "__getitem__") else None
             image = getattr(getattr(first, "processor", None), "image_processor", None)
             self._loaded = {
                 **_library_versions(),
                 "param_dtype": dtypes.pop(),
                 "loaded_revision": loaded,
+                "template_pieces": template,
+                "text_only": self._text_only,
+                "dropped": getattr(st, "_bakeoff_dropped", None),
                 # The vision budget, as loaded: Ollama's image path is not this one.
                 "image_max_soft_tokens": getattr(image, "max_soft_tokens", None),
             }
@@ -406,6 +535,8 @@ class HFEmbedder:
         return self._encoder()([self.prefix.apply(t, role) for t in texts])
 
     def embed_media(self, paths: Sequence[Path]) -> Sequence[Sequence[float]]:
+        if self._text_only:
+            raise EmbedError("unsupported", f"{self.name} was loaded text-only")
         from PIL import Image
 
         return self._encoder()([Image.open(p).convert("RGB") for p in paths])
@@ -416,16 +547,50 @@ class HFEmbedder:
                 **self._loaded}
 
 
-def _load_sentence_transformer(model: str, revision: str, dtype: str) -> Any:
+def _load_sentence_transformer(model: str, revision: str, dtype: str,
+                               text_only: bool = False) -> Any:
     # ponytail: imported on first use; the bake-off venv installs it, the gate
     # never does.
     import sentence_transformers  # type: ignore[import-not-found]
     import torch  # type: ignore[import-not-found]
 
-    return sentence_transformers.SentenceTransformer(
-        model, revision=revision, device="cpu",
-        model_kwargs={"torch_dtype": getattr(torch, dtype)},
+    if not text_only:
+        return sentence_transformers.SentenceTransformer(
+            model, revision=revision, device="cpu", trust_remote_code=_is_wemm(model),
+            model_kwargs={"torch_dtype": getattr(torch, dtype)},
+        )
+    # The checkpoint's own dtype first (bf16 -> fp32 is exact), then the two
+    # unreached parts out, then the cast: the whole model never exists in fp32.
+    st = sentence_transformers.SentenceTransformer(
+        model, revision=revision, device="cpu", trust_remote_code=_is_wemm(model),
+        model_kwargs={"torch_dtype": torch.bfloat16},
     )
+
+    class Unreached(torch.nn.Module):  # type: ignore[misc]
+        def __init__(self, part: str) -> None:
+            super().__init__()
+            self.part = part
+
+        def forward(self, *a: Any, **k: Any) -> Any:
+            raise RuntimeError(f"text-only load: {self.part} was dropped and must not run")
+
+    inner = st[0].model
+    dropped = {}
+    for owner, attr, label in ((inner, "lm_head", "lm_head"), (inner.model, "visual", "visual")):
+        part = getattr(owner, attr)
+        dropped[label] = sum(p.numel() for p in part.parameters())
+        setattr(owner, attr, Unreached(label))
+    st.to(getattr(torch, dtype))
+    st._bakeoff_dropped = dropped
+    return st
+
+
+def _st_pieces(st: Any) -> list[str]:
+    """How the loaded processor renders `WEMM_PROBE`, one decoded piece per id."""
+    first = st[0]
+    ids = first.preprocess([WEMM_PROBE])["input_ids"][0].tolist()
+    tok = first.processor.tokenizer
+    return [tok.decode([i]) for i in ids]
 
 
 def _library_versions() -> dict[str, Any]:

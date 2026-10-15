@@ -460,6 +460,22 @@ def score(rankings: Rankings, labels: Mapping[str, frozenset[str]], *,
     return out
 
 
+def first_relevant_ranks(rankings: Rankings, labels: Mapping[str, frozenset[str]],
+                         ) -> dict[str, int | str | None]:
+    """Per query id, the 1-based rank of its first relevant item in the arm's
+    top `DEPTH`, None if none is there, `ERROR:<kind>` if the query errored:
+    ids and ranks only, so a verdict that turns on a few queries names them."""
+    out: dict[str, int | str | None] = {}
+    for q in sorted(labels):
+        r = rankings.get(q, Errored("exception"))
+        if isinstance(r, Errored):
+            out[q] = f"ERROR:{r.kind}"
+            continue
+        out[q] = next((pos for pos, pid in enumerate(r[:DEPTH], start=1) if pid in labels[q]),
+                      None)
+    return out
+
+
 def reading_gap(
     lexical: Sequence[Rankings], labels: Mapping[str, frozenset[str]],
 ) -> dict[str, bool | Errored]:
@@ -624,6 +640,7 @@ def evaluate(the_set: BakeoffSet, arms: Mapping[str, ArmRun], *, lexical_arms: S
             s[f"outside_{sub}"] = of([q for q in labels if q not in qs])
         s["paired_recall5_minus_reference_ci95"] = None if name == reference else _paired_ci(
             _per_query(arm.rankings, labels, recall_at), ref_recall)
+        s["per_query"] = first_relevant_ranks(arm.rankings, labels)
         s["cost"] = arm.cost
         s["provenance"] = arm.provenance
         result_arms[name] = s
@@ -784,6 +801,29 @@ def gemma_embedder(*, ollama_tag: str = "", hf_repo: str = "", revision: str = "
     return None
 
 
+def wemm_embedder(*, llama_url: str = "", hf_repo: str = "", revision: str = "",
+                  dtype: str = "", text_only: bool = False, name: str, model_sha256: str = "",
+                  mmproj_sha256: str = "", build: str = "", server_pid: int | None = None,
+                  timeout: float) -> tuple[Embedder, str] | None:
+    """Stage 2's WeMM-Embedding-2B and its arm label: a llama-server serving
+    the GGUF (`wemm`), or a pinned HF revision at an explicit dtype
+    (`wemm-<dtype>`, so both can be decided side by side). Never both."""
+    if llama_url and hf_repo:
+        raise ValueError("--wemm and --wemm-hf are two serving paths; pass one")
+    if hf_repo:
+        if not revision or not dtype:
+            raise ValueError("--wemm-hf needs --wemm-revision and --wemm-hf-dtype")
+        short = {"float32": "fp32", "bfloat16": "bf16"}.get(dtype, dtype)
+        return HFEmbedder(hf_repo, revision=revision, dtype=dtype, native_dim=2048,
+                          text_only=text_only), f"wemm-{short}"
+    if llama_url:
+        return LlamaServerEmbedder(
+            name, native_dim=2048, base_url=llama_url, model_sha256=model_sha256,
+            mmproj_sha256=mmproj_sha256, build=build, dtype="Q4_K_M (projector BF16)",
+            server_pid=server_pid, timeout=timeout), "wemm"
+    return None
+
+
 def _cpu_bf16_flags() -> list[str]:
     try:
         text = Path("/proc/cpuinfo").read_text()
@@ -810,7 +850,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--wemm-model-sha256", default="")
     ap.add_argument("--wemm-mmproj-sha256", default="")
     ap.add_argument("--wemm-build", default="")
-    ap.add_argument("--wemm-dtype", default="Q4_K_M (projector BF16)")
+    ap.add_argument("--wemm-hf", default="", help="or its Hugging Face repo, on CPU: stage 2")
+    ap.add_argument("--wemm-revision", default="", help="the HF commit, pinned")
+    ap.add_argument("--wemm-hf-dtype", default="", help="float32 or bfloat16; never float16")
+    ap.add_argument("--wemm-text-only", action="store_true",
+                    help="HF only: load without lm_head and the vision tower (text slices)")
     ap.add_argument("--wemm-pid", type=int, default=None,
                     help="the llama-server pid, for its peak RSS")
     ap.add_argument("--media-dir", type=Path, default=MEDIA_DIR)
@@ -822,8 +866,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     gemma = gemma_embedder(ollama_tag=args.gemma, hf_repo=args.gemma_hf,
                            revision=args.gemma_revision, dtype=args.gemma_dtype,
                            base_url=args.ollama, timeout=args.timeout)
-    stage = "stage2-wemm" if args.wemm else "stage2" if gemma else "floor"
-    candidates = [m for m in (gemma.name if gemma else "", args.wemm and args.wemm_name) if m]
+    wemm = wemm_embedder(llama_url=args.wemm, hf_repo=args.wemm_hf, revision=args.wemm_revision,
+                         dtype=args.wemm_hf_dtype, text_only=args.wemm_text_only,
+                         name=args.wemm_name, model_sha256=args.wemm_model_sha256,
+                         mmproj_sha256=args.wemm_mmproj_sha256, build=args.wemm_build,
+                         server_pid=args.wemm_pid, timeout=args.timeout)
+    stage = (f"stage2-{wemm[1]}" if wemm and args.wemm_hf else "stage2-wemm" if wemm
+             else "stage2" if gemma else "floor")
+    candidates = [m for m in (gemma.name if gemma else "", wemm[0].name if wemm else "") if m]
     before = host_sample()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     provenance: dict[str, Any] = {
@@ -856,18 +906,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                                         dog=dog, base=args.ollama, **kw))
             if args.gemma:
                 unloaded[gemma.name] = _unload(gemma.name)
-        if args.wemm:
-            # Served by its own llama-server, which the operator starts and stops.
-            wemm = LlamaServerEmbedder(
-                args.wemm_name, native_dim=2048, base_url=args.wemm,
-                model_sha256=args.wemm_model_sha256, mmproj_sha256=args.wemm_mmproj_sha256,
-                build=args.wemm_build, dtype=args.wemm_dtype, server_pid=args.wemm_pid,
-                timeout=args.timeout)
+        if wemm:
+            # llama-server: started and stopped by the operator. HF: in-process.
+            emb, label = wemm
             dims = tuple(int(d) for d in args.wemm_dims.split(","))
             for name, the_set in sets.items():
                 build = _image_arms if the_set.media else _text_arms
                 kw = {"media_dir": args.media_dir} if the_set.media else {}
-                arms[name].update(build(wemm, "wemm", the_set, dims, timeout=args.timeout,
+                arms[name].update(build(emb, label, the_set, dims, timeout=args.timeout,
                                         dog=dog, base=args.ollama, **kw))
     except AbortedError as e:
         for m in ("bge-m3", args.gemma):
