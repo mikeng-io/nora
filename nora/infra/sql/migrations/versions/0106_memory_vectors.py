@@ -9,10 +9,13 @@ the full 2048 (V2). pgvector's HNSW limit for `halfvec` is 4000 dimensions;
 the live server is 0.8.6 on PG18.
 
 **The node is its own queue** (65 §1.1). `project()` clears `embedding`,
-`embedding_model`, `embedded_at`, `embed_attempts` and `embed_error` when the
-embedded input changes; the embedding worker picks live, embeddable nodes
-with a NULL `embedding` through `idx_memory_node_unembedded`, a partial index
-whose predicate names the embeddable kinds (`nora.domain.memory_index.
+`embedding_model`, `embedded_at`, `embed_attempts`, `embed_error` and
+`embed_input` when the input the vector was made from changes (`embed_input`:
+the node's `text`, or the `bytes` its `sha256` names); the embedding
+worker picks live, embeddable nodes with a NULL `embedding` through
+`idx_memory_node_unembedded` (fewest failures, then newest: `embed_attempts,
+id DESC`, the pick's own order), a partial index whose predicate names the
+embeddable kinds (`nora.domain.memory_index.
 EMBEDDED_KINDS`) as literals, so the worker's literal predicate implies it.
 
 **`embedding` (0044) is dropped** (65 §1.2): its code went with the
@@ -49,12 +52,18 @@ def upgrade() -> None:
         "embed_attempts", sa.Integer, nullable=False, server_default=sa.text("0"),
     ))
     op.add_column("memory_node", sa.Column("embed_error", sa.Text))
+    op.add_column("memory_node", sa.Column("embed_input", sa.Text))
+    op.create_check_constraint(
+        "ck_memory_node_embed_input", "memory_node",
+        "embed_input IS NULL OR embed_input IN ('text', 'bytes')",
+    )
     op.execute(
         "CREATE INDEX idx_memory_node_embedding_256 ON memory_node USING hnsw "
         "((subvector(embedding, 1, 256)::halfvec(256)) halfvec_cosine_ops)"
     )
     op.create_index(
-        "idx_memory_node_unembedded", "memory_node", ["embed_attempts", "id"],
+        "idx_memory_node_unembedded", "memory_node",
+        ["embed_attempts", sa.text("id DESC")],
         postgresql_where=sa.text(
             "embedding IS NULL AND state = 'live' AND kind IN ('message', 'media', "
             "'note', 'memo', 'event', 'lesson', 'character')"
@@ -92,6 +101,7 @@ def downgrade() -> None:
 
     op.drop_index("idx_memory_node_unembedded", table_name="memory_node")
     op.drop_index("idx_memory_node_embedding_256", table_name="memory_node")
-    for column in ("embed_error", "embed_attempts", "embedded_at", "embedding_model",
-                   "embedding"):
+    op.drop_constraint("ck_memory_node_embed_input", "memory_node", type_="check")
+    for column in ("embed_input", "embed_error", "embed_attempts", "embedded_at",
+                   "embedding_model", "embedding"):
         op.drop_column("memory_node", column)

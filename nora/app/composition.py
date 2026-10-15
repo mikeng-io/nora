@@ -157,7 +157,7 @@ from nora.engagement.subagents_context import SubagentsContextReader
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.computer.probe import ComputerdProbe
-from nora.infra.embedder import LlamaEmbedder, fingerprint
+from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
 from nora.infra.google.auth import GoogleCredentials
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
@@ -4514,6 +4514,7 @@ async def build_dependencies(
             MemoryEmbedWorker(
                 engine, LlamaEmbedder(cfg.memory_index.embedder_url), blobs,
                 model=fingerprint(cfg.memory_index.embedder_model),
+                model_file=model_file(cfg.memory_index.embedder_model),
                 batch=cfg.memory_index.embed_batch,
                 images_per_hour=cfg.memory_index.embed_images_per_hour,
                 metrics=metrics,

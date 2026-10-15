@@ -34,11 +34,34 @@ From [20](20-embedding-bakeoff.md) and PRs #22 and #24:
 
 1. **No separate embedding queue.** [25](25-memory-graph.md) §7 named "the
    embedding worker"; the queue is the node itself. `project()`'s upsert
-   clears `embedding` when the node's embedded input changes (its text, or
-   its `sha256` for an image), and the worker embeds nodes whose vector is
-   NULL, through a partial index. A rebuild therefore equals live, and a
-   model change is one statement (clear every vector) followed by the
-   backfill.
+   clears `embedding` when the input the vector was made from changes, and
+   the worker embeds nodes whose vector is NULL, through a partial index. The
+   node records that input (`embed_input`: its `text`, or the `bytes` its
+   `sha256` names), so an image embedded from its reading because its bytes
+   were not held is cleared by a new reading, and one embedded from its
+   bytes is not (review of #30). A rebuild therefore equals live, and a
+   model change is one statement (clear every vector of another
+   fingerprint, which the worker runs once per process before its first
+   batch) followed by the backfill.
+5. **No node escapes the worker's bookkeeping, and none is retried
+   forever** (review of #30). Any failure of one node, an unexpected
+   exception included, is recorded on it and backed off exponentially; after
+   8 attempts it is not picked again until its input changes or the operator
+   clears vectors, and it is counted `given_up`. Every image is decoded by
+   the worker (Pillow), bounded (refused above 64 Mpx, downscaled to 1920
+   image tokens' worth) and sent as a PNG, so a crafted file fails as that
+   node's rejection and never inside the shared server.
+6. **The served model is checked by file name, not by hash.** The
+   fingerprint is the configured `<gguf file>@<sha256 prefix>` plus the
+   formatter's version; the worker embeds only while the server's /props
+   `model_path` names that file. llama-server exposes no file hash, so the
+   prefix is the operator's record of what was hashed, not a check.
+7. **The server runs the bake-off's flags exactly** (`-c 2048 -b 2048 -ub
+   2048 -t 4 -ngl 0 --parallel 1`), with `LLAMA_MEDIA_MARKER` pinned. A
+   pooled embedding is one micro-batch, so a text is counted with the
+   server's /tokenize and cut to fit 2000 tokens; a 5xx from a server whose
+   /health answers 200 is the input's fault (rejected, per node), from one
+   that does not, the server's (unavailable, the tick stops).
 2. **The old `embedding` table (0044) is dead.** Nothing outside its schema
    reads or writes it (grep, 2026-10-16). The migration drops it, with its
    `EMBEDDING_DIMENSIONS` constant (the name now holds 2048), so there is one
@@ -55,7 +78,7 @@ From [20](20-embedding-bakeoff.md) and PRs #22 and #24:
 
 | slice | builds | proves it |
 |---|---|---|
-| **V1** | migration `0106_memory_vectors`: `memory_node.embedding halfvec(2048)`, `embedding_model text` (the fingerprint: model file hash plus format version), `embedded_at`, `embed_attempts`, `embed_error`; the HNSW expression index; a partial index on the unembedded embeddable nodes; drop `embedding`. An `embedder` compose service (llama.cpp server, the model files bind-mounted read-only, threads capped so turns keep the CPU). `nora/infra/embedder.py`: the one client, over the one formatter `nora/domain/embedder_input.py`. The embedding worker in the runtime's drain loop: a batch per tick, a failure counted and backed off, never a hot loop. `nora memory rebuild --embeddings-only` and a media throttle sized from the measured media count | the upsert clears a vector when the text or image changes and keeps it otherwise; the worker fills NULLs and records the model; an embedder error leaves the node NULL and counted; a node from another model reads as unembedded; the HNSW index exists and the planner uses it; the bake-off adapter and production format a query, a document and an image identically; schema-parity, row-history and single-head tests |
+| **V1** | migration `0106_memory_vectors`: `memory_node.embedding halfvec(2048)`, `embedding_model text` (the fingerprint: model file hash plus format version), `embedded_at`, `embed_attempts`, `embed_error`, `embed_input` (§1.1); the HNSW expression index; a partial index on the unembedded embeddable nodes, in the pick's order; drop `embedding`. An `embedder` compose service (llama.cpp server with the bake-off's flags, §1.7, the model files bind-mounted read-only, threads capped so turns keep the CPU). `nora/infra/embedder.py`: the one client, over the one formatter `nora/domain/embedder_input.py`. The embedding worker in the runtime's drain loop: a batch per tick, a failure counted and backed off, given up after 8 (§1.5), never a hot loop. `nora memory rebuild --embeddings-only` and a media throttle sized from the measured media count | the upsert clears a vector when its recorded input changes and keeps it otherwise; a poisoned image, an unexpected exception and an oversized text are each one node's recorded failure; a restarted server's new marker still embeds; the worker fills NULLs and records the model; an embedder error leaves the node NULL and counted; a node from another model reads as unembedded; the HNSW index exists and the planner uses it; the bake-off adapter and production format a query, a document and an image identically; schema-parity, row-history and single-head tests |
 | **V2** | S5 seeds: **dense** (the two-stage search, scope inside the scan, `hnsw.iterative_scan` so a scoped search still returns its 50) and **exact** (a literal handle, URL, id or listed person's name contained in the node: pinned ahead of every dense hit, operator 2026-10-16). Trigram similarity remains only as the fallback when the embedder is down, and the answer is then `partial`. Coverage: while embeddable nodes are unembedded, the answer is `partial` | the scope suite again with dense seeds; an exact name match ranks above a closer dense neighbour; embedder down gives `partial` with lexical results, never `nothing_found`; an out-of-scope node never returned however near its vector |
 | **V3** | the acceptance run: deploy (asked first), backfill, `[memory_index] enabled = true` in a sandbox, `conversational_recall` no worse than 7/8 | the eval read-back |
 

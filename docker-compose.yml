@@ -664,8 +664,13 @@ services:
   #   and no egress, and nothing but nora can reach it.
   # - Pinned to the nearest published server image after the bake-off's
   #   build (b11521, b42b7e6d3): b11541, by digest.
-  # - Context 4096 tokens, and a batch as large, because a pooled embedding
-  #   is computed in one batch (`nora.infra.embedder.MAX_TEXT_CHARS`).
+  # - The bake-off's server flags exactly (results/20261015T171213Z-stage2-*:
+  #   `-c 2048 -b 2048 -ub 2048 -t 4 -ngl 0 --parallel 1`), so memory and the
+  #   image token cap (which the server ties to -ub) are what was measured.
+  #   A pooled embedding is one micro-batch, so the client keeps every prompt
+  #   under 2048 tokens (`nora.infra.embedder.TOKEN_BUDGET`).
+  # - LLAMA_MEDIA_MARKER pins the multimodal marker: unset, this build picks a
+  #   random one per start, and a client holding the old one gets HTTP 500.
   embedder:
     logging:
       driver: json-file
@@ -675,6 +680,8 @@ services:
     restart: unless-stopped
     profiles: [embedder]
     networks: [embedder]
+    environment:
+      - LLAMA_MEDIA_MARKER=<__media__>
     command:
       - "--embedding"
       - "--pooling"
@@ -683,16 +690,18 @@ services:
       - "/models/Qwen3-VL-Embedding-2B.Q4_K_M.gguf"
       - "--mmproj"
       - "/models/Qwen3-VL-Embedding-2B.mmproj-f16.gguf"
-      - "--ctx-size"
-      - "4096"
-      - "--batch-size"
-      - "4096"
-      - "--ubatch-size"
-      - "4096"
-      - "--threads"
+      - "-c"
+      - "2048"
+      - "-b"
+      - "2048"
+      - "-ub"
+      - "2048"
+      - "-t"
       - "4"
-      - "--threads-batch"
-      - "4"
+      - "-ngl"
+      - "0"
+      - "--parallel"
+      - "1"
       - "--host"
       - "0.0.0.0"
       - "--port"

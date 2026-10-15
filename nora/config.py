@@ -1318,11 +1318,14 @@ class MemoryIndexConfig(BaseModel):
     embedding worker on the same drain tick: up to `embed_batch` nodes per
     tick through llama-server at `embedder_url` (the `embedder` compose
     service), and at most `embed_images_per_hour` images an hour (about
-    3.4 s of CPU each on the deploy host). `embedder_model` names the model
-    file the server loads; with the formatter's version it is the
-    fingerprint stored with every vector, so changing it makes every stored
-    vector another model's, re-embedded by the worker. Off by default: the
-    `embedder` service must be up first."""
+    3.4 s of CPU each on the deploy host). `embedder_model` is
+    `<gguf file name>@<sha256 prefix>`: the worker refuses to embed unless
+    the server reports loading that file name (/props), and with the
+    formatter's version it is the fingerprint stored with every vector, so
+    changing it clears every stored vector at the worker's first tick and
+    re-embeds them. The hash prefix is recorded, not checked: the server
+    exposes no file hash. Off by default: the `embedder` service must be up
+    first."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1330,7 +1333,7 @@ class MemoryIndexConfig(BaseModel):
     enabled: bool = False
     embed: bool = False
     embedder_url: str = "http://embedder:8080"
-    embedder_model: str = "Qwen3-VL-Embedding-2B.Q4_K_M@7812c91cd1e0"
+    embedder_model: str = "Qwen3-VL-Embedding-2B.Q4_K_M.gguf@7812c91cd1e0"
     embed_batch: int = Field(default=64, ge=1, le=1000)
     embed_images_per_hour: int = Field(default=120, ge=0)
 

@@ -2193,9 +2193,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_memory_embed_total",
         "Memory index nodes the embedding worker tried, by outcome ("
         + " / ".join(EMBED_OUTCOMES) + "). unavailable = the embedder or the "
-        "blob store did not answer (the tick stops); rejected = the embedder "
-        "refused the input; empty = nothing to embed. Every failure backs the "
-        "node off.",
+        "blob store did not answer (the tick stops); rejected = the input was "
+        "refused or would not decode; empty = nothing to embed; error = any "
+        "other failure of that node. Every failure backs the node off; "
+        "given_up is counted in addition when a failure was the node's last "
+        "allowed attempt.",
         ("outcome",),
     ),
 )

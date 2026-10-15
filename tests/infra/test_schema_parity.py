@@ -87,6 +87,9 @@ EXPECTED_DESC_INDEXES = {
         "platform": False, "conversation_id": False,
         "updated_at": True, "id": True,
     },
+    # memory_node (0106): the embedding worker's pick, fewest failures and
+    # then newest, `(embed_attempts, id DESC)`, the order `embed_pick` asks.
+    "idx_memory_node_unembedded": {"embed_attempts": False, "id": True},
 }
 
 

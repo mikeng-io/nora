@@ -62,6 +62,9 @@ _DESC_EXPRESSION_INDEXES = frozenset({
     # `tests/infra/test_schema_parity.py`'s `EXPECTED_EXPRESSION_INDEXES`,
     # which asserts its definition from `pg_get_indexdef`.
     "idx_memory_node_embedding_256",
+    # The embedding worker's pick index, `(embed_attempts, id DESC)` (0106),
+    # with its row in `EXPECTED_DESC_INDEXES`.
+    "idx_memory_node_unembedded",
 })
 
 

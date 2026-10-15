@@ -74,6 +74,7 @@ from nora.domain.facts import (
     FACT_TERM_CEILING_CHARS,
 )
 from nora.domain.lineage import CONFIDENCES, REASONING_MODES
+from nora.domain.memory_index import EMBED_INPUTS as MEMORY_EMBED_INPUTS
 from nora.domain.memory_index import EMBEDDED_KINDS as MEMORY_EMBEDDED_KINDS
 from nora.domain.memory_index import HUB_KINDS as MEMORY_HUB_KINDS
 from nora.domain.memory_index import NODE_KINDS as MEMORY_NODE_KINDS
@@ -4718,9 +4719,10 @@ MEMORY_NODE = sa.Table(
         server_default=sa.text("clock_timestamp()"),
     ),
     # The dense channel (0106, design/unified-memory/65-build-step-3-vectors.md).
-    # The node is its own embedding queue: `project()` clears all five when
-    # the embedded input changes (the text, or the bytes of an image), and the
-    # embedding worker fills a NULL `embedding`. `embedding_model` is the
+    # The node is its own embedding queue: `project()` clears all six when
+    # the input the vector was made from changes (`embed_input`: the `text`,
+    # or the `bytes` its `sha256` names), and the embedding worker fills a
+    # NULL `embedding`. `embedding_model` is the
     # fingerprint it was made with (`nora.infra.embedder.fingerprint`), so a
     # vector of another model reads as unembedded. `embedded_at` (epoch ms) is
     # the last attempt, a failed one included; `embed_attempts` counts the
@@ -4731,6 +4733,7 @@ MEMORY_NODE = sa.Table(
     sa.Column("embedded_at", sa.BigInteger),
     sa.Column("embed_attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("embed_error", sa.Text),
+    sa.Column("embed_input", sa.Text),
     sa.UniqueConstraint("kind", "source_id", name="uq_memory_node_kind_source"),
     sa.CheckConstraint(f"kind IN ({_in_list(MEMORY_NODE_KINDS)})", name="ck_memory_node_kind"),
     sa.CheckConstraint(
@@ -4743,6 +4746,10 @@ MEMORY_NODE = sa.Table(
         "OR unit IS NOT NULL OR origin_room IS NOT NULL "
         "OR cardinality(persons) > 0",
         name="ck_memory_node_has_a_scope",
+    ),
+    sa.CheckConstraint(
+        f"embed_input IS NULL OR embed_input IN ({_in_list(MEMORY_EMBED_INPUTS)})",
+        name="ck_memory_node_embed_input",
     ),
 )
 IDX_MEMORY_NODE_UNIT = sa.Index("idx_memory_node_unit", MEMORY_NODE.c.unit)
@@ -4769,9 +4776,11 @@ IDX_MEMORY_NODE_EMBEDDING_256 = sa.Index(
     postgresql_ops={"embedding_256": "halfvec_cosine_ops"},
 )
 #: The embedding worker's pick (`nora.infra.sql.memory_index.embed_pick`): the
-#: live, embeddable nodes with no vector, fewest failures and newest first.
+#: live, embeddable nodes with no vector, fewest failures and newest first,
+#: in the pick's own order (`id DESC`, so alembic-check-blind like the other
+#: DESC indexes: `migrations/env.py`, `EXPECTED_DESC_INDEXES`).
 IDX_MEMORY_NODE_UNEMBEDDED = sa.Index(
-    "idx_memory_node_unembedded", MEMORY_NODE.c.embed_attempts, MEMORY_NODE.c.id,
+    "idx_memory_node_unembedded", MEMORY_NODE.c.embed_attempts, sa.text("id DESC"),
     postgresql_where=sa.text(
         f"embedding IS NULL AND state = 'live' AND kind IN ({_in_list(MEMORY_EMBEDDED_KINDS)})"
     ),

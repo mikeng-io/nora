@@ -803,7 +803,7 @@ async def test_memory_rebuild_embeddings_only_clears_vectors_and_reports_counts(
 
     try:
         async with engine.begin() as conn:
-            [item] = await memory_index.embed_pick(conn, limit=5, now_ms=0, model="m")
+            [item] = await memory_index.embed_pick(conn, limit=5, now_ms=0)
             assert await memory_index.embed_store(
                 conn, item, vector=[1.0] + [0.0] * 2047, model="another-model+fmt1",
                 now_ms=1, by_bytes=False,
@@ -820,6 +820,7 @@ async def test_memory_rebuild_embeddings_only_clears_vectors_and_reports_counts(
         out = capsys.readouterr().out
         assert "vectors: cleared 1 (of other models)" in out
         assert "waiting for the worker: 1" in out
+        assert "given up after 8 attempts: 0" in out
         assert "[memory_index] embed is false" in out
         assert await vectors() == [None]
 

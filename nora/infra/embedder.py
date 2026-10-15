@@ -1,7 +1,8 @@
 """The one client for the memory index's embedder (design/unified-memory/
 65-build-step-3-vectors.md §0, V1): Qwen3-VL-Embedding-2B served by
 llama-server with `--embedding --pooling last` and its projector, the
-`embedder` compose service.
+`embedder` compose service, run with the bake-off's flags (`-c 2048 -b 2048
+-ub 2048 -t 4 -ngl 0 --parallel 1`).
 
 Every prompt comes from `nora.domain.embedder_input`, the formatter the
 bake-off adapter uses too, so production embeds exactly what the bake-off
@@ -11,19 +12,29 @@ cosine and an inner product rank the same.
 **Two failures, kept apart** (R-27's spirit, an ERROR is never a PASS):
 
 - `EmbedderUnavailableError`: the embedder did not answer usefully (refused,
-  timed out, a 5xx, an answer that is not one vector of the expected width).
-  Nothing is known about the input; the caller stops for this tick.
-- `EmbedderRejectedError`: the embedder refused THIS input (a 4xx), or an
-  image's bytes could not be decoded. The caller backs that node off and
-  moves on.
+  timed out, not healthy, an answer that is not one vector of the expected
+  width, or a server that is not serving the configured model). Nothing is
+  known about the input; the caller stops for this tick.
+- `EmbedderRejectedError`: THIS input is at fault. A 4xx; or a 5xx while the
+  server's /health still answers 200, which is how llama-server reports an
+  input it cannot embed ("input is too large", "failed to load image", a
+  media marker it does not know); or image bytes that do not decode. The
+  caller backs that node off and moves on.
 
 Neither ever carries the input: an exception message here names a status
 or a class, never a text, because a message body is room content.
 
-An image goes as its own bytes. llama-server decodes with stb_image, which
-reads JPEG and PNG (and a GIF's first frame) but not WebP, the shape most
-stickers arrive in; anything that is not JPEG or PNG is re-encoded as the PNG
-of its first frame first (Pillow, in a thread).
+**A text fits the server's batch.** A pooled embedding is one batch, so a
+prompt longer than `-ub` tokens is refused. A text up to `SAFE_TEXT_CHARS`
+characters is sent as it is; a longer one is counted with the server's own
+/tokenize and cut until its prompt fits `TOKEN_BUDGET`.
+
+**An image is decoded here, every time**, by Pillow in a thread, and sent as
+the PNG of its first frame: llama-server's decoder reads no WebP (most
+stickers), and a crafted file must fail HERE, as this node's rejection,
+never inside the shared server. A file claiming more than
+`MAX_DECODE_PIXELS` is refused before it is decoded, and one larger than
+`MAX_SEND_PIXELS` is downscaled first (module constants say why).
 """
 
 from __future__ import annotations
@@ -32,6 +43,7 @@ import asyncio
 import base64
 import io
 import math
+from pathlib import PurePosixPath
 from typing import Any
 
 import aiohttp
@@ -40,25 +52,41 @@ from nora.domain.embedder_input import FORMAT_VERSION, image_prompt, text_prompt
 
 __all__ = [
     "DIMENSIONS",
-    "MAX_TEXT_CHARS",
+    "MAX_DECODE_PIXELS",
+    "MAX_SEND_PIXELS",
+    "SAFE_TEXT_CHARS",
+    "TOKEN_BUDGET",
     "EmbedderRejectedError",
     "EmbedderUnavailableError",
     "LlamaEmbedder",
     "fingerprint",
+    "model_file",
 ]
 
 #: Qwen3-VL-Embedding-2B's width (65 §0: store 2048, index the first 256).
 DIMENSIONS = 2048
 
-#: The longest text sent, in characters. The server's context is 4096 tokens
-#: (`docker-compose.yml`); a CJK character is about a token, and the prompt's
-#: own turns take about 40.
-# ponytail: a longer text is embedded from its head; chunking a node is a
-# later step if a search measurably misses the tail of a long note.
-MAX_TEXT_CHARS = 3500
+#: The server's micro-batch (`-ub 2048`, the bake-off's): a pooled embedding
+#: is computed in one, so no prompt may be longer. The budget leaves room for
+#: the special tokens llama-server adds.
+UBATCH = 2048
+TOKEN_BUDGET = UBATCH - 48
 
-#: The image types llama-server reads as they are (module docstring).
-_SENT_AS_IS = frozenset({"image/jpeg", "image/jpg", "image/png"})
+#: A text this long or shorter cannot overflow the budget, so it is sent
+#: without a /tokenize call: the worst rate measured on this tokenizer was
+#: 2.11 tokens a character (3500 rare Hong Kong characters, 7389 tokens;
+#: ordinary Cantonese 1.22, emoji 1.10), and 880 x 2.11 plus the ~40 tokens
+#: of the prompt's own turns is under `TOKEN_BUDGET`.
+SAFE_TEXT_CHARS = 880
+
+#: Qwen3-VL merges 2x2 patches of 16 px, so one image token is 32 x 32 px.
+#: The server caps an image at `-ub` tokens and resizes past it; sending at
+#: most 1920 tokens' worth keeps image plus prompt inside one micro-batch and
+#: leaves the server nothing to resize on an image this size or smaller.
+MAX_SEND_PIXELS = 1920 * 32 * 32
+#: A file claiming more pixels than this is refused before decoding: a
+#: decompression bomb is a few KB that inflates to gigabytes.
+MAX_DECODE_PIXELS = 64_000_000
 
 #: llama.cpp's default multimodal marker, for a server whose /props names none.
 _DEFAULT_MARKER = "<__media__>"
@@ -69,14 +97,19 @@ class EmbedderUnavailableError(RuntimeError):
 
 
 class EmbedderRejectedError(RuntimeError):
-    """The embedder refused this input, or its bytes could not be decoded."""
+    """This input cannot be embedded: refused by the server, or undecodable."""
 
 
 def fingerprint(model_id: str) -> str:
     """What `memory_node.embedding_model` records: the configured model id
-    (the GGUF and its hash) plus the formatter's version. A vector whose
-    fingerprint is not the current one is another model's (65 V1)."""
+    (`<gguf file name>@<sha256 prefix>`) plus the formatter's version. A
+    vector whose fingerprint is not the current one is another model's."""
     return f"{model_id}+fmt{FORMAT_VERSION}"
+
+
+def model_file(model_id: str) -> str:
+    """The GGUF file name a configured model id names (before the `@`)."""
+    return model_id.partition("@")[0]
 
 
 def _normalised(raw: Any) -> list[float]:
@@ -99,21 +132,33 @@ def _normalised(raw: Any) -> list[float]:
     return [x / norm for x in floats]
 
 
-def _as_sendable(data: bytes, media_type: str) -> bytes:
-    """`data` as bytes llama-server decodes: JPEG and PNG as they are, any
-    other image as the PNG of its first frame."""
-    if media_type.strip().lower() in _SENT_AS_IS:
-        return data
-    from PIL import Image, UnidentifiedImageError
+def _as_sendable(data: bytes) -> bytes:
+    """`data` decoded and re-encoded as the PNG of its first frame, at most
+    `MAX_SEND_PIXELS`. ANY failure is this input's rejection: Pillow raises
+    far more than `OSError` on a crafted file (`DecompressionBombError`,
+    `SyntaxError`, `struct.error`, ...), and one that escaped would leave the
+    node unrecorded, first in every pick, wedging the worker."""
+    from PIL import Image
 
     try:
         with Image.open(io.BytesIO(data)) as img:
+            width, height = img.size
+            if width * height > MAX_DECODE_PIXELS:
+                raise EmbedderRejectedError(f"image of {width}x{height} pixels refused")
             img.seek(0)
             frame = img.convert("RGBA" if "A" in img.getbands() else "RGB")
-            out = io.BytesIO()
-            frame.save(out, format="PNG")
-            return out.getvalue()
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        if width * height > MAX_SEND_PIXELS:
+            scale = math.sqrt(MAX_SEND_PIXELS / (width * height))
+            frame = frame.resize(
+                (max(1, int(width * scale)), max(1, int(height * scale))),
+                Image.Resampling.BICUBIC,
+            )
+        out = io.BytesIO()
+        frame.save(out, format="PNG")
+        return out.getvalue()
+    except EmbedderRejectedError:
+        raise
+    except Exception as exc:  # any decode failure is this input's
         raise EmbedderRejectedError(f"undecodable image ({type(exc).__name__})") from exc
 
 
@@ -126,27 +171,66 @@ class LlamaEmbedder:
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._marker: str | None = None
 
+    async def served_model(self) -> str:
+        """The file name of the model the server loaded (/props
+        `model_path`), so the worker can refuse to stamp vectors with a
+        fingerprint the server is not serving."""
+        props = await self._call("GET", "/props", None)
+        path = props.get("model_path") if isinstance(props, dict) else None
+        if not path:
+            raise EmbedderUnavailableError("the server names no model")
+        return PurePosixPath(str(path)).name
+
     async def embed_query(self, text: str) -> list[float]:
-        return await self._embed({"prompt_string": text_prompt(text[:MAX_TEXT_CHARS], "query")})
+        return await self._embed_text(text, "query")
 
     async def embed_document(self, text: str) -> list[float]:
-        return await self._embed(
-            {"prompt_string": text_prompt(text[:MAX_TEXT_CHARS], "document")},
-        )
+        return await self._embed_text(text, "document")
 
-    async def embed_image(self, data: bytes, media_type: str) -> list[float]:
-        sendable = await asyncio.to_thread(_as_sendable, data, media_type)
+    async def embed_image(self, data: bytes) -> list[float]:
+        sendable = await asyncio.to_thread(_as_sendable, data)
+        payload = [base64.b64encode(sendable).decode()]
         marker = await self._media_marker()
-        return await self._embed({
-            "prompt_string": image_prompt(marker),
-            "multimodal_data": [base64.b64encode(sendable).decode()],
-        })
+        try:
+            return await self._embed({"prompt_string": image_prompt(marker),
+                                      "multimodal_data": payload})
+        except (EmbedderRejectedError, EmbedderUnavailableError):
+            # A restarted server may know another marker: read it again, and
+            # retry once if it did change.
+            self._marker = None
+            fresh = await self._media_marker()
+            if fresh == marker:
+                raise
+        return await self._embed({"prompt_string": image_prompt(fresh),
+                                  "multimodal_data": payload})
+
+    async def _embed_text(self, text: str, role: str) -> list[float]:
+        return await self._embed({"prompt_string": await self._fitted(text, role)})
+
+    async def _fitted(self, text: str, role: str) -> str:
+        """`text`'s prompt, cut until it fits `TOKEN_BUDGET` tokens by the
+        server's own count."""
+        if len(text) <= SAFE_TEXT_CHARS:
+            return text_prompt(text, role)
+        for _ in range(4):
+            prompt = text_prompt(text, role)
+            resp = await self._call("POST", "/tokenize", {
+                "content": prompt, "add_special": True, "parse_special": True,
+            })
+            tokens = resp.get("tokens") if isinstance(resp, dict) else None
+            if not isinstance(tokens, list):
+                raise EmbedderUnavailableError("a /tokenize answer with no tokens")
+            if len(tokens) <= TOKEN_BUDGET:
+                return prompt
+            text = text[:max(SAFE_TEXT_CHARS, int(len(text) * TOKEN_BUDGET / len(tokens) * 0.95))]
+            if len(text) <= SAFE_TEXT_CHARS:
+                break
+        return text_prompt(text[:SAFE_TEXT_CHARS], role)
 
     async def _media_marker(self) -> str:
-        """The server's multimodal marker: a newer llama-server picks one per
-        start and publishes it in /props, and the default then does not
-        tokenize as a marker. Read once per process; a restarted server is a
-        new marker, so a rejected image clears it (`_embed`)."""
+        """The server's multimodal marker (/props `media_marker`). A server
+        not pinned by LLAMA_MEDIA_MARKER picks one per start; it is read once
+        and read again after any failed image call."""
         if self._marker is None:
             props = await self._call("GET", "/props", None)
             named = props.get("media_marker") if isinstance(props, dict) else None
@@ -154,28 +238,38 @@ class LlamaEmbedder:
         return self._marker
 
     async def _embed(self, content: dict[str, Any]) -> list[float]:
-        try:
-            resp = await self._call("POST", "/embedding", {"content": content})
-        except EmbedderRejectedError:
-            if "multimodal_data" in content:
-                self._marker = None
-            raise
+        resp = await self._call("POST", "/embedding", {"content": content})
         row = resp[0] if isinstance(resp, list) and resp else resp
         if not isinstance(row, dict) or "embedding" not in row:
             raise EmbedderUnavailableError("an answer with no embedding")
         return _normalised(row["embedding"])
 
+    async def _healthy(self) -> bool:
+        try:
+            async with (
+                aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session,
+                session.get(self._base + "/health") as resp,
+            ):
+                return resp.status == 200
+        except (aiohttp.ClientError, TimeoutError):
+            return False
+
     async def _call(self, method: str, path: str, body: dict[str, Any] | None) -> Any:
+        status: int | None = None
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.request(method, self._base + path, json=body) as resp,
             ):
-                if 400 <= resp.status < 500:
-                    raise EmbedderRejectedError(f"HTTP {resp.status}")
-                if resp.status != 200:
-                    raise EmbedderUnavailableError(f"HTTP {resp.status}")
-                return await resp.json(content_type=None)
+                status = resp.status
+                if status == 200:
+                    return await resp.json(content_type=None)
         except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
             # ValueError: an answer that is not JSON.
             raise EmbedderUnavailableError(type(exc).__name__) from exc
+        if 400 <= status < 500:
+            raise EmbedderRejectedError(f"HTTP {status}")
+        # A 5xx from a server that is still healthy is about this input.
+        if status >= 500 and await self._healthy():
+            raise EmbedderRejectedError(f"HTTP {status}")
+        raise EmbedderUnavailableError(f"HTTP {status}")

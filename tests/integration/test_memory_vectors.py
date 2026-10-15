@@ -29,7 +29,7 @@ from sqlalchemy.dialects import postgresql
 from nora.domain.media import MediaBlob
 from nora.domain.memory_index import HUB_KINDS
 from nora.domain.models import NormalizedMessage
-from nora.infra.embedder import LlamaEmbedder, fingerprint
+from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
 from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -42,7 +42,8 @@ from tests.unit.test_embedder import FakeLlamaServer, png_bytes
 
 pytestmark = pytest.mark.asyncio
 
-MODEL = fingerprint("model-a@0000")
+MODEL_ID = "model-a.gguf@0000"
+MODEL = fingerprint(MODEL_ID)
 
 
 class Clock:
@@ -80,11 +81,12 @@ def _message(body: str, *, ts: int = 1000, blobs: tuple[MediaBlob, ...] = ()) ->
 
 
 def worker(
-    engine: Any, url: str, *, blobs: Any = None, model: str = MODEL, batch: int = 16,
+    engine: Any, url: str, *, blobs: Any = None, model_id: str = MODEL_ID, batch: int = 16,
     images_per_hour: int = 100, metrics: Any = None, clock: Any = None,
 ) -> MemoryEmbedWorker:
     return MemoryEmbedWorker(
-        engine, LlamaEmbedder(url), blobs, model=model, batch=batch,
+        engine, LlamaEmbedder(url), blobs, model=fingerprint(model_id),
+        model_file=model_file(model_id), batch=batch,
         images_per_hour=images_per_hour, metrics=metrics, clock=clock or Clock(),
     )
 
@@ -185,7 +187,7 @@ async def test_an_embedder_error_leaves_the_node_null_counted_and_backed_off(
     metrics, clock = Metrics(), Clock()
     w = worker(engine, url, metrics=metrics, clock=clock)
 
-    fake.status = 503
+    fake.status, fake.healthy = 503, False
     with caplog.at_level(logging.DEBUG):
         assert await w.run_once() == 1, "an unavailable embedder ends the tick"
     assert fake.calls == 1
@@ -203,7 +205,7 @@ async def test_an_embedder_error_leaves_the_node_null_counted_and_backed_off(
     assert fake.calls == 2
 
     # A refused input is the node's own: counted, and the batch goes on.
-    fake.status = 400
+    fake.status, fake.healthy = 400, True
     clock.now += 3600
     assert await w.run_once() == 2
     assert metrics.get("nora_memory_embed_total", outcome="rejected") == 2
@@ -217,10 +219,14 @@ async def test_an_embedder_error_leaves_the_node_null_counted_and_backed_off(
 
 
 async def test_a_node_of_another_model_reads_as_unembedded_and_is_re_embedded(engine, llama):
-    _fake, url = llama
+    """The worker's first tick clears every other model's vector (65 §1.1),
+    so the ordinary pick re-embeds it, images included."""
+    fake, url = llama
     store = SqlRecordStore(engine)
     mid = await store.append(message=_message("the lantern festival plan"))
-    await worker(engine, url, model=fingerprint("model-b@1111")).run_once()
+    fake.model_path = "/models/model-b.gguf"
+    await worker(engine, url, model_id="model-b.gguf@1111").run_once()
+    fake.model_path = "/models/model-a.gguf"
 
     async with engine.connect() as conn:
         counts = await memory_index.embed_counts(conn, MODEL)
@@ -230,7 +236,7 @@ async def test_a_node_of_another_model_reads_as_unembedded_and_is_re_embedded(en
     row = (await _nodes(engine))[("message", str(mid))]
     assert row.embedding_model == MODEL
     async with engine.connect() as conn:
-        assert await memory_index.embed_counts(conn, MODEL) == (1, 0, 0)
+        assert await memory_index.embed_counts(conn, MODEL) == (1, 0, 0, 0)
 
 
 async def test_the_image_throttle_leaves_images_for_later_and_never_holds_up_a_text(
@@ -295,11 +301,11 @@ async def test_clearing_takes_every_vector_or_only_another_models(engine, llama)
     async with engine.begin() as conn:
         assert await memory_index.clear_embeddings(conn, keep_model=MODEL) == 1
     async with engine.connect() as conn:
-        assert await memory_index.embed_counts(conn, MODEL) == (2, 1, 0)
+        assert await memory_index.embed_counts(conn, MODEL) == (2, 1, 0, 0)
     async with engine.begin() as conn:
         assert await memory_index.clear_embeddings(conn) == 2
     async with engine.connect() as conn:
-        assert await memory_index.embed_counts(conn, MODEL) == (0, 3, 0)
+        assert await memory_index.embed_counts(conn, MODEL) == (0, 3, 0, 0)
 
 
 async def test_the_planner_can_use_the_hnsw_index_and_the_pick_index(engine, llama):
@@ -320,8 +326,118 @@ async def test_the_planner_can_use_the_hnsw_index_and_the_pick_index(engine, lla
         ), {"q": query})).scalars())
         # The worker's own query, as the code builds it.
         stmt = memory_index._pick_statement(
-            limit=16, now_ms=0, model=MODEL, other_models=False, media=True,
+            limit=16, now_ms=0, media=True,
         ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
         pick = "\n".join((await conn.exec_driver_sql(f"EXPLAIN {stmt}")).scalars())
     assert "idx_memory_node_embedding_256" in dense
     assert "idx_memory_node_unembedded" in pick
+    # The index serves the pick's order: no sort step on top of it.
+    assert "Sort" not in pick, pick
+
+
+async def test_an_image_embedded_from_its_reading_loses_the_vector_when_the_reading_changes(
+    engine, llama,
+):
+    """Finding 3: an image whose bytes Nora no longer holds is embedded from
+    its reading, and `embed_input` records it, so a new reading clears it; an
+    image embedded from its bytes keeps its vector through the same change."""
+    _fake, url = llama
+    blobs = FakeBlobStore()
+    held = await blobs.put(data=png_bytes())
+    gone = "ef" * 32  # in media_json, never in the blob store
+    store = SqlRecordStore(engine)
+    media = SqlMediaObjectStore(engine)
+    for sha in (held, gone):
+        assert await media.comprehend(
+            sha256=sha, title="Lantern", description="A red lantern.", content="", model="m",
+        ) is True
+    mid = await store.append(message=_message("look", blobs=(
+        MediaBlob(sha256=held, media_type="image/png", size=10),
+        MediaBlob(sha256=gone, media_type="image/jpeg", size=10),
+    )))
+    await worker(engine, url, blobs=blobs).run_once()
+    nodes = await _nodes(engine)
+    held_key, gone_key = ("media", f"{mid}:{held}"), ("media", f"{mid}:{gone}")
+    assert (nodes[held_key].embed_input, nodes[gone_key].embed_input) == ("bytes", "text")
+    assert nodes[gone_key].embedding is not None
+
+    for sha in (held, gone):
+        assert await media.comprehend(
+            sha256=sha, title="Lantern", description="A blue lantern.", content="", model="m",
+        ) is True
+    nodes = await _nodes(engine)
+    assert nodes[held_key].embedding is not None
+    assert nodes[gone_key].embedding is None and nodes[gone_key].embed_input is None
+
+
+async def test_an_unexpected_failure_is_recorded_and_a_node_is_given_up_after_the_cap(
+    engine, llama, monkeypatch,
+):
+    """Review (b), (c): any exception one node raises is recorded on that
+    node, never escaping the tick, and after `EMBED_MAX_ATTEMPTS` the node is
+    not picked again, counted `given_up`."""
+    _fake, url = llama
+    store = SqlRecordStore(engine)
+    bad = await store.append(message=_message("a node that always breaks", ts=1000))
+    good = await store.append(message=_message("a node that embeds", ts=1100))
+    real = LlamaEmbedder.embed_document
+
+    async def _breaks(self: Any, text: str) -> list[float]:
+        if "breaks" in text:
+            raise KeyError("boom")
+        return await real(self, text)
+
+    monkeypatch.setattr(LlamaEmbedder, "embed_document", _breaks)
+    metrics, clock = Metrics(), Clock()
+    w = worker(engine, url, metrics=metrics, clock=clock)
+
+    assert await w.run_once() == 2, "the failure did not stop the batch"
+    nodes = await _nodes(engine)
+    assert nodes[("message", str(good))].embedding is not None
+    row = nodes[("message", str(bad))]
+    assert (row.embed_attempts, row.embed_error) == (1, "error:KeyError")
+    assert metrics.get("nora_memory_embed_total", outcome="error") == 1
+
+    for _ in range(memory_index.EMBED_MAX_ATTEMPTS - 1):
+        clock.now += 7 * 3600
+        assert await w.run_once() == 1
+    assert metrics.get("nora_memory_embed_total", outcome="given_up") == 1
+    clock.now += 7 * 3600
+    assert await w.run_once() == 0, "given up: never picked again"
+    async with engine.connect() as conn:
+        counts = await memory_index.embed_counts(conn, MODEL)
+    assert (counts.given_up, counts.failing) == (1, 1)
+
+    # A change to its input frees it.
+    await store.append_edit(message_id=bad, message=_message("now it embeds", ts=2000))
+    assert await w.run_once() == 1
+    assert (await _nodes(engine))[("message", str(bad))].embedding is not None
+
+
+async def test_a_poisoned_image_is_one_nodes_rejection_not_a_wedge(engine, llama):
+    """A crafted file never reaches the server and never stops the batch."""
+    fake, url = llama
+    blobs = FakeBlobStore()
+    poison = await blobs.put(data=b"GIF89a\x01\x00\x01\x00\x80\x00\x00garbage")
+    store = SqlRecordStore(engine)
+    mid = await store.append(message=_message("look", blobs=(
+        MediaBlob(sha256=poison, media_type="image/gif", size=10),
+    )))
+    metrics = Metrics()
+    assert await worker(engine, url, blobs=blobs, metrics=metrics).run_once() == 2
+    row = (await _nodes(engine))[("media", f"{mid}:{poison}")]
+    assert row.embed_attempts == 1 and row.embed_error.startswith("rejected:undecodable")
+    assert metrics.get("nora_memory_embed_total", outcome="rejected") == 1
+    assert all("multimodal_data" not in c for c in fake.accepted)
+
+
+async def test_the_worker_embeds_nothing_while_the_server_serves_another_model(engine, llama):
+    fake, url = llama
+    store = SqlRecordStore(engine)
+    await store.append(message=_message("the lantern festival plan"))
+    fake.model_path = "/models/some-other-model.gguf"
+    w = worker(engine, url)
+    assert await w.run_once() == 0
+    assert fake.calls == 0
+    fake.model_path = "/models/model-a.gguf"
+    assert await w.run_once() == 1

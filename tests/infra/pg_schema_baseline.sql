@@ -548,6 +548,7 @@ CONSTRAINT ck_memo_revision_title_ceiling CHECK ((length(title) <= 200))
 CONSTRAINT ck_memory_edge_rel CHECK ((rel = ANY (ARRAY['authored_by'::text, 'in_room'::text, 'shared_by'::text, 'attached_to'::text, 'during'::text, 'about'::text, 'cites'::text, 'supersedes'::text, 'tracks'::text, 'closes_into'::text, 'leaves_behind'::text, 'draws_on'::text, 'informed_by'::text, 'disputes'::text, 'feedback_on'::text, 'depicts'::text, 'mentions'::text, 'located_in'::text, 'outcome_of'::text])))
 CONSTRAINT ck_memory_index_state_one_row CHECK (id),
 CONSTRAINT ck_memory_index_state_status CHECK ((status = ANY (ARRAY['never'::text, 'building'::text, 'complete'::text])))
+CONSTRAINT ck_memory_node_embed_input CHECK (((embed_input IS NULL) OR (embed_input = ANY (ARRAY['text'::text, 'bytes'::text])))),
 CONSTRAINT ck_memory_node_has_a_scope CHECK (((kind = ANY (ARRAY['person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text])) OR (unit IS NOT NULL) OR (origin_room IS NOT NULL) OR (cardinality(persons) > 0))),
 CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text]))),
 CONSTRAINT ck_memory_node_state CHECK ((state = ANY (ARRAY['live'::text, 'retired'::text, 'superseded'::text])))
@@ -722,7 +723,7 @@ CREATE INDEX idx_memory_node_embedding_256 ON public.memory_node USING hnsw (((p
 CREATE INDEX idx_memory_node_origin_room ON public.memory_node USING btree (origin_room);
 CREATE INDEX idx_memory_node_sha256 ON public.memory_node USING btree (sha256);
 CREATE INDEX idx_memory_node_text_trgm ON public.memory_node USING gin (text public.gin_trgm_ops);
-CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text])));
+CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id DESC) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text])));
 CREATE INDEX idx_memory_node_unit ON public.memory_node USING btree (unit);
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
@@ -1420,6 +1421,7 @@ edits integer NOT NULL,
 eligible_count integer NOT NULL,
 embed_attempts integer DEFAULT 0 NOT NULL,
 embed_error text,
+embed_input text,
 embedded_at bigint,
 embedding public.halfvec(2048),
 embedding_model text,

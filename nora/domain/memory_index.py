@@ -17,6 +17,7 @@ from typing import Any, Literal, Protocol, get_args
 
 __all__ = [
     "EMBEDDED_KINDS",
+    "EMBED_INPUTS",
     "EMBED_OUTCOMES",
     "EPISODE_KINDS",
     "HUB_KINDS",
@@ -26,6 +27,7 @@ __all__ = [
     "PROJECTION_OUTCOMES",
     "RELATIONS",
     "SEARCH_STATUSES",
+    "EmbedInput",
     "EmbedOutcome",
     "IndexState",
     "IndexedNode",
@@ -77,11 +79,21 @@ EMBEDDED_KINDS: tuple[str, ...] = (
 #: `nora_memory_embed_total`'s `outcome`, one per node the embedding worker
 #: tried (65 V1). `ok` stored a vector; `unavailable` the embedder (or the
 #: blob store holding an image's bytes) did not answer, and the tick stops;
-#: `rejected` the embedder refused this input; `empty` the node had nothing
-#: to embed (no text, and no image bytes). Every failure leaves the node's
-#: vector NULL, counts an attempt and backs the node off.
-EmbedOutcome = Literal["ok", "unavailable", "rejected", "empty"]
+#: `rejected` the embedder refused this input, or its bytes would not
+#: decode; `empty` the node had nothing to embed (no text, no image bytes);
+#: `error` anything else went wrong with this one node. Every failure leaves
+#: the node's vector NULL, counts an attempt and backs the node off.
+#: `given_up` is counted IN ADDITION when a failure is the node's last
+#: allowed attempt: it is never picked again until its input changes or the
+#: operator clears vectors (`nora memory rebuild --embeddings-only`).
+EmbedOutcome = Literal["ok", "unavailable", "rejected", "empty", "error", "given_up"]
 EMBED_OUTCOMES: tuple[str, ...] = get_args(EmbedOutcome)
+
+#: What a node's vector, or its last failed attempt, was made from
+#: (`memory_node.embed_input`): its `text`, or the `bytes` its `sha256` names.
+#: A change to that input, and only that input, clears the vector.
+EmbedInput = Literal["text", "bytes"]
+EMBED_INPUTS: tuple[str, ...] = get_args(EmbedInput)
 
 
 def embeds_bytes(media_type: str) -> bool:

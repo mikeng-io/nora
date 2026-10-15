@@ -879,21 +879,21 @@ async def _memory_rebuild_embeddings(args: argparse.Namespace, cfg: Config) -> i
     keep = model if args.other_models else None
     engine = create_sql_engine(_database_url(cfg))
     try:
-        async with engine.connect() as conn:
-            # A dry run clears inside a transaction it rolls back, so the
-            # count is the statement's own, and nothing is written.
-            cleared = await memory_index.clear_embeddings(conn, keep_model=keep)
+        async with engine.begin() as conn:
+            cleared = await memory_index.clear_embeddings(
+                conn, keep_model=keep, dry_run=bool(args.dry_run),
+            )
             after = await memory_index.embed_counts(conn, model)
-            if args.dry_run:
-                await conn.rollback()
-            else:
-                await conn.commit()
     finally:
         await engine.dispose()
     verb = "would clear" if args.dry_run else "cleared"
     which = "of other models" if keep is not None else "all"
     print(f"vectors: {verb} {cleared} ({which})")
     print(f"embedded with {model}: {after.embedded}; waiting for the worker: {after.pending}")
+    print(
+        f"failed at least once: {after.failing}; given up after "
+        f"{memory_index.EMBED_MAX_ATTEMPTS} attempts: {after.given_up}"
+    )
     if not cfg.memory_index.embed:
         print("[memory_index] embed is false: nothing backfills until it is on")
     return 0
