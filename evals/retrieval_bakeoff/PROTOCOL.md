@@ -13,17 +13,21 @@ fixed before it was written. Design source:
 | file | holds |
 |---|---|
 | `PROTOCOL.md` | these rules |
-| `set.yaml` | per slice: the pool (item ids) and the queries |
+| `set.yaml` | per slice: where its items live (`items`), its labels file (`labels`), the pool (item ids) and the queries |
 | `media.yaml` | per media item: source, licence, source URL or generator and prompt, sha256, the frozen reading |
-| `labels.yaml` | per query: the relevant items, the hard negatives, both labellers' raw sets, and every disagreement with how it was settled |
-| `labels.lock` | sha256 of `set.yaml`, `media.yaml` and `labels.yaml` |
+| `texts.yaml` | per text item (the `cantonese` and `names` slices): when it was sent, its language and its text |
+| `labels.yaml` | the `text_image` slice, per query: the relevant items, the hard negatives, both labellers' raw sets, and every disagreement with how it was settled |
+| `labels_text.yaml` | the same for the `cantonese` and `names` slices, which share their labellers |
+| `labels.lock` | sha256 of `set.yaml`, `media.yaml`, `texts.yaml`, `labels.yaml` and `labels_text.yaml` |
 
-`tests/evals/test_bakeoff_set.py` enforces the shape: at least 40 queries per
-slice, every label resolves to a pool id, every media item is in a pool, every
-query has at least one relevant item and at least one hard negative (or a
-stated reason the pool has none), each labeller's `raw_sha256` recomputes from
-the committed raw sets, and the lock matches the three files. A mismatch fails;
-it never skips.
+`tests/evals/test_bakeoff_set.py` enforces the shape: the three journey slices
+(`text_image`, `cantonese`, `names`) exist, at least 40 queries per slice,
+every label resolves to an id in its own slice's pool, every media and text
+item is in a pool, every query has at least one relevant item and at least one
+hard negative (or a stated reason the pool has none), each labels file covers
+exactly the queries of the slices that name it, each labeller's `raw_sha256`
+recomputes from that file's committed raw sets, and the lock matches the five
+files. A mismatch fails; it never skips.
 
 ## Blind by construction
 
@@ -175,6 +179,95 @@ never both.
 6. **The lock.** `labels.lock` is written in the same commit as the
    reconciled labels. Labels change only in a new commit with a new lock, and
    every result cites the lock it was scored against.
+
+## The text slices: `cantonese` and `names`
+
+The sections above were written for `text_image`. Where the text slices differ,
+this section governs them; where it is silent, the rules above hold with
+"message" for "image".
+
+**What they test** (design 20, «Slices»): `cantonese` is a message found by a
+later question about it, across written Cantonese, English, mixed script and
+romanised Cantonese, with slang and near-duplicates; `names` is a message found
+by an invented game title, an invented handle or a Hong Kong place name inside
+it. The `names` pool is the `cantonese` pool plus about 60 messages about named
+things, so a names query competes against the whole chat.
+
+**The pool is synthetic.** Every message is written for this set by a fresh
+agent session (the pool author) that is told the setting, the languages and
+the kinds of confusable it must contain (near-duplicates differing in one
+detail, a plan made last month and again this week, two titles one word
+apart, two handles one character apart), and never sees a query or a label.
+Nothing comes from a room, a member or a production store. People appear only
+as invented handles or as relations ("my boss"), never as a personal name. No
+phone, email, URL, street number, booking code or ID shape, and no run of four
+or more digits. Each item records `sent` (Hong Kong time), `lang` and `text`
+in `texts.yaml`; ids are shuffled against time so an id says nothing about
+which messages relate. Exact duplicate texts are not allowed: a text-only arm
+could not tell them apart.
+
+**Time is part of the input.** A query may say "this week" or "last month",
+so each slice states the moment its queries are asked (`as_of`), and the
+labellers judge a time constraint by the message's `sent` against `as_of`.
+The text an arm embeds is the message alone; how a harness presents `sent` to
+an arm is the harness's choice and is recorded with its result.
+
+**Blind for text.** The incumbent's floor (lexical or bge-m3) indexes the
+message text itself, so a query author who copies a message's words hands the
+floor the answer (the lesson of this set's first version). So:
+
+- **Three separate fresh sessions.** The pool author, the query author and
+  labeller B are different agent sessions; none sees another's notes. The
+  query author sees only the pool (ids, `sent`, `lang`, text) and this
+  section's query rules. Labeller B sees only the pool, the queries with
+  `as_of`, and the relevance rules below.
+- **Queries are what a person later asks to recover a message**: a
+  paraphrase, another register or language, or a vague reference ("that
+  typhoon night when the minibus stopped"), never a copy of the message's
+  distinctive words. Generic words with no other way to say them are allowed.
+  In `names`, the name itself is the point and may appear, the way a person
+  recalling it would write it; the rest of the message's wording is not
+  copied.
+- **Languages.** `yue`, `en` and `mixed` as above, each at least 10 per slice,
+  plus `roman` (romanised Cantonese) in the text slices.
+- **No selection by a floor**, exactly as above: no query is kept, dropped or
+  written by how a text arm scores it.
+- The query author records, separately from the queries, the message it meant
+  (`author_targets`) and proposed hard negatives with the one detail each
+  fails. Labeller A labels from the pool and the query texts without opening
+  that file, and checks the proposed hard negatives only after A's labels are
+  frozen.
+
+**Relevance for text.** A message is relevant to a query if a member who asked
+it would accept that message as the one they meant, or as one of them: every
+constraint the query states holds in the message as written, read with its
+`sent` time against `as_of`. A constraint the query does not state is not
+required.
+
+- **The message decides**, not what a reader guesses happened around it. A
+  reply that only makes sense next to another message ("ok 7pm then") is
+  relevant only if the query's stated constraints hold in it alone.
+- **Counts, days, times, places, names and who did it** are constraints when
+  the query states them. "Six of us" excludes a message about five. "This
+  week" excludes a message sent before the Monday of `as_of`'s week.
+- **A name** must match the one the query names: a title one word off, a
+  sequel number, or a handle one character off is a different name, unless the
+  query itself is vague enough to cover both.
+- **Ambiguous** (the labeller cannot tell whether a constraint holds) is not
+  relevant, and the item is named in the labeller's notes.
+
+**Hard negatives for text** are near misses of the same kind as above: the
+near-duplicate that differs in the stated detail, last month's plan when the
+query asks for this week's, the similar title, the handle one character off,
+the place easily confused with the named one.
+
+**Labelling and its digest.** As above: A (the maintainer) labels every query
+across its whole slice pool and freezes before opening B's set; B is the third
+fresh session, with no retrieval or search tools, reading the whole pool;
+agreement is reported per slice before reconciliation; every disagreement is
+settled against the message and logged. `labels_text.yaml` holds both slices'
+queries, and each labeller's `raw_sha256` there is the digest defined above
+over every query in that file, withdrawn ones included.
 
 ## Identifiers and PII
 
