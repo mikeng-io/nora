@@ -164,3 +164,22 @@ are measured with Nora running.
   objects is read and the embed time is extrapolated from the measured
   per-image cost; the backfill then runs under a throttle (a per-hour budget
   sized from that count) with Nora running, never as one unbounded batch.
+
+## WeMM-2B measured (2026-10-15, Q4_K_M)
+
+Stage 2 for WeMM-Embedding-2B ran on all three journey slices
+(`evals/retrieval_bakeoff/results/20261015T111644Z-*`). It used the community
+**Q4_K_M** GGUF with the BF16 projector, served by llama-server on CPU,
+because the `norty` user is not in the `render` group. The input was the
+model's own template: no instruction, and `<embedding>` appended once by the
+server. Recall@5 for dense WeMM at 2048 / 256 against the incumbent baseline:
+text → image 1.000 / 1.000 (baseline 0.928), Cantonese 0.738 / 0.689 (baseline
+0.770, the hold bar is 0.720), names 0.896 / 0.896 (baseline 0.896).
+
+`decide()` returns **REPLACE**, with `dense:wemm@2048` as the winner. It holds
+Cantonese and wins text → image. At 256, and in every fused WeMM arm,
+Cantonese is not held, so those arms are media-only. The Cantonese hold clears
+its bar by about one query of 61, and the Q4 vectors agree with the bf16
+checkpoint at a mean cosine of 0.976 (min 0.951, 21 items). The verdict is
+therefore a Q4 verdict that a full-precision run could reverse. Cost: 4.0 s
+p50 and 5.6 s p95 per image, 0.21–0.29 s per text, and 3.3 GiB peak RSS.
