@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Eval harness only: a note_candidates case can pin production's batch window (metadata.batch_after_ms), and p5 does. No runtime change.", "details": [], "limitations": []}

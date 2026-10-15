@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design-doc correction only, no code change. design/evaluation/10-the-scenario-map.md §5 repeated a withdrawn 06-first-full-run.md finding (\"8 of 16 no_trigger/near_miss cases inert, four copies of plain_no_mention\") as a live action item (\"drop the four copies\"). Re-verified 2026-09-19 against the current corpus files and the real nora.tag.is_tagged/strip_code_spans logic: the defect was already fixed by the corpus's own 2026-09-18 {trigger} substitution, and every one of the 16 cases depends on a real, distinct mechanism today. Found the fix is also already pinned by a standing, currently-green CI test (tests/architecture/test_the_near_miss_corpora_exercise_their_rules.py) with the identical exemption list this check derived independently. Corrected in 10-the-scenario-map.md §12 and 06-first-full-run.md's own withdrawn table."
-}

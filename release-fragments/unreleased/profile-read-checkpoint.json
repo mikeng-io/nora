@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Instagram bridge internals: a checkpoint met by the profile read now stops the session like every other route; no user-visible change unless Instagram challenges the account.", "details": [], "limitations": []}

@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Repository governance restructuring: CONTRIBUTING.md, AGENTS.md as the entry point, arc42 for ARCHITECTURE.md, ADRs moved to docs/adr/, superpowers removed.",
-  "reason": "Documentation and repository structure only. No runtime code path, config surface, or behaviour Nora exhibits to a room changes; the one code edit is a test's assertion target following the file it pins.",
-  "details": [],
-  "limitations": []
-}

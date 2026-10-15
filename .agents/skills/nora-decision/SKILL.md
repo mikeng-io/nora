@@ -26,7 +26,7 @@ branch's worktree.
 
 1. **Can you fix it now?** Then fix it (gate, then `nora-prove-fix`). File only
    what you have decided not to fix. A residue too small to act on goes in the
-   release fragment's limitations, not a new issue.
+   PR body's limitations, not a new issue.
 2. **Look for a home first.**
    ```bash
    gh issue list --state all --search "<two or three words>" --limit 20
@@ -151,7 +151,7 @@ two branches can take the same number and git merges both rows without a conflic
    second `R-6`; without it the check reports false duplicates.
 5. **If your number is taken,** renumber YOUR row and every reference to it, never
    the other one: `git grep -nE 'DEC-<n>([^0-9]|$)'` on the branch, the ADR's
-   Index line, the release fragment, and the PR title (`gh pr edit <N> --title`).
+   Index line, the commit bodies, and the PR title (`gh pr edit <N> --title`).
    Check: the same grep afterwards finds only your decision. (#444's title says
    DEC-199; its row landed as DEC-200. DEC-155 was allocated twice, #251 and #259.)
 

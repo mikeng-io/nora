@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "design/context-assembly S1, completed for all six occasions that build a model-facing prompt (participation already had the shape; this covers the relevance gate, proactive, the note curator, note candidates and culture). Each occasion now declares what it carries as a (name, order, cache-tier) table instead of leaving it as ContextBlock(...) calls spread through the module, mirroring the table nora.agent.prefill already kept for the tag path. Along the way the design bundle's own survey of what each occasion carries turned out to be short by one block in three of the five: proactive also carries loop_decisions, note-candidates also carries notes, and culture also carries standing and notes -- all built by a call to a builder shared with another occasion rather than a literal ContextBlock(name=...) in that occasion's own file, which is what the original survey missed. Every occasion's rendered output is byte-identical before and after; nothing a person or the model sees is different.",
-  "details": [],
-  "limitations": []
-}

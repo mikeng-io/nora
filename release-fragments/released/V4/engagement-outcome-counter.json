@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Adds nora_engagement_outcomes_total{outcome}, a standing Prometheus counter for how every admitted tag ends (send_reply / recovered / silent / vetoed / timeout / llm_error / unattributed), so DEC-93's 'is the route honouring tool_choice=required' question is continuously visible instead of a one-off Langfuse query (measured live 2026-08-28: 10/18 turns, 56%, ended recovered). Pure observability: no reply text, timing, routing or delivery behaviour changed, and the label vocabulary is TagTrace.VALID_OUTCOMES itself, never hand-copied. No DEC/R row: it does not establish a new behavioural rule, it makes an existing one (DEC-93) measurable, the same footing as nora_tagtrace_writes_total and nora_recovered_replies_total, neither of which has its own row."
-}

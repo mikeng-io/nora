@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Design-only: the Dreamer bundle records that the agent loop is an implementation of a research loop, and the culture bundle withdraws the false premise that closed PR #237.",
-  "reason": "Documents only, no code paths touched. design/dreamer-agent-loop/03-no-agent-loop gains a re-taken participant inventory and section 7 (the agent loop is an implementation detail; what it implements is a research loop, and the Dreamer's value is derivation ACROSS stores); 17-failure-classes gains class 11, the tautology that restates its own prompt and passes every gate the runtime owns. design/culture-tier records correction 14 (ask_memory is ungranted, not unreachable — PR #237 was closed on a false premise), narrows DEC-182 to the cache shape it actually killed, names `standing` and the note index as inputs the design had never listed, and sweeps three pre-DEC-182 sections that a reader believed and reported as a finding.",
-  "details": [],
-  "limitations": []
-}

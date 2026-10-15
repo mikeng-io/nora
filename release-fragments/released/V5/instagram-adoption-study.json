@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "A design bundle only — design/instagram-adoption/, six documents establishing by measurement that Instagram group DMs are reachable through mautrix's instameow, which the official API cannot do at any tier. No code, configuration or behaviour ships with it, so nothing here is user-observable.",
-  "details": [],
-  "limitations": []
-}

@@ -10,8 +10,8 @@ the §8.1 outcome string it answers with.
 THERE ARE SEVERAL OCCASIONS, AND THE TURN IS THE SAME TURN
 ----------------------------------------------------------
 A reminder coming due was the first (DEC-70). A version announcement was the
-second (DEC-79): on the boot after an upgrade, the operator's release note is
-put to her and she relays it in her own voice. Gatherings (DEC-139), compute
+second (DEC-97): on the boot after an upgrade, the operator's release note was
+put to her to relay in her own voice; DEC-314 retired it. Gatherings (DEC-139), compute
 results (Nora Compute spec §2) and relays (DEC-105) followed; participation
 (design/dreamer-agent-loop/35) is the latest — the FIRST occasion that triggers
 on a real room going quiet rather than on a stored row, and the first where
@@ -310,7 +310,7 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     `ai_peer` id (39 D5), which is nobody in `identity.toml` by construction,
     so this turn runs on nobody's authority and `build_context` accepts every
     consequence of a `None` tagger. `speak` skips §12's refusal for it
-    exactly as it does for a version announcement.
+    exactly as it does for a participation turn.
 
     `body` is the INTENT the Cognition session's `remind` wrote (the decide turn before
     2026-10-03) — «raise the dinner plan now
@@ -352,9 +352,8 @@ def compute_occasion(
     *, checkpoint: str = "", kept_files: tuple[str, ...] = (), kept: MediaBlob | None = None,
 ) -> Event:
     """A finished compute job, as the occasion it is (Nora Compute spec §2)
-    — the THIRD `Event`, reusing `FirePath.speak` exactly as
-    `VersionAnnouncer` (DEC-97) already established as the pattern for a
-    second thing built on this turn beside reminders.
+    — reusing `FirePath.speak`, the pattern DEC-97 established for a
+    thing built on this turn beside reminders.
 
     `body` is the job's own task description PLUS its result summary —
     the backend's own account of what it built (Nora Compute spec §11: this text
@@ -475,7 +474,7 @@ def participation_occasion(
     (design/dreamer-agent-loop/35).
 
     The FIRST occasion with no stored row and nobody's request behind it —
-    `person_id=None`, like a version announcement, because the quiescence
+    `person_id=None`, like the retired version announcement, because the quiescence
     trigger that fires it (`nora.app.participation.ParticipationTrigger`) owes
     the turn to no one person. Every consequence of a `None` tagger that
     `build_context` documents is accepted here as it is there.
@@ -840,12 +839,12 @@ class FirePath:
         the id the tick already screened `policy.is_allowed` against — through
         `Persons.by_person`, and never from the message.
 
-        An occasion with `person_id=None` (a version announcement) therefore has
+        An occasion with `person_id=None` (a proactive or participation turn) therefore has
         `tagger is None` DELIBERATELY, and every consequence above is accepted
         rather than escaped: nobody asked, so there is no peer card to read and
         no person whose room membership scopes a lookup. What makes that safe is
         that `speak` skips §12's refusal only for such an occasion, and that the
-        tools which go dark are exactly the ones an announcement has no use
+        tools which go dark are exactly the ones such an occasion has no use
         for.
 
         `sender_name` has the same shape and is the second half of the same
@@ -1755,8 +1754,8 @@ class FirePath:
                 #
                 # `and occasion.person_id is not None` is the whole difference an
                 # occasion held on NOBODY's behalf makes. Without that clause a
-                # version announcement — which names no requester by design —
-                # would refuse itself on a rule about a grant it never had, and
+                # participation or proactive turn — which names no requester by
+                # design — would refuse itself on a rule about a grant it never had, and
                 # the failure would read as a revoked person. An occasion that
                 # DOES name someone still refuses, unchanged.
                 log.error(
@@ -1818,7 +1817,7 @@ class FirePath:
                 # R-97, armed on the participation occasion ALONE (issue
                 # #216). `None` everywhere else is the rule off, and each
                 # `None` is a decision rather than an omission: a reminder, a
-                # relay, a finished compute job and a version announcement
+                # relay and a finished compute job
                 # all exist BECAUSE something is owed to somebody, so a turn
                 # that looked and found nothing still owes them that sentence
                 # — `lost_job_occasion` is the extreme case, a whole occasion
@@ -2734,8 +2733,7 @@ def _synthetic_message(
 
     `body` is `Event.body`: for a reminder the requester's OWN sentence(s),
     which is the premise of the whole feature (a deferred request, put to her at
-    the due time AS a request); for a version announcement the operator's own
-    release note, put to her the same way. The circumstances deliberately do NOT
+    the due time AS a request). The circumstances deliberately do NOT
     go here — they belong in the header — because a body that is anything other
     than what somebody actually wrote breaks that premise.
 
@@ -2748,7 +2746,7 @@ def _synthetic_message(
 
     **`voice` is left at its `False` default, DELIBERATELY** (operator,
     2026-09-17). Every occasion that reaches here — a reminder, a proactive
-    row, a participation turn, a version announcement, the destination half of
+    row, a participation turn, the destination half of
     `send_to` — goes out as TEXT, even when the request that created it was
     SPOKEN. A reminder asked for aloud at 14:00 arrives as a message in the
     room at 20:00.

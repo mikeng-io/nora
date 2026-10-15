@@ -1,9 +1,0 @@
-{
-  "type": "fix",
-  "summary": "Nora now reliably finds a real playlist when asked to play one, instead of settling for a single video titled \"playlist\".",
-  "details": [
-    "Asked to play a genre or \"a kpop playlist\", Nora previously sometimes queued a single multi-hour compilation video whose title claimed to be a playlist -- technically correct (a plain video URL always queues as one track) but not what was asked for.",
-    "play_music's guidance now spells out that only an actual YouTube playlist URL (youtube.com/playlist?list=...) queues multiple tracks, and nudges the search itself toward finding one rather than trusting a video's title."
-  ],
-  "limitations": []
-}

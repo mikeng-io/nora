@@ -951,29 +951,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "conversation slot was held by a tag. One per deferred turn per tick, "
         "so a sustained rate means a group is starving its own reminders.",
     ),
-    # The version announcement (DEC-97/R-42), one per room per boot ATTEMPT.
-    # `already_announced` is the ordinary reading on every boot after the first
-    # and is what proves R-42 holding — a deployment restarting all day shows it
-    # climbing while `sent` stays where it was. The other statuses are each a
-    # reason the group heard nothing: `unavailable` (the build carries no
-    # readable stamp — a wiring gap, never "no versions exist"), `no_note` (the
-    # version was never annotated, so there is nothing anybody wrote to relay),
-    # `deferred` (a tag held the conversation), and the fire path's own
-    # failed_policy / failed_timeout / failed_error. R-5 keeps every one of those
-    # out of the room, so this counter is their only trace.
-    _CounterSpec(
-        "nora_version_announcements_total",
-        "Version-announcement attempts, by status: sent; already_announced (the "
-        "R-42 claim already existed — a restart staying quiet); unavailable (no "
-        "readable build stamp); no_note (the version carries no release note); "
-        "deferred (the conversation slot was held); and the fire path's "
-        "failed_policy / failed_timeout / failed_error.",
-        ("status",),
-    ),
     # `ComputeJobPoller`'s own delivery outcome (Nora Compute spec §4), the
     # same `sent` / `failed_policy` / `failed_timeout` / `failed_error`
     # vocabulary `speak()` returns (§8.1) that `nora_reminders_fired_total`
-    # and `nora_version_announcements_total` already use this label for.
+    # already uses this label for.
     # `failed_error` is also what `nora.app.compute_poller.recover` reports
     # for a `FIRING` row swept at boot (a crash mid-delivery) — the exact
     # `nora_reminders_fired_total` precedent for a row that "vanished" without

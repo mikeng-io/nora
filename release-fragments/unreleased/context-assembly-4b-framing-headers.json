@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "The fire turn's header paragraphs, the summons' head and the prompt prefill's clock, header and closing lines are now built by typed builders in one module, and every byte the model reads is unchanged, so no one sees a difference.",
-  "details": [],
-  "limitations": []
-}

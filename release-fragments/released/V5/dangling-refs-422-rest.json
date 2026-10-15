@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs-only: closes the last 6 of #422's 15 dangling-reference pins in tests/architecture/test_doc_references_resolve.py's _KNOWN_DANGLING. DEC-76 and DEC-84 in design/09-decision-index.md, left pinned by #494 while mikeng-io/governance-claims-482 edited those same rows (now merged as #497), each get an appended 'Reference note added 2026-09-25' clause following #494's exact convention, verified with git log --diff-filter=D: evals/evaluators.py deleted 00beda19 (renamed to tests/offline_eval_evaluators.py), evals/journeys.py, tests/test_evals_intent.py, tests/test_evals_live_runner.py and tests/test_evals_journeys.py all deleted 778a617e. nora/agent/disclosure.py (DEC-124) stays pinned, with its 'not yet triaged' wording replaced by a permanent reason: never built, DEC-124 names it only prospectively, checked 2026-09-25. No code changed.",
-  "details": [],
-  "limitations": []
-}

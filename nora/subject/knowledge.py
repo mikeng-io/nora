@@ -539,7 +539,7 @@ async def settle(
     the count fell back to the baseline with the turn still running. Three of
     eight `conversational_recall` turns were then torn down mid-model-call and
     graded as silence. Endless loops composition spawns (`ComputeJobPoller`,
-    `VersionAnnouncer`, the heartbeat) are not in `spawned`, so they never hold
+    the heartbeat) are not in `spawned`, so they never hold
     this open; that was the count's reason for a baseline, kept.
     """
     try:

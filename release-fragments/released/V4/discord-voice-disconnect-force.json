@@ -1,9 +1,0 @@
-{
-  "type": "fix",
-  "summary": "Fixed Nora sometimes getting permanently stuck unable to rejoin a Discord voice channel until restarted.",
-  "details": [
-    "Discord's voice server can silently drop an idle voice connection on its own. When Nora's idle-timeout (or /music stop) then tried to disconnect that already-dead connection, discord.py's default graceful disconnect returned early without ever unregistering the guild's voice client -- leaving that guild permanently \"already connected\" from discord.py's own point of view, blocking every future play request with no live player or audio to show for it.",
-    "The disconnect now forces cleanup regardless of whether the remote side already dropped the connection, since it only ever runs because Nora herself decided the session is over."
-  ],
-  "limitations": []
-}

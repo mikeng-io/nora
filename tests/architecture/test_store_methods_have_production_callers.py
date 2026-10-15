@@ -202,11 +202,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "Step 5 is the consumer, and it is gated on a measured improvement "
         "rather than assumed.",
     ),
-    ("announcements.py", "announced"): _Pin(
-        "read_back_affordance",
-        "Its own docstring: «the operator's read, and what the tests assert the "
-        "ledger on». No consumer designed.",
-    ),
     # `assess.py`'s `recent` needs no pin: `recent` is already ambiguous
     # (audit.py/decision_log.py/tag_traces.py/tool_call_log.py all define one),
     # so `_ambiguous` skips it before the pin table is ever consulted.
@@ -303,7 +298,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 # other files and define no public methods, so they are simply not here.
 _STORE_MODULES: frozenset[str] = frozenset(
     {
-        "announcements.py", "assess.py", "audit.py", "cognition_store.py", "lessons.py",
+        "assess.py", "audit.py", "cognition_store.py", "lessons.py",
         "tension.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py",

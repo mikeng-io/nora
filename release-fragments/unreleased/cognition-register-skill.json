@@ -1,1 +1,0 @@
-{"type": "none", "reason": "The Cognition session runs in shadow only: its new prelude and Register skill change what that session's model reads, and nothing it writes reaches a room or a live table.", "details": [], "limitations": []}

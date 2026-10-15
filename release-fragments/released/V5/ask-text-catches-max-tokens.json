@@ -1,9 +1,0 @@
-{
-  "type": "fix",
-  "summary": "nora.agent.structured.ask_text now catches Strands' MaxTokensReachedException, matching the tag turn's own salvage — so a debrief/standing-fold call that hits the token ceiling is graded as a clean length cutoff instead of counted as a hard error.",
-  "details": [
-    "Strands' event loop raises MaxTokensReachedException unconditionally on stop_reason==\"max_tokens\" rather than returning normally (event_loop.py:304-311), so ask_text's own translation of a NORMALLY-RETURNED stop_reason into finish_reason=\"length\" could never fire for a genuine cutoff -- a pre-existing gap introduced when 4448c737 moved the debrief/standing fold onto ask_text without the catch nora/agent/factory.py's invoke() already has for the tag turn's Agent invocation (motivated by a measured 2026-09-02 incident: an uncaught raise there read as a generic silent failure and dropped a recoverable partial reply).",
-    "ask_text now catches it, recovers the partial text from agent.messages the same way factory.invoke does (excluding Strands' canned tool-recovery notice, moot here since ask_text never grants tools but kept for parity), and returns StructuredResult(finish_reason=\"length\", ...) instead of letting the raise reach the caller's outer exception handling. nora.engagement.stages.debrief._check already refuses a \"length\" finish cleanly (test_a_truncated_body_is_never_parsed); this closes the gap that kept that branch from ever being reached on a real cutoff, so nora_debrief_total{outcome=\"unavailable\"} now fires instead of {outcome=\"error\"}.",
-    "tests/unit/test_structured.py pins the catch (both the recoverable-partial and tool-use-only-notice shapes), falsified by reverting the fix before landing."
-  ]
-}

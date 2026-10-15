@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Developer workflow only: `make gate` now checks what the branch changed (static steps in full, affected tests, whole suite when unmapped) and `make full-gate` is the old full serial run. No runtime behaviour changes.", "details": [], "limitations": []}

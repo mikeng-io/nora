@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Build-only change to the public site's container image; nothing a visitor or room sees changes.",
-  "details": [],
-  "limitations": []
-}

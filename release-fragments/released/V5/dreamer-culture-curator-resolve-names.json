@@ -1,9 +1,0 @@
-{
-  "type": "fix",
-  "summary": "The room-culture pass and the note tier's housekeeping pass now call a member by the name you gave them, not the name they gave themselves.",
-  "details": [
-    "#544 fixed this for the background pass that notices new arrangements worth writing down. The same gap was still open in the two other Dreamer passes that build their own message batches: the pass that writes each room's culture account, and the pass that decides whether an open note is still standing. Both attributed a mapped sender's line to their self-set, changeable platform profile name (`identity.toml` maps a real name to it) instead of the operator's canonical one. Both now resolve names the same way, through the same roster the tag path already uses.",
-    "A sender the roster does not know keeps their profile name, as before."
-  ],
-  "limitations": []
-}

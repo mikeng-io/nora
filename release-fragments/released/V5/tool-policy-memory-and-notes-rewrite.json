@@ -1,9 +1,0 @@
-{
-  "type": "change",
-  "summary": "Nora's memory, people and note tools now explain their results when they return them, instead of in a long description she read on every message.",
-  "details": [
-    "about, ask_memory, search_memory, search_memory_workspace, recall_lookups, lookup_person, group_members, who_said, load_transcript, note_read, note_search, note_create, note_update and remember were rewritten to ADR 0015. Together their descriptions went from 3,371 to 1,495 tokens.",
-    "How to read a result (a profile can be wrong, a partial room view, an edited message, only say 記低咗 once remember has saved it) now arrives in the result's note, only when it applies.",
-    "ask_memory's depth is an enum type, so an invalid value is refused before the tool runs."
-  ]
-}

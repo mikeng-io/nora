@@ -30,7 +30,7 @@ body:
         - search (exa / tavily / web tools)
         - memory (honcho / recall / prefill)
         - observability (tracing / logging / alerts / sentry)
-        - release-and-version (fragments / build stamp / deploy)
+        - release-and-version (release-please / build stamp / deploy)
         - skills (skill library / size guard)
         - repo-hygiene (CONTRIBUTING / tests layout / gates / scripts)
         - design-only (a design bundle, no code change)

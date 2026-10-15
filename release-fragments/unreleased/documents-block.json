@@ -1,1 +1,0 @@
-{"type": "none", "reason": "The <documents> block, like the document tools it serves, renders only under [documents] enabled, which ships false; no one sees it until the flag is turned on. Superseded: documents went live on 2026-10-01, and `documents-live` carries the user-facing note.", "details": [], "limitations": []}

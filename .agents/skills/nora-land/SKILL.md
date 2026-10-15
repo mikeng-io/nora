@@ -1,11 +1,11 @@
 ---
 name: nora-land
-description: Lands a Nora change from first edit to merged master, covering a new worktree from origin/master, the test loop, the gate read by its exit code, a Conventional Commit, the release fragment, a PR from the template, independent review, an authored merge commit and the post-merge read-back. Load when starting work, committing, opening a PR or merging. Not for deploying to norty (nora-deploy).
+description: Lands a Nora change from first edit to merged master, covering a new worktree from origin/master, the test loop, the gate read by its exit code, a Conventional Commit that is the release note, a PR from the template, independent review, an authored merge commit and the post-merge read-back. Load when starting work, committing, opening a PR or merging. Not for deploying to norty (nora-deploy).
 ---
 
 # nora-land
 
-Worktree, sync, (gate, commit)*, fragment, push, PR, review, merge, read-back.
+Worktree, sync, (gate, commit)*, push, PR, review, merge, read-back.
 Rules and reasons: `CONTRIBUTING.md`, `AGENTS.md`. Every step ends in a check:
 the log or the read-back, never an exit code alone. Go end to end; stop only
 for a blocker or a fact only the operator holds (a decision is not input).
@@ -68,7 +68,7 @@ on the final head; fix rounds run their own tests. `make full-gate` = whole suit
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
 **Docs-only** (every path a `.md` outside `nora/`, `evals/`, `scripts/`, or data under
-`docs/`, `design/`, `release-fragments/`): the gate's selector, without the static steps:
+`docs/`, `design/`): the gate's selector, without the static steps:
 
 ```bash
 git add <paths>    # the doc gate scans `git ls-files`: an unstaged new doc is never read (#391)
@@ -99,26 +99,17 @@ git log -1 --format='%h %s'
   GitHub-default merge subjects. `--no-verify` only with the reason in the body.
 - Commit on the recorded rc, never `gate; commit`. Name paths, not `git add -A`.
 
-## 5. Release fragment
+## 5. The subject is the release note
 
-Any change outside `release-fragments/`, docs included, adds a NEW file under
-`release-fragments/unreleased/`, not the parent directory (audit 2026-09-24:
-guessed wrong repeatedly). Schema: `release-fragments/README.md`.
+There is no release fragment (DEC-314). release-please turns the `feat`, `fix`,
+`security`, `perf`, `change` and `doctrine` subjects merged since the last tag
+into the CHANGELOG and the GitHub Release (`nora-release`). Other types never
+show up there.
 
-- `type`: `feature`, `fix`, `change`, `security` or `none`; no `internal` (#172).
-- Rendering types need a `summary`; `details`/`limitations` are string arrays.
-- Internal work: `{"type": "none", "reason": "<why no user sees it>", "details": [], "limitations": []}`.
-  A `none` with non-empty `details` or `limitations` is refused.
-
-Commit it, then validate (it reads committed `base...HEAD`, wants the file ADDED):
-
-```bash
-uv run python scripts/check_release_fragments.py --base origin/master > "$LOG/frag.log" 2>&1; FRAG_RC=$?
-```
-
-Same as `make release-check`. PASS is `FRAG_RC=0`; 2 is no new fragment or an
-invalid one. It lists every bad file in the directory, including ones your
-branch never touched: fix those in their own commit, name them in the PR.
+- Write a user-visible subject as a changelog line: `fix(music): resume after a
+  voice reconnect`. A breaking change gets `!` or a `BREAKING CHANGE:` footer.
+- Internal work takes a hidden type (`refactor`, `test`, `docs`, `chore`, …),
+  not a `fix` that no user will see.
 
 ## 6. Merged tree, push, PR
 

@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Eval harness only: a proactive case's row now also replaces a seeded copy of itself that names no note (Cognition's rows carry subject_rows, not note_id), so proactive_act a12 and a13 no longer fire the same intention twice. No runtime change.", "details": [], "limitations": []}

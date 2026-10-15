@@ -1,8 +1,0 @@
-{
-  "type": "fix",
-  "summary": "nora events backfill-units now reports how many events a dry run would set, instead of always printing 0.",
-  "details": [
-    "The dry-run report counted the number of writes actually made, which is always zero without --apply; it now reports the legacy-event count that --apply would act on."
-  ],
-  "limitations": []
-}

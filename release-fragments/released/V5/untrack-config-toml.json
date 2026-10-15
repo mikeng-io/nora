@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Repository hygiene with no user-observable behaviour change. `config.toml` is removed from git tracking (the file itself is untouched on disk, and the running container's bind mount is unaffected), joining `identity.toml` and `policy.toml` which were already ignored. Nora's configuration, startup and runtime behaviour are identical before and after. The two cross-check suites that compared the live file against `config.example.toml` now SKIP where no local `config.toml` exists — which is every dev worktree and CI, and, per issue #321, not proven to run anywhere else under the current workflow either; that gap is tracked there rather than preserved by this change."
-}

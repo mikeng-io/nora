@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Diagnostic only: the WhatsApp bridge logs the structure (keys, never content) of a message it drops, to identify how phone edits arrive."
-}

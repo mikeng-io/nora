@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design bundle only — no production code changed. DEC-196 records that Nora's agent loop runs Strands' ConcurrentToolExecutor unoverridden, so a model that emits N tool_use blocks in one turn starts N tasks at once with no bound; Langfuse (51,452 observations, 2026-07-12 → 2026-09-22) shows 26.2% of turns emit more than one tool call, 159 batches exceeded four, and one emitted 76. The bundle specifies a wrapper executor holding one shared, inheritable semaphore beneath the existing per-tool budget ceiling, and records a DEC numbering collision on the media-read-lane branch that must be resolved before either merges. Nothing a member of a room can observe, because nothing is built."
-}

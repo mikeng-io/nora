@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Development governance only: agent skills for the people and agents who build Nora (.agents/skills, ADR 0017), AGENTS.md and CONTRIBUTING.md corrections, and a tighter doc-reference gate. Nothing a member of a room can observe.",
-  "details": [],
-  "limitations": []
-}

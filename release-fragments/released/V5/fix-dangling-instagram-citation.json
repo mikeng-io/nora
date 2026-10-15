@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Documentation only. The tool-catalogue design bundle cited `design/instagram-adoption/06-retention-and-custody.md`, a file that was never written — a peer had said they intended to credit a measurement there and the path was recorded as though it already existed. That turned `tests/architecture/test_doc_references_resolve.py` red on master the moment the bundle merged. The prose keeps the parallel it was drawn to and drops the path. Nothing a member of a room can observe."
-}

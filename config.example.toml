@@ -1817,24 +1817,6 @@ enabled = false
 # max_per_hour = 5                      # codes one person can be sent in an hour
 # max_per_day = 10                      # and in a day: bounds messages and guesses
 
-[version]
-# The startup upgrade note (DEC-97). On the boot after a deploy, if the version
-# baked into this image has not been announced in a room yet, Nora relays the
-# release note there ONCE — in her own words, through the same fire path a
-# reminder uses. Never twice: the claim is a row in `version_announcements`,
-# taken before the turn, so a restart (or a crash-loop) stays quiet (R-42).
-#
-# ON by default, unlike [heartbeat]/[presence]/[search], because it is already
-# gated by something stronger: an image with no baked stamp announces nothing at
-# all. Only a build made with `scripts/build-image.sh V3` — which stamps
-# nora/version.json from git and makes the Dockerfile refuse a mismatch — can
-# ever speak here. Set it false if you would rather tell the group yourself.
-#
-# WHERE she announces is not configured here: it is every conversation
-# policy.toml already allows her into. Which rooms she may speak in is a trust
-# question, and trust lives in policy.toml (DEC-8).
-announce = true
-
 [doctrine]
 dir = "nora/doctrine"
 reload = "mtime"                      # mtime | startup

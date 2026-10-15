@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Test-only fix: removes wall-clock flakiness in test_the_debriefs_cost_is_excluded_from_the_tag_latency_series, which flaked under make gate's parallel load (same class as #430). No user-visible behaviour change.",
-  "details": [],
-  "limitations": []
-}

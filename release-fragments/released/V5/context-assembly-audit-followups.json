@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Two follow-ups from an independent Sonnet code-review audit of PR #386 (design/context-assembly S1-S3), both internal. First: the order/key restamp pattern used when an occasion renders a block built by a shared function elsewhere (nora.language.note_render.render_notes, standing_render.render_standing, nora.domain.decision_log.render_decisions, nora.language.self_card_render.render_self_card) was hand-copied at four call sites across nora/agent/prefill.py, nora/language/proactive.py, nora/language/note_candidates.py and nora/language/culture.py; it is now one function, nora.domain.blocks.restamp, that all four call. Second: S1's own stated acceptance bar (a test asserting no ContextBlock is built outside its occasion's declared table) had shipped for the relevance gate but not the other four occasions declared in the same PR; tests/architecture/test_the_registry_is_exhaustive.py adds it for all five, verified to actually fail when a row is removed. No behaviour change; output is byte-identical, confirmed by the full existing suite plus 13 new tests.",
-  "details": [],
-  "limitations": []
-}

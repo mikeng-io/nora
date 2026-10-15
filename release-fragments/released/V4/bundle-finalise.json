@@ -1,1 +1,0 @@
-{"type":"none","reason":"Design-only: adds a dated Status/Checkpoint to the 19 bundle nodes that lacked one, and rewrites the critical path as a build order now that the design is closed."}

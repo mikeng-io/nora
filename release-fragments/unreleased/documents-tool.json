@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Both document tools ship off (`[documents] enabled = false`) until the portal pages that open a document exist, so no turn is offered them; the one doctrine line names no tool and asks nothing while they are off. Superseded: documents went live on 2026-10-01, and `documents-live` carries the user-facing note.", "details": [], "limitations": []}

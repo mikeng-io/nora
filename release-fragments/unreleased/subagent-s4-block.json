@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Off by default ([subagent] enabled = false): the <subagents> block renders only when the sub-agent is on and the room has a job, so no user sees it yet.", "details": [], "limitations": []}

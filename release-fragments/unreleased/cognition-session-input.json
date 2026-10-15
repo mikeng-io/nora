@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "The Cognition session input fixes (clock, rollup rows, her own sends, claim-by-kind, deviation cap, room label) change only the shadow session, which runs with session_mode off in production; no user sees it.",
-  "details": [],
-  "limitations": []
-}

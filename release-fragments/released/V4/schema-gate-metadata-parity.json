@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Schema gate compares schema.py's MetaData against the migrated database.",
-  "reason": "Test-only. Closes a gap in tests/infra/test_schema_parity.py: nothing compared the ORM metadata to the database at column level, so a type or server default that disagreed with its migration was invisible to four of the five assertions and the fifth was satisfied by regenerating the baseline it compares against. No runtime behaviour changes.",
-  "details": [],
-  "limitations": []
-}

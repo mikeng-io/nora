@@ -1,1 +1,0 @@
-{"type": "none", "reason": "Infrastructure for Nora's computer (an sbx microVM running computerd, the SandboxRuntime port and client); no tool uses it yet, so nobody in a room sees a change until S2b.", "details": [], "limitations": []}

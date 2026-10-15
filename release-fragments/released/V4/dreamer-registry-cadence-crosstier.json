@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs only. Folds four operator findings into design/dreamer-agent-loop/: the measured tick-to-message ratio, the discovery that the shared entity registry already exists and is unpopulated by both tiers that reference it, the cross-tier read rule, the Standing reasoning-effort probe, and the conversation-scoped vs workspace-scoped boundary that events and reminders reveal. No code, no behaviour change."
-}

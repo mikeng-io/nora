@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Plan and spec annotations only. Adds docs/superpowers/plans/2026-08-21-standing-debrief-plan.md and marks three sections of the reflection spec superseded by the shipped fact tier (6.8 CLOSED - Postgres relational per DEC-129; 6.3's Fact sketch superseded - a fact is a triple keyed on workspace, not a sentence keyed on conversation_id; 16.2 closed in favour of workspace scope). Also records the resolution of ship-blocker 14.1: reasoningContent IS retained in agent.messages (strands _format_regular_messages builds a new list rather than mutating), confirmed live by 844 occurrences of the warning that can only fire when the block is present - which inverts the spec's own 1.5 and was the go/no-go for the whole design. No code, config, schema or behaviour changes.",
-  "details": [],
-  "limitations": []
-}

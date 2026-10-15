@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "config.example.toml's Instagram note now matches what instagram_read answers.",
-  "details": [],
-  "limitations": [],
-  "reason": "Comment-only change in config.example.toml; no behaviour changes. The note predated #421's split of 'no account on file' from 'ambiguous' and its story-only-when-asked rule."
-}

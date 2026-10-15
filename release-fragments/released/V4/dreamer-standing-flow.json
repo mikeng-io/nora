@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Docs only. Adds Flow D (Standing) to design/dreamer-agent-loop/18-flows.md — the in-slot contrast to the three background flows, and the clean negative case for the input-vs-tool rule. No code, no behaviour change."
-}

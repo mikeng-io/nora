@@ -31,14 +31,15 @@ and a negative control (the real tree it must pass):
    a visible diff; there is no `bare` kind, and a value marked `system` or
    `carried` that a person controls is exactly what that pin makes a reviewer
    look at.
-4. **No prose outside it.** In the four modules that used to carry the text
-   (`nora/app/fire.py`, `nora/app/announce.py`, `nora/domain/summons.py`,
-   `nora/agent/prefill.py`) no string of five words or more is built outside
-   `framing`: not an f-string, not a `+` or `%` or `.format` over literals, not a
-   bare literal returned or assigned. Docstrings, `raise`, `assert` and log
-   messages are not prompt text and are skipped. The few entries that remain are
-   DATA a block carries or a label an attribute carries, each named in `ALLOWED`
-   with why; a stale entry is refused.
+4. **No prose outside it.** In the modules that used to carry the text
+   (`nora/app/fire.py`, `nora/domain/summons.py`, `nora/agent/prefill.py`;
+   `nora/app/announce.py` was the fourth until DEC-314 retired it) no string of
+   five words or more is built outside `framing`: not an f-string, not a `+` or
+   `%` or `.format` over literals, not a bare literal returned or assigned.
+   Docstrings, `raise`, `assert` and log messages are not prompt text and are
+   skipped. The few entries that remain are DATA a block carries or a label an
+   attribute carries, each named in `ALLOWED` with why; a stale entry is
+   refused.
 
 **What a test like this cannot see**, so a reviewer knows what is left. None of
 these is closed on purpose; each would cost more than it buys, or is a different
@@ -86,7 +87,6 @@ FRAMING_REL = "nora/domain/framing.py"
 #: The modules that carried the text before 4b. Rule 4 reads these.
 SCANNED = (
     "nora/app/fire.py",
-    "nora/app/announce.py",
     "nora/domain/summons.py",
     "nora/agent/prefill.py",
 )
@@ -97,10 +97,6 @@ SCANNED = (
 #: instruction. Each reason is why it is not framing; a step that moves one
 #: removes the row.
 ALLOWED: dict[tuple[str, str], str] = {
-    ("nora/app/announce.py", "SPEAKER"): (
-        "the `from=` attribute of the announcement's `<tag_message>`: a label for "
-        "whose words these are, not a sentence put to her"
-    ),
     ("nora/domain/summons.py", "_NOT_SEEN"): (
         "the line an item shows when there is no reading, by state: facts only, "
         "inside a `social_post` block (step 4a left it a data line)"
@@ -359,7 +355,7 @@ def test_the_discovery_sees_every_known_construction_site(modules):
     found, _problems = event_findings(modules)
     assert set(found) >= {
         "reminder", "proactive", "compute", "relay", "compute_lost",
-        "participation", "version_announcement",
+        "participation",
     }
 
 
@@ -854,6 +850,5 @@ def test_the_scan_reads_the_files_that_carried_the_text():
     lines are known to be there, so the scan must find them."""
     found = {(rel, holder) for rel, holder, _ in prose_outside_framing({})}
     assert ("nora/domain/summons.py", "render_summons") in found
-    assert ("nora/app/announce.py", "SPEAKER") in found
     for rel in SCANNED:
         assert (ROOT / rel).exists(), rel

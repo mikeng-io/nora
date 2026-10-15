@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "The presence before/after measurement is re-judged in full on a judge source that carries speakers.",
-  "details": [],
-  "limitations": [],
-  "reason": "Design doc only; nothing Nora does in a room changes. design/self-awareness/05 gains a dated section: all 42 saved replies from the <presence> before/after run were re-judged (judge only, each arm under its own doctrine) after #460 gave the judge a source with speakers, which made every earlier verdict incomparable. 3 of 42 remain judge-timeout ERRORs. Neither falsifier fired. The draws are correlated through the shared eval Honcho workspace, recorded as #462."
-}

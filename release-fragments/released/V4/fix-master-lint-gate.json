@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Lint only. `uv run ruff check nora/ evals/ tests/` — one of CLAUDE.md's gate commands — was failing on master with three E501 line-length errors introduced by 609234b (the Discord @-mention resolution work, PR #14), which merged with the gate red. Three test lines wrapped; no assertion, value or behaviour changed, and the 49 tests in those three files still pass. No runtime code touched.",
-  "details": [],
-  "limitations": []
-}

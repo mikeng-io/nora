@@ -1,1 +1,0 @@
-{"type":"none","reason":"Internal: SqlNoteStore and its in-memory double now satisfy DreamSink (propose/supersede) and join the shared contract suite. Groundwork for the note curator — nothing user-observable changes yet, since no adaptor writes through it."}

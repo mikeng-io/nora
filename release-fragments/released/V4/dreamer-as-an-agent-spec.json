@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design documents only. 2026-08-20-dreamer-as-an-agent-design.md specifies the Dreamer as a read-only research agent with each synthesizer as an adaptor (objective, inputs, output schema, tool subset, sink); act verbs and write verbs are excluded from the runtime, which writes the schema-validated return itself. 2026-08-20-fact-store-research-handoff.md hands the fact tier's storage and graph/retrieval question to the workstream that owns it, carrying over the Graphiti research read at 0.29.3, Apache AGE as an unevaluated candidate, and the four interface constraints the runtime places on any store. Both status: proposed, no code, nothing added to design/09-decision-index.md. No schema, config or behaviour changes.",
-  "details": [],
-  "limitations": []
-}

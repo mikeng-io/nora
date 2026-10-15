@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "The Google Drive adapter and its one-time sign-in script ship off and nothing calls them yet: no tool opens a shared file until the next step, so no user sees a change.",
-  "details": [],
-  "limitations": []
-}

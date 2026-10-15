@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Operator instrumentation only (issue #163, arm 2). 8 of 41 relevance-gate calls in the 20.3h after the shadow flip produced no verdict, every one a TimeoutError, and all 8 landed on nora_relevance_gate_errors_total{kind=\"call_failed\"} alongside transport errors and provider refusals — so the split between «the ceiling is too low for this arm» and «the provider refused» was readable only from a stack trace in the log. A timeout now has its own kind, and nora_relevance_gate_seconds records the call's latency on every exit (right-censored at the ceiling) so the 20s number can be argued against a distribution rather than a counter. The gate also takes its own asyncio.wait_for around the model call instead of relying on whichever client the composition root wires; the deployed client already bounded itself, so no deployed behaviour changes. The gate stays fail-closed on every non-verdict, and no admission rule, prompt, threshold or turn behaviour is touched. Nothing a member of a room can observe.",
-  "details": [],
-  "limitations": []
-}

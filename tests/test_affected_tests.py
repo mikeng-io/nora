@@ -154,7 +154,7 @@ def test_empty_diff_selects_nothing():
 # Until 2026-10-02 a hand-kept table named the readers of AGENTS.md,
 # CONTRIBUTING.md and the decision index, and every other `.md` got only the
 # universal doc scan. README.md, DESIGN.md, docs/runbook.md, ARCHITECTURE.md,
-# the deploy READMEs and release-fragments/README.md all have a test that
+# the deploy READMEs and the release-fragment README all had a test that
 # opens them and none was selected. These cases name the real readers of the
 # real tree, so a change to how a test opens a doc shows up here.
 
@@ -173,7 +173,7 @@ def test_generic_docs_markdown_selects_the_universal_doc_reader():
 
 
 @pytest.mark.parametrize(("path", "readers"), [
-    ("README.md", ["tests/test_docs.py", "tests/test_release_commands.py"]),
+    ("README.md", ["tests/test_docs.py"]),
     ("DESIGN.md", ["tests/test_docs.py"]),
     ("docs/runbook.md", ["tests/test_docs.py"]),
     ("ARCHITECTURE.md", ["tests/test_architecture_doc.py"]),
@@ -187,9 +187,6 @@ def test_generic_docs_markdown_selects_the_universal_doc_reader():
      ["tests/architecture/test_decision_index_ids_are_unique.py",
       "tests/architecture/test_decision_index_tests_exist.py",
       "tests/test_architecture_doc.py"]),
-    ("release-fragments/README.md",
-     ["tests/test_release_commands.py", "tests/test_release_notes.py"]),
-    ("release-fragments/unreleased/x.json", ["tests/test_release_notes.py"]),
 ])
 def test_a_doc_selects_every_test_that_opens_it(path, readers):
     selected = _selected(path)
@@ -201,10 +198,9 @@ def test_a_doc_selects_every_test_that_opens_it(path, readers):
 def test_mixed_markdown_and_docs_tree_change_unions_every_reader():
     selected = select([
         "docs/foo.md", "README.md", "design/09-decision-index.md",
-        "release-fragments/unreleased/x.json",
     ])
     assert selected != ALL
-    for reader in ("tests/test_docs.py", "tests/test_release_notes.py",
+    for reader in ("tests/test_docs.py",
                    "tests/architecture/test_decision_index_tests_exist.py",
                    UNIVERSAL_DOC_READER):
         assert reader in selected
@@ -318,9 +314,6 @@ def test_a_docstring_that_mentions_a_doc_does_not_read_it(tmp_path):
 def test_a_docs_tree_data_file_nothing_reads_selects_nothing_explicitly(tmp_path):
     repo = _synthetic(tmp_path, **{"test_a.py": "def test_a():\n    assert 1\n"})
     assert select(["design/orphan.yaml"], repo) == []
-    assert select(["release-fragments/unreleased/x.json"], repo) == [
-        "tests/test_release_notes.py",
-    ]
 
 
 def test_a_test_module_that_cannot_be_parsed_is_assumed_to_read_every_doc(tmp_path):
@@ -721,14 +714,14 @@ _TRIVIAL = "def test_x():\n    assert 1\n"
 
 
 def test_a_new_root_test_is_judged_by_the_test_that_forbids_new_root_tests(tmp_path):
-    """Evasion (a): a new tests/test_zz.py + a release fragment used to select
-    five files and pass while `test_tests_root_takes_no_new_files` was red."""
+    """Evasion (a): a new tests/test_zz.py + a release fragment (retired since)
+    used to select five files and pass while `test_tests_root_takes_no_new_files` was red."""
     repo = _tree(tmp_path, {
         "tests/test_zz.py": _TRIVIAL,
         "tests/architecture/test_tests_root_takes_no_new_files.py": _TRIVIAL,
-        "release-fragments/unreleased/zz.json": "{}",
+        "design/zz.yaml": "{}",
     })
-    selected = select(["tests/test_zz.py", "release-fragments/unreleased/zz.json"], repo)
+    selected = select(["tests/test_zz.py", "design/zz.yaml"], repo)
     assert selected != ALL
     assert META in selected
     # the target is the directory, so the matching test is inside what runs
@@ -744,21 +737,20 @@ def test_a_new_test_that_reads_the_config_template_reaches_its_architecture_test
             "from pathlib import Path\n"
             "def test_x():\n    Path('config.example.toml').read_text()\n",
         "tests/architecture/test_config_comes_from_the_template.py": _TRIVIAL,
-        "release-fragments/unreleased/zz.json": "{}",
+        "design/zz.yaml": "{}",
     })
-    selected = select(["tests/unit/test_zz.py", "release-fragments/unreleased/zz.json"], repo)
+    selected = select(["tests/unit/test_zz.py", "design/zz.yaml"], repo)
     assert META in selected and "tests/unit/test_zz.py" in selected
-    assert "tests/test_release_notes.py" in selected
 
 
 def test_the_two_evasion_diffs_end_to_end_through_the_cli(tiny_repo, capsys):
     (tiny_repo / "tests" / "architecture").mkdir(parents=True)
     (tiny_repo / "tests" / "architecture" / "test_meta.py").write_text(_TRIVIAL)
     (tiny_repo / "tests" / "test_zz.py").write_text(_TRIVIAL)
-    (tiny_repo / "release-fragments" / "unreleased").mkdir(parents=True)
-    (tiny_repo / "release-fragments" / "unreleased" / "zz.json").write_text("{}")
+    (tiny_repo / "design").mkdir(parents=True, exist_ok=True)
+    (tiny_repo / "design" / "zz.yaml").write_text("{}")
     _run_git(tiny_repo, "add", ".")
-    _run_git(tiny_repo, "commit", "-q", "-m", "a test and a fragment")
+    _run_git(tiny_repo, "commit", "-q", "-m", "a test and a design file")
 
     assert main(["--base", "base-ref", "--repo", str(tiny_repo)]) == 0
 

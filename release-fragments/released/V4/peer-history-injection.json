@@ -1,5 +1,0 @@
-{
-  "type": "change",
-  "summary": "Nora now starts every turn already remembering the person talking to her, instead of having to stop and look them up.",
-  "detail": "She was given who you are but not what has happened with you — her own memory of a person only arrived if she decided to go and fetch it mid-reply, which cost a round trip and which she often didn't do. That memory now rides in from the start, keyed to what you just said, so a promise from last week surfaces when it's relevant. It is presented to her as a record of what she concluded, not as fact about you, and she is told she may be wrong about it. She can no longer look up the person talking twice in one turn. The four things she reads before answering now happen at the same time rather than one after another, so this costs no extra waiting — turns are slightly faster than before the change. Looking somebody up now also returns who they are, not just what has happened with them — previously she could only get the second, so a person she had identity details for but no history with came back as someone she knew nothing about."
-}

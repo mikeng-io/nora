@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Load-time lint on doctrine frontmatter only; nothing Nora says changes. The loader's authority check enforced self-reference, resolvability and pairwise symmetry but ACCEPTED CYCLES — 'a' above 'b' and 'b' above 'a' passed, as did a 3-cycle, declaring a precedence no reader can satisfy. It now walks the graph and refuses a cyclic declaration at startup, naming the loop it found. check_authority_chain is renamed check_authority_graph in the same change: identity/voice and silence/conduct are deliberately unranked peers (design/17 §7b writes identity/voice as one tier; kind puts silence and conduct on one tier by construction), so the declaration is a strict partial order over sections, not a chain, and the name now says so. The authority fields are still not rendered into the prompt — that is a separate decision needing a measurement."
-}

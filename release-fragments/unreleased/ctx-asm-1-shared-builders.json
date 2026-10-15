@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Shared prompt builders replace three private copies and render byte-identical text; no prompt a model reads changes.",
-  "details": [],
-  "limitations": []
-}

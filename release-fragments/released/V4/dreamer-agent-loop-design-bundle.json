@@ -1,4 +1,0 @@
-{
-  "type": "none",
-  "reason": "Design bundle only — no code, no behaviour change. design/dreamer-agent-loop/ records the investigation into why the Dreamer has produced two rows from 963 messages, and proposes the revision that closes the gap. Nothing ships until that revision is built and ratified."
-}

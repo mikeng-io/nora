@@ -51,7 +51,8 @@ recreating anything. On 2026-10-01 DEC-247 (commit f4f2439c) removed
 The live file still had them, and the next deploy, which was someone else's,
 crash-looped nora, presence and analytics for about 3 minutes. Apply the key
 change through step 5's validated copy, then rerun step 3. A merge that removes
-or renames a config key should say so in its release fragment.
+or renames a config key should say so in its PR's Deploy note and in a
+`change(config): …` commit, so the release notes carry it.
 
 ## Other images
 
