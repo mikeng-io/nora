@@ -1,0 +1,1996 @@
+# Relevance labels for the retrieval bake-off's cantonese and names slices. Rules: PROTOCOL.md.
+version: 1
+slices:
+- cantonese
+- names
+as_of: '2026-10-15'
+blind: 'Three separate fresh agent sessions wrote the pool, wrote the queries, and judged labeller B''s set;
+  none was given another''s notes. The query author was given only the pool; B only the pool, the queries and
+  the relevance rules (PROTOCOL.md, text slices). This cannot be shown from git: A wrote all three sessions''
+  prompts and ran them, and nothing in the repository records what each session read.'
+pool_author:
+  who: a fresh agent session, 2026-10-15
+  given: the setting, the four languages, the confusable kinds to include, the PII rules
+  not_given: any query, label, or file of this repository
+query_author:
+  who: a fresh agent session, separate from the pool author
+  given: 'the pool (ids, sent, lang, text) and the query rules: a later paraphrase, another register or language
+    or a vague reference; no copying of distinctive words; in names the name itself may appear'
+  not_given: any floor or arm result, readings, labels; no instruction to aim at or avoid a technique
+  produced: the query texts; separately, its intended targets (author_targets) and proposed near misses with
+    the detail each fails
+  selection: 'none by score: every query it wrote is in the set except those withdrawn below, each by a rule
+    written before the queries and with its reason'
+labellers:
+  A:
+    who: the set's maintainer (the session that built this PR); read the whole pool and the query texts, labelled
+      without opening the query author's targets, and froze its raw set before B's output existed
+    frozen_at: '2026-10-15T03:18:09Z'
+    frozen_at_is: self-reported by A; git does not show that A's set was frozen before B's existed
+    raw_sha256: 0e3bdc59853f20303e36bed627b73ebc95d2e530b46cc5aadb6f507a578b0f8a
+  B:
+    who: a fresh agent session, separate from the pool author, the query author and A
+    given: PROTOCOL.md's time and relevance rules for text, the pool, the queries with as_of
+    not_given: the targets, anyone's notes or labels; no grep, search or retrieval tools
+    raw_sha256: 7f56cb6017dff2cc08aa6cbe4d74c26d4ef82c4fd115c5110450d4bb2a696b96
+hard_negative_review: Proposed by the query author with the failed detail; checked by A against each message
+  after A's labels were frozen. Each fails a detail its query states; none dropped. None is in a final relevant
+  set.
+agreement_before_reconciliation:
+  cantonese:
+    queries: 72
+    identical_sets: 71
+    mean_jaccard: 0.986
+    cohen_kappa_over_query_item_pairs: 0.993
+    query_item_pairs: 28800
+    relevant_to_both: 71
+    relevant_to_A_only: 1
+    relevant_to_B_only: 0
+  names:
+    queries: 59
+    identical_sets: 58
+    mean_jaccard: 0.983
+    cohen_kappa_over_query_item_pairs: 0.991
+    query_item_pairs: 27140
+    relevant_to_both: 58
+    relevant_to_A_only: 1
+    relevant_to_B_only: 0
+time_only_queries:
+  ca-q16:
+  - msg-019
+  ca-q24:
+  - msg-067
+  ca-q35:
+  - msg-031
+  ca-q36:
+  - msg-371
+  nm-q22:
+  - msg-044
+pii_edits: 6 values matched the private denylist and were replaced with same-meaning alternatives; labels unchanged.
+withdrawn:
+- query: ca-q09
+  slice: cantonese
+  lang: yue
+  text: 打風嗰晚屋企扇窗震到好嘈
+  raw:
+    A:
+    - msg-266
+    B: []
+  reason: 'A marked msg-266 (a window rattling loudly) relevant; B excluded it. Settled not relevant: the message
+    states neither a typhoon nor a night (sent 15:50), so the query''s constraints do not hold in it as written.
+    No other message answers the query, so it is withdrawn rather than the rule loosened.'
+- query: ca-q34
+  slice: cantonese
+  lang: yue
+  text: 上個禮拜觀塘綫又出事，車廂擠到上唔到
+  raw:
+    A:
+    - msg-366
+    B:
+    - msg-366
+  reason: 'Withdrawn in review (both labellers had marked it relevant): the query states a detail its message
+    does not, the rule that withdrew ca-q09. The query says the train was too packed to get on; msg-366 says
+    only that it was packed.'
+- query: ca-q60
+  slice: cantonese
+  lang: en
+  text: getting the second wisdom tooth out this week
+  raw:
+    A:
+    - msg-386
+    B:
+    - msg-386
+  reason: 'Withdrawn in review (both labellers had marked it relevant): the query states a detail its message
+    does not, the rule that withdrew ca-q09. The query says the tooth comes out this week; msg-386 says only
+    another dentist visit for the second wisdom tooth, not an extraction.'
+- query: ca-q64
+  slice: cantonese
+  lang: mixed
+  text: 我 cousin 下個月去台北，係表妹嗰個
+  raw:
+    A:
+    - msg-305
+    B:
+    - msg-305
+  reason: 'Withdrawn in review (both labellers had marked it relevant): msg-305 was sent 2026-09-18, so its
+    下個月 is October; at as_of 2026-10-15 the query''s 下個月 is November. The time constraint does not hold, the
+    rule that withdrew nm-q44, and no other message answers it.'
+- query: nm-q19
+  slice: names
+  lang: en
+  text: tofu_wizard posted something from Tai O
+  raw:
+    A:
+    - msg-409
+    B:
+    - msg-409
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (posted ... from Tai O), which PROTOCOL.md (Blind for text) forbids. Applied
+    from the rule as written, by reading the query against its target; no arm score was consulted.'
+- query: nm-q21
+  slice: names
+  lang: en
+  text: who said add me, my handle's kelp_otter
+  raw:
+    A:
+    - msg-418
+    B:
+    - msg-418
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (add me, my ... kelp_otter), which PROTOCOL.md (Blind for text) forbids. Applied
+    from the rule as written, by reading the query against its target; no arm score was consulted.'
+- query: nm-q36
+  slice: names
+  lang: mixed
+  text: dimsum_rockett 係假 account 嗰條
+  raw:
+    A:
+    - msg-442
+    B:
+    - msg-442
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (係 ... account), which PROTOCOL.md (Blind for text) forbids. Applied from the
+    rule as written, by reading the query against its target; no arm score was consulted.'
+- query: nm-q37
+  slice: names
+  lang: yue
+  text: harbour_moth 喺西貢影嘅靚相
+  raw:
+    A:
+    - msg-446
+    B:
+    - msg-446
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (喺西貢影 ... 靚 ... 相), which PROTOCOL.md (Blind for text) forbids. Applied from
+    the rule as written, by reading the query against its target; no arm score was consulted.'
+- query: nm-q40
+  slice: names
+  lang: en
+  text: Sai Wan seafood dinner on a Saturday
+  raw:
+    A:
+    - msg-208
+    B:
+    - msg-208
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (Sai Wan seafood dinner), which PROTOCOL.md (Blind for text) forbids. Applied
+    from the rule as written, by reading the query against its target; no arm score was consulted.'
+- query: nm-q44
+  slice: names
+  lang: mixed
+  text: 南丫島 BBQ 第二次，呢個星期日
+  raw:
+    A:
+    - msg-279
+    B: []
+  reason: 'A marked msg-279 (Lamma BBQ round two this Sunday?) relevant; B excluded it. Settled not relevant:
+    it was sent on Sunday 10-11, so its Sunday is not the Sunday after as_of (10-18) that the query names.
+    No other message answers the query, so it is withdrawn rather than the rule loosened.'
+- query: nm-q46
+  slice: names
+  lang: yue
+  text: 大澳買咗蝦醬返嚟嗰個
+  raw:
+    A:
+    - msg-438
+    B:
+    - msg-438
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (大澳 ... 蝦醬 ... 返嚟), which PROTOCOL.md (Blind for text) forbids. Applied from
+    the rule as written, by reading the query against its target; no arm score was consulted.'
+- query: nm-q49
+  slice: names
+  lang: roman
+  text: bin go hai tai po dang jan
+  raw:
+    A:
+    - msg-328
+    B:
+    - msg-328
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (hai tai po dang), which PROTOCOL.md (Blind for text) forbids. Applied from the
+    rule as written, by reading the query against its target; no arm score was consulted.'
+- query: nm-q51
+  slice: names
+  lang: mixed
+  text: 長洲啲平安包好 big
+  raw:
+    A:
+    - msg-429
+    B:
+    - msg-429
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (平安包好), which PROTOCOL.md (Blind for text) forbids. Applied from the rule as
+    written, by reading the query against its target; no arm score was consulted.'
+- query: nm-q53
+  slice: names
+  lang: yue
+  text: 坪洲好寧靜嗰句
+  raw:
+    A:
+    - msg-451
+    B:
+    - msg-451
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (坪洲好 ... 靜), which PROTOCOL.md (Blind for text) forbids. Applied from the rule
+    as written, by reading the query against its target; no arm score was consulted.'
+- query: nm-q55
+  slice: names
+  lang: yue
+  text: 太古站出口等
+  raw:
+    A:
+    - msg-391
+    B:
+    - msg-391
+  reason: 'Withdrawn in review: beyond the name itself and generic words, the query repeats its target''s own
+    wording in the same order (太古站 ... 出口等), which PROTOCOL.md (Blind for text) forbids. Applied from the rule
+    as written, by reading the query against its target; no arm score was consulted.'
+disagreements:
+- query: ca-q09
+  item: msg-266
+  A: relevant
+  B: not_relevant
+  outcome: not_relevant
+  reason: 'A marked msg-266 (a window rattling loudly) relevant; B excluded it. Settled not relevant: the message
+    states neither a typhoon nor a night (sent 15:50), so the query''s constraints do not hold in it as written.
+    No other message answers the query, so it is withdrawn rather than the rule loosened.'
+- query: nm-q44
+  item: msg-279
+  A: relevant
+  B: not_relevant
+  outcome: not_relevant
+  reason: 'A marked msg-279 (Lamma BBQ round two this Sunday?) relevant; B excluded it. Settled not relevant:
+    it was sent on Sunday 10-11, so its Sunday is not the Sunday after as_of (10-18) that the query names.
+    No other message answers the query, so it is withdrawn rather than the rule loosened.'
+queries:
+  ca-q01:
+    relevant:
+    - msg-114
+    hard_negatives:
+    - msg-295
+    - msg-021
+    hard_negative_fails:
+      msg-295: 係九月三號波，唔係七月八號
+      msg-021: 係已經掛咗，冇講幾點轉
+    author_targets:
+    - msg-114
+    raw:
+      A:
+      - msg-114
+      B:
+      - msg-114
+    notes_B: msg-001/msg-021 are July signal 8 but state no hour.
+  ca-q02:
+    relevant:
+    - msg-295
+    hard_negatives:
+    - msg-114
+    - msg-256
+    hard_negative_fails:
+      msg-114: July and signal 8, not September signal 3
+      msg-256: August signal 3, no switch time
+    author_targets:
+    - msg-295
+    raw:
+      A:
+      - msg-295
+      B:
+      - msg-295
+    notes_B: msg-256 (Aug) and msg-378 (Jul) are signal 3 outside September.
+  ca-q03:
+    relevant:
+    - msg-187
+    hard_negatives:
+    - msg-241
+    - msg-257
+    hard_negative_fails:
+      msg-241: 十月嗰次，冇講巴士
+      msg-257: 同日但係講 WFH，唔係冇車
+    author_targets:
+    - msg-187
+    raw:
+      A:
+      - msg-187
+      B:
+      - msg-187
+    notes_B: msg-257 is June black rain WFH, no mention of no transport.
+  ca-q04:
+    relevant:
+    - msg-241
+    hard_negatives:
+    - msg-187
+    - msg-257
+    hard_negative_fails:
+      msg-187: June, not autumn
+      msg-257: June, and about working from home
+    author_targets:
+    - msg-241
+    raw:
+      A:
+      - msg-241
+      B:
+      - msg-241
+  ca-q05:
+    relevant:
+    - msg-083
+    hard_negatives:
+    - msg-017
+    - msg-398
+    hard_negative_fails:
+      msg-017: 係七月，唔係十月
+      msg-398: 六月，冇警告
+    author_targets:
+    - msg-083
+    raw:
+      A:
+      - msg-083
+      B:
+      - msg-083
+    notes_B: msg-017 is July.
+  ca-q06:
+    relevant:
+    - msg-203
+    hard_negatives:
+    - msg-257
+    - msg-001
+    hard_negative_fails:
+      msg-257: black rain in June, not red rain
+      msg-001: signal 8, not a rainstorm
+    author_targets:
+    - msg-203
+    raw:
+      A:
+      - msg-203
+      B:
+      - msg-203
+    notes_B: msg-257 is black rain, not red.
+  ca-q07:
+    relevant:
+    - msg-261
+    hard_negatives:
+    - msg-046
+    - msg-021
+    hard_negative_fails:
+      msg-046: 冇講係第二次
+      msg-021: 七月，第一次
+    author_targets:
+    - msg-261
+    raw:
+      A:
+      - msg-261
+      B:
+      - msg-261
+    notes_B: msg-046 and msg-077 are September days off but do not say second time this year.
+  ca-q08:
+    relevant:
+    - msg-314
+    hard_negatives:
+    - msg-387
+    hard_negative_fails:
+      msg-387: 淨係講麪包冇晒，冇提打風
+    author_targets:
+    - msg-314
+    raw:
+      A:
+      - msg-314
+      B:
+      - msg-314
+    notes_A: 'msg-387: bread swept off shelves, but nothing says before a typhoon; ambiguous, not relevant.'
+    notes_B: msg-387 (bread cleared out) does not mention a typhoon; ambiguous, excluded.
+  ca-q10:
+    relevant:
+    - msg-097
+    hard_negatives:
+    - msg-089
+    hard_negative_fails:
+      msg-089: the AC broke, not a power cut
+    author_targets:
+    - msg-097
+    raw:
+      A:
+      - msg-097
+      B:
+      - msg-097
+    notes_B: sent Sun 2026-10-11 23:00.
+  ca-q11:
+    relevant:
+    - msg-312
+    hard_negatives:
+    - msg-327
+    hard_negative_fails:
+      msg-327: 係六個人，唔係五個
+    author_targets:
+    - msg-312
+    raw:
+      A:
+      - msg-312
+      B:
+      - msg-312
+    notes_B: msg-327 is six people.
+  ca-q12:
+    relevant:
+    - msg-327
+    hard_negatives:
+    - msg-312
+    hard_negative_fails:
+      msg-312: 係五個人
+    author_targets:
+    - msg-327
+    raw:
+      A:
+      - msg-327
+      B:
+      - msg-327
+    notes_B: msg-312 is five people.
+  ca-q13:
+    relevant:
+    - msg-060
+    hard_negatives:
+    - msg-192
+    hard_negative_fails:
+      msg-192: $150, not $180
+    author_targets:
+    - msg-060
+    raw:
+      A:
+      - msg-060
+      B:
+      - msg-060
+    notes_B: msg-192 is $150.
+  ca-q14:
+    relevant:
+    - msg-192
+    hard_negatives:
+    - msg-060
+    hard_negative_fails:
+      msg-060: $180 and September, not $150 in June
+    author_targets:
+    - msg-192
+    raw:
+      A:
+      - msg-192
+      B:
+      - msg-192
+    notes_B: message is phrased from the debtor side (I owe you $150); accepted.
+  ca-q15:
+    relevant:
+    - msg-019
+    hard_negatives:
+    - msg-239
+    hard_negative_fails:
+      msg-239: 九月嗰次，冇話同一間
+    author_targets:
+    - msg-019
+    raw:
+      A:
+      - msg-019
+      B:
+      - msg-019
+  ca-q16:
+    relevant:
+    - msg-239
+    hard_negatives:
+    - msg-019
+    hard_negative_fails:
+      msg-019: October, and the same place as before
+    author_targets:
+    - msg-239
+    raw:
+      A:
+      - msg-239
+      B:
+      - msg-239
+  ca-q17:
+    relevant:
+    - msg-048
+    hard_negatives:
+    - msg-181
+    hard_negative_fails:
+      msg-181: 兩盒，唔係三盒
+    author_targets:
+    - msg-048
+    raw:
+      A:
+      - msg-048
+      B:
+      - msg-048
+    notes_B: msg-181 is two.
+  ca-q18:
+    relevant:
+    - msg-181
+    hard_negatives:
+    - msg-048
+    hard_negative_fails:
+      msg-048: three pizzas, in August
+    author_targets:
+    - msg-181
+    raw:
+      A:
+      - msg-181
+      B:
+      - msg-181
+  ca-q19:
+    relevant:
+    - msg-249
+    hard_negatives:
+    - msg-362
+    hard_negative_fails:
+      msg-362: 係出糧，唔係花紅
+    author_targets:
+    - msg-249
+    raw:
+      A:
+      - msg-249
+      B:
+      - msg-249
+    notes_B: msg-362 is salary, not bonus.
+  ca-q20:
+    relevant:
+    - msg-362
+    hard_negatives:
+    - msg-249
+    hard_negative_fails:
+      msg-249: bonus in October, not payday in August
+    author_targets:
+    - msg-362
+    raw:
+      A:
+      - msg-362
+      B:
+      - msg-362
+    notes_B: msg-249 is October bonus.
+  ca-q21:
+    relevant:
+    - msg-207
+    hard_negatives:
+    - msg-298
+    hard_negative_fails:
+      msg-298: 係荃灣，唔係沙田
+    author_targets:
+    - msg-207
+    raw:
+      A:
+      - msg-207
+      B:
+      - msg-207
+    notes_B: msg-298 is Tsuen Wan.
+  ca-q22:
+    relevant:
+    - msg-298
+    hard_negatives:
+    - msg-207
+    hard_negative_fails:
+      msg-207: Sha Tin, not Tsuen Wan
+    author_targets:
+    - msg-298
+    raw:
+      A:
+      - msg-298
+      B:
+      - msg-298
+  ca-q23:
+    relevant:
+    - msg-029
+    hard_negatives:
+    - msg-300
+    - msg-067
+    hard_negative_fails:
+      msg-300: 係大澳，唔係大埔
+      msg-067: 係大澳
+    author_targets:
+    - msg-029
+    raw:
+      A:
+      - msg-029
+      B:
+      - msg-029
+    notes_B: msg-067 is Tai O.
+  ca-q24:
+    relevant:
+    - msg-300
+    hard_negatives:
+    - msg-029
+    - msg-067
+    hard_negative_fails:
+      msg-029: 係大埔
+      msg-067: 係九月，唔係八月尾
+    author_targets:
+    - msg-300
+    raw:
+      A:
+      - msg-300
+      B:
+      - msg-300
+    notes_B: msg-067 is Tai O but sent 09-07, not end of August.
+  ca-q25:
+    relevant:
+    - msg-052
+    hard_negatives:
+    - msg-086
+    hard_negative_fails:
+      msg-086: cat spilled coffee, not sleeping on laptop
+    author_targets:
+    - msg-052
+    raw:
+      A:
+      - msg-052
+      B:
+      - msg-052
+  ca-q26:
+    relevant:
+    - msg-290
+    hard_negatives:
+    - msg-296
+    hard_negative_fails:
+      msg-296: 係狗，唔係貓
+    author_targets:
+    - msg-290
+    raw:
+      A:
+      - msg-290
+      B:
+      - msg-290
+    notes_B: msg-296 is a dog.
+  ca-q27:
+    relevant:
+    - msg-296
+    hard_negatives:
+    - msg-290
+    hard_negative_fails:
+      msg-290: a cat, not a dog
+    author_targets:
+    - msg-296
+    raw:
+      A:
+      - msg-296
+      B:
+      - msg-296
+  ca-q28:
+    relevant:
+    - msg-245
+    hard_negatives:
+    - msg-146
+    hard_negative_fails:
+      msg-146: 係狗，唔係貓
+    author_targets:
+    - msg-245
+    raw:
+      A:
+      - msg-245
+      B:
+      - msg-245
+    notes_B: msg-146 is a dog.
+  ca-q29:
+    relevant:
+    - msg-146
+    hard_negatives:
+    - msg-245
+    hard_negative_fails:
+      msg-245: a cat, not a dog
+    author_targets:
+    - msg-146
+    raw:
+      A:
+      - msg-146
+      B:
+      - msg-146
+  ca-q30:
+    relevant:
+    - msg-273
+    hard_negatives:
+    - msg-108
+    hard_negative_fails:
+      msg-108: 七月第一次，唔係十月
+    author_targets:
+    - msg-273
+    raw:
+      A:
+      - msg-273
+      B:
+      - msg-273
+    notes_B: msg-108 is July.
+  ca-q31:
+    relevant:
+    - msg-238
+    no_hard_negative: pool has no other talking-bird message
+    author_targets:
+    - msg-238
+    raw:
+      A:
+      - msg-238
+      B:
+      - msg-238
+  ca-q32:
+    relevant:
+    - msg-175
+    hard_negatives:
+    - msg-346
+    hard_negative_fails:
+      msg-346: Tung Chung line, not Tsuen Wan line
+    author_targets:
+    - msg-175
+    raw:
+      A:
+      - msg-175
+      B:
+      - msg-175
+    notes_B: msg-346 is Tung Chung line.
+  ca-q33:
+    relevant:
+    - msg-346
+    hard_negatives:
+    - msg-175
+    hard_negative_fails:
+      msg-175: 荃灣綫，唔係東涌綫
+    author_targets:
+    - msg-346
+    raw:
+      A:
+      - msg-346
+      B:
+      - msg-346
+  ca-q35:
+    relevant:
+    - msg-371
+    hard_negatives:
+    - msg-031
+    hard_negative_fails:
+      msg-031: 六月，唔係八月
+    author_targets:
+    - msg-371
+    raw:
+      A:
+      - msg-371
+      B:
+      - msg-371
+    notes_B: msg-031 is June.
+  ca-q36:
+    relevant:
+    - msg-031
+    hard_negatives:
+    - msg-371
+    hard_negative_fails:
+      msg-371: August, not June
+    author_targets:
+    - msg-031
+    raw:
+      A:
+      - msg-031
+      B:
+      - msg-031
+  ca-q37:
+    relevant:
+    - msg-068
+    hard_negatives:
+    - msg-392
+    hard_negative_fails:
+      msg-392: 司機拒載，唔係兜路
+    author_targets:
+    - msg-068
+    raw:
+      A:
+      - msg-068
+      B:
+      - msg-068
+  ca-q38:
+    relevant:
+    - msg-070
+    hard_negatives:
+    - msg-306
+    hard_negative_fails:
+      msg-306: every 45 mins in June, not last weekend
+    author_targets:
+    - msg-070
+    raw:
+      A:
+      - msg-070
+      B:
+      - msg-070
+    notes_B: msg-306 is June.
+  ca-q39:
+    relevant:
+    - msg-306
+    hard_negatives:
+    - msg-070
+    hard_negative_fails:
+      msg-070: 三十分鐘一班
+    author_targets:
+    - msg-306
+    raw:
+      A:
+      - msg-306
+      B:
+      - msg-306
+  ca-q40:
+    relevant:
+    - msg-025
+    hard_negatives:
+    - msg-101
+    hard_negative_fails:
+      msg-101: October repeat, not June
+    author_targets:
+    - msg-025
+    raw:
+      A:
+      - msg-025
+      B:
+      - msg-025
+    notes_B: msg-101 is October.
+  ca-q41:
+    relevant:
+    - msg-101
+    hard_negatives:
+    - msg-025
+    hard_negative_fails:
+      msg-025: 六月第一次，唔係上個禮拜
+    author_targets:
+    - msg-101
+    raw:
+      A:
+      - msg-101
+      B:
+      - msg-101
+  ca-q42:
+    relevant:
+    - msg-184
+    hard_negatives:
+    - msg-098
+    hard_negative_fails:
+      msg-098: 四點，七月
+    author_targets:
+    - msg-184
+    raw:
+      A:
+      - msg-184
+      B:
+      - msg-184
+    notes_B: msg-098 is July at 4.
+  ca-q43:
+    relevant:
+    - msg-098
+    hard_negatives:
+    - msg-184
+    hard_negative_fails:
+      msg-184: 3pm in September
+    author_targets:
+    - msg-098
+    raw:
+      A:
+      - msg-098
+      B:
+      - msg-098
+  ca-q44:
+    relevant:
+    - msg-215
+    hard_negatives:
+    - msg-085
+    - msg-198
+    hard_negative_fails:
+      msg-085: 係星期六，唔係星期日
+      msg-198: 七月，冇講集合時間
+    author_targets:
+    - msg-215
+    raw:
+      A:
+      - msg-215
+      B:
+      - msg-215
+    notes_B: msg-085 is Saturday.
+  ca-q45:
+    relevant:
+    - msg-308
+    hard_negatives:
+    - msg-198
+    - msg-215
+    hard_negative_fails:
+      msg-198: July, not this month
+      msg-215: September, with a meeting time
+    author_targets:
+    - msg-308
+    raw:
+      A:
+      - msg-308
+      B:
+      - msg-308
+    notes_B: msg-198 is July.
+  ca-q46:
+    relevant:
+    - msg-007
+    hard_negatives:
+    - msg-206
+    hard_negative_fails:
+      msg-206: 六月已經行咗嗰次，唔係提議
+    author_targets:
+    - msg-007
+    raw:
+      A:
+      - msg-007
+      B:
+      - msg-007
+  ca-q47:
+    relevant:
+    - msg-185
+    hard_negatives:
+    - msg-016
+    hard_negative_fails:
+      msg-016: 七點半，唔係九點半
+    author_targets:
+    - msg-185
+    raw:
+      A:
+      - msg-185
+      B:
+      - msg-185
+    notes_B: msg-016 is 7:30.
+  ca-q48:
+    relevant:
+    - msg-016
+    hard_negatives:
+    - msg-185
+    hard_negative_fails:
+      msg-185: 九點半，唔係七點半
+    author_targets:
+    - msg-016
+    raw:
+      A:
+      - msg-016
+      B:
+      - msg-016
+  ca-q49:
+    relevant:
+    - msg-170
+    hard_negatives:
+    - msg-231
+    hard_negative_fails:
+      msg-231: ten people, not twelve
+    author_targets:
+    - msg-170
+    raw:
+      A:
+      - msg-170
+      B:
+      - msg-170
+    notes_B: msg-231 is ten people.
+  ca-q50:
+    relevant:
+    - msg-231
+    hard_negatives:
+    - msg-170
+    hard_negative_fails:
+      msg-170: 十二個人
+    author_targets:
+    - msg-231
+    raw:
+      A:
+      - msg-231
+      B:
+      - msg-231
+  ca-q51:
+    relevant:
+    - msg-244
+    hard_negatives:
+    - msg-155
+    hard_negative_fails:
+      msg-155: 三張，唔係兩張
+    author_targets:
+    - msg-244
+    raw:
+      A:
+      - msg-244
+      B:
+      - msg-244
+    notes_B: msg-155 is three.
+  ca-q52:
+    relevant:
+    - msg-155
+    hard_negatives:
+    - msg-244
+    hard_negative_fails:
+      msg-244: two tickets, not three
+    author_targets:
+    - msg-155
+    raw:
+      A:
+      - msg-155
+      B:
+      - msg-155
+  ca-q53:
+    relevant:
+    - msg-102
+    hard_negatives:
+    - msg-355
+    hard_negative_fails:
+      msg-355: 星期三，唔係星期四
+    author_targets:
+    - msg-102
+    raw:
+      A:
+      - msg-102
+      B:
+      - msg-102
+    notes_B: msg-355 is Wednesday.
+  ca-q54:
+    relevant:
+    - msg-211
+    hard_negatives:
+    - msg-318
+    hard_negative_fails:
+      msg-318: mum's birthday, not brother's
+    author_targets:
+    - msg-211
+    raw:
+      A:
+      - msg-211
+      B:
+      - msg-211
+  ca-q55:
+    relevant:
+    - msg-318
+    hard_negatives:
+    - msg-211
+    hard_negative_fails:
+      msg-211: 細佬生日，唔係阿媽
+    author_targets:
+    - msg-318
+    raw:
+      A:
+      - msg-318
+      B:
+      - msg-318
+  ca-q56:
+    relevant:
+    - msg-124
+    hard_negatives:
+    - msg-066
+    hard_negative_fails:
+      msg-066: leave approved, not rejected
+    author_targets:
+    - msg-124
+    raw:
+      A:
+      - msg-124
+      B:
+      - msg-124
+    notes_B: msg-066 is approved.
+  ca-q57:
+    relevant:
+    - msg-066
+    hard_negatives:
+    - msg-124
+    hard_negative_fails:
+      msg-124: 係唔批，唔係批咗
+    author_targets:
+    - msg-066
+    raw:
+      A:
+      - msg-066
+      B:
+      - msg-066
+  ca-q58:
+    relevant:
+    - msg-352
+    hard_negatives:
+    - msg-191
+    hard_negative_fails:
+      msg-191: 六月嗰次 $800，唔係今個禮拜
+    author_targets:
+    - msg-352
+    raw:
+      A:
+      - msg-352
+      B:
+      - msg-352
+    notes_B: msg-191 is June.
+  ca-q59:
+    relevant:
+    - msg-191
+    hard_negatives:
+    - msg-352
+    hard_negative_fails:
+      msg-352: 十月 $500
+    author_targets:
+    - msg-191
+    raw:
+      A:
+      - msg-191
+      B:
+      - msg-191
+  ca-q61:
+    relevant:
+    - msg-217
+    hard_negatives:
+    - msg-047
+    hard_negative_fails:
+      msg-047: 六月嗰次，剪得太短
+    author_targets:
+    - msg-217
+    raw:
+      A:
+      - msg-217
+      B:
+      - msg-217
+    notes_B: msg-047 is June.
+  ca-q62:
+    relevant:
+    - msg-214
+    hard_negatives:
+    - msg-364
+    hard_negative_fails:
+      msg-364: Osaka in June, not September
+    author_targets:
+    - msg-214
+    raw:
+      A:
+      - msg-214
+      B:
+      - msg-214
+    notes_B: Fukuoka counts as Japan; msg-364 is June.
+  ca-q63:
+    relevant:
+    - msg-161
+    hard_negatives:
+    - msg-076
+    hard_negative_fails:
+      msg-076: 訂嘅係八月，喺六月
+    author_targets:
+    - msg-161
+    raw:
+      A:
+      - msg-161
+      B:
+      - msg-161
+  ca-q65:
+    relevant:
+    - msg-275
+    hard_negatives:
+    - msg-014
+    hard_negative_fails:
+      msg-014: 坐巴士過橋，唔係坐船
+    author_targets:
+    - msg-275
+    raw:
+      A:
+      - msg-275
+      B:
+      - msg-275
+    notes_B: msg-014 is by bus.
+  ca-q66:
+    relevant:
+    - msg-369
+    hard_negatives:
+    - msg-050
+    hard_negative_fails:
+      msg-050: went in August, not next week
+    author_targets:
+    - msg-369
+    raw:
+      A:
+      - msg-369
+      B:
+      - msg-369
+    notes_B: sent Mon 10-12, next week = week of 10-19, consistent with as_of.
+  ca-q67:
+    relevant:
+    - msg-035
+    hard_negatives:
+    - msg-213
+    hard_negative_fails:
+      msg-213: 係長洲，七月
+    author_targets:
+    - msg-035
+    raw:
+      A:
+      - msg-035
+      B:
+      - msg-035
+    notes_B: msg-213 is 長洲.
+  ca-q68:
+    relevant:
+    - msg-333
+    hard_negatives:
+    - msg-174
+    - msg-302
+    hard_negative_fails:
+      msg-174: sore throat, no sick leave
+      msg-302: sore throat, no fever
+    author_targets:
+    - msg-333
+    raw:
+      A:
+      - msg-333
+      B:
+      - msg-333
+  ca-q69:
+    relevant:
+    - msg-072
+    hard_negatives:
+    - msg-088
+    hard_negative_fails:
+      msg-088: 六月，唔係八月
+    author_targets:
+    - msg-072
+    raw:
+      A:
+      - msg-072
+      B:
+      - msg-072
+    notes_B: msg-088 is June.
+  ca-q70:
+    relevant:
+    - msg-099
+    hard_negatives:
+    - msg-116
+    hard_negative_fails:
+      msg-116: 係阿叔，唔係阿嬸
+    author_targets:
+    - msg-099
+    raw:
+      A:
+      - msg-099
+      B:
+      - msg-099
+  ca-q71:
+    relevant:
+    - msg-116
+    hard_negatives:
+    - msg-099
+    hard_negative_fails:
+      msg-099: an auntie, not an uncle
+    author_targets:
+    - msg-116
+    raw:
+      A:
+      - msg-116
+      B:
+      - msg-116
+  ca-q72:
+    relevant:
+    - msg-341
+    hard_negatives:
+    - msg-396
+    - msg-235
+    hard_negative_fails:
+      msg-396: always late, not a no-show count
+      msg-235: no count of three
+    author_targets:
+    - msg-341
+    raw:
+      A:
+      - msg-341
+      B:
+      - msg-341
+  nm-q01:
+    relevant:
+    - msg-401
+    hard_negatives:
+    - msg-425
+    - msg-260
+    hard_negative_fails:
+      msg-425: the sequel demo, this week
+      msg-260: July, just asking who's online
+    author_targets:
+    - msg-401
+    raw:
+      A:
+      - msg-401
+      B:
+      - msg-401
+  nm-q02:
+    relevant:
+    - msg-425
+    hard_negatives:
+    - msg-401
+    hard_negative_fails:
+      msg-401: 第一集，唔係二代 demo
+    author_targets:
+    - msg-425
+    raw:
+      A:
+      - msg-425
+      B:
+      - msg-425
+  nm-q03:
+    relevant:
+    - msg-402
+    hard_negatives:
+    - msg-454
+    - msg-260
+    hard_negative_fails:
+      msg-454: 約打機，冇講旺角
+      msg-260: 冇講旺角
+    author_targets:
+    - msg-402
+    raw:
+      A:
+      - msg-402
+      B:
+      - msg-402
+  nm-q04:
+    relevant:
+    - msg-454
+    hard_negatives:
+    - msg-260
+    hard_negative_fails:
+      msg-260: 冇講九點，七月
+    author_targets:
+    - msg-454
+    raw:
+      A:
+      - msg-454
+      B:
+      - msg-454
+    notes_B: msg-260 states no 9pm.
+  nm-q05:
+    relevant:
+    - msg-419
+    hard_negatives:
+    - msg-427
+    - msg-056
+    hard_negative_fails:
+      msg-427: 竹林快遞，唔係特快
+      msg-056: 竹林快遞
+    author_targets:
+    - msg-419
+    raw:
+      A:
+      - msg-419
+      B:
+      - msg-419
+  nm-q06:
+    relevant:
+    - msg-427
+    hard_negatives:
+    - msg-419
+    - msg-056
+    hard_negative_fails:
+      msg-419: 竹林特快, a different title
+      msg-056: just asking who's playing
+    author_targets:
+    - msg-427
+    raw:
+      A:
+      - msg-427
+      B:
+      - msg-427
+  nm-q07:
+    relevant:
+    - msg-356
+    hard_negatives:
+    - msg-417
+    - msg-458
+    hard_negative_fails:
+      msg-417: Saltmoon Diners, 講 co-op
+      msg-458: 講好 cozy，唔係難
+    author_targets:
+    - msg-356
+    raw:
+      A:
+      - msg-356
+      B:
+      - msg-356
+  nm-q08:
+    relevant:
+    - msg-417
+    hard_negatives:
+    - msg-458
+    - msg-432
+    hard_negative_fails:
+      msg-458: Saltmoon Diner without the s, about cooking
+      msg-432: a hosted session, not about the mode
+    author_targets:
+    - msg-417
+    raw:
+      A:
+      - msg-417
+      B:
+      - msg-417
+  nm-q09:
+    relevant:
+    - msg-404
+    hard_negatives:
+    - msg-453
+    hard_negative_fails:
+      msg-453: about it being free, not the search
+    author_targets:
+    - msg-404
+    raw:
+      A:
+      - msg-404
+      B:
+      - msg-404
+  nm-q10:
+    relevant:
+    - msg-453
+    hard_negatives:
+    - msg-404
+    hard_negative_fails:
+      msg-404: 搵唔到隻 game，唔係免費
+    author_targets:
+    - msg-453
+    raw:
+      A:
+      - msg-453
+      B:
+      - msg-453
+  nm-q11:
+    relevant:
+    - msg-406
+    hard_negatives:
+    - msg-405
+    hard_negative_fails:
+      msg-405: 第一季，唔係續集
+    author_targets:
+    - msg-406
+    raw:
+      A:
+      - msg-406
+      B:
+      - msg-406
+  nm-q12:
+    relevant:
+    - msg-405
+    hard_negatives:
+    - msg-406
+    hard_negative_fails:
+      msg-406: 係第二集，未出
+    author_targets:
+    - msg-405
+    raw:
+      A:
+      - msg-405
+      B:
+      - msg-405
+    notes_B: 第一季 read as the first installment.
+  nm-q13:
+    relevant:
+    - msg-410
+    hard_negatives:
+    - msg-459
+    hard_negative_fails:
+      msg-459: 霧港奇談，差一隻字
+    author_targets:
+    - msg-410
+    raw:
+      A:
+      - msg-410
+      B:
+      - msg-410
+    notes_B: msg-459 is 奇談, a different name.
+  nm-q14:
+    relevant:
+    - msg-459
+    hard_negatives:
+    - msg-410
+    hard_negative_fails:
+      msg-410: 霧港奇譚 ending, not the studio question
+    author_targets:
+    - msg-459
+    raw:
+      A:
+      - msg-459
+      B:
+      - msg-459
+  nm-q15:
+    relevant:
+    - msg-430
+    hard_negatives:
+    - msg-424
+    hard_negative_fails:
+      msg-424: the first game, 60 hours
+    author_targets:
+    - msg-430
+    raw:
+      A:
+      - msg-430
+      B:
+      - msg-430
+    notes_B: II = 2.
+  nm-q16:
+    relevant:
+    - msg-450
+    hard_negatives:
+    - msg-428
+    - msg-460
+    hard_negative_fails:
+      msg-428: 冇 DX，講第三關
+      msg-460: 講排行榜
+    author_targets:
+    - msg-450
+    raw:
+      A:
+      - msg-450
+      B:
+      - msg-450
+    notes_B: msg-428 is Glasswing Rally without DX.
+  nm-q17:
+    relevant:
+    - msg-444
+    hard_negatives:
+    - msg-443
+    hard_negative_fails:
+      msg-443: Bramblecode, a different puzzle game
+    author_targets:
+    - msg-444
+    raw:
+      A:
+      - msg-444
+      B:
+      - msg-444
+    notes_B: msg-443 is Bramblecode.
+  nm-q18:
+    relevant:
+    - msg-456
+    hard_negatives:
+    - msg-457
+    hard_negative_fails:
+      msg-457: 雲吞星球2 trailer，唔係維修
+    author_targets:
+    - msg-456
+    raw:
+      A:
+      - msg-456
+      B:
+      - msg-456
+  nm-q20:
+    relevant:
+    - msg-413
+    hard_negatives:
+    - msg-409
+    hard_negative_fails:
+      msg-409: tofu_wizard，大澳唔係大埔
+    author_targets:
+    - msg-413
+    raw:
+      A:
+      - msg-413
+      B:
+      - msg-413
+  nm-q22:
+    relevant:
+    - msg-235
+    hard_negatives:
+    - msg-044
+    hard_negative_fails:
+      msg-044: 六月嗰次，唔係七月
+    author_targets:
+    - msg-235
+    raw:
+      A:
+      - msg-235
+      B:
+      - msg-235
+    notes_B: July message that kelp_otter flaked again answers whether they came; msg-435 is about kelp_otterr
+      naming, excluded.
+  nm-q23:
+    relevant:
+    - msg-435
+    hard_negatives:
+    - msg-418
+    hard_negative_fails:
+      msg-418: 真 kelp_otter，冇講多個 r
+    author_targets:
+    - msg-435
+    raw:
+      A:
+      - msg-435
+      B:
+      - msg-435
+  nm-q24:
+    relevant:
+    - msg-439
+    hard_negatives:
+    - msg-242
+    - msg-448
+    hard_negative_fails:
+      msg-242: 係約人打，唔係帶隊
+      msg-448: mossy_teapit，差一隻字
+    author_targets:
+    - msg-439
+    raw:
+      A:
+      - msg-439
+      B:
+      - msg-439
+    notes_B: msg-242 is an invite, not carrying.
+  nm-q25:
+    relevant:
+    - msg-448
+    hard_negatives:
+    - msg-439
+    hard_negative_fails:
+      msg-439: mossy_teapot, carried the raid
+    author_targets:
+    - msg-448
+    raw:
+      A:
+      - msg-448
+      B:
+      - msg-448
+  nm-q26:
+    relevant:
+    - msg-441
+    hard_negatives:
+    - msg-403
+    hard_negative_fails:
+      msg-403: ferryghost8，唔係7
+    author_targets:
+    - msg-441
+    raw:
+      A:
+      - msg-441
+      B:
+      - msg-441
+    notes_B: msg-403 is ferryghost8.
+  nm-q27:
+    relevant:
+    - msg-408
+    hard_negatives:
+    - msg-426
+    hard_negative_fails:
+      msg-426: 六月，太古城，冇換
+    author_targets:
+    - msg-408
+    raw:
+      A:
+      - msg-408
+      B:
+      - msg-408
+  nm-q28:
+    relevant:
+    - msg-426
+    hard_negatives:
+    - msg-408
+    hard_negative_fails:
+      msg-408: Prince Edward, not Taikoo Shing
+    author_targets:
+    - msg-426
+    raw:
+      A:
+      - msg-426
+      B:
+      - msg-426
+  nm-q29:
+    relevant:
+    - msg-412
+    hard_negatives:
+    - msg-455
+    hard_negative_fails:
+      msg-455: lemontea_rice，另一個人
+    author_targets:
+    - msg-412
+    raw:
+      A:
+      - msg-412
+      B:
+      - msg-412
+    notes_B: msg-455 is lemontea_rice.
+  nm-q30:
+    relevant:
+    - msg-422
+    hard_negatives:
+    - msg-447
+    hard_negative_fails:
+      msg-447: pineapplebun_23，唔識嗰個
+    author_targets:
+    - msg-422
+    raw:
+      A:
+      - msg-422
+      B:
+      - msg-422
+  nm-q31:
+    relevant:
+    - msg-447
+    hard_negatives:
+    - msg-422
+    hard_negative_fails:
+      msg-422: pineapplebun_22
+    author_targets:
+    - msg-447
+    raw:
+      A:
+      - msg-447
+      B:
+      - msg-447
+  nm-q32:
+    relevant:
+    - msg-431
+    hard_negatives:
+    - msg-432
+    hard_negative_fails:
+      msg-432: quiet_gecko hosting, not can't come
+    author_targets:
+    - msg-431
+    raw:
+      A:
+      - msg-431
+      B:
+      - msg-431
+  nm-q33:
+    relevant:
+    - msg-432
+    hard_negatives:
+    - msg-431
+    hard_negative_fails:
+      msg-431: quiet_geckoo，嚟唔到
+    author_targets:
+    - msg-432
+    raw:
+      A:
+      - msg-432
+      B:
+      - msg-432
+  nm-q34:
+    relevant:
+    - msg-423
+    hard_negatives:
+    - msg-452
+    hard_negative_fails:
+      msg-452: 長洲 in July
+    author_targets:
+    - msg-423
+    raw:
+      A:
+      - msg-423
+      B:
+      - msg-423
+  nm-q35:
+    relevant:
+    - msg-452
+    hard_negatives:
+    - msg-423
+    hard_negative_fails:
+      msg-423: 係坪洲，唔係長洲
+    author_targets:
+    - msg-452
+    raw:
+      A:
+      - msg-452
+      B:
+      - msg-452
+  nm-q38:
+    relevant:
+    - msg-449
+    hard_negatives:
+    - msg-446
+    hard_negative_fails:
+      msg-446: harbour_moth in Sai Kung
+    author_targets:
+    - msg-449
+    raw:
+      A:
+      - msg-449
+      B:
+      - msg-449
+  nm-q39:
+    relevant:
+    - msg-421
+    hard_negatives:
+    - msg-208
+    - msg-449
+    hard_negative_fails:
+      msg-208: 西環食海鮮，唔係行路睇日落
+      msg-449: 西灣，唔係西環
+    author_targets:
+    - msg-421
+    raw:
+      A:
+      - msg-421
+      B:
+      - msg-421
+  nm-q41:
+    relevant:
+    - msg-226
+    hard_negatives:
+    - msg-208
+    - msg-407
+    hard_negative_fails:
+      msg-208: Sai Wan，唔係西貢
+      msg-407: 十月，講貴
+    author_targets:
+    - msg-226
+    raw:
+      A:
+      - msg-226
+      B:
+      - msg-226
+  nm-q42:
+    relevant:
+    - msg-407
+    hard_negatives:
+    - msg-226
+    - msg-208
+    hard_negative_fails:
+      msg-226: August invite, no price
+      msg-208: Sai Wan
+    author_targets:
+    - msg-407
+    raw:
+      A:
+      - msg-407
+      B:
+      - msg-407
+    notes_B: sent 10-05, in last week.
+  nm-q43:
+    relevant:
+    - msg-445
+    hard_negatives:
+    - msg-279
+    hard_negative_fails:
+      msg-279: 南丫島燒烤，唔係行山
+    author_targets:
+    - msg-445
+    raw:
+      A:
+      - msg-445
+      B:
+      - msg-445
+  nm-q45:
+    relevant:
+    - msg-322
+    hard_negatives:
+    - msg-279
+    - msg-005
+    hard_negative_fails:
+      msg-279: the second one, upcoming
+      msg-005: a beach, not Lamma
+    author_targets:
+    - msg-322
+    raw:
+      A:
+      - msg-322
+      B:
+      - msg-322
+  nm-q47:
+    relevant:
+    - msg-440
+    hard_negatives:
+    - msg-438
+    hard_negative_fails:
+      msg-438: Tai O shrimp paste, not dolphins
+    author_targets:
+    - msg-440
+    raw:
+      A:
+      - msg-440
+      B:
+      - msg-440
+  nm-q48:
+    relevant:
+    - msg-324
+    hard_negatives:
+    - msg-438
+    hard_negative_fails:
+      msg-438: 大澳買嘢，冇講訊號
+    author_targets:
+    - msg-324
+    raw:
+      A:
+      - msg-324
+      B:
+      - msg-324
+  nm-q50:
+    relevant:
+    - msg-127
+    hard_negatives:
+    - msg-328
+    hard_negative_fails:
+      msg-328: 係大埔，唔係大圍
+    author_targets:
+    - msg-127
+    raw:
+      A:
+      - msg-127
+      B:
+      - msg-127
+  nm-q52:
+    relevant:
+    - msg-269
+    hard_negatives:
+    - msg-105
+    hard_negative_fails:
+      msg-105: June, too hot
+    author_targets:
+    - msg-269
+    raw:
+      A:
+      - msg-269
+      B:
+      - msg-269
+    notes_B: msg-105 is June and hot.
+  nm-q54:
+    relevant:
+    - msg-411
+    hard_negatives:
+    - msg-123
+    - msg-167
+    hard_negative_fails:
+      msg-123: fabric shopping, not food
+      msg-167: shopping, not food
+    author_targets:
+    - msg-411
+    raw:
+      A:
+      - msg-411
+      B:
+      - msg-411
+  nm-q56:
+    relevant:
+    - msg-113
+    hard_negatives:
+    - msg-391
+    hard_negative_fails:
+      msg-391: Tai Koo, not Prince Edward
+    author_targets:
+    - msg-113
+    raw:
+      A:
+      - msg-113
+      B:
+      - msg-113
+  nm-q57:
+    relevant:
+    - msg-392
+    hard_negatives:
+    - msg-068
+    hard_negative_fails:
+      msg-068: 司機兜路，唔係拒載大嶼山
+    author_targets:
+    - msg-392
+    raw:
+      A:
+      - msg-392
+      B:
+      - msg-392
+  nm-q58:
+    relevant:
+    - msg-281
+    hard_negatives:
+    - msg-091
+    hard_negative_fails:
+      msg-091: 冇講淺水灣
+    author_targets:
+    - msg-281
+    raw:
+      A:
+      - msg-281
+      B:
+      - msg-281
+  nm-q59:
+    relevant:
+    - msg-414
+    hard_negatives:
+    - msg-206
+    - msg-007
+    hard_negative_fails:
+      msg-206: legs tired after Lion Rock, not the view
+      msg-007: plan to hike it, not the view
+    author_targets:
+    - msg-414
+    raw:
+      A:
+      - msg-414
+      B:
+      - msg-414
+    notes_B: msg-206 is about the hike, not the view.

@@ -24,10 +24,14 @@ fixed before it was written. Design source:
 (`text_image`, `cantonese`, `names`) exist, at least 40 queries per slice,
 every label resolves to an id in its own slice's pool, every media and text
 item is in a pool, every query has at least one relevant item and at least one
-hard negative (or a stated reason the pool has none), each labels file covers
-exactly the queries of the slices that name it, each labeller's `raw_sha256`
-recomputes from that file's committed raw sets, and the lock matches the five
-files. A mismatch fails; it never skips.
+hard negative (or a stated reason the pool has none), every
+`hard_negative_fails` key is one of the query's hard negatives, each labels
+file covers exactly the queries of the slices that name it and no withdrawn
+query is back in the set, no two queries share a text, a text slice's `as_of`
+equals its labels file's, each labeller's `raw_sha256` and the reported
+agreement recompute from that file's committed raw sets, every
+`time_only_queries` entry is a live query and one of its hard negatives, and
+the lock matches the five files. A mismatch fails; it never skips.
 
 ## Blind by construction
 
@@ -209,8 +213,14 @@ could not tell them apart.
 **Time is part of the input.** A query may say "this week" or "last month",
 so each slice states the moment its queries are asked (`as_of`), and the
 labellers judge a time constraint by the message's `sent` against `as_of`.
-The text an arm embeds is the message alone; how a harness presents `sent` to
-an arm is the harness's choice and is recorded with its result.
+In stages 1–3 (lexical, dense, fused; design 20) every arm indexes the message
+text alone and is never shown `sent`. A query whose relevant message and one
+of its hard negatives say the same thing and differ only in when they were
+sent is therefore a tie for every arm: no arm can rank the right one first
+except by chance. Those queries are listed in `labels_text.yaml` under
+`time_only_queries` (ca-q16, ca-q24, ca-q35, ca-q36, nm-q22, each with the
+hard negative it ties with), and the harness reports them separately from the
+rest of the slice.
 
 **Blind for text.** The incumbent's floor (lexical or bge-m3) indexes the
 message text itself, so a query author who copies a message's words hands the
