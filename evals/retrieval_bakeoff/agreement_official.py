@@ -7,8 +7,9 @@ with each vendor's OTHER published path, on the same inputs, at the same
 pinned commit and dtype:
 
 - Qwen: `scripts/qwen3_vl_embedding.py` from the model repository
-  (`Qwen3VLEmbedder.process`, its default instruction; it resizes images
-  with qwen-vl-utils, then the processor does not);
+  (`Qwen3VLEmbedder.process`, a query given the retrieval instruction the
+  way the vendor's README passes it, everything else its default; it resizes
+  images with qwen-vl-utils, then the processor does not);
 - jina: raw transformers, as the card's quickstart writes it
   (`model.embed(**processor(text="Query: ..."))`, and an image as
   `processor(images=..., text="Document: " + IMAGE_RUN)`, with no chat
@@ -109,8 +110,11 @@ def reference_vectors(label: str) -> tuple[dict[str, list[float]], dict]:
         params = model.model
         for it in spec():
             x = {"image": it["value"]} if it["role"] == "image" else {"text": it["value"]}
+            if it["role"] == "query":  # the vendor's retrieval usage; else its default
+                x["instruction"] = adapters.QWEN3VL_QUERY_INSTRUCTION
             out[it["id"]] = model.process([x], normalize=True)[0].tolist()
-        how = "scripts/qwen3_vl_embedding.py Qwen3VLEmbedder.process, default instruction"
+        how = ("scripts/qwen3_vl_embedding.py Qwen3VLEmbedder.process; queries with "
+               "instruction=QWEN3VL_QUERY_INSTRUCTION, documents and images its default")
     else:
         model = transformers.AutoModel.from_pretrained(
             path, trust_remote_code=True, default_task="retrieval", modality="vision",
