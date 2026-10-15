@@ -41,11 +41,16 @@ from typing import Any, Protocol
 __all__ = [
     "FLOAT16",
     "GEMMA2_PREFIX",
+    "JINA_V5_OMNI_SMALL",
     "NO_PREFIX",
+    "OFFICIAL",
+    "QWEN3VL_EMBEDDING_2B",
     "EmbedError",
     "Embedder",
     "HFEmbedder",
     "LlamaServerEmbedder",
+    "OfficialEmbedder",
+    "OfficialFormat",
     "OllamaEmbedder",
     "Prefix",
     "check",
@@ -365,3 +370,242 @@ def _library_versions() -> dict[str, Any]:
     return {"torch": torch.__version__, "transformers": transformers.__version__,
             "sentence_transformers": sentence_transformers.__version__,
             "torch_threads": torch.get_num_threads()}
+
+
+# --- Qwen3-VL-Embedding-2B and jina-embeddings-v5-omni-small: the official formats ----
+#
+# Each model's input is fixed by its own files at the pinned commit, never by
+# a guess, and every sequence that reaches the model is checked against it
+# (`OfficialEmbedder`). Read 2026-10-15 from:
+#
+# - Qwen/Qwen3-VL-Embedding-2B @ 9f2f7e71: `config_sentence_transformers.json`
+#   (`prompts.default` = "Represent the user's input.", the default prompt),
+#   `chat_template.jinja` (the same string as `default_system_message`),
+#   `scripts/qwen3_vl_embedding.py` (`default_instruction`, the same again;
+#   last-token pooling, then L2), `1_Pooling/config.json` (`lasttoken`) and
+#   `tokenizer.json`, whose post-processor appends `<|endoftext|>`, the token
+#   that is pooled. One system turn carries the instruction for every input:
+#   the card names no separate query instruction, so query, document and
+#   image all get the default. Matryoshka 64 to 2048 (card).
+# - jinaai/jina-embeddings-v5-omni-small @ 950200ab: `config_sentence_transformers.json`
+#   (`Query: ` / `Document: `), `custom_st.py` (text is the prompt plus the
+#   text, no chat template and no special token; an image is the chat
+#   template over the prompt and the vision run, `_build_eval_image_prompt`;
+#   last-token pooling at `attention_mask.sum() - 1`, so right padding only;
+#   L2), the `retrieval` LoRA adapter (`default_task`). The card: "The
+#   Query:/Document: distinction applies to EVERY modality", so a pool image
+#   is a document. Matryoshka 32 to 1024 (`config.json`).
+
+#: Qwen3-VL-Embedding's default instruction, on every input.
+QWEN3VL_INSTRUCTION = "Represent the user's input."
+#: The run of image tokens collapses to one in a checked sequence: its length
+#: is the image's patch count, which the processor derives from the pixels.
+IMAGE_RUN = "<|vision_start|><|image_pad|><|vision_end|>"
+_QWEN3VL_TURN = ("<|im_start|>system\n" + QWEN3VL_INSTRUCTION + "<|im_end|>\n"
+                 "<|im_start|>user\n{x}<|im_end|>\n<|im_start|>assistant\n<|endoftext|>")
+_IMAGE_PAD_RUN = re.compile(r"(?:<\|image_pad\|>)+")
+
+
+@dataclass(frozen=True, slots=True)
+class OfficialFormat:
+    """One model's input as its own files define it, and how
+    sentence-transformers is asked to produce it."""
+
+    label: str
+    repo: str
+    revision: str
+    licence: str
+    native_dim: int
+    #: role -> the whole sequence the model reads, `{x}` for the text.
+    text: dict[str, str]
+    #: The whole sequence for one image, its token run collapsed (`IMAGE_RUN`).
+    image: str
+    #: role ("query", "document", "image") -> `SentenceTransformer.encode` kwargs.
+    encode: dict[str, dict[str, str]]
+    #: Beyond the dtype, what `model_kwargs` the card loads it with.
+    model_kwargs: dict[str, str]
+    trust_remote_code: bool
+    #: The pool reads `attention_mask.sum() - 1`: a left-padded row is wrong.
+    right_padding_only: bool
+
+    def sent(self, role: str, text: str = "") -> str:
+        """The exact sequence the model must read for this input."""
+        if role == "image":
+            return self.image
+        if role not in self.text:
+            raise ValueError(f"role must be 'query', 'document' or 'image', not {role!r}")
+        return self.text[role].replace("{x}", text)
+
+    def record(self) -> dict[str, Any]:
+        return {"label": self.label, "repo": self.repo, "revision": self.revision,
+                "licence": self.licence, "text": dict(self.text), "image": self.image,
+                "encode": {k: dict(v) for k, v in self.encode.items()},
+                "model_kwargs": dict(self.model_kwargs),
+                "trust_remote_code": self.trust_remote_code,
+                "pooling": "last token, then L2; Matryoshka: truncate, then L2"}
+
+
+QWEN3VL_EMBEDDING_2B = OfficialFormat(
+    label="qwen3vl",
+    repo="Qwen/Qwen3-VL-Embedding-2B",
+    revision="9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda",
+    licence="apache-2.0",
+    native_dim=2048,
+    text={"query": _QWEN3VL_TURN, "document": _QWEN3VL_TURN},
+    image=_QWEN3VL_TURN.replace("{x}", IMAGE_RUN),
+    encode={r: {"prompt": QWEN3VL_INSTRUCTION} for r in ("query", "document", "image")},
+    model_kwargs={},
+    trust_remote_code=False,
+    right_padding_only=False,
+)
+
+JINA_V5_OMNI_SMALL = OfficialFormat(
+    label="jina5omni",
+    repo="jinaai/jina-embeddings-v5-omni-small",
+    revision="950200abde3a3bcf3d5bdfe5d28fb5bb5e7dfbb0",
+    # Non-commercial: measured here only; shipping it would need another licence.
+    licence="cc-by-nc-4.0 (non-commercial; measurement only)",
+    native_dim=1024,
+    text={"query": "Query: {x}", "document": "Document: {x}"},
+    image="<|im_start|>user\nDocument: " + IMAGE_RUN + "<|im_end|>\n",
+    encode={"query": {"prompt_name": "query"}, "document": {"prompt_name": "document"},
+            "image": {"prompt_name": "document"}},
+    # `vision` skips the audio tower at load; text and image paths are unchanged.
+    model_kwargs={"default_task": "retrieval", "modality": "vision"},
+    trust_remote_code=True,
+    right_padding_only=True,
+)
+
+OFFICIAL = {f.label: f for f in (QWEN3VL_EMBEDDING_2B, JINA_V5_OMNI_SMALL)}
+
+
+def fed_sequence(pieces: str, mask: Sequence[int] | None, *, right_padding_only: bool) -> str:
+    """What a check compares: the decoded unpadded row with its image run
+    collapsed, or a marker no format equals when the padding breaks the pool."""
+    if right_padding_only and mask is not None and list(mask) != sorted(mask, reverse=True):
+        return "<left-padded: the last-token pool reads a pad>"
+    return _IMAGE_PAD_RUN.sub("<|image_pad|>", pieces)
+
+
+class OfficialEmbedder:
+    """A model in its official format (`OfficialFormat`) through
+    sentence-transformers on CPU, at a pinned commit and an explicit dtype.
+
+    Checked, not assumed, before a vector counts:
+
+    - the snapshot is the pinned commit (its directory is the 40-hex sha),
+      loaded from disk with the hub offline, so `trust_remote_code` runs only
+      that commit's code;
+    - every parameter is at the requested dtype (jina's own loader keeps its
+      base in bf16 whatever it is passed, so the loaded model is cast; both
+      checkpoints are stored bf16, so float32 is exact);
+    - every sequence the model's `forward` receives, decoded, equals
+      `OfficialFormat.sent` for its input, as a multiset per call (the
+      library sorts a batch by length). Anything else is an `unsupported`
+      ERROR for the batch, never a vector."""
+
+    def __init__(self, fmt: OfficialFormat, *, dtype: str,
+                 load: Callable[[str, OfficialFormat, str, list[str]], Any] | None = None,
+                 snapshot: Callable[[str, str], str] | None = None) -> None:
+        _refuse_float16(fmt.repo, dtype)
+        if not HFEmbedder.REVISION.fullmatch(fmt.revision):
+            raise ValueError(f"{fmt.repo}: revision must be a 40-hex commit sha")
+        self.fmt = fmt
+        self.name = fmt.repo
+        self.native_dim = fmt.native_dim
+        self._dtype = dtype
+        self._load = load or _load_official
+        self._snapshot = snapshot or _pinned_snapshot
+        self._st: Any = None
+        self._fed: list[str] = []
+        self._loaded: dict[str, Any] = {}
+        self._checked = {"query": 0, "document": 0, "image": 0}
+
+    def _model(self) -> Any:
+        if self._st is None:
+            path = self._snapshot(self.fmt.repo, self.fmt.revision)
+            if Path(path).name != self.fmt.revision:
+                raise ValueError(f"{self.name}: pinned {self.fmt.revision}, snapshot {path}")
+            st = self._load(path, self.fmt, self._dtype, self._fed)
+            dtypes = {str(p.dtype) for p in st.parameters()}
+            if dtypes != {f"torch.{self._dtype}"}:
+                raise ValueError(f"{self.name}: asked for {self._dtype}, loaded {sorted(dtypes)}")
+            self._loaded = {**_library_versions(), "param_dtype": dtypes.pop(),
+                            "loaded_revision": Path(path).name,
+                            "parameters": sum(p.numel() for p in st.parameters())}
+            self._st = st
+        return self._st
+
+    def _encode(self, inputs: list[Any], role: str, expected: list[str]) -> list[list[float]]:
+        st = self._model()
+        self._fed.clear()
+        out = st.encode(inputs, batch_size=len(inputs), normalize_embeddings=False,
+                        convert_to_numpy=True, **self.fmt.encode[role])
+        fed = sorted(self._fed)
+        self._fed.clear()
+        if fed != sorted(expected):
+            raise EmbedError("unsupported", f"{self.fmt.label}: {len(fed)} sequences fed, not "
+                                            f"the {len(expected)} of its official {role} format")
+        self._checked[role] += len(expected)
+        return [list(map(float, v)) for v in out]
+
+    def embed_text(self, texts: Sequence[str], role: str) -> Sequence[Sequence[float]]:
+        return self._encode(list(texts), role, [self.fmt.sent(role, t) for t in texts])
+
+    def embed_media(self, paths: Sequence[Path]) -> Sequence[Sequence[float]]:
+        from PIL import Image
+
+        images = [Image.open(p).convert("RGB") for p in paths]
+        return self._encode(images, "image", [self.fmt.image] * len(images))
+
+    def provenance(self) -> dict[str, Any]:
+        return {"runtime": "sentence-transformers", "model": self.name,
+                "revision": self.fmt.revision, "licence": self.fmt.licence, "dtype": self._dtype,
+                "native_dim": self.native_dim, "format": self.fmt.record(),
+                "format_checked": {"how": "every sequence forward() received, decoded",
+                                   **self._checked},
+                **self._loaded}
+
+
+def _pinned_snapshot(repo: str, revision: str) -> str:
+    """The local snapshot of `repo` at `revision`, never a download: the run
+    reads only what was fetched and hashed beforehand."""
+    from huggingface_hub import snapshot_download  # type: ignore[import-not-found]
+
+    return str(snapshot_download(repo_id=repo, revision=revision, local_files_only=True,
+                                 ignore_patterns=["*.png", "*.gguf"]))
+
+
+def _load_official(path: str, fmt: OfficialFormat, dtype: str, fed: list[str]) -> Any:
+    # ponytail: imported on first use; the bake-off venv installs it, the gate
+    # never does.
+    import os
+
+    import sentence_transformers
+    import torch
+
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    st = sentence_transformers.SentenceTransformer(
+        path, device="cpu", trust_remote_code=fmt.trust_remote_code,
+        model_kwargs={**fmt.model_kwargs, "dtype": getattr(torch, dtype)},
+    )
+    st.to(getattr(torch, dtype))
+    first = st[0]
+    model = first.model
+    tok = getattr(first, "tokenizer", None) or first.processor.tokenizer
+    forward = model.forward
+
+    # sentence-transformers calls `model.forward` directly (no hooks run), and
+    # jina's module calls the model; an instance attribute sees both.
+    def checked_forward(*args: Any, **kwargs: Any) -> Any:
+        ids = kwargs["input_ids"] if "input_ids" in kwargs else args[0]
+        mask = kwargs.get("attention_mask")
+        for r in range(ids.shape[0]):
+            row_mask = None if mask is None else mask[r].tolist()
+            row = ids[r] if mask is None else ids[r][mask[r] == 1]
+            fed.append(fed_sequence(tok.decode(row.tolist(), skip_special_tokens=False),
+                                    row_mask, right_padding_only=fmt.right_padding_only))
+        return forward(*args, **kwargs)
+
+    model.forward = checked_forward
+    return st

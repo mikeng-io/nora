@@ -66,9 +66,11 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from evals.retrieval_bakeoff.adapters import (
+    OFFICIAL,
     Embedder,
     EmbedError,
     HFEmbedder,
+    OfficialEmbedder,
     OllamaEmbedder,
     check,
     matryoshka,
@@ -459,6 +461,22 @@ def score(rankings: Rankings, labels: Mapping[str, frozenset[str]], *,
     return out
 
 
+def first_relevant_ranks(rankings: Rankings, labels: Mapping[str, frozenset[str]],
+                         ) -> dict[str, int | str | None]:
+    """Per query id, the 1-based rank of its first relevant item in the arm's
+    top `DEPTH`, None if none is there, `ERROR:<kind>` if the query errored:
+    ids and ranks only, so a verdict that turns on a few queries names them."""
+    out: dict[str, int | str | None] = {}
+    for q in sorted(labels):
+        r = rankings.get(q, Errored("exception"))
+        if isinstance(r, Errored):
+            out[q] = f"ERROR:{r.kind}"
+            continue
+        out[q] = next((pos for pos, pid in enumerate(r[:DEPTH], start=1) if pid in labels[q]),
+                      None)
+    return out
+
+
 def reading_gap(
     lexical: Sequence[Rankings], labels: Mapping[str, frozenset[str]],
 ) -> dict[str, bool | Errored]:
@@ -623,6 +641,7 @@ def evaluate(the_set: BakeoffSet, arms: Mapping[str, ArmRun], *, lexical_arms: S
             s[f"outside_{sub}"] = of([q for q in labels if q not in qs])
         s["paired_recall5_minus_reference_ci95"] = None if name == reference else _paired_ci(
             _per_query(arm.rankings, labels, recall_at), ref_recall)
+        s["per_query"] = first_relevant_ranks(arm.rankings, labels)
         s["cost"] = arm.cost
         s["provenance"] = arm.provenance
         result_arms[name] = s
@@ -783,6 +802,23 @@ def gemma_embedder(*, ollama_tag: str = "", hf_repo: str = "", revision: str = "
     return None
 
 
+#: Each official-format candidate's Matryoshka dimensions: native, and 256.
+OFFICIAL_DIMS = {"qwen3vl": (2048, 256), "jina5omni": (1024, 256)}
+
+
+def official_embedder(label: str, *, dtype: str) -> OfficialEmbedder | None:
+    """Stage 2's Qwen3-VL-Embedding-2B or jina-embeddings-v5-omni-small, in
+    the format its own files define (`adapters.OfficialFormat`), at its
+    pinned commit and an explicit dtype. One per run: one model resident."""
+    if not label:
+        return None
+    if label not in OFFICIAL:
+        raise ValueError(f"--official must be one of {sorted(OFFICIAL)}, not {label!r}")
+    if not dtype:
+        raise ValueError("--official needs --official-dtype (float32 or bfloat16)")
+    return OfficialEmbedder(OFFICIAL[label], dtype=dtype)
+
+
 def _cpu_bf16_flags() -> list[str]:
     try:
         text = Path("/proc/cpuinfo").read_text()
@@ -802,6 +838,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--gemma-revision", default="", help="the HF commit, pinned")
     ap.add_argument("--gemma-dtype", default="", help="bfloat16 or float32; never float16")
     ap.add_argument("--gemma-dims", default="768,256")
+    ap.add_argument("--official", default="", help=f"one of {sorted(OFFICIAL)}: stage 2")
+    ap.add_argument("--official-dtype", default="float32", help="never float16")
     ap.add_argument("--media-dir", type=Path, default=MEDIA_DIR)
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--out", type=Path, default=SET_DIR / "results")
@@ -811,14 +849,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     gemma = gemma_embedder(ollama_tag=args.gemma, hf_repo=args.gemma_hf,
                            revision=args.gemma_revision, dtype=args.gemma_dtype,
                            base_url=args.ollama, timeout=args.timeout)
-    stage = "stage2" if gemma else "floor"
+    official = official_embedder(args.official, dtype=args.official_dtype)
+    if official and gemma:
+        raise ValueError("one candidate per run: --official or --gemma/--gemma-hf")
+    stage = f"stage2-{args.official}" if official else "stage2" if gemma else "floor"
+    candidate = official or gemma
     before = host_sample()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     provenance: dict[str, Any] = {
         **_commit(), "host": platform.node(), "python": sys.version.split()[0],
         "nice": os.nice(0), "host_before": before,
         "stage": "1 (lexical) plus the bge-m3 floor"
-                 + (f", and 2 (dense: {gemma.name})" if gemma else ""),
+                 + (f", and 2 (dense: {candidate.name})" if candidate else ""),
         "cpu_bf16_flags": _cpu_bf16_flags(),
     }
     arms: dict[str, dict[str, ArmRun]] = {name: {} for name in sets}
@@ -844,6 +886,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                                         dog=dog, base=args.ollama, **kw))
             if args.gemma:
                 unloaded[gemma.name] = _unload(gemma.name)
+        if official:
+            dims = OFFICIAL_DIMS[args.official]
+            for name, the_set in sets.items():
+                build = _image_arms if the_set.media else _text_arms
+                kw = {"media_dir": args.media_dir} if the_set.media else {}
+                arms[name].update(build(official, args.official, the_set, dims,
+                                        timeout=args.timeout, dog=dog, base=args.ollama, **kw))
     except AbortedError as e:
         for m in ("bge-m3", args.gemma):
             if m:
