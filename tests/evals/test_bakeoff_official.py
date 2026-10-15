@@ -64,7 +64,7 @@ def test_the_default_instruction_variant_is_recorded_under_its_own_label() -> No
     """The first Qwen run gave queries the default instruction too; it stays a
     recorded variant, never the scored arm."""
     v = QWEN3VL_DEFAULT_INSTRUCTION_VARIANT
-    assert v.label == "qwen3vl-default-instruction" and v.label not in OFFICIAL
+    assert v.label == "qwen3vl-defaultinst" and v.label not in OFFICIAL
     assert v.sent("query", "x") == _qwen_turn("Represent the user's input.", "x")
     assert (v.revision, v.image, v.sent("document", "x")) == (
         QWEN.revision, QWEN.image, QWEN.sent("document", "x"))

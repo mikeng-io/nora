@@ -190,22 +190,28 @@ def scores_from_results(paths: Iterable[Path], *, subset: str | None = None,
     `rename` joins one candidate measured through two serving paths into one
     arm, explicitly: `{"wemm-fp32": "wemm"}` reads `dense:wemm-fp32@2048` as
     `dense:wemm@2048` (WeMM at fp32 on the text slices, Q4 on text_image,
-    whose files keep each precision in their provenance). A renamed arm that
-    lands on an (arm, slice) another file also measured is refused, never
-    silently overwritten."""
+    whose files keep each precision in their provenance).
+
+    A file whose arms recorded a known variant's format (`_variant_formats`)
+    has them relabelled first, whatever the caller passes: the first Qwen
+    run's arms, written as `qwen3vl`, load as `qwen3vl-defaultinst`.
+
+    A candidate arm, after both renames, that appears twice for one slice
+    raises ValueError (ERROR): the verdict would otherwise be whichever file
+    was read last. The incumbents and the lexical floors, which every run
+    re-measures, may recur; the last one read is kept."""
     out: dict[str, dict[str, Score]] = {}
-    renamed: set[tuple[str, str]] = set()
     for path in paths:
         result = json.loads(Path(path).read_text(encoding="utf-8"))
+        relabel = _variant_relabel(result)
         for written, a in result["arms"].items():
             arm = written
-            for old, new in (rename or {}).items():
+            for old, new in (*relabel.items(), *(rename or {}).items()):
                 arm = arm.replace(old, new)
-            key = (arm, result["slice"])
-            if (arm != written or key in renamed) and result["slice"] in out.get(arm, {}):
-                raise ValueError(f"{arm} on {result['slice']} is measured twice once renamed")
-            if arm != written:
-                renamed.add(key)
+            floor = arm in INCUMBENTS or arm.startswith("lexical:")
+            if not floor and result["slice"] in out.get(arm, {}):
+                raise ValueError(f"ERROR: {arm} on {result['slice']} is measured twice "
+                                 f"(again in {Path(path).name}); load one run per arm")
             src = a if subset is None else a[subset]
             errors = a["errors"]
             out.setdefault(arm, {})[result["slice"]] = Score(
@@ -213,6 +219,31 @@ def scores_from_results(paths: Iterable[Path], *, subset: str | None = None,
                 int(errors.get("queries", 0)) + int(errors.get("pool", 0)),
                 _misses_in(a.get("per_query"), result, subset),
             )
+    return out
+
+
+def _variant_formats() -> list[tuple[str, dict[str, str], str]]:
+    """(label as written, the variant's recorded `text` format, the variant's
+    own label) for each format the harness recorded under a reused label."""
+    from evals.retrieval_bakeoff.adapters import (
+        QWEN3VL_DEFAULT_INSTRUCTION_VARIANT,
+        QWEN3VL_EMBEDDING_2B,
+    )
+
+    v = QWEN3VL_DEFAULT_INSTRUCTION_VARIANT
+    return [(QWEN3VL_EMBEDDING_2B.label, dict(v.text), v.label)]
+
+
+def _variant_relabel(result: Mapping[str, Any]) -> dict[str, str]:
+    """{written label: variant label} for a file whose arms recorded a
+    variant's format (only dense arms carry the format; their fused arms
+    share the label and follow)."""
+    out: dict[str, str] = {}
+    for a in result["arms"].values():
+        fmt = (a.get("provenance") or {}).get("format") or {}
+        for written, text, variant in _variant_formats():
+            if fmt.get("label") == written and fmt.get("text") == text:
+                out[written] = variant
     return out
 
 

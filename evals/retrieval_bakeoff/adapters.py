@@ -758,7 +758,7 @@ QWEN3VL_EMBEDDING_2B = OfficialFormat(
 #: The first Qwen run (results 20261015T135707Z): the default instruction on
 #: queries too. A recorded variant, never the scored arm.
 QWEN3VL_DEFAULT_INSTRUCTION_VARIANT = dataclasses.replace(
-    QWEN3VL_EMBEDDING_2B, label="qwen3vl-default-instruction",
+    QWEN3VL_EMBEDDING_2B, label="qwen3vl-defaultinst",
     text={"query": _QWEN3VL_TURN, "document": _QWEN3VL_TURN},
     encode={r: {"prompt": QWEN3VL_INSTRUCTION} for r in ("query", "document", "image")},
 )

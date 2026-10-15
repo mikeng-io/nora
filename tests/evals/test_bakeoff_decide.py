@@ -257,3 +257,88 @@ def test_slice_wins_applies_the_same_bar_to_one_slice() -> None:
     assert wins == {"dense:gemma2@256": False, "dense:gemma2@768": True}
     with pytest.raises(ValueError, match="ERROR"):
         slice_wins({**r, "dense:gemma2@768": _arm(0.95, 0.5, 0.5, errors=1)}, "text_image")
+
+
+# --- review of #22 at 63e8d83a ---------------------------------------------------------
+
+
+def test_the_dimension_step_breaks_a_miss_tie_before_the_name() -> None:
+    """By name alone `dense:a@768` would win; the lower dimension must."""
+    d = _decide(**{
+        "dense:a@768": _arm(0.96, 0.80, 0.70, misses=(1, 9, 5)),
+        "dense:z@256": _arm(0.96, 0.80, 0.70, misses=(1, 9, 5)),
+    })
+    assert d.winner == "dense:z@256"
+
+
+def test_the_name_step_breaks_a_tie_on_misses_and_dimension_ascending() -> None:
+    d = _decide(**{
+        "dense:b@256": _arm(0.96, 0.80, 0.70, misses=(1, 9, 5)),
+        "dense:a@256": _arm(0.96, 0.80, 0.70, misses=(1, 9, 5)),
+    })
+    assert d.winner == "dense:a@256"
+
+
+def _result(tmp_path: Path, name: str, slice_: str, arms: dict) -> Path:
+    import json
+
+    f = tmp_path / name
+    f.write_text(json.dumps({"slice": slice_, "arms": arms}), encoding="utf-8")
+    return f
+
+
+def _a(recall: float, provenance: dict | None = None) -> dict:
+    return {"recall5": recall, "mrr10": 0.5, "errors": {"queries": 0, "pool": 0},
+            **({"provenance": provenance} if provenance else {})}
+
+
+def test_a_candidate_arm_measured_twice_on_a_slice_is_refused_in_either_order(
+    tmp_path: Path,
+) -> None:
+    """The verdict must not depend on which file is read last."""
+    one = _result(tmp_path, "1.json", "names", {"dense:x@256": _a(0.9)})
+    two = _result(tmp_path, "2.json", "names", {"dense:x@256": _a(0.5)})
+    for order in ([one, two], [two, one]):
+        with pytest.raises(ValueError, match=r"ERROR.*dense:x@256.*names"):
+            scores_from_results(order)
+
+
+def test_incumbent_and_lexical_arms_may_recur_across_runs(tmp_path: Path) -> None:
+    """Every run re-measures the floor; those are not candidates."""
+    arms = {"dense:bge-m3": _a(0.9), "lexical:bm25": _a(0.5)}
+    r = scores_from_results([_result(tmp_path, "1.json", "names", arms),
+                             _result(tmp_path, "2.json", "names", arms)])
+    assert r["dense:bge-m3"]["names"].recall5 == 0.9
+
+
+def test_an_arm_recorded_in_the_qwen_default_instruction_format_loads_as_the_variant(
+    tmp_path: Path,
+) -> None:
+    from evals.retrieval_bakeoff.adapters import (
+        QWEN3VL_DEFAULT_INSTRUCTION_VARIANT,
+        QWEN3VL_EMBEDDING_2B,
+    )
+
+    variant = {"format": {**QWEN3VL_DEFAULT_INSTRUCTION_VARIANT.record(), "label": "qwen3vl"}}
+    scored = {"format": QWEN3VL_EMBEDDING_2B.record()}
+    v = _result(tmp_path, "v.json", "names", {"dense:qwen3vl@2048": _a(0.8, variant),
+                                              "fused:bm25+qwen3vl@2048": _a(0.7)})
+    s = _result(tmp_path, "s.json", "names", {"dense:qwen3vl@2048": _a(0.9, scored)})
+    for order in ([v, s], [s, v]):
+        r = scores_from_results(order)
+        assert r["dense:qwen3vl@2048"]["names"].recall5 == 0.9
+        assert r["dense:qwen3vl-defaultinst@2048"]["names"].recall5 == 0.8
+        assert r["fused:bm25+qwen3vl-defaultinst@2048"]["names"].recall5 == 0.7
+
+
+def test_the_committed_qwen_variant_and_scored_runs_load_together_in_either_order() -> None:
+    g = lambda pat: sorted(RESULT.parent.glob(pat))  # noqa: E731
+    v, q = g("20261015T135707Z-stage2-qwen3vl-*.json"), g("20261015T165508Z-stage2-qwen3vl-*.json")
+    verdicts = set()
+    for order in (v + q, q + v):
+        r = scores_from_results(order)
+        assert r["dense:qwen3vl@2048"]["text_image"].recall5 == 0.9855
+        assert r["dense:qwen3vl-defaultinst@2048"]["text_image"].recall5 == 0.9493
+        d = decide(r)
+        verdicts.add((d.verdict, d.winner))
+    assert verdicts == {(Verdict.REPLACE, "dense:qwen3vl@2048")}

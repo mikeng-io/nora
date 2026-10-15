@@ -127,9 +127,15 @@ doubles the index.
 candidate arm passes, the winner is the one with the fewest **total misses**
 summed over the three journey slices (text → image, Cantonese, names). A miss
 is a query whose first relevant item is not in the top 5, counted from each
-result's per-query ranks. A remaining tie goes to the lower dimension. A
-passing arm whose result carries no per-query ranks makes the verdict ERROR,
-because its misses are unknown and are never guessed. This replaced "the
+result's per-query ranks. A remaining tie goes to the lower dimension, and
+a tie on both goes to the arm name in ascending order, so the verdict never
+depends on file order. The per-query ranks are needed only here: when
+several arms pass, one whose result carries none makes the verdict ERROR,
+because its misses are unknown and are never guessed. A single passing arm
+needs no count. A candidate arm measured twice on one slice (two runs loaded
+together) is also ERROR, because the verdict would depend on which file was
+read last; the incumbents and the lexical floors, which every run
+re-measures, may recur. This replaced "the
 best text → image recall@5, then the lower dimension", which on 2026-10-15
 picked WeMM-2B over Qwen3-VL-Embedding-2B for one more image found, despite
 0.15 less Cantonese recall@5 (see the measured note below).
@@ -254,8 +260,9 @@ results: `evals/retrieval_bakeoff/results/20261015T165508Z-stage2-qwen3vl-*`
 - **Recorded variant, not scored:** the first Qwen run
   (`20261015T135707Z-stage2-qwen3vl-*`, from fb582e90) gave queries the
   default instruction too (`QWEN3VL_DEFAULT_INSTRUCTION_VARIANT`). Its arms
-  are named `qwen3vl` in those files. Read them as this variant, never beside
-  the scored run.
+  are written as `qwen3vl` in those files. `decide` recognises the variant's
+  recorded format and loads them as `qwen3vl-defaultinst`, so they can sit
+  beside the scored run without replacing it.
 - **jina-embeddings-v5-omni-small** (`950200ab`, **CC-BY-NC-4.0**:
   non-commercial, so this is a measurement only and could not ship under this
   licence). The `retrieval` LoRA adapter. Text is `Query: ` or `Document: `
