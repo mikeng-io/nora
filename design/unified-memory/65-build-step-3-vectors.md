@@ -4,7 +4,8 @@ Status: **plan**, 2026-10-16, approved by the operator the same day ("Yes
 proceed", after the bake-off closed at #24). Grounded in master at
 `13f299e3`; the migration head is `0105_memory_index`. It finishes
 [00](00-intent.md) «Sequence» step 3 ("vectors join when step 2 picks the
-embedder") on top of [60](60-build-step-3.md) S1–S5.
+embedder") on top of [60](60-build-step-3.md) S1–S5. V1 merged as #30; V2
+was built 2026-10-16, and §4 records what it decided.
 
 ## 0. What the bake-off fixed
 
@@ -89,6 +90,77 @@ misses are ranking misses.
 ## 3. Not in this step
 
 HNSW at the real index size is measured after the backfill, not assumed from
-the bake-off's 700 items. The iGPU (`norty` is not in `render`) is an
+the bake-off's 700 items.
+
+**No chunking now.** Measured 2026-10-16 on production lengths: notes at most
+929 characters, lessons 131, messages at most 1798, media readings p99 1295
+and at most 2435, all inside one embedding or close to it. Chunking (a node
+per section, `part_of` its parent, the title prefixed) is designed when
+artifacts or long transcripts join the index. Its trigger is
+`nora_memory_embed_truncated_total{kind}`: the worker counts every text the
+embedder cut to fit its micro-batch (V2), on top of `ok`. The iGPU (`norty` is not in `render`) is an
 operator action that changes the throttle, not the design. The `ask_memory`
 text alignment is its own `nora-tool` PR.
+
+## 4. V2 as built (2026-10-16)
+
+What V2 decided where the plan above left room (DEC-315; the code is
+`nora.infra.sql.memory_read` and `nora.agent.memory_search`):
+
+1. **Three seeds, in order.** Exact hits are seeded first and **pinned**:
+   every one ranks ahead of every other hit in the answer (operator,
+   2026-10-16). Then dense, the question embedded once with the query
+   instruction. The trigram seed runs only with no query vector. This
+   replaces 25 §4 step 2's «fused by reciprocal rank»: there is nothing to
+   fuse while lexical is the fallback, and V3 measures whether that loses a
+   case.
+2. **Exact is narrow.** It covers a URL (with a scheme or `www.`), a handle
+   (`@` plus two or more handle characters, never inside an e-mail
+   address), an id-like token (five or more letters and digits holding
+   both, or six or more digits), and the name or alias of a person the
+   reading room lists. Each must be literal in the question. An ASCII term
+   matches only on its own, so `Kit` is not in `kitchen`. Any other script
+   matches as a substring, because Cantonese has no spaces. A reference
+   inside a longer one is dropped (`Kit` inside `Kit Chan`), as is a name
+   under two characters. Ordinary words are never exact. At most 10 exact
+   seeds (`EXACT_LIMIT`), the nearest to the question first. Names reach the
+   search from the tool, from the room's resolved roster filtered to the
+   persons the policy lists, so `nora.infra` reads no policy.
+3. **Dense in one statement.** Fifty candidates come from the HNSW index on
+   the leading 256 dimensions, with the scope filter and the model
+   fingerprint in the same scan. They are re-scored on the full 2048 cosine,
+   and the best 20 are kept. `hnsw.iterative_scan = relaxed_order`, so a
+   room whose unit holds few of the nearest vectors still gets candidates.
+   `hnsw.ef_search = 100`: the scan needs at least 50 or it returns fewer
+   than 50, and the bake-off's 50 was measured on 460 items, so this is
+   twice that, with no measurement at the real size yet (V3). A test
+   asserts the plan scans `idx_memory_node_embedding_256` with the scope as
+   its filter.
+4. **Score.** A dense seed's relevance is its cosine. An exact seed's is 1
+   (literal containment, which is what the lexical seed also scores 1). The
+   walk's floor stays at 0.1. **Consequence:** a dense search returns its
+   nearest even when nothing is relevant, so `nothing_found` comes only
+   from an empty scope or vectors orthogonal to the question. A higher
+   floor needs the cosine distribution of real hits and misses, which V3
+   reads off the backfilled index. A floor set above a true hit's cosine
+   would turn «found» into «you never said that».
+5. **Statuses.** The answer is `partial` in three cases:
+   - the seeds were lexical. That happens when `[memory_index] embed` is
+     off (so `enabled` on with `embed` off answers `partial` every time),
+     when the embedder failed, timed out (10 s per call, in a turn) or is
+     serving another GGUF file than the configured one (checked per query
+     against /props, the worker's rule), or when no node holds a current
+     vector yet;
+   - live embeddable nodes still wait for a vector of the current model.
+     This includes nodes holding another model's vector and failing nodes
+     in backoff;
+   - the index is incomplete, as before.
+
+   A node the worker **gave up on** (8 attempts) does not count, or one
+   poisoned file would hold every answer `partial` for good.
+   `rebuild --embeddings-only --dry-run` and the embed counter report those
+   nodes. A failing node can hold answers `partial` for about a day, until
+   it is given up. Coverage is one count per search over the node table.
+6. **Episodes are lexical only** (§1.4), so with dense seeds a stay, trip or
+   outing is reached only through an edge or as a named person's `about`
+   seed, never by its own text. The scope suite runs both ways.

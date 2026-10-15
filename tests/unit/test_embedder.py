@@ -30,6 +30,7 @@ from PIL import Image
 from nora.domain.embedder_input import (
     EOT,
     FORMAT_VERSION,
+    QUERY_INSTRUCTION,
     TAIL,
     head,
     image_prompt,
@@ -195,7 +196,7 @@ async def test_the_bake_off_adapter_and_production_format_identically(llama, tmp
 
 async def test_a_vector_is_2048_wide_and_unit_length(llama):
     _fake, url = llama
-    vec = await LlamaEmbedder(url).embed_document("the lantern festival plan")
+    vec = (await LlamaEmbedder(url).embed_document("the lantern festival plan")).vector
     assert len(vec) == DIMENSIONS
     assert math.isclose(math.fsum(x * x for x in vec), 1.0, rel_tol=1e-9)
 
@@ -209,10 +210,36 @@ async def test_a_long_text_is_cut_to_fit_the_micro_batch(llama, text):
     """The server refuses a prompt longer than `-ub` with a 500; the client
     counts with /tokenize and cuts, so the text is embedded, from its head."""
     fake, url = llama
-    await LlamaEmbedder(url).embed_document(text)
+    embedded = await LlamaEmbedder(url).embed_document(text)
     sent = fake.accepted[0]["prompt_string"]
     assert tokens_of(sent) <= TOKEN_BUDGET
     assert text[:SAFE_TEXT_CHARS] in sent
+    assert embedded.truncated  # the worker counts it: the trigger for chunking
+
+
+@pytest.mark.parametrize("text", [
+    "the lantern festival plan",     # under the safe length: never counted
+    "x" * (SAFE_TEXT_CHARS + 500),   # counted with /tokenize, and it fits
+], ids=["short", "long-but-fits"])
+async def test_a_text_that_fits_is_not_truncated(llama, text):
+    fake, url = llama
+    embedded = await LlamaEmbedder(url).embed_document(text)
+    assert not embedded.truncated
+    assert text in fake.accepted[0]["prompt_string"]
+
+
+async def test_a_query_is_refused_while_the_server_serves_another_model(llama):
+    """65 V2: a question is never embedded by a model other than the one the
+    stored vectors came from; the search falls back on this error."""
+    fake, url = llama
+    client = LlamaEmbedder(url, query_model_file=Path(MODEL_PATH).name)
+    assert len(await client.embed_query("where did we eat")) == DIMENSIONS
+    assert QUERY_INSTRUCTION in fake.accepted[-1]["prompt_string"]
+    fake.model_path = "/models/model-b.gguf"
+    calls = fake.calls
+    with pytest.raises(EmbedderUnavailableError):
+        await client.embed_query("where did we eat")
+    assert fake.calls == calls  # refused before any embedding
 
 
 async def test_every_image_is_decoded_and_sent_as_a_bounded_png(llama):

@@ -9,36 +9,108 @@ the terms): pg_trgm's word similarity has no faithful Python twin, and a
 fake that guessed at it would answer differently from the store on exactly
 the near-miss cases. The contract suite uses whole words, where the two
 agree.
+
+Vectors (65 V2): `vectors` maps a node's key to `(model, vector)`. The dense
+read is an exact cosine search, which the store's two-stage search equals on
+any set no larger than its candidates; given-up nodes (`given_up`) are what
+the store counts at `EMBED_MAX_ATTEMPTS`. `bag_of_words` is a toy embedding
+(one hashed axis per word) under which cosine tracks shared words, so a
+test can say «near» and «far» with texts; `FakeQueryEmbedder` embeds a
+question with it, the way `LlamaEmbedder.embed_query` does with the model.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+import hashlib
+import math
+import re
+from collections.abc import Iterable, Mapping, Sequence
 
 from nora.domain.memory_index import (
+    EMBEDDED_KINDS,
     HUB_KINDS,
     IndexedNode,
     IndexState,
     MemoryScope,
     Neighbour,
     Seed,
+    exact_holds,
     in_scope,
 )
 
-__all__ = ["FakeMemoryIndex"]
+__all__ = ["DIMENSIONS", "FakeMemoryIndex", "FakeQueryEmbedder", "bag_of_words", "cosine"]
 
 Edge = tuple[str, str, str, str, str]
+
+#: The production width (`nora.infra.embedder.DIMENSIONS`).
+DIMENSIONS = 2048
+
+_TOKEN = re.compile(r"\w+")
+
+
+def bag_of_words(text: str) -> list[float]:
+    """A unit vector with one hashed axis per distinct word of `text`
+    (lower-cased); the empty text gets an axis of its own. Two texts' cosine
+    is their shared words over the root of the product of their counts."""
+    vec = [0.0] * DIMENSIONS
+    words = set(_TOKEN.findall(text.lower())) or {"\x00"}
+    for word in words:
+        vec[int.from_bytes(hashlib.sha256(word.encode()).digest()[:4], "big") % DIMENSIONS] += 1
+    norm = math.sqrt(sum(x * x for x in vec))
+    return [x / norm for x in vec]
+
+
+def cosine(a: Sequence[float], b: Sequence[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+class FakeQueryEmbedder:
+    """`nora.domain.memory_index.QueryEmbedder`: `vectors[text]` when given,
+    else `bag_of_words(text)`; raises `fail` when set (the embedder down).
+    Records every text it was asked to embed."""
+
+    def __init__(
+        self, vectors: Mapping[str, Sequence[float]] | None = None, *,
+        fail: BaseException | None = None,
+    ) -> None:
+        self.vectors = dict(vectors or {})
+        self.fail = fail
+        self.calls: list[str] = []
+
+    async def embed_query(self, text: str) -> list[float]:
+        self.calls.append(text)
+        if self.fail is not None:
+            raise self.fail
+        vec = list(self.vectors.get(text) or bag_of_words(text))
+        norm = math.sqrt(sum(x * x for x in vec))
+        return [x / norm for x in vec]
 
 
 class FakeMemoryIndex:
     def __init__(
         self, nodes: Iterable[IndexedNode] = (), edges: Iterable[Edge] = (), *,
         state: IndexState | None = None, fail: BaseException | None = None,
+        vectors: Mapping[tuple[str, str], tuple[str, Sequence[float]]] | None = None,
+        embed_model: str | None = None, given_up: Iterable[tuple[str, str]] = (),
     ) -> None:
         self.nodes: dict[tuple[str, str], IndexedNode] = {n.key: n for n in nodes}
         #: `(src_kind, src_id, rel, dst_kind, dst_id)`; no end need exist.
         self.edges: list[Edge] = list(dict.fromkeys(edges))
         self.state = state or IndexState("complete", 0)
+        #: key -> (model fingerprint, vector). `embed_model` embeds every
+        #: embeddable node not in `vectors` with `bag_of_words`, as the
+        #: worker would have under that model.
+        self.vectors: dict[tuple[str, str], tuple[str, list[float]]] = {
+            k: (m, list(v)) for k, (m, v) in (vectors or {}).items()
+        }
+        if embed_model is not None:
+            for node in self.nodes.values():
+                if node.key not in self.vectors and _embeddable(node):
+                    self.vectors[node.key] = (embed_model, bag_of_words(node.text))
+        self.given_up = set(given_up)
         #: Raised by every read when set: the store being down.
         self.fail = fail
         self.calls: list[str] = []
@@ -62,6 +134,41 @@ class FakeMemoryIndex:
                 out.append(Seed(node, held / len(wanted)))
         out.sort(key=lambda s: (-s.score, -(s.node.at_ms or 0), s.node.key))
         return out[:limit]
+
+    async def dense(
+        self, vector: Sequence[float], scope: MemoryScope, *, model: str, limit: int,
+    ) -> list[Seed]:
+        self._check("dense")
+        out = [
+            Seed(self.nodes[k], cosine(vector, v))
+            for k, (m, v) in self.vectors.items()
+            if m == model and k in self.nodes and in_scope(self.nodes[k], scope)
+        ]
+        out.sort(key=lambda s: (-s.score, -(s.node.at_ms or 0), s.node.key))
+        return out[:max(0, limit)]
+
+    async def exact(
+        self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
+        vector: Sequence[float] | None = None, model: str | None = None,
+    ) -> list[Seed]:
+        self._check("exact")
+        wanted = [t for t in dict.fromkeys(t.strip() for t in terms) if t]
+        if not wanted or limit <= 0:
+            return []
+        ranked: list[tuple[int, float, IndexedNode]] = []
+        for node in self.nodes.values():
+            held = sum(1 for t in wanted if exact_holds(t, node.text))
+            if not held or not in_scope(node, scope):
+                continue
+            stored = self.vectors.get(node.key)
+            near = (
+                cosine(vector, stored[1])
+                if vector is not None and stored is not None and stored[0] == model
+                else -2.0
+            )
+            ranked.append((held, near, node))
+        ranked.sort(key=lambda r: (-r[0], -r[1], -(r[2].at_ms or 0), r[2].key))
+        return [Seed(node, 1.0) for _, _, node in ranked[:limit]]
 
     async def about(
         self, person_id: str, scope: MemoryScope, *, limit: int,
@@ -93,6 +200,20 @@ class FakeMemoryIndex:
                     out.append(Neighbour(via=near, rel=rel, outgoing=outgoing, node=node))
         return out
 
-    async def index_state(self) -> IndexState:
+    async def index_state(self, *, model: str | None = None) -> IndexState:
         self._check("index_state")
-        return self.state
+        if model is None:
+            return IndexState(self.state.status, self.state.queue)
+        live = [n for n in self.nodes.values() if _embeddable(n) and n.key not in self.given_up]
+        embedded = sum(1 for n in live if self.vectors.get(n.key, ("", []))[0] == model)
+        return IndexState(
+            self.state.status, self.state.queue, embedded=embedded,
+            unembedded=len(live) - embedded,
+        )
+
+
+def _embeddable(node: IndexedNode) -> bool:
+    """`memory_index._embeddable`'s rule: live, an embedded kind, and a text
+    (or an attachment, embedded from its bytes)."""
+    return node.state == "live" and node.kind in EMBEDDED_KINDS and (
+        bool(node.text) or node.kind == "media")

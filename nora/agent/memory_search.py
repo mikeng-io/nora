@@ -13,10 +13,24 @@ to the index, which applies them inside every read (`SqlMemoryIndex`); the
 walk never filters afterwards, so it can only step onto in-scope nodes and a
 path is cut at its first out-of-scope node.
 
-**2. Seeds.** Lexical, by the question's terms; plus, for a named person
-this room lists, the in-scope nodes `about` them (25 §4 step 2's exact
-reference). A person this room does not list seeds nothing. A hub never
-seeds.
+**2. Seeds** (65 V2), in this order, a node seeded once:
+
+- **Exact** (`exact_terms_of`): a node containing, literally, a handle, a
+  URL, an id-like token or the name of a person this room lists, as the
+  question wrote it. Each is PINNED: it ranks ahead of every other hit in the
+  answer, however near a dense hit is (operator ruling 2026-10-16: a literal
+  name must not lose to a near-duplicate). Ordinary words are never exact.
+- **Dense**: the question embedded ONCE with the model's query instruction,
+  and the nearest in-scope nodes of the configured model's vectors, scored by
+  their cosine (`SqlMemoryIndex.dense`).
+- **Lexical**, by the question's terms (`terms_of`), ONLY when there is no
+  query vector: `[memory_index] embed` is off, no node holds a vector of the
+  current model yet, or the embedder failed. The answer is then `partial`.
+- **About**: for a named person this room lists, the in-scope nodes `about`
+  them (25 §4 step 2's exact reference). A person this room does not list
+  seeds nothing.
+
+A hub never seeds.
 
 **3. Expansion**, hop by hop, both edge directions, from the best
 `FRONTIER_WIDTH` nodes of the last hop. Two rules on top of scope:
@@ -36,15 +50,20 @@ Each step multiplies the parent's relevance by the relation's weight
 stops early when a hop keeps nothing (adaptive depth), at `NODE_BUDGET`
 nodes, or at the hop count `depth` asks for, never past `HOP_CEILING`.
 
-**4. Rank** by relevance times age decay (`HALF_LIFE_DAYS`). **5. Return** the
+**4. Rank** the pinned exact hits first, then the rest, each by relevance
+times age decay (`HALF_LIFE_DAYS`). **5. Return** the
 best `RESULT_LIMIT` items, each with its kind, age, a handle where the kind
 has one a person or a tool can use, its text, and its path; an item whose
 text carries an identifier is withheld whole (`scan_identifiers`, R-18).
 
 **Statuses** (R-27, 25 §4): `unavailable` on any error, counted, never an
-empty answer; `partial` when the index is not `complete` or its projection
-queue is not empty, whatever was found, so an unfinished index is never
-«you never said that»; `nothing_found` only from a complete index; `ok`.
+empty answer; `partial`, whatever was found, when the index is not
+`complete`, its projection queue is not empty, the seeds were lexical (the
+fallback above), or live embeddable nodes still wait for a vector of the
+current model (65 V2; a node the worker gave up on does not count, or one
+poisoned file would hold every answer `partial` for good), so an
+unfinished index is never «you never said that»; `nothing_found` only from
+a complete index; `ok`.
 
 The constants below are STARTING values (25 §4: adaptive depth ships only if
 it beats a fixed two hops on the journey slices); none was measured.
@@ -70,16 +89,21 @@ from nora.domain.memory_index import (
     IndexedNode,
     MemoryIndexRead,
     MemoryScope,
+    QueryEmbedder,
     SearchStatus,
+    exact_holds,
 )
+from nora.domain.models import PersonRef
 from nora.domain.prompt import stamp
 from nora.domain.rollup import room_key
 
 __all__ = [
+    "EXACT_LIMIT",
     "HOPS_BY_DEPTH",
     "HOP_CEILING",
     "MemorySearch",
     "MemorySearchResult",
+    "exact_terms_of",
     "render_packet",
     "scope_for",
     "terms_of",
@@ -99,12 +123,26 @@ HOP_CEILING = 4
 #: none ends the walk. Starting value: a lexical seed scores at least
 #: `WORD_SIMILARITY_MIN` (0.5), so this admits about four weak hops from the
 #: weakest seed and stops the walk well before noise dominates.
+#: Unchanged for dense seeds (65 V2), whose relevance is their full-width
+#: cosine, on the same [0, 1] scale as a lexical score (a negative cosine is
+#: below it): a seed under 0.1 points nearly orthogonally to the question
+#: and is dropped, and a middling one (0.3) still takes the default two hops
+#: through a `cites` or an `about`. What the floor does NOT do is make a
+#: dense search answer `nothing_found` when nothing relevant exists: the
+#: nearest vectors are returned with their low cosines. Raising it needs
+#: the cosine distribution of real hits and misses, which 65 V3 measures on
+#: the backfilled index; a floor above a true hit's cosine would turn
+#: «found» into «you never said that», the worse error.
 RELEVANCE_FLOOR = 0.1
 #: Nodes kept per search, seeds included.
 NODE_BUDGET = 60
 #: Nodes expanded per hop: the best of the last hop's.
 FRONTIER_WIDTH = 20
 SEED_LIMIT = 20
+#: Exact seeds per search, all pinned ahead of the rest (65 V2). Fewer than
+#: `SEED_LIMIT` so a question naming a much-discussed person still has dense
+#: seeds to expand from; the pinned ones are the nearest of their matches.
+EXACT_LIMIT = 10
 RESULT_LIMIT = 10
 #: An exact-reference seed (a node `about` the named person) has no lexical
 #: score of its own; it ranks as a middling lexical hit.
@@ -138,6 +176,61 @@ _WORD = re.compile(
     "[a-z0-9][a-z0-9'\\-]*[a-z0-9]|[\u3400-\u9fff\uf900-\ufaff]+", re.IGNORECASE,
 )
 _MAX_TERMS = 8
+
+#: Exact references (65 V2). A URL with a scheme or `www.`; a handle, `@`
+#: and two or more handle characters, not inside an e-mail address; an
+#: id-like token, five or more letters and digits holding both, or six or
+#: more digits. Trailing sentence punctuation is not part of either.
+_URL = re.compile(r"(?:https?://|www\.)[^\s<>\"'`]+", re.IGNORECASE)
+_HANDLE = re.compile(r"(?<![\w@])@[A-Za-z0-9_](?:[A-Za-z0-9_.]*[A-Za-z0-9_])")
+_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*[A-Za-z0-9]")
+_TRAILING = ".,;:!?)]}>\"'」』》】）。，！？"  # noqa: RUF001 — the full-width ones are the data
+_MAX_EXACT = 8
+
+
+def _id_like(token: str) -> bool:
+    if token.isdigit():
+        return len(token) >= 6
+    return (
+        len(token) >= 5 and any(c.isdigit() for c in token)
+        and any(c.isalpha() for c in token)
+    )
+
+
+def exact_terms_of(query: str, names: Sequence[str] = ()) -> list[str]:
+    """The question's exact references (65 V2), in the order it says them:
+    its URLs, handles and id-like tokens, and each of `names` (the names and
+    aliases of persons this room lists) that the question contains as
+    `exact_holds` matches it. A reference inside a longer one is dropped
+    (`Kit` inside `Kit Chan`, a handle inside a URL), and so is any name
+    shorter than two characters. Nothing else: an ordinary word is never
+    exact, however rare."""
+    text = query or ""
+    found: list[tuple[int, str]] = []
+    for m in _URL.finditer(text):
+        found.append((m.start(), m.group(0).rstrip(_TRAILING)))
+    for m in _HANDLE.finditer(text):
+        found.append((m.start(), m.group(0)))
+    for m in _TOKEN.finditer(text):
+        if _id_like(m.group(0)):
+            found.append((m.start(), m.group(0)))
+    for name in dict.fromkeys(n.strip() for n in names):
+        if len(name) >= 2 and exact_holds(name, text):
+            found.append((text.lower().find(name.lower()), name))
+    terms = list(dict.fromkeys(t for _, t in sorted(found) if t))
+    kept = [
+        t for t in terms
+        if not any(len(o) > len(t) and exact_holds(t, o) for o in terms)
+    ]
+    return kept[:_MAX_EXACT]
+
+
+def _names(person: PersonRef) -> list[str]:
+    """Every name a person goes by (`nora.agent.room`'s matching set):
+    the name Nora calls them, first, last and both, and every alias."""
+    full = " ".join(p for p in (person.first_name, person.last_name) if p)
+    return [n for n in (person.name, person.first_name, person.last_name, full,
+                        *person.aliases) if n]
 
 
 def terms_of(query: str) -> list[str]:
@@ -205,11 +298,15 @@ class Step:
 
 @dataclass(slots=True)
 class Hit:
+    """A node the walk kept. `pin` is non-zero on an exact seed only: it
+    ranks ahead of every unpinned hit, the highest pin first (65 V2)."""
+
     node: IndexedNode
     score: float
     path: tuple[Step, ...]
     people: set[str] = field(default_factory=set)
     places: set[str] = field(default_factory=set)
+    pin: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,10 +335,14 @@ def _decay(at_ms: int | None, now_ms: int) -> float:
 async def walk(
     index: MemoryIndexRead, scope: MemoryScope, *, terms: Sequence[str],
     person_id: str | None, hops: int, admits: Callable[[IndexedNode], bool],
+    exact: Sequence[str] = (), vector: Sequence[float] | None = None,
+    model: str | None = None,
 ) -> list[Hit]:
-    """Seed, then expand hop by hop (module docstring). `admits` is the
-    per-row presence check an episode must pass (R-31); every other rule is
-    the index's scope or this function's."""
+    """Seed, then expand hop by hop (module docstring). `exact` are the
+    pinned references; with a `vector` (and its `model`) the dense seed runs,
+    else the lexical one on `terms`. `admits` is the per-row presence check
+    an episode must pass (R-31); every other rule is the index's scope or
+    this function's."""
     reached: dict[tuple[str, str], Hit] = {}
 
     def keep(node: IndexedNode, score: float, path: tuple[Step, ...]) -> bool:
@@ -252,7 +353,16 @@ async def walk(
         reached[node.key] = Hit(node, score, path)
         return True
 
-    for s in await index.seed(terms, scope, limit=SEED_LIMIT) if terms else ():
+    if exact:
+        pinned = await index.exact(exact, scope, limit=EXACT_LIMIT, vector=vector, model=model)
+        for i, s in enumerate(pinned):
+            if keep(s.node, s.score, (Step(s.node.kind, how="exact"),)):
+                reached[s.node.key].pin = len(pinned) - i
+    if vector is not None and model is not None:
+        seeds = await index.dense(vector, scope, model=model, limit=SEED_LIMIT)
+    else:
+        seeds = await index.seed(terms, scope, limit=SEED_LIMIT) if terms else []
+    for s in seeds:
         keep(s.node, s.score, (Step(s.node.kind, how="matched"),))
     if person_id and person_id in scope.listed_here:
         for node in await index.about(person_id, scope, limit=SEED_LIMIT):
@@ -294,11 +404,21 @@ async def walk(
 
 
 class MemorySearch:
-    """`search` for one read. Takes the index and the metrics registry."""
+    """`search` for one read. Takes the index and the metrics registry, and,
+    while `[memory_index] embed`, the query embedder and the fingerprint of
+    the model its vectors are stored under (`nora.infra.embedder.
+    fingerprint`); without them every search is the lexical fallback."""
 
-    def __init__(self, index: MemoryIndexRead, metrics: Any) -> None:
+    def __init__(
+        self, index: MemoryIndexRead, metrics: Any, *,
+        embedder: QueryEmbedder | None = None, model: str | None = None,
+    ) -> None:
+        if (embedder is None) != (model is None):
+            raise ValueError("an embedder and its model fingerprint come together")
         self._index = index
         self._metrics = metrics
+        self._embedder = embedder
+        self._model = model
 
     def _count(self, status: SearchStatus) -> MemorySearchResult:
         self._metrics.inc(_METRIC, status=status)
@@ -306,8 +426,11 @@ class MemorySearch:
 
     async def search(
         self, *, query: str, person_id: str | None, target: RenderRoom, depth: str,
-        now_ms: int,
+        now_ms: int, people: Sequence[PersonRef] = (),
     ) -> MemorySearchResult:
+        """`people` are the persons the caller can name here (the room's
+        resolved roster); the names of those this room lists are the exact
+        name references (`exact_terms_of`)."""
         def admits(node: IndexedNode) -> bool:
             lineage = Lineage.from_json(node.lineage)
             return section_permits(lineage.section(ROW), target, origin=None)
@@ -316,18 +439,34 @@ class MemorySearch:
             scope = scope_for(target)
             if scope is None:
                 return self._count("unavailable")
-            state = await self._index.index_state()
+            state = await self._index.index_state(model=self._model)
+            names = [n for p in people if p.person_id in scope.listed_here for n in _names(p)]
+            vector: list[float] | None = None
+            # The lexical seed is the fallback (65 V2): no embedder, or no node
+            # holds a vector of this model yet while some wait for one.
+            lexical = self._embedder is None or (state.embedded == 0 and state.unembedded > 0)
+            if not lexical and self._embedder is not None and query.strip():
+                try:
+                    vector = await self._embedder.embed_query(query)
+                except Exception as exc:  # noqa: BLE001 — any failure: the fallback
+                    log.warning("memory search: no query vector (%s)", type(exc).__name__)
+                    lexical = True
             hits = await walk(
-                self._index, scope, terms=terms_of(query), person_id=person_id,
-                hops=HOPS_BY_DEPTH.get(depth, 2), admits=admits,
+                self._index, scope, terms=terms_of(query) if lexical else (),
+                person_id=person_id, hops=HOPS_BY_DEPTH.get(depth, 2), admits=admits,
+                exact=exact_terms_of(query, names), vector=vector, model=self._model,
             )
         except Exception as exc:  # noqa: BLE001 — fail closed: «I couldn't check»
             log.warning("memory search failed (%s)", type(exc).__name__)
             return self._count("unavailable")
         ranked = sorted(
-            hits, key=lambda h: (-h.score * _decay(h.node.at_ms, now_ms), h.node.key),
+            hits,
+            key=lambda h: (-h.pin, -h.score * _decay(h.node.at_ms, now_ms), h.node.key),
         )[:RESULT_LIMIT]
-        incomplete = state.status != "complete" or state.queue > 0
+        incomplete = (
+            state.status != "complete" or state.queue > 0 or lexical
+            or (vector is not None and state.unembedded > 0)
+        )
         status: SearchStatus = (
             "partial" if incomplete else "ok" if ranked else "nothing_found"
         )

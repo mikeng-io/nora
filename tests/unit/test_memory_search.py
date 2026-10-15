@@ -16,6 +16,7 @@ from nora.agent.memory_search import (
     HOP_CEILING,
     RELEVANCE_FLOOR,
     MemorySearch,
+    exact_terms_of,
     render_packet,
     scope_for,
     terms_of,
@@ -23,8 +24,9 @@ from nora.agent.memory_search import (
 )
 from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
 from nora.domain.memory_index import IndexedNode, IndexState
+from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing.memory_index import FakeMemoryIndex
+from nora.testing.memory_index import FakeMemoryIndex, FakeQueryEmbedder, bag_of_words
 
 NOW = 1_790_000_000_000
 _B = RoomFacts("signal", frozenset({"b"}), "u1", frozenset({"kit", "sam"}),
@@ -184,10 +186,24 @@ async def test_an_episode_must_pass_its_own_lineage() -> None:
 # --- statuses -----------------------------------------------------------------
 
 
+M = "m"
+
+
 async def _search(index: FakeMemoryIndex, query: str = "ramen", metrics: Metrics | None = None,
-                  target: RenderRoom | None = None):
+                  target: RenderRoom | None = None, embedder: FakeQueryEmbedder | None = None,
+                  people: tuple[PersonRef, ...] = ()):
+    """A search with dense seeds over model `M`, the fake index's vectors
+    (`embed_model=M`); without them it falls back to lexical (`_lexical`
+    is the search with no embedder at all)."""
+    return await MemorySearch(
+        index, metrics or Metrics(), embedder=embedder or FakeQueryEmbedder(), model=M,
+    ).search(query=query, person_id=None, target=target or _target(), depth="low",
+             now_ms=NOW, people=people)
+
+
+async def _lexical(index: FakeMemoryIndex, query: str = "ramen", metrics: Metrics | None = None):
     return await MemorySearch(index, metrics or Metrics()).search(
-        query=query, person_id=None, target=target or _target(), depth="low", now_ms=NOW,
+        query=query, person_id=None, target=_target(), depth="low", now_ms=NOW,
     )
 
 
@@ -200,9 +216,93 @@ async def _search(index: FakeMemoryIndex, query: str = "ramen", metrics: Metrics
 ])
 async def test_status(nodes: list[IndexedNode], state: IndexState, status: str) -> None:
     metrics = Metrics()
-    found = await _search(FakeMemoryIndex(nodes, state=state), metrics=metrics)
+    found = await _search(FakeMemoryIndex(nodes, state=state, embed_model=M), metrics=metrics)
     assert found.status == status
     assert metrics.get("nora_memory_search_total", status=status) == 1
+
+
+async def test_the_lexical_fallback_is_always_partial_never_nothing_found() -> None:
+    """65 V2: with no embedder (`[memory_index] embed` off) the seeds are
+    lexical, and a lexical miss is not «you never said that»."""
+    hit = await _lexical(FakeMemoryIndex([_msg("1", "ramen")]))
+    assert (hit.status, [h.node.source_id for h in hit.hits]) == ("partial", ["1"])
+    assert (await _lexical(FakeMemoryIndex([]))).status == "partial"
+
+
+async def test_a_failing_embedder_falls_back_to_lexical_and_answers_partial() -> None:
+    index = FakeMemoryIndex([_msg("1", "ramen crawl")], embed_model=M)
+    found = await _search(index, "ramen", embedder=FakeQueryEmbedder(fail=TimeoutError()))
+    assert found.status == "partial"
+    assert [h.node.source_id for h in found.hits] == ["1"]
+    assert "seed" in index.calls and "dense" not in index.calls
+
+
+async def test_the_question_is_embedded_once_and_dense_seeds_replace_lexical() -> None:
+    index = FakeMemoryIndex([_msg("1", "ramen crawl"), _msg("2", "noodle shop")], embed_model=M)
+    embedder = FakeQueryEmbedder()
+    found = await _search(index, "ramen crawl tonight", embedder=embedder)
+    assert embedder.calls == ["ramen crawl tonight"]
+    assert "dense" in index.calls and "seed" not in index.calls
+    assert [h.node.source_id for h in found.hits] == ["1"] and found.status == "ok"
+
+
+async def test_coverage_holds_it_partial_until_every_embeddable_node_has_a_vector() -> None:
+    waiting = _msg("2", "noodle shop")
+    index = FakeMemoryIndex([_msg("1", "ramen"), waiting], embed_model=M)
+    del index.vectors[waiting.key]
+    assert (await _search(index)).status == "partial"
+    index.given_up.add(waiting.key)  # the worker gave up: not waited for
+    assert (await _search(index)).status == "ok"
+
+
+async def test_no_vector_yet_uses_lexical_without_calling_the_embedder() -> None:
+    index = FakeMemoryIndex([_msg("1", "ramen")])  # nothing embedded
+    embedder = FakeQueryEmbedder()
+    found = await _search(index, embedder=embedder)
+    assert (found.status, embedder.calls) == ("partial", [])
+    assert [h.node.source_id for h in found.hits] == ["1"]
+
+
+async def test_an_exact_hit_is_pinned_ahead_of_a_nearer_newer_dense_hit() -> None:
+    named = _msg("named", "Rin booked a table", at=NOW - 60 * 86_400_000)
+    twin = _msg("twin", "booked a table tonight", at=NOW)
+    index = FakeMemoryIndex([named, twin], embed_model=M)
+    q = "booked a table tonight"  # the twin's own words: cosine 1
+    rin = PersonRef("kit", "Rin", "kit")  # listed in B under id `kit`
+    found = await _search(index, "did Rin say " + q,
+                          embedder=FakeQueryEmbedder({"did Rin say " + q: bag_of_words(q)}),
+                          people=(rin,))
+    assert [h.node.source_id for h in found.hits] == ["named", "twin"]
+    assert found.hits[0].pin > 0 and found.hits[0].path[0].how == "exact"
+
+
+async def test_a_name_of_someone_this_room_does_not_list_is_not_exact() -> None:
+    index = FakeMemoryIndex([_msg("1", "Rin booked a table")], embed_model=M)
+    stranger = PersonRef("rin", "Rin", "rin")  # not listed in B
+    found = await _search(index, "did Rin book", people=(stranger,))
+    assert all(h.pin == 0 for h in found.hits)
+    assert "exact" not in index.calls
+
+
+# --- what counts as exact -------------------------------------------------------
+
+
+@pytest.mark.parametrize(("query", "names", "terms"), [
+    ("what did they say about the restaurant downtown yesterday?", [], []),
+    ("remember the 2026 trip, 3pm at gate 12, room 404?", [], []),
+    ("did @night_owl post https://example.org/menu?x=1.", [],
+     ["@night_owl", "https://example.org/menu?x=1"]),
+    ("booking ZX4471 or order 88812345", [], ["ZX4471", "88812345"]),
+    ("write to me@example.org", [], []),
+    ("what did Kit Chan say in the kitchen", ["Kit", "Kit Chan", "Chan"], ["Kit Chan"]),
+    ("阿豹妹今日講咩", ["阿豹", "阿豹妹"], ["阿豹妹"]),
+    ("is X coming", ["X"], []),
+    ("the status at https://example.org/s/1234567", [], ["https://example.org/s/1234567"]),
+])
+def test_exact_terms_are_literal_references_never_ordinary_words(
+    query: str, names: list[str], terms: list[str],
+) -> None:
+    assert exact_terms_of(query, names) == terms
 
 
 async def test_any_error_is_unavailable_and_counted() -> None:

@@ -11,6 +11,7 @@ fails `tests/infra/test_schema_parity.py`.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, get_args
@@ -36,10 +37,13 @@ __all__ = [
     "Neighbour",
     "NodeKind",
     "ProjectionOutcome",
+    "QueryEmbedder",
     "Relation",
     "SearchStatus",
     "Seed",
     "embeds_bytes",
+    "exact_holds",
+    "exact_pattern",
     "in_scope",
 ]
 
@@ -116,7 +120,9 @@ PROJECTION_OUTCOMES: tuple[str, ...] = get_args(ProjectionOutcome)
 
 #: `nora_memory_search_total`'s `status`, and what `ask_memory` answers while
 #: `[memory_index] enabled` (25 §4): `partial` while a rebuild has not
-#: completed or the projection queue is not empty, never `nothing_found`;
+#: completed, the projection queue is not empty, the search fell back to the
+#: lexical seed (no embedder, or it failed), or embeddable nodes still wait
+#: for a vector of the current model (65 V2), never `nothing_found`;
 #: `unavailable` on any error (fail closed).
 SearchStatus = Literal["ok", "nothing_found", "partial", "unavailable"]
 SEARCH_STATUSES: tuple[str, ...] = get_args(SearchStatus)
@@ -191,7 +197,8 @@ class IndexedNode:
 
 @dataclass(frozen=True, slots=True)
 class Seed:
-    """A node a search starts from, with its lexical relevance in [0, 1]."""
+    """A node a search starts from, with its relevance in [0, 1]: the lexical
+    score, the full-width cosine of a dense seed, or 1 for an exact seed."""
 
     node: IndexedNode
     score: float
@@ -211,10 +218,46 @@ class Neighbour:
 @dataclass(frozen=True, slots=True)
 class IndexState:
     """`memory_index_state.status` (`never`, `building`, `complete`) and the
-    projection queue's length now."""
+    projection queue's length now; with a model fingerprint asked for, the
+    vector coverage too (65 V2): `embedded`, the live embeddable nodes holding
+    a vector of that model, and `unembedded`, those still waiting for one.
+    A node the worker gave up on (`EMBED_MAX_ATTEMPTS`) is in neither: it
+    waits for nothing the worker will do, so it must not hold every answer
+    `partial` forever; `nora memory rebuild --embeddings-only --dry-run`
+    and the embed counter report it."""
 
     status: str
     queue: int
+    embedded: int = 0
+    unembedded: int = 0
+
+
+# --- exact seeds (65 V2) ------------------------------------------------------
+
+#: The characters that continue an ASCII word, a handle or an id: a term
+#: matches only where neither neighbour is one of these.
+_WORDISH = "A-Za-z0-9_"
+
+
+def exact_holds(term: str, text: str) -> bool:
+    """Whether `text` contains `term` literally, case-insensitively, as the
+    exact seed matches it (`SqlMemoryIndex.exact` states the same in SQL).
+    An ASCII term matches only on its own: not inside a longer word, handle
+    or id (`Kit` is not in `kitchen`, `@kit` not in `@kitty`); a term with
+    any other script matches as a substring, because Chinese writes no
+    spaces between words."""
+    if not term:
+        return False
+    if term.isascii():
+        return re.search(exact_pattern(term), text, re.IGNORECASE) is not None
+    return term.lower() in text.lower()
+
+
+def exact_pattern(term: str) -> str:
+    """`exact_holds`' ASCII rule as a Postgres regular expression (ARE: the
+    same look-arounds, and `re.escape` only escapes punctuation, which ARE
+    reads as the literal character)."""
+    return f"(?<![{_WORDISH}]){re.escape(term)}(?![{_WORDISH}])"
 
 
 def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
@@ -245,6 +288,16 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
     )
 
 
+class QueryEmbedder(Protocol):
+    """The question as a vector, with the model's query instruction
+    (`nora.infra.embedder.LlamaEmbedder.embed_query`): `DIMENSIONS` floats of
+    unit length. Raises on any failure; the search then falls back to the
+    lexical seed and answers `partial`."""
+
+    async def embed_query(self, text: str) -> list[float]:
+        ...
+
+
 class MemoryIndexRead(Protocol):
     """The read half of the memory index (25 §4): `SqlMemoryIndex`, and
     `nora.testing.memory_index.FakeMemoryIndex` under the shared contract
@@ -257,6 +310,24 @@ class MemoryIndexRead(Protocol):
     ) -> list[Seed]:
         """In-scope, non-hub nodes whose text holds the terms (pg_trgm word
         similarity, or containment), best first. A hub never seeds."""
+        ...
+
+    async def dense(
+        self, vector: Sequence[float], scope: MemoryScope, *, model: str, limit: int,
+    ) -> list[Seed]:
+        """In-scope, non-hub nodes holding a vector of `model`, nearest to
+        `vector` first, scored by their full-width cosine. A vector of any
+        other model is never compared (65 V2)."""
+        ...
+
+    async def exact(
+        self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
+        vector: Sequence[float] | None = None, model: str | None = None,
+    ) -> list[Seed]:
+        """In-scope, non-hub nodes containing at least one of `terms`
+        literally (`exact_holds`), scored 1: those holding the most terms
+        first, then, given a `vector`, the nearest by cosine among nodes of
+        `model`, then the newest."""
         ...
 
     async def about(
@@ -274,5 +345,6 @@ class MemoryIndexRead(Protocol):
         node is returned as a direct neighbour whatever its scope."""
         ...
 
-    async def index_state(self) -> IndexState:
+    async def index_state(self, *, model: str | None = None) -> IndexState:
+        """The index's state; with `model`, its vector coverage as well."""
         ...

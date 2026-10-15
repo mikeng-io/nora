@@ -8,6 +8,11 @@ unit tests use. The property is the scope: each read returns only in-scope
 nodes, and a hub only as a direct neighbour. One database for the module,
 truncated between tests. Texts are whole words, where pg_trgm and the fake's
 containment agree.
+
+The seeds of 65 V2 too: `dense` compares only vectors of the asked model,
+nearest first; `exact` matches a term literally and whole (an ASCII term not
+inside a longer word, any other script as a substring); `index_state` with a
+model counts the vector coverage, leaving out nodes the worker gave up on.
 """
 
 from __future__ import annotations
@@ -29,10 +34,11 @@ from nora.domain.memory_index import (
     in_scope,
 )
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.memory_index import EMBED_MAX_ATTEMPTS
 from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import MEMORY_EDGE, MEMORY_INDEX_STATE, MEMORY_NODE
-from nora.testing.memory_index import FakeMemoryIndex
+from nora.testing.memory_index import DIMENSIONS, FakeMemoryIndex
 
 SCOPE = MemoryScope(
     units=("u1",), rooms=("signal:b", "signal:c"),
@@ -93,28 +99,38 @@ def _db(pg_admin: Any) -> Iterator[str]:
             conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
 
 
-Load = Callable[[list[IndexedNode], list[tuple[str, str, str, str, str]]],
-                Awaitable[MemoryIndexRead]]
+Vectors = dict[tuple[str, str], tuple[str, list[float]]]
+Load = Callable[..., Awaitable[MemoryIndexRead]]
 
 
 @pytest.fixture(params=["fake", "sql"])
 async def load(request: Any) -> AsyncIterator[Load]:
+    """`load(nodes, edges, vectors={key: (model, vector)}, given_up={key})`."""
     if request.param == "fake":
-        async def fake(nodes: list[IndexedNode], edges: list[Any]) -> MemoryIndexRead:
-            return FakeMemoryIndex(nodes, edges)
+        async def fake(
+            nodes: list[IndexedNode], edges: list[Any], vectors: Vectors | None = None,
+            given_up: frozenset[tuple[str, str]] = frozenset(),
+        ) -> MemoryIndexRead:
+            return FakeMemoryIndex(nodes, edges, vectors=vectors, given_up=given_up)
         yield fake
         return
     engine = create_sql_engine(request.getfixturevalue("_db"))
 
-    async def sql(nodes: list[IndexedNode], edges: list[Any]) -> MemoryIndexRead:
+    async def sql(
+        nodes: list[IndexedNode], edges: list[Any], vectors: Vectors | None = None,
+        given_up: frozenset[tuple[str, str]] = frozenset(),
+    ) -> MemoryIndexRead:
         async with engine.begin() as conn:
             await conn.execute(sa.update(MEMORY_INDEX_STATE).values(status="complete"))
             for n in nodes:
+                model, vector = (vectors or {}).get(n.key, (None, None))
                 await conn.execute(pg_insert(MEMORY_NODE).values(
                     kind=n.kind, source_id=n.source_id, text=n.text, at_ms=n.at_ms,
                     unit=n.unit, origin_room=n.origin_room, persons=list(n.persons),
                     exclude_persons=list(n.exclude_persons),
                     lineage=n.lineage if n.lineage is not None else [], state=n.state,
+                    embedding=vector, embedding_model=model,
+                    embed_attempts=EMBED_MAX_ATTEMPTS if n.key in given_up else 0,
                 ))
             for sk, si, rel, dk, di in edges:
                 await conn.execute(pg_insert(MEMORY_EDGE).values(
@@ -192,4 +208,80 @@ async def test_neighbours_both_directions_hubs_kept_out_of_scope_and_dangling_dr
 
 async def test_state_reads_the_index_state(load: Load) -> None:
     index = await _graph(load)
+    assert await index.index_state() == IndexState("complete", 0)
+
+
+# --- the seeds of 65 V2 ---------------------------------------------------------
+
+M = "model-a"
+
+
+def _unit(*weights: tuple[int, float]) -> list[float]:
+    vec = [0.0] * DIMENSIONS
+    for i, w in weights:
+        vec[i] = w
+    norm = sum(x * x for x in vec) ** 0.5
+    return [x / norm for x in vec]
+
+
+Q = _unit((0, 1.0))
+
+
+async def test_dense_compares_only_the_models_in_scope_vectors_nearest_first(load: Load) -> None:
+    nodes = [
+        IndexedNode("message", "near", "a", 3, origin_room="signal:b"),
+        IndexedNode("note", "mid", "b", 2, unit="u1"),
+        IndexedNode("note", "other-unit", "c", 1, unit="u2"),
+        IndexedNode("message", "other-model", "d", 1, origin_room="signal:b"),
+        IndexedNode("message", "none", "e", 1, origin_room="signal:b"),
+        IndexedNode("person", "kit", "Kit"),
+    ]
+    vectors = {
+        ("message", "near"): (M, _unit((0, 0.9), (1, 0.43589))),
+        ("note", "mid"): (M, _unit((0, 0.5), (2, 0.86603))),
+        ("note", "other-unit"): (M, Q),
+        ("message", "other-model"): ("model-b", Q),
+        ("person", "kit"): (M, Q),
+    }
+    index = await load(nodes, [], vectors)
+    seeds = await index.dense(Q, SCOPE, model=M, limit=10)
+    assert [s.node.source_id for s in seeds] == ["near", "mid"]
+    assert [round(s.score, 2) for s in seeds] == [0.9, 0.5]
+    assert [s.node.source_id for s in await index.dense(Q, SCOPE, model=M, limit=1)] == ["near"]
+
+
+async def test_exact_matches_whole_terms_in_scope_most_terms_then_nearest_first(
+    load: Load,
+) -> None:
+    nodes = [
+        IndexedNode("message", "kitchen", "the kitchen sink", 9, origin_room="signal:b"),
+        IndexedNode("message", "both", "Kit and @night_owl", 1, origin_room="signal:b"),
+        IndexedNode("message", "far", "kit's bike", 8, origin_room="signal:b"),
+        IndexedNode("message", "near", "with KIT today", 2, origin_room="signal:b"),
+        IndexedNode("note", "cjk", "阿豹妹今日去咗行山", 3, unit="u1"),
+        IndexedNode("message", "owlish", "@night_owlet", 4, origin_room="signal:b"),
+        IndexedNode("note", "other-unit", "Kit too", 9, unit="u2"),
+    ]
+    vectors = {("message", "near"): (M, Q), ("message", "far"): (M, _unit((3, 1.0)))}
+    index = await load(nodes, [], vectors)
+    seeds = await index.exact(["Kit", "@night_owl"], SCOPE, limit=10, vector=Q, model=M)
+    assert [s.node.source_id for s in seeds] == ["both", "near", "far"]
+    assert all(s.score == 1.0 for s in seeds)
+    # Any other script is a substring: Cantonese writes no spaces.
+    assert [s.node.source_id for s in await index.exact(["阿豹"], SCOPE, limit=10)] == ["cjk"]
+    assert await index.exact([], SCOPE, limit=10) == []
+
+
+async def test_coverage_counts_embedded_and_waiting_and_not_the_given_up(load: Load) -> None:
+    nodes = [
+        IndexedNode("message", "done", "a", 1, origin_room="signal:b"),
+        IndexedNode("message", "waiting", "b", 1, origin_room="signal:b"),
+        IndexedNode("message", "stale", "c", 1, origin_room="signal:b"),
+        IndexedNode("message", "given-up", "d", 1, origin_room="signal:b"),
+        IndexedNode("stay", "s9", "stay", 1, persons=("kit",)),  # lexical only
+        IndexedNode("person", "kit", "Kit"),                     # a hub
+    ]
+    vectors = {("message", "done"): (M, Q), ("message", "stale"): ("model-b", Q)}
+    index = await load(nodes, [], vectors, frozenset({("message", "given-up")}))
+    assert await index.index_state(model=M) == IndexState("complete", 0, 1, 2)
     assert await index.index_state() == IndexState("complete", 0)

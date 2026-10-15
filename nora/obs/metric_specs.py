@@ -24,6 +24,7 @@ from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
 from nora.domain.memory_index import (
     EMBED_OUTCOMES,
+    EMBEDDED_KINDS,
     NODE_KINDS,
     PROJECTION_OUTCOMES,
     SEARCH_STATUSES,
@@ -2182,8 +2183,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_memory_search_total",
         "Memory index searches, by status (" + " / ".join(SEARCH_STATUSES) + "). "
-        "partial = the index is not complete or its projection queue is not "
-        "empty; unavailable = the search failed (fail closed).",
+        "partial = the index is not complete, its projection queue is not "
+        "empty, the seeds fell back to lexical (no embedder, or it failed), or "
+        "nodes still wait for a vector of the current model; unavailable = the "
+        "search failed (fail closed).",
         ("status",),
     ),
     # The memory index's embedding worker (`nora.infra.sql.memory_embed`,
@@ -2199,6 +2202,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "given_up is counted in addition when a failure was the node's last "
         "allowed attempt.",
         ("outcome",),
+    ),
+    # The embedding worker's texts cut to fit the embedder's micro-batch
+    # (design/unified-memory/65-build-step-3-vectors.md §3): counted in
+    # addition to `ok`, by node kind, so a rise says which kind needs
+    # chunking. Bounded: the embedded kinds only.
+    _CounterSpec(
+        "nora_memory_embed_truncated_total",
+        "Memory index texts embedded from their head only, cut to fit the "
+        "embedder's micro-batch, by node kind (" + " / ".join(EMBEDDED_KINDS) + "). "
+        "Counted in addition to nora_memory_embed_total{outcome=ok}; the "
+        "trigger for chunking long nodes.",
+        ("kind",),
     ),
 )
 

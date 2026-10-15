@@ -29,6 +29,12 @@ costs one call per tick. `embed_error` records a short class
 (`unavailable:HTTP 503`, `rejected:HTTP 400`, `error:KeyError`, `empty`), and
 nothing here logs or records a node's text.
 
+**A text cut to fit** the server's micro-batch (`LlamaEmbedder.
+embed_document`'s `truncated`) is stored like any other, its vector standing
+for the head of the text, and counted on `nora_memory_embed_truncated_total
+{kind}`: there is no chunking (65 §3), and that counter is what says when
+there should be.
+
 **The image throttle.** An image costs about 3.4 s of norty's CPU, a text
 about 0.4 s (65 §0). At most `images_per_hour` images are embedded in any
 hour; once spent, the pick leaves attachments out until it frees, so texts
@@ -145,6 +151,7 @@ class MemoryEmbedWorker:
         """Embed one node and store or record the result. None: an image
         left for a later tick, the throttle having run out in this batch."""
         by_bytes = False
+        truncated = False
         try:
             vector: list[float] | None = None
             if self._blobs is not None and item.sha256 and embeds_bytes(media_type):
@@ -164,12 +171,16 @@ class MemoryEmbedWorker:
                 if not item.text.strip():
                     await self._failed(item, "empty", by_bytes=False)
                     return "empty"
-                vector = await self._embedder.embed_document(item.text)
+                embedded = await self._embedder.embed_document(item.text)
+                vector = embedded.vector
+                truncated = embedded.truncated
             async with self._engine.begin() as conn:
                 await memory_index.embed_store(
                     conn, item, vector=vector, model=self._model,
                     now_ms=int(self._clock() * 1000), by_bytes=by_bytes,
                 )
+            if truncated and self._metrics is not None:
+                self._metrics.inc("nora_memory_embed_truncated_total", kind=item.kind)
             return "ok"
         except (EmbedderUnavailableError, _BlobUnavailableError) as exc:
             prefix = "blob" if isinstance(exc, _BlobUnavailableError) else "unavailable"

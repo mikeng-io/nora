@@ -382,7 +382,7 @@ async def test_an_unexpected_failure_is_recorded_and_a_node_is_given_up_after_th
     good = await store.append(message=_message("a node that embeds", ts=1100))
     real = LlamaEmbedder.embed_document
 
-    async def _breaks(self: Any, text: str) -> list[float]:
+    async def _breaks(self: Any, text: str) -> Any:
         if "breaks" in text:
             raise KeyError("boom")
         return await real(self, text)
@@ -441,3 +441,17 @@ async def test_the_worker_embeds_nothing_while_the_server_serves_another_model(e
     assert fake.calls == 0
     fake.model_path = "/models/model-a.gguf"
     assert await w.run_once() == 1
+
+
+async def test_a_text_cut_to_fit_is_stored_and_counted_by_kind(engine, llama):
+    """65 §3: no chunking yet; a text embedded from its head only is counted,
+    in addition to `ok`, so the counter says when chunking starts to matter."""
+    _fake, url = llama
+    store = SqlRecordStore(engine)
+    long_id = await store.append(message=_message("x" * 9000, ts=1000))
+    await store.append(message=_message("a short message", ts=1100))
+    metrics = Metrics()
+    assert await worker(engine, url, metrics=metrics).run_once() == 2
+    assert (await _nodes(engine))[("message", str(long_id))].embedding is not None
+    assert metrics.get("nora_memory_embed_total", outcome="ok") == 2
+    assert metrics.get("nora_memory_embed_truncated_total", kind="message") == 1
