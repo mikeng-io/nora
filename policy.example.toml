@@ -233,6 +233,8 @@ persons  = "*"               # anyone in this chat, including someone Nora
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. UNITS -> WORKSPACES (DEC-214) — the hierarchy is workspace > unit > room.
+#    RETIRING (operator 2026-10-16): removed with Honcho, after which the unit is
+#    the only boundary (design/unified-memory/35-persona.md row 6).
 #
 #    A Nora WORKSPACE holds one or more units; a unit holds one or more rooms
 #    (at most one per platform). Units in one workspace share one Honcho

@@ -71,6 +71,8 @@ phone = "+85212345678"
 # igid     = "10000001"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# RETIRING (operator 2026-10-16): removed with Honcho, see
+# design/unified-memory/35-persona.md row 6.
 # WORKSPACE BINDINGS (DEC-214). policy.toml's [units.<unit>] puts each unit in
 # a Nora workspace; this says which HONCHO workspace that Nora workspace's
 # person models live in. The two are different names for different things.
