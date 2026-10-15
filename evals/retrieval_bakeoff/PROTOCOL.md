@@ -18,8 +18,7 @@ fixed before it was written. Design source:
 | `labels.yaml` | per query: the relevant items, the hard negatives, both labellers' raw sets, and every disagreement with how it was settled |
 | `labels.lock` | sha256 of `set.yaml`, `media.yaml` and `labels.yaml` |
 
-The set's loader test (test_bakeoff_set.py, under tests/evals, added with the
-labels) enforces the shape: at least 40 queries per
+`tests/evals/test_bakeoff_set.py` enforces the shape: at least 40 queries per
 slice, every label resolves to a pool id, every query has at least one relevant
 item, and the lock matches the three files. A mismatch fails; it never skips.
 
@@ -110,8 +109,9 @@ state is not required.
 - **Ambiguous by sight** (the labeller cannot tell whether a constraint holds)
   is not relevant, and the item is named in the labeller's notes.
 - Every query has at least one relevant item. A query whose final set is empty
-  is a set defect, fixed by a new pool item or a new set version, never by
-  loosening the rule.
+  is a set defect, fixed by a new pool item or by withdrawing the query (logged
+  in `labels.yaml` under `withdrawn`, with its raw labels and the reason), never
+  by loosening the rule.
 
 ## Hard negatives
 

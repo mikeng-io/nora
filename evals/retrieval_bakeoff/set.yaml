@@ -345,11 +345,7 @@ slices:
     - id: ti-q29
       lang: mixed
       text: 喺 MTR 車廂入面，架車停咗喺九龍塘
-      reading_gap: false
-    - id: ti-q30
-      lang: en
-      text: inside a Singapore metro carriage with the doors open at a station
-      reading_gap: false
+      reading_gap: true
     - id: ti-q31
       lang: yue
       text: 一排綠色小巴泊喺天橋底，後面好多幢好高嘅屋苑
@@ -521,10 +517,6 @@ slices:
     - id: ti-q73
       lang: en
       text: a hawker stall with skewers, fish balls and pots of sauce
-      reading_gap: false
-    - id: ti-q74
-      lang: en
-      text: a lone candle flame with blurry dots of light behind
       reading_gap: false
     - id: ti-q75
       lang: yue

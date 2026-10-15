@@ -1,0 +1,969 @@
+# Relevance labels for the retrieval bake-off. Rules: PROTOCOL.md.
+version: 1
+slice: text_image
+labellers:
+  A:
+    who: 'the author: the agent session that chose the pool and wrote the queries'
+    when: after the queries were written, before B saw anything
+    raw_sha256: 2862309c4df3f00aee005f641352f7ce7c6033161f819ac3e116bd0ed275c28b
+  B:
+    who: a separate agent session, independent of the author
+    given: PROTOCOL.md Relevance section, the pool (ids, image files, frozen readings), the query texts
+    not_given: the author's notes, labels, hard negatives or reading_gap flags; no retrieval tools
+    raw_sha256: f654f8eb973728b0cb683fc45593a5420dd4427d51fea252b725d3ba4a1ae80e
+agreement_before_reconciliation:
+  queries: 78
+  identical_sets: 72
+  mean_jaccard: 0.949
+  cohen_kappa_over_query_item_pairs: 0.968
+  query_item_pairs: 17472
+  relevant_to_both: 91
+  relevant_to_A_only: 5
+  relevant_to_B_only: 1
+withdrawn:
+- query: ti-q30
+  reason: 'Final relevant set is empty: no pool image shows a Singapore carriage. Withdrawn, not loosened
+    (PROTOCOL.md, Relevance).'
+  raw:
+    A:
+    - img-074
+    B: []
+  settled:
+  - query: ti-q30
+    item: img-074
+    A: relevant
+    B: not_relevant
+    outcome: not_relevant
+    reason: The image is a Hong Kong MTR carriage at Kowloon Tong, not Singapore; A labelled it from the
+      wrong reading.
+- query: ti-q74
+  reason: 'Final relevant set is empty: the only candle photo shows two flames. Withdrawn, not loosened
+    (PROTOCOL.md, Relevance).'
+  raw:
+    A:
+    - img-152
+    B: []
+  settled:
+  - query: ti-q74
+    item: img-152
+    A: relevant
+    B: not_relevant
+    outcome: not_relevant
+    reason: A second candle flame is clearly visible at the left edge, so "a lone candle flame" does not
+      hold.
+disagreements:
+- query: ti-q29
+  item: img-074
+  A: not_relevant
+  B: relevant
+  outcome: relevant
+  reason: The carriage signs read 九龍塘 / Kowloon Tong; the reading calls it Novena, Singapore, and the
+    image decides. A had tagged it a hard negative from the reading, so the tag is dropped.
+- query: ti-q40
+  item: img-082
+  A: relevant
+  B: not_relevant
+  outcome: not_relevant
+  reason: Only the horizon is orange; the upper sky is pale blue, so "the whole sky is pink-orange" does
+    not hold.
+- query: ti-q45
+  item: img-042
+  A: relevant
+  B: not_relevant
+  outcome: not_relevant
+  reason: The bowl rim reads dark teal-green, not black; ambiguous by sight, so not relevant.
+- query: ti-q62
+  item: img-125
+  A: relevant
+  B: not_relevant
+  outcome: relevant
+  reason: Yellow chopsticks lift the meat and noodles are visible beneath it. The meat is no less identifiable
+    as beef than in img-194, which both labellers accepted, so the two are treated alike.
+queries:
+  ti-q01:
+    relevant:
+    - img-016
+    hard_negatives:
+    - img-036
+    - img-073
+    - img-179
+    raw:
+      A:
+      - img-016
+      B:
+      - img-016
+    notes_B: img-016 shows four xiaolongbao from above; img-179 (shrimp dumplings) excluded.
+  ti-q02:
+    relevant:
+    - img-179
+    hard_negatives:
+    - img-016
+    - img-073
+    raw:
+      A:
+      - img-179
+      B:
+      - img-179
+    notes_B: 'img-179: four open-topped shrimp dumplings, read as siu mai, though no yellow wrapper is
+      visible. img-016 shows xiaolongbao, not siu mai.'
+  ti-q03:
+    relevant:
+    - img-073
+    hard_negatives:
+    - img-016
+    - img-179
+    raw:
+      A:
+      - img-073
+      B:
+      - img-073
+  ti-q04:
+    relevant:
+    - img-137
+    hard_negatives:
+    - img-127
+    - img-030
+    raw:
+      A:
+      - img-137
+      B:
+      - img-137
+  ti-q05:
+    relevant:
+    - img-030
+    hard_negatives:
+    - img-167
+    - img-127
+    raw:
+      A:
+      - img-030
+      B:
+      - img-030
+  ti-q06:
+    relevant:
+    - img-046
+    - img-075
+    hard_negatives:
+    - img-017
+    - img-031
+    raw:
+      A:
+      - img-046
+      - img-075
+      B:
+      - img-046
+      - img-075
+    notes_B: img-046 and img-075 show the same bun in a clear bag (same timestamp). img-017 is excluded
+      because it has a printed package label.
+  ti-q07:
+    relevant:
+    - img-031
+    hard_negatives:
+    - img-046
+    - img-075
+    raw:
+      A:
+      - img-031
+      B:
+      - img-031
+  ti-q08:
+    relevant:
+    - img-002
+    - img-091
+    hard_negatives:
+    - img-202
+    - img-013
+    raw:
+      A:
+      - img-002
+      - img-091
+      B:
+      - img-002
+      - img-091
+    notes_B: img-002 also has letter candles spelling HAPPY BIRTHDAY, though its pool reading does not
+      say so.
+  ti-q09:
+    relevant:
+    - img-202
+    hard_negatives:
+    - img-091
+    - img-002
+    raw:
+      A:
+      - img-202
+      B:
+      - img-202
+    notes_B: 'img-202: the chocolate writing is English ''HAPPY BIRTHDAY'', the same greeting as 生日快樂.'
+  ti-q10:
+    relevant:
+    - img-013
+    hard_negatives:
+    - img-002
+    - img-091
+    raw:
+      A:
+      - img-013
+      B:
+      - img-013
+  ti-q11:
+    relevant:
+    - img-221
+    hard_negatives:
+    - img-049
+    - img-217
+    raw:
+      A:
+      - img-221
+      B:
+      - img-221
+    notes_B: img-217 and img-115 have latte art, but it is a rosetta or indistinct, not a heart.
+  ti-q12:
+    relevant:
+    - img-049
+    hard_negatives:
+    - img-221
+    - img-064
+    raw:
+      A:
+      - img-049
+      B:
+      - img-049
+  ti-q13:
+    relevant:
+    - img-064
+    hard_negatives:
+    - img-049
+    raw:
+      A:
+      - img-064
+      B:
+      - img-064
+  ti-q14:
+    relevant:
+    - img-192
+    hard_negatives:
+    - img-195
+    raw:
+      A:
+      - img-192
+      B:
+      - img-192
+  ti-q15:
+    relevant:
+    - img-208
+    hard_negatives:
+    - img-128
+    - img-173
+    raw:
+      A:
+      - img-208
+      B:
+      - img-208
+  ti-q16:
+    relevant:
+    - img-128
+    hard_negatives:
+    - img-208
+    - img-173
+    raw:
+      A:
+      - img-128
+      B:
+      - img-128
+  ti-q17:
+    relevant:
+    - img-065
+    hard_negatives:
+    - img-154
+    - img-170
+    raw:
+      A:
+      - img-065
+      B:
+      - img-065
+  ti-q18:
+    relevant:
+    - img-170
+    hard_negatives:
+    - img-154
+    - img-065
+    raw:
+      A:
+      - img-170
+      B:
+      - img-170
+    notes_B: img-154 shows the same cat on a wooden step, but no rooster ornament is visible.
+  ti-q19:
+    relevant:
+    - img-182
+    hard_negatives:
+    - img-060
+    raw:
+      A:
+      - img-182
+      B:
+      - img-182
+  ti-q20:
+    relevant:
+    - img-191
+    hard_negatives:
+    - img-211
+    raw:
+      A:
+      - img-191
+      B:
+      - img-191
+  ti-q21:
+    relevant:
+    - img-211
+    hard_negatives:
+    - img-191
+    - img-097
+    raw:
+      A:
+      - img-211
+      B:
+      - img-211
+  ti-q22:
+    relevant:
+    - img-145
+    hard_negatives:
+    - img-037
+    raw:
+      A:
+      - img-145
+      B:
+      - img-145
+    notes_B: img-037 has four dogs on leashes but is in a dry park, so it is excluded.
+  ti-q23:
+    relevant:
+    - img-132
+    hard_negatives: []
+    raw:
+      A:
+      - img-132
+      B:
+      - img-132
+  ti-q24:
+    relevant:
+    - img-068
+    hard_negatives:
+    - img-196
+    raw:
+      A:
+      - img-068
+      B:
+      - img-068
+  ti-q25:
+    relevant:
+    - img-196
+    hard_negatives:
+    - img-068
+    raw:
+      A:
+      - img-196
+      B:
+      - img-196
+  ti-q26:
+    relevant:
+    - img-040
+    hard_negatives:
+    - img-110
+    - img-056
+    raw:
+      A:
+      - img-040
+      B:
+      - img-040
+  ti-q27:
+    relevant:
+    - img-110
+    hard_negatives:
+    - img-040
+    raw:
+      A:
+      - img-110
+      B:
+      - img-110
+  ti-q28:
+    relevant:
+    - img-021
+    - img-122
+    hard_negatives:
+    - img-077
+    - img-026
+    raw:
+      A:
+      - img-021
+      - img-122
+      B:
+      - img-021
+      - img-122
+    notes_B: img-021 (Wan Chai) and img-122 (Yau Tong) both have a yellow wall with a large calligraphy
+      station name. img-026 has only a yellow overhead sign.
+  ti-q29:
+    relevant:
+    - img-074
+    - img-077
+    hard_negatives:
+    - img-122
+    raw:
+      A:
+      - img-077
+      B:
+      - img-074
+      - img-077
+    notes_B: img-074 is in Kowloon Tong (signs read 九龍塘), not Novena as its reading claims.
+  ti-q31:
+    relevant:
+    - img-209
+    hard_negatives:
+    - img-096
+    raw:
+      A:
+      - img-209
+      B:
+      - img-209
+  ti-q32:
+    relevant:
+    - img-014
+    hard_negatives:
+    - img-048
+    raw:
+      A:
+      - img-014
+      B:
+      - img-014
+  ti-q33:
+    relevant:
+    - img-175
+    hard_negatives:
+    - img-177
+    - img-207
+    raw:
+      A:
+      - img-175
+      B:
+      - img-175
+  ti-q34:
+    relevant:
+    - img-011
+    hard_negatives:
+    - img-134
+    - img-168
+    raw:
+      A:
+      - img-011
+      B:
+      - img-011
+    notes_B: img-134 and img-168 are high night views but have no dark hillside in the foreground.
+  ti-q35:
+    relevant:
+    - img-134
+    - img-168
+    hard_negatives:
+    - img-011
+    - img-084
+    raw:
+      A:
+      - img-134
+      - img-168
+      B:
+      - img-134
+      - img-168
+    notes_B: 'img-011 is excluded: it is from the Peak at dusk, with Central in the foreground and the
+      harbour behind it, not across the water.'
+  ti-q36:
+    relevant:
+    - img-034
+    - img-071
+    hard_negatives:
+    - img-084
+    - img-123
+    raw:
+      A:
+      - img-034
+      - img-071
+      B:
+      - img-034
+      - img-071
+    notes_B: img-071's tower is the leftmost building but sits a little in from the frame edge; it is
+      included as borderline. img-123 and img-084 have the tall tower centre or right. In img-134 and
+      img-168 the towers are not at the edge.
+  ti-q37:
+    relevant:
+    - img-205
+    hard_negatives:
+    - img-165
+    - img-201
+    raw:
+      A:
+      - img-205
+      B:
+      - img-205
+  ti-q38:
+    relevant:
+    - img-165
+    hard_negatives:
+    - img-205
+    raw:
+      A:
+      - img-165
+      B:
+      - img-165
+  ti-q39:
+    relevant:
+    - img-082
+    hard_negatives:
+    - img-166
+    - img-043
+    raw:
+      A:
+      - img-082
+      B:
+      - img-082
+    notes_B: Only img-082 has a red winglet tip.
+  ti-q40:
+    relevant:
+    - img-166
+    hard_negatives:
+    - img-043
+    - img-174
+    - img-199
+    raw:
+      A:
+      - img-082
+      - img-166
+      B:
+      - img-166
+    notes_B: 'img-082 is excluded: only the horizon is orange and the upper sky is pale blue, so the whole
+      sky is not pink-orange. img-166''s pool reading wrongly calls it a mountain peak.'
+  ti-q41:
+    relevant:
+    - img-105
+    hard_negatives:
+    - img-082
+    raw:
+      A:
+      - img-105
+      B:
+      - img-105
+  ti-q42:
+    relevant:
+    - img-015
+    - img-024
+    - img-130
+    - img-215
+    hard_negatives:
+    - img-158
+    raw:
+      A:
+      - img-015
+      - img-024
+      - img-130
+      - img-215
+      B:
+      - img-015
+      - img-024
+      - img-130
+      - img-215
+    notes_B: img-024 and img-130 show the same temple hall, with large incense coils hanging from the
+      ceiling above the altar.
+  ti-q43:
+    relevant:
+    - img-158
+    hard_negatives:
+    - img-160
+    raw:
+      A:
+      - img-158
+      B:
+      - img-158
+  ti-q44:
+    relevant:
+    - img-001
+    - img-212
+    hard_negatives:
+    - img-018
+    - img-020
+    raw:
+      A:
+      - img-001
+      - img-212
+      B:
+      - img-001
+      - img-212
+    notes_B: 'img-001 is tsukemen-style: dipping broth and noodles in separate bowls.'
+  ti-q45:
+    relevant:
+    - img-020
+    hard_negatives:
+    - img-190
+    - img-113
+    raw:
+      A:
+      - img-020
+      - img-042
+      B:
+      - img-020
+    notes_B: 'img-042 is excluded as ambiguous: the bowl looks very dark green rather than black (the
+      rim shows teal). Corn and a halved egg are present.'
+  ti-q46:
+    relevant:
+    - img-200
+    hard_negatives:
+    - img-206
+    - img-012
+    raw:
+      A:
+      - img-200
+      B:
+      - img-200
+  ti-q47:
+    relevant:
+    - img-135
+    - img-193
+    hard_negatives:
+    - img-036
+    - img-206
+    raw:
+      A:
+      - img-135
+      - img-193
+      B:
+      - img-135
+      - img-193
+  ti-q48:
+    relevant:
+    - img-047
+    - img-067
+    - img-224
+    hard_negatives:
+    - img-180
+    - img-100
+    raw:
+      A:
+      - img-047
+      - img-067
+      - img-224
+      B:
+      - img-047
+      - img-067
+      - img-224
+    notes_B: In img-047 the wok is further away and the food is less distinct, but it looks like dumplings
+      in boiling water.
+  ti-q49:
+    relevant:
+    - img-100
+    hard_negatives:
+    - img-180
+    raw:
+      A:
+      - img-100
+      B:
+      - img-100
+  ti-q50:
+    relevant:
+    - img-180
+    hard_negatives:
+    - img-100
+    raw:
+      A:
+      - img-180
+      B:
+      - img-180
+  ti-q51:
+    relevant:
+    - img-029
+    - img-178
+    hard_negatives:
+    - img-203
+    - img-032
+    raw:
+      A:
+      - img-029
+      - img-178
+      B:
+      - img-029
+      - img-178
+  ti-q52:
+    relevant:
+    - img-203
+    hard_negatives:
+    - img-032
+    raw:
+      A:
+      - img-203
+      B:
+      - img-203
+  ti-q53:
+    relevant:
+    - img-176
+    hard_negatives:
+    - img-188
+    - img-195
+    raw:
+      A:
+      - img-176
+      B:
+      - img-176
+  ti-q54:
+    relevant:
+    - img-188
+    hard_negatives:
+    - img-176
+    - img-195
+    raw:
+      A:
+      - img-188
+      B:
+      - img-188
+  ti-q55:
+    relevant:
+    - img-050
+    hard_negatives:
+    - img-114
+    - img-189
+    raw:
+      A:
+      - img-050
+      B:
+      - img-050
+  ti-q56:
+    relevant:
+    - img-120
+    hard_negatives: []
+    raw:
+      A:
+      - img-120
+      B:
+      - img-120
+  ti-q57:
+    relevant:
+    - img-140
+    hard_negatives:
+    - img-062
+    raw:
+      A:
+      - img-140
+      B:
+      - img-140
+  ti-q58:
+    relevant:
+    - img-163
+    hard_negatives:
+    - img-078
+    - img-022
+    raw:
+      A:
+      - img-163
+      B:
+      - img-163
+  ti-q59:
+    relevant:
+    - img-078
+    hard_negatives:
+    - img-163
+    - img-022
+    raw:
+      A:
+      - img-078
+      B:
+      - img-078
+    notes_B: 'img-022 is excluded: a curry tray with soup, but no salad bowl.'
+  ti-q60:
+    relevant:
+    - img-027
+    hard_negatives:
+    - img-133
+    - img-183
+    - img-066
+    raw:
+      A:
+      - img-027
+      B:
+      - img-027
+    notes_B: 'img-133 is excluded: it is not all salmon (it has avocado and mushroom rolls).'
+  ti-q61:
+    relevant:
+    - img-184
+    hard_negatives:
+    - img-153
+    - img-066
+    raw:
+      A:
+      - img-184
+      B:
+      - img-184
+    notes_B: 'img-153 is excluded: the plate is black.'
+  ti-q62:
+    relevant:
+    - img-125
+    - img-194
+    hard_negatives:
+    - img-076
+    raw:
+      A:
+      - img-125
+      - img-194
+      B:
+      - img-194
+  ti-q63:
+    relevant:
+    - img-076
+    - img-190
+    hard_negatives:
+    - img-113
+    - img-001
+    raw:
+      A:
+      - img-076
+      - img-190
+      B:
+      - img-076
+      - img-190
+    notes_B: img-076 and img-190 are near-duplicates. The fish cake is mostly white with a pink rim and
+      flecks. img-113 is excluded because it has no fish cake.
+  ti-q64:
+    relevant:
+    - img-118
+    hard_negatives:
+    - img-204
+    raw:
+      A:
+      - img-118
+      B:
+      - img-118
+  ti-q65:
+    relevant:
+    - img-216
+    hard_negatives:
+    - img-157
+    raw:
+      A:
+      - img-216
+      B:
+      - img-216
+  ti-q66:
+    relevant:
+    - img-157
+    hard_negatives:
+    - img-216
+    raw:
+      A:
+      - img-157
+      B:
+      - img-157
+  ti-q67:
+    relevant:
+    - img-063
+    hard_negatives:
+    - img-098
+    - img-103
+    raw:
+      A:
+      - img-063
+      B:
+      - img-063
+  ti-q68:
+    relevant:
+    - img-098
+    - img-103
+    hard_negatives:
+    - img-063
+    raw:
+      A:
+      - img-098
+      - img-103
+      B:
+      - img-098
+      - img-103
+  ti-q69:
+    relevant:
+    - img-006
+    hard_negatives:
+    - img-139
+    raw:
+      A:
+      - img-006
+      B:
+      - img-006
+  ti-q70:
+    relevant:
+    - img-107
+    hard_negatives:
+    - img-111
+    raw:
+      A:
+      - img-107
+      B:
+      - img-107
+  ti-q71:
+    relevant:
+    - img-111
+    hard_negatives:
+    - img-107
+    raw:
+      A:
+      - img-111
+      B:
+      - img-111
+  ti-q72:
+    relevant:
+    - img-106
+    hard_negatives:
+    - img-108
+    raw:
+      A:
+      - img-106
+      B:
+      - img-106
+    notes_B: 'img-108 is excluded: a long winding slide, not a spiral.'
+  ti-q73:
+    relevant:
+    - img-186
+    hard_negatives:
+    - img-210
+    raw:
+      A:
+      - img-186
+      B:
+      - img-186
+  ti-q75:
+    relevant:
+    - img-126
+    hard_negatives:
+    - img-092
+    raw:
+      A:
+      - img-126
+      B:
+      - img-126
+  ti-q76:
+    relevant:
+    - img-181
+    hard_negatives: []
+    raw:
+      A:
+      - img-181
+      B:
+      - img-181
+  ti-q77:
+    relevant:
+    - img-164
+    hard_negatives: []
+    raw:
+      A:
+      - img-164
+      B:
+      - img-164
+  ti-q78:
+    relevant:
+    - img-155
+    hard_negatives:
+    - img-093
+    raw:
+      A:
+      - img-155
+      B:
+      - img-155
