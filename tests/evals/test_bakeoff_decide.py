@@ -31,11 +31,12 @@ RESULT = (Path(__file__).resolve().parents[2] / "evals" / "retrieval_bakeoff" / 
           / "20261015T033750Z-floor-text_image.json")
 
 
-def _arm(text_image: float | None, cantonese: float, names: float, errors: int = 0) -> dict:
+def _arm(text_image: float | None, cantonese: float, names: float, errors: int = 0,
+         misses: tuple[int | None, int | None, int | None] = (None, None, None)) -> dict:
     return {
-        "text_image": Score(text_image, 0.5, errors),
-        "cantonese": Score(cantonese, 0.5, 0),
-        "names": Score(names, 0.5, 0),
+        "text_image": Score(text_image, 0.5, errors, misses[0]),
+        "cantonese": Score(cantonese, 0.5, 0, misses[1]),
+        "names": Score(names, 0.5, 0, misses[2]),
     }
 
 
@@ -117,14 +118,97 @@ def test_a_missing_incumbent_decides_error() -> None:
     assert d.verdict is Verdict.ERROR
 
 
-def test_two_winners_tie_on_images_and_the_lower_dimension_wins() -> None:
+def test_several_passing_the_fewest_total_misses_wins_not_the_best_images() -> None:
+    """Operator ruling 2026-10-16: among passing arms, the fewest misses summed
+    over text_image, cantonese and names; better images alone do not decide."""
     d = _decide(**{
-        "fused:bm25+gemma2@768": _arm(0.96, 0.80, 0.70),
-        "fused:bm25+gemma2@256": _arm(0.96, 0.79, 0.70),
-        "fused:bm25+wemm@2048": _arm(0.95, 0.80, 0.70),
+        "dense:wemm@2048": _arm(1.00, 0.76, 0.70, misses=(0, 16, 5)),
+        "dense:qwen3vl@2048": _arm(0.96, 0.88, 0.70, misses=(1, 7, 5)),
     })
     assert d.verdict is Verdict.REPLACE
+    assert d.winner == "dense:qwen3vl@2048"
+    assert d.misses == {"dense:wemm@2048": 21, "dense:qwen3vl@2048": 13}
+
+
+def test_an_exact_tie_on_total_misses_is_broken_by_the_lower_dimension() -> None:
+    d = _decide(**{
+        "fused:bm25+gemma2@768": _arm(0.96, 0.80, 0.70, misses=(2, 9, 6)),
+        "fused:bm25+gemma2@256": _arm(0.95, 0.79, 0.70, misses=(3, 9, 5)),
+        "fused:bm25+wemm@2048": _arm(0.97, 0.80, 0.70, misses=(1, 10, 6)),
+    })
+    assert d.verdict is Verdict.REPLACE
+    assert d.misses == {"fused:bm25+gemma2@768": 17, "fused:bm25+gemma2@256": 17,
+                        "fused:bm25+wemm@2048": 17}
     assert d.winner == "fused:bm25+gemma2@256"
+
+
+@pytest.mark.parametrize("missing", [0, 1, 2])
+def test_a_passing_arm_without_per_query_ranks_decides_error_never_a_guess(missing) -> None:
+    misses: list[int | None] = [0, 7, 5]
+    misses[missing] = None
+    d = _decide(**{
+        "dense:wemm@2048": _arm(1.00, 0.76, 0.70, misses=(0, 16, 5)),
+        "dense:qwen3vl@2048": _arm(0.96, 0.88, 0.70, misses=tuple(misses)),  # type: ignore[arg-type]
+    })
+    assert d.verdict is Verdict.ERROR
+    assert "dense:qwen3vl@2048" in d.reason and "per_query" in d.reason
+
+
+def test_one_passing_arm_needs_no_miss_count() -> None:
+    d = _decide(**{"dense:wemm@2048": _arm(1.00, 0.80, 0.70)})
+    assert (d.verdict, d.winner) == (Verdict.REPLACE, "dense:wemm@2048")
+
+
+def test_the_loader_counts_misses_from_per_query_ranks(tmp_path: Path) -> None:
+    """A miss is a query whose first relevant item is not in the top 5: rank
+    over 5, none in the top 50, or an errored query."""
+    f = tmp_path / "r.json"
+    f.write_text(
+        '{"slice": "names", "subsets": {"time_only": ["q3", "q4"]},'
+        ' "reading_gap": {"queries": ["q1", "q4"]}, "arms": {"dense:x@256": {'
+        '"recall5": 0.5, "mrr10": 0.4, "errors": {"queries": 0, "pool": 0},'
+        '"in_reading_gap": {"recall5": 0.5, "mrr10": 0.5},'
+        '"outside_reading_gap": {"recall5": 0.5, "mrr10": 0.5},'
+        '"outside_time_only": {"recall5": 0.5, "mrr10": 0.5},'
+        '"time_only": {"recall5": 0.5, "mrr10": 0.5},'
+        '"per_query": {"q1": 1, "q2": 5, "q3": 6, "q4": null, "q5": "ERROR:timeout"}}}}',
+        encoding="utf-8")
+    assert scores_from_results([f])["dense:x@256"]["names"].misses == 3
+    assert scores_from_results([f], subset="time_only")["dense:x@256"]["names"].misses == 2
+    assert scores_from_results([f], subset="in_reading_gap")["dense:x@256"]["names"].misses == 1
+    assert scores_from_results([f], subset="outside_reading_gap")[
+        "dense:x@256"]["names"].misses == 2
+    assert scores_from_results([f], subset="outside_time_only")[
+        "dense:x@256"]["names"].misses == 1
+
+
+def test_a_subset_whose_queries_are_not_listed_has_unknown_misses(tmp_path: Path) -> None:
+    f = tmp_path / "r.json"
+    f.write_text(
+        '{"slice": "names", "arms": {"dense:x@256": {"recall5": 0.5, "mrr10": 0.4,'
+        ' "errors": {"queries": 0, "pool": 0}, "odd": {"recall5": 0.5, "mrr10": 0.5},'
+        ' "per_query": {"q1": 9}}}}', encoding="utf-8")
+    assert scores_from_results([f], subset="odd")["dense:x@256"]["names"].misses is None
+
+
+def test_the_five_way_comparison_picks_qwen_by_fewest_total_misses() -> None:
+    """The committed files: Qwen@2048 misses 12 queries (text_image 0,
+    cantonese 7, names 5), WeMM@2048 21 (0, 16, 5), Qwen@256 17; WeMM had
+    won on text_image recall alone (1.000 against 0.9855)."""
+    g = lambda pat: sorted(RESULT.parent.glob(pat))  # noqa: E731
+    files = (g("20261015T105051Z-stage2-*.json") + g("20261015T125057Z-stage2-wemm-*.json")
+             + g("20261015T165508Z-stage2-qwen3vl-*.json")
+             + g("20261015T145806Z-stage2-jina5omni-*.json"))
+    d = decide(scores_from_results(files))
+    assert (d.verdict, d.winner) == (Verdict.REPLACE, "dense:qwen3vl@2048")
+    assert d.misses == {"dense:qwen3vl@2048": 12, "dense:qwen3vl@256": 17,
+                        "dense:wemm@2048": 21}
+    fp32 = (g("20261015T105051Z-stage2-*.json") + g("20261015T123946Z-stage2-wemm-fp32-*.json")
+            + g("20261015T125057Z-stage2-wemm-text_image.json")
+            + g("20261015T165508Z-stage2-qwen3vl-*.json")
+            + g("20261015T145806Z-stage2-jina5omni-*.json"))
+    d = decide(scores_from_results(fp32, rename={"wemm-fp32": "wemm"}))
+    assert (d.verdict, d.winner) == (Verdict.REPLACE, "dense:qwen3vl@2048")
 
 
 def test_the_committed_result_loads_into_decide_with_its_own_arm_names() -> None:

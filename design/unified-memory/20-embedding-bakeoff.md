@@ -123,6 +123,17 @@ rule is `evals/retrieval_bakeoff/decide.py`. A model that wins images but loses 
 second, media-only embedder, which is a decision for the operator because it
 doubles the index.
 
+**Several passing** (operator ruling 2026-10-16): when more than one
+candidate arm passes, the winner is the one with the fewest **total misses**
+summed over the three journey slices (text → image, Cantonese, names). A miss
+is a query whose first relevant item is not in the top 5, counted from each
+result's per-query ranks. A remaining tie goes to the lower dimension. A
+passing arm whose result carries no per-query ranks makes the verdict ERROR,
+because its misses are unknown and are never guessed. This replaced "the
+best text → image recall@5, then the lower dimension", which on 2026-10-15
+picked WeMM-2B over Qwen3-VL-Embedding-2B for one more image found, despite
+0.15 less Cantonese recall@5 (see the measured note below).
+
 **Stage 2, 2026-10-15: EmbeddingGemma 2, Q8_0 and full precision.** Both
 decide KEEP_BGE_M3, with Gemma flagged media-only. Q8_0 through Ollama
 (`results/20261015T100638Z-stage2-*`): text → image recall@5 1.000, Cantonese
@@ -289,15 +300,20 @@ the scored Qwen.)
 - incumbent + jina: KEEP_BGE_M3, no media-only flag. It holds Cantonese, and
   on text → image stops at 0.9565, about half a query's credit short.
 - **Five-way** (incumbent, EmbeddingGemma 2 `105051Z`, WeMM-2B, Qwen, jina),
-  the comparison the WeMM note above waits for: **REPLACE,
-  `dense:wemm@2048`**, with WeMM read either way (Q4 on every slice, or fp32
+  the comparison the WeMM note above waits for, re-derived from the
+  committed files under the 2026-10-16 ruling (fewest total misses): **REPLACE,
+  `dense:qwen3vl@2048`**, with WeMM read either way (Q4 on every slice, or fp32
   text plus Q4 text → image through `rename`). Three arms pass the rule:
-  `dense:wemm@2048` (text → image 1.000, Cantonese 0.7377),
-  `dense:qwen3vl@2048` (0.9855, 0.8852) and `dense:qwen3vl@256` (0.9710,
-  0.8361). The rule ranks passing arms by text → image recall alone, so WeMM
-  wins on one more query found, while Qwen leads it by 0.15 on Cantonese.
-  Which matters more is the operator's call; the rule as written does not
-  weigh it.
+
+  | passing arm | text → image | Cantonese | names | total misses (ti + ca + nm) |
+  |---|---|---|---|---|
+  | `dense:qwen3vl@2048` | 0.9855 | 0.8852 | 0.8958 | **12** (0 + 7 + 5) |
+  | `dense:qwen3vl@256` | 0.9710 | 0.8361 | 0.8958 | 17 (2 + 10 + 5) |
+  | `dense:wemm@2048` | 1.000 | 0.7377 | 0.8958 | 21 (0 + 16 + 5) |
+
+  Under the earlier pick (the best text → image recall@5) the same files gave
+  `dense:wemm@2048`. On the reading-gap subset the pick is the same, Qwen at
+  2048 (8 misses, against 13 and 14).
 
 - **Cantonese by language** at the native dimension (bge-m3 / Qwen / jina):
   en (25) 0.88 / 0.92 / 0.92, mixed (17) 0.82 / 1.00 / 0.94, roman (5)
