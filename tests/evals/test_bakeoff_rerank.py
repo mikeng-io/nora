@@ -1,0 +1,118 @@
+"""The two-stage arm (operator's index design, 2026-10-16): the top k by
+cosine on the leading search dimensions, re-ranked by full cosine. Exact here;
+the HNSW twin is tests/integration/test_bakeoff_hnsw.py. k under 5 is refused,
+and a candidate set shorter than k while the pool is not is an ERROR."""
+
+from __future__ import annotations
+
+import math
+
+import pytest
+
+from evals.retrieval_bakeoff import decide, hnsw, run
+from evals.retrieval_bakeoff.decide import Score, Verdict
+from evals.retrieval_bakeoff.run import Embedded, Errored, Rerank
+
+
+def _unit(*xs: float) -> list[float]:
+    n = math.sqrt(sum(x * x for x in xs))
+    return [x / n for x in xs]
+
+
+#: Query weighted on the third dimension; `x` is the full-cosine best and the
+#: prefix-cosine worst, so a k that excludes it loses it.
+QUERY = Embedded(vectors={"q": _unit(1, 0, 3)})
+POOL = Embedded(vectors={
+    "p1": _unit(1, 0, 0), "p2": _unit(1, 0.1, 0), "p3": _unit(1, 0.2, 0.5),
+    "p4": _unit(1, 0.3, 1), "p5": _unit(1, 0.4, 0), "p6": _unit(1, 0.5, 0.2),
+    "x": _unit(0.3, 1, 3),
+})
+
+
+def test_the_top_k_by_prefix_is_re_ranked_by_full_cosine():
+    ranked, times = run.rank_rerank(QUERY, POOL, search_dim=2, k=5)
+    # Stage 1 keeps p1..p5 (prefix cosine 1 down to .93); x (.29) and p6 (.89) are out.
+    assert ranked["q"] == ["p4", "p3", "p1", "p2", "p5"]
+    assert len(times["stage1"]) == len(times["stage2"]) == 1
+
+
+def test_a_k_that_holds_the_pool_is_dense_at_the_full_dimension():
+    ranked, _ = run.rank_rerank(QUERY, POOL, search_dim=2, k=7)
+    assert ranked["q"] == run.rank_dense(QUERY, POOL)["q"]
+    assert ranked["q"][0] == "x"
+
+
+def test_an_errored_query_stays_an_error():
+    qs = Embedded(vectors=dict(QUERY.vectors), errors={"bad": "timeout"})
+    ranked, _ = run.rank_rerank(qs, POOL, search_dim=2, k=5)
+    assert ranked["bad"] == Errored("timeout")
+
+
+@pytest.mark.parametrize("make", [
+    lambda: run.rank_rerank(QUERY, POOL, search_dim=2, k=4),
+    lambda: Rerank(256, 2048, ks=(4,)),
+    lambda: Rerank(256, 2048, hnsw_ks=(4,), dsn="postgresql+asyncpg://h/bakeoff"),
+], ids=["rank", "exact-arm", "hnsw-arm"])
+def test_k_under_five_is_refused(make):
+    with pytest.raises(ValueError, match="under 5"):
+        make()
+
+
+def test_an_hnsw_arm_needs_a_dsn_and_ef_search_at_least_k():
+    with pytest.raises(ValueError, match="--dsn"):
+        Rerank(256, 2048, hnsw_ks=(50,))
+    with pytest.raises(ValueError, match="ef_search"):
+        Rerank(256, 2048, hnsw_ks=(50,), dsn="postgresql+asyncpg://h/bakeoff", ef_search=40)
+
+
+@pytest.mark.parametrize(("n", "k", "pool", "short"), [
+    (50, 50, 400, False), (49, 50, 400, True), (30, 50, 30, False), (29, 50, 30, True),
+])
+def test_a_candidate_set_short_of_k_is_short_only_when_the_pool_is_not(n, k, pool, short):
+    assert hnsw.short_candidates(n, k, pool) is short
+
+
+def test_a_short_candidate_set_is_an_error_in_the_exact_arm(monkeypatch):
+    monkeypatch.setattr(run, "_cosines", lambda q, pool, ids: [(0.0, i) for i in sorted(ids)][:3])
+    ranked, _ = run.rank_rerank(QUERY, POOL, search_dim=2, k=5)
+    assert ranked["q"] == Errored("short_candidates")
+
+
+def test_the_arms_are_named_and_scored_through_the_harness():
+    rr = Rerank(2, 3, ks=(5, 7))
+    arms = run._rerank_arms("m", rr, POOL, QUERY, {}, {}, "the text", "s")
+    assert set(arms) == {"rerank:m@2>3/k5", "rerank:m@2>3/k7"}
+    assert arms["rerank:m@2>3/k5"].rankings["q"][0] == "p4"
+    assert arms["rerank:m@2>3/k5"].cost["stage1_search_ms"]["n"] == 1
+    assert arms["rerank:m@2>3/k5"].provenance["k"] == 5
+
+
+def test_an_hnsw_arm_that_cannot_run_errors_every_query(monkeypatch):
+    def down(*a, **k):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(hnsw, "rerank", down)
+    rr = Rerank(2, 3, hnsw_ks=(5,), dsn="postgresql+asyncpg://h/bakeoff")
+    arm = run._rerank_arms("m", rr, POOL, QUERY, {}, {}, "the text", "s")["hnsw-rerank:m@2>3/k5"]
+    assert arm.rankings == {"q": Errored("exception")}
+    assert run.score(arm.rankings, {"q": frozenset({"x"})})["verdict"] == "ERROR"
+
+
+def _arm(r: float, errors: int = 0) -> dict[str, Score]:
+    return {s: Score(r, 0.5, errors) for s in decide.JOURNEY}
+
+
+INCUMBENT = {"dense:bge-m3": _arm(0.80), "fused:trigram+bge-m3": _arm(0.80),
+             "fused:bm25+bge-m3": _arm(0.80)}
+
+
+def test_decide_reads_a_two_stage_arm_as_searching_its_index_dimension():
+    d = decide.decide({**INCUMBENT, "dense:qwen3vl-q4@2048": _arm(0.95),
+                  "rerank:qwen3vl-q4@256>2048/k50": _arm(0.95)})
+    assert d.verdict is Verdict.REPLACE
+    assert d.winner == "rerank:qwen3vl-q4@256>2048/k50"
+
+
+def test_an_error_in_the_hnsw_arm_decides_error():
+    d = decide.decide({**INCUMBENT, "hnsw-rerank:qwen3vl-q4@256>2048/k50": _arm(0.95, errors=1)})
+    assert d.verdict is Verdict.ERROR

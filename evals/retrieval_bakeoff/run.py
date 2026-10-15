@@ -65,6 +65,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from evals.retrieval_bakeoff import hnsw, qwen_llama
 from evals.retrieval_bakeoff.adapters import (
     Embedder,
     EmbedError,
@@ -354,6 +355,75 @@ def rank_dense(queries: Embedded, pool: Embedded, depth: int = DEPTH) -> Ranking
     return out
 
 
+#: The two-stage arms keep at least the top 5 that recall@5 reads.
+MIN_RERANK_K = 5
+
+
+@dataclass(frozen=True, slots=True)
+class Rerank:
+    """The two-stage arms one candidate gets (operator's index design,
+    2026-10-16): search the leading `search_dim` for the top `k`, re-rank
+    those by full-`full_dim` cosine. `ks` exactly in Python; `hnsw_ks` in the
+    throwaway Postgres at `dsn` (`hnsw.rerank`), `hnsw.ef_search` = `ef_search`
+    or `k`, whichever is larger."""
+
+    search_dim: int
+    full_dim: int
+    ks: tuple[int, ...] = ()
+    hnsw_ks: tuple[int, ...] = ()
+    dsn: str = ""
+    ef_search: int = 0
+
+    def __post_init__(self) -> None:
+        for k in (*self.ks, *self.hnsw_ks):
+            if k < MIN_RERANK_K:
+                raise ValueError(f"rerank k={k} is under {MIN_RERANK_K}: recall@5 reads 5")
+        if self.hnsw_ks and not self.dsn:
+            raise ValueError("an HNSW rerank arm needs the throwaway --dsn")
+        if self.ef_search and self.hnsw_ks and self.ef_search < max(self.hnsw_ks):
+            raise ValueError(f"hnsw.ef_search={self.ef_search} is under k={max(self.hnsw_ks)}: "
+                             "HNSW returns at most ef_search rows")
+
+    def name(self, label: str, k: int, *, in_sql: bool = False) -> str:
+        return (f"{'hnsw-rerank' if in_sql else 'rerank'}:{label}"
+                f"@{self.search_dim}>{self.full_dim}/k{k}")
+
+
+def _cosines(q: Sequence[float], pool: Mapping[str, Sequence[float]],
+             ids: Iterable[str]) -> list[tuple[float, str]]:
+    return sorted(((sum(a * b for a, b in zip(q, pool[pid], strict=True)), pid) for pid in ids),
+                  key=lambda s: (-s[0], s[1]))
+
+
+def rank_rerank(queries: Embedded, pool: Embedded, *, search_dim: int, k: int,
+                ) -> tuple[Rankings, dict[str, list[float]]]:
+    """The two-stage arm with exact cosine: the top `k` of `pool` by cosine
+    on the leading `search_dim` (renormalised, as an index over that
+    subvector ranks), then those `k` by cosine on the full vectors `queries`
+    and `pool` hold. A query with fewer than `k` candidates while the pool
+    holds `k` is `short_candidates`, an ERROR. Also returns each query's
+    stage-1 and stage-2 milliseconds."""
+    if k < MIN_RERANK_K:
+        raise ValueError(f"rerank k={k} is under {MIN_RERANK_K}")
+    small_pool, small_q = truncated(pool, search_dim), truncated(queries, search_dim)
+    out: Rankings = {}
+    times: dict[str, list[float]] = {"stage1": [], "stage2": []}
+    for qid in [*queries.vectors, *queries.errors]:
+        if qid in queries.errors or qid in small_q.errors:
+            out[qid] = Errored(queries.errors.get(qid) or small_q.errors[qid])
+            continue
+        t0 = time.perf_counter()
+        cands = [pid for _, pid in _cosines(small_q.vectors[qid], small_pool.vectors,
+                                             small_pool.vectors)[:k]]
+        t1 = time.perf_counter()
+        ranked = [pid for _, pid in _cosines(queries.vectors[qid], pool.vectors, cands)]
+        times["stage1"].append((t1 - t0) * 1000)
+        times["stage2"].append((time.perf_counter() - t1) * 1000)
+        out[qid] = (Errored("short_candidates")
+                    if hnsw.short_candidates(len(cands), k, len(small_pool.vectors)) else ranked)
+    return out, times
+
+
 def rrf_scores(channels: Sequence[Rankings], *, k: int = RRF_K,
                depth: int = DEPTH) -> dict[str, dict[str, float] | Errored]:
     """Per query, each pool id's sum over the channels of 1 / (k + rank),
@@ -604,6 +674,13 @@ def _latency(e: Embedded, batch: int = BATCH) -> dict[str, Any]:
             "item_ms_p50": p(e.item_ms, 0.5), "item_ms_p95": p(e.item_ms, 0.95)}
 
 
+def _ms(xs: Sequence[float]) -> dict[str, float | int | None]:
+    def p(q: float) -> float | None:
+        return round(sorted(xs)[min(len(xs) - 1, int(q * len(xs)))], 2) if xs else None
+
+    return {"p50": p(0.5), "p95": p(0.95), "n": len(xs)}
+
+
 # --- the run ----------------------------------------------------------------------------
 
 
@@ -728,13 +805,59 @@ def _arm_name(label: str, d: int, dims: Sequence[int], native: int) -> str:
 
 
 def _arms_at(label: str, dims: Sequence[int], native: int, docs: Embedded, queries: Embedded,
-             cost: dict[str, Any], prov: dict[str, Any], over: str) -> dict[str, ArmRun]:
+             cost: dict[str, Any], prov: dict[str, Any], over: str,
+             rerank: Rerank | None = None, slice_name: str = "") -> dict[str, ArmRun]:
     arms: dict[str, ArmRun] = {}
     for d in dims:
         pool, qs = truncated(docs, d), truncated(queries, d)
+        t0 = time.perf_counter()
+        ranked = rank_dense(qs, pool)
+        ms = (time.perf_counter() - t0) * 1000 / max(1, len(qs.vectors))
         arms[_arm_name(label, d, dims, native)] = ArmRun(
-            rank_dense(qs, pool), pool_errors=dict(pool.errors), cost=cost,
+            ranked, pool_errors=dict(pool.errors),
+            cost={**cost, "exact_search_ms_mean": round(ms, 2)},
             provenance={**prov, "dims": d, "over": over})
+    if rerank is not None:
+        arms.update(_rerank_arms(label, rerank, docs, queries, cost, prov, over, slice_name))
+    return arms
+
+
+def _rerank_arms(label: str, rr: Rerank, docs: Embedded, queries: Embedded,
+                 cost: dict[str, Any], prov: dict[str, Any], over: str,
+                 slice_name: str) -> dict[str, ArmRun]:
+    """The two-stage arms over the full vectors one embedding call made."""
+    full, qs = truncated(docs, rr.full_dim), truncated(queries, rr.full_dim)
+    small = truncated(docs, rr.search_dim)
+    # An item the index could not hold (no unit vector at either size) is the pool's ERROR.
+    pool_errors = {**full.errors, **small.errors}
+    arms: dict[str, ArmRun] = {}
+    shape = {"search_dims": rr.search_dim, "rerank_dims": rr.full_dim, "over": over}
+    for k in rr.ks:
+        ranked, times = rank_rerank(qs, full, search_dim=rr.search_dim, k=k)
+        arms[rr.name(label, k)] = ArmRun(
+            ranked, pool_errors=dict(pool_errors),
+            cost={**cost, "stage1_search_ms": _ms(times["stage1"]),
+                  "stage2_rerank_ms": _ms(times["stage2"]),
+                  "timing": "exact cosine in Python, per query"},
+            provenance={**prov, **shape, "k": k, "ranking": "exact cosine, both stages"})
+    for k in rr.hnsw_ks:
+        name = rr.name(label, k, in_sql=True)
+        ef = max(rr.ef_search, k)
+        ok_pool = {pid: v for pid, v in full.vectors.items() if pid not in pool_errors}
+        sql_ranked: Rankings
+        try:
+            got, times, p = hnsw.rerank(
+                rr.dsn, ok_pool, qs.vectors, table=f"bakeoff_hnsw_{slice_name}",
+                search_dim=rr.search_dim, full_dim=rr.full_dim, k=k, ef_search=ef)
+            sql_ranked = {q: Errored(r) if isinstance(r, str) else r for q, r in got.items()}
+            c = {"stage1_search_ms": _ms(times["stage1"]), "two_stage_ms": _ms(times["two_stage"]),
+                 "timing": "client wall time over loopback, per query, after one warm pass"}
+        except Exception as e:  # noqa: BLE001 - every query is an ERROR, never a miss
+            sql_ranked = dict.fromkeys(qs.vectors, Errored("exception"))
+            c, p = {}, {"failed": f"{type(e).__name__}: {e}"[:300]}
+        sql_ranked.update({q: Errored(kind) for q, kind in qs.errors.items()})
+        arms[name] = ArmRun(sql_ranked, pool_errors=dict(pool_errors), cost={**cost, **c},
+                            provenance={**prov, **shape, **p, "k": k})
     return arms
 
 
@@ -745,7 +868,8 @@ def _warm(embedder: Embedder, timeout: float, dog: MemoryWatchdog | None) -> Non
 
 
 def _text_arms(embedder: Embedder, label: str, the_set: BakeoffSet, dims: Sequence[int], *,
-               timeout: float, dog: MemoryWatchdog | None, base: str) -> dict[str, ArmRun]:
+               timeout: float, dog: MemoryWatchdog | None, base: str,
+               rerank: Rerank | None = None) -> dict[str, ArmRun]:
     """Each pool item's text (a photo's reading, a message's text) embedded
     once as a document, each query once as a query, then every dimension."""
     _warm(embedder, timeout, dog)
@@ -757,12 +881,12 @@ def _text_arms(embedder: Embedder, label: str, the_set: BakeoffSet, dims: Sequen
             "ollama_ps": _ollama_ps(base, embedder.name)}
     over = "the frozen readings" if the_set.media else "the message text"
     return _arms_at(label, dims, embedder.native_dim, docs, queries, cost,
-                    embedder.provenance(), over)
+                    embedder.provenance(), over, rerank, the_set.slice)
 
 
 def _image_arms(embedder: Embedder, label: str, the_set: BakeoffSet, dims: Sequence[int], *,
                 timeout: float, dog: MemoryWatchdog | None, base: str,
-                media_dir: Path = MEDIA_DIR) -> dict[str, ArmRun]:
+                media_dir: Path = MEDIA_DIR, rerank: Rerank | None = None) -> dict[str, ArmRun]:
     """Each pool image embedded once from its bytes (hash-checked), each query
     once as a query, then every Matryoshka dimension derived from those."""
     _warm(embedder, timeout, dog)
@@ -774,7 +898,7 @@ def _image_arms(embedder: Embedder, label: str, the_set: BakeoffSet, dims: Seque
     cost = {"images": _latency(images, 1), "queries": _latency(queries),
             "ollama_ps": _ollama_ps(base, embedder.name)}
     return _arms_at(label, dims, embedder.native_dim, images, queries, cost,
-                    embedder.provenance(), "the images")
+                    embedder.provenance(), "the images", rerank, the_set.slice)
 
 
 def _unload(model: str) -> bool:
@@ -824,6 +948,29 @@ def wemm_embedder(*, llama_url: str = "", hf_repo: str = "", revision: str = "",
     return None
 
 
+def qwen_embedder(*, llama_url: str, tokenizer: Path | None, name: str,
+                  server_pid: int | None, build: str, timeout: float,
+                  ) -> qwen_llama.QwenLlamaServerEmbedder | None:
+    """Stage 2's Qwen3-VL-Embedding-2B Q4_K_M on llama-server, every prompt
+    checked against the pinned official tokenizer (`qwen_llama`)."""
+    if not llama_url:
+        return None
+    if tokenizer is None:
+        raise ValueError("--qwen needs --qwen-tokenizer, the pinned official tokenizer.json")
+    return qwen_llama.QwenLlamaServerEmbedder(
+        name, native_dim=2048, base_url=llama_url, build=build, server_pid=server_pid,
+        timeout=timeout, official_ids=qwen_llama.official_tokenizer(tokenizer))
+
+
+def rerank_spec(spec: str, ks: str, hnsw_ks: str, *, dsn: str, ef_search: int) -> Rerank | None:
+    """`--rerank 256>2048 --rerank-k 20,50,100 --hnsw-k 50` as a `Rerank`."""
+    if not spec:
+        return None
+    search, _, full = spec.partition(">")
+    return Rerank(int(search), int(full), tuple(int(k) for k in ks.split(",") if k),
+                  tuple(int(k) for k in hnsw_ks.split(",") if k), dsn, ef_search)
+
+
 def _cpu_bf16_flags() -> list[str]:
     try:
         text = Path("/proc/cpuinfo").read_text()
@@ -857,6 +1004,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                     help="HF only: load without lm_head and the vision tower (text slices)")
     ap.add_argument("--wemm-pid", type=int, default=None,
                     help="the llama-server pid, for its peak RSS")
+    ap.add_argument("--qwen", default="",
+                    help="a llama-server URL serving Qwen3-VL-Embedding-2B Q4_K_M: stage 2")
+    ap.add_argument("--qwen-tokenizer", type=Path, default=None,
+                    help="the official tokenizer.json at the pinned revision")
+    ap.add_argument("--qwen-name", default="qwen3-vl-embedding-2b:Q4_K_M")
+    ap.add_argument("--qwen-dims", default="2048,256")
+    ap.add_argument("--qwen-build", default="")
+    ap.add_argument("--qwen-pid", type=int, default=None, help="the llama-server pid")
+    ap.add_argument("--rerank", default="",
+                    help="two-stage arms for --qwen or --wemm: SEARCH>FULL dims, e.g. 256>2048")
+    ap.add_argument("--rerank-k", default="20,50,100", help="exact two-stage arms' k")
+    ap.add_argument("--hnsw-k", default="50", help="HNSW two-stage arms' k, in --dsn")
+    ap.add_argument("--hnsw-ef-search", type=int, default=0,
+                    help="hnsw.ef_search; at least k (default: k)")
     ap.add_argument("--media-dir", type=Path, default=MEDIA_DIR)
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--out", type=Path, default=SET_DIR / "results")
@@ -871,9 +1032,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                          name=args.wemm_name, model_sha256=args.wemm_model_sha256,
                          mmproj_sha256=args.wemm_mmproj_sha256, build=args.wemm_build,
                          server_pid=args.wemm_pid, timeout=args.timeout)
+    qwen = qwen_embedder(llama_url=args.qwen, tokenizer=args.qwen_tokenizer, name=args.qwen_name,
+                         server_pid=args.qwen_pid, build=args.qwen_build, timeout=args.timeout)
+    if qwen and (gemma or wemm):
+        raise ValueError("one candidate per run: --qwen, or --gemma(-hf) or --wemm(-hf)")
+    rerank = rerank_spec(args.rerank, args.rerank_k, args.hnsw_k, dsn=args.dsn,
+                         ef_search=args.hnsw_ef_search)
+    if rerank and not (qwen or wemm):
+        raise ValueError("--rerank needs a 2048-dimension candidate: --qwen or --wemm")
     stage = (f"stage2-{wemm[1]}" if wemm and args.wemm_hf else "stage2-wemm" if wemm
-             else "stage2" if gemma else "floor")
-    candidates = [m for m in (gemma.name if gemma else "", wemm[0].name if wemm else "") if m]
+             else "stage2-qwen3vl-q4" if qwen else "stage2" if gemma else "floor")
+    candidates = [m for m in (gemma.name if gemma else "", wemm[0].name if wemm else "",
+                              qwen.name if qwen else "") if m]
     before = host_sample()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     provenance: dict[str, Any] = {
@@ -914,7 +1084,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 build = _image_arms if the_set.media else _text_arms
                 kw = {"media_dir": args.media_dir} if the_set.media else {}
                 arms[name].update(build(emb, label, the_set, dims, timeout=args.timeout,
-                                        dog=dog, base=args.ollama, **kw))
+                                        dog=dog, base=args.ollama, rerank=rerank, **kw))
+        if qwen:
+            # llama-server: started and stopped by the operator.
+            dims = tuple(int(d) for d in args.qwen_dims.split(","))
+            for name, the_set in sets.items():
+                build = _image_arms if the_set.media else _text_arms
+                kw = {"media_dir": args.media_dir} if the_set.media else {}
+                arms[name].update(build(qwen, "qwen3vl-q4", the_set, dims, timeout=args.timeout,
+                                        dog=dog, base=args.ollama, rerank=rerank, **kw))
     except AbortedError as e:
         for m in ("bge-m3", args.gemma):
             if m:
@@ -945,7 +1123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _write(path, result)
         for arm, a in result["arms"].items():
             langs = " ".join(f"{k}={v['recall5']}/{v['mrr10']}" for k, v in a["by_lang"].items())
-            print(f"{name:10} {arm:28} {a['verdict']:5} r5={a['recall5']} mrr={a['mrr10']} "
+            print(f"{name:10} {arm:36} {a['verdict']:5} r5={a['recall5']} mrr={a['mrr10']} "
                   f"{langs}")
         gap = result["reading_gap"]["n"]
         print(f"{name}: reading gap {gap}; verdict {result['verdict']}; {path}")
