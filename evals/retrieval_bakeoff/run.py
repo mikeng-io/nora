@@ -67,10 +67,12 @@ import yaml
 
 from evals.retrieval_bakeoff import hnsw, qwen_llama
 from evals.retrieval_bakeoff.adapters import (
+    OFFICIAL,
     Embedder,
     EmbedError,
     HFEmbedder,
     LlamaServerEmbedder,
+    OfficialEmbedder,
     OllamaEmbedder,
     check,
     matryoshka,
@@ -965,6 +967,23 @@ def wemm_embedder(*, llama_url: str = "", hf_repo: str = "", revision: str = "",
     return None
 
 
+#: Each official-format candidate's Matryoshka dimensions: native, and 256.
+OFFICIAL_DIMS = {"qwen3vl": (2048, 256), "jina5omni": (1024, 256)}
+
+
+def official_embedder(label: str, *, dtype: str) -> OfficialEmbedder | None:
+    """Stage 2's Qwen3-VL-Embedding-2B or jina-embeddings-v5-omni-small, in
+    the format its own files define (`adapters.OfficialFormat`), at its
+    pinned commit and an explicit dtype. One per run: one model resident."""
+    if not label:
+        return None
+    if label not in OFFICIAL:
+        raise ValueError(f"--official must be one of {sorted(OFFICIAL)}, not {label!r}")
+    if not dtype:
+        raise ValueError("--official needs --official-dtype (float32 or bfloat16)")
+    return OfficialEmbedder(OFFICIAL[label], dtype=dtype)
+
+
 def qwen_embedder(*, llama_url: str, tokenizer: Path | None, name: str,
                   server_pid: int | None, build: str, timeout: float,
                   ) -> qwen_llama.QwenLlamaServerEmbedder | None:
@@ -1035,6 +1054,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--hnsw-k", default="50", help="HNSW two-stage arms' k, in --dsn")
     ap.add_argument("--hnsw-ef-search", type=int, default=0,
                     help="hnsw.ef_search; at least k (default: k)")
+    ap.add_argument("--official", default="", help=f"one of {sorted(OFFICIAL)}: stage 2")
+    ap.add_argument("--official-dtype", default="float32", help="never float16")
     ap.add_argument("--media-dir", type=Path, default=MEDIA_DIR)
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--out", type=Path, default=SET_DIR / "results")
@@ -1061,6 +1082,12 @@ def main(argv: Sequence[str] | None = None) -> int:
              else "stage2-qwen3vl-q4" if qwen else "stage2" if gemma else "floor")
     candidates = [m for m in (gemma.name if gemma else "", wemm[0].name if wemm else "",
                               qwen.name if qwen else "") if m]
+    official = official_embedder(args.official, dtype=args.official_dtype)
+    if official and (gemma or wemm or qwen):
+        raise ValueError("one candidate per run: --official, --gemma(-hf), --wemm(-hf) or --qwen")
+    if official:
+        stage = f"stage2-{args.official}"
+        candidates.append(official.name)
     before = host_sample()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     provenance: dict[str, Any] = {
@@ -1110,6 +1137,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 kw = {"media_dir": args.media_dir} if the_set.media else {}
                 arms[name].update(build(qwen, "qwen3vl-q4", the_set, dims, timeout=args.timeout,
                                         dog=dog, base=args.ollama, rerank=rerank, **kw))
+        if official:
+            dims = OFFICIAL_DIMS[args.official]
+            for name, the_set in sets.items():
+                build = _image_arms if the_set.media else _text_arms
+                kw = {"media_dir": args.media_dir} if the_set.media else {}
+                arms[name].update(build(official, args.official, the_set, dims,
+                                        timeout=args.timeout, dog=dog, base=args.ollama, **kw))
     except AbortedError as e:
         for m in ("bge-m3", args.gemma):
             if m:

@@ -6,6 +6,7 @@ and a candidate set shorter than k while the pool is not is an ERROR."""
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
@@ -98,17 +99,22 @@ def test_an_hnsw_arm_that_cannot_run_errors_every_query(monkeypatch):
     assert run.score(arm.rankings, {"q": frozenset({"x"})})["verdict"] == "ERROR"
 
 
-def _arm(r: float, errors: int = 0) -> dict[str, Score]:
-    return {s: Score(r, 0.5, errors) for s in decide.JOURNEY}
+def _arm(r: float, errors: int = 0, misses: int = 4) -> dict[str, Score]:
+    return {s: Score(r, 0.5, errors, misses) for s in decide.JOURNEY}
 
 
 INCUMBENT = {"dense:bge-m3": _arm(0.80), "fused:trigram+bge-m3": _arm(0.80),
              "fused:bm25+bge-m3": _arm(0.80)}
+RESULTS = Path(__file__).resolve().parents[2] / "evals" / "retrieval_bakeoff" / "results"
 
 
-def test_decide_reads_a_two_stage_arm_as_searching_its_index_dimension():
-    d = decide.decide({**INCUMBENT, "dense:qwen3vl-q4@2048": _arm(0.95),
-                  "rerank:qwen3vl-q4@256>2048/k50": _arm(0.95)})
+def test_a_tie_on_misses_goes_to_the_two_stage_arm_by_its_indexed_dimension():
+    """Fewest total misses first (operator, 2026-10-16); on a tie, the lower
+    dimension, and a two-stage arm's is the one its index searches (256),
+    not the one it re-ranks with (2048)."""
+    d = decide.decide({**INCUMBENT, "dense:qwen3vl-q4@2048": _arm(0.95, misses=4),
+                       "rerank:qwen3vl-q4@256>2048/k50": _arm(0.95, misses=4),
+                       "dense:qwen3vl-q4@256": _arm(0.95, misses=5)})
     assert d.verdict is Verdict.REPLACE
     assert d.winner == "rerank:qwen3vl-q4@256>2048/k50"
 
@@ -116,6 +122,18 @@ def test_decide_reads_a_two_stage_arm_as_searching_its_index_dimension():
 def test_an_error_in_the_hnsw_arm_decides_error():
     d = decide.decide({**INCUMBENT, "hnsw-rerank:qwen3vl-q4@256>2048/k50": _arm(0.95, errors=1)})
     assert d.verdict is Verdict.ERROR
+
+
+def test_the_committed_two_stage_run_re_derives_its_verdict():
+    """20261015T171213Z: every two-stage arm misses 12 (text_image 0,
+    cantonese 7, names 5), as dense@2048 does; dense@256 misses 13. The four
+    two-stage arms tie on misses and on the indexed 256, so the name picks."""
+    d = decide.decide(decide.scores_from_results(
+        sorted(RESULTS.glob("20261015T171213Z-stage2-qwen3vl-q4-*.json"))))
+    assert (d.verdict, d.winner) == (Verdict.REPLACE, "hnsw-rerank:qwen3vl-q4@256>2048/k50")
+    two_stage = [a for a in d.misses if "rerank:" in a]
+    assert len(two_stage) == 4 and {d.misses[a] for a in two_stage} == {12}
+    assert d.misses["dense:qwen3vl-q4@2048"] == 12 and d.misses["dense:qwen3vl-q4@256"] == 13
 
 
 def test_each_relevant_item_s_rank_is_recorded_so_a_lost_item_re_derives():
