@@ -107,3 +107,7 @@ RELEVANCE_GATE_TASK.md
 # this repo" invariant intact.
 deploy/voice-wake/tests/fixtures/seam_frames.bin
 
+
+# The embedder service's model files (docker-compose.yml `embedder`,
+# EMBEDDER_MODELS_DIR): gigabytes of GGUF, never committed.
+/models/

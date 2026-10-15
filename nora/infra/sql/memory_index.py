@@ -73,6 +73,17 @@ alone never discloses a place.
 A snapshot restore copies none of the four tables (`NOT_RESTORED`): the
 restored index is empty and reads `never` until a rebuild (60 §0.5, S4).
 
+**The vector** (design/unified-memory/65-build-step-3-vectors.md V1). The node
+is its own embedding queue: an upsert that changes what a node is embedded
+from clears its vector and the worker's bookkeeping with it, and one that
+does not keeps them, so a re-projection of an unchanged row costs no model
+call and a rebuild equals live. What a node is embedded from is its text,
+except an attachment whose `media_json` type is an image: that is embedded
+from its bytes, which its `sha256` names, so a reading landing on it later
+does not clear its vector. The worker's reads and writes are `embed_pick`,
+`embed_store` and `embed_failed` here, the only module that writes the
+index; `nora.infra.sql.memory_embed` drives them.
+
 **What a delete removes** (S4): a node and the edges its own projection
 writes, never an edge another node's projection owns. The edges into a
 hidden message from the memos that cite it stay, dangling, exactly as a
@@ -101,8 +112,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.culture import split_culture_key
+from nora.domain.media import blobs_from_media_json
 from nora.domain.media_join import shas_in
-from nora.domain.memory_index import HUB_KINDS, ProjectionOutcome
+from nora.domain.memory_index import EMBEDDED_KINDS, HUB_KINDS, ProjectionOutcome, embeds_bytes
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
 from nora.infra.sql.schema import (
     CULTURE,
@@ -133,12 +145,20 @@ from nora.infra.sql.schema import (
 __all__ = [
     "INDEXED_WRITES",
     "REBUILD_LOCK_KEY",
+    "EmbedCounts",
+    "Embeddable",
     "IndexStatus",
     "RebuildRefusedError",
     "RebuildReport",
+    "clear_embeddings",
     "drain_queue",
     "drop",
+    "embed_counts",
+    "embed_failed",
+    "embed_pick",
+    "embed_store",
     "index_status",
+    "media_types",
     "project",
     "project_episodes",
     "rebuild",
@@ -356,10 +376,12 @@ async def _project_message(conn: AsyncConnection, source_id: str) -> None:
                 ).where(MEDIA_OBJECTS.c.sha256.in_(shas))
             )
         }
+    types = {b.sha256: b.media_type for b in blobs_from_media_json(row.media_json)}
     for att, sha in wanted.items():
         await _upsert_node(
             conn, kind="media", source_id=att, origin_room=room,
             text=readings.get(sha, ""), at_ms=row.ts, sha256=sha,
+            by_bytes=embeds_bytes(types.get(sha, "")),
         )
         edges.append(("media", att, "attached_to", "message", source_id, "messages.media_json"))
         if author is not None:
@@ -387,11 +409,52 @@ async def _reproject_media(conn: AsyncConnection, sha256: str) -> None:
         ).where(MEDIA_OBJECTS.c.sha256 == sha256)
     )).first()
     text = "" if row is None else _reading(row.title, row.description, row.content)
-    await conn.execute(
-        sa.update(MEMORY_NODE)
+    nodes = (await conn.execute(
+        sa.select(MEMORY_NODE.c.id, MEMORY_NODE.c.source_id)
         .where(MEMORY_NODE.c.kind == "media", MEMORY_NODE.c.sha256 == sha256)
-        .values(text=text, projected_at=sa.func.clock_timestamp())
-    )
+    )).all()
+    types = await media_types(conn, [(n.source_id, sha256) for n in nodes])
+    # An image attachment is embedded from its bytes, so its vector outlives
+    # a new reading; any other attachment is embedded from this text, and
+    # loses its vector when the text changes. In an UPDATE the right-hand
+    # side reads the row as it was, so the comparison is old text to new.
+    by_text = {n.id for n in nodes if not embeds_bytes(types.get(n.source_id, ""))}
+    for ids, clears in (
+        (sorted(by_text), True), (sorted({n.id for n in nodes} - by_text), False),
+    ):
+        if not ids:
+            continue
+        values: dict[str, Any] = {"text": text, "projected_at": sa.func.clock_timestamp()}
+        if clears:
+            values |= _cleared_when(MEMORY_NODE.c.text.is_distinct_from(text))
+        await conn.execute(
+            sa.update(MEMORY_NODE).where(MEMORY_NODE.c.id.in_(ids)).values(values)
+        )
+
+
+async def media_types(
+    conn: AsyncConnection, attachments: Iterable[tuple[str, str]],
+) -> dict[str, str]:
+    """The type each attachment's own message records for its bytes
+    (`messages.media_json`), keyed by the attachment's `source_id`
+    (`_attachment_id`); `""` for one whose message or entry is gone. The one
+    reading of whether an attachment is an image, for the projector and the
+    embedding worker alike."""
+    wanted = dict(attachments)
+    ids = sorted({int(sid.partition(":")[0]) for sid in wanted})
+    if not ids:
+        return {}
+    held = {
+        r.id: r.media_json
+        for r in await conn.execute(
+            sa.select(MESSAGES.c.id, MESSAGES.c.media_json).where(MESSAGES.c.id.in_(ids))
+        )
+    }
+    out: dict[str, str] = {}
+    for sid, sha in wanted.items():
+        blobs = blobs_from_media_json(held.get(int(sid.partition(":")[0])))
+        out[sid] = next((b.media_type for b in blobs if b.sha256 == sha), "")
+    return out
 
 
 # --- the Notebook ------------------------------------------------------------
@@ -1030,8 +1093,24 @@ def _node_values(
     }
 
 
-async def _upsert_node(conn: AsyncConnection, **values: Any) -> None:
-    await _upsert_nodes(conn, [_node_values(**values)])
+async def _upsert_node(conn: AsyncConnection, *, by_bytes: bool = False, **values: Any) -> None:
+    await _upsert_nodes(conn, [_node_values(**values)], by_bytes=by_bytes)
+
+
+#: The worker's bookkeeping, cleared with the vector it describes.
+_EMBED_COLUMNS = ("embedding", "embedding_model", "embedded_at", "embed_attempts", "embed_error")
+
+
+def _cleared_when(changed: sa.ColumnElement[bool]) -> dict[str, Any]:
+    """SET values that clear the vector and the worker's bookkeeping where
+    `changed` holds and keep them where it does not (65 §1.1): a node whose
+    embedded input changed is unembedded again, and the worker finds it
+    through `idx_memory_node_unembedded`."""
+    node = MEMORY_NODE.c
+    return {
+        name: sa.case((changed, 0 if name == "embed_attempts" else sa.null()), else_=node[name])
+        for name in _EMBED_COLUMNS
+    }
 
 
 #: Rows per statement: a switch projects every stay of every person, and one
@@ -1039,11 +1118,22 @@ async def _upsert_node(conn: AsyncConnection, **values: Any) -> None:
 _CHUNK = 1000
 
 
-async def _upsert_nodes(conn: AsyncConnection, rows: list[dict[str, Any]]) -> None:
+async def _upsert_nodes(
+    conn: AsyncConnection, rows: list[dict[str, Any]], *, by_bytes: bool = False,
+) -> None:
+    """Insert or update `rows`. `by_bytes`: these nodes are embedded from
+    the bytes their `sha256` names (an image attachment), so only a new
+    `sha256` clears their vector; any other node's vector goes when its
+    text changes."""
     stmt = pg_insert(MEMORY_NODE)
+    embedded_from = MEMORY_NODE.c.sha256 if by_bytes else MEMORY_NODE.c.text
+    changed = embedded_from.is_distinct_from(stmt.excluded[embedded_from.name])
     stmt = stmt.on_conflict_do_update(
         constraint="uq_memory_node_kind_source",
         set_={
+            # Read before the new values land: a CASE in DO UPDATE sees the
+            # existing row through the table's columns.
+            **_cleared_when(changed),
             "unit": stmt.excluded.unit,
             "origin_room": stmt.excluded.origin_room,
             "persons": stmt.excluded.persons,
@@ -1513,3 +1603,174 @@ async def _count(engine: AsyncEngine) -> RebuildReport:
             )).scalar_one())
         unprojected = await _queue_length(conn)
     return RebuildReport(projected, dropped, unprojected, dry_run=True)
+
+
+# --- the vectors (design/unified-memory/65-build-step-3-vectors.md V1) -------
+
+#: A failed node waits `BASE * 2^(attempts - 1)`, at most `CAP`, before the
+#: worker tries it again: a node the embedder keeps refusing costs one call
+#: every few hours, never one per tick.
+EMBED_BACKOFF_BASE_MS = 60_000
+EMBED_BACKOFF_CAP_MS = 6 * 3_600_000
+
+
+def _literal_in(column: str, values: tuple[str, ...]) -> Any:
+    """`column IN (...)` with the values as SQL literals, never parameters:
+    `idx_memory_node_unembedded` is a partial index, and the planner can use
+    one only when the query's own predicate implies the index's, which a bind
+    parameter under a generic plan never does. The values are module
+    constants."""
+    listed = ", ".join(f"'{v}'" for v in values)
+    return sa.text(f"memory_node.{column} IN ({listed})")
+
+
+@dataclass(frozen=True, slots=True)
+class Embeddable:
+    """A node the worker is to embed: what it is embedded from, never more."""
+
+    id: int
+    kind: str
+    source_id: str
+    text: str
+    sha256: str | None
+
+
+async def embed_pick(
+    conn: AsyncConnection, *, limit: int, now_ms: int, model: str,
+    other_models: bool = False, media: bool = True,
+) -> list[Embeddable]:
+    """Up to `limit` live, embeddable nodes with no vector, the fewest
+    failures first and then the newest, so a new message is embedded on the
+    next tick while a backfill works backwards. A failed node waits out its
+    backoff. A node with no text is skipped unless it is an attachment,
+    which may be embedded from its bytes.
+
+    `other_models` also picks nodes holding another model's vector: a scan
+    the partial index cannot serve, so the worker asks for it only until it
+    once finds none. `media=False` leaves attachments out, while the image
+    throttle is spent."""
+    rows = await conn.execute(_pick_statement(
+        limit=limit, now_ms=now_ms, model=model, other_models=other_models, media=media,
+    ))
+    return [Embeddable(r.id, r.kind, r.source_id, r.text, r.sha256) for r in rows]
+
+
+def _pick_statement(
+    *, limit: int, now_ms: int, model: str, other_models: bool, media: bool,
+) -> sa.Select[Any]:
+    """`embed_pick`'s query, apart so a test can ask the planner about it."""
+    node = MEMORY_NODE.c
+    missing: Any = node.embedding.is_(None)
+    if other_models:
+        missing = sa.or_(missing, node.embedding_model.is_distinct_from(model))
+    wait = sa.cast(sa.func.least(
+        EMBED_BACKOFF_BASE_MS * sa.func.power(2, sa.func.least(node.embed_attempts - 1, 30)),
+        EMBED_BACKOFF_CAP_MS,
+    ), sa.BigInteger)
+    where = [
+        missing,
+        sa.text("memory_node.state = 'live'"),
+        _literal_in("kind", EMBEDDED_KINDS),
+        sa.or_(node.text != "", node.kind == "media"),
+        sa.or_(node.embed_attempts == 0, node.embedded_at <= now_ms - wait),
+    ]
+    if not media:
+        where.append(node.kind != "media")
+    return (
+        sa.select(node.id, node.kind, node.source_id, node.text, node.sha256)
+        .where(*where)
+        .order_by(node.embed_attempts, node.id.desc())
+        .limit(limit)
+    )
+
+
+def _same_input(item: Embeddable, by_bytes: bool) -> Any:
+    """The node still holds the input `item` was embedded from: a write
+    landing after an edit would pin the old text's vector on the new text."""
+    node = MEMORY_NODE.c
+    same = node.sha256 == item.sha256 if by_bytes else node.text == item.text
+    return sa.and_(node.id == item.id, same)
+
+
+async def embed_store(
+    conn: AsyncConnection, item: Embeddable, *, vector: list[float], model: str,
+    now_ms: int, by_bytes: bool,
+) -> bool:
+    """Store `item`'s vector and the fingerprint it was made with. False if
+    the node changed (or went) while it was being embedded: the worker finds
+    it again, unembedded."""
+    result = await conn.execute(
+        sa.update(MEMORY_NODE).where(_same_input(item, by_bytes)).values(
+            embedding=vector, embedding_model=model, embedded_at=now_ms,
+            embed_attempts=0, embed_error=None,
+        )
+    )
+    return bool(result.rowcount)
+
+
+async def embed_failed(
+    conn: AsyncConnection, item: Embeddable, *, error: str, now_ms: int, by_bytes: bool,
+) -> None:
+    """Count a failed attempt and back the node off. `error` is a short
+    class (`nora.infra.sql.memory_embed`), never content. A vector of
+    another model the node still held goes too: it is unusable, and a NULL
+    puts the node back on the indexed pick."""
+    await conn.execute(
+        sa.update(MEMORY_NODE).where(_same_input(item, by_bytes)).values(
+            embedding=None, embedding_model=None, embedded_at=now_ms,
+            embed_attempts=MEMORY_NODE.c.embed_attempts + 1, embed_error=error[:80],
+        )
+    )
+
+
+async def clear_embeddings(conn: AsyncConnection, *, keep_model: str | None = None) -> int:
+    """`nora memory rebuild --embeddings-only`: clear every vector and the
+    worker's bookkeeping, or, with `keep_model`, only the vectors of any
+    other model. The worker backfills what this clears. Returns the nodes
+    cleared."""
+    node = MEMORY_NODE.c
+    if keep_model is None:
+        where: Any = sa.or_(
+            node.embedding.isnot(None), node.embed_attempts > 0, node.embedding_model.isnot(None),
+        )
+    else:
+        where = sa.and_(
+            node.embedding.isnot(None), node.embedding_model.is_distinct_from(keep_model),
+        )
+    result = await conn.execute(
+        sa.update(MEMORY_NODE).where(where).values(
+            embedding=None, embedding_model=None, embedded_at=None,
+            embed_attempts=0, embed_error=None,
+        )
+    )
+    return int(result.rowcount or 0)
+
+
+class EmbedCounts(NamedTuple):
+    """The live, embeddable nodes with something to embed: holding a vector
+    of `model`, waiting for one, and of those waiting, how many have failed
+    at least once."""
+
+    embedded: int
+    pending: int
+    failing: int
+
+
+async def embed_counts(conn: AsyncConnection, model: str) -> EmbedCounts:
+    node = MEMORY_NODE.c
+    # IS NOT DISTINCT FROM, so a NULL model is «not current», never NULL.
+    current = sa.and_(
+        node.embedding.isnot(None), node.embedding_model.is_not_distinct_from(model),
+    )
+    row = (await conn.execute(
+        sa.select(
+            sa.func.count().filter(current),
+            sa.func.count().filter(~current),
+            sa.func.count().filter(sa.and_(~current, node.embed_attempts > 0)),
+        ).where(
+            sa.text("memory_node.state = 'live'"),
+            _literal_in("kind", EMBEDDED_KINDS),
+            sa.or_(node.text != "", node.kind == "media"),
+        )
+    )).one()
+    return EmbedCounts(int(row[0]), int(row[1]), int(row[2]))

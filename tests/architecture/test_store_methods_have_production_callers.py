@@ -280,6 +280,10 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # the analytics process. Callers: `nora.app.runtime.memory_drain_loop`
         # and `nora.analytics.runner`.
         "drain_index_queue",
+        # `MemoryEmbedWorker.run_once` (design/unified-memory/65 V1) shares the
+        # name with other workers' ticks. Caller: `nora.app.runtime.
+        # memory_drain_loop`, pinned by `tests/unit/test_runtime.py`.
+        "run_once",
     }
 )
 
@@ -304,7 +308,8 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "computer_sessions.py",
         "character.py", "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
-        "media_descriptions.py", "media_objects.py", "memo.py", "memory_read.py", "mobility.py",
+        "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",
+        "memory_read.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "otp.py",
         "participation_state.py", "presence.py",
         "reasoning_strip.py", "record_query.py",

@@ -157,6 +157,7 @@ from nora.engagement.subagents_context import SubagentsContextReader
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.computer.probe import ComputerdProbe
+from nora.infra.embedder import LlamaEmbedder, fingerprint
 from nora.infra.google.auth import GoogleCredentials
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
@@ -177,6 +178,7 @@ from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memo import SqlMemoStore
+from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
@@ -1282,6 +1284,10 @@ class Dependencies:
     # `keepalive = true`. `nora/__main__.py` starts it; the eval subject,
     # which composes the same graph, does not.
     oauth_keepalive: OAuthKeepalive | None = None
+    # The memory index's embedding worker (design/unified-memory/
+    # 65-build-step-3-vectors.md V1): `None` under `[memory_index] embed =
+    # false`, the default. `__main__` hands it to the memory drain loop.
+    memory_embed: MemoryEmbedWorker | None = None
 
 
 def _image_gen_wiring(
@@ -4504,6 +4510,15 @@ async def build_dependencies(
         otp=otp,
         otp_api_token=otp_api_token,
         oauth_keepalive=oauth_keepalive,
+        memory_embed=(
+            MemoryEmbedWorker(
+                engine, LlamaEmbedder(cfg.memory_index.embedder_url), blobs,
+                model=fingerprint(cfg.memory_index.embedder_model),
+                batch=cfg.memory_index.embed_batch,
+                images_per_hour=cfg.memory_index.embed_images_per_hour,
+                metrics=metrics,
+            ) if cfg.memory_index.embed else None
+        ),
     )
 
 

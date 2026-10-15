@@ -58,7 +58,7 @@ import sqlalchemy as sa
 # the migrations, which DO hardcode the number (a migration that read a live
 # constant would change meaning under a later edit), so moving the constant
 # fails the parity gate loudly instead of drifting.
-from pgvector.sqlalchemy import Vector
+from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy.dialects import postgresql as pg
 
 from nora.domain.computer_events import ACTORS as COMPUTER_ACTORS
@@ -74,6 +74,7 @@ from nora.domain.facts import (
     FACT_TERM_CEILING_CHARS,
 )
 from nora.domain.lineage import CONFIDENCES, REASONING_MODES
+from nora.domain.memory_index import EMBEDDED_KINDS as MEMORY_EMBEDDED_KINDS
 from nora.domain.memory_index import HUB_KINDS as MEMORY_HUB_KINDS
 from nora.domain.memory_index import NODE_KINDS as MEMORY_NODE_KINDS
 from nora.domain.memory_index import NODE_STATES as MEMORY_NODE_STATES
@@ -90,9 +91,10 @@ from nora.domain.standing import (
     WORKING_SET_CEILING_ITEMS,
 )
 
-#: bge-m3's width, MEASURED against the live endpoint on 2026-08-28 rather
-#: than read off a model card. The migration reads this same constant.
-EMBEDDING_DIMENSIONS = 1024
+#: Qwen3-VL-Embedding-2B's width, and the leading slice the HNSW index holds
+#: (design/unified-memory/65-build-step-3-vectors.md §0; 0106 spells both).
+EMBEDDING_DIMENSIONS = 2048
+EMBEDDING_INDEXED_DIMENSIONS = 256
 
 METADATA = sa.MetaData()
 
@@ -2287,68 +2289,6 @@ IDX_FACT_DISPUTED = sa.Index(
 
 IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
     "idx_fact_premise_premise_fact_id", FACT_PREMISE.c.premise_fact_id,
-)
-
-
-# THE EMBEDDING SEAM (24 §7.5, migration 0044). ONE table for every tier, not
-# one per tier — 24 §1's whole argument is that this is one seam and not three.
-#
-# **`kind` is an open string, never an enum.** A closed set means the fifth
-# tier ships with a schema change and a CHECK edit before it can store its
-# first vector. The exchange tier's closed act set is right for ACTS, which are
-# a vocabulary; `kind` is a REGISTRY, and registries stay open.
-#
-# **`row_key` is TEXT**, for `rendered_claim`'s reason one table over: it holds
-# different tiers' keys, and `room_lexeme`'s is three TEXT columns with no
-# surrogate id.
-#
-# **One column per DIMENSION, routed by kind** (24 §7.5). `vector(N)` fixes N at
-# DDL time, so a future tier bringing its own model adds a COLUMN rather than a
-# type — and the "declare three things and write no schema" bar holds for any
-# tier reusing an existing dimension. `v1024` is bge-m3, and 1024 is MEASURED
-# against the live endpoint rather than read off a model card.
-#
-# **`fingerprint` is the re-embedding predicate** (25 §5): model identity and
-# the exact text embedded. One comparison — `fingerprint <> current` — catches a
-# model swap and a changed row, with no second mechanism and no ordering trap.
-EMBEDDING = sa.Table(
-    "embedding",
-    METADATA,
-    sa.Column("kind", sa.Text, primary_key=True),
-    sa.Column("row_key", sa.Text, primary_key=True),
-    # The scope a search is allowed to cross. `unit` for a fact, a
-    # conversation for a lexeme — the seam does not care which, only that a
-    # reader can filter by it, because a retrieval verb that could not would
-    # be R-49's relay in a new place.
-    sa.Column("scope", sa.Text, nullable=False),
-    # What was embedded, kept so a stale vector can be explained rather than
-    # merely detected.
-    sa.Column("text", sa.Text, nullable=False),
-    sa.Column("model", sa.Text, nullable=False),
-    sa.Column("fingerprint", sa.Text, nullable=False),
-    sa.Column("embedded_at", sa.BigInteger, nullable=False),
-    sa.Column("v1024", Vector(EMBEDDING_DIMENSIONS)),
-    sa.CheckConstraint(
-        "length(btrim(text)) > 0", name="embedding_text_is_present_check",
-    ),
-    sa.CheckConstraint(
-        "length(btrim(model)) > 0", name="embedding_model_is_named_check",
-    ),
-)
-
-#: The dense channel's index. HNSW rather than IVFFlat: it needs no training
-#: pass over existing rows, which matters for a table that starts empty and
-#: grows slowly — an IVFFlat index built on nothing has useless lists forever.
-#: `vector_cosine_ops` because 23 §6 ranks on cosine distance.
-IDX_EMBEDDING_V1024 = sa.Index(
-    "idx_embedding_v1024", EMBEDDING.c.v1024,
-    postgresql_using="hnsw",
-    postgresql_ops={"v1024": "vector_cosine_ops"},
-)
-
-#: The scope filter every read applies before ranking.
-IDX_EMBEDDING_SCOPE = sa.Index(
-    "idx_embedding_scope", EMBEDDING.c.kind, EMBEDDING.c.scope,
 )
 
 
@@ -4777,6 +4717,20 @@ MEMORY_NODE = sa.Table(
         "projected_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("clock_timestamp()"),
     ),
+    # The dense channel (0106, design/unified-memory/65-build-step-3-vectors.md).
+    # The node is its own embedding queue: `project()` clears all five when
+    # the embedded input changes (the text, or the bytes of an image), and the
+    # embedding worker fills a NULL `embedding`. `embedding_model` is the
+    # fingerprint it was made with (`nora.infra.embedder.fingerprint`), so a
+    # vector of another model reads as unembedded. `embedded_at` (epoch ms) is
+    # the last attempt, a failed one included; `embed_attempts` counts the
+    # failures since the input last changed, and backs the node off;
+    # `embed_error` names the last one's class, never content.
+    sa.Column("embedding", HALFVEC(EMBEDDING_DIMENSIONS)),
+    sa.Column("embedding_model", sa.Text),
+    sa.Column("embedded_at", sa.BigInteger),
+    sa.Column("embed_attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("embed_error", sa.Text),
     sa.UniqueConstraint("kind", "source_id", name="uq_memory_node_kind_source"),
     sa.CheckConstraint(f"kind IN ({_in_list(MEMORY_NODE_KINDS)})", name="ck_memory_node_kind"),
     sa.CheckConstraint(
@@ -4800,6 +4754,27 @@ IDX_MEMORY_NODE_SHA256 = sa.Index("idx_memory_node_sha256", MEMORY_NODE.c.sha256
 IDX_MEMORY_NODE_TEXT_TRGM = sa.Index(
     "idx_memory_node_text_trgm", MEMORY_NODE.c.text,
     postgresql_using="gin", postgresql_ops={"text": "gin_trgm_ops"},
+)
+#: The dense seed's first stage (65 §0): HNSW over the leading 256
+#: dimensions, re-scored on the full 2048. An expression index, so autogenerate
+#: cannot compare it (`migrations/env.py`); its shape is asserted from the
+#: catalogue by `tests/infra/test_schema_parity.py` (`EXPECTED_EXPRESSION_INDEXES`).
+IDX_MEMORY_NODE_EMBEDDING_256 = sa.Index(
+    "idx_memory_node_embedding_256",
+    sa.cast(
+        sa.func.subvector(MEMORY_NODE.c.embedding, 1, EMBEDDING_INDEXED_DIMENSIONS),
+        HALFVEC(EMBEDDING_INDEXED_DIMENSIONS),
+    ).label("embedding_256"),
+    postgresql_using="hnsw",
+    postgresql_ops={"embedding_256": "halfvec_cosine_ops"},
+)
+#: The embedding worker's pick (`nora.infra.sql.memory_index.embed_pick`): the
+#: live, embeddable nodes with no vector, fewest failures and newest first.
+IDX_MEMORY_NODE_UNEMBEDDED = sa.Index(
+    "idx_memory_node_unembedded", MEMORY_NODE.c.embed_attempts, MEMORY_NODE.c.id,
+    postgresql_where=sa.text(
+        f"embedding IS NULL AND state = 'live' AND kind IN ({_in_list(MEMORY_EMBEDDED_KINDS)})"
+    ),
 )
 
 #: Ends named by `(kind, source_id)`, so an edge outlives a rebuild that

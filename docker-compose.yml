@@ -245,7 +245,10 @@ services:
     # evals, the tailnet forward) and nora reaches it BY NAME, `honcho:8000`, on
     # the `honcho` network below, which holds Honcho's api and this one service.
     # docs/runbook.md §"Closing Honcho" has the order the steps must go in.
-    networks: [nora, honcho]
+    #
+    # `embedder` (design/unified-memory/65-build-step-3-vectors.md V1): the
+    # internal network that holds the embedding server and this one service.
+    networks: [nora, honcho, embedder]
     extra_hosts: ["host.docker.internal:host-gateway"]
     # :9100 on loopback so deploy/watchdog.sh (host) still reads /health; the
     # in-container healthcheck below hits the container's own 127.0.0.1:9100.
@@ -640,6 +643,73 @@ services:
       start_period: 20s
       retries: 5
 
+  # embedder — the memory index's embedding model
+  # (design/unified-memory/65-build-step-3-vectors.md): Qwen3-VL-Embedding-2B,
+  # the Q4_K_M GGUF and its f16 projector, served by llama.cpp's server with
+  # `--embedding --pooling last`, the setup the bake-off measured (#22, #24:
+  # ~3.06 GB peak RSS, ~0.4 s a text and ~3.4 s an image on norty's CPU).
+  # nora reaches it as `embedder:8080` (`[memory_index] embedder_url`); the
+  # worker that calls it runs only under `[memory_index] embed = true`.
+  #
+  # - Profile `embedder`: not started by a plain `docker compose up`. Bring it
+  #   up with `docker compose --profile embedder up -d embedder`, then turn the
+  #   worker on.
+  # - The model files are bind-mounted READ-ONLY from EMBEDDER_MODELS_DIR
+  #   (.env; default ./models/embedder), never downloaded by the container.
+  #   The two file names are the ones `config.toml [memory_index]
+  #   embedder_model` describes; a different file is a different model.
+  # - Threads capped at 4 and memory at 4g with no swap (`stt`'s reason: the
+  #   weights stay resident), so a backfill leaves the turn path its CPU.
+  # - On the `embedder` network only, which is internal: no published port
+  #   and no egress, and nothing but nora can reach it.
+  # - Pinned to the nearest published server image after the bake-off's
+  #   build (b11521, b42b7e6d3): b11541, by digest.
+  # - Context 4096 tokens, and a batch as large, because a pooled embedding
+  #   is computed in one batch (`nora.infra.embedder.MAX_TEXT_CHARS`).
+  embedder:
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    image: ghcr.io/ggml-org/llama.cpp:server-b11541@sha256:bf3da52e92c083472b3d1c9f9da081f423ab9def95a87ec4bba51940382d75fd
+    container_name: embedder
+    restart: unless-stopped
+    profiles: [embedder]
+    networks: [embedder]
+    command:
+      - "--embedding"
+      - "--pooling"
+      - "last"
+      - "-m"
+      - "/models/Qwen3-VL-Embedding-2B.Q4_K_M.gguf"
+      - "--mmproj"
+      - "/models/Qwen3-VL-Embedding-2B.mmproj-f16.gguf"
+      - "--ctx-size"
+      - "4096"
+      - "--batch-size"
+      - "4096"
+      - "--ubatch-size"
+      - "4096"
+      - "--threads"
+      - "4"
+      - "--threads-batch"
+      - "4"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+    cpus: 4
+    mem_limit: 4g
+    memswap_limit: 4g
+    volumes:
+      - ${EMBEDDER_MODELS_DIR:-./models/embedder}:/models:ro
+    healthcheck:
+      # llama-server's own /health: 200 once the model is loaded.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 3
+
   # db — Nora's own PostgreSQL record store (design/20 §3). Reached as `db:5432`
   # on the private network; loopback publish (127.0.0.1:5435) lets host-side ops
   # (migrations, the one-time load, backups, the `nora groups` CLI) in without
@@ -969,6 +1039,11 @@ networks:
   honcho:
     external: true
     name: honcho_memory
+  # The embedding server and nora, and nothing else (65 V1). Internal: the
+  # model server needs no egress, and an internal network has no gateway, so
+  # joining it cannot move nora's default route (the `honcho` network's note).
+  embedder:
+    internal: true
   # SearXNG + Firecrawl network joins REMOVED (DEC-73, 2026-08-08): web_search is
   # Tavily (a public API reached over the default network), web_fetch is gone, so
   # Nora no longer calls the co-located SearXNG/Firecrawl containers.

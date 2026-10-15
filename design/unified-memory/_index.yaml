@@ -36,6 +36,7 @@ members:
   - 45-persona-adaptor.md
   - 50-learning-from-acts.md
   - 60-build-step-3.md
+  - 65-build-step-3-vectors.md
   - 40-prior-art.md
 edges:
   - {src: 00-intent, dst: ../cognition-loop/05-data-model, rel: depends_on, provenance: asserted}
@@ -59,5 +60,7 @@ edges:
   - {src: 50-learning-from-acts, dst: 45-persona-adaptor, rel: depends_on, provenance: asserted}
   - {src: 50-learning-from-acts, dst: ../self-growth/40-lessons, rel: extends, provenance: asserted}
   - {src: 60-build-step-3, dst: 25-memory-graph, rel: realizes, provenance: asserted}
+  - {src: 65-build-step-3-vectors, dst: 60-build-step-3, rel: extends, provenance: asserted}
+  - {src: 65-build-step-3-vectors, dst: 20-embedding-bakeoff, rel: realizes, provenance: asserted}
   - {src: 40-prior-art, dst: ../cognition-loop/80-prior-art, rel: extends, provenance: asserted}
 ---

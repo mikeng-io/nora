@@ -1079,6 +1079,15 @@ refresh_timeout_seconds = 8
 [memory_index]
 drain_seconds = 60.0
 enabled = false
+# The embedding worker (design/unified-memory/65-build-step-3-vectors.md V1):
+# off until the `embedder` compose service is up (`--profile embedder`).
+# `embedder_model` is the GGUF the service loads and its sha256 prefix; it is
+# part of every stored vector's fingerprint, so changing it re-embeds all.
+embed = false
+embedder_url = "http://embedder:8080"
+embedder_model = "Qwen3-VL-Embedding-2B.Q4_K_M@7812c91cd1e0"
+embed_batch = 64
+embed_images_per_hour = 120
 
 # The presence analytics substrate — the DERIVED layer (docs/superpowers/
 # specs/2026-08-18-presence-analytics-substrate-design.md), DEC-115. Ships

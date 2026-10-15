@@ -78,6 +78,7 @@ from nora.domain.lessons import Lesson
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
+from nora.infra.embedder import fingerprint
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import (
@@ -373,6 +374,18 @@ def add_subcommands(
     rebuild.add_argument(
         "--dry-run", action="store_true",
         help="count what would be projected and dropped; write nothing",
+    )
+    # 65-build-step-3-vectors.md V1: vectors only, the projection untouched;
+    # the embedding worker backfills what this clears.
+    rebuild.add_argument(
+        "--embeddings-only", action="store_true",
+        help="clear the stored vectors (not the projection) for the embedding "
+             "worker to backfill; with --dry-run, count them",
+    )
+    rebuild.add_argument(
+        "--other-models", action="store_true",
+        help="with --embeddings-only: clear only vectors made by another model "
+             "than [memory_index] embedder_model",
     )
     rebuild.set_defaults(func=cmd_memory_rebuild)
 
@@ -840,6 +853,10 @@ async def cmd_memory_rebuild(args: argparse.Namespace) -> int:
     a store. Prints counts per kind only, never an id or a text. Exit 1 when
     a source stayed unprojected, so a script reads «incomplete» as a failure."""
     cfg = _config(args)
+    if getattr(args, "embeddings_only", False):
+        return await _memory_rebuild_embeddings(args, cfg)
+    if getattr(args, "other_models", False):
+        raise CliError("--other-models applies only with --embeddings-only")
     engine = create_sql_engine(_database_url(cfg))
     try:
         result = await memory_index.rebuild(engine, dry_run=bool(args.dry_run))
@@ -850,6 +867,36 @@ async def cmd_memory_rebuild(args: argparse.Namespace) -> int:
     for line in render_rebuild(result):
         print(line)
     return 1 if result.unprojected and not result.dry_run else 0
+
+
+async def _memory_rebuild_embeddings(args: argparse.Namespace, cfg: Config) -> int:
+    """`nora memory rebuild --embeddings-only [--other-models] [--dry-run]`
+    (design/unified-memory/65-build-step-3-vectors.md V1). Clears vectors,
+    every one or only another model's, and reports counts: the embedding
+    worker (`[memory_index] embed`) backfills them on its own ticks. The
+    projection is untouched."""
+    model = fingerprint(cfg.memory_index.embedder_model)
+    keep = model if args.other_models else None
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        async with engine.connect() as conn:
+            # A dry run clears inside a transaction it rolls back, so the
+            # count is the statement's own, and nothing is written.
+            cleared = await memory_index.clear_embeddings(conn, keep_model=keep)
+            after = await memory_index.embed_counts(conn, model)
+            if args.dry_run:
+                await conn.rollback()
+            else:
+                await conn.commit()
+    finally:
+        await engine.dispose()
+    verb = "would clear" if args.dry_run else "cleared"
+    which = "of other models" if keep is not None else "all"
+    print(f"vectors: {verb} {cleared} ({which})")
+    print(f"embedded with {model}: {after.embedded}; waiting for the worker: {after.pending}")
+    if not cfg.memory_index.embed:
+        print("[memory_index] embed is false: nothing backfills until it is on")
+    return 0
 
 
 def render_rebuild(result: memory_index.RebuildReport) -> list[str]:

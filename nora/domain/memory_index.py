@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, get_args
 
 __all__ = [
+    "EMBEDDED_KINDS",
+    "EMBED_OUTCOMES",
     "EPISODE_KINDS",
     "HUB_KINDS",
     "NODE_KINDS",
@@ -24,6 +26,7 @@ __all__ = [
     "PROJECTION_OUTCOMES",
     "RELATIONS",
     "SEARCH_STATUSES",
+    "EmbedOutcome",
     "IndexState",
     "IndexedNode",
     "MemoryIndexRead",
@@ -34,6 +37,7 @@ __all__ = [
     "Relation",
     "SearchStatus",
     "Seed",
+    "embeds_bytes",
     "in_scope",
 ]
 
@@ -60,6 +64,32 @@ Relation = Literal[
 RELATIONS: tuple[str, ...] = get_args(Relation)
 
 NODE_STATES: tuple[str, ...] = ("live", "retired", "superseded")
+
+#: The kinds that get a vector (25 §7's «vector» column, 65 §1.4): every
+#: kind with text worth matching by meaning. Never a hub (a hub never seeds,
+#: 60 S5), and never a kind 25 §7 marks lexical only: the Rollup episodes
+#: (outing, stay, trip), whose text is a kind and an interval. Disputes and
+#: feedback, also lexical only there, have no node kind yet.
+EMBEDDED_KINDS: tuple[str, ...] = (
+    "message", "media", "note", "memo", "event", "lesson", "character",
+)
+
+#: `nora_memory_embed_total`'s `outcome`, one per node the embedding worker
+#: tried (65 V1). `ok` stored a vector; `unavailable` the embedder (or the
+#: blob store holding an image's bytes) did not answer, and the tick stops;
+#: `rejected` the embedder refused this input; `empty` the node had nothing
+#: to embed (no text, and no image bytes). Every failure leaves the node's
+#: vector NULL, counts an attempt and backs the node off.
+EmbedOutcome = Literal["ok", "unavailable", "rejected", "empty"]
+EMBED_OUTCOMES: tuple[str, ...] = get_args(EmbedOutcome)
+
+
+def embeds_bytes(media_type: str) -> bool:
+    """Whether an attachment of `media_type` is embedded from its bytes
+    rather than its reading (65 §1.3): an image, a sticker or a GIF is; a
+    video, a voice note or a document is embedded from its reading's text."""
+    return media_type.strip().lower().startswith("image/")
+
 
 #: `nora_memory_projection_total`'s `outcome`. `ok` projected (or dropped) in
 #: the store's own transaction; `queued` failed, and the source is on

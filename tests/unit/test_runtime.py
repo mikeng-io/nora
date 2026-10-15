@@ -273,6 +273,44 @@ async def test_memory_drain_loop_keeps_draining_after_a_failing_drain():
     assert metrics.get("nora_errors_total", stage="memory_drain") == 1
 
 
+async def test_memory_drain_loop_embeds_after_each_drain_and_survives_a_failure():
+    """`[memory_index] embed` (65 V1): one embedding batch after every drain,
+    a failing batch counted under its own stage, and a failing drain never
+    skipping the batch."""
+    order: list[str] = []
+    done = asyncio.Event()
+
+    class _Store:
+        async def drain_index_queue(self) -> int:
+            order.append("drain")
+            if order.count("drain") == 2:
+                raise RuntimeError("database away")
+            return 0
+
+    class _Embed:
+        async def run_once(self) -> int:
+            order.append("embed")
+            if order.count("embed") == 1:
+                raise RuntimeError("embedder away")
+            if order.count("embed") >= 3:
+                done.set()
+            return 1
+
+    metrics = Metrics()
+    task = asyncio.create_task(
+        memory_drain_loop(_Store(), metrics, interval_seconds=0.01, embed=_Embed()),
+    )
+    try:
+        await asyncio.wait_for(done.wait(), timeout=5.0)
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    assert order[:6] == ["drain", "embed"] * 3
+    assert metrics.get("nora_errors_total", stage="memory_embed") == 1
+    assert metrics.get("nora_errors_total", stage="memory_drain") == 1
+
+
 # ---------------------------------------------------------------------------
 # adapter supervision
 # ---------------------------------------------------------------------------

@@ -1312,12 +1312,27 @@ class MemoryIndexConfig(BaseModel):
     `enabled` (S5) is the READ: on, `ask_memory` answers from the index
     through `nora.agent.memory_search` and Honcho is not called; off (the
     default), `ask_memory` is today's Honcho path, unchanged. Undo is this
-    flag and a restart."""
+    flag and a restart.
+
+    `embed` (design/unified-memory/65-build-step-3-vectors.md V1) starts the
+    embedding worker on the same drain tick: up to `embed_batch` nodes per
+    tick through llama-server at `embedder_url` (the `embedder` compose
+    service), and at most `embed_images_per_hour` images an hour (about
+    3.4 s of CPU each on the deploy host). `embedder_model` names the model
+    file the server loads; with the formatter's version it is the
+    fingerprint stored with every vector, so changing it makes every stored
+    vector another model's, re-embedded by the worker. Off by default: the
+    `embedder` service must be up first."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     drain_seconds: float = Field(default=60.0, gt=0)
     enabled: bool = False
+    embed: bool = False
+    embedder_url: str = "http://embedder:8080"
+    embedder_model: str = "Qwen3-VL-Embedding-2B.Q4_K_M@7812c91cd1e0"
+    embed_batch: int = Field(default=64, ge=1, le=1000)
+    embed_images_per_hour: int = Field(default=120, ge=0)
 
 
 class AnalyticsConfig(BaseModel):
