@@ -19,6 +19,7 @@ Operator, 2026-10-15, answering 30 §8:
 | 3. Who may dispute a line | **Anyone**, and how much it counts depends on the context. Weighing it is what Nora learns to do; no fixed rule decides it. **Except** (2026-10-15): the subject's own dispute hides the line at once (§2). |
 | 4. Visibility of what someone told about themselves | **Ruled 2026-10-15: the unit is the read boundary**, lineage stays off, and evidence about a person counts only if said in a room they are listed in (§3). |
 | 5. Honcho's uncited conclusions | **Dropped.** A one-off backfill script builds the new memory from Nora's own stores. |
+| 6. The workspace (DEC-214) | **Ruled 2026-10-16: retired; the unit is the only boundary.** A workspace exists to put several units' people in one Honcho tenant, and the unit-boundary ruling in row 4 already stops anything crossing units, so nothing would enforce it. It is removed at step 9 of [00](00-intent.md) «Sequence», with Honcho. Removed with it: `policy.toml` `[units.<u>] workspace` and its startup check, `identity.toml` `[workspaces]`, and the routing; the portal's viewer scope (`workspaces_of_person`) moves to the unit. Cost, accepted: what a person says about themselves in one unit no longer reaches another unit their workspace shares today; only turning lineage on for Persona would bring that back. |
 
 ## 1. What Persona is
 

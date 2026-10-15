@@ -220,7 +220,9 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   ONE Honcho peer across all of them; different workspaces are separate person
   models entirely. Declared in `policy.toml` (`[units.friends] workspace =
   "67"`). With no `[units]` table every unit is in one implicit workspace
-  (`default`). Not a Honcho workspace — see the next entry.
+  (`default`). Not a Honcho workspace — see the next entry. **Retired with Honcho**
+  (operator 2026-10-16, `design/unified-memory/35-persona.md` row 6): the
+  unit becomes the only boundary; this entry describes the code until then.
 
 - **Honcho workspace** — Honcho's tenant: where one workspace's peers,
   sessions and conclusions live. Each workspace is bound to exactly one, in
