@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Eval-only: WeMM-Embedding-2B (Q4_K_M, llama-server on CPU) measured in the retrieval bake-off on the text-to-image, Cantonese and names slices, with the adapter corrected to the model's own input template. Nothing Nora runs or says changes.",
+  "details": [],
+  "limitations": []
+}

@@ -315,6 +315,58 @@ def test_hf_sends_images_unprefixed(tmp_path: Path) -> None:
     assert all(isinstance(x, Image.Image) for x in st.seen[0])
 
 
+WEMM = "tencent/WeMM-Embedding-2B"
+
+
+def _wemm_hf(st: FakeST, pieces: list[str], *, text_only: bool = True) -> HFEmbedder:
+    return HFEmbedder(WEMM, revision=SHA, dtype="float32", native_dim=2048, text_only=text_only,
+                      load=lambda name, revision, dtype: st, pieces=lambda st: pieces)
+
+
+def test_wemm_through_hf_renders_the_wrapper_llama_server_tokenized() -> None:
+    """The HF processor must render the probe exactly as /tokenize did, with
+    no instruction on the text (WeMM's `prompts` is {})."""
+    st = FakeST()
+    emb = _wemm_hf(st, list(adapters.WEMM_PIECES))
+    emb.embed_text(["打風"], "query")
+    assert st.seen == [["打風"]]
+    assert emb.provenance()["template_pieces"] == list(adapters.WEMM_PIECES)
+
+
+@pytest.mark.parametrize("pieces", [
+    # transformers 5.19: the newline before `<embedding>` survives
+    ["<|im_start|>", "user", "\n", "two", " bowls", " of", " noodles", "<|im_end|>", "\n",
+     "<embedding>"],
+    # no `<embedding>` appended: last-token pooling would read `<|im_end|>`
+    ["<|im_start|>", "user", "\n", "two", " bowls", " of", " noodles", "<|im_end|>"],
+])
+def test_wemm_through_hf_refuses_any_other_rendering(pieces: list[str]) -> None:
+    with pytest.raises(ValueError, match="renders"):
+        _wemm_hf(FakeST(), pieces).embed_text(["打風"], "query")
+
+
+def test_a_text_only_load_refuses_media(tmp_path: Path) -> None:
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"jpeg")
+    with pytest.raises(EmbedError) as e:
+        _wemm_hf(FakeST(), list(adapters.WEMM_PIECES)).embed_media([img])
+    assert e.value.kind == "unsupported"
+
+
+def test_wemm_arms_are_labelled_by_serving_path() -> None:
+    """Q4 (llama-server) and full precision (HF) arms must not share a name,
+    or a decide() over both would let one overwrite the other."""
+    hf = run.wemm_embedder(hf_repo=WEMM, revision=SHA, dtype="float32", text_only=True,
+                           name="x", timeout=1)
+    q4 = run.wemm_embedder(llama_url="http://x", name="wemm-embedding-2b:Q4_K_M", timeout=1)
+    assert hf is not None and q4 is not None
+    assert (hf[1], q4[1]) == ("wemm-fp32", "wemm")
+    assert isinstance(hf[0], HFEmbedder) and hf[0].native_dim == 2048
+    with pytest.raises(ValueError, match="two serving paths"):
+        run.wemm_embedder(llama_url="http://x", hf_repo=WEMM, revision=SHA, dtype="float32",
+                          name="x", timeout=1)
+
+
 @pytest.mark.parametrize("dtype", ["float16", "fp16", "torch.float16", "half"])
 def test_float16_is_refused_at_construction(dtype: str) -> None:
     with pytest.raises(ValueError, match="float16"):
@@ -377,23 +429,6 @@ def test_ollama_sends_media_as_image_objects_for_a_vision_model(tmp_path: Path) 
                          "input": [{"image": "anBlZw=="}, {"image": "anBlZw=="}]}]
     emb.embed_media([img])
     assert t.shows == 1  # capabilities read once
-
-
-def test_llama_server_sends_the_recorded_media_shape(tmp_path: Path) -> None:
-    img = tmp_path / "a.jpg"
-    img.write_bytes(b"jpeg")
-    bodies: list[dict] = []
-
-    def transport(method, url, body, timeout):
-        bodies.append(body)
-        return [{"index": 0, "embedding": [[1.0] + [0.0] * 2047]}]
-
-    emb = adapters.LlamaServerEmbedder("wemm-2b", native_dim=2048, transport=transport)
-    vec = emb.embed_media([img])
-    assert len(vec[0]) == 2048
-    content = bodies[0]["content"]
-    assert content["multimodal_data"] == ["anBlZw=="]
-    assert "<__media__>" in content["prompt_string"]
 
 
 # --- the set, the watchdog and the output --------------------------------------------
