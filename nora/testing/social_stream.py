@@ -5,9 +5,11 @@
 It answers the way the bridge does rather than the same way every time: an
 account it holds nothing for is `not_found` on every read, a checkpointed
 session is `halt` on every read and unhealthy, and each scripted answer
-(a value or a `Failed`) is returned for its own account or item only. `calls`
-records `(read, id)` for every call, so a test can count what reached the
-network.
+(a value or a `Failed`) is returned for its own account or item only. A
+listing pages like the bridge's: `pages` holds each account's first page and
+`after` the page each cursor names, and a cursor it holds nothing for is
+`not_found`. `calls` records `(read, id)` for every call and `cursors` the
+cursor of every list read, so a test can count what reached the network.
 """
 
 from __future__ import annotations
@@ -29,9 +31,9 @@ _HALT = Failed(FailureKind.HALT, "needs_human")
 
 
 class FakeSocialSource:
-    """Scripted per account (`probes`, `stories`, `pages`) and per item
-    (`items`, keyed by item id). `checkpointed` is the session needing a
-    human: every read halts and `healthy` is False."""
+    """Scripted per account (`probes`, `stories`, `pages`), per cursor
+    (`after`) and per item (`items`, keyed by item id). `checkpointed` is the
+    session needing a human: every read halts and `healthy` is False."""
 
     def __init__(
         self, *, network: str = "instagram", probe_cost: int = 2,
@@ -43,9 +45,11 @@ class FakeSocialSource:
         self.probes: dict[str, Probe | Failed] = {}
         self.stories: dict[str, StorySnapshot | Failed] = {}
         self.pages: dict[str, Page | Failed] = {}
+        self.after: dict[str, Page | Failed] = {}
         self.items: dict[str, SocialItem | Failed] = {}
         self.checkpointed = False
         self.calls: list[tuple[str, str]] = []
+        self.cursors: list[str | None] = []
 
     def reads(self, read: str) -> list[str]:
         """The ids `read` was called with, in order."""
@@ -61,7 +65,12 @@ class FakeSocialSource:
 
     async def list_items(self, *, account: Account, after: str | None) -> Page | Failed:
         self.calls.append(("items", account.id))
-        return _HALT if self.checkpointed else self.pages.get(account.id, _NOT_FOUND)
+        self.cursors.append(after)
+        if self.checkpointed:
+            return _HALT
+        if after:
+            return self.after.get(after, _NOT_FOUND)
+        return self.pages.get(account.id, _NOT_FOUND)
 
     async def read_item(self, *, ref: ItemRef) -> SocialItem | Failed:
         self.calls.append(("item", ref.item_id))

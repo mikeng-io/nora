@@ -1560,6 +1560,14 @@ class SocialPollConfig(BaseModel):
     video one per `[media.describe.video] chunk_seconds` window (up to
     `chunk_max`) plus its text pass. Back-filled items may use at most half of
     what polled items leave (§7). 0 perceives nothing.
+
+    The back-fill (§7) pages each member's posts and reels back from their
+    first list read, newest first, until `backfill_max_items` back-filled
+    items, a page with nothing newer than `backfill_max_days`, or the end of
+    the grid. It reads at most `backfill_pages_per_tick` pages a tick, one per
+    member, after the tick's probes and due reads, and only while what is left
+    of the hour's budget still covers a probe and a read of every member. 0
+    pages turns it off.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1573,6 +1581,9 @@ class SocialPollConfig(BaseModel):
     back_off_max_hours: float = Field(default=6.0, gt=0)
     jitter_seconds: float = Field(default=10.0, ge=0)
     perception_daily_cap: int = Field(default=200, ge=0)
+    backfill_max_days: float = Field(default=90.0, gt=0)
+    backfill_max_items: int = Field(default=50, ge=0)
+    backfill_pages_per_tick: int = Field(default=2, ge=0)
 
     @model_validator(mode="after")
     def _bounds_are_ordered(self) -> SocialPollConfig:

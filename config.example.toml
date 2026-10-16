@@ -792,6 +792,8 @@ mode = "dry_run"
 # a group room of policy.toml, with exactly one igid in identity.toml) is probed,
 # and their story or their newest posts and reels are read only when the probe
 # says something changed. New items are recorded with their media in custody.
+# From a member's first list read, their past posts and reels are paged back
+# (the back-fill) with what the probes leave of the hour's budget.
 # Needs [social.instagram] enabled (refused at load otherwise). It reads through
 # the login Nora's Instagram messaging uses: a checkpoint halts it until the
 # bridge reports the session healthy again.
@@ -812,6 +814,9 @@ enabled = false
 # back_off_max_hours = 6.0        # the pause doubles up to this, until a clean probe
 # jitter_seconds = 10.0           # random pause of up to this before each call
 # perception_daily_cap = 200      # model calls per unit per day; past it, an item waits a day
+# backfill_max_days = 90.0        # the back-fill pages history back to this age...
+# backfill_max_items = 50         # ...or this many back-filled items, whichever comes first
+# backfill_pages_per_tick = 2     # back-fill pages a tick, one per member, from what probes leave; 0 is off
 
 [social.linkedin]
 # linkedin_read and linkedin_search (DEC-201): read-only LinkedIn through the same

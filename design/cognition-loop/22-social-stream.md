@@ -86,7 +86,7 @@ SocialSource
   capabilities: frozenset[Cap]       # PROBE, STORY, LIST_ITEMS, READ_ITEM
   probe(account) -> Probe            # newest-story marker; item counts, or why absent
   story(account) -> StorySnapshot    # found, frames with taken_at, expires_at
-  list_items(account, before) -> Page[ItemRef]   # posts and reels, newest first
+  list_items(account, after) -> Page[SocialItem] # posts and reels, newest first
   read_item(ref) -> SocialItem
   probe_cost: int                    # upstream calls one probe spends (Instagram: 2)
 ```
@@ -295,8 +295,10 @@ after insert. Everything that changes about an item is a new row elsewhere.
   No unit column: a person in two units is one row, and which units may read
   it is derived from membership at read time.
 - **`social_poll`**: one row per probe and per read: `network`, `person`,
-  `stage`, `outcome` (`unchanged`, `story_due`, `items_due`, `partial`,
-  `count_fell`, `read_ok`, `halted`, `backed_off`, `error`), the probed
+  `stage` (`probe`, `story`, `items`, `backfill`), `outcome` (`unchanged`,
+  `story_due`, `items_due`, `partial`, `count_fell`, `read_ok`, `halted`,
+  `backed_off`, `error`, and `abandoned` for a back-fill page whose cursor
+  was judged bad, §7), a back-fill page's next `cursor` (§7), the probed
   `latest_reel_media`, `media_count` and `total_clips_count` (null when
   absent), whether this row advanced the marker and whether it advanced the
   counts (a probe that made no list read due, or a completed list read; a
@@ -384,6 +386,62 @@ runs; past that, items are recorded unperceived and perceived on a later day.
 investigation): 12 items a page, newest first, paged by `after`. A member
 whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit stops far earlier.
 
+**As built in S5** (`nora/app/social_poller.py`, migration
+`0111_social_backfill`, `[social.poll] backfill_max_days`, `backfill_max_items`,
+`backfill_pages_per_tick`):
+
+- **Where it starts.** A member's first list read (no counts ever recorded)
+  is the back-fill's first page: its items are recorded `origin = backfill`
+  and its `social_poll` row has stage `backfill` and the page's next
+  `cursor`. A member whose first list read was recorded before S5 has no
+  such row and starts again at the first page, once (its items are known and
+  not recorded twice). A member whose list was never read (no counts yet, or
+  a network without `LIST_ITEMS`) is not back-filled until it is. Members
+  with `social = false` are not on the roster, so they are never paged.
+- **How deep.** Each later page records its items newer than
+  `backfill_max_days` (default 90), until the member has `backfill_max_items`
+  (default 50) back-filled items, the first page's included. The walk ends at
+  the item limit, at a page read at a cursor that holds any item older than
+  the day limit (every later page is older still), or at the end of the grid
+  (`next_cursor` null). The first page ends it only when all its items are
+  older, since a pinned post there can be old. An item past either limit is
+  counted, not recorded.
+- **The lowest priority.** After the tick's probes and the reads they made
+  due, and only if none of them halted or backed off the login, each member
+  whose back-fill is not done gets at most one page, least recently paged
+  first, up to `backfill_pages_per_tick` (default 2; 0 is off) pages a tick.
+  A page is read only while what is left of the trailing hour's budget,
+  after it, still covers one probe and one read of every member on the
+  roster. At the defaults that is at most 12 calls an hour of the 60, and 10
+  members' 50 items (about 4 pages each past the first) take about 20 ticks.
+  The reserve has a ceiling: past 19 members at the defaults no page fits,
+  and the back-fill waits until the reserve counts only the members due.
+  Every page goes through the same jitter, budget, halt, back-off and
+  `stale_query` handling as any read; a halt or back-off on a page ends the
+  tick.
+- **Where it stands, across a restart.** The latest `backfill` row of the
+  member that read a page or ended the walk decides, read every tick
+  (`SqlSocialStreamStore.backfills`): its `cursor` is where the next page
+  starts, null is done, `abandoned` is done. Nothing is held in memory, so a
+  restart reads no page twice. `social_poll` stays APPEND-ONLY.
+- **A bad cursor ends that member's back-fill** (`abandoned`): the bridge
+  refusing the request (`400 invalid_id`, which on a back-fill page can only
+  be the cursor, since the adapter shape-checks the igid and username), or
+  the same cursor refused upstream twice in a row (each refusal also backs
+  the login off, as any does). It is not restarted from the top: the cursor
+  is opaque, so "the oldest recorded item's position" cannot be rebuilt from
+  an item, and what upstream answers for a stale cursor is unmeasured; a
+  failure that recurs at one depth would recur after a restart too, spending
+  rejected calls on the login. What is lost is the rest of one member's
+  history window.
+- Back-filled items raise no stimulus and use the back-fill perception
+  allowance (§5). Measured by `nora_social_polls_total{stage="backfill"}`
+  (pages, by outcome), `nora_social_backfill_items_total{outcome}`
+  (`recorded`, `known`, `past_limit`) and
+  `nora_social_backfill_ended_total{reason}` (`grid_end`, `max_items`,
+  `max_days`, `bad_cursor`). Paging past the first page has not been read
+  live.
+
 ## 8. Build order
 
 | step | ships | measured by |
@@ -394,7 +452,7 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 | S3a | **BUILT 2026-10-16, with the poller** (`nora/app/social_perception.py`, migration `0108_social_perception`, `[social.poll] perception_daily_cap`): each new item's media perceived once by ingest's comprehension job (images and video), told what it reads, under the per-unit daily cap, polled first, back-fill at most half of what polled items leave (§7), an item past the cap or after a failed read tried again on a later day (§5); one `social` stimulus per completed read and unit once its items are settled, none for back-fill, once across a restart (§5); the read-side exclusion of opted-out persons and gone or hidden items (§2) | `nora_perception_total{source="social",outcome}`; `nora_stimulus_total{kind="social"}`; `social_perception` rows per unit per day. Not built: polled items in Character's wake count (§6) |
 | S3b | **BUILT 2026-10-16, the deletion half, off by default** (`nora/app/social_expiry.py`, `nora/infra/sql/blob_refs.py`, migration `0109_blob_tombstone`, `[social] story_expiry_enabled`, `story_media_keep_days` and `story_media_keep_max_days`): a `BlobStore` delete on both implementations that keeps bytes put within the last hour and is one step against `put`, the [70](70-migration.md) §9 tombstone as one row per confirmed deletion, and a story frame's bytes deleted at the first bound once perceived and embedded or at the hard limit regardless, never bytes another row names, posts and reels never (§5). Nothing reaches the 30-day bound until 31 days after the poller is enabled. The index projects and embeds social items since 2026-10-16 (§9) and `story_frame_embedded` is the read; until the pass calls it, every frame's bytes go at the hard limit | `nora_social_story_bytes_deleted_total{reason}`, `nora_social_story_unembedded_total`, `blob_tombstone` rows; then, with the hand-off, story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
-| S5 | the back-fill over `LIST_ITEMS` | items per member against `media_count` |
+| S5 | **BUILT 2026-10-17** (§7): the back-fill pages each member's posts and reels from their first list read, up to 90 days or 50 items, at the lowest budget priority (after probes and due reads, at most `backfill_pages_per_tick` pages a tick and one a member, never past what the hour owes every member's probe and read); progress read off `social_poll` rows (stage `backfill`, `cursor`, migration `0111_social_backfill`); a bad cursor ends that member's back-fill. Paging past the first page not yet read live | items per member against `media_count`; `nora_social_backfill_ended_total{reason}` |
 
 S4 needs a week of S2's rows to learn from.
 

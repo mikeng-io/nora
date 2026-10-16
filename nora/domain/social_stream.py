@@ -154,18 +154,34 @@ class MediaItem:
 
 ItemKind = Literal["story_frame", "post", "reel"]
 
-#: A `social_poll` row's stage: the probe, or one of the three reads.
-PollStage = Literal["probe", "story", "items", "item"]
+#: A `social_poll` row's stage: the probe, or one of the reads. `backfill` is
+#: a page of a member's history (§7): their first list read, and each page
+#: paged back from it.
+PollStage = Literal["probe", "story", "items", "item", "backfill"]
 POLL_STAGES: tuple[str, ...] = get_args(PollStage)
 
 #: A `social_poll` row's outcome. A probe's is `Due.outcome`; a read is
 #: `read_ok`; a failure is `halted` (the login, or one read kind), `backed_off`
-#: or `error`. The table's CHECK constraint holds the same set.
+#: or `error`; `abandoned` is a back-fill page whose cursor was judged bad,
+#: which ends that member's back-fill. The table's CHECK constraint holds the
+#: same set.
 PollOutcome = Literal[
     "unchanged", "story_due", "items_due", "partial", "count_fell",
-    "read_ok", "halted", "backed_off", "error",
+    "read_ok", "halted", "backed_off", "error", "abandoned",
 ]
 POLL_OUTCOMES: tuple[str, ...] = get_args(PollOutcome)
+
+#: Why a member's back-fill ended (§7): the grid ended (`next_cursor` null),
+#: the item limit was reached, a page held nothing inside the day limit, or
+#: its cursor was judged bad.
+BackfillEnd = Literal["grid_end", "max_items", "max_days", "bad_cursor"]
+BACKFILL_ENDS: tuple[str, ...] = get_args(BackfillEnd)
+
+#: What became of one item on a back-fill page: `recorded` new, already
+#: `known`, or `past_limit` (older than the day limit, or past the item
+#: limit), not recorded.
+BackfillItemOutcome = Literal["recorded", "known", "past_limit"]
+BACKFILL_ITEM_OUTCOMES: tuple[str, ...] = get_args(BackfillItemOutcome)
 
 #: Why the poller did not make a call it had due on a tick: the login is
 #: halted or backed off, the hourly budget is spent, or the roster could not

@@ -599,8 +599,8 @@ CONSTRAINT ck_social_item_story_frame_expires CHECK (((kind <> 'story_frame'::te
 CONSTRAINT ck_social_perception_calls CHECK ((calls >= 0)),
 CONSTRAINT ck_social_perception_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
 CONSTRAINT ck_social_perception_outcome CHECK ((outcome = ANY (ARRAY['ok'::text, 'nothing_found'::text, 'unavailable'::text, 'failed'::text, 'capped'::text])))
-CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text]))),
-CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text])))
+CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text, 'abandoned'::text]))),
+CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text])))
 CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
@@ -1430,6 +1430,7 @@ created_by text NOT NULL,
 created_by_tag text NOT NULL,
 cues text[] DEFAULT '{}'::text[] CONSTRAINT signal_cues_not_null NOT NULL,
 culture_key text NOT NULL,
+cursor text,
 cut_cooldown integer DEFAULT 0 NOT NULL,
 deleted_at timestamp with time zone NOT NULL,
 delivery_status text DEFAULT 'pending'::text NOT NULL,

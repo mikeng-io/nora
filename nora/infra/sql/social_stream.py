@@ -41,7 +41,7 @@ Postgres.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
@@ -161,8 +161,22 @@ class ProbeTimes:
     answered: datetime | None
 
 
+@dataclass(frozen=True)
+class Backfill:
+    """Where one person's back-fill stands. `cursor` is where the next page
+    starts (None: the first page); `items` how many items of theirs are
+    recorded `origin = backfill`; `rejected` the pages refused upstream since
+    the last page read; `last_at` when a page was last tried (None: never)."""
+
+    items: int
+    cursor: str | None = None
+    done: bool = False
+    rejected: int = 0
+    last_at: datetime | None = None
+
+
 class SqlSocialStreamStore:
-    """The stream's five tables, as seventeen verbs."""
+    """The stream's five tables, as eighteen verbs."""
 
     def __init__(
         self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
@@ -217,17 +231,18 @@ class SqlSocialStreamStore:
         latest_reel_media: int | None = None, media_count: int | None = None,
         total_clips_count: int | None = None, advanced_marker: bool = False,
         advanced_counts: bool = False, latency_ms: int | None = None,
-        id: str | None = None,
+        id: str | None = None, cursor: str | None = None,
     ) -> None:
         """Append one probe or read. A read passes its own `id`, the
-        `read_id` its items were recorded with."""
+        `read_id` its items were recorded with; a back-fill page its next
+        `cursor`, None when the walk ended on it."""
         extra = {} if id is None else {"id": id}
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(SOCIAL_POLL).values(
                 **extra, network=network, person=person, stage=stage, outcome=outcome,
                 latest_reel_media=latest_reel_media, media_count=media_count,
                 total_clips_count=total_clips_count, advanced_marker=advanced_marker,
-                advanced_counts=advanced_counts, latency_ms=latency_ms,
+                advanced_counts=advanced_counts, latency_ms=latency_ms, cursor=cursor,
             ))
 
     async def record_state(
@@ -343,6 +358,64 @@ class SqlSocialStreamStore:
         )
         async with self._engine.connect() as conn:
             return [(r.recorded_at, r.stage) for r in (await conn.execute(stmt)).all()]
+
+    async def backfills(self, *, network: str) -> dict[str, Backfill]:
+        """Where each person's back-fill stands (§7), for every person with a
+        completed list read: read off their `backfill` rows, so a restart
+        resumes at the cursor the last page left and reads no page twice.
+
+        The latest row that read a page (`read_ok`) or ended the walk
+        (`abandoned`) decides: abandoned, or a page with no next cursor, is
+        done; otherwise the walk goes on at that page's cursor. A person with
+        a list read and no such row (their first list read was recorded
+        before the back-fill existed) starts at the first page. `rejected`
+        counts the pages refused upstream (`backed_off`) since then."""
+        p, i = SOCIAL_POLL, SOCIAL_ITEM
+        # ponytail: every list read and back-fill row of the network, folded
+        # here; a list read is rare and a back-fill a handful of pages a
+        # person, so a window query is not worth it yet.
+        rows_stmt = (
+            sa.select(p.c.person, p.c.stage, p.c.outcome, p.c.cursor, p.c.recorded_at)
+            .where(
+                p.c.network == network,
+                sa.or_(
+                    p.c.stage == "backfill",
+                    sa.and_(p.c.stage == "items", p.c.outcome == "read_ok"),
+                ),
+            )
+            .order_by(p.c.recorded_at, p.c.id)
+        )
+        counts_stmt = (
+            sa.select(i.c.person, sa.func.count())
+            .where(i.c.network == network, i.c.origin == "backfill")
+            .group_by(i.c.person)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(rows_stmt)).all()
+            counts = dict((await conn.execute(counts_stmt)).tuples().all())
+        listed: set[str] = set()
+        out: dict[str, Backfill] = {}
+        for r in rows:
+            if r.outcome == "read_ok":
+                listed.add(r.person)
+            if r.stage != "backfill":
+                continue
+            was = out.get(r.person, Backfill(items=0))
+            if r.outcome == "abandoned":
+                out[r.person] = Backfill(items=0, done=True, last_at=r.recorded_at)
+            elif r.outcome == "read_ok":
+                out[r.person] = Backfill(
+                    items=0, cursor=r.cursor, done=r.cursor is None, last_at=r.recorded_at,
+                )
+            else:
+                out[r.person] = Backfill(
+                    items=0, cursor=was.cursor, done=was.done,
+                    rejected=was.rejected + (r.outcome == "backed_off"), last_at=r.recorded_at,
+                )
+        return {
+            person: replace(out.get(person, Backfill(items=0)), items=int(counts.get(person, 0)))
+            for person in listed
+        }
 
     # -- the readers: perception and the stimulus -----------------------------
 

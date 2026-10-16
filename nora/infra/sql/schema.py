@@ -4694,10 +4694,14 @@ SOCIAL_POLL = sa.Table(
     sa.Column("advanced_counts", sa.Boolean, nullable=False, server_default=sa.text("false")),
     sa.Column("latency_ms", sa.Integer),
     _recorded_at(),
-    sa.CheckConstraint("stage IN ('probe', 'story', 'items', 'item')", name="ck_social_poll_stage"),
+    # 0111: a back-fill page's next cursor (null: the walk ended there).
+    sa.Column("cursor", sa.Text),
+    sa.CheckConstraint(
+        "stage IN ('probe', 'story', 'items', 'item', 'backfill')", name="ck_social_poll_stage",
+    ),
     sa.CheckConstraint(
         "outcome IN ('unchanged', 'story_due', 'items_due', 'partial', 'count_fell', "
-        "'read_ok', 'halted', 'backed_off', 'error')",
+        "'read_ok', 'halted', 'backed_off', 'error', 'abandoned')",
         name="ck_social_poll_outcome",
     ),
 )

@@ -197,12 +197,14 @@ def held(world: World, *item_ids: str) -> None:
         world.media.blobs[f"attachment:{_CDN}/{item_id}.jpg"] = f"bytes of {item_id}".encode()
 
 
-def post(world: World, item_id: str, account: str = ADA) -> SocialItem:
+def post(
+    world: World, item_id: str, account: str = ADA, *, age: timedelta = timedelta(days=1),
+) -> SocialItem:
     """A listed post, media included, and the CDN holding its bytes."""
     held(world, item_id)
     return SocialItem(
         network="instagram", item_id=item_id, account=account, kind="post",
-        taken_at=world.clock.now - timedelta(days=1), expires_at=None, caption="c",
+        taken_at=world.clock.now - age, expires_at=None, caption="c",
         alt_text=None, media=(MediaItem("image", f"{_CDN}/{item_id}.jpg"),),
     )
 
@@ -358,10 +360,10 @@ async def test_a_failed_list_read_leaves_the_rise_due_on_the_next_probe(world) -
     await poller.tick()
     assert world.source.reads("items") == [ADA, BEA, ADA], "counts unchanged: nothing due"
     assert [r[:2] for r in await world.polls("ada")] == [
-        ("probe", "items_due"), ("items", "error"),
-        ("probe", "items_due"), ("items", "read_ok"),
+        ("probe", "items_due"), ("backfill", "error"),
+        ("probe", "items_due"), ("backfill", "read_ok"),
         ("probe", "unchanged"),
-    ]
+    ], "a first list read is the back-fill's first page"
 
 
 async def test_a_listed_page_records_every_new_item_with_its_media_and_reads_no_post(world) -> None:
@@ -846,3 +848,233 @@ async def test_a_post_with_no_usable_media_is_recorded_and_not_read_again(world)
         await poller.tick()
     assert served.count("items") == reads, "the list read completed; nothing is read again"
     assert "post" not in served
+
+
+# ---- the back-fill ------------------------------------------------------------
+
+
+def grid(
+    world: World, account: str, items: int, *, every: timedelta = timedelta(days=1),
+) -> None:
+    """`account` has posted `items` posts, one every `every` going back from
+    a day ago, listed 12 a page newest first like the bridge's timeline: the
+    first page in `pages`, each later one under the cursor the page before
+    hands on (`<account>-c<n>`), the last handing on none. The probe's count
+    makes the first list read due."""
+    posts = [
+        post(world, f"{account}-{k}", account, age=timedelta(days=1) + every * k)
+        for k in range(items)
+    ]
+    chunks = [tuple(posts[i:i + 12]) for i in range(0, items, 12)] or [()]
+    for n, chunk in enumerate(chunks):
+        page = Page(items=chunk, next_cursor=f"{account}-c{n + 1}" if n + 1 < len(chunks) else None)
+        if n == 0:
+            world.source.pages[account] = page
+        else:
+            world.source.after[f"{account}-c{n}"] = page
+    world.source.probes[account] = probe(posts=items)
+
+
+async def backfilled(world: World, person: str) -> int:
+    i = SOCIAL_ITEM
+    async with world.engine.connect() as conn:
+        return (await conn.execute(
+            sa.select(sa.func.count()).where(i.c.person == person, i.c.origin == "backfill"),
+        )).scalar_one()
+
+
+async def ticks(world: World, poller: SocialPoller, n: int, *, every: int = 10) -> None:
+    """`n` ticks `every` minutes apart, after the clock's current time: inside
+    the ceiling, so nobody is probed again and each tick is the back-fill's."""
+    start = world.clock.now
+    for k in range(1, n + 1):
+        world.clock.now = start + timedelta(minutes=every * k)
+        await poller.tick()
+
+
+def ended(world: World, reason: str) -> float:
+    return world.metrics.get(
+        "nora_social_backfill_ended_total", network="instagram", reason=reason,
+    )
+
+
+async def test_the_backfill_pages_back_until_fifty_items(world) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 80)
+    poller = world.poller()
+
+    await poller.tick()
+    assert world.source.cursors == [None, None], "each member's first list read, nothing more"
+    assert await backfilled(world, "ada") == 12
+
+    await ticks(world, poller, 6)
+    assert world.source.cursors[2:] == [f"{ADA}-c{n}" for n in range(1, 5)], (
+        "one page a tick, newest first, and none after the limit"
+    )
+    assert await backfilled(world, "ada") == 50, "the first page's 12 count toward the 50"
+    assert ended(world, "max_items") == 1
+    assert world.metrics.get(
+        "nora_social_backfill_items_total", network="instagram", outcome="past_limit",
+    ) == 10, "the rest of the fifth page is not recorded"
+    assert [r[:2] for r in await world.polls("ada")][-1] == ("backfill", "read_ok")
+
+
+async def test_the_backfill_stops_at_ninety_days(world) -> None:
+    """One post every three days: the 31st is past 90 days. It is on the
+    third page, which records the six before it and ends the walk: every
+    page after it is older still."""
+    quiet(world, BEA)
+    grid(world, ADA, 60, every=timedelta(days=3))
+    poller = world.poller()
+
+    await poller.tick()
+    await ticks(world, poller, 5)
+    assert world.source.cursors[2:] == [f"{ADA}-c1", f"{ADA}-c2"], "no page past the limit"
+    assert await backfilled(world, "ada") == 30, "every post inside 90 days, none past it"
+    assert ended(world, "max_days") == 1
+    assert world.metrics.get(
+        "nora_social_backfill_items_total", network="instagram", outcome="past_limit",
+    ) == 6
+
+
+async def test_an_old_pinned_post_on_the_first_page_does_not_end_the_backfill(world) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 30)
+    first = world.source.pages[ADA]
+    assert isinstance(first, Page)
+    pinned = post(world, "pinned", age=timedelta(days=400))
+    world.source.pages[ADA] = Page(items=(pinned, *first.items), next_cursor=first.next_cursor)
+    poller = world.poller()
+
+    await poller.tick()
+    await ticks(world, poller, 3)
+    assert world.source.cursors[2:] == [f"{ADA}-c1", f"{ADA}-c2"]
+    assert await backfilled(world, "ada") == 31
+
+
+async def test_the_backfill_stops_at_the_end_of_the_grid(world) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 20)
+    poller = world.poller()
+
+    await poller.tick()
+    await ticks(world, poller, 4)
+    assert world.source.cursors[2:] == [f"{ADA}-c1"]
+    assert await backfilled(world, "ada") == 20
+    assert ended(world, "grid_end") == 2, "bea's empty grid ended on her first read"
+
+
+async def test_the_backfill_never_takes_what_the_hour_owes_the_probes(world) -> None:
+    """Two members: a page needs a probe and a read of each (6) left over."""
+    grid(world, ADA, 30)
+    grid(world, BEA, 30)
+    poller = world.poller(hourly_budget=10)
+
+    await poller.tick()
+    assert sum(c for _, c in poller._spent) == 6, "two probes and two first list reads"
+    await ticks(world, poller, 5)
+    assert world.source.cursors == [None, None], "4 left in the hour: no page fits"
+
+    world.clock.at(minutes=61)
+    await poller.tick()
+    assert world.source.cursors[2:] == [f"{ADA}-c1", f"{BEA}-c1"], (
+        "the hour turned over: what the probes may need is back, and a page fits"
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "transition"),
+    [
+        (Failed(FailureKind.HALT, "needs_human"), "halted"),
+        (Failed(FailureKind.BACK_OFF, "upstream_rejected"), "backed_off"),
+    ],
+)
+async def test_a_halt_or_back_off_on_a_backfill_page_stops_the_backfill(
+    world, failure: Failed, transition: str,
+) -> None:
+    grid(world, ADA, 30)
+    grid(world, BEA, 30)
+    world.source.after[f"{ADA}-c1"] = failure
+    poller = world.poller()
+
+    await poller.tick()
+    await ticks(world, poller, 1)
+    assert world.source.cursors == [None, None, f"{ADA}-c1"], "bea's page is not read"
+    assert world.transitions()[-1] == transition
+    await ticks(world, poller, 1)
+    assert world.source.cursors == [None, None, f"{ADA}-c1"], "and nothing while it holds"
+
+
+async def test_a_restarted_poller_resumes_the_backfill_where_it_stood(world) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 40)
+    first = world.poller()
+    await first.tick()
+    await ticks(world, first, 1)
+    assert world.source.cursors == [None, None, f"{ADA}-c1"]
+
+    second = world.poller()
+    await ticks(world, second, 4)
+    assert world.source.cursors[2:] == [f"{ADA}-c1", f"{ADA}-c2", f"{ADA}-c3"], (
+        "the new poller went on from the cursor the last page left: no page twice"
+    )
+    assert await backfilled(world, "ada") == 40
+
+
+async def test_a_cursor_the_bridge_refuses_ends_the_backfill(world) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 40)
+    world.source.after[f"{ADA}-c1"] = Failed(FailureKind.UNAVAILABLE, "invalid_id")
+    poller = world.poller()
+
+    await poller.tick()
+    await ticks(world, poller, 3)
+    assert world.source.cursors == [None, None, f"{ADA}-c1"], "never sent again"
+    assert [r[:2] for r in await world.polls("ada")][-1] == ("backfill", "abandoned")
+    assert ended(world, "bad_cursor") == 1
+    assert world.transitions() == ["up"], "the login is fine"
+
+
+async def test_a_cursor_refused_upstream_twice_ends_the_backfill(world) -> None:
+    """Each refusal backs the login off; a third would too."""
+    quiet(world, BEA)
+    grid(world, ADA, 40)
+    world.source.after[f"{ADA}-c1"] = Failed(FailureKind.BACK_OFF, "upstream_rejected")
+    poller = world.poller()
+
+    await poller.tick()
+    await ticks(world, poller, 1)
+    world.clock.at(minutes=30)
+    await poller.tick()
+    assert world.source.cursors == [None, None, f"{ADA}-c1", f"{ADA}-c1"]
+    assert [r[:2] for r in await world.polls("ada")][-2:] == [
+        ("backfill", "backed_off"), ("backfill", "abandoned"),
+    ]
+    world.clock.at(hours=2)
+    await ticks(world, poller, 3)
+    assert world.source.cursors.count(f"{ADA}-c1") == 2, "never sent a third time"
+    assert ended(world, "bad_cursor") == 1
+
+
+async def test_the_backfill_reads_at_most_its_pages_a_tick(world) -> None:
+    world.subjects = FakeSocialSubjectIndex({"ada": ADA, "bea": BEA, "cy": "10000003"})
+    for account in (ADA, BEA, "10000003"):
+        grid(world, account, 40)
+    poller = world.poller()
+
+    await poller.tick()
+    await ticks(world, poller, 1)
+    assert world.source.cursors[3:] == [f"{ADA}-c1", f"{BEA}-c1"], "two pages, one a member"
+    await ticks(world, poller, 1)
+    assert world.source.cursors[5:] == ["10000003-c1", f"{ADA}-c2"], "least recently paged first"
+
+
+async def test_a_member_who_set_social_off_is_never_backfilled(world) -> None:
+    grid(world, ADA, 40)
+    grid(world, BEA, 40)
+    poller = world.poller()
+    await poller.tick()
+
+    world.subjects.social_off = frozenset({"bea"})
+    await ticks(world, poller, 3)
+    assert world.source.cursors[2:] == [f"{ADA}-c1", f"{ADA}-c2", f"{ADA}-c3"]
