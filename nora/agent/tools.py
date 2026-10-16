@@ -6283,6 +6283,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     degraded=view.degraded,
                 ),
             )
+            listed = target.room.persons if target.room is not None else None
+            if ref is not None and (listed is None or ref.person_id not in listed):
+                # The live roster resolved them, but policy does not list
+                # them for this room (or the room is `*`, persons=None): the
+                # index's person filter would read false everywhere and
+                # answer a false `nothing_found` (independent review of #32).
+                # «I could not check», before any read.
+                _record_room(metrics, "memory_search", "unavailable", reason="unlisted")
+                return {**_MEMORY_UNLISTED, **asked}
             now = now_fn()
             found = await search.search(
                 query=text[:500], person_id=ref.person_id if ref is not None else None,

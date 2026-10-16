@@ -84,7 +84,8 @@ def _build_with(
         persons=persons, honcho=honcho, deliverer=SinkSender(),
         metrics=metrics or Metrics(),
         room=room, transit_source=_UNREACHABLE_TRANSIT, question="佢鍾唔鍾意踢波",
-        context_window=40, lineage=_LINEAGE, memory_retrieval=search, **extra,
+        context_window=40, lineage=extra.pop("lineage", _LINEAGE),
+        memory_retrieval=search, **extra,
     )
     return {t.tool_name: t for t in built}
 
@@ -486,6 +487,36 @@ async def test_on_kinds_narrow_to_their_node_kinds(persons: Any) -> None:
     both = await _call(tool, query="dinner harbour", kinds=["notes", "events"])
     assert [i["kind"] for i in notes["results"]] == ["memo"]
     assert sorted(i["kind"] for i in both["results"]) == ["event", "memo"]
+
+
+def _lineage_listing(listed: frozenset[str] | None) -> LineagePolicy:
+    facts = RoomFacts("signal", frozenset({GROUP}), "u1", listed, label="Friends")
+    return LineagePolicy(rooms=(facts,), _by_id={("signal", GROUP): facts})
+
+
+@pytest.mark.parametrize("listed", [
+    # The live roster has Miles; policy lists only Tyler here.
+    frozenset({"tyler_cortez"}),
+    # A `*` room: policy lists nobody (persons=None).
+    None,
+])
+async def test_on_a_person_the_room_does_not_list_is_unavailable_not_nothing(
+    persons: Any, listed: frozenset[str] | None,
+) -> None:
+    """Independent review of #32: a person the live roster resolves but
+    policy does not list for this room would be narrowed to false in every
+    read, a false `nothing_found` over an index that holds their words. It
+    is `unavailable` with a note, before any read."""
+    index = _index()
+    result = await _call(
+        _build_with(
+            persons, FakeMemoryStore(), _dense(index, Metrics()),
+            lineage=_lineage_listing(listed),
+        )["memory_search"],
+        query="football", person="Miles",
+    )
+    assert result["status"] == "unavailable", result
+    assert result["note"] and result["person"] == "Miles Novak"
 
 
 async def test_on_a_person_narrows_to_what_is_theirs(persons: Any) -> None:
