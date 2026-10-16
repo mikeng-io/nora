@@ -50,8 +50,10 @@ From [20](20-embedding-bakeoff.md) and PRs #22 and #24:
    exception included, is recorded on it and backed off exponentially; after
    8 attempts it is not picked again until its input changes or the operator
    clears vectors, and it is counted `given_up`. Every image is decoded by
-   the worker (Pillow), bounded (refused above 64 Mpx, downscaled to 1920
-   image tokens' worth) and sent as a PNG, so a crafted file fails as that
+   the worker (Pillow), bounded (refused above 64 Mpx, downscaled to 256
+   image tokens' worth, the largest the bake-off measured; 1920 tokens took
+   about 60 s an image and 6.5 GiB live on 2026-10-16, and `FORMAT_VERSION` 2
+   re-embeds what was sent larger) and sent as a PNG, so a crafted file fails as that
    node's rejection and never inside the shared server.
 6. **The served model is checked by file name, not by hash.** The
    fingerprint is the configured `<gguf file>@<sha256 prefix>` plus the

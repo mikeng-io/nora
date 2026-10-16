@@ -43,8 +43,11 @@ __all__ = [
     "text_prompt",
 ]
 
-#: Bump when a prompt this module renders changes (module docstring).
-FORMAT_VERSION = 1
+#: Bump when a prompt this module renders changes (module docstring), or
+#: what an image is sent as (`nora.infra.embedder.MAX_SEND_PIXELS`): 2 is the
+#: 256-token image bound, so images embedded at 1920 tokens' worth read as
+#: another model's and are re-embedded.
+FORMAT_VERSION = 2
 
 #: The default instruction: documents and images.
 DOCUMENT_INSTRUCTION = "Represent the user's input."
