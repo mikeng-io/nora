@@ -2,8 +2,8 @@
 
 The numbers asserted here were measured on the live deployment. The rule
 exists because a violation is invisible: a budget that is too small does not
-fail loudly, it just stops the turn early — which reads as the model choosing
-not to answer (R-23).
+fail loudly, it just stops the turn early; R-23 keeps that from reading as the
+model choosing not to answer.
 
 The measurements, once, so the constants below are not magic:
 

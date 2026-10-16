@@ -10,7 +10,7 @@ over `GET /v1/transport/kmb/route-eta/...` and MTR only over `POST
 — `405`/`404` — so a client that asked the wrong operator would fail rather
 than quietly agree.
 
-The payload fixtures are trimmed copies of live responses captured on 6 Aug 2026
+The payload fixtures are trimmed copies of live responses captured
 (K73 at 23:15 HKT, 68X at 23:16 HKT), field names and value TYPES verbatim from
 the wire: `service_type` is a string in the KMB route list and an int in a KMB
 ETA row; every MTR number is a string; `status` is `"0"` on both a real route
@@ -31,9 +31,8 @@ from nora.infra.transit import TransitClient
 # ---- what the two operators really return -----------------------------------
 
 # The KMB route list is the operator resolver: "68X" present and "K73" absent.
-# `service_type` is
-# a STRING here and an int in an ETA row — that divergence is on the wire, not a
-# transcription slip.
+# `service_type` is a STRING here and an int in an ETA row — that divergence is
+# on the wire, not a transcription slip.
 KMB_ROUTES = [
     {"route": "68X", "bound": "O", "service_type": "1",
      "orig_en": "HUNG SHUI KIU (HUNG FUK ESTATE)", "dest_en": "MONG KOK (PARK AVENUE)"},
@@ -97,7 +96,7 @@ MTR_ROUTES_CSV = (
 
 # ---- the stop datasets the place resolver reads (DEC-41) ---------------------
 
-# Trimmed copies of the live KMB stop list (probed 6 Aug 2026). Names, ids and
+# Trimmed copies of the live KMB stop list (probed live). Names, ids and
 # coordinates verbatim from the wire, including the two shapes that make
 # matching interesting: every KMB name carries a "(TN970)"-style stop
 # code — so 「天恆」 can never EXACT-match a KMB stop — and the three 天恆邨總站
@@ -161,7 +160,7 @@ KMB_ROUTE_STOPS = {
 }
 
 # Per-stop ETA (`GET /v1/transport/kmb/eta/{stop_id}/{route}/{service_type}`,
-# verified live 6 Aug 2026 23:58 HKT). Same row shape as
+# verified live 23:58 HKT). Same row shape as
 # route-eta; every row is already at the asked-for stop.
 KMB_STOP_ETA = {
     ("147D513A708AA741", "68X"): [
@@ -187,7 +186,7 @@ KMB_STOP_ETA = {
 }
 
 # Trimmed copy of opendata.mtr.com.hk/data/mtr_bus_stops.csv (probed
-# 6 Aug 2026): BOM, quoted names carrying commas, and STATION_ID in exactly the
+# live): BOM, quoted names carrying commas, and STATION_ID in exactly the
 # format `getSchedule` uses for `busStopId` — that equality is the join key the
 # resolver stands on. 輕鐵 appears in two stops ~2.2 km apart, BOTH on K73: the
 # honest on-route ambiguity case.
@@ -263,7 +262,7 @@ MTR_K73 = {
 }
 
 # THE TRAP, captured live. This is what MTR returns for `ZZZ999` — and, at
-# 23:15 on 6 Aug 2026, for K12, K14, K51A, K52A, K52P, K53S, K58, K65A, K74,
+# 23:15, for K12, K14, K51A, K52A, K52P, K53S, K58, K65A, K74,
 # K75S and K76S, every one of them a REAL published route that had simply
 # stopped running for the night. The envelope is identical. Nothing inside it
 # distinguishes "no such route" from "no service", so nothing inside it may be

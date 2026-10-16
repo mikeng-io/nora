@@ -42,8 +42,8 @@ from nora.infra.vision import (
 )
 
 # The operator's settled settings. Asserted with the REAL numbers rather than
-# round test ones: at loop 360 and configured 120 a configured value that never
-# takes effect is invisible at any other triple.
+# round test ones: only at these values does a configured ceiling that never
+# takes effect show.
 OPERATOR_LOOP = 360.0
 OPERATOR_CONFIGURED = 120.0
 
@@ -257,7 +257,7 @@ def test_the_derived_timeout_honours_the_configured_value_at_the_instagram_windo
     whole point of setting it.
 
     Dividing by the `media_fetch` budget (4) would derive
-    `min(120, 360 * 0.6 / 4) = 54 s`, cutting off reads of a 90-second window
+    `min(120, 360 * 0.6 / 4) = 54 s`, cutting off the slower reads of a 90-second window
     that the configured ceiling exists to allow.
     """
     derived = derive_vision_timeout(
@@ -481,7 +481,7 @@ def test_composition_hands_the_client_the_derivations_inputs_not_a_budget():
     The budget counts calls that OVERLAP, and a wall-clock ceiling must not be
     divided by those, so composition does not feed `media_fetch`'s budget to
     `derive_vision_timeout`;
-    `test_the_media_fetch_budget_does_not_move_the_derived_timeout` states that
+    `test_the_media_fetch_budget_is_not_an_input_to_the_derivation` states that
     property. The budget is resolved through `budgets()` at `tool_registry`, for
     the refusal ceiling it genuinely bounds.
 
@@ -672,8 +672,8 @@ async def test_a_kimi_provider_uses_the_direct_client(mimo):
 
 async def test_the_default_provider_is_still_omniroute(mimo):
     """A caller that never names a provider travels through the gateway
-    client. The
-    bearer key carried by the request proves it used the omniroute client."""
+    client. The bearer key carried by the request proves it used the omniroute
+    client."""
     result = await _client_kimi(mimo).describe(data=RED_PNG, media_type="image/png")
     assert result.available, result.reason
     assert len(mimo.requests) == 1
@@ -795,7 +795,7 @@ async def test_a_heartbeat_sized_turn_cuts_a_slow_read_short(mimo):
 async def test_describe_hands_its_window_count_to_the_ceiling(mimo, monkeypatch):
     """`describe(windows=10)` must reach
     `wait_for` with the ten-window ceiling (360 x 0.6 / 10 = 21.6 s), not the
-    one-window 120 — a `describe` that ignored `windows` passed every test."""
+    one-window 120 — a `describe` that ignored `windows` would pass every other test."""
     from nora.infra.vision import client as client_module
 
     seen: list[float] = []

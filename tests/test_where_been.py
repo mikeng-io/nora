@@ -111,9 +111,9 @@ class _FakeMobility:
 
 
 class _FakeMobilityWithHistory(_FakeMobility):
-    """Adds the full-history reads the `day` arm's `unusual` flags use
-    The plain fake lacks them on purpose: that is the
-    fail-soft path, and the day must still be answered."""
+    """Adds the full-history reads the `day` arm's `unusual` flags use.
+    The plain fake lacks them on purpose: that is the fail-soft path, and the
+    day must still be answered."""
 
     def __init__(self, *, history, derived_places, **kw):
         super().__init__(**kw)

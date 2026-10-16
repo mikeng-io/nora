@@ -231,8 +231,8 @@ async def test_an_unread_window_is_unavailable_never_nothing_found(persons):
 
 async def test_a_none_window_is_the_same_unavailable_as_an_empty_one(persons):
     """The composition that never wired a window at all — the offline and eval
-    builds. A wiring gap is
-    `unavailable`, exactly as it is for `reminders=None` and `versions=None`."""
+    builds. A wiring gap is `unavailable`, exactly as it is for `reminders=None`
+    and `versions=None`."""
     tools, metrics, _ = _build(persons, window=None)
 
     result = await _call(tools["who_said"], words="收隊")
@@ -299,9 +299,8 @@ async def test_the_window_it_searches_is_the_one_the_prefill_rendered(persons, t
     at, and every line in the block is one it can find.
 
     The tool and `<group_transcript>` are two renderers of one tuple (DEC-80).
-    Asserting the tool against the
-    ACTUAL rendered block — not against `WINDOW` again — is what makes this a
-    check rather than a restatement of the fixture.
+    Asserting the tool against the ACTUAL rendered block — not against `WINDOW`
+    again — is what makes this a check rather than a restatement of the fixture.
     """
     from datetime import UTC, datetime
 

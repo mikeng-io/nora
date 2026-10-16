@@ -12,8 +12,7 @@ from nora.platform.whatsapp.send import WhatsAppSender, _bridge_media_kind
 
 # The bridge's OWN closed kind vocabulary for `/send-media`'s `media_type`
 # (`buildMediaPayload`'s `switch`, `deploy/whatsapp-bridge/bridge_helpers.js`).
-# Anything
-# outside this set is the bridge's 400
+# Anything outside this set is the bridge's 400
 # `{"error": "media_type must be image|video|audio|sticker|document"}` —
 # this is the oracle the contract-style tests below check against, kept
 # separate from `nora.platform.whatsapp.send._BRIDGE_MEDIA_KINDS` so a typo

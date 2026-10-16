@@ -4,7 +4,7 @@ The load-bearing test is `test_whereis_refuses_to_disclose_outside_the_circle`
 (R-31): a conversation that is NOT a subset of the circle gets a REFUSAL, not a
 position and not a silent omission. Revert `DisclosureGuard.permits` to «always
 true» and it goes red — presence would leak into a room containing an outsider,
-the inverse of R-21, which nothing else enforces.
+the inverse of R-21.
 
 The room fixtures mirror the live `Ridgeline` group (same shape as
 `tests/unit/test_agent_room.py`). The presence reader is the REAL `PresenceStore`
@@ -783,8 +783,9 @@ async def test_a_location_trusted_room_resolves_saved_places_past_an_unmapped_ac
 ):
     """DEC-79 reaches the SECOND disclosure surface too: `saved_places` must not
     answer «there are no saved places» in a room where `where_is` discloses.
-    Both refuse on the same unmappable accounts, and it would silently kill the
-    `where_work` journey (DEC-77/78), which routes onto `saved_places`. Drop the
+    Otherwise `saved_places` alone refuses on the unmappable accounts `where_is`
+    discloses past, and the `where_work` journey (DEC-77/78), which routes onto
+    `saved_places`, dies with it. Drop the
     `location_trusted` term from `resolvable_places` and this reds."""
     await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
     room = _room(persons, members=(MILES, GRANT, frozenset({"+85299999999"}), NORA))
@@ -964,8 +965,8 @@ async def test_whereis_omits_speed_below_the_jitter_floor(persons, store):
 # separately; these two tests cover the glue at tools.py that turns
 # resolvable_places into the client's map, so reverting it to
 # `local_places = None` cannot leave R-35's end-to-end path inert under a green
-# suite. Subset room → the client receives the Home
-# map under the casefolded key; non-subset room → it receives None.
+# suite. Subset room → the client receives the Home map under the casefolded
+# key; non-subset room → it receives None.
 
 from nora.agent.tools import build_tools  # noqa: E402
 
@@ -1163,8 +1164,8 @@ async def test_a_saved_places_ok_note_carries_the_rules_its_list_needs(persons, 
 async def test_a_circle_member_who_is_not_in_the_room_can_still_be_asked_about(
     persons, store,
 ):
-    """Only an identified person can use where_is, and it can ask about anyone
-    in the circle.
+    """Only an identified person can use where_is, and it can ask about
+    anyone in the circle.
 
     The target is resolved against the circle, not `RoomView.find` (room
     membership): a friend who shares her location with Nora but is not in THIS
