@@ -40,7 +40,7 @@ node.
 | one post or reel by shortcode | bridge `GET /posts/{shortcode}` | built |
 | **a list of a member's posts or reels** | no bridge route yet; the web app's GraphQL timeline query (§1a) | **mechanism found** (S0, 2026-10-16); the bridge route is S1 |
 | whether `latest_reel_media` equals the newest frame's `taken_at` | S0 | **equal** on the one story read (n=1): the probe value and the newest of 3 frames were the same second. §3's marker does not rely on it |
-| a frame's expiry | S0 | **per frame**: each item's `expiring_at` is its `taken_at` + 86400; the reel's own `expiring_at` was null |
+| a frame's expiry | S0 | **per frame** on the one reel read (n=1, 3 frames): each item's `expiring_at` was its `taken_at` + 86400, and the reel's own `expiring_at` was null. The stream stores each frame's own expiry |
 | whether reading a story marks it seen to its author | S0 | **a separate call**: the web viewer marks a story seen with `PolarisStoriesV3SeenMutation`, sent after the read. With it blocked, the reel's `seen` stayed `0`. The stream sends the read only, never the mutation |
 
 What the official API can do here, from Meta's documentation and not measured
@@ -62,7 +62,10 @@ with the seen mutation blocked in the page:
 | a member's posts and reels, newest first | `PolarisProfilePostsTabContentQuery_connection` (`/graphql/query`) | captured | `username`, `first: 12`, `after` (cursor), `data.count: 12` and the relay provider flags | `xdt_api__v1__feed__user_timeline_graphql_connection.edges[].node`: `code`, `pk`, `taken_at`, `caption`, `video_versions`, … and `page_info` |
 
 Both are the shape `social_profile.go` already sends for
-`PolarisProfilePageContentQuery`, through the same session. The two `doc_id`s are not
+`PolarisProfilePageContentQuery` through the bridge's session. That the
+bridge's session is answered for these two documents is **assumed**: they
+were captured from OpenCLI's browser, logged into the same account, and S1's
+first read-back is the test. The two `doc_id`s are not
 written here (they are id-shaped, and the repo's PII hook refuses them):
 they go into the live config at S1, and §1a's capture recovers them. **A `doc_id`
 rotates** when Instagram ships a new web build: each is config, never a
@@ -108,9 +111,8 @@ Every poll of a member is two stages:
    probe value that led to their last *completed* story read, stored on
    `social_poll`. A different value makes a story read due. The marker is the
    probe's own value, never a frame's `taken_at`, so the detector does not
-   depend on the two being the same clock (§1, unmeasured). The counts are
-   compared with the last recorded counts; a rise makes a list read due once
-   `LIST_ITEMS` exists. A probe whose `social` half failed
+   depend on the two being the same clock (§1: equal, but n=1). The counts are
+   compared with the last recorded counts; a rise makes a list read due. A probe whose `social` half failed
    (`social_available: false`) is outcome `partial`: the story comparison
    stands, the count comparison is skipped, and an absent count is never read
    as "unchanged".
@@ -170,6 +172,10 @@ spending a fixed budget where it buys the most.
     minutes and doubling to the ceiling's 6 hours, reset by one clean probe.
   - `503` is the bridge healing itself: the call is skipped, not counted as
     a back-off.
+  - A GraphQL error naming one of §1a's documents is `stale_query`: a
+    rotated `doc_id`. It halts **that read** for every member until the id
+    is captured again, is recorded as a `source_health` transition, and does
+    not count toward the login's back-off, since the login is fine.
   Every halt and back-off is a transition in `source_health`
   ([20](20-observe.md) §1), so silence during it is never read as absence.
 - **What is guaranteed.** Every frame is seen before it expires **while the
@@ -259,8 +265,8 @@ reads it.
 
 ## 7. The back-fill of past posts and reels
 
-When a member is first polled on a network, or when `LIST_ITEMS` first
-becomes available, the poller pages their posts and reels newest first, up to
+When a member is first polled on a network, or when a network first
+exposes `LIST_ITEMS`, the poller pages their posts and reels newest first, up to
 a depth limit (starting at 90 days or 50 items, whichever comes first), at the
 budget's lowest priority, so it never delays a probe or a story read. Items
 are written with `origin = backfill` under the custody rule of §5. Back-fill
@@ -269,7 +275,7 @@ runs; past that, items are recorded unperceived and perceived on a later day.
 
 **The mechanism is the timeline query of §1a** (S0 found it, closing P13's
 investigation): 12 items a page, newest first, paged by `after`. A member
-with 281 posts is 24 pages; the depth limit stops far earlier.
+whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit stops far earlier.
 
 ## 8. Build order
 
