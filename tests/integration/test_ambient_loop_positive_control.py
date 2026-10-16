@@ -76,14 +76,13 @@ agree with their doubles) for a Postgres container. The precedent for the shape
 is `tests/unit/test_offline_pipeline_assembler.py`, which sits in `unit/`
 because it asserts about a call, not about a run; this asserts about a run.
 
-One deliberate departure from the scenario, stated rather than hidden:
-**both rooms are on one platform.** The live home room is Discord and the
-thread was on Signal; `build_offline_pipeline` wires exactly one adapter
-(`adapters={adapter.platform: adapter}`). Putting the home room on a platform
-with no adapter would make assertion 5 pass vacuously — nothing could reach
-it even if the code tried. So the home room is a second conversation on the
-SAME adapter: a send into it is genuinely reachable, and "zero sends into the
-home room" is therefore a measurement rather than a tautology.
+The home room is on another platform (Telegram here; a unit holds at most one
+room per platform, DEC-105), served by its own `FakeAdapter` passed as
+`extra_adapters`. With no adapter for its platform a send there would raise
+instead of being recorded, and assertion 5 would pass vacuously. Because the
+home room has its own adapter, "zero sends into the home room" is a measurement
+rather than a tautology, and `test_5_*` checks that the pipeline routes the home
+room's platform to that adapter.
 """
 
 from __future__ import annotations
@@ -132,9 +131,8 @@ HKT = ZoneInfo("Asia/Hong_Kong")
 UNIT = "ridgeline"
 #: The room the thread lives in — Signal, opted in to the gate.
 THREAD_ROOM = "signal-thread"
-#: The room a proactive row would fire into — Discord in the scenario. Here it
-#: is a second conversation on the SAME adapter, on purpose: see the module
-#: docstring. Nothing in this journey may ever send here.
+#: The room a proactive row would fire into, on its own platform and adapter
+#: (module docstring). Nothing in this journey may ever send here.
 HOME_ROOM = "home-room"
 
 MILES = "+852111"
@@ -281,6 +279,7 @@ class _Journey:
 
     metrics: Metrics
     adapter: FakeAdapter
+    home_adapter: FakeAdapter
     audit: FakeRecordStore
     standing: InMemoryStandingStore
     notes: InMemoryNoteStore
@@ -294,14 +293,25 @@ class _Journey:
     sent_after_participation: tuple[tuple[str, str], ...] = ()
     #: sends recorded immediately after the tag turn
     sent_after_tag: tuple[tuple[str, str], ...] = ()
-    #: every send of the whole run, `(conversation_id, text)`
+    #: every send of the whole run, on either adapter, `(conversation_id, text)`
     sent_all: tuple[tuple[str, str], ...] = ()
+    #: the adapter the engagement pipeline routes the home room's platform to
+    home_route: Any = None
     #: the fold's INPUT, as the debrief stage rendered it
     fold_input: str = ""
 
 
-def _sends(adapter: FakeAdapter) -> tuple[tuple[str, str], ...]:
-    return tuple((target.conversation_id, text) for target, text in adapter.sent)
+class _HomeAdapter(FakeAdapter):
+    """The home room's platform: a `FakeAdapter` that records sends on Telegram."""
+
+    platform = "telegram"
+
+
+def _sends(*adapters: FakeAdapter) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (target.conversation_id, text)
+        for adapter in adapters for target, text in adapter.sent
+    )
 
 
 def _config(tmp_path: Path) -> Any:
@@ -359,6 +369,7 @@ async def _drive(tmp_path: Path) -> _Journey:
     note_store = InMemoryNoteStore()
     reminders = FakeReminderStore()
     adapter = FakeAdapter()
+    home_adapter = _HomeAdapter()
     clock = _Clock(T_QUESTION)
 
     # THE TAG PATH'S MODEL — the one that dies. `openai.APIError` is the SDK's
@@ -411,9 +422,11 @@ async def _drive(tmp_path: Path) -> _Journey:
         participation_runner=participation_runner,
         participation_clock=clock.monotonic,
         participation_gate=gate,
+        extra_adapters={home_adapter.platform: home_adapter},
     )
     journey = _Journey(
-        metrics=metrics, adapter=adapter, audit=audit, standing=standing_store,
+        metrics=metrics, adapter=adapter, home_adapter=home_adapter, audit=audit,
+        standing=standing_store,
         notes=note_store, reminders=reminders,
         gate_client=gate_client, debrief_client=debrief_client,
         tag_runner=tag_runner, participation_runner=participation_runner,
@@ -449,7 +462,7 @@ async def _drive(tmp_path: Path) -> _Journey:
     with mock.patch("time.time", return_value=T_ANSWER / 1000):
         journey.windows_closed = await trigger.close_due_windows()
         await drain()
-    journey.sent_after_participation = _sends(adapter)
+    journey.sent_after_participation = _sends(adapter, home_adapter)
 
     # --- 16:43:57 — Observe. The tag, in the same second as the answer. ----
     # The SAME second, as `messages` recorded it live: he was typing while the
@@ -475,12 +488,13 @@ async def _drive(tmp_path: Path) -> _Journey:
     with mock.patch("time.time", return_value=T_DEBRIEF / 1000):
         await dispatcher.on_message(tagged)
         await drain()
-    journey.sent_after_tag = _sends(adapter)
+    journey.sent_after_tag = _sends(adapter, home_adapter)
     journey.fold_input = (
         debrief_client.standing_calls[-1] if debrief_client.standing_calls else ""
     )
 
-    journey.sent_all = _sends(adapter)
+    journey.sent_all = _sends(adapter, home_adapter)
+    journey.home_route = _engagement._adapter_for(home_adapter.platform)
     await audit.aclose()
     return journey
 
@@ -727,9 +741,9 @@ def test_5_nothing_was_ever_sent_into_the_home_room(journey: _Journey) -> None:
     """The only thing the group ever heard is the one answer, in the room the
     thread lives in.
 
-    Non-vacuous because the home room is served by the SAME adapter as the
-    thread (module docstring): a send there is reachable, and `test_1_*` proves
-    that adapter records sends.
+    Non-vacuous because the home room's platform is routed to its own
+    recording adapter (asserted first): a send there would be recorded, not
+    raised.
 
     SCOPE. This covers the paths this journey drives: ingest, the
     participation turn, the tag turn and the fold. The proactive ACT turn is
@@ -737,6 +751,10 @@ def test_5_nothing_was_ever_sent_into_the_home_room(journey: _Journey) -> None:
     "the tag and participation paths did not misroute", not as a claim about
     the proactive path.
     """
+    assert journey.home_route is journey.home_adapter, (
+        "the home room's platform must route to its own recording adapter, or "
+        "'nothing was sent there' cannot fail"
+    )
     assert [cid for cid, _ in journey.sent_all if cid == HOME_ROOM] == [], (
         f"nothing may be sent into the home room: {journey.sent_all}"
     )

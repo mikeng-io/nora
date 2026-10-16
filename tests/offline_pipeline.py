@@ -15,7 +15,7 @@ concern.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -78,6 +78,7 @@ def build_offline_pipeline(
     participation_clock: Callable[[], float] | None = None,
     participation_opt_in: bool = False,
     participation_gate: RelevanceGate | None = None,
+    extra_adapters: Mapping[str, Any] | None = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks, ParticipationTrigger | None]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -98,7 +99,13 @@ def build_offline_pipeline(
     injecting the clock the settle/cooldown durations are measured against, and
     `participation_gate` optionally putting a REAL `RelevanceGate` in front of it (see the
     `gate=` comment at the trigger's construction).
+
+    `extra_adapters` serves rooms on other platforms, keyed by platform. A caller that
+    asserts nothing was sent into such a room needs one: with no adapter for its
+    platform, a send there raises instead of being recorded, and the assertion passes
+    vacuously.
     """
+    adapters = {adapter.platform: adapter, **(extra_adapters or {})}
     metrics = metrics or Metrics()
     background = BackgroundTasks()
     debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
@@ -124,7 +131,7 @@ def build_offline_pipeline(
     # harness's (empty) room table, the fake adapter's health, and the handles
     # `config.evaluation.toml` declares.
     presence_reader = PresenceReader(
-        policy=permissive_policy(), adapters={adapter.platform: adapter},
+        policy=permissive_policy(), adapters=adapters,
         handles=cfg.agent.handles,
     )
     assembler = build_assembler(
@@ -189,10 +196,9 @@ def build_offline_pipeline(
         maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
     )
     engagement = EngagementPipeline(
-        # One adapter, keyed by the platform it declares itself to be: an
-        # offline harness replays a single platform's traffic, so this is the
-        # whole routing table rather than a degenerate case of it.
-        adapters={adapter.platform: adapter},
+        # Keyed by the platform each adapter declares itself to be: the
+        # replayed platform's adapter plus any `extra_adapters`.
+        adapters=adapters,
         audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
@@ -253,7 +259,7 @@ def build_offline_pipeline(
             memos=None,
             quote_window=quote_window,
             doctrine_store=doctrine_store, metrics=metrics,
-            runner=runner, adapters={adapter.platform: adapter},
+            runner=runner, adapters=adapters,
             registry=tool_registry,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
             ai_peer=cfg.memory.ai_peer,
