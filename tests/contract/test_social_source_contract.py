@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +31,9 @@ from nora.domain.social_stream import (
     Account,
     Failed,
     FailureKind,
+    Page,
     Probe,
+    SocialItem,
     StorySnapshot,
 )
 from nora.infra.social.instagram_source import InstagramSocialSource
@@ -49,6 +52,27 @@ def _fixture(name: str) -> dict[str, Any]:
     return json.loads((_FIXTURES / name).read_text())
 
 
+#: The cursor `items_ok.json` hands on, which names `items_last_page.json`.
+_CURSOR = _fixture("items_ok.json")["body"]["next_cursor"]
+
+
+def _listed(name: str) -> Page:
+    """A fixture's page as the fake holds it: its items' ids and its cursor,
+    which is what paging turns on."""
+    body = _fixture(name)["body"]
+    return Page(
+        items=tuple(
+            SocialItem(
+                network="instagram", item_id=row["pk"], account=_IGID, kind=row["kind"],
+                taken_at=datetime.fromtimestamp(row["taken_at"], UTC), expires_at=None,
+                caption=row["caption"] or None, alt_text=None, media=(),
+            )
+            for row in body["items"]
+        ),
+        next_cursor=body["next_cursor"],
+    )
+
+
 @dataclass
 class _Bridge:
     """Answers each route with its fixture, and `/health` with a session."""
@@ -56,6 +80,8 @@ class _Bridge:
     answers: dict[str, dict[str, Any]] = field(default_factory=lambda: {
         "account": _fixture("account_ok.json"),
         "story": _fixture("story_not_found.json"),
+        "items": _fixture("items_ok.json"),
+        "items_after": _fixture("items_last_page.json"),
     })
     session: str = "authenticated"
 
@@ -71,9 +97,15 @@ class _Bridge:
                 return web.json_response(fx["body"], status=fx["status"])
             return handler
 
+        async def items(request: web.Request) -> web.Response:
+            after = request.query.get("after")
+            fx = self.answers["items_after" if after == _CURSOR else "items"]
+            return web.json_response(fx["body"], status=fx["status"])
+
         app.router.add_get("/health", health)
         app.router.add_get("/accounts/{igid}", route("account"))
         app.router.add_get("/accounts/{igid}/story", route("story"))
+        app.router.add_get("/accounts/{igid}/items", items)
         return app
 
 
@@ -111,6 +143,8 @@ class _FakeArm(_Arm):
         self.fake = FakeSocialSource()
         self.fake.probes[_IGID] = _PROBE
         self.fake.stories[_IGID] = StorySnapshot(found=False)
+        self.fake.pages[_IGID] = _listed("items_ok.json")
+        self.fake.after[_CURSOR] = _listed("items_last_page.json")
         self.source = self.fake
 
     def unknown_account(self) -> None:
@@ -173,3 +207,11 @@ async def test_a_rotated_story_query_halts_that_read_only(arm: _Arm) -> None:
     got = await arm.source.story(account=_ACCOUNT)
     assert isinstance(got, Failed) and got.kind is FailureKind.STALE_QUERY
     assert await arm.source.probe(account=_ACCOUNT) == _PROBE
+
+
+async def test_a_listing_pages_on_by_the_cursor_its_page_hands_on(arm: _Arm) -> None:
+    first = await arm.source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(first, Page) and first.next_cursor == _CURSOR
+    last = await arm.source.list_items(account=_ACCOUNT, after=first.next_cursor)
+    assert isinstance(last, Page) and last.next_cursor is None
+    assert [i.item_id for i in last.items] == ["2001", "2002"]

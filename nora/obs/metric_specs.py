@@ -35,6 +35,8 @@ from nora.domain.reasoning_strip import (
     WRITE_OUTCOMES,
 )
 from nora.domain.social_stream import (
+    BACKFILL_ENDS,
+    BACKFILL_ITEM_OUTCOMES,
     BYTE_DELETION_REASONS,
     CUSTODY_OUTCOMES,
     PERCEPTION_OUTCOMES,
@@ -2037,6 +2039,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_social_poll_skipped_total",
         "Social poller ticks that stopped before every due member was probed, by "
         "network and reason (" + " / ".join(SKIP_REASONS) + ").",
+        ("network", "reason"),
+    ),
+    # The back-fill of past posts and reels (22 §7). Its pages are
+    # nora_social_polls_total{stage="backfill"}.
+    _CounterSpec(
+        "nora_social_backfill_items_total",
+        "Items on back-fill pages, by network and outcome ("
+        + " / ".join(BACKFILL_ITEM_OUTCOMES) + "): past_limit is older than "
+        "backfill_max_days or past backfill_max_items, and is not recorded.",
+        ("network", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_social_backfill_ended_total",
+        "Members whose back-fill ended, by network and reason ("
+        + " / ".join(BACKFILL_ENDS) + ").",
         ("network", "reason"),
     ),
     _CounterSpec(

@@ -154,23 +154,62 @@ class MediaItem:
 
 ItemKind = Literal["story_frame", "post", "reel"]
 
-#: A `social_poll` row's stage: the probe, or one of the three reads.
-PollStage = Literal["probe", "story", "items", "item"]
+#: A `social_poll` row's stage: the probe, or one of the reads. `backfill` is
+#: a page of a member's history (§7): their first list read, and each page
+#: paged back from it.
+PollStage = Literal["probe", "story", "items", "item", "backfill"]
 POLL_STAGES: tuple[str, ...] = get_args(PollStage)
 
 #: A `social_poll` row's outcome. A probe's is `Due.outcome`; a read is
 #: `read_ok`; a failure is `halted` (the login, or one read kind), `backed_off`
-#: or `error`. The table's CHECK constraint holds the same set.
+#: or `error`; `abandoned` is a back-fill page whose cursor was judged bad,
+#: which ends that member's back-fill; `unavailable` is a back-fill page that
+#: failed unavailable on a tick no other call was answered on (the bridge
+#: healing), which does not count against its cursor. The table's CHECK
+#: constraint holds the same set.
 PollOutcome = Literal[
     "unchanged", "story_due", "items_due", "partial", "count_fell",
-    "read_ok", "halted", "backed_off", "error",
+    "read_ok", "halted", "backed_off", "error", "abandoned", "unavailable",
 ]
 POLL_OUTCOMES: tuple[str, ...] = get_args(PollOutcome)
 
+#: Why a member's back-fill ended (§7): the grid ended (`next_cursor` null),
+#: the item limit was reached, a page held nothing inside the day limit, or
+#: its cursor was judged bad.
+BackfillEnd = Literal["grid_end", "max_items", "max_days", "bad_cursor"]
+BACKFILL_ENDS: tuple[str, ...] = get_args(BackfillEnd)
+
+#: A back-fill cursor is judged bad once the pages sent at it were refused
+#: upstream this many times in a row: each refusal backs the login off, and
+#: the next try at the same cursor would cost another.
+BAD_CURSOR_REJECTIONS = 2
+#: ... or failed this many times in a row, whatever the failure (a refusal,
+#: an answer the adapter cannot read, not found), so no cursor is sent on
+#: every tick for good. A halt, a stale query, or an unavailable page while
+#: nothing else is answered (the bridge down) is not the cursor's and does
+#: not count.
+BAD_CURSOR_FAILURES = 3
+
+
+def cursor_is_bad(*, rejected: int, failures: int) -> bool:
+    """Whether a back-fill cursor whose pages have failed `failures` times in
+    a row, `rejected` of them refused upstream, is to be given up."""
+    return rejected >= BAD_CURSOR_REJECTIONS or failures >= BAD_CURSOR_FAILURES
+
+
+#: What became of one item on a back-fill page: `recorded` new, already
+#: `known`, or `past_limit` (older than the day limit, or past the item
+#: limit), not recorded.
+BackfillItemOutcome = Literal["recorded", "known", "past_limit"]
+BACKFILL_ITEM_OUTCOMES: tuple[str, ...] = get_args(BackfillItemOutcome)
+
 #: Why the poller did not make a call it had due on a tick: the login is
-#: halted or backed off, the hourly budget is spent, or the roster could not
-#: be read.
-SkipReason = Literal["halted", "backed_off", "budget", "roster_unavailable"]
+#: halted or backed off, the hourly budget is spent, the roster could not be
+#: read, or the bridge answered nothing on the tick (`bridge_unavailable`,
+#: which stops the back-fill for that tick).
+SkipReason = Literal[
+    "halted", "backed_off", "budget", "roster_unavailable", "bridge_unavailable",
+]
 SKIP_REASONS: tuple[str, ...] = get_args(SkipReason)
 
 #: What became of one media item's bytes: `stored` in custody, custody
