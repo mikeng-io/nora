@@ -91,5 +91,6 @@ def test_perception_is_built_with_the_rooms():
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
         and n.func.id == "SocialPerception"
     ]
-    rooms = next(k.value for k in call.keywords if k.arg == "rooms")
-    assert isinstance(rooms, ast.Call) and ast.unparse(rooms.func) == "social_person_rooms"
+    rooms = {k.arg: k.value for k in call.keywords}.get("rooms")
+    assert isinstance(rooms, ast.Call), "SocialPerception is built without rooms"
+    assert ast.unparse(rooms.func) == "social_person_rooms"
