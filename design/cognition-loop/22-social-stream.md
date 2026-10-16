@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The social stream — one source interface, an adaptive per-person poll, and a back-fill of past posts and reels"
-description: "How step 5 ingests members' social items: a network-neutral source interface (Instagram first, Threads later), a two-stage poll whose probe (the profile's newest-story time and post and reel counts) decides whether a costly read runs, a per-person cadence learned from when that person posts and raised by what is happening now, one budget and one halt per login, the custody rule (text and embeddings kept, media bytes expire once embedded), the social_item and social_poll Record tables, and the back-fill of past posts and reels, which waits on a listing mechanism (P13)."
+description: "How step 5 ingests members' social items: a network-neutral source interface (Instagram first, Threads later), a two-stage poll whose probe (the profile's newest-story time and post and reel counts) decides whether a costly read runs, a per-person cadence learned from when that person posts and raised by what is happening now, one budget and one halt per login, the custody rule (everything kept, except a story frame's media bytes, which expire once embedded), the social_item and social_poll Record tables, and the back-fill of past posts and reels, which waits on a listing mechanism (P13)."
 tags: [nora, observe, social, instagram, threads, stories, posts, reels, polling, backfill, custody]
 timestamp: '2026-10-16'
 edges:
@@ -161,25 +161,29 @@ of `social_poll` rows, never on one sample.
 
 ## 5. Custody and the Record
 
-**Custody (operator ruling 2026-10-16, amending
-instagram-adoption/06's "social reads never enter custody").** What a social
-item *said* is kept: its metadata, caption, alt text, location tag and its
-perception (what it showed, as text). Its **media bytes are not**: they are
-fetched into media custody within the same poll (the CDN URLs are signed and
-expire, so a later fetch may find nothing), perceived, and hard-deleted at a
-bound: for a story frame `expires_at` plus `[social] media_keep_days`
-(starting at 7), for a post or reel `seen_at` plus the same. Deletion leaves
-the tombstone of [70](70-migration.md) §9 (id, kind, time).
+**Custody (operator rulings 2026-10-16, amending
+instagram-adoption/06's "social reads never enter custody").** Every item's
+media is fetched into media custody within the same poll (the CDN URLs are
+signed and expire, so a later fetch may find nothing) and perceived. Then the
+two kinds part:
+
+| kind | rows, caption, perception, embedding | media bytes |
+|---|---|---|
+| `post`, `reel` | kept, **no retention** | kept, **no retention**, like room media |
+| `story_frame` | kept | hard-deleted at `expires_at` plus `[social] story_media_keep_days` (starting at 7), leaving the tombstone of [70](70-migration.md) §9 (id, kind, time) |
+
+A post or reel is something its author published to stay; a story is
+something they published to vanish, so only its bytes go.
 
 **Embedded too (operator 2026-10-16).** Each item's image or video is
 embedded by the memory index's multimodal embedder (design/unified-memory,
 node 20's chosen model reads image and video) through the index's own worker,
 like any other media the index projects; this node does not embed. The vector
-is derived, like the perception text, and is kept when the bytes go. So the
-byte deletion waits on it: bytes are deleted at the bound **only once the
-item's perception and embedding both exist**, or at a hard limit
-(`[social] media_keep_max_days`, starting at 30) after which the item stays
-unembedded, which is counted, not an error. Every rendering
+is derived, like the perception text, and is kept when a story's bytes go. So
+a story frame's byte deletion waits on it: its bytes are deleted at the bound
+**only once its perception and embedding both exist**, or at a hard limit
+(`[social] story_media_keep_max_days`, starting at 30) after which the frame
+stays unembedded, which is counted, not an error. Every rendering
 of a social item says what it is and how old it is
 (instagram-adoption/06, «a story must be SAID to be a story»).
 
@@ -202,10 +206,11 @@ after insert. Everything that changes about an item is a new row elsewhere.
   login's transitions.
 
 Perception rows are the ones ingest comprehension already writes, keyed by
-the media item (`media_objects`). A frame gone (§3) and a retention hide are
+the media item (`media_objects`). A frame gone (§3) and a hide are
 rows in an append-only `social_item_state` (`item`, `state`: `gone`,
-`hidden`; `reason`; `recorded_at`), which every read joins. Retention keys
-are set before S2 ships ([70](70-migration.md) §9).
+`hidden`; `reason`; `recorded_at`), which every read joins. No row of this
+stream has a retention key: posts and reels have none at all, and a story's
+only bound is on its bytes (above).
 
 **Stimulus.** A completed read that recorded new items raises **one** `social`
 stimulus for that person, after its items are perceived or recorded
@@ -259,7 +264,7 @@ count on `social_poll`.
 | S0 | P13 probe of the private feed route; and, for 5 members with a story up, `latest_reel_media` against the newest frame's `taken_at` | one page read back on norty, the session healthy an hour later; the equality table |
 | S1 | `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads |
 | S2 | the poller: probe-then-read, ceiling cadence, budget, halt and back-off with `source_health` transitions; media fetched into custody and expired; the story rule's test rewritten ([20](20-observe.md) §2) and the bridge comments that still say «only when asked» updated (`internal/transport/http/server.go`, `internal/app/app.go`, `internal/gateway/instameow/social.go`) | a week of `social_poll` rows; the login unharmed |
-| S3 | perception of new frames under the per-unit cap; the `social` stimulus; Character's wake count; `social_item` media handed to the memory index's embed worker, and byte deletion gated on perception and embedding | `nora_perception_total{source="social"}`; stimuli per read; items embedded before their bytes went |
+| S3 | perception of new frames under the per-unit cap; the `social` stimulus; Character's wake count; `social_item` media handed to the memory index's embed worker, and a story frame's byte deletion gated on perception and embedding | `nora_perception_total{source="social"}`; stimuli per read; story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
 | S5 | `LIST_ITEMS` and the back-fill, only if S0 found a mechanism | items per member against `media_count` |
 
