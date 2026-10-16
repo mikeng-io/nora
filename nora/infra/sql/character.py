@@ -30,10 +30,12 @@ from collections.abc import Sequence
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import EPISODE_EVIDENCE_OUTCOMES, Episode, RoomMessage
 from nora.domain.lessons import NAMES_HER
+from nora.domain.social_stream import from_us, to_us
 from nora.infra.sql.audit import transcript_row, transcript_select
 from nora.infra.sql.mobility import current_build_id
 from nora.infra.sql.schema import (
@@ -174,6 +176,46 @@ class SqlCharacterEvidence:
         async with self._engine.connect() as conn:
             at = (await conn.execute(stmt)).scalar_one_or_none()
         return None if at is None else int(at.timestamp() * 1000)
+
+    # -- a person's social items -----------------------------------------------
+
+    async def social_cursor(self, *, adaptor: str, key: str) -> tuple[int, int]:
+        """How far `adaptor`'s sessions for `key` have been handed the
+        person's social items, as `(cursor, read_at)` in microseconds since
+        the epoch: the `recorded_at` of the last item handed, and when the
+        read that settled last began (`(0, 0)`: none yet). Kept on its own
+        `consolidation_watermark` row (`<adaptor>:social`), beside the key's
+        message watermark, because an item has no Record id: `last_message_id`
+        holds the cursor (BIGINT, 0115) and `updated_at` the read's time."""
+        t = CONSOLIDATION_WATERMARK
+        stmt = sa.select(t.c.last_message_id, t.c.updated_at).where(
+            t.c.consolidator_name == f"{adaptor}:social", t.c.scope_id == key,
+        )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).one_or_none()
+        if row is None:
+            return 0, 0
+        return int(row.last_message_id), to_us(row.updated_at)
+
+    async def advance_social_cursor(
+        self, *, adaptor: str, key: str, cursor: int, read_at: int,
+    ) -> None:
+        """Move the cursor to `cursor` and the read's time to `read_at`,
+        neither ever back."""
+        t = CONSOLIDATION_WATERMARK
+        at = from_us(read_at)
+        stmt = (
+            pg.insert(CONSOLIDATION_WATERMARK)
+            .values(consolidator_name=f"{adaptor}:social", scope_id=key,
+                    last_message_id=cursor, updated_at=at)
+            .on_conflict_do_update(
+                index_elements=[t.c.consolidator_name, t.c.scope_id],
+                set_={"last_message_id": sa.func.greatest(t.c.last_message_id, cursor),
+                      "updated_at": sa.func.greatest(t.c.updated_at, at)},
+            )
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
 
     # -- a unit --------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 """How the composition root builds the social stream's stores.
 
-Every reader's store (the poller's and `social_read`'s) is
+Every reader's store (the poller's, `social_read`'s and Character's) is
 `readable_social_store`, which leaves out an opted-out person's items under
 their current id and every retired one; the one store built without it is the
 story expiry's, which deletes every person's frames' bytes. And each social
@@ -49,7 +49,7 @@ def test_only_the_helper_and_the_story_expiry_build_the_store():
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
         and n.func.id == "readable_social_store"
     ]
-    assert len(readers) == 2
+    assert len(readers) == 3
 
 
 def _conv(id, unit, persons, *, home=False):

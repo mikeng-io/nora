@@ -177,7 +177,7 @@
   {
     "name": "C3b: the echo rule is gone, a revision citing only her sends is staged",
     "file": "nora/domain/culture.py",
-    "old": "    if citable.echo_rule and not episodes and messages <= citable.nora:\n",
+    "old": "    if citable.echo_rule and not episodes and not items and messages <= citable.nora:\n",
     "new": "    if False:\n",
     "target": "tests/unit/test_character_nora.py::test_a_revision_citing_only_her_own_sends_is_refused_by_the_echo_rule"
   }

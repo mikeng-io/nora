@@ -33,8 +33,8 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nora.agent.memory_search import (
+    EXACT_LIMIT,
     PINNED_LIMIT,
-    RESULT_LIMIT,
     MemorySearch,
     MemorySearchResult,
 )
@@ -266,7 +266,7 @@ async def test_an_exact_name_outranks_a_closer_dense_neighbour(engine: Any) -> N
     assert found.hits[1].pin == 0
 
 
-async def test_literal_hits_hold_half_the_answer_and_a_cosine_one_hit_still_shows(
+async def test_literal_hits_are_pinned_and_a_cosine_one_hit_still_shows(
     engine: Any,
 ) -> None:
     """With every exact hit pinned, ten nodes naming Rin would fill every slot and
@@ -281,7 +281,9 @@ async def test_literal_hits_hold_half_the_answer_and_a_cosine_one_hit_still_show
     pinned = [h for h in found.hits if h.pin]
     assert len(pinned) == PINNED_LIMIT and list(found.hits[:PINNED_LIMIT]) == pinned
     assert found.hits[PINNED_LIMIT].node.source_id == "twin"
-    assert len(found.hits) == RESULT_LIMIT
+    # Every named node, past the exact seeds by their cosine, and the twin:
+    # the cut is the packet's (`render_packet`), not the search's.
+    assert len(found.hits) == 12 + 1 > EXACT_LIMIT
 
 
 async def test_an_exact_seed_is_whole_and_in_scope(engine: Any) -> None:
@@ -447,7 +449,8 @@ async def test_a_short_dense_scan_is_counted(engine: Any, monkeypatch: Any) -> N
             for i, vec in enumerate(crowd)
         ])
     for i in range(3):
-        await _node(engine, f"mine{i}", "second", _spread(rng, 0.3))
+        # About 0.53 from the question: above `DENSE_FLOOR`, under the crowd.
+        await _node(engine, f"mine{i}", "second", _spread(rng, 0.6))
     metrics = Metrics()
     found = await _search(engine, metrics=metrics)
     assert len(found.hits) == 3  # positive control: the whole scope is found

@@ -2376,7 +2376,7 @@ def _person_adaptor_with(store):
     key = character_key("friends", "ada")
     return CharacterPersonAdaptor(
         culture=InMemoryCultureStore(), evidence=PersonEvidence(store=store, keys={key: pk}),
-        keys={key: pk},
+        keys={key: pk}, screen=lambda _text: None, render_chars=240,
     )
 
 
@@ -2444,3 +2444,46 @@ async def test_new_evidence_between_retries_does_not_reset_noras_count():
     statuses, sizes, _wm = await _retry_until_it_advances(adaptor, lambda: add(next(arrived)))
     assert statuses == ["unavailable", "unavailable", "ok"]
     assert sizes == [300, 300, 300]
+
+
+class _SettlingEvidence:
+    """An evidence with a second cursor: records each `settle`."""
+
+    def __init__(self) -> None:
+        self.settled: list[str] = []
+
+    async def count(self, *, key: str, after: int) -> int:
+        return 1
+
+    async def newest(self, *, key: str, after: int, limit: int):
+        return ["an item"], after
+
+    async def settle(self, *, key: str) -> None:
+        self.settled.append(key)
+
+
+class _StatusRunner:
+    def __init__(self, status: str) -> None:
+        self._status = status
+
+    async def run(self, *, adaptor, key, batch):
+        return _StubOutcome(status=self._status, written=0)
+
+
+@pytest.mark.parametrize(("status", "settled"), [("ok", ["k"]), ("unavailable", [])])
+async def test_an_evidences_second_cursor_settles_only_after_a_run_that_was_not_unavailable(
+    status, settled,
+):
+    """A person's social items are handed by a cursor of their own: it moves
+    on the watermark's rule, so a failed run hands the same items again."""
+    from types import SimpleNamespace
+
+    from nora.app.runtime import _dream_evidence_once
+
+    evidence = _SettlingEvidence()
+    await _dream_evidence_once(
+        adaptor=SimpleNamespace(name="character-person"), runtime=_StatusRunner(status),
+        language=_KeyedLanguage(age=1e9), metrics=Metrics(), evidence=evidence, key="k",
+        sched=None, batch_limit=10, max_age_seconds=0.0,
+    )
+    assert evidence.settled == settled

@@ -930,11 +930,12 @@ def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
 def readable_social_store(
     engine: Any, persons: Any, *, metrics: Any = None,
 ) -> SqlSocialStreamStore:
-    """The social stream's store for every reader: the poller's and
-    `social_read`'s. It leaves out each item of a person whose `identity.toml`
-    block sets `social = false`, under their current id and every retired one
-    (`Persons.social_off_ids`). The one store built without it is the story
-    expiry's, which deletes every person's frames' bytes at their bound."""
+    """The social stream's store for every reader: the poller's,
+    `social_read`'s and a person's Character session's. It leaves out each
+    item of a person whose `identity.toml` block sets `social = false`, under
+    their current id and every retired one (`Persons.social_off_ids`). The one
+    store built without it is the story expiry's, which deletes every
+    person's frames' bytes at their bound."""
     return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)
 
 
@@ -3866,8 +3867,17 @@ async def build_dependencies(
                     culture=culture_store,
                     evidence=PersonEvidence(
                         store=SqlCharacterEvidence(engine), keys=person_keys,
+                        # Their social items are evidence too (design/
+                        # cognition-loop/22 §6), read whether or not the poller
+                        # runs, opted-out persons left out by the store.
+                        social=readable_social_store(engine, persons),
+                        former_ids=persons.former_ids_for,
                     ),
                     keys=person_keys, metrics=metrics,
+                    screen=scan_identifiers,
+                    render_chars=cfg.media.comprehension_render_chars,
+                    # A caption keeps only the author's own @handle.
+                    handle_owners=persons.instagram_username_owners,
                 ),
             )
 
