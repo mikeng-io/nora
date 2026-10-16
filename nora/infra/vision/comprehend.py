@@ -117,6 +117,12 @@ COMPREHEND_QUESTIONS = {
     ),
 }
 
+def _framed(context: str, question: str) -> str:
+    """The question, after the sentence saying what the bytes are when there
+    is one (`MediaInterpreter.describe`'s `context`)."""
+    return f"{context}\n\n{question}" if context else question
+
+
 # The text pass. Used for a voice note (whose `content` is already in hand —
 # the STT service transcribed it at ingest, so listening again would spend a
 # second and larger call to learn what Nora already knows) and to synthesize a
@@ -251,7 +257,7 @@ class MediaComprehender:
         return self._models.get("image", "")
 
     async def describe(
-        self, *, data: bytes, media_type: str, label: str = "",
+        self, *, data: bytes, media_type: str, label: str = "", context: str = "",
     ) -> MediaDescription:
         """Never raises. `available=False` carries no partial triple."""
         top, _subtype = parse_media_type(media_type)
@@ -269,8 +275,8 @@ class MediaComprehender:
             return MediaDescription(available=False, reason="unsupported_format")
         try:
             if top == "video":
-                return await self._comprehend_video(data, media_type, model)
-            return await self._comprehend_still(data, media_type, label, top, model)
+                return await self._comprehend_video(data, media_type, model, context)
+            return await self._comprehend_still(data, media_type, label, top, model, context)
         except Exception:
             # The port never raises. `VisionClient.describe` already turns
             # every failure into an unavailable result itself; this is the belt
@@ -280,8 +286,9 @@ class MediaComprehender:
 
     async def _comprehend_still(
         self, data: bytes, media_type: str, label: str, top: str, model: str,
+        context: str = "",
     ) -> MediaDescription:
-        question = COMPREHEND_QUESTIONS.get(label) or COMPREHEND_QUESTIONS[top]
+        question = _framed(context, COMPREHEND_QUESTIONS.get(label) or COMPREHEND_QUESTIONS[top])
         view = await preprocess_media(data, media_type)
         result = await self._client.describe(
             data=view, media_type=media_type,
@@ -304,7 +311,7 @@ class MediaComprehender:
         )
 
     async def _comprehend_video(
-        self, data: bytes, media_type: str, model: str,
+        self, data: bytes, media_type: str, model: str, context: str = "",
     ) -> MediaDescription:
         """Windows in order, timecoded FROM THE WINDOW, then one
         cheap text pass.
@@ -328,7 +335,7 @@ class MediaComprehender:
                 # a process ago. See `client.derive_vision_timeout`.
                 windows=windows,
                 prompt=(
-                    f"{COMPREHEND_QUESTIONS['video']}\n\n"
+                    f"{_framed(context, COMPREHEND_QUESTIONS['video'])}\n\n"
                     "Answer in plain prose, not JSON."
                 ),
                 model=model,

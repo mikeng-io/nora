@@ -20,7 +20,7 @@ suite both pass.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import replace as _replace
 from typing import Any
 from uuid import UUID, uuid4
@@ -253,7 +253,7 @@ class SqlGatheringStore:
         return [_row_to_event(r) for r in rows]
 
     async def list_for_person(
-        self, *, person_id: str,
+        self, *, person_id: str, conversation_ids: Collection[str] = (),
     ) -> Sequence[Gathering]:
         rsvpd = sa.select(EVENT_RSVPS.c.event_id).where(
             EVENT_RSVPS.c.person_id == person_id,
@@ -263,6 +263,7 @@ class SqlGatheringStore:
             .where(sa.or_(
                 EVENTS.c.created_by == person_id,
                 EVENTS.c.id.in_(rsvpd),
+                EVENTS.c.conversation_id.in_(sorted(conversation_ids)),
             ))
             .order_by(EVENTS.c.created_at)
         )

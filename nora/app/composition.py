@@ -96,6 +96,7 @@ from nora.app.memory_routing import (
 )
 from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
 from nora.app.otp import OtpService
+from nora.app.social_perception import SocialPerception
 from nora.app.social_poller import SocialPoller
 from nora.app.source_health import AdapterHealthRecorder
 from nora.app.subagent_backend import SubagentBackend
@@ -191,6 +192,7 @@ from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.revisions import SqlRevisionStore
 from nora.infra.sql.rollup_read import SqlRollupRead
+from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.stimuli import SqlStimulusStore
@@ -276,7 +278,7 @@ from .fire import (
     relay_occasion,
     reminder_occasion,
 )
-from .gatherings import GatheringService
+from .gatherings import GatheringService, room_event_shown
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
@@ -921,6 +923,22 @@ def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
     }
 
 
+def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
+    """Each person LISTED by id in a room, and the units of the rooms that list
+    them, in policy order: the units a social item of theirs is charged to and
+    announced in. A `*` room lists nobody, the rule `SocialSubjectIndex.members`
+    applies to who is polled."""
+    out: dict[str, list[str]] = {}
+    for conv in allowlist.conversations:
+        if conv.persons is None or not conv.unit:
+            continue
+        for person in sorted(conv.persons):
+            units = out.setdefault(person, [])
+            if conv.unit not in units:
+                units.append(conv.unit)
+    return {person: tuple(units) for person, units in out.items()}
+
+
 def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
     """One key per (unit, person listed in any of that unit's rooms), from
     `policy.toml` and `identity.toml`. A
@@ -1003,6 +1021,10 @@ class Dependencies:
     documents: DocumentStore
     document_service: DocumentService
     rooms_of: Callable[[str], frozenset[RoomKey]]
+    # Whether a member of a room may see an event of it they neither made nor
+    # answered on the portal's Plans (`nora.app.gatherings.room_event_shown`,
+    # bound to the process's lineage policy).
+    room_event_shown: Callable[[Any, str, str, str], bool]
     # (platform, conversation_id) -> the room's policy label, for the portal's document
     # rows; "" for a room the policy does not name.
     room_label: Callable[[str, str], str]
@@ -1200,6 +1222,9 @@ class Dependencies:
     # `nora/__main__.py` starts it; the eval subject, which composes the same
     # graph, does not.
     social_poller: SocialPoller | None = None
+    # Its perception pass: `None` whenever the poller is. `nora/__main__.py`
+    # starts it beside the poller.
+    social_perception: SocialPerception | None = None
 
 
 def _image_gen_wiring(
@@ -3465,17 +3490,22 @@ async def build_dependencies(
     # deployment's login. `[social.poll] enabled` needs `[social.instagram]`
     # (refused at load), so `social_subjects` is set whenever it is on.
     social_poller: SocialPoller | None = None
+    social_perception: SocialPerception | None = None
     if cfg.social.poll.enabled and social_subjects is not None:
         from nora.infra.social.instagram_source import InstagramSocialSource
         from nora.infra.social.subjects import instagram_roster
-        from nora.infra.sql.social_stream import SqlSocialStreamStore
 
+        # ONE store for the poller and every reader, holding who opted out:
+        # the read-side exclusion lives in the store's reads (§2).
+        social_store = SqlSocialStreamStore(engine, opted_out=frozenset(
+            p for p in persons.by_person if persons.social_off(p)
+        ))
         social_poller = SocialPoller(
             source=InstagramSocialSource(
                 base_url=cfg.social.instagram.base_url,
                 timeout_seconds=cfg.social.instagram.timeout_seconds,
             ),
-            store=SqlSocialStreamStore(engine),
+            store=social_store,
             health=SqlSourceHealthLog(engine),
             roster=functools.partial(instagram_roster, social_subjects),
             settings=cfg.social.poll, metrics=metrics,
@@ -3483,6 +3513,19 @@ async def build_dependencies(
             # media custody is off, and then items are recorded without bytes.
             media=media_sources.for_platform("instagram") if media_sources else None,
             blobs=blobs, media_objects=media_objects,
+        )
+        # Perception needs `[media] comprehension` (`comprehension` is None
+        # without it, and then items stay unperceived and their reads are
+        # announced as recorded); the stimulus needs `[cognition] enabled`.
+        social_perception = SocialPerception(
+            store=social_store, media_objects=media_objects,
+            comprehension=comprehension, stimuli=stimulus_store,
+            units=social_person_units(allowlist),
+            daily_cap=cfg.social.poll.perception_daily_cap,
+            tz=ZoneInfo(cfg.cognition.timezone),
+            chunk_seconds=cfg.media.describe.video.chunk_seconds,
+            chunk_max=cfg.media.describe.video.chunk_max,
+            tick_seconds=cfg.social.poll.tick_seconds, metrics=metrics,
         )
         log.info("social poller wired (instagram)")
 
@@ -4290,6 +4333,7 @@ async def build_dependencies(
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
+        room_event_shown=functools.partial(room_event_shown, lineage),
         room_label=functools.partial(room_label, allowlist),
         blobs=blobs, artifacts=computer_exports,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
@@ -4346,6 +4390,7 @@ async def build_dependencies(
         otp_api_token=otp_api_token,
         oauth_keepalive=oauth_keepalive,
         social_poller=social_poller,
+        social_perception=social_perception,
         memory_embed=(
             MemoryEmbedWorker(
                 engine, LlamaEmbedder(cfg.memory_index.embedder_url), blobs,

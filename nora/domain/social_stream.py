@@ -17,8 +17,9 @@ An absent count is never read as "unchanged".
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, tzinfo
 from enum import StrEnum
 from typing import Literal, get_args
 
@@ -142,10 +143,12 @@ class Page:
 
 @dataclass(frozen=True)
 class MediaItem:
-    """One image or video of an item, as the platform serves it."""
+    """One image or video of an item, as the platform serves it.
+    `duration_seconds` is a video's length when the platform sent one."""
 
     kind: Literal["image", "video"]
     url: str
+    duration_seconds: float | None = None
 
 
 ItemKind = Literal["story_frame", "post", "reel"]
@@ -282,3 +285,132 @@ def decide(
             elif now < before:
                 fell = True
     return Due(story_due=story_due, items_due=rose, partial=False, count_fell=fell)
+
+
+# -- perception and the stimulus (§5, §7) --------------------------------------
+
+#: What one attempt to perceive an item's media came to: `ok` (read),
+#: `nothing_found` (nothing here reads it, or it was read already),
+#: `unavailable` (the read failed; tried again on a later day), `failed` (it
+#: will not succeed: a permanent reason, or `MAX_PERCEPTION_ATTEMPTS` failed
+#: reads; never tried again) or `capped` (the day's cap was spent; left
+#: unperceived until a later day). The table's CHECK holds the same set.
+PerceptionOutcome = Literal["ok", "nothing_found", "unavailable", "failed", "capped"]
+PERCEPTION_OUTCOMES: tuple[str, ...] = get_args(PerceptionOutcome)
+
+#: Where a perceived item came from: the label vocabulary of
+#: `nora_perception_total{source}`.
+PerceptionSource = Literal["social"]
+PERCEPTION_SOURCES: tuple[str, ...] = get_args(PerceptionSource)
+
+Origin = Literal["poll", "backfill"]
+
+#: An item whose read failed this many times is recorded `failed`.
+MAX_PERCEPTION_ATTEMPTS = 3
+
+#: Comprehension reasons no retry can change (the bytes, the custody, the
+#: configured describers): the item is recorded `failed` at once.
+_TERMINAL = frozenset({
+    "unsupported_format", "too_large", "unsupported_payload", "blob", "no_index", "ffmpeg",
+})
+#: Reasons a read ended on before any model was called.
+_NO_CALL = _TERMINAL | {"store", "in_flight", "unreadable", "already_read"}
+
+
+def is_terminal(reason: str) -> bool:
+    """A failed read no later day can change (a describer not configured for
+    the type counts: that is the deployment, not a hiccup)."""
+    return reason in _TERMINAL or (reason.startswith("no_") and reason.endswith("_describer"))
+
+
+def made_no_call(reason: str) -> bool:
+    """Whether a read that ended on `reason` called no model."""
+    return reason in _NO_CALL or is_terminal(reason)
+
+
+def vision_calls(
+    *, top: str, duration_seconds: float | None, chunk_seconds: int, chunk_max: int,
+) -> int:
+    """The model calls one medium's read makes at most: one for an image; for a
+    video, one per window of `chunk_seconds` up to `chunk_max` (all of them
+    when its length is unknown), plus the text pass that titles it."""
+    if top != "video":
+        return 1
+    if duration_seconds is None or duration_seconds <= 0:
+        return chunk_max + 1
+    windows = -(-int(duration_seconds) // max(chunk_seconds, 1)) or 1
+    return min(windows, chunk_max) + 1
+
+
+#: A `social` stimulus's `ref` is this, a colon, and the read's id.
+SOCIAL_READ_REF = "social_read"
+
+
+def perception_allowance(
+    *, cap: int, poll_used: int, backfill_used: int, origin: Origin,
+) -> int:
+    """How many more vision calls an item of `origin` may spend in one unit
+    today, given what that unit's polled and back-filled items spent.
+
+    A polled item may spend whatever is left of `cap`. A back-filled one may
+    spend at most half of what the polled items have left of it, less what
+    back-fill already spent, so history never takes more than half of a day the
+    news has not used, however many passes run (§7)."""
+    left = cap - poll_used - backfill_used
+    if origin == "backfill":
+        left = min(left, (cap - poll_used) // 2 - backfill_used)
+    return max(left, 0)
+
+
+_KIND_WORDS: dict[str, tuple[str, str]] = {
+    "story_frame": ("story frame", "story frames"),
+    "post": ("post", "posts"),
+    "reel": ("reel", "reels"),
+    "thread_post": ("thread post", "thread posts"),
+}
+
+
+def read_item(items: Sequence[tuple[str, bool]]) -> str:
+    """A `social` stimulus's `item`: what the read recorded, one
+    `[collab:]<kind>` per item in the read's order (`collab:post`, `reel`)."""
+    return ",".join(f"collab:{kind}" if collab else kind for kind, collab in items)
+
+
+def describe_read(item: str) -> str:
+    """`read_item`'s words for a model: «2 story frames», «a collab post and a
+    reel». Counted per kind, in the order the kinds first appear."""
+    counts: dict[str, int] = {}
+    for part in filter(None, item.split(",")):
+        counts[part] = counts.get(part, 0) + 1
+    words = []
+    for part, n in counts.items():
+        collab, _, kind = part.rpartition(":")
+        one, many = _KIND_WORDS.get(kind, (kind.replace("_", " "),) * 2)
+        noun = f"collab {one if n == 1 else many}" if collab else (one if n == 1 else many)
+        words.append(f"a {noun}" if n == 1 else f"{n} {noun}")
+    if len(words) <= 1:
+        return "".join(words) or "an item"
+    return ", ".join(words[:-1]) + " and " + words[-1]
+
+
+def perception_context(
+    *, network: str, kind: str, collab: bool, taken_at: datetime, tz: tzinfo,
+) -> str:
+    """What a describer is told it is reading (instagram-adoption/06: a story
+    must be SAID to be a story). Every word is a system fact (the kind the
+    platform reports, the collab flag, the time it was posted), never the
+    caption, which is the author's text. The time is absolute, because the
+    description it shapes is kept for good and an age would go stale in it."""
+    platform = network.capitalize()
+    when = taken_at.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+    if kind == "story_frame":
+        what = (
+            f"one frame of a story on {platform}, posted {when} (a story "
+            "disappears a day after it is posted)"
+        )
+    else:
+        noun = _KIND_WORDS.get(kind, (kind.replace("_", " "), ""))[0]
+        what = f"a {noun} on {platform}, posted {when}"
+    if collab:
+        what += ", made together with another account"
+    return f"This is {what}, from a member of the group Nora is in."

@@ -66,6 +66,7 @@ from nora.domain.cognition_ground import (
     RecordItem,
     RecordKind,
     RollupLine,
+    SocialLine,
     StayDeviation,
     parse_rollup_ref,
     record_ref,
@@ -147,6 +148,25 @@ def _rollup_lines(
             ref=s.ref, kind=parsed.kind, names=tuple(r.name for r in refs if r is not None),
             person_ids=parsed.person_ids, start_ms=parsed.start_ms, end_ms=parsed.end_ms,
             place=parsed.place,
+        )
+    return out
+
+
+def _social_lines(
+    pending: Sequence[Stimulus], claimed: set[int], persons: Any,
+) -> dict[str, SocialLine]:
+    """The readable `social` stimuli of the agenda, by `ref`, each with its
+    person's roster NAME. One naming a person the roster does not know has no
+    entry: the session is not handed a row it cannot read."""
+    out: dict[str, SocialLine] = {}
+    for s in pending:
+        if s.id not in claimed or s.kind != "social" or not s.person_id:
+            continue
+        ref = persons.by_person.get(s.person_id)
+        if ref is None:
+            continue
+        out[s.ref] = SocialLine(
+            ref=s.ref, name=ref.name, person_id=s.person_id, item=s.item, at_ms=s.at_ms,
         )
     return out
 
@@ -540,7 +560,7 @@ def build_grounder(
         )
         return Grounding(
             records=records_out, notes=notes, memos=memos, events=tuple(events),
-            rollups=rollups,
+            rollups=rollups, socials=_social_lines(pending, claimed, persons),
             own_sends=own_sends, room_labels=labels, self_account=account,
         )
 

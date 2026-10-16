@@ -265,6 +265,7 @@ _LOCK_CLASS = 0x636F_6777
 _KIND_PREDICATE: dict[str, Any] = {
     "time": STIMULUS.c.kind == sa.literal_column("'time'"),
     "rollup": STIMULUS.c.kind == sa.literal_column("'rollup'"),
+    "social": STIMULUS.c.kind == sa.literal_column("'social'"),
 }
 
 
@@ -284,11 +285,12 @@ class SqlStimulusStore:
             "due_ms": stimulus.due_ms, "recorded_at": _at(recorded_at_ms),
         }
         stmt: Any = pg_insert(STIMULUS).values(**values)
-        if stimulus.kind in ("time", "rollup"):
-            # The partial unique indexes `uq_stimulus_time_ref` and
-            # `uq_stimulus_rollup_ref` (0071): a floor raised on every tick,
-            # or a Rollup stimulus raised again by a later run or a rebuild,
-            # is written once. The conflict target must restate the index's
+        if stimulus.kind in _KIND_PREDICATE:
+            # The partial unique indexes `uq_stimulus_time_ref`,
+            # `uq_stimulus_rollup_ref` (0071) and `uq_stimulus_social_ref`
+            # (0108): a floor raised on every tick, a Rollup stimulus raised
+            # again by a later run or a rebuild, or a read announced again, is
+            # written once. The conflict target must restate the index's
             # predicate for Postgres to infer it.
             #
             # The predicate is a LITERAL per kind, never `kind == <value>`:

@@ -174,6 +174,20 @@ async def test_list_for_person_excludes_events_im_not_part_of(store):
     assert out == []
 
 
+async def test_list_for_person_includes_every_event_in_my_rooms(store):
+    """An event recorded in a room the viewer is in shows though they neither
+    made nor answered it; an event in a room they are not in still does not."""
+    mine = _event(conversation_id="signal:group-9", created_by="cognition:u")
+    elsewhere = _event(conversation_id="signal:group-10", created_by="cognition:u")
+    await store.create(mine)
+    await store.create(elsewhere)
+
+    out = await store.list_for_person(
+        person_id="miles", conversation_ids=frozenset({"signal:group-9"}),
+    )
+    assert [e.id for e in out] == [mine.id]
+
+
 async def test_list_for_person_deduplicates_creator_who_also_rsvpd(store):
     ev = _event(conversation_id="signal:group-8", created_by="miles")
     await store.create(ev)

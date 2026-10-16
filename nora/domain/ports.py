@@ -882,12 +882,13 @@ class StimulusStore(Protocol):
     """
 
     async def append(self, *, stimulus: NewStimulus, recorded_at_ms: int) -> int | None:
-        """Append one stimulus and return its id. A `time` or `rollup`
-        stimulus is unique on `(unit, ref)`: appending one already on record
-        returns None and writes nothing, which is what lets the evaluator
-        raise a daily floor on every tick, and the Rollup raise a co-location
-        start on every run it is still starting (or a rebuild recompute it),
-        without counting either twice."""
+        """Append one stimulus and return its id. A `time`, `rollup` or
+        `social` stimulus is unique on `(unit, ref)`: appending one already on
+        record returns None and writes nothing, which is what lets the
+        evaluator raise a daily floor on every tick, the Rollup raise a
+        co-location start on every run it is still starting (or a rebuild
+        recompute it), and the social stream announce a read once however
+        often it finds it, without counting any of them twice."""
         ...
 
     async def view(
@@ -1614,8 +1615,12 @@ class MediaInterpreter(Protocol):
     """
 
     async def describe(
-        self, *, data: bytes, media_type: str, label: str = "",
-    ) -> MediaDescription: ...
+        self, *, data: bytes, media_type: str, label: str = "", context: str = "",
+    ) -> MediaDescription:
+        """`context` is a sentence saying what the bytes are (a social item's
+        kind and when it was posted), put before the question. Like `label`,
+        it is built by code from system facts, never from text anyone typed."""
+        ...
 
     async def summarize(self, *, text: str) -> MediaDescription: ...
 
