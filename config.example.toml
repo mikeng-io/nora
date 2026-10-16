@@ -597,8 +597,9 @@ refresh_timeout_seconds = 8
 # projection is queued and re-projected every `drain_seconds`. `nora memory
 # rebuild` rebuilds the whole index. `enabled` selects ONE memory tool surface
 # (DEC-316): on, `memory_search` answers from the index (scoped to the room's
-# unit) and `ask_memory`, `search_memory`, `search_memory_workspace` and
-# `who_said` are not offered; off, those Honcho verbs and no `memory_search`.
+# unit) and no Honcho tool is offered (`ask_memory`, `search_memory`,
+# `search_memory_workspace`, `who_said`, `about`, `remember`); off, those
+# Honcho tools and no `memory_search`.
 [memory_index]
 drain_seconds = 60.0
 enabled = false
