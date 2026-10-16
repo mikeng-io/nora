@@ -78,7 +78,7 @@ ItemState = Literal["gone", "hidden"]
 
 #: Probe outcomes that carry no answer from the platform: the call failed, or
 #: the login was halted or backed off on it.
-_UNANSWERED = ("halted", "backed_off", "error")
+_UNANSWERED = ("halted", "backed_off", "error", "abandoned", "unavailable")
 
 
 #: Perception outcomes that settle an item for good.

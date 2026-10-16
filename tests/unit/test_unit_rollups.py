@@ -17,6 +17,8 @@ from nora.domain.rollup import (
     ReactionFact,
     ResponseEvidence,
     SendFact,
+    SocialFact,
+    SocialInput,
     StaySpan,
     adapter_up,
     colocations,
@@ -194,6 +196,26 @@ def test_silent_runs_count_completed_days_only():
     ]
     assert silent_runs(book, person_id="a", days=4, through_date="2026-09-19") == []
 
+
+
+def test_a_member_seen_only_through_their_posts_starts_no_silence_run():
+    social = SocialInput(items=(SocialFact("a", _t(15, 12)),), observed_from={"a": _t(14, 0)})
+    only_posts = daybooks(
+        "u", ["a"], stays=[], found=[], outings_found=[], messages=[], reactions=[],
+        as_of_ms=_t(19, 12), social=social,
+    )
+    assert [b.items_posted for b in only_posts] == [1]
+    assert silent_runs(only_posts, person_id="a", days=2, through_date="2026-09-19") == []
+
+    at_home_then_posts = daybooks(
+        "u", ["a"], stays=[_stay("a", _t(14, 9), _t(14, 18), HOME_A, kind="home")],
+        found=[], outings_found=[], messages=[], reactions=[], as_of_ms=_t(19, 12),
+        social=social,
+    )
+    # Measured from the 14th: posting is not speaking, so the 15th stays silent.
+    assert silent_runs(
+        at_home_then_posts, person_id="a", days=2, through_date="2026-09-19",
+    )[0] == ("2026-09-15", "2026-09-16")
 
 # -- tie -------------------------------------------------------------------
 

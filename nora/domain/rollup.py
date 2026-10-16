@@ -1031,17 +1031,28 @@ class Deviation:
         return f"deviation|{self.kind}|{self.person_id}|{self.start_ms}"
 
 
+def _only_social(book: Daybook) -> bool:
+    return bool(book.items_posted) and not (
+        book.stays or book.colocation_ms or book.outings or book.rooms
+        or book.messages or book.reactions
+    )
+
+
 def silent_runs(
     books: Sequence[Daybook], *, person_id: str, days: int, through_date: str,
 ) -> list[tuple[str, str]]:
     """Runs of at least `days` consecutive COMPLETED local dates (before
     `through_date`, the date still running) on which `person_id` was silent:
     no daybook row at all counts as silent (nothing held for them that day).
-    Returns `(first, last)` dates of each run's first `days`."""
+    The count starts at their first row that holds more than social items: a
+    member seen only through what they post was never measured for silence,
+    and their first post must not start a run. Returns `(first, last)` dates
+    of each run's first `days`."""
     mine = {b.local_date: b for b in books if b.person_id == person_id}
-    if not mine:
+    anchored = [day for day, b in mine.items() if not _only_social(b)]
+    if not anchored:
         return []
-    first = date.fromisoformat(min(mine))
+    first = date.fromisoformat(min(anchored))
     last = date.fromisoformat(through_date) - timedelta(days=1)
     runs: list[tuple[str, str]] = []
     streak: list[date] = []

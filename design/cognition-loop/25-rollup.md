@@ -165,7 +165,12 @@ no account on any network and for one who opted out: NULL is «not an input»,
 the member. The count is part of the recompute every run does over the whole
 Record up to the watermark, so a back-filled item recorded later reaches its
 day on the next run, and the daybook rows of a build at a watermark are the
-same however the runs fell; there is no late-arrival window to widen. Tie: per
+same however the runs fell; there is no late-arrival window to widen. The one
+exception is deliberate: a hide or a frame gone applies to every day as of the
+next run, past ones included, so an item a person withdrew drops out of the
+counts already built. A member's silence count starts at their first row that
+holds more than social items: posting alone neither breaks a silence nor
+starts one. Tie: per
 pair per ISO week, replies (a quote of the other's message), mentions (a
 structured mention resolving to the other), reactions, each direction, and
 co-location minutes split at the week boundary. Response: per send,
