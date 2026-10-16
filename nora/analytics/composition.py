@@ -235,9 +235,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
     unit_rollups = UnitRollups(
         store=rollups, config=unit_config, units=units, people=people,
         stimuli=SqlStimulusStore(engine), metrics=metrics,
-        social=SqlSocialStreamStore(engine, opted_out=frozenset(
-            p for p in persons.by_person if persons.social_off(p)
-        )),
+        social=SqlSocialStreamStore(engine, opted_out=persons.social_off_ids()),
     )
     runner = RollupRunner(
         mobility=mobility, rollups=rollups, config=rollup_config,
