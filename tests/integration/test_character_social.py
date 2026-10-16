@@ -566,3 +566,21 @@ async def test_a_selector_after_a_script_and_a_flag_are_kept(social) -> None:
     out = await _wake(_session(store))
 
     assert f"\u845b\U000e0100 \u2764\ufe0f {scotland} ok xy \u845b</item>" in out
+
+
+async def test_an_item_whose_tagged_place_changed_is_still_read_and_counted(social) -> None:
+    """A `place` state row records a changed or removed tagged place, not a
+    removal: the item stays readable, so both Character reads still return
+    it and the session can cite it. Only `gone` and `hidden` hide an item."""
+    store, _engine = social
+    await _record(store, "9301")
+    await _record(store, "9302")
+    await store.record_place(network="instagram", item_id="9301", place="Another Square")
+    await store.record_place(network="instagram", item_id="9302", place=None)
+
+    assert await store.polled_count(persons=["ada"], after_us=0) == 2
+    items = await store.person_items(persons=["ada"], after_us=0, limit=SOCIAL_ITEMS_MAX)
+    assert sorted(i.item_id for i in items) == ["9301", "9302"]
+    adaptor = _session(store)
+    assert await adaptor.evidence.count(key=KEY, after=0) == 2
+    assert sorted(_cites(await _wake(adaptor))) == ["9301", "9302"]
