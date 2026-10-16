@@ -97,6 +97,7 @@ to tell `ok` from `partial`.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import re
 from collections.abc import Awaitable, Callable, Iterable
@@ -105,6 +106,7 @@ from datetime import datetime
 from typing import Any, NamedTuple
 
 import sqlalchemy as sa
+from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -117,6 +119,7 @@ from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_
 from nora.infra.sql.schema import (
     CULTURE,
     CULTURE_REVISION,
+    EMBEDDING_DIMENSIONS,
     EVENT_REVISION,
     EVENT_RSVPS,
     EVENTS,
@@ -149,6 +152,7 @@ __all__ = [
     "IndexStatus",
     "RebuildRefusedError",
     "RebuildReport",
+    "adopt_worker_state",
     "clear_embeddings",
     "drain_queue",
     "drop",
@@ -1802,3 +1806,118 @@ async def embed_counts(
         ).where(*_embeddable(), *where)
     )).one()
     return EmbedCounts(int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]))
+
+
+# --- an eval sandbox's vectors ----------------------------------------------
+
+
+class _Source(NamedTuple):
+    id: int
+    kind: str
+    text_md5: str
+    sha256: str | None
+    embed_input: str
+    held: bool
+
+
+def _md5(text: str) -> str:
+    """Postgres' `md5(text)`: the hex digest of the text's UTF-8 bytes."""
+    return hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()
+
+
+async def adopt_worker_state(
+    source: AsyncConnection, target: AsyncConnection, *, model: str, batch: int = 500,
+) -> None:
+    """Give `target`'s unembedded nodes the embedding worker's result from
+    `source` wherever the input it was made from is IDENTICAL: a vector of
+    `model`, or a failure the worker will not retry (given up, or `empty`).
+
+    For an eval sandbox (`nora.subject.sandbox_index`): `target` is a sandbox
+    whose index `rebuild` has just projected from rows as of an instant,
+    `source` the deployment's clone, read only. The worker never runs there.
+
+    **Why this is as-of safe.** A vector is a pure function of the model and
+    the input it was embedded from (`nora.infra.sql.memory_embed`: the text
+    as a document, or an image's bytes), whatever node, kind or instant it
+    belongs to. Copying one onto a node whose input is identical is therefore
+    the vector re-embedding that node would produce, never a later state of
+    it. The identity is the projector's own keep rule (`_input_changed`): the
+    bytes the `sha256` names for a vector made from them, the text for any
+    other. A node whose text changed after the instant (an edit, a later
+    reading on an image embedded from its reading) differs from the source's
+    and gets nothing: it stays unembedded and is counted so. An attachment
+    adopts only from the source's node for the same bytes, so a reading's
+    vector, or an `empty` failure, never moves to another file that shares
+    its text. Matched on the input alone, never on `(kind, source_id)`: the
+    snapshot path renumbers every row it writes, and an id says nothing about
+    what was embedded."""
+    node = MEMORY_NODE.c
+    held = sa.and_(node.embedding.isnot(None), node.embedding_model == model)
+    terminal = sa.and_(
+        node.embedding.is_(None),
+        sa.or_(node.embed_attempts >= EMBED_MAX_ATTEMPTS, node.embed_error == "empty"),
+    )
+    found = [_Source(*r) for r in await source.execute(
+        sa.select(
+            node.id, node.kind, sa.func.md5(node.text), node.sha256, node.embed_input,
+            sa.case((held, True), else_=False),
+        ).where(sa.or_(held, terminal), node.embed_input.isnot(None))
+        # A vector before a failure, then the oldest: one choice per input.
+        .order_by(sa.case((held, 0), else_=1), node.id)
+    )]
+    by_bytes: dict[str, list[_Source]] = {}
+    by_text: dict[str, list[_Source]] = {}
+    for row in found:
+        if row.kind == "media":
+            by_bytes.setdefault(row.sha256 or "", []).append(row)
+        elif row.embed_input == "text":
+            by_text.setdefault(row.text_md5, []).append(row)
+    pairs: list[tuple[int, int]] = []
+    for t in await target.execute(
+        sa.select(node.id, node.kind, node.text, node.sha256).where(
+            node.embedding.is_(None), node.embed_attempts == 0, *_embeddable(),
+        )
+    ):
+        digest = _md5(t.text)
+        if t.kind == "media":
+            match = [r for r in by_bytes.get(t.sha256 or "", ())
+                     if r.embed_input == "bytes" or r.text_md5 == digest]
+        else:
+            match = by_text.get(digest, [])
+        if match:
+            pairs.append((t.id, match[0].id))
+    for i in range(0, len(pairs), batch):
+        chunk: dict[int, list[int]] = {s: [] for _, s in pairs[i:i + batch]}
+        for target_id, source_id in pairs[i:i + batch]:
+            chunk[source_id].append(target_id)
+        rows = (await source.execute(
+            sa.select(
+                node.id, node.text, node.sha256, node.embed_input,
+                sa.cast(node.embedding, sa.Text).label("vector"), node.embedding_model,
+                node.embedded_at, node.embed_attempts, node.embed_error,
+            ).where(node.id.in_(list(chunk)))
+        )).all()
+        for r in rows:
+            # The identity again, held by the UPDATE itself: a match made on a
+            # digest lands only where the input is equal, never merely hashed so.
+            same = (
+                sa.and_(node.kind == "media", node.sha256 == r.sha256)
+                if r.embed_input == "bytes"
+                else sa.and_(node.text == r.text, sa.or_(
+                    node.kind != "media", node.sha256 == r.sha256,
+                ))
+            )
+            await target.execute(
+                sa.update(MEMORY_NODE).where(
+                    node.id.in_(chunk[r.id]), node.embedding.is_(None),
+                    node.embed_attempts == 0, same,
+                ).values(
+                    embedding=(
+                        None if r.vector is None
+                        else sa.cast(sa.literal(r.vector, sa.Text), HALFVEC(EMBEDDING_DIMENSIONS))
+                    ),
+                    embedding_model=r.embedding_model, embedded_at=r.embedded_at,
+                    embed_attempts=r.embed_attempts, embed_error=r.embed_error,
+                    embed_input=r.embed_input,
+                )
+            )

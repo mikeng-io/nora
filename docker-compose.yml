@@ -665,8 +665,13 @@ services:
   #   embedder_model` describes; a different file is a different model.
   # - Threads capped at 4 and memory at 4g with no swap (`stt`'s reason: the
   #   weights stay resident), so a backfill leaves the turn path its CPU.
-  # - On the `embedder` network only, which is internal: no published port
-  #   and no egress, and nothing but nora can reach it.
+  # - nora reaches it on the `embedder` network, which is internal. The eval
+  #   suite runs on the host, where neither `embedder` nor the container's
+  #   address on an internal network answers, and docker publishes no port
+  #   for a container whose only network is internal. So it also joins
+  #   `embedder_host`, a network of its own whose one job is to carry a
+  #   LOOPBACK publish (127.0.0.1:8092, `nora.subject.EMBEDDER_FROM_HOST`):
+  #   nothing off the box reaches it, and no other service joins it.
   # - Pinned to the nearest published server image after the bake-off's
   #   build (b11521, b42b7e6d3): b11541, by digest.
   # - The bake-off's server flags exactly (results/20261015T171213Z-stage2-*:
@@ -684,7 +689,8 @@ services:
     container_name: embedder
     restart: unless-stopped
     profiles: [embedder]
-    networks: [embedder]
+    networks: [embedder, embedder_host]
+    ports: ["127.0.0.1:8092:8080"]
     environment:
       - LLAMA_MEDIA_MARKER=<__media__>
     command:
@@ -1058,6 +1064,13 @@ networks:
   # joining it cannot move nora's default route (the `honcho` network's note).
   embedder:
     internal: true
+  # The embedder's loopback publish for the eval suite on the host, and nothing
+  # else: docker publishes no port for a container on internal networks only.
+  # No masquerade, so it gives the model server no NAT route out; the publish
+  # is docker-proxy on the host connecting in, which needs none.
+  embedder_host:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
   # SearXNG + Firecrawl network joins REMOVED (DEC-73, 2026-08-08): web_search is
   # Tavily (a public API reached over the default network), web_fetch is gone, so
   # Nora no longer calls the co-located SearXNG/Firecrawl containers.
