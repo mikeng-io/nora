@@ -43,6 +43,8 @@ import asyncio
 import base64
 import io
 import math
+import time
+from collections.abc import Callable
 from pathlib import PurePosixPath
 from typing import Any, NamedTuple
 
@@ -56,6 +58,7 @@ __all__ = [
     "MAX_SEND_PIXELS",
     "QUERY_TIMEOUT_SECONDS",
     "SAFE_TEXT_CHARS",
+    "SERVED_MODEL_TTL_SECONDS",
     "TOKEN_BUDGET",
     "EmbedderRejectedError",
     "EmbedderUnavailableError",
@@ -90,12 +93,20 @@ MAX_SEND_PIXELS = 1920 * 32 * 32
 #: decompression bomb is a few KB that inflates to gigabytes.
 MAX_DECODE_PIXELS = 64_000_000
 
-#: Each call of a search's query embedding (65 V2), inside a turn: a text
-#: query takes about 0.4 s on norty's CPU (65 §0), but the server runs one
-#: request at a time (`--parallel 1`), so a query can wait behind an image
-#: the worker is embedding (about 3.4 s). Ten seconds covers both twice; past
-#: it the search falls back to the lexical seed, never waits the worker's 120.
+#: A search's whole query embedding (65 V2), inside a turn: every call it
+#: makes (/props, /tokenize, /embedding, /health) shares this one deadline.
+#: A text query takes about 0.4 s on norty's CPU (65 §0), but the server runs
+#: one request at a time (`--parallel 1`), so a query can wait behind an
+#: image the worker is embedding (about 3.4 s). Ten seconds covers both
+#: twice; past it the search falls back to the lexical seed, never waits the
+#: worker's 120. Per call, the three calls could take 25 s (review of #31).
 QUERY_TIMEOUT_SECONDS = 10.0
+#: How long a query trusts the last /props that named the configured model,
+#: so a search makes one call, not two. A model swap is an operator's
+#: restart of the `embedder` service; for at most this long after it, a
+#: question may be embedded by the new model and compared with the old one's
+#: vectors, until the worker clears them.
+SERVED_MODEL_TTL_SECONDS = 60.0
 
 #: llama.cpp's default multimodal marker, for a server whose /props names none.
 _DEFAULT_MARKER = "<__media__>"
@@ -187,16 +198,23 @@ class LlamaEmbedder:
     by: `embed_query` reads /props first and is unavailable while the server
     serves any other file, the worker's own rule (`nora.infra.sql.
     memory_embed`), so a search never compares a question from one model
-    with vectors from another (65 V2). `timeout_seconds` bounds each call."""
+    with vectors from another (65 V2); a match is trusted for
+    `SERVED_MODEL_TTL_SECONDS`. `timeout_seconds` bounds each call, and
+    `query_timeout_seconds` a whole `embed_query`."""
 
     def __init__(
         self, base_url: str, *, timeout_seconds: float = 120.0,
         query_model_file: str | None = None,
+        query_timeout_seconds: float = QUERY_TIMEOUT_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._marker: str | None = None
         self._query_model_file = query_model_file
+        self._query_timeout = query_timeout_seconds
+        self._clock = clock
+        self._served_ok_at: float | None = None
 
     async def served_model(self) -> str:
         """The file name of the model the server loaded (/props
@@ -209,10 +227,26 @@ class LlamaEmbedder:
         return PurePosixPath(str(path)).name
 
     async def embed_query(self, text: str) -> list[float]:
+        """The question's vector, within one `query_timeout_seconds`
+        deadline for every call it makes, or unavailable."""
+        try:
+            return await asyncio.wait_for(self._query(text), self._query_timeout)
+        except TimeoutError as exc:
+            raise EmbedderUnavailableError("the query timed out") from exc
+
+    async def _query(self, text: str) -> list[float]:
         if self._query_model_file is not None:
-            served = await self.served_model()
-            if served != self._query_model_file:
-                raise EmbedderUnavailableError("the server serves another model")
+            now = self._clock()
+            fresh = (
+                self._served_ok_at is not None
+                and now - self._served_ok_at < SERVED_MODEL_TTL_SECONDS
+            )
+            if not fresh:
+                self._served_ok_at = None
+                served = await self.served_model()
+                if served != self._query_model_file:
+                    raise EmbedderUnavailableError("the server serves another model")
+                self._served_ok_at = now
         return (await self._embed_text(text, "query")).vector
 
     async def embed_document(self, text: str) -> TextVector:

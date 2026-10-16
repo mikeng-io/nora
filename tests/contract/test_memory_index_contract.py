@@ -27,6 +27,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nora.domain.memory_index import (
+    ExactTerm,
     IndexedNode,
     IndexState,
     MemoryIndexRead,
@@ -256,19 +257,27 @@ async def test_exact_matches_whole_terms_in_scope_most_terms_then_nearest_first(
     nodes = [
         IndexedNode("message", "kitchen", "the kitchen sink", 9, origin_room="signal:b"),
         IndexedNode("message", "both", "Kit and @night_owl", 1, origin_room="signal:b"),
-        IndexedNode("message", "far", "kit's bike", 8, origin_room="signal:b"),
-        IndexedNode("message", "near", "with KIT today", 2, origin_room="signal:b"),
+        IndexedNode("message", "far", "Kit's bike", 8, origin_room="signal:b"),
+        IndexedNode("message", "near", "with Kit today", 2, origin_room="signal:b"),
+        IndexedNode("message", "upper", "KIT is not the name as written", 9,
+                    origin_room="signal:b"),
         IndexedNode("note", "cjk", "阿豹妹今日去咗行山", 3, unit="u1"),
         IndexedNode("message", "owlish", "@night_owlet", 4, origin_room="signal:b"),
         IndexedNode("note", "other-unit", "Kit too", 9, unit="u2"),
     ]
     vectors = {("message", "near"): (M, Q), ("message", "far"): (M, _unit((3, 1.0)))}
     index = await load(nodes, [], vectors)
-    seeds = await index.exact(["Kit", "@night_owl"], SCOPE, limit=10, vector=Q, model=M)
+    seeds = await index.exact(
+        [ExactTerm("Kit", cased=True), ExactTerm("@Night_Owl")], SCOPE, limit=10,
+        vector=Q, model=M,
+    )
+    # A name only as written (not `KIT`); a handle in any case.
     assert [s.node.source_id for s in seeds] == ["both", "near", "far"]
     assert all(s.score == 1.0 for s in seeds)
+    assert [None if s.near is None else round(s.near, 2) for s in seeds] == [None, 1.0, 0.0]
     # Any other script is a substring: Cantonese writes no spaces.
-    assert [s.node.source_id for s in await index.exact(["阿豹"], SCOPE, limit=10)] == ["cjk"]
+    assert [s.node.source_id
+            for s in await index.exact([ExactTerm("阿豹")], SCOPE, limit=10)] == ["cjk"]
     assert await index.exact([], SCOPE, limit=10) == []
 
 
@@ -283,5 +292,23 @@ async def test_coverage_counts_embedded_and_waiting_and_not_the_given_up(load: L
     ]
     vectors = {("message", "done"): (M, Q), ("message", "stale"): ("model-b", Q)}
     index = await load(nodes, [], vectors, frozenset({("message", "given-up")}))
-    assert await index.index_state(model=M) == IndexState("complete", 0, 1, 2)
+    assert await index.index_state(model=M) == IndexState("complete", 0, 1, 2, 1)
     assert await index.index_state() == IndexState("complete", 0)
+
+
+async def test_coverage_counts_within_a_scope_and_lexical_reads_the_given_up(load: Load) -> None:
+    """Review of #31: a node waiting in another unit does not hold this
+    room's answers `partial`; a node the worker gave up on, which no dense
+    seed reaches, is still found by its words."""
+    nodes = [
+        IndexedNode("message", "done", "ramen crawl", 1, origin_room="signal:b"),
+        IndexedNode("message", "given-up", "ramen night", 2, origin_room="signal:b"),
+        IndexedNode("message", "waiting-elsewhere", "ramen too", 3, unit="u2"),
+        IndexedNode("message", "given-up-elsewhere", "ramen also", 4, unit="u2"),
+    ]
+    index = await load(nodes, [], {("message", "done"): (M, Q)},
+                       frozenset({("message", "given-up"), ("message", "given-up-elsewhere")}))
+    assert await index.index_state(model=M, scope=SCOPE) == IndexState("complete", 0, 1, 0, 1)
+    assert await index.index_state(model=M) == IndexState("complete", 0, 1, 1, 2)
+    found = await index.seed(["ramen"], SCOPE, limit=10, given_up_of=M)
+    assert [s.node.source_id for s in found] == ["given-up"]

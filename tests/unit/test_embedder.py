@@ -14,6 +14,7 @@ fails here as it would against the real server."""
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import io
@@ -41,6 +42,7 @@ from nora.infra.embedder import (
     DIMENSIONS,
     MAX_SEND_PIXELS,
     SAFE_TEXT_CHARS,
+    SERVED_MODEL_TTL_SECONDS,
     TOKEN_BUDGET,
     EmbedderRejectedError,
     EmbedderUnavailableError,
@@ -72,8 +74,9 @@ def tokens_of(text: str) -> int:
 class FakeLlamaServer:
     """llama-server's /props, /health, /tokenize and /embedding (module
     docstring). `status` forces every /embedding answer's HTTP status,
-    `healthy` /health's, `width` the vector's. Records every /embedding
-    content it accepted."""
+    `healthy` /health's, `width` the vector's, `delay` how long /props and
+    /embedding each take. Records every /embedding content it accepted, and
+    counts /props calls."""
 
     def __init__(self, *, marker: str = MARKER, ubatch: int = 2048) -> None:
         self.marker = marker
@@ -84,6 +87,8 @@ class FakeLlamaServer:
         self.width = DIMENSIONS
         self.accepted: list[dict[str, Any]] = []
         self.calls = 0
+        self.props_calls = 0
+        self.delay = 0.0
         self.restarts = 0
 
     def restart(self) -> None:
@@ -100,6 +105,8 @@ class FakeLlamaServer:
         return app
 
     async def _props(self, _request: web.Request) -> web.Response:
+        self.props_calls += 1
+        await asyncio.sleep(self.delay)
         return web.json_response({"media_marker": self.marker, "model_path": self.model_path})
 
     async def _health(self, _request: web.Request) -> web.Response:
@@ -116,6 +123,7 @@ class FakeLlamaServer:
 
     async def _embedding(self, request: web.Request) -> web.Response:
         self.calls += 1
+        await asyncio.sleep(self.delay)
         if self.status != 200:
             return self._error("forced", self.status)
         content = (await request.json()).get("content")
@@ -232,14 +240,46 @@ async def test_a_query_is_refused_while_the_server_serves_another_model(llama):
     """65 V2: a question is never embedded by a model other than the one the
     stored vectors came from; the search falls back on this error."""
     fake, url = llama
-    client = LlamaEmbedder(url, query_model_file=Path(MODEL_PATH).name)
+    now = [0.0]
+    client = LlamaEmbedder(url, query_model_file=Path(MODEL_PATH).name, clock=lambda: now[0])
     assert len(await client.embed_query("where did we eat")) == DIMENSIONS
     assert QUERY_INSTRUCTION in fake.accepted[-1]["prompt_string"]
     fake.model_path = "/models/model-b.gguf"
+    now[0] += SERVED_MODEL_TTL_SECONDS  # the last /props match has expired
     calls = fake.calls
     with pytest.raises(EmbedderUnavailableError):
         await client.embed_query("where did we eat")
     assert fake.calls == calls  # refused before any embedding
+
+
+async def test_a_query_reads_props_once_a_minute_not_once_a_search(llama):
+    """Review of #31: /props on every search doubled a turn's calls."""
+    fake, url = llama
+    now = [0.0]
+    client = LlamaEmbedder(url, query_model_file=Path(MODEL_PATH).name, clock=lambda: now[0])
+    for _ in range(3):
+        await client.embed_query("where did we eat")
+        now[0] += 10
+    assert (fake.props_calls, fake.calls) == (1, 3)
+    now[0] += SERVED_MODEL_TTL_SECONDS
+    await client.embed_query("where did we eat")
+    assert fake.props_calls == 2
+
+
+async def test_one_deadline_covers_every_call_of_a_query(llama):
+    """Review of #31: /props and /embedding each had their own timeout, so a
+    slow server held a turn for the sum. Each call here is under the per-call
+    timeout; together they are past the query's deadline."""
+    fake, url = llama
+    fake.delay = 0.3
+    client = LlamaEmbedder(
+        url, timeout_seconds=1.0, query_model_file=Path(MODEL_PATH).name,
+        query_timeout_seconds=0.45,
+    )
+    with pytest.raises(EmbedderUnavailableError):
+        await client.embed_query("where did we eat")
+    fake.delay = 0.1
+    assert len(await client.embed_query("where did we eat")) == DIMENSIONS
 
 
 async def test_every_image_is_decoded_and_sent_as_a_bounded_png(llama):

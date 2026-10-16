@@ -16,16 +16,21 @@ path is cut at its first out-of-scope node.
 **2. Seeds** (65 V2), in this order, a node seeded once:
 
 - **Exact** (`exact_terms_of`): a node containing, literally, a handle, a
-  URL, an id-like token or the name of a person this room lists, as the
-  question wrote it. Each is PINNED: it ranks ahead of every other hit in the
-  answer, however near a dense hit is (operator ruling 2026-10-16: a literal
-  name must not lose to a near-duplicate). Ordinary words are never exact.
+  URL or an id-like token (in any case), or the name of a person this room
+  lists (as written). The first `PINNED_LIMIT` are PINNED: they rank ahead
+  of every other hit in the answer, however near a dense hit is (operator
+  ruling 2026-10-16: a literal name must not lose to a near-duplicate); the
+  rest rank by their cosine, so the other half of the answer always goes by
+  score. Ordinary words are never exact.
 - **Dense**: the question embedded ONCE with the model's query instruction,
   and the nearest in-scope nodes of the configured model's vectors, scored by
-  their cosine (`SqlMemoryIndex.dense`).
-- **Lexical**, by the question's terms (`terms_of`), ONLY when there is no
-  query vector: `[memory_index] embed` is off, no node holds a vector of the
-  current model yet, or the embedder failed. The answer is then `partial`.
+  their cosine (`SqlMemoryIndex.dense`). A scan that comes back with fewer
+  than the scope holds is counted (`nora_memory_dense_short_total`).
+- **Lexical**, by the question's terms (`terms_of`), when there is no query
+  vector: `[memory_index] embed` is off, no node in scope holds a vector of
+  the current model yet, or the embedder failed. The answer is then
+  `partial`. Beside a dense seed, it reads only the nodes the worker gave up
+  on, which no vector reaches.
 - **About**: for a named person this room lists, the in-scope nodes `about`
   them (25 §4 step 2's exact reference). A person this room does not list
   seeds nothing.
@@ -59,11 +64,12 @@ text carries an identifier is withheld whole (`scan_identifiers`, R-18).
 **Statuses** (R-27, 25 §4): `unavailable` on any error, counted, never an
 empty answer; `partial`, whatever was found, when the index is not
 `complete`, its projection queue is not empty, the seeds were lexical (the
-fallback above), or live embeddable nodes still wait for a vector of the
-current model (65 V2; a node the worker gave up on does not count, or one
-poisoned file would hold every answer `partial` for good), so an
-unfinished index is never «you never said that»; `nothing_found` only from
-a complete index; `ok`.
+fallback above), or live embeddable nodes IN THIS SEARCH'S SCOPE still wait
+for a vector of the current model (65 V2; a node the worker gave up on does
+not count, or one poisoned file would hold every answer `partial` for good,
+and the lexical seed reads it instead; nor does an attachment that failed
+as `empty`, which waits for its reading), so an unfinished index is never
+«you never said that»; `nothing_found` only from a complete index; `ok`.
 
 The constants below are STARTING values (25 §4: adaptive depth ships only if
 it beats a fixed two hops on the journey slices); none was measured.
@@ -74,6 +80,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -86,6 +93,7 @@ from nora.domain.lineage import PRESENCE, ROW, Lineage, LineageEntry, RenderRoom
 from nora.domain.media import HANDLE_CHARS
 from nora.domain.memory_index import (
     EPISODE_KINDS,
+    ExactTerm,
     IndexedNode,
     MemoryIndexRead,
     MemoryScope,
@@ -101,6 +109,7 @@ __all__ = [
     "EXACT_LIMIT",
     "HOPS_BY_DEPTH",
     "HOP_CEILING",
+    "PINNED_LIMIT",
     "MemorySearch",
     "MemorySearchResult",
     "exact_terms_of",
@@ -112,6 +121,7 @@ __all__ = [
 log = logging.getLogger("nora.agent.memory_search")
 
 _METRIC = "nora_memory_search_total"
+_DENSE_SHORT = "nora_memory_dense_short_total"
 
 #: `ask_memory`'s existing `depth` as hops (60 §0.7). Two by default.
 HOPS_BY_DEPTH: Mapping[str, int] = {
@@ -139,11 +149,18 @@ NODE_BUDGET = 60
 #: Nodes expanded per hop: the best of the last hop's.
 FRONTIER_WIDTH = 20
 SEED_LIMIT = 20
-#: Exact seeds per search, all pinned ahead of the rest (65 V2). Fewer than
-#: `SEED_LIMIT` so a question naming a much-discussed person still has dense
-#: seeds to expand from; the pinned ones are the nearest of their matches.
+#: Exact seeds per search (65 V2). Fewer than `SEED_LIMIT` so a question
+#: naming a much-discussed person still has dense seeds to expand from.
 EXACT_LIMIT = 10
 RESULT_LIMIT = 10
+#: Exact hits pinned ahead of every other hit: the first of them, the most
+#: terms held and then the nearest to the question. Half the answer, so a
+#: literal name still never loses to a near-duplicate (operator ruling
+#: 2026-10-16) while the other half always goes by score: with every exact
+#: hit pinned, ten literal matches filled every slot and even a dense hit at
+#: cosine 1.0 was never shown (review of #31). An exact hit past these ranks
+#: by its cosine to the question, as a dense hit does.
+PINNED_LIMIT = RESULT_LIMIT // 2
 #: An exact-reference seed (a node `about` the named person) has no lexical
 #: score of its own; it ranks as a middling lexical hit.
 PERSON_SEED_SCORE = 0.6
@@ -188,49 +205,84 @@ _TRAILING = ".,;:!?)]}>\"'」』》】）。，！？"  # noqa: RUF001 — the f
 _MAX_EXACT = 8
 
 
+#: A number with at most a short suffix: a time (`5pm`), an ordinal
+#: (`100th`), a measure (`128GB`). A token made of these joined by `-`
+#: (`5pm-7pm`) is a quantity, not an id.
+_QUANTITY = re.compile(r"\d+[A-Za-z]{0,3}")
+#: An id holds at least this many digits: `ZX4471` is one, `COVID-19` and
+#: `iPhone15`, a name with a number, are not.
+_ID_DIGITS = 3
+
+
 def _id_like(token: str) -> bool:
     if token.isdigit():
         return len(token) >= 6
+    if all(_QUANTITY.fullmatch(part) for part in token.split("-")):
+        return False
     return (
-        len(token) >= 5 and any(c.isdigit() for c in token)
+        len(token) >= 5 and sum(c.isdigit() for c in token) >= _ID_DIGITS
         and any(c.isalpha() for c in token)
     )
 
 
-def exact_terms_of(query: str, names: Sequence[str] = ()) -> list[str]:
+#: Given names that are also English words written capitalised (a month, a
+#: modal or a verb that opens a sentence): such a name is never an exact
+#: reference, or «May I ask» pins every note about May.
+#: ponytail: a short list; a person so named is still found by the `about`
+#: seed and the dense seed. Upgrade: skip a name only where it opens a
+#: sentence, if a live miss shows the list costs a real pin.
+_COMMON_NAMES = _STOP | frozenset({
+    "april", "august", "bill", "can", "frank", "grace", "hope", "jack", "joy", "june",
+    "mark", "may", "might", "must", "pat", "rob", "rose", "shall", "sue", "summer",
+})
+
+
+def exact_terms_of(query: str, names: Sequence[str] = ()) -> list[ExactTerm]:
     """The question's exact references (65 V2), in the order it says them:
-    its URLs, handles and id-like tokens, and each of `names` (the names and
-    aliases of persons this room lists) that the question contains as
-    `exact_holds` matches it. A reference inside a longer one is dropped
-    (`Kit` inside `Kit Chan`, a handle inside a URL), and so is any name
-    shorter than two characters. Nothing else: an ordinary word is never
-    exact, however rare."""
-    text = query or ""
-    found: list[tuple[int, str]] = []
+    its URLs, handles and id-like tokens, matched in any case, and each of
+    `names` (the names and aliases of persons this room lists) that the
+    question contains as written, matched in that case (`cased`). The
+    question and the names are NFKC-normalised first, so `Kit` written in
+    full-width letters is `Kit`. A reference inside a longer one is dropped (`Kit` inside `Kit
+    Chan`, a handle inside a URL), and so is a name shorter than two
+    characters or one that is also a common word (`_COMMON_NAMES`). Nothing
+    else: an ordinary word is never exact, however rare."""
+    text = unicodedata.normalize("NFKC", query or "")
+    found: list[tuple[int, ExactTerm]] = []
     for m in _URL.finditer(text):
-        found.append((m.start(), m.group(0).rstrip(_TRAILING)))
+        found.append((m.start(), ExactTerm(m.group(0).rstrip(_TRAILING))))
     for m in _HANDLE.finditer(text):
-        found.append((m.start(), m.group(0)))
+        found.append((m.start(), ExactTerm(m.group(0))))
     for m in _TOKEN.finditer(text):
         if _id_like(m.group(0)):
-            found.append((m.start(), m.group(0)))
-    for name in dict.fromkeys(n.strip() for n in names):
-        if len(name) >= 2 and exact_holds(name, text):
-            found.append((text.lower().find(name.lower()), name))
-    terms = list(dict.fromkeys(t for _, t in sorted(found) if t))
+            found.append((m.start(), ExactTerm(m.group(0))))
+    for name in dict.fromkeys(unicodedata.normalize("NFKC", n).strip() for n in names):
+        if len(name) < 2 or name.lower() in _COMMON_NAMES:
+            continue
+        if exact_holds(name, text, cased=True):
+            found.append((text.find(name), ExactTerm(name, cased=True)))
+    terms = list(dict.fromkeys(t for _, t in sorted(found) if t.text))
     kept = [
         t for t in terms
-        if not any(len(o) > len(t) and exact_holds(t, o) for o in terms)
+        if not any(
+            len(o.text) > len(t.text) and exact_holds(t.text, o.text, cased=t.cased)
+            for o in terms
+        )
     ]
     return kept[:_MAX_EXACT]
 
 
 def _names(person: PersonRef) -> list[str]:
-    """Every name a person goes by (`nora.agent.room`'s matching set):
-    the name Nora calls them, first, last and both, and every alias."""
+    """The names a person is pinned by: the name Nora calls them, their
+    first name, their full name and every alias. Never the bare last name:
+    a family name pins everything about the family, and a romanised one is
+    often two letters (review of #31)."""
     full = " ".join(p for p in (person.first_name, person.last_name) if p)
-    return [n for n in (person.name, person.first_name, person.last_name, full,
-                        *person.aliases) if n]
+    surname = person.last_name.strip()
+    return [
+        n for n in (person.name, person.first_name, full, *person.aliases)
+        if n and n.strip() != surname
+    ]
 
 
 def terms_of(query: str) -> list[str]:
@@ -335,14 +387,18 @@ def _decay(at_ms: int | None, now_ms: int) -> float:
 async def walk(
     index: MemoryIndexRead, scope: MemoryScope, *, terms: Sequence[str],
     person_id: str | None, hops: int, admits: Callable[[IndexedNode], bool],
-    exact: Sequence[str] = (), vector: Sequence[float] | None = None,
-    model: str | None = None,
+    exact: Sequence[ExactTerm] = (), vector: Sequence[float] | None = None,
+    model: str | None = None, given_up: bool = False, embedded: int = 0,
+    metrics: Any = None,
 ) -> list[Hit]:
     """Seed, then expand hop by hop (module docstring). `exact` are the
-    pinned references; with a `vector` (and its `model`) the dense seed runs,
-    else the lexical one on `terms`. `admits` is the per-row presence check
-    an episode must pass (R-31); every other rule is the index's scope or
-    this function's."""
+    literal references, the first `PINNED_LIMIT` of them pinned; with a
+    `vector` (and its `model`) the dense seed runs, plus the lexical one on
+    `terms` over the nodes the worker gave up on when `given_up`; else the
+    lexical one on `terms`. `embedded` is how many vectors the scope holds,
+    so a dense scan that came back short is counted on `metrics`. `admits`
+    is the per-row presence check an episode must pass (R-31); every other
+    rule is the index's scope or this function's."""
     reached: dict[tuple[str, str], Hit] = {}
 
     def keep(node: IndexedNode, score: float, path: tuple[Step, ...]) -> bool:
@@ -354,12 +410,22 @@ async def walk(
         return True
 
     if exact:
-        pinned = await index.exact(exact, scope, limit=EXACT_LIMIT, vector=vector, model=model)
-        for i, s in enumerate(pinned):
-            if keep(s.node, s.score, (Step(s.node.kind, how="exact"),)):
-                reached[s.node.key].pin = len(pinned) - i
+        literal = await index.exact(exact, scope, limit=EXACT_LIMIT, vector=vector, model=model)
+        for i, s in enumerate(literal):
+            pinned = i < PINNED_LIMIT
+            # Past the pinned ones, an exact hit competes on its cosine like
+            # a dense hit; with no vector to compare, on its literal 1.
+            score = s.score if pinned or s.near is None else s.near
+            if keep(s.node, score, (Step(s.node.kind, how="exact"),)) and pinned:
+                reached[s.node.key].pin = PINNED_LIMIT - i
     if vector is not None and model is not None:
         seeds = await index.dense(vector, scope, model=model, limit=SEED_LIMIT)
+        if len(seeds) < min(SEED_LIMIT, embedded) and metrics is not None:
+            metrics.inc(_DENSE_SHORT)
+        if given_up and terms:
+            # The dense seed cannot reach a node the worker gave up on; its
+            # words still can (review of #31: otherwise it is «nothing».)
+            seeds += await index.seed(terms, scope, limit=SEED_LIMIT, given_up_of=model)
     else:
         seeds = await index.seed(terms, scope, limit=SEED_LIMIT) if terms else []
     for s in seeds:
@@ -439,7 +505,7 @@ class MemorySearch:
             scope = scope_for(target)
             if scope is None:
                 return self._count("unavailable")
-            state = await self._index.index_state(model=self._model)
+            state = await self._index.index_state(model=self._model, scope=scope)
             names = [n for p in people if p.person_id in scope.listed_here for n in _names(p)]
             vector: list[float] | None = None
             # The lexical seed is the fallback (65 V2): no embedder, or no node
@@ -452,9 +518,10 @@ class MemorySearch:
                     log.warning("memory search: no query vector (%s)", type(exc).__name__)
                     lexical = True
             hits = await walk(
-                self._index, scope, terms=terms_of(query) if lexical else (),
+                self._index, scope, terms=terms_of(query),
                 person_id=person_id, hops=HOPS_BY_DEPTH.get(depth, 2), admits=admits,
                 exact=exact_terms_of(query, names), vector=vector, model=self._model,
+                given_up=state.given_up > 0, embedded=state.embedded, metrics=self._metrics,
             )
         except Exception as exc:  # noqa: BLE001 — fail closed: «I couldn't check»
             log.warning("memory search failed (%s)", type(exc).__name__)

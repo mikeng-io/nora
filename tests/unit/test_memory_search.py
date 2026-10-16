@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from nora.agent import memory_search
 from nora.agent.memory_search import (
     HOP_CEILING,
     RELEVANCE_FLOOR,
@@ -23,7 +24,7 @@ from nora.agent.memory_search import (
     walk,
 )
 from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
-from nora.domain.memory_index import IndexedNode, IndexState
+from nora.domain.memory_index import IndexedNode, IndexState, exact_holds
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
 from nora.testing.memory_index import FakeMemoryIndex, FakeQueryEmbedder, bag_of_words
@@ -290,6 +291,16 @@ async def test_a_name_of_someone_this_room_does_not_list_is_not_exact() -> None:
 @pytest.mark.parametrize(("query", "names", "terms"), [
     ("what did they say about the restaurant downtown yesterday?", [], []),
     ("remember the 2026 trip, 3pm at gate 12, room 404?", [], []),
+    # Review of #31: a time, an ordinal, a measure or a name with a number
+    # is not an id.
+    ("COVID-19 at 5pm-7pm on the 100th day, iPhone15, 128GB", [], []),
+    # A person's name only as written, never a common word or a bare surname
+    # (`_names` drops it), and a full-width name is the same name (NFKC).
+    ("will you come, and may I ask about mark?", ["Will", "May", "Mark"], []),
+    ("May I ask, Will?", ["Will", "May"], []),
+    ("did kit come", ["Kit"], []),
+    ("did Ｋｉｔ come", ["Kit"], ["Kit"]),
+    ("ＺＸ４４７１ is the booking", [], ["ZX4471"]),
     ("did @night_owl post https://example.org/menu?x=1.", [],
      ["@night_owl", "https://example.org/menu?x=1"]),
     ("booking ZX4471 or order 88812345", [], ["ZX4471", "88812345"]),
@@ -302,7 +313,33 @@ async def test_a_name_of_someone_this_room_does_not_list_is_not_exact() -> None:
 def test_exact_terms_are_literal_references_never_ordinary_words(
     query: str, names: list[str], terms: list[str],
 ) -> None:
-    assert exact_terms_of(query, names) == terms
+    assert [t.text for t in exact_terms_of(query, names)] == terms
+
+
+def test_a_name_is_cased_and_a_url_handle_or_id_is_not() -> None:
+    found = exact_terms_of("Kit sent @night_owl ZX4471", ["Kit"])
+    assert [(t.text, t.cased) for t in found] == [
+        ("Kit", True), ("@night_owl", False), ("ZX4471", False)]
+
+
+def test_a_person_is_pinned_by_full_name_and_alias_never_the_bare_surname() -> None:
+    """Review of #31: a family name pins everything about the family, and a
+    romanised one (Ho, Lo, Ma) is two letters."""
+    kit = PersonRef("kit", "Kit", "kit", first_name="Kit", last_name="Ho", aliases=("阿傑",))
+    assert sorted(memory_search._names(kit)) == ["Kit", "Kit", "Kit Ho", "阿傑"]
+    assert exact_terms_of("the Ho family dinner", memory_search._names(kit)) == []
+    called_by_surname = PersonRef("ho", "Ho", "ho", first_name="Kit", last_name="Ho")
+    assert memory_search._names(called_by_surname) == ["Kit", "Kit Ho"]
+
+
+@pytest.mark.parametrize(("term", "text", "holds"), [
+    ("Zoë", "Zoëy came", False),       # accented Latin: a whole word too
+    ("Zoë", "with Zoë today", True),
+    ("Kit", "Kit今日唔得閒", True),      # a CJK neighbour does not continue a word
+    ("阿豹", "阿豹妹今日", True),        # any other script: a substring
+])
+def test_a_latin_name_matches_as_a_whole_word(term: str, text: str, holds: bool) -> None:
+    assert exact_holds(term, text, cased=True) is holds
 
 
 async def test_any_error_is_unavailable_and_counted() -> None:

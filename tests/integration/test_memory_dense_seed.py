@@ -33,9 +33,14 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nora.agent.memory_search import MemorySearch, MemorySearchResult
+from nora.agent.memory_search import (
+    PINNED_LIMIT,
+    RESULT_LIMIT,
+    MemorySearch,
+    MemorySearchResult,
+)
 from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
-from nora.domain.memory_index import MemoryScope
+from nora.domain.memory_index import ExactTerm, MemoryScope
 from nora.domain.models import PersonRef
 from nora.infra.sql import memory_read
 from nora.infra.sql.engine import create_sql_engine
@@ -247,6 +252,24 @@ async def test_an_exact_name_outranks_a_closer_dense_neighbour(engine: Any) -> N
     assert found.hits[1].pin == 0
 
 
+async def test_literal_hits_hold_half_the_answer_and_a_cosine_one_hit_still_shows(
+    engine: Any,
+) -> None:
+    """Review of #31: with every exact hit pinned, ten nodes naming Rin
+    filled every slot and the question's own near-duplicate never showed.
+    The first `PINNED_LIMIT` are pinned; the rest rank by their cosine."""
+    for i in range(12):
+        await _node(engine, f"named{i:02}", f"Rin note {i}", MID, at=NOW - 86_400_000 * (i + 1))
+    await _node(engine, "twin", "a twin with no name", SAME, at=NOW - 86_400_000 * 40)
+    q = "what did Rin say"
+    found = await _search(engine, q, embedder=FakeQueryEmbedder({q: QUESTION}),
+                          people=(_RIN,))
+    pinned = [h for h in found.hits if h.pin]
+    assert len(pinned) == PINNED_LIMIT and list(found.hits[:PINNED_LIMIT]) == pinned
+    assert found.hits[PINNED_LIMIT].node.source_id == "twin"
+    assert len(found.hits) == RESULT_LIMIT
+
+
 async def test_an_exact_seed_is_whole_and_in_scope(engine: Any) -> None:
     await _node(engine, "kitchen", "the kitchen is closed", FAR)
     await _node(engine, "elsewhere", "Kit said hi", FAR, unit="u2")
@@ -295,18 +318,101 @@ async def test_no_vectors_yet_falls_back_without_asking_the_embedder(engine: Any
     assert (_ids(found), found.status, embedder.calls) == (["lex"], "partial", [])
 
 
-async def test_unembedded_nodes_keep_it_partial_and_given_up_ones_do_not(engine: Any) -> None:
+async def test_unembedded_nodes_keep_it_partial_and_given_up_ones_are_read_by_their_words(
+    engine: Any,
+) -> None:
+    """A node waiting for a vector holds the answer `partial`. One the worker
+    gave up on does not (it waits for nothing), and since no dense seed can
+    reach it, the lexical seed reads it: never a confident `nothing_found`
+    for words that are there (review of #31)."""
     await _node(engine, "mine", "second", MID)
-    await _node(engine, "waiting", "third", None)
+    await _node(engine, "waiting", "the ramen crawl plan", None)
     assert (await _search(engine)).status == "partial"
     async with engine.begin() as conn:
         await conn.execute(sa.update(MEMORY_NODE).where(MEMORY_NODE.c.source_id == "waiting")
                            .values(embed_attempts=EMBED_MAX_ATTEMPTS))
     found = await _search(engine)
     assert (found.status, _ids(found)) == ("ok", ["mine"])
+    q = "the ramen crawl"
+    found = await _search(engine, q, embedder=FakeQueryEmbedder({q: FAR}))
+    assert (found.status, _ids(found)) == ("ok", ["waiting"])
+    assert found.hits[0].path[0].how == "matched"
     assert (await _search(engine, "nothing near",
                           embedder=FakeQueryEmbedder({"nothing near": FAR}))).status \
         == "nothing_found"
+
+
+async def test_a_node_waiting_in_another_unit_does_not_make_this_room_partial(
+    engine: Any,
+) -> None:
+    """Review of #31: coverage is counted within the search's scope."""
+    await _node(engine, "mine", "second", MID)
+    await _node(engine, "waiting-elsewhere", "third", None, unit="u2")
+    assert (await _search(engine)).status == "ok"
+    await _node(engine, "waiting-here", "fourth", None)
+    assert (await _search(engine)).status == "partial"
+
+
+async def test_an_attachment_with_nothing_to_embed_does_not_hold_it_partial(
+    engine: Any,
+) -> None:
+    """A text-less attachment that is not an image fails as `empty` and
+    waits for its reading, not for the worker."""
+    await _node(engine, "mine", "second", MID)
+    await _node(engine, "1:abc", "", None, kind="media", attempts=1)
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(MEMORY_NODE).where(MEMORY_NODE.c.kind == "media")
+                           .values(embed_error="empty"))
+    assert (await _search(engine)).status == "ok"
+
+
+async def test_a_short_dense_scan_is_counted(engine: Any, monkeypatch: Any) -> None:
+    """When `hnsw.max_scan_tuples` stops the scan before it finds the scope's
+    vectors, the search says so on a counter (no content)."""
+    rng = random.Random(11)
+    crowd = [_spread(rng, 1.0) for _ in range(300)]
+    async with engine.begin() as conn:
+        await conn.execute(pg_insert(MEMORY_NODE), [
+            {"kind": "message", "source_id": f"d{i}", "text": f"crowd {i}",
+             "at_ms": NOW - 3_600_000, "origin_room": "signal:d",
+             "embedding": vec, "embedding_model": MODEL}
+            for i, vec in enumerate(crowd)
+        ])
+    for i in range(3):
+        await _node(engine, f"mine{i}", "second", _spread(rng, 0.3))
+    metrics = Metrics()
+    found = await _search(engine, metrics=metrics)
+    assert len(found.hits) == 3  # positive control: the whole scope is found
+    assert metrics.get("nora_memory_dense_short_total") == 0
+    # pgvector does not bound the initial scan (`ef_search`), only the
+    # iterative one after it: both small, so the scan stops in the crowd.
+    monkeypatch.setattr(memory_read, "HNSW_EF_SEARCH", 10)
+    monkeypatch.setattr(memory_read, "HNSW_MAX_SCAN_TUPLES", 20)
+    found = await _search(engine, metrics=metrics)
+    assert len(found.hits) < 3
+    assert metrics.get("nora_memory_dense_short_total") == 1
+
+
+async def test_the_exact_read_is_served_by_the_trigram_index_for_every_term_kind(
+    engine: Any,
+) -> None:
+    """Review of #31: a CJK term's `strpos` in the same OR as the regular
+    expressions made the whole exact read a sequential scan. Each kind now
+    has a form `idx_memory_node_text_trgm` serves. The plan is asked of the
+    terms' OR alone: with the scope beside it, a table this small is read
+    through the scope's own indexes, which says nothing about the terms."""
+    await _node(engine, "mine", "Kit 阿豹妹 ZX4471", MID)
+    terms = [ExactTerm("Kit", cased=True), ExactTerm("阿豹妹", cased=True),
+             ExactTerm("阿豹妹"), ExactTerm("ZX4471")]
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("SET LOCAL enable_bitmapscan = on"))
+        n = MEMORY_NODE.alias("n")
+        stmt = sa.select(n.c.id).where(
+            sa.or_(*[memory_read._holds(n.c.text, t) for t in terms]),
+        ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+        plan = "\n".join((await conn.exec_driver_sql(f"EXPLAIN {stmt}")).scalars())
+    assert "idx_memory_node_text_trgm" in plan and "Seq Scan" not in plan, plan
+    assert len(await SqlMemoryIndex(engine).exact(terms, _SCOPE, limit=5)) == 1
 
 
 async def test_a_hub_never_seeds_densely(engine: Any) -> None:

@@ -13,7 +13,9 @@ agree.
 Vectors (65 V2): `vectors` maps a node's key to `(model, vector)`. The dense
 read is an exact cosine search, which the store's two-stage search equals on
 any set no larger than its candidates; given-up nodes (`given_up`) are what
-the store counts at `EMBED_MAX_ATTEMPTS`. `bag_of_words` is a toy embedding
+the store counts at `EMBED_MAX_ATTEMPTS`, and what `seed(given_up_of=...)`
+reads. The fake has no `empty` failures (an `IndexedNode` carries no
+`embed_error`). `bag_of_words` is a toy embedding
 (one hashed axis per word) under which cosine tracks shared words, so a
 test can say «near» and «far» with texts; `FakeQueryEmbedder` embeds a
 question with it, the way `LlamaEmbedder.embed_query` does with the model.
@@ -29,6 +31,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from nora.domain.memory_index import (
     EMBEDDED_KINDS,
     HUB_KINDS,
+    ExactTerm,
     IndexedNode,
     IndexState,
     MemoryScope,
@@ -122,6 +125,7 @@ class FakeMemoryIndex:
 
     async def seed(
         self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
+        given_up_of: str | None = None,
     ) -> list[Seed]:
         self._check("seed")
         wanted = [t for t in dict.fromkeys(t.strip() for t in terms) if t]
@@ -129,6 +133,11 @@ class FakeMemoryIndex:
             return []
         out: list[Seed] = []
         for node in self.nodes.values():
+            if given_up_of is not None and not (
+                node.key in self.given_up and _embeddable(node)
+                and self.vectors.get(node.key, ("", []))[0] != given_up_of
+            ):
+                continue
             held = sum(1 for t in wanted if t.lower() in node.text.lower())
             if held and in_scope(node, scope):
                 out.append(Seed(node, held / len(wanted)))
@@ -148,27 +157,29 @@ class FakeMemoryIndex:
         return out[:max(0, limit)]
 
     async def exact(
-        self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
+        self, terms: Sequence[ExactTerm], scope: MemoryScope, *, limit: int,
         vector: Sequence[float] | None = None, model: str | None = None,
     ) -> list[Seed]:
         self._check("exact")
-        wanted = [t for t in dict.fromkeys(t.strip() for t in terms) if t]
+        wanted = [t for t in dict.fromkeys(
+            ExactTerm(t.text.strip(), t.cased) for t in terms) if t.text]
         if not wanted or limit <= 0:
             return []
-        ranked: list[tuple[int, float, IndexedNode]] = []
+        ranked: list[tuple[int, float | None, IndexedNode]] = []
         for node in self.nodes.values():
-            held = sum(1 for t in wanted if exact_holds(t, node.text))
+            held = sum(1 for t in wanted if exact_holds(t.text, node.text, cased=t.cased))
             if not held or not in_scope(node, scope):
                 continue
             stored = self.vectors.get(node.key)
             near = (
                 cosine(vector, stored[1])
                 if vector is not None and stored is not None and stored[0] == model
-                else -2.0
+                else None
             )
             ranked.append((held, near, node))
-        ranked.sort(key=lambda r: (-r[0], -r[1], -(r[2].at_ms or 0), r[2].key))
-        return [Seed(node, 1.0) for _, _, node in ranked[:limit]]
+        ranked.sort(key=lambda r: (
+            -r[0], -(r[1] if r[1] is not None else -2.0), -(r[2].at_ms or 0), r[2].key))
+        return [Seed(node, 1.0, near) for _, near, node in ranked[:limit]]
 
     async def about(
         self, person_id: str, scope: MemoryScope, *, limit: int,
@@ -200,15 +211,21 @@ class FakeMemoryIndex:
                     out.append(Neighbour(via=near, rel=rel, outgoing=outgoing, node=node))
         return out
 
-    async def index_state(self, *, model: str | None = None) -> IndexState:
+    async def index_state(
+        self, *, model: str | None = None, scope: MemoryScope | None = None,
+    ) -> IndexState:
         self._check("index_state")
         if model is None:
             return IndexState(self.state.status, self.state.queue)
-        live = [n for n in self.nodes.values() if _embeddable(n) and n.key not in self.given_up]
-        embedded = sum(1 for n in live if self.vectors.get(n.key, ("", []))[0] == model)
+        nodes = [
+            n for n in self.nodes.values()
+            if _embeddable(n) and (scope is None or in_scope(n, scope))
+        ]
+        current = {n.key for n in nodes if self.vectors.get(n.key, ("", []))[0] == model}
+        given_up = {n.key for n in nodes if n.key in self.given_up} - current
         return IndexState(
-            self.state.status, self.state.queue, embedded=embedded,
-            unembedded=len(live) - embedded,
+            self.state.status, self.state.queue, embedded=len(current),
+            unembedded=len(nodes) - len(current) - len(given_up), given_up=len(given_up),
         )
 
 

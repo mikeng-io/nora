@@ -43,21 +43,29 @@ uses only when there is no query vector.
   `hnsw.iterative_scan = relaxed_order` (pgvector 0.8), because HNSW returns
   at most `hnsw.ef_search` rows BEFORE the filter, so a room whose unit holds
   few of the nearest vectors would otherwise get fewer than its 50, or none;
-  the scan goes on until 50 rows pass (or pgvector's `hnsw.max_scan_tuples`,
-  20,000 by default). And `hnsw.ef_search = HNSW_EF_SEARCH` (the constant
-  says why). The re-score orders the candidates afresh, so the relaxed
-  order of the first stage costs nothing.
+  the scan goes on until 50 rows pass or it has visited
+  `hnsw.max_scan_tuples = HNSW_MAX_SCAN_TUPLES` tuples. And `hnsw.ef_search
+  = HNSW_EF_SEARCH`. The constants say why. The re-score orders the
+  candidates afresh, so the relaxed order of the first stage costs nothing.
 - **`exact`**: a node containing a term literally (`nora.domain.memory_index.
-  exact_holds`): an ASCII term on its own, as a regular expression with
-  ASCII look-arounds; any other as a case-insensitive substring. Ranked by
-  how many terms it holds, then by cosine to the query when a vector of the
-  current model is given, then newest.
+  exact_holds`): a Latin term on its own, as a regular expression with
+  look-arounds (`~`, or `~*` for a term matched in any case); any other as a
+  substring, `LIKE` (or `ILIKE`). Both forms are served by
+  `idx_memory_node_text_trgm`, so the OR of the terms is a bitmap OR of
+  index scans, never a scan of the table. Ranked by how many terms it holds,
+  then by cosine to the query when a vector of the current model is given
+  (returned as the seed's `near`), then newest.
 - **`seed`, lexical, is `record_query`'s** (`WORD_SIMILARITY_MIN`, the `<%`
   operator, containment ranked first): per term, a node matches when its
   text contains the term or pg_trgm's word similarity finds it at the
   threshold; its score is the mean over the terms of 1 for containment, else
   the word similarity, so a node holding every term ranks above one holding
-  one. `idx_memory_node_text_trgm` serves both operators.
+  one. `idx_memory_node_text_trgm` serves both operators. With `given_up_of`
+  it reads only the embeddable nodes the worker gave up on, which the dense
+  seed cannot reach.
+- **`index_state`** counts the vector coverage within the search's scope
+  (`_in_scope`), so a node waiting in another unit does not hold this
+  room's answers `partial`.
 """
 
 from __future__ import annotations
@@ -71,17 +79,20 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.memory_index import (
+    EMBEDDED_KINDS,
     EPISODE_KINDS,
     HUB_KINDS,
     PERSON_SCOPED_KINDS,
+    ExactTerm,
     IndexedNode,
     IndexState,
     MemoryScope,
     Neighbour,
     Seed,
     exact_pattern,
+    is_latin,
 )
-from nora.infra.sql.memory_index import embed_counts, index_status
+from nora.infra.sql.memory_index import EMBED_MAX_ATTEMPTS, embed_counts, index_status
 from nora.infra.sql.record_query import WORD_SIMILARITY_MIN
 from nora.infra.sql.schema import (
     EMBEDDING_DIMENSIONS,
@@ -90,7 +101,7 @@ from nora.infra.sql.schema import (
     MEMORY_NODE,
 )
 
-__all__ = ["DENSE_CANDIDATES", "HNSW_EF_SEARCH", "SqlMemoryIndex"]
+__all__ = ["DENSE_CANDIDATES", "HNSW_EF_SEARCH", "HNSW_MAX_SCAN_TUPLES", "SqlMemoryIndex"]
 
 #: The first stage's candidates, re-scored on the full 2048 (65 §0: the
 #: bake-off's k, at which no query lost an item against an exact 2048 search).
@@ -103,6 +114,16 @@ DENSE_CANDIDATES = 50
 #: cost is one HNSW scan of a 100-entry list, about linear in this number;
 #: 65 §3 measures both at the real size after the backfill.
 HNSW_EF_SEARCH = 100
+#: How many tuples an iterative scan may visit before it stops, short of its
+#: `DENSE_CANDIDATES` or not. pgvector's default is 20,000; the live index
+#: holds about 46,000 embeddable nodes (a hundred times the bake-off's 460),
+#: so a unit holding few of the nearest vectors could be cut off with
+#: candidates still unvisited. This is above the whole index: a scoped scan
+#: gives up only after it has seen every vector. The cost falls on a scope
+#: holding fewer than `DENSE_CANDIDATES` vectors, which walks the whole graph
+#: every search; 65 §3 times it at the real size after the backfill, and
+#: `nora_memory_dense_short_total` counts every search that came back short.
+HNSW_MAX_SCAN_TUPLES = 50_000
 
 _TEXTS = pg.ARRAY(sa.Text)
 
@@ -185,6 +206,28 @@ def _dense_statement(
     )
 
 
+def _like(term: str) -> str:
+    """`%term%` with LIKE's own wildcards and escape character escaped."""
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _holds(text: Any, term: ExactTerm) -> sa.ColumnElement[bool]:
+    """`exact_holds` in SQL, in a form `idx_memory_node_text_trgm` serves: a
+    Latin term as a regular expression (`~`, or `~*` uncased), any other as
+    `LIKE` (or `ILIKE`) on a substring. Never `strpos`, which no index
+    serves: one such term in the OR turned the whole read into a scan of the
+    table (review of #31)."""
+    if is_latin(term.text):
+        op = "~" if term.cased else "~*"
+        pattern = sa.bindparam(None, exact_pattern(term.text), type_=sa.Text)
+        regex: sa.ColumnElement[bool] = text.op(op, is_comparison=True)(pattern)
+        return regex
+    like = sa.bindparam(None, _like(term.text), type_=sa.Text)
+    held: sa.ColumnElement[bool] = text.like(like) if term.cased else text.ilike(like)
+    return held
+
+
 def _node(r: Any) -> IndexedNode:
     return IndexedNode(
         kind=r.kind, source_id=r.source_id, text=r.text or "", at_ms=r.at_ms,
@@ -207,6 +250,7 @@ class SqlMemoryIndex:
 
     async def seed(
         self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
+        given_up_of: str | None = None,
     ) -> list[Seed]:
         wanted = [t for t in dict.fromkeys(t.strip() for t in terms) if t]
         if not wanted or limit <= 0:
@@ -219,10 +263,18 @@ class SqlMemoryIndex:
             sa.func.word_similarity(t.c.term, n.c.text),
         )
         score = (sa.func.sum(per_term) / len(wanted)).label("score")
+        where = [sa.or_(contains, t.c.term.op("<%")(n.c.text)), _in_scope(n, scope)]
+        if given_up_of is not None:
+            where += [
+                n.c.kind.in_(EMBEDDED_KINDS),
+                n.c.embed_attempts >= EMBED_MAX_ATTEMPTS,
+                sa.or_(n.c.embedding.is_(None),
+                       n.c.embedding_model.is_distinct_from(given_up_of)),
+            ]
         stmt = (
             sa.select(*_columns(n), score)
             .select_from(n.join(t, sa.true()))
-            .where(sa.or_(contains, t.c.term.op("<%")(n.c.text)), _in_scope(n, scope))
+            .where(*where)
             .group_by(n.c.id)
             .order_by(score.desc(), n.c.at_ms.desc().nulls_last(), n.c.id)
             .limit(limit)
@@ -243,42 +295,43 @@ class SqlMemoryIndex:
         async with self._engine.begin() as conn:
             await conn.execute(sa.text("SET LOCAL hnsw.iterative_scan = relaxed_order"))
             await conn.execute(sa.text(f"SET LOCAL hnsw.ef_search = {HNSW_EF_SEARCH}"))
+            await conn.execute(sa.text(
+                f"SET LOCAL hnsw.max_scan_tuples = {HNSW_MAX_SCAN_TUPLES}"
+            ))
             rows = (await conn.execute(stmt)).all()
         return [Seed(_node(r), float(r.score)) for r in rows]
 
     async def exact(
-        self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
+        self, terms: Sequence[ExactTerm], scope: MemoryScope, *, limit: int,
         vector: Sequence[float] | None = None, model: str | None = None,
     ) -> list[Seed]:
-        wanted = [t for t in dict.fromkeys(t.strip() for t in terms) if t]
+        wanted = [t for t in dict.fromkeys(
+            ExactTerm(t.text.strip(), t.cased) for t in terms) if t.text]
         if not wanted or limit <= 0:
             return []
         n = MEMORY_NODE.alias("n")
-        matches = n.c.text.op("~*", is_comparison=True)
-        held = [
-            matches(sa.bindparam(None, exact_pattern(t), type_=sa.Text)) if t.isascii()
-            else sa.func.strpos(
-                sa.func.lower(n.c.text), sa.func.lower(sa.bindparam(None, t, type_=sa.Text)),
-            ) > 0
-            for t in wanted
-        ]
+        held = [_holds(n.c.text, t) for t in wanted]
         count = sum((sa.case((h, 1), else_=0) for h in held), sa.literal(0)).label("held")
         order: list[Any] = [count.desc()]
+        near: Any = sa.null()
         if vector is not None and model is not None:
-            order.append(sa.case(
+            near = sa.case(
                 (n.c.embedding_model == model,
-                 n.c.embedding.cosine_distance(_vector(vector, EMBEDDING_DIMENSIONS))),
+                 1 - n.c.embedding.cosine_distance(_vector(vector, EMBEDDING_DIMENSIONS))),
                 else_=None,
-            ).asc().nulls_last())
+            )
+            order.append(near.desc().nulls_last())
         stmt = (
-            sa.select(*_columns(n), count)
+            sa.select(*_columns(n), count, near.label("near"))
             .where(sa.or_(*held), _in_scope(n, scope))
             .order_by(*order, n.c.at_ms.desc().nulls_last(), n.c.kind, n.c.source_id)
             .limit(limit)
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [Seed(_node(r), 1.0) for r in rows]
+        return [
+            Seed(_node(r), 1.0, None if r.near is None else float(r.near)) for r in rows
+        ]
 
     async def about(
         self, person_id: str, scope: MemoryScope, *, limit: int,
@@ -340,15 +393,18 @@ class SqlMemoryIndex:
                 ]
         return out
 
-    async def index_state(self, *, model: str | None = None) -> IndexState:
+    async def index_state(
+        self, *, model: str | None = None, scope: MemoryScope | None = None,
+    ) -> IndexState:
         async with self._engine.connect() as conn:
             s = await index_status(conn)
             if model is None:
                 return IndexState(status=s.status, queue=s.queue)
-            # ponytail: one count over the node table per search; a counter
+            # ponytail: one count over the scope's nodes per search; a counter
             # row kept by the worker if it ever shows in a turn's latency.
-            c = await embed_counts(conn, model)
+            where = () if scope is None else (_in_scope(MEMORY_NODE, scope),)
+            c = await embed_counts(conn, model, *where)
         return IndexState(
             status=s.status, queue=s.queue, embedded=c.embedded,
-            unembedded=c.pending - c.given_up,
+            unembedded=c.pending - c.given_up - c.empty, given_up=c.given_up,
         )

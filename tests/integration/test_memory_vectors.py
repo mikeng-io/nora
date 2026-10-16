@@ -236,7 +236,7 @@ async def test_a_node_of_another_model_reads_as_unembedded_and_is_re_embedded(en
     row = (await _nodes(engine))[("message", str(mid))]
     assert row.embedding_model == MODEL
     async with engine.connect() as conn:
-        assert await memory_index.embed_counts(conn, MODEL) == (1, 0, 0, 0)
+        assert await memory_index.embed_counts(conn, MODEL) == (1, 0, 0, 0, 0)
 
 
 async def test_the_image_throttle_leaves_images_for_later_and_never_holds_up_a_text(
@@ -301,11 +301,11 @@ async def test_clearing_takes_every_vector_or_only_another_models(engine, llama)
     async with engine.begin() as conn:
         assert await memory_index.clear_embeddings(conn, keep_model=MODEL) == 1
     async with engine.connect() as conn:
-        assert await memory_index.embed_counts(conn, MODEL) == (2, 1, 0, 0)
+        assert await memory_index.embed_counts(conn, MODEL) == (2, 1, 0, 0, 0)
     async with engine.begin() as conn:
         assert await memory_index.clear_embeddings(conn) == 2
     async with engine.connect() as conn:
-        assert await memory_index.embed_counts(conn, MODEL) == (0, 3, 0, 0)
+        assert await memory_index.embed_counts(conn, MODEL) == (0, 3, 0, 0, 0)
 
 
 async def test_the_planner_can_use_the_hnsw_index_and_the_pick_index(engine, llama):
@@ -455,3 +455,50 @@ async def test_a_text_cut_to_fit_is_stored_and_counted_by_kind(engine, llama):
     assert (await _nodes(engine))[("message", str(long_id))].embedding is not None
     assert metrics.get("nora_memory_embed_total", outcome="ok") == 2
     assert metrics.get("nora_memory_embed_truncated_total", kind="message") == 1
+
+
+async def test_an_unavailable_embedder_never_gives_a_node_up(engine, llama):
+    """Review of #31: only a failure of the input itself counts toward the
+    give-up cap. An outage backs the node off, never past the cap, so it is
+    embedded when the server is back."""
+    fake, url = llama
+    store = SqlRecordStore(engine)
+    mid = await store.append(message=_message("a message during an outage", ts=1000))
+    metrics, clock = Metrics(), Clock()
+    w = worker(engine, url, metrics=metrics, clock=clock)
+    assert await w.run_once() == 1  # ready, and the node embedded once
+    await store.append_edit(message_id=mid, message=_message("edited in the outage", ts=2000))
+    fake.status, fake.healthy = 503, False
+    for _ in range(memory_index.EMBED_MAX_ATTEMPTS + 2):
+        clock.now += 7 * 3600
+        assert await w.run_once() == 1, "still picked: never given up"
+    row = (await _nodes(engine))[("message", str(mid))]
+    assert row.embed_attempts < memory_index.EMBED_MAX_ATTEMPTS
+    assert metrics.get("nora_memory_embed_total", outcome="given_up") == 0
+    fake.status, fake.healthy = 200, True
+    clock.now += 7 * 3600
+    assert await w.run_once() == 1
+    assert (await _nodes(engine))[("message", str(mid))].embedding is not None
+
+
+async def test_a_cut_text_whose_vector_was_not_stored_is_not_counted(
+    engine, llama, monkeypatch,
+):
+    """Review of #31: the truncation counter counts stored vectors only. A
+    node edited while it was embedded is not stored (it is embedded again,
+    and counted then if it is still cut)."""
+    _fake, url = llama
+    store = SqlRecordStore(engine)
+    long_id = await store.append(message=_message("x" * 9000, ts=1000))
+    real = LlamaEmbedder.embed_document
+
+    async def _edited_meanwhile(self: Any, text: str) -> Any:
+        out = await real(self, text)
+        await store.append_edit(message_id=long_id, message=_message("short now", ts=2000))
+        return out
+
+    monkeypatch.setattr(LlamaEmbedder, "embed_document", _edited_meanwhile)
+    metrics = Metrics()
+    assert await worker(engine, url, metrics=metrics).run_once() == 1
+    assert (await _nodes(engine))[("message", str(long_id))].embedding is None
+    assert metrics.get("nora_memory_embed_truncated_total", kind="message") == 0
