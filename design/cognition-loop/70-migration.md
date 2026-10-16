@@ -397,7 +397,8 @@ Nothing is measured yet; each term is measured before the budget it sets.
 - **History storage**: nothing derived is overwritten, so the database grows
   with every revision and transition. Revision bodies are short text; media
   blobs dominate, are hidden past retention and are the only thing
-  hard-deleted, and only when storage forces it (§9). Growth is read monthly
+  hard-deleted, only when storage forces it (§9), except a story frame's,
+  deleted at its own bound ([22](22-social-stream.md) §5). Growth is read monthly
   from table sizes; history is kept as long as the Record it derives from.
 
 ## 7. Rollback and failure modes
@@ -458,12 +459,15 @@ step's PR:
   Langfuse is not read by Nora; its traces are left to Langfuse's retention,
   and the command reports how many name the person. A cascade test covers
   every store; each step that adds a store extends both.
-- **Retention is soft too**: story items, other social items, presence fixes
-  and face data each have a retention key, set before the step that ingests
-  them ships, and past it rows are hidden, not deleted. **Media blobs are the
-  one exception**: story frames, reels and photos are hidden like the rest
-  until storage forces deletion; then the blob is hard-deleted and leaves a
-  tombstone (id, kind, time) that marks a restore incomplete for it.
+- **Retention is soft too**: presence fixes and face data each have a
+  retention key, set before the step that ingests them ships, and past it
+  rows are hidden, not deleted. Social items have none (operator 2026-10-16,
+  [22](22-social-stream.md) §5): posts and reels are kept whole, and a story
+  keeps its rows. **Media blobs are the one exception**: photos are hidden
+  like the rest until storage forces deletion, and a story frame's bytes are
+  deleted at its own bound once perceived and embedded; either deletion
+  leaves a tombstone (id, kind, time) that marks a restore incomplete for it.
+  Post and reel bytes are kept like room media.
 - **Prune is hiding**: `[store] prune_enabled` hides what it trims today.
 
 ## 10. Observability
