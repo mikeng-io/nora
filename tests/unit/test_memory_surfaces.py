@@ -4,8 +4,9 @@ Honcho and the memory graph never sit on one tool surface. `[memory_index]
 enabled` (the registry holding a `MemorySearch`) selects the graph's,
 `memory_search`; off (the shipped default, and the rollback) it is the
 Honcho surface: `ask_memory`, `search_memory`,
-`search_memory_workspace`, `who_said`. `about`, `remember` and
-`load_transcript` are on both.
+`search_memory_workspace`, `who_said`, `about` and `remember`. The graph
+surface holds no Honcho tool at all: no `about`,
+no `remember`. `load_transcript` reads the room's own rows and is on both.
 
 Pinned at every place tools are assembled, each through its own production
 builder: a tag, a fire turn, the Cognition session, each Dreamer adaptor that
@@ -42,44 +43,52 @@ from tests.fakes import SinkSender
 from tests.test_room_tools import GROUP, IDENTITY, MILES, NORA, TYLER, _NullStore
 
 #: Every verb either surface could carry, so a set below is what one place
-#: offers of them.
-MEMORY_VERBS = HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS | {
-    "about", "remember", "load_transcript",
-}
+#: offers of them. A literal, not built from `HONCHO_MEMORY_TOOLS`: a tool
+#: dropped from that constant must still be seen here, or the graph test
+#: would pass by no longer looking for it.
+MEMORY_VERBS = frozenset({
+    "ask_memory", "search_memory", "search_memory_workspace", "who_said",
+    "about", "remember", "memory_search", "load_transcript",
+})
+
+
+def test_memory_verbs_cover_both_surfaces() -> None:
+    assert HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS <= MEMORY_VERBS
 
 #: What each assembly point offers of `MEMORY_VERBS`, per surface. The graph
-#: column is the Honcho column with every Honcho memory verb taken out and
-#: `memory_search` put in where that place had a Honcho search verb. The
+#: column is the Honcho column with every Honcho tool taken out (`about` and
+#: `remember` included) and `memory_search` put in where that place had a
+#: Honcho search verb. The
 #: worker holds no `memory_search`: it reads the unit's other rooms, and the
 #: worker's reach is its one room (`NOT_LOOKUPS`).
 EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     "tag": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
                           "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "about", "remember", "load_transcript"}),
+        True: frozenset({"memory_search", "load_transcript"}),
     },
     "fire": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
                           "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "about", "remember", "load_transcript"}),
+        True: frozenset({"memory_search", "load_transcript"}),
     },
     "cognition": {
         False: frozenset({"ask_memory", "search_memory", "search_memory_workspace",
                           "about"}),
-        True: frozenset({"memory_search", "about"}),
+        True: frozenset({"memory_search"}),
     },
     CULTURE_ADAPTOR_NAME: {
         False: frozenset({"ask_memory", "search_memory", "about"}),
-        True: frozenset({"memory_search", "about"}),
+        True: frozenset({"memory_search"}),
     },
     CHARACTER_PERSON_ADAPTOR_NAME: {
         False: frozenset({"ask_memory", "search_memory", "about"}),
-        True: frozenset({"memory_search", "about"}),
+        True: frozenset({"memory_search"}),
     },
     "subagent": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
                           "load_transcript"}),
-        True: frozenset({"about", "load_transcript"}),
+        True: frozenset({"load_transcript"}),
     },
 }
 
@@ -183,10 +192,12 @@ def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
     persons: Any, where: str,
 ) -> None:
     """`[memory_index]` on: `memory_search`, and none of `ask_memory`,
-    `search_memory`, `search_memory_workspace` or `who_said`."""
+    `search_memory`, `search_memory_workspace`, `who_said`, `about` or
+    `remember`: no Honcho tool at all."""
     offered = _built(where, True, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][True]
     assert not offered & HONCHO_MEMORY_TOOLS
+    assert not offered & {"about", "remember"}
 
 
 def test_cognition_takes_the_memory_surface_from_the_registry() -> None:
@@ -201,7 +212,8 @@ def test_cognition_takes_the_memory_surface_from_the_registry() -> None:
     assert "memory_search" in off.withheld and "memory_search" not in off.wired
     assert "memory_search" in on.wired
     assert not on.wired & HONCHO_MEMORY_TOOLS
-    assert {"ask_memory", "search_memory", "search_memory_workspace"} <= on.withheld
+    assert {"ask_memory", "search_memory", "search_memory_workspace", "about"} <= on.withheld
+    assert "about" in off.wired
     with pytest.raises(TypeError):
         read_surface(read_only=read_only, enabled_flags=())  # type: ignore[call-arg]
 

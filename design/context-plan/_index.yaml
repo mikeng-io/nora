@@ -9,7 +9,8 @@ description: 'Dynamic context exposure for accepted tag turns: current source-gr
   REOPENED 2026-10-12 on a wider question: compose the whole per-turn prompt, doctrine included
   (nodes 09-10). PARKED again 2026-10-13 by the operator after step 2 (node 15,
   #833): Tev1 as shipped cannot compose the prompt; training waits on data
-  (~500 real tag turns).'
+  (~500 real tag turns). Node 16 (2026-10-17): Clef 27B on Ollama Cloud is
+  inside the latency budget (1.2-2.4 s) but keeps 91% of used context at best; still parked.'
 tags:
 - nora
 - context
@@ -55,6 +56,7 @@ members:
 - 13-records-never-leave-as-data.md
 - 14-a-decision-model-composes-the-prompt.md
 - 15-what-the-composer-decides.md
+- 16-clef-on-ollama-cloud.md
 edges:
 - src: 00-overview
   dst: 01-the-seam
@@ -112,6 +114,10 @@ edges:
   dst: 14-a-decision-model-composes-the-prompt
   rel: realizes
   provenance: asserted
+- src: 16-clef-on-ollama-cloud
+  dst: 15-what-the-composer-decides
+  rel: informs
+  provenance: asserted
 scope:
   v1:
   - current source-grounded architecture and separate ContextPlan/EngageDecision responsibilities
@@ -126,6 +132,7 @@ scope:
   - operator ruling: records never leave as data, law only; the location law's real boundary (node 13)
   - a trained decision model composes the whole tag prompt; targets <5k greeting, ~10k typical (node 14)
   - the decomposition and the two decisions, sized to measured Tev1 latency (node 15)
+  - Clef 27B on Ollama Cloud /v1/systemone: composer re-run and relevance-gate spike, 2026-10-17 (node 16)
   deferred:
   - production router wiring, contract and config
   - dynamic transcript extent and reference remapping
