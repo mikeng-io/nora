@@ -171,6 +171,9 @@ type TimelineItem struct {
 	// enter a span, a log line or an error (16 §Tracing's never-list).
 	Caption       string
 	CarouselCount int
+	// Collab is a collaboration post another account owns and this one
+	// co-authored: on this account's grid, under the owner's id.
+	Collab bool
 }
 
 // Thread is one group thread's membership, never short and never empty.
