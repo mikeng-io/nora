@@ -23,19 +23,17 @@ import sqlalchemy as sa
 
 from nora.agent.dreamer import DreamerRuntime
 from nora.agent.egress import scan_identifiers
-from nora.domain.culture import character_key
+from nora.domain.culture import MAX_CONSECUTIVE_REJECTIONS, character_key
 from nora.domain.models import PersonRef
 from nora.domain.social_stream import MediaItem, PersonSocialItem, SocialItem
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.sql.schema import MEDIA_OBJECTS
+from nora.infra.sql.schema import MEDIA_OBJECTS, SOCIAL_ITEM
 from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.language.character import (
     CHARACTER_PERSON_ADAPTOR_NAME,
-    SOCIAL_BLOCK_CHARS,
-    SOCIAL_CAPTION_CHARS,
+    SOCIAL_BLOCK_BUDGET_CHARS,
     SOCIAL_ITEMS_MAX,
-    SOCIAL_SHOWS_CHARS,
     CharacterPersonAdaptor,
     CharacterRoom,
     PersonEvidence,
@@ -106,9 +104,12 @@ async def _perceived(engine, sha: str, description: str) -> None:
 FORMER = {"ada": ("ada-old",)}
 
 
-def _session(store: SqlSocialStreamStore, metrics: Metrics | None = None):
+def _session(
+    store: SqlSocialStreamStore, metrics: Metrics | None = None,
+    record: InMemoryCharacterEvidence | None = None,
+):
     evidence = PersonEvidence(
-        store=InMemoryCharacterEvidence(), keys=KEYS, social=store,
+        store=record or InMemoryCharacterEvidence(), keys=KEYS, social=store,
         former_ids=lambda person: FORMER.get(person, ()),
     )
     return CharacterPersonAdaptor(
@@ -234,21 +235,117 @@ async def test_a_backlog_past_the_bound_is_handed_over_successive_runs_each_once
 
 
 async def test_a_block_of_maximal_items_stays_within_its_budget(social) -> None:
+    """The whole rendered block, its opening tag and every attribute
+    included, measured against the budget, not against the per-item clips
+    that are meant to keep it there: the longest captions and readings, ten
+    media an item, and the longest citations a story frame's composite id
+    makes."""
     store, engine = social
     shas = [f"{n:02d}" * 32 for n in range(10)]
     for sha in shas:
         await _perceived(engine, sha, "a long description of a picture " * 20)
-    long_caption = "word " * 400
+    long_caption = "字" * 3000
     for n in range(SOCIAL_ITEMS_MAX + 3):
-        await _record(store, str(7000 + n), caption=long_caption, media=",".join(shas))
+        await _record(store, f"{3_000_000_000 + n}_{4_000_000_000 + n}", kind="story_frame",
+                      caption=long_caption, media=",".join(shas))
     out = await _wake(_session(store))
 
-    items = re.findall(r'<item [^>]*shows="([^"]*)"[^>]*>([^<]*)</item>', out)
-    assert len(items) == SOCIAL_ITEMS_MAX
-    for shows, caption in items:
-        assert len(shows) <= SOCIAL_SHOWS_CHARS and shows.endswith("…")
-        assert len(caption) <= SOCIAL_CAPTION_CHARS and caption.endswith("…")
-    assert sum(len(s) + len(c) for s, c in items) <= SOCIAL_BLOCK_CHARS
+    block = out[out.index("<social_items "):out.index("</social_items>") + len("</social_items>")]
+    assert block.count("<item ") == SOCIAL_ITEMS_MAX
+    assert len(block) <= SOCIAL_BLOCK_BUDGET_CHARS, len(block)
+
+
+def test_the_block_is_at_most_a_third_of_the_sessions_token_budget(example_config) -> None:
+    """`total_tokens` counts every model call's whole input, so the block is
+    paid once per call: at the dense-Cantonese rate and the shipped
+    `[dreamer.budgets.culture]` (the person session's budget when it has no
+    block of its own), every call of a session that runs to its `turns`
+    limit stays within a third of `total_tokens` for the block."""
+    from nora.domain.culture import OUTPUT_TOKENS_PER_CHAR
+
+    shipped = example_config.dreamer.budget_for("culture")
+    worst = SOCIAL_BLOCK_BUDGET_CHARS * OUTPUT_TOKENS_PER_CHAR * shipped.turns
+    assert worst <= shipped.total_tokens / 3, (worst, shipped)
+
+
+async def test_a_backlog_does_not_wake_a_session_on_every_tick(social) -> None:
+    """A back-log counts at most one session's worth, and only what arrived
+    since the key last ran: after a session, the rest of a back-log waits for
+    the next wake for any reason, so sessions never run back to back."""
+    store, _engine = social
+    record = InMemoryCharacterEvidence()
+    adaptor = _session(store, record=record)
+    for n in range(40):
+        await _record(store, str(6000 + n), taken_at=T0 - timedelta(minutes=n))
+    assert await adaptor.evidence.count(key=KEY, after=0) == SOCIAL_ITEMS_MAX
+
+    first = _cites(await _wake(adaptor))
+    await adaptor.evidence.settle(key=KEY)
+    ran = await store.now()
+    record.set_last_run(adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=KEY,
+                        at_ms=int(ran.timestamp() * 1000) + 1)
+    # 34 are still to hand, and none of them wakes the key again.
+    assert await adaptor.evidence.count(key=KEY, after=0) == 0
+    await _record(store, "6999", caption="a new story")
+    assert await adaptor.evidence.count(key=KEY, after=0) == 1
+    # The next session, whatever woke it, takes the oldest still waiting.
+    second = _cites(await _wake(adaptor))
+    assert len(second) == SOCIAL_ITEMS_MAX and not set(first) & set(second)
+    assert "6999" not in second
+
+
+async def test_a_session_that_gives_up_keeps_its_items_and_a_kept_one_uses_them(social) -> None:
+    """The cursor moves only past items a session used: one that settled
+    its account (revised or kept it), never one abandoned after its retries,
+    whose items the next session is handed again."""
+    store, _engine = social
+    for n in range(3):
+        await _record(store, str(8000 + n))
+    adaptor = _session(store)
+
+    first = _cites(await _wake(adaptor))
+    for _ in range(MAX_CONSECUTIVE_REJECTIONS - 1):
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=())
+        await _wake(adaptor)
+    assert await adaptor.accept(key=KEY, items=()) == ()  # abandoned
+    await adaptor.evidence.settle(key=KEY)
+    assert _cites(await _wake(adaptor)) == first
+
+    _revise, keep = adaptor.verbs(key=KEY)
+    assert await keep(entity="Ada", why="nothing new") == {"status": "ok"}
+    assert await adaptor.accept(key=KEY, items=()) == ()
+    await adaptor.evidence.settle(key=KEY)
+    assert await _wake(adaptor) == ""
+
+
+@pytest.mark.parametrize("shape", ["tail_tie", "all_tie"])
+async def test_a_read_never_splits_a_microsecond(social, shape) -> None:
+    """Items recorded in one microsecond are handed together: a read that
+    would stop inside one stops short of it, so a cursor at its last item
+    skips none (and when every row shares it, all of them go)."""
+    store, engine = social
+    at = T0 + timedelta(microseconds=50)
+    recorded = (
+        [T0 + timedelta(microseconds=n) for n in range(11)] + [at] * 4
+        if shape == "tail_tie" else [at] * 15
+    )
+    for n, when in enumerate(recorded):
+        async with engine.begin() as conn:
+            await conn.execute(sa.insert(SOCIAL_ITEM).values(
+                network="instagram", item_id=str(1000 + n), person="ada", account="1",
+                kind="post", taken_at=T0, seen_at=T0, origin="poll", recorded_at=when,
+            ))
+    seen: list[str] = []
+    cursor = 0
+    for _ in range(5):
+        got = await store.person_items(persons=["ada"], after_us=cursor, limit=12)
+        if not got:
+            break
+        seen += [g.item_id for g in got]
+        cursor = max(g.recorded_us for g in got)
+    assert sorted(seen) == sorted(str(1000 + n) for n in range(15))
+    assert len(seen) == len(set(seen))
 
 
 async def test_a_hostile_caption_cannot_close_the_block_or_forge_a_citation(social) -> None:
@@ -315,20 +412,26 @@ async def test_items_recorded_under_a_former_id_are_the_persons_own(social) -> N
 async def test_every_handle_but_the_authors_own_is_redacted_whatever_precedes_it(social) -> None:
     """Captions here are Cantonese: a handle written straight after a CJK
     character, or with a full-width at sign, names somebody just the same, and
-    so does one after `-`, `.` or `+`. Nothing before the `@` lets a handle
-    through; an email's domain is redacted too (fail closed)."""
-    store, _engine = social
-    fullwidth = "\uff20"
-    await _record(store, "9201", caption=(
+    so does one after `-`, `.` or `+`, one hidden behind a zero-width space,
+    or a link to their profile. Nothing before the `@` lets a handle through;
+    an email's domain is redacted too (fail closed). A reading of the media
+    is redacted the same way: perception can transcribe a mention sticker."""
+    store, engine = social
+    fullwidth, zwsp = "\uff20", "\u200b"
+    await _record(store, "9201", media=SWIM, caption=(
         f"同你好@bo_runs 去游水，影相{fullwidth}bo_runs，"
-        "a-@bo_runs a.@bo_runs a+@bo_runs x@bo_runs，email me@example.com，"
-        "我係@ada.swims"
+        f"a-@bo_runs a.@bo_runs a+@bo_runs x@bo_runs @{zwsp}bo_runs，"
+        "email me@example.com，see https://www.instagram.com/bo_runs/ and "
+        "instagram.com/ada.swims，我係@ada.swims"
     ))
+    await _perceived(engine, SWIM, "a sticker reading @bo_runs over a pool")
     out = await _wake(_session(store))
 
-    assert "bo_runs" not in out and "example.com" not in out
+    assert "bo_runs" not in out and "example.com" not in out and zwsp not in out
     # NFKC also writes full-width punctuation half-width.
     assert "同你好@… 去游水,影相@…," in out
-    assert "a-@… a.@… a+@… x@…," in out
+    assert "a-@… a.@… a+@… x@… @…," in out
     assert "email me@…," in out
+    assert "see instagram.com/… and instagram.com/ada.swims" in out
     assert "@ada.swims" in out
+    assert 'shows="a photo - a sticker reading @… over a pool"' in out

@@ -182,33 +182,38 @@ class PersonKey:
 
 #: The most social items one person session is handed: the OLDEST not yet
 #: handed, so a back-fill of 50 drains over successive sessions, each item once.
-SOCIAL_ITEMS_MAX = 12
+SOCIAL_ITEMS_MAX = 6
 
 #: The longest caption the block carries, in characters. A caption runs to a
 #: few thousand; the account wants what kind of thing they post, not the text.
-SOCIAL_CAPTION_CHARS = 300
+SOCIAL_CAPTION_CHARS = 150
 
 #: The longest `shows` one item carries, in characters, all its media
 #: together (each reading is first clipped to `[media]
 #: comprehension_render_chars`): a ten-picture carousel is one item.
-SOCIAL_SHOWS_CHARS = 480
+SOCIAL_SHOWS_CHARS = 150
 
-#: The most the block's items carry in captions and readings, in characters:
-#: 12 x 780 = 9,360, about 10,800 tokens at `OUTPUT_TOKENS_PER_CHAR`'s
-#: dense-Cantonese 1.15, per model call. Against `[dreamer.budgets.culture]`
-#: (`total_tokens = 120000` across the session's calls) that is about 9% a
-#: call, so a session of four calls spends about 36% of the budget on it at
-#: the worst; an English block is about a third of that. Each item's
-#: attributes (its citation, kind and posted time) add under 150 characters.
+#: The most the whole rendered `<social_items>` block may be, in characters:
+#: its opening tag (its description and field notes, about 770), and per item
+#: its caption, its `shows` and its attributes (a citation, a kind, a posted
+#: time: under 140). `total_tokens` counts every model call's whole input, so
+#: the block is paid once per call: at `OUTPUT_TOKENS_PER_CHAR`'s
+#: dense-Cantonese 1.15 it is at most 3,910 tokens a call, and at
+#: `[dreamer.budgets.culture]`'s `turns = 10` at most 39,100, a third of its
+#: `total_tokens = 120000` (`tests/integration/test_character_social.py`
+#: holds both). The rest of the session (its messages, the room cultures,
+#: the instruction, its writes) keeps the other two thirds.
 # ponytail: a fixed bound; a config key once a session's token use with the
 # block is read back.
-SOCIAL_BLOCK_CHARS = SOCIAL_ITEMS_MAX * (SOCIAL_CAPTION_CHARS + SOCIAL_SHOWS_CHARS)
+SOCIAL_BLOCK_BUDGET_CHARS = 3_400
 
 
 class _PersonMessages(Protocol):
     """`nora.infra.sql.character.SqlCharacterEvidence`'s person reads."""
 
     async def message_head(self) -> int: ...
+
+    async def last_run_ms(self, *, adaptor: str, key: str) -> int | None: ...
 
     async def social_cursor(self, *, adaptor: str, key: str) -> int: ...
 
@@ -245,10 +250,13 @@ class PersonEvidence:
     when the last item handed was recorded). `newest` hands the oldest
     `SOCIAL_ITEMS_MAX` items past it and remembers how far that reaches;
     `settle`, which the dream loop calls only after a run that is not
-    `unavailable` (the same rule as the watermark), moves the cursor there.
-    So a failed run hands the same items again, and a backlog past the bound
-    is handed over the next sessions, every item once. Only polled items count
-    toward the wake (§6); back-filled ones are handed with the rest."""
+    `unavailable` (the same rule as the watermark), moves the cursor there,
+    unless the session gave up on its batch (`forget`). So a failed or
+    abandoned run hands the same items again, and a backlog past the bound
+    is handed over the next sessions, every item once. Only polled items
+    count toward the wake (§6), and only those recorded since the key last
+    ran, at most `SOCIAL_ITEMS_MAX`; back-filled ones are handed with the
+    rest."""
 
     def __init__(
         self, *, store: _PersonMessages, keys: Mapping[str, PersonKey],
@@ -300,9 +308,16 @@ class PersonEvidence:
             self._clear[key] = (min(after, floor), head)
         if self._social is None:
             return n
-        after_us = await self._store.social_cursor(adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
-        return n + await self._social.polled_count(
-            persons=self._ids(person_id), after_us=after_us)
+        # Only what arrived since the key last ran, and at most one
+        # session's worth: a backlog already pending at the last run (the
+        # rest of a back-fill, or polled items past what one session takes)
+        # waits for the next wake for any reason, and never fires one
+        # session after another.
+        cursor = await self._store.social_cursor(adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
+        last = await self._store.last_run_ms(adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
+        polled = await self._social.polled_count(
+            persons=self._ids(person_id), after_us=max(cursor, (last or 0) * 1000))
+        return n + min(polled, SOCIAL_ITEMS_MAX)
 
     def _ids(self, person_id: str) -> tuple[str, ...]:
         """Every id their social items may be recorded under."""
@@ -332,9 +347,16 @@ class PersonEvidence:
             self._pending[key] = max(i.recorded_us for i in items)
         return [*messages, *items], cursor
 
+    def forget(self, key: str) -> None:
+        """The session for `key` did not settle its account (it gave up on
+        the batch): its social items were not used, so `settle` keeps them
+        for the next one."""
+        self._pending.pop(key, None)
+
     async def settle(self, *, key: str) -> None:
-        """The run that read `newest` for `key` was not `unavailable`: its
-        social items were handed, so the cursor moves past them."""
+        """The run that read `newest` for `key` was not `unavailable` and its
+        session settled its account (revised or kept it): its social items
+        were used, so the cursor moves past them."""
         reached = self._pending.pop(key, None)
         if reached is not None:
             await self._store.advance_social_cursor(
@@ -382,17 +404,26 @@ def _room_cultures(
     ))
 
 
+Owners = Callable[[str], frozenset[str]]
+
+
 def _shows(
     item: PersonSocialItem, *, screen: Callable[[str], str | None], render_chars: int,
-    metrics: Metrics | None,
+    metrics: Metrics | None, person: str, owners: Owners,
 ) -> str | None:
     """What perception made of an item's media, each reading clipped to
-    `render_chars` and all of them together to `SOCIAL_SHOWS_CHARS`, or None
-    when nothing read them. A model wrote it about bytes a member posted, so
-    it is screened at every render (R-51, as `nora.domain.media_join` does),
-    whole and before the clip, so an identifier the clip would cut is still
-    seen: one carrying an identifier is withheld and counted, and the item
-    renders without it."""
+    `render_chars`, other people's handles redacted (`_redact`: a reading
+    can transcribe a mention sticker) and all of them together clipped to
+    `SOCIAL_SHOWS_CHARS`, or None when nothing read them. A model wrote it
+    about bytes a member posted, so it is screened at every render (R-51, as
+    `nora.domain.media_join` does), whole and before the clip, so an
+    identifier the clip would cut is still seen: one carrying an identifier
+    is withheld and counted, and the item renders without it.
+
+    A location sticker's text is not told apart from the rest of a reading:
+    the describer writes it as prose, with nothing that marks it, so a place
+    named on a sticker can reach the block. The account still holds no
+    presence read; this is the ceiling, stated."""
     parts = [
         sanitize_description(
             media_detail(label="", title=r.title, description=r.description,
@@ -401,7 +432,7 @@ def _shows(
         )
         for r in item.readings
     ]
-    shows = "; ".join(p for p in parts if p)
+    shows = _redact("; ".join(p for p in parts if p), person=person, owners=owners)
     if not shows:
         return None
     kind = screen(shows)
@@ -427,36 +458,55 @@ def _clip(text: str, limit: int) -> str:
 #: fail closed.
 _HANDLE = re.compile(r"@([A-Za-z0-9_][A-Za-z0-9_.]*)")
 
+#: A link to a profile (or to anything under one), the path's first segment
+#: being the handle: `instagram.com/<handle>`. A post link's first segment
+#: (`p`, `reel`) is no handle, and is redacted all the same: fail closed.
+_PROFILE = re.compile(
+    r"(?:https?://)?(?:www\.)?instagram\.com/([A-Za-z0-9_.]+)[^\s]*", re.IGNORECASE,
+)
 
-def _caption(
-    text: str | None, *, person: str, owners: Callable[[str], frozenset[str]],
-) -> str:
-    """The caption, NFKC-normalized, every `@handle` in it but the author's
-    own written `@…` (an email address's domain too), then clipped to
-    `SOCIAL_CAPTION_CHARS`. A handle names somebody who never
-    chose to be in this account, and it is an identifier on a network; whose
-    handle it is comes from `identity.toml` (`owners`), so one nobody
-    recorded is redacted too."""
-    def redact(m: re.Match[str]) -> str:
-        return m.group(0) if person in owners(m.group(1).rstrip(".")) else "@…"
 
-    normal = unicodedata.normalize("NFKC", (text or "").strip())
-    return _clip(_HANDLE.sub(redact, normal), SOCIAL_CAPTION_CHARS)
+def _redact(text: str, *, person: str, owners: Owners) -> str:
+    """`text` NFKC-normalized, with its invisible format characters (Unicode
+    category Cf: a zero-width space or joiner, a direction mark) removed, so
+    neither a full-width at sign nor one hidden behind `@\u200b` survives;
+    then every `@handle` and `instagram.com/<handle>` link that is not the
+    author's own written `@…` and `instagram.com/…`. A handle names somebody
+    who never chose to be in this account, and it is an identifier on a
+    network; whose handle it is comes from `identity.toml` (`owners`), so
+    one nobody recorded is redacted too. Removing Cf also splits an emoji
+    joined by a zero-width joiner into its parts."""
+    normal = unicodedata.normalize("NFKC", text.strip())
+    normal = "".join(c for c in normal if unicodedata.category(c) != "Cf")
+
+    def own(handle: str) -> bool:
+        return person in owners(handle.rstrip("."))
+
+    normal = _HANDLE.sub(lambda m: m.group(0) if own(m.group(1)) else "@…", normal)
+    return _PROFILE.sub(
+        lambda m: m.group(0) if own(m.group(1)) else "instagram.com/…", normal,
+    )
+
+
+def _caption(text: str | None, *, person: str, owners: Owners) -> str:
+    """The caption, redacted (`_redact`), then clipped to
+    `SOCIAL_CAPTION_CHARS`."""
+    return _clip(_redact(text or "", person=person, owners=owners), SOCIAL_CAPTION_CHARS)
 
 
 def _social_items(
     items: Sequence[PersonSocialItem], now: datetime, *, person: str,
     screen: Callable[[str], str | None], render_chars: int, metrics: Metrics | None,
-    owners: Callable[[str], frozenset[str]],
+    owners: Owners,
 ) -> ContextBlock | None:
     """`<social_items>`: one `item` per social item, newest posted first,
     each with the citation it is cited by, what it is, when it was posted (a
     moment and an age) and what its media shows; its caption, other people's
-    `@handles` redacted, is the content. At most `SOCIAL_BLOCK_CHARS` of
-    captions and readings. Never its location: a person session holds no
-    presence, and its account renders in rooms whose `location` flags differ
-    (R-31); never its `alt_text`, nor its tagged or mentioned handles, which
-    the read does not return."""
+    handles redacted, is the content. At most `SOCIAL_BLOCK_BUDGET_CHARS` in
+    all. Never its location: a person session holds no presence, and its
+    account renders in rooms whose `location` flags differ (R-31); never its
+    `alt_text`, nor its tagged or mentioned handles, which the read does not
+    return."""
     if not items:
         return None
     ordered = sorted(items, key=lambda it: it.taken_at, reverse=True)
@@ -467,7 +517,7 @@ def _social_items(
             ("kind", social_label(it.network, it.kind, collab=it.collab)),
             ("posted", stamp(int(it.taken_at.timestamp() * 1000), now)),
             ("shows", _shows(it, screen=screen, render_chars=render_chars,
-                             metrics=metrics)),
+                             metrics=metrics, person=person, owners=owners)),
         ),
         body=lambda it: _caption(it.caption, person=person, owners=owners),
     ))
@@ -569,6 +619,22 @@ class CharacterPersonAdaptor(EntitySessions):
                           owners=self._handle_owners),
         ]
         return assemble([p for p in parts if p is not None], sep="\n\n")
+
+    async def accept(
+        self, *, key: str, items: Sequence[Mapping[str, object]]
+    ) -> Sequence[object]:
+        """`EntitySessions.accept`, and the social items' cursor told whether
+        they were used: a session that did not settle its account (it
+        raised, or was abandoned after `MAX_CONSECUTIVE_REJECTIONS`) keeps
+        them for the next one. A session that kept its account unchanged
+        used them: it read them and judged they add nothing, and handing
+        them again would hold every newer item behind them."""
+        try:
+            out = await super().accept(key=key, items=items)
+        finally:
+            if not self.settled(key):
+                self.evidence.forget(key)
+        return out
 
     async def commit(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int

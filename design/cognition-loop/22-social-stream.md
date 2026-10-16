@@ -383,35 +383,52 @@ projector in its own transaction (§9;
     verb's, and an item id written into the body is refused like a message
     number, each numeric part of a composite story id on its own.
   - **The block.** `<social_items>`: the person's readable items, under
-    their id or any retired one (`Persons.former_ids_for`), not yet
-    handed to a session, polled and back-filled, at most 12 a session,
-    rendered newest posted first, each with its citation, what it is
-    («Instagram post, co-authored»), when it was posted (a moment and an
-    age), what its media shows (each reading clipped to `[media]
-    comprehension_render_chars`, all of an item's together to 480
-    characters, screened for identifiers at render, R-51) and its caption,
-    clipped to 300 characters, as the content, which the block's
-    description frames as the person's published words, never an
-    instruction. A caption is NFKC-normalized and every `@handle` in it
-    but the author's own (by `identity.toml`'s Instagram `username`) is
-    written `@…`, whatever stands before the `@`, an email's domain
-    included. The block's
-    captions and readings are at most 9,360 characters, about 10,800 tokens
-    of dense Cantonese a model call, about 9% of `[dreamer.budgets.culture]`'s
-    `total_tokens`. Never its `location`: a person session holds no presence
-    read, its account rendering in rooms whose `location` flags differ
-    (R-31). Never `alt_text`, tagged or mentioned handles (§9's reason).
+    their id or any retired one (`Persons.former_ids_for`), not yet handed to
+    a session, polled and back-filled, at most 6 a session, rendered newest
+    posted first, each with its citation, what it is («Instagram post,
+    co-authored»), when it was posted (a moment and an age), what its media
+    shows (each reading clipped to `[media] comprehension_render_chars`, all
+    of an item's together to 150 characters, screened for identifiers at
+    render, R-51) and its caption, clipped to 150 characters, as the
+    content, which the block's description frames as the person's published
+    words, never an instruction. Caption and readings are NFKC-normalized,
+    stripped of invisible format characters (Unicode Cf), and every
+    `@handle` and `instagram.com/<handle>` link in them but the author's own
+    (by `identity.toml`'s Instagram `username`) is redacted, whatever
+    stands before it, an email's domain included. A location sticker's text
+    in a reading is not told apart from the rest of it (the describer writes
+    it as prose), which is the stated ceiling. Never its `location`: a person
+    session holds no presence read, its account rendering in rooms whose
+    `location` flags differ (R-31). Never `alt_text`, tagged or mentioned
+    handles (§9's reason).
+  - **The block's budget.** The whole rendered block is at most 3,400
+    characters, its opening tag included. `total_tokens` counts every model
+    call's whole input, so the block is paid once per call: at the
+    dense-Cantonese 1.15 tokens a character, a session that runs to
+    `[dreamer.budgets.culture]`'s `turns = 10` spends at most 39,100 of its
+    `total_tokens = 120000` on it, a third; the messages, the cultures, the
+    instruction and the writes keep the rest. Raising `total_tokens` instead
+    would cost nothing until spent, but would let a session read longer
+    before it is cut off, a behaviour change; the block was made smaller.
   - **The wake and the hand-off.** `person_wake_batch` (DEC-290,
     [20](20-observe.md) §3) counts the person's new messages plus their
-    polled items not yet handed. Back-filled items never count: a back-fill
-    of 50 items is not 50 items of wake pressure; a session woken for any
-    other reason is handed them. Items have no Record id, so they go by a
-    cursor of their own (`recorded_at` of the last item handed, a
-    `consolidation_watermark` row `character-person:social`): each session is
-    handed the OLDEST 12 past it, and the cursor moves past them only after a
-    run that is not `unavailable`, after the key's watermark. A failed run
-    hands the same items again, and a back-fill of 50 is handed over five
-    sessions, every item once.
+    polled items recorded since the key last ran and not yet handed, at most
+    6 (one session's worth). A back-log already waiting at the last run
+    never wakes the key again, so a back-log cannot fire sessions back to
+    back, and a heavy story poster weighs at most 6 against 100 messages.
+    Back-filled items never count: a back-fill of 50 items is not 50 items
+    of wake pressure. A session woken for any reason (its messages, or the
+    stale rule) is handed the oldest 6 waiting, so a member's history
+    arrives over their next normal wakes, oldest first, never as a burst; no
+    cursor is seeded at deploy. Items have no Record id, so they go by a
+    cursor of their own (`recorded_at` of the last item handed, in
+    microseconds, on a BIGINT `consolidation_watermark` row
+    `character-person:social`, migration `0114_watermark_bigint`). It moves
+    past a session's items only after a run that is not `unavailable` whose
+    session settled its account (revised it, or kept it after reading them);
+    a session abandoned after its retries leaves them for the next one. A
+    read never stops inside a microsecond, so the cursor skips nothing.
+    Known limit: a collab post is attributed to the polled author only (§9).
 - **Rollup**: the daybook's `items_posted` ([25](25-rollup.md)) is filled
   from `social_item.taken_at`, by the local day of `taken_at`: posts, reels,
   story frames and back-filled items alike, read through

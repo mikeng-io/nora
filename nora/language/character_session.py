@@ -60,6 +60,10 @@ class EntitySessions:
         self._staged: dict[str, dict[Entity, CultureProposal]] = {}
         self._kept: dict[str, set[Entity]] = {}
         self._batch_start: dict[str, int | None] = {}
+        #: Keys whose last `accept` settled their entity (revised or kept):
+        #: what an adaptor with a cursor of its own reads to know whether
+        #: its batch was used (`settled`).
+        self._settled: set[str] = set()
         # ponytail: in memory, so a restart forgets a rejection run and the
         # batch gets up to `MAX_CONSECUTIVE_REJECTIONS` more tries; a column on
         # `dream_schedule_state` if that is ever seen to matter.
@@ -199,6 +203,7 @@ class EntitySessions:
         it is logged, counted `abandoned`, and returns `()`, so the key
         advances instead of re-reading a batch for ever.
         """
+        self._settled.discard(key)
         staged = self._staged.pop(key, {})
         kept = self._kept.pop(key, set())
         self._citable.pop(key, None)
@@ -212,11 +217,17 @@ class EntitySessions:
             self._reject(key, f"the session for key={key} did not settle its entity")
             return ()
         self._rejections.pop(key, None)
+        self._settled.add(key)
         for _ in kept:
             self._count("kept")
         own = [p for entity, p in staged.items() if entity is None]
         others = [p for entity, p in staged.items() if entity is not None]
         return (*own, *others)
+
+    def settled(self, key: str) -> bool:
+        """Whether the last `accept` for `key` settled its entity: False
+        after a run that raised or was abandoned."""
+        return key in self._settled
 
     def _reject(self, key: str, why: str) -> None:
         """Refuse this run. RAISES `AccountNotRecordableError` (the runtime
