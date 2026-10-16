@@ -6,7 +6,7 @@
 # so it does not have to be retyped. Edit the docs first if the underlying
 # command changes; this file follows them, not the other way round.
 
-.PHONY: test test-fast test-affected lint typecheck imports gate full-gate mutate \
+.PHONY: bridge test test-fast test-affected lint typecheck imports gate full-gate mutate \
         setup hooks schema-parity heads decision-numbers \
         eval-participation eval-adversarial-corpora eval-gate \
         build up stop logs ps \
@@ -55,9 +55,20 @@ imports:
 # whole suite, so it is never weaker than full-gate on a change it cannot
 # scope. `full-gate` is the whole suite, serial, unconditionally.
 gate: lint typecheck imports
+	@if git diff --name-only origin/master -- deploy/instagram-bridge | grep -q . \
+		|| git ls-files --others --exclude-standard -- deploy/instagram-bridge | grep -q .; then \
+		$(MAKE) --no-print-directory bridge; \
+	else echo "bridge: deploy/instagram-bridge untouched, skipped"; fi
 	@$(MAKE) --no-print-directory test-affected BASE=origin/master INCLUDE_WORKTREE=--include-worktree
 
-full-gate: lint typecheck imports test
+full-gate: lint typecheck imports bridge test
+
+# --- the Go instagram-bridge -------------------------------------------------
+# Nothing else builds it before an image does: the 2026-10-14 history scrub
+# rewrote every `chan` keyword in it to a pseudonym and master stayed red for
+# two days without a signal. `gate` runs it when the diff touches the bridge.
+bridge:
+	cd deploy/instagram-bridge && go vet ./... && go test ./...
 
 # --- proving a fix is guarded (scripts/mutate.py) ---------------------------
 # `gate` green says the suite passes. It does not say the suite would have

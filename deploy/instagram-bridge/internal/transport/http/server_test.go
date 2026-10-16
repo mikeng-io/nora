@@ -155,8 +155,8 @@ func (p *okPorts) Mentions(context.Context) ([]domain.CommentMention, map[int]in
 
 type noEvents struct{}
 
-func (noEvents) Subscribe() (cortez []byte, [][]byte, int) { return make(cortez []byte), nil, 0 }
-func (noEvents) Unsubscribe(cortez []byte)                 {}
+func (noEvents) Subscribe() (chan []byte, [][]byte, int) { return make(chan []byte), nil, 0 }
+func (noEvents) Unsubscribe(chan []byte)                 {}
 func (noEvents) Stats() (int, int, int)                  { return 0, 0, 0 }
 
 func handler(snap domain.Session, err error) http.Handler {
