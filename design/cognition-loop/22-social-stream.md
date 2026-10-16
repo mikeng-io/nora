@@ -391,11 +391,16 @@ projector in its own transaction (§9;
     of an item's together to 150 characters, screened for identifiers at
     render, R-51) and its caption, clipped to 150 characters, as the
     content, which the block's description frames as the person's published
-    words, never an instruction. Caption and readings are NFKC-normalized,
-    stripped of invisible format characters (Unicode Cf), and every
-    `@handle` and `instagram.com/<handle>` link in them but the author's own
-    (by `identity.toml`'s Instagram `username`) is redacted, whatever
-    stands before it, an email's domain included. A location sticker's text
+    words, never an instruction. Caption and readings are NFKC-normalized
+    and stripped of every invisible code point (Unicode's
+    Default_Ignorable_Code_Point set, every Cf character, the blank braille
+    pattern). Then, failing closed: every Instagram link becomes
+    `instagram.com/…`, path and query included, the author's own (by
+    `identity.toml`'s Instagram `username`) keeping only
+    `instagram.com/<their handle>`; and every `@` with the non-whitespace
+    run after it becomes `@…` unless that run is exactly the author's own
+    username. A handle followed by punctuation or text up to the next space
+    is redacted with it, an email's domain included. A location sticker's text
     in a reading is not told apart from the rest of it (the describer writes
     it as prose), which is the stated ceiling. Never its `location`: a person
     session holds no presence read, its account rendering in rooms whose

@@ -147,8 +147,9 @@ async def test_a_social_only_wake_renders_its_items_and_may_cite_one(social) -> 
     assert 'kind="Instagram post"' in out
     assert 'shows="a photo - someone swimming in the sea at sunrise"' in out
     assert "2026-10-05" in out and "2d ago" in out
-    # Another person's handle is redacted; the author's own stays.
-    assert ">dawn swim with @…, photos by @ada.swims</item>" in out
+    # Another person's handle is redacted, up to the next space; the
+    # author's own stays.
+    assert ">dawn swim with @… photos by @ada.swims</item>" in out
     assert "bo_runs" not in out
     # Never the location, the network's alt text, or a tagged or mentioned handle.
     for absent in ("Placeholder Square", "alt text", "tagged.friend", "mentioned.friend"):
@@ -422,16 +423,41 @@ async def test_every_handle_but_the_authors_own_is_redacted_whatever_precedes_it
         f"同你好@bo_runs 去游水，影相{fullwidth}bo_runs，"
         f"a-@bo_runs a.@bo_runs a+@bo_runs x@bo_runs @{zwsp}bo_runs，"
         "email me@example.com，see https://www.instagram.com/bo_runs/ and "
-        "instagram.com/ada.swims，我係@ada.swims"
+        "instagram.com/ada.swims 我係@ada.swims"
     ))
     await _perceived(engine, SWIM, "a sticker reading @bo_runs over a pool")
     out = await _wake(_session(store))
 
     assert "bo_runs" not in out and "example.com" not in out and zwsp not in out
-    # NFKC also writes full-width punctuation half-width.
-    assert "同你好@… 去游水,影相@…," in out
-    assert "a-@… a.@… a+@… x@… @…," in out
-    assert "email me@…," in out
-    assert "see instagram.com/… and instagram.com/ada.swims" in out
-    assert "@ada.swims" in out
+    # NFKC also writes full-width punctuation half-width, and an `@` run
+    # is redacted up to the next whitespace, whatever it holds.
+    assert ("同你好@… 去游水,影相@… a.@… a+@… x@… @… me@… instagram.com/… and "
+            "instagram.com/ada.swims 我係@ada.swims") in out
     assert 'shows="a photo - a sticker reading @… over a pool"' in out
+
+
+async def test_a_handle_padded_with_marks_or_fillers_and_every_link_are_redacted(social) -> None:
+    """Whatever follows the `@` (a combining mark, a Hangul filler, a blank
+    braille pattern, a variation selector), the run is redacted unless it is
+    the author's own username exactly once invisible code points are
+    removed; and every Instagram link loses its tail, two in a row each on
+    its own, the author's own keeping only their handle."""
+    store, _engine = social
+    await _record(store, "9202", caption=(
+        "a @\u0301bo_runs b @\u3164bo_runs c @\u2800bo_runs d @bo_runs\ufe0f "
+        "e @ada.swims\u0301 f @ada\u3164.swims\ufe0f g x\u2800\u3164\u034fy"
+    ))
+    await _record(store, "9203", caption=(
+        "https://www.instagram.com/bo_runs/p/xyz?igsh=1"
+        "instagram.com/ada.swims/reels/abc?x=1 "
+        "instagram.com/bo_runs"
+    ))
+    out = await _wake(_session(store))
+
+    assert "bo_runs" not in out and "\u3164" not in out and "\u2800" not in out
+    # The author's own handle padded with invisible code points is still
+    # theirs; one changed by a combining mark is not. No invisible code
+    # point survives anywhere.
+    assert "a @… b @… c @… d @… e @… f @ada.swims g xy</item>" in out
+    assert ">instagram.com/…instagram.com/ada.swims instagram.com/…</item>" in out
+    assert "reels" not in out and "igsh" not in out

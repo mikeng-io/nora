@@ -451,41 +451,63 @@ def _clip(text: str, limit: int) -> str:
     return text[:limit - 1].rstrip() + "…"
 
 
-#: An `@` and the username characters after it, wherever it stands: no
-#: lookbehind, so nothing before the `@` (a CJK character, `-`, `.`, `+`, a
-#: letter) lets a handle through. Read after NFKC, so a full-width at sign is
-#: an `@`. An email's domain is matched too and redacted like any handle:
-#: fail closed.
-_HANDLE = re.compile(r"@([A-Za-z0-9_][A-Za-z0-9_.]*)")
+#: Code points that render as nothing or as blank space and could hide or
+#: pad a handle: Unicode's Default_Ignorable_Code_Point set (soft hyphen,
+#: combining grapheme joiner, Hangul fillers, zero-width and direction
+#: marks, variation selectors, tags), plus the blank braille pattern. Every
+#: Cf character is removed as well (`_invisible`).
+_IGNORABLE = (
+    (0x00AD, 0x00AD), (0x034F, 0x034F), (0x061C, 0x061C), (0x115F, 0x1160),
+    (0x17B4, 0x17B5), (0x180B, 0x180F), (0x200B, 0x200F), (0x202A, 0x202E),
+    (0x2060, 0x206F), (0x2800, 0x2800), (0x3164, 0x3164), (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
+)
 
-#: A link to a profile (or to anything under one), the path's first segment
-#: being the handle: `instagram.com/<handle>`. A post link's first segment
-#: (`p`, `reel`) is no handle, and is redacted all the same: fail closed.
+
+def _invisible(c: str) -> bool:
+    n = ord(c)
+    return unicodedata.category(c) == "Cf" or any(lo <= n <= hi for lo, hi in _IGNORABLE)
+
+
+#: An `@` and every non-whitespace character after it: the whole run is
+#: redacted unless it is exactly the author's own username. Nothing before
+#: or inside the run (a CJK character, `-`, a combining mark, a filler) lets
+#: a handle through, an email's domain included: fail closed.
+_HANDLE = re.compile(r"@(\S+)")
+
+#: A link to anything on Instagram: its first path segment, and the rest of
+#: the link (path, query, fragment) up to whitespace or the next link.
 _PROFILE = re.compile(
-    r"(?:https?://)?(?:www\.)?instagram\.com/([A-Za-z0-9_.]+)[^\s]*", re.IGNORECASE,
+    r"(?:https?://)?(?:www\.)?instagram\.com/([^\s/?#]*)"
+    r"(?:(?!(?:https?://)?(?:www\.)?instagram\.com/)\S)*",
+    re.IGNORECASE,
 )
 
 
 def _redact(text: str, *, person: str, owners: Owners) -> str:
-    """`text` NFKC-normalized, with its invisible format characters (Unicode
-    category Cf: a zero-width space or joiner, a direction mark) removed, so
-    neither a full-width at sign nor one hidden behind `@\u200b` survives;
-    then every `@handle` and `instagram.com/<handle>` link that is not the
-    author's own written `@…` and `instagram.com/…`. A handle names somebody
-    who never chose to be in this account, and it is an identifier on a
-    network; whose handle it is comes from `identity.toml` (`owners`), so
-    one nobody recorded is redacted too. Removing Cf also splits an emoji
-    joined by a zero-width joiner into its parts."""
+    """`text` NFKC-normalized, every invisible code point removed
+    (`_invisible`: a zero-width space, a filler, a variation selector), then
+    every Instagram link and every `@` run that is not the author's own
+    written `instagram.com/…` and `@…`. The author's own link keeps only
+    `instagram.com/<their handle>`, never what follows it; their own handle
+    stays only when the run after the `@` is it exactly, so one followed by
+    punctuation is redacted too. A handle names somebody who never chose to
+    be in this account, and it is an identifier on a network; whose handle it
+    is comes from `identity.toml` (`owners`), so one nobody recorded is
+    redacted too. Removing Cf also splits an emoji joined by a zero-width
+    joiner into its parts."""
     normal = unicodedata.normalize("NFKC", text.strip())
-    normal = "".join(c for c in normal if unicodedata.category(c) != "Cf")
+    normal = "".join(c for c in normal if not _invisible(c))
 
     def own(handle: str) -> bool:
-        return person in owners(handle.rstrip("."))
+        return bool(handle) and person in owners(handle)
 
-    normal = _HANDLE.sub(lambda m: m.group(0) if own(m.group(1)) else "@…", normal)
-    return _PROFILE.sub(
-        lambda m: m.group(0) if own(m.group(1)) else "instagram.com/…", normal,
+    normal = _PROFILE.sub(
+        lambda m: f"instagram.com/{m.group(1)}" if own(m.group(1)) else "instagram.com/…",
+        normal,
     )
+    return _HANDLE.sub(lambda m: m.group(0) if own(m.group(1)) else "@…", normal)
 
 
 def _caption(text: str | None, *, person: str, owners: Owners) -> str:
