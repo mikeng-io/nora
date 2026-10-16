@@ -6,12 +6,11 @@ object store would be sized and operated against no data. An object store is
 also a CONTAINER on the INGEST WRITE PATH that can be DOWN: recording a message
 can already fail on the record store and on the disk the bytes land on, and
 another daemon adds a custody failure unrelated to either. Its lifecycle rules
-are not needed: media expiry is the retention sweep (`SqlRecordStore.prune_all`)
-plus one path: read the surviving rows' `media_json`, delete every blob no
-longer named.
+are not needed: the one expiry there is (a story frame's bytes) is a pass over
+the rows that name them (`nora.app.social_expiry`).
 
 **The port keeps the choice reversible.** `nora.domain.ports.BlobStore` is
-`put`/`get`, S3's shape; swapping in S3 or RustFS is one constructor in the
+`put`/`get`/`delete`, S3's shape; swapping in S3 or RustFS is one constructor in the
 composition root, changing no stage, no schema and no recorded key, because the
 key is the content hash, not a path this class invented.
 
@@ -48,9 +47,16 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import threading
+import time
+import uuid
 from pathlib import Path
 
+from nora.domain.ports import BlobDeletion
 from nora.infra.blobs.cipher import BlobCipher
+
+#: The suffix of a file `delete` has set aside while it decides.
+_ASIDE = ".deleting"
 
 
 class FilesystemBlobStore:
@@ -59,6 +65,26 @@ class FilesystemBlobStore:
     def __init__(self, root: Path, *, cipher: BlobCipher) -> None:
         self._root = Path(root)
         self._cipher = cipher
+        self._recovered = False
+        self._recovering = threading.Lock()
+
+    def _recover(self) -> None:
+        """Undo every deletion a crash interrupted, once, before this store's
+        first read or write: `delete` renames a file aside before it decides,
+        so a process killed in between leaves the bytes under a name `get`
+        never reads. A file set aside whose blob is missing is put back (the
+        deletion was never confirmed, so nothing says it is gone); one whose
+        blob was written again meanwhile is removed."""
+        with self._recovering:
+            if self._recovered:
+                return
+            for aside in self._root.glob(f"??/.*{_ASIDE}"):
+                blob = aside.with_name(aside.name[1:].split(".", 1)[0])
+                if blob.exists():
+                    aside.unlink(missing_ok=True)
+                else:
+                    os.replace(aside, blob)
+            self._recovered = True
 
     def _path_for(self, key: str) -> Path:
         """`<root>/<first2>/<rest>`, and only for a key this store could have
@@ -89,15 +115,23 @@ class FilesystemBlobStore:
         and not rewriting means both that a concurrent reader never sees a
         truncated file that was previously complete AND that the stored nonce is
         never reused to seal a second, different plaintext under the same key.
+        Its modification time is set to now instead: that is the last `put`
+        `delete` reads, so bytes a writer has just stored are not deleted
+        before the row naming them is written.
         """
         key = hashlib.sha256(data).hexdigest()
         await asyncio.to_thread(self._write, key, data)
         return key
 
     def _write(self, key: str, data: bytes) -> None:
+        self._recover()
         path = self._path_for(key)
         if path.exists():
-            return
+            try:
+                os.utime(path)
+                return
+            except FileNotFoundError:
+                pass  # a deletion took it between the two calls: write it again
         sealed = self._cipher.seal(data)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -120,6 +154,7 @@ class FilesystemBlobStore:
         return await asyncio.to_thread(self._read, key)
 
     def _read(self, key: str) -> bytes | None:
+        self._recover()
         path = self._path_for(key)
         if not path.exists():
             return None
@@ -130,26 +165,37 @@ class FilesystemBlobStore:
         # this; a future retrieval tool is its only caller.
         return self._cipher.open(path.read_bytes())
 
-    async def delete(self, *, key: str) -> bool:
-        """Drop one blob. True if it was there.
+    async def delete(self, *, key: str, idle_seconds: float) -> BlobDeletion:
+        """Drop one blob unless it was put within `idle_seconds`
+        (`BlobStore.delete`).
 
-        NOT on the `BlobStore` port, deliberately — `nora.domain.ports`'
-        docstring says why, and it is the same argument that keeps `prune`
-        off `RecordStore` while `SqlRecordStore.prune_all` exists. Retention for
-        media is an OPERATOR DECISION that has not been made (DEC-43's open
-        question); this is the mechanism that decision will need, present so
-        that making it costs a policy and not an implementation.
+        The mechanism only: which bytes may go is the caller's to decide, and
+        one key can be named by many rows (a forwarded image, the computer
+        audit), so a caller asks `nora.infra.sql.blob_refs.held_elsewhere`
+        first. A key that is not a sha256 is refused, as `get` refuses it.
 
-        Content addressing is what makes the eventual sweep cheap: the live set
-        is every hash named by a surviving row's `media_json`, and everything
-        else under the root is garbage. No reference counting, because two rows
-        naming the same blob name the same hash.
+        **One step against `put`.** The file is first renamed aside, which is
+        atomic, and its modification time read there: a `put` that touched
+        it before the rename shows as recent and the file is put back; a
+        `put` after the rename finds no file (or loses its `utime`) and
+        writes a new one. Either way no `put` is lost. A crash while the file
+        is aside is undone by `_recover` on the next process's first use.
         """
-        return await asyncio.to_thread(self._delete, key)
+        return await asyncio.to_thread(self._delete, key, idle_seconds)
 
-    def _delete(self, key: str) -> bool:
+    def _delete(self, key: str, idle_seconds: float) -> BlobDeletion:
+        self._recover()
         path = self._path_for(key)
-        if not path.exists():
-            return False
-        path.unlink()
-        return True
+        aside = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}{_ASIDE}")
+        try:
+            os.rename(path, aside)
+        except FileNotFoundError:
+            return "absent"
+        if time.time() - aside.stat().st_mtime < idle_seconds:
+            if path.exists():
+                aside.unlink()  # a `put` wrote the same bytes again meanwhile
+            else:
+                os.replace(aside, path)
+            return "kept"
+        aside.unlink()
+        return "deleted"

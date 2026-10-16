@@ -7,7 +7,8 @@ import fnmatch
 import hashlib
 import json
 import re
-from collections.abc import Callable, Mapping, Sequence
+import time
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -85,6 +86,7 @@ from nora.domain.models import (
 )
 from nora.domain.ports import (
     AdapterHealth,
+    BlobDeletion,
     JobResult,
     JobStatus,
     LaunchRequest,
@@ -986,12 +988,25 @@ class FakeBlobStore:
     `fail_on_put` is the disk refusing. The custody stage must record the
     message without a handle and count the failure, and the only way to test
     that is a store that can fail on demand.
+
+    Every `put`, of new bytes or held ones, is stamped with `clock` (seconds),
+    which `delete`'s `idle_seconds` reads, as the real stores read a file's
+    modification time or an object's `LastModified`. `before_delete` runs
+    inside `delete` before its check: what a concurrent writer does between
+    a caller's decision and the deletion.
     """
 
-    def __init__(self, *, fail_on_put: bool = False) -> None:
+    def __init__(
+        self, *, fail_on_put: bool = False, clock: Callable[[], float] = time.time,
+        before_delete: Callable[[str], Awaitable[None]] | None = None,
+    ) -> None:
         self.blobs: dict[str, bytes] = {}
+        self.put_at: dict[str, float] = {}
         self.fail_on_put = fail_on_put
         self.puts = 0
+        self.deletes = 0
+        self._clock = clock
+        self._before_delete = before_delete
 
     async def put(self, *, data: bytes) -> str:
         if self.fail_on_put:
@@ -999,12 +1014,26 @@ class FakeBlobStore:
         self.puts += 1
         key = hashlib.sha256(data).hexdigest()
         self.blobs.setdefault(key, data)
+        self.put_at[key] = self._clock()
         return key
 
     async def get(self, *, key: str) -> bytes | None:
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
             raise ValueError("blob key must be a lowercase sha256 hex digest")
         return self.blobs.get(key)
+
+    async def delete(self, *, key: str, idle_seconds: float) -> BlobDeletion:
+        if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
+            raise ValueError("blob key must be a lowercase sha256 hex digest")
+        if self._before_delete is not None:
+            await self._before_delete(key)
+        if key not in self.blobs:
+            return "absent"
+        if self._clock() - self.put_at.get(key, float("-inf")) < idle_seconds:
+            return "kept"
+        self.deletes += 1
+        del self.blobs[key]
+        return "deleted"
 
 
 class FakeMediaDescriptionStore:

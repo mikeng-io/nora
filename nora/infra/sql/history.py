@@ -159,6 +159,8 @@ APPEND_ONLY: dict[str, str] = {
     "social_item_state": "recorded_at",
     # 0108_social_perception: each attempt to perceive an item's media.
     "social_perception": "recorded_at",
+    # 0109_blob_tombstone: a story frame's bytes deleted at their bound.
+    "blob_tombstone": "recorded_at",
     "decision_log": "recorded_at",
     "note_merge_decision": "recorded_at",
     "tool_call_log": "created_at",

@@ -325,13 +325,13 @@ async def test_a_second_put_of_the_same_bytes_leaves_no_temp_file_behind(tmp_pat
 
 
 async def test_delete_makes_a_blob_gone_and_is_idempotent(tmp_path):
-    """The mechanism the operator's retention decision will need — present so
-    that making the decision costs a policy, not an implementation."""
+    """The mechanism a retention policy calls (a story frame's bound, today);
+    the port's own suite is `tests/contract/test_blob_store_contract.py`."""
     store = FilesystemBlobStore(tmp_path, cipher=_CIPHER)
     key = await store.put(data=JPEG)
-    assert await store.delete(key=key) is True
+    assert await store.delete(key=key, idle_seconds=0) == "deleted"
     assert await store.get(key=key) is None
-    assert await store.delete(key=key) is False
+    assert await store.delete(key=key, idle_seconds=0) == "absent"
 
 
 # --- the stage --------------------------------------------------------------

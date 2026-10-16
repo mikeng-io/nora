@@ -49,7 +49,8 @@ the network's `MediaSource`, kept in the `BlobStore` and indexed in
 `social_item.media_ref`, comma-separated in the item's order. An item already
 recorded is never fetched. Custody that is not wired, or a fetch that fails,
 records the item with no `media_ref` for that media, counted, never dropped.
-A story frame's bytes are kept like a post's: nothing here deletes them.
+Nothing here deletes bytes: a story frame's go at their bound, in
+`nora.app.social_expiry`.
 """
 
 from __future__ import annotations
@@ -510,9 +511,6 @@ class SocialPoller:
             read_id=read_id,
         )
 
-    # ponytail: a story frame's bytes are never deleted; deleting them at
-    # `expires_at` plus a bound needs a `BlobStore` delete and a tombstone row,
-    # which custody does not have yet.
     async def _keep(self, item: SocialItem, now: datetime) -> str | None:
         """Each of `item`'s media into custody → their content addresses,
         comma-separated, or None when none was kept."""

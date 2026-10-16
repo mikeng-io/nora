@@ -120,12 +120,12 @@ version reintroduces the bug it avoids:
   retryable/retry_after shape would imply a retry policy that does not exist.
   The asymmetry with `SendResult` is intentional; do not add a `FeedResult`.
 
-- `BlobStore` is `put`/`get` and NOTHING ELSE — no `delete`, for the same
-  reason `RecordStore` has no `prune`. Deleting media is a retention policy the
-  operator has not made (DEC-43), and putting it on the port would oblige every
-  implementation, including fakes, to implement a policy they do not have.
-  `FilesystemBlobStore.delete` exists on the CONCRETE class, as
-  `SqlRecordStore.prune_all` does.
+- `BlobStore` is `put`, `get` and `delete`. `delete` is the mechanism; the
+  one policy that calls it is a story frame's bound
+  (design/cognition-loop/22-social-stream.md §5, `nora.app.social_expiry`),
+  which deletes only bytes no other row names
+  (`nora.infra.sql.blob_refs.held_elsewhere`) and leaves a tombstone. Room
+  media has no retention (DEC-43): nothing deletes it.
 
   `put` returns the KEY and takes no key argument. A content-addressed store
   where the caller chooses the key is not content-addressed — it is a
@@ -1271,17 +1271,34 @@ class MediaSource(Protocol):
     async def fetch(self, *, ref: MediaRef) -> MediaBytes: ...
 
 
+#: What `BlobStore.delete` did: removed the bytes, found none, or kept them
+#: because they were put too recently.
+BlobDeletion = Literal["deleted", "absent", "kept"]
+
+
 @runtime_checkable
 class BlobStore(Protocol):
-    """Content-addressed byte custody. `put` returns the key it computed; there
-    is no `delete` on this port — see module docstring. Keys are referenced
-    from media rows AND from the computer audit (`computer_events.request`,
-    `.output_ref`); any future GC must keep every referenced key
-    (`nora/infra/blobs/__init__.py`)."""
+    """Content-addressed byte custody. `put` returns the key it computed.
+    Keys are referenced from media rows AND from the computer audit
+    (`computer_events.request`, `.output_ref`), among others: a caller of
+    `delete` must first ask `nora.infra.sql.blob_refs.held_elsewhere`, because
+    one key can be named by many rows (see module docstring)."""
 
     async def put(self, *, data: bytes) -> str: ...
 
     async def get(self, *, key: str) -> bytes | None: ...
+
+    async def delete(self, *, key: str, idle_seconds: float) -> BlobDeletion:
+        """Drop the bytes of `key` unless they were `put` within the last
+        `idle_seconds` by the store's own clock: `deleted`, `absent` (nothing
+        was held; a retried deletion answers this) or `kept` (a recent `put`).
+
+        A `put` of bytes already held counts as a put, so a writer that has
+        just stored them, and has not yet written the row naming them, keeps
+        them. The check and the removal are one step against `put`: a `put`
+        that lands between them is never lost. A store that cannot confirm
+        the bytes are gone raises."""
+        ...
 
 
 @dataclass(frozen=True)

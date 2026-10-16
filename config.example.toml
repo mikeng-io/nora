@@ -740,6 +740,16 @@ enabled = false
 bridge_url = "http://127.0.0.1:19826"
 # timeout_seconds = 90.0                  # keep above the bridge's ~75 s subprocess timeout
 # content_max_chars = 4000                # retrieved-text clamp
+# A story frame's media bytes, kept in custody by [social.poll], are deleted
+# story_media_keep_days after the frame expires once its media is both perceived
+# and embedded, and story_media_keep_max_days after it expires whatever is done.
+# The memory index embeds no social item yet, so only the second bound deletes
+# today. Its rows and its description stay; posts and reels keep their bytes.
+# Off by default: nothing is deleted until story_expiry_enabled = true, and
+# setting it back to false (and recreating) stops the deletions.
+# story_expiry_enabled = false
+# story_media_keep_days = 7
+# story_media_keep_max_days = 30
 
 [social.instagram]
 # Instagram backend for instagram_read and instagram_search: a person's profile

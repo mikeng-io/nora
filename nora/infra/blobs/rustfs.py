@@ -25,10 +25,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import ClientError
 
+from nora.domain.ports import BlobDeletion
 from nora.infra.blobs.cipher import BlobCipher
 
 if TYPE_CHECKING:
@@ -94,6 +96,44 @@ class RustfsBlobStore:
                 return None
             raise
         return response["Body"].read()
+
+    async def delete(self, *, key: str, idle_seconds: float) -> BlobDeletion:
+        """Drop one object unless it was put within `idle_seconds`
+        (`BlobStore.delete`).
+
+        Every `put` uploads afresh, under a fresh nonce, so its `LastModified`
+        is the last put and its `ETag` changes with it. The `DeleteObject` is
+        conditional on the `ETag` the `HEAD` read (`If-Match`): a `put` that
+        lands between the two fails the delete with 412 and the bytes are kept.
+        The deletion is confirmed by a second `HEAD`; one that still finds the
+        object raises."""
+        _validate_key(key)
+        return await asyncio.to_thread(self._delete_object, key, idle_seconds)
+
+    def _delete_object(self, key: str, idle_seconds: float) -> BlobDeletion:
+        head = self._head(key)
+        if head is None:
+            return "absent"
+        age = (datetime.now(UTC) - head["LastModified"]).total_seconds()
+        if age < idle_seconds:
+            return "kept"
+        try:
+            self._s3.delete_object(Bucket=self._bucket, Key=key, IfMatch=head["ETag"])
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in ("PreconditionFailed", "412"):
+                return "kept"
+            raise
+        if self._head(key) is not None:
+            raise RuntimeError("the object store still holds a deleted blob")
+        return "deleted"
+
+    def _head(self, key: str) -> Any:
+        try:
+            return self._s3.head_object(Bucket=self._bucket, Key=key)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
+                return None
+            raise
 
 
 def _validate_key(key: str) -> None:
