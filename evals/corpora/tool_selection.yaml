@@ -1208,7 +1208,9 @@ cases:
   # no person-fact write verb. Its counterpart there is shaped like the group
   # case: what the speaker said is kept without a write, and a note keeps an
   # open question, never a settled fact (DEC-316), so the turn replies and
-  # makes none of the writes it holds.
+  # makes none of the writes it holds. What the reply SAYS (that it will be
+  # kept, not 「記低咗」 nor 「記唔到」) is ungraded: this corpus has no judge and
+  # ToolRouteGrader reads only the tools that ran.
   - name: route_keep_group_fact_is_not_remember
     entry: tag
     expect: reply

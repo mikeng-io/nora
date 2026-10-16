@@ -87,7 +87,7 @@ PINNED: dict[str, tuple[int, str]] = {
     # describes what she does; `voice.md` and quoted speech stay Cantonese.
     # Dashes are removed at the transport (`nora.agent.punctuation`), not by a
     # doctrine rule.
-    "conduct": (43, "6eceec57e8e8c6497250bde2bc07785f77228eb0bb50d083d4394017266b81be"),
+    "conduct": (43, "4a1d33cefd7bc125e95590e0cc8bc3636aab9047080b416232ef88b2eeba8a7c"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # An edit to it needs the gate's 40-case eval suite.
@@ -107,7 +107,7 @@ PINNED: dict[str, tuple[int, str]] = {
     ),
     "constraints": (13, "eb71a2acd9b663cdcadac1b9f8e5191acf02242e6b0140ce3347536e666c392c"),
     # The constraints for room occasions, ordered right after `constraints`.
-    "room-constraints": (2, "94cfb4aaf4011856e36b07d81b39e1f765a62ef143c6e6835b06e6cd920bd80b"),
+    "room-constraints": (2, "0fd7ff88c434a8e1ca4ae0409bc02ff4efec1b2a97e953b4dd5d6aa60c8a49ba"),
     # What she already knows about a picture and when to look again; loaded for room
     # occasions only, before `constraints`.
     "pictures": (3, "3169fa3d26a2adfb03b371953a21b61d1847a9a8e6b57deccd1d1edd01171a2d"),
