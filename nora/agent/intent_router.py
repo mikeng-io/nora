@@ -1,13 +1,10 @@
-"""Phase 2 of the structural routing work (external-review-driven): a precision-
-first, ABSTAINING intent router.
+"""A precision-first, ABSTAINING intent router.
 
-The schema-token realignment (Phase 1, DEC-39 lever) moved `saved_places` but did
-NOT move mall opening-hours off `web_search` — the model's "look up a business's
-hours = web search" prior is too strong for a token nudge (measured, unconfounded
-journeys gate). This is the residual Phase 2 targets: for a narrow, high-precision
-surface where the model reliably misroutes, FORCE the first tool via
-`tool_choice` (the `ReplyGuard._before_model` seam that already mutates it).
-
+A schema-token nudge does not move mall opening-hours off `web_search`: the
+model's "look up a business's hours = web search" prior is too strong. For a
+narrow, high-precision surface where the model reliably misroutes, this FORCES
+the first tool via `tool_choice` (the `ReplyGuard._before_model` seam that
+already mutates it).
 **Abstaining is the whole discipline.** Forcing a NAMED tool turns a probabilistic
 misroute into a DETERMINISTIC one — a misclassification ships a confident wrong
 route, exactly the fail-closed violation the CMS spine forbids. So this fires ONLY

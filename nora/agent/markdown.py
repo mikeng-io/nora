@@ -1,31 +1,23 @@
 """Markdown emphasis in, real Signal styling out (DEC-82). One grammar, one place.
 
-WHAT CHANGED, AND WHY IT IS NOT A REVERSAL
-------------------------------------------
-DEC-82 originally DELETED `**bold**` from replies: `voice.md` forbids it, the
-model emits it anyway on long answers, and Signal renders it as literal
-asterisks — two of four long replies in one stress-test session reached the
-group as `**投資** — 月供 ETF…`. Deleting it was right while the asterisks had
-nowhere to go. They have somewhere to go now: signal-cli's `--text-style`
-carries `start:length:STYLE` ranges, so the same input that used to lose its
-markers keeps its EMPHASIS and loses only the syntax. Headings still strip and
-always will — Signal has no heading style, so a `#` has nothing to convert to.
+`**bold**` is forbidden by `voice.md` but the model emits it anyway on long
+answers, and Signal renders it as literal asterisks. signal-cli's `--text-style`
+carries `start:length:STYLE` ranges, so the emphasis survives and only the
+syntax is lost. Headings strip: Signal has no heading style, so a `#` has
+nothing to convert to. No markdown syntax reaches the group.
 
-So the rule is unchanged in what it protects (no markdown syntax reaches the
-group) and better at what it costs (the meaning survives).
-
-THE ONE HARD PART: TWO SOURCES OF RANGES OVER ONE STRING
---------------------------------------------------------
+TWO SOURCES OF RANGES OVER ONE STRING
+-------------------------------------
 Converting `**x**` both REMOVES characters and PRODUCES offsets into what is
 left. Those offsets have to index the exact bytes that go on the wire — and so
-do the @-mention offsets `nora.agent.outbound` computes, which are a second,
-independent source of ranges over the same string. Get the two out of step and
-Signal renders bold over the wrong words, or tags the wrong person, with no
-error anywhere (`nora.agent.outbound`'s module docstring is the long version).
+do the @-mention offsets `nora.agent.outbound` computes, a second, independent
+source of ranges over the same string. Get the two out of step and Signal
+renders bold over the wrong words, or tags the wrong person, with no error
+anywhere (`nora.agent.outbound`'s module docstring is the long version).
 
-The answer is that this module never hands back a text and some offsets as two
-things. `render_markdown` returns a `Styled` — the final text and its ranges as
-ONE frozen value — and everything downstream computes on that value's `.text`:
+So this module never hands back a text and some offsets as two things.
+`render_markdown` returns a `Styled` — the final text and its ranges as ONE
+frozen value — and everything downstream computes on that value's `.text`:
 
 * `Deliverer.deliver` renders ONCE, measures its guards on `styled.text`, and
   passes the `Styled` (never the draft string) to the composer;
@@ -38,37 +30,31 @@ ONE frozen value — and everything downstream computes on that value's `.text`:
 
 WHY THE RENDER RUNS IN `Deliverer` AND NOT INSIDE `compose`
 -----------------------------------------------------------
-`nora.agent.outbound`'s docstring says a text transformation belongs inside
-`compose`, ahead of the offset arithmetic. That was the right rule when the
-only transformation was a strip, and it is the WRONG place for this one, for a
-reason that outranks it: **R-6 and R-18 must see the converted text.** A text
-transformation in front of a fail-closed guard was proven to defeat it —
-`"*+85298765432*a"` scans clean once the asterisks are gone, and would have
-been SENT — so `deliver` checks the drafted form AND the converted form, which
-means it has to hold the converted form before it composes. The rule survives
-in its real shape: the transformation still happens before any offset exists,
-and `compose` still owns the final text — it just receives it already final.
+A text transformation normally belongs inside `compose`, ahead of the offset
+arithmetic (`nora.agent.outbound`). This one runs earlier because **R-6 and R-18
+must see the converted text.** A text transformation in front of a fail-closed
+guard can defeat it: `"*+85298765432*a"` scans clean once the asterisks are
+gone. So `deliver` checks the drafted form AND the converted form, which means
+it holds the converted form before it composes. The transformation still
+happens before any offset exists, and `compose` still owns the final text — it
+receives it already final.
 
-NARROW ON PURPOSE (all of it bought with a real bug)
------------------------------------------------------
+NARROW ON PURPOSE
+-----------------
 The delimiter rule is about the ASTERISK RUN and the whitespace INSIDE it,
-never about word characters outside it. The first version guarded with
-`(?<!\\w)`/`(?!\\w)` and was broken for Cantonese — the language she actually
-writes in (review 2026-08-10). `\\w` is Unicode-aware, so 投 and 資 ARE word
-characters; in `**投資**方面` the closing `**` is followed by 方, the guard fails
-on the real delimiter, and the engine backtracks onto the INNER asterisk of
-each pair — emitting `*投資*方面`. Half-stripped output is worse than none: the
-asterisks still reach the group AND they move onto the wrong spans
-(`重點係**價錢**同**位置**` became `重點係*價錢同位置*`). Chinese prose has no
-spaces, so emphasis adjacent to CJK is the COMMON shape here, not an edge case.
-Under conversion the same bug would be worse still, because the ranges would be
-computed over the mangled string.
+never about word characters outside it. A `(?<!\\w)`/`(?!\\w)` guard breaks
+Cantonese, the language she writes in: `\\w` is Unicode-aware, so 投 and 資 ARE
+word characters; in `**投資**方面` the closing `**` is followed by 方, the guard
+fails on the real delimiter, and the engine backtracks onto the INNER asterisk
+of each pair — emitting `*投資*方面`. Half-stripped output is worse than none:
+the asterisks still reach the group AND they move onto the wrong spans
+(`重點係**價錢**同**位置**` becomes `重點係*價錢同位置*`). Chinese prose has no
+spaces, so emphasis adjacent to CJK is the COMMON shape here. Under conversion
+the ranges would also be computed over the mangled string.
 
-Everything the old strip left alone, this leaves alone: `3 * 4`, `5*6`,
-`a * b * c`, a bare `*`, `**`, `****`, `**/*.py`, and every underscore
-(`person_id`, `send_reply`, `_x_` — far more often a real token than emphasis,
-and this repo's own vocabulary is full of them). Emphasis never spans a blank
-line.
+Left alone: `3 * 4`, `5*6`, `a * b * c`, a bare `*`, `**`, `****`, `**/*.py`,
+and every underscore (`person_id`, `send_reply`, `_x_` — far more often a real
+token than emphasis). Emphasis never spans a blank line.
 
 FAIL-SAFE
 ---------
@@ -76,8 +62,8 @@ FAIL-SAFE
 NO styles — visible asterisks in the room, which is R-5's shape applied to
 decoration: an unconverted asterisk is visible to everyone and harmless, a
 wrong range is invisible to everyone and not. It is never an empty string and
-never a refusal, so DEC-82's original promise holds unchanged — this cannot
-turn a reply that would have been sent into an R-4 `empty_reply`.
+never a refusal, so this cannot turn a reply that would have been sent into an
+R-4 `empty_reply`.
 """
 
 from __future__ import annotations
@@ -99,9 +85,8 @@ log = logging.getLogger("nora.agent.markdown")
 #   (?!\s)  …  (?<!\s)      no whitespace just inside either delimiter, which is
 #                           what keeps `3 * 4` and `a * b * c` intact.
 #   [^\n]+?                 single line only. Emphasis never spans a blank line,
-#                           and the old `re.DOTALL` let two unrelated stray
-#                           asterisks in different paragraphs pair up and eat
-#                           the text between them.
+#                           else two unrelated stray asterisks in different
+#                           paragraphs would pair up and eat the text between.
 _MD_EMPHASIS = re.compile(r"(?<!\*)(\*{1,3})(?!\*)(?!\s)([^\n]+?)(?<!\s)\1(?!\*)")
 # `(?=\S)` so a bare `###` is left as literal text instead of being emptied —
 # the strip must never turn a reply that would have been SENT into an R-4
@@ -110,15 +95,14 @@ _MD_HEADING = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+(?=\S)", re.MULTILINE)
 
 # `*x*` is one asterisk, `**x**` two, `***x***` three. Three maps to BOLD and
 # not to bold-and-italic: Signal expresses that as two overlapping ranges, and
-# a second range whose only purpose is to reproduce a nuance the model did not
-# mean is more surface than the emphasis is worth. The operator asked for bold
-# and italic; this is bold.
+# a second range reproducing a nuance the model did not mean is more surface
+# than the emphasis is worth.
 _STYLE_BY_RUN = {1: Style.ITALIC, 2: Style.BOLD, 3: Style.BOLD}
 
-# The substitution used to repeat until stable, capped at 3, because one pass
-# over `**a *b* c**` takes the outer pair and leaves the inner one. Kept
-# exactly: the cap is what stops a pathological input from looping, and the
-# nesting is what produces an inner ITALIC inside an outer BOLD.
+# The substitution repeats until stable, capped at 3, because one pass over
+# `**a *b* c**` takes the outer pair and leaves the inner one. The cap stops a
+# pathological input from looping; the nesting produces an inner ITALIC inside
+# an outer BOLD.
 _MAX_PASSES = 3
 
 # `(start, end, style)` in PYTHON CHARACTER offsets over the current string.
@@ -200,16 +184,12 @@ def render_markdown(text: str) -> Styled:
 def strip_markdown(text: str) -> str:
     """The text half of `render_markdown` — Markdown syntax removed, no styling.
 
-    NOT a second implementation of the grammar: it is literally the same call,
-    with the ranges discarded, so the two can never disagree about what a
-    delimiter is. That matters for its one caller — `LeakGuard` normalises the
-    doctrine files through here to build its haystack, and a haystack that
-    spoke a different Markdown dialect from the reply is exactly the hole the
-    2026-08-10 fail-closed audit found (405 bold-caused and 831 heading-caused
-    misses at a 45-char window).
-
-    It pays for the ranges it throws away, which is a few hundred microseconds
-    once at startup on the whole doctrine corpus. Worth it for the guarantee.
+    NOT a second implementation of the grammar: it is the same call with the
+    ranges discarded, so the two can never disagree about what a delimiter is.
+    That matters for its one caller: `LeakGuard` normalises the doctrine files
+    through here to build its haystack, and a haystack that spoke a different
+    Markdown dialect from the reply would miss leaks. It pays for the ranges it
+    throws away, a small cost once at startup.
     """
     return render_markdown(text).text
 
@@ -232,11 +212,9 @@ def _one_pass(text: str, spans: tuple[_Span, ...]) -> tuple[str, tuple[_Span, ..
 
     Equivalent to `_MD_EMPHASIS.sub(r"\\2", text)` for the TEXT — same engine,
     same left-to-right non-overlapping matches, same pieces concatenated in the
-    same order — which is what keeps `strip_markdown` byte-identical to the
-    substitution DEC-82 shipped. The third element is False exactly when the
-    substitution would have been a no-op, which is the loop's old
-    `cleaned == text` break condition: a match always deletes at least two
-    delimiter characters, so "no matches" and "no change" are the same fact.
+    same order. The third element is False exactly when the substitution would
+    have been a no-op: a match always deletes at least two delimiter
+    characters, so "no matches" and "no change" are the same fact.
     """
     matches = list(_MD_EMPHASIS.finditer(text))
     if not matches:

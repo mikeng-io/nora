@@ -10,8 +10,7 @@ building (`trace_attributes`) are pure OpenTelemetry with no Strands
 dependency, and stay in `nora.obs.tracing` — most of the codebase calls them
 and none of it may import `strands`. This module owns only the two things
 that genuinely need `strands.telemetry` itself: provider/exporter setup
-(`setup_agent_tracing`, replacing what `nora.obs.tracing.setup_tracing` used
-to assemble by hand) and the span pair a RAW `chat.completions.create` call
+(`setup_agent_tracing`) and the span pair a RAW `chat.completions.create` call
 needs to open/close in the SDK's own vocabulary
 (`start_raw_model_span`/`end_raw_model_span`) — `nora.app.composition`'s
 `_RelevanceGateModelClient` imports these thin wrappers rather than reaching
@@ -27,22 +26,16 @@ above `nora.agent`) still does not wrap the call in a `start_raw_model_span`
 either — the describer's model name only reaches the trace after the fact,
 via a plain `annotate()` on the outer `comprehend` span, using the model
 name `MediaDescription` already carries back on its return value. This is a
-known, pre-existing gap (a vision read exports zero token usage), not
-something this replacement fixes; widening `MediaDescription` to also carry
-usage so a caller could annotate it is the deferred port-shape question
-`tests/architecture/test_raw_model_calls_carry_their_own_machinery.py`
+known gap (a vision read exports zero token usage); widening `MediaDescription`
+to also carry usage so a caller could annotate it is the deferred port-shape
+question `tests/architecture/test_raw_model_calls_carry_their_own_machinery.py`
 records next to the vision client's exemption from its own `usage`
 requirement.
 
-This is the strands.telemetry replacement for the hand-rolled
-`generation()`/`annotate_generation()` pair `nora.obs.tracing` used to carry —
-see the design discussion this replaced in git history (`design/observability/`,
-deleted 2026-09-19) for why: Strands' own `Tracer.start_model_invoke_span` /
-`end_model_invoke_span` already implement the OTel GenAI semantic
-conventions, the redaction lever `design/13-trace-content-and-redaction.md`
-investigated, and Langfuse-observation-type wiring for Strands' own version —
-upstream-maintained, not a bespoke dialect this repo has to keep two
-architecture tests in sync with.
+Spans are built on Strands' own `Tracer.start_model_invoke_span` /
+`end_model_invoke_span`, which already implement the OTel GenAI semantic
+conventions, the content-redaction lever, and Langfuse-observation-type wiring:
+upstream-maintained rather than a bespoke dialect this repo keeps in sync.
 """
 
 from __future__ import annotations
@@ -89,8 +82,8 @@ _SESSION_ID_MAX = 200
 #: The attribute a span carries its room under, WHEN IT IS STARTED WITH IT:
 #: the roots and stages that pass it to `nora.obs.tracing.span`. Strands spans
 #: never start with it: Strands opens a span and sets `trace_attributes` after,
-#: past `on_start`, so they take their session from the parent instead (read
-#: from the installed `strands/telemetry/tracer.py`, review of #680).
+#: past `on_start`, so they take their session from the parent instead (see the
+#: installed `strands/telemetry/tracer.py`).
 #: A Dreamer unit has no room; its session is the tick that dispatched it
 #: (`nora.app.runtime.dream_loop`), so one pass's units read as one session.
 _CONVERSATION_KEYS = ("nora.conversation_id", "nora.dreamer.pass_id")
@@ -135,10 +128,9 @@ def _valid_session_id(value: str) -> str | None:
 class TraceIdentityProcessor(SpanProcessor):
     """Stamp every span with its conversation and its observation type.
 
-    **One seam, not a stamp at each of the ~15 call sites.** Read back from
-    Langfuse 2026-10-01: zero sessions, every `sessionId` null, although every
-    engagement root already carried `nora.conversation_id`. OTel GenAI names the
-    same thing `gen_ai.conversation.id` ("session, thread"); Langfuse reads
+    **One seam, not a stamp at each call site.** Engagement roots carry
+    `nora.conversation_id`, but Langfuse groups sessions only by `session.id`.
+    OTel GenAI names the same thing `gen_ai.conversation.id` ("session, thread"); Langfuse reads
     `session.id`, and asks for it on each span rather than only the root. A
     child inherits from its parent at start, so the Strands spans and the
     `store.*` reads, which never carry the id themselves, end up in the same
@@ -179,10 +171,9 @@ def setup_agent_tracing(
     (OTel's default, `ParentBased(root=ALWAYS_ON)`), which would export every
     ingest-plumbing span R-76 exists to drop.
 
-    ## `set_tracer_provider` IS OURS TO CALL, and a missing line cost 14 hours
+    ## `set_tracer_provider` IS OURS TO CALL
 
-    An earlier version of this docstring said Strands "registers it as-is".
-    **It does not.** Read from the installed source, 2026-09-22:
+    Strands does NOT register a supplied provider. From the installed source:
 
         if tracer_provider:
             self.tracer_provider = tracer_provider   # kept, never registered
@@ -198,14 +189,9 @@ def setup_agent_tracing(
     `ProxyTracerProvider`, whose tracers are NO-OPS. Every `nora.obs.tracing.
     span(...)` in the codebase then records nothing and exports nothing —
     **and raises nothing, logs nothing and fails no test**, because a no-op
-    tracer is a perfectly well-behaved tracer. Measured live: Langfuse and
-    Jaeger both last saw a `nora` span at 2026-09-21T18:21Z and were still
-    silent 13 hours later, while the app ran normally and answered messages.
-
-    That is the whole shape of the failure worth remembering: the collector was
-    healthy, the endpoint resolved, a POST to it returned 200, and the
-    try/except around this call never fired. Everything reported success
-    because nothing had been asked to do anything.
+    tracer is a perfectly well-behaved tracer. The collector can be
+    healthy and the try/except around this call silent while nothing is
+    exported.
     """
     if exporter not in ("console", "file", "otlp_http"):
         raise ValueError(f"unknown tracing exporter: {exporter!r}")
@@ -259,7 +245,7 @@ def start_raw_model_span(
     Currently used by exactly one caller —
     `nora.app.composition._RelevanceGateModelClient`, which stays off the
     Agent SDK because its verdict must not go through `ask_structured`
-    (see `nora.agent.structured`'s own docstring for the measured reason).
+    (see `nora.agent.structured`'s own docstring for the reason).
     `nora.infra.vision.client` is also a raw call but does NOT use this —
     this module's own docstring explains why (`nora.infra` cannot reach it).
 
@@ -291,15 +277,11 @@ def end_raw_model_span(
     failure), must not turn an already-obtained model verdict into a
     discarded one.
 
-    **Usage is written as zero when the provider omitted it**, unlike
-    `nora.obs.tracing`'s retired `annotate_generation`, which recorded
-    NOTHING rather than assert a free call. `Tracer.end_model_invoke_span`
-    writes `gen_ai.usage.*` unconditionally from the `Usage` dict it is
-    given — there is no "omit if absent" branch to ask it for. This is a
-    real, accepted behavior change from adopting the SDK's own machinery
-    rather than the hand-rolled one: OpenAI-compatible providers return usage
-    on essentially every response, so the gap this closes is rare, and typing
-    it any other way would mean not calling the SDK's own function at all.
+    **Usage is written as zero when the provider omitted it.**
+    `Tracer.end_model_invoke_span` writes `gen_ai.usage.*` unconditionally
+    from the `Usage` dict it is given — there is no "omit if absent" branch.
+    OpenAI-compatible providers return usage on essentially every response, so
+    the omitted case is rare.
     """
     if span is None:
         return

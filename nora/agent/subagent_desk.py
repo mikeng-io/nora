@@ -1,4 +1,4 @@
-"""The sub-agent desk: what Nora's four `subagent_*` tools call (design/subagent §3, §7).
+"""The sub-agent desk: what Nora's four `subagent_*` tools call.
 
 It is the one place a job is launched, listed, read or cancelled FROM A TURN, so the room rule
 lives once. Every method takes the room's `platform` and `conversation_id` from the turn (the
@@ -115,7 +115,7 @@ class JobView:
     document_titles: tuple[str, ...] = ()
     failure: str | None = None
     #: The job's checkpoint and what code recorded, rendered (`render_checkpoint`, mode `read`),
-    #: on a read only; `None` for a job with neither (every job from before checkpoints).
+    #: on a read only; `None` for a job with neither.
     checkpoint: str | None = None
 
 
@@ -133,9 +133,9 @@ class SubagentDesk:
         self._documents = documents
         self._worker: SubagentWorker | None = None
         # One job per tag turn per room: the first job a turn started, by `(tag_id, room)`. A
-        # model that calls create again in the same turn (measured 2026-10-05: 2-3 calls per
-        # draw) gets the first job back, never a duplicate. Only a created job is recorded,
-        # so a refused or failed first attempt leaves the next one free to start.
+        # model that calls create again in the same turn gets the first job back, never a
+        # duplicate. Only a created job is recorded, so a refused or failed first attempt
+        # leaves the next one free to start.
         self._turn_jobs: dict[tuple[str, str, str], str] = {}
         self._create_lock = asyncio.Lock()
 

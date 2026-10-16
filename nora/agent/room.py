@@ -1,42 +1,33 @@
 """The room a tag happened in, as PEOPLE — the scope every room-scoped tool resolves within.
 
-This module exists because of one live incident, recorded in design/12 §3 and in
-`nora.engagement.pipeline`'s own comment: the prefill was given the whole of
-`identity.toml` as a `<roster>` block, and asked who was in the group Nora
-listed five people who had never been members. The roster carried no phone
-number and no ACI, so R-18 (`nora.agent.egress`) saw nothing to block — by the
-time text exists the disclosure is already authorised. **Scope has to be
-enforced where the answer is ASSEMBLED.**
-
-So the rule this module implements is *resolve WITHIN scope*, never *resolve
-then filter*:
+Scope has to be enforced where the answer is ASSEMBLED: a roster block that
+carries no phone number or ACI gives R-18 (`nora.agent.egress`) nothing to
+block, and by the time text exists the disclosure is already authorised. So
+this module resolves WITHIN scope, never resolve-then-filter:
 
 * `RoomView.people` is built from the platform's own membership list for THIS
   conversation, intersected with `identity.toml` — never from
   `Persons.index`, which is Nora's address book across every room she is in.
 * `RoomView.find` builds its name/alias index from `people` alone. A person who
   is in `identity.toml` but not in this room is not "found and rejected", they
-  are **not in the index at all** — so they are indistinguishable from a person
-  who does not exist. Resolve-then-filter would leak membership through the
-  difference between "no such person" and "not here"; this cannot.
+  are **not in the index at all** — indistinguishable from a person who does
+  not exist. Resolve-then-filter would leak membership through the difference
+  between "no such person" and "not here".
 
-That is also why alias matching is safe here at all. design/10 §1.3 forbids an
-alias ever resolving a SENDER — a nickname is operator-authored and a display
-name is settable by anyone, so matching one to decide *who sent this* hands
-identity to whoever can type it. Resolving a lookup TARGET is a different
-operation: the answer is bounded before any alias is consulted.
+Alias matching is safe here because an alias never resolves a SENDER (a
+nickname is operator-authored and a display name is settable by anyone, so
+matching one to decide *who sent this* hands identity to whoever can type it).
+Resolving a lookup TARGET is a different operation: the answer is bounded
+before any alias is consulted.
 
-**That bound is no longer "the room" for every caller, and this paragraph used
-to say it was.** `find_by_name` was extracted out of `RoomView.find` for
-`whereis`, which resolves its target against the location-sharing CIRCLE unioned
-with the room (R-47) — so for that one caller the worst a wrong alias match can
-do is name a circle member who is NOT in the room, which is a stronger claim
-than "somebody already here". The room checks still run in full first, so a
-wrong match cannot reach a room that may not be told anything at all; what it
-can do is answer about the wrong SUBJECT. Every other caller
-(`group_members`, `lookup_person`, `about`) is still bounded by the room.
-`nora.persons.Persons.index` is untouched, and
-`tests/test_persons.py::test_an_alias_never_resolves_a_sender` still holds.
+The bound is the room for `group_members`, `lookup_person` and `about`. For
+`whereis` it is the location-sharing CIRCLE unioned with the room (R-47),
+resolved through `find_by_name`: a wrong alias match there can name a circle
+member who is NOT in the room, which is a stronger claim than "somebody already
+here". The room checks still run in full first, so a wrong match cannot reach a
+room that may not be told anything at all; it can only answer about the wrong
+SUBJECT. `nora.persons.Persons.index` is untouched, and
+`tests/test_persons.py::test_an_alias_never_resolves_a_sender` holds.
 
 **Nora is not one of the people.** Her own account is in the group's member
 list, resolves to nobody in `identity.toml`, and would otherwise be reported as
@@ -56,12 +47,10 @@ from ..persons import Persons
 log = logging.getLogger("nora.agent.room")
 
 # Punctuation a name may arrive wrapped in when the model lifts it out of a
-# Cantonese message — 「阿豹」 is how the name appears in the transcript, and
-# asking the model to strip its own quotes is a rule it will sometimes forget.
+# Cantonese message — 「阿豹」 is how the name appears in the transcript.
 # RUF001 is suppressed because the ambiguous characters ARE the data: this is a
-# set of quote marks to strip, and "did you mean the ASCII one?" is answered by
-# the ASCII ones being in the same string. Replacing them would change which
-# inputs the function handles.
+# set of quote marks to strip, and replacing them would change which inputs the
+# function handles.
 _WRAPPERS = "「」『』《》〈〉“”‘’\"'()（）[]【】 \t　"  # noqa: RUF001
 
 
@@ -116,10 +105,9 @@ class RoomView:
 def find_by_name(people, name: str) -> tuple[PersonRef, ...]:
     """Every person in `people` that `name` could mean.
 
-    Extracted from `RoomView.find` so the same matching rule can be applied to
-    a set that is NOT a room — `whereis` resolves its target against the
-    location-sharing circle (R-47), and two different matching rules for "who
-    do they mean" is exactly the drift `_names_of`'s own docstring warns about.
+    The one matching rule for "who do they mean", applied to a set that need not
+    be a room: `RoomView.find` uses it on the room, `whereis` on the
+    location-sharing circle (R-47). Two matching rules would drift.
     """
     wanted = _key(name)
     if not wanted:
@@ -129,7 +117,7 @@ def find_by_name(people, name: str) -> tuple[PersonRef, ...]:
 
 def _names_of(person: PersonRef) -> frozenset[str]:
     """Every string this person may be called by, normalised. Scoped by the
-    caller — `RoomView.people` for room lookups, a circle's people for
+    caller: `RoomView.people` for room lookups, a circle's people for
     `whereis` (R-47)."""
     full = " ".join(p for p in (person.first_name, person.last_name) if p)
     candidates = [person.name, person.first_name, person.last_name, full, *person.aliases]
@@ -190,14 +178,12 @@ class Room:
         """Which platform this conversation is on.
 
         Read by `remind`, which stores `(platform, conversation_id,
-        conversation_type)` because every conversation key in this codebase is a
-        tuple: a row holding `conversation_id` alone can build neither a
+        conversation_type)` because every conversation key is a tuple: a row
+        holding `conversation_id` alone can build neither a
         `ConversationTarget`, nor the `ConversationSlots` key, nor a
-        `Policy.is_allowed` call. It comes from here rather than from a new
-        `build_tool_specs` parameter because both constructors of this object —
-        the tag pipeline and the fire path — already pass the authoritative
-        value, and a second parameter carrying the same fact is how the two
-        drift.
+        `Policy.is_allowed` call. Both constructors of this object (the tag
+        pipeline and the fire path) pass the authoritative value, so it is read
+        here rather than carried as a second parameter.
         """
         return self._platform
 
@@ -205,23 +191,23 @@ class Room:
     def trigger_message_ids(self) -> tuple[int, ...]:
         """The Record ids of the message(s) that raised this turn (`messages.id`),
         read by the event verbs so an event a tag turn writes cites what it rests
-        on (10 §2 rule 7: the withdrawal cascade can only reach a row through an
-        edge). Empty when the turn was not raised by a Record message (the fire
-        path) or the row is not in the window: the write then keeps the room-only
-        lineage and records no edge, as it did before."""
+        on (the withdrawal cascade can only reach a row through an edge). Empty
+        when the turn was not raised by a Record message (the fire path) or the
+        row is not in the window: the write then keeps the room-only lineage and
+        records no edge."""
         return self._trigger_message_ids
 
     @property
     def tagger(self) -> PersonRef | None:
-        """Who this turn is FOR, or None when the sender is unmapped (§12).
+        """Who this turn is FOR, or None when the sender is unmapped.
 
         `scope()` surfaces the tagger only in its degraded branch, and a
-        `None` check is not what the caller needs anyway: `remind` writes
-        `tagger.person_id` into `reminders.requester_person_id`, which is the id
-        the fire-time policy re-check then runs against. So this is a reader,
-        not a predicate — «is there a mapped requester» and «who is it» are one
-        question here, and answering the first without the second would have
-        the tool invent an owner for the row.
+        `None` check is not what the caller needs: `remind` writes
+        `tagger.person_id` into `reminders.requester_person_id`, the id the
+        fire-time policy re-check runs against. So this is a reader, not a
+        predicate: «is there a mapped requester» and «who is it» are one
+        question, and answering only the first would have the tool invent an
+        owner for the row.
 
         Read-only on purpose: the tagger is fixed for the life of the turn, and
         this object is constructed fresh per turn.
@@ -291,19 +277,17 @@ class Room:
     async def _read(self) -> Roster:
         source = self._roster_source
         if source is None:
-            # No roster source wired at all — the offline and eval
-            # compositions, which have no daemon to ask. Reported as
-            # unavailable rather than empty for the same reason a dead daemon
-            # is: a composition that silently answered "nobody is here" would
-            # make a wiring mistake look like a quiet group (R-5).
+            # No roster source wired (offline and eval compositions have no
+            # daemon to ask). Reported as unavailable rather than empty: a
+            # composition that answered "nobody is here" would make a wiring
+            # mistake look like a quiet group (R-5).
             return Roster(available=False)
         try:
             return await source.roster(conversation_id=self._conversation_id)
         except Exception:
-            # `RosterSource.roster` is documented never to raise. This is the
-            # belt for that braces: a tool inside a live turn must degrade,
-            # never propagate — but the failure is logged loudly because an
-            # implementation that raises here is violating its port.
+            # `RosterSource.roster` is documented never to raise. A tool inside
+            # a live turn must degrade, never propagate; the failure is logged
+            # loudly because an implementation that raises violates its port.
             log.exception("roster source raised for %s", self._conversation_id)
             return Roster(available=False)
 
@@ -324,8 +308,7 @@ class Room:
                 unnamed += 1
                 continue
             # Keyed by person_id: one human holding two accounts in the same
-            # group (DEC-14's baseline case, and the live `Ridgeline` group's
-            # actual shape) is one person in the room, not two.
+            # group is one person in the room, not two.
             people[ref.person_id] = ref
         return RoomView(
             available=True,

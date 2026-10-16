@@ -1,26 +1,21 @@
-"""`ToolRegistry` — the tool-extension axis DEC-10 exists to unblock (spec §9).
+"""`ToolRegistry`: the tool-extension axis (DEC-10).
 
-Before this phase, `ReplyGuard.evaluate` (`nora/agent/guards.py`) read a
-hardcoded three-entry `BUDGETS` class attribute and vetoed anything absent
-from it under R-7 — silently rejecting every tool not in that literal table,
-including a fourth native tool or `end_episode`. `ToolRegistry.budgets()` is
-what a `ReplyGuard` is now constructed with instead (`nora.engagement.stages
-.deliver.build`, threaded from `nora.app.composition`/`nora.app.offline`), so
-a new tool's budget comes from wherever it is registered, not from a table a
-future author has to remember to also edit in `guards.py`.
+`ToolRegistry.budgets()` is what a `ReplyGuard` is constructed with
+(`nora.engagement.stages.deliver.build`, threaded from `nora.app.composition`/
+`nora.app.offline`), so a tool's budget comes from wherever it is registered,
+not from a table in `guards.py`. `ReplyGuard.evaluate` (`nora/agent/guards.py`)
+vetoes any tool absent from that dict under R-7.
 
 It registers whatever `nora.agent.tools` builds, at the budgets that module
-declares — `NATIVE_TOOL_BUDGETS` is the single table both this class and
+declares: `NATIVE_TOOL_BUDGETS` is the single table both this class and
 `build_tool_specs` read, so the number `ReplyGuard` enforces and the number a
-tool is declared to cost can never drift apart. That is the property DEC-10
-exists for, and adding the three room-scoped tools (`group_members`,
-`lookup_person`, `about`) exercised it: they became callable by appearing in
-that one table, with no edit to `guards.py` at all.
+tool is declared to cost cannot drift apart. A tool becomes callable by
+appearing in that one table, with no edit to `guards.py`.
 
 Deliberately NOT here: a `ToolProvider` protocol, MCP tool discovery/lifecycle,
-or anything dynamic — spec §7/§11 defer all of that. `ToolRegistry` is a plain,
-constructed collaborator (no module-level singleton — CLAUDE.md's test-seam
-policy) built once per process by the composition root.
+or anything dynamic. `ToolRegistry` is a plain, constructed collaborator (no
+module-level singleton, per CLAUDE.md's test-seam policy) built once per
+process by the composition root.
 """
 
 from __future__ import annotations
@@ -116,34 +111,31 @@ from .whereis import Circle, PresenceReader
 
 log = logging.getLogger("nora.agent.registry")
 
-#: Parameters Strands injects itself rather than asks the model to supply —
-#: mirrors `FunctionToolMetadata._is_special_parameter`
-#: (`.venv/lib/python3.12/site-packages/strands/tools/decorator.py:419-439`,
-#: verified against strands-agents 1.50.2). `tool_param_names()` below excludes
-#: these from what it calls a tool's ACCEPTED arguments — the model was never
-#: asked to supply them, so a call missing one is not the R-99 defect this
-#: table exists to catch. `"tool_context"` is fixed rather than read per tool:
+#: Parameters Strands injects itself rather than asks the model to supply;
+#: mirrors `FunctionToolMetadata._is_special_parameter` in
+#: `strands/tools/decorator.py`. `tool_param_names()` below excludes these
+#: from what it calls a tool's ACCEPTED arguments: the model is never asked to
+#: supply them, so a call missing one is not the R-99 defect this table
+#: exists to catch. `"tool_context"` is fixed rather than read per tool:
 #: `nora.agent.ports.adapt` always passes `context=True` (never a renamed
 #: parameter) when a tool's signature declares one at all.
 _SPECIAL_TOOL_PARAMS: frozenset[str] = frozenset({"self", "cls", "agent", "tool_context"})
 
 
 def _opening(description: str) -> str:
-    """A tool description's OPENING — ADR 0007's L1: what it does and when to
-    call it — as one unwrapped line.
+    """A tool description's OPENING (ADR 0007's L1: what it does and when to
+    call it) as one unwrapped line.
 
-    The opening is the description's FIRST PARAGRAPH, and that is a declared
-    unit, not a heuristic: `tests/test_tool_surface_policy.py::
+    The opening is the description's FIRST PARAGRAPH, a declared unit rather
+    than a heuristic: `tests/test_tool_surface_policy.py::
     test_the_opening_paragraph_is_an_l1` pins every tool's first paragraph to
-    carry a when-to-call clause and to fit a catalogue line. It replaced the
-    first SENTENCE (2026-09-23) because the first sentence held the «what» and
-    dropped the «when» — measured: 2 of 55 catalogue lines carried a
-    when-to-call clause, and a deferred turn then judged whether to call
-    `calculate` from «Work out a number exactly» without the «use this for ALL
-    arithmetic» that decides it.
+    carry a when-to-call clause and to fit a catalogue line. The first
+    SENTENCE would hold the «what» and drop the «when» (a deferred turn would
+    judge whether to call `calculate` from «Work out a number exactly»
+    without the «use this for ALL arithmetic» that decides it).
 
     Unwrapped, because a line break inside the paragraph is a typographic
-    accident (`search_memory` once rendered cut mid-clause at the column).
+    accident that would render a catalogue line cut mid-clause at the column.
     """
     unwrapped = " ".join(description.strip().split("\n\n")[0].split())
     return unwrapped.rstrip(".")
@@ -153,22 +145,21 @@ class ToolRegistry:
     """Owns which native tools exist and what each costs (DEC-10).
 
     It also HOLDS the one long-lived collaborator a tool needs across tags.
-    `TransitClient` caches both operators' route catalogues — 350 KB from KMB,
-    republished at 05:00 daily — and a per-tag instance would re-pull that for
-    every bus question anybody asked. The registry is the right owner because it
-    is already the one thing the composition root builds once per process
-    (DEC-10), and because putting the cache anywhere else would mean a
-    module-level mutable singleton, which CLAUDE.md's test-seam policy forbids
-    and `tests/architecture/test_no_module_level_mutable_singletons.py`
-    enforces.
+    `TransitClient` caches both operators' route catalogues (large, republished
+    daily), and a per-tag instance would re-pull that for every bus question.
+    The registry is the right owner because it is already the one thing the
+    composition root builds once per process (DEC-10), and because putting the
+    cache anywhere else would mean a module-level mutable singleton, which
+    CLAUDE.md's test-seam policy forbids and
+    `tests/architecture/test_no_module_level_mutable_singletons.py` enforces.
 
     It is DEFAULT-CONSTRUCTED rather than required. `nora.app.eval_support`
     builds throwaway registries purely to read `budgets()` and `tool_names()`,
-    neither of which touches a socket — and a required parameter there would
-    either force those to invent one or tempt the next author into an optional
-    `None` that silently makes `transit` answer `unavailable` forever.
-    Constructing one costs nothing: no session opens and no catalogue is
-    fetched until a tool is actually called.
+    neither of which touches a socket, and a required parameter there would
+    either force those to invent one or tempt an optional `None` that
+    silently makes `transit` answer `unavailable` forever. Constructing one
+    costs nothing: no session opens and no catalogue is fetched until a tool
+    is actually called.
     """
 
     def __init__(
@@ -197,21 +188,21 @@ class ToolRegistry:
         # eval composition ships in — `send_to` then answers `unavailable`,
         # never a silent no-op.
         relay: Relay | None = None,
-        # The room tools' collaborator (design/self-awareness/07): the ONE
-        # presence reader, seen through `RoomDirectory`. `None` leaves
-        # `room_list`/`room_read` answering `unavailable` (R-5), the shape
-        # every offline and eval composition ships in.
+        # The room tools' collaborator: the ONE presence reader, seen through
+        # `RoomDirectory`. `None` leaves `room_list`/`room_read` answering
+        # `unavailable` (R-5), the shape every offline and eval composition
+        # ships in.
         rooms: RoomDirectory | None = None,
         refresher: Any = None,
         geocoder: Any = None,
-        # The DERIVED-presence read behind `where_been` (DEC-155,
-        # presence-analytics P1): the composition root's ONE `SqlMobilityStore`
-        # (same engine, same lifecycle as every other store). NOT
-        # default-constructed, for the reason `route`/`presence` are not:
-        # there is no storeless default, so every composition that has not
-        # built the substrate — offline, eval — leaves `where_been` answering
-        # `unavailable`, honest and inert (R-5). The per-call R-31 guard lives
-        # in the tool itself, through the same `DisclosureGuard` seam.
+        # The DERIVED-presence read behind `where_been` (DEC-155): the
+        # composition root's ONE `SqlMobilityStore` (same engine, same lifecycle
+        # as every other store). NOT default-constructed, for the reason
+        # `route`/`presence` are not: there is no storeless default, so every
+        # composition that has not built the substrate (offline, eval) leaves
+        # `where_been` answering `unavailable`, honest and inert (R-5). The
+        # per-call R-31 guard lives in the tool itself, through the same
+        # `DisclosureGuard` seam.
         mobility: Any = None,
         ai_peer: str = "nora",
         reminders: ReminderStore | None = None,
@@ -223,18 +214,17 @@ class ToolRegistry:
         memos: MemoStore | None = None,
         unit_for: Callable[[str, str], str | None] | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
-        # Nora's computer (design/sandbox-runtime, DEC-243): the runtime is
-        # `None` whenever `[computer] enabled` is false, and every computer
-        # tool then answers `unavailable`. `computer_events` is the audit
-        # store, built unconditionally by the composition root so an
-        # `unavailable` call is audited too; `computer_settings` the bounds.
+        # Nora's computer (DEC-243): the runtime is `None` whenever `[computer]
+        # enabled` is false, and every computer tool then answers
+        # `unavailable`. `computer_events` is the audit store, built
+        # unconditionally by the composition root so an `unavailable` call is
+        # audited too; `computer_settings` the bounds.
         computer: SandboxRuntime | None = None,
         computer_events: ComputerEventStore | None = None,
         computer_settings: ComputerToolSettings | None = None,
-        # Sessions and leases (design/sandbox-runtime §15.2, §15.4): the
-        # session store and the process's ONE `ComputerLeases`, shared by
-        # every turn this registry builds tools for, which is what makes an
-        # in-process lock a lock.
+        # Sessions and leases: the session store and the process's ONE
+        # `ComputerLeases`, shared by every turn this registry builds tools
+        # for, which is what makes an in-process lock a lock.
         computer_sessions: ComputerSessionStore | None = None,
         computer_leases: ComputerLeases | None = None,
         # `computer_export`'s record of what left the computer (always built
@@ -257,42 +247,39 @@ class ToolRegistry:
         image_generator: ImageGenerator | None = None,
         image_refs_allowed: bool = False,
         media_store: MediaObjectStore | None = None,
-        # `document_publish`/`document_read` (design/artifact §26): the document
-        # service seen through `DocumentPublisher`. `None` withholds both tools.
+        # `document_publish`/`document_read`: the document service seen through
+        # `DocumentPublisher`. `None` withholds both tools.
         documents: DocumentPublisher | None = None,
         budget_overrides: Mapping[str, int] | None = None,
-        # `record_query`'s Record read and the process's one `LineagePolicy`
-        # (design/cognition-loop/15-map.md §4). Process-lifetime, like
-        # `rooms`: the per-turn part (which room) is the turn's own
-        # `conversation_id`. `None` answers `unavailable`.
+        # `record_query`'s Record read and the process's one `LineagePolicy`.
+        # Process-lifetime, like `rooms`: the per-turn part (which room) is the
+        # turn's own `conversation_id`. `None` answers `unavailable`.
         record: RecordQuerySource | None = None,
         lineage: LineagePolicy | None = None,
-        # `rollup_read`'s Rollup read and `standing_read`'s Standing head
-        # (design/cognition-loop/25 §5, 50 §2): both Dreamer-only tools
-        # (`nora.agent.surface.DREAMER_ONLY_TOOLS`), and each withheld from
-        # every surface while its read is not wired.
+        # `rollup_read`'s Rollup read and `standing_read`'s Standing head: both
+        # Dreamer-only tools (`nora.agent.surface.DREAMER_ONLY_TOOLS`), and each
+        # withheld from every surface while its read is not wired.
         rollup: RollupReadSource | None = None,
         standing_head: StandingHeadSource | None = None,
         # `character_read`'s culture store (`[culture] enabled`): `None` withholds it.
         culture: CultureReader | None = None,
-        # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools call. Without
-        # it the registry withholds them from every turn.
+        # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools
+        # call. Without it the registry withholds them from every turn.
         subagent: SubagentDesk | None = None,
         # `[video_gen]` wired (ships off): the desk `video_create` calls, and the reference
         # kinds its gates allow (`image`, `video`, `audio`). Without the desk the registry
         # withholds the tool from every turn.
         video: VideoDesk | None = None,
         video_ref_kinds: frozenset[str] = frozenset(),
-        # `[external_files]` (design/external-files §4, ships off): the one
-        # read-only source a shared file link is opened through, held for the
-        # life of the process like `route`. `None` answers the open
-        # `unavailable`.
+        # `[external_files]` (ships off): the one read-only source a shared file
+        # link is opened through, held for the life of the process like
+        # `route`. `None` answers the open `unavailable`.
         external_files: ExternalFilesSource | None = None,
-        # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
-        # the retrieval service `memory_search` answers from, and the switch
-        # between the two memory surfaces (DEC-316): wired, every build offers
-        # `memory_search` and none of the Honcho memory verbs; `None` keeps the
-        # Honcho surface. Process-lifetime like `record`.
+        # `[memory_index] enabled` (ships off): the retrieval service
+        # `memory_search` answers from, and the switch between the two memory
+        # surfaces (DEC-316): wired, every build offers `memory_search` and none
+        # of the Honcho memory verbs; `None` keeps the Honcho surface.
+        # Process-lifetime like `record`.
         memory_search: MemorySearch | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
@@ -334,171 +321,165 @@ class ToolRegistry:
         self._video = video
         self._video_ref_kinds = video_ref_kinds
         self._transit = transit if transit is not None else TransitClient()
-        # `parking` is keyless like `transit` — the TD open-data feed needs no
-        # key, so the same default-construct argument applies: a required
+        # `parking` is keyless like `transit` (the TD open-data feed needs no
+        # key), so the same default-construct argument applies: a required
         # parameter would force offline/eval compositions to invent one, and
         # constructing a `ParkingClient` costs nothing (no session, no index
         # fetch until a tool is called).
         self._parking = parking if parking is not None else ParkingClient()
-        # `street_parking` is the same keyless TD feed family (hk-td-msd_1,
-        # the metered on-street spaces) — default-constructs for the same
-        # reasons as `parking`: no key, no cost until a tool calls it.
+        # `street_parking` is the same keyless TD feed family (the metered
+        # on-street spaces) and default-constructs for the same reasons as
+        # `parking`: no key, no cost until a tool calls it.
         self._street_parking = (
             street_parking if street_parking is not None else StreetParkingClient()
         )
         # `route` is NOT default-constructed: unlike `TransitClient`, a
         # `RouteClient` needs a Google API key, and there is no keyless default
-        # to fall back to. When it is None — every composition that has not
-        # wired a key, including `nora.app.offline` and the eval registries —
-        # the `route` tool answers `unavailable`, which is the honest state for
+        # to fall back to. When it is None (every composition that has not
+        # wired a key, including `nora.app.offline` and the eval registries)
+        # the `route` tool answers `unavailable`, the honest state for
         # "routing is not configured" (R-5). The composition root passes one
-        # built from the resolved `[route]` key (DEC-8); until it does, `route`
-        # is present in the catalogue and refuses to leak, but cannot travel.
+        # built from the resolved `[route]` key (DEC-8); until then, `route` is
+        # present in the catalogue and refuses to leak, but cannot travel.
         self._route = route
         # `vision`/`blobs` are the `media_fetch` collaborators (DEC-56), wired
-        # together and only when custody is on (`[media] enabled` + key → a blob
+        # together and only when custody is on (`[media] enabled` + key -> a blob
         # store) AND a reachable OmniRoute client exists. Either being None
-        # leaves `media_fetch` answering `unavailable` — the same inert-by-config
-        # shape as keyless `route` — so it ships present-but-inert while
+        # leaves `media_fetch` answering `unavailable`, the same inert-by-config
+        # shape as keyless `route`, so it is present-but-inert while
         # `[media] enabled=false`.
         self._vision = vision
         # `describe_models` rides alongside `vision`, the same VALUE-not-object
-        # split `ai_peer` already makes on this class: `nora.agent` may not
-        # import `nora.config` (CLAUDE.md), so the composition root resolves
-        # `cfg.media.describer_for(...)` and hands plain strings in here, exactly
-        # as it resolves the `VisionClient` itself.
+        # split `ai_peer` makes on this class: `nora.agent` may not import
+        # `nora.config` (CLAUDE.md), so the composition root resolves
+        # `cfg.media.describer_for(...)` and hands plain strings in here, as it
+        # resolves the `VisionClient` itself.
         #
         # A modality is PRESENT here only when it is enabled AND names a model,
         # so absence is the single meaning of «no describer» and the tool needs
-        # no second flag to read. Audio and video ship absent (2026-08-17 spec).
+        # no second flag to read.
         self._describe_models = dict(describe_models or {})
         self._describe_providers = dict(describe_providers or {})
         # Per-modality byte ceilings for the describer, present only when the
         # modality names one (0/None = inherit the VisionClient's shared
         # ceiling). Same VALUE-not-object split as the two maps above.
         self._describe_max_bytes = dict(describe_max_bytes or {})
-        # `[media.describe.video]`'s chunk geometry (issue #117). Held here for
-        # the same reason the per-modality maps are: `media_fetch` is built per
-        # turn and must read a clip the same way the ingest-side comprehension
-        # pass does, or the deliberate look and the automatic one disagree
-        # about how much of it was seen.
+        # `[media.describe.video]`'s chunk geometry. Held here for the same
+        # reason the per-modality maps are: `media_fetch` is built per turn and
+        # must read a clip the same way the ingest-side comprehension pass
+        # does, or the deliberate look and the automatic one disagree about how
+        # much of it was seen.
         self._video_chunk_seconds = video_chunk_seconds
         self._video_max_chunks = video_max_chunks
-        # The SHARED media join (issue #116) — `load_transcript` is a
-        # transcript builder inside a tool, and it must render a photo the same
-        # way the prefill just did or one prompt carries two answers about it.
+        # The SHARED media join: `load_transcript` is a transcript builder
+        # inside a tool, and it must render a photo the same way the prefill
+        # does or one prompt carries two answers about it.
         self._media_join = media_join
         self._blobs = blobs
         # The description cache lives HERE, once per process, for the reason the
         # transit catalogue does: keyed by content hash, a per-tag cache would
         # never hit, and a module-level singleton is what the test-seam policy
-        # forbids. Held even when `media_fetch` is inert — it costs an empty
+        # forbids. Held even when `media_fetch` is inert: it costs an empty
         # dict and means turning custody on wires nothing new here.
         #
-        # `store=descriptions` (Task 10) makes it a read-through onto the
-        # durable table rather than a memory-only cache that loses every
-        # description on every deploy — `None` (every composition that has not
-        # wired one) leaves it exactly as it was before this task.
+        # `store=descriptions` makes it a read-through onto the durable table
+        # rather than a memory-only cache; `None` (every composition that has
+        # not wired one) leaves it memory-only.
         self._vision_cache = VisionCache(store=descriptions)
-        # `media_fetch`'s VIDEO reading cache (migration 0061); None leaves
-        # every video read uncached, exactly as before it existed.
+        # `media_fetch`'s VIDEO reading cache; None leaves every video read
+        # uncached.
         self._video_readings = video_readings
         # `search` (Tavily, DEC-73/DEC-116) is NOT default-constructed, for the
         # same reason `route` is not: `web_search`/`web_fetch` ship INERT behind
         # `[search] enabled` AND a key, so every composition that has not wired
-        # one — offline, eval, keyless — leaves this None and both answer
+        # one (offline, eval, keyless) leaves this None and both answer
         # `unavailable` (the honest «not configured» state, R-5). No SSRF gate
-        # needed for either verb: Tavily fetches from its own servers, never
+        # is needed for either verb: Tavily fetches from its own servers, never
         # Nora's, whether it is handed a query or a url.
         self._search = search
         # `social` (OpenCLI bridge, DEC-151) is NOT default-constructed either:
-        # `x_read`/`x_search` ship INERT behind `[social] enabled` (keyless — the
+        # `x_read`/`x_search` ship INERT behind `[social] enabled` (keyless; the
         # bridge is loopback-only and holds the read-only allowlist host-side),
         # so every composition that has not wired one leaves this None and the
         # tool answers `unavailable` (the honest «not configured» state, R-5).
         self._social = social
         # `linkedin` is the same router, handed over only when `[social.linkedin]
-        # enabled` (design/social-per-network/10 §Config): the router's one
-        # default backend also serves X, so LinkedIn's switch cannot live in
-        # it. `None` leaves both LinkedIn tools answering «not set up».
+        # enabled`: the router's one default backend also serves X, so
+        # LinkedIn's switch cannot live in it. `None` leaves both LinkedIn tools
+        # answering «not set up».
         self._linkedin = linkedin
         # `weather` (HKO, DEC-72) is NOT default-constructed either, for symmetry
         # with `route`/`search`: it ships behind `[weather] enabled`, and every
-        # composition that has not wired one leaves this None and `weather` answers
-        # `unavailable`. Keyless, so the composition root wires one on `enabled`
-        # alone — no key to resolve.
+        # composition that has not wired one leaves this None and `weather`
+        # answers `unavailable`. Keyless, so the composition root wires one on
+        # `enabled` alone.
         self._weather = weather
-        # `presence`/`circles` are `whereis`'s collaborators (DEC-59, activating
-        # DEC-54's inert seam): the local `presence_fixes` reader and the circle
-        # rosters derived from identity.toml (`circles_from_persons`). NOT
-        # default-constructed, for the reason `route` is not: there is no
-        # readerless default, so every composition that has not wired them —
-        # offline, eval, `[presence]` disabled, an identity with no circle —
-        # leaves `whereis` answering `unavailable`, honest and inert (R-5). The
-        # per-call R-31 subset guard lives in `nora.agent.whereis`, not here.
+        # `presence`/`circles` are `whereis`'s collaborators (DEC-59): the local
+        # `presence_fixes` reader and the circle rosters derived from
+        # identity.toml (`circles_from_persons`). NOT default-constructed, for
+        # the reason `route` is not: there is no readerless default, so every
+        # composition that has not wired them (offline, eval, `[presence]`
+        # disabled, an identity with no circle) leaves `whereis` answering
+        # `unavailable`, honest and inert (R-5). The per-call R-31 subset guard
+        # lives in `nora.agent.whereis`, not here.
         self._presence = presence
         self._circles = tuple(circles)
         self._relay = relay
         self._rooms = rooms
-        # The LIVE-refresh client (DEC-67) — None leaves `where_is` reading the
+        # The LIVE-refresh client (DEC-67): None leaves `where_is` reading the
         # last stored fix (offline/eval, or [presence] refresh_url unset).
         self._refresher = refresher
-        # The on-demand reverse-geocoder (moved here from the collector,
-        # 2026-08-14) — None leaves `where_is` falling back to Life360's own
-        # address or the raw coordinate, same as no geocoder ever existing.
+        # Passed to `Whereis`, which accepts it but does not call it: `locate`
+        # answers without an address.
         self._geocoder = geocoder
-        # The derived-presence read behind `where_been` (DEC-155) — the same
-        # optional-collaborator shape as `presence` above: None in the
+        # The derived-presence read behind `where_been` (DEC-155): the same
+        # optional-collaborator shape as `presence` above. None in the
         # offline/eval compositions, where the tool answers `unavailable`
         # rather than a guessed empty (R-5).
         self._mobility = mobility
-        # The OBSERVER peer — Nora's Honcho peer id (cfg.memory.ai_peer). The
+        # The OBSERVER peer: Nora's Honcho peer id (cfg.memory.ai_peer). The
         # `about`/`ask_memory` tools read her model of a person as
-        # (observer=ai_peer, observed=person), so the registry threads it like any
-        # other long-lived collaborator (design/24 §4). A future `[agent] name`
-        # config feeds this same seam.
+        # (observer=ai_peer, observed=person), so the registry threads it like
+        # any other long-lived collaborator.
         self._ai_peer = ai_peer
-        # The reminders store (design spec §7.3): a per-process collaborator
-        # like `transit` and `search`, NOT default-constructed for the reason
-        # `route` is not — there is no storeless default, so every composition
-        # that has not wired one (offline, eval, and any test that does not care)
-        # leaves `remind` answering `unavailable`, the honest "not configured"
-        # state (R-5). `nora.app.composition` passes the same `SqlReminderStore`
-        # the heartbeat's tick reads from; two would be two queues.
+        # The reminders store: a per-process collaborator like `transit` and
+        # `search`, NOT default-constructed for the reason `route` is not: there
+        # is no storeless default, so every composition that has not wired one
+        # (offline, eval, and any test that does not care) leaves `remind`
+        # answering `unavailable`, the honest "not configured" state (R-5).
+        # `nora.app.composition` passes the same `SqlReminderStore` the
+        # heartbeat's tick reads from; two would be two queues.
         self._reminders = reminders
-        # `GatheringService`'s own collaborator (the Event module design spec),
-        # wired the identical honest way `reminders` is: NOT default-constructed
-        # — there is no serviceless default — so every composition that has not
-        # wired Events (offline, eval, and any test that does not care) leaves
-        # this None and the six event tools answer `unavailable` (R-5).
+        # `GatheringService`'s own collaborator, wired the identical honest way
+        # `reminders` is: NOT default-constructed (there is no serviceless
+        # default), so every composition that has not wired Events (offline,
+        # eval, and any test that does not care) leaves this None and the six
+        # event tools answer `unavailable` (R-5).
         self._events = events
-        # The note tier's pair (note-tier spec §5.2/§6), wired the identical
-        # honest way `events` is — no store, no unit, or neither, and the
-        # four note verbs answer `unavailable` (R-5) rather than crash or
-        # report an unconsulted notebook as an empty one.
+        # The note tier's pair, wired the identical honest way `events` is: no
+        # store, no unit, or neither, and the four note verbs answer
+        # `unavailable` (R-5) rather than crash or report an unconsulted
+        # notebook as an empty one.
         #
         # `note_unit` is a registry field because the RESOLVER is
-        # process-lifetime; the unit it returns is not. It was first
-        # written as a plain `str` on the reasoning that the seam is fixed by
-        # the deployment — false the moment a deployment has two units,
-        # and this one has had two all along (`ridgeline` and `friends`,
-        # `policy.toml`, deliberately never paired). A constant would hand one
-        # room the other's notebook, which is a cross-unit read AND write
-        # past the boundary spec §3 and DEC-105/R-49 both rest on. It takes
-        # `(platform, conversation_id)` and may answer `None`.
+        # process-lifetime; the unit it returns is not. It is not a plain `str`:
+        # a deployment can have two units (`ridgeline` and `friends`,
+        # `policy.toml`, deliberately never paired), and a constant would hand
+        # one room the other's notebook, a cross-unit read AND write past the
+        # boundary DEC-105/R-49 rest on. It takes `(platform, conversation_id)`
+        # and may answer `None`.
         self._notes = notes
         self._memos = memos
         self._note_unit = note_unit
-        # ONE resolver for every unit-keyed tool. `note_unit` is its
-        # older name and still works; `unit_for` is what a tier outside
-        # the note tier passes, so it does not have to read the NOTE tier's
-        # parameter and thereby depend on the note tier being wired.
+        # ONE resolver for every unit-keyed tool. `note_unit` is its older name
+        # and still works; `unit_for` is what a tier outside the note tier
+        # passes, so it does not have to read the NOTE tier's parameter and
+        # thereby depend on the note tier being wired.
         self._unit_for = unit_for
-        # `recall_lookups`'s own collaborator (tool-recall-log spec §4), wired
-        # the identical honest way `reminders` is: `None`
-        # in the offline/eval compositions and any composition that has not
-        # wired the tool-recall log, which is what makes `recall_lookups`
-        # answer `unavailable` (R-5) rather than crash.
+        # `recall_lookups`'s own collaborator, wired the identical honest way
+        # `reminders` is: `None` in the offline/eval compositions and any
+        # composition that has not wired the tool-recall log, which is what
+        # makes `recall_lookups` answer `unavailable` (R-5) rather than crash.
         self._tool_call_log_store = tool_call_log_store
         self._computer = computer
         self._computer_events = computer_events
@@ -508,71 +489,66 @@ class ToolRegistry:
         self._computer_exports = computer_exports
         self._browser = browser
         self._artifact_link_base = artifact_link_base
-        # §9's three anti-runaway caps, as the DOMAIN value — never
+        # The three anti-runaway caps, as the DOMAIN value, never
         # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
         # read config" contract names `nora.agent` as a source module and
         # `nora.config` as forbidden, so the config type here fails
-        # `uv run lint-imports` outright (and a TYPE_CHECKING guard does not
-        # rescue it: grimp's `exclude_type_checking_imports` defaults to False
-        # and this repo does not set it). `| None` rather than a default
-        # instance because ruff's B008 rejects a call in an argument default.
+        # `uv run lint-imports` (and a TYPE_CHECKING guard does not rescue it:
+        # grimp's `exclude_type_checking_imports` defaults to False and this
+        # repo does not set it). `| None` rather than a default instance
+        # because ruff's B008 rejects a call in an argument default.
         self._caps = reminder_caps or ReminderCaps()
-        # The clock, and there was no convention here to follow: this
-        # constructor took ten collaborators and imported no `datetime`. Three
-        # of `remind`'s six refusals are clock comparisons (`when < now`,
-        # `min_lead_seconds`, `max_horizon_days`), so a fake clock is what makes
-        # them testable without sleeping — and a collaborator through `__init__`
-        # is the only seam CLAUDE.md's test-seam policy allows.
+        # The clock, injected. Three of `remind`'s six refusals are clock
+        # comparisons (`when < now`, `min_lead_seconds`, `max_horizon_days`), so
+        # a fake clock is what makes them testable without sleeping, and a
+        # collaborator through `__init__` is the only seam CLAUDE.md's
+        # test-seam policy allows.
         self._clock = clock
-        # Discovered MCP tool groups (spec: mcp-tool-provider-design §3),
-        # keyed by server name. `.budgets()` folds an entry in ONLY when its
-        # server name is passed in that call's `allowed_mcp` — see
-        # `.budgets()` below for why an unconditional fold was a real
-        # disclosure, not an inert one. `.specs()`/`.build()`'s `allowed_mcp`
-        # is the SAME value a caller must pass here (final-review Finding 1).
+        # Discovered MCP tool groups, keyed by server name. `.budgets()` folds
+        # an entry in ONLY when its server name is passed in that call's
+        # `allowed_mcp`; see `.budgets()` below for why an unconditional fold
+        # discloses names. `.specs()`/`.build()`'s `allowed_mcp` is the SAME
+        # value a caller must pass here.
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
         # The baked build stamp (DEC-97), DEFAULT-CONSTRUCTED like `transit` and
         # unlike `route`/`search`/`weather`: there is no key to resolve and no
         # service to reach, only a file that either shipped with this code or
         # did not, so there is nothing an unconfigured deployment could be
-        # missing. Reading it costs one open, once, on the first `version` call
-        # — a source checkout has no `nora/version.json`, and the reader answers
+        # missing. Reading it costs one open, once, on the first `version` call;
+        # a source checkout has no `nora/version.json`, and the reader answers
         # `unavailable` for it (never `nothing_found`, R-27). Held HERE for the
         # reason the transit catalogue is: it is a process-lifetime fact, and
-        # the alternative — a module-level cache — is the mutable singleton the
+        # the alternative, a module-level cache, is the mutable singleton the
         # test-seam policy forbids.
         self._versions = versions if versions is not None else VersionManifest()
         self._giphy = giphy
         # `nora.agent.reaction`: None keeps every reply exactly as written.
         self._reaction = reaction
-        # `MusicToolBridge` (design/discord-music/07-agent-tool.md), wired the
-        # identical honest way `events`/`reminders` are: NOT
-        # default-constructed — there is no bridgeless default, and every
-        # composition that has not wired `DiscordMusicToolBridge` (offline,
-        # eval, `[music] enabled = false`, or Discord itself disabled) leaves
-        # this None and all four music tools answer `unavailable` (R-5). The
-        # Discord-only gate is a SEPARATE check each tool makes on
+        # `MusicToolBridge`, wired the identical honest way `events`/`reminders`
+        # are: NOT default-constructed (there is no bridgeless default), and
+        # every composition that has not wired `DiscordMusicToolBridge`
+        # (offline, eval, `[music] enabled = false`, or Discord itself disabled)
+        # leaves this None and all four music tools answer `unavailable` (R-5).
+        # The Discord-only gate is a SEPARATE check each tool makes on
         # `room.platform` before ever touching this collaborator.
         self._music = music
-        # `online_now`'s live-state reads (design/online-status/), wired
-        # the identical honest way `mobility`/`music` are: NOT
-        # default-constructed — there is no clientless default — so every
-        # composition that has not wired them (offline, eval, `[online]`
-        # disabled or keyless, Discord disabled) leaves them None and the
-        # matching arms answer `unavailable` (R-5), never `nothing_found`.
-        # `voice` and `discord_presence` are independent of `[online]`:
-        # they read the live Discord client and wire whenever the Discord
-        # platform is enabled. `voice` is the narrow "who is in which
+        # `online_now`'s live-state reads, wired the identical honest way
+        # `mobility`/`music` are: NOT default-constructed (there is no
+        # clientless default), so every composition that has not wired them
+        # (offline, eval, `[online]` disabled or keyless, Discord disabled)
+        # leaves them None and the matching arms answer `unavailable` (R-5),
+        # never `nothing_found`. `voice` and `discord_presence` are independent
+        # of `[online]`: they read the live Discord client and wire whenever the
+        # Discord platform is enabled. `voice` is the narrow "who is in which
         # voice channel" sub-arm; `discord_presence` is the `online` arm's
-        # Discord half — per-person presence (status + rich presence),
-        # the 2026-09-15 correction.
+        # Discord half: per-person presence (status + rich presence).
         self._online = online
         self._voice = voice
         self._discord_presence = discord_presence
         # `ImageGenerator` (DEC-137), wired the same honest way: NOT
         # default-constructed. `None` (config `[image_gen] enabled = false`)
         # leaves the `generate_image` tool present in the catalogue answering
-        # `unavailable` — the wiring-gap state, never `nothing_found`.
+        # `unavailable`: the wiring-gap state, never `nothing_found`.
         self._image_generator = image_generator
         self._image_refs_allowed = image_refs_allowed
         self._media_store = media_store
@@ -588,35 +564,29 @@ class ToolRegistry:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
 
         Includes an MCP tool's budget ONLY when its server name is in
-        `allowed_mcp` — the SAME set the caller passes (or will pass) to
-        `.build()`. `budgets()` feeds `ReplyGuard`, and `ReplyGuard.evaluate`
-        renders the WHOLE dict's keys into the model-facing R-7 unknown-tool
-        veto message (`guards.py::_list_tool_names`) — so an unconditional
-        fold was a REAL disclosure: a conversation with no `pulse` allowlist
-        entry would still be told `pulse_server_status` exists the moment the
-        model hallucinated any wrong tool name, contradicting the spec's
-        claim that this dict is never rendered into a prompt. It also left
-        R-7's default-deny not actually covering those names for an
-        unauthorized conversation, since they were present in `_budgets`
-        regardless. The default (`frozenset()`) is the safe one: a caller
-        with no conversation context (`nora.app.composition`'s throwaway
-        registries) gets exactly the native table, nothing more."""
+        `allowed_mcp`, the SAME set the caller passes (or will pass) to
+        `.build()`. `ReplyGuard.evaluate` renders the WHOLE dict's keys into
+        the model-facing R-7 unknown-tool veto message
+        (`guards.py::_list_tool_names`), so an unconditional fold would tell a
+        conversation with no `pulse` allowlist entry that
+        `pulse_server_status` exists the moment the model named any wrong
+        tool, and R-7's default-deny would not cover those names for an
+        unauthorized conversation. The default (`frozenset()`) is the safe
+        one: a caller with no conversation context (`nora.app.composition`'s
+        throwaway registries) gets exactly the native table, nothing more."""
         budgets = dict(NATIVE_TOOL_BUDGETS)
         # `[llm.budgets]` from config.toml, applied OVER the table rather than
-        # instead of it, so the file may carry one line without restating
-        # twenty (operator, 2026-08-11: budgets "will keep slowly increasing"
-        # as tools are added, and a rebuild to move a number is friction with
-        # no safety return).
+        # instead of it, so the file may carry one line without restating the
+        # rest.
         #
-        # This does not break DEC-10/DEC-32's ONE-NUMBER rule, and the
-        # distinction is the whole reason it is applied HERE. The table still
-        # states the default and the reasoning next to the tool; config states
-        # a per-deployment DELTA; and `budgets()` remains the single place
-        # anything reads a budget from — `ReplyGuard`'s R-7 ceiling, the
-        # `Deliverer`'s message cap and the tests all still resolve to one
-        # value at runtime. Putting `send_reply` alone in config, which is what
-        # was asked for first, WOULD have broken it: fifteen budgets in code
-        # and one in config is the split those decisions exist to prevent.
+        # This keeps DEC-10/DEC-32's ONE-NUMBER rule, and that is why it is
+        # applied HERE. The table states the default and the reasoning next to
+        # the tool; config states a per-deployment DELTA; and `budgets()` is the
+        # single place anything reads a budget from (`ReplyGuard`'s R-7 ceiling,
+        # the `Deliverer`'s message cap and the tests all resolve to one value
+        # at runtime). Putting one budget alone in config would split the
+        # table between code and config, which those decisions exist to
+        # prevent.
         #
         # Unknown names are REJECTED at config load (`nora.config`), not
         # silently dropped here: a typo'd tool name in `[llm.budgets]` is an
@@ -636,13 +606,9 @@ class ToolRegistry:
         Exposed exactly the way `budgets()` is, and for the same reason. Under
         `tool_choice="required"` the model must call something on every pass, so
         the guard's `BeforeModelCallEvent` cancellation is the ONLY thing that
-        ends a turn (DEC-21). It used to end one by asking the `Deliverer`
-        whether it had delivered — terminality expressed as a single tool's side
-        effect, which is the pre-DEC-10 hardcoded `BUDGETS` mistake wearing a
-        different hat. `design/proposed/15-gif-replies.md` §1 proposed fixing
-        that by defining the verb class *in the guard*; this defines it on the
-        tool instead, so `send_gif` — or any other verb that ends a turn —
-        becomes one `terminal=True` in `NATIVE_TOOLS`.
+        ends a turn (DEC-21). Terminality is declared on the tool, not in the
+        guard and not as a single tool's side effect, so any verb that ends a
+        turn (`send_gif` included) is one `terminal=True` in `NATIVE_TOOLS`.
 
         A `frozenset` rather than a mapping: membership is the whole question,
         and there is no per-tool value to carry.
@@ -651,7 +617,7 @@ class ToolRegistry:
 
     def cacheable_tools(self) -> frozenset[str]:
         """The tools whose successful result may be logged to `tool_call_log`
-        and later replayed by `recall_lookups` (tool-recall-log spec §2).
+        and later replayed by `recall_lookups`.
 
         A `frozenset`, the same shape `terminal_tools()` returns and for the
         same reason: membership is the whole question, and there is no
@@ -660,7 +626,7 @@ class ToolRegistry:
         return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.cacheable)
 
     def lookup_tools(self) -> frozenset[str]:
-        """The tools that LOOK and report whether they found anything — R-97's
+        """The tools that LOOK and report whether they found anything: R-97's
         set, and the one thing "did this turn come back with something" can be
         asked of.
 
@@ -671,18 +637,17 @@ class ToolRegistry:
 
         Without `read_only` the set would swallow the write verbs, which also
         declare `three_state` (`note_update`, `remind`, the events family, the
-        music verbs — see `NativeTool.output_contract`, which says so and says
-        why). A failed WRITE is a different fact from an empty READ, and
-        counting one as the other would let a `note_update` that came back
-        `unavailable` silence a reply she had every reason to send.
+        music verbs; see `NativeTool.output_contract`). A failed WRITE is a
+        different fact from an empty READ, and counting one as the other would
+        let a `note_update` that came back `unavailable` silence a reply she
+        had every reason to send.
 
         Without `output_contract` it would swallow `load_transcript`, the one
-        read on the table that deliberately carries NO status — its empty list
-        IS the answer (ADR 0009 §2). Reading an unparseable result as "found
-        nothing" is exactly the `unavailable`-as-`nothing_found` substitution
-        R-27 exists to prevent, and it would have made "she read older messages
-        and then spoke" indistinguishable from "she went looking and came back
-        empty".
+        read on the table that deliberately carries NO status (its empty list
+        IS the answer, ADR 0009 §2). Reading an unparseable result as "found
+        nothing" is the `unavailable`-as-`nothing_found` substitution R-27
+        exists to prevent, and it would make "she read older messages and then
+        spoke" indistinguishable from "she went looking and came back empty".
 
         A `frozenset`, the same shape the three above return and for the same
         reason: membership is the whole question.
@@ -691,10 +656,10 @@ class ToolRegistry:
             name for name, spec in NATIVE_TOOLS.items()
             if spec.read_only and spec.output_contract == "three_state"
             # The one named exception. `load_tools` is read-only and carries a
-            # status, so the derivation admits it — but what it reports is
+            # status, so the derivation admits it, but what it reports is
             # whether a SCHEMA loaded, and counting that as the turn having
             # found something would let a successful load silence a reply
-            # after a lookup that came back empty (design/tool-catalogue/02).
+            # after a lookup that came back empty.
             and name != LOADER_TOOL
         )
 
@@ -707,18 +672,16 @@ class ToolRegistry:
         return self._withheld
 
     def read_only_tools(self) -> frozenset[str]:
-        """The tools that only LOOK — the Dreamer's ceiling (keystone §4).
+        """The tools that only LOOK: the Dreamer's ceiling.
 
-        The hard line the Dreamer-as-an-agent design draws is that a background
-        research loop **may look and may not act**: a process that can speak to
-        the group unprompted, set a reminder, or write to the events store with
-        nobody waiting on it is a categorically different and more dangerous
-        thing than one that can only read. That is a property of the runtime,
-        not a setting, so it is DERIVED here and hand-listed nowhere.
+        A background research loop **may look and may not act**: a process that
+        can speak to the group unprompted, set a reminder, or write to the
+        events store with nobody waiting on it is categorically more dangerous
+        than one that can only read. That is a property of the runtime, not a
+        setting, so it is DERIVED here and hand-listed nowhere.
 
         **This is a ceiling, not a grant.** Each Dreamer adaptor declares its
-        own, narrower subset by tool name (`DreamAdaptor.tools`) — proving a
-        fact wants `web_search`/`web_fetch`, glossing a word does not — and the
+        own, narrower subset by tool name (`DreamAdaptor.tools`), and the
         runtime refuses any name outside this set. So a tool being read-only
         never by itself puts it in front of a model; it only makes it
         *grantable*.
@@ -737,39 +700,32 @@ class ToolRegistry:
 
         Plugin tools (`spec.plugin`, DEC-50) are EXCLUDED: `skills` is not a tool
         this registry builds, and the catalogue gate exists to stop an authored
-        `identity`/`conduct` file naming a tool it does not have. `skills` is not
-        built or described here (see `specs()`), so it does not belong in the
-        gate's list either."""
+        `identity`/`conduct` file naming a tool it does not have. `skills` is
+        not built or described here (see `specs()`), so it does not belong in
+        the gate's list either."""
         return tuple(name for name, spec in NATIVE_TOOLS.items() if not spec.plugin)
 
     def capability_digest(self) -> str:
         """The read-only tool surface as one line each, for a reader that has
         to judge what Nora can answer WITHOUT being able to call anything.
 
-        Today that reader is the Relevance Gate (design/dreamer-agent-loop/36).
-        It decides «is there something in this room she can actually serve?» —
-        a question about her capabilities — and until 2026-09-10 it was told
-        nothing about them: its whole knowledge was a hand-written five-item
-        list in `nora/doctrine/instruments/participation.md`, against 53 registered tools.
-        Issue #144. DEC-150 deleted `kind: capability` for exactly this failure
-        («tools are the source of truth, an authored copy is a cache that goes
-        stale silently»); the gate's list was the same artifact, wearing
-        `kind: instrument` so the loader's guard never reached it.
+        That reader is the Relevance Gate, which decides «is there something
+        in this room she can actually serve?», a question about her
+        capabilities. DEC-150 deleted `kind: capability` because tools are the
+        source of truth and an authored copy is a cache that goes stale
+        silently; this is derived for the same reason.
 
         DERIVED, so it cannot go stale: a tool added to `NATIVE_TOOLS` appears
-        here on the next start with nothing to edit. That is the whole point of
-        the method — a rendered copy pasted into a doctrine file would
-        reintroduce the bug it exists to close.
+        here on the next start with nothing to edit.
 
         READ-ONLY tools only (`read_only_tools`). The gate is asking whether an
-        ANSWER exists, and a verb that acts — `send_reply`, `remind`,
-        `play_music` — is never the reason a window is worth a turn. Measured
-        2026-09-10: 34 of 53 tools, ~2.5k characters.
+        ANSWER exists, and a verb that acts (`send_reply`, `remind`,
+        `play_music`) is never the reason a window is worth a turn.
 
         FIRST SENTENCE only. The full descriptions are written for a model that
-        is about to CALL the tool and carry hundreds of lines of when-to-use
-        guidance; a reader deciding whether an answer could exist needs the
-        verb and its subject, not its usage rules.
+        is about to CALL the tool and carry long when-to-use guidance; a reader
+        deciding whether an answer could exist needs the verb and its subject,
+        not its usage rules.
         """
         return "\n".join(self._digest_lines(
             self.read_only_tools() - {LOADER_TOOL} - TAG_ONLY_TOOLS
@@ -782,9 +738,9 @@ class ToolRegistry:
         """`- name — first sentence`, one line per name, sorted.
 
         Extracted so `capability_digest` and `tool_catalogue` cannot drift into
-        two renderings of the same thing — the failure DEC-150 deleted the
-        capability block for. They differ only in WHICH names and whether a
-        name is marked resident; the line itself has one implementation.
+        two renderings of the same thing. They differ only in WHICH names and
+        whether a name is marked resident; the line itself has one
+        implementation.
         """
         described = self._descriptions()
         lines = []
@@ -795,40 +751,34 @@ class ToolRegistry:
         return lines
 
     def tool_catalogue(self, *, hot: Container[str] = HOT_TOOLS) -> str:
-        """EVERY tool, one line each — the index the model selects from.
+        """EVERY tool, one line each: the index the model selects from.
 
         The difference from `capability_digest` is the reader and therefore the
         scope. The Relevance Gate asks «could an answer exist here?», so it
-        gets READ-ONLY tools: a verb that acts is never the reason a window is
-        worth a turn. This is read by the model that is about to CHOOSE, so it
-        gets all of them — leaving `send_reply` or `remind` out would be
-        leaving out a thing she can do.
+        gets READ-ONLY tools. This is read by the model that is about to
+        CHOOSE, so it gets all of them; leaving `send_reply` or `remind` out
+        would leave out a thing she can do.
 
         A line answers ONE question: is this the tool I want, or not? It
         carries the capability and, where a confusable sibling exists, the
-        discriminator against it — `where_is` says RIGHT NOW, `where_been` says
-        HAS BEEN. It carries no parameters, no arms, no `status` values and no
-        reporting rules; those are answered by the schema and by the result,
-        and a line that starts explaining how to CALL a tool has spent budget
-        belonging to the other 53 on a question nobody has asked yet.
+        discriminator against it (`where_is` says RIGHT NOW, `where_been` says
+        HAS BEEN). It carries no parameters, no arms, no `status` values and no
+        reporting rules; those are answered by the schema and by the result.
 
         DERIVED, like `capability_digest` and for the same reason: a tool added
         to `NATIVE_TOOLS` appears here on the next start with nothing to edit.
-        An authored copy is a cache that goes stale in silence (DEC-150), which
-        is the whole argument for generating it.
 
-        FIRST SENTENCE, not a separate authored field. That was measured rather
-        than assumed: the existing first sentences already discriminate on
-        `find_parking`/`parking_status`, `search_memory`/
-        `search_memory_workspace` and `note_read`/`note_search`. Only
-        `where_is` needed repair, and it was repaired at the docstring rather
-        than worked around here — one source of truth per tool, not two.
+        FIRST SENTENCE, not a separate authored field: the first sentences
+        already discriminate between confusable siblings
+        (`find_parking`/`parking_status`, `search_memory`/
+        `search_memory_workspace`, `note_read`/`note_search`), so a repair
+        belongs in the docstring, one source of truth per tool.
 
         `hot` marks the tools whose full schema is already resident, so the
         model does not spend a round trip fetching what it already holds. It
         defaults to the one declaration in `nora.agent.tools`; the parameter
-        exists so a test can render a catalogue without depending on today's
-        measured six.
+        exists so a test can render a catalogue without depending on the
+        current set.
         """
         names = set(self.tool_names()) - {LOADER_TOOL}
         return "\n".join(self._digest_lines(names, hot=hot))
@@ -837,8 +787,8 @@ class ToolRegistry:
         """Each tool's model-facing description, introspected once per process.
 
         Docstrings are fixed by the code that shipped, so this cannot go stale
-        within a process — and `ToolSurface.catalogue` renders per turn, where
-        re-introspecting fifty-odd closures every tag would be pure waste.
+        within a process, and `ToolSurface.catalogue` renders per turn, where
+        re-introspecting every closure every tag would be pure waste.
         """
         if self._described is None:
             self._described = {
@@ -848,26 +798,24 @@ class ToolRegistry:
         return self._described
 
     def catalog(self) -> tuple[dict, ...]:
-        """Every built tool's public metadata — name, model-facing
-        description, and declared registry fields — for the web portal's
+        """Every built tool's public metadata (name, model-facing
+        description, and declared registry fields) for the web portal's
         `/app/v1/tools` endpoint.
 
         This is the LIVE surface: the descriptions come from the same
         Strands introspection the agent loop derives (`FunctionToolMetadata.
         extract_metadata`, Args-stripped), and the declared fields are read
-        straight off `NATIVE_TOOLS` — so what the portal shows IS what the
-        deployed agent can call, and a tool added on master appears here on
-        the next deploy with no frontend rebuild.
+        straight off `NATIVE_TOOLS`, so what the portal shows IS what the
+        deployed agent can call.
 
-        Why this method lives HERE and not in `nora.web`: the strands import
+        This method lives HERE and not in `nora.web` because the strands import
         boundary (`tests/test_boundaries.py::test_strands_import_boundary`)
-        allows `strands` only under `nora/agent/` — the
-        web layer must not import it. The registry already owns the tool
-        table, so it is the natural single reader.
+        allows `strands` only under `nora/agent/`. The registry already owns
+        the tool table, so it is the natural single reader.
 
         Plugin tools are excluded by construction (`build_tool_specs` does
         not build them). A spec whose `call` cannot be introspected keeps its
-        declared fields with `description` dropped — one bad tool must never
+        declared fields with `description` dropped: one bad tool must never
         sink the endpoint (R-27), and the failure is logged server-side.
         """
         catalog = []
@@ -897,14 +845,13 @@ class ToolRegistry:
         return tuple(sorted(catalog, key=lambda entry: entry["name"]))
 
     def _introspection_specs(self) -> tuple[ToolSpec, ...]:
-        """Every native tool, built ONLY to introspect its callable — never invoked.
+        """Every native tool, built ONLY to introspect its callable, never invoked.
 
-        Factored out of `catalog()` so `tool_param_names()` (R-99) reads the
-        identical built specs rather than a second copy of this all-but-one-
-        argument-None `build_tool_specs()` call — two copies of "how to build
-        a spec for introspection alone" is exactly how one of them drifts
-        (CLAUDE.md). `_catalog_room()`'s docstring says why the room stand-in
-        is enough for both callers: no tool is CALLED here, only introspected.
+        Shared by `catalog()` and `tool_param_names()` (R-99) so both read the
+        identical built specs rather than two copies of the all-but-one-argument
+        -None `build_tool_specs()` call. `_catalog_room()`'s docstring says why
+        the room stand-in is enough for both callers: no tool is CALLED here,
+        only introspected.
         """
         return build_tool_specs(
             store=None,
@@ -915,12 +862,12 @@ class ToolRegistry:
             deliverer=None,
             metrics=None,
             room=self._catalog_room(),
-            # The catalog is the DECLARED surface — «what can this deployment
-            # call», not «what does one room see». `_catalog_room()` already
-            # says platform="discord" so the Discord-only music verbs appear;
-            # this is the same exception for the Dreamer-only memory verb
-            # (#350). Both gates live in `build_tool_specs`, and an endpoint
-            # that dropped either would under-report what the agent can do.
+            # The catalog is the DECLARED surface: «what can this deployment
+            # call», not «what does one room see». `_catalog_room()` says
+            # platform="discord" so the Discord-only music verbs appear; this is
+            # the same exception for the Dreamer-only memory verb. Both gates
+            # live in `build_tool_specs`, and an endpoint that dropped either
+            # would under-report what the agent can do.
             dream_adaptor="catalog",
             # Both memory surfaces, for the same reason (DEC-316): the flag
             # picks one per deployment, and the catalog and R-99's argument
@@ -945,32 +892,29 @@ class ToolRegistry:
         return self._video_chunk_seconds
 
     def tool_param_names(self) -> Mapping[str, frozenset[str]]:
-        """Each tool's ACCEPTED argument names, read off its own signature —
-        never hand-copied — for `ReplyGuard`'s R-99 unknown-argument veto
-        (design/social-per-network/30-link-owner-registry.md).
+        """Each tool's ACCEPTED argument names, read off its own signature,
+        never hand-copied, for `ReplyGuard`'s R-99 unknown-argument veto.
 
         `strands.tools.decorator.FunctionToolMetadata._create_input_model`
-        (`.venv/lib/python3.12/site-packages/strands/tools/decorator.py:
-        190-231`) builds its validating pydantic model from exactly these
-        names — one field per signature parameter, no `model_config` set
-        anywhere in that class, so pydantic v2's own default
-        (`extra="ignore"`) makes `validate_input` (decorator.py:369-393)
-        SILENTLY DROP any key a call carries that is not one of them. Reading
-        the same signature here, the same way, is what lets `ReplyGuard` veto
-        that call BEFORE Strands' validation ever runs (`BeforeToolCallEvent`
-        fires on the raw `tool_use`, ahead of it).
+        builds its validating pydantic model from exactly these names: one
+        field per signature parameter, with no `model_config` set, so pydantic
+        v2's default (`extra="ignore"`) makes `validate_input` SILENTLY DROP
+        any key a call carries that is not one of them. Reading the same
+        signature here, the same way, is what lets `ReplyGuard` veto that call
+        BEFORE Strands' validation runs (`BeforeToolCallEvent` fires on the raw
+        `tool_use`, ahead of it).
 
-        A tool this registry does not BUILD — a `plugin=True` entry
-        (`skills`), or an MCP tool folded in only through `budgets(allowed_
-        mcp=...)` — has no entry here at all, deliberately: this table is
-        read from `build_tool_specs()`'s own output, which never constructs
-        either kind, so there is no signature to derive one from. `evaluate`
-        treats a missing entry as "cannot verify", never as "reject
-        everything" — the same fail-closed-on-the-CHECK-itself direction
-        `catalog()`'s per-spec `except Exception` already takes.
+        A tool this registry does not BUILD (a `plugin=True` entry such as
+        `skills`, or an MCP tool folded in only through
+        `budgets(allowed_mcp=...)`) has no entry here at all, deliberately:
+        this table is read from `build_tool_specs()`'s own output, which never
+        constructs either kind, so there is no signature to derive one from.
+        `evaluate` treats a missing entry as "cannot verify", never as "reject
+        everything", the same fail-closed-on-the-CHECK-itself direction
+        `catalog()`'s per-spec `except Exception` takes.
 
         Memoized like `_descriptions()`: fixed by the code that shipped, so
-        re-introspecting fifty-odd closures every tag would be pure waste.
+        re-introspecting every closure every tag would be pure waste.
         """
         if self._param_names is None:
             names: dict[str, frozenset[str]] = {}
@@ -999,17 +943,16 @@ class ToolRegistry:
         list matter (`platform`/`conversation_id` for the conversation-scoped
         closures); every collaborator is `None` because no tool is CALLED
         here (a call would be the only thing touching a socket or a roster).
-        A real `Room` is constructed per tag with a roster source — the
+        A real `Room` is constructed per tag with a roster source; the
         catalog needs none of it.
         """
         return SimpleNamespace(
             # platform="discord": the catalog is the REGISTRY FULL TABLE, the
-            # operator-facing surface of what the deployed agent can call —
-            # not one room's per-turn catalog. Since 2026-09-16 music verbs
-            # are filtered at catalog-BUILD time for non-Discord rooms, so a
-            # "signal" stand-in here would silently hide the six music verbs
-            # from the portal. Discord shows the whole table; per-turn
-            # catalogs still filter correctly for their own room.
+            # operator-facing surface of what the deployed agent can call, not
+            # one room's per-turn catalog. Music verbs are filtered at
+            # catalog-BUILD time for non-Discord rooms, so a "signal" stand-in
+            # would hide them from the portal. Per-turn catalogs still filter
+            # correctly for their own room.
             platform="discord", conversation_id="catalog", tagger=None,
         )
 
@@ -1039,16 +982,14 @@ class ToolRegistry:
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
-        dependencies — before any Strands adaptation.
+        dependencies, before any Strands adaptation.
 
         `transit_source`/`route_source`/`vision_source`/`blob_store`/
         `vision_cache`/`search_source`/`reminders`/`reminder_caps`/`clock`/
-        `versions` are
-        NOT in this signature and must not become one: each is the registry's
-        own long-lived collaborator (or, for the cache, its own per-process
-        state), not something a tag brings with it, so every caller of
-        `specs()`/`build()` is unchanged by their arrival. `reminder_caps` and
-        `clock` qualify for the same reason `ai_peer` does — both are
+        `versions` are NOT in this signature and must not become one: each is
+        the registry's own long-lived collaborator (or, for the cache, its own
+        per-process state), not something a tag brings with it. `reminder_caps`
+        and `clock` qualify for the same reason `ai_peer` does: both are
         process-lifetime VALUES, fixed by the deployment, not by the turn.
 
         `fire_turn` IS in this signature and does not violate that rule: it is a
@@ -1059,34 +1000,32 @@ class ToolRegistry:
         `transcript` is in it for the same reason and is the most per-turn value
         here: it is `TagContext.transcript`, the window the prefill rendered
         `<group_transcript>` from, and `who_said` (DEC-146) answers out of it.
-        It must never become a registry field — a window living for the life of
+        It must never become a registry field: a window living for the life of
         the process would let one conversation's messages be searched from
-        another, which is a disclosure and not a staleness bug. Passing the SAME
-        tuple the prefill used is what keeps the tool and the block in the
-        prompt one interpretation of one window rather than two.
+        another, which is a disclosure. Passing the SAME tuple the prefill used
+        keeps the tool and the block in the prompt one interpretation of one
+        window rather than two.
 
-        `links` is in it for the same reason and is the same KIND of thing —
-        per-TURN, not per-process (DEC-89). It must not become a registry field:
-        one `LinkCarry` living for the life of the process would offer a link
-        minted in one conversation to a reply being composed in another, which
-        is a disclosure rather than a cosmetic bug. It comes from
+        `links` is in it for the same reason and is the same KIND of thing:
+        per-TURN, not per-process (DEC-89). It must not become a registry
+        field: one `LinkCarry` living for the life of the process would offer a
+        link minted in one conversation to a reply being composed in another,
+        which is a disclosure. It comes from
         `nora.engagement.stages.deliver.build`'s `DeliveryHandle`, which is also
         where the `Deliverer` that consumes it is built.
 
         `supplied_unit` is per-CALL for the same reason, from exactly one
         caller: `nora.agent.dreamer.RegistryToolSource`, whose unit-keyed
         adaptors ARE keyed on the unit and must SUPPLY it rather than let
-        the tool layer derive it from a room they do not have
-        (design/dreamer-agent-loop/32 §3.4, `08-state.md` §10). It must not
+        the tool layer derive it from a room they do not have. It must not
         become a registry field either: a unit fixed for the life of the
-        process is the cross-unit read `note_unit`'s own comment
-        (above, in `__init__`) exists to prevent. Every tag-path caller leaves
-        it None and the resolver answers as before.
+        process is the cross-unit read `note_unit`'s own comment (above, in
+        `__init__`) exists to prevent. Every tag-path caller leaves it None
+        and the resolver answers from the room.
 
-        `dream_adaptor` is the second per-turn PROVENANCE beside `fire_turn`
-        (design/dreamer-agent-loop/39 D3): the Dreamer adaptor's NAME when
-        `nora.agent.dreamer.RegistryToolSource` built this set, `""` for
-        every tag and every fire turn."""
+        `dream_adaptor` is the second per-turn PROVENANCE beside `fire_turn`:
+        the Dreamer adaptor's NAME when `nora.agent.dreamer.RegistryToolSource`
+        built this set, `""` for every tag and every fire turn."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -1177,12 +1116,11 @@ class ToolRegistry:
     ) -> list[Any]:
         """`surface(...).tools`, for a caller that wants only the list.
 
-        Every production loop calls `surface()` itself — it is the one builder
-        (see its docstring). This stays for the callers that ask «what tools
-        would this turn get» and nothing else: tests, and anything reading the
+        Every production loop calls `surface()` itself, the one builder (see
+        its docstring). This stays for the callers that ask «what tools would
+        this turn get» and nothing else: tests, and anything reading the
         adapted objects without placing a catalogue. It takes no `grant` and
-        never defers, so it is exactly the resident-everything build it
-        always was."""
+        never defers, so it is the resident-everything build."""
         return self.surface(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -1228,12 +1166,10 @@ class ToolRegistry:
         proactive act, reminders) and every Dreamer adaptor
         (`RegistryToolSource`) all call this, and nothing else decides which
         tools an occasion sees. `ToolScope` (`nora.agent.surface`) admits by
-        platform, by whether the Dreamer built the set, and by `grant` — the
-        Dreamer's per-adaptor ceiling, which used to be a filter over
-        `build()`'s output.
+        platform, by whether the Dreamer built the set, and by `grant`, the
+        Dreamer's per-adaptor ceiling.
 
-        `defer` (design/tool-catalogue/02): False keeps every admitted tool
-        resident, exactly as before this method existed. True keeps only
+        `defer`: False keeps every admitted tool resident. True keeps only
         `HOT_TOOLS` resident, puts the rest on a per-turn `ToolShelf`, and adds
         `load_tools` so the model can register what it names. `load_tools` is
         in `tools` only when the shelf holds something, so a turn with nothing
@@ -1243,8 +1179,8 @@ class ToolRegistry:
         for a text turn). Under `defer` the resident set is
         `hot_tools(occasion)`: `HOT_TOOLS` plus every tool whose
         `NativeTool.hot_on` names the occasion, still cut by the scope, so a
-        voice turn keeps the music verbs resident and a text turn is exactly
-        what it was. Without `defer` everything admitted is resident anyway and
+        voice turn keeps the music verbs resident and a text turn keeps
+        `HOT_TOOLS`. Without `defer` everything admitted is resident anyway and
         the occasion changes nothing.
 
         `allowed_mcp` groups are appended resident, after the native tools,
@@ -1296,7 +1232,7 @@ class ToolRegistry:
             admitted=(spec.name for spec in admitted),
             render=lambda names, hot: self._digest_lines(names, hot=hot),
             # A shelved tool called by name loads on the spot (`ShelfLoader`'s
-            # docstring has the measurement): without it, every direct call
-            # cost a failed round trip and a cache miss.
+            # docstring has the reasoning): without it, every direct call
+            # costs a failed round trip and a cache miss.
             hooks=(ShelfLoader(shelf),) if shelf else (),
         )

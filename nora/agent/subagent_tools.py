@@ -1,4 +1,4 @@
-"""The sub-agent worker's tool source (design/subagent §4, §4c): a CLOSED list.
+"""The sub-agent worker's tool source: a CLOSED list.
 
 Neither precedent builds it. The Dreamer's `RegistryToolSource` keeps only
 `read_only_tools()`, which drops `computer_run` and `computer_write`, and a tag
@@ -46,13 +46,13 @@ log = logging.getLogger("nora.agent.subagent_tools")
 ACTS: frozenset[str] = frozenset({
     "computer_run", "computer_write", "computer_edit", "computer_import",
     "computer_export", "document_publish",
-    # the worker's own place-keeper (design/subagent §4d): not a lookup, not an effect outside
+    # the worker's own place-keeper: not a lookup, not an effect outside
     "checkpoint_update",
 })
 
 #: Read-only tools that are still not the worker's.
 NOT_LOOKUPS: frozenset[str] = frozenset({
-    # reads that leave the launching room: the worker's reach is one room (§4c)
+    # reads that leave the launching room: the worker's reach is one room
     "room_list", "room_read", "search_memory_workspace",
     # `memory_search` (DEC-316) reads the memory index across the unit's
     # rooms, so it is not the worker's either
@@ -161,9 +161,7 @@ class SubagentToolSource:
             grant=grant, store=self._store, conversation_id=conversation_id,
             conversation_type=conversation_type, persons=self._persons,
             honcho=self._honcho,
-            # No deliverer, ever: nothing the worker holds speaks to anybody, and the
-            # absence is stated here so a `None` that was once a deliverer is not
-            # passed back in.
+            # No deliverer, ever: nothing the worker holds speaks to anybody.
             deliverer=None, metrics=self._metrics, room=room,
             subagent_job=job_id, checkpoint_sink=checkpoint_sink,
         )

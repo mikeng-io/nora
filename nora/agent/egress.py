@@ -6,35 +6,23 @@ answers:
 * `scan_identifiers` — somebody's E.164 number, ACI/PNI, or a key-shaped
   string. Never safe to emit **or transmit**, whatever the destination: the
   group, a tool result the model then reasons over, or an argument to a third
-  party (design/14 §2.2). This is the floor.
-* `scan_reply` — the identifiers, applied to text addressed to the GROUP.
+  party. This is the floor.
+* `scan_reply` — the identifiers plus a coordinate pair, applied to text
+  addressed to the GROUP. There is no model-name veto: `x_read` (DEC-151)
+  legitimately relays third-party content that names models, and refusing the
+  whole reply for a quoted model name would cost real answers.
 
-The reply predicate used to ALSO refuse the name of the model she runs on
-(`_MODELNAME`), and `Deliverer.deliver` failed closed on the WHOLE reply. That
-veto is DISABLED by operator decision (2026-08-31): `social_fetch` (DEC-151, now
-`x_read`) legitimately relays third-party content that names models — the exact post she
-was asked to read in the first live trace was about "Opus 5" — and refusing
-the whole reply for a quoted model name cost real answers. Identifiers remain
-the floor at every exit; a model name is no longer treated as one.
+`LeakGuard` (`nora.agent.guards`) blocks the canary and verbatim doctrine
+spans — R-6, protecting Nora's *configuration*. This protects the *people*,
+which is a different exposure: nothing else stops a reply from carrying
+somebody's phone number or ACI.
 
-`LeakGuard` (`nora.agent.guards`) already blocks the canary and verbatim
-doctrine spans — R-6, protecting Nora's *configuration*. This protects the
-*people*, which is a different exposure and was previously unguarded: nothing
-stopped a reply from carrying somebody's phone number or ACI.
-
-`LeakGuard` (`nora.agent.guards`) already blocks the canary and verbatim
-doctrine spans — R-6, protecting Nora's *configuration*. This protects the
-*people*, which is a different exposure and was previously unguarded: nothing
-stopped a reply from carrying somebody's phone number or ACI.
-
-That gap matters more here than in most systems, because Nora legitimately
-holds the material. The transcript she reasons over contains real sender ids,
-and `about` returns durable recall about a person. `constraints.md`
-tells her not to relay any of it — but a doctrine instruction is a request to a
-model, and this codebase has now been bitten four separate times by things
-that were true in intent and false in fact. A prompt-injected or simply sloppy
-turn should not be the only thing between a member's phone number and the
-group.
+That matters because Nora legitimately holds the material. The transcript she
+reasons over contains real sender ids, and `about` returns durable recall about
+a person. `constraints.md` tells her not to relay any of it — but a doctrine
+instruction is a request to a model, not a guarantee. A prompt-injected or
+simply sloppy turn should not be the only thing between a member's phone
+number and the group.
 
 **Blocking costs one silent reply. Leaking is not recoverable** — the message
 is on every member's device before anyone can react. So this fails closed, and
@@ -87,20 +75,18 @@ _IDENTIFIER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("keylike", _KEYLIKE),
 )
 
-# DEC-156 (2026-09-06): where_been/where_is results now CARRY lat/lng, so a
-# sloppy or injected turn can echo a coordinate into a reply — the model has
-# the material in its context for the first time. The pair pattern is the
-# same shape `looks_like_coordinate` (nora/agent/security.py) uses for tool
-# ARGUMENTS; it is REDEFINED here rather than imported because security.py
-# already imports from this module (a second import direction would be
-# circular). Range is NOT checked: an out-of-range pair is still a leaked
-# coordinate, and blocking it too is the safe direction.
+# DEC-156: where_been/where_is results CARRY lat/lng, so a sloppy or injected
+# turn can echo a coordinate into a reply. The pair pattern is the same shape
+# `looks_like_coordinate` (nora/agent/security.py) uses for tool ARGUMENTS; it
+# is REDEFINED here rather than imported because security.py already imports
+# from this module (a second import direction would be circular). Range is NOT
+# checked: an out-of-range pair is still a leaked coordinate, and blocking it
+# too is the safe direction.
 _COORD_PAIR = re.compile(r"-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+")
 
 # The reply scan is the identifier scan PLUS the coordinate pair: identifiers
-# are the floor at every exit, and coordinates are a reply-only exposure that
-# exists since DEC-156 put lat/lng into the model's context. (The model-name
-# veto stays disabled — operator decision 2026-08-31.)
+# are the floor at every exit, and coordinates are a reply-only exposure
+# because DEC-156 puts lat/lng into the model's context.
 _REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     *_IDENTIFIER_PATTERNS,
     ("coordinate", _COORD_PAIR),
@@ -129,9 +115,8 @@ def scan_identifiers(text: str) -> str | None:
 def scan_reply(text: str) -> str | None:
     """Return the kind of disclosure found, or None if the text is safe to SEND.
 
-    The identifier scan, scoped to text addressed to the group (R-6/R-18).
-    The model-name veto that used to live here is DISABLED (operator decision
-    2026-08-31) — see the module docstring. Everywhere else, use
+    The identifier scan plus the coordinate pair, scoped to text addressed to
+    the group (R-6/R-18). There is no model-name veto. Everywhere else, use
     `scan_identifiers`.
     """
     return _first_match(text, _REPLY_PATTERNS)
@@ -145,10 +130,10 @@ def _normalize(text: str) -> str:
 #: The transcript element's opening tag, `<m n="38" ...>` (`nora.domain.blocks`,
 #: `render_row_window` / `render_messages`). A member's body is XML-escaped when
 #: rendered, so a literal `<m n=` in her draft can only have come from the
-#: PROMPT, never from anything a member wrote. Seen live 2026-10-06: a turn
-#: ended in prose without `send_reply`, the DEC-93 recovery delivered it, and
-#: the prose was her deliberation, quoting a transcript row by its tag. That tag
-#: is the deterministic tell; deliberation without one is not caught here.
+#: PROMPT, never from anything a member wrote. It is the deterministic tell of
+#: prose that is her deliberation quoting a transcript row (recovered by the
+#: DEC-93 delivery of a turn that ended without `send_reply`); deliberation
+#: without one is not caught here.
 _TRANSCRIPT_TAG = re.compile(r"<m\s+n\s*=")
 
 
@@ -164,20 +149,16 @@ class LeakGuard:
     def __init__(self, doctrine: Doctrine, canary: str, min_span: int = 40) -> None:
         self._canary = canary
         self._min_span = min_span
-        # The haystack speaks the SAME dialect as the candidate (fail-closed
-        # audit 2026-08-10). DEC-82 removes Markdown SYNTAX from replies — it
-        # now converts the emphasis to a style range rather than dropping it,
-        # but the CHARACTERS still go — and the doctrine files ARE Markdown:
-        # voice.md alone carries 10 `**bold**` spans and every file has `#`
-        # headings, so comparing a converted reply against a raw haystack
-        # silently un-blocked verbatim recitations whose windows straddled a
-        # removed marker. Measured: 405 bold-caused and 831 heading-caused
-        # misses at a 45-char window. `strip_markdown` is the TEXT half of the
-        # very function that produces the reply's form (`nora.agent.markdown`),
-        # not a lookalike, so the two sides cannot drift apart on what a
-        # delimiter is. `Deliverer` additionally checks the RAW reply, so a span
-        # is caught whichever dialect it was written in.
-        # And the SAME punctuation: the model reads the doctrine with its em
+        # The haystack speaks the SAME dialect as the candidate. DEC-82 removes
+        # Markdown SYNTAX from replies (emphasis becomes a style range, the
+        # CHARACTERS go), and the doctrine files ARE Markdown (bold spans,
+        # `#` headings), so a converted reply compared against a raw haystack
+        # would miss verbatim recitations whose windows straddle a removed
+        # marker. `strip_markdown` is the TEXT half of the very function that
+        # produces the reply's form (`nora.agent.markdown`), so the two sides
+        # cannot drift on what a delimiter is. `Deliverer` additionally checks
+        # the RAW reply, so a span is caught whichever dialect it was written in.
+        # The SAME punctuation too: the model reads the doctrine with its em
         # dashes turned into commas (`nora.agent.punctuation`), so a verbatim
         # recital carries the comma and a window across one would miss a
         # haystack that kept the dash.

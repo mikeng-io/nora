@@ -1,6 +1,6 @@
-"""`nora.agent.mcp` — MCP server discovery (spec: mcp-tool-provider-design
-§3). Builds Strands tool objects for every configured, reachable MCP server
-at process start. The only module that constructs `strands`'s MCP client
+"""`nora.agent.mcp` — MCP server discovery. Builds Strands tool objects for
+every configured, reachable MCP server at process start. The only module that
+constructs `strands`'s MCP client
 objects (`MCPClient`) — `nora.agent.factory`'s own Strands construction
 responsibilities are the model/agent wiring, not MCP.
 
@@ -25,7 +25,7 @@ log = logging.getLogger("nora.agent.mcp")
 
 @dataclass(frozen=True)
 class McpMount:
-    """One MCP server to connect to, as a plain domain value (spec §3.1)."""
+    """One MCP server to connect to, as a plain domain value."""
 
     name: str
     base_url: str
@@ -35,8 +35,8 @@ class McpMount:
 
 @dataclass(frozen=True)
 class McpToolGroup:
-    """One server's discovered tools plus the flat budget they all share
-    (spec §4 — Approach A). `tools` is typed `Any` rather than importing
+    """One server's discovered tools plus the flat budget they all share.
+    `tools` is typed `Any` rather than importing
     Strands' `MCPAgentTool` into a signature `ToolRegistry` also uses,
     matching how `nora.agent.ports.adapt` keeps its own return typed `Any`."""
 
@@ -66,7 +66,7 @@ def build_mcp_tools(mounts: dict[str, McpMount]) -> dict[str, McpToolGroup]:
     silently *drop* a server whose config fails to resolve — e.g. a missing
     `${env:VAR}` — from its return list, rather than raising. That leaves the
     returned `clients` list shorter than `mounts`, which would misalign a
-    positional zip (verified empirically: `test_missing_token_env_yields_absent_not_raised`
+    positional zip (`test_missing_token_env_yields_absent_not_raised`
     hits exactly this — `load_servers()` logs and skips the mount instead of
     raising or returning a matching-length list). Calling per-mount instead
     means a config-resolution failure raises `ValueError` straight out of
@@ -76,9 +76,9 @@ def build_mcp_tools(mounts: dict[str, McpMount]) -> dict[str, McpToolGroup]:
     groups: dict[str, McpToolGroup] = {}
     # Every tool name claimed so far, across EVERY server processed — a
     # remote server names its own tools with no screening, so a name can
-    # collide either with a native tool or with an earlier server's tool
-    # (Finding 3, final-review). Seeded with the native names up front: those
-    # are never dropped in favour of a discovered tool, only the reverse.
+    # collide either with a native tool or with an earlier server's tool.
+    # Seeded with the native names up front: those are never dropped in favour
+    # of a discovered tool, only the reverse.
     claimed: set[str] = set(NATIVE_TOOL_BUDGETS)
     for mount in mounts.values():
         server_config = {

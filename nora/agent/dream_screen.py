@@ -14,17 +14,13 @@ With `web_fetch` in the Dreamer's tool set that matters more, not less. The
 Dreamer reads attacker-influenceable pages and writes distillations of them
 into a durable store. A page that says «her number is +85290000101» becomes a
 lexeme sense, and the sense renders into the prompt on every subsequent turn,
-long after the run that wrote it is forgotten. This is the 2026-08-20 audit's
-F14 — an unbounded model-authored persistence channel, guarded only by a
-truncation and a plausibility reject — generalised to every tier, and settled
-once here rather than re-argued per adaptor. (The audit found it on the
-room-language tier's `sense` column; that tier is deleted and the class of
-defect is not.)
+long after the run that wrote it is forgotten. It is an unbounded
+model-authored persistence channel, guarded only by a truncation and a
+plausibility reject, settled once here rather than re-argued per adaptor.
 
-**Where it sits, and why that is not where the plan put it.** The plan screened
-the *parsed proposals* an adaptor's `accept` returns. This screens the model's
-**raw envelope items** — every string reachable in every item — before any tier
-type exists. Three reasons, and they are the whole placement argument:
+**Where it sits.** The screen reads the model's **raw envelope items** —
+every string reachable in every item — before any tier type exists, not the
+*parsed proposals* an adaptor's `accept` returns. Three reasons:
 
 * Screening a parsed `object` would require every adaptor to expose its own
   text for inspection — one more surface a tier can forget something on, and
@@ -39,18 +35,14 @@ type exists. Three reasons, and they are the whole placement argument:
 
 A screened-out item is dropped, counted (`nora_dream_screened_total`), and
 logged — never silently discarded, and never fatal: the run's other items still
-land, exactly as a malformed item is dropped rather than raised on today's
-`_parse_item` path.
+land, as a malformed item is dropped rather than raised on the `_parse_item`
+path.
 
-**`scan_identifiers`, never `scan_reply`.** The reply predicate was
-`scan_identifiers` plus a model-name pattern until 2026-08-31, when that veto
-was disabled by operator decision (see `nora.agent.egress`); today the two
-functions check the same identifier set. The screen still calls the FLOOR
-predicate by name, because an identifier is unsafe at every exit while a word
-like 「haiku」 — a poem, a lexeme *about* which this room coins language — is
-precisely the sort of thing that must survive into a store. This module calls
-the floor predicate, by that name, and the test suite pins the choice so it
-cannot be flipped by accident.
+**`scan_identifiers`, never `scan_reply`.** The two functions check the same
+identifier set today, but the screen calls the FLOOR predicate by name: an
+identifier is unsafe at every exit, while a word like 「haiku」 — a poem, a
+lexeme *about* which this room coins language — must survive into a store. The
+test suite pins the choice so it cannot be flipped by accident.
 
 **A known boundary, stated rather than implied.** The screen reads STRINGS.
 Numbers cannot hide any of the four patterns on their own — `_E164` requires a
@@ -130,16 +122,15 @@ def _strings(value: object, path: str) -> Iterator[tuple[str, str]]:
             yield from _strings(sub, f"{path}[{i}]")
 
 
-#: What THIS screen refuses beyond the reply floor (design/standing-compact,
-#: security review 2026-09-24). `scan_identifiers` is the reply's R-18 floor
-#: and stays exactly what it is; a SINK injected into every later prompt has a
-#: stricter job, and from 2026-09-24 the standing fold is shown tool results
-#: at up to 4000 characters and asked to keep what it found. Measured against
-#: the real `screen()` before this: an email, an 18-digit platform id, a
-#: `where_is` result's `{'lat': …, 'lng': …}` and «lat 22.3 lng 114.1» all
-#: passed. Each maps onto an EXISTING reason label, so the metric's vocabulary
-#: does not move. Street addresses are not here: no pattern for them is
-#: reliable in two languages, and a guess is a screen that drops real prose.
+#: What THIS screen refuses beyond the reply floor. `scan_identifiers` is the
+#: reply's R-18 floor and stays exactly what it is; a SINK injected into every
+#: later prompt has a stricter job: the standing fold sees tool results at up
+#: to 4000 characters and keeps what it finds. Refused here: an email, an
+#: 18-digit platform id, a `where_is` result's `{'lat': …, 'lng': …}` and
+#: «lat 22.3 lng 114.1». Each maps onto an EXISTING reason label, so the
+#: metric's vocabulary does not move. Street addresses are not here: no pattern
+#: for them is reliable in two languages, and a guess is a screen that drops
+#: real prose.
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _LONG_ID = re.compile(r"(?<![\d.])\d{15,}(?![\d.])")
 _LABELLED_COORD = re.compile(

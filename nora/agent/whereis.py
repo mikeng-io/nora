@@ -1,45 +1,36 @@
-"""`whereis(person)` and its R-21 disclosure seam (design/19 §5, design/14 §5.2).
+"""`whereis(person)` and its R-21 disclosure seam.
 
 `whereis` reads the LOCAL presence record for one person in this conversation,
 carries the fix's AGE to the model, and degrades to `unavailable` (never
 null-island) when there is no usable fix. Nora reads a local table; the collector
-daemon absorbs Life360's fragility (§4), so `whereis` has no auth, no retry, no
-challenge-page to handle. With a `LocationRefresher` wired (DEC-67) it first asks
-the COLLECTOR to force a fresh reading before the read — Nora still never speaks
-to Life360 herself, and a location REQUEST sends a member-id, not a coordinate,
-so nothing sensitive leaves; the refresh is best-effort and falls back to the
-stored fix.
+daemon owns Life360, so `whereis` has no auth, no retry, no challenge page to
+handle. With a `LocationRefresher` wired (DEC-67) it first asks the COLLECTOR to
+force a fresh reading before the read; a location request sends a member-id, not
+a coordinate, and the refresh is best-effort, falling back to the stored fix.
 
-**The disclosure guard is a NEW fail-closed seam, and this module does not
-pretend the existing R-21 machinery covers it (both design reviews, HIGH).**
-The room-scoped tools' R-21 is *resolve-within-scope*: a `RoomView` that is a
-subset of the real room, so Nora cannot NAME someone who is not in the room.
-Presence needs the INVERSE: refuse to DISCLOSE a circle member's position into a
-room that contains someone OUTSIDE the circle. Nothing in `nora.agent.room`
-compares a Life360 circle to a Signal group. So `DisclosureGuard` intersects the
-conversation's people with the circle roster and REFUSES — not omits — on any
-member outside it, and `check_disclosure_invariant` is the startup check that
-alarms the day «group ⊄ circle» becomes true. Today circle == group ("Ridgeline")
-so it holds by construction — VERIFIED, not assumed.
+The disclosure guard is its own fail-closed seam. The room-scoped tools' R-21 is
+*resolve-within-scope*: a `RoomView` that is a subset of the real room, so Nora
+cannot NAME someone who is not in the room. Presence needs the INVERSE: refuse to
+DISCLOSE a circle member's position into a room that contains someone OUTSIDE the
+circle. Nothing in `nora.agent.room` compares a Life360 circle to a Signal group,
+so `DisclosureGuard` intersects the conversation's people with the circle roster
+and REFUSES, not omits, on any member outside it. `check_disclosure_invariant` is
+the startup check that alarms when «group ⊄ circle» becomes true.
 
-Two things this seam is careful NOT to weaken:
+Two properties this seam must keep:
 - **Refuse, don't omit.** A silent omission would read to the group as «I don't
-  know where they are», which is R-5's shape; a refusal says why.
-- **Outbound must stay hard-blocked** (design/14 §2.2): a stored position may
-  seed an on-host route computation, but a coordinate must never leave in a tool
-  argument. `whereis` returns a position for Nora's REPLY (in-group disclosure is
-  fine, §5.3), which is a different exit than a Google query argument.
+  know where they are» (R-5's shape); a refusal says why.
+- **Outbound stays hard-blocked.** A stored position may seed an on-host route
+  computation, but a coordinate must never leave in a tool argument. `whereis`
+  returns a position for Nora's REPLY (in-group disclosure is fine), a different
+  exit than a Google query argument. The barrier is
+  `nora.agent.tools._looks_like_coordinate`, which refuses a raw coordinate in a
+  `route` argument (R-28), so a `whereis` coordinate cannot ride a route argument
+  to Google.
 
-  That barrier EXISTS: `nora.agent.tools._looks_like_coordinate` refuses a raw
-  coordinate in a `route` argument (council finding #4, 2026-08-07, R-28) — it
-  landed BEFORE this tool was wired, exactly as the council required, so a
-  `whereis` fallback coordinate cannot ride a route argument to Google.
-
-Shipped 2026-08-07 as a testable SEAM (the DEC-48 inert shape), WIRED the same
-day (DEC-59): `whereis` is in `NATIVE_TOOLS`, built by `build_tool_specs` over
-this seam, and `ToolRegistry` holds the presence reader + circles the way it
-holds the route client. The R-28 coordinate barrier in `nora.agent.tools`
-(council #4) landed BEFORE the wiring, as required above.
+`whereis` is in `NATIVE_TOOLS`, built by `build_tool_specs` over this seam, and
+`ToolRegistry` holds the presence reader and circles the way it holds the route
+client (DEC-59).
 """
 
 from __future__ import annotations
@@ -78,7 +69,7 @@ class PresenceReader(Protocol):
 class LocationRefresher(Protocol):
     """Forces a LIVE on-demand reading for one person before `where_is` reads the
     store (DEC-67). The implementation (`nora.infra.presence_refresh`) calls the
-    collector — which owns Life360 and the DB write — so `where_is` stays a pure
+    collector, which owns Life360 and the DB write, so `where_is` stays a pure
     reader. Best-effort and bounded: returns when a fresh fix is written OR the
     collector's timeout elapses; NEVER raises, so a failure leaves `where_is`
     reading the last stored fix."""
@@ -97,8 +88,7 @@ class Circle:
     person_ids: frozenset[str]
     # The same members, RESOLVED, so a name can be matched against them.
     # `person_ids` answers "may this room be told?"; this answers "who did they
-    # mean?" — and until R-47 the second question was asked of the ROOM, so a
-    # circle member who was not in the group could not be asked about at all.
+    # mean?". A circle member who is not in the group can still be asked about.
     people: tuple[PersonRef, ...] = ()
 
 
@@ -119,35 +109,32 @@ def _dedupe(refs: tuple[PersonRef, ...]) -> tuple[PersonRef, ...]:
     return tuple(out)
 
 
-# The movement read (design/19 §6, first slice — operator ask 2026-08-07):
-# MEASURED facts off the stored fix history, never a prediction. A member is
-# `moving` when their last two fixes inside this window are further apart than
-# the noise floor; `towards` names a saved place only when the distance to it
-# CLOSED by more than the floor across those fixes — «getting nearer to Home»
-# is a measurement, «going home» is a guess, and only the first ships (R-5).
+# The movement read: MEASURED facts off the stored fix history, never a
+# prediction. A member is `moving` when their last two fixes inside this window
+# are further apart than the noise floor; `towards` names a saved place only when
+# the distance to it CLOSED by more than the floor across those fixes. «Getting
+# nearer to Home» is a measurement, «going home» is a guess, and only the first
+# ships (R-5).
 _MOVEMENT_WINDOW_MS = 15 * 60_000
 _MOVEMENT_FLOOR_M = 150.0
 
 # Below this, Life360's own reported speed is GPS jitter off a stationary or
-# slow-walking phone, not a measurement worth relaying (operator ask
-# 2026-08-16) — below brisk-walking pace. Omitted, never rendered as `0`.
+# slow-walking phone, not a measurement worth relaying (below brisk-walking pace).
+# Omitted, never rendered as `0`.
 _SPEED_FLOOR_KMH = 3.0
 
-# How old a person's NEWEST fix may be before it stops meaning «now». Measured
-# 2026-09-24 over 14 days of every tracked person: a stationary phone still
-# reports on Life360's ~30-minute heartbeat (p99 inter-fix gap 30.2 min, all
-# eight people), and every gap above an hour was shared by everyone at once —
-# the collector down, not a phone asleep. 45 minutes is one missed heartbeat.
-# Past it, the record has an EDGE the model must be shown: on 2026-09-24 the
-# collector lost its Life360 login at 00:12, and a 1am ride was answered as
-# «at home all along» off a two-hour-old fix and a history that simply stopped.
+# How old a person's NEWEST fix may be before it stops meaning «now». A stationary
+# phone still reports on Life360's ~30-minute heartbeat, and a gap longer than an
+# hour is the collector being down, not a phone asleep; 45 minutes is one missed
+# heartbeat. Past it, the record has an EDGE the model must be shown: the answer
+# is the last position anything recorded, not where the person is.
 STALE_AFTER_MS = 45 * 60_000
 _TZ = ZoneInfo("Asia/Hong_Kong")
 
 
 def recorded_iso(ts_ms: int) -> str:
-    """RFC 3339 in the household's timezone — the form a model can read a
-    time in (DEC-156: raw unix-ms sent it to `calculate` to convert)."""
+    """RFC 3339 in the household's timezone: the form a model can read a time
+    in, with no unix-ms to convert (DEC-156)."""
     return datetime.fromtimestamp(ts_ms / 1000, tz=_TZ).isoformat(timespec="seconds")
 
 
@@ -178,9 +165,8 @@ def movement_view(
 
 
 def _within_place(lat: float, lng: float, place: SavedPlace) -> bool:
-    """Haversine containment against the place's geofence (design/23 §4.1) —
-    server-side geometry the model never performs; a place with no radius
-    cannot contain."""
+    """Haversine containment against the place's geofence: server-side geometry
+    the model never performs; a place with no radius cannot contain."""
     if place.radius_m is None or place.radius_m <= 0:
         return False
     return haversine_distance_m(lat, lng, place.lat, place.lng) <= place.radius_m
@@ -190,28 +176,25 @@ async def resolvable_places(
     *, room: Room, circles: tuple[Circle, ...], presence: PresenceReader,
     location_trusted: bool = False,
 ) -> tuple[SavedPlace, ...] | None:
-    """The saved places THIS room may resolve by name (design/23 §4.1): only
-    from circles the room is a verified subset of, and EMPTY on doubt about the
-    ROOM — degraded room, unmapped account, guard refusal. The caller falls
-    through to the public lookup rather than refusing: a hard refusal would
-    confirm a guarded name exists, and fall-through makes it indistinguishable
-    from an unsaved one (R-21/R-35's own shape).
+    """The saved places THIS room may resolve by name: only from circles the room
+    is a verified subset of, and EMPTY on doubt about the ROOM (degraded room,
+    unmapped account, guard refusal). The caller falls through to the public
+    lookup rather than refusing: a hard refusal would confirm a guarded name
+    exists, and fall-through makes it indistinguishable from an unsaved one
+    (R-21/R-35's own shape).
 
-    `None` is the FOURTH answer, and it is not the same as `()` (R-27, both
-    2026-08-10 reviews): the read itself failed — a presence store that is
-    unreachable, a `places_for` that raised. `()` says «no names you may have»,
-    `None` says «I could not check», and collapsing them meant an unreachable
-    Postgres rendered as 「你冇 save 過任何地方」 — a confident wrong answer with a
-    healthy `status="ok"` beside it. An ERROR is never a PASS.
+    `None` is the FOURTH answer, and it is not the same as `()` (R-27): the read
+    itself failed (a presence store that is unreachable, a `places_for` that
+    raised). `()` says «no names you may have», `None` says «I could not check».
+    Collapsing them would render an unreachable Postgres as 「你冇 save 過任何地方」,
+    a confident wrong answer beside a healthy `status="ok"`. An ERROR is never a
+    PASS.
 
-    `location_trusted` carries DEC-79 here, because this is the SECOND
-    disclosure surface and the first review found it stranded: `where_is` was
-    widened while this was not, so in the operator's own room `where_is`
-    disclosed a street address while `saved_places` answered «no saved places»
-    forever — the same four unmappable accounts, killing the very path DEC-77/78
-    spent two commits routing 「返工」 onto. One room-level switch, every location
-    surface. It relaxes `unnamed` exactly as `Whereis.locate` does, and
-    `degraded`/unavailable stay hard for the same reason they do there."""
+    `location_trusted` carries DEC-79 here, because this is the SECOND disclosure
+    surface: one room-level switch covers every location surface, so a trusted
+    room that `where_is` answers also gets its saved places. It relaxes `unnamed`
+    exactly as `Whereis.locate` does, and `degraded`/unavailable stay hard for the
+    same reason they do there."""
     try:
         view = await room.scope()
         unnamed_blocks = view.unnamed > 0 and not location_trusted
@@ -230,12 +213,12 @@ async def resolvable_places(
 
 def circles_from_persons(persons: Any) -> tuple[Circle, ...]:
     """The `Circle`s Nora's own process wires `whereis` with, from identity.toml's
-    `[[persons.<id>.life360]]` blocks — the same grouping the collector's
-    `_circles_from_identity` does, with DIFFERENT failure semantics on purpose:
-    the collector REFUSES to start on an unplaced block or an empty roster
-    (enabled-but-collecting-nothing is R-5's shape), while here a block with no
-    `circle_id` is simply skipped and an empty result is a valid answer —
-    `whereis` degrades to `unavailable`, and Nora must not refuse to START over a
+    `[[persons.<id>.life360]]` blocks, grouped as the collector's
+    `_circles_from_identity` groups them but with DIFFERENT failure semantics on
+    purpose: the collector REFUSES to start on an unplaced block or an empty
+    roster (enabled-but-collecting-nothing is R-5's shape), while here a block
+    with no `circle_id` is skipped and an empty result is a valid answer.
+    `whereis` degrades to `unavailable`; Nora must not refuse to START over a
     tool that can honestly say «I can't check».
 
     Sorted by circle_id so the tuple is deterministic across restarts."""
@@ -258,8 +241,8 @@ def circles_from_persons(persons: Any) -> tuple[Circle, ...]:
 
 
 class DisclosureGuard:
-    """R-21 fail-closed (design/19 §5): permit disclosure only into a room whose
-    people are a SUBSET of the circle.
+    """R-21 fail-closed: permit disclosure only into a room whose people are a
+    SUBSET of the circle.
 
     Fail-closed by construction:
     - an empty or unknown circle never permits (nothing to be a subset of);
@@ -279,7 +262,7 @@ class DisclosureGuard:
             # Vacuous truth is not verification: `frozenset() <= anything`, and
             # an empty roster is what a room with only unmapped accounts (or
             # none resolved) reads as. Nothing to check the circle against is
-            # «could not verify», so it refuses (#647 M2).
+            # «could not verify», so it refuses.
             return False
         return room_person_ids <= self._circle.person_ids
 
@@ -294,11 +277,11 @@ def presence_audience(
     """May a DERIVED-presence answer (a place a person goes, what is usual for
     them) be said in this room? The ONE decision `where_been`/`routine_read`
     (`nora.agent.tools._presence_audience`) and a Cognition rollup line
-    (`nora.app.cognition_grounding.place_release`) both take, so the two
-    cannot drift (R-35's room-subset rule, design/27 §4.3). Fail-closed: a
-    room that could not be read, or was read degraded, is `unavailable`; an
-    unnamed account is `unnamed` and a room not a subset of `circle` is
-    `not_subset`, both waived only by a location-trusted room (DEC-79)."""
+    (`nora.app.cognition_grounding.place_release`) both take, so the two cannot
+    drift (R-35's room-subset rule). Fail-closed: a room that could not be read,
+    or was read degraded, is `unavailable`; an unnamed account is `unnamed` and a
+    room not a subset of `circle` is `not_subset`, both waived only by a
+    location-trusted room (DEC-79)."""
     if not view.available or view.degraded:
         return "unavailable"
     if view.unnamed > 0 and not location_trusted:
@@ -317,29 +300,22 @@ def check_disclosure_invariant(
     platform: str = "",
     conversation: str = "",
 ) -> bool:
-    """The startup invariant (design/19 §5, §7.7): is the Signal group a SUBSET
-    of the circle? Publishes `nora_presence_circle_subset_ok` (1/0) and logs an
-    ERROR the day it is not. Returns the boolean so a caller can refuse to wire
-    `whereis` when it fails.
+    """The startup invariant: is the Signal group a SUBSET of the circle?
+    Publishes `nora_presence_circle_subset_ok` (1/0) and logs an ERROR when it is
+    not. Returns the boolean so a caller can refuse to wire `whereis` when it
+    fails.
 
-    This is the mechanical replacement for «the same rule the roster uses» —
-    which the reviews called an overstatement, because nothing else in Nora
-    compares a circle to a group.
-
-    **UNWIRED, pending `whereis` activation (the DEC-48 inert shape).** It needs
-    the Signal group roster, which the COLLECTOR process does not have — so it is
-    called on Nora's side the day `whereis` is wired into `NATIVE_TOOLS`, not at
-    collector startup. Until then it is a tested seam with no live call site (do
-    not read a green `nora_presence_circle_subset_ok` as live coverage). The
+    It runs on Nora's side (the collector process does not have the Signal group
+    roster); `nora.app.composition` calls it for each policy conversation that is not
+    location-trusted. The
     AUTHORITATIVE fail-closed check is the per-call guard in `Whereis.locate`,
-    which SEES `view.unnamed > 0` — an unmapped account the coarse person_id
-    subset here cannot; this startup check is a belt-and-braces pre-flight over
-    the KNOWN person_ids.
+    which SEES `view.unnamed > 0`, an unmapped account the coarse person_id subset
+    here cannot see; this startup check is a belt-and-braces pre-flight over the
+    KNOWN person_ids.
 
     That per-call guard refuses on `unnamed` in an untrusted room, and WAIVES it
-    (counted, never silent) in a location-trusted one since DEC-79 — so this
-    check being green has never implied the room is fully mapped, and now does
-    not imply an unmapped account would be refused either."""
+    (counted, never silent) in a location-trusted one (DEC-79), so a green check
+    does not imply the room is fully mapped."""
     ok = bool(group_person_ids) and group_person_ids <= circle.person_ids
     if metrics is not None:
         metrics.gauge(
@@ -360,9 +336,8 @@ def check_disclosure_invariant(
 
 def _ok_note(*, place: bool, moving: bool) -> str:
     """The reporting rules for a `where_is` `ok` (ADR 0015 §3: result
-    interpretation lives in the result). They used to be the description's
-    `ok` paragraph, paid on every call; here they arrive with the answer they
-    are about, and the place and movement clauses only when those fields do."""
+    interpretation lives in the result). They arrive with the answer they are
+    about, and the place and movement clauses only when those fields do."""
     parts = [
         "Say how old this reading is (age_seconds), since without the age a "
         "position sounds like right now."
@@ -404,30 +379,21 @@ class Whereis:
         self._circle = circle
         self._presence = presence
         # Optional LIVE refresh (DEC-67): when wired, `where_is` asks the collector
-        # to force a fresh reading before it reads the store. None → the old
-        # read-only behaviour (the last stored fix), unchanged.
+        # to force a fresh reading before it reads the store. None: read-only,
+        # the last stored fix.
         self._refresher = refresher
-        # Optional reverse-geocode, ON DEMAND (moved here from the collector,
-        # 2026-08-14): a fix with no Life360 address is geocoded ONLY when
-        # someone actually asks `where_is` about it, not on every poll cycle
-        # for every tracked person regardless of whether anyone ever reads the
-        # result — the collector's own eager version cost real, billed Google
-        # calls for fixes nobody asked about (~12k requests / 6 days, ~$60,
-        # confirmed against Cloud Monitoring's own request-count metric before
-        # this moved). The coordinate this sends is Nora's own code reading a
-        # DB row, never a model-authored value — the same "not the model, not
-        # the group" ground `nora.infra.geocode`'s own docstring already
-        # argues for the collector's version of this exact call.
+        # Accepted but not used by `locate`: the answer carries no address, a
+        # street address is the `reverse_geocode` tool's job.
         self._geocoder = geocoder
         self._guard = DisclosureGuard(circle)
         # LOCATION-DISCLOSURE TRUST (DEC-74, widened by DEC-79): sourced from this
         # conversation's `policy.toml` `location` flag. It is a ROOM-LEVEL switch,
         # not a per-condition one: True relaxes BOTH the SUBSET check and the
-        # `view.unnamed > 0` refusal below. `degraded` is NOT relaxed, and that
-        # asymmetry is the point — an unnamed account is a roster Nora READ and
-        # found an unknown in (a measurement the operator may overrule), whereas
-        # `degraded` is a roster she could not read at all (an R-27 `unavailable`,
-        # which is never a PASS no matter who trusts the room).
+        # `view.unnamed > 0` refusal below. `degraded` is NOT relaxed: an unnamed
+        # account is a roster Nora READ and found an unknown in (a measurement the
+        # operator may overrule), whereas `degraded` is a roster she could not
+        # read at all (an R-27 `unavailable`, never a PASS no matter who trusts
+        # the room).
         self._location_trusted = location_trusted
         self._metrics = metrics
 
@@ -461,40 +427,34 @@ class Whereis:
             )
         # Disclosure is checked against the WHOLE room, before any name is
         # resolved: if anyone here is outside the circle, no member's position may
-        # be disclosed into this conversation at all (§5). Three ways the room
-        # fails the subset test — fail-closed on any uncertainty, and TWO of the
-        # three are unconditional (DEC-79 made the third overridable; the list
-        # below is written as it now behaves, not as DEC-74 left it):
+        # be disclosed into this conversation at all. Three ways the room fails
+        # the subset test, fail-closed on any uncertainty:
         #   - a RESOLVED member whose person_id is not in the circle. Refuses
         #     unless the room is location-trusted (DEC-74);
-        #   - `view.unnamed > 0` — an account in the room resolving to NO
-        #     person_id is by definition unverifiable against the circle, and it
-        #     is the LIKELIEST real trigger (a stranger not in identity.toml joins
-        #     the group, design/19 §5's own example). `view.people` is only the
-        #     RESOLVABLE subset, so checking it alone would silently disclose past
-        #     an unmapped outsider (both #37 reviews, 2026-08-07). Refuses unless
-        #     the room is location-trusted — and when it is waived, it is COUNTED
-        #     and LOGGED rather than passing silently, see below;
+        #   - `view.unnamed > 0`: an account in the room resolving to NO person_id
+        #     is unverifiable against the circle (a stranger not in identity.toml
+        #     joined the group). `view.people` is only the RESOLVABLE subset, so
+        #     checking it alone would silently disclose past an unmapped outsider.
+        #     Refuses unless the room is location-trusted; when waived it is
+        #     COUNTED and LOGGED, see below;
         #   - a DEGRADED view (tagger-only, roster unreadable) that cannot verify
         #     the subset at all. UNCONDITIONAL, and it answers `unavailable`
-        #     rather than `refused` — see the branch itself for why.
+        #     rather than `refused`; see the branch itself.
         room_person_ids = frozenset(p.person_id for p in view.people)
-        # DEC-79 widened DEC-74: `location = true` relaxes the SUBSET check AND
-        # the unnamed refusal, because the operator's real rooms permanently hold
-        # sealed-sender accounts (no phone number on the wire, never spoken, so
-        # nothing to key `identity.toml` on) and a per-condition flag only asked
-        # him the same question twice. `degraded` still refuses for everyone:
-        # trust can overrule what a roster SAYS, never the absence of a roster.
+        # `location = true` relaxes the SUBSET check AND the unnamed refusal,
+        # because real rooms can permanently hold sealed-sender accounts (no phone
+        # number on the wire, never spoken, so nothing to key `identity.toml` on).
+        # `degraded` still refuses for everyone: trust can overrule what a roster
+        # SAYS, never the absence of a roster.
         subset_ok = self._location_trusted or self._guard.permits(room_person_ids)
         unnamed_blocks = view.unnamed > 0 and not self._location_trusted
-        # A DEGRADED room is an ERROR, not a policy decision, and after DEC-79 it
-        # is the ONLY refusal a trusted room can reach — so reporting it as
-        # `refused` put a FALSE sentence in Nora's mouth on the operator's own
-        # live failure mode (R-27, fail-closed audit 2026-08-10). signal-cli
-        # wedged and `listGroups` timing out would render to the group as
-        # 「有人唔喺個 circle 入面」 — a claim about who is in the room — when the
-        # truth is «the daemon is down». `unavailable` is that truth, and the
-        # metric keeps `reason="degraded"` so the refusal stays diagnosable.
+        # A DEGRADED room is an ERROR, not a policy decision, and it is the ONLY
+        # refusal a trusted room can reach. Reporting it as `refused` would put a
+        # false sentence in Nora's mouth when signal-cli is wedged and
+        # `listGroups` times out: 「有人唔喺個 circle 入面」 is a claim about who is
+        # in the room, when the truth is «the daemon is down». `unavailable` is
+        # that truth, and the metric keeps `reason="degraded"` so the refusal
+        # stays diagnosable.
         if view.degraded:
             if self._metrics is not None:
                 self._metrics.inc(
@@ -510,8 +470,8 @@ class Whereis:
                 "blaming anyone's sharing settings."
             )
         if unnamed_blocks or not subset_ok:
-            # WHICH condition fired — so a refusal is diagnosable from the
-            # trace/metric instead of inferred (obs review 2026-08-08).
+            # WHICH condition fired, so a refusal is diagnosable from the
+            # trace/metric.
             reason = "unnamed" if unnamed_blocks else "not_subset"
             if self._metrics is not None:
                 self._metrics.inc(
@@ -530,15 +490,12 @@ class Whereis:
                         "can't confirm who is here. Say so in one clause and do not "
                         "hint at the location.",
             }
-        # A WAIVED guard is counted, not silent (both 2026-08-10 reviews). DEC-79's
-        # entire diagnosis was `…refusals_total{reason="unnamed"} 12`; relaxing the
-        # condition without recording the waiver would have retired the instrument
-        # that found the bug, leaving a zero refusal counter unable to distinguish
-        # «the flag is working» from «the room filled up with strangers». The
-        # startup pre-flight warns once at boot and never again, so an account that
-        # joins later would otherwise produce no signal at all for the process
-        # lifetime. `unnamed` is a LABEL VALUE, not a count, so the cardinality
-        # stays fixed; the count goes in the log line beside it.
+        # A WAIVED guard is counted, not silent: a zero `refusals_total` must be
+        # able to distinguish «the flag is working» from «the room filled up with
+        # strangers». The startup pre-flight warns once at boot only, so an
+        # account that joins later would otherwise produce no signal. `unnamed` is
+        # a LABEL VALUE, not a count, so the cardinality stays fixed; the count
+        # goes in the log line beside it.
         if view.unnamed > 0 and self._location_trusted:
             if self._metrics is not None:
                 self._metrics.inc(
@@ -550,14 +507,12 @@ class Whereis:
                 "cannot see accounts that have never spoken",
                 view.unnamed, self._circle.circle_id,
             )
-        # R-47: resolved against the CIRCLE, not just the room. The room is the
+        # Resolved against the CIRCLE, not just the room (R-47). The room is the
         # AUDIENCE gate and it has already been cleared above; who may be ASKED
-        # ABOUT is a different question, and scoping it to room membership meant
-        # a circle member who simply is not in this group — sharing her location
-        # with Nora the whole time — answered «nobody here goes by that». The
-        # room's own people are unioned in so somebody present but OUTSIDE the
-        # circle still resolves, and gets the honest «I have no recorded
-        # location for them» rather than «who?».
+        # ABOUT is a different question, so a circle member who is not in this
+        # group still resolves. The room's own people are unioned in so somebody
+        # present but OUTSIDE the circle also resolves, and gets the honest «I
+        # have no recorded location for them» rather than «who?».
         matches = _dedupe(find_by_name(self._circle.people, person) + view.find(person))
         if not matches:
             return {
@@ -572,12 +527,11 @@ class Whereis:
                 "note": "More than one person here goes by that. Ask which one.",
             }
         ref = matches[0]
-        # LIVE refresh BEFORE the read (DEC-67, operator: "nora is asking WHERE IS,
-        # not where they used to be"): ask the collector to ping this person's
-        # phone and write a fresh fix, so the read below sees NOW, not the last
-        # battery-saved report. Runs only after disclosure passed and the person
-        # resolved — never for someone the room may not ask about. Best-effort: a
-        # timeout or failure leaves the stored fix, which the read still returns.
+        # LIVE refresh BEFORE the read (DEC-67): ask the collector to ping this
+        # person's phone and write a fresh fix, so the read below sees NOW, not the
+        # last battery-saved report. Runs only after disclosure passed and the
+        # person resolved, never for someone the room may not ask about.
+        # Best-effort: a timeout or failure leaves the stored fix.
         refreshed = False
         if self._refresher is not None:
             refreshed = await self._refresher.refresh(person_id=ref.person_id)
@@ -586,8 +540,8 @@ class Whereis:
                 circle_id=self._circle.circle_id, person_id=ref.person_id
             )
         except Exception:
-            # The reader is documented never to be load-bearing; degrade to
-            # unavailable, never an empty or invented position (R-5).
+            # The reader is never load-bearing; degrade to unavailable, never an
+            # empty or invented position (R-5).
             log.exception("whereis read failed for %s", ref.person_id)
             fix = None
         if fix is None:
@@ -597,11 +551,11 @@ class Whereis:
                 person=ref.name,
             )
         age_seconds = max(0, (now - fix.ts) // 1000)
-        # The household's own name for the spot, when the fix sits inside a
-        # saved place's geofence (design/23 §4.1, operator ask 2026-08-07):
-        # «喺屋企» is the answer a person wants, and carrying place AND address
-        # together means the model never guesses between them. Geometry runs
-        # HERE, server-side; a failed places read just means no place name.
+        # The household's own name for the spot, when the fix sits inside a saved
+        # place's geofence: «喺屋企» is the answer a person wants, and carrying
+        # place AND address together means the model never guesses between them.
+        # Geometry runs HERE, server-side; a failed places read just means no
+        # place name.
         place_name: str | None = None
         movement: dict[str, Any] = {}
         try:
@@ -610,9 +564,9 @@ class Whereis:
                 if _within_place(fix.lat, fix.lng, saved):
                     place_name = saved.name
                     break
-            # The movement read (§6 first slice): measured off the recent fix
-            # history, and only when NOT inside a saved place — «at Home» and
-            # «moving» cannot both be the headline, and containment wins.
+            # The movement read: measured off the recent fix history, and only
+            # when NOT inside a saved place. «At Home» and «moving» cannot both
+            # be the headline, and containment wins.
             if place_name is None:
                 recent = await self._presence.window(
                     circle_id=self._circle.circle_id, person_id=ref.person_id,
@@ -624,8 +578,8 @@ class Whereis:
         if fix.is_driving:
             movement["driving"] = True
         # The record's EDGE (see `STALE_AFTER_MS`): past it, this is the last
-        # position anything recorded, not a position — say what the model is
-        # reading, because `age_seconds` alone was read as «still there».
+        # position anything recorded, not a position. Say what the model is
+        # reading, because `age_seconds` alone reads as «still there».
         stale: dict[str, Any] = {}
         if now - fix.ts > STALE_AFTER_MS:
             tried = (
@@ -642,41 +596,34 @@ class Whereis:
                     "still there."
                 ),
             }
-        # Life360's own reported ground speed for THIS fix's instant — not a
-        # 2-fix derivation, so unlike `moving`/`towards` it needs no window
-        # read and is available on a person's very first recorded fix.
-        # Suppressed inside a saved place for the same reason `moving`/
-        # `towards` are (§6's "cannot both be the headline"): indoor/urban
-        # GPS jitter routinely clears the floor below, and «at Home» is a
-        # more useful answer than a spurious walking-pace reading.
+        # Life360's own reported ground speed for THIS fix's instant: not a 2-fix
+        # derivation, so unlike `moving`/`towards` it needs no window read and is
+        # available on a person's very first recorded fix. Suppressed inside a
+        # saved place for the same reason `moving`/`towards` are: indoor/urban GPS
+        # jitter routinely clears the floor below, and «at Home» is a more useful
+        # answer than a spurious walking-pace reading.
         if (
             place_name is None
             and fix.speed_kmh is not None
             and fix.speed_kmh > _SPEED_FLOOR_KMH
         ):
             movement["speed_kmh"] = round(fix.speed_kmh, 1)
-        # DEC-156 follow-through (operator decision 2026-09-06): NO address
-        # here — neither Life360's own raw field nor an on-demand reverse
-        # geocode. `where_is` answers POSITION (saved place + age + lat/lng);
-        # a street address is the `reverse_geocode` tool's job, fetched only
-        # when the model actually needs one. This removes the one live
-        # external call `locate` could make (the old hidden geocode cost a
-        # billed lookup per cold coordinate) and makes the two presence
-        # tools shape-identical: label + coordinate, address by explicit
-        # fetch only.
+        # NO address here, neither Life360's own raw field nor a reverse geocode
+        # (DEC-156). `where_is` answers POSITION (saved place + age + lat/lng); a
+        # street address is the `reverse_geocode` tool's job, fetched only when the
+        # model needs one. This keeps `locate` free of external calls.
         return {
             "status": "ok",
             "person": ref.name,
-            # The AGE is part of every answer (§5, design/14 §5.3: position is
-            # not intent). A stale fix is honest and better than `unavailable`;
-            # the model is told how old it is so it can say «20 分鐘前».
+            # The AGE is part of every answer (position is not intent). A stale
+            # fix is honest and better than `unavailable`; the model is told how
+            # old it is so it can say «20 分鐘前».
             "age_seconds": int(age_seconds),
             "recorded_iso": recorded_iso(fix.ts),
             "wire_state": fix.wire_state.value,
-            # DEC-156: lat/lng ALWAYS carried — the model may pass them to
-            # `reverse_geocode` for a street address (Miles's request
-            # 2026-09-05). They never enter a REPLY (R-28's speech half
-            # stands; the docstring teaches the model the same rule).
+            # lat/lng ALWAYS carried (DEC-156): the model may pass them to
+            # `reverse_geocode` for a street address. They never enter a REPLY
+            # (R-28's speech half; the docstring teaches the model the same rule).
             **({"place": place_name} if place_name else {}),
             "lat": fix.lat,
             "lng": fix.lng,

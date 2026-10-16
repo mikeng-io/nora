@@ -1,25 +1,24 @@
-"""The one retrieval service over the memory index (design/unified-memory/
-25-memory-graph.md §4, 60-build-step-3.md S5): scope, seed, expand hop by
+"""The one retrieval service over the memory index: scope, seed, expand hop by
 hop, rank, and an evidence packet with the path that reached each item.
-`memory_search` calls it while `[memory_index] enabled`; nothing else does yet.
+`memory_search` calls it while `[memory_index] enabled`.
 
 **1. Scope, per read, from the live policy** (`scope_for`). The unit is the
-read boundary (DEC-231, 35 §3): the reading room's unit, every room of it,
+read boundary (DEC-231): the reading room's unit, every room of it,
 the persons this room lists, who is here (listed or in the live roster), and
 the listed persons whose presence passes here (the room's `location` flag
 and the live DisclosureGuard, `nora.agent.lineage`'s own predicate). Lineage
-mode is not consulted: it is off and stays off (35 §3). The arrays go DOWN
+mode is not consulted. The arrays go DOWN
 to the index, which applies them inside every read (`SqlMemoryIndex`); the
 walk never filters afterwards, so it can only step onto in-scope nodes and a
 path is cut at its first out-of-scope node.
 
-**2. Seeds** (65 V2), in this order, a node seeded once:
+**2. Seeds**, in this order, a node seeded once:
 
 - **Exact** (`exact_terms_of`): a node containing, literally, a handle, a
   URL or an id-like token (in any case), or the name of a person this room
   lists (as written). The first `PINNED_LIMIT` are PINNED: they rank ahead
-  of every other hit in the answer, however near a dense hit is (operator
-  ruling 2026-10-16: a literal name must not lose to a near-duplicate); the
+  of every other hit in the answer, however near a dense hit is (a literal
+  name must not lose to a near-duplicate); the
   rest rank by their cosine, so the other half of the answer always goes by
   score. Ordinary words are never exact.
 - **Dense**: the question embedded ONCE with the model's query instruction,
@@ -32,7 +31,7 @@ path is cut at its first out-of-scope node.
   `partial`. Beside a dense seed, it reads only the nodes the worker gave up
   on, which no vector reaches.
 - **About**: for a named person this room lists, the in-scope nodes `about`
-  them (25 §4 step 2's exact reference). A person this room does not list
+  them (an exact reference). A person this room does not list
   seeds nothing.
 
 A hub never seeds.
@@ -45,7 +44,7 @@ never read, never returned and never takes a slot. A named person always
 narrows: to nodes about them, authored or shared by them, or listing them,
 said where they are listed (the `about` seed's rule,
 `nora.domain.memory_index.narrowed`). `kinds` narrows the SEEDS and the
-ANSWER, not the hops (independent review of #32): the seeds run once with
+ANSWER, not the hops: the seeds run once with
 it and once without, the hops cross any kind, and only the asked kinds are
 ranked and returned. An episode has no vector and its text is a kind and an
 interval, so `places` is mostly reached from what was said during one.
@@ -53,12 +52,12 @@ interval, so `places` is mostly reached from what was said during one.
 **3. Expansion**, hop by hop, both edge directions, from the best
 `FRONTIER_WIDTH` nodes of the last hop. Two rules on top of scope:
 
-- **The hub rule** (25 §4 step 3): a person, room, unit, Nora or place node
+- **The hub rule**: a person, room, unit, Nora or place node
   is kept only as a direct neighbour of the node that reached it (a message's
   author, an event's venue), and never put on the next frontier. Two hops
   through a person reach everything ever said about them, which is a search
   on the person, not an expansion of the question.
-- **The listed-room rule** (35 §3): an edge to person P is followed only if
+- **The listed-room rule**: an edge to person P is followed only if
   the reading room lists P and, when the node it comes from was said in a
   room, that room lists P too. Talk about Kit in a room Kit is not in is not
   evidence about Kit.
@@ -74,18 +73,18 @@ best `RESULT_LIMIT` items, each with its kind, age, a handle where the kind
 has one a person or a tool can use, its text, and its path; an item whose
 text carries an identifier is withheld whole (`scan_identifiers`, R-18).
 
-**Statuses** (R-27, 25 §4): `unavailable` on any error, counted, never an
+**Statuses** (R-27): `unavailable` on any error, counted, never an
 empty answer; `partial`, whatever was found, when the index is not
 `complete`, its projection queue is not empty, the seeds were lexical (the
 fallback above), or live embeddable nodes IN THIS SEARCH'S SCOPE still wait
-for a vector of the current model (65 V2; a node the worker gave up on does
+for a vector of the current model (a node the worker gave up on does
 not count, or one poisoned file would hold every answer `partial` for good,
 and the lexical seed reads it instead; nor does an attachment that failed
 as `empty`, which waits for its reading), so an unfinished index is never
 «you never said that»; `nothing_found` only from a complete index; `ok`.
 
-The constants below are STARTING values (25 §4: adaptive depth ships only if
-it beats a fixed two hops on the journey slices); none was measured.
+The constants below are starting values, not tuned against a measured
+distribution.
 """
 
 from __future__ import annotations
@@ -138,27 +137,26 @@ log = logging.getLogger("nora.agent.memory_search")
 _METRIC = "nora_memory_search_total"
 _DENSE_SHORT = "nora_memory_dense_short_total"
 
-#: A reasoning depth as hops (60 §0.7). `memory_search` takes no depth, so it
+#: A reasoning depth as hops. `memory_search` takes no depth, so it
 #: searches at `DEFAULT_DEPTH`; the table stays for a caller that asks.
 HOPS_BY_DEPTH: Mapping[str, int] = {
     "minimal": 2, "low": 2, "medium": 3, "high": 4, "max": 4,
 }
-#: 25 §4 step 3's hard ceiling.
+#: The hard ceiling on hops.
 HOP_CEILING = 4
 DEFAULT_DEPTH = "low"
 #: A node whose relevance falls below this is not kept; a hop that keeps
 #: none ends the walk. Starting value: a lexical seed scores at least
 #: `WORD_SIMILARITY_MIN` (0.5), so this admits about four weak hops from the
 #: weakest seed and stops the walk well before noise dominates.
-#: Unchanged for dense seeds (65 V2), whose relevance is their full-width
+#: The same floor serves dense seeds, whose relevance is their full-width
 #: cosine, on the same [0, 1] scale as a lexical score (a negative cosine is
 #: below it): a seed under 0.1 points nearly orthogonally to the question
 #: and is dropped, and a middling one (0.3) still takes the default two hops
 #: through a `cites` or an `about`. What the floor does NOT do is make a
 #: dense search answer `nothing_found` when nothing relevant exists: the
 #: nearest vectors are returned with their low cosines. Raising it needs
-#: the cosine distribution of real hits and misses, which 65 V3 measures on
-#: the backfilled index; a floor above a true hit's cosine would turn
+#: the cosine distribution of real hits and misses; a floor above a true hit's cosine would turn
 #: «found» into «you never said that», the worse error.
 RELEVANCE_FLOOR = 0.1
 #: Nodes kept per search, seeds included.
@@ -166,16 +164,16 @@ NODE_BUDGET = 60
 #: Nodes expanded per hop: the best of the last hop's.
 FRONTIER_WIDTH = 20
 SEED_LIMIT = 20
-#: Exact seeds per search (65 V2). Fewer than `SEED_LIMIT` so a question
+#: Exact seeds per search. Fewer than `SEED_LIMIT` so a question
 #: naming a much-discussed person still has dense seeds to expand from.
 EXACT_LIMIT = 10
 RESULT_LIMIT = 10
 #: Exact hits pinned ahead of every other hit: the first of them, the most
 #: terms held and then the nearest to the question. Half the answer, so a
-#: literal name still never loses to a near-duplicate (operator ruling
-#: 2026-10-16) while the other half always goes by score: with every exact
-#: hit pinned, ten literal matches filled every slot and even a dense hit at
-#: cosine 1.0 was never shown (review of #31). An exact hit past these ranks
+#: literal name still never loses to a near-duplicate while the other half
+#: always goes by score: were every exact hit pinned, ten literal matches
+#: would fill every slot and even a dense hit at cosine 1.0 would never show.
+#: An exact hit past these ranks
 #: by its cosine to the question, as a dense hit does.
 PINNED_LIMIT = RESULT_LIMIT // 2
 #: An exact-reference seed (a node `about` the named person) has no lexical
@@ -186,9 +184,8 @@ HALF_LIFE_DAYS = 180.0
 #: Characters of one item's text in the packet.
 TEXT_CHARS = 600
 
-#: How much of the parent's relevance a relation carries (25 §4 step 3,
-#: «weighted by relation»). Provenance relations carry most; co-occurrence
-#: least. A relation absent here carries `_DEFAULT_WEIGHT`.
+#: How much of the parent's relevance a relation carries. Provenance relations carry
+#: most; co-occurrence least. A relation absent here carries `_DEFAULT_WEIGHT`.
 REL_WEIGHT: Mapping[str, float] = {
     "cites": 0.9, "attached_to": 0.9, "supersedes": 0.8, "tracks": 0.8,
     "closes_into": 0.8, "leaves_behind": 0.8, "draws_on": 0.7, "informed_by": 0.7,
@@ -211,7 +208,7 @@ _WORD = re.compile(
 )
 _MAX_TERMS = 8
 
-#: Exact references (65 V2). A URL with a scheme or `www.`; a handle, `@`
+#: Exact references. A URL with a scheme or `www.`; a handle, `@`
 #: and two or more handle characters, not inside an e-mail address; an
 #: id-like token, five or more letters and digits holding both, or six or
 #: more digits. Trailing sentence punctuation is not part of either.
@@ -255,7 +252,7 @@ _COMMON_NAMES = _STOP | frozenset({
 
 
 def exact_terms_of(query: str, names: Sequence[str] = ()) -> list[ExactTerm]:
-    """The question's exact references (65 V2), in the order it says them:
+    """The question's exact references, in the order it says them:
     its URLs, handles and id-like tokens, matched in any case, and each of
     `names` (the names and aliases of persons this room lists) that the
     question contains as written, matched in that case (`cased`). The
@@ -293,7 +290,7 @@ def _names(person: PersonRef) -> list[str]:
     """The names a person is pinned by: the name Nora calls them, their
     first name, their full name and every alias. Never the bare last name:
     a family name pins everything about the family, and a romanised one is
-    often two letters (review of #31)."""
+    often two letters."""
     full = " ".join(p for p in (person.first_name, person.last_name) if p)
     surname = person.last_name.strip()
     return [
@@ -305,8 +302,7 @@ def _names(person: PersonRef) -> list[str]:
 def terms_of(query: str) -> list[str]:
     """The question's search terms: its words of three or more letters that
     are not grammar, and each run of CJK characters whole (a Cantonese run is
-    one term; pg_trgm's word similarity finds it inside a sentence,
-    `record_query`'s measured case)."""
+    one term; pg_trgm's word similarity finds it inside a sentence)."""
     out: list[str] = []
     for m in _WORD.finditer(query or ""):
         word = m.group(0)
@@ -327,8 +323,7 @@ def scope_for(target: RenderRoom, *, own_room: bool = False) -> MemoryScope | No
     unit and no unit-placed node (a note, memo or event of the unit may come
     from any of its rooms), so nothing said elsewhere is read. The culture
     adaptor's (DEC-316): a room's culture is written from that room's own
-    speech, as its Honcho `search_memory` read only its own session. The
-    listed-room and presence rules are unchanged; a stay or trip, which
+    speech. The listed-room and presence rules still apply; a stay or trip, which
     belongs to a person and to no room, is still read where its person
     passes presence here."""
     here = target.room
@@ -379,7 +374,7 @@ class Step:
 @dataclass(slots=True)
 class Hit:
     """A node the walk kept. `pin` is non-zero on an exact seed only: it
-    ranks ahead of every unpinned hit, the highest pin first (65 V2)."""
+    ranks ahead of every unpinned hit, the highest pin first."""
 
     node: IndexedNode
     score: float
@@ -397,7 +392,7 @@ class MemorySearchResult:
 
 def _listed_room_rule(person: str, via: IndexedNode, scope: MemoryScope) -> bool:
     """An edge to `person` is followed only if this room lists them and the
-    node it comes from was said in a room that lists them (35 §3)."""
+    node it comes from was said in a room that lists them."""
     if person not in scope.listed_here:
         return False
     if via.origin_room is None:
@@ -428,7 +423,7 @@ async def walk(
     is the per-row presence check an episode must pass (R-31); every other
     rule is the index's scope or this function's.
 
-    `bridge` is `scope` without its `kinds` (independent review of #32),
+    `bridge` is `scope` without its `kinds`,
     given when kinds were asked. The seeds run on `scope` and then on
     `bridge`, so a node of an asked kind still seeds when a crowd of other
     kinds would outrank it, and a node of another kind can seed a path to
@@ -463,7 +458,7 @@ async def walk(
                 metrics.inc(_DENSE_SHORT)
             if given_up and terms:
                 # The dense seed cannot reach a node the worker gave up on;
-                # its words still can (review of #31: otherwise «nothing».)
+                # its words still can, so it is not reported as «nothing».)
                 seeds += await index.seed(terms, sc, limit=SEED_LIMIT, given_up_of=model)
         else:
             seeds = await index.seed(terms, sc, limit=SEED_LIMIT) if terms else []
@@ -473,7 +468,7 @@ async def walk(
             for node in await index.about(person_id, sc, limit=SEED_LIMIT):
                 # The listed-room rule holds for an exact-reference seed too:
                 # an entry about P said in a room that does not list P is not
-                # evidence about P (35 §3).
+                # evidence about P.
                 if _listed_room_rule(person_id, node, scope):
                     keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),))
     hop_scope = bridge if bridge is not None else scope
@@ -564,7 +559,7 @@ class MemorySearch:
             state = await self._index.index_state(model=self._model, scope=scope)
             names = [n for p in people if p.person_id in scope.listed_here for n in _names(p)]
             vector: list[float] | None = None
-            # The lexical seed is the fallback (65 V2): no embedder, or no node
+            # The lexical seed is the fallback: no embedder, or no node
             # holds a vector of this model yet while some wait for one.
             lexical = self._embedder is None or (state.embedded == 0 and state.unembedded > 0)
             if not lexical and self._embedder is not None and query.strip():
@@ -626,7 +621,7 @@ def render_packet(
     hits: Sequence[Hit], *, name_of: Callable[[str], str],
     room_label: Callable[[str], str], now: datetime,
 ) -> tuple[list[dict[str, Any]], int]:
-    """The evidence packet (25 §4 step 5) and how many items were withheld
+    """The evidence packet and how many items were withheld
     for carrying an identifier. Names, room labels and handles only: never a
     person id, a room key or a row id."""
     items: list[dict[str, Any]] = []
@@ -634,7 +629,7 @@ def render_packet(
     for h in hits:
         # Screened WHOLE, before the cut: an identifier straddling
         # `TEXT_CHARS` would otherwise leave as a fragment the screen cannot
-        # recognise (R-18, PR #16 review).
+        # recognise (R-18).
         if h.node.text and scan_identifiers(h.node.text) is not None:
             withheld += 1
             continue

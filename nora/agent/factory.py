@@ -1,26 +1,21 @@
-"""The ONLY module that constructs Strands objects (spec C.7).
+"""The only module that constructs Strands objects (spec C.7).
 
-One `AsyncOpenAI` client for the whole process (audit T2) — never one per tag.
-**One `OpenAIModel` PER TAG, though** (DEC-42, `ModelSource` below): the client
-is what pools connections and is the thing audit T2 is actually about, while
-the model is a config dict whose `tool_choice` is per-turn state. Sharing the
-model would apply one tag's relaxation to a concurrent tag's first call.
+One `AsyncOpenAI` client for the whole process, never one per tag. One
+`OpenAIModel` PER TAG, though (DEC-42, `ModelSource` below): the client pools
+connections, while the model is a config dict whose `tool_choice` is per-turn
+state. Sharing the model would apply one tag's relaxation to a concurrent tag's
+first call.
 
-The client guarantee lives in the composition root's *call
-discipline*, not in a module-level singleton (DEC-13): `create_client` is a
-plain constructor, called exactly once by
-`nora.app.composition.build_dependencies`, whose result is threaded through
-`Dependencies.client` to every consumer. `nora.__main__.App.shutdown` closes
-that same object directly (`await self.deps.client.close()`) — there is
-nothing left in this module to reset between tests, and nothing left for a
-test to leak into another one via import-time state.
+The client guarantee lives in the composition root's call discipline, not in a
+module-level singleton (DEC-13): `create_client` is a plain constructor, called
+once by `nora.app.composition.build_dependencies`, whose result is threaded
+through `Dependencies.client` to every consumer. `nora.__main__.App.shutdown`
+closes that same object (`await self.deps.client.close()`). The module holds no
+import-time state.
 
-Takes explicit scalars, never `nora.config` objects — this used to be the one
-documented exception to "only app and `__main__` read config"
-(`pyproject.toml`'s `ignore_imports`, deleted by the pipelines phase). The
-composition root (Task 8) resolves `LLMConfig`/`LLMTierConfig`/`LimitsConfig`
-down to the scalars below and hands them over already resolved, including the
-API key itself — this module no longer reads the environment.
+Takes explicit scalars, never `nora.config` objects: the composition root
+resolves `LLMConfig`/`LLMTierConfig`/`LimitsConfig` down to the scalars below,
+including the API key, and this module does not read the environment.
 """
 
 from __future__ import annotations
@@ -53,35 +48,31 @@ from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
 
-# The agent's name in a trace, and the thing that makes a Langfuse span readable.
-# Strands names the agent span `f"invoke_agent {agent.name}"` and defaults
-# `name` to "Strands Agents" / `agent_id` to "default", so every trace this
-# process ever produced was called `invoke_agent Strands Agents` — correct,
-# and useless for finding anything. This is the DEFAULT; the composition root
-# passes `cfg.agent.name` (2026-08-08), so a cloned agent gets its own span.
-# The span name is what a saved Langfuse view filters on, so the default holds
-# "nora" exactly — a rename is a deliberate new-agent act, not a casual edit.
+# The agent's name in a trace. Strands names the agent span
+# `f"invoke_agent {agent.name}"` and defaults `name` to "Strands Agents" and
+# `agent_id` to "default"; this default gives a Langfuse span a findable name.
+# The composition root passes `cfg.agent.name`, so a cloned agent gets its own
+# span. A saved Langfuse view filters on the span name, so the default holds
+# "nora" exactly: a rename is a deliberate new-agent act.
 DEFAULT_AGENT_NAME = "nora"
 
 # The second agent's span name (`create_dream_agent`). Separate from the value
-# above ON PURPOSE: the Dreamer's traces must be findable APART from her turns —
-# it runs with nobody waiting on it, and a background loop sharing her span name
-# would make every saved Langfuse view a mixture of the two.
+# above on purpose: the Dreamer runs with nobody waiting on it, and sharing her
+# span name would make every saved Langfuse view a mixture of the two.
 DEFAULT_DREAM_AGENT_NAME = "dreamer"
 
-# How much of one invocation's wall clock may be spent sleeping between retries.
-# The rest has to cover the model calls themselves, of which there may be
-# `max_attempts` — a quarter leaves three quarters for up to four attempts.
+# The fraction of one invocation's wall clock that may be spent sleeping between
+# retries. The rest covers the model calls themselves, of which there may be
+# `max_attempts`: a quarter leaves three quarters for up to four attempts.
 RETRY_BACKOFF_FRACTION = 0.25
 
 
 def create_client(
     *, base_url: str, api_key: str, http_client: httpx.AsyncClient | None = None,
 ) -> AsyncOpenAI:
-    """`http_client` is the transport seam a direct describer lane needs when
-    its endpoint wants something on EVERY request that the SDK does not send —
-    OpenCode Go's mandatory `x-opencode-session` (DEC-197). `None` keeps the
-    SDK's own client, so every existing caller is unchanged."""
+    """`http_client` is the transport seam for an endpoint that wants something
+    on EVERY request that the SDK does not send, e.g. OpenCode Go's mandatory
+    `x-opencode-session` (DEC-197). `None` keeps the SDK's own client."""
     if not api_key:
         raise RuntimeError("api_key is empty — refusing to start")
     return AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
@@ -91,83 +82,58 @@ def create_model_provider(
     *, model: str, max_tokens: int, temperature: float, client: AsyncOpenAI,
     reasoning_effort: str = "none", tool_choice: str = FIRST_CALL,
 ) -> OpenAIModel:
-    """`tool_choice="required"` is load-bearing, not a tuning knob.
+    """Build the per-tag model provider.
 
-    `send_reply` is a tool, and it is the ONLY way Nora can speak (A9, R-2).
-    `deepseek-v4-flash` — the configured tier — does not emit `tool_calls` on
-    its own: given an explicit tool definition AND a system prompt demanding
-    one, it answers in plain text with `finish_reason="stop"`, verified
-    directly against the gateway. `tool_choice="auto"` changes nothing;
-    `"required"` produces the call every time.
+    `tool_choice="required"` (the default, `FIRST_CALL`) is load-bearing, not a
+    tuning knob. `send_reply` is a tool and the only way Nora can speak (A9,
+    R-2). `deepseek-v4-flash`, the configured tier, does not emit `tool_calls`
+    on its own: given an explicit tool definition and a system prompt demanding
+    one, it answers in plain text with `finish_reason="stop"`, and
+    `tool_choice="auto"` changes nothing. Without `"required"` every tag is
+    dropped as `no_send_call` and she is structurally mute.
 
-    Without it every tag ran the model, got prose, and dropped it as
-    `no_send_call` — Nora reacted 👀 then ⚠️ and never spoke. The failure was
-    honest and counted, which is how it was found on the first real tag, but
-    it made her structurally mute.
+    It constrains the model to call SOME tool, not `send_reply` specifically, so
+    `load_transcript`/`about` remain reachable and R-7's default-deny is
+    untouched.
 
-    This constrains the model to call SOME tool, not `send_reply` specifically,
-    so `load_transcript`/`about` remain reachable and R-7's default-deny
-    is untouched.
+    The value is the FIRST of a sequence, not a constant: `ReplyGuard` flips
+    this same model to `auto` once she has spoken, so she is compelled to answer
+    and then permitted to stop. `nora.agent.tool_choice` owns both ends. The
+    model is therefore built PER TAG (`ModelSource` below): it is per-turn
+    mutable state, and one instance shared by two concurrent tags would apply
+    one tag's relaxation to the other's first call.
 
-    **It is the FIRST value of a sequence, not a constant, since step 5b**:
-    `ReplyGuard` flips this same model to `auto` once she has spoken, so she is
-    compelled to answer and then permitted to stop. `nora.agent.tool_choice`
-    owns both ends and the measurements behind them. That flip is why the
-    object this function returns is now built PER TAG (`ModelSource` below) —
-    it is per-turn mutable state, and one instance shared by two concurrent
-    tags would apply one tag's relaxation to the other tag's first call.
+    `tool_choice` is a parameter because a second kind of loop exists. The
+    Dreamer (`create_dream_agent`) has no terminal verb: every act verb is
+    excluded from it, and the terminal ones are act verbs. Its loop ends only
+    when the model declines to call anything and returns its structured result,
+    which is unreachable under `"required"`. On Nora's path `ReplyGuard`'s
+    `BeforeModelCallEvent` hook ends a turn by observing a terminal call (DEC-21,
+    DEC-32); the Dreamer has none, so it passes `"auto"`.
 
-    **`tool_choice` is a PARAMETER since the Dreamer, and the default above is
-    unchanged.** Everything written above is an argument about *a turn that
-    must end in `send_reply`* — Nora's turn — and it is not relativised by the
-    parameter: every tag-path call site takes the default and the request is
-    byte-identical to what it was before this parameter existed. The parameter
-    exists because there is now a SECOND kind of loop in this process, and the
-    argument above does not reach it.
-
-    The Dreamer (`create_dream_agent` below) has **no terminal verb at all**:
-    every act verb is excluded from it by construction, and the terminal ones
-    ARE act verbs. Its loop therefore ends the only way a loop with nothing to
-    end it can — the model **declines to call anything** and returns its
-    structured result. Under `"required"` that is unreachable: the model must
-    call something on every pass, so a loop whose terminal condition is a
-    non-call would run until a limit caught it. On Nora's path
-    `ReplyGuard`'s `BeforeModelCallEvent` hook is what ends a turn, and it ends
-    it by observing a terminal call (DEC-21, DEC-32); the Dreamer has no such
-    observation to make. So it passes `"auto"` — for the same reason
-    `ReplyGuard` flips to `AFTER_SPEAKING` after she has spoken, one step
-    earlier: a loop that is permitted to stop is a loop that can stop.
-
-    **Dash-free** (`nora.agent.punctuation`): the request carries no em dash,
+    Dash-free (`nora.agent.punctuation`): the request carries no em dash,
     because she copies the ones she is shown.
 
-    **Reasoning-carrying** (`nora.agent.reasoning_carry`, #325): a
-    continuation call carries the reasoning the previous call produced, as the
-    `reasoning` field the upstream reads, instead of the SDK dropping it. Inert
-    at `reasoning_effort = "none"`, where there is no reasoning to carry.
+    Reasoning-carrying (`nora.agent.reasoning_carry`): a continuation call
+    carries the reasoning the previous call produced, as the `reasoning` field
+    the upstream reads, instead of the SDK dropping it. Inert at
+    `reasoning_effort = "none"`, where there is no reasoning to carry.
     """
     return ReasoningCarryingOpenAIModel(
         model_id=model,
         client=client,
         params={
             "max_tokens": max_tokens,
-            # `temperature` is the ONLY sampling parameter we send. `top_p` is
-            # absent from this dict ON PURPOSE and has no config key, so the
-            # value in force is the PROVIDER's default and no nucleus
-            # truncation is applied by us anywhere in the loop.
-            #
-            # Stated here because the absence was invisible from both the code
-            # and config.example.toml, and an audit reasoning about her
-            # sampling got the wrong picture (F8, the 2026-08-20
-            # prompt-architecture audit). Do NOT "make it explicit" by adding
-            # `top_p`: 1.0 is a no-op, and anything below it truncates the
-            # distribution on a guess. See the sampling note in
-            # config.example.toml's `[llm]` for what measuring it would take.
+            # `temperature` is the only sampling parameter we send. `top_p` is
+            # absent on purpose and has no config key, so the PROVIDER's
+            # default is in force and we apply no nucleus truncation anywhere
+            # in the loop. Do not add `top_p`: 1.0 is a no-op, and anything
+            # below it truncates the distribution on a guess. See the sampling
+            # note in config.example.toml's `[llm]`.
             "temperature": temperature,
             "tool_choice": tool_choice,
-            # Comes from the tier (config.toml), not from here — a runtime
-            # value belongs in config, not in code (DEC-8). See
-            # `LLMTierConfig.reasoning_effort` for the measurements.
+            # From the tier (config.toml), not from here: a runtime value
+            # belongs in config (DEC-8). See `LLMTierConfig.reasoning_effort`.
             "reasoning_effort": reasoning_effort,
         },
     )
@@ -182,23 +148,18 @@ class ModelSpec:
     immutable and shareable, the object built from them is neither. An
     `OpenAIModel` carries `config["params"]`, which `nora.agent.tool_choice`
     mutates mid-turn, so one shared instance would let one tag's relaxation
-    decide another tag's first call — and design/16 §2.1 measured that call as
-    sending nothing 5/6.
+    decide another tag's first call.
     """
 
     model: str
     max_tokens: int
     temperature: float
     reasoning_effort: str = "none"
-    # DEFAULTED to the tag path's value, so every existing call site is
-    # unchanged and the turn that must end in `send_reply` still gets
-    # `"required"`. The Dreamer builds a SECOND source with
-    # `tool_choice=AFTER_SPEAKING`, because its loop has no terminal verb at
-    # all: under `"required"` the model must call something on every pass, and
-    # the only thing that ends a turn is a guard observing a terminal call
-    # (DEC-21/DEC-32) — so a read-only research loop could never stop by
+    # Defaults to the tag path's value (`"required"`). The Dreamer builds a second
+    # source with `tool_choice=AFTER_SPEAKING`: its loop has no terminal verb,
+    # and under `"required"` a read-only research loop could never stop by
     # itself. The field lives here rather than on `create_dream_agent` because
-    # `tool_choice` is a property of the MODEL PROVIDER, and `ModelSource` is
+    # `tool_choice` is a property of the model provider, and `ModelSource` is
     # the only thing that builds one.
     tool_choice: str = FIRST_CALL
 
@@ -206,16 +167,14 @@ class ModelSpec:
 class ModelSource:
     """One `OpenAIModel` PER TAG, over the process-wide `AsyncOpenAI` client.
 
-    Audit T2's guarantee is "one CLIENT per process" — that is the one that
-    matters, because it is what pools connections — and it is untouched here:
-    the client is built exactly once by `nora.app.composition.build_dependencies`
-    and handed in. The MODEL is a config dict with a client reference; building
-    one per tag costs nothing and is what makes `tool_choice` (and, usefully,
-    `reasoning_effort`) per-tag state.
+    The client is what pools connections and is built exactly once by
+    `nora.app.composition.build_dependencies` and handed in. The MODEL is a
+    config dict with a client reference; building one per tag costs nothing and
+    makes `tool_choice` and `reasoning_effort` per-tag state.
 
     A constructed collaborator, injected into
-    `nora.app.agent_runner.LiveAgentRunner` through `__init__` — never a
-    factory callable or a module-level singleton (CLAUDE.md's test-seam
+    `nora.app.agent_runner.LiveAgentRunner` through `__init__`, never a factory
+    callable or a module-level singleton (CLAUDE.md's test-seam
     policy). Tests that need to drive the real Strands loop against a stub
     `Model` pass a stand-in with the same one-method surface
     (`tests/fakes.py::FixedModelSource`).
@@ -237,38 +196,20 @@ class ModelSource:
 def build_limits(*, output_tokens: int, turns: int, total_tokens: int) -> dict:
     """R-8: the three caps Strands enforces around the WHOLE agent loop.
 
-    All three are LOOP budgets. `output_tokens` is the one that reads like a
-    per-call ceiling and is not, and until 2026-08-06 it was passed
-    `llm.max_tokens` — the tier's genuine per-CALL ceiling — under a docstring
-    that said "`output_tokens` derives from the active tier", which stated the
-    bug as though it were the intent. The effect was that the whole loop was
-    allowed to emit exactly what a single call was allowed to emit.
+    All three are LOOP budgets. `output_tokens` reads like a per-call ceiling
+    and is not: it is supplied by the composition root from
+    `[llm.limits] output_tokens`, sized as a multiple of the per-call
+    `max_tokens` (`llm.max_tokens`), so a loop may emit more than one call.
+    `nora.agent.factory` takes the number and does not know the multiple.
 
-    Measured against the live gateway, three consecutive single model calls
-    emitted 3,993 / 3,987 / 3,974 completion tokens against `max_tokens =
-    4000` — 99.8% of the loop's entire output budget spent by the first call.
-    Any turn that needed a second one was cut short by a cap nobody had
-    chosen, and (before the `stop_reason` work below) the cut was reported as
-    the model declining to speak. So the loop budget is now supplied
-    explicitly by the composition root from `[llm.limits] output_tokens`,
-    sized as a MULTIPLE of the per-call ceiling (today 12,000 against
-    `max_tokens = 2000`, 6x) rather than equal to it. `nora.agent.factory` is
-    deliberately not the place that knows the multiple — it takes the number.
+    See `nora.engagement.stages.invoke` for what happens when one of these binds:
+    Strands returns an `AgentResult` whose `stop_reason` is `limit_turns` /
+    `limit_total_tokens` / `limit_output_tokens`, raises nothing, and logs
+    nothing (R-23).
 
-    See `nora.engagement.stages.invoke` for what happens when one of these
-    three does bind: Strands returns an `AgentResult` whose `stop_reason` is
-    `limit_turns` / `limit_total_tokens` / `limit_output_tokens`, raises
-    nothing, and logs nothing (R-23).
-
-    Scalarised in Task 8 (Phase 3's composition-root cutover): this used to
-    take `(tier, limits)` object pairs because the now-deleted
-    `Handler.handle_tag` called it positionally on every tag, and Tasks 5-6
-    were scoped not to touch `handler.py`'s call shape while it still carried
-    real traffic. `Handler` is gone and this is now called exactly once, at
-    process startup, by `nora.app.composition.build_dependencies` — so there
-    is no longer a caller forcing an object-shaped signature, and scalars
-    keep this module's inputs framework-free the same way
-    `create_client`/`create_model_provider` already are.
+    Takes scalars (from `nora.app.composition.build_dependencies` and from each
+    run that builds its own agent), which keeps this module's inputs
+    framework-free like `create_client`/`create_model_provider`.
     """
     return {
         "turns": turns,
@@ -286,7 +227,7 @@ class RetryPolicy:
     `AfterInvocationEvent` hook). Nora builds one `Agent` per tag and two tags
     can overlap, so a shared instance would let one tag's retry counter decide
     another tag's backoff. `create_agent` constructs a fresh strategy from these
-    numbers instead — the same reason `ReplyGuard` is per-tag.
+    numbers instead, as `ReplyGuard` is per-tag.
     """
 
     max_attempts: int
@@ -311,27 +252,23 @@ def build_retry_policy(
     *, timeout_seconds: float, initial_delay: int = 1,
     backoff_fraction: float = RETRY_BACKOFF_FRACTION,
 ) -> RetryPolicy:
-    """A retry budget that fits inside the invocation timeout — an A8 fix.
+    """A retry budget that fits inside the invocation timeout.
 
     Strands' default is `max_attempts=6, initial_delay=4, max_delay=240`
     (`strands/event_loop/_retry.py`), i.e. 4+8+16+32+64 = 124s of backoff before
     it gives up. `nora.engagement.stages.invoke` wraps the whole invocation in
-    `asyncio.wait_for(..., timeout=llm.timeout_seconds)`, which is 30s, and the
-    retry sleeps happen INSIDE that wait — so the very first throttle would
-    burn 4s, retry, and the timeout would fire long before the strategy ever
-    gave up. The turn is then counted
-    `nora_silent_failures_total{reason="invocation_timeout"}` when what actually
-    happened was provider throttling. A8 exists to make the silent-failure rate
-    trustworthy, and a reason label that names the wrong cause is worse than a
-    missing one: it points the next investigation at latency instead of quota.
+    `asyncio.wait_for(..., timeout=llm.timeout_seconds)`, and the retry sleeps
+    happen INSIDE that wait, so the timeout would fire long before the strategy
+    gave up, and the turn would be counted
+    `nora_silent_failures_total{reason="invocation_timeout"}` when the cause was
+    provider throttling.
 
-    So the budget is derived from the timeout rather than configured beside it.
+    So the budget is derived from the timeout rather than configured beside it:
     `timeout_seconds` is already per-tier config (`LLMConfig.timeout_seconds`),
-    and a second knob would be a second thing to keep consistent with it — the
-    invariant that matters (`total_backoff_seconds < timeout_seconds`) is one
-    nobody can violate if it is never written down twice.
+    and deriving keeps `total_backoff_seconds < timeout_seconds` true by
+    construction.
 
-    At today's 30s: `initial_delay=1`, budget 7.5s, so 1+2+4 = 7s over four
+    At a 30s timeout: `initial_delay=1`, budget 7.5s, so 1+2+4 = 7s over four
     attempts, leaving 23s for the calls themselves.
     """
     # A zero or negative base would never grow `spent` and the loop below would
@@ -366,77 +303,67 @@ def create_agent(
     skills_dir: str | Path | None = None,
     agent_name: str = DEFAULT_AGENT_NAME,
 ) -> Agent:
-    """`skills_dir` turns the on-demand skill layer ON (DEC-50, activating DEC-48).
+    """Build the per-tag agent for a Nora turn.
 
-    When set, one `AgentSkills` plugin is built over that directory. The plugin
-    does two things and NEITHER is doctrine: it injects an `<available_skills>`
-    block (each skill's NAME and when-to-load line — NOT its body — progressive
-    disclosure, design/12 §1) into the system prompt before each invocation, and
-    it registers the model-facing `skills(skill_name)` activation tool that loads
-    a skill's full instructions on demand. R-7 admits that tool because
-    `nora.agent.tools.NATIVE_TOOLS` now carries a `skills` budget; without it
+    `skills_dir` turns the on-demand skill layer on (DEC-50, DEC-48). When set,
+    one `AgentSkills` plugin is built over that directory. It injects an
+    `<available_skills>` block (each skill's name and when-to-load line, not its
+    body) into the system prompt before each invocation, and registers the
+    model-facing `skills(skill_name)` activation tool that loads a skill's full
+    instructions on demand. R-7 admits that tool because
+    `nora.agent.tools.NATIVE_TOOLS` carries a `skills` budget; without it
     `ReplyGuard` would veto every activation call.
 
-    **One plugin PER TAG, like the model and the guard.** This is the ONLY module
-    that constructs Strands objects, and `AgentSkills` is one; built here it gets
-    the same per-tag isolation the model (`ModelSource`) and `ReplyGuard` already
-    have — its per-agent skill state (a `WeakKeyDictionary` keyed by agent) never
-    spans two tags. Construction does no I/O: a directory source is read through
-    the agent's sandbox at first invocation, not now.
+    One plugin PER TAG, like the model and the guard: its per-agent skill state
+    (a `WeakKeyDictionary` keyed by agent) never spans two tags. Construction
+    does no I/O; a directory source is read through the agent's sandbox at first
+    invocation.
 
-    **R-29 survives activation.** The `skills` tool resolves a name by pure dict
-    lookup against the operator-loaded set (`AgentSkills._skills_for`), exactly as
-    restrictive as `nora.skills.loader.SkillStore.resolve`: filesystem/URL loading
-    happens only from THIS `skills_dir` (operator config), never from the
-    `skill_name` a message supplies — a message naming a path, a URL or an inline
-    blob is a dict miss, so item 6 can name a shipped skill but never introduce a
-    new source. `strict=False` so a malformed operator skill warns and is skipped
-    rather than crashing a tag (R-5); the shipped `navigation` skill is valid and
-    `tests/test_skill_content.py` holds it so.
+    R-29 holds through activation. The `skills` tool resolves a name by pure
+    dict lookup against the operator-loaded set (`AgentSkills._skills_for`),
+    exactly as restrictive as `nora.skills.loader.SkillStore.resolve`: loading
+    happens only from this `skills_dir` (operator config), never from a
+    `skill_name` a message supplies, so a message naming a path, a URL or an
+    inline blob is a dict miss. `strict=False` so a malformed operator skill
+    warns and is skipped rather than crashing a tag (R-5).
 
-    `skills_dir=None` leaves the layer INERT (offline/eval compositions, and any
-    deployment that has not wired it): no plugin, no `<available_skills>` block,
-    no activation tool — the pre-DEC-50 prompt, byte-identical.
+    `skills_dir=None` leaves the layer inert (offline/eval compositions): no
+    plugin, no `<available_skills>` block, no activation tool.
     """
     plugins: list[Plugin] = (
         [AgentSkills(str(skills_dir), strict=False)] if skills_dir is not None else []
     )
-    # `list[HookProvider]`, explicitly — `[guard] + ([tool_call_log] if ...
-    # else [])` infers `list[ToolCallLog | ReplyGuard]`, which mypy's
-    # invariant-list check then refuses to hand to `Agent(hooks=...)`
-    # (`list[HookProvider | HookCallback[Any]] | None`) even though both
-    # elements ARE `HookProvider`s.
+    # Annotated explicitly: `[guard] + ([tool_call_log] if ... else [])` infers
+    # `list[ToolCallLog | ReplyGuard]`, which mypy's invariant-list check refuses
+    # to hand to `Agent(hooks=...)` even though both are `HookProvider`s.
     hooks: list[HookProvider | HookCallback[Any]] = [guard]
     if tool_call_log is not None:
         hooks.append(tool_call_log)
-    # AFTER the guard: `BeforeToolCallEvent` dispatches in registration order,
-    # and a tool-surface hook (`ShelfLoader`) must see the guard's verdict so
-    # it never loads a tool the guard cancelled. Before `reasoning_watch`,
-    # which must stay last for its own reason (below).
+    # After the guard: `BeforeToolCallEvent` dispatches in registration order,
+    # and a tool-surface hook (`ShelfLoader`) must see the guard's verdict so it
+    # never loads a tool the guard cancelled. Before `reasoning_watch`, which
+    # must stay last (below).
     hooks.extend(tool_hooks)
-    # LAST, and the position is load-bearing rather than tidy.
-    # `BeforeModelCallEvent` dispatches in REGISTRATION order (only the After
-    # events reverse), so a watch registered after `ReplyGuard` reads an
-    # `event.cancel` the guard has already set — and the guard cancels the pass
-    # that follows a terminal verb, which on the tag path is most turns. At that
-    # moment `agent.messages` holds exactly the reasoning-carrying assistant
-    # message a naive watch would count as a strip, on a request that is never
-    # formatted and therefore strips nothing. `nora.agent.reasoning_strip.
-    # ReasoningStripWatch`'s own docstring carries this and
-    # `tests/unit/test_reasoning_strip_probe.py` is what holds it.
+    # Last, and the position is load-bearing. `BeforeModelCallEvent` dispatches
+    # in registration order (only the After events reverse), so a watch
+    # registered after `ReplyGuard` reads an `event.cancel` the guard has already
+    # set. The guard cancels the pass that follows a terminal verb; at that
+    # moment `agent.messages` holds the reasoning-carrying assistant message a
+    # naive watch would count as a strip, on a request that is never formatted.
+    # `nora.agent.reasoning_strip.ReasoningStripWatch`'s docstring carries this
+    # and `tests/unit/test_reasoning_strip_probe.py` holds it.
     if reasoning_watch is not None:
         hooks.append(reasoning_watch)
     return Agent(
         model=model,
         plugins=plugins,
         # Identity, so a trace can be found. `name` becomes the span name;
-        # `agent_id` is stable rather than per-tag because the tag is already
-        # carried as a trace attribute (`nora.obs.tracing.trace_attributes`) and
-        # a per-tag agent_id would make every trace its own agent.
+        # `agent_id` is stable rather than per-tag because the tag is already a
+        # trace attribute (`nora.obs.tracing.trace_attributes`), and a per-tag
+        # agent_id would make every trace its own agent.
         name=agent_name,
         agent_id=agent_name,
-        # Fresh per agent — see RetryPolicy's docstring for why this is not a
-        # shared instance.
+        # Fresh per agent; see RetryPolicy's docstring.
         retry_strategy=ModelRetryStrategy(
             max_attempts=retry.max_attempts,
             initial_delay=retry.initial_delay,
@@ -444,14 +371,12 @@ def create_agent(
         ),
         system_prompt=system_prompt,
         tools=tools,
-        # pre_fill/messages are plain dicts by design end-to-end (build_prefill in
-        # nora.agent.prefill through nora.engagement's stages/pipeline, none of which
-        # import strands — see this module's own docstring and
-        # tests/test_boundaries.py::test_strands_import_boundary). Strands' `Agent`
-        # wants `list[Message]` (a TypedDict); retyping this one call site to match
-        # would force list[Message] up through that whole framework-free chain, which
-        # is out of scope for this fix. The dicts already have the right shape at
-        # runtime; only the static type is being asserted here.
+        # pre_fill/messages are plain dicts end-to-end (build_prefill in
+        # nora.agent.prefill through nora.engagement's stages/pipeline, none of
+        # which import strands; see
+        # tests/test_boundaries.py::test_strands_import_boundary). Strands'
+        # `Agent` wants `list[Message]` (a TypedDict); the dicts have the right
+        # shape at runtime and only the static type is asserted here.
         messages=list(pre_fill),  # type: ignore[arg-type]
         hooks=hooks,
         conversation_manager=NullConversationManager(),
@@ -475,55 +400,43 @@ def create_dream_agent(
 ) -> Agent:
     """The Dreamer's agent: a loop that may LOOK and may not ACT.
 
-    A sibling of `create_agent` rather than a flag on it, and it lives HERE
-    rather than beside the Dreamer runtime because this module is the only one
-    in the codebase allowed to construct Strands objects (spec C.7). A second
-    agent gets a second constructor in this file; it never gets an `Agent(...)`
-    call somewhere else.
+    A sibling of `create_agent` rather than a flag on it. It lives here because
+    this module is the only one allowed to construct Strands objects (spec
+    C.7). Each `create_agent` parameter that is absent is welded to Nora's turn:
 
-    **What is absent is the specification.** `create_agent`'s parameters are
-    each welded to Nora's turn and none of them has a meaning here:
-
-    - no `pre_fill` — a tag's prefill is the transcript, the peer card and the
+    - no `pre_fill`: a tag's prefill is the transcript, the peer card and the
       room; the Dreamer is handed its batch by the runtime as the invocation's
       own prompt, and there is no conversation to reconstruct;
-    - no `skills_dir` — DEC-50's on-demand layer injects `<available_skills>`
-      and registers the `skills` activation tool for a model composing a reply.
-      A research loop has an objective, not a repertoire, and a tool the guard
-      would have to admit is a tool the Dreamer would have to budget;
-    - no `tool_call_log` — that log exists so `recall_lookups` can replay one
-      conversation's earlier lookups to a later turn in the same conversation.
-      The Dreamer has no conversation.
+    - no `skills_dir`: DEC-50's layer injects `<available_skills>` and registers
+      the `skills` activation tool for a model composing a reply. A research loop
+      has an objective, not a repertoire, and a tool the guard admits is a tool
+      the Dreamer would have to budget;
+    - no `tool_call_log`: that log replays one conversation's earlier lookups to
+      a later turn in the same conversation, and the Dreamer has no conversation.
 
-    **`guard` is typed `HookProvider`, not `ReplyGuard` and not `DreamGuard`** —
-    structurally, because what this constructor needs from it is exactly what
-    `Agent(hooks=...)` needs from it and nothing more. `ReplyGuard` satisfies it
-    too; that is a property of the protocol, not an invitation. The guard that
-    belongs here is `DreamGuard` — R-7 default-deny with no terminal verb and no
-    deliverer — and typing this parameter to that class would make this module
-    import it for a constraint the SDK does not impose.
+    `guard` is typed `HookProvider`, not `ReplyGuard` or `DreamGuard`, because
+    what this constructor needs from it is exactly what `Agent(hooks=...)` needs.
+    The guard that belongs here is `DreamGuard` (R-7 default-deny, no terminal
+    verb, no deliverer); typing the parameter to that class would make this
+    module import it for a constraint the SDK does not impose.
 
-    **`tool_choice` is not set here, and that is deliberate**: it is a property
-    of the MODEL, and the model arrives already built. The Dreamer's is built
-    with `create_model_provider(..., tool_choice=AFTER_SPEAKING)`; see that
-    function's docstring for why a loop with no terminal verb cannot run under
-    `"required"`. Setting it from this constructor would put the same fact in
-    two places and let a caller pass a `"required"` model that silently could
-    not stop.
+    `tool_choice` is not set here: it is a property of the MODEL, which arrives
+    already built with `create_model_provider(..., tool_choice=AFTER_SPEAKING)`
+    (see that function for why a loop with no terminal verb cannot run under
+    `"required"`). Setting it here would put one fact in two places and let a
+    caller pass a `"required"` model that could not stop.
 
-    Everything else is the posture `create_agent` already holds, for the same
-    reasons: `conversation_manager=NullConversationManager()` and
-    `session_manager=None` (D4 — no agent memory, ever; continuity is the store),
-    `callback_handler=None` (nothing prints to stdout),
-    `load_tools_from_directory=False` (the tool set is the one passed in, and for
-    this agent that set is a *ceiling*, not a default), and a FRESH
-    `ModelRetryStrategy` per agent (see `RetryPolicy` — it holds per-invocation
-    state, and dream runs overlap the same way tags do).
+    The rest is `create_agent`'s posture:
+    `conversation_manager=NullConversationManager()` and `session_manager=None`
+    (D4: no agent memory; continuity is the store), `callback_handler=None`,
+    `load_tools_from_directory=False` (the tool set passed in is a ceiling, not a
+    default), and a fresh `ModelRetryStrategy` per agent (see `RetryPolicy`; dream
+    runs overlap the way tags do).
     """
     return Agent(
         model=model,
-        # Identity, so a background run is findable in Langfuse APART from her
-        # turns — same argument as `create_agent`, different default.
+        # Identity, so a background run is findable in Langfuse apart from her
+        # turns.
         name=agent_name,
         agent_id=agent_name,
         retry_strategy=ModelRetryStrategy(
@@ -533,10 +446,8 @@ def create_dream_agent(
         ),
         system_prompt=system_prompt,
         tools=tools,
-        # After the guard, for `create_agent`'s reason — see the comment on its
-        # `hooks` list. `None` is the inert default every existing caller took
-        # before issue #325, and the Dreamer is the path the 2026-09-17
-        # `reasoning_effort` change moved the exposure ONTO.
+        # After the guard, for `create_agent`'s reason (see the comment on its
+        # `hooks` list). `None` is the inert default.
         hooks=[guard] if reasoning_watch is None else [guard, reasoning_watch],
         conversation_manager=NullConversationManager(),
         session_manager=None,
@@ -546,9 +457,9 @@ def create_dream_agent(
     )
 
 
-#: The sub-agent worker's history window, in messages (design/subagent §4d). A long job's
-#: history would otherwise grow without bound, so the oldest steps scroll away and the
-#: checkpoint, re-anchored into the pinned brief (`SubagentProgress`), carries the place.
+#: The sub-agent worker's history window, in messages. The oldest steps scroll
+#: away so a long job's history stays bounded, and the checkpoint, re-anchored
+#: into the pinned brief (`SubagentProgress`), carries the place.
 SUBAGENT_WINDOW_MESSAGES = 40
 
 
@@ -565,38 +476,39 @@ def create_subagent(
     retry: RetryPolicy,
     agent_name: str = "subagent",
 ) -> Agent:
-    """The sub-agent worker's agent (design/subagent §4): a background loop that does ONE
-    objective for Nora and answers with a report.
+    """The sub-agent worker's agent: a background loop that does ONE objective for
+    Nora and answers with a report.
 
-    A sibling of `create_dream_agent` rather than a flag on it, and it lives HERE for the same
-    reason: this module is the only one in the codebase allowed to construct Strands objects
-    (spec C.7). What differs from the Dreamer's, and why:
+    A sibling of `create_dream_agent` rather than a flag on it, living here for
+    the same reason (only this module constructs Strands objects, spec C.7). What
+    differs from the Dreamer's:
 
-    - **it has a `skills_dir`.** The worker's know-how arrives as skills, the way
-      `nora/skills/document-creation` does for a tag turn, so `AgentSkills` is built over
-      `skills_dir` exactly as `create_agent` builds it (one plugin per agent, `strict=False`).
-      The Dreamer has an objective and no repertoire; the worker has both. The `skills`
-      activation tool the plugin registers is admitted by the guard because the runner adds
-      its name to the guard's membership set.
-    - **`progress` is a second hook**, after the guard, which counts rounds, records the last
-      tool and collects the `document_id`s of `document_publish` results that came back `ok`.
-    - **`reasoning_watch`** is the Dreamer's optional one (issue #325): the worker runs at a
-      reasoning effort (`[subagent] reasoning_effort`, low), and the watch counts continuation
-      calls whose reasoning the transport threw away, so it is wired the same way.
-    - no `pre_fill` (the worker starts blank; its brief is the invocation's prompt), no
-      `tool_call_log` (no conversation to replay), no reasoning watch (nothing it writes is
-      delivered as written; the report goes to Nora).
+    - it has a `skills_dir`. The worker's know-how arrives as skills, as
+      `nora/skills/document-creation` does for a tag turn, so `AgentSkills` is
+      built over `skills_dir` as `create_agent` builds it (one plugin per agent,
+      `strict=False`). The `skills` activation tool the plugin registers is
+      admitted by the guard because the runner adds its name to the guard's
+      membership set.
+    - `progress` is a second hook, after the guard, which counts rounds, records
+      the last tool and collects the `document_id`s of `document_publish` results
+      that came back `ok`.
+    - `reasoning_watch` is optional, as the Dreamer's: the worker runs at a
+      reasoning effort (`[subagent] reasoning_effort`), and the watch counts
+      continuation calls whose reasoning the transport threw away.
+    - no `pre_fill` (the worker starts blank; its brief is the invocation's
+      prompt) and no `tool_call_log` (no conversation to replay).
 
-    `guard` is typed `HookProvider` for `create_dream_agent`'s reason; the guard that belongs
-    here is a `DreamGuard` built with `per_tool_ceilings=False` (DEC-247, amended for the
-    sub-agent). The posture is otherwise the Dreamer's: no session manager, no stdout handler,
-    no tools loaded from a directory, and a FRESH `ModelRetryStrategy` per agent. The one
-    difference is its history: a sliding window of `SUBAGENT_WINDOW_MESSAGES`, not
-    `NullConversationManager`, because a job runs hundreds of rounds in one invocation (the
-    Dreamer's passes are short). `progress` re-anchors the checkpoint after each trim.
+    `guard` is typed `HookProvider` for `create_dream_agent`'s reason; the guard
+    that belongs here is a `DreamGuard` built with `per_tool_ceilings=False`
+    (DEC-247). The posture is otherwise the Dreamer's: no session manager, no
+    stdout handler, no tools loaded from a directory, and a fresh
+    `ModelRetryStrategy` per agent. The history differs: a sliding window of
+    `SUBAGENT_WINDOW_MESSAGES`, not `NullConversationManager`, because a job runs
+    hundreds of rounds in one invocation. `progress` re-anchors the checkpoint
+    after each trim.
 
-    `tool_choice` is not set here: it belongs to the MODEL, built with `AFTER_SPEAKING` so the
-    loop ends when the model stops calling tools.
+    `tool_choice` is not set here: it belongs to the MODEL, built with
+    `AFTER_SPEAKING` so the loop ends when the model stops calling tools.
     """
     return Agent(
         model=model,
@@ -610,12 +522,14 @@ def create_subagent(
         ),
         system_prompt=system_prompt,
         tools=tools,
-        # `reasoning_watch` LAST, for `create_agent`'s reason: it must read the guard's verdicts.
+        # `reasoning_watch` last, for `create_agent`'s reason: it must read the
+        # guard's verdicts.
         hooks=[guard, progress] if reasoning_watch is None else [guard, progress, reasoning_watch],
-        # A sliding window, trimmed BEFORE every model call (`per_turn=True`: the default trims
-        # once per invocation, and a job is one invocation of hundreds of rounds) with the
-        # brief, the first message, pinned. The agent registers the manager's own callback
-        # before `hooks`, so `progress` re-anchors the checkpoint on the trimmed list.
+        # A sliding window, trimmed before every model call (`per_turn=True`; the
+        # default trims once per invocation, and a job is one invocation of
+        # hundreds of rounds) with the brief, the first message, pinned. The
+        # agent registers the manager's own callback before `hooks`, so
+        # `progress` re-anchors the checkpoint on the trimmed list.
         conversation_manager=SlidingWindowConversationManager(
             window_size=SUBAGENT_WINDOW_MESSAGES, per_turn=True, pin_first=1,
         ),
@@ -635,17 +549,17 @@ def create_browse_agent(
     *, model: OpenAIModel, system_prompt: str, tools: list, trace_attributes: dict,
     retry: RetryPolicy, agent_name: str = "browse",
 ) -> Agent:
-    """The browse sub-agent (design/browser-runtime 00 §5, B2): one browser task
-    for Nora, in her own computer's browser, with page tools only.
+    """The browse sub-agent: one browser task for Nora, in her own computer's
+    browser, with page tools only.
 
-    Built here because this module is the only one that constructs Strands
-    objects (spec C.7). Unlike `create_subagent` it has no skills, no guard and
-    no progress hook: its tools are the whole of what it can do, its step
-    budget is counted inside those tools (`nora.agent.browse`), and the loop's
-    three caps come from `build_limits` at `invoke`. The window keeps the brief
-    pinned and the most recent pages, as `create_subagent`'s does for long jobs.
-    `tool_choice` belongs to the model (`AFTER_SPEAKING`): the loop ends when the
-    model, having called `browse_done`, stops calling tools.
+    Built here because only this module constructs Strands objects (spec C.7).
+    Unlike `create_subagent` it has no skills, no guard and no progress hook:
+    its tools are the whole of what it can do, its step budget is counted inside
+    those tools (`nora.agent.browse`), and the loop's three caps come from
+    `build_limits` at `invoke`. The window keeps the brief pinned and the most
+    recent pages, as `create_subagent`'s does for long jobs. `tool_choice`
+    belongs to the model (`AFTER_SPEAKING`): the loop ends when the model, having
+    called `browse_done`, stops calling tools.
     """
     return Agent(
         model=model,
@@ -674,69 +588,63 @@ def create_browse_agent(
 
 #: Strands' canned recovery notice (`_recover_message_on_max_tokens_reached`,
 #: `event_loop.py:601`) as two fragments, so a partial-text extraction can
-#: exclude a block carrying it without asserting a full-sentence match.
-#: A SINGLE shared definition (review, 2026-09-19) — `nora.agent.structured.
-#: ask_text`'s own extraction split the same notice at different points,
-#: which made `grep` for the literal string Strands emits find neither site.
+#: exclude a block carrying it without asserting a full-sentence match. One
+#: shared definition, also used by `nora.agent.structured.ask_text`.
 MAX_TOKENS_NOTICE_PREFIX = "The selected tool "
 MAX_TOKENS_NOTICE_INFIX = "tool use was incomplete due to maximum token limits being reached"
 
 
 async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limits: dict) -> Any:
-    """Run one turn and return Strands' `AgentResult` — `stop_reason` included.
+    """Run one turn and return Strands' `AgentResult`, `stop_reason` included.
 
-    The return value is NOT decoration and must not be dropped again (R-23).
-    When one of `limits`' three caps binds, Strands' `_check_limits` yields an
-    `EventLoopStopEvent` carrying `stop_reason="limit_total_tokens"` (or
-    `limit_turns` / `limit_output_tokens`) and returns normally: no exception,
-    no log line, no warning anywhere in the SDK — verified end to end against
-    1.50.2. `AgentResult.stop_reason` is the ONLY channel that says a turn was
-    cut off rather than finished, so `nora.app.agent_runner.LiveAgentRunner`
-    reads it off this result and hands it up the stage chain.
+    The return value must not be dropped (R-23). When one of `limits`' three caps
+    binds, Strands' `_check_limits` yields an `EventLoopStopEvent` carrying
+    `stop_reason="limit_total_tokens"` (or `limit_turns` / `limit_output_tokens`)
+    and returns normally: no exception, no log line, no warning anywhere in the
+    SDK. `AgentResult.stop_reason` is the only channel that says a turn was cut
+    off rather than finished, so `nora.app.agent_runner.LiveAgentRunner` reads it
+    off this result and hands it up the stage chain.
 
-    Typed `Any` rather than `strands.agent.AgentResult` so that callers in
-    `nora.app` — which mypy checks strictly and which must not import
-    `strands` (`tests/test_boundaries.py::test_strands_import_boundary`) —
-    can narrow the one attribute they want without naming the SDK type.
+    Typed `Any` rather than `strands.agent.AgentResult` so callers in `nora.app`,
+    which mypy checks strictly and which must not import `strands`
+    (`tests/test_boundaries.py::test_strands_import_boundary`), can narrow the one
+    attribute they want without naming the SDK type.
 
-    **`MaxTokensReachedException` is caught here, not left to bubble.** Strands
-    raises it AFTER appending the partial message to `agent.messages`
-    (event_loop.py:640) — the words are recoverable, they just never left the
-    loop. Without this catch the exception lands in `invoke.run`'s generic
-    `except Exception`, which counts a silent failure and drops the partial
-    reply entirely (measured live 2026-09-02: Blake's Raft-password tag hit
-    max_tokens and Nora stayed silent). The partial text is extracted from the
-    last message's text blocks and carried up as `PartialReplyError` so the
-    pipeline can deliver it. `nora.agent` may import `strands` (only
-    `nora.app` may not), so naming the SDK exception here is legal.
+    Raises:
+        PartialReplyError: `MaxTokensReachedException` is caught here, not left
+            to bubble. Strands raises it AFTER appending the partial message to
+            `agent.messages` (event_loop.py:640), so the words are recoverable.
+            Left uncaught, `invoke.run`'s generic `except Exception` would count
+            a silent failure and drop the partial reply. The partial text is
+            extracted from the last message's text blocks and carried up so the
+            pipeline can deliver it. `nora.agent` may import `strands` (only
+            `nora.app` may not).
     """
     try:
         return await agent.invoke_async(
             tag_message,
             invocation_state=invocation_state,
-            # limits is a plain dict end-to-end for the same reason pre_fill is above:
-            # nora.app.composition/nora.engagement build and thread it as `dict` without
-            # importing strands. Strands' `Limits` is a TypedDict with the same three
-            # keys build_limits() always fills (turns/output_tokens/total_tokens); the
-            # value is shape-correct at runtime, only the static type differs.
+            # `limits` is a plain dict end-to-end for the same reason as
+            # `pre_fill` above. Strands' `Limits` is a TypedDict with the same
+            # three keys build_limits() fills (turns/output_tokens/total_tokens);
+            # only the static type differs.
             limits=limits,  # type: ignore[arg-type]
         )
     except MaxTokensReachedException:
-        # The partial message is the LAST entry in `agent.messages` — Strands
-        # appended it before raising (event_loop.py:640). Extract its text
-        # blocks the same way `final_text` does, but from the message dict
-        # directly (there is no `AgentResult` to read here).
+        # The partial message is the LAST entry in `agent.messages` (Strands
+        # appended it before raising, event_loop.py:640). Extract its text
+        # blocks the way `final_text` does, from the message dict directly
+        # (there is no `AgentResult` here).
         #
-        # EXCLUDE Strands' canned recovery notice. Before appending, the SDK
-        # replaces EVERY tool-use block with a fixed English sentence:
-        # "The selected tool X's tool use was incomplete due to maximum token
-        # limits being reached." (`_recover_message_on_max_tokens_reached`,
-        # called at event_loop.py:601). A cut-off mid-send_reply therefore
-        # leaves a message whose ONLY text blocks are that notice — nothing
-        # the model wrote. Delivering it would leak SDK machinery into the
-        # group (the exact thing R-5/R-6 exist to prevent). So blocks that
-        # carry that exact shape are dropped: a partial that is ONLY the
-        # notice yields partial_text="" and the turn stays silent.
+        # Exclude Strands' canned recovery notice. Before appending, the SDK
+        # replaces every tool-use block with a fixed sentence: "The selected
+        # tool X's tool use was incomplete due to maximum token limits being
+        # reached." (`_recover_message_on_max_tokens_reached`, event_loop.py:601).
+        # A cut-off mid-send_reply therefore leaves a message whose only text
+        # blocks are that notice, and delivering it would leak SDK machinery into
+        # the group (R-5/R-6). Blocks of that shape are dropped, so a partial
+        # that is only the notice yields partial_text="" and the turn stays
+        # silent.
         partial = ""
         if agent.messages:
             last = agent.messages[-1]
@@ -752,17 +660,16 @@ async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limi
         raise PartialReplyError(partial) from None
 
 
-# What the model is asked for when its loop ran out mid-work. Deliberately NOT
-# "summarise": she is answering the person who asked, in her own voice, with
-# what she has — a summary of her own research reads like a report, not a
-# reply.
+# What the model is asked for when its loop ran out mid-work. Deliberately not
+# "summarise": she is answering the person who asked, in her own voice, with what
+# she has; a summary of her own research reads like a report, not a reply.
 #
-# It says nothing about budgets, tokens or limits, and that is load-bearing:
+# It says nothing about budgets, tokens or limits, which is load-bearing:
 # whatever comes back is DELIVERED to the group, and
 # `tests/integration/test_turn_budget_is_legible.py::
 # test_the_budget_fallback_says_nothing_diagnostic_to_the_group` pins that the
-# room never reads the machine's excuses. Telling the model it ran out of
-# budget is the surest way to make it say so.
+# room never reads the machine's excuses. Telling the model it ran out of budget
+# is the surest way to make it say so.
 _DRAFT_INSTRUCTION = (
     "Answer now, from what you already have in this conversation. Do not call "
     "any tool and do not look anything else up — everything you are going to "
@@ -778,45 +685,34 @@ async def draft_from_exhausted_loop(
 ) -> str:
     """One more completion over the agent's OWN accumulated context, tools off.
 
-    WHY THIS EXISTS. A turn cut off by one of R-8's caps has usually done all
-    the work — trace 844eb6d1 (2026-09-06) read seven pages across four
-    `web_search` and three `web_fetch` calls, then stopped on
-    `limit_total_tokens` at call seven and the group received
-    the canned apology. She had the answer in front of her and sent an
-    apology (issue #110, operator: "This is exactly how it shouldn't be, not
-    like a friend, just like a bot").
+    A turn cut off by one of R-8's caps has usually done all the work, and the
+    group should get her answer rather than a canned apology.
 
-    WHY ON THE AGENT AND NOT FROM THE TRACE. The pipeline could draft from
-    `TagTrace.messages` without touching this layer, and that was the first
-    design. It is wrong: `DEFAULT_MAX_TRACE_CHARS` is 10,000, and the turn
-    above had accumulated ~45,600 tokens — the trace carries about 5% of what
-    she read. Drafting from it ships the feature and defeats its purpose. The
-    full context exists only on this `agent`, which is why the call belongs
-    here.
+    It runs on the agent, not from the trace: `TagTrace.messages` is truncated
+    (`DEFAULT_MAX_TRACE_CHARS` is 10,000) and carries a small fraction of what she
+    read, so drafting from it would defeat the purpose. The full context exists
+    only on this `agent`.
 
-    WHY A SECOND `invoke_async` IS NOT INSTANTLY RE-CUT. Strands' caps are
-    PER-INVOCATION: `_check_limits` reads
+    A second `invoke_async` is not instantly re-cut: Strands' caps are
+    per-invocation. `_check_limits` reads
     `event_loop_metrics.latest_agent_invocation`, documented in the SDK as
     "scoped to the current invocation so caps don't fire prematurely on the
-    second invoke against a reused agent" (verified against 1.50.2). So this
-    call gets a fresh budget rather than inheriting the spent one. `limits` is
-    still passed — an unbounded call on a turn that just proved it can run
-    away is not a thing to write.
+    second invoke against a reused agent". So this call gets a fresh budget.
+    `limits` is still passed, since an unbounded call on a turn that just proved
+    it can run away is not acceptable.
 
-    WHY `tool_choice` IS FLIPPED. The agent runs `tool_choice="required"`
-    (DEC-21) because that is what makes her reach for `send_reply` instead of
-    answering in prose. Here prose is exactly what is wanted, and leaving the
-    pin on would force yet another tool call — the one thing there is no
-    budget for. `update_config` is the supported route and is pinned by
-    `tests/test_strands_api_contract.py::test_obligation_7...`; the guard
-    already uses it. Restored in the `finally` because the agent is not
-    ours to leave altered, even though this one is discarded right after.
+    `tool_choice` is flipped because the agent runs `tool_choice="required"`
+    (DEC-21) to make her reach for `send_reply`, whereas here prose is wanted and
+    the pin would force yet another tool call. `update_config` is the supported
+    route, pinned by
+    `tests/test_strands_api_contract.py::test_obligation_7...`; the guard uses it
+    too. It is restored in the `finally` because the agent is not ours to leave
+    altered.
 
-    FAIL-CLOSED. Returns "" on a timeout, an exception, or a model that
-    answers with nothing. The caller keeps the canned line for that case: this
-    is an IMPROVEMENT on the fallback, never a replacement for having one, and
-    an exhausted turn must not also hang — hence its own timeout rather than
-    the tier's.
+    Fail-closed: returns "" on a timeout, an exception, or a model that answers
+    with nothing, and the caller keeps the canned line. This improves on the
+    fallback and never replaces it, and an exhausted turn must not also hang,
+    hence its own timeout rather than the tier's.
     """
     model = getattr(agent, "model", None)
     previous: object = None
@@ -827,9 +723,9 @@ async def draft_from_exhausted_loop(
             model.update_config(params={**previous, "tool_choice": "none"})
             restore = True
         except Exception:  # noqa: BLE001 — a config knob is not worth losing the draft over
-            # A model shape that will not take the flip still gets the call —
-            # it may answer in prose anyway, and refusing to draft because a
-            # config knob moved is a worse failure than drafting with tools on.
+            # A model that will not take the flip still gets the call: it may
+            # answer in prose anyway, and refusing to draft is worse than
+            # drafting with tools on.
             log.warning("draft: could not disable tool_choice; drafting anyway")
     try:
         result = await asyncio.wait_for(
@@ -839,9 +735,9 @@ async def draft_from_exhausted_loop(
             ),
             timeout=timeout_seconds,
         )
-    except Exception as exc:  # noqa: BLE001 — incl. TimeoutError; see FAIL-CLOSED above
-        # Never re-raise into a turn that has already failed once. The caller
-        # falls back to the canned line, which is where it was anyway.
+    except Exception as exc:  # noqa: BLE001 — incl. TimeoutError; fail-closed, see docstring
+        # Never re-raise into a turn that has already failed once; the caller
+        # falls back to the canned line.
         log.warning("draft: exhausted-loop draft failed (%s)", type(exc).__name__)
         return ""
     finally:
@@ -858,11 +754,11 @@ def remaining_limits(agent: Agent, limits: dict) -> dict | None:
     when any cap is already spent.
 
     Strands' caps are per-invocation (`draft_from_exhausted_loop` above): a
-    second `invoke_async` on the same agent starts from zero. A continuation
-    that must count against the SAME turn's ceilings (the summons' one
-    follow-up, `nora.app.agent_runner.LiveAgentRunner.invoke`'s `follow_up`)
-    is therefore handed the remainder, read off the same metrics
-    `_check_limits` reads (`latest_agent_invocation`: its cycle count and its
+    second `invoke_async` on the same agent starts from zero. A continuation that
+    must count against the SAME turn's ceilings (the summons' one follow-up,
+    `nora.app.agent_runner.LiveAgentRunner.invoke`'s `follow_up`) is therefore
+    handed the remainder, read off the metrics `_check_limits` reads
+    (`latest_agent_invocation`: its cycle count and its
     `outputTokens`/`totalTokens`). A cap absent from `limits` stays absent.
     Fail-closed: metrics the SDK did not keep read as None, never as a full
     fresh budget."""
@@ -885,8 +781,8 @@ def remaining_limits(agent: Agent, limits: dict) -> dict | None:
         if cap is None:
             continue
         used = spent.get(key)
-        # A cap nothing measures, or a count that is not a number, is not a
-        # cap with room left: no continuation.
+        # A cap nothing measures, or a count that is not a number, is not a cap
+        # with room left: no continuation.
         if not isinstance(used, int) or isinstance(used, bool):
             return None
         left[key] = cap - used
@@ -896,31 +792,24 @@ def remaining_limits(agent: Agent, limits: dict) -> dict | None:
 
 
 def final_text(result: Any) -> str:
-    """The model's last PROSE, or "" — the words it wrote instead of calling
+    """The model's last PROSE, or "": the words it wrote instead of calling
     `send_reply` (DEC-93).
 
-    Empty on every healthy turn: a turn that used the tool has already said
-    what it had to say, and its final message carries a `toolUse` block rather
-    than text. This exists for the turn that ends `end_turn` with a complete,
-    group-addressed reply sitting in a `text` block that strict-silence then
-    discards — measured live at 2 of 4 tags.
+    Empty on every healthy turn: a turn that used the tool has already said what
+    it had to say, and its final message carries a `toolUse` block rather than
+    text. This covers the turn that ends `end_turn` with a complete,
+    group-addressed reply in a `text` block that strict-silence would discard.
 
     Defensive throughout (`getattr`, `isinstance`) because this reads a
     third-party result shape on the reply path: a Strands version that renames
-    `message` must degrade to "" — the pre-DEC-93 behaviour — never raise into
-    a turn that otherwise succeeded.
+    `message` must degrade to "" rather than raise into a turn that otherwise
+    succeeded.
 
-    **It lives HERE, beside `invoke`, and not in `nora/app/agent_runner.py`
-    where it was written.** Two reasons, and the second is the one that made it
-    move. First, it reads the SDK shape `invoke` above returns — the same
-    `AgentResult` that function is typed `Any` for — and this module is where
-    knowing a Strands shape belongs; `agent_runner` may not even import
-    `strands`, so a reader there could not check this parser against the type it
-    parses. Second, the Dreamer needs exactly this extraction (its loop ends
-    with the model's structured result as authored text, DEC-93's shape read for
-    a different purpose) and `nora.agent` may not import `nora.app` — so the
-    alternative to promoting it was a second copy, which is how two defensive
-    parsers of one third-party shape drift apart.
+    It lives here, beside `invoke`, because it reads the SDK shape `invoke`
+    returns, and knowing a Strands shape belongs in this module (`nora.app` may
+    not import `strands`). The Dreamer needs the same extraction (its loop ends
+    with the model's structured result as authored text) and `nora.agent` may not
+    import `nora.app`.
     """
     message = getattr(result, "message", None)
     if not isinstance(message, dict):

@@ -1,15 +1,13 @@
 """Strip synthetic (non-Nora-authored) artifacts from `agent.messages` before
 they fold into a `TagTrace`, and cap the result to a token-ish character
-budget -- truncating assistant narration, never a human's own words (spec
-§6.5, quoting Hermes's micro-compaction note: intent cannot be reconstructed
-from the work that followed).
+budget -- truncating assistant narration, never a human's own words (intent
+cannot be reconstructed from the work that followed).
 
-Verified against Strands 1.50.2
-(`strands/event_loop/event_loop.py`, `_recover_message_on_max_tokens_reached.py`)
--- three synthetic shapes, listed in `_GUARD_VETO_STRINGS` and the two
-constant-text matches below. A future SDK bump may change these; this module
-degrades to "nothing stripped" rather than raising if a shape is absent, per
-`nora.agent.tag_trace_extract`'s defensive-throughout rule.
+Three synthetic shapes (Strands 1.50.2: `strands/event_loop/event_loop.py`,
+`_recover_message_on_max_tokens_reached.py`), listed in `_GUARD_VETO_STRINGS`
+and the two constant-text matches below. A future SDK bump may change these;
+this module degrades to "nothing stripped" rather than raising if a shape is
+absent, per `nora.agent.tag_trace_extract`'s defensive-throughout rule.
 """
 
 from __future__ import annotations

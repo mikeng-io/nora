@@ -14,10 +14,9 @@ WITHIN one: a model emitting its tool calls as a PARALLEL BATCH is asked about
 every call in the batch before any of them completes, so all of them see the
 pre-batch count and all pass.
 
-Found in a live Langfuse trace (2026-08-13): nine `place_info` calls against a
-budget of four, in two batches, which carried the turn to 148k input tokens
-against a 128k ceiling. It ended `limit_total_tokens` with an empty message —
-so the group heard nothing, which is R-23's shape and the worst way for a
+Without the reservation, nine `place_info` calls could run against a budget
+of four, and the turn would end `limit_total_tokens` with an empty message —
+so the group hears nothing, which is R-23's shape and the worst way for a
 budget to fail.
 
 Folding the two into one counter would close that hole and open DEC-33's:
@@ -52,7 +51,7 @@ class CallLedger:
         self._counts: dict[str, int] = dict.fromkeys(self._budgets, 0)
         self._in_flight: dict[str, int] = {}
         # Which CALL each outstanding reservation belongs to, keyed by the
-        # SDK's `toolUseId`. See `release` for the bug this closes.
+        # SDK's `toolUseId`. See `release`.
         self._reserved: dict[str, str] = {}
 
     @property
@@ -61,8 +60,8 @@ class CallLedger:
 
         Exposed as the live dict rather than a copy because callers read it by
         subscript (`counts["send_reply"]`) and because `ReplyGuard` publishes
-        it under its own `counts` attribute, which four test files
-        already read. Write through `record` — a caller that increments
+        it under its own `counts` attribute, which tests read. Write through
+        `record` — a caller that increments
         this directly bypasses nothing today, but says nothing about in-flight
         calls either, which is the half that makes the ceiling hold.
         """
@@ -86,7 +85,7 @@ class CallLedger:
     def reserve(self, tool_name: str, *, ref: str = "") -> None:
         """Mark a call ADMITTED BUT NOT YET FINISHED, so it counts against the
         ceiling while it runs — see this module's docstring for the parallel
-        batch that made this necessary and the trace that found it.
+        batch that made this necessary.
 
         `ref` is the SDK's `toolUseId`, which is what makes `release` able to
         drop THIS call's reservation rather than whichever one happens to be
@@ -103,24 +102,22 @@ class CallLedger:
     def release(self, tool_name: str, *, ref: str = "") -> None:
         """Drop THIS call's reservation, whatever its outcome.
 
-        **Keyed on `ref` when there is one, and that is a fix rather than a
-        refinement** (2026-08-21 review, measured on both guards). `reserve` is
-        called only on the ADMITTED path, but the after-tool hook fires for a
-        VETOED call too — so a name-keyed release let a vetoed call decrement a
-        reservation belonging to a sibling in the same parallel batch:
+        **Keyed on `ref` when there is one.** `reserve` is called only on the
+        ADMITTED path, but the after-tool hook fires for a VETOED call too — so
+        a name-keyed release would let a vetoed call decrement a reservation
+        belonging to a sibling in the same parallel batch:
 
             A admitted, B admitted     -> in_flight = 2, ceiling closed
             C VETOED (never reserved)
             C's after-hook releases    -> in_flight = 1
             D admitted                 -> a third call runs against a budget of 2
 
-        which is the 2026-08-13 nine-`place_info` trace this module exists to
-        prevent, needing only one veto in the batch to reopen. Unknown `ref`
-        releases nothing, which is the safe direction: a hook firing twice must
-        not lend budget back.
+        which reopens the parallel-batch overrun this module exists to prevent
+        with a single veto. Unknown `ref` releases nothing, which is the safe
+        direction: a hook firing twice must not lend budget back.
 
-        The name-only path is kept for callers with no id, and it keeps the old
-        behaviour for them — it cannot be made exact without one.
+        The name-only path serves callers with no id; it cannot be made exact
+        without one.
         """
         if ref:
             name = self._reserved.pop(ref, None)

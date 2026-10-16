@@ -1,14 +1,12 @@
-"""The lineage predicates: may room B be shown this section?
-(design/cognition-loop/10-tiers.md §3, "Lineage decides who may see a row";
-DEC-222, DEC-225; migration step 2.)
+"""The lineage predicates: may room B be shown this section? (DEC-222, DEC-225)
 
 **Applied at assembly, never at egress** (GLOSSARY): when a pushed block
 renders (`nora.agent.prefill`) and when a read tool returns
 (`record_query`), for the room the turn is bound to. By the time text exists
 the disclosure is decided.
 
-One pure function per lineage kind, each answering for ONE entry and ONE room,
-and each written from 10 §3's table. Room B may be shown:
+One pure function per lineage kind, each answering for ONE entry and ONE room.
+Room B may be shown:
 
 - `message:<A>`: when B is A; or A and B are in one unit, B's listed persons
   are a subset of A's, neither lists `*`, and B's live roster is readable,
@@ -20,34 +18,31 @@ and each written from 10 §3's table. Room B may be shown:
 - `social` (P), `play` (P): when P is a listed person of B;
 - `perception`: when B passes the lineage of the item it reads.
 
-Details the build fixed, where the table left them open (annotated in 10 §3):
+Details:
 
 - **`message`: same unit, and `*` on either side denies.** R-49 lets a message
   cross only between rooms of one unit, and DEC-225 extends R-49 to derived
   rows, so a room of another unit never passes. A `*` room in A's place has no
   roster a subset can be checked against, so nothing from it leaves it; a `*`
-  room in B's place is 10 §3's own refusal.
+  room in B's place is refused.
 - **`presence`: the guard is not waived by the flag.** `where_is` treats
   `location = true` as trust that relaxes the subset check (DEC-79). Here the
-  table asks for the flag AND the guard, so both must pass: B's live roster is
-  read, a degraded or unreadable one denies (R-27), and B's people must be a
-  subset of a circle holding P. An unmapped account in B is IGNORED, not
-  counted: `_presence` never reads `live.unnamed`, so the guard runs over the
-  named people alone (`live.person_ids`). That lets a flagged room pass past an
-  unmapped account as DEC-79 lets `where_is` disclose there, but it is not
-  DEC-79's waiver: nothing here counts it on
-  `nora_presence_disclosure_waived_total`, so a pass made over an unmapped
-  account leaves no trace. (The `message` kind and `exclude_persons` are
-  stricter and deny on `unnamed > 0`.) A presence entry with no subject denies:
-  the guard is a rule about a person.
+  flag AND the guard must both pass: B's live roster is read, a degraded or
+  unreadable one denies (R-27), and B's people must be a subset of a circle
+  holding P. An unmapped account in B is IGNORED, not counted: `_presence`
+  never reads `live.unnamed`, so the guard runs over the named people alone
+  (`live.person_ids`). That lets a flagged room pass past an unmapped account,
+  but it is not DEC-79's waiver: nothing here counts it on
+  `nora_presence_disclosure_waived_total`, so such a pass leaves no trace. (The
+  `message` kind and `exclude_persons` are stricter and deny on `unnamed > 0`.)
+  A presence entry with no subject denies: the guard is a rule about a person.
 - **Unknown is deny.** An entry of a kind with no predicate, `UNRESOLVED`
   included, passes only in the row's origin room; so does a section with no
   entries. With no origin, nowhere.
 
-`exclude_persons` (10 §3, "Surprises") is checked beside lineage for the whole
-row: a row naming anyone refuses a room listing one of them, a `*` room, a
-room with unmapped accounts, and a room whose live roster could not be read or
-holds one of them.
+`exclude_persons` is checked beside lineage for the whole row: a row naming
+anyone refuses a room listing one of them, a `*` room, a room with unmapped
+accounts, and a room whose live roster could not be read or holds one of them.
 """
 
 from __future__ import annotations
@@ -97,8 +92,8 @@ def _message(entry: LineageEntry, target: RenderRoom) -> bool:
     b = target.room
     if b is None:
         return False
-    # The room the words were said in is the entry's ORIGIN, as 2a writes
-    # it (`nora.domain.lineage`, module docstring).
+    # The room the words were said in is the entry's ORIGIN
+    # (`nora.domain.lineage`, module docstring).
     if b.is_room(entry.origin):
         return True
     sources = target.resolve(entry.origin)
@@ -111,10 +106,10 @@ def _message(entry: LineageEntry, target: RenderRoom) -> bool:
         return False
     if not b.persons <= a.persons:
         return False
-    # WHO IS ACTUALLY IN B, not only who B lists (review of 4444adbb): a
-    # listed-persons subset says nothing about an account that joined B and
-    # was never listed. B's live roster must be readable, whole, fully named,
-    # and every person in it a listed person of A; otherwise deny.
+    # Who is actually in B, not only who B lists: a listed-persons subset says
+    # nothing about an account that joined B and was never listed. B's live
+    # roster must be readable, whole, fully named, and every person in it a
+    # listed person of A; otherwise deny.
     live = target.live
     if live is None or not live.available or live.degraded or live.unnamed > 0:
         return False
@@ -185,8 +180,8 @@ def entry_permits(entry: LineageEntry, target: RenderRoom, *, origin: str | None
 def section_permits(
     entries: Iterable[LineageEntry], target: RenderRoom, *, origin: str | None,
 ) -> bool:
-    """Every entry passes (10 §3, "per field, every entry"); a section with no
-    entries is unknown, shown only in its origin room."""
+    """Every entry passes; a section with no entries is unknown, shown only in
+    its origin room."""
     listed = tuple(entries)
     if not listed:
         return target.room is not None and target.room.is_room(origin)
@@ -281,9 +276,9 @@ def derived_view(
     *, notes: Iterable[Note], standing: Standing | None,
     culture: CultureRevision | None, target: RenderRoom,
 ) -> DerivedView:
-    """Apply lineage to the derived rows a prompt carries (15 §3: "renders
-    each row, field or section only where its lineage passes for the room").
-    A section that fails is dropped whole; the rest of its row stays."""
+    """Apply lineage to the derived rows a prompt carries: each row, field or
+    section is rendered only where its lineage passes for the room. A section
+    that fails is dropped whole; the rest of its row stays."""
     shown = tuple(
         n for n in notes
         if visible_sections(

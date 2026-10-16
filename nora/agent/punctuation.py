@@ -1,24 +1,13 @@
 """No em dash reaches the model: `DashFreeOpenAIModel`.
 
-**Why this is a transport concern and not a doctrine one.** `voice.md` has
-told her since v21 (2026-09-22) that the em dash is written-language and
-marketing-copy punctuation, and her replies kept carrying it: 102 of her last
-173 messages in the busiest room, 66 of the 110 sent AFTER the rule landed.
-The rule was not the lever. Her input was: the tool schemas she reads every
-turn carried 302 of them, and her own earlier messages in the transcript, the
-most same-register specimen in front of her, carried a median of 14 more.
-
-Measured 2026-09-24 by replaying 40 recorded tag turns against the deployed
-`nora` alias, 2-3 samples each, one variable per arm:
-
-    input                                         replies with an em dash
-    as recorded                                   29/59   49%
-    + her own past lines without them             12/60   20%
-    + nothing she reads carries one               3/95     3%
-
-So she copies it; she does not choose it. And the copying is self-sustaining:
-a reply written with a dash becomes a transcript line that demonstrates the
-dash to the next turn, which is why the rule never decayed into compliance.
+**Why this is a transport concern and not a doctrine one.** `voice.md` tells
+her the em dash is written-language and marketing-copy punctuation, and a
+rule alone does not stop it: she copies what she reads. The tool schemas she
+reads every turn, and her own earlier messages in the transcript (the most
+same-register specimen in front of her), carry em dashes, and a reply written
+with a dash becomes a transcript line that demonstrates the dash to the next
+turn. Removing the dash from everything she reads breaks that loop; the rule
+alone does not.
 
 **One place, because the sources are many and keep growing.** Tool
 docstrings, block descriptions, her notes and peer cards (which models wrote),
@@ -30,8 +19,7 @@ Cantonese line becomes the full-width comma `voice.md` asks for, and in any
 other text a comma. Nothing she reads loses a word.
 
 It rewrites what the MODEL is sent, never what is stored or delivered: the
-audit rows, the transcript table and every outbound message are untouched, so
-provenance is exactly what it was.
+audit rows, the transcript table and every outbound message are untouched.
 """
 
 from __future__ import annotations

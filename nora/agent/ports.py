@@ -34,8 +34,7 @@ R27_CORE_STATES: frozenset[str] = frozenset({"ok", "nothing_found", "unavailable
 #: The DECLARED EXTENSIONS (ADR 0009 §1). The core is a core, not a ceiling: the
 #: live tool surface carries these ten beside it, each one a distinction the
 #: guards and the recall ladder already depend on, and each named here with its
-#: meaning so an extension cannot be added silently. ADR 0008 §3's fixed
-#: three-value enum is SUPERSEDED by this table — collapsing `refused` into
+#: meaning so an extension cannot be added silently. Collapsing `refused` into
 #: `unavailable` would turn «I may not say» into «I couldn't check», which is
 #: the exact conflation R-27 exists to prevent.
 DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
@@ -97,8 +96,8 @@ OUTPUT_STATUSES: frozenset[str] = R27_CORE_STATES | frozenset(DECLARED_STATUS_EX
 #: contract name -> the keys a result declaring it MUST carry.
 #:
 #: `three_state` is the DEFAULT for a tool whose result carries the status axis.
-#: `messages` is `load_transcript`'s deliberately status-free shape (ADR 0009
-#: §2) — the recall ladder's middle rung answers `{"messages": [...]}` on both
+#: `messages` is `load_transcript`'s deliberately status-free shape (ADR 0009)
+#: — the recall ladder's middle rung answers `{"messages": [...]}` on both
 #: its paths, and validating it against `required: ["status"]` would turn every
 #: successful call into `unavailable`. A tool whose contract does not require
 #: `status` is validated against its own shape; the three-state axis is the

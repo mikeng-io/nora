@@ -1,4 +1,4 @@
-"""The video desk: what `video_create` calls (design/video-generation §1, §4).
+"""The video desk: what `video_create` calls.
 
 It is the one place a clip is started from a turn, so the two rules that guard the spend live
 once, in code, BEFORE any provider call:
@@ -6,13 +6,13 @@ once, in code, BEFORE any provider call:
 - **The daily cap, per room.** `max_per_room_per_day` clips per room (platform plus
   conversation id) per local day (the deployment's timezone), counted from `compute_jobs`
   itself (`ComputeJobStore.kind_since`), so a restart never resets it. A clip the
-  provider failed costs nothing (measured 2026-10-02) and does not count
+  provider failed costs nothing and does not count
   (`nora.domain.video.clip_counts`). Checked and launched under one lock (one lock for all
   rooms: a per-room count under it is still race-free), so two calls racing cannot both pass
   a cap of one. A create that broke after it was sent is recorded against
   the cap as `uncertain`, since it may have rendered and a retry would spend again.
 - **One clip per turn.** A model that calls again in the same turn gets the first clip back,
-  never a second (the sub-agent desk measured 2 to 3 create calls per draw, 2026-10-05).
+  never a second.
 
 The room is never an argument: the tool closure binds `platform` and `conversation_id` from the
 turn, and the row it writes is delivered into that room by `ComputeJobPoller`.
@@ -123,10 +123,10 @@ class VideoDesk:
         to_fit = any(r.kind != "image" for r in request.references)
         if prepare is not None and not repeat and to_fit:
             # Fitting a clip or a sound spends no quota but takes seconds of encoding, so it runs
-            # before the lock that every room's create waits on (found in review). A repeat in
-            # this turn skips it: the lock below answers it from memory. A room already at its
-            # cap is answered before any encode, so the cap bounds the work as well as the spend
-            # (security review); the count is read again under the lock, which stays the rule.
+            # before the lock that every room's create waits on. A repeat in this turn skips it:
+            # the lock below answers it from memory. A room already at its cap is answered before
+            # any encode, so the cap bounds the work as well as the spend; the count is read
+            # again under the lock, which stays the rule.
             try:
                 used = await self.used_today(platform=platform, conversation_id=conversation_id)
             except Exception:

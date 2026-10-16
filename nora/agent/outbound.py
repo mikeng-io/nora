@@ -1,122 +1,108 @@
 """The WIRE FORM of one outbound message: her text, plus what rides beside it.
 
-This module answers one question — *given the exact string that is about to be
-sent, what decoration goes with it* — and it is the ONLY place allowed to
-answer it. Three decorations today: @-mentions (a range over the text plus an
-id that is never in the text), text styles (a range plus BOLD or ITALIC), and a
-link preview card.
+This module answers one question, *given the exact string that is about to be
+sent, what decoration goes with it*, and it is the ONLY place allowed to answer
+it. Three decorations: @-mentions (a range over the text plus an id that is never
+in the text), text styles (a range plus BOLD or ITALIC), and a link preview card.
 
-WHY IT IS A SEPARATE STAGE, AND WHY IT RUNS LAST
+Why it is a separate stage, and why it runs last
 ------------------------------------------------
 A mention is `(start, length, recipient)` over the message body. Those offsets
-are only meaningful against ONE string — the exact bytes the platform receives
-— so every transformation of the text has to happen BEFORE they are computed,
-and nothing may touch the text after. That is not a style preference; it is the
-one way this feature breaks silently. A later stage that trims, reflows,
-rewrites markdown, appends a footer or normalises whitespace shifts every
-offset after the edit, and Signal does not reject the result: it renders
-somebody's name over the wrong span of somebody else's sentence, in a group,
-with no error anywhere.
+are only meaningful against ONE string, the exact bytes the platform receives, so
+every transformation of the text has to happen BEFORE they are computed, and
+nothing may touch the text after. A later stage that trims, reflows, rewrites
+markdown, appends a footer or normalises whitespace shifts every offset after the
+edit, and Signal does not reject the result: it renders somebody's name over the
+wrong span of somebody else's sentence, in a group, with no error anywhere.
 
 The structural answer is that `compose` OWNS the final text. It returns an
 `Outbound` whose `.text` is what `Deliverer` hands to `adapter.send`, so a text
-transformation added AFTER the `compose` call in `Deliverer.deliver` is INERT —
-it cannot reach the wire, because the wire reads `outbound.text` and not the
-local it would have rewritten. Wrong-but-inert beats
-correct-looking-but-corrupting: the missing transformation is visible in the
-group as raw markdown, whereas a shifted mention is invisible to everyone
-except the person wrongly tagged.
+transformation added AFTER the `compose` call in `Deliverer.deliver` is INERT: it
+cannot reach the wire, because the wire reads `outbound.text` and not the local
+it would have rewritten. Wrong-but-inert beats correct-looking-but-corrupting:
+the missing transformation is visible in the group as raw markdown, whereas a
+shifted mention is invisible to everyone except the person wrongly tagged.
 
-**AND `compose` NO LONGER TAKES A STRING.** It takes a `Styled` — the final
-text and the style ranges over it, as one frozen value produced by
-`nora.agent.markdown.render_markdown`. Two consequences, and both are the
-mechanism rather than a convenience:
+`compose` takes a `Styled`, not a string: the final text and the style ranges
+over it, as one frozen value produced by `nora.agent.markdown.render_markdown`.
 
-* the pre-conversion draft is **not in this method's scope**, so it cannot be
-  handed to the mention scanner by mistake. The mention offsets and the style
-  offsets index the same string because there is only one string here to index;
-* `Outbound` STORES that `Styled` and exposes `.text`/`.styles` as properties
-  of it, so a message whose styles index a different string than its text is
+* The pre-conversion draft is not in this method's scope, so it cannot be handed
+  to the mention scanner by mistake. The mention offsets and the style offsets
+  index the same string because there is only one string here to index.
+* `Outbound` STORES that `Styled` and exposes `.text`/`.styles` as properties of
+  it, so a message whose styles index a different string than its text is
   unconstructible rather than merely untested.
 
-The markdown conversion therefore happens in `Deliverer.deliver`, one line
-before the guards, and NOT on the first line of `compose` where an earlier
-version of this docstring said a transformation belongs. That rule was written
-when the only transformation was a strip, and R-6/R-18 outrank it: a
-fail-closed guard must see the CONVERTED text as well as the drafted one
-(`"*+85298765432*a"` scans clean once the asterisks are gone), so `deliver` has
-to hold the converted form before it composes. The rule survives in its real
-shape — the transformation still precedes every offset, and `compose` still
-owns the final text; it just receives it already final.
+The markdown conversion therefore happens in `Deliverer.deliver`, one line before
+the guards, not on the first line of `compose`. R-6/R-18 require a fail-closed
+guard to see the CONVERTED text as well as the drafted one (`"*+85298765432*a"`
+scans clean once the asterisks are gone), so `deliver` holds the converted form
+before it composes. The transformation still precedes every offset, and
+`compose` still owns the final text; it receives it already final.
 
-`tests/architecture/test_outbound_offsets_are_computed_last.py` is what keeps
-all of that true — it asserts, on the AST, that the value `Deliverer.deliver`
-passes to `adapter.send(text=...)` is an attribute of the compose result and
-never a bare local, that the guards measure the same value that is composed,
-and that `compose` reads nothing but its `Styled` parameter.
+`tests/architecture/test_outbound_offsets_are_computed_last.py` asserts, on the
+AST, that the value `Deliverer.deliver` passes to `adapter.send(text=...)` is an
+attribute of the compose result and never a bare local, that the guards measure
+the same value that is composed, and that `compose` reads nothing but its
+`Styled` parameter.
 
-WHY THE MODEL DOES NOT GET A `mentions` PARAMETER
+Why the model does not get a `mentions` parameter
 -------------------------------------------------
-`send_reply(text)` is unchanged, and the mention is written the way a person
-writes one: 「@grant 你幾高?」. Three reasons, in order of weight:
+`send_reply(text)` takes no mentions argument; the mention is written the way a
+person writes one: 「@grant 你幾高?」. Reasons, in order of weight:
 
 1. **A second parameter is a second place for the model to be wrong.** A
-   `mentions=["grant"]` argument that disagrees with the text (named someone
-   the sentence never mentions, or spelled them differently) has no correct
-   resolution, and the model would have to keep two representations of one fact
-   in agreement across a turn. The text IS the fact.
-2. **Every id form stays out of the model's reach.** The model never names a
-   recipient; it names a person, in the way it already refers to people in
-   prose, and the id is looked up here. There is no argument shape in which it
-   could supply an ACI even if a prompt-injected turn tried.
-3. It is what the operator asked for, verbatim — 「我唔知你幾高」 then
-   「@grant 你幾高?」 as two messages, which `send_reply`'s budget of 3
-   (DEC-42) already permits with no budget change.
+   `mentions=["grant"]` argument that disagrees with the text (named someone the
+   sentence never mentions, or spelled them differently) has no correct
+   resolution. The text IS the fact.
+2. **Every id form stays out of the model's reach.** The model names a person, in
+   the way it already refers to people in prose, and the id is looked up here.
+   There is no argument shape in which it could supply an ACI even if a
+   prompt-injected turn tried.
+3. Two messages (「我唔知你幾高」 then 「@grant 你幾高?」) are already permitted by
+   `send_reply`'s budget of 3 (DEC-42).
 
-The cost is a parser, and the parser is deliberately NOT "a regex for @word".
-It matches the LONGEST handle in a KNOWN VOCABULARY — every name, first name
-and alias in `identity.toml` — so there is no guess about where a handle ends,
-which matters immediately in this group: 「@阿豹同我講」 has no whitespace and
-no punctuation to split on, and a `[\\w]+` run would swallow the sentence.
+The parser is deliberately NOT "a regex for @word". It matches the LONGEST handle
+in a KNOWN VOCABULARY (every name, first name and alias in `identity.toml`), so
+there is no guess about where a handle ends. That matters for 「@阿豹同我講」,
+which has no whitespace or punctuation to split on, where a `[\\w]+` run would
+swallow the sentence.
 
-FAIL-CLOSED, AND WHAT THAT MEANS HERE
---------------------------------------
-The decision the whole module turns on: **an unresolvable mention drops to
-plain text; it never sends a range, and it never refuses the message.**
+Fail-closed, and what that means here
+-------------------------------------
+**An unresolvable mention drops to plain text; it never sends a range, and it
+never refuses the message.**
 
-* Never a range, because a mention Signal cannot route is worse than no
-  mention. `SendCommand` throws `UserErrorException` on a recipient string it
-  cannot parse, which fails the WHOLE send — so a guessed id does not degrade
-  to a cosmetic miss, it costs the message (R-5's exact shape: the group hears
-  nothing and nothing looks broken). And a range that parses but names the
-  wrong account tags a real person into a conversation about somebody else.
-* Never a refusal, because the mention is decoration on a sentence that
-  answers a human. R-5 says silence beats a wrong answer; it does not say
-  silence beats an untagged answer. 「@grant 你幾高?」 sent as plain text is
-  the same question, minus a notification.
+* Never a range, because a mention Signal cannot route is worse than no mention.
+  `SendCommand` throws `UserErrorException` on a recipient string it cannot parse,
+  which fails the WHOLE send, so a guessed id costs the message (R-5's shape: the
+  group hears nothing and nothing looks broken). And a range that parses but names
+  the wrong account tags a real person into a conversation about somebody else.
+* Never a refusal, because the mention is decoration on a sentence that answers a
+  human. R-5 says silence beats a wrong answer; it does not say silence beats an
+  untagged answer. 「@grant 你幾高?」 sent as plain text is the same question,
+  minus a notification.
 
-So this is fail-closed on the RANGE and fail-open on the MESSAGE, and the two
-are not in tension — the closed half is what makes the open half safe.
+So this is fail-closed on the RANGE and fail-open on the MESSAGE; the closed half
+is what makes the open half safe.
 
-**The roster gate** is the sharp end of that. A handle resolving through
-`identity.toml` is not enough to tag someone: `identity.toml` is Nora's address
-book across every room she is in, and it is loaded once at startup, so it can
-be stale and it is certainly wider than this conversation. The id that goes on
-the wire has to be one the PLATFORM itself just listed as a member of THIS
-group — `RosterSource.roster`, intersected per-account. Three consequences,
-all deliberate:
+**The roster gate.** A handle resolving through `identity.toml` is not enough to
+tag someone: `identity.toml` is Nora's address book across every room she is in,
+loaded once at startup, so it can be stale and it is wider than this
+conversation. The id that goes on the wire has to be one the PLATFORM itself just
+listed as a member of THIS group (`RosterSource.roster`, intersected
+per-account):
 
 * a person who is in `identity.toml` but not in this room is not tagged
-  (`not_in_room`) — the same resolve-WITHIN-scope rule `nora.agent.room`'s
-  docstring argues for, applied to the outbound direction;
+  (`not_in_room`), the same resolve-WITHIN-scope rule `nora.agent.room` applies,
+  in the outbound direction;
 * a roster that could not be read tags NOBODY (`roster_unavailable`), because
   «I could not check who is here» is not «they are here» (R-22, R-27);
-* the id sent is picked out of the INTERSECTION, so it is an id form
-  signal-cli emitted a moment ago rather than one a config file claims.
+* the id sent is picked out of the INTERSECTION, so it is an id form the platform
+  reported rather than one a config file claims.
 
 The roster read is lazy and cached for the composer's life (one turn): a reply
-with no resolvable handle never touches the daemon, so this costs nothing on
-the overwhelmingly common message.
+with no resolvable handle never touches the daemon.
 """
 
 from __future__ import annotations
@@ -141,25 +127,25 @@ from .egress import scan_identifiers
 
 log = logging.getLogger("nora.agent.outbound")
 
-# The longest handle this will consider, in characters. Not a safety bound —
-# the vocabulary is operator-authored and closed — but a bound on the work done
-# per `@` in a message, so a reply full of stray at-signs cannot turn into a
+# The longest handle this will consider, in characters. Not a safety bound (the
+# vocabulary is operator-authored and closed) but a bound on the work done per
+# `@` in a message, so a reply full of stray at-signs cannot turn into a
 # quadratic scan of every alias in the file.
 MAX_HANDLE_CHARS = 48
 
 # A URL in her own text, for the preview card. Deliberately narrow: `http(s)`
 # only (a `data:`/`file:` URL is not something a preview should ever chase),
 # and stopping at whitespace or a bracket. The trailing-punctuation strip below
-# is what makes 「睇下 https://example.net/abc。」 yield the link and not the
-# sentence — and every character it strips leaves the result still a SUBSTRING
-# of the body, which signal-cli requires ("The same url must also appear in the
-# message body, otherwise the preview won't be displayed by the apps").
+# makes 「睇下 https://example.net/abc。」 yield the link and not the sentence,
+# and every character it strips leaves the result a SUBSTRING of the body, which
+# signal-cli requires ("The same url must also appear in the message body,
+# otherwise the preview won't be displayed by the apps").
 _URL = re.compile(r"https?://[^\s<>\"'　]+")
 
 # Trailing characters that end a sentence rather than a URL, ASCII and CJK
 # both. `)` is included even though a URL may legitimately contain one: a
 # preview that misses is cosmetic, a preview whose url is not a substring of
-# the body renders nothing at all, and neither is worth the ambiguity.
+# the body renders nothing at all.
 _URL_TAIL = "。，、！？：；)）]】>》.,!?:;'\""  # noqa: RUF001 - CJK punctuation is the point
 
 
@@ -167,20 +153,17 @@ _URL_TAIL = "。，、！？：；)）]】>》.,!?:;'\""  # noqa: RUF001 - CJK p
 class Outbound:
     """One message as it goes on the wire: the FINAL text, plus its decoration.
 
-    Frozen, and `styled` is the authoritative copy of the text — see this
-    module's docstring for why that is the mechanism and not a detail.
-    Constructing one by hand outside `OutboundComposer.compose` is how the
-    offsets and the text get to disagree, so the only public producer is that
+    Frozen, and `styled` is the authoritative copy of the text (see this module's
+    docstring). Constructing one by hand outside `OutboundComposer.compose` is how
+    the offsets and the text get to disagree, so the only public producer is that
     method.
 
-    **`text` and `styles` are properties, not fields, and that is the whole
-    point.** They read one `Styled`, so there is no assignment anywhere that
-    could pair this message's text with another message's ranges — the
-    correspondence is held by object identity rather than by a convention
-    somebody has to keep. `Mention` ranges are a separate field because they
-    are computed HERE, from `styled.text`, in a method that has no other string
-    in scope; the style ranges arrive already paired with the text they index,
-    which is the only form in which they are safe to pass around.
+    **`text` and `styles` are properties, not fields.** They read one `Styled`,
+    so no assignment can pair this message's text with another message's ranges:
+    the correspondence is held by object identity rather than by a convention.
+    `Mention` ranges are a separate field because they are computed HERE, from
+    `styled.text`, in a method that has no other string in scope; the style
+    ranges arrive already paired with the text they index.
     """
 
     styled: Styled
@@ -197,24 +180,22 @@ class Outbound:
 
 
 def _is_word(ch: str) -> bool:
-    """ASCII word character — the only alphabet a handle boundary is asserted in.
+    """ASCII word character: the only alphabet a handle boundary is asserted in.
 
-    Boundary checking is done ONLY between two ASCII word characters, and that
-    asymmetry is the point. `@miles` inside `@mikeson` must not match when only
-    `miles` is a known handle (ASCII on both sides — reject), while 「@阿豹同我講」
-    must match the handle 「阿豹」 (CJK on both sides — accept), because Chinese
-    is written without separators and demanding one would make every CJK handle
-    unmatchable in an ordinary sentence. `str.isalnum()` is true for 同 as well
-    as for `s`, so a boundary rule expressed in `isalnum()` alone would silently
-    be the strict one everywhere.
+    Boundary checking is done ONLY between two ASCII word characters. `@miles`
+    inside `@mikeson` must not match when only `miles` is a known handle (ASCII
+    on both sides: reject), while 「@阿豹同我講」 must match the handle 「阿豹」
+    (CJK on both sides: accept), because Chinese is written without separators.
+    `str.isalnum()` is true for 同 as well as for `s`, so a boundary rule
+    expressed in `isalnum()` alone would be the strict one everywhere.
     """
     return ch.isascii() and (ch.isalnum() or ch == "_")
 
 
 #: An Instagram messaging fbid: bare digits, no `+` and no hyphens, the same
 #: shape as a Discord snowflake. Kept as its own name rather than reusing
-#: `_SNOWFLAKE_RE` because the two are the same REGEX and not the same RULE —
-#: a change to Discord's id grammar must not silently re-grammar Instagram's.
+#: `_SNOWFLAKE_RE` because the two are the same REGEX and not the same RULE: a
+#: change to Discord's id grammar must not re-grammar Instagram's.
 _INSTAGRAM_FBID_RE = re.compile(r"[0-9]{5,25}")
 
 
@@ -222,52 +203,41 @@ def _preferred_recipient(ids: frozenset[str], *, platform: str) -> str | None:
     """The id form to put on the wire, out of the ones the ROSTER confirmed.
 
     **Platform-aware, because "an id form the wire will accept" is a different
-    predicate per platform (issue #211).** This function used to be written
-    for signal-cli's RECIPIENT grammar alone, and a Discord snowflake — an
-    all-digit string with no `+` and no hyphens — matched neither of the two
-    patterns it knew, so `_recipient` refused every Discord mention as
-    `unresolved` even though the person WAS mapped and the roster DID confirm
-    them. The fix is a branch, not a rewrite: Signal's rule is unchanged byte
-    for byte below, because it is still exactly right for Signal.
+    predicate per platform.**
 
-    On `platform="discord"`: a snowflake is a bare digit string — accept it,
-    and there is no hierarchy to prefer between (unlike Signal's ACI-over-
-    E164), because the roster gate upstream (`_recipient`) has already
-    intersected `identity.toml`'s ids with the ones THIS guild's member list
-    just reported for the account, so `ids` holds only id forms Discord itself
-    just gave — a snowflake, and nothing else it would need to choose between.
+    On `platform="discord"`: a snowflake is a bare digit string. Accept it; there
+    is no hierarchy to prefer between (unlike Signal's ACI-over-E164), because the
+    roster gate upstream (`_recipient`) has already intersected `identity.toml`'s
+    ids with the ones THIS guild's member list reported for the account.
 
-    On every other platform (Signal today): ACI first. Under sealed sender the
-    same account reaches Nora as a phone number on one message and as an ACI
-    on another (design/10 §1.1), the ACI is the stable one, and it is the form
-    `nora.platform.signal.react` already sends as `targetAuthor` for exactly
-    this reason.
+    On `platform="instagram"`: the messaging fbid (see the branch below).
+
+    On every other platform (Signal): ACI first. Under sealed sender the same
+    account reaches Nora as a phone number on one message and as an ACI on
+    another, the ACI is the stable one, and it is the form
+    `nora.platform.signal.react` already sends as `targetAuthor`.
 
     Anything that is neither a UUID nor an E.164 number returns `None` rather
     than being sent hopefully. A Signal USERNAME is the concrete case: it is a
     valid `identity.toml` id kind, but signal-cli's RECIPIENT grammar needs it
-    prefixed `u:` and a bare one would be parsed as a phone number and rejected
-    — failing the whole send (see this module's docstring). The roster gate
-    makes this branch nearly unreachable on its own (`listGroups` reports
-    numbers and ACIs), which is why it is a `None` and not a prefix hack: there
-    is no live case to validate a hack against.
+    prefixed `u:` and a bare one would be parsed as a phone number and rejected,
+    failing the whole send (see this module's docstring). The roster gate makes
+    this branch nearly unreachable on its own (`listGroups` reports numbers and
+    ACIs), which is why it is a `None` and not a prefix hack.
     """
     if platform == "discord":
         snowflakes = sorted(v for v in ids if _SNOWFLAKE_RE.fullmatch(v))
         return snowflakes[0] if snowflakes else None
     if platform == "instagram":
-        # The same shape as Discord's, and reached for the same reason: an
-        # Instagram fbid is a bare digit string, so it matched NEITHER pattern
-        # below and every Instagram mention resolved to `None` — Nora writing
-        # "@Name" as plain text with no ping, `status: sent`, nothing logged.
+        # The same shape as Discord's: an Instagram fbid is a bare digit string,
+        # so it matches NEITHER pattern below.
         #
-        # Two id kinds exist for an Instagram account and only ONE is a
-        # mention: `fbid` (interop_messaging_user_fbid) is what a mention
-        # carries, `igid` is the public id that profile and story reads take.
-        # Both are bare digits — measured at 15 and 17 digits with a shared
-        # leading `1784` — so no length or prefix rule separates them. The
-        # ROSTER is what disambiguates: it reports the messaging id, and
-        # `_recipient` has already intersected away everything it did not.
+        # Two id kinds exist for an Instagram account and only ONE is a mention:
+        # `fbid` (interop_messaging_user_fbid) is what a mention carries, `igid` is
+        # the public id that profile and story reads take. Both are bare digits,
+        # so no length or prefix rule separates them. The ROSTER is what
+        # disambiguates: it reports the messaging id, and `_recipient` has already
+        # intersected away everything it did not.
         fbids = sorted(v for v in ids if _INSTAGRAM_FBID_RE.fullmatch(v))
         return fbids[0] if fbids else None
     uuids = sorted(v for v in ids if _UUID_RE.fullmatch(v))
@@ -278,22 +248,20 @@ def _preferred_recipient(ids: frozenset[str], *, platform: str) -> str | None:
 
 
 # Deliberately re-stated here rather than imported from `nora.agent.egress`:
-# those two patterns exist to REFUSE a string, and are tuned to fire on a
-# substring anywhere in a sentence (`\b`-anchored, `+`-required). These two
-# have the opposite job — deciding that a WHOLE id is of a known form before it
-# is sent — so they are `fullmatch`-shaped. Sharing one pattern between "block
-# if this appears anywhere" and "accept only if this is the entire value" is
-# how one of the two silently loosens when the other is tuned.
+# those patterns exist to REFUSE a string, and are tuned to fire on a substring
+# anywhere in a sentence (`\b`-anchored, `+`-required). These two decide that a
+# WHOLE id is of a known form before it is sent, so they are `fullmatch`-shaped.
+# Sharing one pattern between "block if this appears anywhere" and "accept only
+# if this is the entire value" is how one of the two silently loosens when the
+# other is tuned.
 _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
                       r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 _E164_RE = re.compile(r"\+\d{8,15}")
 
 # A Discord snowflake: an unsigned integer, decimal, no leading `+` and no
-# hyphens — the one id form `_UUID_RE`/`_E164_RE` were never meant to accept
-# and the reason #211 happened (every snowflake refused as neither). Sharing
-# neither pattern with them for the same reason they do not share one with
-# each other: this one's job is "is this a whole snowflake", not "does a
-# snowflake appear somewhere".
+# hyphens, an id form `_UUID_RE`/`_E164_RE` do not accept. Not shared with them,
+# for the same reason they do not share one with each other: this one's job is
+# "is this a whole snowflake", not "does a snowflake appear somewhere".
 _SNOWFLAKE_RE = re.compile(r"\d+")
 
 
@@ -301,9 +269,9 @@ def first_url(text: str) -> str | None:
     """The first http(s) URL in `text`, as a substring of `text`, or None.
 
     A SUBSTRING is the contract, not merely a URL: signal-cli requires the
-    preview's url to appear in the message body verbatim or the apps show no
-    card at all, so a normalised, unescaped or redirect-followed URL here would
-    produce a message that carries a preview payload nobody ever sees.
+    preview's url to appear in the message body verbatim or the apps show no card
+    at all, so a normalised, unescaped or redirect-followed URL here would produce
+    a message that carries a preview payload nobody ever sees.
     """
     match = _URL.search(text)
     if match is None:
@@ -316,10 +284,9 @@ class OutboundComposer:
     """Turns one final reply string into its `Outbound`. Constructed per turn.
 
     Per turn, and not per process, because the roster cache below is scoped to
-    one conversation and one moment — the same reason `nora.agent.room.Room` is
-    per tag. Collaborators arrive through `__init__` only (CLAUDE.md's
-    test-seam policy); there is no module-level state and nothing here is
-    reused between turns.
+    one conversation and one moment (as `nora.agent.room.Room` is per tag).
+    Collaborators arrive through `__init__` only (CLAUDE.md's test-seam policy);
+    there is no module-level state and nothing here is reused between turns.
 
     `roster_source` and `preview_source` are BOTH optional, and they degrade
     differently on purpose:
@@ -354,18 +321,17 @@ class OutboundComposer:
         """`styled` plus its decoration. Never raises; never returns other text.
 
         **The parameter is a `Styled`, not a string, and that is the safety
-        property.** `styled.text` is already final — `Deliverer.deliver`
-        rendered the Markdown before it measured its guards, because a
-        fail-closed guard has to see the bytes that leave — so the only string
-        this method can reach is the one the platform will receive. There is no
-        draft in scope to compute a mention offset against by mistake, and the
-        style ranges that arrive with it were computed against this same
-        string. Both facts are what `Outbound` then holds together.
+        property.** `styled.text` is already final (`Deliverer.deliver` rendered
+        the Markdown before it measured its guards, because a fail-closed guard has
+        to see the bytes that leave), so the only string this method can reach is
+        the one the platform will receive. There is no draft in scope to compute a
+        mention offset against by mistake, and the style ranges that arrive with it
+        were computed against this same string.
 
-        A transformation of the outbound text added HERE would still be
-        correct-by-construction for the mentions and WRONG for the styles,
-        which already index `styled.text`. It belongs in
-        `nora.agent.markdown.render_markdown`, where both are produced at once.
+        A transformation of the outbound text added HERE would be correct for the
+        mentions and WRONG for the styles, which already index `styled.text`. It
+        belongs in `nora.agent.markdown.render_markdown`, where both are produced
+        at once.
         """
         mentions = await self._mentions(styled.text)
         preview = await self._preview(styled.text)
@@ -389,16 +355,14 @@ class OutboundComposer:
                 # lands next to an orphan `@`.
                 length=utf16_len(text[start_char:start_char + 1 + handle_len]),
                 recipient=recipient,
-                # Instagram-only (`Mention.handle`'s own docstring): the
-                # account's OWN username, if the operator recorded one beside
-                # this exact fbid. Looked up here, not in `send.py`, because
-                # this method already resolved `recipient` against THIS room's
-                # live roster — `nora.platform.instagram.send` gets a value
-                # already tied to the right account, never a second identity
-                # lookup one layer down. `None` on every other platform
-                # (`self._platform != "instagram"` short-circuits before the
-                # dict read) and `None` on Instagram until an operator opts a
-                # person in — both leave the span exactly as Nora wrote it.
+                # Instagram-only (`Mention.handle`'s own docstring): the account's
+                # OWN username, if the operator recorded one beside this exact
+                # fbid. Looked up here, not in `send.py`, because this method
+                # already resolved `recipient` against THIS room's live roster, so
+                # `nora.platform.instagram.send` gets a value already tied to the
+                # right account. `None` on every other platform and on Instagram
+                # until an operator opts a person in; both leave the span exactly
+                # as Nora wrote it.
                 handle=(
                     self._persons.instagram_handle(recipient)
                     if self._platform == "instagram" else None
@@ -469,11 +433,10 @@ class OutboundComposer:
             recipient = _preferred_recipient(shared, platform=self._platform)
             if recipient is None:
                 # In the room, but every id form the platform gave for them is
-                # one signal-cli's RECIPIENT grammar would not take. Counted
-                # under `unresolved` rather than a fifth label: the operator's
-                # action is the same as for an unmapped person (fix
-                # identity.toml), and `rule`/`outcome` values are as
-                # append-only as the metric names (DEC-33).
+                # one signal-cli's RECIPIENT grammar would not take. Counted under
+                # `unresolved`: the operator's action is the same as for an
+                # unmapped person (fix identity.toml), and `rule`/`outcome` values
+                # are append-only like the metric names (DEC-33).
                 self._metrics.inc("nora_outbound_mentions_total", outcome="unresolved")
             return recipient
         self._metrics.inc("nora_outbound_mentions_total", outcome="not_in_room")
@@ -518,15 +481,14 @@ class OutboundComposer:
         if preview is None:
             self._metrics.inc("nora_link_previews_total", outcome="unavailable")
             return None
-        # R-18 on somebody ELSE's text. `scan_identifiers`, NOT `scan_reply`,
-        # and the distinction is `nora.agent.egress`'s own (DEC-30): the
-        # identifier floor applies to everything that leaves, including a
-        # fetched page's title, because a number rendered in a card is in the
-        # room exactly as much as one she typed. The model-name half does not,
-        # because that rule is «she does not SAY what she runs on» and a third
-        # party's page title is not her saying anything — screening it here
-        # would silently drop the preview of any page about LLMs, which in this
-        # group is a page they are likely to be discussing.
+        # R-18 on somebody ELSE's text. `scan_identifiers`, NOT `scan_reply`
+        # (the distinction is `nora.agent.egress`'s, DEC-30): the identifier
+        # floor applies to everything that leaves, including a fetched page's
+        # title, because a number rendered in a card is in the room exactly as
+        # much as one she typed. The model-name half does not, because that rule
+        # is «she does not SAY what she runs on» and a third party's page title
+        # is not her saying anything; screening it would drop the preview of any
+        # page about LLMs.
         kind = scan_identifiers(f"{preview.title} {preview.description}")
         if kind:
             log.error("preview_blocked: %s in the fetched card for %s", kind, preview.url)
@@ -539,18 +501,16 @@ class OutboundComposer:
 
 def _handle_index(persons: Persons) -> dict[str, str | None]:
     """Every name Nora may be tagged with, longest first, `None` if ambiguous.
+    Built from `name`, `first_name` and `aliases`, the SAME three fields
+    `nora.agent.room.RoomView.find` matches a lookup target on. An alias never
+    resolves a SENDER (a display name is spoofable, and matching one would hand
+    identity to whoever can type it), but this is not a sender question: the names
+    are operator-authored in `identity.toml`, the text being matched is Nora's
+    OWN, and the answer is then narrowed to the room's actual members before
+    anything is sent.
 
-    Built from `name`, `first_name` and `aliases` — the SAME three fields
-    `nora.agent.room.RoomView.find` matches a lookup target on, and safe here
-    for the same reason it is safe there (`nora.agent.room`'s docstring, §alias
-    matching): design/10 §1.3 forbids an alias resolving a SENDER, because a
-    display name is spoofable and matching one would hand identity to whoever
-    can type it. This is not a sender question. The names are operator-authored
-    in `identity.toml`, the text being matched is Nora's OWN, and the answer is
-    then narrowed to the room's actual members before anything is sent.
-
-    A handle claimed by two people maps to `None` rather than to one of them —
-    see `_match_handle`. The dict is insertion-ordered longest-first so
+    A handle claimed by two people maps to `None` rather than to one of them (see
+    `_match_handle`). The dict is insertion-ordered longest-first so
     `_match_handle` can return on its first hit.
     """
     claims: dict[str, set[str]] = {}
