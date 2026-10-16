@@ -17,8 +17,9 @@ store's own write: a message the index missed is a search miss until
 the next pass; a message lost because its index row failed is a lost message.
 
 It projects messages and their attachments, the Notebook (notes, memos,
-lessons, events, culture and Character accounts) and the entity hubs they
-point at. `nora.infra.sql.memory_read` reads the index.
+lessons, events, culture and Character accounts), the social stream's items
+and their media, and the entity hubs they point at.
+`nora.infra.sql.memory_read` reads the index.
 
 **What a node's text holds** (R-18, R-28): a message's body, and an
 attachment's reading. Never a sender id, a sender name, a raw envelope or a
@@ -67,6 +68,23 @@ its person alone. Both copy the row's presence lineage, which a reader must
 pass as `rollup_read.visible_rows` does (R-31, DEC-222): the scope
 alone never discloses a place.
 
+**What a social item is** (design/cognition-loop/22 §9, the operator's
+rulings). One `social` node per `social_item`, keyed `network:item_id`, and
+one `social_media` node per medium of it, `(item, sha256)` in `media_ref`'s
+order, `attached_to` the item: a carousel is several. Both are their
+author's: `persons` is the item's person, no unit and no room, so they are
+readable only in a room that lists that person (`PERSON_SCOPED_KINDS`). The
+item's text is what it is (`social_label`: «Instagram story»), its caption,
+its alt text and the reading of each medium (`media_objects`, keyed by the
+bytes, whichever pass wrote it); a medium's text is its reading, and an image
+is embedded from its bytes like an attachment. Never the item's `location`,
+and never its `tagged` or `mentioned` handles, which get no edge either:
+only the author is a person here (`authored_by`, `shared_by`). An item with
+a `social_item_state` row (gone or hidden) has no node, like a hidden
+message. A person's `social = false` is not read here: the projector is pure,
+and the read leaves their items out (`MemoryScope.social_off`), so switching
+it back needs no rebuild.
+
 A snapshot restore copies none of the four tables (`NOT_RESTORED`): the
 restored index is empty and reads `never` until a rebuild.
 
@@ -113,7 +131,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from nora.domain.culture import split_culture_key
 from nora.domain.media import blobs_from_media_json
 from nora.domain.media_join import shas_in
-from nora.domain.memory_index import EMBEDDED_KINDS, HUB_KINDS, ProjectionOutcome
+from nora.domain.memory_index import (
+    ATTACHMENT_KINDS,
+    EMBEDDED_KINDS,
+    HUB_KINDS,
+    ProjectionOutcome,
+    social_label,
+)
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
 from nora.infra.sql.schema import (
     CULTURE,
@@ -140,6 +164,8 @@ from nora.infra.sql.schema import (
     ROLLUP_BUILD,
     ROLLUP_DAYBOOK,
     ROLLUP_OUTING,
+    SOCIAL_ITEM,
+    SOCIAL_ITEM_STATE,
 )
 
 __all__ = [
@@ -166,6 +192,8 @@ __all__ = [
     "rebuild",
     "reproject_episodes",
     "reproject_media",
+    "social_source_id",
+    "story_frame_embedded",
 ]
 
 log = logging.getLogger("nora.infra.sql.memory_index")
@@ -196,6 +224,11 @@ INDEXED_WRITES: dict[str, str] = {
     # The build pointer: switching it changes which build's outings, stays
     # and trips have nodes (all three kinds).
     "rollup_build": "outing",
+    # A social item, its gone-or-hidden state, and a perception landing (the
+    # reading it wrote is in `media_objects`, reprojected there as well).
+    "social_item": "social",
+    "social_item_state": "social",
+    "social_perception": "social",
 }
 
 _METRIC = "nora_memory_projection_total"
@@ -420,31 +453,174 @@ async def _reproject_media(conn: AsyncConnection, sha256: str) -> None:
             **_cleared_when(_input_changed(text, MEMORY_NODE.c.sha256)),
         )
     )
+    # A social item's text holds its media's readings, so each item holding
+    # these bytes is projected again, its media with it.
+    held = (await conn.execute(
+        sa.select(MEMORY_NODE.c.source_id).where(
+            MEMORY_NODE.c.kind == "social_media", MEMORY_NODE.c.sha256 == sha256,
+        )
+    )).scalars()
+    for item in sorted({sid.rpartition(":")[0] for sid in held}):
+        await _project_social(conn, item)
 
 
 async def media_types(
     conn: AsyncConnection, attachments: Iterable[tuple[str, str]],
+    social: Iterable[tuple[str, str]] = (),
 ) -> dict[str, str]:
-    """The type each attachment's own message records for its bytes
-    (`messages.media_json`), keyed by the attachment's `source_id`
-    (`_attachment_id`); `""` for one whose message or entry is gone. The one
-    reading of whether an attachment is an image, for the projector and the
-    embedding worker alike."""
+    """The type each medium's bytes are recorded as, keyed by its node's
+    `source_id`; `""` for one whose message or entry is gone. An attachment's
+    is what its own message records (`messages.media_json`); a social item's
+    medium has no message, so its is what custody recorded for those bytes
+    (`media_objects.media_type`). The one reading of whether a medium is an
+    image, for the projector and the embedding worker alike."""
     wanted = dict(attachments)
-    ids = sorted({int(sid.partition(":")[0]) for sid in wanted})
-    if not ids:
-        return {}
-    held = {
-        r.id: r.media_json
-        for r in await conn.execute(
-            sa.select(MESSAGES.c.id, MESSAGES.c.media_json).where(MESSAGES.c.id.in_(ids))
-        )
-    }
     out: dict[str, str] = {}
-    for sid, sha in wanted.items():
-        blobs = blobs_from_media_json(held.get(int(sid.partition(":")[0])))
-        out[sid] = next((b.media_type for b in blobs if b.sha256 == sha), "")
+    ids = sorted({int(sid.partition(":")[0]) for sid in wanted})
+    if ids:
+        held = {
+            r.id: r.media_json
+            for r in await conn.execute(
+                sa.select(MESSAGES.c.id, MESSAGES.c.media_json).where(MESSAGES.c.id.in_(ids))
+            )
+        }
+        for sid, sha in wanted.items():
+            blobs = blobs_from_media_json(held.get(int(sid.partition(":")[0])))
+            out[sid] = next((b.media_type for b in blobs if b.sha256 == sha), "")
+    others = dict(social)
+    if others:
+        types = dict((await conn.execute(
+            sa.select(MEDIA_OBJECTS.c.sha256, MEDIA_OBJECTS.c.media_type)
+            .where(MEDIA_OBJECTS.c.sha256.in_(sorted(set(others.values()))))
+        )).tuples().all())
+        out.update({sid: types.get(sha, "") for sid, sha in others.items()})
     return out
+
+
+# --- the social stream ---------------------------------------------------------
+
+
+def social_source_id(network: str, item_id: str) -> str:
+    """A social item's node id: its natural key, `(network, item_id)`. A
+    network name holds no `:`, so the first one splits it back."""
+    return f"{network}:{item_id}"
+
+
+def _social_media_ids(item: str, shas: Iterable[str]) -> dict[str, str]:
+    """A social item's media nodes, `(item, sha256)` in its order: the
+    attachment's shape (`_attachment_id`), the sha256 last so the item is
+    everything before the final `:`."""
+    return {_attachment_id(item, sha): sha for sha in dict.fromkeys(shas)}
+
+
+async def _project_social(conn: AsyncConnection, source_id: str) -> None:
+    network, _, item_id = source_id.partition(":")
+    i, st = SOCIAL_ITEM, SOCIAL_ITEM_STATE
+    stated = sa.exists().where(st.c.network == i.c.network, st.c.item_id == i.c.item_id)
+    row = (await conn.execute(
+        sa.select(
+            i.c.person, i.c.kind, i.c.taken_at, i.c.caption, i.c.alt_text, i.c.media_ref,
+            i.c.collab, stated.label("stated"),
+        ).where(i.c.network == network, i.c.item_id == item_id)
+    )).first()
+    if row is None or row.stated:
+        # Gone, hidden or never recorded: never a hit (§2), like a hidden
+        # message; both states hide, so any row of either is enough.
+        await _drop(conn, "social", [source_id])
+        return
+    shas = [sha for sha in (row.media_ref or "").split(",") if sha]
+    wanted = _social_media_ids(source_id, shas)
+    readings: dict[str, str] = {}
+    if wanted:
+        readings = {
+            r.sha256: _reading(r.title, r.description, r.content)
+            for r in await conn.execute(
+                sa.select(
+                    MEDIA_OBJECTS.c.sha256, MEDIA_OBJECTS.c.title,
+                    MEDIA_OBJECTS.c.description, MEDIA_OBJECTS.c.content,
+                ).where(MEDIA_OBJECTS.c.sha256.in_(sorted(set(wanted.values()))))
+            )
+        }
+    at_ms = int(row.taken_at.timestamp() * 1000)
+    persons = [row.person]
+    # Never `location`, `tagged` or `mentioned` (the module docstring).
+    await _upsert_node(
+        conn, kind="social", source_id=source_id, persons=persons, at_ms=at_ms,
+        text=_text(
+            social_label(network, row.kind, collab=row.collab), row.caption, row.alt_text,
+            *(readings.get(sha, "") for sha in wanted.values()),
+        ),
+    )
+    held = set((await conn.execute(
+        sa.select(MEMORY_EDGE.c.src_id).where(
+            MEMORY_EDGE.c.rel == "attached_to",
+            MEMORY_EDGE.c.dst_kind == "social", MEMORY_EDGE.c.dst_id == source_id,
+        )
+    )).scalars())
+    await _delete(conn, "social_media", sorted(held - set(wanted)))
+    await _hub(conn, "person", row.person)
+    edges: list[Edge] = [
+        ("social", source_id, "authored_by", "person", row.person, "social_item.person"),
+    ]
+    for media, sha in wanted.items():
+        await _upsert_node(
+            conn, kind="social_media", source_id=media, persons=persons, at_ms=at_ms,
+            text=readings.get(sha, ""), sha256=sha,
+        )
+        edges += [
+            ("social_media", media, "attached_to", "social", source_id, "social_item.media_ref"),
+            ("social_media", media, "shared_by", "person", row.person, "social_item.person"),
+        ]
+    ends: list[tuple[str, str]] = []
+    for kind, ids in (("social", [source_id]), ("social_media", list(wanted))):
+        if ids:
+            ends += await _delete_edges(conn, sa.and_(
+                MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids),
+            ))
+    await _insert_edges(conn, edges)
+    await _drop_orphans(conn, ends)
+
+
+async def story_frame_embedded(
+    conn: AsyncConnection, frames: Iterable[tuple[str, str]], *, model: str,
+) -> set[tuple[str, str]]:
+    """Of `frames` (`(network, item_id)`), those whose embedding is done, for
+    `StoryMediaExpiry` (design/cognition-loop/22 §5): the frame has at least
+    one medium node, and every one of them holds a vector of `model` or is
+    terminal, given up (`EMBED_MAX_ATTEMPTS`) or failed `empty`, which no
+    later tick will change. A frame with no medium node (never projected,
+    gone or hidden, or projected under a failure still queued) is not
+    embedded, so its bytes wait for the hard limit: keeping bytes longer is
+    the safe side of the bound."""
+    by_id = {social_source_id(n, i): (n, i) for n, i in frames}
+    if not by_id:
+        return set()
+    node, e = MEMORY_NODE.c, MEMORY_EDGE.c
+    # Never NULL: `bool_and` skips a NULL, so a pending medium whose
+    # `embed_error` is NULL would otherwise read as done.
+    done = sa.or_(
+        sa.and_(node.embedding.isnot(None), node.embedding_model.is_not_distinct_from(model)),
+        sa.and_(
+            node.embedding.is_(None),
+            sa.or_(
+                node.embed_attempts >= EMBED_MAX_ATTEMPTS,
+                node.embed_error.is_not_distinct_from("empty"),
+            ),
+        ),
+    )
+    rows = await conn.execute(
+        sa.select(e.dst_id)
+        .select_from(MEMORY_EDGE.join(MEMORY_NODE, sa.and_(
+            node.kind == e.src_kind, node.source_id == e.src_id,
+        )))
+        .where(
+            e.rel == "attached_to", e.src_kind == "social_media", e.dst_kind == "social",
+            _among(e.dst_id, sorted(by_id)),
+        )
+        .group_by(e.dst_id)
+        .having(sa.func.bool_and(done))
+    )
+    return {by_id[sid] for sid in rows.scalars()}
 
 
 # --- the Notebook ------------------------------------------------------------
@@ -1016,6 +1192,10 @@ async def _drop_episodes(conn: AsyncConnection, kind: str, keys: list[str]) -> N
 
 _PRESENCE: dict[str, sa.Table] = {"stay": PRESENCE_STAYS, "trip": PRESENCE_TRIPS}
 
+#: A kind whose media go with it, and their kind: a message's attachments, a
+#: social item's media.
+_CARRIES: dict[str, str] = {"message": "media", "social": "social_media"}
+
 
 # --- the queue ---------------------------------------------------------------
 
@@ -1062,6 +1242,7 @@ _PROJECTORS: dict[str, Callable[[AsyncConnection, str], Awaitable[None]]] = {
     "lesson": _project_lesson,
     "event": _project_event,
     "character": _project_character,
+    "social": _project_social,
     **{kind: _episode_projector(kind) for kind in _EPISODES},
 }
 
@@ -1213,14 +1394,14 @@ async def _drop(conn: AsyncConnection, kind: str, ids: list[str]) -> None:
     if kind in _EPISODES:
         await _drop_episodes(conn, kind, ids)
         return
-    if kind == "message":
+    if kind in _CARRIES:
         attachments = list((await conn.execute(
             sa.select(MEMORY_EDGE.c.src_id).where(
                 MEMORY_EDGE.c.rel == "attached_to",
-                MEMORY_EDGE.c.dst_kind == "message", _among(MEMORY_EDGE.c.dst_id, ids),
+                MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, ids),
             )
         )).scalars())
-        await _delete(conn, "media", attachments)
+        await _delete(conn, _CARRIES[kind], attachments)
     await _delete(conn, kind, ids)
 
 
@@ -1392,7 +1573,13 @@ def _sources() -> list[tuple[str, Any, list[Any]]]:
         ("lesson", LESSON.c.id, []),
         ("event", EVENTS.c.id, []),
         ("character", CULTURE.c.key, []),
+        ("social", _social_key(), []),
     ]
+
+
+def _social_key() -> Any:
+    """A social item's node id in SQL (`social_source_id`)."""
+    return SOCIAL_ITEM.c.network + ":" + SOCIAL_ITEM.c.item_id
 
 
 def _source_of(kind: str) -> Any:
@@ -1406,6 +1593,14 @@ def _source_of(kind: str) -> Any:
         )
     if kind == "character":
         return sa.exists().where(CULTURE.c.key == node)
+    if kind == "social":
+        st = SOCIAL_ITEM_STATE
+        return sa.exists().where(
+            _social_key() == node,
+            ~sa.exists().where(
+                st.c.network == SOCIAL_ITEM.c.network, st.c.item_id == SOCIAL_ITEM.c.item_id,
+            ),
+        )
     table = {"note": NOTE, "memo": MEMO, "lesson": LESSON, "event": EVENTS}[kind]
     return sa.exists().where(table.c.id == sa.cast(node, pg.UUID(as_uuid=False)))
 
@@ -1635,7 +1830,7 @@ def _embeddable() -> list[Any]:
     return [
         sa.text("memory_node.state = 'live'"),
         _literal_in("kind", EMBEDDED_KINDS),
-        sa.or_(node.text != "", node.kind == "media"),
+        sa.or_(node.text != "", node.kind.in_(ATTACHMENT_KINDS)),
     ]
 
 
@@ -1677,7 +1872,7 @@ def _pick_statement(*, limit: int, now_ms: int, media: bool) -> sa.Select[Any]:
         sa.or_(node.embed_attempts == 0, node.embedded_at <= now_ms - wait),
     ]
     if not media:
-        where.append(node.kind != "media")
+        where.append(node.kind.not_in(ATTACHMENT_KINDS))
     return (
         sa.select(node.id, node.kind, node.source_id, node.text, node.sha256)
         .where(*where)
@@ -1822,7 +2017,7 @@ def _input_key(kind: str, text: str, sha256: str | None) -> str:
     """What a worker result is made from, as far as one key says: an
     attachment's file, any other node's text. Equal keys are the identity
     `adopt_worker_state` copies on."""
-    return (sha256 or "") if kind == "media" else text
+    return (sha256 or "") if kind in ATTACHMENT_KINDS else text
 
 
 def _adoptable(node: Any, source: _Source) -> bool:
@@ -1830,11 +2025,11 @@ def _adoptable(node: Any, source: _Source) -> bool:
     `node`'s input. An attachment's vector made from its bytes, or from a
     reading equal to `node`'s (the projector's keep rule, `_input_changed`);
     any other node's from its text, never an attachment's."""
-    if node.kind == "media":
-        return source.kind == "media" and (
+    if node.kind in ATTACHMENT_KINDS:
+        return source.kind in ATTACHMENT_KINDS and (
             source.embed_input == "bytes" or node.text == source.text
         )
-    return source.kind != "media" and source.embed_input == "text"
+    return source.kind not in ATTACHMENT_KINDS and source.embed_input == "text"
 
 
 async def adopt_worker_state(

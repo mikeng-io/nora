@@ -6,8 +6,9 @@ hop, rank, and an evidence packet with the path that reached each item.
 read boundary (DEC-231): the reading room's unit, every room of it,
 the persons this room lists, who is here (listed or in the live roster), and
 the listed persons whose presence passes here (the room's `location` flag
-and the live DisclosureGuard, `nora.agent.lineage`'s own predicate). Lineage
-mode is not consulted. The arrays go DOWN
+and the live DisclosureGuard, `nora.agent.lineage`'s own predicate), and the
+listed persons whose `social = false` keeps their social items out of every
+read (the caller's, from identity). Lineage mode is not consulted. The arrays go DOWN
 to the index, which applies them inside every read (`SqlMemoryIndex`); the
 walk never filters afterwards, so it can only step onto in-scope nodes and a
 path is cut at its first out-of-scope node.
@@ -93,7 +94,7 @@ import logging
 import math
 import re
 import unicodedata
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
@@ -104,6 +105,7 @@ from nora.domain.external_files import render_file_links
 from nora.domain.lineage import PRESENCE, ROW, Lineage, LineageEntry, RenderRoom
 from nora.domain.media import HANDLE_CHARS
 from nora.domain.memory_index import (
+    ATTACHMENT_KINDS,
     EPISODE_KINDS,
     ExactTerm,
     IndexedNode,
@@ -314,7 +316,9 @@ def terms_of(query: str) -> list[str]:
     return list(dict.fromkeys(out))[:_MAX_TERMS]
 
 
-def scope_for(target: RenderRoom, *, own_room: bool = False) -> MemoryScope | None:
+def scope_for(
+    target: RenderRoom, *, own_room: bool = False, social_off: Collection[str] = (),
+) -> MemoryScope | None:
     """The reading room's scope, from the live policy (`target.rooms`) and
     its live roster (`target.live`); `None` for a room outside the policy,
     which reads nothing.
@@ -325,7 +329,11 @@ def scope_for(target: RenderRoom, *, own_room: bool = False) -> MemoryScope | No
     adaptor's (DEC-316): a room's culture is written from that room's own
     speech. The listed-room and presence rules still apply; a stay or trip, which
     belongs to a person and to no room, is still read where its person
-    passes presence here."""
+    passes presence here.
+
+    `social_off` are the persons whose `identity.toml` block sets `social =
+    false`: none of their social items is read (design/cognition-loop/22 §2),
+    whenever it was recorded."""
     here = target.room
     if here is None:
         return None
@@ -356,6 +364,7 @@ def scope_for(target: RenderRoom, *, own_room: bool = False) -> MemoryScope | No
         exclude_strict=not vouched,
         presence_persons=presence,
         room_persons=room_persons,
+        social_off=frozenset(social_off),
     )
 
 
@@ -530,6 +539,7 @@ class MemorySearch:
         depth: str = DEFAULT_DEPTH, now_ms: int, people: Sequence[PersonRef] = (),
         kinds: Sequence[str] = (), since_ms: int | None = None,
         until_ms: int | None = None, own_room: bool = False,
+        social_off: Collection[str] = (),
     ) -> MemorySearchResult:
         """`people` are the persons the caller can name here (the room's
         resolved roster); the names of those this room lists are the exact
@@ -537,13 +547,14 @@ class MemorySearch:
         that person and narrows the search to them; `kinds` (node kinds),
         `since_ms` and `until_ms` narrow it too (the module docstring), all
         inside the index's reads. `own_room` reads the reading room alone
-        (`scope_for`)."""
+        (`scope_for`); `social_off` are the persons whose social items no read
+        may return."""
         def admits(node: IndexedNode) -> bool:
             lineage = Lineage.from_json(node.lineage)
             return section_permits(lineage.section(ROW), target, origin=None)
 
         try:
-            scope = scope_for(target, own_room=own_room)
+            scope = scope_for(target, own_room=own_room, social_off=social_off)
             if scope is None:
                 return self._count("unavailable")
             only = MemoryFilter(
@@ -607,14 +618,29 @@ def _path(path: Sequence[Step]) -> list[str]:
 
 
 def _handle(node: IndexedNode) -> str | None:
-    """What a person or a tool can name the item by: an attachment's media
-    handle, an entry's title (its first line). A message, an episode and an
-    account have none: their ids are not something said in a chat (R-18)."""
-    if node.kind == "media" and node.sha256:
+    """What a person or a tool can name the item by: a medium's handle (an
+    attachment's or a social item's), an entry's title (its first line). A
+    message, an episode, an account and a social item have none: their ids
+    are not something said in a chat (R-18)."""
+    if node.kind in ATTACHMENT_KINDS and node.sha256:
         return node.sha256[:HANDLE_CHARS]
     if node.kind in ("note", "memo", "event"):
         return node.text.split("\n", 1)[0].strip() or None
     return None
+
+
+def _shown(node: IndexedNode) -> tuple[str, str]:
+    """An item's kind as the answer says it, and its text. A social item says
+    what it is, its node text's first line (`social_label`: «Instagram
+    story»), and the rest is its text; a medium of one says it is a picture
+    or video of the network's. Every other kind is its kind."""
+    if node.kind == "social":
+        label, _, rest = node.text.partition("\n")
+        return label or "social item", rest
+    if node.kind == "social_media":
+        network = node.source_id.partition(":")[0]
+        return f"{network.capitalize()} picture or video", node.text
+    return node.kind, node.text
 
 
 def render_packet(
@@ -633,9 +659,10 @@ def render_packet(
         if h.node.text and scan_identifiers(h.node.text) is not None:
             withheld += 1
             continue
-        text = render_file_links(h.node.text[:TEXT_CHARS]) if h.node.text else ""
+        kind, body = _shown(h.node)
+        text = render_file_links(body[:TEXT_CHARS]) if body else ""
         places = sorted(p for p in h.places if scan_identifiers(p) is None)
-        item: dict[str, Any] = {"kind": h.node.kind}
+        item: dict[str, Any] = {"kind": kind}
         if h.node.at_ms is not None:
             item["age"] = stamp(h.node.at_ms, now)
         handle = _handle(h.node)

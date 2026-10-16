@@ -3505,7 +3505,7 @@ async def build_dependencies(
         # the read-side exclusion lives in the store's reads (§2).
         social_store = SqlSocialStreamStore(engine, opted_out=frozenset(
             p for p in persons.by_person if persons.social_off(p)
-        ))
+        ), metrics=metrics)
         social_poller = SocialPoller(
             source=InstagramSocialSource(
                 base_url=cfg.social.instagram.base_url,

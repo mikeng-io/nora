@@ -13,8 +13,9 @@ cleared (`clear_embeddings`), so a model change is that one statement and the
 backfill through the ordinary pick.
 
 **What a node is embedded from.** An attachment whose own message records an
-image type (`nora.domain.memory_index.embeds_bytes`: a photo, a sticker, a
-GIF) is embedded from its bytes, read from the blob store; any other node,
+image type, or a social item's medium whose bytes custody recorded as one
+(`nora.domain.memory_index.embeds_bytes`: a photo, a sticker, a GIF), is
+embedded from its bytes, read from the blob store; any other node,
 and an image whose bytes Nora no longer holds, from its text as a document.
 The store records which (`embed_input`), so only a change to THAT input
 clears the vector.
@@ -52,7 +53,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.memory_index import EmbedOutcome, embeds_bytes
+from nora.domain.memory_index import ATTACHMENT_KINDS, EmbedOutcome, embeds_bytes
 from nora.domain.ports import BlobStore
 from nora.infra.embedder import (
     EmbedderRejectedError,
@@ -131,10 +132,13 @@ class MemoryEmbedWorker:
             )
             types = await memory_index.media_types(
                 conn, [(n.source_id, n.sha256 or "") for n in picked if n.kind == "media"],
+                social=[
+                    (n.source_id, n.sha256 or "") for n in picked if n.kind == "social_media"
+                ],
             )
         tried = 0
         for item in picked:
-            media_type = types.get(item.source_id, "") if item.kind == "media" else ""
+            media_type = types.get(item.source_id, "") if item.kind in ATTACHMENT_KINDS else ""
             outcome = await self._one(item, media_type)
             if outcome is None:
                 continue

@@ -388,3 +388,58 @@ async def test_a_narrowing_drops_non_hub_neighbours_and_keeps_hubs(load: Load) -
     index = await _graph(load)
     found = await index.neighbours([("message", "1")], _only(kinds=("message",)))
     assert {nb.node.key for nb in found} == {("person", "kit")}
+
+
+# --- the social stream's nodes (design/cognition-loop/22 §9) ------------------
+
+#: (node, in scope for SCOPE, in scope once kit has set `social = false`).
+#: A social node is its author's: readable only where the room lists them.
+#: `social = false` removes every one of theirs, recorded before the switch or
+#: not, and nothing else of theirs: a Character account about kit stays.
+SOCIAL_NODES: list[tuple[IndexedNode, bool, bool]] = [
+    (IndexedNode("social", "instagram:1", "Instagram story\npicnic plans", 10,
+                 persons=("kit",)), True, False),
+    (IndexedNode("social_media", "instagram:1:" + "a1" * 32, "picnic plans blanket", 10,
+                 persons=("kit",), sha256="a1" * 32), True, False),
+    (IndexedNode("social", "instagram:2", "Instagram post\npicnic plans", 9,
+                 persons=("sam",)), True, True),
+    (IndexedNode("social", "instagram:3", "Instagram reel\npicnic plans", 8,
+                 persons=("rin",)), False, False),
+    (IndexedNode("character", "c9", "picnic plans fan", 7, unit="u1",
+                 persons=("kit",)), True, True),
+]
+OFF = replace(SCOPE, social_off=frozenset({"kit"}))
+
+
+def test_the_python_predicate_states_the_social_scope_and_its_opt_out() -> None:
+    assert [in_scope(n, SCOPE) for n, _, _ in SOCIAL_NODES] == [
+        ok for _, ok, _ in SOCIAL_NODES
+    ]
+    assert [in_scope(n, OFF) for n, _, _ in SOCIAL_NODES] == [
+        ok for _, _, ok in SOCIAL_NODES
+    ]
+
+
+async def test_every_read_leaves_out_an_opted_out_persons_social_nodes(load: Load) -> None:
+    """The SQL filter and the Python one agree, inside each read: seed, exact,
+    about, neighbours and dense."""
+    vectors = {n.key: (M, _unit((0, 1.0))) for n, _, _ in SOCIAL_NODES}
+    index = await load(
+        [n for n, _, _ in SOCIAL_NODES] + [IndexedNode("person", "kit")],
+        [("social", "instagram:1", "authored_by", "person", "kit"),
+         ("social_media", "instagram:1:" + "a1" * 32, "attached_to", "social", "instagram:1"),
+         ("character", "c9", "about", "person", "kit")],
+        vectors=vectors,
+    )
+    for scope, column in ((SCOPE, 1), (OFF, 2)):
+        want = {n.key for n, *ok in SOCIAL_NODES if ok[column - 1]}
+        assert {s.node.key for s in await index.seed(["picnic"], scope, limit=50)} == want
+        assert {s.node.key for s in await index.exact(
+            [ExactTerm("picnic")], scope, limit=50)} == want
+        assert {s.node.key for s in await index.dense(
+            _unit((0, 1.0)), scope, model=M, limit=50)} == want
+    assert {n.key for n in await index.about("kit", OFF, limit=10)} == {("character", "c9")}
+    found = await index.neighbours([("social", "instagram:1")], SCOPE)
+    assert ("social_media", "instagram:1:" + "a1" * 32) in {nb.node.key for nb in found}
+    gone = await index.neighbours([("social", "instagram:1")], OFF)
+    assert {nb.node.key for nb in gone} == {("person", "kit")}, "a hub stays a neighbour"
