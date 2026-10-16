@@ -17,11 +17,14 @@ so its assertion holds in both the tag and heartbeat audiences.
 """
 
 import re
+from datetime import UTC, datetime
 
 import pytest
 
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.framing import ParticipationHeader, ProactiveHeader
+
+_NOW = datetime(2026, 10, 16, 11, 0, tzinfo=UTC)
 
 # `pictures` and `room-constraints` are room-occasion files only.
 AUTHORED = (
@@ -254,12 +257,12 @@ def test_the_right_to_stay_silent_comes_with_the_offered_turn(doctrine_store):
     `ParticipationHeader` and `ProactiveHeader`, and no doctrine any audience
     reads may carry it, or it reaches the heartbeat, which assembles from the
     same authored files."""
-    for header in (ParticipationHeader(), ProactiveHeader(rows=())):
+    for header in (ParticipationHeader(), ProactiveHeader(rows=(), now=_NOW)):
         text = " ".join(header.render().split())
         assert "silence is a complete answer here, not a failure" in text, header
     # The base rate is the proactive turn's only (ParticipationHeader's
     # docstring says why).
-    assert "most turns like this one end that way" in ProactiveHeader(rows=()).render()
+    assert "most turns like this one end that way" in ProactiveHeader(rows=(), now=_NOW).render()
     assert "most turns" not in ParticipationHeader().render()
     for audience in ("tag", "heartbeat", "participation", "proactive"):
         assert 'name="silence"' not in doctrine_store.get(applies_to=audience).text

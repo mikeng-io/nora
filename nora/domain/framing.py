@@ -47,7 +47,7 @@ from typing import Literal, Protocol
 from nora.domain.compute import DocumentReadBack
 from nora.domain.models import PersonRef
 from nora.domain.ports import JobResult, JobStatus
-from nora.domain.prompt import escape
+from nora.domain.prompt import age, escape
 from nora.domain.reminders import Recurrence, Reminder, Series, remaining_occurrences
 
 Entry = Literal["escaped", "carried", "joined", "system"]
@@ -246,6 +246,11 @@ class ProactiveHeader:
     """
 
     rows: tuple[Reminder, ...]
+    #: The turn's clock. The decision's age is rendered by the transcript's own
+    #: `age`, so «written 43h ago» and a message «8h ago» compare at a glance:
+    #: an absolute stamp beside relative ages left her unable to see that the
+    #: message settling the thing came after the intention.
+    now: datetime
 
     @staticmethod
     def _about(row: Reminder) -> str:
@@ -256,7 +261,9 @@ class ProactiveHeader:
 
     def _decided(self) -> str:
         return "".join(
-            f"- decided {stamp(row.created_at)}, for {stamp(row.due_at)}"
+            f"- decided {stamp(row.created_at)} "
+            f"({_put(age(int(row.created_at.timestamp() * 1000), self.now), 'system')}), "
+            f"for {stamp(row.due_at)}"
             f"{self._about(row)}\n"
             for row in self.rows
         )
@@ -270,8 +277,11 @@ class ProactiveHeader:
             "so you would come back to it. That time has come — that is why this "
             "turn is happening, and it is the only reason.\n"
             f"{self._decided()}"
-            "The tag_message below is what you wrote to yourself then: an "
-            "intention, not a script, and not a fact about the room. Read what "
+            "The intention below is what you wrote to yourself then: an "
+            "intention, not a script, and not a fact about the room. Every "
+            "message in the transcript younger than that decision came after "
+            "you wrote it, and you have not weighed it yet: if one of them "
+            "settles the thing, it is settled. Read what "
             "is in front of you NOW — the transcript, the standing, the notes "
             "(note_read gives you a note's current body; where_is and route are "
             "worth asking now, not earlier) — and decide again. If the thing has "

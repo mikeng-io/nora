@@ -138,6 +138,9 @@ NON_ESCAPED: dict[tuple[str, str, str], str] = {
     ),
     ("ClockLine", "self.stated", "system"): "`state_time` of the clock, the zone's name",
     ("SummonsHead", "self.summoned", "system"): "`age(...)`, computed from two instants",
+    ("ProactiveHeader", "age(int(row.created_at.timestamp() * 1000), self.now)", "system"): (
+        "`age(...)` of the decision, computed from two instants"
+    ),
 }
 
 #: The helpers a placeholder may call. Anything else a builder interpolates is a

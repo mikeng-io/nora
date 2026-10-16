@@ -1031,6 +1031,16 @@ def _replying_to_block(ctx: TagContext, display_name: str) -> str:
     ).render() + "\n"
 
 
+def build_intention(ctx: TagContext) -> str:
+    """A proactive turn's own earlier intention, in its own block. Not a
+    `<tag_message>`: that block says a person just asked her this and the turn
+    is for answering it, which overrode the header's «an intention, not a
+    script» and had her raise a question the room had already settled."""
+    return ContextBlock(
+        name="intention", body=escape(render_file_links(ctx.message.body)),
+    ).render()
+
+
 def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -> str:
     """The tagging message, attributed.
 

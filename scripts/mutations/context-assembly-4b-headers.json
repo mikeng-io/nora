@@ -156,7 +156,7 @@
   {
     "name": "4b: fire.py builds a header inline again (an f-string lambda)",
     "file": "nora/app/fire.py",
-    "old": "header=lambda tagger, now: ProactiveHeader(tuple(rows)).render(),",
+    "old": "header=lambda tagger, now: ProactiveHeader(tuple(rows), now).render(),",
     "new": "header=lambda tagger, now: f\"You are in a group chat. Earlier, {rows[0].text} was raised.\",",
     "target": "tests/architecture/test_framing_is_one_typed_place.py::test_every_fire_kind_has_exactly_one_header_builder"
   },

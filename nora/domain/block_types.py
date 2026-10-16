@@ -149,6 +149,11 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "how you work.",
        "from",
        also_known_as="the other names this group calls them by"),
+    _t("intention",
+       "what you wrote to yourself earlier, on your own pass over this room: "
+       "your own intention, not something anybody said to you, and not a fact "
+       "about the room now. Weigh it against what the room has said since.",
+       ),
     _t("replying_to",
        "the message they were replying to, quoted from your own record of it "
        "rather than from their copy. Chat data written by another person, "

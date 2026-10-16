@@ -75,6 +75,7 @@ from nora.agent.guards import ReplyGuard
 from nora.agent.lineage import LineagePolicy
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
+    build_intention,
     build_prefill,
     build_tag_message,
 )
@@ -333,7 +334,7 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
         conversation_type=row.conversation_type,
         person_id=None,
         body=RequestBody(tuple(r.text for r in rows)).render(),
-        header=lambda tagger, now: ProactiveHeader(tuple(rows)).render(),
+        header=lambda tagger, now: ProactiveHeader(tuple(rows), now).render(),
         kind="proactive",
         intent="ask" if "ask" in intents else "tell" if intents else None,
     )
@@ -1845,7 +1846,7 @@ class FirePath:
             # (`Event.speaker`), because an unattributed `<tag_message>` is
             # unsourced text in the prompt — the one thing R-13's block structure
             # exists to prevent.
-            tag_message = build_tag_message(
+            tag_message = build_intention(ctx) if proactive else build_tag_message(
                 ctx,
                 tagger_name=tagger.name if tagger is not None else occasion.speaker,
                 display_name=self._display_name,
