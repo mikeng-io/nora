@@ -266,7 +266,7 @@ async def test_an_exact_name_outranks_a_closer_dense_neighbour(engine: Any) -> N
     assert found.hits[1].pin == 0
 
 
-async def test_literal_hits_hold_half_the_answer_and_a_cosine_one_hit_still_shows(
+async def test_literal_hits_are_pinned_and_a_cosine_one_hit_still_shows(
     engine: Any,
 ) -> None:
     """With every exact hit pinned, ten nodes naming Rin would fill every slot and

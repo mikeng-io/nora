@@ -133,7 +133,7 @@ What V2 decided where the plan above left room (DEC-315; the code is
    its cosine to the question, as a dense hit does. The review of #31 found
    that with every exact hit pinned, ten literal matches of one name filled
    all ten slots and even a dense hit at cosine 1.0 never showed; half the
-   answer now always goes by score. Then dense, the question embedded once
+   answer then went by score (since §6, all but the five pinned). Then dense, the question embedded once
    with the query instruction. The trigram seed runs when there is no query
    vector, and beside the dense seed over the nodes holding no vector of
    the current model, waiting for one or given up on (§4.5). This replaces 25 §4 step 2's «fused by reciprocal rank»: there is
@@ -393,9 +393,10 @@ index against master's search for the same 143 queries:
 
 | rule | value | why |
 |---|---|---|
-| dense floor, on a seed scored by its cosine (dense, or exact past the pins) | 0.38 | under every hit ranked in a top 20 (lowest 0.387); 3 of the 20 empty questions then seed nothing and answer `nothing_found`, none of the 143 with a hit does |
+| dense floor, on a seed scored by its cosine (dense, or exact past the pins) | 0.38 | under every hit ranked in a top 20 (lowest 0.387, a margin of 0.007 on queries easier than a member's own); 3 of the 20 empty questions then seed nothing and answer `nothing_found`, none of the 143 with a hit does |
+| ... except inside a date window (`since`, `until`) | the walk's 0.1 | a question asked by time shares few words with its answer: the recall cases' evidence scored 0.07 to 0.36 (item 1), and the window already narrowed it; with the floor, the one line in the window answered `nothing_found` (review of this PR) |
 | walk floor: every hop, a lexical search, the lexical seed beside a dense one | 0.1, unchanged | a hop's relevance is its seed's times the weights: a median hit (0.65) reaches the outing it was said during (`during`, 0.5) at 0.32, and an episode has no vector, so a cosine floor on hops would cut every episode (review of this PR); a lexical score is a share of terms held, another scale |
-| budget | 2,000 tokens of rendered items | known item shown, as built: **107**, master's ten: **98** (and every one of master's 98 among the 107); a median 20 items and 1,930 tokens a packet, master's 1,020. Replayed: 97 at 1,000, 111 at 1,500, 112 at 2,000, 115 at 2,500 |
+| budget | 2,000 tokens of rendered items | known item shown, as built: **107**, master's ten: **98** (and every one of master's 98 among the 107); a median 20 items and 1,930 tokens a packet, master's 1,020. Replayed: 97 at 1,000, 111 at 1,500, 112 at 2,000, 115 at 2,500. The replay ran on lists the old walk ranked and kept hops a dropped seed would no longer reach, so it reads 5 high; the floor on every hop, as first built, showed 118 because it also cut every episode (review of this PR) |
 | score-gap stop | a drop over 0.2 in relevance from one unpinned item to the next | replayed, it shortened 4 of 163 lists and cost none its hit; 0.15 on the age-decayed rank cost 7 |
 | minimum | 3 items, over the gap and the budget, not the floor | a sparse question still shows its best few. The V3 row asked for one item before the identifier screen; this counts items after it, so a withheld hit never stands in for one |
 | hard cap | 30 | at 52 tokens (the 10th percentile) the budget admits about 38; a safety cap |
@@ -409,11 +410,14 @@ empties a list holding an item the screen lets through, so `ok`, `partial`,
 `nothing_found` and `unavailable` keep their meaning (R-27). The floor can
 empty one, never past a pinned literal, which scores 1. One visible change:
 the packet now draws on up to 30 hits, so a search whose first ten were all
-withheld (the tool's `withheld`) can now answer `ok` with later ones.
+withheld (the tool's `withheld`) can now answer `ok` with later ones. The
+search hands the packet its best 30 before the screen, so a withheld hit
+still takes one of those 30.
 
 **Ceilings.** n is small: 143 known items from two rooms, model-written
 queries (easier than a member's own words, so a real question's hit
-scores lower and the floor errs low on purpose), 20 empty questions. The
+scores lower: the floor is 0.007 under the lowest hit measured, no margin
+for that), 20 empty questions. The
 `about` score has no labelled person query behind it, only the scale. The
 reading that would reopen it: a live or eval `memory_search` whose true
 hit scored under 0.38, or a packet that hits the budget with the answer
