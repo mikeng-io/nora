@@ -161,6 +161,11 @@ this revision; this bundle does not edit GLOSSARY):
   ceiling (D5), strikes.
 - **The 2026-09-24 story rule** (design/instagram-adoption/18-instagram-read-and-search.md):
   stories are read by ingestion.
+- **The 2026-09-21 social-read retention rule**, for the social stream only
+  (design/instagram-adoption/06-retention-and-custody.md; operator 2026-10-16):
+  what a member's story, post or reel said (metadata, caption, perception text,
+  its image or video embedding) is kept; its media bytes are deleted at a bound ([22](22-social-stream.md) §5).
+  A live read on the tag path stays ephemeral.
 - **Design 43**: extended from three note passes to the whole loop, and its
   `WITHHELD_TOOLS` list (`nora/language/note_candidates.py`, deleted 2026-10-03, DEC-277) retired: every
   read tool is granted except the live social reads, and the budget is the

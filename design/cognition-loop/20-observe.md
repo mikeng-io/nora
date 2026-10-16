@@ -3,7 +3,7 @@ type: design
 title: "Observe — ingestion fills the Record and raises stimuli; only sources that cannot push are polled"
 description: "The five streams (messages, presence, social, play, perception), what each records today and what is added, which are pushed and which polled, the social stream within members only, the durable stimuli and their cues, and the wake policy: one table of triggers, the watermark, the brakes, self-wakes Cognition requests for itself, and the wake rules of the slow adaptors. Absence is a stimulus only when every source it rests on is proven healthy."
 tags: [nora, observe, ingestion, social-graph, instagram, presence, play, steam, discord, stimuli]
-timestamp: '2026-09-28'
+timestamp: '2026-10-16'
 edges:
   - {dst: 30-cognition, rel: sequences, provenance: asserted}
   - {dst: 60-faces, rel: extends, provenance: asserted}
