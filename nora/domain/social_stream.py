@@ -28,6 +28,22 @@ from typing import Literal, get_args
 #: given the platform's bound.
 STORY_LIFETIME_SECONDS = 86_400
 
+#: The longest tagged place kept, in characters. A place's name is a few
+#: words; anything longer is not one, and is cut rather than stored whole.
+LOCATION_MAX_CHARS = 120
+
+
+def published_location(value: object) -> str | None:
+    """A tagged place's name as the author published it, made safe to keep:
+    one line (every run of whitespace or control characters one space),
+    trimmed, cut to `LOCATION_MAX_CHARS`; None when there is none. It is the
+    author's words and stays data: it is stored and indexed as text, never
+    rendered into an instruction."""
+    if not isinstance(value, str):
+        return None
+    flat = " ".join("".join(c if c.isprintable() else " " for c in value).split())
+    return flat[:LOCATION_MAX_CHARS].rstrip() or None
+
 
 class Cap(StrEnum):
     """What a network can do. A capability a network lacks is absent from its
@@ -107,6 +123,8 @@ class StoryFrame:
     thumbnail_url: str | None = None
     caption: str | None = None
     alt_text: str | None = None
+    #: The place a location sticker tags it with (`published_location`).
+    location: str | None = None
 
 
 @dataclass(frozen=True)
@@ -248,6 +266,9 @@ class SocialItem:
     alt_text: str | None
     media: tuple[MediaItem, ...]
     collab: bool = False
+    #: The place the item is tagged with (`published_location`), None when it
+    #: carries none.
+    location: str | None = None
 
 
 def frame_item(*, network: str, account: str, frame: StoryFrame) -> SocialItem:
@@ -256,6 +277,7 @@ def frame_item(*, network: str, account: str, frame: StoryFrame) -> SocialItem:
         network=network, item_id=frame.item_id, account=account, kind="story_frame",
         taken_at=frame.taken_at, expires_at=frame.expires_at, caption=frame.caption,
         alt_text=frame.alt_text, media=(MediaItem(kind=frame.kind, url=frame.url),),
+        location=frame.location,
     )
 
 

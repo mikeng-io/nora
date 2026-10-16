@@ -172,7 +172,8 @@ TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
 #: holds.
 #:
 #: `memory_search` (DEC-316) is the graph surface's memory verb, offered INSTEAD
-#: of `ask_memory` and `search_memory_workspace` while `[memory_index] enabled`.
+#: of `about`, `ask_memory` and `search_memory_workspace` while `[memory_index]
+#: enabled`.
 #: The ration holds every memory verb of both surfaces, so it binds whichever one
 #: a deployment registers.
 MEMORY_TOOLS: frozenset[str] = frozenset({

@@ -470,6 +470,11 @@ async def walk(
     def keep(node: IndexedNode, score: float, path: tuple[Step, ...]) -> bool:
         if node.key in reached or score < RELEVANCE_FLOOR:
             return False
+        # Episodes only, not every `PRESENCE_KINDS`: `admits` reads a row's
+        # presence lineage, and a social item's tagged place carries none (an
+        # empty lineage is denied outside its origin room, and it has no
+        # room), so it would never be kept. The index's scope already gates
+        # it by presence.
         if node.kind in EPISODE_KINDS and not admits(node):
             return False
         reached[node.key] = Hit(node, score, path)
@@ -680,13 +685,17 @@ def _shown(node: IndexedNode) -> tuple[str, str]:
     """An item's kind as the answer says it, and its text. A social item says
     what it is, its node text's first line (`social_label`: «Instagram
     story»), and the rest is its text; a medium of one says it is a picture
-    or video of the network's. Every other kind is its kind."""
+    or video of the network's, and its location that it is a tagged place.
+    Every other kind is its kind."""
     if node.kind == "social":
         label, _, rest = node.text.partition("\n")
         return label or "social item", rest
     if node.kind == "social_media":
         network = node.source_id.partition(":")[0]
         return f"{network.capitalize()} picture or video", node.text
+    if node.kind == "social_location":
+        network = node.source_id.partition(":")[0]
+        return f"{network.capitalize()} tagged place", node.text
     return node.kind, node.text
 
 

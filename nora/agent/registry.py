@@ -280,8 +280,9 @@ class ToolRegistry:
         external_files: ExternalFilesSource | None = None,
         # `[memory_index] enabled` (ships off): the retrieval service
         # `memory_search` answers from, and the switch between the two memory
-        # surfaces (DEC-316): wired, every build offers `memory_search` and none
-        # of the Honcho memory verbs; `None` keeps the Honcho surface.
+        # surfaces (DEC-316): wired, every build offers `memory_search` and no
+        # Honcho tool (`about` and `remember` included); `None` keeps the
+        # Honcho surface.
         # Process-lifetime like `record`.
         memory_search: MemorySearch | None = None,
     ) -> None:
@@ -316,7 +317,7 @@ class ToolRegistry:
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
             # The memory surface not selected (DEC-316): with no index wired
-            # the graph's `memory_search`, with one the Honcho memory verbs.
+            # the graph's `memory_search`, with one every Honcho tool.
             # `build_tool_specs` never builds them; withholding them here
             # keeps the digest and `withheld_tools()` (Cognition's read
             # surface) true to the same one choice.

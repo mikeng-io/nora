@@ -289,7 +289,15 @@ after insert. Everything that changes about an item is a new row elsewhere.
 - **`social_item`**: `(network, item_id)` unique; `person`, `account`,
   `kind` (`story_frame`, `post`, `reel`, later `thread_post`), `taken_at`,
   `expires_at` (story frames), `caption`, `alt_text`, `location`, `tagged`
-  and `mentioned` handles (recorded, never read, [20](20-observe.md) §2),
+  and `mentioned` handles (recorded, never read, [20](20-observe.md) §2;
+  `location` is read by the memory index since §9 decision 4). `location`
+  is the tagged place's name only, never its coordinates: the bridge reads
+  a post's or reel's `location.name` off the timeline node and a story
+  frame's first `story_locations[].location.name`, and the source keeps it
+  as one line of at most `LOCATION_MAX_CHARS` (`published_location`), the
+  author's words kept as data. The story sticker's field is UNMEASURED on
+  the story document and read defensively; a post read alone
+  (`GET /posts/{shortcode}`) carries none.
   `media_ref`, `seen_at`, `origin` (`poll` or `backfill`), `collab` (another
   account's post the person co-authored, §1), `recorded_at`.
   No unit column: a person in two units is one row, and which units may read
@@ -494,18 +502,31 @@ detail is [unified-memory/25](../unified-memory/25-memory-graph.md) §7a.
    now name a social item's medium; a medium's type for the embedder is read
    from `media_objects.media_type`, since it has no message.
 2. *Its scope.* Person-scoped like a stay: `persons` is the author, no unit
-   and no room, readable only where a room lists them. Not the presence
-   rule. Tagged and mentioned people get no `persons` entry and no edge.
+   and no room, readable only where a room lists them. The item is not under
+   the presence rule; its tagged place is (decision 4). Tagged and mentioned
+   people get no `persons` entry and no edge.
 3. *The off switch.* Filtered at read: the `memory_search` tool computes the
    listed persons with `social = false` per read, and every index read
    leaves their social nodes out, an item recorded before the switch
    included. The projector stays pure.
 4. *Its text.* The caption, verbatim like a message body: an @mention inside
-   it is the author's own text, as in a message. Never `location`, never the
-   tagged or mentioned handles, and (amended the same day, operator) never
-   `alt_text`: the network's generated alt text is typically phrased with the
-   place and the tagged handles, which would bring back what leaving out
-   `location` keeps out; 0 of 32 live rows held one, so nothing is lost.
+   it is the author's own text, as in a message. Never the tagged or
+   mentioned handles, and (amended the same day, operator) never `alt_text`:
+   the network's generated alt text is typically phrased with the place and
+   the tagged handles; 0 of 32 live rows held one, so nothing is lost.
+   **The location is searchable** (operator, 2026-10-17: «should a post's
+   location tag be searchable in Nora's memory? — yes»; this reverses the
+   original «never `location`»). A tagged place is one the author published,
+   and still their whereabouts, so it is gated as a stay is: a
+   `social_location` node of its own, keyed like the item and `attached_to`
+   it, in scope only where the author passes presence (the room's `location`
+   flag AND the live DisclosureGuard, `PRESENCE_KINDS`). Where presence
+   fails the item is still found by its caption and media, and its place
+   neither matches a search nor is rendered. It is not in the item's text,
+   because a read cannot gate part of a node. Alt text stays out: it was not
+   ruled on, and it would carry the place past that gate. Detail:
+   [unified-memory/25](../unified-memory/25-memory-graph.md) §7a item 4.
+   The poller records it for posts, reels and story frames (§5).
 5. *The verb.* No new category and no tool-text change: social items are in
    `kinds=media`, and the answer's `kind` says what an item is («Instagram
    story») with its `age`.
@@ -527,3 +548,9 @@ the index has not projected waits for the hard limit.
   no author's viewer list was read to confirm Nora is absent from it. That
   read needs a member's help: one story, read by the poller, then their
   viewer list.
+- A location tag the author later removes stays recorded and searchable:
+  `social_item` is append-only, its first row's place is kept, and nothing
+  compares a re-listed item's place against it. Removing it needs a place
+  change recorded as an item state row, the poller comparing each re-listed
+  item's place, and the index projecting the latest place. A withdrawn
+  whereabouts is the sensitive case; captions behave the same way.

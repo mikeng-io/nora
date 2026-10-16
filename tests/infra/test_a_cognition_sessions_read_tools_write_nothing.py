@@ -371,15 +371,16 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
     # No counter that feeds a decision moved, and Honcho was only ever read.
     assert world.memory.fed == [] and world.memory.writes == [] and world.memory.peers == []
-    assert world.memory.queries   # and it WAS read (`about`, on both surfaces)
     if "memory_search" in world.surface.wired:
-        # The graph surface: the index answered, Honcho was never searched or
-        # asked (no Honcho behind `memory_search`, DEC-316).
+        # The graph surface: the index answered, and Honcho was never read at
+        # all: no Honcho tool sits on it, `about` included (DEC-316).
         assert not HONCHO_MEMORY_TOOLS & set(world.surface.wired)
         assert "unavailable" not in results["memory_search"], results["memory_search"]
         assert world.memory.chats == [] and world.memory.searches == []
+        assert world.memory.queries == []
     else:
         assert world.memory.chats and world.memory.searches
+        assert world.memory.queries   # and `about` WAS read
 
 
 async def test_the_positive_control_a_live_write_moves_the_snapshot(engine, world):
