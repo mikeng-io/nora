@@ -23,7 +23,7 @@ from collections.abc import Awaitable, Callable, Collection, Coroutine, Mapping,
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
 import boto3
@@ -284,6 +284,9 @@ from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
 from .runtime import BackgroundTasks
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
 
 log = logging.getLogger("nora.app.composition")
 
@@ -1328,6 +1331,20 @@ def _image_gen_wiring(
 def wall_clock() -> datetime:
     """The deployment's clock. THE default, and the only one production uses."""
     return datetime.now(UTC)
+
+
+def _story_frames_embedded(
+    engine: AsyncEngine, model: str,
+) -> Callable[[Sequence[tuple[str, str]]], Awaitable[set[tuple[str, str]]]]:
+    """The memory index's answer to which story frames are embedded under the
+    deployed embedder, for the story expiry pass."""
+    from nora.infra.sql.memory_index import story_frame_embedded
+
+    async def embedded(frames: Sequence[tuple[str, str]]) -> set[tuple[str, str]]:
+        async with engine.connect() as conn:
+            return await story_frame_embedded(conn, frames, model=model)
+
+    return embedded
 
 
 async def build_dependencies(
@@ -3541,6 +3558,7 @@ async def build_dependencies(
         keep_days=cfg.social.story_media_keep_days,
         max_days=cfg.social.story_media_keep_max_days,
         tick_seconds=cfg.social.poll.tick_seconds, metrics=metrics,
+        embedded=_story_frames_embedded(engine, fingerprint(cfg.memory_index.embedder_model)),
     ) if blobs is not None and cfg.social.story_expiry_enabled else None
 
     # The participation occasion: trigger, then

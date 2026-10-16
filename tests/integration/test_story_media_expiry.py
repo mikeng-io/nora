@@ -15,7 +15,7 @@ Database scoped to the MODULE and truncated between tests (AGENTS.md).
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -25,7 +25,8 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.app.social_expiry import StoryMediaExpiry
+from nora.app.composition import _story_frames_embedded
+from nora.app.social_expiry import EmbeddedFrames, StoryMediaExpiry
 from nora.domain.social_stream import SocialItem
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import (
@@ -91,6 +92,8 @@ class World:
     metrics: Metrics = field(default_factory=Metrics)
     #: Run inside each `delete`, before its check: a writer racing the pass.
     racing: Callable[[str], Awaitable[None]] | None = None
+    #: The memory index's answer, when the pass is given one.
+    embedded: EmbeddedFrames | None = None
     blobs: FakeBlobStore = field(init=False)
 
     def __post_init__(self) -> None:
@@ -107,6 +110,7 @@ class World:
         return StoryMediaExpiry(
             store=self.store, blobs=self.blobs, keep_days=KEEP, max_days=MAX,
             tick_seconds=600, metrics=self.metrics, clock=self.clock,
+            embedded=self.embedded,
         )
 
     async def seed(
@@ -200,6 +204,42 @@ async def test_at_the_first_bound_a_frame_without_an_embedding_keeps_its_bytes(w
     assert world.held(unperceived)
     assert await world.tombstones() == []
     assert world.blobs.deletes == 0
+
+
+async def test_at_the_first_bound_a_perceived_and_embedded_frame_loses_its_bytes(world) -> None:
+    asked: list[list[tuple[str, str]]] = []
+
+    async def index(frames: Sequence[tuple[str, str]]) -> set[tuple[str, str]]:
+        asked.append(list(frames))
+        return {("instagram", "both"), ("instagram", "unperceived")}
+
+    world.embedded = index
+    both = await world.seed("both", perceived=True)
+    unperceived = await world.seed("unperceived")
+    unembedded = await world.seed("unembedded", perceived=True)
+    expiry = world.expiry()
+
+    world.clock.days(1 + KEEP)
+    await expiry.tick()
+
+    assert not world.held(both)
+    assert world.held(unperceived), "embedded but never perceived: kept to the hard limit"
+    assert world.held(unembedded)
+    assert [r for _, _, r in await world.tombstones()] == ["embedded"]
+    assert world.deleted("embedded") == 1
+    assert all(("instagram", "unperceived") not in a for a in asked)
+
+
+async def test_with_the_real_index_an_unprojected_frame_waits_for_the_hard_limit(world) -> None:
+    world.embedded = _story_frames_embedded(world.engine, "a-model")
+    sha = await world.seed("s1", perceived=True)
+    expiry = world.expiry()
+
+    world.clock.days(1 + KEEP)
+    await expiry.tick()
+
+    assert world.held(sha)
+    assert await world.tombstones() == []
 
 
 async def test_at_the_hard_limit_the_bytes_go_tombstoned_and_counted_unembedded(world) -> None:
