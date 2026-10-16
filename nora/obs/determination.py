@@ -1,52 +1,34 @@
 """One determination — a turn that could have spoken and decided either way —
 as a value, and the two renderings that read it.
 
-**Why this is a value and not two format calls.** The shadow mirror (design/
-dreamer-agent-loop/35 §10.6) already rendered a determination, and rendered it
-well: the source room, the verdict, the text she sent or the draft she declined
-to send, and the window that closed. But it rendered it *into a send* — through
-`deliver.build`, the `Deliverer`'s guards and an audit row — so the whole record
-existed only where an operator had wired a mirror channel, cost a real send per
-determination, and never appeared in the log. A determination that is only
-readable as a chat message is not readable by anything that is not a person
-already in that channel.
+The value feeds two sinks: the shadow mirror (`render_mirror`, posted to a
+channel) and the process log (`log_determination`), which needs no channel and
+no send. A determination carries the source room, the verdict, the text she
+sent or the draft she declined to send, and the window that closed.
 
-Splitting the value from its rendering gives the same record two sinks: the
-mirror it already had, and the process log, which needs no channel and no send.
-The mirror's output is unchanged — `render_mirror` is the old `_mirror_text`
-verbatim, and the fire path's shadow tests read it.
+**Not a metric** (AGENTS.md: «a log line is not a metric»). Counters such as
+`nora_participation_spoke_total` and `nora_participation_silence_total` answer
+how many and with what outcome. What no counter can carry is WHAT the declined
+floor was made of: the draft that doubles as her reasoning, and the window she
+read it against.
 
-**Why this is not a metric** (AGENTS.md: «a log line is not a metric»). The
-counters already exist and already answer how many, how often, with what
-outcome: `nora_participation_spoke_total`, `nora_participation_silence_total`,
-and the proactive pair. What no counter can carry is WHAT the declined floor was
-made of — the draft that doubles as her reasoning, and the window she read it
-against. That content is the whole reason to look, and it is irreducible to a
-label.
+**Content is DEBUG, shape is INFO.** A determination carries her draft and a
+tail of the room's transcript, so `log_determination` logs the shape at INFO
+and the speech at DEBUG, as two events with fixed shapes rather than one event
+whose fields come and go with the log level. This keeps group speech out of the
+default log.
 
-**Why the content is DEBUG and the shape is INFO.** `FirePath._turn` already
-made this call once, deliberately: the length of unrouted prose goes to INFO
-«because it separates them without putting group speech in the log; the prose
-itself is DEBUG, for a deliberate diagnosis». A determination carries both her
-draft and a tail of the room's transcript, so it splits the same way — `log_determination`
-logs the shape at INFO and the speech at DEBUG, as two events with fixed
-shapes rather than one event whose fields come and go with the log level.
+**No `nora.*` imports.** This module reads dataclasses it defines and the
+standard library, nothing else, so it can be lifted out whole;
+`test_the_module_imports_nothing_from_nora` checks it. For that reason it
+renders no window of its own: `render_mirror` takes the window already
+rendered (`nora.app.fire._mirror_window` builds it through the shared
+`render_rows`), so the line format is not duplicated here.
 
-**No `nora.*` imports, on purpose.** This module reads dataclasses it defines
-and the standard library, nothing else. A determination is not a Nora idea —
-it is what any occasion that may decline the floor produces — and keeping the
-imports empty is what lets it be lifted out whole.
-`test_the_module_imports_nothing_from_nora` is the check, and it is why this
-module RENDERS no window of its own. `render_mirror` takes the window already
-rendered — `nora.app.fire._mirror_window` builds it through the shared
-`render_rows`, because that file may import `nora.domain` freely and this one
-may not. A private copy of the LINE FORMAT here is what that avoids.
-
-The COLLAPSE is a different question and stays here, in `window_from` and
-`_one_line` below. `WindowRow.body` promises one line to everything that reads
-it, and the log sink (`as_content`) reads it without ever passing through
-`fire`, so the promise has to be kept at the constructor. `_one_line`'s own
-docstring argues why that is not a duplicated policy.
+The line COLLAPSE stays here, in `window_from` and `_one_line`.
+`WindowRow.body` promises one line to everything that reads it, and the log
+sink (`as_content`) reads it without passing through `fire`, so the promise is
+kept at the constructor.
 """
 
 from __future__ import annotations
@@ -56,18 +38,16 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 #: How many transcript rows the window tail carries, and how much of each.
-#: Both are the shadow mirror's own numbers, kept because the two sinks render
-#: ONE value: a log that truncated differently would be a second answer to
-#: «what did she read» and the two would drift.
+#: Both sinks render ONE value, so the log and the mirror truncate identically.
 WINDOW_ROWS = 5
 WINDOW_BODY_CHARS = 120
 
 Verdict = Literal["spoke", "silent"]
 
-#: The ledger's key column: the four outcomes the mirror's prose already
-#: distinguishes, as one word each. Derived from the value in `disposition`
-#: rather than passed in, so a caller cannot label a determination something
-#: its own fields contradict.
+#: The ledger's key column: the four outcomes the mirror's prose distinguishes,
+#: as one word each. Derived from the value in `disposition` rather than passed
+#: in, so a caller cannot label a determination something its own fields
+#: contradict.
 Disposition = Literal["spoke", "held_shadow", "held_cooldown", "declined"]
 
 
@@ -78,19 +58,14 @@ class WindowRow:
     Deliberately not `TranscriptRow`: this module carries the two fields the
     rendering reads and nothing else, which is what keeps it free of the
     domain package. `sender_name` is `str | None` because the record store's
-    row is — an unmapped sender has no name, and rendering it as `None` is
-    what the mirror has always done.
+    row is: an unmapped sender has no name and renders as `None`.
     """
 
     sender_name: str | None
     #: ONE LINE, ALREADY. `render_mirror` puts this on a line of its own beside
-    #: a name, so a body holding a line break forges a window row under a name
-    #: that never said it. The collapse is `nora.domain.prompt.one_line` and it
-    #: belongs to whoever builds this — this module may not import it (see the
-    #: module docstring) — so `window_from`, the only constructor, does it
-    #: rather than asking its caller to remember. An obligation stated in a
-    #: comment is the kind that gets forgotten; that is this whole change's
-    #: story.
+    #: a name, so a body holding a line break would forge a window row under a
+    #: name that never said it. `window_from`, the only constructor, does the
+    #: collapse (this module may not import `nora.domain.prompt.one_line`).
     body: str | None
 
 
@@ -106,7 +81,7 @@ class Determination:
     `held` and `shadow_hold` are separate because the operator's question is
     different in each case: `held` says she concluded speak, `shadow_hold` says
     the room heard nothing because shadow mode is on rather than because the
-    cooldown happened to hold it (Miles decision 2026-09-05).
+    cooldown happened to hold it.
     """
 
     occasion: str
@@ -130,19 +105,16 @@ class Determination:
 
 
 def render_mirror(d: Determination, *, window: str) -> str:
-    """The shadow mirror post (§10.6): the source room, the verdict, the text
-    and the window that closed.
+    """The shadow mirror post: the source room, the verdict, the text and the
+    window that closed.
 
-    Byte-identical to the `_mirror_text` this replaced. `tests/unit/
-    test_fire_path.py`'s shadow suite reads these strings.
+    `tests/unit/test_fire_path.py`'s shadow suite reads these strings.
 
-    **`window` is REQUIRED, with no default**, and that is the whole of its
-    safety. It carries the rows this module is forbidden to render itself (see
-    the module docstring), so a default of `""` would mean a caller that forgot
-    the argument posted a mirror with the window silently missing — the section
-    an operator reads to see WHAT she read, absent and indistinguishable from a
-    turn where the window was genuinely empty. An empty string still renders
-    nothing; the difference is that somebody had to say so.
+    `window` is REQUIRED, with no default. It carries the rows this module may
+    not render itself, so a default of `""` would let a caller that forgot the
+    argument post a mirror with the window silently missing, indistinguishable
+    from a turn where the window was genuinely empty. An empty string still
+    renders nothing; the caller has to say so.
     """
     lines = [f"[shadow] {d.platform}/{d.conversation_id}"]
     if d.verdict == "spoke":
@@ -217,12 +189,10 @@ def log_determination(log: logging.Logger, d: Determination) -> None:
     """Log one determination: the shape at INFO, the speech at DEBUG.
 
     Two events with fixed shapes rather than one event whose fields appear and
-    disappear with the log level — a record that changes shape cannot be read
-    by anything that did not also read the level it was written at.
+    disappear with the log level.
 
     `tag_id` is not a field here: `nora.obs.logging` binds it as a contextvar
-    for the whole turn, so every line already carries it. Repeating it would be
-    a second copy that a refactor can make disagree with the first.
+    for the whole turn, so every line already carries it.
     """
     log.info("determination", extra=as_shape(d))
     if log.isEnabledFor(logging.DEBUG):
@@ -235,24 +205,16 @@ def window_from(rows: Any) -> tuple[WindowRow, ...]:
     Takes anything with `sender_name` and `body` — `TranscriptRow` at runtime —
     so the domain type stays on the caller's side of the import.
 
-    **Bodies are collapsed to one line here**, which is what makes
-    `WindowRow.body`'s promise true. `str.splitlines` is the stdlib answer to
-    «what ends a line», so rejoining its output with a space needs no regex, no
-    table of separators and no `nora.*` import — see `_one_line` below.
-
-    Doing it here rather than asking the caller to is the same judgement
-    `MediaJoin` is one class for: one renderer remembering and the next
-    forgetting is what this change exists to stop, and this is the only way a
-    `Determination`'s window is ever built.
+    Bodies are collapsed to one line here, which is what makes
+    `WindowRow.body`'s promise true (see `_one_line`). This is the only way a
+    `Determination`'s window is built.
     """
     return tuple(
         WindowRow(
-            # THE NAME IS COLLAPSED TOO, and the `person_name` projection is
-            # preferred over the self-set platform one (DEC-80) — `render_mirror`
-            # puts this on a line of its own beside a body, so a newline in a
-            # profile name forges a window row, and the raw profile name is a
-            # second name for somebody the verdict line above already called
-            # something else.
+            # The name is collapsed too, and the `person_name` projection is
+            # preferred over the self-set platform one (DEC-80):
+            # `render_mirror` puts this on a line of its own beside a body, so
+            # a newline in a profile name would forge a window row.
             sender_name=_one_line(
                 getattr(row, "person_name", None) or row.sender_name or ""
             ) or None,
@@ -265,15 +227,11 @@ def window_from(rows: Any) -> tuple[WindowRow, ...]:
 def _one_line(body: str) -> str:
     """`body` with every line break replaced by the space a reader would see.
 
-    **Not a second copy of a policy** — that is the distinction that makes this
-    acceptable where a duplicated separator table would not be. The policy is
-    «what ends a line», and `str.splitlines` IS that answer, in the standard
-    library, for both this function and `nora.domain.prompt.one_line`. There is
-    no list here that can drift out of step with one over there, because
-    neither of them holds a list.
+    Not a second copy of a policy: «what ends a line» is `str.splitlines`, for
+    both this function and `nora.domain.prompt.one_line`, so neither holds a
+    separator list that can drift.
 
-    `tests/unit/test_determination.py` pins the agreement directly against
-    `one_line` over a shared corpus, so a divergence reds rather than waits to
-    be noticed.
+    `tests/unit/test_determination.py` pins the agreement against `one_line`
+    over a shared corpus.
     """
     return " ".join(part.strip() for part in body.splitlines() if part.strip())

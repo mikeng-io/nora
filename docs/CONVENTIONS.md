@@ -674,10 +674,15 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
   what it requires, when to change it. It is never a log: no dates, issue or PR
   numbers, measurements, review stories or "was X, now Y" — the commit, the
   issue and the ADR hold those, and a comment copy drifts from them. A decision
-  is cited as a bare pointer (`DEC-123`, `ADR 0023`), never retold. Example
-  TOMLs are gated on these markers
-  (`tests/architecture/test_example_toml_comments_are_reference.py`), never on
-  length.
+  is cited as a bare pointer (`DEC-123`, `ADR 0023`), never retold. The same
+  holds for docstrings, including a test's: it says what the test guards, not
+  how the bug was found. Gated on these markers, never on length: example TOMLs
+  by `tests/architecture/test_example_toml_comments_are_reference.py`, Python
+  by `tests/architecture/test_comments_carry_no_new_log.py` (dates and issue
+  numbers; the baseline in `log_marker_baseline.json` only goes down, and
+  `python scripts/log_markers.py --write` records a cleanup). A model-facing
+  docstring (a tool's) is behaviour: change it through the nora-tool skill,
+  not as a comment edit.
 - Test-seam policy: production classes take collaborators through `__init__`
   only — no `*_fn` hooks, no `_for_test` params, no module-level mutable
   singletons.
