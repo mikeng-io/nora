@@ -232,7 +232,7 @@ out *what it is*. Three reasons it stays that way:
 | `profile`, `story` by `person` | the tool's first PR | `GET /accounts/{igid}`, `GET /accounts/{igid}/story` |
 | `profile`, `story` by `link` or `handle` | P10 | `GET /accounts?username=` |
 | a post / reel by link | P12 | `GET /posts/{shortcode}` |
-| `posts` (a person's list) | not before P13 finds a mechanism | none today |
+| `posts` (a person's list) | not before P13 finds a mechanism (found 2026-10-16: design/cognition-loop/22-social-stream.md §1a) | none today |
 
 A verb, an input kind, and the words advertising them all land together. The
 first PR's tool accepts only `person` and only `profile` / `story`; `link` and
