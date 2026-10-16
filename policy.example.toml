@@ -165,10 +165,10 @@ persons  = "*"               # Anyone in this chat, including senders Nora canno
 # 3. UNITS -> WORKSPACES (DEC-214). Optional. Hierarchy: workspace > unit > room.
 #    Retiring with Honcho; the unit becomes the only boundary.
 #
-#    A workspace holds one or more units. Units in one workspace share one
-#    person-model, each unit is its own scope inside it, and recall for a unit
-#    comes from that unit's rooms. Different workspaces share nothing: use one
-#    when a group's people must not share memory with another's.
+#    A workspace holds one or more units. Within a workspace a person is
+#    one person-model across all its units, each unit is its own scope, and recall for a unit
+#    comes from that unit's rooms. Different workspaces keep separate person-models:
+#    use one when a group's people must not share memory with another's.
 #
 #    With no [units] table, every unit is in one implicit workspace bound to
 #    config.toml's `memory.workspace_id`. Once the table exists it must name

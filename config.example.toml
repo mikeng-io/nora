@@ -44,7 +44,7 @@ base_url = "http://instagram-bridge:18082"  # bridge holds the cookie session; n
                                   # copy the cookie header into the bridge's /session volume
 
 [memory]
-# Honcho (memory) endpoint. In the container deployment Honcho is not published
+# Honcho (memory) endpoint. Honcho has no authentication, so never publish it
 # on the host: use http://honcho:8000 on the private honcho_memory network
 # (see docs/runbook.md, "Closing Honcho").
 base_url = "http://127.0.0.1:8000"
@@ -868,8 +868,9 @@ max_chars = 200                # more than this: no model call
 enabled = false
 threshold = 0.5                    # wake score that starts utterance collection
 model_path = "/app/models/喂Nora.onnx"  # wake model baked into the voice-wake image
-stt_model = "sensevoice"           # STT engine for the wake path (fast model);
-                                   # voice notes use [speech.stt].model
+stt_model = "sensevoice"           # STT engine for the wake path, preloaded by the stt
+                                   # service at boot (another engine loads cold on first
+                                   # wake); voice notes use [speech.stt].model
 vad_enabled = true                 # end an utterance when Silero VAD hears no speech for
                                    # silence_tail_ms; false = RMS loudness fallback
 vad_threshold = 0.5                # speech probability at/above this counts as speech
@@ -1054,7 +1055,7 @@ display_name = "Nora"
 [dreamer]
 # The Dreamer's instruction corpus: `doctrine/` (one file, applies to every run) and
 # `objectives/` (one per adaptor). Bind-mounted read-only, so an edit is live on the
-# next tick with no rebuild.
+# next tick with no rebuild: any pull on the deploy host is a deploy.
 dir = "nora/dreamer"
 reload = "mtime"
 strict = true
@@ -1102,7 +1103,8 @@ max_tokens = 6000
 
 # Culture fold budget. The fold researches with read verbs before it writes, and each
 # turn re-sends the full context, so the defaults are too small. A cut loop holds the
-# watermark and the same batch is retried. `output_tokens` must let the loop emit a
+# watermark and retries the batch; the third cut in a row skips past it and that
+# batch is lost (DEC-280). `output_tokens` must let the loop emit a
 # realistic account twice (tool-call arguments, then the account); keep it well above
 # that, and raise `[dreamer] max_tokens` rather than this if a fold truncates. Removing
 # this block leaves a fold that cannot finish.
@@ -1123,7 +1125,8 @@ lookup_person = 12
 # Cognition session budget (DEC-247). Required when the cognition section is enabled;
 # config refuses to load without it. Sessions are bounded by rounds, tokens and time
 # only: `max_memory_calls`, `max_tool_calls` and a `tool_calls` table are refused at
-# load for this adaptor. Uses `[dreamer] model`. `timeout_seconds` must end at least
+# load for this adaptor. Uses `[dreamer] model`; the per-call ceiling is `[dreamer]
+# max_tokens`, not this block. `timeout_seconds` must end at least
 # 60s before the cognition section's `session_timeout_seconds` (3900) or the runner
 # refuses to start. Starting values, not tuned. Do not state these limits in the prompt.
 [dreamer.budgets.cognition]
@@ -1368,7 +1371,7 @@ max_bytes = 104857600
 # A clip is read in transient windows of `chunk_seconds`, each sent to the
 # describer; storage keeps the whole original. `chunk_max` caps windows per clip
 # (10 x 90 s = 15 minutes read in full). When it binds, the description says how
-# much was read and the clip's length is recorded in provenance. Audio is
-# stripped from the windows.
+# much was read and the clip's length is recorded in provenance. Windows keep the audio track;
+# a clip whose audio cannot be decoded is read silent.
 chunk_seconds = 90
 chunk_max = 10

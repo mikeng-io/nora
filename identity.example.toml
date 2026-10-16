@@ -40,7 +40,8 @@ phone = "+85212345678"
 # lid   = "60000000000001"
 
 # Instagram: matchable kinds are `fbid` and `igid`. They are different numbers
-# for the same person and neither can be derived from the other. List both.
+# for the same person and neither can be derived from the other. List both;
+# a swapped or missing id fails silently (no error, the match just never happens).
 #
 # `fbid` is the messaging identity (interop_messaging_user_fbid): what inbound
 # messages and @-mentions carry. `igid` is the public numeric Instagram id, used
@@ -69,7 +70,7 @@ phone = "+85212345678"
 #
 # A bound Honcho workspace must be Nora's own (carrying her `nora_owner`
 # marker) or absent or empty, which she claims. An unmarked workspace that
-# already holds sessions is refused; pick another id (a `nora-` prefix keeps
+# already holds sessions makes startup fail; pick another id (a `nora-` prefix keeps
 # them apart). config.toml's memory.workspace_id is exempt.
 #
 # [workspaces.home]
