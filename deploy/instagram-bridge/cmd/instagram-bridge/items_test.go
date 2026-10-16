@@ -28,6 +28,14 @@ type itemsBody struct {
 		Caption       string `json:"caption"`
 		CarouselCount int    `json:"carousel_count"`
 		Collab        bool   `json:"collab"`
+		AltText       string `json:"alt_text"`
+		Items         []struct {
+			Kind            string   `json:"kind"`
+			URL             string   `json:"url"`
+			Width           int      `json:"width"`
+			Height          int      `json:"height"`
+			DurationSeconds *float64 `json:"duration_seconds"`
+		} `json:"items"`
 	} `json:"items"`
 	NextCursor *string `json:"next_cursor"`
 }
@@ -113,6 +121,41 @@ func TestItemsMapsReelsPostsAndTheCursor(t *testing.T) {
 	}
 	if body.NextCursor == nil || *body.NextCursor != "synthetic-cursor-1" {
 		t.Errorf("next_cursor = %v, want the page's end_cursor", body.NextCursor)
+	}
+}
+
+// The listing carries the media, in `GET /posts/{shortcode}`'s item shape: a
+// reel's largest clip with its duration, a carousel's every child in order (a
+// child with no url skipped), a post's image with its alt text, and `items`
+// present and empty when a node carries none.
+func TestItemsCarryTheirMedia(t *testing.T) {
+	f := &fakeIG{TimelineBody: []byte(fakeig.TimelineFirstPageJSON)}
+	body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
+
+	reel, carousel, plain := body.Items[0], body.Items[1], body.Items[2]
+	if len(reel.Items) != 1 || reel.Items[0].Kind != "video" || reel.Items[0].URL != "https://cdn/r.mp4" ||
+		reel.Items[0].Width != 720 || reel.Items[0].Height != 1280 ||
+		reel.Items[0].DurationSeconds == nil || *reel.Items[0].DurationSeconds != 7.5 {
+		t.Errorf("reel items = %+v, want its largest clip with a 7.5s duration", reel.Items)
+	}
+	if len(carousel.Items) != 2 || carousel.Items[0].Kind != "image" || carousel.Items[0].URL != "https://cdn/c1.jpg" ||
+		carousel.Items[1].Kind != "video" || carousel.Items[1].URL != "https://cdn/c2.mp4" {
+		t.Errorf("carousel items = %+v, want the image then the video, the url-less child skipped", carousel.Items)
+	}
+	if len(plain.Items) != 1 || plain.Items[0].Kind != "image" || plain.Items[0].URL != "https://cdn/p3.jpg" ||
+		plain.AltText != "a photo of a plate" {
+		t.Errorf("post = %+v, want its image and alt text", plain)
+	}
+
+	last := getItems(t, newTestBridge(t, &fakeIG{TimelineBody: []byte(fakeig.TimelineLastPageJSON)}), fakeig.TimelineOwnerIGID, "")
+	var raw struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(last.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if v, has := raw.Items[0]["items"]; !has || len(v.([]any)) != 0 {
+		t.Errorf("a node with no media: items = %v (present %v), want an empty list, not null", v, has)
 	}
 }
 

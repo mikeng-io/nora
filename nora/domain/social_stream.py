@@ -118,8 +118,8 @@ class StorySnapshot:
 
 @dataclass(frozen=True)
 class ItemRef:
-    """One post or reel as a listing shows it: enough to dedupe, order, and
-    read the item in full."""
+    """One post or reel named by its shortcode: what `read_item` reads a single
+    post by."""
 
     account: str
     item_id: str
@@ -133,9 +133,10 @@ class ItemRef:
 
 @dataclass(frozen=True)
 class Page:
-    """A page of a listing, newest first. `next_cursor` is None at the end."""
+    """A page of a listing, newest first, each item complete enough to record
+    (its media included). `next_cursor` is None at the end."""
 
-    items: tuple[ItemRef, ...]
+    items: tuple[SocialItem, ...]
     next_cursor: str | None
 
 

@@ -341,6 +341,11 @@ type timelineItem struct {
 	CarouselCount int    `json:"carousel_count"`
 	// Collab is a post another account owns and this one co-authored.
 	Collab bool `json:"collab"`
+	// Items is the media the listing carries, in `GET /posts/{shortcode}`'s
+	// item shape; never null, empty when the node had no usable url.
+	Items []postItem `json:"items"`
+	// AltText is Instagram's own description of the image, "" when none.
+	AltText string `json:"alt_text"`
 }
 
 // itemsBody is the 200 shape, on the list conventions `GET /accounts`
@@ -353,7 +358,12 @@ type itemsBody struct {
 func itemsOf(p domain.TimelinePage) itemsBody {
 	items := make([]timelineItem, 0, len(p.Items))
 	for _, it := range p.Items {
-		items = append(items, timelineItem(it))
+		items = append(items, timelineItem{
+			Code: it.Code, PK: it.PK, TakenAt: it.TakenAt, Kind: it.Kind,
+			MediaType: it.MediaType, Caption: it.Caption,
+			CarouselCount: it.CarouselCount, Collab: it.Collab,
+			Items: postItemsOf(it.Items), AltText: it.AltText,
+		})
 	}
 	return itemsBody{Items: items, NextCursor: p.NextCursor}
 }

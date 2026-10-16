@@ -250,20 +250,36 @@ func sameIdentity(item *responses.Items, code domain.Shortcode, id domain.MediaI
 // candidate by area wins, then by width, as the library's own
 // `wrapXMAItem` picks.
 func postItemOf(it *responses.Items) (domain.PostItem, bool) {
-	var best domain.PostItem
+	videos := make([]mediaCandidate, 0, len(it.VideoVersions))
 	for _, v := range it.VideoVersions {
+		videos = append(videos, mediaCandidate{URL: v.URL, Width: v.Width, Height: v.Height})
+	}
+	images := make([]mediaCandidate, 0, len(it.ImageVersions2.Candidates))
+	for _, c := range it.ImageVersions2.Candidates {
+		images = append(images, mediaCandidate{URL: c.URL, Width: c.Width, Height: c.Height})
+	}
+	return pickMedia(videos, images, it.VideoDuration)
+}
+
+// pickMedia is postItemOf's rule over plain candidates, shared with the
+// timeline, whose nodes carry the same renditions: the largest clip when
+// there is one (with its duration when Instagram sent one), else the largest
+// image.
+func pickMedia(videos, images []mediaCandidate, duration float64) (domain.PostItem, bool) {
+	var best domain.PostItem
+	for _, v := range videos {
 		if v.URL != "" && larger(v.Width, v.Height, best) {
 			best = domain.PostItem{Kind: mediaVideo, URL: v.URL, Width: v.Width, Height: v.Height}
 		}
 	}
 	if best.URL != "" {
-		if it.VideoDuration > 0 {
-			d := it.VideoDuration
+		if duration > 0 {
+			d := duration
 			best.DurationSeconds = &d
 		}
 		return best, true
 	}
-	for _, c := range it.ImageVersions2.Candidates {
+	for _, c := range images {
 		if c.URL != "" && larger(c.Width, c.Height, best) {
 			best = domain.PostItem{Kind: mediaImage, URL: c.URL, Width: c.Width, Height: c.Height}
 		}

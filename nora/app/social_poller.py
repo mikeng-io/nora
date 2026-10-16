@@ -17,9 +17,9 @@ first tick, so a restart keeps them.
 
 **A probe decides, then the read** (§3, `nora.domain.social_stream.decide`).
 A completed story read advances the marker, including one that found nothing;
-a list read reads the first page only and advances the counts only when every
-new item on it was recorded, so a failed or interrupted list read leaves the
-rise due on the next probe. Items from a person's first list read, before any
+a list read reads the first page only, which carries every item's media, and
+records each new item from it; a failed list read leaves the rise due on the
+next probe. Items from a person's first list read, before any
 counts were recorded, are history and are recorded `origin = "backfill"`; a
 post with no usable media is recorded without it. A frame recorded earlier that a story read no
 longer shows, before its own expiry, is recorded `gone`.
@@ -53,7 +53,6 @@ A story frame's bytes are kept like a post's: nothing here deletes them.
 from __future__ import annotations
 
 import asyncio
-import functools
 import logging
 import random
 import time
@@ -316,13 +315,17 @@ class SocialPoller:
         self, stage: PollStage, cost: int, call: Callable[[], Awaitable[Any]],
     ) -> tuple[Any, int]:
         """One upstream call: jitter, then the call, spent against the
-        budget. Answers `(result, latency_ms)`."""
+        budget. Answers `(result, latency_ms)`. An `unsupported` answer is the
+        bridge refusing locally, with nothing sent upstream, so it is not
+        spent."""
         if self._settings.jitter_seconds > 0:
             await self._sleep(self._rand() * self._settings.jitter_seconds)
         self._calls_this_tick += 1
         started = time.monotonic()
         result = await call()
         latency = int((time.monotonic() - started) * 1000)
+        if isinstance(result, Failed) and result.kind is FailureKind.UNSUPPORTED:
+            return result, latency
         self._spent.append((self._clock(), cost))
         self._metrics.inc(
             "nora_social_upstream_calls_total", cost, network=self._network, stage=stage,
@@ -409,39 +412,22 @@ class SocialPoller:
             return await self._failed(member, "items", page, ms)
         await self._recovered("items")
         known = await self._store.known_items(
-            network=self._network, item_ids=[r.item_id for r in page.items],
+            network=self._network, item_ids=[i.item_id for i in page.items],
         )
-        complete = True
-        stop: SkipReason | None = None
-        for ref in page.items:
-            if ref.item_id in known:
+        # The page carries each item's media: nothing is read per item.
+        recorded = set(known)
+        for item in page.items:
+            if item.item_id in recorded:
                 continue
-            if Cap.READ_ITEM not in self._source.capabilities:
-                complete = False
-                break
-            if not self._afford(1):
-                complete, stop = False, "budget"
-                break
-            item, item_ms = await self._call(
-                "item", 1, functools.partial(self._source.read_item, ref=ref),
-            )
-            if isinstance(item, Failed):
-                complete = False
-                stop = await self._failed(member, "item", item, item_ms)
-                if stop is not None:
-                    break
-                continue
+            recorded.add(item.item_id)
             await self._insert(
                 member, item, self._clock(), origin="backfill" if first else "poll",
             )
-            await self._record(member, "item", "read_ok", item_ms)
-        # The list read itself completed; the counts it carries advance only
-        # when every new item on the page was recorded.
         await self._record(
             member, "items", "read_ok", ms, media_count=probe.media_count,
-            total_clips_count=probe.total_clips_count, advanced_counts=complete,
+            total_clips_count=probe.total_clips_count, advanced_counts=True,
         )
-        return stop
+        return None
 
     async def _failed(
         self, member: Member, stage: PollStage, failure: Failed, ms: int, *,
