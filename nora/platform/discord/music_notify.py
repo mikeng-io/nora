@@ -78,11 +78,10 @@ def is_snowflake(value: str) -> bool:
     ASCII decimal digits with a plausible snowflake length — NOT
     `str.isdigit()`, which is fail-open in both directions: it accepts
     superscripts (`"²"`) and other non-decimal digit characters that `int()`
-    then refuses, so a line that can NEVER route would pass startup and fail
-    at send time indistinguishably from a deleted channel — PASS standing in
-    for ERROR. It also accepts Arabic-Indic digits, which `int()` DOES parse,
-    so such an id would silently route while reading as something else
-    entirely.
+    then refuses, so a line that can NEVER route would pass startup and fail at
+    send time indistinguishably from a deleted channel — PASS standing in for
+    ERROR. It also accepts Arabic-Indic digits, which `int()` DOES parse, so
+    such an id would silently route while reading as something else entirely.
 
     The length bound additionally rejects `"0"` and a 30-digit number, both
     of which parse and neither of which can name a channel."""

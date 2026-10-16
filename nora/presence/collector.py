@@ -364,8 +364,8 @@ class PresenceCollector:
             if read.status is not ReadStatus.OK:
                 # A ban/challenge that began DURING the refresh: stop polling
                 # immediately rather than fire more unpaced reads at a refusing
-                # account (the entry gate only saw a clean state). where_is falls back to the
-                # stored fix.
+                # account (the entry gate only saw a clean state). where_is
+                # falls back to the stored fix.
                 return False
             member = next(
                 (m for m in read.members if m.life360_id == member_id), None

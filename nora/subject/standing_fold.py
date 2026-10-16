@@ -408,8 +408,8 @@ async def fold(
         ))
 
     # The verdict chain as of the turn (see the module docstring). Written
-    # through the table rather than a store: the branch has no store for it, and
-    # master's arm reads it through its own.
+    # through the table rather than a store: nothing in the code under test reads
+    # it through one, and master's arm reads it through its own.
     if turn.verdicts:
         engine = create_sql_engine(subject.database_url)
         try:

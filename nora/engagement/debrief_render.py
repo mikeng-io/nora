@@ -184,16 +184,14 @@ _BLOCK_CHARS = 600
 _CARRIED_CHARS = 4000
 
 #: WHICH block `_clip` cut, grounded on `_block`'s own four branches: `text`
-#: and
-#: `reasoningContent` are both the MODEL'S OWN output (what it said, what it
-#: thought) and share the `reasoning` label; `toolUse` is the model's own
+#: and `reasoningContent` are both the MODEL'S OWN output (what it said, what
+#: it thought) and share the `reasoning` label; `toolUse` is the model's own
 #: request to a tool and gets its own label because a clipped CALL and a
-#: clipped RESULT are different failures for a grounding judge — one hides
-#: what she asked, the other hides what she was told. `transcript` is
-#: deliberately NOT a value here: nothing in
-#: this module clips a `TranscriptRow.body` (`_transcript` renders it whole),
-#: so a `transcript` label would be a declared value with no call site ever
-#: incrementing it.
+#: clipped RESULT are different failures for a grounding judge — one hides what
+#: she asked, the other hides what she was told. `transcript` is deliberately
+#: NOT a value here: nothing in this module clips a `TranscriptRow.body`
+#: (`_transcript` renders it whole), so a `transcript` label would be a
+#: declared value with no call site ever incrementing it.
 ClipKind = Literal["reasoning", "tool_call", "tool_result", "thinking"]
 CLIP_KINDS: tuple[str, ...] = get_args(ClipKind)
 
@@ -215,11 +213,10 @@ _CLIP_MARK = "clipped"
 #: The mark on one of Nora's OWN rows, and the LEGEND that says what it means.
 #: Without it, a row of hers that had actually reached the room looks exactly
 #: like one that had not, and a turn-scoped «nothing was sent» header is free
-#: to explain it away. The mark binds to `messages.delivery_status`, the
-#: column the
-#: sender writes back after the platform accepts the message, so it is the
-#: record's own answer to «did this reach anybody» rather than an inference from
-#: the turn.
+#: to explain it away. The mark binds to `messages.delivery_status`, the column
+#: the sender writes back after the platform accepts the message, so it is the
+#: record's own answer to «did this reach anybody» rather than an inference
+#: from the turn.
 _DELIVERED = "delivered"
 _NOT_DELIVERED = "not delivered"
 

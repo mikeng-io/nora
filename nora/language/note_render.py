@@ -208,8 +208,7 @@ def today_block(when: date | str) -> ContextBlock:
 
     `when` is a `date` for every real day; a `str` is shown as written, for a
     stored `YYYYMMDD` that is not a date (month 13) — a day it cannot name is
-    still printed, because the model reads every
-    `anchor` against this line.
+    still printed, because the model reads every `anchor` against this line.
 
     **A CLOCK THIS PROCESS OWNS, not anything the room said**, and escaped
     anyway: it is a block body, and `assemble`'s contract is that a body arrives

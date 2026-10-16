@@ -9,16 +9,15 @@ field:
 
 - `noise-detection` (DEFAULT) — JackyHoCL
   `whisper-large-v3-turbo-cantonese-noise-detection` on the plain transformers
-  runtime (fp32 CPU). Keeps both `RV` and `discord` intact on real Discord voice
-  audio, emits Traditional Chinese with punctuation out of the box, RTF ~0.49. Trained for streaming
-  noise: silence/background comes back tagged `%nz`, which post-processing
-  strips.
-- `sensevoice` (BACKUP) — `iic/SenseVoiceSmall` via FunASR. The latency floor (RTF ~0.04) and the
-  failover when
-  the primary is unavailable. Natively understands Cantonese (`yue`) —
-  verified on this host (voice-lab) that it preserves 口語 particles like
-  唔/嘅/喺/哋 that faster-whisper mangles — but emits Simplified Chinese and no
-  punctuation.
+  runtime (fp32 CPU). Keeps both `RV` and `discord` intact on real Discord
+  voice audio, emits Traditional Chinese with punctuation out of the box, RTF
+  ~0.49. Trained for streaming noise: silence/background comes back tagged
+  `%nz`, which post-processing strips.
+- `sensevoice` (BACKUP) — `iic/SenseVoiceSmall` via FunASR. The latency floor
+  (RTF ~0.04) and the failover when the primary is unavailable. Natively
+  understands Cantonese (`yue`) — verified on this host (voice-lab) that it
+  preserves 口語 particles like 唔/嘅/喺/哋 that faster-whisper mangles — but emits
+  Simplified Chinese and no punctuation.
 
 Post-processing runs OpenCC `s2t` for BOTH backends so Nora always receives
 yue-Hant-HK text (her doctrine is 繁體) regardless of which engine answered.

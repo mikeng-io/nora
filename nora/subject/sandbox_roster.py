@@ -1,11 +1,10 @@
 """A room's members in a full-restore sandbox, read from the restored record.
 
 The sandbox has no signal-cli daemon and no Instagram bridge, so every roster
-read would answer `available=False`. Every room-scoped
-tool that runs under lineage (`where_been`, `rollup_read`, the
-presence pre-flight) would then answer `unavailable`, so a case asking «where
-have we been together» would measure a Nora who could not look, which
-production is not.
+read would answer `available=False`. Every room-scoped tool that runs under
+lineage (`where_been`, `rollup_read`, the presence pre-flight) would then
+answer `unavailable`, so a case asking «where have we been together» would
+measure a Nora who could not look, which production is not.
 
 `RecordedRoster` answers instead with the people who SPOKE in the room in the
 `WINDOW` before the subject's instant, from the restored `messages` rows. Each

@@ -269,13 +269,12 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # AN INPUT THE GRAPH CANNOT HONOUR IS AN ERROR.
     #
     # `nora.subject.Knowledge` is single-room — one transcript, one standing,
-    # one `DEFAULT_ROOM` — so a multi-room case is refused rather than run:
-    # with the rooms unseeded the pass finds nothing due, writes nothing, and
-    # returns `nothing_found` with no error, so every case expecting `none`
-    # PASSES having measured an empty workspace. `rooms` and `standing` are
-    # seedable (`knows`). `rows` — the reminder rows a pass is asserted to
-    # WRITE — is an expectation rather than an input, and is checked against
-    # `Outcome.written` instead.
+    # one `DEFAULT_ROOM`. A case whose metadata carries `row` states an input
+    # that cannot be seeded, so it is refused rather than run: with that input
+    # unseeded the pass finds nothing due, writes nothing, and returns
+    # `nothing_found` with no error, so every case expecting `none` PASSES
+    # having measured an empty workspace. `rooms` and `standing` are seedable
+    # (`knows`).
     unseeded = [k for k in ("row",) if case.metadata.get(k)]
     if unseeded:
         return Outcome(

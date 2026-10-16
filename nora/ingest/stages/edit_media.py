@@ -4,12 +4,12 @@ again.
 No network lets an edit ADD media: Signal, WhatsApp and Instagram edit text or
 a caption, and Discord can only remove attachments. So an edit that carries as
 many attachments as the original holds blobs for gets the original's handles
-back on its placeholders, and nothing is downloaded. Running custody instead would re-fetch every
-attachment on every update — a
-Discord pin of an edited message included — and a re-fetch that failed would
-leave `[image]` where the record said `[image a3f2c1]`, which then compares as
-a CHANGE: the edit would be recorded, fed to Honcho as a correction, and the
-handle lost from the transcript.
+back on its placeholders, and nothing is downloaded. Running custody instead
+would re-fetch every attachment on every update — a Discord pin of an edited
+message included — and a re-fetch that failed would leave `[image]` where the
+record said `[image a3f2c1]`, which then compares as a CHANGE: the edit would
+be recorded, fed to Honcho as a correction, and the handle lost from the
+transcript.
 
 When the counts differ (an attachment removed, or one the original never
 held), custody runs as for any message, because there is no positional match

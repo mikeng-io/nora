@@ -57,11 +57,10 @@ _KNOWN_NAME = "Miles"
 class Message:
     """One prior room message.
 
-    `row_id` and `at_ms` exist because some corpora CITE their own messages:
-    a note-candidate case can assert that a staged candidate's `message_ids`
-    contained a particular row. A case that says "note 101" and a store that
-    assigns ids by insertion order are two different facts, and the second
-    cannot be asserted against.
+    `row_id` and `at_ms` exist because some corpora CITE their own messages by
+    row id. A case that says "message 101" and a store that assigns ids by
+    insertion order are two different facts, and the second cannot be asserted
+    against.
 
     `person` is separate from `name` for the reason `identity.toml` exists:
     the display name is what the platform reports and the person id is who

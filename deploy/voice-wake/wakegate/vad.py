@@ -2,8 +2,8 @@
 
 RMS measures LOUD; the end of an utterance is decided by SPEECH. Under ducked
 music the RMS floor sits near 1,000, so a quiet-RMS threshold never sees the
-speaker stop, and a second 「喂 Nora」 inside that window would be appended to the
-first utterance instead of starting a new one.
+speaker stop, and a second 「喂 Nora」 spoken inside the long utterance would be
+appended to it instead of starting a new one.
 
 Silero VAD answers that question: trained speech-vs-everything-else, ~2 MB,
 sub-millisecond per chunk on CPU, and `openwakeword.vad.VAD` already wraps

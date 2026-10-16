@@ -343,24 +343,24 @@ CORPUS_ENTRY: dict[str, str] = {
     # composition builds under `[cognition] enabled = true`; with
     # sessions off in the eval config the case is an ERROR, never a pass.
     "tool_selection_cognition": "dreamer",
-    # What she says about WHERE she is. A tag, and
-    # judged — "did she reply" says nothing about whether the reply named the
-    # right networks, or recited them unasked.
+    # What she says about WHERE she is. A tag, and judged — "did she reply"
+    # says nothing about whether the reply named the right networks, or recited
+    # them unasked.
     "presence": "tag",
     "standing": "standing",
     "tool_reporting": "tag",
-    # What she says about her OWN FORM. A tag, and judged --
-    # "did she reply" says nothing about whether the reply described the
-    # mascot when asked, or recited it unasked.
+    # What she says about her OWN FORM. A tag, and judged — "did she reply"
+    # says nothing about whether the reply described the mascot when asked, or
+    # recited it unasked.
     "appearance": "tag",
-    # L5: what a held lesson does to a reply. A tag,
-    # judged on the ONE behaviour each case's lesson asks for.
+    # What a held lesson does to a reply. A tag, judged on the ONE behaviour
+    # each case's lesson asks for.
     "lessons": "tag",
-    # The character cut: whether an ordinary tag
-    # reply still sounds like her. A tag, judged on the opted-in `personality` criterion.
+    # The character cut: whether an ordinary tag reply still sounds like her.
+    # A tag, judged on the opted-in `personality` criterion.
     "personality": "tag",
-    # The conversational-recall journeys on existing tools. A tag, judged on `recall_grounded`,
-    # in a FULL-RESTORE sandbox (`FULL_RESTORE_CORPORA`).
+    # The conversational-recall journeys on existing tools. A tag, judged on
+    # `recall_grounded`, in a FULL-RESTORE sandbox (`FULL_RESTORE_CORPORA`).
     "conversational_recall": "tag",
 }
 
@@ -378,16 +378,15 @@ CORPUS_ENTRY: dict[str, str] = {
 #: memos, presence or Rollup at all, which are exactly what recall rests on.
 FULL_RESTORE_CORPORA: frozenset[str] = frozenset({"conversational_recall"})
 
-#: S2 — graded on WHICH TOOL ran, not on whether she replied.
-#: One grader only:
+#: S2 — graded on WHICH TOOL ran, not on whether she replied. One grader only:
 #: `sample_read` groups every evaluator's labels under one case, so adding
 #: `MeetsGrader` here would let a reply verdict blur a routing one.
 ROUTED_CORPORA = frozenset({"tool_selection", "tool_selection_cognition"})
 
 #: S3 (grounding)/S9 (injection) — "did she reply" is structural; "was the
-#: reply right" needs a judge. Every case in
-#: these six corpora expects `reply`, so judging unconditionally (once a
-#: judge is configured) adds no second selection rule.
+#: reply right" needs a judge. Every case in these corpora expects `reply`, so
+#: judging unconditionally (once a judge is configured) adds no second
+#: selection rule.
 JUDGED_CORPORA = frozenset({
     "being_contradicted", "identity_grounding", "source_scope",
     "injections", "transcript_injection", "standing", "presence",
@@ -396,7 +395,7 @@ JUDGED_CORPORA = frozenset({
     "tool_reporting",
     # Its opted-in `appearance` criterion binds with safety.
     "appearance",
-    # L5: its opted-in `lesson_applied` criterion binds with safety.
+    # Its opted-in `lesson_applied` criterion binds with safety.
     "lessons",
     # Its opted-in `personality` criterion binds with safety.
     "personality",
@@ -406,10 +405,9 @@ JUDGED_CORPORA = frozenset({
 
 #: Corpora with NO structural reading at all: every case's verdict IS the
 #: judge's. `standing` grades a Cantonese position against a semantic property,
-#: and "a fold wrote
-#: something" is true of every fold that did not fail. Run without a judge,
-#: every case would pay for a fold and then ERROR, so `python -m evals` refuses
-#: to start one instead.
+#: and "a fold wrote something" is true of every fold that did not fail. Run
+#: without a judge, every case would pay for a fold and then ERROR, so
+#: `python -m evals` refuses to start one instead.
 #:
 #: `conversational_recall` too: its only structural reading is `expect: reply`,
 #: which any reply meets, including one that invents a place, and its evidence

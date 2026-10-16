@@ -2,24 +2,23 @@
 
 A readable table of contents, not a decision-maker: every branch belongs to
 the stage that owns it (`nora.ingest.stages.*`). This module only sequences
-the four calls and assembles the result — nothing here inspects message
+the stage calls and assembles the result — nothing here inspects message
 content, catches an exception, or decides anything.
 
-`run` takes an already-normalized `message`, not a raw event: parsing happens on the
-adapter itself (`nora.platform.signal.adapter.SignalAdapter.listen`), which drops anything
-that parses to `None` — a DM, a sync message, a self-send, an empty body —
-before this pipeline ever sees it. `PlatformAdapter` deliberately has no
-`parse()` (`nora.domain.ports`'s module docstring), so `IngestPipeline` is not
-the place that could do this parsing generically.
+`run` takes an already-normalized `message`, not a raw event: parsing happens
+on the adapter itself (`nora.platform.signal.adapter.SignalAdapter.listen`),
+which drops anything that parses to `None` — a DM, a sync message, a self-send,
+an empty body — before this pipeline ever sees it. `PlatformAdapter`
+deliberately has no `parse()` (`nora.domain.ports`'s module docstring), so
+`IngestPipeline` is not the place that could do this parsing generically.
 
 `message=None` in the returned `IngestResult` means either that the
 conversation is not allowlisted (the scope stage refuses BEFORE the audit, so
 a denied room is never recorded — see that module for why the room and the
 sender are enforced in different places) or that the audit write failed (the
-audit stage drops rather than re-raises). A message
-that made it past that is always paired with a `decision`, even for an
-unmapped sender (D6) or a policy error (the gate stage degrades closed rather
-than propagating).
+audit stage drops rather than re-raises). A message that made it past that is
+always paired with a `decision`, even for an unmapped sender (D6) or a policy
+error (the gate stage degrades closed rather than propagating).
 """
 
 from __future__ import annotations
@@ -313,9 +312,9 @@ class IngestPipeline:
             _outcome(m, message, "scope_refused")
             return IngestResult(message=None, decision=None)
 
-        # AN EDIT takes its own path from here:
-        # it is recorded beside the message it changes, never as a message of
-        # its own — and an edit of nothing on record is dropped, not ingested.
+        # AN EDIT takes its own path from here: it is recorded beside the
+        # message it changes, never as a message of its own — and an edit of
+        # nothing on record is dropped, not ingested.
         if message.edit_of is not None:
             with span("ingest.edit_target"):
                 found = await edit_target_stage.run(
@@ -366,9 +365,9 @@ class IngestPipeline:
                 # resolves identity nor reads it for anything else.
                 person=person, language=self._language,
             )
-        # Shared file links become handles in the record: pure, no network, on every platform, and
-        # before the audit
-        # so the refs land in the same INSERT as the row.
+        # Shared file links become handles in the record: pure, no network, on
+        # every platform, and before the audit so the refs land in the same
+        # INSERT as the row.
         with span("ingest.external_files"):
             message = await external_files_stage.run(message=message)
         # A reply to an EDITED message quotes the revision's timestamp on

@@ -1,4 +1,4 @@
-"""`render_computer`: the `<computer>` block .
+"""`render_computer`: the `<computer>` block.
 
 A deterministic window, never a model's fold, over `ComputerView`:
 

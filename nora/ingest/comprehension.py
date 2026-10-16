@@ -4,18 +4,18 @@ custody.
 **Custody stays inline; comprehension does not, and the asymmetry is the whole
 argument.** `[image a3f2c1]` is a promise that `a3f2c1` can be produced, so the
 copy runs before the audit write — spawning it would write the promise first
-and keep it second, which is the A9 violation `nora/ingest/stages/
-media.py` exists to end. **Comprehension has no such property.** An
-un-comprehended image is a row that says Nora holds the bytes and claims
-nothing about them, so a comprehension that lands late, or never, has not made
-anything untrue. `memory_feed` is already spawned on precisely this reasoning and Honcho
-is already never load-bearing.
+and keep it second, which is the A9 violation `nora/ingest/stages/media.py`
+exists to end. **Comprehension has no such property.** An un-comprehended image
+is a row that says Nora holds the bytes and claims nothing about them, so a
+comprehension that lands late, or never, has not made anything untrue.
+`memory_feed` is already spawned on precisely this reasoning and Honcho is
+already never load-bearing.
 
 **And inline would be untenable in the one case that matters.** Signal ingest
 is serialized: the listener awaits each message's stages in turn, so an inline
-video read — chunked, several model calls, tens of seconds — would
-stall every message behind it in the room. What waits is a loopback HTTP
-fetch and a disk write.
+video read — chunked, several model calls, tens of seconds — would stall every
+message behind it in the room. What waits is a loopback HTTP fetch and a disk
+write.
 
 **What lands, lands ONCE.** The job keys on the sha256 and refuses a row that
 already carries a comprehension: a description is a pure function of the bytes,
@@ -187,9 +187,10 @@ class MediaComprehension:
         try:
             # THE CONCURRENCY SLOT, held around the WHOLE job. `_inflight`
             # dedupes identical bytes, not volume, and `spawn` is a bare
-            # `create_task` — without a bound, fifty photos in a minute would be fifty
-            # concurrent describer calls, each holding a decrypted blob plus its base64
-            # copy against an 8 MiB still ceiling and a 100 MiB video one.
+            # `create_task` — without a bound, fifty photos in a minute would
+            # be fifty concurrent describer calls, each holding a decrypted
+            # blob plus its base64 copy against an 8 MiB still ceiling and a
+            # 100 MiB video one.
             #
             # Around the whole job rather than around the model call alone: the
             # blob read and the ffmpeg chunking ARE the memory, and a semaphore

@@ -181,10 +181,10 @@ class Judge:
             return answer.choices[0].message.content or ""
 
         # ONE AFTER ANOTHER, never concurrent: the judge alias's provider
-        # rate-limits (HTTP 429) simultaneous large prompts and falls back to
-        # a provider that times out, turning draws into ERRORs. Stops at the
-        # first failure: a failed sample is an ERROR about
-        # the instrument, and asking again after it is only more load.
+        # rate-limits (HTTP 429) simultaneous large prompts and falls back to a
+        # provider that times out, turning draws into ERRORs. Stops at the
+        # first failure: a failed sample is an ERROR about the instrument, and
+        # asking again after it is only more load.
         answers: list[str | BaseException] = []
         try:
             for _ in range(self.samples):

@@ -35,13 +35,13 @@ evidence, wakes the key, hands over the previous account and what is new, and
 validates every write; the model decides what to look up and what the account
 now says.
 
-**Lineage, chosen and stated.** An account is prose with no sections
-(DEC-184), so it has no section to drop. `[lineage]` is off and marked do-not-enable (AGENTS.md
-«A boundary is drawn by scope»): the unit is the read boundary, and a person's
-account renders only in that unit's rooms that list them. What would have put
-presence into it is left out instead: a person session holds no presence verb
-(`where_been`, `online_now`), because its account renders in rooms whose
-`location` flags differ, and R-31 is never simplified away.
+**Lineage, chosen and stated.** An account is prose with no sections (DEC-184),
+so it has no section to drop. `[lineage]` is off and marked do-not-enable
+(AGENTS.md «A boundary is drawn by scope»): the unit is the read boundary, and
+a person's account renders only in that unit's rooms that list them. What would
+have put presence into it is left out instead: a person session holds no
+presence verb (`where_been`, `online_now`), because its account renders in
+rooms whose `location` flags differ, and R-31 is never simplified away.
 """
 
 from __future__ import annotations

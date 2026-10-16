@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Identifier detector for what is about to enter a commit.
 
-The look is what a commit ADDS, so the cost is seconds: the staged blobs
+The scan reads only what a commit ADDS, so the cost is seconds: the staged blobs
 (pre-commit), the commit message and the author/committer identity
 (commit-msg), and every commit a push introduces (pre-push, the backstop for a
 commit made with --no-verify or before the hooks were installed).

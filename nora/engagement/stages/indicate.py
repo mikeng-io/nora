@@ -80,8 +80,7 @@ Spawning introduces an ordering hazard, handled here: `begin()` and `resolve()`
 can otherwise race, and a resolution that lands before its own 👀 leaves the 👀
 as the final state. `Indicator.placed` is an `asyncio.Event` set in `_place`'s
 `finally`, and `_resolve` waits on it before touching anything, so the two are
-serialised with respect to each other without either being on the reply's
-path.
+serialised with respect to each other without either being on the reply's path.
 
 
 WHY R-2, R-2b, R-3 AND R-7 ALL STILL HOLD

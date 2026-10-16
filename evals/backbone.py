@@ -977,8 +977,8 @@ def _hold_the_transport_tier(subject: Any, spec: Spec, md: Mapping[str, Any]) ->
     elif spec.policy is not None:
         # A caller that states its OWN room set (a test reconstructing a room
         # of its own) composed its own world: the networks it runs are the
-            # ones its subject enabled. Reading the deployment's config here would
-            # fail every integration test off the deploy host.
+        # ones its subject enabled. Reading the deployment's config here would
+        # fail every integration test off the deploy host.
         networks = tuple(sorted(
             name for name in ("signal", "discord", "whatsapp", "instagram")
             if getattr(getattr(subject.cfg.platforms, name, None), "enabled", False)
@@ -1383,9 +1383,9 @@ def _check_the_corpus_assertions(
             # A text `must_cite` grades the MESSAGE, so it binds only when
             # there was one or the case requires one. On `either` (and
             # `silence`) staying quiet is a legal answer, and the corpus
-                # header says what is graded there is «the message, if there was
-                # one»; checking an empty reply for a word would fail every correct
-                # silence.
+            # header says what is graded there is «the message, if there was
+            # one»; checking an empty reply for a word would fail every correct
+            # silence.
             elif not negate and absent and (said or case.expect not in ("either", "silence")):
                 failed.append(f"{key}: the reply does not contain {absent}")
     failed += _check_the_body(meta, outcome, rows, require_open=case.expect == "create")
@@ -1522,11 +1522,11 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         },
                         # The deployment's OWN roster and room set, verbatim.
                         # `_DEFAULT_IDENTITY` knows ONE person; a real room has
-                                    # many, and a snapshot copies each row's real `person_id`
-                                    # — so most speakers would resolve to "the
-                                    # identity does not know them" and render nameless,
-                                    # while message BODIES name roster members
-                                    # outright. A real policy entry also carries
+                        # many, and a snapshot copies each row's real `person_id`
+                        # — so most speakers would resolve to "the
+                        # identity does not know them" and render nameless,
+                        # while message BODIES name roster members
+                        # outright. A real policy entry also carries
                         # `description` (which REACHES THE MODEL), the
                         # `relevance_gate`/`home_room`/`voice` opt-ins and the
                         # room's tool grant; a minimal invented one measures a
@@ -1584,11 +1584,11 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     leave_room_for_arrival=port.delivers_input,
                 )
             # A case about a document she already made
-                    # has to make it, the production source holding none. Refused on a
+            # has to make it, the production source holding none. Refused on a
             # subject with `[documents]` off, never read as a model failure.
             await seed_documents(subject, case.name, md.get("documents") or ())
             # The lessons a `lessons` counterfactual
-                    # attaches, written into the subject's unit. Seeded in EVERY arm; only
+            # attaches, written into the subject's unit. Seeded in EVERY arm; only
             # `[lessons] render` decides whether the turn reads them.
             await seed_lessons(subject, case.name, varied_lessons(md), now_ms=seeded.now_ms)
             exporter = _prefill_capture()
@@ -1696,7 +1696,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         doctrine=subject.deps.doctrine.doctrine_text,
                         # The SOURCE the reply had to ground against — the
                         # window her turn actually RENDERED (`shown_transcript`),
-                                    # not `seeded.transcript` (every row
+                        # not `seeded.transcript` (every row
                         # `sandbox_from_snapshot` read back, unbounded — the
                         # room up to the instant, not what she was shown), and
                         # for a reporting case the tool results too.
@@ -1778,7 +1778,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             }
     except RoomNotInPolicyError as exc:
         # A pseudonymised anchor with no map in effect is refused, and the
-                    # message says what would resolve it.
+        # message says what would resolve it.
         if pseudonyms.active():
             # With a map in effect the room in the message is a REAL id: the
             # log is read and quoted, so the room is withheld here.
@@ -1886,9 +1886,9 @@ def traced_nora_task(spec: Spec) -> tuple[Any, TracedHandler]:
     """Tool routing, which needs no new grader at all. `ToolCalled`/
     `ToolSelectionAccuracyEvaluator`/`ToolParameterAccuracyEvaluator`/
     `TrajectoryEvaluator` all read `actual_trajectory`, and a real
-    `participation` case's `Session` carries a genuine `ToolExecutionSpan` —
-    so the only thing needed is a `Session` at all, which `nora_task(spec)`
-    alone never produces.
+    `participation` case's `Session` carries a genuine `ToolExecutionSpan` — so
+    the only thing needed is a `Session` at all, which `nora_task(spec)` alone
+    never produces.
 
     `eval_task(TracedHandler())(nora_task(spec))` is the whole of it:
     `TracedHandler.after()` does `processed.setdefault("trajectory",
@@ -2143,9 +2143,8 @@ class MeetsGrader(Evaluator):
 
     `AbsenceGrader` covers a SUBSET of this (silence/speak/go/no_go) for the
     hand-written cases. `MeetsGrader` is for the PORTED corpora, several of
-    which need `create`/`update`/`remind`/
-    `either`/a judge's verdict, which `AbsenceGrader` was never built to
-    read.
+    which need `create`/`update`/`remind`/`either`/a judge's verdict, which
+    `AbsenceGrader` was never built to read.
 
     Reconstructs a real `Outcome` from `environment_state` rather than
     re-deriving `.meets()`'s branches, so a future change to that method's

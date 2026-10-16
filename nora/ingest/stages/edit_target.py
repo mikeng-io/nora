@@ -117,10 +117,10 @@ def _is_stale(
     """Older than the newest edit on record: a redelivery, or out of order.
     Decided HERE, before custody, so a stale update fetches nothing.
 
-    Older than the NEWEST CLOCK on record — the maximum, not the version
-    shown, which a skewed edit can make lower (judging against it would let a
-    redelivered older edit bring old text back). An edit
-    whose timestamp is already on record is a redelivery. And a Signal edit that names the latest
+    Older than the NEWEST CLOCK on record — the maximum, not the version shown,
+    which a skewed edit can make lower (judging against it would let a
+    redelivered older edit bring old text back). An edit whose timestamp is
+    already on record is a redelivery. And a Signal edit that names the latest
     revision's own timestamp is newer BY DEFINITION, whatever its clock says:
     each device stamps its own sends, so a linked desktop running behind the
     phone would otherwise have every edit it makes thrown away."""

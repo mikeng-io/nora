@@ -31,8 +31,9 @@ horizon wake with no new episode still retires what is due.
 argument carrying a UUID, so each held lesson is shown as `L1`, `L2`, ... and the
 book maps the handle back (`LessonBook.verbs(handles=...)`).
 
-**Nothing renders a lesson yet:** `[lessons] enabled` is off by default and the
-session writes into a store that no prompt reads.
+**Rendering is separate:** `[lessons] enabled` gates the session, and
+`render_lessons` (`nora.language.lesson_render`), gated by `[lessons] render`,
+is what shows the held lessons to a prompt.
 """
 
 from __future__ import annotations

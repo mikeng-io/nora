@@ -44,11 +44,10 @@ a row's own attributes keeps the element with one character of words and so
 exceeds the allowance by that overhead, the only place it yields.
 
 **Group-derived text is one line, and is escaped.** A message's words are
-collapsed to one line (`nora.domain.prompt.clip`, which is `one_line` and a cut)
-and escaped by the shared renderer, and every attribute value is collapsed and
-escaped there: a body that contained a newline, a closing tag or a quote can
-neither write a second row nor an element (R-13, R-13c; a forged
-row).
+collapsed to one line (`nora.domain.prompt.clip`, which is `one_line` and a
+cut) and escaped by the shared renderer, and every attribute value is collapsed
+and escaped there: a body that contained a newline, a closing tag or a quote
+can neither write a second row nor an element (R-13, R-13c; a forged row).
 
 **Where it lives.** In `nora.language`, not `nora.domain`, because it is built
 from the `nora.language` renderers, which a domain module may not import. The

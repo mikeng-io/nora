@@ -17,13 +17,13 @@ its own instruction digest.
 
 **It synthesises ACROSS the stores Nora holds; the batch is one input among
 several (DEC-182).** What DEC-182 rules out is the CACHE shape — ask Honcho
-once, store the answer, do nothing else — not the use of memory. Honcho does not
-scope at the layer a cached `chat` answer would need: `chat` on a two-message
-probe session answers freely about people appearing nowhere in it, and `search`
-scoped to that session returns other rooms' hits byte-identical to the unscoped
-query. What survives is the ATTRIBUTION: **producing an account is a property of
-asking a model to write prose, not a property of that endpoint**, so the fold is
-the author and the dialectic call is not on this path.
+once, store the answer, do nothing else — not the use of memory. Honcho does
+not scope at the layer a cached `chat` answer would need: `chat` on a
+two-message probe session answers freely about people appearing nowhere in it,
+and `search` scoped to that session returns other rooms' hits byte-identical to
+the unscoped query. What survives is the ATTRIBUTION: **producing an account is
+a property of asking a model to write prose, not a property of that endpoint**,
+so the fold is the author and the dialectic call is not on this path.
 
 **What it reads.** `record.since(conversation_id=key, ...)` — `WHERE
 conversation_id = :key` in our own Postgres, hard-scoped by construction — is

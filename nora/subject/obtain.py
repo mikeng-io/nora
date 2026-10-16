@@ -271,9 +271,9 @@ class Subject:
     """Nora, composed, plus the config she was composed from.
 
     `deps` is exactly what `nora/__main__.py` runs on — same type, same builder,
-    same fields —
-    `tests/integration/test_the_subject_is_the_deployed_graph.py` notices when
-    that moves. An entry point is an attribute of it (`deps.dispatcher`,
+    same fields — and
+    `tests/integration/test_the_subject_is_the_deployed_graph.py` fails when
+    `__main__` and the subject diverge. An entry point is an attribute of it (`deps.dispatcher`,
     `deps.engagement`, `deps.participation_trigger`, `deps.dreamer_runtime`),
     so the entry point is a selection on a case rather than a branch in a
     runner.

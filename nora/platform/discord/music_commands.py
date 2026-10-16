@@ -471,13 +471,12 @@ async def register(
     resolve_music_channel: ResolveMusicChannel = no_music_channel,
     client_getter: ClientGetter | None = None,
 ) -> None:
-    """Built and synced fresh inside `DiscordAdapter.listen()`, same
-    lifecycle as `client` itself — a fresh `discord.Client` per connection
-    attempt (`adapter.py`'s own reasoning), so a fresh `CommandTree` every
-    attempt too. Re-syncing identical commands on every reconnect is
-    slightly wasteful but always correct; tracking "already synced" to skip
-    it is worth doing only if reconnects turn out frequent enough to
-    matter.
+    """Built and synced fresh inside `DiscordAdapter.listen()`, same lifecycle
+    as `client` itself — a fresh `discord.Client` per connection attempt
+    (`adapter.py`'s own reasoning), so a fresh `CommandTree` every attempt too.
+    Re-syncing identical commands on every reconnect is slightly wasteful but
+    always correct; tracking "already synced" to skip it is worth doing only if
+    reconnects turn out frequent enough to matter.
 
     Registers `/music` AND the `/discord` voice-control group. There is NO
     `on_voice_state_update` empty-channel handler here: the
