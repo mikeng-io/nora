@@ -188,7 +188,7 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # asks the model to say what the room comes to her for and what it never
     # would; that is a claim about a relationship across months, and the batch
     # is a few days.
-    "ask_memory", "search_memory",
+    "memory_search", "search_memory",
     # THE ROSTER — who is actually in this room, and who a handle IS. A batch
     # renders display names; an account that calls one person by two names, or
     # two people by one, is wrong in the way nobody notices. `lookup_person` is

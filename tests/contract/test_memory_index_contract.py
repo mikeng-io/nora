@@ -18,6 +18,7 @@ model counts the vector coverage, leaving out nodes the worker gave up on.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from dataclasses import replace
 from typing import Any
 from uuid import uuid4
 
@@ -30,6 +31,7 @@ from nora.domain.memory_index import (
     ExactTerm,
     IndexedNode,
     IndexState,
+    MemoryFilter,
     MemoryIndexRead,
     MemoryScope,
     in_scope,
@@ -312,3 +314,78 @@ async def test_coverage_counts_within_a_scope_and_lexical_reads_the_given_up(loa
     assert await index.index_state(model=M) == IndexState("complete", 0, 1, 1, 2)
     found = await index.seed(["ramen"], SCOPE, limit=10, given_up_of=M)
     assert [s.node.source_id for s in found] == ["given-up"]
+
+
+# ---------------------------------------------------------------------------
+# the question's narrowing (`MemoryScope.only`, `memory_search`'s filters)
+# ---------------------------------------------------------------------------
+
+
+def _only(**kw: Any) -> MemoryScope:
+    return replace(SCOPE, only=MemoryFilter(**kw))
+
+
+#: `NODES`' in-scope three: message 1 (at 10, room b, authored by kit), note
+#: n1 (at 9, the unit, about kit), stay s1 (at 3, kit's).
+@pytest.mark.parametrize(("narrowing", "expected"), [
+    ({"kinds": ("note",)}, {("note", "n1")}),
+    ({"kinds": ("message", "stay")}, {("message", "1"), ("stay", "s1")}),
+    ({"since_ms": 9}, {("message", "1"), ("note", "n1")}),
+    ({"until_ms": 5}, {("stay", "s1")}),
+    ({"since_ms": 9, "until_ms": 9}, {("note", "n1")}),
+    ({"person": "kit"}, {("message", "1"), ("note", "n1"), ("stay", "s1")}),
+    ({"person": "sam"}, set()),
+    ({"person": "rin"}, set()),  # not listed here: nothing about them reads
+])
+async def test_a_narrowing_applies_inside_the_seed(
+    load: Load, narrowing: dict[str, Any], expected: set[tuple[str, str]],
+) -> None:
+    index = await _graph(load)
+    seeds = await index.seed(["lantern", "festival"], _only(**narrowing), limit=50)
+    assert {s.node.key for s in seeds} == expected
+
+
+async def test_a_person_narrowing_keeps_the_listed_room_rule(load: Load) -> None:
+    """Kit's own message in room c, which does not list kit, is in scope and
+    still not evidence about kit (35 §3, the `about` seed's rule)."""
+    nodes = [
+        IndexedNode("message", "b1", "lantern", 2, origin_room="signal:b"),
+        IndexedNode("message", "c1", "lantern", 1, origin_room="signal:c"),
+    ]
+    edges = [
+        ("message", "b1", "authored_by", "person", "kit"),
+        ("message", "c1", "authored_by", "person", "kit"),
+    ]
+    index = await load(nodes, edges)
+    assert {s.node.key for s in await index.seed(["lantern"], SCOPE, limit=50)} == {
+        ("message", "b1"), ("message", "c1")}
+    seeds = await index.seed(["lantern"], _only(person="kit"), limit=50)
+    assert {s.node.key for s in seeds} == {("message", "b1")}
+
+
+async def test_a_narrowing_applies_inside_dense_exact_about_and_index_state(
+    load: Load,
+) -> None:
+    nodes = [
+        IndexedNode("message", "near", "lantern", 3, origin_room="signal:b"),
+        IndexedNode("note", "mid", "lantern", 2, unit="u1"),
+    ]
+    vectors = {
+        ("message", "near"): (M, _unit((0, 0.9), (1, 0.43589))),
+        ("note", "mid"): (M, _unit((0, 0.5), (2, 0.86603))),
+    }
+    index = await load(nodes, [("note", "mid", "about", "person", "kit")], vectors)
+    notes = _only(kinds=("note",))
+    assert [s.node.source_id for s in await index.dense(Q, notes, model=M, limit=10)] == [
+        "mid"]
+    assert [s.node.source_id for s in await index.exact(
+        [ExactTerm("lantern")], notes, limit=10)] == ["mid"]
+    assert await index.about("kit", _only(kinds=("message",)), limit=10) == []
+    state = await index.index_state(model=M, scope=_only(until_ms=2))
+    assert (state.embedded, state.unembedded) == (1, 0)
+
+
+async def test_a_narrowing_drops_non_hub_neighbours_and_keeps_hubs(load: Load) -> None:
+    index = await _graph(load)
+    found = await index.neighbours([("message", "1")], _only(kinds=("message",)))
+    assert {nb.node.key for nb in found} == {("person", "kit")}

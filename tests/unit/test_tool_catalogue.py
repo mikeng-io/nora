@@ -98,7 +98,8 @@ TAG_PLATFORMS = ("signal", "discord", "whatsapp", "instagram")
 # between 21 and 31, and reading them showed the lines were right and the
 # number was wrong — the extra tokens ARE the discriminator in exactly the
 # pairs that need one (`search_memory` «in this group's history» against
-# `search_memory_workspace` «across EVERY room»; `create_event` «a NEW
+# `search_memory_workspace` «across EVERY room», since 2026-10-16
+# `memory_search`; `create_event` «a NEW
 # gathering» against `update_event` «ALREADY proposed»). Cutting those to fit
 # would have removed the reason the line exists.
 #
@@ -199,8 +200,8 @@ def test_confusable_pairs_are_discriminated_in_the_catalogue_itself():
     assert "named" in by_name["parking_status"]
     assert "nearest" in by_name["find_parking"]
 
-    assert "this group's" in by_name["search_memory"]
-    assert "EVERY room" in by_name["search_memory_workspace"]
+    assert "exact words" in by_name["search_memory"]
+    assert "where people went" in by_name["memory_search"]
 
     assert "NEW" in by_name["event_propose"]
     assert "ALREADY" in by_name["event_revise"]

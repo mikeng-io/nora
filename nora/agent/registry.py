@@ -287,7 +287,7 @@ class ToolRegistry:
         # `unavailable`.
         external_files: ExternalFilesSource | None = None,
         # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
-        # the retrieval service `ask_memory` answers from instead of Honcho.
+        # the retrieval service `memory_search` answers from instead of Honcho.
         # Process-lifetime like `record`; `None` keeps the Honcho path.
         memory_search: MemorySearch | None = None,
     ) -> None:
@@ -443,7 +443,7 @@ class ToolRegistry:
         # rather than a guessed empty (R-5).
         self._mobility = mobility
         # The OBSERVER peer — Nora's Honcho peer id (cfg.memory.ai_peer). The
-        # `about`/`ask_memory` tools read her model of a person as
+        # `about`/`memory_search` tools read her model of a person as
         # (observer=ai_peer, observed=person), so the registry threads it like any
         # other long-lived collaborator (design/24 §4). A future `[agent] name`
         # config feeds this same seam.
@@ -802,7 +802,8 @@ class ToolRegistry:
         FIRST SENTENCE, not a separate authored field. That was measured rather
         than assumed: the existing first sentences already discriminate on
         `find_parking`/`parking_status`, `search_memory`/
-        `search_memory_workspace` and `note_read`/`note_search`. Only
+        `search_memory_workspace` (since replaced by `memory_search`) and
+        `note_read`/`note_search`. Only
         `where_is` needed repair, and it was repaired at the docstring rather
         than worked around here — one source of truth per tool, not two.
 
@@ -1100,7 +1101,7 @@ class ToolRegistry:
             relay=self._relay,
             rooms=self._rooms,
             record=self._record,
-            memory_search=self._memory_search,
+            memory_retrieval=self._memory_search,
             lineage=self._lineage,
             rollup=self._rollup,
             standing_head=self._standing_head,

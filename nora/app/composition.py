@@ -3038,7 +3038,7 @@ async def build_dependencies(
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
         # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
-        # `ask_memory` answers from the index; off, from Honcho as before.
+        # `memory_search` answers from the index; off, from Honcho as before.
         memory_search=(
             MemorySearch(
                 SqlMemoryIndex(engine), metrics,

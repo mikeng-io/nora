@@ -65,7 +65,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the tiers' reads that already exist
     "where_been", "routine_read", "note_read", "note_search",
     # memory
-    "about", "ask_memory", "search_memory", "search_memory_workspace",
+    "about", "memory_search", "search_memory",
 })
 
 #: The side-effect audit of every tool in the catalogue
@@ -105,12 +105,13 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
                  "local to the build. No write.",
     "note_search": "SQL read of note bodies; counters only. No write.",
     "about": "Honcho `peer_card` + `representation` reads; counters only.",
-    "ask_memory": "Honcho `chat` (dialectic reasoning, server side): a read verb; "
-                  "what Honcho does inside it is not observable from this repo. "
-                  "KEPT, flagged; counters only.",
+    "memory_search": "With `[memory_index] enabled`, SQL reads of the memory index "
+                     "(`SqlMemoryIndex`, which writes nothing) and one query "
+                     "embedding; off, a Honcho `chat` (dialectic reasoning, server "
+                     "side, not observable from this repo; KEPT, flagged) or a "
+                     "workspace `search` narrowed to the unit's scope. Counters "
+                     "only. No write.",
     "search_memory": "Honcho session `search` read; counters only.",
-    "search_memory_workspace": "Honcho workspace `search` read, narrowed to the "
-                               "unit's scope; counters only.",
 }
 
 #: Tools withheld while their flag is off. `record_query` is offered only with
@@ -187,7 +188,7 @@ def read_tools_for(
     through the room it names; a `room` argument that is not on the agenda is
     refused. That binds WHICH room a read is resolved through (its roster and
     lineage), not which rooms' data a tool may reach: `record_query
-    scope="all_rooms"` and `search_memory_workspace` read the unit's OTHER
+    scope="all_rooms"` and `memory_search` read the unit's OTHER
     rooms too, because the unit is the read boundary (DEC-231). The unit's home
     room is never substituted for an item's room."""
     allowance = grant if grant is not None else cognition_grant()

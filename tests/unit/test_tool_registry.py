@@ -151,11 +151,10 @@ def test_the_computer_tools_are_offered_only_when_a_computer_is_wired(defer):
 def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") -> list:
     """The DECLARED surface, which is what every caller below asks about.
 
-    `dream_adaptor` defaults to a name rather than `""` because
-    `search_memory_workspace` is Dreamer-only (#350) and a tag-path build no
-    longer carries it — a declared-vs-built comparison run on the tag catalog
-    would be comparing against a deliberate subset. The subset itself is
-    pinned by `test_a_room_catalog_omits_the_dreamer_only_memory_verb`.
+    `dream_adaptor` defaults to a name rather than `""` because the
+    `DREAMER_ONLY_TOOLS` are not built for a tag path, so a declared-vs-built
+    comparison run on the tag catalog would be comparing against a
+    deliberate subset (`nora.agent.surface`).
     """
     return registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
@@ -183,7 +182,10 @@ def test_the_registry_exposes_every_declared_tool():
         "record_query",
         # design/cognition-loop/25 §5, 50 §2: the Dreamer-only reads.
         "rollup_read", "standing_read", "character_read",
-        "group_members", "lookup_person", "about", "ask_memory", "search_memory",
+        "group_members", "lookup_person", "about", "search_memory",
+        # 2026-10-16 (operator ruling): ONE memory verb, replacing `ask_memory`
+        # and `search_memory_workspace`.
+        "memory_search",
         "recall_lookups",
         "calculate", "transit", "route",
         "place_info", "saved_places",
@@ -245,9 +247,6 @@ def test_the_registry_exposes_every_declared_tool():
         "memo_read",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
-        # The memory search variant, built for the Dreamer's unit key but
-        # reaching Honcho's whole workspace — every unit, not one.
-        "search_memory_workspace",
     }
 
 
@@ -320,12 +319,12 @@ def test_budgets_match_todays_table():
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,
-        # 4 — the dialectic reasoning verb is slow (~14-19s), so the budget is
-        # sized by the loop wall clock (240s); four calls (~76s) still fit.
-        # Raised from 2 (operator 2026-09-03) for the personalization
-        # decomposition's group turns.
-        "ask_memory": 4, "search_memory": 4,
-        # 2 (tool-recall-log spec §4): the same shape `ask_memory`'s own
+        # 4 — `memory_search` (2026-10-16) keeps `ask_memory`'s: its Honcho
+        # `chat` is slow (~14-19s), so the budget is sized by the loop wall
+        # clock (240s); four calls (~76s) still fit. Raised from 2 (operator
+        # 2026-09-03) for the personalization decomposition's group turns.
+        "memory_search": 4, "search_memory": 4,
+        # 2 (tool-recall-log spec §4): the same shape `memory_search`'s own
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.
         "recall_lookups": 2,
@@ -504,9 +503,6 @@ def test_budgets_match_todays_table():
         # model looping on a tool it should have trusted to have worked (the
         # remember verb's write lane, 2026-08-30).
         "remember": 1,
-        # `search_memory_workspace` is 4 like its room-scoped sibling — the
-        # same verb at a wider scope, the same sizing.
-        "search_memory_workspace": 4,
         # `rollup_read` is 4 like `where_been` (cheap local SELECTs, so the round
         # trip is the cost); `standing_read` is 1 (the head does not move inside a
         # session's read of one room). A Cognition session raises both per agenda
@@ -539,7 +535,7 @@ def test_specs_carry_the_same_budgets_as_budgets():
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
         # The DECLARED surface — see `_built_tools`. Without an adaptor name
         # this compares the table against the tag catalog, which is missing
-        # `search_memory_workspace` on purpose (#350).
+        # the Dreamer-only tools on purpose.
         metrics=Metrics(), room=_room(), dream_adaptor="proactive",
     )
     # Every BUILT spec's budget matches `budgets()`. `budgets()` is a superset:
@@ -604,7 +600,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
         # The DECLARED surface — see `_built_tools`. Without an adaptor name
         # this compares the table against the tag catalog, which is missing
-        # `search_memory_workspace` on purpose (#350).
+        # the Dreamer-only tools on purpose.
         metrics=Metrics(), room=_room(), dream_adaptor="proactive",
     )
     assert {s.name: s.time_shiftable for s in specs} == {
@@ -939,7 +935,7 @@ READ_ONLY = frozenset({
     # design/cognition-loop/15-map.md §4: a Record read under lineage.
     "record_query",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
-    "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
+    "about", "memory_search", "search_memory", "recall_lookups", "media_fetch",
     # design/external-files §3: reads a shared file; the account cannot write.
     "file_fetch",
     "media_search",
@@ -954,10 +950,6 @@ READ_ONLY = frozenset({
     # design/cognition-loop/25 §5, 50 §2: Dreamer-only SELECTs of the Rollup's
     # current build and of a room's Standing head.
     "rollup_read", "standing_read", "character_read",
-    # The unit-wide memory variant — a pure read of a store the tag path
-    # already trusts, granted to a unit-keyed adaptor through
-    # `UNIT_SAFE_TOOLS`.
-    "search_memory_workspace",
     "music_status",
     # DEC-151, DEC-201: the X tools are pure reads at all three layers, the
     # tools' closed vocabulary, the bridge's host-side allowlist, this
@@ -1040,22 +1032,16 @@ def test_the_read_and_act_halves_partition_the_table():
     assert not READ_ONLY & ACT_VERBS
 
 
-def test_a_room_catalog_omits_the_dreamer_only_memory_verb():
-    """#350: `search_memory_workspace` returns VERBATIM lines, attributed by
-    name, from Honcho's workspace `/search` — the whole deployment, every
-    unit — filtered only by identity.toml's address book. Its own body says
-    it "exists for the Dreamer … never a quote into any room", and until
-    2026-09-19 that sentence was false: it shipped in every room's catalog.
-
-    `dream_adaptor` is the gate, so an ordinary tag turn must not see it and
-    a Dreamer build must.
-    """
+def test_memory_search_is_in_the_room_and_the_dreamer_catalog_alike():
+    """#350 kept `search_memory_workspace` off every room's catalog: verbatim
+    lines from Honcho's workspace, filtered only by the address book. Its
+    successor `memory_search` (operator ruling 2026-10-16) is every
+    occasion's: in a room its Honcho search keeps only the words of the
+    people that room's view resolves (`tests/test_tools.py` pins that), so
+    the tag and the Dreamer catalogs no longer differ by a memory verb."""
     tag = {t.tool_name for t in _built_tools(ToolRegistry(), dream_adaptor="")}
     dreamer = {t.tool_name for t in _built_tools(ToolRegistry())}
 
-    assert "search_memory_workspace" not in tag
-    assert "search_memory_workspace" in dreamer
-    # Nothing ELSE moved with it — the gate is one verb wide, not a catalog
-    # rewrite that happens to drop this one.
-    assert dreamer - tag == {"search_memory_workspace"}
-    assert tag - dreamer == set()
+    assert "memory_search" in tag and "memory_search" in dreamer
+    assert not {"ask_memory", "search_memory_workspace"} & (tag | dreamer)
+    assert dreamer == tag

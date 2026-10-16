@@ -1332,7 +1332,7 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
     """The property the grant exists for, measured at the seam rather than
     inferred from it: `RegistryToolSource.build` with the culture adaptor's own
     name, key and grant returns the room-scoped verbs (`group_members`,
-    `ask_memory`; the presence verbs left the grant on 2026-10-07) over a room
+    `memory_search`; the presence verbs left the grant on 2026-10-07) over a room
     with a real platform rather than the empty one.
 
     Without the scope-keyed resolution this returns the same NAMES built
@@ -1372,7 +1372,7 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
         getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
     }
     assert names == set(culture.tools), sorted(set(culture.tools) - names)
-    assert "group_members" in names and "ask_memory" in names
+    assert "group_members" in names and "memory_search" in names
     room = captured["room"]
     assert room.platform == "signal", "the verbs were built over the EMPTY room"
     assert room._roster_source is not None, "no roster: every verb is unavailable"

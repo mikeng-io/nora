@@ -265,9 +265,8 @@ CALLS: dict[str, list[dict[str, Any]]] = {
     "where_been": [{"what": "places"}, {"what": "day", "date": "2026-09-30"}],
     "routine_read": [{"date": "2026-10-01", "from_hour": 18, "to_hour": 21}],
     "about": [{"person": "Ada"}],
-    "ask_memory": [{"person": "Ada"}],
+    "memory_search": [{"query": "dinner", "person": "Ada"}, {"query": "dinner"}],
     "search_memory": [{"query": "dinner"}],
-    "search_memory_workspace": [{"query": "dinner"}],
 }
 
 

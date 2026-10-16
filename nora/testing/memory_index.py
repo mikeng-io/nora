@@ -1,6 +1,6 @@
 """`FakeMemoryIndex`: the memory index's read in memory, for the walk's unit
 tests (`nora.agent.memory_search`). It answers through
-`nora.domain.memory_index.in_scope`, the Python statement of the filter
+`nora.domain.memory_index.in_scope` and `narrowed`, the Python statement of the filter
 `SqlMemoryIndex` writes in SQL, and `tests/contract/test_memory_index_contract.py`
 runs both against the same graph, so the fake cannot drift from the store.
 
@@ -31,6 +31,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from nora.domain.memory_index import (
     EMBEDDED_KINDS,
     HUB_KINDS,
+    PERSON_RELATIONS,
     ExactTerm,
     IndexedNode,
     IndexState,
@@ -39,6 +40,7 @@ from nora.domain.memory_index import (
     Seed,
     exact_holds,
     in_scope,
+    narrowed,
 )
 
 __all__ = ["DIMENSIONS", "FakeMemoryIndex", "FakeQueryEmbedder", "bag_of_words", "cosine"]
@@ -118,6 +120,17 @@ class FakeMemoryIndex:
         self.fail = fail
         self.calls: list[str] = []
 
+    def _admits(self, node: IndexedNode, scope: MemoryScope) -> bool:
+        """The scope and the question's narrowing (`scope.only`), as
+        `SqlMemoryIndex` applies both inside every read."""
+        if not in_scope(node, scope):
+            return False
+        linked = {
+            di for sk, si, rel, dk, di in self.edges
+            if (sk, si) == node.key and rel in PERSON_RELATIONS and dk == "person"
+        }
+        return narrowed(node, scope, linked)
+
     def _check(self, name: str) -> None:
         self.calls.append(name)
         if self.fail is not None:
@@ -139,7 +152,7 @@ class FakeMemoryIndex:
             ):
                 continue
             held = sum(1 for t in wanted if t.lower() in node.text.lower())
-            if held and in_scope(node, scope):
+            if held and self._admits(node, scope):
                 out.append(Seed(node, held / len(wanted)))
         out.sort(key=lambda s: (-s.score, -(s.node.at_ms or 0), s.node.key))
         return out[:limit]
@@ -151,7 +164,7 @@ class FakeMemoryIndex:
         out = [
             Seed(self.nodes[k], cosine(vector, v))
             for k, (m, v) in self.vectors.items()
-            if m == model and k in self.nodes and in_scope(self.nodes[k], scope)
+            if m == model and k in self.nodes and self._admits(self.nodes[k], scope)
         ]
         out.sort(key=lambda s: (-s.score, -(s.node.at_ms or 0), s.node.key))
         return out[:max(0, limit)]
@@ -168,7 +181,7 @@ class FakeMemoryIndex:
         ranked: list[tuple[int, float | None, IndexedNode]] = []
         for node in self.nodes.values():
             held = sum(1 for t in wanted if exact_holds(t.text, node.text, cased=t.cased))
-            if not held or not in_scope(node, scope):
+            if not held or not self._admits(node, scope):
                 continue
             stored = self.vectors.get(node.key)
             near = (
@@ -191,7 +204,7 @@ class FakeMemoryIndex:
         }
         out = [
             self.nodes[k] for k in found
-            if k in self.nodes and in_scope(self.nodes[k], scope)
+            if k in self.nodes and self._admits(self.nodes[k], scope)
         ]
         out.sort(key=lambda n: (-(n.at_ms or 0), n.key))
         return out[:max(0, limit)]
@@ -207,7 +220,7 @@ class FakeMemoryIndex:
                 node = self.nodes.get(far)
                 if near not in wanted or node is None:
                     continue
-                if node.kind in HUB_KINDS or in_scope(node, scope):
+                if node.kind in HUB_KINDS or self._admits(node, scope):
                     out.append(Neighbour(via=near, rel=rel, outgoing=outgoing, node=node))
         return out
 
@@ -219,7 +232,7 @@ class FakeMemoryIndex:
             return IndexState(self.state.status, self.state.queue)
         nodes = [
             n for n in self.nodes.values()
-            if _embeddable(n) and (scope is None or in_scope(n, scope))
+            if _embeddable(n) and (scope is None or self._admits(n, scope))
         ]
         current = {n.key for n in nodes if self.vectors.get(n.key, ("", []))[0] == model}
         given_up = {n.key for n in nodes if n.key in self.given_up} - current

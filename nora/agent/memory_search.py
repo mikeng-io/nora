@@ -1,7 +1,7 @@
 """The one retrieval service over the memory index (design/unified-memory/
 25-memory-graph.md §4, 60-build-step-3.md S5): scope, seed, expand hop by
 hop, rank, and an evidence packet with the path that reached each item.
-`ask_memory` calls it while `[memory_index] enabled`; nothing else does yet.
+`memory_search` calls it while `[memory_index] enabled`; nothing else does yet.
 
 **1. Scope, per read, from the live policy** (`scope_for`). The unit is the
 read boundary (DEC-231, 35 §3): the reading room's unit, every room of it,
@@ -36,6 +36,14 @@ path is cut at its first out-of-scope node.
   seeds nothing.
 
 A hub never seeds.
+
+**The question's narrowing** (`memory_search`'s `kinds`, `since`, `until`
+and `person`) is a `MemoryFilter` on the scope (`MemoryScope.only`), so the
+index applies it inside every read above and every hop below, where it
+applies the scope: a node outside it is never read, never returned and
+never takes a slot. A named person always narrows: to nodes about them,
+authored or shared by them, or listing them, said where they are listed
+(the `about` seed's rule, `nora.domain.memory_index.narrowed`).
 
 **3. Expansion**, hop by hop, both edge directions, from the best
 `FRONTIER_WIDTH` nodes of the last hop. Two rules on top of scope:
@@ -82,7 +90,7 @@ import math
 import re
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -95,6 +103,7 @@ from nora.domain.memory_index import (
     EPISODE_KINDS,
     ExactTerm,
     IndexedNode,
+    MemoryFilter,
     MemoryIndexRead,
     MemoryScope,
     QueryEmbedder,
@@ -106,6 +115,7 @@ from nora.domain.prompt import stamp
 from nora.domain.rollup import room_key
 
 __all__ = [
+    "DEFAULT_DEPTH",
     "EXACT_LIMIT",
     "HOPS_BY_DEPTH",
     "HOP_CEILING",
@@ -123,12 +133,14 @@ log = logging.getLogger("nora.agent.memory_search")
 _METRIC = "nora_memory_search_total"
 _DENSE_SHORT = "nora_memory_dense_short_total"
 
-#: `ask_memory`'s existing `depth` as hops (60 §0.7). Two by default.
+#: A reasoning depth as hops (60 §0.7). `memory_search` takes no depth, so it
+#: searches at `DEFAULT_DEPTH`; the table stays for a caller that asks.
 HOPS_BY_DEPTH: Mapping[str, int] = {
     "minimal": 2, "low": 2, "medium": 3, "high": 4, "max": 4,
 }
 #: 25 §4 step 3's hard ceiling.
 HOP_CEILING = 4
+DEFAULT_DEPTH = "low"
 #: A node whose relevance falls below this is not kept; a hop that keeps
 #: none ends the walk. Starting value: a lexical seed scores at least
 #: `WORD_SIMILARITY_MIN` (0.5), so this admits about four weak hops from the
@@ -491,12 +503,17 @@ class MemorySearch:
         return MemorySearchResult(status)
 
     async def search(
-        self, *, query: str, person_id: str | None, target: RenderRoom, depth: str,
-        now_ms: int, people: Sequence[PersonRef] = (),
+        self, *, query: str, person_id: str | None, target: RenderRoom,
+        depth: str = DEFAULT_DEPTH, now_ms: int, people: Sequence[PersonRef] = (),
+        kinds: Sequence[str] = (), since_ms: int | None = None,
+        until_ms: int | None = None,
     ) -> MemorySearchResult:
         """`people` are the persons the caller can name here (the room's
         resolved roster); the names of those this room lists are the exact
-        name references (`exact_terms_of`)."""
+        name references (`exact_terms_of`). `person_id` seeds the nodes about
+        that person and narrows the search to them; `kinds` (node kinds),
+        `since_ms` and `until_ms` narrow it too (the module docstring), all
+        inside the index's reads."""
         def admits(node: IndexedNode) -> bool:
             lineage = Lineage.from_json(node.lineage)
             return section_permits(lineage.section(ROW), target, origin=None)
@@ -505,6 +522,12 @@ class MemorySearch:
             scope = scope_for(target)
             if scope is None:
                 return self._count("unavailable")
+            only = MemoryFilter(
+                kinds=tuple(dict.fromkeys(kinds)), since_ms=since_ms, until_ms=until_ms,
+                person=person_id or None,
+            )
+            if only != MemoryFilter():
+                scope = replace(scope, only=only)
             state = await self._index.index_state(model=self._model, scope=scope)
             names = [n for p in people if p.person_id in scope.listed_here for n in _names(p)]
             vector: list[float] | None = None

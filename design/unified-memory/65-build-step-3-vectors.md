@@ -102,7 +102,8 @@ artifacts or long transcripts join the index. Its trigger is
 embedder cut to fit its micro-batch whose vector it stored (V2), on top of
 `ok`. The iGPU (`norty` is not in `render`) is an
 operator action that changes the throttle, not the design. The `ask_memory`
-text alignment is its own `nora-tool` PR.
+text alignment is its own `nora-tool` PR (built 2026-10-16 as `memory_search`,
+DEC-316).
 
 ## 4. V2 as built (2026-10-16)
 
