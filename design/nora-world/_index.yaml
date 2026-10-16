@@ -50,7 +50,7 @@ scope:
     - "VRM avatars: the person's look, chosen by the person"
     - "The shared venue: karaoke with a local backing track, lyrics, and position-tagged voice over our own WebRTC"
   later:
-    - "The projection: the world rebuilt from a portal View of the Notebook and Rollup (waits on the entry convergence, DEC-249)"
+    - "The projection: the world assembled as a portal View of the Notebook and Rollup (waits on the entry convergence, DEC-249)"
     - "Nora's reading on avatars, from that unit's Notebook"
     - "world_place: Nora decides what to make real, from Cognition"
     - "The asset pipeline's generation step (Hunyuan3D on Modal)"

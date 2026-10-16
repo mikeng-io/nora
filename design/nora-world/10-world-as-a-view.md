@@ -77,8 +77,10 @@ element needs per-person understanding, it goes through Character.
 | the scene a viewer gets | View | the one View builder (`05-data-model.md` §6) | assembled at read time; never stored |
 
 **Projected placements are not stored.** The projection (§5) is a pure
-function of an entry's id, kind and district, evaluated by the View builder
-at assembly, so there is no cache to read back and nothing to rebuild.
+function of the unit's supported entries as of T (each one's id, kind and
+district) and the `world_place` acts that hold cells, evaluated by the View
+builder at assembly, so an object can shift when a neighbour arrives or
+leaves; so there is no cache to read back and nothing to rebuild.
 
 **Precedence.** For one entry, Nora's latest `world_place` act wins over the
 projected placement. A person's hide wins over both, for that person's avatar.
