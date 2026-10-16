@@ -190,8 +190,8 @@ files:
       sha: "140cf343bc46"
     When the group is sorting something out:
       bucket: practice
-      reason: "help a plan land, do not run it or chase; use a tag only when needed"
-      sha: "31eac52a7dd5"
+      reason: "help a plan land, do not run it or chase; use a tag only when needed; a for-now placeholder is settled by the real plan"
+      sha: "51640ef15161"
     Banter:
       bucket: seed
       reason: "her humour, in the room not above it (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)"
