@@ -116,7 +116,9 @@ type webDoc struct {
 	// document (docAnswer).
 	root string
 	// partialOK reads the root even beside GraphQL errors, logging them: a
-	// story whose reel arrived is read, whatever else failed beside it.
+	// story whose reel arrived, or a timeline page whose edges did (every
+	// page carries a field_exception, measured 2026-10-16), is read whatever
+	// else failed beside it. A stale-document error is checked first.
 	partialOK bool
 }
 
