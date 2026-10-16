@@ -197,6 +197,7 @@ from nora.domain.models import (
     WeatherObservation,
 )
 from nora.domain.parking import StreetParking as StreetParking
+from nora.domain.rollup import HealthRow as HealthRow
 from nora.domain.social_stream import Account as Account
 from nora.domain.social_stream import Cap as Cap
 from nora.domain.social_stream import Failed as Failed
@@ -1143,6 +1144,14 @@ class SourceHealthLog(Protocol):
         at_ms: int, detail: str = "",
     ) -> bool:
         """Append one row; False when it could not be written (logged)."""
+        ...
+
+    async def transitions(
+        self, *, source: str, since_ms: int,
+    ) -> tuple[HealthRow, ...] | None:
+        """`source`'s `transition` rows at or after `since_ms`, oldest first:
+        what a poller that has just started rebuilds its halt and back-off
+        from. `None` when they could not be read (logged)."""
         ...
 
 

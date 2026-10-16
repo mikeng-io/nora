@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.ports import SourceHealthEvent
+from nora.domain.ports import HealthRow, SourceHealthEvent
 from nora.infra.sql.schema import SOURCE_HEALTH
 
 log = logging.getLogger("nora.infra.sql.source_health")
@@ -50,3 +50,24 @@ class SqlSourceHealthLog:
             log.exception("source health row not written (%s %s %s)", source, event, outcome)
             return False
         return True
+
+    async def transitions(
+        self, *, source: str, since_ms: int,
+    ) -> tuple[HealthRow, ...] | None:
+        h = SOURCE_HEALTH
+        stmt = (
+            sa.select(h.c.source, h.c.scope, h.c.event, h.c.outcome, h.c.at_ms, h.c.detail)
+            .where(h.c.source == source, h.c.event == "transition", h.c.at_ms >= since_ms)
+            .order_by(h.c.at_ms, h.c.id)
+        )
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(stmt)).all()
+        except Exception:
+            log.exception("source health transitions not read (%s)", source)
+            return None
+        return tuple(
+            HealthRow(source=r.source, scope=r.scope, event=r.event, outcome=r.outcome,
+                      at_ms=r.at_ms, detail=r.detail)
+            for r in rows
+        )

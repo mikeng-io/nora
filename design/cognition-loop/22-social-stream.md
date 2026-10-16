@@ -164,7 +164,8 @@ spending a fixed budget where it buys the most.
   member is probed at least every 6 hours. The cold start (no history) is the
   ceiling.
 - **Budget.** One per-login hourly cap on **upstream calls**, probes counted
-  at `probe_cost`, reads at 1 (starting at 60), with jitter on every call. The
+  at `probe_cost`, reads at 1 (starting at 60), with jitter before every call,
+  a tick's first included. The
   ceiling alone costs `members × probe_cost / 6` an hour: 10 members is 3.3
   of 60, and the ceiling stays inside the budget up to 180 members. A unit
   with more members gets fresher reads for the active ones, not more calls.
@@ -173,18 +174,31 @@ spending a fixed budget where it buys the most.
   - `409 needs_human` (checkpoint or logout) **halts** every social poll for
     the login. It resumes only when the bridge's `/health` reports the
     session healthy; it is never retried on the tick ("retrying this is how a
-    captcha becomes a ban", errors.go).
+    captcha becomes a ban", errors.go). A cleared halt resumes on the
+    back-off ladder's top step (6 hours) before the next probe. **Two halts
+    within 24 hours lock the login** until an operator clears it, by
+    appending a `source_health` row (`source = 'social.instagram'`,
+    `scope = ''`, `event = 'transition'`, `outcome = 'cleared'`, `at_ms` now);
+    a restart does not clear it.
   - `502 upstream_rejected` on a probe or read, or a `social_error` starting
     with `429`, **backs off** the login: polling pauses, starting at 15
     minutes and doubling to the ceiling's 6 hours, reset by one clean probe.
   - `503` is the bridge healing itself: the call is skipped, not counted as
-    a back-off.
+    a back-off, and that member is tried again after the floor. A probe whose
+    answer will not change on its own (not found, unsupported, an id that is
+    not an id) waits for the ceiling. The order is least recently probed
+    first, answered or not, so a member whose probes keep failing never
+    holds the front of the queue.
   - A GraphQL error naming one of §1a's documents is `stale_query`: a
     rotated `doc_id`. It halts **that read** for every member until the id
     is captured again, is recorded as a `source_health` transition, and does
     not count toward the login's back-off, since the login is fine.
   Every halt and back-off is a transition in `source_health`
   ([20](20-observe.md) §1), so silence during it is never read as absence.
+  The halt, the lock and the back-off (its step and its end) are rebuilt
+  from those transitions when the poller starts, and the hour's spent
+  calls from `social_poll`, so a restart neither probes early nor resets
+  the doubling.
 - **What is guaranteed.** Every frame is seen before it expires **while the
   login is healthy**: the 6-hour ceiling leaves 18 hours. A halt longer than
   that loses frames, and the `source_health` interval says which hours were
@@ -294,7 +308,7 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 |---|---|---|
 | S0 | **DONE 2026-10-16**: the REST story read is broken upstream; the web app's story and timeline queries captured (§1a); `latest_reel_media` equal to the newest `taken_at` (n=1); the seen mark is a separate mutation | §1 and §1a; session `authenticated` after |
 | S1 | **DONE 2026-10-16**: the bridge's story read moved onto the GraphQL story query (this also mends the live `instagram_read` story, broken today) and a new `GET /accounts/{igid}/items?after=` over the timeline query, both with `doc_id`s from config and the `stale_query` code, and a test that no read sends the seen mutation; `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `LIST_ITEMS`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads; the bridge read back live (§1) |
-| S2 | **DONE 2026-10-16, off by default** (`nora/app/social_poller.py`, `[social.poll]`): probe-then-read on the ceiling cadence with the 30-minute floor, one hourly budget with jitter, halt and back-off per login with `source_health` transitions, each new item's media fetched into custody, the per-person off switch (`social = false` in `identity.toml`, §2), and the story rule's test rewritten ([20](20-observe.md) §2). The bridge comments already described the poller after S1 | a week of `social_poll` rows; the login unharmed |
+| S2 | **DONE 2026-10-16, off by default** (`nora/app/social_poller.py`, `[social.poll]`): probe-then-read on the ceiling cadence with the 30-minute floor, one hourly budget with jitter, halt and back-off per login with `source_health` transitions (rebuilt on restart, a cleared halt resuming on the top back-off step, two halts in 24 hours locking the login until an operator clears it), a first-ever list read's items recorded `origin = backfill` (§7, first page only), each new item's media fetched into custody, the per-person off switch (`social = false` in `identity.toml`, §2), and the story rule's test rewritten ([20](20-observe.md) §2). The bridge comments already described the poller after S1 | a week of `social_poll` rows; the login unharmed |
 | S3 | perception of new frames under the per-unit cap; the `social` stimulus; Character's wake count; `social_item` media handed to the memory index's embed worker, and a story frame's byte deletion gated on perception and embedding; a story frame's bytes deleted at the hard limit (`story_media_keep_max_days`), with a `BlobStore` delete and the [70](70-migration.md) §9 tombstone, which custody does not have yet. Nothing reaches the 30-day bound until 31 days after the poller is enabled. The `[social]` keep keys arrive with the code that reads them; the read-side exclusion of an opted-out person's items (§2) lands with the first reader of `social_item` | `nora_perception_total{source="social"}`; stimuli per read; story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
 | S5 | the back-fill over `LIST_ITEMS` | items per member against `media_count` |

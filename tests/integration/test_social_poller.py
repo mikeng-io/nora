@@ -15,16 +15,21 @@ Database scoped to the MODULE and truncated between tests (AGENTS.md).
 
 from __future__ import annotations
 
+import copy
 import functools
+import json
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import psycopg
 import pytest
 import sqlalchemy as sa
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
 from nora.app.social_poller import SocialPoller
 from nora.config import SocialPollConfig
@@ -39,6 +44,7 @@ from nora.domain.social_stream import (
     StoryFrame,
     StorySnapshot,
 )
+from nora.infra.social.instagram_source import InstagramSocialSource
 from nora.infra.social.subjects import instagram_roster
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import SOCIAL_ITEM, SOCIAL_ITEM_STATE, SOCIAL_POLL
@@ -55,6 +61,11 @@ from nora.testing.stimuli import InMemorySourceHealthLog
 
 ADA, BEA = "10000001", "10000002"
 _CDN = "https://scontent.cdninstagram.com/v/t51"
+_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "instagram_bridge"
+
+
+def _bridge_fixture(name: str) -> dict[str, Any]:
+    return json.loads((_FIXTURES / name).read_text())
 
 
 @pytest.fixture(scope="module")
@@ -273,16 +284,32 @@ async def test_the_budget_stops_a_tick_and_frees_up_after_an_hour(world) -> None
     ) == 4
 
 
-async def test_the_member_answered_longest_ago_is_probed_first(world) -> None:
-    quiet(world, ADA)
-    world.source.probes[BEA] = Failed(FailureKind.UNAVAILABLE, "503")
+async def test_a_member_whose_probe_keeps_failing_does_not_starve_the_rest(world) -> None:
+    """Least recently probed goes first, answered or not: ada's probe fails
+    every time and is never answered, and bea still gets her turn."""
+    quiet(world, BEA)
+    world.source.probes[ADA] = Failed(FailureKind.UNAVAILABLE, "503")
+    poller = world.poller(hourly_budget=3)  # one probe and a list read an hour
+
+    await poller.tick()
+    assert world.probes() == [ADA]
+    world.clock.at(minutes=61)
+    await poller.tick()
+    assert world.probes() == [ADA, BEA]
+
+
+async def test_a_probe_that_will_not_change_waits_for_the_ceiling(world) -> None:
+    """An account the platform does not know is not retried every floor."""
+    quiet(world, BEA)
+    world.source.probes[ADA] = Failed(FailureKind.NOT_FOUND, "not_found")
     poller = world.poller()
     await poller.tick()
-
-    quiet(world, BEA)
-    world.clock.at(hours=6, minutes=5)
+    world.clock.at(minutes=31)
     await poller.tick()
-    assert world.probes() == [ADA, BEA, BEA, ADA], "bea was never answered"
+    assert world.probes() == [ADA, BEA]
+    world.clock.at(hours=6)
+    await poller.tick()
+    assert world.probes() == [ADA, BEA, ADA, BEA]
 
 
 # ---- probe, then read -------------------------------------------------------
@@ -387,8 +414,12 @@ async def test_a_409_halts_every_call_until_the_session_is_healthy(world) -> Non
     quiet(world, ADA)
     world.clock.at(hours=8)
     await poller.tick()
-    assert world.probes() == [ADA, ADA, BEA]
-    assert world.transitions() == ["up", "halted", "up"]
+    assert world.probes() == [ADA], "a cleared checkpoint waits out the top back-off step"
+    assert world.transitions() == ["up", "halted", "up", "backed_off"]
+
+    world.clock.at(hours=14, minutes=1)
+    await poller.tick()
+    assert world.probes() == [ADA, BEA, ADA], "least recently probed first"
 
 
 async def test_a_502_backs_off_doubling_and_one_clean_probe_resets_it(world) -> None:
@@ -561,3 +592,184 @@ async def test_a_member_who_set_social_off_is_never_probed(world) -> None:
     world.clock.at(hours=6)
     await poller.tick()
     assert world.probes() == [ADA, ADA]
+
+
+
+# ---- durability and ordering of a halt or back-off ---------------------------
+
+
+class _RowsFail(SqlSocialStreamStore):
+    """The real store, refusing every `social_poll` row whose outcome is in
+    `refuse`: the database failing at the worst moment."""
+
+    refuse: frozenset[str] = frozenset()
+
+    async def record_poll(self, **kw: Any) -> None:
+        if kw.get("outcome") in self.refuse:
+            raise RuntimeError("database refused the row")
+        await super().record_poll(**kw)
+
+
+@pytest.mark.parametrize(("failure", "outcome", "state"), [
+    (Failed(FailureKind.HALT, "needs_human"), "halted", "halted"),
+    (Failed(FailureKind.BACK_OFF, "upstream_rejected"), "backed_off", "backed_off"),
+])
+async def test_a_halt_or_back_off_holds_when_its_row_cannot_be_written(
+    world, failure, outcome, state,
+) -> None:
+    store = _RowsFail(world.engine)
+    store.refuse = frozenset({outcome})
+    world.store = store
+    quiet(world, BEA)
+    world.source.probes[ADA] = failure
+    await world.poller().tick()
+    assert world.probes() == [ADA], "the tick stopped: bea was not probed"
+    assert world.transitions() == ["up", state]
+
+
+async def test_a_restart_mid_back_off_waits_it_out_and_keeps_doubling(world) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = Failed(FailureKind.BACK_OFF, "upstream_rejected")
+    world.source.probes[BEA] = Failed(FailureKind.BACK_OFF, "upstream_rejected")
+    await world.poller().tick()
+
+    world.clock.at(minutes=10)
+    await world.poller().tick()
+    assert world.probes() == [ADA], "a new process still waits out the 15 minutes"
+
+    world.clock.at(minutes=20)
+    await world.poller().tick()
+    assert world.probes() == [ADA, BEA]
+    details = [r.detail for r in world.health.rows if r.outcome == "backed_off"]
+    assert details == ["upstream_rejected 900s", "upstream_rejected 1800s"]
+
+
+async def test_a_restart_after_a_halt_resumes_on_the_ladder(world) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = Failed(FailureKind.HALT, "needs_human")
+    await world.poller().tick()
+
+    quiet(world, ADA)
+    world.clock.at(hours=1)
+    await world.poller().tick()
+    assert world.probes() == [ADA], "the restarted process still treats the halt as live"
+    assert world.transitions()[-2:] == ["up", "backed_off"]
+
+
+async def test_two_halts_in_a_day_lock_the_login_until_an_operator_clears_it(world) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = Failed(FailureKind.HALT, "needs_human")
+    poller = world.poller()
+    await poller.tick()
+    world.clock.at(hours=1)
+    await poller.tick()                       # healthy: up, then the top step
+    world.clock.at(hours=7, minutes=1)
+    await poller.tick()                       # ada halts again
+    assert world.transitions()[-2:] == ["halted", "locked"]
+
+    assert world.probes() == [ADA, BEA, ADA]
+    world.clock.at(hours=20)
+    await poller.tick()
+    await world.poller().tick()               # a restart does not clear it
+    assert world.probes() == [ADA, BEA, ADA]
+
+    await world.health.record(
+        source="social.instagram", scope="", event="transition", outcome="cleared",
+        at_ms=int(world.clock.now.timestamp() * 1000),
+    )
+    quiet(world, ADA)
+    world.clock.at(hours=21)
+    await poller.tick()
+    assert world.probes() == [ADA, BEA, ADA, ADA, BEA]
+
+
+async def test_a_restart_counts_the_last_hours_calls_against_the_budget(world) -> None:
+    quiet(world, ADA, BEA)
+    await world.poller(hourly_budget=3).tick()
+    assert world.probes() == [ADA]
+
+    world.clock.at(minutes=10)
+    await world.poller(hourly_budget=3).tick()
+    assert world.probes() == [ADA], "the hour's three calls are still spent"
+
+
+async def test_the_first_call_of_a_tick_is_jittered_too(world) -> None:
+    quiet(world, ADA)
+    world.subjects = FakeSocialSubjectIndex({"ada": ADA})
+    world.source.pages[ADA] = Failed(FailureKind.UNAVAILABLE, "503")
+    pauses: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        pauses.append(seconds)
+
+    poller = SocialPoller(
+        source=world.source, store=world.store, health=world.health,
+        roster=functools.partial(instagram_roster, world.subjects),
+        settings=SocialPollConfig(enabled=True, jitter_seconds=10),
+        metrics=world.metrics, clock=world.clock, sleep=sleep, rand=lambda: 0.5,
+    )
+    await poller.tick()
+    assert pauses == [5.0, 5.0], "one pause before the probe, one before the list read"
+
+
+async def test_a_first_list_read_is_recorded_as_backfill_and_later_ones_as_poll(world) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(posts=1)
+    world.source.pages[ADA] = Page(items=(post(world, "p1"),), next_cursor=None)
+    poller = world.poller()
+    await poller.tick()
+
+    world.source.probes[ADA] = probe(posts=2)
+    world.source.pages[ADA] = Page(items=(post(world, "p2"), post(world, "p1")), next_cursor=None)
+    world.clock.at(hours=6)
+    await poller.tick()
+    async with world.engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(SOCIAL_ITEM.c.item_id, SOCIAL_ITEM.c.origin).order_by(SOCIAL_ITEM.c.item_id),
+        )).all()
+    assert [tuple(r) for r in rows] == [("p1", "backfill"), ("p2", "poll")]
+
+
+async def test_a_post_with_no_usable_media_is_recorded_and_not_read_again(world) -> None:
+    """Through the real Instagram adapter, over a bridge whose post's media
+    is off the CDN."""
+    posts = copy.deepcopy(_bridge_fixture("posts_carousel_ok.json"))
+    posts["body"]["items"] = [{"kind": "image", "url": "https://evil.test/a.jpg"}]
+    answers = {
+        "account": _bridge_fixture("account_ok.json"),
+        "story": _bridge_fixture("story_not_found.json"),
+        "items": _bridge_fixture("items_last_page.json"),
+        "post": posts,
+    }
+    served: list[str] = []
+
+    def route(name: str) -> Any:
+        async def handler(_: web.Request) -> web.Response:
+            served.append(name)
+            return web.json_response(answers[name]["body"], status=answers[name]["status"])
+        return handler
+
+    async def health(_: web.Request) -> web.Response:
+        return web.json_response({"session": "authenticated"})
+
+    app = web.Application()
+    app.router.add_get("/health", health)
+    app.router.add_get("/accounts/{igid}", route("account"))
+    app.router.add_get("/accounts/{igid}/story", route("story"))
+    app.router.add_get("/accounts/{igid}/items", route("items"))
+    app.router.add_get("/posts/{shortcode}", route("post"))
+    async with TestServer(app) as server:
+        poller = SocialPoller(
+            source=InstagramSocialSource(base_url=str(server.make_url("")), timeout_seconds=5),
+            store=world.store, health=world.health,
+            roster=functools.partial(instagram_roster, FakeSocialSubjectIndex({"ada": ADA})),
+            settings=SocialPollConfig(enabled=True, jitter_seconds=0),
+            metrics=world.metrics, clock=world.clock,
+        )
+        await poller.tick()
+        reads = served.count("post")
+        assert reads >= 1
+        assert all(ref is None for ref in (await world.items()).values())
+        world.clock.at(hours=6)
+        await poller.tick()
+    assert served.count("post") == reads, "the list read completed; nothing is read again"

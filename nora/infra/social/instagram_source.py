@@ -208,8 +208,10 @@ class InstagramSocialSource:
             and _is_cdn_url(row.get("url"))
         )
         if not media:
+            # Recorded without media rather than failed: the post exists, and
+            # a failure here would keep the list read incomplete and re-read
+            # the same post on every probe.
             log.warning("instagram bridge post carried no usable media")
-            return _UNAVAILABLE
         caption = payload.get("caption")
         taken = _when(payload.get("taken_at"))
         return SocialItem(

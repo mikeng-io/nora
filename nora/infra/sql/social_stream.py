@@ -56,7 +56,7 @@ class ProbeTimes:
 
 
 class SqlSocialStreamStore:
-    """The stream's three tables, as nine verbs."""
+    """The stream's three tables, as ten verbs."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -194,3 +194,18 @@ class SqlSocialStreamStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return {person: ProbeTimes(attempted, ok) for person, attempted, ok in rows}
+
+    async def calls_since(
+        self, *, network: str, since: datetime,
+    ) -> list[tuple[datetime, PollStage]]:
+        """Every probe and read recorded on `network` after `since`, oldest
+        first, as `(recorded_at, stage)`: the calls a poller that has just
+        started counts against its hourly budget."""
+        p = SOCIAL_POLL
+        stmt = (
+            sa.select(p.c.recorded_at, p.c.stage)
+            .where(p.c.network == network, p.c.recorded_at > since)
+            .order_by(p.c.recorded_at, p.c.id)
+        )
+        async with self._engine.connect() as conn:
+            return [(r.recorded_at, r.stage) for r in (await conn.execute(stmt)).all()]
