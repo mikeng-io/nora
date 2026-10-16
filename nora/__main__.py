@@ -332,6 +332,8 @@ class App:
         # false`, the shipped default.
         if deps.social_poller is not None:
             deps.background.spawn(deps.social_poller.run())
+            if deps.social_perception is not None:
+                deps.background.spawn(deps.social_perception.run())
         else:
             log.info("social poller disabled ([social.poll] enabled = false)")
         # The computer session sweeper: composition builds it only while

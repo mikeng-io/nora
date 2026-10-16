@@ -142,6 +142,7 @@ $$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -257,6 +258,7 @@ ADD CONSTRAINT row_history_pkey PRIMARY KEY (id);
 ADD CONSTRAINT self_tension_pkey PRIMARY KEY (id);
 ADD CONSTRAINT social_item_pkey PRIMARY KEY (id);
 ADD CONSTRAINT social_item_state_pkey PRIMARY KEY (id);
+ADD CONSTRAINT social_perception_pkey PRIMARY KEY (id);
 ADD CONSTRAINT social_poll_pkey PRIMARY KEY (id);
 ADD CONSTRAINT source_health_pkey PRIMARY KEY (id);
 ADD CONSTRAINT standing_pkey PRIMARY KEY (platform, conversation_id);
@@ -393,6 +395,7 @@ ALTER TABLE ONLY public.row_history
 ALTER TABLE ONLY public.self_tension
 ALTER TABLE ONLY public.social_item
 ALTER TABLE ONLY public.social_item_state
+ALTER TABLE ONLY public.social_perception
 ALTER TABLE ONLY public.social_poll
 ALTER TABLE ONLY public.source_health
 ALTER TABLE ONLY public.standing
@@ -587,6 +590,9 @@ CONSTRAINT ck_social_item_kind CHECK ((kind = ANY (ARRAY['story_frame'::text, 'p
 CONSTRAINT ck_social_item_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
 CONSTRAINT ck_social_item_state_state CHECK ((state = ANY (ARRAY['gone'::text, 'hidden'::text])))
 CONSTRAINT ck_social_item_story_frame_expires CHECK (((kind <> 'story_frame'::text) OR (expires_at IS NOT NULL)))
+CONSTRAINT ck_social_perception_calls CHECK ((calls >= 0)),
+CONSTRAINT ck_social_perception_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
+CONSTRAINT ck_social_perception_outcome CHECK ((outcome = ANY (ARRAY['ok'::text, 'nothing_found'::text, 'unavailable'::text, 'failed'::text, 'capped'::text])))
 CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text]))),
 CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text])))
 CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
@@ -776,7 +782,10 @@ CREATE INDEX idx_row_history_key ON public.row_history USING btree (table_name, 
 CREATE INDEX idx_row_history_table_recorded ON public.row_history USING btree (table_name, recorded_at);
 CREATE INDEX idx_self_tension_unit ON public.self_tension USING btree (unit, written_at);
 CREATE INDEX idx_social_item_person ON public.social_item USING btree (network, person, taken_at);
+CREATE INDEX idx_social_item_read ON public.social_item USING btree (read_id);
 CREATE INDEX idx_social_item_state_item ON public.social_item_state USING btree (network, item_id, recorded_at);
+CREATE INDEX idx_social_perception_at ON public.social_perception USING btree (at);
+CREATE INDEX idx_social_perception_item ON public.social_perception USING btree (network, item_id, at);
 CREATE INDEX idx_social_poll_person ON public.social_poll USING btree (network, person, recorded_at);
 CREATE INDEX idx_source_health_source_at ON public.source_health USING btree (source, at_ms);
 CREATE INDEX idx_standing_revision_room_updated ON public.standing_revision USING btree (platform, conversation_id, updated_at DESC, id DESC);
@@ -875,6 +884,7 @@ CREATE TABLE public.row_history (
 CREATE TABLE public.self_tension (
 CREATE TABLE public.social_item (
 CREATE TABLE public.social_item_state (
+CREATE TABLE public.social_perception (
 CREATE TABLE public.social_poll (
 CREATE TABLE public.source_health (
 CREATE TABLE public.standing (
@@ -984,6 +994,7 @@ CREATE UNIQUE INDEX uq_row_history_open ON public.row_history USING btree (table
 CREATE UNIQUE INDEX uq_social_item_key ON public.social_item USING btree (network, item_id);
 CREATE UNIQUE INDEX uq_stimulus_retraction_stimulus ON public.stimulus_retraction USING btree (stimulus_id);
 CREATE UNIQUE INDEX uq_stimulus_rollup_ref ON public.stimulus USING btree (unit, ref) WHERE (kind = 'rollup'::text);
+CREATE UNIQUE INDEX uq_stimulus_social_ref ON public.stimulus USING btree (unit, ref) WHERE (kind = 'social'::text);
 CREATE UNIQUE INDEX uq_stimulus_time_ref ON public.stimulus USING btree (unit, ref) WHERE (kind = 'time'::text);
 DECLARE
 END
@@ -1258,6 +1269,7 @@ asserted_at bigint,
 asserted_at bigint,
 asserted_by text,
 asserted_by text,
+at timestamp with time zone NOT NULL,
 at timestamptz := clock_timestamp();
 at_home_of text[] DEFAULT '{}'::text[] NOT NULL,
 at_ms bigint CONSTRAINT signal_at_ms_not_null NOT NULL,
@@ -1299,6 +1311,7 @@ build_id bigint NOT NULL,
 build_id bigint NOT NULL,
 build_id bigint NOT NULL,
 built_at text,
+calls integer DEFAULT 0 NOT NULL,
 canonical_form text NOT NULL,
 canonical_form text NOT NULL,
 canonical_name text NOT NULL,
@@ -1595,6 +1608,7 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -1625,6 +1639,7 @@ is_nora integer DEFAULT 0 NOT NULL,
 iso_week text NOT NULL,
 issued_at timestamp with time zone NOT NULL,
 item text CONSTRAINT signal_item_not_null NOT NULL,
+item_id text NOT NULL,
 item_id text NOT NULL,
 item_id text NOT NULL,
 item_index integer NOT NULL,
@@ -1767,6 +1782,7 @@ narrative text NOT NULL,
 network text NOT NULL,
 network text NOT NULL,
 network text NOT NULL,
+network text NOT NULL,
 new_image := to_jsonb(NEW);
 new_image jsonb;
 new_key := new_key || jsonb_build_object(col, new_image -> col);
@@ -1805,7 +1821,9 @@ open_stay jsonb,
 operation_id uuid NOT NULL,
 operation_id uuid NOT NULL,
 origin text NOT NULL,
+origin text NOT NULL,
 origin_room text,
+outcome text NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
@@ -1835,6 +1853,7 @@ payload jsonb NOT NULL,
 payload jsonb,
 people text[] DEFAULT '{}'::text[] NOT NULL,
 people text[] DEFAULT '{}'::text[] NOT NULL,
+person text NOT NULL,
 person text NOT NULL,
 person text NOT NULL,
 person_a text NOT NULL,
@@ -1906,6 +1925,7 @@ reactions integer NOT NULL,
 reactions integer NOT NULL,
 reactions_ab integer NOT NULL,
 reactions_ba integer NOT NULL,
+read_id uuid,
 reading text NOT NULL,
 reading_digest text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
@@ -1913,6 +1933,7 @@ reason text DEFAULT ''::text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
+reason text,
 reason text,
 reasoning text,
 reasoning text,
@@ -1934,6 +1955,7 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -2224,6 +2246,7 @@ unit text NOT NULL,
 unit text,
 unit text,
 unit_id text DEFAULT ''::text NOT NULL,
+units text[] DEFAULT '{}'::text[] NOT NULL,
 unprojected integer DEFAULT 0 NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
 updated_at bigint NOT NULL,

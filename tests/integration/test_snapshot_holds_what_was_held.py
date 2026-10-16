@@ -372,6 +372,12 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "social_item_state": lambda n: {
         "id": _uuid("ss", n), "network": "instagram", "item_id": f"item{n}", "state": "gone",
     },
+    # 0108_social_perception: one attempt to perceive an item's media.
+    "social_perception": lambda n: {
+        "id": _uuid("sv", n), "network": "instagram", "item_id": f"item{n}",
+        "person": "ken", "units": ["friends"], "origin": "poll", "outcome": "ok",
+        "calls": 1, "at": T0,
+    },
     # 0101_self_tension: a lesson refused by the law.
     "self_tension": lambda n: {
         "id": _uuid("st", n), "unit": "friends", "source": "lesson",

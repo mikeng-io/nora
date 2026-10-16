@@ -187,9 +187,23 @@ async def test_a_rollup_stimulus_is_written_once_per_ref(store):
     assert time_same_ref is not None  # the two kinds' refs are separate spaces
 
 
+async def test_a_social_stimulus_is_written_once_per_ref(store):
+    """Migration 0108: a `social` stimulus names the read it announces, and a
+    perception pass that finds the read again (after a restart) writes nothing."""
+    sig = NewStimulus(unit=UNIT, kind="social", item="story_frame",
+                      ref="social_read:r1", at_ms=NOW, person_id="ada")
+    first = await store.append(stimulus=sig, recorded_at_ms=NOW)
+    again = await store.append(stimulus=sig, recorded_at_ms=NOW + 30_000)
+    other_unit = await store.append(
+        stimulus=NewStimulus(unit="other", kind="social", item="story_frame",
+                             ref="social_read:r1", at_ms=NOW, person_id="ada"),
+        recorded_at_ms=NOW)
+    assert first is not None and again is None and other_unit is not None
+
+
 async def test_message_refs_are_not_deduplicated(store):
-    """Only `time` and `rollup` are unique on their ref: two reactions that share a message
-    are two Record items, and both are stimuli."""
+    """Only `time`, `rollup` and `social` are unique on their ref: two
+    reactions that share a message are two Record items, and both are stimuli."""
     a = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     b = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     assert a is not None and b is not None and a != b

@@ -1553,6 +1553,13 @@ class SocialPollConfig(BaseModel):
     pause of up to `jitter_seconds` before each call. A rejected or
     rate-limited call backs the login off for `back_off_start_minutes`,
     doubling to `back_off_max_hours` until a clean probe.
+
+    With `[media] comprehension` on, a perception pass on the same tick reads
+    each new item's media, spending at most `perception_daily_cap` MODEL CALLS
+    per unit per local day (`[cognition] timezone`): one per image, and per
+    video one per `[media.describe.video] chunk_seconds` window (up to
+    `chunk_max`) plus its text pass. Back-filled items may use at most half of
+    what polled items leave (§7). 0 perceives nothing.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1565,6 +1572,7 @@ class SocialPollConfig(BaseModel):
     back_off_start_minutes: float = Field(default=15.0, gt=0)
     back_off_max_hours: float = Field(default=6.0, gt=0)
     jitter_seconds: float = Field(default=10.0, ge=0)
+    perception_daily_cap: int = Field(default=200, ge=0)
 
     @model_validator(mode="after")
     def _bounds_are_ordered(self) -> SocialPollConfig:
