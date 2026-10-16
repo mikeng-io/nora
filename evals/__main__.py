@@ -14,6 +14,7 @@ import os
 import signal
 import statistics
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -402,6 +403,21 @@ def _print_input(name: str, case_name: str, *, source_url: str) -> int:
     return 0
 
 
+def memory_index_enabled(config_toml: str) -> bool:
+    """`[memory_index] enabled` in a config's text; absent is the code
+    default, off."""
+    return bool(tomllib.loads(config_toml).get("memory_index", {}).get("enabled", False))
+
+
+def memory_surface_line(deployed: bool, flag: bool) -> str:
+    """The run header's account of which memory surface it measures, and why."""
+    if deployed:
+        return "graph ([memory_index] enabled = true in the deployment's config)"
+    if flag:
+        return "graph (--memory-index; the deployment runs the honcho surface)"
+    return "honcho ([memory_index] enabled = false in the deployment's config)"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="python -m evals")
     ap.add_argument("corpus", nargs="*", help="corpus name(s) — see --list")
@@ -602,11 +618,19 @@ def main() -> int:
             # AFTER the rebuild: the sweep reads Honcho's address and the
             # deployment's workspace off the config every subject composes.
             print(f"run {RUN_ID}: every draw gets its own Honcho workspace")
-            print(
-                "memory surface: "
-                + ("graph ([memory_index] enabled = true, --memory-index)"
-                   if args.memory_index else "the deployment's")
-            )
+            # THE MEMORY SURFACE, RESOLVED, not assumed (DEC-316): the
+            # generated config's own flag, or `--memory-index`. Cases are
+            # selected for it and every subject is checked against it, so a
+            # deployment that turned the index on is never measured with the
+            # Honcho surface's case filter.
+            # `materialise` has just written it; the per-case check
+            # (`refuse_a_memory_surface_mismatch`) is the fail-closed backstop
+            # should this ever read the wrong file.
+            written = Path(generated)
+            deployed = written.exists() and memory_index_enabled(
+                written.read_text(encoding="utf-8"))
+            graph = deployed or args.memory_index
+            print(f"memory surface: {memory_surface_line(deployed, args.memory_index)}")
             print(pseudonyms.status())
             _sweep_stale_workspaces()
 
@@ -623,7 +647,7 @@ def main() -> int:
                     ok = _run_one(
                         name, source_url=source_url, judge=judge, sample=args.sample,
                         only=only, all_reasons=args.reasons, positions=args.positions,
-                        memory_index=args.memory_index,
+                        memory_index=graph,
                         context_receipts=(receipts if args.context_arm != "full"
                                           or args.context_report else None),
                     ) and ok

@@ -611,3 +611,40 @@ def test_an_unknown_memory_surface_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr("evals.scenarios._CORPORA", tmp_path)
     with pytest.raises(ValueError, match="memory_surface"):
         scenarios.load_all("tool_selection")
+
+
+@pytest.mark.parametrize(("config", "flag", "graph", "says"), [
+    ("[memory_index]\nenabled = false\n", False, False, "honcho"),
+    ("[memory_index]\nenabled = false\n", True, True, "--memory-index"),
+    # The live config turned the index on: a run without the flag measures
+    # the graph surface, and says why, instead of filtering for honcho.
+    ("[memory_index]\nenabled = true\n", False, True, "deployment's config"),
+    ("", False, False, "honcho"),
+])
+def test_the_arm_is_resolved_from_the_generated_config_or_the_flag(
+    config: str, flag: bool, graph: bool, says: str,
+) -> None:
+    from evals.__main__ import memory_index_enabled, memory_surface_line
+
+    deployed = memory_index_enabled(config)
+    assert (deployed or flag) is graph
+    line = memory_surface_line(deployed, flag)
+    assert line.startswith("graph" if graph else "honcho") and says in line
+
+
+def test_the_spec_carries_the_arm_and_a_disagreeing_subject_is_refused(monkeypatch):
+    from evals import scenarios
+    from evals.backbone import refuse_a_memory_surface_mismatch
+
+    captured: list = []
+    monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
+    scenarios.experiment_for("tool_selection", source_url="x", memory_index=True)
+    scenarios.experiment_for("tool_selection", source_url="x")
+    assert [s.memory_surface for s in captured] == ["graph", "honcho"]
+    refuse_a_memory_surface_mismatch("graph", True)
+    refuse_a_memory_surface_mismatch("honcho", False)
+    refuse_a_memory_surface_mismatch(None, True)
+    with pytest.raises(ValueError, match="disagree"):
+        refuse_a_memory_surface_mismatch("honcho", True)
+    with pytest.raises(ValueError, match="disagree"):
+        refuse_a_memory_surface_mismatch("graph", False)

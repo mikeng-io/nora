@@ -2083,3 +2083,26 @@ async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
 
     assert deps.otp is not None and deps.otp_api_token == "t"  # noqa: S105 — the fixture's token
     assert deps.registry.adapters["signal"]._sender._dm_recipients == frozenset({"+852111"})
+
+
+@pytest.mark.parametrize("graph", [False, True])
+async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path, graph):
+    """DEC-316, through the real composition: `[memory_index] enabled` picks
+    the session's memory verbs exactly as it picks every other occasion's.
+    The session's `wired` set (its guard's read-only set) and what it BUILDS
+    agree, and neither holds the other surface."""
+    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(
+        cfg, {**_SESSION_ON, "memory_index.enabled": graph},
+    ))
+    runner = deps.cognition_runner
+    assert runner is not None
+    unit, home = next(iter(runner._home_rooms.items()))
+    built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
+    on, off = (GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS) if graph else (
+        HONCHO_MEMORY_TOOLS, GRAPH_MEMORY_TOOLS)
+    assert ("memory_search" in built) is graph
+    assert not built & off and not runner._read_only_tools & off
+    assert built & on and runner._read_only_tools & on

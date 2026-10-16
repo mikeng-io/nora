@@ -318,14 +318,25 @@ def terms_of(query: str) -> list[str]:
     return list(dict.fromkeys(out))[:_MAX_TERMS]
 
 
-def scope_for(target: RenderRoom) -> MemoryScope | None:
+def scope_for(target: RenderRoom, *, own_room: bool = False) -> MemoryScope | None:
     """The reading room's scope, from the live policy (`target.rooms`) and
     its live roster (`target.live`); `None` for a room outside the policy,
-    which reads nothing."""
+    which reads nothing.
+
+    `own_room` narrows it to the reading room alone: no other room of the
+    unit and no unit-placed node (a note, memo or event of the unit may come
+    from any of its rooms), so nothing said elsewhere is read. The culture
+    adaptor's (DEC-316): a room's culture is written from that room's own
+    speech, as its Honcho `search_memory` read only its own session. The
+    listed-room and presence rules are unchanged; a stay or trip, which
+    belongs to a person and to no room, is still read where its person
+    passes presence here."""
     here = target.room
     if here is None:
         return None
-    unit_rooms = [r for r in target.rooms if here.unit and r.unit == here.unit]
+    unit_rooms = (
+        [] if own_room else [r for r in target.rooms if here.unit and r.unit == here.unit]
+    )
     if not any(r.platform == here.platform and r.ids == here.ids for r in unit_rooms):
         unit_rooms.append(here)
     room_persons = {
@@ -343,7 +354,7 @@ def scope_for(target: RenderRoom) -> MemoryScope | None:
         if section_permits((LineageEntry(PRESENCE, subject=p),), target, origin=None)
     )
     return MemoryScope(
-        units=(here.unit,) if here.unit else (),
+        units=(here.unit,) if here.unit and not own_room else (),
         rooms=tuple(room_persons),
         listed_here=listed,
         people_here=listed | (live.person_ids if live is not None else frozenset()),
@@ -523,20 +534,21 @@ class MemorySearch:
         self, *, query: str, person_id: str | None, target: RenderRoom,
         depth: str = DEFAULT_DEPTH, now_ms: int, people: Sequence[PersonRef] = (),
         kinds: Sequence[str] = (), since_ms: int | None = None,
-        until_ms: int | None = None,
+        until_ms: int | None = None, own_room: bool = False,
     ) -> MemorySearchResult:
         """`people` are the persons the caller can name here (the room's
         resolved roster); the names of those this room lists are the exact
         name references (`exact_terms_of`). `person_id` seeds the nodes about
         that person and narrows the search to them; `kinds` (node kinds),
         `since_ms` and `until_ms` narrow it too (the module docstring), all
-        inside the index's reads."""
+        inside the index's reads. `own_room` reads the reading room alone
+        (`scope_for`)."""
         def admits(node: IndexedNode) -> bool:
             lineage = Lineage.from_json(node.lineage)
             return section_permits(lineage.section(ROW), target, origin=None)
 
         try:
-            scope = scope_for(target)
+            scope = scope_for(target, own_room=own_room)
             if scope is None:
                 return self._count("unavailable")
             only = MemoryFilter(

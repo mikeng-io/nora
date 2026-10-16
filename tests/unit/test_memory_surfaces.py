@@ -20,7 +20,6 @@ from typing import Any
 import pytest
 
 from nora.agent.dreamer import (
-    AdaptorGrant,
     HomeRoom,
     RegistryToolSource,
     cognition_grant,
@@ -136,9 +135,12 @@ def _built(where: str, graph: bool, persons: Any) -> set[str]:
         return set(surface.admitted)
     if where == "cognition":
         source = _dream_source(registry, persons)
-        # The flags as composition derives them from config.
-        flags = ("memory_index.enabled",) if graph else ()
-        wired = read_surface(read_only=source.read_only(), enabled_flags=flags).wired
+        # As composition derives it: the registry that builds the tools says
+        # which memory surface it offers (one source, DEC-316).
+        wired = read_surface(
+            read_only=source.read_only(), enabled_flags=(),
+            registry_withheld=registry.withheld_tools(),
+        ).wired
         build = read_tools_for(source, names=wired, grant=cognition_grant())
         return _names(build("u1", [AgendaRoom("signal", GROUP)]))
     if where == CULTURE_ADAPTOR_NAME:
@@ -147,9 +149,12 @@ def _built(where: str, graph: bool, persons: Any) -> set[str]:
             grant=culture_grant(),
         ))
     if where == CHARACTER_PERSON_ADAPTOR_NAME:
+        # As production builds it (`DreamerRuntime`, composition's grants):
+        # the key is the person's home room (`tool_room`), no unit supplied
+        # (`key_kind` is `entity`), and the culture grant (a real room).
         return _names(_dream_source(registry, persons).build(
-            key="miles_novak", names=CHARACTER_PERSON_TOOLS, unit="u1", adaptor=where,
-            grant=AdaptorGrant(),
+            key=GROUP, names=CHARACTER_PERSON_TOOLS, unit=None, adaptor=where,
+            grant=culture_grant(),
         ))
     assert where == "subagent"
     return _names(SubagentToolSource(
@@ -185,13 +190,30 @@ def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
     assert not offered & HONCHO_MEMORY_TOOLS
 
 
-def test_cognition_names_what_it_holds_on_each_surface() -> None:
-    """The session's `wired` set is its guard's read-only set and its boot
-    log, so it must name the surface the registry builds, not the catalogue."""
+def test_cognition_takes_the_memory_surface_from_the_registry() -> None:
+    """One source (DEC-316 review): Cognition's `wired` set is what the
+    registry it builds through withholds, never a flag re-derived from
+    config beside it. `read_surface` cannot be called without it."""
     read_only = frozenset(HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS | {"about"})
-    off = read_surface(read_only=read_only, enabled_flags=())
-    on = read_surface(read_only=read_only, enabled_flags=("memory_index.enabled",))
+    off = read_surface(read_only=read_only, enabled_flags=(),
+                       registry_withheld=_registry(False).withheld_tools())
+    on = read_surface(read_only=read_only, enabled_flags=(),
+                      registry_withheld=_registry(True).withheld_tools())
     assert "memory_search" in off.withheld and "memory_search" not in off.wired
     assert "memory_search" in on.wired
     assert not on.wired & HONCHO_MEMORY_TOOLS
     assert {"ask_memory", "search_memory", "search_memory_workspace"} <= on.withheld
+    with pytest.raises(TypeError):
+        read_surface(read_only=read_only, enabled_flags=())  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("graph", [False, True])
+def test_the_digest_lists_one_memory_surface(graph: bool) -> None:
+    """The capability digest (the relevance gate's view of what she can
+    answer) names the surface the registry offers, never the other one."""
+    digest = _registry(graph).capability_digest()
+    named = {line.split(" — ")[0][2:] for line in digest.splitlines()}
+    if graph:
+        assert "memory_search" in named and not named & HONCHO_MEMORY_TOOLS
+    else:
+        assert "memory_search" not in named and "search_memory" in named

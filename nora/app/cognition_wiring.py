@@ -40,7 +40,6 @@ from nora.agent.dreamer import (
     DreamToolSource,
     cognition_grant,
 )
-from nora.agent.tools import HONCHO_MEMORY_TOOLS
 from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
 from nora.domain.gatherings import OPEN_STATUSES, Gathering, GatheringStore
 from nora.domain.note_body import NORA_NAMES
@@ -127,15 +126,7 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
 FLAGGED_READS: Mapping[str, str] = {
     "record_query": "record_query.enabled",
     "character_read": "culture.enabled",
-    # The memory graph's search (DEC-316): built only with the index wired.
-    "memory_search": "memory_index.enabled",
 }
-
-#: Tools withheld while their flag is ON: the Honcho memory verbs, which the
-#: graph surface replaces (DEC-316). The registry builds one memory surface
-#: (`nora.agent.tools.HONCHO_MEMORY_TOOLS`); naming them here keeps `wired`
-#: and the boot log true to what the session actually holds.
-RETIRED_BY_FLAG: Mapping[str, str] = dict.fromkeys(HONCHO_MEMORY_TOOLS, "memory_index.enabled")
 
 
 @dataclass(frozen=True)
@@ -145,25 +136,29 @@ class ReadSurface:
     `wired`: in the catalogue, in the tool table, read-only, not withheld.
     `missing`: named by the design and absent from the tool table (or not
     read-only): the design's tool does not exist yet. `withheld`: exists, held
-    back by a flag that is off."""
+    back by a flag that is off, or not offered by the registry (the memory
+    surface it did not select, DEC-316)."""
 
     wired: frozenset[str]
     missing: frozenset[str]
     withheld: frozenset[str]
 
 
-def read_surface(*, read_only: frozenset[str], enabled_flags: Collection[str]) -> ReadSurface:
-    """The catalogue against the registry's read-only set and the flags that
-    are on (`enabled_flags` holds the FLAGGED_READS and RETIRED_BY_FLAG
-    values that are true)."""
+def read_surface(
+    *, read_only: frozenset[str], enabled_flags: Collection[str],
+    registry_withheld: frozenset[str],
+) -> ReadSurface:
+    """The catalogue against the registry's read-only set, the flags that
+    are on (`enabled_flags` holds the FLAGGED_READS values that are true),
+    and what the registry itself does not offer (`ToolRegistry.
+    withheld_tools()`). REQUIRED, so the memory surface (DEC-316) has one
+    source, the registry that builds the tools: a caller cannot leave it out
+    and have the catalogue claim the Honcho verbs with the graph's built."""
     present = COGNITION_READ_CATALOGUE & read_only
     withheld = frozenset(
         name for name, flag in FLAGGED_READS.items()
         if name in present and flag not in enabled_flags
-    ) | frozenset(
-        name for name, flag in RETIRED_BY_FLAG.items()
-        if name in present and flag in enabled_flags
-    )
+    ) | (present & registry_withheld)
     return ReadSurface(
         wired=present - withheld,
         missing=COGNITION_READ_CATALOGUE - read_only,

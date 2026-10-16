@@ -462,8 +462,11 @@ def experiment_for(
     answer that needs draws, and draws are what a corpus-sized bill makes
     people skimp on.
 
-    `memory_index` composes the subject on the memory graph's tool surface
-    (`MEMORY_INDEX_OVERRIDES`).
+    `memory_index` is the RESOLVED arm (`python -m evals` takes it from the
+    generated config's `[memory_index] enabled`, or `--memory-index`): it
+    selects the cases, composes the subject on the graph surface
+    (`MEMORY_INDEX_OVERRIDES`), and is checked against the composed config
+    per case (`Spec.memory_surface`).
     """
     from evals.backbone import sampled
 
@@ -501,6 +504,7 @@ def experiment_for(
         judge=judge if name in JUDGED_CORPORA else None,
         full_restore=name in FULL_RESTORE_CORPORA,
         overrides=dict(MEMORY_INDEX_OVERRIDES) if memory_index else None,
+        memory_surface=arm,
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
     experiment = Experiment(cases=cases, evaluators=[grader])

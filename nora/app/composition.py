@@ -4256,8 +4256,10 @@ async def build_dependencies(
                 enabled_flags=(
                     *(("record_query.enabled",) if cfg.record_query.enabled else ()),
                     *(("culture.enabled",) if cfg.culture.enabled else ()),
-                    *(("memory_index.enabled",) if cfg.memory_index.enabled else ()),
                 ),
+                # The memory surface the registry selected (DEC-316), read
+                # from the registry that builds the tools, not from config.
+                registry_withheld=tool_registry.withheld_tools(),
             )
             log.info(
                 "cognition sessions: read tools wired=%s missing=%s withheld=%s",

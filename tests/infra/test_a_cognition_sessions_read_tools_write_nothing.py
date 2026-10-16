@@ -37,7 +37,9 @@ import sqlalchemy as sa
 
 from nora.agent.dreamer import HomeRoom, RegistryToolSource, cognition_grant
 from nora.agent.lineage import LineagePolicy
+from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
+from nora.agent.tools import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
 from nora.agent.whereis import Circle
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
@@ -52,6 +54,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memo import SqlMemoStore
+from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.record_query import SqlRecordQuery
@@ -171,7 +174,7 @@ async def _say(engine, *, platform: str, room: str, person: str, sender: str, ts
 class World:
     """The real registry and tool source over real stores, and the doubles."""
 
-    def __init__(self, engine, tmp_path) -> None:
+    def __init__(self, engine, tmp_path, *, graph: bool = False) -> None:
         (tmp_path / "policy.toml").write_text(_POLICY)
         (tmp_path / "identity.toml").write_text(_IDENTITY)
         self.policy = load_policy(tmp_path / "policy.toml")
@@ -203,6 +206,11 @@ class World:
             rollup=SqlRollupRead(engine), standing_head=SqlStandingStore(engine),
             lineage=LineagePolicy.from_policy(self.policy, circles=(circle,), mode="on"),
             notes=self.notes, memos=self.memos,
+            # The memory graph's surface (DEC-316): `memory_search` over the
+            # real index read, and no Honcho memory verb.
+            memory_search=(
+                MemorySearch(SqlMemoryIndex(engine), self.metrics) if graph else None
+            ),
             note_unit=lambda platform, cid: "u1", unit_for=lambda platform, cid: "u1",
             events=events, mobility=SqlMobilityStore(engine), circles=(circle,),
             media_join=media_join,
@@ -230,6 +238,7 @@ class World:
         )
         self.surface = read_surface(
             read_only=self.source.read_only(), enabled_flags={"record_query.enabled"},
+            registry_withheld=registry.withheld_tools(),
         )
 
     def tools(self, rooms: list[Room]) -> dict[str, Any]:
@@ -268,12 +277,19 @@ CALLS: dict[str, list[dict[str, Any]]] = {
     "ask_memory": [{"person": "Ada"}],
     "search_memory": [{"query": "dinner"}],
     "search_memory_workspace": [{"query": "dinner"}],
+    # The graph surface's (DEC-316): a plain search, and one narrowed every
+    # way it can be, so each filter's SQL runs.
+    "memory_search": [
+        {"query": "dinner"},
+        {"query": "dinner", "person": "Ada", "since": "2026-09-01", "until": "2026-10-30",
+         "kinds": ["messages", "places"]},
+    ],
 }
 
 
-@pytest.fixture
-async def world(engine, tmp_path):
-    w = World(engine, tmp_path)
+@pytest.fixture(params=[False, True], ids=["honcho_surface", "graph_surface"])
+async def world(request, engine, tmp_path):
+    w = World(engine, tmp_path, graph=request.param)
     async with engine.begin() as conn:
         # The Rollup builder's row, so the derived-presence reads reach their
         # SQL instead of answering «no build is current yet».
@@ -307,7 +323,9 @@ async def world(engine, tmp_path):
 async def test_the_call_table_covers_every_wired_tool(world):
     """The audit is only as good as what it ran: a wired tool with no call here
     would be «checked» by not being called."""
-    assert set(CALLS) == set(world.surface.wired)
+    assert set(world.surface.wired) <= set(CALLS)
+    # what the table holds beyond this surface is the OTHER memory surface's
+    assert set(CALLS) - set(world.surface.wired) <= HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS
 
 
 async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, world):
@@ -315,8 +333,8 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     tools = world.tools([A])
     assert set(tools) == set(world.surface.wired)
     results: dict[str, list[str]] = {}
-    for name, calls in CALLS.items():
-        for arguments in calls:
+    for name in sorted(world.surface.wired):
+        for arguments in CALLS[name]:
             answer = await _call(tools[name], **{
                 k: world.memo_id if v == "MEMO" else v for k, v in arguments.items()
             })
@@ -338,7 +356,15 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
     # No counter that feeds a decision moved, and Honcho was only ever read.
     assert world.memory.fed == [] and world.memory.writes == [] and world.memory.peers == []
-    assert world.memory.queries and world.memory.chats and world.memory.searches   # and it WAS read
+    assert world.memory.queries   # and it WAS read (`about`, on both surfaces)
+    if "memory_search" in world.surface.wired:
+        # The graph surface: the index answered, Honcho was never searched or
+        # asked (no Honcho behind `memory_search`, DEC-316).
+        assert not HONCHO_MEMORY_TOOLS & set(world.surface.wired)
+        assert "unavailable" not in results["memory_search"], results["memory_search"]
+        assert world.memory.chats == [] and world.memory.searches == []
+    else:
+        assert world.memory.chats and world.memory.searches
 
 
 async def test_the_positive_control_a_live_write_moves_the_snapshot(engine, world):
@@ -389,8 +415,8 @@ async def test_a_two_room_agenda_reads_each_room_through_itself_and_cannot_read_
 async def test_the_two_room_reads_write_nothing_either(engine, world):
     before = await _counts(engine)
     tools = world.tools([A, B])
-    for name, calls in CALLS.items():
-        for arguments in calls:
+    for name in sorted(world.surface.wired):
+        for arguments in CALLS[name]:
             for room in ("signal:ROOM-A", "discord:ROOM-B"):
                 await _call(tools[name], room=room, **arguments)
     assert _live(await _counts(engine)) == _live(before)

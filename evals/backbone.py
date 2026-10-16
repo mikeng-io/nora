@@ -933,6 +933,26 @@ class Spec:
     #: `evals.subject_config.FULL_RESTORE_OVERRIDES` on. Per corpus, never
     #: per case: a corpus is a suite about one assembly.
     full_restore: bool = False
+    #: The memory surface this run's cases were selected for (DEC-316,
+    #: `evals.scenarios.MEMORY_SURFACES`): `graph` or `honcho`, or None for a
+    #: caller that selected none. A subject composed on the OTHER surface is
+    #: refused per case, never graded: the case filter and the config would
+    #: be measuring two different Noras.
+    memory_surface: str | None = None
+
+
+def refuse_a_memory_surface_mismatch(selected: str | None, enabled: bool) -> None:
+    """Raise when the cases were selected for one memory surface and the
+    subject composed the other (DEC-316): the case filter and the config
+    would be measuring two different Noras, and a case graded so is an
+    ERROR, never a reading. `selected` None: the caller selected none."""
+    if selected is not None and enabled != (selected == "graph"):
+        raise ValueError(
+            f"the cases were selected for the {selected} memory surface, and the "
+            f"subject composed [memory_index] enabled = {enabled}: the case filter "
+            "and the config disagree (DEC-316). Resolve the arm from the "
+            "generated config, or pass --memory-index."
+        )
 
 
 #: Where the deployment's policy and roster live. Copied verbatim into each
@@ -1572,6 +1592,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         "(design/evaluation/11-the-sandbox-rebuild.md §1.2's "
                         "declared Discord divergence)."
                     )
+            if spec.memory_surface is not None:
+                refuse_a_memory_surface_mismatch(
+                    spec.memory_surface, subject.cfg.memory_index.enabled,
+                )
             transport = _hold_the_transport_tier(subject, spec, md)
             if spec.full_restore:
                 # Already seeded, every store, before `obtain()`: this reads

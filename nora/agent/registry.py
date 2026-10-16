@@ -91,6 +91,8 @@ from .surface import (
 from .tools import (
     COMPUTER_TOOLS,
     DOCUMENT_TOOLS,
+    GRAPH_MEMORY_TOOLS,
+    HONCHO_MEMORY_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
@@ -321,6 +323,12 @@ class ToolRegistry:
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
+            # The memory surface not selected (DEC-316): with no index wired
+            # the graph's `memory_search`, with one the Honcho memory verbs.
+            # `build_tool_specs` never builds them; withholding them here
+            # keeps the digest and `withheld_tools()` (Cognition's read
+            # surface) true to the same one choice.
+            | (GRAPH_MEMORY_TOOLS if memory_search is None else HONCHO_MEMORY_TOOLS)
         )
         self._subagent = subagent
         self._video = video
@@ -689,6 +697,14 @@ class ToolRegistry:
             # after a lookup that came back empty (design/tool-catalogue/02).
             and name != LOADER_TOOL
         )
+
+    def withheld_tools(self) -> frozenset[str]:
+        """The tools no occasion in this process is offered: a read with no
+        store wired, and the memory surface not selected (DEC-316). The ONE
+        answer to «is X offered here», so a consumer that keeps its own
+        catalogue (Cognition's `read_surface`) reads it rather than
+        re-deriving it from config."""
+        return self._withheld
 
     def read_only_tools(self) -> frozenset[str]:
         """The tools that only LOOK — the Dreamer's ceiling (keystone §4).

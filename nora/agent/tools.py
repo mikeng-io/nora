@@ -262,6 +262,7 @@ from ..infra.vision.preprocess import (
     preprocess_media,
     video_encode_signature,
 )
+from ..language.culture import CULTURE_ADAPTOR_NAME
 from ..obs.logging import current_tag_id
 from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
@@ -4798,6 +4799,14 @@ HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "search_memory_workspace", "who_said",
 })
 GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search"})
+#: The Dreamer adaptors whose `memory_search` reads their OWN room alone
+#: (`nora.agent.memory_search.scope_for`'s `own_room`; DEC-316, coordinator
+#: ruling 2026-10-16). The culture fold writes one room's culture, which must
+#: not come from another room's speech: its Honcho `search_memory` read only
+#: its own session. Every other occasion reads the unit under the listed-room
+#: rule, the character-person session included (no wider than `ask_memory`
+#: over the index was on master).
+ROOM_ONLY_MEMORY_ADAPTORS: frozenset[str] = frozenset({CULTURE_ADAPTOR_NAME})
 
 
 def _memory_day(raw: str, *, end: bool) -> datetime | None:
@@ -6326,6 +6335,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 query=text[:500], person_id=ref.person_id if ref is not None else None,
                 target=target, now_ms=int(now.timestamp() * 1000), people=view.people,
                 kinds=kinds, since_ms=since_ms, until_ms=until_ms,
+                own_room=dream_adaptor in ROOM_ONLY_MEMORY_ADAPTORS,
             )
             if found.status == "unavailable":
                 _record_room(metrics, "memory_search", "unavailable", reason="index")

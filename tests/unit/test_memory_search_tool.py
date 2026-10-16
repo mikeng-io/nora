@@ -378,3 +378,69 @@ async def test_on_a_person_narrows_to_what_is_theirs(persons: Any) -> None:
     assert result["status"] == "ok"
     assert sorted(i["text"] for i in result["results"]) == [
         "pizza night plan", "pizza on friday"]
+
+
+# ---- who reads which rooms -----------------------------------------------------
+
+_OTHER = "g-other"
+_OTHER_ROOM = RoomFacts(
+    "signal", frozenset({_OTHER}), "u1", frozenset({"miles_novak", "tyler_cortez"}),
+    label="Other",
+)
+_TWO_ROOMS = LineagePolicy(
+    rooms=(_FRIENDS, _OTHER_ROOM),
+    _by_id={("signal", GROUP): _FRIENDS, ("signal", _OTHER): _OTHER_ROOM},
+)
+
+
+def _two_rooms_index() -> FakeMemoryIndex:
+    """One line in this room and one in another room of the same unit, both
+    by a member both rooms list, so only the room boundary separates them."""
+    return FakeMemoryIndex(
+        [
+            IndexedNode("message", "71", "the pitch is booked here", _T, origin_room=_ROOM),
+            IndexedNode("message", "72", "the pitch line from the other room", _T,
+                        origin_room=f"signal:{_OTHER}"),
+            IndexedNode("person", "miles_novak"),
+        ],
+        [
+            ("message", "71", "authored_by", "person", "miles_novak"),
+            ("message", "72", "authored_by", "person", "miles_novak"),
+        ],
+        embed_model="m",
+    )
+
+
+@pytest.mark.parametrize("person", [None, "Miles"])
+async def test_a_culture_pass_never_reads_another_rooms_line(
+    persons: Any, person: str | None,
+) -> None:
+    """DEC-316 (coordinator ruling 2026-10-16): a room's culture is written
+    from that room's own speech, as the culture adaptor's Honcho
+    `search_memory` read only its own session. Its `memory_search` reads its
+    own room alone; the unit's other rooms never reach the pass."""
+    tool = _build_with(
+        persons, FakeMemoryStore(), _dense(_two_rooms_index(), Metrics()),
+        lineage=_TWO_ROOMS, dream_adaptor="culture",
+    )["memory_search"]
+    result = await _call(tool, query="the pitch", **({"person": person} if person else {}))
+    assert result["status"] == "ok", result
+    assert [i["text"] for i in result["results"]] == ["the pitch is booked here"]
+    assert "other room" not in str(result)
+
+
+@pytest.mark.parametrize("adaptor", ["", "character-person"])
+async def test_every_other_occasion_reads_the_unit_under_the_listed_room_rule(
+    persons: Any, adaptor: str,
+) -> None:
+    """The positive control, and the rule for everything that is not the
+    culture fold: the unit's other rooms are read (a member both rooms list
+    said it), as `ask_memory` over the index was on master."""
+    tool = _build_with(
+        persons, FakeMemoryStore(), _dense(_two_rooms_index(), Metrics()),
+        lineage=_TWO_ROOMS, dream_adaptor=adaptor,
+    )["memory_search"]
+    result = await _call(tool, query="the pitch")
+    assert result["status"] == "ok", result
+    assert sorted(i["text"] for i in result["results"]) == [
+        "the pitch is booked here", "the pitch line from the other room"]

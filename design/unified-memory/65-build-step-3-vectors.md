@@ -246,7 +246,22 @@ sub-agent worker); the two never sit side by side.
   not the hops (item 6 above: an episode has no vector, so `places` is
   reached from what was said during one). A person this room's policy does
   not list is `unavailable`, not a false `nothing_found`.
+- **Reach.** The culture adaptor's `memory_search` reads its own room
+  alone: a room's culture is not written from another room's speech, as its
+  Honcho `search_memory` read only its own session. Every other occasion,
+  the character-person session included, reads the unit under the
+  listed-room rule.
+- **One source.** The registry selects the surface (it holds a
+  `MemorySearch` or not), builds only that surface, and withholds the other
+  from the capability digest and from Cognition's read surface.
 - **Measuring it.** `python -m evals tool_selection --memory-index` composes
   the subject on the graph surface; without the flag the subject is the
-  deployment's. A case that routes on one surface only says so
-  (`metadata.memory_surface`), and the other arm skips it.
+  deployment's, whichever surface its config selects, and the header says
+  which. A case that routes on one surface only says so
+  (`metadata.memory_surface`), the other arm skips it, and a subject composed
+  on the other surface is refused per case.
+- **Before the flag goes on.** Per-pass search capacity is lower on the
+  graph surface: a tag or fire turn had `ask_memory` 4 + `search_memory` 4 +
+  `who_said` 4 calls and has `memory_search` 4; the culture and
+  character-person passes now spend it inside `max_memory_calls`. Measure it
+  first.
