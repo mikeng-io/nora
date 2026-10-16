@@ -3,8 +3,9 @@ states of `[memory_index] enabled` (design/unified-memory/60 S5, 65 V2).
 
 Off (no `MemorySearch`, the shipped default and the rollback): Honcho, as the
 two verbs it replaced did. With a person, `chat` (what `ask_memory` did);
-without one, the unit's message search (what `search_memory_workspace` did),
-keeping in a room only the words of the people that room's view resolves. A
+without one, in a Dreamer pass the unit's message search (what
+`search_memory_workspace` did, Dreamer-only), and in a room turn that room's
+own session search (what `search_memory` does), never another room's. A
 date or kind it cannot honour is said in the note.
 
 On: the index answers and Honcho is not called. `person`, `since`, `until`
@@ -25,6 +26,7 @@ from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.domain.lineage import RoomFacts
 from nora.domain.memory_index import IndexedNode, IndexState
+from nora.domain.ports import MessageHits
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeMemoryStore, FakeRosterSource
@@ -112,24 +114,63 @@ async def test_off_with_a_person_is_what_ask_memory_did(persons: Any) -> None:
     assert result["status"] == "ok" and result["answer"] == "plays five-a-side on Sundays"
 
 
-async def test_off_without_a_person_searches_the_unit_with_the_rooms_roster(
+class _TwoRooms(FakeMemoryStore):
+    """Honcho as it routes: the room's session search returns only that
+    room's messages; the unit's workspace search returns every room of the
+    unit, here room A's line and room B's (spoken by a member of THIS room,
+    so the roster filter alone would not stop it)."""
+
+    ROOM_A = ("miles_novak", "booked the pitch for sunday")
+    ROOM_B = ("miles_novak", "the pitch thing I only said in the other room")
+
+    async def search(self, *, query: str, conversation_id: str | None = None,
+                     limit: int = 8, unit: str | None = None) -> MessageHits:
+        self.routes.append(("search", conversation_id, unit))
+        self.searches.append(query)
+        if conversation_id == GROUP:
+            return MessageHits(reachable=True, hits=(self.ROOM_A,))
+        if conversation_id is None and unit is not None:
+            return MessageHits(reachable=True, hits=(self.ROOM_A, self.ROOM_B))
+        return MessageHits(reachable=False)
+
+
+async def test_off_a_room_turn_without_a_person_stays_in_this_channel(
     persons: Any,
 ) -> None:
-    """In a room, the unit's message search (DEC-214's `scope`, never the
-    room's session) keeps only words of the people this room's view
-    resolves: someone in the address book but not in this room never comes
-    back, which is the crossing #350 kept the old unit verb off rooms for."""
-    honcho = FakeMemoryStore()
-    honcho.messages = [
-        ("miles_novak", "booked the pitch for sunday"),
-        ("elsewhere_liu", "said in another room of the unit"),
-    ]
+    """Parity with origin/master: a room turn never had the unit search
+    (`search_memory_workspace` was Dreamer-only, #350), so `memory_search`
+    in a room searches this room's own session, as `search_memory` does,
+    and another room's words never come back, even a member's."""
+    honcho = _TwoRooms()
     tool = _build_with(persons, honcho, None, unit_for=lambda *_: "u1")["memory_search"]
     result = await _call(tool, query="pitch")
-    assert [r for r in honcho.routes if r[0] == "search"] == [("search", None, "u1")]
-    assert honcho.chats == []
+    assert [r for r in honcho.routes if r[0] == "search"] == [("search", GROUP, None)]
     assert result["status"] == "ok"
     assert result["results"] == [{"who": "Miles Novak", "said": "booked the pitch for sunday"}]
+    assert "other room" not in str(result)
+
+
+async def test_off_a_dreamer_pass_searches_the_unit(persons: Any) -> None:
+    """The unit search is the Dreamer's, as `search_memory_workspace` was."""
+    honcho = _TwoRooms()
+    tool = _build_with(
+        persons, honcho, None, unit_for=lambda *_: "u1", dream_adaptor="proactive",
+    )["memory_search"]
+    result = await _call(tool, query="pitch")
+    assert [r for r in honcho.routes if r[0] == "search"] == [("search", None, "u1")]
+    assert len(result["results"]) == 2
+
+
+async def test_off_a_dreamer_pass_with_no_unit_is_refused_not_widened(
+    persons: Any,
+) -> None:
+    """No unit to name is `unavailable`, never an unrouted search of a
+    default workspace."""
+    honcho = _TwoRooms()
+    tool = _build_with(persons, honcho, None, dream_adaptor="proactive")["memory_search"]
+    result = await _call(tool, query="pitch")
+    assert result["status"] == "unavailable" and result["note"]
+    assert honcho.searches == []
 
 
 async def test_off_in_a_dreamer_pass_searches_with_the_whole_address_book(

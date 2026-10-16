@@ -1077,7 +1077,8 @@ refresh_timeout_seconds = 8
 # `memory_search` answers from the index (scoped to the room's unit, with the
 # path that reached each item; `person`, `since`, `until` and `kinds` narrow it
 # inside the index's reads) and Honcho is not called; off, it is the Honcho
-# path (`chat` about a named person, else the unit's message search), which
+# path (`chat` about a named person, else the room's own message search, or
+# the unit's in a Dreamer pass), which
 # cannot narrow by date or kind and says so in its result.
 [memory_index]
 drain_seconds = 60.0

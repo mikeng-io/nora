@@ -1313,7 +1313,8 @@ class MemoryIndexConfig(BaseModel):
     through `nora.agent.memory_search`, its `person`, `since`, `until` and
     `kinds` applied inside the index's reads, and Honcho is not called; off
     (the default), `memory_search` is Honcho: `chat` about a named person,
-    the unit's message search without one, neither narrowed by date or kind
+    without one, the unit's message search in a Dreamer pass and the room's
+    own session search in any other turn, neither narrowed by date or kind
     (the result says so). Undo is this flag and a restart.
 
     `embed` (design/unified-memory/65-build-step-3-vectors.md V1) starts the

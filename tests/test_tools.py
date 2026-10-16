@@ -1677,8 +1677,8 @@ def _unit_memory_tools(wiring, **over):
         room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         question="who is here", context_window=40,
         # `dream_adaptor` picks `memory_search`'s Dreamer roster (the whole
-        # address book, what `search_memory_workspace` used); a room turn
-        # keeps only its own view's people (tests/unit/test_memory_search_tool.py).
+        # address book, over the unit, what `search_memory_workspace` did); a
+        # room turn searches its own channel (tests/unit/test_memory_search_tool.py).
         unit_for=lambda *_a: "ws-main", dream_adaptor="proactive", **over,
     )
     return {t.tool_name: t for t in tools}

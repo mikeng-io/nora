@@ -4747,6 +4747,11 @@ _MEMORY_NO_ROSTER: Mapping[str, str] = MappingProxyType({
     "note": "I can't work out who is here, so I can't look back through what was "
             "said. Say you can't check, and do not guess.",
 })
+_MEMORY_NO_UNIT: Mapping[str, str] = MappingProxyType({
+    "status": "unavailable",
+    "note": "I can't tell which group this pass is for, so I didn't search. Say "
+            "you couldn't check, and do not say there was nothing.",
+})
 #: With the index off, Honcho answers, and neither of its verbs can narrow by
 #: a date or a kind: said, not pretended (operator ruling 2026-10-16).
 _MEMORY_NOT_NARROWED = (
@@ -6357,15 +6362,24 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         })
 
     async def _memory_search_honcho(text: str) -> dict:
-        """`memory_search` with no person and the index off: Honcho's message
-        search over the UNIT (`scope=<unit>`, DEC-214), what
-        `search_memory_workspace` did. A Dreamer pass keeps that verb's
-        roster, the whole address book less Nora (it has no room view; a
-        unit-keyed one has no room at all). Any other turn keeps only the
-        words of the people this room's live view resolves, so a room never
-        surfaces words of someone who is not in it (the crossing #350 kept
-        the old verb off rooms for). The filter, the withhold and the
-        statuses are `search_memory`'s own (`_memory_hits_result`)."""
+        """`memory_search` with no person and the index off, holding BOTH old
+        tools' gates exactly (security review of #32):
+
+        - **A Dreamer pass** (`dream_adaptor`) is what `search_memory_workspace`
+          was, the only place it was offered (#350): Honcho's message search
+          over the UNIT (`scope=<unit>`, DEC-214), with that verb's roster,
+          the whole address book less Nora. A unit that cannot be named is
+          refused here (`unavailable`), never sent unrouted to a default
+          workspace.
+        - **Any other turn** stays in THIS channel, as `search_memory` does:
+          the room's own Honcho session (`conversation_id`, captured once,
+          DEC-24), filtered to the people this room's live view resolves.
+          A room turn never reaches another room's words through this verb;
+          the unit is the boundary only for the index, whose scope rules
+          (DEC-313) a Honcho hit does not carry.
+
+        The filter, the withhold and the statuses are `search_memory`'s own
+        (`_memory_hits_result`)."""
         partial_view: bool | None = None
         if dream_adaptor:
             by_person = getattr(persons, "by_person", None)
@@ -6374,10 +6388,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 # not an empty address book: «I could not check» (R-27).
                 _record_room(metrics, "memory_search", "unavailable", reason="no_roster")
                 return dict(_MEMORY_NO_ROSTER)
+            unit = _unit()
+            if not unit:
+                _record_room(metrics, "memory_search", "unavailable", reason="no_unit")
+                return dict(_MEMORY_NO_UNIT)
             roster = {
                 p.honcho_peer_id: p.name
                 for person_id, p in by_person.items() if person_id != ai_peer
             }
+            route: dict[str, str] = {"unit": unit}
         else:
             view = await room.scope()
             if not view.available:
@@ -6385,11 +6404,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return dict(_MEMORY_NO_ROSTER)
             roster = {p.honcho_peer_id: p.name for p in view.people}
             partial_view = view.degraded
+            route = {"conversation_id": bound_conversation_id}
         try:
-            # No `conversation_id`: the client's WORKSPACE `/search`, narrowed
-            # to this turn's unit. `None` (a room policy cannot name) is
-            # refused by the client once `[units]` exists, never widened.
-            found = await honcho.search(query=text[:500], unit=_unit())
+            found = await honcho.search(query=text[:500], **route)
         except Exception:
             # Belt-and-braces: the adapter catches everything itself and
             # `MessageHits.reachable` is the real signal.

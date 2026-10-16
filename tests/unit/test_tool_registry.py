@@ -1036,9 +1036,10 @@ def test_memory_search_is_in_the_room_and_the_dreamer_catalog_alike():
     """#350 kept `search_memory_workspace` off every room's catalog: verbatim
     lines from Honcho's workspace, filtered only by the address book. Its
     successor `memory_search` (operator ruling 2026-10-16) is every
-    occasion's: in a room its Honcho search keeps only the words of the
-    people that room's view resolves (`tests/test_tools.py` pins that), so
-    the tag and the Dreamer catalogs no longer differ by a memory verb."""
+    occasion's and holds that gate in its body: with the index off, only a
+    Dreamer pass searches the unit; a room turn searches its own channel
+    (`tests/unit/test_memory_search_tool.py` pins both), so the tag and the
+    Dreamer catalogs no longer differ by a memory verb."""
     tag = {t.tool_name for t in _built_tools(ToolRegistry(), dream_adaptor="")}
     dreamer = {t.tool_name for t in _built_tools(ToolRegistry())}
 

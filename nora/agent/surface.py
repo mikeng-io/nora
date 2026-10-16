@@ -48,8 +48,9 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
 #: `search_memory_workspace` here: verbatim lines from Honcho's workspace, so
 #: a room could surface words said by people in none of its units, the
 #: crossing `send_to` refuses, R-49. Its successor `memory_search` (operator
-#: ruling 2026-10-16) is every occasion's: it searches the turn's unit and,
-#: in a room, keeps only the words of the people this room's view resolves.)
+#: ruling 2026-10-16) is every occasion's, and holds the gate in its body:
+#: with the index off, only a Dreamer pass searches the unit; a room turn
+#: searches its own channel, as `search_memory` does.)
 #:
 #: `rollup_read` supersedes `where_been`'s 90-day cap (25 §5), and is also a
 #: tag-path tool (`TAG_READABLE_LOOP_TOOLS`, below). `standing_read` shows her
