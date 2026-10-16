@@ -429,8 +429,8 @@ class ToolRegistry:
         # The LIVE-refresh client (DEC-67): None leaves `where_is` reading the
         # last stored fix (offline/eval, or [presence] refresh_url unset).
         self._refresher = refresher
-        # The on-demand reverse-geocoder: None leaves `where_is` falling back to
-        # Life360's own address or the raw coordinate.
+        # Passed to `Whereis`, which accepts it but does not call it: `locate`
+        # answers without an address.
         self._geocoder = geocoder
         # The derived-presence read behind `where_been` (DEC-155): the same
         # optional-collaborator shape as `presence` above. None in the

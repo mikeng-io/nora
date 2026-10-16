@@ -93,8 +93,8 @@ class SubagentProgress(HookProvider):
         # What the pinned message's anchor was last written from; rewritten when either moves.
         self._anchored: tuple[int, int] | None = None
         self._version = 0
-        #: The job's Langfuse trace id, set by the runner inside its span; the backend writes it
-        #: to the row when it marks the job.
+        #: The job's Langfuse trace id, set by the runner inside its span; the backend returns it
+        #: and the compute poller writes it to the row when it marks the job.
         self.trace_id: str | None = None
         self._document_ids: list[str] = []
 

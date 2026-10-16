@@ -207,8 +207,8 @@ def build_limits(*, output_tokens: int, turns: int, total_tokens: int) -> dict:
     `limit_total_tokens` / `limit_output_tokens`, raises nothing, and logs
     nothing (R-23).
 
-    Takes scalars, called once at process startup by
-    `nora.app.composition.build_dependencies`, which keeps this module's inputs
+    Takes scalars (from `nora.app.composition.build_dependencies` and from each
+    run that builds its own agent), which keeps this module's inputs
     framework-free like `create_client`/`create_model_provider`.
     """
     return {

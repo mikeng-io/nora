@@ -545,8 +545,8 @@ def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
     `peer_card` and this are the two halves of one person and are deliberately
     not merged: the card is who they are («Name: Miles Novak», «Aliases: …»),
     this is what has happened with them («asked what to eat for dinner»,
-    dated). They share no items, so a reader seeing both is seeing two
-    different things rather than one thing twice.
+    dated). They are written to hold different things, so a reader seeing both is
+    seeing two views rather than one thing twice.
 
     The `note` carries the hedge the card does not need. These conclusions are
     Honcho's distillation of messages Nora witnessed: inferred, unverified,

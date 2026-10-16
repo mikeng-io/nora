@@ -939,9 +939,7 @@ class ReplyGuard(HookProvider):
                 # operator cares about is "one reply per tag". This counter cannot
                 # tell the two branches apart, so anyone changing the cap must read
                 # them together. `rule` values are append-only like metric names (a
-                # new value silently splits every existing `rule="R-2"` query), and
-                # the latch branch is unreachable while the budget is 1, so a
-                # separate label would be a series that cannot increment (R-17).
+                # new value silently splits every existing `rule="R-2"` query, R-17).
                 return self._veto(
                     "R-2", "You already sent your reply. Do not call send_reply "
                            "again. If you still need something, use one of the "

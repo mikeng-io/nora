@@ -235,7 +235,7 @@ class AdaptorBudget:
     #: `[llm.budgets]` is deployment-wide and this is one adaptor's.
     #:
     #: Empty by omission: an adaptor that says nothing runs on the table's
-    #: ceilings.
+    #: ceilings as `[llm.budgets]` adjusts them.
     tool_calls: Mapping[str, int] = field(default_factory=dict)
     #: **How many tool calls one pass may make, over EVERY verb together.**
     #: `max_memory_calls`' shape and grain (per sample, enforced by `DreamGuard`,

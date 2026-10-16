@@ -306,7 +306,8 @@ def check_disclosure_invariant(
     fails.
 
     It runs on Nora's side (the collector process does not have the Signal group
-    roster); `nora.app.composition` calls it for each policy conversation. The
+    roster); `nora.app.composition` calls it for each policy conversation that is not
+    location-trusted. The
     AUTHORITATIVE fail-closed check is the per-call guard in `Whereis.locate`,
     which SEES `view.unnamed > 0`, an unmapped account the coarse person_id subset
     here cannot see; this startup check is a belt-and-braces pre-flight over the
