@@ -2402,9 +2402,17 @@ class CognitionSessionRunner:
                     return _refused(refusal.reason, refusal.detail)
                 link: dict[str, str] = {}
                 note_row = next((r for r in subject_rows if r.startswith("note:")), None)
+                if note_row is None:
+                    # The agenda shows a note as `<note n="<id>">`, so the model
+                    # cites the bare id. Unlinked, the row survives the note's
+                    # retire and fires on a settled premise.
+                    open_ids = {n.id for n in await self._notes.standing(unit=unit)}
+                    note_row = next(
+                        (r for r in subject_rows if r.strip().strip("[]") in open_ids), None,
+                    )
                 if note_row is not None:
                     shown_note = await self._notes.read(
-                        unit=unit, note_id=_bare_row(note_row),
+                        unit=unit, note_id=_bare_row(note_row.strip().strip("[]")),
                     )
                     if shown_note is None:
                         return _refused("not_found", f"no open note {note_row!r}")
@@ -2468,7 +2476,10 @@ class CognitionSessionRunner:
                     row, id=uuid.uuid4(), due_at=now_utc(at_ms),
                     created_at=now_utc(self._now_ms()),
                 )
-                await self._reminders.cancel(row.id, conversation_id=row.conversation_id)
+                if not await self._reminders.cancel(row.id, conversation_id=row.conversation_id):
+                    # The heartbeat claimed it between the read and the cancel:
+                    # it is firing now, so a moved copy would say it twice.
+                    return _refused("already_due", "that reminder is coming due now")
                 await self._reminders.create(moved)
             return {"status": "ok", "reminder_id": str(moved.id)}
 
