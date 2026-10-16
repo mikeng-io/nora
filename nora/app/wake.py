@@ -1,5 +1,4 @@
-"""The wake evaluator — 20 §3's wake policy (design/cognition-loop/20-observe.md
-§3).
+"""The wake evaluator — the wake policy.
 
 Every ~30 s it reads each unit's pending stimuli (one read per unit, no model),
 applies the wake table and the brakes (`nora.domain.stimuli.decide`), and when a
@@ -9,13 +8,13 @@ counts — as a `cognition_wake` row and hands it to the session hook
 the unit's watermark, so the next tick sees those stimuli as consumed.
 
 **The daily floors are raised here.** `time` stimuli are the only ones a
-clock raises (20 §1), and the two daily floors (07:00 and 00:00 HK by default,
+clock raises, and the two daily floors (07:00 and 00:00 HK by default,
 `[cognition] time_floors`) are the only `time` producers. Each tick raises
 the floors whose instant has passed within `floor_grace_seconds`, once per
 unit per day (`uq_stimulus_time_ref` makes the repeat a no-op). The grace is
 what stops a deploy at 15:00 from raising that morning's 07:00 as if due now;
 a restart at 07:02 still raises it. Anchors, revisits and event dates are
-`time` stimuli too and arrive with the agenda (step 3), which is what reads
+`time` stimuli too and arrive with the agenda, which is what reads
 the Register rows they come from.
 
 **One unit's failure is its own.** Each unit's read and write is bounded and
@@ -117,8 +116,7 @@ class WakeEvaluator:
         `on_wake`: the session hook, typed by ONE Protocol, `nora.domain.stimuli.
         WakeHook` (keyword-only: `unit`, `view`, `wake_id`, `now_ms`), which
         `nora.app.cognition_session.CognitionSessionRunner.wake_hook` also
-        returns, so the two sides cannot drift apart (they did once: this
-        module called it positionally, the runner took keywords). Called right
+        returns, so the two sides cannot drift apart. Called right
         after a wake is recorded, awaited in a background task, and
         never imported by name, so this module's own `nora` imports stay
         `{nora.domain.ports, nora.domain.stimuli}`
@@ -130,9 +128,9 @@ class WakeEvaluator:
         test builds, a wake is recorded and run by nothing, and it occupies its
         unit for `session_seconds`.
 
-        **With a hook the brakes count REAL sessions** (20 §3: single-flight
-        and `max_concurrent_sessions`; `nora.domain.stimuli`'s state
-        machine). Every wake is written `tracked`; a unit is in flight while
+        **With a hook the brakes count REAL sessions** (single-flight and
+        `max_concurrent_sessions`; `nora.domain.stimuli`'s state machine). Every
+        wake is written `tracked`; a unit is in flight while
         its task is alive in this process or its newest wake is OPEN (no
         outcome row, younger than `session_timeout_seconds`; a restart
         recomputes it from the rows), whether or not a session row was ever
@@ -145,9 +143,8 @@ class WakeEvaluator:
         logged, counted and contained: it never aborts the tick for another
         unit.
 
-        `floors_ready` (M8, DEC-245): whether a skill ships for the `time`
-        agenda kind (`AgendaSkills.by_kind`; it does since the cut-over, the
-        notebook review). False, a unit whose wakes start sessions raises NO
+        `floors_ready` (DEC-245): whether a skill ships for the `time`
+        agenda kind (`AgendaSkills.by_kind`). False, a unit whose wakes start sessions raises NO
         floor, because a session woken by one would have nothing to do.
 
         `upcoming(unit, now_ms)` (DEC-303): the unit's rooms holding an event
@@ -211,8 +208,8 @@ class WakeEvaluator:
             if verdict.reason is None:
                 continue
             if len(flying) >= self._policy.max_concurrent_sessions:
-                # The global bound (20 §3; 06-trigger.md §6). The unit stays
-                # pending and is looked at again next tick.
+                # The global bound. The unit stays pending and is looked at again next
+                # tick.
                 self._metrics.inc("nora_cognition_wake_deferred_total", brake="concurrency")
                 continue
             wake_id = await self._record(view, verdict, verdict.reason, cutoff_ms)
@@ -220,8 +217,8 @@ class WakeEvaluator:
                 written.append(wake_id)
                 flying.add(view.unit)
                 if view.tracked:
-                    # The session sees what the wake CLAIMED and nothing else
-                    # (D2): the stimuli it left pending are the next wake's.
+                    # The session sees what the wake CLAIMED and nothing else: the
+                    # stimuli it left pending are the next wake's.
                     claimed = replace(
                         view, pending=tuple(
                             x for x in view.pending if x.id in verdict.claimed_ids
@@ -271,7 +268,7 @@ class WakeEvaluator:
         recorded before this process started has no session left to own it: the
         process that ran it was killed or stopped, and nothing in this one knows
         it. Left alone it holds its unit single-flight (`unit_in_flight`) for the
-        rest of `session_timeout_seconds` (3,900 s by default) and then expires,
+        rest of `session_timeout_seconds` and then expires,
         which reads as a FAILED session and doubles the unit's backoff: a restart
         would cost the unit an hour and a strike toward the failure backoff.
 
@@ -283,7 +280,7 @@ class WakeEvaluator:
         from now, as it does after any ended session.
 
         Never raises. A store that cannot be read or written leaves the wake open,
-        which is exactly today's behaviour: it expires on its own clock. The write
+        and it expires on its own clock. The write
         is `record_outcome`, first-write-wins under the unit's lock, so a wake that
         was meanwhile closed (a second process, a late write) keeps its outcome."""
         try:
@@ -343,8 +340,7 @@ class WakeEvaluator:
         unwinds (`CognitionSessionRunner.on_wake`); a task cancelled before
         its first step writes nothing, and its wake stays OPEN until it
         expires, which reads as failed: its stimuli are never consumed
-        unseen. The composition root must call this at shutdown (DEC-242,
-        open choice (a))."""
+        unseen. The composition root must call this at shutdown (DEC-242)."""
         tasks = tuple(self._background)
         for task in tasks:
             task.cancel()
@@ -427,9 +423,9 @@ class WakeEvaluator:
                 timeout=self._timeout,
             )
             live = unit in self._live and not self._live[unit].done()
-            # M8: no skill for `time` yet, so a `time` stimulus that is ALREADY
-            # pending (raised before the gate, or by the previous deploy) must
-            # not wake a session either: not raising a floor is half of it.
+            # With no skill for `time`, a `time` stimulus that is ALREADY
+            # pending must not wake a session either: not raising a floor is half
+            # of it.
             inert = inert_kinds_for(tracked=tracked, floors_ready=self._floors_ready)
             return await self._strike_failed(
                 replace(view, tracked=tracked, live=live, inert_kinds=inert), now_ms,
@@ -446,7 +442,7 @@ class WakeEvaluator:
         a stimulus that arrived after the last agenda-failed wake is never struck
         unseen. INFRASTRUCTURE failures (provider outage, kill, database) back
         the unit off (`view.failures`) and never strike, however many in a row
-        (DEC-244, #637 second review): a human message is not dropped for an
+        (DEC-244): a human message is not dropped for an
         outage."""
         mark = view.failed_mark
         if (

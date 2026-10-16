@@ -1,4 +1,4 @@
-"""The sub-agent's typed brief and the facts code adds to it (design/subagent §4a).
+"""The sub-agent's typed brief and the facts code adds to it.
 
 The worker starts blank: no transcript, no peer card, no room block. What it needs is in the
 brief, interpreted ONCE by Nora when she launched it, and the worker never re-reads the chat.
@@ -77,7 +77,7 @@ class Decision:
 class SubagentBrief:
     objective: str
     #: A short name the room would recognise (<= `TITLE_CHARS`), written by Nora. Empty only
-    #: on a payload from before the field existed: read it through `job_title`.
+    #: on a payload that lacks the field: read it through `job_title`.
     title: str = ""
     decisions: tuple[Decision, ...] = ()
     inputs: tuple[str, ...] = ()
@@ -108,7 +108,7 @@ class SubagentBrief:
 
 
 def job_title(payload: Mapping[str, Any] | None, objective: str) -> str:
-    """The job's title: the one Nora wrote, or for a row from before titles the objective cut
+    """The job's title: the one Nora wrote, or, for a row with none, the objective cut
     to `TITLE_CHARS` on one line. Never empty unless the objective is."""
     written = " ".join(str((payload or {}).get("title") or "").split())
     if written:

@@ -1,35 +1,30 @@
-"""The note tier's types. A note is TRACKED UNCERTAINTY — never a settled claim
+"""The note tier's types. A note is TRACKED UNCERTAINTY: never a settled claim
 (which is a fact, with a warrant) and never a conclusion about a person (which
-is Honcho's `(observer, observed)` axis). See
-`docs/superpowers/specs/2026-08-21-note-tier-design.md`.
+is Honcho's `(observer, observed)` axis).
 
 **The four fields are the point of this module**, and three of them are only
 load-bearing if the wrong thing is *unrepresentable* rather than discouraged:
 
-- **`closing_condition`** — what would settle this. Retirement (§7.4),
-  promotion-readiness (§7.3) and a revisit's success criterion (§10) are all
-  read off this one field, so a note without one has three mechanisms with no
-  input. A thing nothing would resolve is not an uncertainty being tracked; it
-  is a fact, or it is ignorance.
-- **the anchor** (`anchor_date` and/or `anchor_entity_ids`) — merge eligibility
+- **`closing_condition`**: what would settle this. Retirement, promotion-
+  readiness and a revisit's success criterion are all read off this one field,
+  so a note without one has three mechanisms with no input. A thing nothing
+  would resolve is not an uncertainty being tracked; it is a fact, or it is
+  ignorance.
+- **the anchor** (`anchor_date` and/or `anchor_entity_ids`): merge eligibility
   and mechanical retirement are computed from it. "We should hang out sometime"
-  has no referent anything could later be looked up by; it dies as a candidate
-  row nobody sees.
-- **`title` / `description`** — the injected index entry (§5.1). Capped HERE,
-  because truncating in the renderer is silent loss and a constructor that
-  refuses is not.
+  has no referent anything could later be looked up by.
+- **`title` / `description`**: the injected index entry. Capped HERE, because
+  truncating in the renderer is silent loss and a constructor that refuses is
+  not.
 
-**Where this tier deliberately differs from the fact tier, and why the port has
-the shape it does.** `fact` carries a biconditional —
-`(superseded_by is null) = (superseded_at is null)` — because a contradicted
+**Where this tier differs from the fact tier.** `fact` carries a biconditional,
+`(superseded_by is null) = (superseded_at is null)`, because a contradicted
 fact is always replaced by the corrected one. **A note is not.** Retirement has
 no successor: a dinner that happened is replaced by nothing. So this module
 asserts the *implication* only (a replacement implies a retirement, never the
-converse), and that asymmetry is exactly why `DreamSink.supersede` takes
-`replaced_by: str | None` rather than a required id (DEC-130, spec §15.5).
-Collapsing this into the fact tier's biconditional would force this tier to mint
-a placeholder id to satisfy a signature — the invent-a-value-to-satisfy-a-schema
-move §7.3 forbids elsewhere.
+converse), which is why `DreamSink.supersede` takes `replaced_by: str | None`
+rather than a required id (DEC-130). A required id would force this tier to mint
+a placeholder to satisfy a signature.
 
 Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 """
@@ -43,55 +38,42 @@ from xml.sax.saxutils import unescape
 from nora.domain.lineage import Lineage
 from nora.domain.prompt import one_line
 
-#: The injected index carries one line per note on EVERY tag (§5.1), so these
-#: are prompt-budget decisions, not cosmetic ones. They are enforced in
+#: The injected index carries one line per note on EVERY tag, so these are
+#: prompt-budget decisions, not cosmetic ones. They are enforced in
 #: `__post_init__` rather than in `nora.language.note_render` because a renderer
-#: that truncates loses content silently, and the whole tier is built on the
-#: index being a complete listing of what exists.
+#: that truncates loses content silently, and the index is a complete listing of
+#: what exists.
 TITLE_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 200
-#: 27 §5.2's OPERATING value — what a writer should produce. **Not
-#: configurable, deliberately.** `[notes] max_body_chars` was declared with a
-#: range validator and a stanza in `config.example.toml` and NOTHING EVER READ
-#: IT — enforcement was this constant, in four places, the whole time. A
-#: documented knob that changes nothing is the config-file form of a declared
-#: metric with no call site: it reads as a control and is a decoration.
-#:
-#: It was deleted rather than threaded because the cap's own argument is that
-#: it is enforced in the TYPE, where a refusal is reviewable and names the cap
-#: — and `__post_init__` cannot see config. Threading it would have moved the
-#: refusal out to a store boundary to make a knob true, which is the tail
-#: wagging the dog. Enforced in `NoteRevision.__post_init__` and both proposal
-#: types.
+#: The OPERATING body cap: what a writer should produce. Not configurable:
+#: it is enforced in the TYPE, where a refusal is reviewable and names the cap,
+#: and `__post_init__` cannot see config. Enforced in
+#: `NoteRevision.__post_init__` and both proposal types.
 BODY_MAX_CHARS = 8000
 
-#: 27 §5.2's ABSOLUTE ceiling — what the table will hold. NOT configurable, and
+#: The ABSOLUTE body ceiling: what the table will hold. Not configurable, and
 #: four times the operating value on purpose.
 #:
-#: The two numbers mean different things, which is why there are two: 8000 says
-#: «no writer should produce that», 32000 says «this row is corrupt». A body
-#: between them means something reached the table WITHOUT passing the domain
-#: type — a bug to go and find, not a row to reject when somebody reads it. A
-#: CHECK at the operating value would collapse the two meanings.
+#: The two numbers mean different things: 8000 says «no writer should produce
+#: that», 32000 says «this row is corrupt». A body between them means something
+#: reached the table WITHOUT passing the domain type, a bug to find rather than
+#: a row to reject when somebody reads it. A CHECK at the operating value would
+#: collapse the two meanings.
 #:
-#: **`nora/infra/sql/schema.py` reads this constant rather than repeating the
-#: number**, on `STANDING_BODY_CEILING_CHARS`' precedent and for its stated
-#: reason: a change to the ceiling must not leave the table and the type
-#: disagreeing silently. The gate cannot catch that on its own —
-#: `test_schema_parity` compares `schema.py` against the migrated database, so
-#: two literals agree with each other and with no declared intent.
-#:
-#: Migration `0038` keeps its own literal, deliberately: a migration is a
-#: snapshot of what was applied and must not import a constant that can move
-#: underneath it.
+#: `nora/infra/sql/schema.py` reads this constant rather than repeating the
+#: number, on `STANDING_BODY_CEILING_CHARS`' precedent: `test_schema_parity`
+#: compares `schema.py` against the migrated database, so two literals would
+#: agree with each other and with no declared intent. Migration `0038` keeps its
+#: own literal: a migration is a snapshot of what was applied and must not
+#: import a constant that can move underneath it.
 NOTE_BODY_CEILING_CHARS = 32000
 
 #: Anchor dates are `YYYYMMDD` integers, not epoch milliseconds. The anchor is
-#: compared for EQUALITY when deciding merge eligibility (§7.1) and against
-#: "today" when deciding expiry (§7.4) — both are calendar-day questions, and a
-#: millisecond timestamp makes two notes about the same day unequal for a reason
-#: that has nothing to do with the day. Every other timestamp in this module is
-#: epoch-ms, matching the fact tier.
+#: compared for EQUALITY when deciding merge eligibility and against "today"
+#: when deciding expiry; both are calendar-day questions, and a millisecond
+#: timestamp makes two notes about the same day unequal for a reason that has
+#: nothing to do with the day. Every other timestamp in this module is epoch-ms,
+#: matching the fact tier.
 _MIN_ANCHOR_DATE = 1_000_00_00
 
 #: One calendar day, in epoch ms — shared by `anchor_bounds_ms` and
@@ -106,8 +88,8 @@ MS_PER_DAY = 86_400_000
 #: ahead is caught, late enough not to pester while the anchor is far off.
 REVISIT_LEAD_DAYS = 3
 
-#: **`DATELESS_REVISIT_HORIZON_DAYS = 7`**: 33/34's own worked example for an
-#: undated note's wake cadence ("+7d, capped by the strike ceiling").
+#: **`DATELESS_REVISIT_HORIZON_DAYS = 7`**: an undated note's wake cadence
+#: (+7d, capped by the strike ceiling).
 DATELESS_REVISIT_HORIZON_DAYS = 7
 
 
@@ -115,34 +97,24 @@ def anchor_bounds_ms(anchor_date: int) -> tuple[int, int] | None:
     """The FIRST and LAST instants of a `YYYYMMDD` anchor, in epoch ms, or
     `None` if the value is not a date this can read.
 
-    Moved here from `nora.language.note_revisitor` in the note-curator merge
-    (design 34; the curator was deleted 2026-10-03, DEC-277) — a pure function
-    two modules need (the grounding check, and `default_revisit_at` below) belongs in the domain,
-    not duplicated or imported sideways between two `nora.language` modules.
-
-    Both start and end are returned, but **only the end had a reader before
-    this merge** — `default_revisit_at` is this function's second caller and
-    its first reader of the START.
+    A pure function that `default_revisit_at` and the grounding check both need,
+    so it lives in the domain rather than imported sideways between two
+    `nora.language` modules.
 
     END of the day, not the start: a note anchored to the 15th is not stale
     at 00:00 on the 15th. Computed from the calendar rather than from a
-    stored timestamp because `anchor_date` IS an integer date — the tier
-    chose that shape deliberately, and re-deriving a moment from it is this
-    function's job rather than the store's.
+    stored timestamp because `anchor_date` IS an integer date.
 
     Returns `None` rather than raising on a malformed value; the caller
-    treats `None` as "not decidable" — an unreadable anchor must leave the
+    treats `None` as "not decidable": an unreadable anchor must leave the
     note standing, not expire it, and must not compute a nonsense
     `revisit_at` either.
 
-    **UTC, while the deployment runs in HKT — stated rather than fixed.** A
-    note anchored to the 9th therefore only reads as passed at 08:00 local on
-    the 10th. That is the CONSERVATIVE direction for expiry (it retires
-    later, never earlier) and it is why this is recorded instead of changed:
-    picking a timezone is a decision about what a note's DATE MEANS to the
-    people writing it, and that is the operator's, not this module's. *The
-    reading that would settle it:* a note whose anchor day matters to within
-    a few hours — a same-day deadline rather than a dinner.
+    **UTC, while the deployment runs in HKT.** A note anchored to the 9th
+    therefore only reads as passed at 08:00 local on the 10th. That is the
+    CONSERVATIVE direction for expiry (it retires later, never earlier).
+    Picking a timezone is a decision about what a note's DATE MEANS to the
+    people writing it, and that is the operator's, not this module's.
     """
     import datetime as _dt
 
@@ -165,28 +137,22 @@ def default_revisit_at(
     lead_days: int = REVISIT_LEAD_DAYS,
     dateless_horizon_days: int = DATELESS_REVISIT_HORIZON_DAYS,
 ) -> int:
-    """The `revisit_at` a note gets at CREATION (design 34 §5.3 resolution
-    (c)): the Cognition session's `note_create` calls it. Its other callers, the
-    note-candidates gate and the note curator's `record_wake` after a WAKE that
-    left a note standing, were deleted 2026-10-03 (DEC-277); the formula was
-    one, so a created note's first wake is a normal scheduled wake rather than
-    a strike bootstrap.
+    """The `revisit_at` a note gets at CREATION: the Cognition session's
+    `note_create` calls it, so a created note's first wake is a normal scheduled
+    wake rather than a strike bootstrap.
 
-    **Anchored**: the anchor's own day START minus `lead_days` — early enough
-    to catch a note answered well before its moment, on the reasoning
-    `REVISIT_LEAD_DAYS` states. Once the anchor itself has passed this value
-    is in the past too (and stays there), which is harmless: the (deleted)
-    `anchored_before` selected a past-anchor note unconditionally, so an
-    already-elapsed `revisit_at` on such a note changed nothing about whether
-    it was selected.
+    **Anchored**: the anchor's own day START minus `lead_days`, early enough
+    to catch a note answered well before its moment (`REVISIT_LEAD_DAYS`). Once
+    the anchor itself has passed this value is in the past too (and stays
+    there), which is harmless: an already-elapsed `revisit_at` on a past-anchor
+    note changes nothing about whether it is selected.
 
     **Dateless, or an anchor this cannot read**: `now_ms` plus
-    `dateless_horizon_days` — the bounded horizon 33/34 name for a note with
-    no moment to count down to. Falling back to the dateless horizon on an
-    unreadable anchor (rather than raising or returning `now_ms`) matches
-    `anchor_bounds_ms`'s own fail-conservative contract: a value this cannot
-    parse must still get SOME future wake, not an immediate one and not none
-    at all.
+    `dateless_horizon_days`, the bounded horizon for a note with no moment to
+    count down to. Falling back to it on an unreadable anchor (rather than
+    raising or returning `now_ms`) matches `anchor_bounds_ms`'s
+    fail-conservative contract: a value this cannot parse must still get SOME
+    future wake, not an immediate one and not none at all.
     """
     if anchor_date is not None:
         bounds = anchor_bounds_ms(anchor_date)
@@ -196,69 +162,51 @@ def default_revisit_at(
 
 
 def note_handle(title: str) -> str:
-    """The key a note is addressed BY, normalised — §16.1's decision made
-    mechanical.
+    """The key a note is addressed BY, normalised.
 
     A note has no model-reachable id: every index that renders notes carries
     title and description and nothing else, so the title is the handle
     (DEC-105's shape for `send_to`, which takes a room's operator-written
-    label for the same reason — «an id is not something a person says in a
+    label for the same reason: «an id is not something a person says in a
     chat»). This function is what makes that handle comparable.
 
-    **It lives in the DOMAIN because there are now four readers and they must
-    agree exactly** — `nora.agent.tools`' `note_read`/`note_update` resolve a
-    title against the standing set, `ReplyGuard`'s R-55 latch keys on the very
-    same string, the debrief's note-read latch reads it back, and, from
-    2026-09-13 until its deletion (2026-10-03, DEC-277), the note-candidates
-    create gate, which resolved the title the model named for an update (#228).
-    That fourth reader is what moved it:
-    `nora.language` sits BELOW `nora.agent` in the layered import contract, so
-    the only alternative to moving it down was a second copy — and two copies
-    of a `casefold()` is how a latch silently stops matching the tool it
-    guards.
+    **It lives in the DOMAIN because several readers must agree exactly**:
+    `nora.agent.tools`' `note_read`/`note_update` resolve a title against the
+    standing set, `ReplyGuard`'s R-55 latch keys on the very same string, and
+    the debrief's note-read latch reads it back. `nora.language` sits BELOW
+    `nora.agent` in the layered import contract, so the only alternative to
+    living down here is a second copy, and two copies of a `casefold()` is how a
+    latch silently stops matching the tool it guards.
 
     `casefold`, not `lower`, and `strip` before it: the database's own
     uniqueness is `(unit, lower(title)) WHERE retired_at IS NULL`, so case
     is already not part of a note's identity, and a model that types the index
     line back with a trailing space has not named a different note.
 
-    **And UNESCAPED, for the same reason one step further on.** The handle is
-    the title as the model SAW it, and every index escapes what it renders
-    (R-13): `note_render` renders `<notes>` for both paths and puts the title
-    through `escape`. So a note called «Dinner & drinks» reaches the model as
-    «Dinner &amp;amp; drinks», and the tool docstrings tell it to type that back
-    «exactly as `<notes>` shows it» — which then failed to match the stored
-    title and answered «No note in `<notes>` has that title».
+    **And UNESCAPED.** The handle is the title as the model SAW it, and every
+    index escapes what it renders (R-13): `note_render` renders `<notes>` and
+    puts the title through `escape`. So a note called «Dinner & drinks» reaches
+    the model as «Dinner &amp;amp; drinks», and the tool docstrings tell it to
+    type that back «exactly as `<notes>` shows it»; without unescaping that
+    would not match the stored title.
 
-    **`&quot;` IS IN THAT SET, and it was not until #292.** `unescape` from
-    `xml.sax.saxutils` decodes `&amp;`, `&lt;` and `&gt;` and NOTHING ELSE
-    unless it is handed the extra entities — `escape_attr`'s own asymmetry with
-    `escape`, one layer down. It did not bite while the index rendered the title
-    BETWEEN tags, where `escape` leaves `"` alone. The moment the title moved
-    into an attribute — which is what closes the forgeable ` — ` separator — a
-    note called «She said "no"» began reaching the model as
-    «She said &amp;quot;no&amp;quot;», and typing that back exactly as shown
-    stopped resolving. Same defect as the paragraph above, same consequence (a
-    duplicate note instead of an update, an unlinkable decision), reached from
-    the fix for a different one.
-
-    The decision was unlinkable after that, not merely refused: a proactive
-    `remind` written without its `note_id` falls through `ProactiveScreen` to
-    the flag-only path, so the note-moved cancellation D11 exists for never
-    runs. Normalising here rather than at the call sites is the same argument
-    the paragraph above makes about `casefold` — the readers must agree
-    exactly.
+    **`&quot;` is in that set.** `unescape` from `xml.sax.saxutils` decodes
+    `&amp;`, `&lt;` and `&gt;` and nothing else unless it is handed the extra
+    entities (`escape_attr`'s asymmetry with `escape`). The index renders the
+    title in an attribute, so a note called «She said "no"» reaches the model as
+    «She said &amp;quot;no&amp;quot;», and typing that back exactly as shown must
+    still resolve. A miss means a duplicate note instead of an update, and a
+    proactive `remind` written without its `note_id` falls through
+    `ProactiveScreen` to the flag-only path, so the note-moved cancellation never
+    runs. Normalising here rather than at the call sites keeps the readers in
+    agreement.
     """
     # COLLAPSED, because the index collapses it. `render_note_rows` puts the
     # title in an attribute and `render_elements` runs `one_line` on every
     # attribute value, so a title holding a newline reaches the model as one
-    # line — and the model types back what it was SHOWN. Without this, a note
-    # titled «Dinner\nplan» stored as two lines never matches the one-line form
-    # it was displayed as: `_resolve_updates` finds nothing, the pass writes a
-    # DUPLICATE instead of an update, and a proactive `remind` written without
-    # its `note_id` falls through `ProactiveScreen`. Exactly the consequence the
-    # paragraph above records for `&` — same defect, reached through the fix
-    # for a different one.
+    # line, and the model types back what it was SHOWN. Without this, a note
+    # titled «Dinner\nplan» never matches its displayed one-line form:
+    # `_resolve_updates` finds nothing and the pass writes a DUPLICATE.
     return one_line(unescape(title.strip(), _ATTR_ENTITIES)).casefold()
 
 
@@ -288,11 +236,9 @@ def likely_duplicates(notes: Sequence[Note]) -> dict[str, str]:
 
 
 def has_duplicate_open_title(title: str, open_titles: Sequence[str]) -> bool:
-    """Design 41 §7.2: an open title refuses a second note under the same
-    handle. Shared by the tag path's `note_create` and the Cognition
-    session's, so both refuse identically (30-cognition.md §2: "a note ...
-    written by cognition and one written on a tag turn pass the same
-    validator"). `open_titles` is READ-ONLY input the caller already fetched
+    """An open title refuses a second note under the same handle. Shared by the
+    tag path's `note_create` and the Cognition session's, so both refuse
+    identically. `open_titles` is READ-ONLY input the caller already fetched
     (`book.standing(unit=...)`'s titles); this function makes no store call."""
     wanted = note_handle(title)
     return any(note_handle(t) == wanted for t in open_titles)
@@ -301,22 +247,14 @@ def has_duplicate_open_title(title: str, open_titles: Sequence[str]) -> bool:
 #: What `escape_attr` writes and `escape` does not, so `note_handle` decodes the
 #: index's attribute form as well as its text form.
 #:
-#: **This widens a pre-existing asymmetry rather than closing one, and the
-#: limit is written down because it was measured rather than assumed.**
-#: `note_handle` unescapes BOTH sides — the stored title and what the model
-#: typed — so a title whose own characters spell an entity does not round-trip.
-#: Already true of `&amp;` before this line existed; now also true of `&quot;`:
-#: a note literally titled «literal &quot; in the title» normalises to a quote
-#: on the stored side and to the entity text on the rendered side, and stops
-#: resolving. Verified, not reasoned — an earlier version of this comment
-#: claimed `unescape`'s `&amp;`-last ordering made that case safe, and running
-#: it showed it does not.
-#:
-#: Out of scope here: the real fix is to unescape only the MODEL's input and
-#: never the stored title, which is a change to a function four readers share
-#: (`tools`' resolve, R-55's latch, the debrief latch, #228's create gate) and
-#: belongs with them in view. The case needs a title containing the literal
-#: text of an XML entity, which nothing has produced in the live tier.
+#: Limit: `note_handle` unescapes BOTH sides (the stored title and what the model
+#: typed), so a title whose own characters spell an entity does not round-trip.
+#: True of `&amp;` and of `&quot;`: a note literally titled «literal &quot; in
+#: the title» normalises to a quote on the stored side and to the entity text on
+#: the rendered side, and stops resolving. Fixing it means unescaping only the
+#: MODEL's input and never the stored title, a change to a function several
+#: readers share (`tools`' resolve, R-55's latch, the debrief latch). It needs a
+#: title containing the literal text of an XML entity.
 _ATTR_ENTITIES = {"&quot;": '"'}
 
 
@@ -334,12 +272,12 @@ class Note:
     """One tracked uncertainty, scoped to a unit.
 
     `established_in` is the conversation it was born in. It is a **routing key,
-    never a filter** (§3): the unit already is the disclosure boundary
-    (DEC-105/R-49 — rooms sharing a unit are one social unit), so this
+    never a filter**: the unit already is the disclosure boundary
+    (DEC-105/R-49: rooms sharing a unit are one social unit), so this
     never decides who sees a note. What it decides is where a promoted `Event`
-    lands, since `Event` is conversation-scoped and a note is not (§7.3).
+    lands, since `Event` is conversation-scoped and a note is not.
 
-    `head_revision_id` is what §6.3's compare-and-swap compares. It is on the
+    `head_revision_id` is what the compare-and-swap compares. It is on the
     note rather than derived by "latest revision" because a CAS needs one value
     both sides can name, and "whatever is newest right now" is the thing being
     guarded against.
@@ -358,28 +296,25 @@ class Note:
     anchor_entity_ids: tuple[str, ...] = ()
     retired_at: int | None = None
     replaced_by: str | None = None
-    # WHY it was retired — `NoteSupersedeReason`'s vocabulary, written by
+    # WHY it was retired: `NoteSupersedeReason`'s vocabulary, written by
     # `DreamSink.supersede`. A closed vocabulary rather than free text because
-    # "how many notes were retired this week, and on what ground"
-    # is the reading that justifies keeping the reason, and prose does not
-    # aggregate. (It was written as "how many did it merge"; the curator's
-    # merge was deleted 2026-09-08, and a fold is `retired-merged`, written by
-    # `merge_into` (the Cognition session's `note_merge`).)
-    # `None` until retired; the `retired_at is None` invariant below is what
-    # pairs them.
+    # "how many notes were retired this week, and on what ground" is the reading
+    # that justifies keeping the reason, and prose does not aggregate. A fold is
+    # `retired-merged`, written by `merge_into` (the Cognition session's
+    # `note_merge`). `None` until retired; the `retired_at is None` invariant
+    # below is what pairs them.
     retire_reason: str | None = None
     revisit_at: int | None = None
     strikes: int = 0
     last_wake_revision_id: str | None = None
     event_id: str | None = None
     reminder_id: str | None = None
-    # WHERE IT MAY BE SHOWN (design/cognition-loop/10-tiers.md §3, migration
-    # `0073_lineage`): the `(kind, subject, origin room)` set its citations
-    # reach, and the people it is never shown to. Written by the store from
-    # the row's own citations, never by a model; read at render by
-    # `nora.agent.lineage`. `compare=False`: equality stays about content, and
-    # a row built by hand (no lineage, every section unknown) is on the
-    # fail-closed side.
+    # WHERE IT MAY BE SHOWN (migration `0073_lineage`): the
+    # `(kind, subject, origin room)` set its citations reach, and the people it
+    # is never shown to. Written by the store from the row's own citations,
+    # never by a model; read at render by `nora.agent.lineage`.
+    # `compare=False`: equality stays about content, and a row built by hand (no
+    # lineage, every section unknown) is on the fail-closed side.
     lineage: Lineage = field(default=Lineage(), compare=False)
     exclude_persons: tuple[str, ...] = field(default=(), compare=False)
 
@@ -433,9 +368,8 @@ class Note:
         **This is free text, never a key.** 「Grant 婚禮」, 「Gabe's wedding」
         and 「婚禮」 are three different strings and one occasion, while two
         unrelated notes that both say 「wedding」 are one string and two
-        occasions — a key built from these is wrong in both directions at
-        once, which is why the curator's merge (removed 2026-09-08) never
-        compared them, and why nothing compares them now.
+        occasions: a key built from these is wrong in both directions at
+        once, so nothing compares them.
 
         Kept because `note_has_an_anchor_check` reads the column and a reader
         asking «what did somebody write here» deserves an answer.
@@ -445,15 +379,15 @@ class Note:
 
 @dataclass(frozen=True, slots=True)
 class NoteRevision:
-    """One append to a note's body. **Never an edit** (§6.1).
+    """One append to a note's body. **Never an edit.**
 
     `parent_revision_id` is the head the writer read, which is what makes
-    §6.3's compare-and-swap possible: a revision that cannot name what it was
+    the compare-and-swap possible: a revision that cannot name what it was
     written against cannot be refused when the head moved under it. `None` is
     the first revision and nothing else.
 
-    `established_by` is load-bearing beyond provenance. §9.6's strike resets
-    **only on a tag-path revision** — if the revisitor's own writes reset it,
+    `established_by` is load-bearing beyond provenance. The strike resets
+    **only on a tag-path revision**: if a background pass's own writes reset it,
     the loop breaker resets itself forever and is decorative. That distinction
     is unmakeable without knowing who wrote each revision, so this field is
     required rather than optional.
@@ -470,35 +404,27 @@ class NoteRevision:
     written_at: int
     established_by: str
     entity_ids: tuple[str, ...] = field(default_factory=tuple)
-    # DEC-125/DEC-126, and `None` is a REAL state rather than an absence: this
+    # DEC-125/DEC-126. `None` is a REAL state rather than an absence: this
     # table has two writers and only one of them is an adaptor. A background
-    # revision (the Dreamer's, formerly the curator's) arrives as a `Proposal` and carries both; a
-    # tag-path revision has
-    # no `Proposal` and no instruction digest to carry. `established_by` already
-    # tells the two apart (`tag:<person_id>` versus a run id) and is required
-    # for that reason, so these say only what it cannot: WHICH instruction
-    # produced an adaptor's revision. See `0036_note_revision_provenance` for
-    # why this is nullable where `fact_candidate`'s equivalent is not.
+    # revision arrives as a `Proposal` and carries both; a tag-path revision has
+    # no `Proposal` and no instruction digest. `established_by` already tells the
+    # two apart (`tag:<person_id>` versus a run id), so these say only what it
+    # cannot: WHICH instruction produced an adaptor's revision. See
+    # `0036_note_revision_provenance`.
     instruction_sha256: str | None = None
     model: str | None = None
 
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
             raise ValueError("a revision needs a body")
-        # 27 §5.2, and the reason it is a cap at all: the body is NOT injected
-        # — it is read on demand — so the exposure is the CURATOR, which reads
-        # bodies per tick against a budget counted in ROWS. A row budget is
-        # only a budget if a row has a bounded size; one unbounded body can
-        # consume a whole tick's allowance, and the pass then reports «nothing
-        # to do» about the notes it never reached.
+        # The body is NOT injected (it is read on demand), so the exposure is
+        # background passes, which read bodies against a budget counted in ROWS.
+        # A row budget is only a budget if a row has a bounded size.
         #
-        # TWO NUMBERS, deliberately. This is the operating value (8000, roughly
-        # a long page); the database CHECK is 32000. The gap is not slack — it
-        # is the difference between «this writer should not do that» and «this
-        # row is corrupt». A body between them means a writer bypassed this
-        # type, which is a bug to find rather than a row to reject at read
-        # time, and a database that refused at 8000 would make the two
-        # indistinguishable.
+        # TWO NUMBERS: this is the operating value (8000); the database CHECK
+        # is `NOTE_BODY_CEILING_CHARS`. A body between them means a writer
+        # bypassed this type, a bug to find rather than a row to reject at read
+        # time.
         if len(self.body) > BODY_MAX_CHARS:
             raise ValueError(
                 f"a note body is at most {BODY_MAX_CHARS} characters (got "
@@ -515,25 +441,21 @@ class NoteRevision:
 
 
 #: The prefix `nora.agent.tools` stamps on a revision it writes for a person.
-#: **The one thing §9.6's strike reset turns on**, and it is a prefix rather
-#: than a flag column because `established_by` already had to distinguish the
-#: writers for provenance — a second column saying the same thing is a second
-#: thing to keep in step.
+#: **The one thing the strike reset turns on**, and a prefix rather than a flag
+#: column because `established_by` already distinguishes the writers for
+#: provenance; a second column saying the same thing is a second thing to keep
+#: in step.
 TAG_PATH_PREFIX = "tag:"
 
 
 def is_tag_path_revision(established_by: str) -> bool:
     """Whether a revision was written by a person on the tag path.
 
-    **§9.6's trap, and the whole reason this predicate exists rather than a
-    bare `head != last_wake` comparison:** the strike reset must be «head moved
-    BY THE TAG PATH», not «head moved». If a background pass's own writes
-    counted, a note the revisitor keeps rewriting would reset its own strike
-    forever and the breaker would be decorative — a self-referential reset is
-    not a reset.
-
-    The spec states this plainly and says why: *"the mechanism reads correct
-    without the qualifier and loops forever with it missing."*
+    The strike reset must be «head moved BY THE TAG PATH», not «head moved», which
+    is why this predicate exists rather than a bare `head != last_wake`
+    comparison. If a background pass's own writes counted, a note it keeps
+    rewriting would reset its own strike forever and the breaker would be
+    decorative: a self-referential reset is not a reset.
     """
     return established_by.startswith(TAG_PATH_PREFIX)
 
@@ -551,24 +473,16 @@ def tag_path_progressed_since_wake(
     `last_wake_revision_id`, so what it asks is «is there a tag-path revision
     in the span this wake has not seen».
 
-    **It used to ask who wrote the CURRENT HEAD**, and that is a different
-    question with a different answer on the sequence that matters:
+    It does not ask who wrote the CURRENT HEAD. Take:
 
         wake at R5 → the room revises (R6, `tag:miles`) → a background pass
         appends (R7, a run id)
 
-    The head is R7, background-authored, so the old test said «no progress»,
-    charged a strike, and LEFT THE WATERMARK AT R5 — so the same R6 could never
-    count on any later tick either. A note the room is actively working, that a
-    background pass also touches each cycle, never resets and marches to the
-    strike ceiling. The curator's `merge` wrote exactly such a revision and
-    is gone (2026-09-08); the note-candidates gate's appended revision
-    (#228, deleted 2026-10-03, DEC-277) wrote one on the same shape, and a
-    Cognition-session `note_update` still does, so the sequence is live and
-    this walk still earns its keep.
-
-    Both implementations agreed on the wrong answer, which is why the contract
-    suite could not see it: they shared a belief, not a check.
+    The head is R7, background-authored, but R6 is tag-path progress since the
+    wake. Judging by the head would charge a strike and leave the watermark at
+    R5, so the same R6 could never count later, and a note the room is actively
+    working would march to the strike ceiling. Background passes and a
+    Cognition-session `note_update` append such revisions.
 
     A `last_wake_revision_id` of `None` is a note that has never been woken, so
     the whole chain is unseen and any tag-path revision in it counts.
@@ -600,34 +514,29 @@ def proactive_row_forwarded_is_moved(
     created_at_ms: int,
     survivor_chain: Iterable[tuple[int, str]],
 ) -> bool:
-    """Whether a proactive row that names a `retired-merged` note — or, from
-    `SqlNoteStore.merge_into`'s side, one ABOUT to become one — has gone
-    stale. `nora.app.proactive_screen.ProactiveScreen._follow_survivor`'s
-    own two-step order, extracted so the merge-time re-point (issue #158
-    residue) cannot silently diverge from the fire-time screen again — a
-    first version of that re-point read only the SECOND step below and
-    missed the first entirely (#520 review round 2).
+    """Whether a proactive row that names a `retired-merged` note (or, from
+    `SqlNoteStore.merge_into`'s side, one ABOUT to become one) has gone stale.
+    `nora.app.proactive_screen.ProactiveScreen._follow_survivor`'s two-step
+    order, shared so the merge-time re-point cannot diverge from the fire-time
+    screen.
 
     1. **The DUPLICATE's own chain.** `revision_id` is a genuine ancestor of
-       `duplicate_head` — that is where the row was linked — so this is an
-       ANCESTRY WALK (`tag_path_progressed_since_wake`), exactly the check
-       an ordinary, never-forwarded row gets. A tag-path edit to the
-       duplicate itself, after the row was linked and before it forwards,
-       is caught here.
-    2. **The SURVIVOR's chain**, only reached if step 1 found nothing.
-       Nothing links this row to any revision of the survivor — it was
-       never about the survivor — so this cannot be an ancestry walk: it is
-       a SCAN, `created_at_ms` (the row's own booking time) against every
-       revision the survivor's chain carries, for the same reason
-       `_follow_survivor`'s own docstring gives (paraphrase-proofing via
-       `is_tag_path_revision`).
+       `duplicate_head` (that is where the row was linked), so this is an
+       ANCESTRY WALK (`tag_path_progressed_since_wake`), exactly the check an
+       ordinary, never-forwarded row gets. A tag-path edit to the duplicate
+       after the row was linked and before it forwards is caught here.
+    2. **The SURVIVOR's chain**, only reached if step 1 found nothing. Nothing
+       links this row to any revision of the survivor (it was never about the
+       survivor), so this cannot be an ancestry walk: it is a SCAN of
+       `created_at_ms` (the row's own booking time) against every revision the
+       survivor's chain carries, for the reason `_follow_survivor`'s docstring
+       gives (paraphrase-proofing via `is_tag_path_revision`).
 
-    Two different algorithms for two different reasons a row can be stale,
-    and the reason they cannot be swapped, skipped or reordered: step 1
-    answers "did anyone settle the ORIGINAL question, on the note that
-    originally held it" and step 2 answers "did anyone settle the FOLDED
-    question, on the note it now lives in" — both are real premises the row
-    was booked against, and either failing means Nora should not raise it.
+    The two steps cannot be swapped, skipped or reordered: step 1 answers "did
+    anyone settle the ORIGINAL question, on the note that originally held it"
+    and step 2 "did anyone settle the FOLDED question, on the note it now lives
+    in". Both are premises the row was booked against, and either failing means
+    Nora should not raise it.
     """
     if tag_path_progressed_since_wake(
         head_revision_id=duplicate_head, last_wake_revision_id=revision_id,
@@ -654,21 +563,19 @@ class NoteSupersedeReason:
 
     RETIRED_EXPIRED = "retired-expired"
     RETIRED_CLOSED = "retired-closed"
-    #: Folded into another open note, which `replaced_by` names (design 41
-    #: §7.6, DEC-202). Written by `merge_into` — the Cognition session's
-    #: `note_merge` — and by operator triage. A lookup that lands here FORWARDS to
-    #: that note rather than reporting nothing — see `NoteStore.successor`.
+    #: Folded into another open note, which `replaced_by` names (DEC-202).
+    #: Written by `merge_into` (the Cognition session's `note_merge`) and by
+    #: operator triage. A lookup that lands here FORWARDS to that note rather
+    #: than reporting nothing: see `NoteStore.successor`.
     RETIRED_MERGED = "retired-merged"
-    #: Never an open question of the group — an entry about Nora's own turn,
-    #: or one nobody raised. For operator triage only; no pass writes it
-    #: (design 41 §7.6).
+    #: Never an open question of the group: an entry about Nora's own turn,
+    #: or one nobody raised. For operator triage only; no pass writes it.
     RETIRED_WITHDRAWN = "retired-withdrawn"
 
-    #: `"merged"` was the third value until 2026-09-08, written only by the
-    #: curator's merge verb, which is gone. A live row carrying it would
-    #: still read back (`retire_reason` is free text at the column); nothing
-    #: writes it now, so the vocabulary no longer names it, and nothing
-    #: forwards from it: its `replaced_by` was never an open-note guarantee.
+    #: A legacy `"merged"` value is not in the vocabulary: a live row carrying
+    #: it still reads back (`retire_reason` is free text at the column), but
+    #: nothing writes it and nothing forwards from it, because its `replaced_by`
+    #: was never an open-note guarantee.
     ALL: tuple[str, ...] = (
         RETIRED_EXPIRED, RETIRED_CLOSED, RETIRED_MERGED, RETIRED_WITHDRAWN,
     )
@@ -681,18 +588,14 @@ class NoteSupersedeReason:
 MERGE_FORWARD_HOPS = 8
 
 
-# --- note-merge (design 41 §7.3-7.8, DEC-202; the pass was deleted 2026-10-03,
-# DEC-277 — the table `note_merge_decision` and these constants stay as data)
-# --------------------------------
+# --- note-merge (DEC-202): the `note_merge_decision` table and these constants
+# are retained data (DEC-277) ---------------------------------------------
 
-#: What the deleted `[notes] merge_mode` could be once the adaptor was wired
-#: at all (`off` is not here: an adaptor that was off was not built). Rows
-#: written by the deleted pass carry one of these; nothing writes new ones.
+#: The modes recorded on `note_merge_decision` rows. Nothing writes new rows.
 NOTE_MERGE_MODES: tuple[str, ...] = ("shadow", "on")
 
 #: What one considered fold came to, recorded per (survivor, duplicate) pair
-#: on `note_merge_decision` (and counted on the since-removed
-#: `nora_note_merge_total{outcome}`). The CHECK constraint reads this tuple.
+#: on `note_merge_decision`. The CHECK constraint reads this tuple.
 #:
 #: - `would_merge` — `shadow` only: every code check passed and nothing was
 #:   written. The row the operator labels.
@@ -720,16 +623,15 @@ MERGE_REASON_MAX_CHARS = 500
 
 @dataclass(frozen=True, slots=True)
 class NoteMergeDecision:
-    """One fold the (deleted, DEC-277) `note-merge` pass considered, as
-    `note_merge_decision` stores it — the row the operator labelled in `shadow`
-    and the audit of a fold in `on`.
+    """One fold the `note-merge` pass considered, as `note_merge_decision` stores
+    it: the row the operator labelled in `shadow` and the audit of a fold in
+    `on`.
 
-    **Not the shared decision log** (`nora.domain.decision_log`), though
-    design 41 §7.8 called these «decision-log rows». That table is the ambient
-    deciders' shared state: its rows render into the participation and
-    proactive prompts, its `reason` is a code label capped at 80 characters,
-    and it refuses model text and note titles by its own rule. A merge row
-    needs both titles and the model's reason, and must never reach a prompt.
+    **Not the shared decision log** (`nora.domain.decision_log`). That table is
+    the ambient deciders' shared state: its rows render into the participation
+    and proactive prompts, its `reason` is a code label capped at 80 characters,
+    and it refuses model text and note titles by its own rule. A merge row needs
+    both titles and the model's reason, and must never reach a prompt.
 
     Titles are stored beside the ids so a row reads on its own; a note's title
     never changes, so the two cannot disagree.
@@ -767,11 +669,10 @@ class NoteMergeDecision:
 
 
 def latest_anchor(first: int | None, second: int | None) -> int | None:
-    """The later of two anchor days, a dated one over a dateless one (§7.7).
+    """The later of two anchor days, a dated one over a dateless one.
 
-    A survivor that kept its own earlier anchor would have been selected by
-    `anchored_before` (deleted) on that day and could be expired with the later question
-    folded inside it.
+    A survivor that kept its own earlier anchor could be expired on that day
+    with the later question folded inside it.
     """
     if first is None:
         return second
@@ -781,19 +682,19 @@ def latest_anchor(first: int | None, second: int | None) -> int | None:
 
 
 class StaleNoteHeadError(Exception):
-    """The compare-and-swap in §6.3 refused: the head this revision was written
+    """The compare-and-swap refused: the head this revision was written
     against is not the head any more.
 
     **Why a refusal and not a merge, an overwrite, or a silent no-op.** A note's
-    value is the *arrangement* — the writer read one body, reasoned over it, and
+    value is the *arrangement*: the writer read one body, reasoned over it, and
     is now appending prose that only makes sense against that body. If the head
-    moved (a background pass appended to it mid-turn, or a parallel turn
-    in the other room of the same unit revised it), the text being appended is an answer
-    to a question that has changed. Writing it on top destroys the intervening
+    moved (a background pass appended mid-turn, or a parallel turn in the other
+    room of the same unit revised it), the text being appended answers a
+    question that has changed. Writing it on top destroys the intervening
     revision's arrangement with nothing recording that it happened; returning 0
-    and carrying on reports «nothing to do» for what was actually «I could not
-    do it» — R-27's `unavailable`-as-`nothing_found` failure, one layer down.
-    Raising is the only one of the three the caller cannot mistake for success.
+    and carrying on reports «nothing to do» for what was «I could not do it»
+    (R-27's `unavailable`-as-`nothing_found`). Raising is the only one of the
+    three the caller cannot mistake for success.
 
     `observed_head` is what the head actually is, so the tool layer's message can
     be «this note changed under you, read it again» rather than a bare failure.
@@ -816,16 +717,12 @@ class StaleNoteHeadError(Exception):
 
 class RetiredNoteError(StaleNoteHeadError):
     """The compare-and-swap refused because the note is RETIRED, not because
-    its head moved (design 41 §7.6, guard 1).
+    its head moved. The append requires the note to be open: `supersede` never
+    touches the head, so a writer that lost a race to a retirement would
+    otherwise append into a note nothing reads again.
 
-    Until 2026-09-24 an append compared the head alone, and `supersede` never
-    touches the head, so a writer that read a note and then lost a race to a
-    retirement appended successfully into a note nothing reads again. The
-    append now requires the note to be open, and this is what the refusal
-    says.
-
-    A SUBCLASS so every existing `except StaleNoteHeadError` still holds —
-    «read it again» is still the remedy — but its own type, so a lost race to
+    A SUBCLASS so every existing `except StaleNoteHeadError` still holds
+    («read it again» is still the remedy), but its own type, so a lost race to
     a retirement is not counted as an ordinary stale head, and so a caller
     that can forward knows where to: `replaced_by` is the note it was folded
     into when `retire_reason` is `retired-merged`, and `None` otherwise.

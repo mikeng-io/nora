@@ -1,6 +1,4 @@
-"""The doctrine check: does a lesson loosen or contradict a LAW rule
-(design/self-growth/40-lessons.md §4, step L3; design/cognition-loop/
-50-character-and-standing.md §6)?
+"""The doctrine check: does a lesson loosen or contradict a LAW rule?
 
 A separate instrument call (a model other than the Lessons session) reads one
 lesson and the law subset (DEC-291) and answers which rule, if any, the lesson
@@ -29,8 +27,8 @@ __all__ = [
     "parse_verdict",
 ]
 
-#: The doctrine folders whose law reaches a unit's turns, where a lesson renders
-#: (L5). `public/` (no unit) and `instruments/` (other models' instructions) carry
+#: The doctrine folders whose law reaches a unit's turns, where a lesson renders.
+#: `public/` (no unit) and `instruments/` (other models' instructions) carry
 #: law too, but no lesson ever reaches those surfaces, so reading them would only
 #: let a lesson about a group chat be refused by a rule about the public surface.
 LAW_SURFACES = ("core/", "rooms/")

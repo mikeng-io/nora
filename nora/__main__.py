@@ -80,12 +80,10 @@ async def build_app(config_path: Path) -> App:
         enabled=cfg.obs.errors.enabled,
         dsn_env=cfg.obs.errors.dsn_env,
         environment=cfg.obs.errors.environment,
-        # NO RELEASE yet. `scripts/build-image.sh` now stamps every build it
-        # can with its `git describe` version (DEC-314), but that value is not
-        # passed through, so Sentry groups by environment alone and "is this
-        # new since the last deploy" is not answerable from an issue. Wiring
-        # `nora/version.json`'s `version` through is the follow-up that makes
-        # regression tracking real.
+        # No release is passed, so Sentry groups by environment alone and "is this
+        # new since the last deploy" is not answerable from an issue. Wiring the
+        # running version through (`nora.infra.version`, which reads the
+        # build-time `nora/version.json`; absent in a dev checkout) would make it so.
     )
     if cfg.obs.tracing.enabled:
         try:
@@ -96,11 +94,9 @@ async def build_app(config_path: Path) -> App:
                 headers_env=cfg.obs.tracing.headers_env,
             )
         except Exception:
-            # Tracing is never load-bearing (nora.obs.tracing.span's own
-            # rule) — a bad endpoint or an unreachable collector must never
-            # take the app down. This was setup_tracing's own guard before it
-            # moved to nora.agent.telemetry.setup_agent_tracing (nora.obs may
-            # not import nora.agent — see that module's docstring).
+            # Tracing is never load-bearing (nora.obs.tracing.span's own rule): a bad
+            # endpoint or an unreachable collector must never take the app down. The
+            # guard lives here because nora.obs may not import nora.agent.
             log.warning("tracing setup failed; continuing without tracing", exc_info=True)
 
     deps = await build_dependencies(cfg)
@@ -114,8 +110,8 @@ class App:
         self.config_path = config_path
         self._health_runner = None
 
-    # Convenience accessors matching the pre-phase-3 App's surface — tests and
-    # the health app read these directly rather than reaching into `deps`.
+    # Convenience accessors: tests and the health app read these directly
+    # rather than reaching into `deps`.
     @property
     def adapter(self):
         return self.deps.adapter
@@ -170,17 +166,15 @@ class App:
         # without.
         if deps.otp is not None:
             register_otp_routes(health_app, otp=deps.otp, api_token=deps.otp_api_token)
-        # The voice channel's text entry point (design/voice-channel/, stage
-        # 3): the wake service POSTs transcripts here, and they enter through
-        # the dispatcher exactly like a typed Discord message — same adapter
-        # callback, same ingest, same reactive path. `on_voice_event` is the
-        # audio-controller's callback channel (design/voice-channel/07 §5) —
-        # present only when the consumer was built (hub + music manager).
+        # The voice channel's text entry point: the wake service POSTs transcripts
+        # here, and they enter through the dispatcher exactly like a typed Discord
+        # message (same adapter callback, ingest and reactive path). `on_voice_event`
+        # is the audio-controller's callback channel, present only when the consumer
+        # was built (hub + music manager).
         register_voice(
             health_app, ingest=deps.dispatcher.on_message,
             # A guild's speech is recorded in the room the operator marked
-            # `voice = true` (design/voice-channel/07 §12.2, reversed
-            # 2026-09-17). Passed as the resolved id, or None to refuse —
+            # `voice = true`. Passed as the resolved id, or None to refuse;
             # `nora.web` never sees a `Policy`.
             resolve_voice_room=deps.resolve_voice_room,
             on_voice_event=(
@@ -193,9 +187,8 @@ class App:
         deps.background.spawn(heartbeat(deps.metrics))
         # What this process loaded: its deploy, its three config files, and
         # every doctrine and Dreamer load from now on, so `nora snapshot --at
-        # T` can say what was in force (design/cognition-loop/70-migration
-        # §5). Spawned, never awaited: a slow or failing database costs the
-        # rows, not the start.
+        # T` can say what was in force. Spawned, never awaited: a slow or
+        # failing database costs the rows, not the start.
         recorder = RevisionRecorder(
             store=deps.revisions, doctrine=deps.doctrine_store,
             dreamer=deps.dreamer_instructions, metrics=deps.metrics,
@@ -213,10 +206,8 @@ class App:
         deps.background.spawn(self._update_last_event_age())
         # Lazy adoption, spawned exactly like the prune sweep and for the same
         # reason: it writes to the record store, and the ingest path drops a
-        # message it cannot audit (the shape dates from the SQLite era's
-        # single-writer WAL; off the hot path is still right under Postgres).
-        # Nothing awaits it — a slow or failing backfill must not delay the
-        # adapters coming up.
+        # message it cannot audit. Nothing awaits it; a slow or failing
+        # backfill must not delay the adapters coming up.
         deps.background.spawn(self._adopt_pending())
         # Conditional, unlike its neighbours: `store.prune_enabled = false` means
         # the record is kept in full, and the sweep is not merely widened but
@@ -233,21 +224,18 @@ class App:
         deps.background.spawn(runtime.memory_drain_loop(
             deps.audit, deps.metrics,
             interval_seconds=self.cfg.memory_index.drain_seconds,
-            # `[memory_index] embed` (65 V1); None while off.
+            # `[memory_index] embed`; None while off.
             embed=deps.memory_embed,
         ))
         # The Dreamer's clock, the SAME conditional shape as the retention
-        # sweep above: `[dreamer] enabled = false` (the shipped default — a
-        # subsystem does not switch itself on) means composition built no
-        # cursor store, so there is nothing this loop could tick even if
-        # spawned.
+        # sweep above: `[dreamer] enabled = false` (the shipped default) means
+        # composition built no cursor store, so there is nothing this loop could
+        # tick even if spawned.
         #
-        # `deps.language_store is not None` is the SECOND condition and not a
-        # restatement of the first: it is the thing that remembers where each
-        # adaptor got to (`consolidation_watermark`, reached through a module
-        # that keeps its inherited `language` name — see
-        # `nora.infra.sql.language`). So this reads "the clock is wanted, and
-        # the cursor exists" — two conditions, neither wearing a tier's name.
+        # `deps.language_store is not None` is the SECOND condition, not a
+        # restatement of the first: it remembers where each adaptor got to
+        # (`consolidation_watermark`, reached through `nora.infra.sql.language`).
+        # So this reads "the clock is wanted, and the cursor exists".
         if self.cfg.dreamer.enabled and deps.language_store is not None:
             # BEFORE the loop starts, and awaited rather than spawned. An
             # adaptor with a new name has no watermark row, `watermark_for`
@@ -273,9 +261,9 @@ class App:
                 deps.audit, deps.language_store,
                 deps.metrics,
                 scopes=deps.language_scopes,
-                # The shared media join (issue #116): every scope-keyed dream
-                # adaptor reads one batch, so joining it once here covers all
-                # of them and none has to hold a media store.
+                # The shared media join: every scope-keyed dream adaptor reads one
+                # batch, so joining it once here covers all of them and none has to
+                # hold a media store.
                 media_join=deps.media_join,
                 tick_seconds=self.cfg.dreamer.tick_seconds,
                 safety_lag=self.cfg.dreamer.safety_lag,
@@ -286,25 +274,20 @@ class App:
                 adaptors=deps.dream_adaptors,
                 runtime=deps.dreamer_runtime,
                 units=deps.unit_scopes,
-                # Per-adaptor clocks (design/dreamer-agent-loop/32 §3.1) — a
-                # cron-shaped adaptor's own interval and batch live here, not
-                # in `[dreamer]`'s shared numbers.
+                # Per-adaptor clocks: a cron-shaped adaptor's own interval and batch
+                # live here, not in `[dreamer]`'s shared numbers.
                 schedules=deps.dream_schedules,
-                # Where a watermark-free scheduled adaptor's last fire is
-                # kept. In Postgres rather than in `dream_loop`'s frame
-                # because the frame is rebuilt on every restart and Nora is
-                # force-recreated several times on an ordinary day, which
-                # turned a daily schedule into a per-deploy one.
+                # Where a watermark-free scheduled adaptor's last fire is kept. In
+                # Postgres rather than in `dream_loop`'s frame because the frame is
+                # rebuilt on every restart, which would turn a daily schedule into a
+                # per-deploy one.
                 schedule_clock=deps.dream_schedule_clock,
-                # The ONE wall clock around a whole (adaptor, key) unit
-                # (issue #191) — `#60` bounded the two store phases inside it;
-                # this covers everything else the loop awaits per unit too.
-                # The RESOLVER, not the raw field: `[dreamer]
+                # The ONE wall clock around a whole (adaptor, key) unit: it covers
+                # everything the loop awaits per unit, beyond the two store phases
+                # bounded inside it. The RESOLVER, not the raw field: `[dreamer]
                 # max_unit_hold_seconds` ships unset, and `Config.
-                # dreamer_max_unit_hold_seconds` is what derives a number
-                # from this config's own budgets rather than a literal that
-                # goes stale the moment one of them is raised (issue #191
-                # independent review, BLOCKER).
+                # dreamer_max_unit_hold_seconds` derives a number from this config's own
+                # budgets rather than a literal that goes stale when one is raised.
                 max_unit_hold_seconds=self.cfg.dreamer_max_unit_hold_seconds(),
             ))
         elif self.cfg.dreamer.enabled:
@@ -318,16 +301,15 @@ class App:
             )
         else:
             log.info("dream loop disabled (dreamer.enabled = false)")
-        # The cognition loop's wake evaluator (design/cognition-loop/20 §3): it
-        # records wakes and hands each to the Cognition session, the one
-        # background writer (the Dreamer's note passes are deleted, DEC-277).
+        # The cognition loop's wake evaluator: it records wakes and hands each
+        # to the Cognition session, the one background writer (DEC-277).
         # `None` under `[cognition] enabled = false`.
         if deps.wake_evaluator is not None:
             # BEFORE the loop starts, and awaited, for the reason the watermarks
             # above are: whatever a previous process left open is released before
             # a tick reads it, so a restart never holds a unit for the rest of a
             # session timeout. Never raises (it counts and logs); a wake it could
-            # not release expires on its own clock, as it did before.
+            # not release expires on its own clock.
             await deps.wake_evaluator.reclaim_orphans(
                 process_started_ms=int(started_at * 1000),
             )
@@ -343,8 +325,8 @@ class App:
         # off or no lane token set.
         if deps.oauth_keepalive is not None:
             deps.oauth_keepalive.start(deps.background.spawn)
-        # The computer session sweeper (design/sandbox-runtime §15.2):
-        # composition builds it only while `[computer] enabled`.
+        # The computer session sweeper: composition builds it only while
+        # `[computer] enabled`.
         if deps.computer_sweeper is not None:
             deps.background.spawn(runtime.computer_sweep_loop(
                 deps.computer_sweeper, deps.metrics,
@@ -361,24 +343,20 @@ class App:
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,
             ttl_seconds=DEBOUNCE_SWEEP_TTL_SECONDS,
         ))
-        # The participation occasion's clock (design/dreamer-agent-loop/35):
-        # `deps.participation_trigger` is None unless `[participation]
-        # enabled` AND composition built a fire path — the flag alone gates
-        # nothing, matching the dream clock's "the flag is what decides,
-        # not a widened interval" shape.
+        # The participation occasion's clock: `deps.participation_trigger` is
+        # None unless `[participation] enabled` AND composition built a fire
+        # path. The flag alone gates nothing, matching the dream clock's "the
+        # flag is what decides, not a widened interval" shape.
         if deps.participation_trigger is not None:
             deps.background.spawn(runtime.participation_loop(
                 deps.participation_trigger, deps.metrics,
                 tick_seconds=PARTICIPATION_TICK_SECONDS,
                 sweep_ttl_seconds=PARTICIPATION_SWEEP_TTL_SECONDS,
             ))
-        # EVERY enabled adapter, not just Signal's. `start_adapters` and
-        # `supervise_adapter` were written generic over any number of them; this
-        # was the one call site still pinning that to a single-element list, so
-        # an enabled `DiscordAdapter` was built and identity-resolved at startup
-        # and then never had `listen()` called — present in `/health`, deaf in
-        # practice. Each platform gets its own supervised task, so one wedged
-        # Gateway cannot take Signal down with it.
+        # EVERY enabled adapter, not just Signal's: one that never had
+        # `listen()` called would be present in `/health` yet deaf. Each
+        # platform gets its own supervised task, so one wedged Gateway cannot
+        # take Signal down with it.
         adapter_tasks = runtime.start_adapters(
             deps.background,
             [
@@ -414,14 +392,11 @@ class App:
         per platform.
 
         `nora_last_event_age_seconds` stays UNLABELLED and stays Signal's.
-        It is the Signal-era liveness series, and adding a label changes a
-        series' IDENTITY — every dashboard or alert selecting it by bare name
-        would stop matching, silently, with no error anywhere. (`deploy/
+        Adding a label changes a series' IDENTITY: every dashboard or alert
+        selecting it by bare name would stop matching, silently. (`deploy/
         watchdog.sh` itself reads `/health`'s `sse` block rather than this
-        metric, and ALERTS rather than restarting — checked, because an
-        earlier version of this comment claimed otherwise.) The per-platform
-        answer goes to its own series instead, which is append-only and breaks
-        nothing.
+        metric, and alerts rather than restarting.) The per-platform answer
+        goes to its own series instead, which is append-only.
         """
         recorder = self.deps.health_recorder
         while True:
@@ -436,8 +411,8 @@ class App:
                     if recorder is not None:
                         await recorder.unknown(adapter.platform)
                     continue
-                # The same sample, recorded as a transition when the state
-                # changed (design/cognition-loop/20 §1): source health is Record.
+                # The same sample, recorded as a transition when the state changed:
+                # source health is Record.
                 if recorder is not None:
                     await recorder.sample(health)
                 age = health.last_event_age_seconds
@@ -476,11 +451,11 @@ def build_parser() -> argparse.ArgumentParser:
     """The CLI surface: the daemon (no subcommand) plus the read-only control
     plane (`groups`, `persons pending`).
 
-    `--config` is unchanged for the daemon — `python -m nora` and `python -m
-    nora --config other.toml` behave exactly as before, because the subparsers
-    are not `required`. It is also repeated on every subcommand through
-    `_config_parent`, with `default=argparse.SUPPRESS` so that a subcommand
-    which does NOT carry the flag leaves the top-level value in place instead
+    `--config` works for the daemon (`python -m nora`, `python -m nora
+    --config other.toml`) because the subparsers are not `required`. It is
+    also repeated on every subcommand through `_config_parent`, with
+    `default=argparse.SUPPRESS` so that a subcommand which does NOT carry the
+    flag leaves the top-level value in place instead
     of overwriting it with a second default. That is what makes both
     `nora --config c.toml groups` and the more natural `nora groups --config
     c.toml` work.
@@ -506,14 +481,13 @@ async def run_until_stopped(
 ) -> None:
     """Run `app` until it ends or a stop signal arrives, then shut it down.
 
-    **No handler existed before this.** A Python process with no SIGTERM handler
-    dies on the signal without unwinding: `finally` never ran, so `App.shutdown`
-    (and with it `CognitionShutdown`, which cancels the sessions and records their
-    wakes) was reachable only by SIGINT. `docker stop` sends SIGTERM, and nora
-    starts 2 to 24 times a day, so every restart killed its sessions mid-flight and
-    left their wakes open to hold their units for the rest of the session timeout.
-    (`uv run`, the image's entrypoint, forwards SIGTERM to the process it spawns:
-    read back with uv 0.11.7; the image pins 0.11.18.)
+    Without a SIGTERM handler the process dies on the signal without
+    unwinding: `finally` never runs, so `App.shutdown` (and with it
+    `CognitionShutdown`, which cancels the sessions and records their wakes)
+    would be reachable only by SIGINT. `docker stop` sends SIGTERM, so a
+    restart would kill sessions mid-flight and leave their wakes open to hold
+    their units for the rest of the session timeout. (`uv run`, the image's
+    entrypoint, forwards SIGTERM to the process it spawns.)
 
     The first signal cancels `app.run()`, which stops the adapters and every
     background loop (so no NEW wake starts) and returns to `finally:

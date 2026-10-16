@@ -1,19 +1,19 @@
 """Lazy adoption — backfill the Honcho memory of a person who was unmapped
 when their messages arrived.
 
-The hole this closes: a sender absent from `identity.toml` is audited with
-`person_id` NULL and NOTHING is fed to Honcho (`nora.ingest.stages.memory_feed`
-bare-returns on `person is None`, D6). Mapping is startup-only (Q4), so when
-the operator finally adds that account and restarts, every message from before
-that edit stays unfed — permanently. The peer card has a hole covering the
-person's entire history up to their adoption, and nothing anywhere says so.
+A sender absent from `identity.toml` is audited with `person_id` NULL and
+NOTHING is fed to Honcho (`nora.ingest.stages.memory_feed` bare-returns on
+`person is None`). Mapping is startup-only, so when the operator adds that
+account and restarts, every earlier message stays unfed unless it is
+backfilled; the peer card would silently miss the person's history up to
+their adoption.
 
 This module reconciles that at startup: find audited rows with no `person_id`
 whose `(platform, sender_id)` NOW resolves against the freshly-loaded
 `Persons` index, replay each into that person's peer, and record the
 `person_id` on the row.
 
-Four things about how it does that are the design, not incidental:
+Four properties are load-bearing:
 
 1. **FEED, THEN MARK. Never the reverse.** Setting `person_id` first and
    feeding second means a Honcho failure — or a crash — between the two leaves
@@ -24,15 +24,13 @@ Four things about how it does that are the design, not incidental:
    peer's memory is the tolerable direction; losing it forever is not.
 
 2. **Off the ingest hot path, and never blocking startup.** `nora.infra.sql.
-   audit`'s module docstring records that WAL permits exactly one writer, that
-   an extra per-message write produced SQLITE_BUSY under an N-listener burst,
-   and that the ingest path's documented failure behaviour is to DROP the
-   message. Pruning was moved off the write path for precisely that reason;
-   this chore is scheduled the same way — `App.run` spawns it through
-   `BackgroundTasks` after the health server is up, exactly as it spawns
-   `prune_loop`, and it starts after a delay so it is not competing with the
-   first burst of ingest writes. The awaited Honcho feed between rows (200-800ms
-   in production) is itself the throttle that keeps the single writer free;
+   audit`'s module docstring: WAL permits exactly one writer, an extra
+   per-message write can raise SQLITE_BUSY under a burst, and the ingest path
+   drops the message on failure. So this chore is scheduled like
+   `prune_loop`: `App.run` spawns it through `BackgroundTasks` after the
+   health server is up, and it starts after a delay so it does not compete
+   with the first burst of ingest writes. The awaited Honcho feed between rows
+   is itself the throttle that keeps the single writer free;
    `SqlRecordStore.set_person_id` writes one row per statement for the same
    reason.
 
@@ -106,12 +104,10 @@ async def backfill(
         rows = await audit.unattributed(limit=limit)
         scanned = len(rows)
         if media_join is not None:
-            # The shared media join (issue #116). These rows are FED TO HONCHO
-            # below, and on master a photo's description and a voice note's
-            # words rode in `body` — so a back-filled row reached memory with
-            # them. Without this it reaches memory as `[image a3f2c1]` and
-            # nothing else, which is precisely the empty marker the issue was
-            # opened to end, on the one path that exists to repair memory.
+            # The shared media join. These rows are FED TO HONCHO below, so a
+            # photo's description and a voice note's words must ride in the
+            # body; without the join a back-filled row reaches memory as an
+            # empty `[image a3f2c1]` marker.
             rows = list(await media_join.enrich(rows, path="adoption"))
         for row in rows:
             person = persons.resolve(row.platform, row.sender_id)
@@ -122,7 +118,7 @@ async def backfill(
             # FEED FIRST. `set_person_id` below is the marker, and marking a row
             # whose feed did not land would retire it from every future scan —
             # see this module's docstring, point 1.
-            # The file-link handle, never the URL (design/external-files §1).
+            # The file-link handle, never the URL.
             text = render_file_links(row.body or "").strip()
             if text:
                 if not await _feed(memory=memory, peer_id=person.honcho_peer_id,

@@ -1,11 +1,10 @@
-"""The memory index's closed vocabularies (design/unified-memory/25-memory-graph.md
-§2, 60-build-step-3.md §1).
+"""The memory index's closed vocabularies.
 
 One place for the node kinds, the relations and the node states, read by the
 table's CHECKs (`nora.infra.sql.schema`), by the projector
 (`nora.infra.sql.memory_index`) and by the projection counter's help text, so
 the three cannot disagree. A new relation or kind is a schema change, never
-something a model invents (25 §2): adding one here without its migration
+something a model invents: adding one here without its migration
 fails `tests/infra/test_schema_parity.py`.
 """
 
@@ -55,20 +54,20 @@ __all__ = [
     "narrowed",
 ]
 
-#: Every kind step 3 names (60 §3), so S2-S4 add projectors without a CHECK
-#: migration. `media` is one attachment, `(message, sha256)`, never the bytes.
+#: Every node kind, so a new projector needs no CHECK migration. `media` is
+#: one attachment, `(message, sha256)`, never the bytes.
 NodeKind = Literal[
     "message", "media", "note", "memo", "event", "lesson", "character",
     "outing", "stay", "trip", "person", "room", "unit", "nora", "place",
 ]
 NODE_KINDS: tuple[str, ...] = get_args(NodeKind)
 
-#: The entities (25 §1): a node a hop may reach only as a direct neighbour,
-#: never fan out from (25 §4 step 3). They are the only nodes allowed no
+#: The entities: a node a hop may reach only as a direct neighbour, never
+#: fan out from. They are the only nodes allowed no
 #: scope of their own; every other node carries a unit, a room or a person.
 HUB_KINDS: tuple[str, ...] = ("person", "room", "unit", "nora", "place")
 
-#: 25 §2's closed set, as written there.
+#: The closed set of edge relations.
 Relation = Literal[
     "authored_by", "in_room", "shared_by", "attached_to", "during", "about",
     "cites", "supersedes", "tracks", "closes_into", "leaves_behind",
@@ -79,9 +78,9 @@ RELATIONS: tuple[str, ...] = get_args(Relation)
 
 NODE_STATES: tuple[str, ...] = ("live", "retired", "superseded")
 
-#: The kinds that get a vector (25 §7's «vector» column, 65 §1.4): every
-#: kind with text worth matching by meaning. Never a hub (a hub never seeds,
-#: 60 S5), and never a kind 25 §7 marks lexical only: the Rollup episodes
+#: The kinds that get a vector: every
+#: kind with text worth matching by meaning. Never a hub (a hub never seeds),
+#: and never a kind that is lexical only: the Rollup episodes
 #: (outing, stay, trip), whose text is a kind and an interval. Disputes and
 #: feedback, also lexical only there, have no node kind yet.
 EMBEDDED_KINDS: tuple[str, ...] = (
@@ -89,7 +88,7 @@ EMBEDDED_KINDS: tuple[str, ...] = (
 )
 
 #: `nora_memory_embed_total`'s `outcome`, one per node the embedding worker
-#: tried (65 V1). `ok` stored a vector; `unavailable` the embedder (or the
+#: tried. `ok` stored a vector; `unavailable` the embedder (or the
 #: blob store holding an image's bytes) did not answer, and the tick stops;
 #: `rejected` the embedder refused this input, or its bytes would not
 #: decode; `empty` the node had nothing to embed (no text, no image bytes);
@@ -110,7 +109,7 @@ EMBED_INPUTS: tuple[str, ...] = get_args(EmbedInput)
 
 def embeds_bytes(media_type: str) -> bool:
     """Whether an attachment of `media_type` is embedded from its bytes
-    rather than its reading (65 §1.3): an image, a sticker or a GIF is; a
+    rather than its reading: an image, a sticker or a GIF is; a
     video, a voice note or a document is embedded from its reading's text."""
     return media_type.strip().lower().startswith("image/")
 
@@ -119,28 +118,28 @@ def embeds_bytes(media_type: str) -> bool:
 #: the store's own transaction; `queued` failed, and the source is on
 #: `memory_projection_queue` for the next pass; `lost` failed AND the queue
 #: write failed, so only a rebuild finds it. In every case the store's own
-#: write stands (60 §2).
+#: write stands.
 ProjectionOutcome = Literal["ok", "queued", "lost"]
 PROJECTION_OUTCOMES: tuple[str, ...] = get_args(ProjectionOutcome)
 
 
-# --- the read (S5, design/unified-memory/25-memory-graph.md §4) --------------
+# --- the read ----------------------------------------------------------------
 
 #: `nora_memory_search_total`'s `status`, and what `memory_search` answers while
-#: `[memory_index] enabled` (25 §4): `partial` while a rebuild has not
+#: `[memory_index] enabled`: `partial` while a rebuild has not
 #: completed, the projection queue is not empty, the search fell back to the
 #: lexical seed (no embedder, or it failed), or embeddable nodes still wait
-#: for a vector of the current model (65 V2), never `nothing_found`;
+#: for a vector of the current model, never `nothing_found`;
 #: `unavailable` on any error (fail closed).
 SearchStatus = Literal["ok", "nothing_found", "partial", "unavailable"]
 SEARCH_STATUSES: tuple[str, ...] = get_args(SearchStatus)
 
 #: The Rollup episodes, each carrying a presence lineage the reading room must
-#: pass (R-31, DEC-222, 60 §0.3).
+#: pass (R-31, DEC-222).
 EPISODE_KINDS: tuple[str, ...] = ("outing", "stay", "trip")
 
 #: The person-only kinds: no unit and no room, readable where a room lists
-#: their person (60 §0.3). Any other node with neither a unit nor a room is
+#: their person. Any other node with neither a unit nor a room is
 #: never in scope.
 PERSON_SCOPED_KINDS: tuple[str, ...] = ("stay", "trip")
 
@@ -150,7 +149,7 @@ PERSON_SCOPED_KINDS: tuple[str, ...] = ("stay", "trip")
 #: Grouped by what a person would ask for, not by store: `notes` is everything
 #: she wrote down herself (a note, a memo, a lesson, a Character account),
 #: `places` is where people went (an outing, a stay, a trip). Hubs are never
-#: a category: they are never returned (25 §4 step 3).
+#: a category: they are never returned.
 MemoryKind = Literal["messages", "media", "notes", "events", "places"]
 MEMORY_KINDS: tuple[str, ...] = get_args(MemoryKind)
 KINDS_BY_CATEGORY: Mapping[str, tuple[str, ...]] = {
@@ -163,8 +162,8 @@ KINDS_BY_CATEGORY: Mapping[str, tuple[str, ...]] = {
 
 #: The relations that tie a node to the person a `memory_search` names: an
 #: entry `about` them, a message `authored_by` them, an attachment
-#: `shared_by` them. `mentions` and `depicts` join when something writes them
-#: (60 §0.6); until then they would match nothing.
+#: `shared_by` them. `mentions` and `depicts` join when something writes them;
+#: until then they would match nothing.
 PERSON_RELATIONS: tuple[str, ...] = ("about", "authored_by", "shared_by")
 
 
@@ -182,7 +181,7 @@ class MemoryFilter:
       node with no time is outside any window.
     - `person`: a node `about`, `authored_by` or `shared_by` that person
       (`PERSON_RELATIONS`), or one whose `persons` lists them; and, the
-      `about` seed's own rule (35 §3), only where the reading room lists them
+      `about` seed's own rule, only where the reading room lists them
       and the node was said in a room that lists them too, or in no room.
     """
 
@@ -195,7 +194,7 @@ class MemoryFilter:
 @dataclass(frozen=True, slots=True)
 class MemoryScope:
     """What one read may reach, computed per read from the live policy and
-    the reading room's live roster (25 §4 step 1, 35 §3). The unit is the
+    the reading room's live roster. The unit is the
     boundary: a node is in scope when it belongs to the reading room's unit
     or to one of that unit's rooms (or, for a stay or trip, to a person this
     room lists), every person it is readable only to is listed here, and it
@@ -234,7 +233,7 @@ class MemoryScope:
 @dataclass(frozen=True, slots=True)
 class IndexedNode:
     """One `memory_node` row as a read returns it: a pointer and what is
-    needed to find and show it, never the item's truth (25 §1)."""
+    needed to find and show it, never the item's truth."""
 
     kind: str
     source_id: str
@@ -263,7 +262,7 @@ class Seed:
     score, the full-width cosine of a dense seed, or 1 for an exact seed.
     `near` is an exact seed's cosine to the question when it holds a vector of
     the asked model: an exact hit past the pinned ones ranks by it, as a dense
-    hit would (65 V2)."""
+    hit would."""
 
     node: IndexedNode
     score: float
@@ -285,7 +284,7 @@ class Neighbour:
 class IndexState:
     """`memory_index_state.status` (`never`, `building`, `complete`) and the
     projection queue's length now; with a model fingerprint asked for, the
-    vector coverage too (65 V2), counted within the search's scope when one
+    vector coverage too, counted within the search's scope when one
     is given: `embedded`, the live embeddable nodes holding a vector of that
     model; `unembedded`, those still waiting for one; and `given_up`, those
     the worker gave up on (`EMBED_MAX_ATTEMPTS`). A given-up node waits for
@@ -302,7 +301,7 @@ class IndexState:
     given_up: int = 0
 
 
-# --- exact seeds (65 V2) ------------------------------------------------------
+# --- exact seeds -------------------------------------------------------------
 
 #: The characters that continue a Latin word, a handle or an id: a Latin
 #: term matches only where neither neighbour is one of these. ASCII letters,
@@ -316,7 +315,7 @@ _LATIN_MAX = 0x24F
 
 
 class ExactTerm(NamedTuple):
-    """One exact reference (65 V2). `cased` for a person's name, which
+    """One exact reference. `cased` for a person's name, which
     matches only as written (`Will` is not `will`); a URL, a handle or an id
     matches in any case."""
 
@@ -357,7 +356,7 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
     """The scope predicate for a NON-hub node, in Python: the fake index's,
     and the statement of what `SqlMemoryIndex` writes in SQL (the contract
     suite holds the two to the same answers). A hub never passes: it has no
-    scope, and is reached only as a direct neighbour (25 §4 step 3)."""
+    scope, and is reached only as a direct neighbour."""
     if node.kind in HUB_KINDS or node.state != "live":
         return False
     placed = (
@@ -421,9 +420,9 @@ class QueryEmbedder(Protocol):
 
 
 class MemoryIndexRead(Protocol):
-    """The read half of the memory index (25 §4): `SqlMemoryIndex`, and
+    """The read half of the memory index: `SqlMemoryIndex`, and
     `nora.testing.memory_index.FakeMemoryIndex` under the shared contract
-    suite. Every method applies `scope` INSIDE its read (25 §3), and its
+    suite. Every method applies `scope` INSIDE its read, and its
     `only` beside it (`narrowed`): a node out of scope, or outside the
     question's narrowing, is never returned, so nothing after the read has
     to remember to drop it."""
@@ -443,7 +442,7 @@ class MemoryIndexRead(Protocol):
     ) -> list[Seed]:
         """In-scope, non-hub nodes holding a vector of `model`, nearest to
         `vector` first, scored by their full-width cosine. A vector of any
-        other model is never compared (65 V2)."""
+        other model is never compared."""
         ...
 
     async def exact(

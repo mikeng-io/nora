@@ -1,4 +1,4 @@
-"""The document store port (ADR 0020, design/artifact/00-design.md §5).
+"""The document store port (ADR 0020).
 
 A document is published by Nora into a room and read back by people in the portal.
 Two tables sit behind this port and **neither is ever updated in place**:
@@ -145,7 +145,7 @@ class StoredDocument:
 class RevisionRecord:
     """One entry of a document's history. `media` is every picture that revision names,
     so the picture route can serve a picture an EARLIER revision shows (the portal's
-    history view, design/artifact §34)."""
+    history view)."""
 
     revision: int
     title: str

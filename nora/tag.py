@@ -1,7 +1,7 @@
-"""Trigger matching (spec B.2 / R-11) and per-conversation debounce (R-9).
+"""Trigger matching (R-11) and per-conversation debounce (R-9).
 
 Firing is about *tagging intent*, not string presence: a trigger quoted as code is
-not a tag (Q2).
+not a tag.
 """
 
 from __future__ import annotations
@@ -26,12 +26,12 @@ _WORD = re.compile(r"[0-9A-Za-z_]")
 
 
 def normalize(body: str) -> str:
-    """NFKC, then drop zero-width and bidi-control characters (B.2 rule 1)."""
+    """NFKC, then drop zero-width and bidi-control characters."""
     return unicodedata.normalize("NFKC", body).translate(_INVISIBLE)
 
 
 def strip_code_spans(body: str) -> str:
-    """Remove fenced blocks then inline spans (B.2 rule 2). Unclosed fences eat the tail."""
+    """Remove fenced blocks then inline spans. Unclosed fences eat the tail."""
     return _INLINE_CODE.sub(" ", _FENCED.sub(" ", body))
 
 
@@ -44,7 +44,7 @@ def is_tagged(body: str, trigger: str) -> bool:
         before = text[match.start() - 1] if match.start() else ""
         after = text[match.end()] if match.end() < len(text) else ""
         if _WORD.match(before) or _WORD.match(after):
-            continue                       # B.2 rule 3: word-character boundary required
+            continue                       # a word character on either side is not a tag
         return True
     return False
 
@@ -53,8 +53,8 @@ class DebounceStore(Protocol):
     """The three verbs `Debounce` needs from `nora.infra.sql.tag_debounce`.
 
     A STRUCTURAL shape declared here rather than an import, so this module keeps
-    importing nothing but the standard library — it is a leaf, and the engagement
-    path's rate limiter has no business depending on SQLAlchemy to run.
+    importing nothing but the standard library: it is a leaf, and the engagement
+    path's rate limiter must not depend on SQLAlchemy to run.
     """
 
     async def read_all(self) -> list[tuple[str, str, int]]: ...
@@ -70,12 +70,12 @@ def _room(key: Hashable) -> tuple[str, str] | None:
     """The `(platform, conversation_id)` a debounce key names, or `None`.
 
     Production's key is exactly that two-tuple
-    (`nora.engagement.stages.admission.run`). `ConversationTarget` — the shape
-    the unit tests key with — is a frozen dataclass, not a tuple, and so has no
-    durable form here: it stays in memory only, which is what it already was.
-    Returning `None` rather than guessing is the point; a key coerced through
-    `str()` would round-trip to something that is not the key it came from, and
-    hydration would then restore a window against a room nobody can name.
+    (`nora.engagement.stages.admission.run`). `ConversationTarget`, the shape
+    the unit tests key with, is a frozen dataclass, not a tuple, and so has no
+    durable form here: it stays in memory only. Returning `None` rather than
+    guessing is the point; a key coerced through `str()` would round-trip to
+    something that is not the key it came from, and hydration would then
+    restore a window against a room nobody can name.
     """
     if (
         type(key) is tuple
@@ -93,12 +93,11 @@ class Debounce:
     The clock is injected so tests are deterministic and never sleep. A blocked tag
     does NOT reset the window — otherwise a burst would starve the conversation.
 
-    **`store` is OPTIONAL and `None` is the shipping default for every caller
-    that is not the composition root.** With it absent this class is exactly
-    what it was before migration 0056 — an in-memory dict that a restart
-    empties — which is what the tests construct and what every offline/eval
-    wiring gets. Supplying one makes `allow`'s answer survive a force-recreate
-    (`nora/infra/sql/migrations/versions/0056_*.py` for the defect).
+    **`store` is OPTIONAL; `None` is the default for every caller that is not
+    the composition root.** With it absent this class is an in-memory dict that
+    a restart empties, which is what the tests and every offline/eval wiring
+    get. Supplying one makes `allow`'s answer survive a force-recreate
+    (migration `0056`).
 
     **The write goes through `spawn`, because `allow` may not await.** Its
     caller chain is `EngagementPipeline.run` -> `admission.run`, and that
@@ -113,9 +112,9 @@ class Debounce:
 
     **The clock is `time.time`, not `time.monotonic`.** A monotonic epoch is
     arbitrary per process, so a persisted monotonic value is not a time to
-    whatever reads it back. Every comparison in this class is a DIFFERENCE of
-    two readings of the same clock, so the substitution changes no answer — but
-    it is what makes the stored value mean anything at all.
+    whatever reads it back. Every comparison here is a DIFFERENCE of two
+    readings of the same clock, so the choice changes no answer; it is what
+    makes the stored value meaningful.
     """
 
     def __init__(
@@ -141,8 +140,8 @@ class Debounce:
     async def hydrate(self) -> int:
         """Load the surviving windows from the store; returns how many.
 
-        Called ONCE, at wiring time, before any adapter is listening — `allow`
-        is synchronous and can never do this for itself.
+        Called ONCE, at wiring time, before any adapter is listening; `allow`
+        is synchronous and cannot do this itself.
 
         It PRUNES first, with a cutoff computed from this instance's own
         interval: a row older than `min_interval_seconds` cannot change

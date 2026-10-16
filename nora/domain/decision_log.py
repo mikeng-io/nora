@@ -1,24 +1,23 @@
 """The shared decision log — one row per ambient decision, and the block that
-renders it back into the NEXT decider's prompt (issue #199).
+renders it back into the NEXT decider's prompt.
 
-WHAT THIS IS, AND WHY IT IS NEW
--------------------------------
-Nora has three decision paths that can each take a room's floor, and until this
-module none of them could see what the others had done:
+WHAT THIS IS
+------------
+Nora has three decision paths that can each take a room's floor; this log is
+the shared state that lets each see what the others did:
 
   the Relevance Gate + the participation turn  (`nora.ingest.relevance_gate`,
                                                 `FirePath.speak` kind="participation")
-  the proactive act turn (the decide pass is   (`FirePath.speak` kind="proactive")
-    deleted 2026-10-03, DEC-277)
+  the proactive act turn (no decide pass,      (`FirePath.speak` kind="proactive")
+    DEC-277)
   the tag turn                                 (`nora.engagement.pipeline`)
 
-The gate persisted NOTHING durable — metrics and trace attributes only. The
-proactive adaptor kept a log of its OWN reminder rows and nothing else. The
+The gate persists NOTHING durable (metrics and trace attributes only). The
 determination log (`nora.obs.determination`) is a log: written, never read back
-into a prompt. So on 2026-09-10 participation answered a question at 16:43, the
-tag turn one second later re-derived the whole answer from scratch and died, and
-the proactive decider raised the same question in another room at 18:03. Three
-paths, one room, no shared state.
+into a prompt. Without this table, one path could answer a question, the tag
+turn a second later re-derive the whole answer from scratch, and the proactive
+decider raise the same question in another room: three paths, one room, no
+shared state.
 
 WHO WRITES AND WHO READS — AND WHY THE GATE DOES NEITHER
 --------------------------------------------------------
@@ -26,7 +25,7 @@ WHO WRITES AND WHO READS — AND WHY THE GATE DOES NEITHER
 |---|---|---|
 | `participation` | `spoke` / `silent`, with the disposition | `FirePath._determined` |
 | `proactive_act` | `spoke` / `silent`, with the disposition | `FirePath._determined` |
-| `proactive_decide` | `remind` / `decline`, and the note it was about | none now (DEC-277) |
+| `proactive_decide` | `remind` / `decline`, and the note it was about | no writer (DEC-277) |
 | `tag` | `replied` / `silent` / `failed`, with the disposition | `EngagementPipeline.run` |
 
 `tag` is three-way and not two, because R-5's deliberate silence is a HEALTHY
@@ -48,14 +47,13 @@ reads as «that decider never ran».
 **`RelevanceGate` neither writes nor reads, and that is a decision rather than
 an omission.** Its own module docstring is «ONE call, transcript + standing, no
 tools, no doctrine, no loop, JSON out — admission control and nothing else», and
-a writer with a fail-soft path and a store read is not that shape. Design 36 §6
-is the sharper half: the gate must not be able to answer «does Nora have
-something true to add?», and a block of what she has raised carries that
-question in under a new label — a pending `kind="proactive"` row has a
-`payload["note_title"]` on it. So the gate stays a pure function on both sides
-of this table (DEC-179): it persists nothing durable, and a `no_go` — which
-runs no turn — is invisible to every downstream reader, same as before this
-log existed. `nora_relevance_gate_total` / `nora_relevance_gate_errors_total`
+a writer with a fail-soft path and a store read is not that shape. The gate
+must not be able to answer «does Nora have something true to add?», and a block
+of what she has raised carries that question in under a new label — a pending
+`kind="proactive"` row has a `payload["note_title"]` on it. So the gate stays a
+pure function on both sides of this table (DEC-179): it persists nothing
+durable, and a `no_go` — which runs no turn — is invisible to every downstream
+reader. `nora_relevance_gate_total` / `nora_relevance_gate_errors_total`
 (R-23's split) are where a gate verdict is observable at all.
 
 WHAT A ROW IS — AND WHAT IT IS NOT
@@ -67,12 +65,12 @@ tag, because a block a model cannot classify is a block it will classify wrong.
 **No speech and NO MODEL TEXT goes in a row, ever.** `reason` is a code-derived
 label from a closed set — a determination's `disposition`, a tag turn's
 disposition — and the one model-authored string that
-could have reached this table, the proactive decide turn's `why` (deleted 2026-10-03), is
-deliberately not
-stored: it is written ABOUT a note and would carry note titles into a block
-whose own note says it holds none. Her draft, her reply and the room's words
-stay where they already are (the audit rows, the determination log), and
-`REASON_MAX_CHARS` is enforced in three places rather than trusted to one.
+could have reached this table, the proactive decide turn's `why` (that turn
+is gone, DEC-277), is deliberately not stored: it is written ABOUT a note and
+would carry note titles into a block whose own note says it holds none. Her
+draft, her reply and the room's words stay where they already are (the audit
+rows, the determination log), and `REASON_MAX_CHARS` is enforced in three
+places rather than trusted to one.
 
 **No PERSON or ROOM identifier goes in a render, ever** (R-18/R-28). A row
 carries `conversation_id` so it can be READ back; `render_decisions` never puts
@@ -98,9 +96,9 @@ store may answer with a year of rows).
 
 Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 `nora.domain.media_join` is the precedent for a domain module that owns a
-timeout and a metrics Protocol — the alternative is a copy of this logic in
-each of the packages that writes a row, and they sit at four different layers
-of the import contract.
+timeout and a metrics Protocol; the alternative is a copy of this logic in each
+of the packages that writes a row, which sit at four different layers of the
+import contract.
 """
 
 from __future__ import annotations
@@ -125,7 +123,7 @@ log = logging.getLogger("nora.domain.decision_log")
 #: vocabulary is what drifts (`nora_ingest_outcomes_total`'s precedent).
 DecisionWriter = Literal[
     "participation",      # the participation turn's determination
-    "proactive_decide",   # NO WRITER since 2026-10-03 (DEC-277); old rows remain
+    "proactive_decide",   # no writer (DEC-277); old rows remain
     "proactive_act",      # a kind="proactive" row's act turn
     "tag",                # the tag path, somebody addressed her
 ]
@@ -135,13 +133,10 @@ DecisionWriter = Literal[
 #: again and held back» are different facts about a room and the next decider
 #: has to be able to tell them apart.
 #:
-#: `go`/`no_go` (the Relevance Gate's own vocabulary) were here until DEC-179:
-#: the gate never wrote a row, `ParticipationTrigger` did on its behalf, and
-#: removing that writer left these two values with nowhere they could ever be
-#: produced — a closed vocabulary with an unreachable member is exactly the
-#: kind of decoration this module's own note-gloss test caught (every
-#: declared verdict must be glossed, and nothing glosses a verdict nobody
-#: writes).
+#: The Relevance Gate's `go`/`no_go` are deliberately absent (DEC-179): the
+#: gate writes no row, and a closed vocabulary with an unreachable member is
+#: decoration (every declared verdict must be glossed, and nothing glosses a
+#: verdict nobody writes).
 DecisionVerdict = Literal[
     "spoke", "silent",    # participation, proactive_act
     "remind", "decline",  # proactive_decide (no writer now; old rows)
@@ -174,16 +169,13 @@ PROACTIVE_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
 
 #: The ACT turn's set, and the one place `proactive_act` is read by a
 #: `proactive_act` reader. **That is the exception, and it is the whole point
-#: of the constant** (2026-09-17, msgs 5450/5455).
+#: of the constant.**
 #:
-#: MEASURED. Two proactive rows about two different notes came due 30 minutes
-#: apart in one Signal room. `heartbeat._by_turn` coalesces only rows due in the
-#: SAME tick, so they were two turns; the 20:00 turn read `<notes>`, saw both,
-#: and raised both; the 20:30 turn raised the second one again. Its transcript
-#: window DID carry the 20:00 message — as an unlabelled line of Nora speech,
-#: with nothing saying it was a raise she had just made unprompted. Nothing
-#: else in that prompt could say so: `<decisions>` is the DECIDE pass's block,
-#: and `_read_decisions` was participation-only.
+#: `heartbeat._by_turn` coalesces only rows due in the SAME tick, so two
+#: proactive rows about two different notes that come due apart are two turns.
+#: The later turn's transcript window carries the earlier raise only as an
+#: unlabelled line of Nora speech, with nothing saying it was a raise she had
+#: made unprompted; this reader is what says so.
 #:
 #: **Why the exclusion rule does not bind here.** It bars a decider from
 #: reading its own answer to its own recurring question — participation's last
@@ -196,8 +188,8 @@ PROACTIVE_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
 #: and a code-derived disposition, never model text (this module's own rule),
 #: which is exactly what the decide pass's exclusion of itself turns on.
 #:
-#: **`proactive_decide` IS excluded, and that is the same rule honoured** (it has no writer since
-#: 2026-10-03, DEC-277; its old rows still exist). The
+#: **`proactive_decide` IS excluded, and that is the same rule honoured** (it
+#: has no writer, DEC-277; its old rows still exist). The
 #: decide row that scheduled THIS turn is the reason the turn is happening;
 #: `ProactiveHeader` already puts it in front of her, in her own words, as
 #: the intention to weigh. Handing it back a second time under a block of
@@ -216,11 +208,8 @@ PROACTIVE_ACT_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
 #: How much of a `reason` is kept. ONE number, not a store cap and a render cap:
 #: two would be a number somebody has to look up.
 #:
-#: MEASURED, not estimated, because the first version of this comment was not:
-#: it claimed ~11 tokens a row and cited the Relevance Gate's ~300-token budget,
-#: and both halves were wrong — the row is ~38 tokens at this width (151
-#: characters with a label and a note id) and the gate is not a reader of this
-#: block at all. The real numbers: at the CEILING, 20 rows each carrying a
+#: Sizing: a row is ~38 tokens at this width (151 characters with a label and
+#: a note id). At the CEILING, 20 rows each carrying a
 #: reason at this cap is ~3,700 characters, ~930 tokens; at the widths actually
 #: written — a disposition or an error kind, ~10 characters — it is ~1,200
 #: characters, ~300 tokens. That is the volatile tier of a fire-turn prompt,
@@ -239,8 +228,8 @@ RECENT_WINDOW_MS = 24 * 60 * 60 * 1000
 class DecisionRow:
     """One decision, as the next decider needs to read it.
 
-    `note_id` is nullable because only the (deleted) proactive decide turn decided ABOUT
-    a note; every other writer decides about a room. `unit` may be empty
+    `note_id` is nullable because only the proactive decide turn (no writer
+    now, DEC-277) decided ABOUT a note; every other writer decides about a room. `unit` may be empty
     for the same shape of reason `FirePath._unit_for` returns `None` — a
     room with no policy entry is a wiring gap, and guessing a unit would
     put one social unit's decisions in another's prompt.
@@ -256,12 +245,12 @@ class DecisionRow:
     #: A CODE-DERIVED label and never model text: a determination's
     #: `disposition`, a tag turn's disposition. Empty is ordinary.
     #:
-    #: The proactive decide turn's own `why` was written here until the third
-    #: review of this branch and is not any more. It is the one model-authored
-    #: string on this table, it is written ABOUT a note, and it therefore
-    #: carries note titles into a prompt whose whole claim is that it holds no
-    #: notes. `note_id` is what a reader needs from that row, and a reader that
-    #: cannot resolve an id has no business being handed a title.
+    #: The proactive decide turn's own `why` is NOT stored here: it is the one
+    #: model-authored string that could land on this table, it is written ABOUT
+    #: a note, and it would carry note titles into a prompt whose whole claim is
+    #: that it holds no notes. `note_id` is what a reader needs from that row,
+    #: and a reader that cannot resolve an id has no business being handed a
+    #: title.
     reason: str
     ts: int
 
@@ -370,16 +359,16 @@ class DecisionLogRecorder:
         Both stores order on `(ts, id)`, so rows written in the SAME
         millisecond are ordered by their id — and with a bare `uuid4` that is
         random, which means one pass's own decisions render in arbitrary order.
-        Not hypothetical: a Dreamer `commit` walks an envelope of four items
-        with no `await` that yields between them, so all four land on one
-        millisecond, and «remind, then decline, because X» would render as
-        often backwards as forwards. A block whose rows are out of order is the
-        undated-transcript failure again, one axis over.
+        A Dreamer `commit` walks an envelope of four items with no `await`
+        that yields between them, so all four land on one millisecond, and
+        «remind, then decline, because X» would render as often backwards as
+        forwards. A block whose rows are out of order is the undated-transcript
+        failure again, one axis over.
 
         The leading timestamp is the row's OWN `ts`, passed in rather than
         read again here: two clock reads a millisecond apart would put a
-        different instant in the id than in the column, and the claim that the
-        two sort alike would be false exactly once per thousand rows. The
+        different instant in the id than in the column, and the two would no
+        longer sort alike. The
         counter breaks a same-millisecond tie by INSERTION order; the random
         tail keeps two processes from colliding on the primary key.
 
@@ -455,35 +444,31 @@ class DecisionLogRecorder:
         """**The primary read**: every room of one unit, over the window,
         newest-LAST. `()` on any failure.
 
-        **Unit and not room, and that is what makes the log answer issue
-        #199 at all.** A `kind="proactive"` row fires into the unit's HOME
-        room and nowhere else (39 D2/D3), and the home room is one platform;
-        the thread it is about runs wherever the group happens to be talking.
-        In the measured incident those were different rooms on different
-        platforms — so a reader scoped to «this room, last 24 hours» sees
-        nothing, and the duplicate it exists to prevent goes through anyway.
+        **Unit and not room, and that is what makes the log useful.** A
+        `kind="proactive"` row fires into the unit's HOME room and nowhere
+        else, and the home room is one platform; the thread it is about runs
+        wherever the group happens to be talking. Those can be different rooms
+        on different platforms, so a reader scoped to «this room, last 24
+        hours» sees nothing, and the duplicate the log exists to prevent goes
+        through anyway.
         The room a decision was made in is rendered as a LABEL instead, which
         is the information a reader actually needs from it.
 
         Newest-LAST because the block is read top-to-bottom beside a transcript
         that is also oldest-first (`RecordStore.recent`'s order, pinned by
         `tests/contract/test_audit_store_contract.py`). One document, one
-        direction of time: the Relevance Gate's renderer reversed its
-        transcript once on a docstring that claimed otherwise, and every
-        verdict would have been judged on a conversation read backwards.
+        direction of time: a reversed block would be judged against a
+        conversation read backwards.
 
-        **`writers` is pushed into the QUERY, and filtering after the read
-        instead is the defect this argument exists to prevent.** Every reader
-        wants a subset — each one excludes its own writer — and the bound is 20
-        rows. A busy room's dominant writer can out-produce every other writer
-        by an order of magnitude; filtered afterwards, 20 of its rows from the
-        last half hour evict every `proactive_decide` row and the
-        participation turn renders NO BLOCK, silently, in exactly the busy
-        room where issue #199 happened. Measured on the contract-suite double:
-        one proactive row plus 25 ordinary rows from one high-volume writer
-        answered 20 rows, 0 of them readable.
+        **`writers` is pushed into the QUERY; filtering after the read is the
+        defect this argument exists to prevent.** Every reader wants a subset
+        (each excludes its own writer) and the bound is `RECENT_LIMIT` rows. A
+        busy room's dominant writer can out-produce every other writer by an
+        order of magnitude; filtered afterwards, its rows from the last half
+        hour would evict every other writer's and the reader would render NO
+        BLOCK, silently, in exactly the busy room where it matters.
 
-        So the bound has to be 20 READABLE rows. An empty `writers` means every
+        So the bound has to be `RECENT_LIMIT` READABLE rows. An empty `writers` means every
         writer, which is what a caller with no filter means.
 
         `platform` is the metric label only — a read failure has to be counted
@@ -560,23 +545,13 @@ class DecisionLogRecorder:
             log.exception("decision log: counting the failure failed")
 
 
-#: What the block says it is. Stated once, here, because it is the whole
-#: **There is no `_WRITER_GLOSS` and no `_note_for` here any more** (#314).
-#:
-#: They built the block's framing sentence from the writers a given render
-#: actually carried — «it carries these deciders only: …» — so the block never
-#: named a decider whose rows were filtered out. Sound, and unrepresentable
-#: once a block's description belongs to its TYPE: the same tag was described
-#: two ways by two callers, which is the divergence that cost four block types
-#: their single description.
-#:
-#: The gloss now lives in `nora.domain.block_types` as the `writer` annotation,
-#: listing all four whatever the render holds, beside a description saying that
-#: a decider absent from the rows is one this block does not carry. Second
-#: person throughout, and that is not style: this block renders beside
-#: `<decisions>`, whose description says «what YOU decided to raise», and a
-#: neighbour speaking about «Nora's own loop» invites the model — which IS Nora
-#: — to read the second block as somebody else's record.
+#: There is no per-render writer gloss here: the block's description belongs
+#: to its TYPE, in `nora.domain.block_types` (the `writer` annotation lists all
+#: four writers whatever the render holds, beside a description saying that a
+#: decider absent from the rows is one this block does not carry). Second
+#: person throughout, and that is not style: Nora IS the model reading it, and
+#: a third-person «Nora's own loop» invites the model to read the block as
+#: somebody else's record.
 
 
 def decision_line(
@@ -592,17 +567,13 @@ def decision_line(
     deployment with `[notes] enabled = false` it would be note-derived content
     the turn has no other source for.
 
-    **`note <id>` is a MARKER, not a lookup key, and the difference is stated
-    because the first version of this docstring got it wrong.** It claimed the
-    reader resolves the id against the `<notes>` block in the same prompt.
-    `nora.language.note_render` emits `- <title> — <description> (about
-    <date>)` and no id anywhere, so no reader can resolve it today (reviewer,
-    2026-09-11). What the id is actually for: an OPERATOR joining a row to a
-    note in the database, and the tag reader that is the next piece of this
-    work. What the MODEL is told about it is only what is true — `_NOTE` says
-    it means «this decision was about a tracked note» and that it cannot be
-    looked up — because an id a model believes is lookupable is worse than no
-    id at all.
+    **`note <id>` is a MARKER, not a lookup key.** `nora.language.note_render`
+    emits `- <title> — <description> (about <date>)` and no id anywhere, so no
+    reader can resolve it against the `<notes>` block. The id is for an
+    OPERATOR joining a row to a note in the database. What the MODEL is told
+    about it is only what is true — the block's `note` annotation says it means
+    «this decision was about a tracked note» and that it cannot be looked up —
+    because an id a model believes is lookupable is worse than no id at all.
 
     `label` is the operator-authored policy label for the room, never an id
     (R-18/R-28). It is how a unit-scoped block stays readable: the row
@@ -635,19 +606,15 @@ def render_decisions(
 ) -> ContextBlock:
     """`<loop_decisions>` — the rows, with an age on every one of them.
 
-    **Named `loop_decisions` and not `decisions`** because
-    the deleted `nora.language.proactive` (DEC-277) rendered a `<decisions>` block, and that
-    one is her REMINDER rows — what she scheduled and how each fired. Two
-    blocks with one name in one prompt is exactly the undecidable input this
-    repo has already paid for: the model cannot tell which is which, and the
-    fix is never the instruction.
+    **Named `loop_decisions` and not `decisions`** because a `<decisions>`
+    block is her REMINDER rows — what she scheduled and how each fired. Two
+    blocks with one name in one prompt is an undecidable input: the model
+    cannot tell which is which, and the fix is never the instruction.
 
     **An age per row, not a timestamp.** Every question this block is read to
     answer is a question about WHEN — has this already been handled, did
-    somebody just answer it, is that verdict stale — and the gate's own
-    measured lesson is that a temporal judgement made against undated lines
-    fails silently at a rate nothing reports. Rendering an age per transcript
-    row cut that gate's error rate by two thirds over 40 labelled cases.
+    somebody just answer it, is that verdict stale — and a temporal judgement
+    made against undated lines fails silently at a rate nothing reports.
 
     **No PERSON or ROOM identifier reaches the string** (R-18/R-28): no
     `conversation_id`, no phone number, no service id. A note's own id IS
@@ -659,18 +626,10 @@ def render_decisions(
     `groups` is `(label, rows)` so one call serves both readers, each of which
     labels a row with the room it was decided in.
 
-    **THERE IS NO `writers` ARGUMENT, and it was removed rather than left
-    unused** (#314). The caller passed what it had FILTERED TO so the framing
-    sentence could name those deciders and only those — a decider the caller
-    excluded was stated as absent rather than silently missing, because the
-    participation turn reading «no proactive_decide row» as «she has raised
-    nothing» is a false fact handed to a decider.
-
-    That sentence is now the type's, so it cannot vary with the argument, and
-    the reading is closed in words instead: the description says a decider you
-    do not see on any row is one this block does not carry. The argument had
-    nothing left to do, and a parameter every caller still passes into a
-    function that ignores it is worse than none.
+    **THERE IS NO `writers` ARGUMENT.** The framing sentence belongs to the
+    block's type and cannot vary per render, so the reading «a decider I do not
+    see never ran» is closed in words instead: the description says a decider
+    you do not see on any row is one this block does not carry.
 
     **What is model-authored in here: nothing.** Every `reason` any writer can
     produce is a code label from a closed set, and the decide turn's `why` is

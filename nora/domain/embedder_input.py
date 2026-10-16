@@ -1,5 +1,4 @@
-"""Qwen3-VL-Embedding-2B's input format: the ONE formatter (design/unified-memory/
-65-build-step-3-vectors.md §0).
+"""Qwen3-VL-Embedding-2B's input format: the ONE formatter.
 
 The model reads a chat sequence its own files define (Qwen/Qwen3-VL-Embedding-2B
 at `9f2f7e71`): a system turn holding an instruction, the user turn, the

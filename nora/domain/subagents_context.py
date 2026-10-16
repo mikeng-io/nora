@@ -1,4 +1,4 @@
-"""`SubagentsView`: what the `<subagents>` block renders (design/subagent/00-design.md §7).
+"""`SubagentsView`: what the `<subagents>` block renders.
 
 A plain value the reader builds and the renderer only formats, the shape
 `nora.domain.documents_context` gives `<documents>`. It carries `now`, so every age is
@@ -68,8 +68,8 @@ class SubagentLine:
     progress_known: bool = False
     rounds: int = 0
     last_tool: str | None = None
-    #: Running only: the worker's last checkpoint (design/subagent §4d), from the worker's
-    #: memory or else the row; `None` when it has written none (every job from before them).
+    #: Running only: the worker's last checkpoint, from the worker's
+    #: memory or else the row; `None` when it has written none.
     checkpoint: Checkpoint | None = None
     report: str | None = None
     #: `(document_id, title)`; the title is `""` when it could not be read.

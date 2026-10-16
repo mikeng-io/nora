@@ -1,37 +1,34 @@
-"""Cues: the deterministic features of a Record item that make it matter
-(design/cognition-loop/20-observe.md §3, `10-tiers.md` §6 «cue»).
+"""Cues: the deterministic features of a Record item that make it matter.
 
 **Code, never a model.** A cue is computed once, at ingest, from the item's
 own text, and stored on its stimulus. Nothing downstream re-reads the text to
-decide whether it mattered; the wake evaluator and, later, Cognition's agenda
+decide whether it mattered; the wake evaluator and Cognition's agenda
 compute on the cue names (comprehend once).
 
 **A cue is a reason to look, not a conclusion.** «聽日» in a message does not
 mean a plan exists; it means the item carries a date expression, which is why
-it wakes the loop sooner (a strong cue, 20 §3's table). A false positive costs
+it wakes the loop sooner (a strong cue). A false positive costs
 one earlier session; a false negative costs nothing but lateness, because every
 pending stimulus is still consumed by the next wake (settled, batch, max age).
 So the vocabularies below lean towards recall on the phrases people in these
 rooms actually type, in English and in Cantonese, and are deliberately NOT a
 parser: they never extract WHICH date.
 
-What is implemented, per 20 §3's list, and what is not:
+What is implemented, and what is not:
 
 - a date or time expression: `datetime`, English and Cantonese/Chinese;
 - an amount or a split: `amount`;
 - a keep instruction («記低», "keep that", "write that down"): `keep`;
 - an RSVP word: `rsvp`;
 - a place name or a place link: `place_link` only, a maps or venue URL. A
-  bare place NAME needs a gazetteer the Record does not hold yet;
+  bare place NAME needs a gazetteer the Record does not hold;
 - a surprise cue ("don't tell her", «唔好話俾佢知»): `surprise`;
 - a reply to, edit of, reaction to or delete of a message a Register row
-  cites: NOT computed. No Register row cites a message today (the `citation`
-  edge table is migration step 2), and faking it from «any reply» would make
-  every reply strong.
+  cites: NOT computed. Nothing records which message a Register row cites, and
+  faking it from «any reply» would make every reply strong.
 
-`STRONG_CUES` are the ones 20 §3's strong-cue trigger names: a date or time, a
-place change (here: a place link), a keep instruction, an RSVP. An edit of a
-cited message is strong too, and waits for the citation table.
+`STRONG_CUES` are the ones the strong-cue trigger names: a date or time, a
+place change (here: a place link), a keep instruction, an RSVP.
 """
 
 from __future__ import annotations
@@ -45,7 +42,7 @@ from typing import Literal, get_args
 Cue = Literal["datetime", "amount", "keep", "rsvp", "place_link", "surprise"]
 CUES: tuple[str, ...] = get_args(Cue)
 
-#: The cues that trip 20 §3's `strong cue` trigger. `amount` and `surprise`
+#: The cues that trip the `strong cue` trigger. `amount` and `surprise`
 #: matter to a session (a split to record; a surprise makes `exclude_persons`
 #: mandatory on the write that cites it) but do not by themselves say a plan is
 #: moving, so they wait for a settled room like any other stimulus.
@@ -54,8 +51,7 @@ STRONG_CUES: frozenset[str] = frozenset({"datetime", "keep", "rsvp", "place_link
 #: After a wake whose reason was `strong_cue`, only these cues trip the trigger
 #: again. A `datetime` mention in a conversation that just woke a session is
 #: usually the same plan being talked on, and re-waking on each one slices one
-#: conversation into many ~13k-token sessions (measured on the live record: 6
-#: strong-cue wakes in 2h13m on one unit, 5 wrote nothing). An RSVP (a
+#: conversation into many sessions. An RSVP (a
 #: decision), a place link (a place) and a keep instruction («記低», DEC-306:
 #: the tag turn tells the person it WILL be kept, and only a session keeps it)
 #: are new information worth catching fast. The restriction lifts when a wake
@@ -86,7 +82,7 @@ _DATETIME = re.compile(
         r"\bthis\s+(?:morning|afternoon|evening|weekend|week)\b",
         r"\bnext\s+(?:week|month|weekend|year|" + _WEEKDAYS_EN + r")\b",
         r"\b(?:" + _WEEKDAYS_EN + r")\b",
-        # 28/9, 28/9/2026, 2026-09-28
+        # 28/9, 28/9/2026, YYYY-MM-DD
         r"(?<![\d/])\d{1,2}/\d{1,2}(?:/\d{2,4})?(?![\d/])",
         r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)",
         # Sep 28, 28 Sep, 28th of September
@@ -126,7 +122,7 @@ _KEEP = re.compile(
     "|".join((
         r"記低|記錄低|记低",
         # 記住 as an ask (記住呢個, 記住: …, Nora記住), never «記住啦你» banter,
-        # «唔記住» or «記住咗» (DEC-306 review).
+        # «唔記住» or «記住咗» (DEC-306).
         r"(?<!唔)記住(?!啦你|囉你|呀你|咗|嚟)",
         r"\bkeep\s+(?:that|this)\b",
         # «remember this», or «remember that» closing a clause; never «remember

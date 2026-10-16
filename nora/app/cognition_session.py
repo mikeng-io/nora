@@ -1,4 +1,4 @@
-"""The Cognition session loop (design/cognition-loop/30-cognition.md): the
+"""The Cognition session loop: the
 background writer of the notebook, the events, a room's Standing and Nora's own
 reminders.
 
@@ -8,7 +8,7 @@ reminders.
 made. On, one session runs per wake the evaluator (`nora.app.wake.WakeEvaluator`)
 records.
 
-**A wake has one fate, and the brakes read it** (20 §3, DEC-242;
+**A wake has one fate, and the brakes read it** (DEC-242;
 `nora.domain.stimuli`'s state machine). The evaluator writes the wake row
 `tracked`; from then until its ONE `cognition_wake_outcome` row the wake is
 OPEN (its unit in flight, its range claimed), and with no outcome past
@@ -24,16 +24,16 @@ transaction with those carry rows, or `failed` / `timeout` / `cancelled`,
 with none. Only `closed` advances the unit's watermark; the others leave their
 stimuli pending («a failed session does not advance it»), and a failure is
 RAISED after it is recorded, never returned as if it were a session that ran.
-The session's wall clock is `budget.timeout_seconds` (30 §5), enforced here by
+The session's wall clock is `budget.timeout_seconds`, enforced here by
 cancelling the model loop, and held at least `SESSION_TIMEOUT_MARGIN_SECONDS`
 under the wake's own timeout (the constructor refuses otherwise) so a session
 records its outcome before its wake can expire; `shutdown` cancels the
 sessions still in flight and records them `cancelled`.
 
-**What a session gets** (30-cognition.md §1-§2): the situation and agenda
-(`nora.domain.cognition_session.build_situation`, already pure and already
-shipped), the read tools its rooms permit (built by the CALLER — the
-composition root, from the existing `nora.agent.dreamer` tool-source
+**What a session gets**: the situation and agenda
+(`nora.domain.cognition_session.build_situation`, pure), the read tools its
+rooms permit (built by the CALLER — the composition root, from the existing
+`nora.agent.dreamer` tool-source
 machinery every other adaptor already uses; this module does not rebuild
 disclosure, lineage or withdrawal, it is handed the finished tool list and
 REFUSES any tool not on `read_only_tools`), skills injected per agenda kind
@@ -44,7 +44,7 @@ tier's own live store call, stamped `cognition:<unit>`. Every verb is declared
 with named, typed parameters and a docstring (ADR 0015): a `**kwargs` closure
 reaches the model as one untyped `kwargs` parameter, which is not a tool.
 
-**An agenda with no items is no session** (30-cognition.md §1): `on_wake`
+**An agenda with no items is no session**: `on_wake`
 returns before building any tool or calling `agent_runner` at all. The ONE
 call site in this whole module that can make a model call is the single
 `await self._agent_runner.run(...)` inside `_run_session` — everything
@@ -266,9 +266,7 @@ class AdaptorBudget:
     output_tokens: int
     timeout_seconds: float
     #: `nora.agent.dreamer.AdaptorBudget`'s two per-pass ceilings on tool
-    #: reads (issue #160, design 43 §4): the memory cluster and every verb
-    #: together. `None` is no ceiling, which is every caller's behaviour
-    #: before these existed.
+    #: reads: the memory cluster and every verb together. `None` is no ceiling.
     max_memory_calls: int | None = None
     max_tool_calls: int | None = None
 
@@ -322,11 +320,11 @@ OpenNoteTitles = Callable[[str], Awaitable[Sequence[str]]]
 OpenEvents = Callable[[str, str], Awaitable[Sequence[Gathering]]]
 #: `(platform, conversation_id)` -> the room's Standing head WITH the id of the
 #: `standing_revision` row that is it (`SqlStandingStore.read_head`): the token a
-#: `standing_revise` call asserts as its base (M6, DEC-250).
+#: `standing_revise` call asserts as its base (DEC-250).
 PriorStanding = Callable[[str, str], Awaitable[StandingHead | None]]
 #: `(platform, conversation_id)` -> the room's roster, roster name -> person id,
 #: or None when it cannot be read (an ERROR, never an empty room): what a note's
-#: `## Owed` owner is checked against (M3).
+#: `## Owed` owner is checked against.
 RosterOf = Callable[[str, str], Awaitable[Mapping[str, str] | None]]
 #: `(platform, conversation_id)` -> the room's `proactive` flag
 #: (`Policy.proactive_allowed`): may Nora reach it unasked at all.
@@ -346,8 +344,7 @@ ReadToolsFor = Callable[[str, Sequence[Room]], list[Any]]
 Grounder = Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]
 SkillsFor = Callable[[Sequence[str]], str]
 #: The versions (content digests) of the skills `SkillsFor` would inject for
-#: these agenda kinds, recorded on the session row (30 §1: "the skill versions
-#: injected").
+#: these agenda kinds, recorded on the session row.
 SkillVersionsFor = Callable[[Sequence[str]], Mapping[str, object]]
 #: `(text, versions)` for these agenda kinds from ONE resolution of each skill:
 #: the text injected and the digests recorded, so a hot reload between two
@@ -392,12 +389,12 @@ class _RunState:
     #: `"platform:conversation_id"` -> the room, for every room on the agenda.
     rooms: dict[str, tuple[str, str]]
     #: The Record rows the session was SHOWN (the grounding's `records`): what
-    #: a note body may cite, each checked for its author (M3).
+    #: a note body may cite, each checked for its author.
     records: tuple[RecordItem, ...] = ()
-    #: What the session's read tools returned that a note may cite (m4).
+    #: What the session's read tools returned that a note may cite.
     fetched: Fetched = field(default_factory=Fetched)
     #: `(room key, agenda item or None)` of every write this session landed:
-    #: what `close(reason="written")` is backed by, per item (B3).
+    #: what `close(reason="written")` is backed by, per item.
     #: A write that named no item is `(room, None)`.
     written: set[tuple[str, int | None]] = field(default_factory=set)
     closed_indices: set[int] = field(default_factory=set)
@@ -426,8 +423,7 @@ _QUIET_CLOSES: frozenset[str] = frozenset({"no_change", "covered"})
 def _all_quiet(state: _RunState) -> bool:
     """Every agenda item is closed, each `no_change` or `covered`, and no verb
     but `close` was called: the model has nothing left to write, and the call
-    Strands would make after the last close only returns. Measured live
-    2026-10-03: that call wrote nothing on every session that closed quiet."""
+    Strands would make after the last close only returns."""
     return (
         not state.acted
         and len(state.closed_indices) == len(state.items_by_index)
@@ -461,7 +457,7 @@ def _room_of(room: str, state: _RunState) -> tuple[str, str] | dict[str, object]
 def _write_target(
     room: str, item: int | None, state: _RunState,
 ) -> tuple[tuple[str, str], int | None] | dict[str, object]:
-    """The room a write is about and the agenda item it is for (B3). `item`
+    """The room a write is about and the agenda item it is for. `item`
     is optional: given, it must be an item on the agenda, and it fixes the room
     (a `room` that names another is refused, never guessed between). Left out,
     the room is `_room_of`'s."""
@@ -491,7 +487,7 @@ def _off_agenda(state: _RunState) -> dict[str, object]:
 def _written_for(index: int, item: AgendaItem, state: _RunState) -> bool:
     """Whether a write that would commit backs `index`'s `written` close: one
     tagged with this item, or an untagged write in its room when it holds the
-    only item there (B3)."""
+    only item there."""
     key = _room_key(item.room)
     if (key, index) in state.written:
         return True
@@ -511,7 +507,7 @@ def _parse_when(text: str) -> datetime | None:
 
 def _when_ms(text: str) -> int | None:
     """Epoch ms of an ISO 8601 time WITH an offset, or None (naive, empty or
-    unparseable): every time a session verb takes is one time base (M5)."""
+    unparseable): every time a session verb takes is one time base."""
     parsed = _parse_when(text)
     # Integer arithmetic: `timestamp() * 1000` can land a millisecond short.
     return None if parsed is None else (parsed - _EPOCH) // timedelta(milliseconds=1)
@@ -532,7 +528,7 @@ _OWED_HEADING = re.compile(r"(?mi)^\s*#+\s*owed\b")
 def _day_number(text: str) -> int | None:
     """`YYYYMMDD` of an ISO date `YYYY-MM-DD` (a real day), or None: a note's
     anchor is a date in the session's one time base, stored as the number the
-    note tier holds (M5)."""
+    note tier holds."""
     if not _ISO_DAY.match(text):
         return None
     try:
@@ -799,7 +795,7 @@ class CognitionSessionRunner:
             # WHEN SHE LAST LOOKED is when the unit's last session ENDED, not the
             # newest message (`view.last_activity_ms` is how active the room
             # is): a clock line that says «you last looked» from a person's
-            # message time tells her the wrong span (#B2, DEC-245). None: no
+            # message time tells her the wrong span (DEC-245). None: no
             # earlier session on record, or one that never ended.
             last_looked_ms = (
                 None if view.last_session is None else view.last_session.ended_at_ms
@@ -865,8 +861,8 @@ class CognitionSessionRunner:
             # must not leave `skill_versions` naming a different text than the
             # one the model reads.
             skill_text, skill_versions = self._skills(kinds)
-            # GROUNDED AFTER THE SKIP, BEFORE ANYTHING IS RECORDED (30 §1, #637
-            # review major 2): the agenda is final, so the grounding's per-item
+            # GROUNDED AFTER THE SKIP, BEFORE ANYTHING IS RECORDED: the agenda is
+            # final, so the grounding's per-item
             # index (her own sends) is the index the render reads, and an item
             # promoted from `deferred` by a skip is grounded. A read that
             # fails raises here, so the wake is recorded `failed` and its
@@ -1029,7 +1025,7 @@ class CognitionSessionRunner:
                     wake_id=wake_id, unit=unit, outcome=outcome, at_ms=ended_ms,
                     detail=detail, session_id=session_id,
                     # A session that closed or was cancelled did not FAIL: it has
-                    # no cause (m2), never `infra`.
+                    # no cause, never `infra`.
                     cause=cause if outcome in ("failed", "timeout") else NO_CAUSE,
                 ),
                 carries=carries, recorded_at_ms=ended_ms,
@@ -1054,7 +1050,7 @@ class CognitionSessionRunner:
             session_id=session_id, wake_id=wake_id, unit=unit, now_ms=now_ms,
             items_by_index=dict(enumerate(items)),
             rooms={_room_key(i.room): (i.room.platform, i.room.conversation_id) for i in items},
-            # Her own sends in an item's window are SHOWN too (D1, DEC-245), marked
+            # Her own sends in an item's window are SHOWN too (DEC-245), marked
             # as hers, so a note citing one is refused `cites_nora`, not `unknown_id`.
             records=(
                 *grounding.records.values(),
@@ -1194,7 +1190,7 @@ class CognitionSessionRunner:
         self, *, state: _RunState, situation: Situation, view: UnitView,
     ) -> list[NewCarry]:
         """What a session that ENDED (not one cut off at a bound: `_run_session`
-        raises `SessionLimitError` before this, DEC-247) leaves behind (30 §2):
+        raises `SessionLimitError` before this, DEC-247) leaves behind:
         every item the model did not close closes `waiting` with a strike (or `struck` at
         `max_strikes`); a waiting or struck item's stimuli, and the ones past
         `max_items`, are RETURNED to the next agenda as carry rows, because the
@@ -1312,10 +1308,10 @@ class CognitionSessionRunner:
         self, *, unit: str, state: _RunState, now_ms: int,
         labels: Mapping[str, str] | None = None,
     ) -> list[Any]:
-        # EACH ITEM'S READS RESOLVE THROUGH ITS OWN ROOM (30 §1, DEC-231, R-21;
-        # #637 review, major 3). One room on the agenda: that room's tools, as
-        # ever. Several: `read_tools_for` returns ONE tool per name (a tool name
-        # is one tool: Strands keeps the LAST of two silently, which read one
+        # EACH ITEM'S READS RESOLVE THROUGH ITS OWN ROOM (DEC-231, R-21). One
+        # room on the agenda: that room's tools. Several: `read_tools_for`
+        # returns ONE tool per name (a tool name is one tool: Strands keeps the
+        # LAST of two silently, which read one
         # room's Record through another room's binding without a word), and
         # each takes a `room` argument routing the read through that room's
         # own build; a `room` value not on the agenda is refused. The unit is the
@@ -1326,7 +1322,7 @@ class CognitionSessionRunner:
         # home room.
         rooms = list(dict.fromkeys(item.room for item in state.items_by_index.values()))
         keys = [_room_key(r) for r in rooms]
-        # The prompt calls a room by its LABEL (m5); the id is what a tool's
+        # The prompt calls a room by its LABEL; the id is what a tool's
         # `room` argument takes, so it appears here, once, beside the label it
         # belongs to, and nowhere in an item.
         named = [room_label(r, labels or {}) for r in rooms]
@@ -1339,7 +1335,7 @@ class CognitionSessionRunner:
             "room may be shown; a room that is not listed is refused."
         )
         # The reads that hand out citable rows are watched: what they return is
-        # what a note may cite besides the agenda's own rows (m4).
+        # what a note may cite besides the agenda's own rows.
         read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched, keys)
 
         async def shown_for(
@@ -1347,7 +1343,7 @@ class CognitionSessionRunner:
         ) -> Shown | dict[str, object]:
             """What a write in this room may cite and name, built from what the
             session was actually shown and fetched, so the tag path's own
-            validator runs on it (M3, m4): the rows of THIS room the agenda
+            validator runs on it: the rows of THIS room the agenda
             raised (id, author, person, whether they are Nora's), the rows
             `record_query` returned, the ids an existing note cites, the Rollup
             rows read, the room's roster and Nora's names. An unreadable
@@ -1358,7 +1354,7 @@ class CognitionSessionRunner:
             rendered: dict[int, ShownMessage] = {
                 # `sender` IS the `from` the prompt rendered for this row: the
                 # note validator compares a `(<names>)` slot to it, so it is
-                # `speaker_of`, the one function the renderer uses too (step 3b).
+                # `speaker_of`, the one function the renderer uses too.
                 r.message_id: ShownMessage(
                     id=r.message_id, sender=speaker_of(r.author), person_id=r.person_id,
                     is_nora=r.own or r.author in self._nora_names,
@@ -1391,7 +1387,7 @@ class CognitionSessionRunner:
             platform: str, conversation_id: str, item: int | None, **ok: object,
         ) -> dict[str, object]:
             """A write that landed: it backs a `written` close of the item it
-            names (B3)."""
+            names."""
             state.written.add((_room_key(Room(platform, conversation_id)), item))
             return {"status": "ok", **ok}
 
@@ -1425,7 +1421,7 @@ class CognitionSessionRunner:
                 return _refused("no_such_item", f"{item_index} is not an item of this agenda")
             if reason == "written" and not _written_for(item_index, item, state):
                 # A close is measured against what was written, never against the
-                # model's say-so (B3).
+                # model's say-so.
                 return _refused(
                     "no_write_for_item",
                     "no write of yours for this item was accepted in this session (name "
@@ -1698,13 +1694,13 @@ class CognitionSessionRunner:
                 return _refused("invalid_revision", str(exc))
             return wrote(platform, conversation_id, item)
 
-        # -- memos (DEC-306, 40-register §2): settled and kept, never closed --
+        # -- memos (DEC-306): settled and kept, never closed --
 
         def _memo_screen(verb: str, parts: Mapping[str, object]) -> dict[str, object] | None:
             """The Dreamer's identifier and coordinate screen (R-18/R-28,
             `dream_screen.offence`) over what a memo write says OUTSIDE its `##
             Kept` lines (`nora.domain.memo.screened_parts`): a Kept line holds
-            what the room said, verbatim (D5, DEC-230). Refused with the field,
+            what the room said, verbatim (DEC-230). Refused with the field,
             never the text."""
             found = offence(parts)
             if found is None:
@@ -1726,7 +1722,7 @@ class CognitionSessionRunner:
             carried: frozenset[int] = frozenset(),
         ) -> tuple[Any, tuple[str, ...]] | dict[str, object]:
             """`(parsed body, citations)` of a memo write, or its refusal: the
-            title and body caps, the 12-schemas §3 grammar over what this session
+            title and body caps, the note-body grammar over what this session
             was shown (and what the head already cites), then the screen."""
             if not title.strip() or len(title) > MEMO_TITLE_MAX_CHARS:
                 return _refused(
@@ -1957,7 +1953,7 @@ class CognitionSessionRunner:
             shown: Shown, parts: Sequence[str], *, may_be_uncited: bool = False,
         ) -> tuple[tuple[FieldMeta, ...], tuple[int, ...]] | dict[str, object]:
             """What an event write states and rests on, held to what the session
-            saw (30 §3 checks 1 and 5): the mode and confidence the tier allows,
+            saw: the mode and confidence the tier allows,
             and citations it was shown. `may_be_uncited`: `lapsed`, whose
             evidence is the clock."""
             try:
@@ -2530,7 +2526,7 @@ class CognitionSessionRunner:
     # purpose: the pending seam returns only rows COGNITION wrote, so «own»
     # already holds, and passing this session's id would refuse a self-wake set
     # by an EARLIER session, which is the normal case («she keeps, moves or
-    # cancels them», 20 §3).
+    # cancels them»).
 
     def _reminder_row(
         self, *, platform: str, conversation_id: str, text: str, intent: str,

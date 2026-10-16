@@ -1,21 +1,20 @@
 """Tier 4 forecasting and Tier 3 anomaly detection over derived stays — pure,
 standard library only, under the same neutrality contract as
-`nora.domain.mobility` (design/27 §3; `pyproject.toml`'s import-linter
-contract names both modules).
+`nora.domain.mobility` (`pyproject.toml`'s import-linter contract names both
+modules).
 
-**The forecaster is a frequency table, not a model** (design/19 §6, design/27
-§4.1, issue #7). The question it answers is TIME-ANCHORED — «at this hour on
-this weekday, where» — so it is dwell per (subject, hour-of-week, place),
-recency-weighted, and one stay contributes to every hour it spans. It never
-claims more than its evidence: each answer carries how many past weeks
+**The forecaster is a frequency table, not a model.** The question it answers
+is TIME-ANCHORED — «at this hour on this weekday, where» — so it is dwell per
+(subject, hour-of-week, place), recency-weighted, and one stay contributes to
+every hour it spans. It never claims more than its evidence: each answer carries how many past weeks
 support it, how much of the hour those weeks actually observed, and which
 fallback level produced it, and a subject with no history gets
 `insufficient`, never a guess (R-27's third state).
 
 **Anomalies are scored against the subject's OWN history at the SAME place**
-(issue #6: «still at work at 23:00, p99 for her»), robust (median/MAD, never
+(«still at work at 23:00, p99 for her»), robust (median/MAD, never
 mean/stddev) and with a MAD floor per quantity so a baseline that agrees to
-within seconds cannot make seconds anomalous (design/27 §1.3). Only stays that
+within seconds cannot make seconds anomalous. Only stays that
 closed THIS cycle are scored, against stays that started before them — a stay
 is never anomalous relative to itself or to its future.
 """
@@ -70,8 +69,8 @@ _DAY_MS = 86_400_000
 _WEEK_MS = 7 * _DAY_MS
 
 # The smallest duration deviation that could mean anything: one stay's
-# duration is measured to the resting cadence (~30 min between fixes,
-# design/27 §1.1), so a MAD below that is the sampler agreeing with itself.
+# duration is measured to the resting cadence (~30 min between fixes), so a MAD
+# below that is the sampler agreeing with itself.
 DURATION_MIN_MAD_MS = 30 * 60_000
 # Arrival/departure clock times carry the same cadence error at each end.
 ARRIVAL_MIN_MAD_MINUTES = 30.0
@@ -271,7 +270,7 @@ def forecast_hour(
     )
 
 
-# --- the committed instrument (design/27 §4.1) -----------------------------
+# --- the committed instrument -----------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -288,8 +287,8 @@ class BacktestResult:
     only stays that ended before that day began, predicts each local hour's
     dominant place, and is scored against the place the stays actually
     covered most in that hour. `baseline_hits` is the same bins scored for
-    «always the place they spend most time» — the trivial forecaster §4.1
-    says this must beat to be worth anything."""
+    «always the place they spend most time», the trivial forecaster this must
+    beat to be worth anything."""
 
     days: tuple[BacktestDay, ...]
 
@@ -526,9 +525,8 @@ _UNNAMED_PLACE = {
 def place_words(label: str | None, kind: str, saved: bool) -> str:
     """What she calls a place: its household name when Life360 saved one;
     otherwise what it is to them, near the street its label gives. An unsaved
-    label is the street address of the spot (the geocode cache), not a name:
-    live on 2026-09-28 a road's name, read as a name, became «a road they only
-    drive along» for a place with four-hour stays. The one spelling every
+    label is the street address of the spot (the geocode cache), not a name, so
+    it is never read as one. The one spelling every
     reader of a place uses (the presence tools, a Cognition rollup line)."""
     unnamed = _UNNAMED_PLACE.get(kind, _UNNAMED_PLACE["unlabeled"])
     if label and saved:
@@ -538,12 +536,12 @@ def place_words(label: str | None, kind: str, saved: bool) -> str:
     return unnamed
 
 
-# --- the movement model (design/27 §4.4) -----------------------------------
+# --- the movement model -----------------------------------------------------
 #
-# When people leave and arrive (M1, with M4's «days like today»), and the trips
-# they repeat with how long those take (M2). Reported as HABITS, never as one
-# average: one subject's Wednesday returns home were 19:21-19:31 on four nights
-# and 23:40-00:14 on three, and their median, 19:31, describes neither.
+# When people leave and arrive (with «days like today»), and the trips they
+# repeat with how long those take. Reported as HABITS, never as one average:
+# returns home at 19:21-19:31 on four nights and 23:40-00:14 on three have a
+# median, 19:31, that describes neither.
 
 # Up to 04:00 still belongs to the previous day's evening («home at 00:14»
 # is Wednesday night's return, not Thursday's).
@@ -580,8 +578,7 @@ def window_minute(
     the minute of that day it falls at; `None` outside every such window.
 
     The window's own start day, not a fixed rollover hour: a 0-to-23 window
-    lost every event after 04:00 when it was read against a 04:00 rollover
-    (independent review 2026-09-28)."""
+    read against a 04:00 rollover would lose every event after 04:00."""
     lo, hi = _window_bounds(from_hour, to_hour)
     local = datetime.fromtimestamp(ts / 1000, tz=tz)
     minute = local.hour * 60 + local.minute
@@ -777,8 +774,7 @@ def time_forecast(
 
     def past(d: date) -> bool:
         # A past day is one whose window had CLOSED by the cutoff: asked at
-        # 01:00 about tomorrow, tonight's 22-to-06 is still open and partial
-        # (independent review 2026-09-28).
+        # 01:00 about tomorrow, tonight's 22-to-06 is still open and partial.
         return d < day and _instant_ms(d, hi, tz) <= history_before_ms
 
     events = {
@@ -853,8 +849,7 @@ def time_forecast(
             )
         hit = window_minute(max(left), tz, from_hour, to_hour)
         # The habit counts a leaving only after two hours away; out for less
-        # so far is not yet «left» (lunch at 12:30 read as «already left
-        # work at 12:30», independent review 2026-09-28).
+        # so far is not yet «left» (lunch at 12:30 is not «already left work»).
         return TimeForecast(
             "ok", kind, forecast.habits, forecast.days, basis,
             today="done" if now_ms - max(left) >= _AWAY_MINUTES * 60_000 else "stepped_out",
@@ -944,7 +939,7 @@ def trip_patterns(
         ordered_d = sorted(durations)
         n = len(ordered_d)
         # Nearest rank at the same distance from each end, so the middle half
-        # is symmetric at every n (at n=4 it was the 2nd to the maximum).
+        # is symmetric at every n.
         q1, q3 = ordered_d[round((n - 1) / 4)], ordered_d[n - 1 - round((n - 1) / 4)]
         out.append(TripPattern(
             o, d, day_type, tod, n, round(q1), round(q3), round(ordered_d[n // 2]),  # type: ignore[arg-type]
@@ -954,7 +949,7 @@ def trip_patterns(
 
 @dataclass(frozen=True)
 class ArrivalBacktest:
-    """M1's committed instrument (design/27 §4.4): for each held-out day with
+    """The arrival instrument: for each held-out day with
     an arrival in the window, did it fall inside a predicted habit (± the
     tolerance), against «the median of every earlier day ± 30 min».
 

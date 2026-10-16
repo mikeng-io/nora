@@ -1,35 +1,31 @@
-"""Lifetime concerns `Handler` and `App` used to own directly (Phase 3, Task 7).
+"""Lifetime concerns of the running process: background tasks, retention and
+sweep loops, adapter supervision and the Dreamer's clock.
 
 This module owns background-task lifetime: the strong-reference task set every
 fire-and-forget spawn is tracked in, the retention prune sweep, the `Debounce`
-TTL sweep, and per-adapter restart-with-backoff supervision. `nora/handler.py`
-is deleted; `nora/__main__.py:103-120` wires all four units through
-`nora.app.composition.build_dependencies`, which is what actually constructs
-them for production traffic. It takes **dependencies, not config**: the
-composition root passes a store, metrics, adapters and intervals, never
-`Config` itself (`nora.app` is one of only two packages allowed to read it —
-see `nora/app/composition.py` — and `runtime.py` deliberately isn't one of
-them).
+TTL sweep, and per-adapter restart-with-backoff supervision.
+`nora.app.composition.build_dependencies` constructs them for production
+traffic. It takes **dependencies, not config**: the composition root passes a
+store, metrics, adapters and intervals, never `Config` itself (`nora.app` is one
+of only two packages allowed to read it — see `nora/app/composition.py` — and
+`runtime.py` deliberately isn't one of them).
 
-Five responsibilities, five independent units below, none of which know about
-each other:
+Independent units below, none of which know about each other:
 
-- `BackgroundTasks` — the strong-reference set `Handler._spawn` used to hold,
-  now generic.
-- `prune_loop` — moved from `nora.__main__._prune_loop`, unchanged in behaviour.
-- `debounce_sweep_loop` — new: keeps `Debounce._last` bounded (see `nora/tag.py`'s
+- `BackgroundTasks` — the strong-reference set every fire-and-forget task is
+  held in.
+- `prune_loop` — the retention sweep.
+- `debounce_sweep_loop` — keeps `Debounce._last` bounded (see `nora/tag.py`'s
   `sweep`).
 - `supervise_adapter` / `start_adapters` — per-adapter restart-with-backoff,
-  replacing what would otherwise be a bare `asyncio.gather`.
+  instead of a bare `asyncio.gather`.
 - `dream_loop` — the Dreamer's clock: ticks every configured scope and
   unit, running each `DreamAdaptor` whose fire condition is met. A SIBLING
   of `prune_loop`, not a copy of its shape — see `dream_loop`'s own docstring
   for the two differences that are load-bearing rather than stylistic.
 
-  It was written for the room-language consolidator and its docstring described
-  that job until 2026-09-07, when the language and knowledge tiers were
-  deleted. The loop is now general: what it ticks is whatever
-  `composition.py` puts in `adaptors`, which today is the note tier's three.
+  It is general: what it ticks is whatever `composition.py` puts in
+  `adaptors`.
 """
 
 from __future__ import annotations
@@ -54,8 +50,7 @@ log = logging.getLogger("nora.app.runtime")
 
 
 class BackgroundTasks:
-    """Strong-reference holder for fire-and-forget tasks (carried over from
-    `Handler._spawn`/`Handler._done`, verbatim behaviour).
+    """Strong-reference holder for fire-and-forget tasks.
 
     asyncio's event loop keeps only a *weak* reference to a task it did not
     hand back to anyone; a bare `asyncio.create_task(...)` whose return value
@@ -87,11 +82,8 @@ class BackgroundTasks:
         than relying solely on `_on_done` (registered at `spawn` time) to have
         already fired: a done-callback added via `add_done_callback` is delivered
         through `loop.call_soon`, and is not guaranteed to have run by the moment
-        an `await` on that same task returns here — pre-existing gap this method
-        found failing (`tests/unit/test_runtime.py::
-        test_cancel_all_cancels_every_tracked_task`, reproduced against the
-        unmodified Task 7 commit) before this fix, unrelated to Phase 3 Task 8's
-        own scope but tightened alongside it since `App.shutdown` now calls this.
+        an `await` on that same task returns here
+        (`tests/unit/test_runtime.py::test_cancel_all_cancels_every_tracked_task`).
         `discard`, not `remove`: `_on_done` may still race ahead and already have
         removed the task, and discarding an already-absent element is a no-op.
         """
@@ -115,8 +107,7 @@ class _PrunableStore(Protocol):
 
 
 async def prune_loop(store: _PrunableStore, metrics: Metrics, *, interval_seconds: float) -> None:
-    """The retention sweep `append` no longer does inline. Moved from
-    `nora.__main__._prune_loop` unchanged: sleep, prune, log a non-zero count,
+    """The retention sweep: sleep, prune, log a non-zero count,
     and on failure log + count `nora_errors_total{stage=prune}` and keep looping
     — a failing sweep must never take the loop, or the process, down with it.
     """
@@ -149,15 +140,14 @@ async def memory_drain_loop(
     store: _DrainsIndexQueue, metrics: Metrics, *, interval_seconds: float,
     embed: _EmbedsIndexNodes | None = None,
 ) -> None:
-    """Re-project what the memory index queued (design/unified-memory/
-    60-build-step-3.md S4), `prune_loop`'s shape: sleep, drain, and on
+    """Re-project what the memory index queued, `prune_loop`'s shape: sleep, drain, and on
     failure log + count `nora_errors_total{stage=memory_drain}` and keep
     looping. The analytics process drains on its own tick; this one covers a
     deployment that runs no analytics. It runs during a `nora memory
     rebuild` too: a drain calls the projector a rebuild calls, which writes
     the source's current row, so the two converge whichever lands last.
 
-    `embed` (65-build-step-3-vectors.md V1, `[memory_index] embed`) is the
+    `embed` (`[memory_index] embed`) is the
     embedding worker: one batch after each drain, so a node re-projected
     this tick is embedded on it. Its failure is its own
     (`nora_errors_total{stage=memory_embed}`) and never stops the drain."""
@@ -191,7 +181,7 @@ class _SweepsComputerSessions(Protocol):
 async def computer_sweep_loop(
     sweeper: _SweepsComputerSessions, metrics: Metrics, *, interval_seconds: float,
 ) -> None:
-    """Expire idle computer sessions (design/sandbox-runtime §15.2), `prune_loop`'s
+    """Expire idle computer sessions, `prune_loop`'s
     shape and discipline: sleep, sweep, log a non-zero count, and on failure
     log + count `nora_errors_total{stage=computer_sweep}` and keep looping.
     Started only while `[computer] enabled`. Expiry never deletes anything;
@@ -240,10 +230,10 @@ async def debounce_sweep_loop(
     interval_seconds: float,
     ttl_seconds: float,
 ) -> None:
-    """Keeps `Debounce._last` bounded: `nora/tag.py:63` grows one entry per
-    distinct (platform, conversation_id) forever otherwise, now scaling with
-    platforms x conversations. Same failure discipline as `prune_loop` — a
-    failing sweep is logged and counted, never fatal to the loop."""
+    """Keeps `Debounce._last` bounded: `nora/tag.py` grows one entry per
+    distinct (platform, conversation_id) forever otherwise. Same failure
+    discipline as `prune_loop` — a failing sweep is logged and counted, never
+    fatal to the loop."""
     while True:
         await asyncio.sleep(interval_seconds)
         try:
@@ -273,7 +263,7 @@ async def participation_loop(
     tick_seconds: float,
     sweep_ttl_seconds: float,
 ) -> None:
-    """The participation occasion's clock (design/dreamer-agent-loop/35 §3.5).
+    """The participation occasion's clock.
 
     A sibling of `prune_loop`/`debounce_sweep_loop`, not of `dream_loop`:
     its unit of work is one call over every room's window state, so
@@ -306,13 +296,12 @@ class SupervisedAdapter:
     """A platform name paired with a zero-arg coroutine factory that runs its
     listen loop.
 
-    Deliberately not typed against a `PlatformAdapter` shape: this module has
-    no business knowing any adapter's call signature — the composition root
-    binds whatever shape is live at the call site (today,
+    Deliberately not typed against a `PlatformAdapter` shape: this module
+    has no business knowing any adapter's call signature — the composition root
+    binds whatever shape is live at the call site (e.g.
     `functools.partial(adapter.listen, on_message=dispatcher.on_message)`,
-    since `SignalAdapter.listen` now satisfies
-    `nora.domain.ports.PlatformAdapter.listen`'s keyword-only
-    `on_message: Callable[[NormalizedMessage], Awaitable[None]]` shape). This
+    matching `nora.domain.ports.PlatformAdapter.listen`'s keyword-only
+    `on_message: Callable[[NormalizedMessage], Awaitable[None]]`). This
     module only needs a zero-arg coroutine factory it can restart.
     """
 
@@ -382,19 +371,13 @@ class _SinceReadable(Protocol):
 
 class _ConsolidationCursor(Protocol):
     """The six `SqlLanguageStore` methods `dream_loop` actually
-    call — the cursor/measurement surface, never the append/rescore/read one.
+    calls — the cursor/measurement surface, never the append/rescore/read one.
 
-    `_SinceReadable`'s own docstring makes this argument for `RecordStore`;
-    it applies MORE strongly here, not less. The concrete store used to hand
-    out `append_observations`/`rescore`/`room_language` beside these six — the
-    room-language tier's own surface, not this loop's — and an accidental call
-    to any of them from here would have bypassed this module's central
-    invariant (watermark-last, in the same cycle as the adaptor's own write)
-    with nothing to catch it. That tier is deleted and the store is now the
-    cursor and nothing else, so the narrowing costs nothing today; it stays
-    because the NEXT thing added to that store will not be the cursor's, and
-    naming exactly what is called is what makes the exclusion a fact a type
-    checker enforces rather than a habit a future edit could quietly break.
+    Like `_SinceReadable` for `RecordStore`, naming exactly what is called makes
+    the exclusion a fact a type checker enforces rather than a habit a future
+    edit could quietly break: an accidental call to anything else on the store
+    would bypass this module's central invariant (watermark-last, in the same
+    cycle as the adaptor's own write) with nothing to catch it.
     """
 
     async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int: ...
@@ -438,9 +421,8 @@ class _DreamOutcome(Protocol):
 
 
 class _KeyEvidence(Protocol):
-    """An adaptor's own evidence, for a key that is not a room
-    (design/self-growth/10-character.md §3.2): a Character session for a
-    person, the unit or Nora counts what is new for ITS key since the key's
+    """An adaptor's own evidence, for a key that is not a room: a Character
+    session for a person, the unit or Nora counts what is new for ITS key since the key's
     watermark, and reads the newest of it when it wakes.
 
     `newest` returns the items handed to the session (newest `limit`, oldest
@@ -471,7 +453,7 @@ class _ScheduleClock(Protocol):
     case.** A never-fired pair must not be reported as one that fired at epoch
     0: both fire exactly once on the next tick, so a store that substituted 0
     would pass every test while making a brand-new adaptor's first run look
-    like a fifty-six-year-old one to anybody reading the row.
+    like a decades-old one to anybody reading the row.
     """
 
     async def last_fired(
@@ -500,12 +482,10 @@ def _slot(at_ms: int, sched: AdaptorSchedule) -> int:
 
     **Arithmetic in MILLISECONDS, not seconds.** Flooring the instant to whole
     seconds first would round every sub-second interval to zero, and the
-    suite's schedule tests run at 0.03s so a real clock can exercise a real
-    interval in a tenth of a second. A production schedule is measured in
-    hours and cannot tell the difference; the tests can, and an implementation
-    that only works at production magnitudes is one nothing fast can cover.
+    suite's schedule tests run at sub-second intervals so a real clock can
+    exercise a real interval quickly.
 
-    Integer floor division, and Python's floors toward negative infinity for
+    Integer floor division, and Python floors toward negative infinity for
     negative operands, which is the behaviour wanted: an offset larger than the
     instant (a schedule configured with a phase later in the day than the epoch
     instant under test) must still land in a well-defined slot rather than
@@ -543,16 +523,16 @@ class _AdaptorRunner(Protocol):
 # a single adapter reconnecting to a LOCAL websocket, where a fast retry is
 # cheap; `dream_loop` backs off a call to an EXTERNAL model provider, where a
 # 429 answered at full cadence forever makes the outage worse and burns the
-# quota (non-negotiable 4). A base near one tick and a much longer cap reflect
-# that difference: `supervise_adapter`'s default 60s CAP is this loop's base.
+# quota. A base near one tick and a much longer cap reflect that difference:
+# `supervise_adapter`'s default 60s CAP is this loop's base.
 _DREAM_BACKOFF_BASE_SECONDS = 60.0
 _DREAM_BACKOFF_MAX_SECONDS = 3_600.0
 
 
 #: How far a repeatedly-failing unit's batch is allowed to shrink. A floor
 #: rather than 1 because a one-message batch is not a cheaper version of the
-#: same work — the (deleted, DEC-277) note-candidates objective read a CONVERSATION, and a
-#: single message in isolation is a different question with a worse answer.
+#: same work — an objective that reads a CONVERSATION asks a different question
+#: of a single message in isolation, with a worse answer.
 _DREAM_MIN_SHRUNK_BATCH = 5
 
 
@@ -565,17 +545,12 @@ def _shrunk_batch_limit(base: int, failure_count: int) -> int:
     consume it with nothing left to retry. The cost of that guarantee is that
     the next fire re-reads the IDENTICAL range, and for a failure caused BY the
     range (an output that will not fit the model's per-call ceiling) the retry
-    is guaranteed to fail the same way. Measured 2026-09-16/17, issue #291: one
-    scope re-read the same 80 messages every fire for ~24 hours, each run
-    truncated at exactly 2,000 completion tokens against a real need of 2,124,
-    watermark frozen, lag 1,250 — and the only brake was
-    `_DREAM_BACKOFF_MAX_SECONDS`, which slowed it to once an hour and made it
-    look like a schedule rather than a fault.
+    is guaranteed to fail the same way. Only `_DREAM_BACKOFF_MAX_SECONDS` would
+    then slow it, to a cadence that looks like a schedule rather than a fault.
 
-    Halving per consecutive failure turns that into a search: 80 -> 40 -> 20,
-    and 40 of those messages emit roughly half the verdicts, so a batch whose
-    output overflowed by 6% fits on the FIRST retry. The unit heals itself
-    inside two fires instead of waiting for someone to notice a cadence.
+    Halving per consecutive failure turns that into a search (80 -> 40 -> 20):
+    a batch whose output overflowed by a few percent fits on the FIRST retry,
+    so the unit heals itself inside two fires.
 
     **Why this is safe for the failure it is NOT for.** A provider outage or a
     429 also lands as `unavailable`, and shrinking that batch fixes nothing —
@@ -623,21 +598,21 @@ def _backoff_elapsed(
     function-scoped to one `dream_loop` call and mutated only there, never a
     module-level singleton.
 
-    **`key` is the ISOLATION BOUNDARY, and it stopped being a `scope_id` when
-    per-adaptor scheduling landed (DEC-133, gate D3).** The consolidator path
-    still keys on the scope; an adaptor keys on `(adaptor, its own key)`.
-    Isolating failures per adaptor while leaving the backoff keyed per scope
-    would let one failing adaptor back off every OTHER adaptor in that scope —
-    the exact bug per-adaptor isolation exists to prevent, reintroduced one
-    layer down. The key moves WITH the boundary or the isolation is a lie.
+    **`key` is the ISOLATION BOUNDARY, and it is not always a `scope_id`
+    (DEC-133).** The consolidator path keys on the scope; an adaptor keys on
+    `(adaptor, its own key)`. Isolating failures per adaptor while leaving the
+    backoff keyed per scope would let one failing adaptor back off every OTHER
+    adaptor in that scope — the exact bug per-adaptor isolation exists to
+    prevent, reintroduced one layer down. The key moves WITH the boundary or the
+    isolation is a lie.
     """
     delay = min(base_delay_seconds * (2.0 ** (failure_count - 1)), max_delay_seconds)
     return bool((time.monotonic() - last_failure_at.get(key, 0.0)) >= delay)
 
 
 def _log_instruction_versions(instructions: _InstructionVersions | None) -> None:
-    """One line per tick naming the instruction revision this tick is running
-    (substrate spec §4.4), the way `nora.engagement.pipeline` logs
+    """One line per tick naming the instruction revision this tick is running,
+    the way `nora.engagement.pipeline` logs
     `doctrine_versions={…}` at the start of a tag.
 
     Why the whole thing is wrapped: this is a LOG LINE, and the corpus it reads
@@ -682,13 +657,12 @@ async def seed_watermarks(
     schedule ever fires. Returns the number of rows seeded.
 
     **The hazard this exists for is cheap to forget and expensive to
-    discover.** `watermark_for` returns 0 for an unknown `(name, scope)` pair,
-    and the shared cursor's name was hardcoded as `"language"`. So an
-    adaptor with a NEW name — a migrated observer, or a tier that never ran —
-    starts at 0 and re-reads the room from the beginning, `batch_limit` rows at
-    a time, paying a model call per batch to re-derive evidence that already
-    exists. It is SAFE (the natural key makes the append idempotent) and it is
-    slow, expensive, and looks exactly like a bug.
+    discover.** `watermark_for` returns 0 for an unknown `(name, scope)` pair.
+    So an adaptor with a NEW name — a migrated observer, or a tier that never
+    ran — starts at 0 and re-reads the room from the beginning, `batch_limit`
+    rows at a time, paying a model call per batch to re-derive evidence that
+    already exists. It is SAFE (the natural key makes the append idempotent) and
+    it is slow, expensive, and looks exactly like a bug.
 
     Seeded from another adaptor's row rather than from the record head, and one
     mechanism covers both cases it has to: a RENAMED adaptor inherits the
@@ -724,17 +698,12 @@ async def seed_watermarks(
             origin = source
             if not inherited:
                 # NOTHING TO INHERIT — the source cursor never covered this
-                # scope. Historically that meant «leave it at 0», and at 0 the
-                # adaptor re-reads the room from the beginning, `batch_limit`
-                # rows at a time. For an append-idempotent extractor that is
-                # merely slow; for an adaptor whose output is a single evolving
-                # HEAD it is worse than slow, because every one of those
-                # catch-up runs installs an answer derived from the room's PAST
-                # as the current one.
-                #
-                # Measured 2026-09-17: two Discord scopes had no `language` row
-                # (that tier is deleted), and one held 1,916 messages with
-                # 1,616 unread behind a zero cursor.
+                # scope. At 0 the adaptor would re-read the room from the
+                # beginning, `batch_limit` rows at a time. For an
+                # append-idempotent extractor that is merely slow; for an
+                # adaptor whose output is a single evolving HEAD it is worse
+                # than slow, because every one of those catch-up runs installs
+                # an answer derived from the room's PAST as the current one.
                 sched = (schedules or {}).get(adaptor.name)
                 if sched is None or not sched.seed_at_head:
                     continue
@@ -767,56 +736,46 @@ async def _dream_adaptor_once(
     now_ms: int | None = None,
     failure_count: int = 0,
 ) -> str | None:
-    """One adaptor, one key, one cycle — the room consolidators' cycle
-    generalised off their hardcoded `"language"` cursor and off the
-    `RoomConsolidator` port, both of which are deleted.
+    """One adaptor, one key, one cycle.
 
     An adaptor with `uses_watermark = False` gets NO watermark, lag, quiet or
     age condition and runs on every tick with an empty batch. That is the
     right shape whenever an adaptor's real input is a TABLE rather than a
     message batch — a raw-message proxy for it would fire on the wrong
-    signal. The ONE
-    exception is a watermark-free adaptor with an `AdaptorSchedule` entry: it
-    fires on a daily SLOT rather than on backlog, because there is no
-    watermark to age and no lag to read (design/dreamer-agent-loop/33 §5 N1a).
+    signal. The ONE exception is a watermark-free adaptor with an
+    `AdaptorSchedule` entry: it fires on a daily SLOT rather than on backlog,
+    because there is no watermark to age and no lag to read.
 
-    **The slot, and why it is not elapsed time.** The first version of this
-    branch fired when `now - last_fired >= min_interval_seconds` against a
-    `time.monotonic()` dict in `dream_loop`'s frame. Two defects, both
-    measured on 2026-09-06 and both invisible in `nora_dream_run_total`:
+    **The slot, and why it is not elapsed time.** A schedule fires when the
+    current slot is one nobody has fired in yet, not when
+    `now - last_fired >= min_interval_seconds` against an in-process monotonic
+    clock, for two reasons:
 
-    - **The clock reset on every restart.** The dict was function-local, so a
-      recreate began with no recorded fire and the next tick always fired.
-      `nora` was force-recreated twice inside two hours that day — the routine
-      cost of a bind-mounted `config.toml` whose inode git had replaced — so
-      "daily" was really "once per deploy". `_ScheduleClock` moves it to
+    - **An in-process clock resets on every restart.** A recreate would begin
+      with no recorded fire and the next tick would always fire, so "daily"
+      would mean "once per deploy". `_ScheduleClock` keeps it in
       `dream_schedule_state`, where it survives the process.
-    - **Elapsed time cannot express a phase offset.** The fact tier's three
-      adaptors have a real data dependency (candidates write, adjudication
-      reads them, entity resolution reads what adjudication wrote), and
-      `dream_loop` dispatches adaptors as CONCURRENT tasks with no ordering
-      (33 §6 M6 says so explicitly). Separating their PERIODS does nothing;
-      separating their PHASES does. A slot — `floor((t - offset) / interval)`
-      — makes "daily at 06:00 UTC" expressible, and a schedule fires when the
-      current slot is one nobody has fired in yet.
+    - **Elapsed time cannot express a phase offset.** Adaptors with a data
+      dependency (one writes a queue, the next drains it) need an order, and
+      `dream_loop` dispatches adaptors as CONCURRENT tasks with no ordering.
+      Separating their PERIODS does nothing; separating their PHASES does. A
+      slot — `floor((t - offset) / interval)` — makes "daily at 06:00 UTC"
+      expressible.
 
     Wall clock, therefore, not `monotonic()`: a slot is arithmetic over an
     absolute instant. The cost is that a backwards clock jump can re-fire once;
-    that is a real trade and it is the right side, because the alternative is
-    the reset-every-deploy behaviour above, which happens daily rather than
-    never.
+    that is the right side of the trade, because the alternative is
+    reset-every-deploy, which happens daily rather than never.
 
-    A caller supplying no `clock` gets every-tick, the pre-schedule behaviour —
-    the same by-omission default `AdaptorSchedule` itself documents.
+    A caller supplying no `clock` gets every-tick — the by-omission default
+    `AdaptorSchedule` itself documents.
 
     **Returns the run's STATUS, or `None` when the fire conditions did not
     fire.** The caller needs it: `DreamerRuntime.run` absorbs every failure
     into an `unavailable` outcome and RETURNS NORMALLY, so a provider outage
     reaches `_run_adaptor` as a successful call. Without this return value the
-    exponential backoff could never engage on the one failure it exists for —
-    measured, 2026-08-21: 29 model attempts in 25 ticks against an
-    always-unavailable runtime, versus 1 against a runtime that raises. Worse,
-    the success path was CLEARING backoff accrued from an unrelated failure.
+    exponential backoff could never engage on the one failure it exists for, and
+    the success path would clear backoff accrued from an unrelated failure.
     """
     sched = (schedules or {}).get(adaptor.name)
     evidence: _KeyEvidence | None = getattr(adaptor, "evidence", None)
@@ -845,14 +804,13 @@ async def _dream_adaptor_once(
         # A watermark-free adaptor on its own clock fires on its SLOT, never on
         # backlog: there is no cursor to age, and requiring `lag > 0` would
         # make a silent room's schedule never fire at all — which is precisely
-        # what a time-driven pass (the deleted note curator retired on anchor dates
-        # that pass whether or not anyone speaks) must not do.
+        # what a time-driven pass (one that retires notes on anchor dates,
+        # whether or not anyone speaks) must not do.
         now = _now_ms() if now_ms is None else now_ms
-        # ISSUE #55, THE REVIEW'S FIRST GAP: this read sat outside the
-        # `uses_watermark` branch below, so a scheduled adaptor's whole read
-        # path (this method IS its cursor — there is no watermark here)
-        # stayed dark. `record_fire` two lines down is a WRITE and stays
-        # unwrapped, same as `advance_watermark` in the branch below.
+        # The read goes through `traced_read` like the watermark reads below
+        # (this method IS the adaptor's cursor — there is no watermark here).
+        # `record_fire` two lines down is a WRITE and stays unwrapped, same as
+        # `advance_watermark` in the branch below.
         fired_at = await traced_read(
             "dream_schedule", "last_fired",
             clock.last_fired(adaptor_name=adaptor.name, key=key),
@@ -861,31 +819,28 @@ async def _dream_adaptor_once(
         # `last_fired` returns None for a pair that has never run, and the
         # first slot it sees is by definition one it has not fired in.
         if fired_at is not None and _slot(now, sched) == _slot(fired_at, sched):
-            # COUNTED, not silently returned. The defect this whole mechanism
-            # exists to fix went eleven days unquestioned because
-            # `nora_dream_run_total` counts runs and not their reason, so a
-            # schedule that never fires and a tier with nothing to do are the
-            # same series. A hold is the reading that separates them.
+            # COUNTED, not silently returned: `nora_dream_run_total` counts
+            # runs and not their reason, so a schedule that never fires and a
+            # tier with nothing to do would be the same series. A hold is the
+            # reading that separates them.
             metrics.inc("nora_dream_skipped_total", reason="schedule")
             return None
         status = (await runtime.run(adaptor=adaptor, key=key, batch=())).status
         # Stamped AFTER the run, and NEVER on `unavailable`.
         #
-        # An earlier version stamped first, on the theory that a long run would
-        # otherwise let the next tick start a second concurrent copy. That
-        # theory is false: `dream_loop` already holds a per-`(adaptor, key)`
-        # `running` set, checked before dispatch and released in a `finally`,
-        # so the second copy cannot happen in-process — and across a restart
-        # the old process is gone, where re-running is the behaviour wanted
-        # rather than the one to suppress.
+        # Stamping first would not prevent a concurrent second copy:
+        # `dream_loop` already holds a per-`(adaptor, key)` `running` set,
+        # checked before dispatch and released in a `finally`, so the second
+        # copy cannot happen in-process — and across a restart the old process
+        # is gone, where re-running is the behaviour wanted.
         #
-        # What pre-stamping did cost was real. `unavailable` is what
+        # Pre-stamping would cost real behaviour. `unavailable` is what
         # `DreamerRuntime.run` returns for a 429 that outlived the retry
         # policy, a timeout, or a killed loop; claiming the slot before the run
-        # burned the whole day on it, with no retry, because a schedule hold
+        # would burn the whole day on it, with no retry, because a schedule hold
         # returns `None` and `None` is not `unavailable` — so `dream_loop`'s
-        # exponential backoff cleared on the very next tick and could never
-        # reach its second step for a scheduled adaptor. It also wrote
+        # exponential backoff would clear on the very next tick and never reach
+        # its second step for a scheduled adaptor. It would also write
         # `last_fired_at` and `updated_at` for a run that did nothing, which is
         # R-27's forbidden substitution landing in the one table an operator
         # reads to ask whether this clock is alive.
@@ -896,12 +851,12 @@ async def _dream_adaptor_once(
             await clock.record_fire(adaptor_name=adaptor.name, key=key, at_ms=now)
         return status
 
-    # ISSUE #55'S LAST OPEN QUARTER: the Dreamer's cursor reads, unlit before
-    # this. `traced_read` (`nora.obs.tracing`) is the ONE wrapper — no store
-    # class under `nora/infra/**` gained a span of its own — named
-    # `store.<store>.<method>` per call, nested under whatever `span` is
-    # current (`dream_loop`'s per-unit `dream:<name>` root, or a root of its
-    # own for a standalone caller with no loop around it).
+    # The Dreamer's cursor reads are traced. `traced_read`
+    # (`nora.obs.tracing`) is the ONE wrapper — no store class under
+    # `nora/infra/**` has a span of its own — named `store.<store>.<method>`
+    # per call, nested under whatever `span` is current (`dream_loop`'s
+    # per-unit `dream:<name>` root, or a root of its own for a standalone
+    # caller with no loop around it).
     watermark = await traced_read(
         "language", "watermark_for", language.watermark_for(
             consolidator_name=adaptor.name, scope_id=key),
@@ -930,15 +885,15 @@ async def _dream_adaptor_once(
 
     fires: bool
     if sched is not None:
-        # The adaptor's own clock (design/dreamer-agent-loop/32 §3.1): backlog
-        # present AND the watermark row at least `min_interval_seconds` old —
-        # a daily fact-extraction batch, not the shared lag/quiet/age shape.
+        # The adaptor's own clock: backlog present AND the watermark row at
+        # least `min_interval_seconds` old — a daily fact-extraction batch, not
+        # the shared lag/quiet/age shape.
         # The `else` latch-reset below stays mandatory here too:
         # `watermark_age_seconds` reads `updated_at`, and only the batch arm
         # writes it, so an interval-only fire would otherwise latch on forever.
         stale = lag > 0 and age >= sched.min_interval_seconds
-        # The evidence wake (design/self-growth/10-character.md §3.2): enough
-        # new human messages fire at once, whatever the watermark's age.
+        # The evidence wake: enough new human messages fire at once, whatever
+        # the watermark's age.
         fires = stale or (sched.wake_batch is not None and lag >= sched.wake_batch)
     else:
         fires = (
@@ -954,9 +909,8 @@ async def _dream_adaptor_once(
     if limit != base_limit:
         # COUNTED, for `nora_dream_skipped_total{reason="schedule"}`'s reason:
         # a unit quietly healing itself and a unit that never had a problem
-        # look identical in `nora_dream_run_total`. This is the series that
-        # says «something about THIS range does not fit», which is the reading
-        # #291's 24-hour loop had no way to produce.
+        # look identical in `nora_dream_run_total`. This series says
+        # «something about THIS range does not fit».
         metrics.inc("nora_dream_batch_shrunk_total", adaptor=adaptor.name)
         log.warning(
             "dream batch shrunk after %d consecutive failures: adaptor=%s "
@@ -968,11 +922,11 @@ async def _dream_adaptor_once(
             conversation_id=key, after_id=watermark, limit=limit),
     )
     if media_join is not None:
-        # HERE rather than inside each adaptor (issue #116): every scope-keyed
-        # dream adaptor reads this one batch, so joining once covers all of
-        # them and none of them has to hold a media store. the culture adaptor
-        # renders these rows for a model — a photo it cannot see is exactly the
-        # content the issue was opened about.
+        # HERE rather than inside each adaptor: every scope-keyed dream
+        # adaptor reads this one batch, so joining once covers all of them and
+        # none of them has to hold a media store. The culture adaptor renders
+        # these rows for a model — a photo it cannot see is exactly the
+        # content that would be lost.
         batch = list(await traced_read(
             "media_join", "enrich", media_join.enrich(batch, path="dreamer"),
         ))
@@ -981,9 +935,8 @@ async def _dream_adaptor_once(
 
     if outcome.status == "unavailable":
         # NOBODY READ THIS BATCH. Hold the cursor — this is
-        # `ExtractionUnparseableError`'s guarantee, which used to be an
-        # exception and is now a value: advancing here consumes those messages
-        # permanently with nothing left to retry, and
+        # `ExtractionUnparseableError`'s guarantee, now a value: advancing here
+        # consumes those messages permanently with nothing left to retry, and
         # `nora_dream_evidence_lost_total` above is structurally blind to it
         # (it measures PRUNING). An ERROR is never a PASS.
         return outcome.status
@@ -1017,8 +970,7 @@ async def _dream_evidence_once(
     max_age_seconds: float,
 ) -> str | None:
     """One cycle of an adaptor whose key is not a room: its OWN evidence count
-    decides the wake (design/self-growth/10-character.md §3.2), on the rule C1
-    gave rooms. It fires when the new evidence reaches the schedule's
+    decides the wake, on the rule rooms use. It fires when the new evidence reaches the schedule's
     `wake_batch`, or when the key's watermark is `min_interval_seconds` old
     (stale) with ANY new evidence. A key with nothing new never fires, and a
     key that never ran has an infinitely old watermark, so its first new item
@@ -1078,13 +1030,12 @@ async def dream_loop(
     units: Callable[[], Sequence[str]] = lambda: (),
     schedules: Mapping[str, AdaptorSchedule] | None = None,
     schedule_clock: _ScheduleClock | None = None,
-    # `[dreamer] max_unit_hold_seconds` (issue #191): the ONE wall clock
-    # `_run_adaptor` wraps its whole call to `_dream_adaptor_once` in. `#60`
-    # bounded that call's two store phases; everything else inside it —
-    # `clock.last_fired`/`record_fire`, every `language.*` cursor read,
-    # `record.since`, `media_join.enrich` — was still a bare `await`, and any
-    # one of them hanging left this loop holding `<adaptor>:<key>` in
-    # `running` forever.
+    # `[dreamer] max_unit_hold_seconds`: the ONE wall clock `_run_adaptor`
+    # wraps its whole call to `_dream_adaptor_once` in. The store phases have
+    # their own bounds; everything else inside it — `clock.last_fired`/
+    # `record_fire`, every `language.*` cursor read, `record.since`,
+    # `media_join.enrich` — is a bare `await`, and any one of them hanging would
+    # leave this loop holding `<adaptor>:<key>` in `running` forever.
     #
     # **TEST-ONLY DEFAULT — this number is NOT what production runs.**
     # `nora.app` may not read `Config` (this module's own docstring, top of
@@ -1092,15 +1043,11 @@ async def dream_loop(
     # max_unit_hold_seconds` itself; `nora/__main__.py` is the one caller
     # that matters in production and it ALWAYS passes
     # `Config.dreamer_max_unit_hold_seconds()` explicitly — the resolver
-    # that derives a real number from this deployment's own budgets (issue
-    # #191 independent review, BLOCKER: an earlier version of this comment
-    # claimed the default here "matches production", which was already
-    # false the day it was written — the deployment derives roughly 1625s
-    # against a default of 1200 here). This default exists ONLY so the
-    # several dozen tests in this suite that construct a `dream_loop` with
-    # no opinion on the wall clock do not become effectively unbounded by
-    # omission; its one requirement is "comfortably larger than any test's
-    # own tick interval or sleep window", nothing more specific than that.
+    # that derives a real number from the deployment's own budgets. This
+    # default exists ONLY so the tests that construct a `dream_loop` with no
+    # opinion on the wall clock are not effectively unbounded by omission; its
+    # one requirement is "comfortably larger than any test's own tick interval
+    # or sleep window".
     max_unit_hold_seconds: float = 1200.0,
 ) -> None:
     """The Dreamer's clock. A sibling of `prune_loop`, with two differences
@@ -1117,43 +1064,28 @@ async def dream_loop(
     answered at full cadence forever makes the outage worse and burns the
     quota.
 
-    THIRD — a PLAN DEFECT found while implementing this, in the same spirit
-    Task 7's implementer found and fixed one (an impossible cross-layer
-    import) rather than silently working around it: the brief's own sketch
-    of this loop `await`ed each scope's cycle INLINE, one after another. A
-    single `while True: for scope in scopes(): await ...` is
+    THIRD — each scope's cycle is dispatched as its own tracked task, not
+    `await`ed inline. A single `while True: for scope in scopes(): await ...` is
     ONE coroutine with no concurrency inside it, so `finally: running.discard
-    (scope_id)` always runs — and the for-loop's NEXT scope, or the outer
-    while-loop's NEXT tick — before a second consideration of that SAME scope
-    is even possible. Under that shape `if scope_id in running` can never be
-    true: the per-scope lock non-negotiable 1 exists to enforce would be
-    unreachable dead code, and a test asserting it (`nora_dream_skipped_total
-    {reason="in_flight"}` firing) would stay green whether or not the check
-    is even present — CLAUDE.md's own "if reverting the code under test
-    doesn't turn the test red, the test is decorative" naming this exact
-    failure. It is also the wrong production shape regardless: serializing
-    every scope's one model call behind a single await means one slow room
-    delays every OTHER room's tick, not just its own.
-    So each scope's cycle is dispatched as its own tracked task instead —
-    `_run_one` below carries the per-scope try/except/finally UNCHANGED, and
-    `running`/`failures`/`last_failure_at` are read and written from
-    WHICHEVER scope's task is executing, same as before, just no longer
-    forced to interleave through one sequential await chain. This is what
-    makes tick N+1 able to find scope "g1" still `running` from tick N — the
-    scenario the lock, the backoff and their own tests are named for.
-    The per-cycle discipline is unchanged: watermark-last, the fire
-    conditions and the partial-batch guard are exactly as given.
+    (scope_id)` would always run before a second consideration of that SAME
+    scope was even possible: `if scope_id in running` could never be true, the
+    per-scope lock non-negotiable 1 exists to enforce would be unreachable dead
+    code, and a test asserting it (`nora_dream_skipped_total
+    {reason="in_flight"}` firing) would stay green whether or not the check is
+    present. Inline awaiting would also serialize every scope's one model call
+    behind a single await, so one slow room would delay every OTHER room's tick.
+    `_run_one` below carries the per-scope try/except/finally, and
+    `running`/`failures`/`last_failure_at` are read and written from WHICHEVER
+    scope's task is executing. This is what makes tick N+1 able to find scope
+    "g1" still `running` from tick N — the scenario the lock, the backoff and
+    their tests are named for. The per-cycle discipline is watermark-last, the
+    fire conditions and the partial-batch guard.
 
-    FOURTH — `adaptors` is the whole population now. It was ADDITIVE while the
-    room-language consolidators and the portrait synthesizer ran beside it, and
-    those paragraphs described `consolidators` and `portrait` as parameters of
-    this function until 2026-09-07; both went with the language tier, and
-    neither is in the signature. Each adaptor is
-    scheduled on ITS OWN key: `scopes()` for a `key_kind == "scope"` adaptor,
-    `units()` for a unit-keyed one (`Conversation.unit`,
-    DEC-105). That is not a wider or narrower batch — it is a DIFFERENT key,
-    which is why the original single shared per-scope watermark could not
-    host one unchanged.
+    FOURTH — `adaptors` is the whole population. Each adaptor is scheduled on
+    ITS OWN key: `scopes()` for a `key_kind == "scope"` adaptor, `units()` for a
+    unit-keyed one (`Conversation.unit`, DEC-105). That is not a wider or
+    narrower batch — it is a DIFFERENT key, which is why a single shared
+    per-scope watermark could not host one unchanged.
 
     FIFTH — **failure isolation is PER ADAPTOR, and the backoff key is the
     (adaptor, key) pair** (gate D3). The adaptors have different value
@@ -1161,19 +1093,17 @@ async def dream_loop(
     reading its own store, and letting the riskiest silence the cheapest is
     backwards.
 
-    The cost is stated rather than hidden. A provider outage now needs one
-    failure per (adaptor, key) pair before all of them are backing off, where
-    before it needed one per scope — so the first tick of an outage costs
-    `len(adaptors) x len(keys)` calls instead of `len(scopes)`. That is
-    accepted: each pair still backs off on the same capped exponential, and the
-    alternative — one shared key — is precisely the coupling this decision
-    exists to remove.
+    The cost is stated rather than hidden. A provider outage needs one failure
+    per (adaptor, key) pair before all of them are backing off, so the first
+    tick of an outage costs `len(adaptors) x len(keys)` calls rather than
+    `len(scopes)`. That is accepted: each pair still backs off on the same
+    capped exponential, and the alternative — one shared key — is precisely the
+    coupling this decision exists to remove.
     """
-    # Announce, the way `heartbeat` does — this loop had NO positive liveness
-    # signal, and `__main__` logs only the disabled branch, so with the flag on
-    # the logs said nothing and «is the Dreamer running?» could be answered only
-    # from a MISSING line. The scope count is here because a loop ticking over
-    # ZERO scopes is otherwise indistinguishable from a healthy one.
+    # Announce, the way `heartbeat` does — a positive liveness signal, so
+    # «is the Dreamer running?» is not answered only from a MISSING line. The
+    # scope count is here because a loop ticking over ZERO scopes is otherwise
+    # indistinguishable from a healthy one.
     log.info(
         # `%g` and not heartbeat's `%.1f`: this tick is configurable down to
         # sub-second in tests and up to minutes in production, and `%.1f`
@@ -1203,9 +1133,9 @@ async def dream_loop(
     # backoff and concurrency state whose correct value after a restart IS
     # empty — a fresh process has no in-flight run and no accrued backoff. A
     # SCHEDULE is the opposite: its correct value after a restart is whatever
-    # it was before, and keeping it here made "daily" mean "once per deploy"
-    # (see `_dream_adaptor_once`). It lives in `dream_schedule_state`, reached
-    # through `schedule_clock`.
+    # it was before, and keeping it here would make "daily" mean "once per
+    # deploy" (see `_dream_adaptor_once`). It lives in `dream_schedule_state`,
+    # reached through `schedule_clock`.
     tasks: set[asyncio.Task[None]] = set()
 
     def _keys_for(adaptor: DreamAdaptor) -> Sequence[str]:
@@ -1221,8 +1151,8 @@ async def dream_loop(
         if adaptor.key_kind == "unit":
             return units()
         if adaptor.key_kind == "entity":
-            # A Character entity (design/self-growth/10 §3): the adaptor
-            # knows its own keys, one per (unit, entity), from the policy.
+            # A Character entity: the adaptor knows its own keys, one per
+            # (unit, entity), from the policy.
             entity_keys: Callable[[], Sequence[str]] | None = getattr(adaptor, "keys", None)
             if entity_keys is not None:
                 return entity_keys()
@@ -1243,16 +1173,11 @@ async def dream_loop(
     ) -> None:
         """One unit, ONE Langfuse trace, named for its adaptor.
 
-        Issue #55 put every unit of a tick under one `dream.pass` root. Read
-        back 2026-10-09: that root carried no adaptor, key, outcome, input or
-        output, so Langfuse's trace list showed five identical `dream.pass`
-        rows whose contents were up to 356 interleaved observations of two
-        adaptors at once — culture was findable only by opening each one.
-        `dream:cognition` (`nora.app.cognition_agent_runner`) was readable
-        because it is its own root. So each unit is its own root again, and
-        #55's grouping moves to `nora.dreamer.pass_id`, which
-        `TraceIdentityProcessor` stamps as the Langfuse session: one tick is
-        one session, one unit is one trace in it.
+        Each unit is its own root, so the trace list says which adaptor ran;
+        the tick's grouping is `nora.dreamer.pass_id`, which
+        `TraceIdentityProcessor` stamps as the Langfuse session: one tick is one
+        session, one unit is one trace in it. (`dream:cognition`,
+        `nora.app.cognition_agent_runner`, is likewise its own root.)
 
         `attached(None)`, not an inherited context: `create_task` copies
         whatever span is current, and a unit must never nest under it. The
@@ -1273,7 +1198,7 @@ async def dream_loop(
     async def _run_adaptor(
         adaptor: DreamAdaptor, key: str, runner: _AdaptorRunner
     ) -> None:
-        """One adaptor's cycle, isolated from every sibling's (gate D3).
+        """One adaptor's cycle, isolated from every sibling's (DEC-133).
 
         `runner` is a PARAMETER rather than the enclosing `runtime`, which is
         `_AdaptorRunner | None`: the dispatch below narrows it once, at the one
@@ -1281,19 +1206,17 @@ async def dream_loop(
         condition its caller already established.
 
         **The WHOLE call to `_dream_adaptor_once` runs under ONE wall clock**
-        (issue #191, `[dreamer] max_unit_hold_seconds`). `#60` bounded that
-        call's two store phases (`inputs`, `commit`) with their own
-        `wait_for`s; the cursor reads around them — `clock.last_fired`/
-        `record_fire`, every `language.*` watermark call, `record.since`,
-        `media_join.enrich` — stayed bare `await`s, and any one of them
-        hanging reproduced #60 exactly: this coroutine never returns,
+        (`[dreamer] max_unit_hold_seconds`). The store phases (`inputs`,
+        `commit`) have their own `wait_for`s; the cursor reads around them —
+        `clock.last_fired`/`record_fire`, every `language.*` watermark call,
+        `record.since`, `media_join.enrich` — are bare `await`s, and any one of
+        them hanging would mean this coroutine never returns,
         `finally: running.discard(unit)` below never runs, and this `unit`
         never ticks again — indistinguishable, on `nora_dream_skipped_total
-        {reason="in_flight_adaptor"}`, from an ordinary long run. This is
-        shape (2) of #191, chosen over a per-call bound (shape (1), a new
-        `wait_for` for each name above) because it also covers a call nobody
-        has written yet — the cost is that it can only say WHICH ADAPTOR
-        wedged, not which await.
+        {reason="in_flight_adaptor"}`, from an ordinary long run. One bound
+        around the whole call, rather than a per-call `wait_for`, also covers a
+        call nobody has written yet; the cost is that it can only say WHICH
+        ADAPTOR wedged, not which await.
         """
         unit = f"{adaptor.name}:{key}"
         try:
@@ -1306,7 +1229,7 @@ async def dream_loop(
                     media_join=media_join,
                     schedules=schedules, clock=schedule_clock,
                     # Consecutive failures on THIS unit, so a retry reads less
-                    # than the attempt that failed (issue #291). Cleared on any
+                    # than the attempt that failed. Cleared on any
                     # non-`unavailable` outcome, so this is 0 in steady state.
                     failure_count=failures.get(unit, 0),
                 )
@@ -1319,19 +1242,10 @@ async def dream_loop(
                 # throw — 429 after the retry policy is spent, a reset
                 # connection, its own wall clock — and returns
                 # `unavailable` NORMALLY. So the `except` below never sees a
-                # provider outage, and before 2026-08-21 the success path
-                # here ran `failures.pop(unit)`, which did not merely fail to
-                # back off: it actively CLEARED backoff accrued from an
-                # unrelated failure.
-                #
-                # Measured with a probe at `tick_seconds=0.01`: 29 model
-                # attempts in ~25 ticks against an always-unavailable runtime,
-                # versus 1 against one that raises. At the shipped 300s tick
-                # that is a 429 answered at full cadence forever — the exact
-                # thing this loop's own docstring says the backoff exists to
-                # prevent, with the two tests covering it passing over a path
-                # production does not take (their runner RAISES; the real one
-                # cannot).
+                # provider outage; clearing `failures` here would actively
+                # CLEAR backoff accrued from an unrelated failure and answer a
+                # 429 at full cadence forever, the exact thing this loop's
+                # docstring says the backoff exists to prevent.
                 #
                 # A content failure — the model returned prose — lands here
                 # too, and that is accepted rather than special-cased: asking
@@ -1344,25 +1258,18 @@ async def dream_loop(
                 failures.pop(unit, None)
                 last_failure_at.pop(unit, None)
         except Exception as exc:
-            # **ONE `except`, not two — issue #191 review, HIGH.** A prior
-            # version split this into `except TimeoutError: ... if not
-            # unit_deadline.expired(): raise` followed by a sibling `except
-            # Exception:`. Python does not chain except clauses on the same
-            # try: a `raise` inside the first one propagates PAST the second
-            # entirely, out of `_run_adaptor` itself. A collaborator's own
-            # `TimeoutError` — `record.since` hitting an asyncpg
-            # `command_timeout` or a raw socket timeout, exactly the class
-            # `_bounded_store_call`'s own docstring names — is not `asyncio.
-            # timeout`'s cancellation, so it is not caught by the `async
-            # with` above and lands here uncaught by our OWN clock. The old
-            # shape re-raised it: no `log.exception`, no `nora_errors_total`,
-            # no `_count_failure` — silently unmetered, and the exponential
-            # backoff never engaged. Measured live on the review's probe:
-            # `record.since` raising `TimeoutError` produced 14 calls in
-            # 0.3s and 0 errors counted, against 1 call / 1 error / backoff
-            # on the pre-#191 tree. A single clause with an `isinstance`
-            # branch cannot skip a sibling, because there is no sibling to
-            # skip.
+            # **ONE `except`, not two.** Python does not chain except clauses
+            # on the same try: a `raise` inside a first `except TimeoutError`
+            # would propagate PAST a sibling `except Exception:` entirely, out
+            # of `_run_adaptor` itself. A collaborator's own `TimeoutError` —
+            # `record.since` hitting an asyncpg `command_timeout` or a raw
+            # socket timeout, exactly the class `_bounded_store_call`'s own
+            # docstring names — is not `asyncio.timeout`'s cancellation, so it
+            # is not caught by the `async with` above and lands here. Re-raised,
+            # it would be unlogged, unmetered, uncounted by `_count_failure`,
+            # and the exponential backoff would never engage. A single clause
+            # with an `isinstance` branch cannot skip a sibling, because there
+            # is no sibling to skip.
             if isinstance(exc, TimeoutError) and unit_deadline.expired():
                 # `[dreamer] max_unit_hold_seconds` fired — OUR wall clock,
                 # declared above. `unit_deadline.expired()` is what tells
@@ -1381,25 +1288,23 @@ async def dream_loop(
                 # DELIBERATELY NOT `_count_failure(unit)`. The exponential
                 # backoff exists for a provider outage, where retrying at
                 # full cadence burns quota against something that is
-                # genuinely down (2026-08-21, `_run_adaptor`'s own docstring
-                # above). A wedge is a different claim: THIS unit's clock
-                # fired, which says nothing about whether a retry right now
-                # would wedge again — `record.since` hanging once is not
+                # genuinely down. A wedge is a different claim: THIS unit's
+                # clock fired, which says nothing about whether a retry right
+                # now would wedge again — `record.since` hanging once is not
                 # evidence the store is down, only that one call didn't
                 # return. Backing it off at `_DREAM_BACKOFF_BASE_SECONDS =
-                # 60s` would also fail the property this fix exists for: a
-                # unit released by the wall clock must be tickable on the
-                # VERY NEXT tick, not an hour's climb away from it. Existing
-                # backoff state is left untouched either way — this outcome
-                # is neither a success (clearing it) nor a new failure
-                # (extending it).
+                # 60s` would also defeat the point: a unit released by the
+                # wall clock must be tickable on the VERY NEXT tick, not an
+                # hour's climb away from it. Existing backoff state is left
+                # untouched either way — this outcome is neither a success
+                # (clearing it) nor a new failure (extending it).
             else:
                 # Everything else: an ordinary exception from the cursor
                 # store, the record read, an adaptor raising out of
                 # `inputs` — OR a collaborator's own `TimeoutError` that is
                 # not `unit_deadline` expiring. Counted against this
                 # adaptor's own backoff, never its siblings', and never
-                # silently dropped (issue #191 review).
+                # silently dropped.
                 log.exception("dream cycle failed for %s", unit)
                 metrics.inc("nora_errors_total", stage="dream")
                 # Swallowed here, so `span` never sees it: say it on the root.
@@ -1414,17 +1319,15 @@ async def dream_loop(
             _log_instruction_versions(instructions)
             if runtime is None:
                 continue
-            # ONE ROOT PER UNIT, ONE SESSION PER PASS. Issue #55 grouped a
-            # tick's N adaptors x M keys under one `dream.pass` root; that root
-            # named nothing, so the trace list could not say which adaptor ran
-            # (read back 2026-10-09, `_run_unit`). The pass survives as the
-            # Langfuse session each unit's root carries. Wall-clock seconds:
-            # one tick per id at any `tick_seconds` >= 1, and readable.
+            # ONE ROOT PER UNIT, ONE SESSION PER PASS. A tick's N adaptors x
+            # M keys are grouped by the pass id, which each unit's root carries
+            # as the Langfuse session. Wall-clock seconds: one tick per id at
+            # any `tick_seconds` >= 1, and readable.
             pass_id = "dream.pass:" + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             for adaptor in adaptors:
                 for key in _keys_for(adaptor):
                     # `unit`, not `key`: the lock, the failure count and the
-                    # backoff are all per (adaptor, key) — see the SIXTH note.
+                    # backoff are all per (adaptor, key).
                     unit = f"{adaptor.name}:{key}"
                     if unit in running:
                         # A DISTINCT reason value rather than a new label:

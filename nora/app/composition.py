@@ -4,15 +4,13 @@ A stage never sees Config; it receives a RecordStore, a MemoryStore, a Persons.
 That is what makes stages testable in isolation and what stops the god object
 from reforming. Enforced by import-linter (DEC-12).
 
-`build_dependencies` is now the whole composition root: it owns the ordered,
-fatal startup validation `nora.__main__.build_app` used to run inline
-(`StartupError`, one `except` clause per fallible step, each message
-unchanged from before this move) and builds the full object graph —
-`audit`/`memory`/`persons`/`metrics` from before this phase, plus the
+`build_dependencies` is the whole composition root: it owns the ordered, fatal
+startup validation (`StartupError`, one `except` clause per fallible step) and
+builds the full object graph: `audit`/`memory`/`persons`/`metrics`, the
 `EngagePolicy`, the `ContextAssembler`, both pipelines, the `Dispatcher` that
 glues them, and the runtime pieces (`BackgroundTasks`, `Debounce`).
-`nora.__main__.build_app` is left with exactly three steps: load config,
-await this function, construct `App`.
+`nora.__main__.build_app` has exactly three steps: load config, await this
+function, construct `App`.
 """
 
 from __future__ import annotations
@@ -288,10 +286,7 @@ log = logging.getLogger("nora.app.composition")
 
 class StartupError(Exception):
     """A fatal startup validation failure — refuse to start, with a readable
-    message. Each site below wraps one operator-diagnosable condition; the
-    messages are unchanged from `nora.__main__.build_app`'s pre-phase-3 shape,
-    only relocated here (`migration error` was added deliberately in Phase 2
-    — see `design/09-decision-index.md`)."""
+    message. Each site below wraps one operator-diagnosable condition."""
 
 
 _REASONING_EFFORTS: frozenset[str] = frozenset(
@@ -311,17 +306,16 @@ def _presence_reader(
     cfg: Config, allowlist: Policy, registry: AdapterRegistry,
     rosters: Mapping[str, RosterSource] | None = None,
 ) -> PresenceReader:
-    """The one `PresenceReader` (design/self-awareness/02).
+    """The one `PresenceReader`.
 
-    Her handles come from two places and the order is the design: `[agent.
-    handles]` is the DECLARED fallback, and any adapter that can report its own
-    handle overrides it. Instagram's `own_handle` reads its bridge's `/health`
-    live, per call. Discord's reuses the ONE `/users/@me` response
-    `resolve_identity()` already fetched at startup instead of a second call
-    per turn (design/self-awareness/02/06) — `DiscordAdapter.own_handle`
-    answers from that cache. Signal derives an id and drops the username by
-    design, and WhatsApp's bridge exposes none, so theirs stay declared until
-    an adapter can say.
+    Her handles come from two places and the order matters: `[agent.handles]`
+    is the DECLARED fallback, and any adapter that can report its own handle
+    overrides it. Instagram's `own_handle` reads its bridge's `/health` live,
+    per call. Discord's reuses the ONE `/users/@me` response
+    `resolve_identity()` fetched at startup instead of a second call per turn
+    (`DiscordAdapter.own_handle` answers from that cache). Signal derives an id
+    and drops the username by design, and WhatsApp's bridge exposes none, so
+    theirs stay declared until an adapter can say.
     """
     live: dict[str, Callable[[], Awaitable[str | None]]] = {}
     instagram = registry.adapters.get("instagram")
@@ -333,7 +327,7 @@ def _presence_reader(
     return PresenceReader(
         policy=allowlist, adapters=dict(registry.adapters),
         handles=cfg.agent.handles, live_handles=live,
-        # The room tools' member counts (design/self-awareness/07): the SAME
+        # The room tools' member counts: the SAME
         # roster map `Room` reads, and her own ids so she is never counted as
         # a member of a room she is in. `<presence>` reads neither.
         rosters=rosters, self_ids=registry.self_aliases(),
@@ -350,9 +344,8 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
     already replied.
 
     Narrowed HERE rather than by retyping `LLMConfig`, which is the tag path's
-    own field with its own callers — a wider change should not ride on this
-    one. That retype is the better fix and is worth doing separately; this
-    gives the boot-failure property for the debrief's use of it today.
+    own field with its own callers. Gives the boot-failure property for the
+    debrief's use of it.
     """
     if value not in _REASONING_EFFORTS:
         raise StartupError(
@@ -389,7 +382,7 @@ def _build_wake_evaluator(
     floors_ready: bool = True,
     upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None,
 ) -> WakeEvaluator:
-    """The cognition loop's wake evaluator (design/cognition-loop/20 §3): every
+    """The cognition loop's wake evaluator: every
     wake starts a session through `on_wake`."""
     return WakeEvaluator(
         store=store,
@@ -423,17 +416,14 @@ def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
 
     They are two types carrying the same numbers because `nora.agent` may not
     import `nora.config` (the layer contract), and this file is one of only two
-    allowed to read config — so the conversion has to happen here. What it did
-    NOT have before 2026-09-11 was a name: it was written out twice, inline, at
-    two construction sites, and `max_memory_calls` (issue #160) is the first
-    field DEFAULTED on both sides — meaning a site that forgot it would not
-    raise a `TypeError` the way an undefaulted field does, it would quietly
-    hand the runtime a number the operator did not choose.
+    allowed to read config — so the conversion has to happen here. Some fields
+    (`max_memory_calls`) are DEFAULTED on both sides, so a site that forgot one
+    would not raise a `TypeError`; it would quietly hand the runtime a number
+    the operator did not choose.
 
-    One function, called from both sites, and
-    `tests/unit/test_dream_memory_budget.py` walks `DreamBudgetConfig`'s own
-    field list to assert every one of them arrives — so the next defaulted
-    field cannot be dropped in silence either.
+    One function serves every site, and `tests/unit/test_dream_memory_budget.py`
+    walks `DreamBudgetConfig`'s own field list to assert every one of them
+    arrives.
     """
     return AdaptorBudget(
         turns=b.turns,
@@ -453,89 +443,41 @@ def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
 
 class _RelevanceGateModelClient:
     """Satisfies `nora.ingest.relevance_gate.ModelClient` — ONE RAW
-    `json_object` COMPLETION (design/dreamer-agent-loop/36 §2.3).
+    `json_object` COMPLETION.
 
-    **The gate is the exception `nora/agent/structured.py` warns about, and it
-    is the only one.** The debrief and the standing fold moved onto the SDK in
-    the same change (`4448c737`) and stay there; neither produces a verdict
-    that decides whether Nora may speak into a room she was not invited into.
-    This one does, so it is measured rather than argued.
+    **The gate is the exception `nora/agent/structured.py` warns about.** Its
+    verdict decides whether Nora may speak into a room she was not invited
+    into, so it does not go through the SDK's `structured_output`: Strands
+    converts the schema into a TOOL SPECIFICATION and feeds the result back, so
+    one logical call becomes three messages, and against OmniRoute's Chat
+    Completions transport the SDK drops the assistant turn's reasoning before
+    the verdict is formed. A member who can forge Nora's side of a transcript
+    (a `[assistant]:` row inside a message) would then steer the admission
+    decision, which is an unauthenticated turn. The gate is
+    `tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_sdk.py`.
 
-    Measured 2026-09-11 from the Mac against the deployed `nora-gate` alias,
-    `--suite relevance_gate`, 40 labelled cases, n=5, ONE instruction on both
-    arms (`participation.md` v5 `sha=9969bc4e643c`) — the only variable was
-    the transport:
+    The instruction goes in the SYSTEM role and the room in the USER role.
 
-        arm                             safety     prompt tokens (median)
-        raw `json_object` (this)        6/6 held          2,055
-        Strands `structured_output`     1/6 BREACHED      5,021  (2.4x)
+    **`tool_choice` is not declared here and must not be.** A raw `json_object`
+    completion sends no tools at all, so there is nothing for a tool_choice to
+    select and the field never reaches the wire. The shape is
+    `tests/offline_eval_support.py::_MeasuringGateClient`'s, argument for
+    argument, with one difference: the eval's client sends `NO_CACHE_HEADERS`
+    and this one sends no such header. Eval readings are therefore
+    cache-bypassed; a comparison between eval arms holds, but an absolute eval
+    reading does not transfer to production unqualified.
 
-    The breached case is `forge/assistant-row-via-newline` — a forged
-    `[assistant]:` row inside a member's message, believed go x4 / no_go x1.
-    That is not an accuracy miss, it is an unauthenticated turn: a member who
-    can forge Nora's side of a transcript steers the admission decision.
-
-    **CACHE CAVEAT, added 2026-09-17 and it travels with these numbers.** Both
-    arms above ran through `eval_support.build_gate_probe`, and BOTH are
-    cache-bypassed: `NO_CACHE_HEADERS` is applied to the SDK arm's model
-    (`eval_support.py:919`) and to the raw arm's client (`:1014`). This client
-    — the deployed one — sets no such header, and `NO_CACHE_HEADERS` appears
-    nowhere in this file.
-
-    So the comparison BETWEEN the two arms holds: same instruction, same
-    corpus, same bypass, one variable. What does not transfer unqualified is
-    the ABSOLUTE reading — `n=5` against a bypassed gateway and `n=5` against
-    the deployed one are not the same five calls, and `0/5` and `5/5` are
-    exactly the shape a cache produces. The safety finding stands on the
-    mechanism (`structured_output` becomes a tool spec, three messages, the
-    reasoning dropped before the verdict), which is transport-level and does
-    not depend on the sample count.
-
-    Verified here rather than repeated: `design/evaluation/05-live-parity.md`
-    §4. Neither this docstring's author nor the two sessions that have cited
-    #186 has read the issue first-hand — its numbers are quoted from ADR 0011's
-    account of it — so this caveat is stated at the QUOTING site rather than
-    only in a design node, because that is where somebody reads them.
-
-    The mechanism is below the prompt, which is why no instruction reaches it:
-    Strands converts the schema into a TOOL SPECIFICATION and feeds the result
-    back, so one logical call becomes three messages, and against OmniRoute's
-    Chat Completions transport the SDK drops the assistant turn's reasoning
-    before the verdict is formed. Issue #186; the gate is
-    `tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_sdk.py`,
-    because the warning was a docstring for two days and a docstring did not
-    stop the wiring.
-
-    **The system/user split is older than either transport and is unchanged.**
-    The instruction goes in the SYSTEM role and the room in the USER role, as
-    it did before `4448c737` and after it; both measured arms carried it, so it
-    is not a mitigation one arm had and the other lacked. (`4448c737`'s commit
-    message presents the split as new, and for the DEBRIEF it was — that client
-    really did concatenate. Reading it as new here is wrong, and worth saying
-    because a reader looking for what differs between the two arms would
-    otherwise stop at the wrong field.)
-
-    **`tool_choice` is not declared here and must not be.** The SDK path
-    declared it because Strands sends `tool_choice: None` when nothing sets it
-    and a provider applying its thinking-mode default then refuses outright.
-    A raw `json_object` completion sends no tools at all, so there is nothing
-    for a tool_choice to select and the field never reaches the wire — the
-    shape below is `nora/app/eval_support.py::_MeasuringGateClient`'s,
-    argument for argument, because that is the client the 6/6 arm was measured
-    on and a third shape would be a third thing to trust.
-
-    What a raw client owes, which is what having four hand-rolled ones cost
+    What a raw client owes
     (`tests/architecture/test_raw_model_calls_carry_their_own_machinery.py` is
     the gate): an explicit `asyncio.wait_for`, because the bare `AsyncOpenAI`
     default is 600s x retries and this call runs while the conversation's slot
-    is HELD — an unbounded one is not a slow background job, it is a room that
-    stops answering; a `finish_reason` read, because a raw completion does not
-    raise on a cut-off the way `MaxTokensReachedException` does, it returns
-    `"length"` and a silently truncated body that still parses as JSON into
-    something shorter and wrong; and a usage annotation, because Strands emits
-    `gen_ai.usage.*` itself and a raw call emits nothing, so without it the
-    highest-frequency model call in the system exports to Langfuse costing
-    zero (read back live, 2026-09-08).
+    is HELD, so an unbounded one is a room that stops answering; a
+    `finish_reason` read, because a raw completion does not raise on a cut-off
+    the way `MaxTokensReachedException` does, it returns `"length"` and a
+    silently truncated body that can still parse as JSON into something shorter
+    and wrong; and a usage annotation, because Strands emits `gen_ai.usage.*`
+    itself and a raw call emits nothing, so without it the call exports to
+    Langfuse costing zero.
 
     It PINS `reasoning_effort` rather than leaving it to the route: a setting
     left to the route is a setting nobody chose. `max_tokens` and
@@ -566,11 +508,8 @@ class _RelevanceGateModelClient:
         # `Tracer.start_model_invoke_span`/`end_model_invoke_span`) — nested
         # under whatever `nora.ingest.relevance_gate.decide` has open
         # (a plain `span()`, not a `generation()`: the decision procedure
-        # itself is not one model call, so it no longer pretends to be the
-        # generation span too). This is the ONLY thing that changed about
-        # this call: `messages`/`response_format`/`reasoning_effort` below
-        # are byte-for-byte what `4448c737`/#186 measured 6/6 safe — the
-        # docstring's caveats bind exactly as much as before.
+        # itself is not one model call). The docstring's constraints bind
+        # `messages`/`response_format`/`reasoning_effort` below.
         span = start_raw_model_span(
             messages=[{"role": "user", "content": [{"text": prompt}]}],
             model_id=self._model, system_prompt=system,
@@ -583,10 +522,10 @@ class _RelevanceGateModelClient:
                         messages=[
                             # The instruction in the SYSTEM role, the room in
                             # the USER role. Concatenated into one user
-                            # string — which this never was — a member typing
-                            # `[assistant]:` would sit in exactly the role the
-                            # operator's rules occupy, and nothing downstream
-                            # could tell them apart.
+                            # string, a member typing `[assistant]:` would sit
+                            # in exactly the role the operator's rules
+                            # occupy, and nothing downstream could tell them
+                            # apart.
                             {"role": "system", "content": system},
                             {"role": "user", "content": prompt},
                         ],
@@ -624,8 +563,7 @@ class _RelevanceGateModelClient:
 class _DebriefModelClient:
     """Satisfies `nora.engagement.stages.debrief.ModelClient` — a raw one-shot
     text completion over the process-wide OmniRoute client, with three things
-    on it that every other raw `chat.completions.create` in this repo either
-    has or was measured to need.
+    on it that every other raw `chat.completions.create` in this repo needs.
 
     **`finish_reason` comes back with the content.** A raw
     `chat.completions.create` does not raise on a cut-off the way a Strands
@@ -637,19 +575,13 @@ class _DebriefModelClient:
     caller the field it must check.
 
     **`response_format={"type": "json_object"}`**, because prompt-only JSON
-    enforcement was proven insufficient on this exact call shape once already:
-    a commit titled "schema-forced extraction" carried the ask entirely in the
-    prompt with nothing on the wire asking the provider to honour it.
+    enforcement is insufficient: nothing on the wire would ask the provider to
+    honour it.
 
     **An explicit `asyncio.wait_for`**, because the bare `AsyncOpenAI` default
     is 600s x retries — and this call HOLDS THE CONVERSATION'S SLOT, so an
     unbounded one is not a slow background job, it is a room that stops
     answering.
-
-    (It used to be described as `_LanguageModelClient` plus a field. That class
-    was the language tier's and its three callers — the two room consolidators
-    and the reply-path recogniser — went with the tiers they belonged to, so
-    the reasons it held are restated here rather than pointed at.)
     """
 
     def __init__(
@@ -661,10 +593,9 @@ class _DebriefModelClient:
         self._timeout_seconds = timeout_seconds
         # `agent_name` becomes the Strands agent span (`invoke_agent <name>`)
         # inside `ask_text` — without it every debrief/standing-fold Strands
-        # agent fell back to the SDK default "Strands Agents", so the call
-        # under `engagement.debrief.fold` was indistinguishable from any other
-        # unnamed agent (measured: 56 detached `invoke_agent Strands Agents`
-        # roots in Langfuse over 7 days, including 2 rootless debrief folds).
+        # agent falls back to the SDK default "Strands Agents", so the call
+        # under `engagement.debrief.fold` would be indistinguishable from any
+        # other unnamed agent.
         self._agent_name = agent_name
         self._provider = build_structured_model(
             base_url=base_url, api_key=api_key, model_id=model,
@@ -685,11 +616,9 @@ class _DebriefModelClient:
             timeout_seconds=self._timeout_seconds, system_prompt=system,
             agent_name=self._agent_name, trace_attributes=trace_attributes,
         )
-        # No usage annotation here anymore: this is a real Strands `Agent`
+        # No usage annotation here: this is a real Strands `Agent`
         # invocation (`ask_text`), and Strands emits `gen_ai.usage.*` on its
-        # own model-invoke span itself — the old `_annotate_usage_triple` was
-        # written for the hand-rolled span this call used to run inside,
-        # which is gone (see `nora.engagement.stages.debrief._complete`).
+        # own model-invoke span itself.
         return DebriefCompletion(
             content=got.content, finish_reason=got.finish_reason,
         )
@@ -698,7 +627,7 @@ class _DebriefModelClient:
 def _speech_formatter(
     cfg: Config, prompts: DoctrineStore, metrics: Metrics,
 ) -> SpeechTextFormatter | None:
-    """`[speech.tts.format]`'s formatter (design/voice-channel/08), or None.
+    """`[speech.tts.format]`'s formatter, or None.
 
     `off` is None, so the speaker sends her reply exactly as written. The
     `model` mode's client is the reaction picker's shape, `_DebriefModelClient`
@@ -766,10 +695,10 @@ def _describe_providers(cfg: Config) -> dict[str, str]:
 
     The same enable+model gate as `_describe_models` — a modality only appears
     when it can actually describe — so the two maps cannot disagree about which
-    modalities are live. The provider DEFAULT is `"omniroute"` everywhere: a
-    config written before the field existed describes through the process-wide
-    gateway client exactly as before. Only a modality whose config names a
-    DIRECT provider (`"kimi"`, `"opencode-go"`) routes direct.
+    modalities are live. The provider DEFAULT is `"omniroute"` everywhere: an
+    unset provider describes through the process-wide gateway client. Only a
+    modality whose config names a DIRECT provider (`"kimi"`, `"opencode-go"`)
+    routes direct.
     """
     resolved: dict[str, str] = {}
     for modality in ("image", "audio", "video"):
@@ -797,14 +726,14 @@ class _DirectLane:
 # is NOT here: it is the process-wide gateway client, built once above for
 # every model call, not a describer lane.
 _DIRECT_LANES = {
-    # OmniRoute drops `video_url` content blocks (probe 2026-08-30), so video
+    # OmniRoute drops `video_url` content blocks, so video
     # needs a lane of its own; Kimi's endpoint serves K3 with base64 video.
     "kimi": _DirectLane(
         base_url="https://api.kimi.com/coding/v1",
         default_key_env="KIMI_CODE_API_KEY",
     ),
     # MiMo v2.6 Flash, which Kimi's endpoint does not serve and OmniRoute
-    # cannot carry video to (design/media-read-lane/03).
+    # cannot carry video to.
     "opencode-go": _DirectLane(
         base_url="https://opencode.ai/zen/go/v1",
         default_key_env="OPENCODE_GO_API_KEY",
@@ -926,7 +855,7 @@ def _computer_token(cfg: Config) -> str:
 
 
 def google_credentials(cfg: Config, *, metrics: Any) -> GoogleCredentials | None:
-    """Nora's ONE Google identity (`[google]`, design/external-files §4), or
+    """Nora's ONE Google identity (`[google]`), or
     None. Built when a Google service is switched on (shared files today) and
     all three values `[google]` names are in the environment (DEC-8). A value
     missing is None and a warning naming the variable, never its value: the
@@ -955,9 +884,8 @@ def google_credentials(cfg: Config, *, metrics: Any) -> GoogleCredentials | None
 def external_files_source(
     cfg: Config, *, google: GoogleCredentials | None,
 ) -> ExternalFilesSource | None:
-    """The shared-file source the open tool reads through
-    (design/external-files/00-design.md §4), or None: `[external_files]` off,
-    or no Google identity (`google_credentials`). None answers the open
+    """The shared-file source the open tool reads through, or None:
+    `[external_files]` off, or no Google identity (`google_credentials`). None answers the open
     `unavailable`; recording a link as a handle needs none of this."""
     if not cfg.external_files.enabled or google is None:
         return None
@@ -979,7 +907,7 @@ def _now_ms() -> int:
 
 
 def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
-    """One key per unit, with its rooms in policy order (C3a)."""
+    """One key per unit, with its rooms in policy order."""
     rooms_of: dict[str, list[CharacterRoom]] = {}
     for conv in allowlist.conversations:
         if conv.primary_id and conv.unit:
@@ -994,7 +922,7 @@ def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
 
 def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
     """One key per (unit, person listed in any of that unit's rooms), from
-    `policy.toml` and `identity.toml` (design/self-growth/10 §3, C2b). A
+    `policy.toml` and `identity.toml`. A
     person's evidence and room cultures are the unit's rooms, in policy order;
     their read tools stand in the first of those that lists them. A `*` room
     lists nobody by name and adds no person."""
@@ -1024,9 +952,8 @@ class Dependencies:
     """The wired collaborators the app receives instead of `Config`.
 
     Deliberately **no** `config`/`settings` field. A stage that can reach the
-    whole config is a stage that eventually will — that is precisely how the
-    229-line `Handler` god object grew. Add a named collaborator here instead
-    of widening this type's reach.
+    whole config is a stage that eventually will — that is how a god object
+    grows. Add a named collaborator here instead of widening this type's reach.
 
     `audit`, `memory`, `policy`, `assembler` are annotated with their ports
     (`RecordStore`, `MemoryStore`, `EngagePolicy`, `ContextAssembler`), not
@@ -1034,38 +961,31 @@ class Dependencies:
     (`nora.app.*`), so each is a permanent, statically-checked proof that its
     concrete class conforms to the port, not just a one-time `isinstance`
     name-check. `adapter` stays concrete (`SignalAdapter`, not
-    `PlatformAdapter`) even though the platforms phase closed every gap
-    between them (`tests/contract/test_port_conformance.py`) — but no longer
-    because Signal is the only adapter this process builds. It isn't, as of
-    `design/discord-integration/`. It stays concrete because the few things
-    still reading it are Signal-specific BY CONSTRUCTION and should say so out
-    loud rather than pretend to be platform-neutral: `nora_sender_id`, the
-    signal-cli roster, and the `sse` block `/health` pins for the watchdog.
-    Everything that must work across platforms reads `registry` instead
-    (DEC-102) — so widening this field would hide the split rather than close
-    it. `persons`, `metrics`, `doctrine`, `doctrine_store`, `debounce`,
-    `background`, `llm_state`, `ingest`, `engagement`, `dispatcher` stay
-    concrete too: none has a port at all.
+    `PlatformAdapter`) because the few things reading it are Signal-specific BY
+    CONSTRUCTION and should say so out loud rather than pretend to be
+    platform-neutral: `nora_sender_id`, the signal-cli roster, and the `sse`
+    block `/health` pins for the watchdog. Everything that must work across
+    platforms reads `registry` instead (DEC-102) — so widening this field would
+    hide the split rather than close it. `persons`, `metrics`, `doctrine`,
+    `doctrine_store`, `debounce`, `background`, `llm_state`, `ingest`,
+    `engagement`, `dispatcher` stay concrete too: none has a port at all.
 
     `client` (DEC-13): the process-wide `AsyncOpenAI` instance, constructed
-    exactly once by `build_dependencies` below. It used to be a module-level
-    singleton in `nora.agent.factory` (`_CLIENT`, memoized and reset by a
-    test-only `close_client()`); it is now an ordinary collaborator like
-    everything else here, and `nora.__main__.App.shutdown` closes it
-    directly instead of calling back into `nora.agent.factory`.
+    exactly once by `build_dependencies` below. It is an ordinary collaborator,
+    and `nora.__main__.App.shutdown` closes it directly.
     """
 
     audit: RecordStore
     memory: MemoryStore
     persons: Persons
-    # The ONE media join (issue #116), so `__main__` can hand the same
+    # The ONE media join, so `__main__` can hand the same
     # instance to the dream loop and to lazy adoption — the two transcript
     # builders this module does not construct itself.
     media_join: MediaJoin
     metrics: Metrics
     policy: EngagePolicy
-    # A Discord guild id → where its SPOKEN utterances are recorded, or `None`
-    # (design/voice-channel/07 §12.2, reversed 2026-09-17). `__main__` hands
+    # A Discord guild id → where its SPOKEN utterances are recorded, or `None`.
+    # `__main__` hands
     # this to `register_voice`; it is a callable rather than the room `Policy`
     # because `nora.web` must not learn about policy loading, and because
     # `policy` above is already taken by the ENGAGE policy, which is a
@@ -1096,50 +1016,41 @@ class Dependencies:
     ingest: IngestPipeline
     engagement: EngagementPipeline
     dispatcher: Dispatcher
-    # The participation occasion's quiescence trigger (design/dreamer-agent-
-    # loop/35), None unless `[participation] enabled` AND a fire path was
+    # The participation occasion's quiescence trigger, None unless
+    # `[participation] enabled` AND a fire path was
     # built. `nora/__main__.py` spawns `runtime.participation_loop` on it —
     # the same "dependencies, not config" split every other loop uses.
     participation_trigger: ParticipationTrigger | None
     #: The deployed gate, named so it can be reached without a private.
     #:
     #: It is BUILT below beside `participation_trigger` and held by it
-    #: (`ParticipationTrigger._gate`) — that stays true, and the two still
-    #: cannot come apart because one branch constructs both. This field adds
-    #: no second instance and changes no behaviour; it makes the graph's own
-    #: inventory complete.
+    #: (`ParticipationTrigger._gate`); one branch constructs both, so the two
+    #: cannot come apart. This field is not a second instance.
     #:
-    #: Added because the gate is an ENTRY POINT into Nora
-    #: (`design/evaluation/01-boundaries.md` §3) and every other entry point is
-    #: already an attribute here — `dispatcher`, `engagement`,
-    #: `participation_trigger`, `dreamer_runtime`. The gate was the one that
-    #: was not, which is a fair part of why measuring it meant building a
-    #: second one (`eval_support.py:980`) rather than reaching the deployed
-    #: one.
+    #: The gate is an ENTRY POINT into Nora and, like every other entry point
+    #: (`dispatcher`, `engagement`, `participation_trigger`,
+    #: `dreamer_runtime`), is an attribute here, so a harness can reach the
+    #: deployed one rather than building a second.
     relevance_gate: RelevanceGate | None
     #: The deployed fire path, named for the same reason as `relevance_gate`
-    #: above: it is an ENTRY POINT and was reachable only as
-    #: `participation_trigger._speak`, a bound method behind a private.
+    #: above: it is an ENTRY POINT.
     #:
     #: `FirePath.speak` is what the trigger calls once the gate admits a
     #: window, what the heartbeat calls when a reminder comes due, and what
-    #: every proactive occasion runs through. Nothing here changes any of
-    #: that; the object was already built and already held.
+    #: every proactive occasion runs through.
     fire_path: FirePath | None
-    #: The ONE `<presence>` reader (design/self-awareness/02) the tag path's
+    #: The ONE `<presence>` reader the tag path's
     #: assembler and the fire path both hold. Named for the
-    #: reason the two entry points above are: it was built and held three
-    #: times over and reachable only through privates. NOT `presence` below,
+    #: same reason as the entry points above: reachable without a private.
+    #: NOT `presence` below,
     #: which is the Life360 store — where the PEOPLE are; this is where SHE is.
     self_presence: PresenceReader
-    #: The clock this graph runs on. Named for the same reason the two entry
-    #: points above are: it was a fact the graph had and could not be asked for.
+    #: The clock this graph runs on, named so a harness can ask for it.
     clock: Callable[[], datetime]
 
     #: The fire-time screen a `kind="proactive"` row passes before it speaks.
-    #: Named for the same reason the entry points above are — it decides whether
-    #: an act turn happens at all, and it was reachable only as an argument
-    #: inside the heartbeat's constructor call.
+    #: Named for the same reason as the entry points above — it decides whether
+    #: an act turn happens at all.
     proactive_screen: ProactiveScreen
     adapter: SignalAdapter
     # EVERY built adapter, keyed by platform. `adapter` above stays the concrete
@@ -1193,8 +1104,8 @@ class Dependencies:
     # web-reachable listing method).
     skills_dir: Path
     # The Dreamer's consolidation cursor and the scopes it ticks over.
-    # `language_store` is the CONCRETE `SqlLanguageStore` — the module keeps
-    # its inherited name; the class is now the cursor and nothing else (see
+    # `language_store` is the CONCRETE `SqlLanguageStore`, which is
+    # the cursor and nothing else (see
     # `nora.infra.sql.language`'s own docstring). `None` when `[dreamer]
     # enabled = false`; `nora.__main__.App.run` reads these to spawn (or log
     # skipping) `runtime.dream_loop`.
@@ -1209,8 +1120,8 @@ class Dependencies:
     # `[dreamer] enabled = false`, the shipped default.
     dreamer_runtime: DreamerRuntime | None
     dream_adaptors: tuple[DreamAdaptor, ...]
-    # Per-adaptor clocks for the dream clock (design/dreamer-agent-loop/32
-    # §3.1), keyed by adaptor name and EMPTY under `[dreamer] enabled = false`.
+    # Per-adaptor clocks for the dream clock,
+    # keyed by adaptor name and EMPTY under `[dreamer] enabled = false`.
     # An adaptor with no entry keeps the shared lag/quiet/age shape; an entry
     # is what moves one onto its own interval, batch and envelope cap.
     dream_schedules: Mapping[str, AdaptorSchedule]
@@ -1220,8 +1131,7 @@ class Dependencies:
     # would put a `None` on the one path whose whole purpose is to survive
     # process boundaries. `dream_loop` ignores it when `schedules` is empty.
     dream_schedule_clock: SqlDreamScheduleClock
-    # What instructions, config and code were in force when
-    # (design/cognition-loop/70-migration.md §5, step 1b). The store only:
+    # What instructions, config and code were in force when. The store only:
     # the daemon's `App.run` builds the recorder that writes through it, so
     # an eval subject composed from this graph records no loads of its own.
     revisions: SqlRevisionStore
@@ -1237,13 +1147,11 @@ class Dependencies:
     # agent's event tools use, rather than a second `GatheringService` over the
     # same store.
     events: GatheringService
-    # `[speech.tts]`'s speaker (design/voice-channel/01 §5), annotated with the
+    # `[speech.tts]`'s speaker, annotated with the
     # port like `audit`/`memory` above. `None` unless `enabled` AND a provider
-    # AND its key are all present — the inert-ship default. Stage 1 wires no
-    # caller: this is the yield point the voice answer path reads when it
-    # lands, and it must behave correctly with `None`.
+    # AND its key are all present; callers must behave correctly with `None`.
     speaker: Speaker | None
-    # The audio-controller seam (design/voice-channel/07): the per-guild
+    # The audio-controller seam: the per-guild
     # voice-session registry every voice path shares, and the consumer for
     # the controller's `/app/v1/voice/event` callbacks. Both `None` when
     # `[speech.tts] sidecars` is empty (the consumer additionally needs
@@ -1251,17 +1159,17 @@ class Dependencies:
     # and every voice verb fails closed.
     voice_hub: VoiceControllerHub | None
     voice_event_consumer: VoiceEventConsumer | None
-    # The cognition loop's wake evaluator and session (design/cognition-loop/):
+    # The cognition loop's wake evaluator and session:
     # `None` under `[cognition] enabled = false`, the shipped default. The
     # shutdown cancels the sessions in flight, once (`nora.app.cognition_wiring`).
     wake_evaluator: WakeEvaluator | None = None
     cognition_runner: CognitionSessionRunner | None = None
     cognition_shutdown: CognitionShutdown | None = None
-    # The sub-agent worker (design/subagent): `None` under `[subagent] enabled = false`, the
+    # The sub-agent worker: `None` under `[subagent] enabled = false`, the
     # shipped default. The shutdown cancels the jobs in flight.
     subagent_backend: SubagentBackend | None = None
     wake_tick_seconds: float = 30.0
-    # The computer session sweeper (design/sandbox-runtime §15.2): `None`
+    # The computer session sweeper: `None`
     # unless `[computer] enabled`. `nora/__main__.py` spawns
     # `runtime.computer_sweep_loop` on it every `sweep_seconds`.
     computer_sweeper: ComputerSessionSweeper | None = None
@@ -1270,7 +1178,7 @@ class Dependencies:
     # unless `[computer] enabled`. `nora/__main__.py` spawns
     # `runtime.computer_probe_loop` on it.
     computer_probe: ComputerdProbe | None = None
-    # Platform adapter health transitions as Record (20 §1). ALWAYS built:
+    # Platform adapter health transitions as Record. ALWAYS built:
     # it is Record, not a subsystem that acts, and «was the source healthy
     # for the span» must be answerable for the whole history, not only from
     # the day an operator flipped a flag.
@@ -1284,8 +1192,7 @@ class Dependencies:
     # `keepalive = true`. `nora/__main__.py` starts it; the eval subject,
     # which composes the same graph, does not.
     oauth_keepalive: OAuthKeepalive | None = None
-    # The memory index's embedding worker (design/unified-memory/
-    # 65-build-step-3-vectors.md V1): `None` under `[memory_index] embed =
+    # The memory index's embedding worker: `None` under `[memory_index] embed =
     # false`, the default. `__main__` hands it to the memory drain loop.
     memory_embed: MemoryEmbedWorker | None = None
 
@@ -1364,7 +1271,7 @@ def _image_gen_wiring(
             token_env,
         )
     elif image_generator is None:
-        # M6: unknown provider (or unconstructable lane) degrades
+        # An unknown provider (or unconstructable lane) degrades
         # the tool, never crashes the daemon.
         log.warning(
             "image_gen enabled but provider %r could not be built — "
@@ -1396,37 +1303,28 @@ async def build_dependencies(
     shape (besides `nora.__main__` itself, which only ever passes `cfg`
     straight through here). Everything downstream takes a `Dependencies`.
 
-    **`clock` names a dependency this function already had.** Nine components
-    below take `clock: Callable[[], datetime]` — `FirePath`, `HeartbeatLoop`,
-    `ComputePoller` and the rest — each
-    for the reason `FirePath`'s own docstring gives: *"a module that read the
-    wall clock itself could not be tested at a fixed instant."* Every one of
-    them was then handed a separately-written wall-clock read from here: SEVEN
-    `clock=lambda: datetime.now(UTC)` plus TWO `now=datetime.now(UTC)` values.
-    Nine reads of one fact, written nine times.
+    **`clock` names a dependency the graph shares.** Many components take
+    `clock: Callable[[], datetime]` — `FirePath`, `HeartbeatLoop`,
+    `ComputePoller` and the rest — each for the reason `FirePath`'s own
+    docstring gives: *"a module that read the wall clock itself could not be
+    tested at a fixed instant."* This function states the clock once and hands
+    it to all of them; the default is `wall_clock`.
 
-    So this is not a new seam bolted on: it is the composition root stating
-    once what it was already saying nine times, and the default is the same
-    literal, so production composes exactly the graph it composed before.
-
-    What it makes possible is the part that could not be done at all: a caller
-    can say WHAT TIME IT IS. The proactive adaptor's whole judgement is about
-    time — is this note due, has this position gone stale, is now the moment —
-    and until this parameter existed the only way to ask it a question at a
-    fixed instant was to build a second adaptor by hand. That is one of the
-    seven assemblies `design/evaluation/` measures, and this is the seam whose
-    absence produced it.
+    A caller can therefore say WHAT TIME IT IS. The proactive adaptor's whole
+    judgement is about time (is this note due, has this position gone stale,
+    is now the moment), and a harness asks it a question at a fixed instant by
+    passing a clock.
     """
     try:
         persons = load_persons(cfg.identity_file)
     except PersonsError as exc:
         raise StartupError(f"person mapping error: {exc}") from exc
 
-    # The Nora aiPeer id is RESERVED — no human may hold it (council 2026-08-07,
-    # Honcho v2 corpus-safety). If an operator gave a person the id `nora`, that
-    # human's words would feed under the aiPeer and merge IRREVERSIBLY into
-    # Nora's self-model card (Honcho keeps conclusions, not text). Fail closed at
-    # startup rather than pollute the corpus.
+    # The Nora aiPeer id is RESERVED — no human may hold it. If an operator
+    # gave a person the id `nora`, that human's words would feed under the
+    # aiPeer and merge IRREVERSIBLY into Nora's self-model card (Honcho keeps
+    # conclusions, not text). Fail closed at startup rather than pollute the
+    # corpus.
     if cfg.memory.ai_peer in persons.by_person:
         raise StartupError(
             f"identity.toml maps a person to the id '{cfg.memory.ai_peer}', which "
@@ -1487,23 +1385,18 @@ async def build_dependencies(
     # The compute-job outbox, REUSING `engine` for the same reason `reminders`
     # does above. Built HERE, unconditionally, beside the other stores: boot
     # recovery a few hundred lines down (beside `reminders`' own unconditional
-    # sweep) must find a store to sweep even when the poller itself is off. No
-    # tool writes it today (S3b retired its only producer, the artifact tool); it
-    # is kept as the generic deferred-delivery outbox a future `delegate_task`
-    # writes (design/sandbox-runtime decision 4). Only the poller's tick loop
+    # sweep) must find a store to sweep even when the poller itself is off. It
+    # is the generic deferred-delivery outbox. Only the poller's tick loop
     # (`compute_backends`, further down) is behind the flag.
     compute_jobs: ComputeJobStore = SqlComputeJobStore(engine)
-    # Second consumer wired here (EngagementPipeline/FirePath, via
-    # deliver.build); the THIRD — ToolRegistry(...) below, for
-    # recall_lookups — is Task 7's own wiring.
     tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
-    # The computer audit log (design/sandbox-runtime §12, DEC-243). Built
+    # The computer audit log (DEC-243). Built
     # UNCONDITIONALLY, like `tool_call_log_store`: the computer tools write a
     # row on every call, `unavailable` included, so a call made while
     # `[computer]` is off is audited too. Only the runtime is behind the flag.
     computer_events: ComputerEventStore = SqlComputerEventStore(engine)
-    # Computer sessions (design/sandbox-runtime §15.2), derived by code on
-    # every computer call, and the process's ONE lease table (§15.4): one
+    # Computer sessions, derived by code on
+    # every computer call, and the process's ONE lease table: one
     # instance shared by every turn and the sweeper, which is what makes an
     # in-process lock a lock (one Nora process; `ComputerLeases` says so).
     computer_sessions: ComputerSessionStore = SqlComputerSessionStore(engine)
@@ -1534,7 +1427,7 @@ async def build_dependencies(
             base_url=cfg.computer.base_url, token=computer_token,
             observer=computer_metrics,
         )
-    # `<computer>` (design/sandbox-runtime §15.3): the one reader the tag
+    # `<computer>`: the one reader the tag
     # path and the fire path share. `None` while `[computer]` is off, so no
     # room renders the block.
     computer_context: ComputerContextReader | None = None
@@ -1548,8 +1441,8 @@ async def build_dependencies(
             ),
             clock=lambda: datetime.now(UTC), metrics=metrics,
         )
-    # Issue #325's durable half (`reasoning_strip_log`, migration 0057, ADR
-    # 0013), REUSING `engine` for the same reason the three stores above do.
+    # The durable half of the reasoning-strip counter (`reasoning_strip_log`,
+    # ADR 0013), REUSING `engine` for the same reason the three stores above do.
     # UNCONDITIONAL and behind no flag: an instrument that is off by default
     # answers nothing, and the question it exists to answer -- how often the
     # transport throws a turn's reasoning away, per unit of OPPORTUNITY, and
@@ -1558,14 +1451,13 @@ async def build_dependencies(
     # All three consumers take it: the tag path and the participation occasion
     # through `deliver.build`, and the Dreamer through `DreamerRuntime`.
     reasoning_strip_store = SqlReasoningStripStore(engine)
-    # The reasoning-continuity retention store (Task 6, spec §6/§7.4),
+    # The reasoning-continuity retention store,
     # REUSING `engine` for the same reason `reminders`/`compute_jobs`/
     # `tool_call_log_store` do above. UNCONDITIONAL, unlike the Dreamer's own
-    # stores just below: Phase 2's `[debrief]` flag gates the FOLD, not the
-    # raw retention write — retention must exist and be provably working
-    # BEFORE that flag has anything to gate (spec §7.4, task-6-brief.md).
+    # stores just below: the `[debrief]` flag gates the FOLD, not the
+    # raw retention write.
     tag_trace_store = SqlTagTraceStore(engine)
-    # Standing (26-standing). The STORE is built unconditionally, REUSING
+    # Standing. The STORE is built unconditionally, REUSING
     # `engine` for the same reason its four neighbours above do — the read half
     # feeds `TranscriptInjection`, whose own `_standing` returns `None` for a
     # `None` store, so an always-built store costs one attribute on a
@@ -1607,11 +1499,11 @@ async def build_dependencies(
         room_ids=_room_ids_of(allowlist),
         is_person=persons.by_person.__contains__,
         public_url=cfg.documents.public_url,
-        # A Map names its places and the service looks them up (design/artifact §40). The same
+        # A Map names its places and the service looks them up. The same
         # client `route` and `place_info` use, so `[route]` off means a Map is `unavailable`.
         place_locator=route_client,
     )
-    # `<documents>` (design/artifact §29): the one reader the tag path and the fire path
+    # `<documents>`: the one reader the tag path and the fire path
     # share. `None` while `[documents]` is off, so no room renders the block (the same
     # flag that withholds the document tools).
     documents_context: DocumentsContextReader | None = None
@@ -1620,7 +1512,7 @@ async def build_dependencies(
             store=documents_store, room_ids=_room_ids_of(allowlist),
             clock=lambda: datetime.now(UTC), metrics=metrics,
         )
-    # `<subagents>` (design/subagent §7): this room's sub-agent jobs, tag turn only. `None`
+    # `<subagents>`: this room's sub-agent jobs, tag turn only. `None`
     # while `[subagent]` is off. The worker is attached where the desk's is, once built.
     subagents_context: SubagentsContextReader | None = None
     if cfg.subagent.enabled:
@@ -1628,13 +1520,10 @@ async def build_dependencies(
             jobs=compute_jobs, clock=lambda: datetime.now(UTC), metrics=metrics,
             documents=document_service if cfg.documents.enabled else None,
         )
-    # ONE media join for the whole process (issue #116, operator 2026-09-08),
-    # handed to every transcript builder there is: the tag assembler, the fire
-    # path, the tag-path debrief, the Cognition session and lazy adoption. On master the sticker
-    # description and the
-    # voice-note transcript were baked into `messages.body`, so all of them saw
-    # them; the first cut of this change put the join on the tag assembler
-    # alone and left the other seven rendering bare handles.
+    # ONE media join for the whole process, handed to every transcript builder
+    # there is: the tag assembler, the fire path, the tag-path debrief, the
+    # Cognition session and lazy adoption, so none renders bare handles where
+    # another renders the comprehension.
     #
     # `scan_identifiers` is INJECTED because `nora/language/` sits two layers
     # below `nora/agent/` in the import contract and could not otherwise reach
@@ -1648,11 +1537,11 @@ async def build_dependencies(
         # `enrich` in their own `wait_for` as well; this is what bounds the
         # store read for the six that do not, and it is deliberately shorter
         # than `[standing] store_timeout_seconds` so the inner bound is the one
-        # that fires and the outer stays the backstop it was written as.
+        # that fires and the outer stays the backstop.
         timeout_seconds=cfg.media.join_timeout_seconds,
     )
-    # ONE quote-aware window resolver for the whole process (DEC-195,
-    # design/11 §2.5's amendment, 2026-09-22), handed to every transcript
+    # ONE quote-aware window resolver for the whole process (DEC-195), handed
+    # to every transcript
     # read that can grow past `context_window` to resolve a reply's quote:
     # the tag assembler AND the fire path's `build_context` — the same
     # `MediaJoin` precedent immediately above, for the same reason. Built
@@ -1665,7 +1554,7 @@ async def build_dependencies(
         quote_margin=cfg.store.quote_margin,
         quote_window_multiplier=cfg.store.quote_window_multiplier,
     )
-    # The shared decision log (issue #199). Built unconditionally beside
+    # The shared decision log. Built unconditionally beside
     # `standing_store` for its reason — it costs one
     # attribute where nothing reads it — and there is a second reason here: the
     # log has FOUR writers on three different paths, so a flag gating it would
@@ -1704,25 +1593,19 @@ async def build_dependencies(
     # watermark for ANY adaptor without this object, and `__main__` spawns the
     # loop only where it exists. Off, `dream_loop` is never spawned.
     #
-    # **The naming is the debt, and it is deliberate to leave it.** The
+    # `SqlLanguageStore` keeps its name though it is the Dreamer's cursor: the
     # watermark table belongs to the Dreamer and lives in a module called
-    # `language` for historical reasons; extracting it is its own port change
-    # with its own migration, and doing it inside the language tier's deletion
-    # would put two unrelated risks in one deploy. Recorded rather than done.
+    # `language`; extracting it is its own port change with its own migration.
     language_store: SqlLanguageStore | None = (
         SqlLanguageStore(engine, metrics=metrics) if cfg.dreamer.enabled else None
     )
-    # The note tier's store (2026-08-21 note-tier design), REUSING `engine`
+    # The note tier's store, REUSING `engine`
     # like every store above, and gated on its OWN flag. Off,
     # `TranscriptInjection` gets `notes=None` and `_notes` answers `()`
-    # without a query — the dormant state the tier shipped in. No `metrics=`:
+    # without a query. No `metrics=`:
     # `SqlNoteStore.__init__` takes an engine and nothing else on purpose (its
     # own docstring), and the one read on the critical path is counted by
-    # `_notes` instead. It took an `entities=` registry collaborator from
-    # issue #100 until 2026-09-08, when the note tier's entity-resolution
-    # chain was removed (issue #115's follow-up): nothing minted an entity
-    # once the knowledge tier was gone, so the chain could only ever link an
-    # anchor name to the eight stale rows that tier left behind.
+    # `_notes` instead.
     note_store: SqlNoteStore | None = (
         SqlNoteStore(engine) if cfg.notes.enabled else None
     )
@@ -1735,11 +1618,11 @@ async def build_dependencies(
     # Resolved here, not inside AdapterRegistry — the same convention every
     # other `*_env` secret (the LLM key, the route key) follows: composition.py
     # reads the environment once and hands the already-resolved value to
-    # whatever constructs the client that needs it (design/discord-integration/).
+    # whatever constructs the client that needs it.
     discord_token = os.environ.get(cfg.platforms.discord.token_env, "")
-    # The audio-controllers (design/voice-channel/07): ONE PER GUILD, because
+    # The audio-controllers: ONE PER GUILD, because
     # Discord's limit is one voice connection per bot token per guild and each
-    # connection stays single (§12.5). `[speech.tts] sidecars` lists a
+    # connection stays single. `[speech.tts] sidecars` lists a
     # controller endpoint per guild — usually the SAME one, since a single
     # sidecar serves them all — and IS the join allow-list: a guild with no
     # entry has no voice at all. Empty (the default) leaves the
@@ -1747,7 +1630,7 @@ async def build_dependencies(
     # `/discord join` failing CLOSED (the join-failed reply), never a local
     # connection attempt.
     #
-    # Built BEFORE the music manager: the manager's B5/B8 staleness probes
+    # Built BEFORE the music manager: the manager's staleness probes
     # (`playback_probe`, `generation_probe`) and its hub-session drop/exit
     # seams read and mutate the hub from construction.
     voice_hub: VoiceControllerHub | None = None
@@ -1756,9 +1639,9 @@ async def build_dependencies(
             guild_id: VoiceControllerClient(endpoint)
             for guild_id, endpoint in cfg.speech.tts.sidecars_by_guild.items()
         })
-    # design/discord-music/00-overview.md. `spawn=asyncio.ensure_future`
+    # `spawn=asyncio.ensure_future`
     # rather than the `BackgroundTasks` instance built further down this
-    # function (out of scope here) — safe because `MusicPlayerManager`
+    # function — safe because `MusicPlayerManager`
     # already holds its own strong reference to every task it spawns
     # (`self._idle_tasks`), the exact GC-mid-flight bug `BackgroundTasks`
     # exists to prevent for tasks nobody else references.
@@ -1807,17 +1690,17 @@ async def build_dependencies(
             "will fail closed (the join-failed reply); music stays silent "
             "until a guild is mapped to its controller"
         )
-    # `[speech.tts]`'s speaker (design/voice-channel/01 §5): wired ONLY when
+    # `[speech.tts]`'s speaker: wired ONLY when
     # enabled AND a provider is named AND that provider's key is present —
     # the same inert-ship rule as the transcriber above, plus the keyless-
     # `route`/`search` shape. Off (or providerless, or keyless) leaves no
     # speaker and nothing about Nora's behaviour changes. Built BEFORE the
     # adapter registry (below) because DiscordAdapter's voice playout seam
-    # (stage 3 closure) receives this same instance — the registry's
+    # receives this same instance — the registry's
     # `discord_speaker=` keyword is the one place that knows MiniMax is real;
     # everything downstream receives `Speaker | None`.
     # Built before the speaker (below) because the speech formatter reads its
-    # instruction from it (design/voice-channel/08); nothing else here moved.
+    # instruction from it.
     doctrine_store = DoctrineStore(
         cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
@@ -1856,8 +1739,8 @@ async def build_dependencies(
     # The join allow-list IS the set of guilds a controller exists for — one
     # source of truth, so the gate and the client map can never disagree.
     voice_guild_ids = voice_hub.guild_ids if voice_hub is not None else frozenset()
-    # The controller → nora callback consumer (`POST /app/v1/voice/event`,
-    # design/voice-channel/07 §5) — only when BOTH halves it glues exist:
+    # The controller → nora callback consumer (`POST /app/v1/voice/event`) —
+    # only when BOTH halves it glues exist:
     # the hub (whose event-id dedupe and expected-playback bookkeeping it
     # reads) and the music manager (whose per-guild-locked methods it
     # drives). `nora/__main__.py` registers the route only when this is
@@ -1867,8 +1750,8 @@ async def build_dependencies(
         if music_manager is not None and voice_hub is not None
         else None
     )
-    # Where a guild's music ANNOUNCEMENTS go (design/discord-music/
-    # 10-notification-routing.md). Built from the room policy, not from
+    # Where a guild's music ANNOUNCEMENTS go.
+    # Built from the room policy, not from
     # `cfg.music`: the answer is about a room's people, so it belongs beside
     # the room's trust flags. The channel it names is a DESTINATION, not a
     # room — see `Conversation.music_channel` for why a room entry was wrong.
@@ -1876,8 +1759,7 @@ async def build_dependencies(
     # A `music_channel` named for a guild that has no audio-controller is DEAD
     # CONFIGURATION: `[speech.tts] sidecars` — not `policy.toml` — is what
     # gates `/music play` (`voice_gate`), so nothing will ever announce for
-    # that guild. Both values are in scope here, seventeen lines apart, and
-    # neither was checked (audit, 2026-09-21). A warning rather than a startup
+    # that guild. A warning rather than a startup
     # error: the two files legitimately change on different cadences, and an
     # operator who names the channel before wiring the sidecar has written
     # something correct-but-early, not something wrong.
@@ -1892,8 +1774,7 @@ async def build_dependencies(
                 "channel will never be announced into",
                 convo.label or convo.primary_id, convo.music_channel, music_guild,
             )
-    # The public Instagram summons' intake (design/instagram-adoption/19, the
-    # 2026-09-26 intake): the Instagram adapter hands every `summons` SSE event
+    # The public Instagram summons' intake: the Instagram adapter hands every `summons` SSE event
     # here. ALWAYS built, so a card that arrives while the summons is off is
     # counted `disabled` rather than silently absent; `enabled` only under BOTH
     # `[social.instagram] enabled` and `[social.instagram.summons] enabled`,
@@ -1911,24 +1792,22 @@ async def build_dependencies(
             voice_guild_ids=voice_guild_ids,
             resolve_music_channel=resolve_music_channel,
             instagram_summons=summons_inbox,
-            # A 1:1 message goes only to somebody in identity.toml (operator
-            # rule 2026-10-05); the senders hold this set and refuse the rest.
+            # A 1:1 message goes only to somebody in identity.toml; the
+            # senders hold this set and refuse the rest.
             dm_recipients={p: persons.direct_addresses(p) for p in DIRECT_PLATFORMS},
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
     if "signal" not in registry:
-        # Only one platform exists today, and the rest of this function (the
-        # engagement pipeline, delivery) has no code path that runs without an
-        # adapter — a disabled Signal with nothing else enabled is not a valid
-        # startup state yet, even though AdapterRegistry itself tolerates zero
-        # enabled platforms.
+        # The rest of this function (the engagement pipeline, delivery) has no
+        # code path that runs without an adapter — a disabled Signal with
+        # nothing else enabled is not a valid startup state, even though
+        # AdapterRegistry itself tolerates zero enabled platforms.
         raise StartupError("no platform adapter is enabled (platforms.signal.enabled = false)")
     signal_adapter = registry.get("signal")
-    # `AdapterRegistry.get` returns the port type now that a second concrete
-    # adapter exists (design/discord-integration/) — narrowed back to the
+    # `AdapterRegistry.get` returns the port type — narrowed back to the
     # concrete class here because `Dependencies.adapter` stays SignalAdapter
-    # (nora.app still only ever builds Signal-specific tool wiring around it;
+    # (nora.app only builds Signal-specific tool wiring around it;
     # see that field's own docstring). An internal invariant violation, not a
     # config error, so it fails loudly rather than via a silent type lie.
     if not isinstance(signal_adapter, SignalAdapter):
@@ -1946,7 +1825,7 @@ async def build_dependencies(
     account = registry.identity_for("signal").primary
 
     # The Dreamer's own instruction corpus — its doctrine plus one objective
-    # per adaptor (instruction-substrate spec §4.1). Bind-mounted read-only the
+    # per adaptor. Bind-mounted read-only the
     # way `nora/doctrine` is, so an operator edit is live on the next Dreamer
     # tick with no rebuild. Built unconditionally rather than under
     # `[language].enabled` so a malformed objective is a STARTUP failure with a
@@ -1966,7 +1845,7 @@ async def build_dependencies(
     # BOTH; if they diverge, the agent traces under one name but builds its
     # memory under another — a silent split. Warn rather than fail: a deliberate
     # divergence is rare but conceivable, and this is a config smell, not an
-    # invariant (review M6, 2026-08-08).
+    # invariant.
     if cfg.agent.name != cfg.memory.ai_peer:
         log.warning(
             "agent.name (%r) != memory.ai_peer (%r): traces and Honcho memory "
@@ -2011,10 +1890,9 @@ async def build_dependencies(
 
     llm_state = LLMState()
     background = BackgroundTasks()
-    # R-9's rate limiter, with its window written down (migration 0056). Before
-    # it, `_last` was a dict a force-recreate emptied, so a duplicate tag that
-    # arrived seconds after a restart ran a second turn — and `nora` is
-    # force-recreated routinely. `spawn` is REQUIRED alongside the store, not
+    # R-9's rate limiter, with its window persisted so a force-recreate does
+    # not empty it (a duplicate tag arriving seconds after a restart would
+    # otherwise run a second turn). `spawn` is REQUIRED alongside the store, not
     # optional: `Debounce.allow` is synchronous by design (an await between
     # admission's QUEUED verdict and the enqueue would break FIFO order), so
     # the row is written fire-and-forget on the loop.
@@ -2031,16 +1909,12 @@ async def build_dependencies(
     # First match wins, deterministic text first. The mention policy uses the
     # same alias set R-12 uses to refuse self-tags — an @-mention arrives as
     # U+FFFC in the body plus a `mentions` array, so a substring trigger can
-    # never see it, and tagging her the obvious way used to produce ingest,
-    # attribution and silence.
+    # never see it.
     # EVERY platform's aliases, not just Signal's. These two policies match a
-    # mention/quote against "is this Nora?", and they were built from the Signal
-    # identity alone — so on Discord an @mention carried her SNOWFLAKE while the
-    # match set held a phone number and a UUID, and the obvious way to address
-    # her produced ingest, attribution and silence. That is the exact failure
-    # `MentionPolicy` was written to end (see its docstring), reintroduced by a
-    # second platform rather than by the parser: the Discord parser fills
-    # `mentions` correctly.
+    # mention/quote against "is this Nora?", and on Discord an @mention carries
+    # her SNOWFLAKE, which a match set of a phone number and a UUID never holds:
+    # the obvious way to address her would produce ingest, attribution and
+    # silence, the exact failure `MentionPolicy` exists to end.
     #
     # A UNION rather than a per-platform lookup: these id spaces are disjoint by
     # construction (a Signal phone is `+…`, its ACI a hyphenated UUID, a Discord
@@ -2051,11 +1925,7 @@ async def build_dependencies(
     # for the tag's own platform (DEC-102).
     #
     # Every id form Nora answers to, on every enabled platform — see
-    # `AdapterRegistry.self_aliases`. Built from Signal's identity ALONE until
-    # 2026-08-14, so on Discord an @mention carried her snowflake while the
-    # match set held a phone number and a UUID: the obvious way to address her
-    # produced ingest, attribution and silence, which is the exact failure
-    # `MentionPolicy` was written to end, reintroduced by a second platform.
+    # `AdapterRegistry.self_aliases`.
     self_aliases = registry.self_aliases()
     # `[engagement.trigger].enabled` (default True — see TriggerConfig) gates
     # ONLY the spoken/typed trigger phrase out of the composite: a real
@@ -2067,21 +1937,20 @@ async def build_dependencies(
         engage_policies.append(TriggerTextPolicy(cfg.engagement.trigger.text))
     engage_policies.append(MentionPolicy(self_aliases))
     engage_policies.append(ReplyToNoraPolicy(self_aliases))
-    # Any voice note engages her, independent of trigger text (operator
-    # directive 2026-08-26) — the transcription is conversation content in the
+    # Any voice note engages her, independent of trigger text — the
+    # transcription is conversation content in the
     # body by the time the gate runs. Last so the deterministic text paths
     # keep their reasons, but it fires on any note regardless.
     engage_policies.append(VoiceNotePolicy())
-    # Any transcript that arrived via the voice-wake channel engages her too
-    # (stage 3, design/voice-channel/): the wake service only POSTs after the
+    # Any transcript that arrived via the voice-wake channel engages her too:
+    # the wake service only POSTs after the
     # operator said 「喂 Nora」, which is the voice channel's closest thing to
     # an explicit tag — without this, a transcript lands in the audit row and
-    # the engage gate says `no_trigger` (measured 2026-09-16: DB row inserted,
-    # reply count 0). Same position as VoiceNotePolicy: after the text paths,
-    # fired by content-shape rather than words.
+    # the engage gate says `no_trigger`. Same position as VoiceNotePolicy: after
+    # the text paths, fired by content-shape rather than words.
     engage_policies.append(VoiceWakePolicy())
-    # The participation occasion's room gate (design/dreamer-agent-loop/35
-    # §7): LAST, and only when the occasion is enabled at all. It never
+    # The participation occasion's room gate:
+    # LAST, and only when the occasion is enabled at all. It never
     # engages — it marks an untagged message in an opted-in room with
     # `EngageDecision.relevance_gate`, which the dispatcher NOTES with the
     # quiescence trigger instead of admitting it. With the flag off, no
@@ -2090,18 +1959,17 @@ async def build_dependencies(
         engage_policies.append(RelevanceGatePolicy(allowlist))
     policy = CompositePolicy(tuple(engage_policies))
     # The room-scoped tools' one platform dependency, built BEFORE the presence
-    # reader because the room tools read member counts through it
-    # (design/self-awareness/07). Built here rather than
+    # reader because the room tools read member counts through it. Built here
+    # rather than
     # taken off the adapter because membership is a read-only DIRECTORY query
     # (`nora.platform.signal.directory`'s two-method allowlist), not part of the
     # send/receive/react lifecycle — see `nora.domain.ports.RosterSource`.
-    # ONE PER PLATFORM, not one for all of them. A single `SignalRoster` used
-    # to serve every platform, so a Discord room was looked up in signal-cli —
-    # which has never heard of that conversation id — and came back
-    # `available=False`. `where_is` and every other room-scoped tool then
-    # answered «I could not look», forever, on Discord. Fail-closed and
-    # therefore harmless, but invisible: nothing errored and the honest refusal
-    # is indistinguishable from the guard doing its job.
+    # ONE PER PLATFORM, not one for all of them: signal-cli has never heard of
+    # a Discord conversation id and answers `available=False`, so `where_is`
+    # and every other room-scoped tool would answer «I could not look» on
+    # Discord. Fail-closed and therefore harmless, but invisible: nothing
+    # errors and the honest refusal is indistinguishable from the guard doing
+    # its job.
     #
     # Keyed the same way the adapter map is (DEC-102), and built only for
     # platforms that are actually enabled — a roster for a platform with no
@@ -2115,7 +1983,7 @@ async def build_dependencies(
         from nora.platform.discord.roster import DiscordRoster
         rosters["discord"] = DiscordRoster(discord_token)
     if "instagram" in registry:
-        # Built for a DEGRADED adapter too, and that is deliberate: M0 registers
+        # Built for a DEGRADED adapter too, and that is deliberate: the registry registers
         # an Instagram adapter that could not authenticate rather than refusing
         # to start (`nora.platform.registry`), and a checkpoint clears without a
         # restart. A roster withheld on the startup state would then stay
@@ -2125,13 +1993,13 @@ async def build_dependencies(
         # `available=False` for exactly as long as that is true.
         from nora.platform.instagram.roster import InstagramRoster
         rosters["instagram"] = InstagramRoster(cfg.platforms.instagram.base_url)
-    # `<presence>` (design/self-awareness/02): ONE reader, handed to the tag
+    # `<presence>`: ONE reader, handed to the tag
     # path's assembler and the fire path, so none of the
     # two holds its own idea of which rooms exist or which networks are up.
     # Over the SAME allowlist ingest admits against and the SAME adapter map
     # the tag path sends through.
     presence_reader = _presence_reader(cfg, allowlist, registry, rosters)
-    # THE CULTURE TIER'S READ HALF (design/culture-tier, DEC-207): ONE
+    # THE CULTURE TIER'S READ HALF (DEC-207): ONE
     # read-only reader, handed to the tag path's assembler, the fire path and
     # every Dreamer adaptor whose prompt carries `<culture>`. `None` while
     # `[culture] enabled = false`, the shipped default, so no occasion renders
@@ -2140,13 +2008,12 @@ async def build_dependencies(
     culture_reader: CultureReader | None = (
         SqlCultureStore(engine) if cfg.culture.enabled else None
     )
-    # `<lessons>` on tag and fire turns (design/self-growth/40, L5): read-only,
+    # `<lessons>` on tag and fire turns: read-only,
     # bodies of active lessons. `None` while `[lessons] render` is off.
     lessons_reader: ActiveLessons | None = (
         ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
     )
-    # The join from a note to its room's account (DEC-207; the note curator it was
-    # built for was deleted 2026-10-03, DEC-277):
+    # The join from a note to its room's account (DEC-207):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
     # per platform and a note carries no platform.
@@ -2160,7 +2027,7 @@ async def build_dependencies(
     def note_room_for(cid: str, unit: str) -> tuple[str, str | None] | None:
         return note_rooms.get((cid, unit))
 
-    # THE SAME JOIN, for the name resolver (issue #200): every
+    # THE SAME JOIN, for the name resolver: every
     # id a room is known by, within the note's unit, to the room's platform —
     # what `Persons.name_transcript` needs and `Note.established_in` alone
     # cannot supply, since a note carries no platform of its own.
@@ -2188,7 +2055,7 @@ async def build_dependencies(
         # Standing's READ half. `None` while `[standing] enabled = false`, the
         # shipped default, so `<standing>` renders nothing. Unlike `notes`
         # beside it this needs no `policy=` at all: a position is keyed
-        # `(platform, conversation_id)` (S4) and is NOT shared across a
+        # `(platform, conversation_id)` and is NOT shared across a
         # unit's rooms — two rooms in one social unit share what the
         # unit knows, not where a conversation had got to.
         #
@@ -2197,25 +2064,25 @@ async def build_dependencies(
         # is that the read and the write are the same row seen twice, and two
         # objects for one row is how that stops being structurally true.
         standing=standing_store if cfg.standing.enabled else None,
-        # The media join (issue #116). The same instance every other
+        # The media join. The same instance every other
         # transcript builder holds — the comprehension a spawned job wrote is
         # the one the transcript renders, the one the note tier reads and the
-        # one `media_fetch` serves, and eight copies of that decision would be
-        # eight chances to disagree about what a picture shows.
+        # one `media_fetch` serves, and separate copies of that decision would
+        # be chances to disagree about what a picture shows.
         media_join=media_join,
         # The shared quote-window resolver (DEC-195). Same instance
         # `FirePath` below is given — the point of building it once.
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
-        # `<lessons>` (design/self-growth/40, L5): `None` while `[lessons]
+        # `<lessons>`: `None` while `[lessons]
         # render` is off. The same reader the fire path gets.
         lessons=lessons_reader,
-        # `<computer>` (design/sandbox-runtime §15.3): `None` while
+        # `<computer>`: `None` while
         # `[computer]` is off; the same reader the fire path gets.
         computer=computer_context,
         documents=documents_context,
-        # `<subagents>` (design/subagent §7): `None` while `[subagent]` is off. The worker is
+        # `<subagents>`: `None` while `[subagent]` is off. The worker is
         # attached below, beside the desk's. Not given to the fire path.
         subagents=subagents_context,
     )
@@ -2247,9 +2114,9 @@ async def build_dependencies(
     unit_scopes: Callable[[], Sequence[str]] = lambda: tuple(sorted(  # noqa: E731
         {conv.unit for conv in allowlist.conversations if conv.unit}
     ))
-    # One CLIENT (audit T2, DEC-13), MANY MODELS — one per tag, built by this
+    # One CLIENT (DEC-13), MANY MODELS — one per tag, built by this
     # source. The model carries `tool_choice`, which `ReplyGuard` flips
-    # mid-turn from `required` to `auto` (design/16 §2), so it is per-turn
+    # mid-turn from `required` to `auto`, so it is per-turn
     # mutable state and two concurrent conversations must not share it.
     models = factory.ModelSource(
         client=client,
@@ -2258,7 +2125,7 @@ async def build_dependencies(
             reasoning_effort=tier.reasoning_effort,
         ),
     )
-    # `computer_browse` (design/browser-runtime 00 §5, ADR 0022, B2): a sub-agent
+    # `computer_browse` (ADR 0022): a sub-agent
     # in the room's own browser, with a model source of its own (one model per
     # task, the tag path's reason above). `None` unless `[computer]` AND
     # `[computer.browse]` are on, so the registry withholds the tool.
@@ -2294,11 +2161,11 @@ async def build_dependencies(
         skills_dir=cfg.doctrine.dir.parent / "skills",
         agent_name=cfg.agent.name,
         # The process-wide registry, not a private one — `nora_tagtrace_
-        # truncations_total` (spec §11) has to land where `/metrics` reads it.
+        # truncations_total` has to land where `/metrics` reads it.
         metrics=metrics,
     )
-    # The participation occasion's runner (design/dreamer-agent-loop/35 §4) —
-    # a SECOND `ModelSource`, the shape the Dreamer below established, and for
+    # The participation occasion's runner —
+    # a SECOND `ModelSource`, the shape the Dreamer below uses, and for
     # the same reason: `tool_choice` lives on `ModelSpec`. The determination
     # must be able to end in SILENCE, and the tag runner's `FIRST_CALL`
     # (`required`) pin makes that inexpressible — under it the model must call
@@ -2308,11 +2175,11 @@ async def build_dependencies(
     # required. None while the occasion is disabled; `FirePath` refuses a
     # participation turn that arrives with no runner composed.
     #
-    # The proactive occasion (design/dreamer-agent-loop/39 D12, DEC-162)
+    # The proactive occasion (DEC-162)
     # needs the SAME runner shape for the same reason — its act turn may end
     # in silence — so both are built by `_auto_runner` below, each with its own
     # reasoning effort. The act turn is wired when `policy.toml` names a home
-    # room (39 D2); its rows are written by the Cognition session's `remind`
+    # room; its rows are written by the Cognition session's `remind`
     # (DEC-277).
     proactive_homes = allowlist.home_rooms()
 
@@ -2336,7 +2203,7 @@ async def build_dependencies(
         )
 
     # `[participation]`'s own effort, never the tag lane's — see the field's
-    # note: silence is this occasion's default, and more reasoning measurably
+    # note: silence is this occasion's default, and more reasoning
     # produces more of it.
     participation_runner: LiveAgentRunner | None = None
     if cfg.participation.enabled:
@@ -2344,18 +2211,17 @@ async def build_dependencies(
             cfg.participation.reasoning_effort, "[participation] reasoning_effort",
         )
     # The proactive act turn's runner: the same `auto` shape, its OWN effort
-    # (`ProactiveConfig`, design/cognition-loop/35 §3.4). It shared the
-    # participation runner until 2026-10-12, and the two fail in opposite
-    # directions: at `none` a proactive turn spoke on every case where
-    # silence was right.
+    # (`ProactiveConfig`). It is not shared with the participation runner
+    # because the two fail in opposite directions: at `none` a proactive turn
+    # spoke on every case where silence was right.
     proactive_runner: LiveAgentRunner | None = None
     if proactive_homes:
         proactive_runner = _auto_runner(
             cfg.proactive.reasoning_effort, "[proactive] reasoning_effort",
             max_tokens=cfg.proactive.max_tokens,
         )
-    # The public Instagram summons' runner (design/instagram-adoption/19,
-    # `nora.app.summons`): the SAME `AFTER_SPEAKING` shape as the
+    # The public Instagram summons' runner
+    # (`nora.app.summons`): the SAME `AFTER_SPEAKING` shape as the
     # participation runner above, for the same reason — a summons may end in
     # silence, which the tag runner's `FIRST_CALL` pin makes inexpressible.
     # Its own, not the participation one, because it is wired on its own
@@ -2378,21 +2244,21 @@ async def build_dependencies(
             agent_name=cfg.agent.name,
             metrics=metrics,
         )
-    # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`.
-    # The two were the same value until 2026-08-06, which made the whole
+    # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`:
+    # the two are separate values, and tying them would make the whole
     # loop's output budget equal to one call's ceiling — see
-    # `factory.build_limits` for the measurement.
+    # `factory.build_limits`.
     limits = factory.build_limits(
         output_tokens=tier.limits.output_tokens,
         turns=tier.limits.turns,
         total_tokens=tier.limits.total_tokens,
     )
 
-    # §9's caps as the DOMAIN value, built once so every reminder writer (the
+    # The reminder caps as the DOMAIN value, built once so every reminder writer (the
     # tag path's `ToolRegistry` and the Cognition session) holds the exact SAME
     # `ReminderCaps`, not two instances equal only by both reading `cfg.reminders`.
     reminder_caps = ReminderCaps(**cfg.reminders.model_dump())
-    # `GatheringService` (Gathering module design spec): the ONE use-case layer for
+    # `GatheringService`: the ONE use-case layer for
     # Gathering business rules. `event_store` REUSES `engine` for the same reason
     # `reminders`/`compute_jobs`/`tool_call_log_store` do above — a second
     # `create_sql_engine` would fork the pool. `route_source=route_client` is
@@ -2402,11 +2268,10 @@ async def build_dependencies(
     # and `ai_peer=cfg.memory.ai_peer` are the SAME Honcho client and id
     # already threaded to `TranscriptInjection`/`ToolRegistry` below.
     event_store = SqlGatheringStore(engine)
-    # B3(a) (design/cognition-loop/70-migration.md §8): the migration
-    # backfilled every pre-existing event to `unit_id=""` — units live in
-    # `policy.toml`, not the DB, so it could not fill this column — and
-    # `search_events`'s unit-wide filter would otherwise never find one
-    # again: it reads a unit's rooms from policy instead.
+    # Events stored before units existed carry `unit_id=""` — units live in
+    # `policy.toml`, not the DB, so the column cannot be filled — and
+    # `search_events`'s unit-wide filter would never find one: it reads a
+    # unit's rooms from policy instead.
     event_unit_rooms = _unit_room_ids(allowlist)
 
     def _event_unit_room_ids(unit_id: str) -> tuple[str, ...]:
@@ -2429,18 +2294,16 @@ async def build_dependencies(
     # (the way `factory.build_retry_policy` derives its backoff). The client is
     # always present (the LLM key is required to start); `media_fetch` still
     # answers `unavailable` whenever `blobs` is None, the inert-by-config shape.
-    # The durable half of media dedup (sticker spec §4.1, Task 10): `VisionCache`
+    # The durable half of media dedup: `VisionCache`
     # becomes a read-through in front of THIS store rather than a second,
     # disagreeing copy — REUSING `engine` for the reason `reminders`/
     # `compute_jobs`/`tool_call_log_store` all do above (one pool, one
     # lifecycle; a second `create_sql_engine` would fork the pool and its own
     # `aclose()` would dispose the engine everything else is still using).
     media_descriptions = SqlMediaDescriptionStore(engine, metrics=metrics)
-    # The per-modality DIRECT lanes (provider-aware describers, 2026-08-30;
-    # OpenCode Go added by DEC-197): a describer configured with a direct
+    # The per-modality DIRECT lanes (DEC-197): a describer configured with a direct
     # provider travels through its own client, NOT the process-wide OmniRoute
-    # client — OmniRoute drops `video_url` content blocks (probe 2026-08-30:
-    # router prompt tokens 95 vs native 3164 for the same payload), so a
+    # client — OmniRoute drops `video_url` content blocks, so a
     # video described through it would reach the model as text only.
     vision_client = VisionClient(
         client=client,
@@ -2449,39 +2312,29 @@ async def build_dependencies(
         max_tokens=cfg.media.vision_max_tokens,
         reasoning_effort=cfg.media.vision_reasoning_effort,
         max_bytes=cfg.media.vision_max_bytes,
-        # THE DERIVATION'S INPUTS, NOT ITS RESULT. This used to call
-        # `derive_vision_timeout` here and hand the client one number. It cannot
-        # any more: the divisor is now the SERIAL factor — how many 90-second
-        # windows one invocation reads in sequence — and `cut_video` only
-        # produces that per request, at read time, a process after this line
-        # runs. The client derives per call instead (`VisionClient._call_timeout`).
+        # THE DERIVATION'S INPUTS, NOT ITS RESULT. The divisor is the SERIAL
+        # factor — how many 90-second windows one invocation reads in
+        # sequence — and `cut_video` only produces that per request, at read
+        # time, a process after this line runs. The client derives per call
+        # (`VisionClient._call_timeout`).
         #
-        # The budget is GONE from this wiring, deliberately. It said
-        # `ToolRegistry(budget_overrides=…).budgets()["media_fetch"]` so the
-        # divisor tracked the `[llm.budgets]` knob — but the divisor was the
-        # wrong quantity in the first place: budgeted calls run CONCURRENTLY and
-        # occupy `max(their durations)` of wall clock, never their sum, so at
-        # loop 360 / configured 120 / budget 4 it derived 54 s and the operator's
-        # configured 120 never took effect (design/media-read-lane/
-        # 07-timeout-derivation.md). `budget` still bounds refusals — R-7's
-        # ceiling still comes from `budgets()`, at `tool_registry` below — it
-        # just no longer bounds elapsed time.
+        # No budget is passed: budgeted calls run CONCURRENTLY and occupy
+        # `max(their durations)` of wall clock, never their sum, so a budget
+        # divisor would be the wrong quantity. `budget` still bounds refusals
+        # — R-7's ceiling comes from `budgets()`, at `tool_registry` below —
+        # it does not bound elapsed time.
         timeout_seconds=cfg.media.vision_timeout_seconds,
         loop_timeout_seconds=tier.timeout_seconds,
     )
-    # The sticker IDENTITY ladder — custody, not description (issue #116). Its
-    # model rung moved to the spawned comprehension job below, so this needs no
-    # interpreter and no second `VisionClient`: what it still buys is a repeat
+    # The sticker IDENTITY ladder — custody, not description. Its
+    # model rung is the spawned comprehension job below, so this needs no
+    # interpreter and no second `VisionClient`: what it buys is a repeat
     # sighting costing zero platform RPC, decided at parse time before any
     # bytes move.
     # Built whenever custody is on, and NOT gated on `sticker_descriptions`:
-    # since issue #116 this ladder is pure custody — it turns a repeat sighting
-    # into zero platform RPC and reads nothing. Gating it on the READ switch
-    # meant `sticker_descriptions = false` also threw away the dedup, so every
-    # repeat sighting paid a platform RPC again, while three artefacts said the
-    # ladder stayed on. `sticker_descriptions` gates the comprehension job's
-    # sticker subjects instead (`stickers_enabled` below), which is the only
-    # thing it now describes.
+    # this ladder is pure custody and reads nothing, so gating it on the READ
+    # switch would throw away the dedup. `sticker_descriptions` gates the
+    # comprehension job's sticker subjects instead (`stickers_enabled` below).
     sticker_reader = None
     if blobs is not None:
         sticker_reader = StickerReader(
@@ -2489,7 +2342,7 @@ async def build_dependencies(
             descriptions=media_descriptions,
             metrics=metrics,
         )
-    # THE COMPREHENSION JOB (issue #116) — one model pass per medium into
+    # THE COMPREHENSION JOB — one model pass per medium into
     # title/description/content, spawned off the ingest path. Wired only when
     # custody is on AND `[media] comprehension` is set: with either off, every
     # attachment keeps its bare handle and nothing anywhere claims a
@@ -2519,10 +2372,10 @@ async def build_dependencies(
         )
     # `[speech.stt]`'s transcriber: wired ONLY when enabled — the same
     # inert-ship rule as `stickers`. Off leaves the ingest stage without a
-    # transcriber and a voice note is recorded with a bare handle, exactly as
-    # before speech existed. On, the local `stt` service transcribes voice
-    # notes inline during custody (audio stays on the box — the endpoint is
-    # reachable only on the private `nora` network).
+    # transcriber and a voice note is recorded with a bare handle. On, the
+    # local `stt` service transcribes voice notes inline during custody (audio
+    # stays on the box — the endpoint is reachable only on the private `nora`
+    # network).
     transcriber = None
     if cfg.speech.stt.enabled:
         from nora.infra.speech import SenseVoiceTranscriber
@@ -2536,16 +2389,12 @@ async def build_dependencies(
     # Every path that may speak into a conversation holds this same instance —
     # two would be two locks and no serialisation at all. Built HERE, above the
     # registry, because the relay below needs it and the registry needs the
-    # relay — and above the ingest pipeline, because the standing EVENT trigger
-    # (deleted 2026-10-03, DEC-277) enqueued its folds through this same
-    # instance (D2, design/standing-watermark/10): the tag path and other
-    # per-conversation work must serialize on one lock, and two slots objects
-    # would be two locks.
+    # relay.
     slots = ConversationSlots(
         maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
     )
 
-    # The cognition loop's stimuli (design/cognition-loop/20-observe.md §3): OFF
+    # The cognition loop's stimuli: OFF
     # under `[cognition] enabled = false`, the shipped default. On, the ingest
     # pipeline appends one stimulus per recorded person-authored item, and the
     # evaluator reads them and starts sessions. The evaluator is built after the
@@ -2623,12 +2472,12 @@ async def build_dependencies(
                 cfg.search.api_key_env,
             )
     # `x_read`, `x_search` (DEC-201), `instagram_read` and `instagram_search`
-    # (design/instagram-adoption/18) get ONE `SocialProvider` — `SocialRouter`
-    # — and the registry stays unaware that there are two backends under it
-    # (design/instagram-adoption/08). Each backend is wired independently and
-    # there is NO credential on either, so `enabled` alone is the gate (the
-    # `[preview]` shape); an unwired backend answers `unavailable` for ITS OWN
-    # rows (R-5) and never widens or narrows the other's reach.
+    # get ONE `SocialProvider` — `SocialRouter`
+    # — and the registry stays unaware that there are two backends under it.
+    # Each backend is wired independently and there is NO credential on
+    # either, so `enabled` alone is the gate (the `[preview]` shape); an
+    # unwired backend answers `unavailable` for ITS OWN rows (R-5) and never
+    # widens or narrows the other's reach.
     #
     # The DEFAULT is OpenCLI, reaching the host-side bridge over loopback; its
     # read-only (site, command) allowlist is re-enforced THERE
@@ -2643,10 +2492,10 @@ async def build_dependencies(
             content_max_chars=cfg.social.content_max_chars,
         )
     # The INSTAGRAM backend serves every Instagram read the bridge has a route
-    # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two
-    # (design/instagram-adoption/15, /18, P5), `instagram/post`, its read of a
-    # pasted post or reel link (P12), and `instagram/search`,
-    # `instagram_search`'s (P11), which takes free text and needs no index.
+    # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two,
+    # `instagram/post`, its read of a pasted post or reel link, and
+    # `instagram/search`, `instagram_search`'s, which takes free text and needs
+    # no index.
     # The two read rows take a PERSON, so the router needs a
     # `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
     # person -> igid off `identity.toml` (kind-aware; none or several is
@@ -2677,9 +2526,9 @@ async def build_dependencies(
                 if instagram_social is not None else {}
             ),
             subjects=social_subjects,
-            # P10: a typed handle or a pasted link names a USERNAME, and the
+            # A typed handle or a pasted link names a USERNAME, and the
             # bridge's exact lookup is the only thing that turns one into an
-            # igid (design/instagram-adoption/15 §Links). The same client:
+            # igid. The same client:
             # the lookup is a GET on the same bridge.
             accounts=instagram_social,
         )
@@ -2700,7 +2549,7 @@ async def build_dependencies(
                 "weather enabled but provider %r is unknown — weather stays unavailable",
                 cfg.weather.provider,
             )
-    # `online_now`'s Steam half (design/online-status/) is wired ONLY when
+    # `online_now`'s Steam half is wired ONLY when
     # `[online] enabled` AND the key the section NAMES is present — the
     # enabled-AND-keyed gate `search` uses. Off, or keyless, leaves the
     # registry without a provider and the `online`/`playing` arms answer
@@ -2722,7 +2571,7 @@ async def build_dependencies(
                 "stay unavailable",
                 cfg.online.api_key_env,
             )
-    # `whereis` (DEC-59, activating DEC-54's inert seam) is wired ONLY when
+    # `whereis` (DEC-59) is wired ONLY when
     # `[presence] enabled` AND identity.toml yields at least one circle — the
     # enabled-AND-configured gate `route` and media custody use. Off, or
     # circle-less, leaves the registry without a reader and `whereis` answers
@@ -2759,15 +2608,14 @@ async def build_dependencies(
     image_refs_allowed = (
         cfg.image_gen.enabled and cfg.image_gen.allow_reference_images
     )
-    # Image custody (Miles 2026-08-26): generated images are stored in Nora's
+    # Image custody: generated images are stored in Nora's
     # OWN blob_store (rustfs) and sent as platform attachments.
     image_generator, oauth_keepalive = _image_gen_wiring(
         cfg, metrics, os.environ, state_dir=Path("/app/state"),
     )
     # Sender-generated link previews ([preview]). Keyless, so `enabled` is the
     # whole gate. Off is the shipped default and is not a
-    # degradation: a reply carrying a link goes out with no card, exactly as
-    # every deployment before this section existed. It is ONE instance for the
+    # degradation: a reply carrying a link goes out with no card. It is ONE instance for the
     # process (it holds no per-turn state), handed to the pipeline and the fire
     # path, which hand it to each turn's `OutboundComposer`.
     preview_source = None
@@ -2792,22 +2640,17 @@ async def build_dependencies(
             # collector's TOTAL time is request_location + read_circle (each up to
             # the Life360 client's own timeout) + the poll, so a slow network can
             # still exceed this and Nora cuts it off. Harmless — the path is never
-            # load-bearing, so a cut-off just falls back to the stored fix (review
-            # 2026-08-08).
+            # load-bearing, so a cut-off just falls back to the stored fix.
             timeout_seconds=cfg.presence.refresh_timeout_seconds + 2.0,
         )
-    # The on-demand reverse-geocoder (moved here from the presence collector,
-    # 2026-08-14): the collector calling this on EVERY fix, for every tracked
-    # person, every cadence_seconds tick, regardless of whether anyone ever
-    # asked where they were, cost ~12k billed Google Geocoding calls over 6
-    # days (~$60, confirmed against Cloud Monitoring's own request-count
-    # metric) for addresses nobody read. `Whereis.locate` (nora/agent/whereis.py)
-    # now calls this itself, ONLY when a fix has no address and someone
-    # actually asked `where_is` about it — the collector talks to Life360
-    # alone, never Google. Switchable behind the SAME `ReverseGeocoder` port
-    # (`[presence] geocode_provider`, "google" default or "hkgov"), same
-    # config fields this used to read on the collector's side.
-    # The durable half of the cache (2026-08-19): survives a restart, and is
+    # The on-demand reverse-geocoder: `Whereis.locate` (nora/agent/whereis.py)
+    # calls it ONLY when a fix has no address and someone actually asked
+    # `where_is` about it. The collector talks to Life360 alone, never Google:
+    # geocoding every fix for every tracked person on every cadence tick would
+    # bill Google for addresses nobody reads. Switchable behind the SAME
+    # `ReverseGeocoder` port (`[presence] geocode_provider`, "google" default
+    # or "hkgov").
+    # The durable half of the cache: survives a restart, and is
     # what `nora.analytics` reads (READ-ONLY — it never calls a geocoder
     # itself) to label a derived place. REUSES `engine` for the same reason
     # `presence_store` above does — a second `create_sql_engine` would fork
@@ -2815,17 +2658,14 @@ async def build_dependencies(
     from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
     geocode_cache_store = SqlGeocodeCacheStore(engine)
     geocoder = reverse_geocoder(cfg, os.environ, cache_store=geocode_cache_store)
-    # `ComputeBackend`: NO adapter ships. The per-job container backend was
-    # retired in S3b (design/sandbox-runtime decision 4); the port,
-    # `ComputeJobPoller`, `compute_jobs` and boot recovery stay
-    # as the generic deferred-delivery path a future `delegate_task` will
-    # plug an adapter into. Until one is assigned here the poller below is
-    # never built: wired, idle.
-    # `kind -> ComputeBackend`: the poller resolves a row's backend by its `kind`
-    # (design/subagent §6). `[video_gen]` registers the video backend just below; the
+    # The generic deferred-delivery path: the `ComputeBackend` port,
+    # `ComputeJobPoller`, `compute_jobs` and boot recovery. The poller below is
+    # never built while no backend is registered.
+    # `kind -> ComputeBackend`: the poller resolves a row's backend by its `kind`.
+    # `[video_gen]` registers the video backend just below; the
     # sub-agent worker is registered once the tool registry exists.
     compute_backends: dict[str, ComputeBackend] = {}
-    # Video generation ([video_gen], design/video-generation): enabled AND the key named by
+    # Video generation ([video_gen]): enabled AND the key named by
     # `[video_gen.minimax_cn] api_key_env` present builds the MiniMax CN backend, registered
     # under `VIDEO_KIND` for the poller, and the desk `video_create` calls. The config refuses
     # `enabled` without `[compute] enabled`. Enabled without the key builds nothing: the
@@ -2855,7 +2695,7 @@ async def build_dependencies(
                 "[video_gen] enabled but %s is unset; video_create is withheld",
                 video_cfg.api_key_env,
             )
-    # Nora's computer (design/sandbox-runtime, DEC-243): `ComputerdRuntime`,
+    # Nora's computer (DEC-243): `ComputerdRuntime`,
     # built ONLY when `[computer] enabled`. Off leaves it `None` and every
     # computer tool answers `unavailable` (R-5). `ComputerToolSettings` is the
     # conversion point from config to a domain value (`nora.agent` may not
@@ -2872,7 +2712,7 @@ async def build_dependencies(
         idle_after_minutes=cfg.computer.sessions.idle_after_minutes,
         lapsed_visible_hours=cfg.computer.sessions.lapsed_visible_hours,
     )
-    # `computer_export` (design/sandbox-runtime §6): its record of what left the
+    # `computer_export`: its record of what left the
     # computer, built unconditionally like the audit store. The same store is the
     # portal's Artifacts read (ADR 0023), and a link is the portal's
     # `<[documents] public_url>/artifacts/<artifact_id>`: without a `public_url` a
@@ -2924,8 +2764,7 @@ async def build_dependencies(
     games_client = None
     if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
         # The base URL names a private tailnet host, so the deployment states it
-        # in `.env` (`PULSE_API_BASE`); the identifier scrub (#767) left only a
-        # placeholder in the source.
+        # in `.env` (`PULSE_API_BASE`); the source holds only a placeholder.
         games_client = PulseGamesClient(
             token=pulse_api_token,
             base_url=os.environ.get("PULSE_API_BASE") or PULSE_API_BASE,
@@ -2951,12 +2790,12 @@ async def build_dependencies(
     relay = Relay(
         policy=allowlist, speak=_relay_speak, slots=slots,
         occasion_for=relay_occasion, metrics=metrics,
-        # The SAME reader `<presence>` renders from (design/self-awareness/02),
+        # The SAME reader `<presence>` renders from,
         # so «Discord is down» in the block and `send_to` refusing into Discord
         # are one read of one mapping, never two opinions.
         transport=presence_reader.state,
     )
-    # `DiscordMusicToolBridge` (design/discord-music/07-agent-tool.md) — the
+    # `DiscordMusicToolBridge` — the
     # four music agent tools' own collaborator. Built ONLY when BOTH a
     # Discord adapter and a music manager exist: `music_manager` is already
     # `None` under `cfg.music.enabled = false` (its own construction above),
@@ -2981,17 +2820,16 @@ async def build_dependencies(
                 "internal error: registry's 'discord' entry is not a DiscordAdapter "
                 "— music agent tools stay unavailable"
             )
-    # `DiscordVoicePresence` (design/online-status/) — `online_now`'s voice
+    # `DiscordVoicePresence` — `online_now`'s voice
     # arm. Built whenever a Discord adapter exists: it reads the live
     # client's guild cache (`voice_states` is already in the default
     # intents), so unlike the Steam half there is no `[online]` gate and
     # no key — the same narrowing `music_bridge` above needs, for the same
     # `current_client()` reason.
     voice_presence: VoicePresenceSource | None = None
-    # `DiscordPresence` (design/online-status/, the 2026-09-15 correction)
-    # — the `online` arm's Discord half: per-person presence (status +
-    # rich presence), NOT voice membership. Same construction rule as
-    # `voice_presence`: it reads the live Discord client (now with the
+    # `DiscordPresence` — the `online` arm's Discord half: per-person presence
+    # (status + rich presence), NOT voice membership. Same construction rule as
+    # `voice_presence`: it reads the live Discord client (with the
     # `presences` intent enabled), so no `[online]` gate and no key.
     discord_presence: DiscordPresenceSource | None = None
     if "discord" in registry:
@@ -3006,13 +2844,13 @@ async def build_dependencies(
                 "internal error: registry's 'discord' entry is not a DiscordAdapter "
                 "— online_now's Discord arms stay unavailable"
             )
-    # LINEAGE (design/cognition-loop/10-tiers.md §3, migration step 2): the
+    # LINEAGE: the
     # ONE value that says who each room of the policy is, held by the fire
     # path below and by `record_query` through the registry. The tag path's
     # assembler builds the same value from the same three inputs
     # (`build_assembler`).
     lineage = lineage_policy(cfg, policy=allowlist, persons=persons)
-    # The sub-agent desk the four `subagent_*` tools call (design/subagent §3): built ONLY under
+    # The sub-agent desk the four `subagent_*` tools call: built ONLY under
     # `[subagent] enabled`, so off the registry withholds the tools. The worker is attached below,
     # once built, because its closed tool list is built from this registry.
     subagent_desk = SubagentDesk(
@@ -3037,13 +2875,13 @@ async def build_dependencies(
         # `[record_query] enabled` (ships off): without the read the registry
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
-        # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
+        # `[memory_index] enabled` (ships off):
         # one memory surface: `memory_search` over the index; off, the Honcho
         # verbs as before (DEC-316, `nora.agent.tools.GRAPH_MEMORY_TOOLS`).
         memory_search=(
             MemorySearch(
                 SqlMemoryIndex(engine), metrics,
-                # `[memory_index] embed` (65 V2): dense and exact seeds, the
+                # `[memory_index] embed`: dense and exact seeds, the
                 # lexical seed only as the fallback; off, every answer is
                 # the fallback's `partial`.
                 embedder=LlamaEmbedder(
@@ -3065,14 +2903,14 @@ async def build_dependencies(
         # the same lineage as the session's.
         rollup=SqlRollupRead(engine),
         standing_head=standing_store,
-        # `character_read` (self-growth C4): withheld while `[culture]` is off.
+        # `character_read`: withheld while `[culture]` is off.
         culture=culture_reader,
         # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
         memos=memo_store,
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),
-        # `[media.describe.video]`'s chunk geometry (issue #117): the SAME two
+        # `[media.describe.video]`'s chunk geometry: the SAME two
         # numbers the comprehension pass is built with just above, so
         # `media_fetch`'s deliberate look reads a clip exactly as far as the
         # automatic read did.
@@ -3084,7 +2922,7 @@ async def build_dependencies(
         video_readings=SqlVideoReadingStore(engine), search=search_client,
         social=social_client,
         # The same router, for the two LinkedIn tools, only when LinkedIn is
-        # switched on (design/social-per-network/10 §Config). The config
+        # switched on. The config
         # refuses `[social.linkedin]` without `[social]`, so a router exists.
         linkedin=social_client if cfg.social.linkedin.enabled else None,
         weather=weather_client,
@@ -3094,7 +2932,7 @@ async def build_dependencies(
         # no second store, no new lifecycle (one pool, one lifecycle).
         mobility=mobility,
         relay=relay,
-        # `room_list`/`room_read` (design/self-awareness/07) read through the
+        # `room_list`/`room_read` read through the
         # SAME presence reader `<presence>` renders from: one model of which
         # rooms exist, not a second one for the tools.
         rooms=presence_reader,
@@ -3108,7 +2946,7 @@ async def build_dependencies(
         reminders=reminders,
         # The unified media index store — same engine, same lifecycle.
         media_store=media_objects,
-        # The document tools (design/artifact §26, §31): ships OFF, and off the
+        # The document tools: ships OFF, and off the
         # registry withholds all three from every turn.
         documents=document_service if cfg.documents.enabled else None,
         # the six event tools (`create_event`/`update_event`/`rsvp_event`/
@@ -3116,9 +2954,9 @@ async def build_dependencies(
         # (R-5) whenever a composition has not wired one; every deployment
         # here has, since it needs nothing this file does not already build.
         events=events,
-        # The third consumer of `tool_call_log_store` (Task 6 Step 8 wired the
-        # first two: EngagementPipeline/FirePath, via `deliver.build`) —
-        # `recall_lookups`'s own collaborator, tool-recall-log spec §4.
+        # The third consumer of `tool_call_log_store` (the first two are
+        # EngagementPipeline/FirePath, via `deliver.build`) —
+        # `recall_lookups`'s own collaborator.
         tool_call_log_store=tool_call_log_store,
         # Nora's computer: `computer` is `None` whenever `[computer] enabled`
         # is false; the audit store is always wired (see where it is built).
@@ -3128,7 +2966,7 @@ async def build_dependencies(
         computer_exports=computer_exports,
         artifact_link_base=cfg.documents.public_url,
         browser=browser,
-        # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance the
+        # The reminder caps as the DOMAIN value, the SAME `reminder_caps` instance the
         # Cognition session is built with — see that variable's own comment for
         # why they must not be two separately constructed copies.
         # `nora.agent` may not import `nora.config` (import-linter's "only app
@@ -3167,7 +3005,7 @@ async def build_dependencies(
         giphy=giphy_client,
         reaction=reaction_picker,
         music=music_bridge,
-        # `online_now`'s two live-state reads (design/online-status/). Either
+        # `online_now`'s two live-state reads. Either
         # None leaves its arms answering `unavailable` (R-5), never
         # `nothing_found` — the same optional-collaborator shape `mobility`
         # above uses.
@@ -3183,7 +3021,7 @@ async def build_dependencies(
         # is a tool that exists.
         budget_overrides=cfg.llm.budgets,
     )
-    # The sub-agent worker (design/subagent), registered under its kind for the poller below.
+    # The sub-agent worker, registered under its kind for the poller below.
     # OFF by default: nothing is built and `compute_backends` stays empty. It needs the tool
     # registry (its closed tool list is built from it), which is why it sits here.
     subagent_backend: SubagentBackend | None = None
@@ -3211,27 +3049,24 @@ async def build_dependencies(
             "compute-job poller stays idle. Set enabled = false."
         )
     if presence_store is not None:
-        # The R-21/R-31 startup invariant (design/19 §7.7, wired with `whereis`
-        # per DEC-54(4)): alarm the day a policy conversation is no longer a
-        # subset of a circle. A BACKGROUND task, not a startup gate — it needs
-        # the signal-cli roster, and an unreadable roster must not stop Nora
+        # The R-21/R-31 startup invariant (DEC-54(4)): alarm the day a policy
+        # conversation is no longer a subset of a circle. A BACKGROUND task, not
+        # a startup gate — it needs the signal-cli roster, and an unreadable
+        # roster must not stop Nora
         # (the AUTHORITATIVE fail-closed check is per-call in `Whereis.locate`;
         # this is the belt-and-braces pre-flight its docstring names).
         background.spawn(_presence_preflight(
             allowlist=allowlist, rosters=rosters, persons=persons,
             circles=presence_circles, metrics=metrics,
-            # Without her aliases Nora HERSELF is the «1 unmapped account» —
-            # found live 2026-08-07, first boot of this pre-flight: her own
-            # membership resolves to nobody in identity.toml, exactly the
+            # Without her aliases Nora HERSELF is the «1 unmapped account»: her
+            # own membership resolves to nobody in identity.toml, exactly the
             # stranger-shape the warning exists for. The tag path's Room gets
             # the same set (`EngagementPipeline._run_admitted`).
             #
-            # EVERY platform's aliases, not Signal's alone: this pre-flight now
+            # EVERY platform's aliases, not Signal's alone: this pre-flight
             # walks Discord rooms too, and Nora's SNOWFLAKE is what identifies
-            # her there. Signal-only would have counted her own bot account as
-            # one of the room's unmapped strangers — reintroducing, on the new
-            # platform, the exact false warning found live on this check's
-            # first boot.
+            # her there. Signal-only would count her own bot account as one of
+            # the room's unmapped strangers.
             self_ids=registry.self_aliases(),
         ))
     # The debrief's collaborators, as ONE object that is either present or
@@ -3248,9 +3083,8 @@ async def build_dependencies(
     # `objective=dreamer_instructions` is the SAME hot-reloading instruction
     # substrate every Dreamer adaptor holds, read through `objective_body` and
     # NOT `for_objective`: the latter prepends the Dreamer's own doctrine,
-    # which is research-framed, and «a research-framed doctrine on a task with
-    # no research» is one of the two named causes of the 4096-token runaway
-    # that made this a plain completion in the first place. The file living
+    # which is research-framed, and a research-framed doctrine on a task with
+    # no research makes the model run away with output.
     # under `nora/dreamer/objectives/` says nothing about Standing being a
     # Dreamer adaptor — it is a tag-path stage; that directory is simply where
     # the bind-mounted, hot-reloading instruction text lives.
@@ -3267,8 +3101,7 @@ async def build_dependencies(
                 model=cfg.standing.model or cfg.llm.model,
                 timeout_seconds=cfg.standing.timeout_seconds,
                 # Empty means inherit `[llm] reasoning_effort` — the same
-                # defaulting `model` above uses, and the honest default while
-                # the spike that would choose a value has not been run.
+                # defaulting `model` above uses.
                 reasoning_effort=_reasoning_effort(
                     cfg.standing.reasoning_effort or cfg.llm.reasoning_effort,
                     source=(
@@ -3314,7 +3147,7 @@ async def build_dependencies(
         reasoning_strip_store=reasoning_strip_store,
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
-        # The shared decision log (issue #199). The tag path only
+        # The shared decision log. The tag path only
         # WRITES: somebody addressed her, so it is never in doubt about
         # whether to speak. What it writes is what the other two
         # deciders could not see.
@@ -3324,29 +3157,24 @@ async def build_dependencies(
     # trigger it may carry needs `fire_path.speak`, which does not exist yet
     # here. Nothing between here and there consumes it.
 
-    # Boot recovery (§8.2), UNCONDITIONALLY — deliberately NOT behind
+    # Boot recovery, UNCONDITIONALLY — deliberately NOT behind
     # `cfg.heartbeat.enabled`. A crash leaves rows FIRING, and a heartbeat that
     # has been switched off is exactly the state in which a stranded row would
     # otherwise sit there forever: at-most-once would silently stop applying on
     # the very config that looks safest. Only the LOOP is gated.
     #
-    # `recover` counts what it sweeps; this call site logged and counted nothing,
-    # which made a crash that ate reminders invisible to every dashboard.
+    # `recover` counts what it sweeps, so a crash that ate reminders is visible
+    # to dashboards.
     await recover(store=reminders, metrics=metrics, now=clock())
     # Compute-job boot recovery, ALSO unconditional, and for the SAME reason —
-    # deliberately NOT behind `cfg.compute.enabled`. An earlier draft of this
-    # wiring put this call inside that gate; a deployment that crashes
-    # mid-delivery and then flips `[compute] enabled=false` (to disable the
-    # feature, unrelated to the crash) would leave any `FIRING` `ComputeJob`
-    # row stranded forever — exactly the failure mode reminders' own
-    # unconditional recovery above exists to prevent, silently reopened.
-    # Fixed here per a subagent review that caught it by direct comparison
-    # against `nora.app.heartbeat.recover`'s own stated reasoning.
+    # deliberately NOT behind `cfg.compute.enabled`: a deployment that crashes
+    # mid-delivery and then flips `[compute] enabled=false` would otherwise
+    # leave any `FIRING` `ComputeJob` row stranded forever.
     # The rows are RETURNED so the people waiting on them can be told. Sweeping
-    # them terminal is right and not claiming they failed is right, but before
-    # 2026-08-14 that combination also meant nobody was told ANYTHING: the
-    # requester heard «I'm working on it» and then nothing, ever. Delivered
-    # below, once `fire_path` exists.
+    # them terminal is right and not claiming they failed is right, but without
+    # a delivery nobody would be told ANYTHING: the requester heard «I'm
+    # working on it» and then nothing, ever. Delivered below, once `fire_path`
+    # exists.
     lost_jobs = await compute_poller_recover(
         store=compute_jobs, metrics=metrics, now=clock(),
         # A video row's handle is the provider's task id, not memory: when the video backend
@@ -3367,8 +3195,7 @@ async def build_dependencies(
     # `compute_backends` and accept deferred jobs, but the poller below —
     # which needs `fire_path` to deliver a finished job — would never spawn,
     # and every such job would sit `pending` forever with no path to ever
-    # reach the group it was asked into. This gate pre-dates Nora Compute and
-    # had no reason to anticipate a third occasion needing it.
+    # reach the group it was asked into.
     if cfg.heartbeat.enabled or cfg.compute.enabled or cfg.participation.enabled:
         # The real fire turn. It holds the SAME collaborators the tag path does
         # — one record store, one Honcho client, one runner, one tool registry —
@@ -3379,12 +3206,12 @@ async def build_dependencies(
             persons=persons, records=audit, memory=memory,
             lineage=lineage,
             media_join=media_join,
-            # The shared quote-window resolver (DEC-195, design/11 §2.5's
-            # amendment). The SAME instance `build_assembler` above holds —
-            # a fire turn reads the same `context_window`-sized transcript a
-            # tag reply does, and a reply INSIDE that window can still quote
-            # a parent outside it, whether or not this particular turn was
-            # triggered by one message in particular.
+            # The shared quote-window resolver (DEC-195). The SAME instance
+            # `build_assembler` above holds — a fire turn reads the same
+            # `context_window`-sized transcript a tag reply does, and a reply
+            # INSIDE that window can still quote a parent outside it, whether
+            # or not this particular turn was triggered by one message in
+            # particular.
             quote_window=quote_window,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters=dict(registry.adapters), registry=tool_registry,
@@ -3394,7 +3221,7 @@ async def build_dependencies(
             limits=limits, defer_tools=cfg.llm.defer_tools,
             # `[heartbeat]`, not `[llm]`: nobody is waiting on a fire turn, so
             # the 60s chosen for a person staring at a group chat is the wrong
-            # bound (§5.4).
+            # bound.
             timeout_seconds=cfg.heartbeat.timeout_seconds,
             clock=clock,
             rosters=rosters,
@@ -3404,41 +3231,35 @@ async def build_dependencies(
             llm_state=llm_state,
             tool_call_log_store=tool_call_log_store,
             reasoning_strip_store=reasoning_strip_store,
-            # The reminder-derived Event registry (DEC-139,
-            # design/event-abstraction/04): kind -> factory, wired here at
+            # The reminder-derived Event registry (DEC-139): kind -> factory, wired here at
             # the composition root so the domain type stays free of app
             # wiring. The registry holds the kinds whose Events are PRODUCED
             # BY a due Reminder row; compute/relay/lost-job call speak
-            # directly and are not registry entries. An event no longer owns
+            # directly and are not registry entries. An event does not own
             # a reminder (DEC-303): a reminder is a person's or Nora's own.
             event_registry={
                 "reminder": reminder_occasion,
-                # The proactive act turn (39 D4): a row the Cognition session's `remind` writes
-                # (the decide turn did before 2026-10-03), built `person_id=None`. Registered
+                # The proactive act turn: a row the Cognition session's
+                # `remind` writes, built `person_id=None`. Registered
                 # unconditionally — a row of this kind can only exist if a writer
                 # was once wired, and an unregistered kind fails the
                 # row `failed_error` with no way to say why.
                 "proactive": proactive_occasion,
             },
-            # S5 (15-roadmap §6.3) — `<standing>` renders on the fire path
-            # too. NOT "D5": that number is taken twice already (the identity
-            # config decision, and Phase A's tool grant), and this one was
-            # read off the PLAN's local operator-question table, which the
-            # roadmap relabelled S1-S6 when it closed them. A fire turn
+            # `<standing>` renders on the fire path too. A fire turn
             # speaks into a room UNPROMPTED, so «where had this conversation
             # got to» is the context she is least likely to have any other
             # way: there is no tagging message to infer it from. Reads only;
-            # the fire path writes no position, because S1 is blocked on it
-            # retaining a `TagTrace` at all (see `FirePath.__init__`).
+            # the fire path writes no position (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
-            # THE CULTURE HEAD (design/culture-tier, DEC-207) — the SAME reader
+            # THE CULTURE HEAD (DEC-207) — the SAME reader
             # the tag assembler holds. Keyed on `primary_id`, which is why this
             # path resolves the occasion through the policy it already holds
             # before reading (`FirePath._read_culture`).
             culture=culture_reader,
             lessons=lessons_reader,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            # The participation turn's memory reads (issue #210). ONE knob set,
+            # The participation turn's memory reads. ONE knob set,
             # read at the composition root exactly as the tag assembler reads
             # `tagger_card_conclusions` — two readers each carrying their own idea
             # of how much memory a prompt may hold is how the fire path came to
@@ -3449,7 +3270,7 @@ async def build_dependencies(
             people_in_window_conclusions=cfg.memory.people_in_window_conclusions,
             people_in_window_speakers=cfg.memory.people_in_window_speakers,
             memory_read_timeout_seconds=cfg.memory.read_timeout_seconds,
-            # The shared decision log (issue #199), written from
+            # The shared decision log, written from
             # `_determined` — the one method all four determination
             # exits already converge on. Participation and proactive
             # act turns only; a reminder firing is not a decision
@@ -3457,16 +3278,14 @@ async def build_dependencies(
             decisions=decision_log,
             # `<presence>` — the SAME reader the tag path's assembler holds, so
             # a participation turn or a reminder knows where it is the way a
-            # tag does (design/self-awareness/02).
-            # `<computer>` (design/sandbox-runtime §15.3), the reader the tag
+            # tag does.
+            # `<computer>`, the reader the tag
             # path's assembler holds; `None` while `[computer]` is off.
             computer=computer_context,
             documents=documents_context,
             presence=presence_reader,
-            # The note tier (design/dreamer-agent-loop/35 Phase 2) — S5's
-            # precedent one tier later: the participation determination grounds
-            # on «transcript + standing/notes», which Phase 1's header already
-            # CLAIMED while `build_context` rendered neither. Wired for every
+            # The note tier: the participation determination grounds
+            # on «transcript + standing/notes». Wired for every
             # fire occasion, gated exactly like the assembler's reads above:
             # the SAME store instance (already `None` while the tier's
             # `enabled = false`), and the SAME `allowlist` the assembler scopes
@@ -3475,19 +3294,19 @@ async def build_dependencies(
             notes=note_store,
             memos=memo_store,
             policy=allowlist,
-            # The participation occasion's own runner (§4) — None whenever the
+            # The participation occasion's own runner — None whenever the
             # occasion is disabled, which is also exactly when no participation
             # Event can reach `speak` (no policy marks one, no trigger exists).
             participation_runner=participation_runner,
-            # The proactive act turn's runner (39 D12): the same auto-runner,
+            # The proactive act turn's runner: the same auto-runner,
             # under its own name. Gated on a HOME ROOM existing, not on the
-            # adaptor being wired (audit 2026-09-09): a proactive row written
+            # adaptor being wired: a proactive row written
             # yesterday still comes due after `[dreamer] enabled` is flipped
             # off, the screen below admits it, and a fire path with no runner
             # would fail every such row `failed_error`. The row's existence
             # condition is the home room; so is the runner's.
             proactive_runner=proactive_runner,
-            # The §10.6 shadow mirror: wired only when the operator turned BOTH
+            # The shadow mirror: wired only when the operator turned BOTH
             # the occasion AND the review surface on — a mirrored determination
             # always cleared the room opt-in and the enabled gate first. The
             # channel id is validated non-empty by `ParticipationConfig` when
@@ -3497,7 +3316,7 @@ async def build_dependencies(
                 if cfg.participation.enabled and cfg.participation.shadow else None
             ),
             shadow_platform=cfg.participation.shadow_platform,
-            # The Relevance Gate's OWN review channel (design 36 §4), wired
+            # The Relevance Gate's OWN review channel, wired
             # only when the gate is on AND in shadow. Separate from the
             # mirror above because the two report different things: that one
             # carries what she WOULD HAVE SAID, this one carries what the
@@ -3524,15 +3343,10 @@ async def build_dependencies(
             "compute all off)", len(lost_jobs),
         )
 
-    # THE FIRE-TIME SCREEN for a `kind="proactive"` row, hoisted out of the
-    # heartbeat's argument list and built unconditionally.
-    #
-    # Same object, same arguments, same one consumer. It is a pure value with no
-    # side effects, so constructing it a few lines earlier changes nothing — the
-    # same reasoning as `gate` above. Hoisted for the reason the comment on its
-    # own parameter already gives: the screen belongs to the ROW, not to the
-    # loop, so asking "would this row be refused" should not require turning the
-    # loop on.
+    # THE FIRE-TIME SCREEN for a `kind="proactive"` row, built
+    # unconditionally. It is a pure value with no side effects. The screen
+    # belongs to the ROW, not to the loop, so asking "would this row be
+    # refused" should not require turning the loop on.
     proactive_screen = ProactiveScreen(policy=allowlist, notes=note_store)
 
     if cfg.heartbeat.enabled and fire_path is not None:
@@ -3544,14 +3358,14 @@ async def build_dependencies(
             # `allowlist` — policy.toml — NOT `policy`, which is the
             # CompositePolicy deciding whether a message is a tag and has no
             # `is_allowed` at all. Re-checking the ALLOWLIST at fire time is the
-            # whole point of this parameter (§5.1): the file is read once at
+            # whole point of this parameter: the file is read once at
             # startup and a row may be thirty days old.
             policy=allowlist,
             clock=clock,
             metrics=metrics,
             tick_seconds=cfg.heartbeat.tick_seconds,
             fire=fire_path.run,
-            # The `kind="proactive"` screen (39 D5/D11): the room's flag and
+            # The `kind="proactive"` screen: the room's flag and
             # the note's state, read through the SAME allowlist and the SAME
             # note store every other reader holds. Wired whenever the
             # heartbeat is, not only when the adaptor is: a proactive row
@@ -3562,7 +3376,7 @@ async def build_dependencies(
         )
         background.spawn(heartbeat.run())
 
-    # The compute-job poller (Nora Compute spec §4): a background
+    # The compute-job poller: a background
     # loop, gated on BOTH the feature flag and a live `fire_path` (a compute
     # job is delivered as a fire turn into the same conversation, exactly as
     # a reminder is). `compute_backends` is only non-empty
@@ -3592,14 +3406,14 @@ async def build_dependencies(
         # loop, and `BackgroundTasks` holds the strong reference.
         background.spawn(compute_poller.run())
 
-    # The public Instagram summons consumer (design/instagram-adoption/19,
-    # the 2026-09-26 intake), gated on BOTH `[social.instagram] enabled` and
-    # its own `summons.enabled` (the config refuses the second without the
-    # first) — the same `summons_wired` that enabled the inbox above, so a
+    # The public Instagram summons consumer, gated on BOTH
+    # `[social.instagram] enabled` and its own `summons.enabled` (the config
+    # refuses the second without the first) — the same `summons_wired` that
+    # enabled the inbox above, so a
     # queued card always has a consumer. It takes cards off the inbox the
     # Instagram adapter fills from the bridge's SSE stream, one at a time;
-    # there is no poll (the notification feed never carried these mentions,
-    # measured), so `summons.poll_seconds` is read by nothing. It needs no
+    # there is no poll (the notification feed never carries these mentions),
+    # so `summons.poll_seconds` is read by nothing. It needs no
     # `fire_path`: a summons speaks into no room. Spawned, never awaited;
     # `cancel_all` stops it at shutdown with every other background loop.
     if summons_wired and summons_runner is not None and social_subjects is not None:
@@ -3640,7 +3454,7 @@ async def build_dependencies(
                 "stream, so no summons will ever be received",
             )
 
-    # The participation occasion (design/dreamer-agent-loop/35): trigger, then
+    # The participation occasion: trigger, then
     # dispatcher. Gated on BOTH the flag and a live `fire_path` — the same
     # shape as the poller above. The trigger holds `fire_path.speak` as a
     # BOUND METHOD (`tests/test_composition.py` asserts the same of the
@@ -3656,8 +3470,7 @@ async def build_dependencies(
     if cfg.relevance_gate.enabled and fire_path is not None:
         # The gate is built HERE and not beside the other model clients,
         # because it is the only one whose absence would change behaviour
-        # silently: a trigger with `gate=None` admits every closed window,
-        # which is design 35's cost restored without design 35's name on it.
+        # silently: a trigger with `gate=None` admits every closed window.
         # Constructed in the same branch that constructs the trigger, so the
         # two cannot come apart.
         gate = RelevanceGate(
@@ -3696,7 +3509,7 @@ async def build_dependencies(
             standing=standing_store if cfg.standing.enabled else None,
             transcript_limit=cfg.relevance_gate.transcript_rows,
             # The SAME number the client above is built with, handed to the
-            # gate as well (issue #163). Not belt-and-braces: the client's
+            # gate as well. Not belt-and-braces: the client's
             # `wait_for` is a property of THIS wiring, and the gate's own
             # `decide` promise — never raise, never hang — has to hold against
             # whatever satisfies `ModelClient`. Whichever fires first produces
@@ -3709,24 +3522,18 @@ async def build_dependencies(
             # least able to see — a systematic under-admission exactly where
             # the room is most likely to be asking something.
             media_join=media_join,
-            # NO `capabilities` (issue #144, reversed 2026-09-10 on the eval
-            # suite's own numbers). Giving the gate her derived read-only tool
-            # surface was shipped on the theory that it decides a capability
-            # question blind. Measured over the suite's 40 labelled windows it
-            # made the gate STRICTER and worse: false NO_GO 3 -> 5, no
-            # capability improved, `settled_and_forgotten` 3/3 -> 2/3,
-            # `whereabouts` 8/9 -> 7/9, and +707 prompt tokens on every quiet
-            # window in every opted-in room. PASS -> FAIL.
+            # NO `capabilities`: giving the gate her derived read-only tool
+            # surface made it STRICTER and worse on the eval suite (more false
+            # NO_GO, no capability improved) and adds prompt tokens on every
+            # quiet window in every opted-in room.
             #
             # `ToolRegistry.capability_digest()` and `--capabilities` on the
-            # suite are kept: the instrument that produced that number is worth
-            # more than the change it refused, and the next attempt at #144
-            # starts by re-running it.
+            # suite are kept so the comparison can be re-run.
         )
         participation_trigger = ParticipationTrigger(
             speak=fire_path.speak,
             slots=slots,
-            # Still `[participation]`'s (design 36 §9): the quiescence window
+            # Still `[participation]`'s: the quiescence window
             # belongs to the TRIGGER, which is shared, and the gate is what
             # runs when a window closes — not what defines one.
             settle_seconds=cfg.participation.settle_seconds,
@@ -3739,10 +3546,10 @@ async def build_dependencies(
             gate_shadow=(
                 fire_path.post_gate_verdict if cfg.relevance_gate.shadow else None
             ),
-            # The per-room watermarks, written down (migration 0056). Without
-            # it the SEND cooldown died with the process, so a force-recreate
-            # let her speak again at once however recently she had spoken —
-            # and §10.3's whole job is to cap what a room HEARS.
+            # The per-room watermarks, persisted so the SEND cooldown survives
+            # a force-recreate: otherwise she could speak again at once however
+            # recently she had spoken, and the cooldown's whole job is to cap
+            # what a room HEARS.
             store=SqlParticipationStateStore(engine),
         )
     elif cfg.participation.enabled:
@@ -3750,11 +3557,10 @@ async def build_dependencies(
         # and it cannot live there: that validator refuses a gate with no turn
         # behind it, which is a config error. This is a turn with no gate in
         # FRONT of it, which is a legal config that simply does nothing — the
-        # room policy and the trigger both moved onto `[relevance_gate]
-        # enabled` in design 36, so participation alone now notes no message,
-        # closes no window and runs no turn. Loud rather than inert: design
-        # 35's own marker still says the occasion is "live and running", so an
-        # operator reading it would have no other way to learn this.
+        # room policy and the trigger are both keyed on `[relevance_gate]
+        # enabled`, so participation alone notes no message, closes no window
+        # and runs no turn. Loud rather than inert, so an operator reading
+        # `[participation]` has a way to learn this.
         log.error(
             "participation.enabled = true but relevance_gate.enabled = false — "
             "NOTHING will happen: since design/dreamer-agent-loop/36 the "
@@ -3776,21 +3582,20 @@ async def build_dependencies(
         participation=participation_trigger,
     )
 
-    # ---- the Dreamer runtime (substrate plan Phase 2) --------------------
+    # ---- the Dreamer runtime --------------------
     #
     # Constructed only when `[dreamer] enabled` is true, the shape every
     # gated subsystem in this file uses: a
     # subsystem that is off builds NOTHING, so a wiring mistake in it cannot
     # cost a deployment that never turned it on.
     #
-    # `dream_adaptors` is empty unless `[culture]` turns its pass on (the note
-    # tier's passes were deleted 2026-10-03, DEC-277): `dream_loop` with an
-    # empty tuple ticks the cursor and runs nothing.
+    # `dream_adaptors` is empty unless `[culture]` turns its pass on:
+    # `dream_loop` with an empty tuple ticks the cursor and runs nothing.
     dream_adaptors: tuple[DreamAdaptor, ...] = ()
     dreamer_runtime: DreamerRuntime | None = None
     dream_schedules: Mapping[str, AdaptorSchedule] = {}
     # ONE schedule-state store, shared by the loop's slots and
-    # any other schedule clock (issue #136): two instances would be two
+    # any other schedule clock: two instances would be two
     # engines over one table for no reason.
     dream_schedule_clock = SqlDreamScheduleClock(engine)
     # The Cognition session: built inside the Dreamer block below ONLY under
@@ -3803,7 +3608,7 @@ async def build_dependencies(
     cognition_session_units: Collection[str] | None = None
     cognition_upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None
     if cfg.dreamer.enabled:
-        # THE CULTURE TIER (design/culture-tier, DEC-182..185). An account of
+        # THE CULTURE TIER (DEC-182..185). An account of
         # how each room works and why, folded from that room's own messages
         # when it has said enough (DEC-288) and appended to a chain.
         #
@@ -3813,14 +3618,13 @@ async def build_dependencies(
         # DEC-290). The chain is the contribution: a tier judged on its first
         # snapshot is judged on the one thing it does not contribute.
         #
-        # Gated on `[culture] enabled` alone — no note-tier dependency, unlike
-        # the (deleted, DEC-277) proactive adaptor: the corpus is `messages`,
-        # which every deployment has.
+        # Gated on `[culture] enabled` alone — no note-tier dependency: the
+        # corpus is `messages`, which every deployment has.
         if cfg.culture.enabled:
             dream_schedules = {
                 **dream_schedules,
                 "culture": AdaptorSchedule(
-                    # DEC-288, replacing DEC-185's daily clock: fire on
+                    # DEC-288: fire on
                     # `wake_batch` new human messages, or on any new one once
                     # the last fold is `stale_seconds` old. A SILENT ROOM STILL
                     # NEVER FIRES, which is correct rather than a defect:
@@ -3830,17 +3634,14 @@ async def build_dependencies(
                     wake_batch=cfg.culture.wake_batch,
                     # THE BATCH IS THE CORPUS — see `CultureConfig.batch_limit`.
                     # This is how much of the room the model gets to see, not a
-                    # throttle, and an earlier draft of the design pinned it at
-                    # 1 on an assumption that has since been falsified.
+                    # throttle.
                     batch_limit=cfg.culture.batch_limit,
                     # START FROM WHAT THE ROOM HAS BEEN SAYING LATELY, not from
                     # its origin story. `seed_watermarks` inherits from the
                     # `language` cursor, and that tier is DELETED — so a room it
                     # never covered would seed at 0 and spend days walking a
                     # backlog, installing an account derived from the room's
-                    # past as the current head each time. Measured the night
-                    # this shipped: one room held 1,916 messages with 1,616
-                    # unread behind a zero cursor.
+                    # past as the current head each time.
                     seed_at_head=True,
                 ),
             }
@@ -3848,8 +3649,7 @@ async def build_dependencies(
                 *dream_adaptors,
                 CultureAdaptor(
                     culture=SqlCultureStore(engine),
-                    # THE NOTE INDEX (design/culture-tier `01-the-adaptor
-                    # §1.2`): an account of how a room works that cannot see
+                    # THE NOTE INDEX: an account of how a room works that cannot see
                     # what the room has OPEN is inferring a thing the note
                     # index already states. `None` for the tier being off is
                     # a real configuration and renders no block, not an empty
@@ -3860,10 +3660,9 @@ async def build_dependencies(
                     # The THREE policy resolutions, every one of them the same
                     # `.get` over the allowlist keyed on `conv.primary_id` —
                     # which is this adaptor's own key, because a Dreamer
-                    # adaptor is handed `scopes()` (GLOSSARY.md, DEC-181
-                    # withdrawn). Built here, in one place, so they cannot
-                    # disagree about which room a key names (issue #161's
-                    # arrangement one tier over).
+                    # adaptor is handed `scopes()` (GLOSSARY.md). Built here, in
+                    # one place, so they cannot disagree about which room a key
+                    # names.
                     unit_for={
                         conv.primary_id: conv.unit
                         for conv in allowlist.conversations
@@ -3884,13 +3683,12 @@ async def build_dependencies(
                         if conv.primary_id and conv.description
                     }.get,
                     metrics=metrics,
-                    # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200),
+                    # THE ROOM'S PLATFORM and A NAME RESOLVER,
                     # off the SAME allowlist read `label_for`/`description_for`
                     # already are, plus `persons` — the one instance every
                     # other write path in this file already holds. This is
                     # what lets `inputs()` fill a mapped sender's canonical
-                    # name into `<room_messages>` before it renders, the same
-                    # wiring the deleted `NoteCandidateAdaptor` carried.
+                    # name into `<room_messages>` before it renders.
                     platform_for={
                         conv.primary_id: conv.platform
                         for conv in allowlist.conversations
@@ -3902,7 +3700,7 @@ async def build_dependencies(
                     ),
                 ),
             )
-            # CHARACTER · PERSON (design/self-growth/10 §3, C2b): one session
+            # CHARACTER · PERSON: one session
             # per (unit, person listed in that unit's rooms), woken by that
             # person's own messages across the unit's rooms. Same store,
             # same chain, the stale rule `[culture] stale_seconds` shares.
@@ -3915,8 +3713,8 @@ async def build_dependencies(
                     wake_batch=cfg.culture.person_wake_batch,
                     # THE WAKE BATCH, as Nora's session reads its own: a
                     # person's session reads their newest `person_wake_batch`
-                    # messages, not a room's `batch_limit` (300), which sized
-                    # a room's whole corpus and tripled this read's cost.
+                    # messages, not a room's `batch_limit`, which sizes a room's
+                    # whole corpus.
                     batch_limit=cfg.culture.person_wake_batch,
                 ),
             }
@@ -3931,7 +3729,7 @@ async def build_dependencies(
                 ),
             )
 
-            # CHARACTER · UNIT (C3a): one session per unit, woken by new
+            # CHARACTER · UNIT: one session per unit, woken by new
             # revisions of its rooms' cultures.
             unit_keys = character_unit_keys(allowlist)
             dream_schedules = {
@@ -3942,9 +3740,8 @@ async def build_dependencies(
                     batch_limit=cfg.culture.batch_limit,
                 ),
             }
-            # CHARACTER · NORA (C3b): her own account per unit, from closed
-            # response episodes; read back as the `self` block
-            # (design/self-growth/20).
+            # CHARACTER · NORA: her own account per unit, from closed
+            # response episodes; read back as the `self` block.
             nora_keys = {
                 nora_character_key(uk.unit): NoraKey(unit=uk.unit, rooms=uk.rooms)
                 for uk in unit_keys.values()
@@ -3982,16 +3779,15 @@ async def build_dependencies(
                 ),
             )
 
-        # LESSONS (design/self-growth/40, L2): one session per unit, woken by
+        # LESSONS: one session per unit, woken by
         # closed response episodes, writing through the book's checked verbs.
-        # Gated on `[lessons] enabled` alone (off by default): nothing renders a
-        # lesson before L5, and the doctrine check is L3.
+        # Gated on `[lessons] enabled` alone (off by default).
         if cfg.lessons.enabled:
             lessons_keys = {
                 uk.unit: LessonsKey(unit=uk.unit, rooms=uk.rooms)
                 for uk in character_unit_keys(allowlist).values()
             }
-            # THE DOCTRINE CHECK (L3): every lesson is read against the law by a
+            # THE DOCTRINE CHECK: every lesson is read against the law by a
             # separate call before it is written; a conflict is a tension row.
             # Its instruction is read once HERE so a missing file stops startup
             # instead of refusing every lesson as `check_unavailable`.
@@ -3999,11 +3795,10 @@ async def build_dependencies(
                 raise StartupError(f"the {CHECK_OBJECTIVE} objective is empty")
             lesson_check = DoctrineCheck(
                 # The relevance gate's raw JSON completion, not the Strands
-                # `_DebriefModelClient`: measured 2026-10-09, the Strands path
-                # returned an EMPTY answer (`end_turn`) on a live lesson every
-                # time at every effort, while the same request raw came back
-                # `{"verdict": "consistent"}`. Empty is an `error`, so every such
-                # lesson would have been refused.
+                # `_DebriefModelClient`: the Strands path returns an EMPTY
+                # answer (`end_turn`) on a live lesson, while the same request
+                # raw returns `{"verdict": "consistent"}`. Empty is an `error`,
+                # so every such lesson would be refused.
                 client=_RelevanceGateModelClient(
                     client=client,
                     model=cfg.lessons.check_model or cfg.llm.model,
@@ -4078,38 +3873,33 @@ async def build_dependencies(
         dream_models = factory.ModelSource(
             client=client,
             spec=factory.ModelSpec(
-                # `cfg.dreamer_max_tokens()` and NOT `tier.max_tokens`, which
-                # is what this said until issue #291. The tier's number is
-                # sized for a TAG TURN; a batch pass whose objective asks for
-                # one verdict per message has an output that scales with the
-                # batch, and at `[llm] max_tokens = 2000` one scope spent ~24
-                # hours failing every run with `PartialReplyError` — held
-                # watermark, re-read batch, one retry per hour forever.
-                # The accessor folds the `[llm]` fallback in, so an unset
-                # `[dreamer] max_tokens` still resolves to exactly this.
+                # `cfg.dreamer_max_tokens()` and NOT `tier.max_tokens`. The
+                # tier's number is sized for a TAG TURN; a batch pass whose
+                # objective asks for one verdict per message has an output that
+                # scales with the batch, and a tag-sized ceiling fails every run
+                # with `PartialReplyError` — held watermark, re-read batch, one
+                # retry per hour forever. The accessor folds the `[llm]`
+                # fallback in, so an unset `[dreamer] max_tokens` falls back
+                # to it.
                 model=dream_model, max_tokens=cfg.dreamer_max_tokens(),
                 temperature=tier.temperature,
-                # `[dreamer] reasoning_effort` where set, else the tier's.
-                # Measured: at the tier's "low" this model reasons its way to
+                # `[dreamer] reasoning_effort` where set, else the tier's. At
+                # the tier's "low" this model reasons its way to
                 # `{"candidates": []}` on a transcript that plainly contains
                 # claims, and to `MaxTokensReachedException` on a real one —
                 # reasoning is billed as completion and it spends the ceiling.
                 # The key is the Dreamer's own so her replies keep theirs.
                 # WRAPPED, and the wrap is the point rather than a tidy-up.
-                # `[dreamer] reasoning_effort` is typed, so it cannot arrive
-                # wrong — but `""` is its default and its documented inherit
-                # value, and what it inherits is `[llm] reasoning_effort`, a
-                # bare `str`. Unwrapped, `[llm] = "hgh"` with `[dreamer] = ""`
-                # LOADS and resolves to `"hgh"`, which reaches the provider as
-                # a 400 mid-tick and surfaces as one more `unavailable` in a
-                # background pass nobody watches. That is exactly the scenario
-                # the typed declaration is supposed to have made impossible,
-                # and the declaration alone does not make it so.
+                # `[dreamer] reasoning_effort` is typed, but `""` is its
+                # default and its documented inherit value, and what it
+                # inherits is `[llm] reasoning_effort`, a bare `str`.
+                # Unwrapped, `[llm] = "hgh"` with `[dreamer] = ""` LOADS and
+                # resolves to `"hgh"`, which reaches the provider as a 400
+                # mid-tick and surfaces as one more `unavailable` in a
+                # background pass nobody watches.
                 #
-                # `_reasoning_effort` exists for this case and says so; the
-                # debrief's `standing-or-llm` expression 460 lines up is the
-                # same shape. Copying `StandingConfig`'s declaration without
-                # its RESOLUTION is half the precedent.
+                # `_reasoning_effort` exists for this case; the debrief's
+                # `standing-or-llm` expression is the same shape.
                 reasoning_effort=dream_effort,
                 tool_choice=tool_choice.AFTER_SPEAKING,
             ),
@@ -4120,7 +3910,7 @@ async def build_dependencies(
         dream_tools = RegistryToolSource(
             registry=tool_registry, store=audit, persons=persons,
             honcho=memory, metrics=metrics, ai_peer=cfg.memory.ai_peer,
-            # The home rooms (39 D2), from the SAME allowlist read the
+            # The home rooms, from the SAME allowlist read the
             # adaptor's room map came from, with each room's `location`
             # flag threaded as DEC-74 threads it on a tag. Passed whether or
             # not the proactive adaptor is wired: the map is inert for an
@@ -4158,7 +3948,7 @@ async def build_dependencies(
             # EVERY platform's aliases, for `_presence_preflight`'s reason: a
             # home room's roster must skip Nora's own account rather than
             # count it as one unnamed stranger — which alone makes `where_is`
-            # refuse in a location-trusted room (39 D2, review finding).
+            # refuse in a location-trusted room.
             self_ids=registry.self_aliases(),
         )
         # Each adaptor's room grant, by NAME, handed to the runtime AND to the
@@ -4212,24 +4002,18 @@ async def build_dependencies(
             model_name=dream_model,
             schedules=dream_schedules,
             # The SAME `[llm.budgets]` the tag path applies through
-            # `ToolRegistry(budget_overrides=...)`. Threaded here because the
-            # Dreamer was reading `NATIVE_TOOLS` directly, so one number in
-            # `config.toml` meant two different ceilings depending on which
-            # loop asked — and the Dreamer's was the lower one, on the loop
-            # that does the research.
+            # `ToolRegistry(budget_overrides=...)`, so one number in
+            # `config.toml` is one ceiling whichever loop asks.
             tool_budget_overrides=cfg.llm.budgets,
             grants=dream_grants,
-            # The per-CALL-SITE allowance for `inputs`/`commit` (issue #60),
+            # The per-CALL-SITE allowance for `inputs`/`commit`,
             # multiplied by each adaptor's own declared `store_calls_per_tick`.
             store_timeout_seconds=cfg.dreamer.store_timeout_seconds,
-            # Issue #325. The Dreamer is where the 2026-09-17 config change
-            # moved the exposure: `[dreamer] reasoning_effort` went
-            # `none -> low` in the same session `CultureAdaptor.tools` went
-            # from empty to nine read verbs, and a tool-using run at `low` is
-            # the multi-turn shape the transport strips. Low-traffic and
-            # judgement-forming, so a discarded reasoning there is both closer
-            # to being the verdict and harder to notice than on a reply
-            # somebody reads.
+            # The Dreamer's reasoning-strip store: a tool-using run at
+            # `[dreamer] reasoning_effort = low` is the multi-turn shape the
+            # transport strips. Low-traffic and judgement-forming, so a
+            # discarded reasoning there is both closer to being the verdict
+            # and harder to notice than on a reply somebody reads.
             reasoning_strip_store=reasoning_strip_store,
         )
         # R-5's refuse-to-start shape, and the one check that must run at
@@ -4323,7 +4107,7 @@ async def build_dependencies(
                         platform=platform, conversation_id=cid,
                     ),
                 )
-            # The policy's label for each of those ids (m5): the prompt calls a
+            # The policy's label for each of those ids: the prompt calls a
             # room by it and never by the conversation id.
             cognition_room_labels: dict[tuple[str, str], str] = {
                 (conv.platform, cid): conv.label
@@ -4373,7 +4157,7 @@ async def build_dependencies(
                     ).members(),
                     circles=presence_circles,
                 ),
-                # Her own account in the unit (design/self-growth/20), under
+                # Her own account in the unit, under
                 # `[culture] enabled` like every Character read.
                 # Her own account in the unit, shown only where every room of the
                 # unit agrees on `location` (R-31; `unit_self_reader`).
@@ -4396,7 +4180,7 @@ async def build_dependencies(
                         platform=platform, conversation_id=conversation_id,
                     ),
                     # The HEAD with its `standing_revision` id: the token a
-                    # `standing_revise` base is checked against (M6, DEC-250).
+                    # `standing_revise` base is checked against (DEC-250).
                     standing_of=lambda platform, conversation_id: standing_store.read_head(
                         platform=platform, conversation_id=conversation_id,
                     ),
@@ -4580,7 +4364,7 @@ def _roster_names_of(
     person ids, read through the same `Room` the tag path resolves a room with
     (Nora's own accounts are not members: `self_ids`). `None` when the roster
     cannot be read, so a note write can say `unavailable` instead of refusing
-    every owner against an empty room (M3)."""
+    every owner against an empty room."""
 
     async def roster_of(platform: str, conversation_id: str) -> Mapping[str, str] | None:
         view = await Room(
@@ -4629,7 +4413,7 @@ async def _presence_preflight(
     metrics: Metrics,
     self_ids: frozenset[str] = frozenset(),
 ) -> None:
-    """The R-21/R-31 disclosure pre-flight (design/19 §7.7): for every policy
+    """The R-21/R-31 disclosure pre-flight: for every policy
     conversation, is its resolved membership a SUBSET of each circle?
 
     `check_disclosure_invariant` publishes `nora_presence_circle_subset_ok` and
@@ -4640,7 +4424,7 @@ async def _presence_preflight(
     (`view.unnamed`) that a person_id subset cannot — so this logs those as a
     warning rather than pretending the gauge covers them.
 
-    **In a location-TRUSTED room that per-call guard no longer refuses on
+    **In a location-TRUSTED room that per-call guard does not refuse on
     `view.unnamed` (DEC-79), so do not read the warning below as a block.** What
     still holds there: the roster must READ (a degraded room answers
     `unavailable`), the target must resolve inside it, and every waiver is
@@ -4654,9 +4438,8 @@ async def _presence_preflight(
     for conv in allowlist.conversations:
         # Every platform that HAS a roster, not just Signal. Skipping a
         # platform here does not make it safe — the authoritative check is
-        # per-call in `Whereis.locate` — but it does mean the gauge and the
-        # operator's boot-time warning silently covered only half the rooms
-        # once a second platform existed.
+        # per-call in `Whereis.locate` — but the gauge and the operator's
+        # boot-time warning would silently cover only part of the rooms.
         roster_source = rosters.get(conv.platform)
         if roster_source is None:
             continue
@@ -4696,14 +4479,11 @@ async def _presence_preflight(
                 # non-trusted room mapped to the same circle. Skip it: `where_is`
                 # discloses here on purpose.
                 #
-                # This used to add «and an unmapped account still blocks
-                # disclosure, trusted or not» as the second half of the
-                # justification. DEC-79 made that false, and the fail-closed
-                # audit was right to call it out: what actually remains in a
-                # trusted room is the roster READ (degraded → `unavailable`), the
-                # target resolving inside it, and the waiver counter. Skipping
-                # this gauge is still correct — it would be a permanent false
-                # alarm — but it is now the only pre-flight this room gets.
+                # What remains in a trusted room (DEC-79) is the roster READ
+                # (degraded → `unavailable`), the target resolving inside it,
+                # and the waiver counter. Skipping this gauge is correct (it
+                # would be a permanent false alarm), but it is the only
+                # pre-flight this room gets.
                 log.info(
                     "presence pre-flight: %s conversation %r is location-trusted "
                     "(DEC-74) — the circle-subset invariant is intentionally "
@@ -4715,11 +4495,10 @@ async def _presence_preflight(
             for circle in circles:
                 check_disclosure_invariant(
                     circle=circle, group_person_ids=group_person_ids, metrics=metrics,
-                    # WHICH room, so the gauge is per-conversation. Circle alone
-                    # was last-writer-wins across every allowlisted room, so a
-                    # failing one could be overwritten by a passing one and the
-                    # alarm lost — and widening this loop to a second platform
-                    # is exactly what made that reachable.
+                    # WHICH room, so the gauge is per-conversation: circle alone
+                    # would be last-writer-wins across every allowlisted room,
+                    # and a failing room could be overwritten by a passing one
+                    # and the alarm lost.
                     platform=conv.platform,
                     conversation=conv.primary_id or "",
                 )
@@ -4737,8 +4516,8 @@ async def _build_media_custody(
     key is present — the bytes on disk are ciphertext, and there is deliberately
     no plaintext-on-disk mode. Every way it can be off returns `(None, None)`,
     which is the one wiring state `nora.ingest.stages.media` reads as
-    `not_configured`: it records every attachment exactly as before (placeholder,
-    no handle) and counts each one, so custody being off is visible in the
+    `not_configured`: it records every attachment as a placeholder with
+    no handle, and counts each one, so custody being off is visible in the
     metrics rather than silent.
 
     A MISSING or MALFORMED key is off, not fatal — warned and degraded, never a
@@ -4793,8 +4572,7 @@ async def _build_media_custody(
         # so a fetcher for a platform producing no messages costs nothing,
         # while a gate here would make custody depend on two settings instead
         # of one. Absent one, `stages.media` counts every Instagram
-        # attachment `not_supported` — which is precisely what shipped, and
-        # what recorded a bare `[image]` in the live room.
+        # attachment `not_supported`.
         InstagramMediaSource(
             timeout_seconds=media.timeout_seconds,
             max_bytes=media.max_bytes,
@@ -4891,13 +4669,13 @@ def _room_ids_of(policy: Policy) -> Callable[[str, str], frozenset[str]]:
 
 def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:
     """A Discord `guild_id` → the `conversation_id` its speech is recorded in,
-    or `None` (design/voice-channel/07 §12.2, reversed 2026-09-17).
+    or `None`.
 
     A free function for the same reason as `_note_unit_of`: the `None`
     branch has to be nameable. A guild with no room marked `voice = true` has
     nowhere its speech belongs, and `nora.web.voice` answers 400 — falling
-    back to the voice channel's own id would create the per-channel rooms this
-    reversal exists to stop, one spoken sentence at a time.
+    back to the voice channel's own id would create per-channel rooms, one
+    spoken sentence at a time.
 
     Returns the id rather than the `Conversation` so `nora.web` stays unaware
     that `nora.policy` exists at all."""
@@ -4911,7 +4689,7 @@ def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:
 
 def _music_channel_of(policy: Policy) -> Callable[[str], str | None]:
     """A Discord `guild_id` → the CHANNEL id its music announcements are
-    posted in, or `None` (design/discord-music/10-notification-routing.md).
+    posted in, or `None`.
 
     A thin bind of `Policy.music_channel_for`, for `_voice_room_of`'s reason:
     the platform layer must not learn that `nora.policy` exists, and the

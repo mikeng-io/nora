@@ -1,6 +1,6 @@
-"""One X link parser, for `x_read` (design/social-per-network/10 §`x_read`).
+"""One X link parser, for `x_read`.
 
-The rules follow `nora.domain.instagram_links`, which drew them first:
+The rules follow `nora.domain.instagram_links`:
 
 * **The host is an exact match** on the parsed hostname: `x.com`,
   `twitter.com`, and each with `www.` or `mobile.`. Never a suffix or a

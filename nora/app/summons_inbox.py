@@ -1,6 +1,5 @@
 """`SummonsInbox` — the bounded in-process hand-off between the Instagram
-adapter's SSE loop and the summons consumer (design/instagram-adoption/19,
-the 2026-09-26 intake).
+adapter's SSE loop and the summons consumer.
 
 It satisfies `nora.domain.summons.SummonsSink`, so the platform layer holds
 only that port and never learns this module exists. Composition ALWAYS builds

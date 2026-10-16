@@ -1,10 +1,10 @@
 """The escaping every XML-ish block in the prompt shares (R-13).
 
-`nora.agent.prefill` has escaped group-derived text since the first prefill, and
-`nora.doctrine.loader` now renders frontmatter into section attributes and needs
-the identical rule. The layer contract runs `nora.agent` -> `nora.doctrine`, so
-the loader cannot reach up into `prefill` for it; `nora.domain` is the one place
-both of them may import from.
+`nora.agent.prefill` escapes group-derived text, and `nora.doctrine.loader`
+renders frontmatter into section attributes and needs the identical rule. The
+layer contract runs `nora.agent` -> `nora.doctrine`, so the loader cannot reach
+up into `prefill` for it; `nora.domain` is the one place both of them may
+import from.
 
 Two escapers rather than one because the contexts differ by exactly one
 character: `escape` is for text between tags, `escape_attr` is for a value
@@ -37,13 +37,11 @@ from xml.sax.saxutils import escape as _escape
 #: escape for these: `&#11;` is as illegal as the raw byte, so the only
 #: conforming rendering is to remove them.
 #:
-#: **Found by a component test that PARSED a rendered prompt instead of
-#: substring-matching it.** A member's body containing U+000B renders
-#: `<m n="1">ok\x0bhidden</m>`, which is not well-formed XML — and the element
-#: form's whole argument is that the tag is a delimiter a body cannot break.
-#: `escape` handles `&`, `<`, `>` and is blind to these exactly as it was blind
-#: to the newline; the body is deliberately NOT collapsed, so nothing else was
-#: going to catch them.
+#: A member's body containing U+000B would render
+#: `<m n="1">ok\x0bhidden</m>`, which is not well-formed XML, and the element
+#: form relies on the tag being a delimiter a body cannot break. `escape`
+#: handles `&`, `<`, `>` only, and the body is deliberately NOT collapsed, so
+#: nothing else catches these.
 #:
 #: Stripped rather than replaced with a space: a control character carries no
 #: meaning a reader loses, and a substitution would change the body's length
@@ -58,7 +56,7 @@ def legal(text: object) -> str:
     """`str()`, with the characters XML cannot carry at all removed. Public
     because a name that is VALIDATED against what was rendered has to be put
     through the same removal the renderer applies (`speaker_of` in
-    `nora.language.cognition_render`, step 3b)."""
+    `nora.language.cognition_render`)."""
     return str(text).translate(_XML_FORBIDDEN)
 
 
@@ -74,23 +72,20 @@ def escape_attr(text: object) -> str:
 
 def age(ts_ms: int, now: datetime) -> str:
     """How long ago something was, for a block a model has to judge freshness
-    from. Moved here from `nora.agent.prefill` on 2026-09-10 so it can be ONE
-    implementation: `nora.language` renders prompt blocks too and sits below
-    `nora.agent` in the layer contract, so it could not reach the original and
-    the alternative was a second copy.
+    from. It lives here so there is ONE implementation: `nora.language` renders
+    prompt blocks too and sits below `nora.agent` in the layer contract, so it
+    cannot import it from `nora.agent`.
 
-    The failure it exists for, in `prefill`'s own words: every message looked
-    equally recent, "which is what made 今晚 and 琴日 unanswerable even with a
-    clock in the header". The Relevance Gate had the same gap on its whole
-    transcript and lost two thirds of its error rate closing it.
+    It exists because, without an age, every message looks equally recent,
+    which makes 今晚 and 琴日 unanswerable even with a clock in the header.
 
     An age rather than a timestamp because it is what the question actually
     needs — «is this still current?» — and it costs a few characters per line
     instead of a full datetime.
 
-    NOT the only age vocabulary in the tree: the deleted `nora.language.proactive`
-    (DEC-277) rendered «2 h» where this renders «2h ago». Any remaining
-    second vocabulary is a measured change to merge, not a tidy-up.
+    `ago` renders a different vocabulary («2 h ago» where this renders «2h
+    ago»); merging two vocabularies changes what the model reads, so it is a
+    measured change, not a tidy-up.
     """
     seconds = max(0, int(now.timestamp() - ts_ms / 1000))
     if seconds < 90:
@@ -105,11 +100,10 @@ def age(ts_ms: int, now: datetime) -> str:
 def ago(delta_ms: int) -> str:
     """A span as a person says it: «just now», «42 min», «3 h 5 min», «2 d».
 
-    Moved here from `nora.domain.cognition_render` when that renderer moved to
-    `nora.language` (step 3a of `design/context-assembly/04-every-occasion.md`):
-    `nora.domain.computer_sessions` also calls it, and a domain module may not
-    import `nora.language`. The wording is unchanged and is NOT `age`'s (which
-    says «2h ago»); the two vocabularies are a measured merge, not a tidy-up.
+    It lives here because `nora.domain.computer_sessions` also calls it, and a
+    domain module may not import `nora.language`. The wording is NOT `age`'s
+    (which says «2h ago»); merging the two changes what the model reads, so it
+    is a measured change, not a tidy-up.
     """
     minutes = max(delta_ms, 0) // 60_000
     if minutes < 1:
@@ -124,13 +118,13 @@ def ago(delta_ms: int) -> str:
 
 def stamp(ts_ms: int, now: datetime) -> str:
     """When something was, as a calendar moment AND an age:
-    «2026-09-24 Thu 21:14 (13h ago)», in `now`'s own zone.
+    «YYYY-MM-DD Thu 21:14 (13h ago)», in `now`'s own zone.
 
     For a record a model is asked to place in time, not only to judge fresh.
     `age` answers «is this still current»; «what did we say yesterday» turns on
     the calendar day, and «13h ago» read at 10:00 is yesterday only after
     arithmetic across midnight, which a cheap model does badly. The weekday is
-    there for «last Tuesday» on the same grounds (design/self-awareness/08).
+    there for «last Tuesday» on the same grounds.
 
     No zone on the line: the clock line every turn carries names it once
     (`nora.agent.clock.state_time`), and a caller passes `now` already in that
@@ -154,12 +148,9 @@ def one_line(body: object) -> str:
     pressing enter mid-message writes a continuation line with no `[who]:` on
     it at all, and whose words the model then reads as somebody else's.
 
-    Measured on the relevance gate (2026-09-10, commit 99b34e4): a forged
-    commitment line took that gate to `go` 5/5, and it STAYED `go` 5/5 against
-    a hardened instruction — which is what says this belongs to the renderer
-    and not to the wording. The same reading applies to every other block that
-    renders a row as a line, and AGENTS.md's own rule is the general form of
-    it: never rewrite a model's instruction before reading its input.
+    A forged row is a defect of the renderer, not of the instruction wording:
+    hardening the instruction does not stop the model reading it. The same
+    applies to every other block that renders a row as a line.
 
     A COLLAPSE, not a filter. The text is still quoted in full and still
     judged; only the structural character goes, replaced by the space a reader
@@ -190,8 +181,7 @@ def clip(text: object, limit: int) -> str:
     lets a row that must be shown at all be shown clipped rather than lost.
 
     Shared by the Cognition renderer's message words and the event renderer's
-    venue (step 3b of `design/context-assembly/04-every-occasion.md`); it was a
-    private function of the first."""
+    venue."""
     line = one_line(text)
     if len(line) <= limit:
         return line

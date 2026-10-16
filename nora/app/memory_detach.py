@@ -31,7 +31,7 @@ the file, as its own observer and as Nora's observed (`ScheduleDreamRequest.
 rebuild`, «use after removals»). Safe to run again.
 
 WHAT IT CANNOT REACH. A conclusion with NO session — a dream's deduction
-reasoned across sessions, or a `remember` written before DEC-214 — is not
+reasoned across sessions, or a session-less `remember` — is not
 under the deleted session and survives. Honcho offers no way to tell which of
 those drew on the deleted messages, so they stay; the card rebuild does not
 remove them either.

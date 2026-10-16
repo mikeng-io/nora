@@ -1,17 +1,20 @@
 """The operator control plane: the read-only commands (`nora groups`,
 `nora persons pending`, `nora presence members`, `nora reminders list`) and
 the config write surface (`nora config set/get/unset/validate` — see
-`nora.app.config_cli`). This module's own commands only READ the record
-store; four write elsewhere, each named where it is registered: `xai-login`
-and `openai-codex-login` (the host `.env`), and `memory backfill`, `memory carry-conclusions` and
-`memory detach-unit`, each only with `--apply` (Honcho, DEC-214), and
-`memory rebuild` (the memory index, unless `--dry-run`).
+`nora.app.config_cli`). Most of this module's commands only READ the record
+store; each one that writes says so where it is registered. Among them:
+`xai-login` and `openai-codex-login` (the host `.env`), `memory backfill`,
+`memory carry-conclusions` and `memory detach-unit`, each only with `--apply`
+(Honcho, DEC-214), `memory rebuild` (the memory index, unless `--dry-run`),
+`lessons retire` and `lessons rollback` (one lesson revision, only with
+`--apply`), `snapshot --into` (a separate empty sandbox database),
+`events backfill-units` (the `events` table) and `assess run-nightly` (an
+`assess_report` row).
 
-design/10 §6, plan Task 6. This answers the operator's original complaint —
-*"I CANNOT identify that group ID belongs to which group ... there is NO
-control plane for me"* — and it answers it without ever amending D6: both
-commands only READ. Adoption stays a hand-edit of `identity.toml` followed by a
-restart, at which point `nora.app.adoption` backfills the history (DEC-16).
+The read commands answer «which group does this ID belong to» without
+amending D6: they only READ. Adoption stays a hand-edit of `identity.toml`
+followed by a restart, at which point `nora.app.adoption` backfills the history
+(DEC-16).
 
 Three properties are load-bearing, and each is enforced by something rather
 than promised:
@@ -19,7 +22,7 @@ than promised:
 * **Nothing is written.** The record store is opened through
   `create_readonly_sql_engine` — every connection sets
   `default_transaction_read_only=on`, so any write raises
-  `ReadOnlySqlTransaction` at the server (design/20 §3) — and the only daemon
+  `ReadOnlySqlTransaction` at the server — and the only daemon
   calls go through `nora.platform.signal.directory`, whose method allowlist
   holds exactly `listGroups` and `listContacts`. In the deployment this engine
   additionally connects as a `GRANT SELECT`-only role whose write privileges do
@@ -31,7 +34,7 @@ than promised:
   shell — from failing a command that never talks to the provider. It does need
   the `nora` network to reach `nora-db`, so after the migration the operator
   runs it via `docker exec` into a `nora`-network container as the read-only
-  role (design/20 §3); the URL comes from `DATABASE_URL` there, same as Nora.
+  role; the URL comes from `DATABASE_URL` there, same as Nora.
 * **A broken daemon degrades to a sentence, never a traceback.** `nora groups`
   cannot do its job without signal-cli and says so with an exit code;
   `nora persons pending` can, losing only the display names, and says that too.
@@ -166,7 +169,7 @@ def add_subcommands(
     # merely be discouraged, it would raise at the server. The operator's kill
     # switch is `[heartbeat] enabled = false` plus a restart, which stops all
     # firing rather than one row; cancelling ONE reminder is the model's job
-    # (`cancel_reminder`), in the conversation it was set in (design spec §7.4).
+    # (`cancel_reminder`), in the conversation it was set in.
     reminders_list = reminders_sub.add_parser(
         "list", parents=[parent],
         help="every reminder still pending, soonest first, with what is overdue",
@@ -178,8 +181,7 @@ def add_subcommands(
     reminders_list.set_defaults(func=cmd_reminders_list)
 
     # `measure` — the four measures that grade the ambient path against
-    # something other than its own opinion (design/culture-tier
-    # 02-measurement §2). READ ONLY like everything else in this module, and
+    # something other than its own opinion. READ ONLY, and
     # it changes no behaviour: it computes over rows that already exist.
     #
     # `--refusals` is a FILE and not a Prometheus URL on purpose. Gate
@@ -210,8 +212,7 @@ def add_subcommands(
     )
     measure_participation.set_defaults(func=cmd_measure_participation)
 
-    # `snapshot` — Nora as of T (design/cognition-loop/70-migration.md §2,
-    # step 1b). The SOURCE is only ever read, through the read-only engine
+    # `snapshot` — Nora as of T. The SOURCE is only ever read, through the read-only engine
     # every other command here uses; the one write is into `--into`, a
     # separate empty sandbox database, and without `--into` (or with
     # `--dry-run`) nothing is written anywhere.
@@ -245,7 +246,7 @@ def add_subcommands(
     )
     snap.set_defaults(func=cmd_snapshot)
 
-    # `lessons` (design/self-growth/40-lessons.md §4): the operator's list, show,
+    # `lessons`: the operator's list, show,
     # retire and rollback of Nora's lessons. `list` and `show` read through the
     # read-only engine; `retire` and `rollback` WRITE one revision each, only with
     # `--apply` (`nora.app.lessons_cli`). No model can call these.
@@ -284,8 +285,8 @@ def add_subcommands(
     lessons_rollback.add_argument("--to", required=True, type=int, help="the revision")
     lessons_rollback.add_argument("--apply", action="store_true", help="write")
     lessons_rollback.set_defaults(func=cmd_lessons_rollback)
-    # L3: the lessons the doctrine check refused, with the law each pulled
-    # against (design/cognition-loop/55-self.md §4). Operator-only by design.
+    # The lessons the doctrine check refused, with the law each pulled
+    # against. Operator-only by design.
     lessons_tensions = lessons_sub.add_parser(
         "tensions", parents=[parent],
         help="lessons refused for loosening a law rule, newest first",
@@ -304,7 +305,7 @@ def add_subcommands(
     )
     members.set_defaults(func=cmd_presence_members)
 
-    # `memory backfill` (DEC-214): the second command here that WRITES, and
+    # `memory backfill` (DEC-214): a command here that WRITES, and
     # like `xai-login` it writes nowhere this module's read-only guarantee
     # covers — the record store is still opened read-only; what it writes
     # is Honcho, and only with `--apply`. See `nora.app.memory_backfill`.
@@ -363,7 +364,7 @@ def add_subcommands(
         help="step 2: once Honcho has finished deleting, rebuild the recorded peers' cards",
     )
     detach.set_defaults(func=cmd_memory_detach)
-    # `memory rebuild` (design/unified-memory/60-build-step-3.md S4): WRITES
+    # `memory rebuild`: WRITES
     # the memory index through a writable engine, like `events
     # backfill-units`; the stores it reads are never written.
     rebuild = memory_sub.add_parser(
@@ -375,7 +376,7 @@ def add_subcommands(
         "--dry-run", action="store_true",
         help="count what would be projected and dropped; write nothing",
     )
-    # 65-build-step-3-vectors.md V1: vectors only, the projection untouched;
+    # Vectors only, the projection untouched;
     # the embedding worker backfills what this clears.
     rebuild.add_argument(
         "--embeddings-only", action="store_true",
@@ -389,8 +390,7 @@ def add_subcommands(
     )
     rebuild.set_defaults(func=cmd_memory_rebuild)
 
-    # `events backfill-units` (B3(b), design/cognition-loop/70-migration.md
-    # §8, DEC-237): the THIRD command here that WRITES — unlike `memory
+    # `events backfill-units` (DEC-237): the THIRD command here that WRITES — unlike `memory
     # backfill`'s Honcho-only write, this one writes the `events` table
     # itself (through `GatheringStore.update`, the same path `update_event`
     # writes through), so it needs a WRITABLE engine, not the read-only one
@@ -410,8 +410,7 @@ def add_subcommands(
     )
     backfill_units.set_defaults(func=cmd_events_backfill_units)
 
-    # `assess run-nightly` (design/cognition-loop/30-cognition.md §6,
-    # 70-migration.md §2 row 3, DEC-240): the Assess adaptor's deterministic
+    # `assess run-nightly` (DEC-240): the Assess adaptor's deterministic
     # data-quality checks. WRITABLE engine like `events backfill-units`,
     # because `--record` (the default) writes one `assess_report` row; the
     # checks themselves never write a tier (`nora.app.assess_run`'s own
@@ -519,7 +518,7 @@ def _persons(cfg: Config) -> Persons:
 def _rewrite_env(env_path: Path, marker: str, refresh_token: str) -> None:
     """Idempotently replace-or-append one `KEY=value` line in `.env`.
     Sync by design — runs under `asyncio.to_thread` from the CLI (never
-    blocks the event loop). M8 (Kimi audit): the write is ATOMIC — tmp +
+    blocks the event loop). The write is ATOMIC — tmp +
     os.replace — so a crash/interrupt mid-write can never corrupt the whole
     `.env` (which holds Postgres, Discord, xAI, Life360 secrets). The
     original file mode is preserved explicitly because os.replace installs
@@ -555,7 +554,7 @@ async def cmd_xai_login(args: argparse.Namespace) -> int:
     already owns (the same file every other Nora credential lives in,
     DEC-8). Idempotent: an existing `XAI_OAUTH_REFRESH_TOKEN` line is
     replaced, not duplicated. The access token stays out of `.env`
-    entirely — that is the state file's job (design/proposed/29 §4.1).
+    entirely — that is the state file's job.
     """
     from nora.infra.image_gen.xai_oauth import (
         XaiOAuthFlowError,
@@ -641,7 +640,7 @@ async def cmd_presence_members(args: argparse.Namespace) -> int:
     """`nora presence members` — one authenticated Life360 read that prints every
     circle and member (id + name), so the operator can paste the ids into
     identity.toml and config.toml. Reuses the SAME `Life360Client` the collector
-    runs on (one Life360 library, design/19 §4) — nothing here is a second impl."""
+    runs on (one Life360 library) — nothing here is a second impl."""
     cfg = _config(args)
     presence = cfg.presence
     creds = {
@@ -847,8 +846,7 @@ async def cmd_memory_backfill(args: argparse.Namespace) -> int:
 
 
 async def cmd_memory_rebuild(args: argparse.Namespace) -> int:
-    """`nora memory rebuild [--dry-run]` (design/unified-memory/
-    60-build-step-3.md S4). A WRITABLE engine, like `events backfill-units`:
+    """`nora memory rebuild [--dry-run]`. A WRITABLE engine, like `events backfill-units`:
     it writes the memory index (`nora.infra.sql.memory_index.rebuild`), never
     a store. Prints counts per kind only, never an id or a text. Exit 1 when
     a source stayed unprojected, so a script reads «incomplete» as a failure."""
@@ -871,10 +869,9 @@ async def cmd_memory_rebuild(args: argparse.Namespace) -> int:
 
 async def _memory_rebuild_embeddings(args: argparse.Namespace, cfg: Config) -> int:
     """`nora memory rebuild --embeddings-only [--other-models] [--dry-run]`
-    (design/unified-memory/65-build-step-3-vectors.md V1). Clears vectors,
-    every one or only another model's, and reports counts: the embedding
-    worker (`[memory_index] embed`) backfills them on its own ticks. The
-    projection is untouched."""
+    clears vectors, every one or only another model's, and reports counts: the
+    embedding worker (`[memory_index] embed`) backfills them on its own ticks.
+    The projection is untouched."""
     model = fingerprint(cfg.memory_index.embedder_model)
     keep = model if args.other_models else None
     engine = create_sql_engine(_database_url(cfg))
@@ -918,8 +915,7 @@ def render_rebuild(result: memory_index.RebuildReport) -> list[str]:
 
 
 async def cmd_events_backfill_units(args: argparse.Namespace) -> int:
-    """`nora events backfill-units [--apply]` (B3(b), design/cognition-loop/
-    70-migration.md §8, DEC-237). Opens a WRITABLE engine (`create_sql_
+    """`nora events backfill-units [--apply]` (DEC-237). Opens a WRITABLE engine (`create_sql_
     engine`, not `create_readonly_sql_engine`): unlike every other command
     in this module it writes the `events` table itself, through
     `GatheringStore.update` — the same path `update_event` writes through —
@@ -1029,8 +1025,7 @@ async def cmd_lessons_rollback(args: argparse.Namespace) -> int:
 
 
 async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:
-    """`nora assess run-nightly [--no-record]` (design/cognition-loop/
-    30-cognition.md §6, DEC-240). Refused with a clear message, not a stack
+    """`nora assess run-nightly [--no-record]` (DEC-240). Refused with a clear message, not a stack
     trace, when `[assess] mode` is `"off"` (`AssessDisabledError`). The
     Rollup rebuild diff is not run from this command (`nora.app.assess_run`'s
     own docstring: opt-in, a separate cost); it reports `not_applicable`.
@@ -1072,7 +1067,7 @@ async def cmd_measure_participation(args: argparse.Namespace) -> int:
     # EPOCH MILLISECONDS — `decision_log.ts`, `messages.ts` and the measures
     # themselves are all ms. A seconds-valued bound is smaller than every row
     # in the table, so the window silently becomes ALL TIME while still
-    # printing "last 7d" (caught against live data 2026-09-16).
+    # printing "last 7d".
     now_ms = int(now.timestamp() * 1000)
     since = now_ms - days * 86_400_000
 

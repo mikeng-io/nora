@@ -1,10 +1,7 @@
-"""Computer sessions: one task in progress on Nora's computer, across turns
-(design/sandbox-runtime §15.2, decision 5).
+"""Computer sessions: one task in progress on Nora's computer, across turns.
 
-**A session is DERIVED BY CODE; no model writes one** (operator, 2026-09-30).
-An optional update tool would be skipped: measured here, optional acts are
-(a must-have skill skipped in 3 of 6 live turns; a GIF chosen 3 times in
-about 720). So:
+**A session is DERIVED BY CODE; no model writes one.** An optional update
+tool would be skipped, because a model rarely performs an optional act. So:
 
 - **Open.** A computer tool call in a room with no open session opens one,
   in the same tool path, before its `started` audit row. At most one session

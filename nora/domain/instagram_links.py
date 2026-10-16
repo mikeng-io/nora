@@ -1,5 +1,4 @@
 """One Instagram link parser, for everything that reads an Instagram URL
-(design/instagram-adoption/13 §2026-09-24, /15 §Links, /17 P10).
 
 Two readers need it and they must not disagree:
 
@@ -10,16 +9,15 @@ Two readers need it and they must not disagree:
   into a read, and must never send the bridge anything the link did not
   validly name.
 
-Before this module the rules lived in the parser alone (#435), and a second
-copy in the tool would have been two readings of one URL, which is how two
+A second copy in the tool would be two readings of one URL, which is how two
 copies drift: the day one of them loosens its host check, the other is still
-green. So both read here, and the rules are the parser's, unchanged:
+green. So both read here:
 
 * **The host is an exact match** on the parsed hostname against
   `instagram.com` and `www.instagram.com`. Never a suffix or a substring:
   `www.instagram.com.evil.x` contains the allowed text and lands elsewhere,
   and `m.instagram.com`, `instagr.am` and the trailing-dot spelling of an
-  allowed host are refused as well, because nothing measured them. A port,
+  allowed host are refused as well. A port,
   credentials in the netloc, or a scheme other than http(s) refuse the link.
 * **Each path segment is checked against its own charset**, whole
   (`fullmatch`): a shortcode is Instagram's base64url alphabet, a username is
@@ -165,9 +163,8 @@ def link_shape(url: object, *, story_ring: bool = True) -> LinkKind | None:
 
     `story_ring=False` keeps a two-segment `/stories/<user>/` path out of
     the `story` shape. The transcript render passes it: a shared item's
-    kind was measured only on the three-segment form (13 §2026-09-24), and
-    what it renders for anything else did not change when this module
-    learned the ring form for `instagram_read`."""
+    kind is only established for the three-segment form, so the two-segment
+    ring form keeps its non-story rendering there."""
     split = _split(url)
     return None if split is None else _shape(split[1], story_ring=story_ring)
 

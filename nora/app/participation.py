@@ -1,5 +1,5 @@
 """`ParticipationTrigger` — the quiescence-window trigger for the participation
-occasion (design/dreamer-agent-loop/35 §3.5).
+occasion.
 
 WHAT THIS MODULE IS
 -------------------
@@ -12,32 +12,31 @@ last window already evaluated? When so, it runs exactly ONE participation
 turn for the whole closed window, through `FirePath.speak`, with the full
 window in context (the fire path assembles the transcript itself).
 
-THE LOCKED DECISIONS THIS ENFORCES (design §10)
------------------------------------------------
-* **try_acquire-and-skip (§10.2).** The turn takes the conversation's
+THE INVARIANTS THIS ENFORCES
+----------------------------
+* **try_acquire-and-skip.** The turn takes the conversation's
   `ConversationSlots` slot only if free; a tag holding it means the window is
   marked closed and skipped, silently — a tag never waits behind an ambient
   thought, and evaluating a stale burst after the tag would answer a
   conversation that has already moved on.
-* **Send cooldown, NOT an evaluation cooldown (§10.3).** Every closed window
+* **Send cooldown, NOT an evaluation cooldown.** Every closed window
   is evaluated, cooldown or not; the cooldown only decides
   `send_permitted` on the `speak` call — a "speak" conclusion inside the
   cooldown has its message held by the `Deliverer` at the last inch, logged
   for shadow review, and the turn still answers `SILENT`.
-* **Per-room watermark state, never per-message (§3.5).** Three dicts keyed
-  by `(platform, conversation_id)`: the last message seen, the last window
-  end evaluated, the last send. This is the same treatment the tag path's
-  `Debounce` gets — bounded by `sweep` from the runtime loop, and retained
-  state is per-ROOM cursors, not per-message session state.
+* **Per-room cursor state, never per-message.** Five dicts keyed
+  by `(platform, conversation_id)`: the last message seen, the unjudged count,
+  the last window end evaluated, the last send, and the conversation type.
+  This is the same treatment the tag path's `Debounce` gets — bounded by
+  `sweep` from the runtime loop, and retained state is per-ROOM cursors, not
+  per-message session state.
 
-WHAT SURVIVES A RESTART, AND WHAT DOES NOT (migration 0056)
------------------------------------------------------------
-Every dict below used to be process-local, and `nora` is force-recreated
-routinely — the identical defect `0050_dream_schedule_state` records for the
-Dreamer, where a `time.monotonic()` dict in `dream_loop`'s own frame turned
-"once a day" into "once per deploy". Here it meant the send cooldown was lost
-(she could speak again immediately after a restart however recently she had
-spoken) and a judged window could be judged twice.
+WHAT SURVIVES A RESTART, AND WHAT DOES NOT
+------------------------------------------
+`nora` is force-recreated routinely, so a cursor held only in process memory
+is lost: the send cooldown would reset (she could speak again immediately
+after a restart however recently she had spoken) and a judged window could be
+judged twice.
 
 TWO cursors are STORED, and both are cold path — `_last_window_end` is written
 once per window close and `_last_send_at` once per send.
@@ -48,18 +47,17 @@ TWO are RE-DERIVED at hydration from `messages`, which already holds them:
 the dispatcher's path and must not await, so they could not be stored even if
 that were the simpler answer.
 
-ONE is NEITHER, and that is a decision: **`_unjudged` still starts at zero
+ONE is NEITHER, and that is a decision: **`_unjudged` starts at zero
 after a restart.** A `messages`-derived count does NOT reproduce it. A tagged
 message, a voice note and a voice-wake utterance are all rows in that table
 that never reach `note_message` (the engage policy short-circuits before the
 `relevance_gate` verdict), and Nora's own replies are rows too. A count that
-included them would close windows EARLIER than the trigger does today — more
+included them would close windows EARLIER than the trigger does live — more
 evaluations, more model calls, possibly more speech — which is a change to
 what this class DECIDES wearing a persistence change's clothes. Storing it
 instead would put a database write on `note_message`, which its own docstring
-forbids. So the volume arm resumes from zero, exactly as it does today, and the
-quiet arm — which is the one that was going to fire anyway — resumes from the
-record.
+forbids. So the volume arm resumes from zero, and the quiet arm resumes from
+the record.
 """
 
 from __future__ import annotations
@@ -112,19 +110,16 @@ class ParticipationTrigger:
     not be tested without sleeping.
 
     **The clock is `time.time`, not `time.monotonic`.** Every comparison here
-    is a DIFFERENCE of two readings of the same clock, so the substitution
-    changes no answer — but a monotonic epoch is arbitrary per process, so the
-    two cursors that are now written down would have been written as numbers
-    that mean nothing to the process reading them back. (It also removes a
-    latent one: `monotonic()` on Linux is uptime, so `now - 0.0` right after a
-    container start was SMALLER than the cooldown, and the pre-0056 default of
-    `0.0` for "never sent" therefore refused the first send of every deploy for
-    `cooldown_seconds`. Absence is now `None` and never an instant.)
+    is a DIFFERENCE of two readings of the same clock, but a monotonic epoch is
+    arbitrary per process, so the two stored cursors would be numbers that mean
+    nothing to the process reading them back. Absence is `None`, never an
+    instant: `monotonic()` on Linux is uptime, so a `0.0` default for "never
+    sent" would refuse the first send after a container start for
+    `cooldown_seconds`.
 
     `store` is OPTIONAL and `None` is the dormant default — every offline and
-    eval wiring builds this class without one, and with it absent the behaviour
-    is exactly what shipped before migration 0056: cursors live in memory and a
-    restart empties them. A missing store is never an error.
+    eval wiring builds this class without one: cursors then live in memory and
+    a restart empties them. A missing store is never an error.
     """
 
     def __init__(
@@ -142,11 +137,10 @@ class ParticipationTrigger:
     ) -> None:
         self._speak = speak
         self._slots = slots
-        # The Relevance Gate (design/dreamer-agent-loop/36). `None` is the
-        # pre-gate shape kept alive for the tests that drive the turn
-        # directly: with no gate every closed window runs a turn, which is
-        # exactly design 35's behaviour and exactly what the gate exists to
-        # stop paying for. Production always wires one.
+        # The Relevance Gate. `None` is the shape for the tests that drive the
+        # turn directly: with no gate every closed window runs a turn, which is
+        # exactly what the gate exists to stop paying for. Production always
+        # wires one.
         self._gate = gate
         # `FirePath.post_gate_verdict` when `[relevance_gate] shadow = true`.
         # Its presence IS shadow mode: set, a GO is REVIEWED and no turn runs;
@@ -155,11 +149,10 @@ class ParticipationTrigger:
         self._gate_shadow = gate_shadow
         self._settle_seconds = settle_seconds
         self._cooldown_seconds = cooldown_seconds
-        # The VOLUME arm of the batch (see `close_due_windows`). Sized against
-        # the live rooms rather than guessed: the busiest carries ~44 human
-        # messages a DAY and the next ~32, so a cap at the gate's 40-row
-        # transcript window would fill about once a day — i.e. it would not
-        # exist. Ten is dense enough to fire inside a real conversation.
+        # The VOLUME arm of the batch (see `close_due_windows`). A cap at the
+        # gate's 40-row transcript window would fill about once a day in a busy
+        # room, i.e. would not exist; ten is dense enough to fire inside a real
+        # conversation.
         self._max_window_messages = max_window_messages
         self._clock = clock
         self._store = store
@@ -206,11 +199,10 @@ class ParticipationTrigger:
         The volume arm is not an optimisation, it closes a hole. The quiet arm
         alone reads `now - last_message_at`, and that resets on EVERY message,
         so a room whose gaps stay under `settle_seconds` never closes a window
-        at all. Measured on the real trigger: 200 messages six seconds apart —
-        twenty minutes of live conversation — produced ZERO evaluations, and
-        the first one only came after the room fell silent, by which time the
-        question had scrolled away. The gate was blind exactly when a room is
-        busiest, which is when a question is most likely to be dropped.
+        at all. A room whose messages arrive six seconds apart for twenty minutes
+        would produce ZERO evaluations, the first only after the room fell
+        silent, by which time a question would have scrolled away. The gate
+        would be blind exactly when a room is busiest.
 
         The watermark (`_last_window_end`) is set BEFORE the evaluation, not
         after it: exactly one evaluation per closed window, even if the turn
@@ -246,7 +238,7 @@ class ParticipationTrigger:
             self._unjudged[key] = 0
             await self._record_window_end(key, now)
             platform, conversation_id = key
-            # §10.2: take the slot only if free. A tag holding it skips the
+            # Take the slot only if free. A tag holding it skips the
             # window ENTIRELY (the watermark above already closed it) — never
             # queued, never waited on.
             if not self._slots.try_acquire(key):
@@ -296,7 +288,7 @@ class ParticipationTrigger:
                 )
                 # Only a DELIVERED message spends the cooldown: a held,
                 # silent or failed turn left the room exactly as it was, and
-                # §10.3's cadence caps what the room HEARS.
+                # the cadence caps what the room HEARS.
                 if outcome == SENT:
                     self._last_send_at[key] = now
                     await self._record_send(key, now)
@@ -379,7 +371,7 @@ class ParticipationTrigger:
         Two values and not a nullable score, because "admitted with no score"
         is a real state and collapsing it into `0.0` would put
         «this room scored zero» in front of her — the opposite of what
-        happened. The score is reference only (design 36 decision 5), so a
+        happened. The score is reference only, so a
         missing one must render as nothing, never as a low one.
 
         The `False` case covers NO-GO and every fail-closed reason together,

@@ -1,8 +1,8 @@
-"""Is sound ACTUALLY moving? — the one question nora never asked.
+"""Is sound ACTUALLY moving?
 
-Nora's belief that music was playing came from `playback_id is not None`,
-which is true in five of the arbiter's six states and audible in at most
-one. Worse, even `player.status == "playing"` is not proof: the AudioPlayer
+`playback_id is not None` is not proof of sound: it is true in five of the
+arbiter's six states and audible in at most one. Nor is
+`player.status == "playing"`: the AudioPlayer
 reaches Playing whether or not a connection is subscribed to it, so an
 autopaused player reads `playing` while the room hears silence.
 
@@ -19,9 +19,8 @@ answer the question a status string cannot:
     unreachable                        -> we do not know           UNKNOWN
 
 UNKNOWN is a distinct verdict on purpose. "I could not check" must never
-collapse into "not playing": the old code's failure was reading an absence
-of news as good news, and a fail-open liveness check would reproduce it one
-layer up.
+collapse into "not playing" or into "fine": an absence of news is not good
+news, and a fail-open liveness check would read it as such.
 
 Pure by design — no I/O, no clock, no session. The transport hands it two
 readings and it returns a verdict, so the rule can be tested exhaustively
@@ -84,10 +83,8 @@ def judge_playback(
     if previous is not None and previous.playback_id != current.playback_id:
         # A position is only comparable within ONE playback. After an
         # autoplay advance the old track's last reading (e.g. 195 s) sits
-        # against the new track's first (e.g. 7 s), which reads as "went
-        # backwards" and was judged WEDGED — the stream was torn down and
-        # re-resolved, restarting the song from 0 (live 2026-09-30, every
-        # track boundary).
+        # against the new track's first (e.g. 7 s), which would read as "went
+        # backwards" and judge WEDGED.
         previous = None
     if not believed_playing:
         # No claim, so nothing to falsify — not even an unreachable

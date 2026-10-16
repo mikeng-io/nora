@@ -1,4 +1,4 @@
-"""`policy.toml` → the grant predicate (design/10 §4, §7).
+"""`policy.toml` → the grant predicate.
 
 WHAT IS ALLOWED. Separate from `config.toml` (deploy cadence) and
 `identity.toml` (changes when a human joins) because policy changes when TRUST
@@ -9,7 +9,7 @@ Everything here names people by `person_id`, never by a phone number or a
 platform id. Adding an account to `identity.toml` therefore grants it access
 everywhere that person is already allowed — one edit, not one per room — and
 this file stays readable without knowing anyone's phone number. Note the
-consequence: allowlisting `miles` grants EVERY account he holds (design/10 §3).
+consequence: allowlisting `miles` grants EVERY account he holds.
 
 Deny by default, and an empty allowlist REFUSES TO START. Under R-5 Nora is
 silent when broken, so a silently-denied Nora is indistinguishable from a
@@ -28,11 +28,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-# Not a person_id: the wildcard admitting anyone in a conversation (§4.3).
+# Not a person_id: the wildcard admitting anyone in a conversation.
 EVERYONE = "*"
 
 #: The Nora WORKSPACE every unit belongs to when `policy.toml` has no `[units]`
-#: table at all (the decision of 2026-09-28, DEC-214). A workspace holds units,
+#: table at all (DEC-214). A workspace holds units,
 #: a unit holds rooms; a policy written before the hierarchy existed names no
 #: workspace, so all of its units share this implicit one, and that one is
 #: bound to `config.toml`'s `memory.workspace_id` rather than to its own name
@@ -55,9 +55,8 @@ _SNOWFLAKE_DIGITS = range(17, 21)
 def _is_snowflake(value: str) -> bool:
     """Whether `value` can name a Discord channel.
 
-    ASCII decimal digits only, and NOT `str.isdigit()` — that was the first
-    implementation and is fail-open in both directions (audit, 2026-09-21):
-    it accepts superscripts (`"²"`), which `int()` then refuses, so a line
+    ASCII decimal digits only, and NOT `str.isdigit()`, which is fail-open in
+    both directions: it accepts superscripts (`"²"`), which `int()` then refuses, so a line
     that can NEVER route passed startup and failed at send time
     indistinguishably from a deleted channel; and it accepts Arabic-Indic
     digits, which `int()` DOES parse, so such an id silently routed while
@@ -81,9 +80,8 @@ class Conversation:
     platform: str
     ids: frozenset[str]         # `id` plus `also_ids`, matched identically
     persons: frozenset[str] | None   # None == EVERYONE
-    label: str = ""             # never matched on (§4.2)
-    # The MCP servers this conversation may use (spec:
-    # mcp-tool-provider-design §2.3). Empty means none — deny-by-default,
+    label: str = ""             # never matched on
+    # The MCP servers this conversation may use. Empty means none — deny-by-default,
     # the same posture as the rest of this file (R-5).
     tools: frozenset[str] = frozenset()
     # LOCATION-DISCLOSURE TRUST (DEC-74). Default False: `where_is` refuses to
@@ -123,14 +121,14 @@ class Conversation:
     # in the destination independently: the unit bounds WHICH rooms may
     # ever be paired, and the persons list still decides who may use the pair.
     unit: str = "nora"
-    # UNPROMPTED-SPEECH TRUST (design/dreamer-agent-loop/36 §8, formerly /35).
+    # UNPROMPTED-SPEECH TRUST.
     # Default False: being allowed to ANSWER this room when tagged has never
     # implied being allowed to speak in it uncalled. `relevance_gate = true` is
     # the operator saying "the Relevance Gate may consider THIS room's untagged
     # traffic" — and it still does nothing while `[relevance_gate] enabled =
     # false` in config.toml (the shipped default).
     relevance_gate: bool = False
-    # THE UNIT'S HOME ROOM (design/dreamer-agent-loop/39 D2, DEC-162).
+    # THE UNIT'S HOME ROOM (DEC-162).
     # Default False. A unit has no conversation of its own, and every
     # room-scoped read — `where_is`, `about`, `ask_memory`, `group_members` —
     # resolves through ONE room's roster. `home_room = true` is the operator
@@ -142,7 +140,7 @@ class Conversation:
     # unit, in the file where room trust already lives. At most one per
     # unit; a second is a startup error, not a guess.
     home_room: bool = False
-    # PROACTIVE-SPEECH TRUST (39 D5). Default False: a `kind="proactive"`
+    # PROACTIVE-SPEECH TRUST. Default False: a `kind="proactive"`
     # reminder row is owned by Nora's own `ai_peer` id, which is deliberately
     # not a person in `identity.toml`, so the fire-time `is_allowed` screen
     # cannot admit it — this flag is what the heartbeat checks instead of
@@ -152,38 +150,29 @@ class Conversation:
     # while this flag is on — moving a home room means clearing this on the
     # old one, the same way withdrawing a person from `persons` is.
     proactive: bool = False
-    # WHAT KIND OF ROOM THIS IS, in the operator's own words (issue #161).
+    # WHAT KIND OF ROOM THIS IS, in the operator's own words.
     # `None` — not `""` — when the operator wrote nothing, so "absent" and
     # "present but blank" are one state rather than two.
     #
     # `label` says what the room is CALLED; this says what it IS, and only the
     # operator can state it. A background pass reading a games room's batch
     # sees 「2200」 and 「today no?」 and has nothing in its prompt that would
-    # tell it 2200 is when people log on rather than an appointment — so it
-    # wrote «Bath gathering» twice from a fortnight of shorthand. This is the
-    # sentence that was missing, and it is deliberately POLICY rather than
-    # config: it is about a room's people, it lives beside the room's trust
-    # flags, and the deployment's copy of this file is the only place the
-    # truth about a real room is written down.
+    # tell it 2200 is when people log on rather than an appointment. It is
+    # deliberately POLICY rather than config: it is about a room's people, it
+    # lives beside the room's trust flags, and the deployment's copy of this
+    # file is the only place the truth about a real room is written down.
     #
     # It is rendered as DATA the model reads about the batch, never as an
-    # instruction to it — see the deleted `nora.language.note_candidates.ROOM_BLOCK_NOTE`
-    # (DEC-277) and the culture fold's `_room_block`.
+    # instruction to it (the culture fold's `_room_block`).
     description: str | None = None
-    # WHERE THIS GUILD'S SPOKEN UTTERANCES LAND (design/voice-channel/07
-    # §12.2, reversed 2026-09-17 by the operator). Default False.
+    # WHERE THIS GUILD'S SPOKEN UTTERANCES LAND. Default False.
     #
-    # Phase 1 allowlisted ONE voice channel and gave its utterances their own
-    # `conversation_id`. That does not survive contact with a real server: Zone
-    # 67 has 10+ voice channels and gains more, so per-channel allowlisting is
-    # both unmaintainable AND would put N Discord rooms in one unit —
-    # DEC-105 says a unit holds at most one room per platform, and the
-    # 2026-09-17 cleanup (1953 messages, 11 notes, the whole culture table)
-    # measured what breaching it costs.
-    #
-    # So voice is not a room. It is a SURFACE of a room: `voice = true` on a
+    # Voice is not a room. It is a SURFACE of a room: `voice = true` on a
     # guild's text room means "every voice channel in this guild speaks into
-    # HERE". One notebook, one culture, one unit, one `persons` list —
+    # HERE". Per-channel allowlisting would be unmaintainable (a server has
+    # many voice channels) AND would put N Discord rooms in one unit, which
+    # DEC-105 forbids: a unit holds at most one room per platform. With one
+    # room there is one notebook, one culture, one unit, one `persons` list —
     # a plan spoken aloud and the same plan typed land in the same place.
     # The GUILD is what is checked; the channel is provenance only.
     #
@@ -191,24 +180,18 @@ class Conversation:
     # same shape as `home_room`.
     voice: bool = False
     # WHERE THIS GUILD'S MUSIC ANNOUNCEMENTS LAND — a SIBLING channel id, not
-    # this room's own (design/discord-music/10-notification-routing.md).
-    # `None` (the default) keeps the where-it-started fallback.
+    # this room's own. `None` (the default) keeps the where-it-started
+    # fallback: the system's own music announcements — `Now playing:` on a
+    # natural track-end, `Autoplaying:`, the next track after a skip, the
+    # connection-lost teardown — go to whichever text channel the session's
+    # FIRST play was invoked from, captured once and never moved. That
+    # channel need not be an allowlisted room: `/music play` is gated by
+    # GUILD, never by room.
     #
-    # The system's own music announcements — `Now playing:` on a natural
-    # track-end, `Autoplaying:`, the next track after a skip, the
-    # connection-lost teardown — used to go to whichever text channel the
-    # session's FIRST play happened to be invoked from, captured once and
-    # never moved. That made the routing invisible (nothing surfaces it),
-    # sticky (persisted, survives a restart, no command to change it), and
-    # unbounded: `/music play` is gated by GUILD, never by room, so the
-    # channel it captured need not be an allowlisted room at all.
-    #
-    # A FIELD ON THIS ROOM, NOT A FLAG CLAIMING IT. `voice = true`'s shape was
-    # tried first and is wrong here, and only naming a real channel showed it
-    # (operator, 2026-09-21 — see the design node): a DEDICATED music channel
+    # A FIELD ON THIS ROOM, NOT A FLAG CLAIMING IT. A DEDICATED music channel
     # is by definition NOT the guild's discussion room, so a flag claiming the
-    # declaring room's own channel forces a SECOND `[[conversations]]` entry
-    # per guild.
+    # declaring room's own channel would force a SECOND `[[conversations]]`
+    # entry per guild.
     #
     # An announcement destination is an OUTBOUND target, not a conversation.
     # A `[[conversations]]` entry is a bundle of answers ABOUT PEOPLE —
@@ -219,8 +202,9 @@ class Conversation:
     # unit, which DEC-105 says holds at most one room per platform, and makes
     # Nora RECORD whatever else is said there — her OWN posts are dropped
     # before ingest (`parser.py`), but nobody else's are, and `persons` gates
-    # ANSWERING rather than recording. That is why the loader REFUSES a `music_channel` that
-    # is itself a listed conversation, rather than merely discouraging it.
+    # ANSWERING rather than recording. That is why the loader REFUSES a
+    # `music_channel` that is itself a listed conversation, rather than merely
+    # discouraging it.
     #
     # Still resolved by GUILD with exactly one answer, because Discord allows
     # one voice connection per guild and so `MusicPlayerManager` holds one
@@ -248,7 +232,7 @@ class Policy:
         repr=False, default_factory=dict,
     )
     # unit -> the Nora WORKSPACE it belongs to (the hierarchy workspace > unit
-    # > room, operator 2026-09-28). Filled only from a `[units]` table; empty
+    # > room). Filled only from a `[units]` table; empty
     # when the file has none, and then `units_declared` is False and every
     # unit belongs to `DEFAULT_WORKSPACE`.
     _unit_workspace: dict[str, str] = field(repr=False, default_factory=dict)
@@ -262,7 +246,7 @@ class Policy:
 
     def shows_self_in(self, platform: str, conversation_id: str) -> bool:
         """Whether her unit-wide account (`<self>`) may render in this room
-        (design/self-growth/20, R-31). The account is written from her sends in
+        (R-31). The account is written from her sends in
         every room of the unit, including rooms with `location` on, where she
         may have answered where someone is. So a room renders it only if it
         has `location = true` itself (its audience already holds that trust),
@@ -330,12 +314,11 @@ class Policy:
         `Conversation.music_channel`), so handing back the declaring room
         would invite a caller to treat it as the destination.
 
-        `None` is a FALLBACK rather than a refusal: the music bot worked for
-        weeks before this field existed, announcing into the channel its
-        session started in, and a guild that has not opted in keeps exactly
-        that behaviour. Speech has no such prior — there was never a place to
-        put an utterance other than the room the operator named — which is
-        why `voice_room`'s `None` is a 400 and this one is not.
+        `None` is a FALLBACK rather than a refusal: a guild that has not opted
+        in announces into the channel its session started in. Speech has no
+        such fallback — there is no place to put an utterance other than the
+        room the operator named — which is why `voice_room`'s `None` is a 400
+        and this one is not.
 
         Explicit rather than inferred from "the only room in that guild", for
         `voice_room`'s reason: inference works right up until it silently
@@ -344,7 +327,7 @@ class Policy:
         return convo.music_channel if convo is not None else None
 
     def home_rooms(self) -> dict[str, Conversation]:
-        """Unit -> its home room (39 D2), for every unit that named
+        """Unit -> its home room, for every unit that named
         one. A unit with none is absent, never guessed: the proactive
         adaptor does not run there, and its tool source builds nothing
         room-scoped for it. `load_policy` has already refused two."""
@@ -355,7 +338,7 @@ class Policy:
         }
 
     def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool:
-        """The fire-time screen for a `kind="proactive"` row (39 D5): the ROOM
+        """The fire-time screen for a `kind="proactive"` row: the ROOM
         must be listed AND flagged `proactive = true`. No person is checked,
         because the row's owner is Nora's `ai_peer` id and that id is, by
         construction, nobody in `identity.toml`. Deny by default, like
@@ -365,7 +348,7 @@ class Policy:
         return convo is not None and convo.proactive
 
     def is_allowed(self, *, platform: str, conversation_id: str, person_id: str | None) -> bool:
-        """§4.3's grant predicate, in full.
+        """The grant predicate, in full.
 
         Both gates must pass: the ROOM must be listed, and the SENDER must be
         allowed within it.
@@ -382,7 +365,7 @@ class Policy:
         """
         convo = self.conversation(platform, conversation_id)
         if convo is None:
-            return False                      # room not listed → deny (§4.1)
+            return False                      # room not listed → deny
         if convo.persons is None:
             return True                       # "*" — anyone in this room
         return person_id in convo.persons
@@ -409,7 +392,7 @@ class _PermissivePolicy(Policy):
         return Conversation(
             platform=platform, ids=frozenset({conversation_id}), persons=None,
             primary_id=conversation_id,
-            # Opted IN to the Relevance Gate (design/dreamer-agent-loop/36):
+            # Opted IN to the Relevance Gate:
             # the offline/eval harnesses this policy exists for must be able to
             # drive the gate — an untagged message reaching
             # `RelevanceGatePolicy` here marks `EngageDecision.relevance_gate`
@@ -453,7 +436,7 @@ class _ConversationEntry(BaseModel):
     # Telegram CHANGES chat.id when a group is upgraded to a supergroup,
     # reporting the old id once via migrate_to_chat_id. Without this the
     # allowlist silently stops matching and Nora goes quiet — invisible under
-    # R-5 (§4.2).
+    # R-5.
     also_ids: list[str] = Field(default_factory=list)
     label: str = ""
     persons: list[str] | str = Field(default_factory=list)
@@ -464,32 +447,27 @@ class _ConversationEntry(BaseModel):
     # See `Conversation.unit` (DEC-105): the social unit this room belongs
     # to. `send_to` may only relay BETWEEN rooms that share it.
     unit: str = "nora"
-    # See `Conversation.relevance_gate` (design/dreamer-agent-loop/36): opts
+    # See `Conversation.relevance_gate`: opts
     # THIS room into the Relevance Gate's consideration of its untagged
     # traffic. Default False — the right to speak uncalled is granted per
     # room, never inherited from being answerable.
     relevance_gate: bool = False
-    # See `Conversation.home_room` (design/dreamer-agent-loop/39 D2): the ONE
+    # See `Conversation.home_room`: the ONE
     # room of this unit the proactive adaptor stands in. Default False.
     home_room: bool = False
-    # See `Conversation.proactive` (39 D5): may a proactive row fire HERE.
+    # See `Conversation.proactive`: may a proactive row fire HERE.
     # Default False — unprompted speech is granted per room, never inherited.
     proactive: bool = False
-    # See `Conversation.voice` (design/voice-channel/07 §12.2, reversed
-    # 2026-09-17): every voice channel in THIS room's guild speaks into this
+    # See `Conversation.voice`: every voice channel in THIS room's guild speaks into this
     # room. Default False — a room takes no speech until the operator says so.
     voice: bool = False
-    # See `Conversation.music_channel` (design/discord-music/10-notification-
-    # routing.md): the SIBLING channel id this guild's music announcements are
-    # posted in. Absent is the default — an unset guild keeps announcing where
-    # its session started, so a policy.toml that has never heard of the key
-    # behaves exactly as before.
+    # See `Conversation.music_channel`: the SIBLING channel id this guild's music
+    # announcements are posted in. Absent is the default — an unset guild keeps
+    # announcing where its session started.
     music_channel: str | None = None
-    # See `Conversation.description` (issue #161): what kind of room this is,
-    # in the operator's own words. Absent is the default and the shipped
-    # state — `extra = "forbid"` is in force here, so this entry is what makes
-    # the key legal at all, and a policy.toml that has never heard of it loads
-    # exactly as before.
+    # See `Conversation.description`: what kind of room this is, in the
+    # operator's own words. Absent is the default — `extra = "forbid"` is in
+    # force here, so this entry is what makes the key legal at all.
     description: str | None = None
 
     @field_validator("music_channel")
@@ -615,15 +593,14 @@ def load_policy(path: Path) -> Policy:
                 )
             by_id[key] = convo
 
-    # EVERY ALLOWED ROOM CARRIES A LABEL (issue #200 part 2). `UnitRoom.label`
-    # (`nora.app.composition._unit_rooms`) and the (deleted) note-candidates pass's
-    # `label_for` both rendered `label` or a floor — `UNNAMED_ROOM`, «a room
-    # with no name» — for a room the operator left unlabelled, deliberately,
-    # so a missing label never puts a raw `primary_id` on the model's wire
-    # (R-18, 2026-09-23). That floor is the right failure mode for OLD data a
-    # render meets after the fact; it is the wrong one for a room the
-    # operator is choosing to ADD to `policy.toml` today — two unlabelled
-    # rooms then render identically (#161's own bug), silently, and the
+    # EVERY ALLOWED ROOM CARRIES A LABEL. `UnitRoom.label`
+    # (`nora.app.composition._unit_rooms`) renders `label` or a floor —
+    # `UNNAMED_ROOM`, «a room with no name» — for a room left unlabelled, so a
+    # missing label never puts a raw `primary_id` on the model's wire (R-18).
+    # That floor is the right failure mode for OLD data a render meets after
+    # the fact; it is the wrong one for a room the operator is choosing to ADD
+    # to `policy.toml` — two unlabelled rooms then render identically,
+    # silently, and the
     # operator who wrote neither label finds out from a confused reply
     # instead of from this file. Refused here, in `policy.toml`'s own
     # refuse-to-start shape (R-5), the same way a second home room already
@@ -638,7 +615,7 @@ def load_policy(path: Path) -> Policy:
                 f'label = "..." to this conversation in {path}.'
             )
 
-    # ONE home room per unit (39 D2). Two would make «which room does the
+    # ONE home room per unit. Two would make «which room does the
     # unit-keyed adaptor stand in» a guess, and a guessed room is a
     # disclosure decision nobody made — the exact thing `home_room` exists to
     # have the operator make. Refused at startup, in `policy.toml`'s own
@@ -657,8 +634,7 @@ def load_policy(path: Path) -> Policy:
             )
         homes[convo.unit] = convo
 
-    # ONE voice room per guild (design/voice-channel/07 §12.2, reversed
-    # 2026-09-17). `voice = true` claims every voice channel in a guild, so two
+    # ONE voice room per guild. `voice = true` claims every voice channel in a guild, so two
     # rooms claiming the same guild is not a preference to resolve — it is the
     # operator having written two different answers to "where does speech go",
     # and picking one would put a spoken plan in a room nobody chose.
@@ -692,9 +668,8 @@ def load_policy(path: Path) -> Policy:
             )
         voice_by_guild[key] = convo
 
-    # ONE music room per guild (design/discord-music/10-notification-routing.md).
-    # Mirrors the voice block above, and for the same structural reason rather
-    # than by imitation: Discord allows ONE voice connection per guild, so
+    # ONE music room per guild. Mirrors the voice block above, and for the same structural reason
+    # rather than by imitation: Discord allows ONE voice connection per guild, so
     # `MusicPlayerManager` holds one player and one notify target per guild.
     # Two rooms claiming it is the operator having written two answers to
     # "where do the announcements go", and picking one would put them in a
@@ -737,8 +712,7 @@ def load_policy(path: Path) -> Policy:
         # an answer about people that a write-only channel has no business
         # having. Pointing `music_channel` at a listed room puts the
         # announcements back inside ingest and makes that argument false, so it
-        # is refused rather than merely discouraged (audit, 2026-09-21: the
-        # claim was documented in five places and enforced in none).
+        # is refused rather than merely discouraged.
         destination = (convo.platform, f"{guild_id}/{convo.music_channel}")
         listed = by_id.get(destination)
         if listed is not None:
@@ -789,12 +763,10 @@ def load_policy(path: Path) -> Policy:
 
 
 def _refuse_two_rooms_on_one_platform(conversations: list[Conversation]) -> None:
-    """A unit holds AT MOST ONE room per platform (DEC-105; enforced from
-    2026-09-28, DEC-214).
+    """A unit holds AT MOST ONE room per platform (DEC-105, DEC-214).
 
-    DEC-105 stated it and nothing in code held it, and it was breached twice
-    by hand (the 2026-09-17 cleanup measured one breach: 1953 messages, 11
-    notes and a whole culture table to undo). Everything that addresses a
+    Breaching it is costly to undo by hand (messages, notes and a culture
+    table end up split across rooms). Everything that addresses a
     unit's room by PLATFORM leans on it — `send_to`'s «tell the Signal lot»
     names one room only because there is one — and so does every unit-keyed
     read that picks "the unit's room on X". Refused in every form of the

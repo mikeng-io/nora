@@ -1,5 +1,4 @@
-"""The job CHECKPOINT: a sub-agent worker's working state, kept apart from what code knows
-(design/subagent §4d, operator 2026-10-05).
+"""The job CHECKPOINT: a sub-agent worker's working state, kept apart from what code knows.
 
 A long job needs a place to keep its place: what is done, what is in hand, what is next and
 what it decided. That is Standing's shape and Standing's failure (a model's fold drops an open
@@ -106,7 +105,7 @@ def row_payload(checkpoint: Checkpoint | None, kept_files: tuple[str, ...]) -> d
 def read_row(
     payload: Mapping[str, Any] | None, at: datetime | None,
 ) -> tuple[Checkpoint | None, tuple[str, ...]]:
-    """`(the worker's checkpoint, the kept files)` from a row. A row from before checkpoints
+    """`(the worker's checkpoint, the kept files)` from a row. A row with no checkpoint
     (`None`) or one holding junk reads as nothing, never as an error."""
     if not isinstance(payload, Mapping):
         return None, ()

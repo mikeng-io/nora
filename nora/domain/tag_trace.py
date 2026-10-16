@@ -1,13 +1,11 @@
 """`TagTrace` — one completed tag turn, captured whole for the debrief to
-fold and for retention to rebuild from (spec
-docs/superpowers/specs/2026-08-20-reflection-reasoning-continuity-design.md
-§6.1, §14.6).
+fold and for retention to rebuild from.
 
 `messages` is `agent.messages[baseline:]`, sanitised and capped by
 `nora.agent.tag_trace_extract.extract_tag_trace` -- never semantically
 filtered here or there. `prior` (the previous `Standing`) is deliberately NOT
 a field: this type is built at the `nora/agent/` extraction boundary, which
-has no storage access, so `prior` is the fold's second argument in Phase 2.
+has no storage access, so `prior` is the fold's second argument.
 
 Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 """

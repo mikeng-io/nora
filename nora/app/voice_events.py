@@ -1,5 +1,5 @@
 """`VoiceEventConsumer` — the nora half of the controller → nora callback
-contract (design/voice-channel/07 §5, B5/B7/B8/B9/B10).
+contract.
 
 The audio-controller POSTs lifecycle events to `/app/v1/voice/event`
 (registered in `nora/web/voice.py`): music advancement (`track-finished`,
@@ -8,26 +8,26 @@ observation (`channel-emptied`), and the speech acknowledgement
 (`speech-finished`). Every decision stays here — the controller never
 advances nora's queue itself.
 
-The guards that make a replayed, failed or stale event harmless (§3.3):
+The guards that make a replayed, failed or stale event harmless:
 
 - `event_id` dedupe via the hub (exactly-once, bounded window) — committed
-  ONLY after the event's transition succeeded (B7): a failed delivery
+  ONLY after the event's transition succeeded: a failed delivery
   answers 500 and stays retryable, so the controller's retry is PROCESSED,
   never acknowledged as a duplicate while the work is still undone;
 - `playback_id` must match the guild's CURRENT expected playback before a
   music event may advance the queue — a `track-finished` for a track that
   was already skipped/superseded is answered `stale` and never advances.
-  The match is evaluated by the manager UNDER its per-guild lock (B5):
+  The match is evaluated by the manager UNDER its per-guild lock:
   checked anywhere earlier, an event arriving while a skip holds the lock
   would pass against the old id and advance twice;
 - `voice-death` / `channel-emptied` carry the controller's `generation`
   (and `channel_id`), validated against the live session UNDER the same
-  lock as the teardown (B8): an outbox event delayed across an exit/rejoin
+  lock as the teardown: an outbox event delayed across an exit/rejoin
   must not tear down the NEW session. Both checks live in the manager.
 
 Serialization: the `MusicPlayerManager` methods called here each take the
 per-guild lock themselves, so consuming two events for one guild
-concurrently cannot interleave two transitions on one player (B5).
+concurrently cannot interleave two transitions on one player.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ class VoiceEventConsumer:
         """One callback → (http_status, payload). NEVER raises: the
         controller retries on non-2xx, so a well-formed event whose work
         FAILED answers 500 WITHOUT consuming the `event_id` (the retry
-        will be processed, B7), a well-formed-but-inapplicable one answers
+        will be processed), a well-formed-but-inapplicable one answers
         200 with a `status` naming why nothing happened, and only a
         malformed body earns a 400."""
         if not isinstance(body, dict):
@@ -81,9 +81,9 @@ class VoiceEventConsumer:
         # route has no auth by design (its only caller is a controller on the
         # private compose network), so without this check every distinct
         # `guild_id` a caller invents permanently adds an entry to the hub's
-        # per-guild seq bookmark — an unbounded map keyed by request input,
-        # where a scalar used to be. It also answered `200 ok` to an event for
-        # a guild it could do nothing about, which is a fail-OPEN.
+        # per-guild seq bookmark — an unbounded map keyed by request input. It
+        # would also answer `200 ok` to an event for a guild it could do nothing
+        # about, which is a fail-OPEN.
         if guild_id not in self._hub.guild_ids:
             log.warning(
                 "voice event %s (%s) names guild %s, which has no configured "
@@ -106,7 +106,7 @@ class VoiceEventConsumer:
         try:
             status, payload = await self._process(event_type, guild_id, body)
         except Exception:
-            # B7: the transition RAISED (a dead-generation play climbing
+            # The transition RAISED (a dead-generation play climbing
             # out of the advance, a store failure) — nothing was consumed,
             # so the controller's outbox retry gets a genuine second
             # attempt instead of a `duplicate` acknowledgement of work
@@ -129,7 +129,7 @@ class VoiceEventConsumer:
         if event_type == "speech-finished":
             return 200, {"status": "ok"}
         if event_type == "voice-death":
-            # B8: the generation check AND the hub drop happen inside the
+            # The generation check AND the hub drop happen inside the
             # manager, under the guild lock, before any teardown — a
             # delayed death from an old generation must not touch the NEW
             # session.
@@ -148,20 +148,18 @@ class VoiceEventConsumer:
         # `track-finished` / `stream-failed`: advance ONLY for the playback
         # nora currently expects — anything else is the tail of a
         # skipped/superseded track and must not move the queue. The check
-        # itself happens in the manager, UNDER the guild lock (B5): checked
+        # itself happens in the manager, UNDER the guild lock: checked
         # here instead, an event arriving mid-skip would pass against the
         # old expected id and advance twice.
         playback_id = body.get("playback_id")
         if not isinstance(playback_id, str):
             return 200, {"status": "stale"}
         if event_type == "stream-failed":
-            # NOT the same transition as a natural end (design/voice-channel/
-            # 07 §5, audit B14): a track that failed to START has not
-            # finished, and the manager re-resolves it before it will move
-            # the queue. Routing this to `on_track_finished` is what made one
-            # rejected CDN address cost a whole session on 2026-09-18 —
-            # every failure advanced into another track resolved through the
-            # same broken source session.
+            # NOT the same transition as a natural end: a track that failed to
+            # START has not finished, and the manager re-resolves it before it
+            # will move the queue. Routing this to `on_track_finished` would
+            # advance every failure into another track resolved through the same
+            # broken source session.
             handled = await self._manager.on_stream_failed(
                 guild_id, playback_id=playback_id, reason=_str_field(body, "reason"),
             )

@@ -1,13 +1,12 @@
 """Platform adapter health as Record — one `source_health` row per state
-TRANSITION (design/cognition-loop/20-observe.md §1, migration step 1).
+TRANSITION.
 
-«From step 1, every collector poll and every platform adapter's up and down
-transitions are recorded, so "every source healthy for the interval" is a
-query, not an assumption.» The presence collector records its own polls
-(`nora.presence.collector`); this records the adapters, from the samples the
-liveness loop already takes every 10 s (`App._update_last_event_age`).
+Makes "every source healthy for the interval" a query, not an assumption. The
+presence collector records its own polls (`nora.presence.collector`); this
+records the adapters, from the samples the liveness loop takes every 10 s
+(`App._update_last_event_age`).
 
-**Transitions, not samples.** A row is written the first time a platform is
+Transitions, not samples. A row is written the first time a platform is
 observed after a start (so a restart is visible as a fresh `up` or `down`)
 and whenever its state changes; a steady state writes nothing. Four states:
 

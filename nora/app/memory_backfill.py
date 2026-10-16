@@ -7,8 +7,7 @@ model Nora had of the unit's people was derived in the old one. Honcho keeps
 conclusions, not text, so nothing can be moved across; what can be done is to
 feed the unit's own history again, from the transcript Nora already records
 (`messages`, read through `RecordStore.since`), so the person models in the
-new workspace are built from that unit's rooms and nothing else. Written for
-`ridgeline` leaving the `67` workspace; it names no unit itself.
+new workspace are built from that unit's rooms and nothing else.
 
 THE SAME FEED LIVE INGESTION MAKES, NOT A LOOK-ALIKE. Each row goes through
 `MemoryStore.ensure_peer` + `MemoryStore.feed` on the production
@@ -20,7 +19,8 @@ path (`nora.ingest.stages.memory_feed`). The metadata is the live path's too:
 `{"ts": <ts>}`, and an edited row is fed as its first version followed by the
 edit, framed by the same `edit_text` the live edit path uses. One thing is
 NOT the live path's: each message is sent with its own `created_at` (the
-row's `ts`, the edit's for an edit), so Honcho dates it when it was said. The TEXT is the
+row's `ts`, the edit's for an edit), so Honcho dates it when it was said. The
+TEXT is the
 row joined through the process's `MediaJoin`, as lazy adoption joins it
 (`nora.app.adoption`, the other replay into memory): live ingestion fed a
 photo's marker and, later and separately, its comprehension; a replay has
@@ -30,8 +30,8 @@ WHAT IS SKIPPED, exactly as the live feed skips it: Nora's own rows (`since`
 excludes `is_nora` in the query — her replies reach Honcho through the reply
 path, not ingest — so in the new workspace a message that answered her
 arrives without the reply it answered), and rows whose sender mapped to
-nobody (`person_id` NULL: D6, never fed). Also skipped, and counted: a row
-with no text at all, and a person_id `identity.toml` no longer knows. The transcript store keeps at
+nobody (`person_id` NULL, never fed). Also skipped, and counted: a row
+with no text at all, and a person_id `identity.toml` does not know. The transcript store keeps at
 most `store.max_per_conversation` rows per conversation, so «history» here is
 what it still holds.
 
@@ -146,8 +146,7 @@ def _items(row: TranscriptRow) -> list[tuple[str, dict[str, object], int]]:
     (`nora.ingest.stages.memory_feed.run`). Only the LATEST edit survives in
     the transcript, so an edited-twice row replays as its first version plus
     its last."""
-    # The file-link handle, never the URL, as the live feed sends it
-    # (design/external-files §1).
+    # The file-link handle, never the URL, as the live feed sends it.
     body = render_file_links(row.body or "").strip()
     if row.edit is None:
         return [(body, {"ts": row.ts}, row.ts)] if body else []
@@ -223,8 +222,8 @@ async def backfill_unit(
             "Replaying there would feed every message twice."
         )
     # OURS, or nothing. A Honcho workspace another application uses can carry
-    # the same name as a Nora workspace (the deploy host's `ridgeline` does), and
-    # a replay into it would write people's words into someone else's peers.
+    # the same name as a Nora workspace, and a replay into it would write
+    # people's words into someone else's peers.
     ownership = await memory.inspect_workspace(route.workspace)
     if ownership is None:
         raise BackfillRefusedError(

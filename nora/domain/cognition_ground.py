@@ -1,5 +1,4 @@
-"""What code hands a Cognition session to JUDGE from (design/cognition-loop/
-30-cognition.md §1; #637 review, major 2).
+"""What code hands a Cognition session to JUDGE from.
 
 **The failure this exists for.** An agenda line is a count: «room R has 23 new
 messages». A session handed only that has nothing to tell a plan from a joke,
@@ -8,11 +7,11 @@ cannot cite a message id in a note (a body line MUST end in the ids it rests on,
 a duplicate or closes `no_change` on a room it never read. AGENTS.md's spine
 says it once for every model that judges: the input has to explain itself, and
 a judgement whose input cannot ground it does not fail loudly, it answers
-wrong at a rate nothing reports. So §1 says what code hands it, and this is
-that: for each item the Record rows that raised its stimuli (author, room, id,
+wrong at a rate nothing reports. So code hands it, for
+each item, the Record rows that raised its stimuli (author, room, id,
 time and, when the room said something with a photo in it, what the photo
 shows), and the index lines of the Register rows the session would otherwise
-duplicate or contradict. Index lines, never bodies (§1): a body is one read
+duplicate or contradict. Index lines, never bodies: a body is one read
 tool away, and a pushed body is a disclosure decision nobody made.
 
 **Interpret once.** `Grounding` is built once per session by the caller and
@@ -86,7 +85,7 @@ class RecordItem:
     #: NAME's place: `cognition_session.situation` is append-only and
     #: `nora person forget` (removed) cannot rewrite it, so a canonical name written
     #: there would outlive the person's withdrawal. A name is rendered to the
-    #: model at read time and never serialized (#637 second review, minor 5).
+    #: model at read time and never serialized.
     person_id: str | None = None
     #: Nora's OWN send in the item's window (D1, DEC-245): context the room is
     #: answering, marked as hers, never a stimulus and never something to cite.
@@ -117,7 +116,7 @@ def parse_rollup_ref(stimulus: Stimulus) -> RollupRef | None:
       stimulus's own `at_ms`)
 
     Unreadable is None, never a guess: a session is not handed a rollup row it
-    cannot read (D-decision 2026-09-30, DEC-245)."""
+    cannot read (DEC-245)."""
     if stimulus.kind != "rollup":
         return None
     parts = stimulus.ref.split("|")
@@ -231,8 +230,8 @@ class Grounding:
     `records` is keyed by the stimulus `ref` (`messages:12`), so the renderer
     joins a stimulus to its row without re-parsing anything. `notes` is the
     unit's (the unit is the read boundary, DEC-231); `events` are the rooms on
-    the agenda's. There is no Standing here: Standing is pulled, never pushed
-    (30 §1), and `standing_read` does not exist yet."""
+    the agenda's. There is no Standing here: Standing is pulled, never pushed,
+    and `standing_read` does not exist yet."""
 
     records: Mapping[str, RecordItem] = field(default_factory=dict)
     notes: tuple[NoteLine, ...] = ()
@@ -249,7 +248,7 @@ class Grounding:
     #: `platform:conversation_id` -> the room's label. The prompt says the
     #: label; the id stays where a tool's argument needs it.
     room_labels: Mapping[str, str] = field(default_factory=dict)
-    #: Her own Character · Nora for the unit (design/self-growth/20), rendered
+    #: Her own Character · Nora for the unit, rendered
     #: as the `self` block; `None` when the unit has no account or the read
     #: failed.
     self_account: CultureRevision | None = None

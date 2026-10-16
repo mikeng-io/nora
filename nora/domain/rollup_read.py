@@ -1,7 +1,6 @@
-"""One Rollup row as `rollup_read` returns it
-(design/cognition-loop/25-rollup.md §5, migration step 3).
+"""One Rollup row as `rollup_read` returns it.
 
-A Rollup row is computed by code from the Record (25 §2), so it carries no
+A Rollup row is computed by code from the Record, so it carries no
 model text: a kind, the subject and interval a note cites it by
 (`nora.domain.rollup.Citation`), the lineage it rests on, and a few typed
 fields. Which rows a room may be shown is decided AFTER the read by
@@ -34,7 +33,7 @@ __all__ = [
 
 RollupKind = Literal["stay", "trip", "colocation", "outing", "daybook", "tie"]
 
-#: The rollups `rollup_read` reads (25 §3). The aggregates that answer «where
+#: The rollups `rollup_read` reads. The aggregates that answer «where
 #: does X usually go» (place, occupancy, rhythm, corridor) stay behind
 #: `routine_read`, which forecasts from them; `response` is the Lessons
 #: adaptor's, not a session's.
@@ -49,7 +48,7 @@ ROLLUP_READ_MAX = 40
 class RollupReadQuery:
     """What to read from the CURRENT build: rows of `kind` in `unit` whose
     valid interval overlaps `[start_ms, end_ms)` (the overlap rule a citation
-    resolves by, 25 §2), involving `subjects` (canonical subject ids; every
+    resolves by), involving `subjects` (canonical subject ids; every
     one of them when `match == "all"`, any of them when `"any"`)."""
 
     kind: str

@@ -1,4 +1,4 @@
-"""`remind`'s pure checks (design/cognition-loop/30-cognition.md §2-§3): the
+"""`remind`'s pure checks: the
 code-side act guards a Cognition session's reminder is held to before it is
 written to the live reminder store. Each is a refusal with a named reason:
 non-empty citations, the dedupe rule ("one pending act per (subject rows,
@@ -39,7 +39,7 @@ class RemindContext:
     the LIVE `remind` tool makes (`nora.agent.tools`: the moment must be ahead, no
     nearer than `min_lead_seconds`, no further than `max_horizon_days`; Nora's own
     pending rows under `max_pending_per_requester`), from the same constants, plus
-    two of 30 §3's act guards (the room's `proactive` flag, an abduced value goes
+    two of the act guards (the room's `proactive` flag, an abduced value goes
     out as a question). Every field's default is the permissive reading, so a
     caller that reads none of it is unchanged; the composition reads all of it.
     No number here is ever shown to the model, and no cap is invented: the live
@@ -94,7 +94,7 @@ def check_remind(
     pending: Sequence[PendingRemind], context: RemindContext | None = None,
 ) -> RemindRefusal | None:
     """`remind(at, room, brief)`. `brief` is `(intent, subject_rows)` — never
-    prose (30-cognition.md §2). The refusal reasons are `no_citations`,
+    prose. The refusal reasons are `no_citations`,
     `bad_intent`, `room_not_proactive`, `abduced_must_ask`, `past`, `too_soon`,
     `too_far`, `duplicate_pending` and `pending_ceiling`; none of the details
     states a number (a model told of a cap declines the work)."""

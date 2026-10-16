@@ -1,4 +1,4 @@
-"""Publishing a document, and who may read one (ADR 0020, design/artifact §5, §16).
+"""Publishing a document, and who may read one (ADR 0020).
 
 `DocumentService.publish` is the ONE path a model-written document takes into the
 store, and the order is the point, because each step decides what the next may trust:
@@ -208,13 +208,13 @@ class DocumentService:
         self._room_ids = room_ids
         # Whether `person_id` is a resolved, known person. `created_by` decides who may
         # read a document in a room that does not name them, so a raw platform id that
-        # happens to equal a real person id must never reach it (review of PR 654).
+        # happens to equal a real person id must never reach it.
         self._is_person = is_person
         self._new_id = new_id
         self._now_ms = now_ms
         # Empty means no link is ever built (`[documents] public_url`).
         self._public_url = public_url.rstrip("/")
-        # Looks a named place up for a `Map` (design/artifact §40). `None` while `[route]` is
+        # Looks a named place up for a `Map`. `None` while `[route]` is
         # off, and then a document with a Map is `unavailable`, never stored without one.
         self._place_locator = place_locator
 
@@ -346,7 +346,7 @@ class DocumentService:
         self, document: dict[str, Any], person_names: frozenset[str] | None,
         live_addresses: frozenset[str] | None = None,
     ) -> tuple[dict[str, Any], list[Finding], bool]:
-        """Fill every Map place's coordinate from its NAME (design/artifact §40, issue #695).
+        """Fill every Map place's coordinate from its NAME.
 
         The model writes names and never a coordinate (DEC-24), so whatever `lat`, `lng` or
         `route` a spec carries is DISCARDED and the pair is looked up here, through the same
@@ -622,7 +622,7 @@ class DocumentService:
             )
         if document_id is not None and base_revision is None:
             # A revision that does not say which revision it started from would silently
-            # replace newer work (review of PR 654: a stale edit won as revision 3).
+            # replace newer work.
             return PublishResult(
                 "refused",
                 findings=(

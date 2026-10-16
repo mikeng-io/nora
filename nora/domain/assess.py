@@ -1,16 +1,15 @@
-"""The Assess adaptor's own vocabulary (design/cognition-loop/30-cognition.md
-§6, 70-migration.md §2 row 3, 15-map.md §6, 55-self.md §1): the nightly,
-deterministic data-quality checks and the report Assess writes about them.
+"""The Assess adaptor's own vocabulary: the nightly, deterministic
+data-quality checks and the report Assess writes about them.
 
 **Assess reports only.** It is not in `nora.infra.sql.history.HISTORY_TABLES`
 or `APPEND_ONLY`'s write path for any tier: `assess_report` is the one store
-this adaptor writes (15 §6's table: "Assess … — (reports and metrics only)").
+this adaptor writes (reports and metrics only).
 Nothing reads an `assess_report` row on a turn; it exists for the operator
 and for `nora_dq_failures_total{check}`.
 
 **Fail-closed, not fail-silent** (AGENTS.md's Measure spine, `CMS.md`): a
-check that cannot run because the tier it checks does not exist yet (Character
-and Lessons ship at step 8) is `not_applicable`, never `ok` — a check that
+check that cannot run because the tier it checks does not exist yet is
+`not_applicable`, never `ok` — a check that
 silently reports zero failures because it checked nothing would read exactly
 like a check that ran and found nothing wrong, and those are different facts.
 """
@@ -27,9 +26,8 @@ __all__ = [
     "DqStatus",
 ]
 
-#: Every nightly data-quality check 30 §6 names, in the order its bullet list
-#: gives them. Written out, not derived, because this IS the vocabulary the
-#: design names — `nora.app.assess_dq` has exactly one function per entry,
+#: Every nightly data-quality check. Written out, not derived, because this IS
+#: the vocabulary — `nora.app.assess_dq` has exactly one function per entry,
 #: and `tests/unit/test_assess_dq.py::test_every_named_check_has_a_function`
 #: ties the two so a renamed or dropped check cannot drift silently.
 DQ_CHECKS: tuple[str, ...] = (

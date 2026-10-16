@@ -57,10 +57,10 @@ class Dispatcher:
         self._ingest = ingest
         self._engagement = engagement
         self._background = background
-        # The participation occasion's trigger (design/dreamer-agent-loop/35),
-        # None unless `[participation] enabled`. It is NOT a third pipeline:
-        # it only NOTES a candidate message; the quiescence window owns every
-        # later decision (§3.5), and the turn — if one runs — goes through
+        # The participation occasion's trigger, None unless
+        # `[participation] enabled`. It is NOT a third pipeline: it only NOTES
+        # a candidate message; the quiescence window owns every later
+        # decision, and the turn — if one runs — goes through
         # `FirePath.speak`, never through `EngagementPipeline`.
         self._participation = participation
 
@@ -69,8 +69,7 @@ class Dispatcher:
         if result.message is None or result.decision is None:
             return
         if not result.decision.engage:
-            # The room verdict (EngageDecision.relevance_gate,
-            # design/dreamer-agent-loop/36): an untagged message in an opted-in
+            # The room verdict (EngageDecision.relevance_gate): an untagged message in an opted-in
             # room is NOT admitted — no R-9 debounce semantics, no
             # EngagementRequest, no agent now, and no gate call yet. It is only
             # NOTED with the quiescence trigger; whether a window closes, whether

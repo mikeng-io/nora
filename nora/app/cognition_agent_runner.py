@@ -1,30 +1,28 @@
 """`LiveCognitionAgentRunner` — the production `nora.app.cognition_session.
-CognitionAgentRunner` (migration step 3a-ii), built the same way `nora.app.
-agent_runner.LiveAgentRunner` wraps `nora.agent.factory`'s Strands plumbing
-for a tag turn, and the same way `nora.agent.dreamer.DreamerRuntime._sample`
-wraps it for every OTHER Dreamer adaptor: one `DreamGuard` per call (a
-ledger is spent state — a shared one would let an earlier session's tool
-calls count against a later session's budget, `_sample`'s own reason),
-`factory.create_dream_agent` (the ONLY constructor in the tree allowed to
-build a Strands `Agent` for the Dreamer — spec C.7), `factory.invoke` under
-`budget`'s three R-8 caps.
+CognitionAgentRunner`, built the same way `nora.app.agent_runner.LiveAgentRunner`
+wraps `nora.agent.factory`'s Strands plumbing for a tag turn, and the same way
+`nora.agent.dreamer.DreamerRuntime._sample` wraps it for every OTHER Dreamer
+adaptor: one `DreamGuard` per call (a ledger is spent state — a shared one would
+let an earlier session's tool calls count against a later session's budget),
+`factory.create_dream_agent` (the ONLY constructor in the tree allowed to build a
+Strands `Agent` for the Dreamer — spec C.7), `factory.invoke` under `budget`'s
+three R-8 caps.
 
 **The model is resolved from the existing config/alias mechanism**
 (`nora.agent.factory.ModelSource`, built by the composition root from
-`[cognition]`'s own model alias exactly as `[dreamer]`'s is) — never a
-second model-selection path. No model id or route string is written into
-this file: `nora.app.cognition_session.CognitionSessionRunner` is handed
-`model_id`/`model_route` as plain config-resolved strings by the
-composition root, for the session row's own provenance column
-(30-cognition.md §1), and this class never reads or repeats them.
+`[cognition]`'s own model alias exactly as `[dreamer]`'s is) — never a second
+model-selection path. No model id or route string is written into this file:
+`nora.app.cognition_session.CognitionSessionRunner` is handed
+`model_id`/`model_route` as plain config-resolved strings by the composition
+root, for the session row's own provenance column, and this class never reads or
+repeats them.
 
-**Simplification, stated rather than hidden.** `ReasoningStripWatch`
-(`nora.agent.reasoning_strip`), which every OTHER Dreamer sample attaches,
-is not wired here: it exists to catch a `<think>` block leaking into a
-DELIVERED reply, and nothing this session writes is delivered as she wrote it:
-every write passes its tier's validator, and a reminder's text is read back by a
-fresh turn that writes the words. Ceiling: a `<think>` fragment that passed a
-validator would land in a record; no such write has been seen.
+**`ReasoningStripWatch`** (`nora.agent.reasoning_strip`), which every OTHER
+Dreamer sample attaches, is not wired here: it exists to catch a `<think>` block
+leaking into a DELIVERED reply, and nothing this session writes is delivered as
+she wrote it: every write passes its tier's validator, and a reminder's text is
+read back by a fresh turn that writes the words. Ceiling: a `<think>` fragment
+that passed a validator would land in a record.
 """
 
 from __future__ import annotations
@@ -187,7 +185,7 @@ class LiveCognitionAgentRunner:
         # A failure or a timeout is RAISED, never returned as a normal result:
         # `CognitionSessionRunner` records the session `failed`/`timeout`
         # (which leaves its stimuli pending), and only a loop that RETURNED
-        # closes its items. Swallowing either here made a dead session read as
+        # closes its items. Swallowing either would make a dead session read as
         # one that ran: items closed `waiting` with a strike, the watermark
         # moved past stimuli nobody looked at.
         try:

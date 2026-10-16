@@ -44,15 +44,15 @@
   {
     "name": "update_event actually refuses on EVERY terminal status, not just cancelled",
     "file": "nora/app/gatherings.py",
-    "old": "        if current.status in TERMINAL_STATUSES:\n            # 40-register.md §3: only a status BEFORE `happened` may be",
-    "new": "        if current.status is GatheringStatus.CANCELLED:\n            # 40-register.md §3: only a status BEFORE `happened` may be",
+    "old": "        if current.status in TERMINAL_STATUSES:\n            # Only a status BEFORE `happened` may be",
+    "new": "        if current.status is GatheringStatus.CANCELLED:\n            # Only a status BEFORE `happened` may be",
     "target": "tests/test_gatherings_service.py -k test_update_event_refuses_on_every_terminal_status"
   },
   {
     "name": "rsvp actually refuses on EVERY terminal status, not just cancelled",
     "file": "nora/app/gatherings.py",
-    "old": "        if current.status in TERMINAL_STATUSES:\n            # 40-register.md §3, the same set `update_event` refuses on:",
-    "new": "        if current.status is GatheringStatus.CANCELLED:\n            # 40-register.md §3, the same set `update_event` refuses on:",
+    "old": "        if current.status in TERMINAL_STATUSES:\n            # The same set `update_event` refuses on:",
+    "new": "        if current.status is GatheringStatus.CANCELLED:\n            # The same set `update_event` refuses on:",
     "target": "tests/test_gatherings_service.py -k test_rsvp_refuses_on_every_terminal_status"
   },
   {

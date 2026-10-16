@@ -2,13 +2,10 @@
 
 Both `nora.app.composition.build_dependencies` (production) and
 `nora.app.offline.build_offline_pipeline` (every offline/eval harness) call
-this instead of constructing `TranscriptInjection(...)` themselves. Before
-this module existed the two sites drifted independently — production passed
-18 keyword arguments, `offline.py` passed 7, and an eval's prompt silently
-missing `<standing>`/`<notes>` went unnoticed because nothing
-compared the two call sites. `tests/architecture/test_assembler_parity.py`
-pins both to this one function, so a collaborator added to one side and
-forgotten on the other fails a test instead of shipping quietly.
+this instead of constructing `TranscriptInjection(...)` themselves, so the two
+cannot drift apart. `tests/architecture/test_assembler_parity.py` pins both to
+this one function: a collaborator added to one side and forgotten on the other
+fails a test.
 
 Lives beside `offline.py` rather than inside `composition.py` for the same
 reason `eval_support.py` does: `offline.py` already imports from `nora.app`,
@@ -44,8 +41,7 @@ from nora.policy import Policy
 
 
 def lineage_policy(cfg: Config, *, policy: Policy, persons: Persons) -> LineagePolicy:
-    """The ONE `LineagePolicy` of a process (design/cognition-loop/
-    10-tiers.md §3): every room of `policy.toml`, the location circles of
+    """The ONE `LineagePolicy` of a process: every room of `policy.toml`, the location circles of
     `identity.toml` (the same `circles_from_persons` `where_is` reads) and
     `[lineage] mode`. A pure value; the tag path's assembler, the fire path
     and the tool registry (`record_query`) each hold one built here, so the
@@ -82,47 +78,46 @@ def build_assembler(
         # SHARED (DEC-195) with `nora.app.fire.FirePath`, not built here from
         # `cfg.store.quote_margin`/`.quote_window_multiplier` — those two
         # config values are read ONCE, at the composition root, into the ONE
-        # `QuoteWindow` instance both paths hold. `None` (a harness that
-        # predates this, or has not opted in) is the pre-2026-09-22 shape:
-        # the plain `context_window` fetch, no quote-aware growth.
+        # `QuoteWindow` instance both paths hold. `None` (a harness that has
+        # not opted in) is the plain `context_window` fetch, no quote-aware
+        # growth.
         quote_window=quote_window,
         ai_peer=cfg.memory.ai_peer,
         tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
         notes=notes, policy=policy,
         memos=memos,
         standing=standing,
-        # The media join (issue #116): the transcript's `[image a3f2c1]`
+        # The media join: the transcript's `[image a3f2c1]`
         # placeholders gain their stored comprehension here, in the assembler,
         # so `nora/agent/prefill.py` stays a pure renderer over `TagContext`.
         # `None` (every harness that wires no media index) renders the bare
         # handles, which is what the row actually says. The SAME instance is
         # handed to the five other transcript builders.
         media_join=media_join,
-        # `<presence>` (design/self-awareness/02). The SAME reader the fire
-        # path and the proactive act turn hold, built once at the composition root
-        # over `policy.toml` and the live adapter map. `None` renders the
-        # network alone — what `_where_line` said before it was replaced.
+        # `<presence>`. The SAME reader the fire path and the proactive act
+        # turn hold, built once at the composition root over `policy.toml` and
+        # the live adapter map. `None` renders the network alone.
         presence=presence,
-        # `<culture>` (design/culture-tier, DEC-207). The SAME reader the fire
+        # `<culture>` (DEC-207). The SAME reader the fire
         # path and every Dreamer adaptor that reads an account hold. `None`
         # while `[culture] enabled = false`, and in every harness that wires
         # no store, which renders no block.
         culture=culture,
-        # `<lessons>` (design/self-growth/40, L5): `None` while `[lessons]
+        # `<lessons>`: `None` while `[lessons]
         # render` is off, and in every harness that does not wire it.
         lessons=lessons,
-        # Lineage (design/cognition-loop/10-tiers.md §3). Built here, from the
+        # Lineage. Built here, from the
         # same policy and identity every harness already passes, so an eval
         # turn is filtered exactly as a live one in every `[lineage] mode`.
         lineage=lineage_policy(cfg, policy=policy, persons=persons),
-        # `<computer>` (design/sandbox-runtime §15.3). The SAME reader the
+        # `<computer>`. The SAME reader the
         # fire path holds; `None` while `[computer]` is off, and in every
         # harness, which renders no block.
         computer=computer,
-        # `<documents>` (design/artifact §29). The SAME reader the fire path holds;
+        # `<documents>`. The SAME reader the fire path holds;
         # `None` while `[documents]` is off, which renders no block.
         documents=documents,
-        # `<subagents>` (design/subagent §7). TAG PATH ONLY: the fire path is given no such
-        # reader. `None` while `[subagent]` is off, which renders no block.
+        # `<subagents>`. TAG PATH ONLY: the fire path is given no such reader.
+        # `None` while `[subagent]` is off, which renders no block.
         subagents=subagents,
     )

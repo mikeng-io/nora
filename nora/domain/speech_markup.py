@@ -1,5 +1,5 @@
 """MiniMax speech markup: what a spoken reply may carry beyond her words, and
-the check that it carries nothing else (design/voice-channel/08).
+the check that it carries nothing else.
 
 Her reply is written chat. Before it reaches the TTS voice, the speech
 formatter (`nora.agent.speech_format`) may ADD three kinds of thing MiniMax's
@@ -14,7 +14,7 @@ Everything here is deterministic and framework-free, so it is the half of the
 formatter a test can pin exactly. The model's output is accepted only when
 `check` finds no reason to refuse it; a refusal speaks `normalise(text)`, which
 is her words with only the unreadable removed. The vendor's rules are quoted
-from platform.minimax.cn/docs/api-reference/speech-t2a-http, read 2026-10-01:
+from platform.minimax.cn/docs/api-reference/speech-t2a-http:
 a pause is 0.01 to 99.99 seconds with at most two decimals, must sit between
 pronounceable text, and may not be used consecutively.
 """

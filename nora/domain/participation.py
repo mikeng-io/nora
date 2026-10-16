@@ -2,13 +2,12 @@
 survives a process restart (`nora.app.participation.ParticipationTrigger`).
 
 **Four values, and three of them can be absent.** The absent case is the whole
-reason this is a type rather than a tuple of floats: `dream_schedule`'s module
-docstring already paid for the lesson — epoch 0 is a real instant in 1970 that
-any duration arithmetic computes against happily, so a cursor that returned it
-for a room that has never sent would put "she last spoke fifty-six years ago"
-in front of the cooldown, which reads as a correct answer and permits the send
-either way. `None` is the honest reading and the trigger decides what a first
-sighting means:
+reason this is a type rather than a tuple of floats: epoch 0 is a real instant
+in 1970 that any duration arithmetic computes against happily, so a cursor that
+returned it for a room that has never sent would put "she last spoke
+fifty-six years ago" in front of the cooldown, which reads as a correct answer
+and permits the send either way. `None` is the honest reading and the trigger
+decides what a first sighting means:
 
 * `last_send_at is None` — she has never SENT in this room. The cooldown does
   not apply, rather than applying against 1970.

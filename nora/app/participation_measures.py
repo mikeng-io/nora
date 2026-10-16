@@ -5,8 +5,8 @@ be wired wrongly and still look plausible.
 module's docstring and the important half of it is here: **`refusals` comes
 from a different and much weaker instrument than everything else.** Notes,
 decisions and messages are durable rows in Postgres; gate refusals are
-reconstructed from a Prometheus counter that resets whenever the process does
-(19 times in the 7 days to 2026-09-16). So refusals arrive as an ARGUMENT, and
+reconstructed from a Prometheus counter that resets whenever the process does.
+So refusals arrive as an ARGUMENT, and
 the day a durable per-verdict row exists, only the caller changes.
 
 Read-only throughout, through `create_readonly_sql_engine` — same guarantee
@@ -43,9 +43,9 @@ __all__ = ["SPOKE_JOIN_TOLERANCE_MS", "GatheredRows", "gather", "measure", "pair
 #: the window is one-sided for that reason and a symmetric one would let a
 #: LATER turn's message be claimed by an earlier decision.
 #:
-#: 120s is a bound, not a measurement: it is wide enough for a slow deliver and
-#: narrow enough that two participation turns in the same room inside it would
-#: be the pathological case, which at one turn in seven days is not reachable.
+#: 120s is a bound, not a measurement: wide enough for a slow deliver, narrow
+#: enough that two participation turns in the same room inside it are the
+#: pathological case.
 #:
 #: EPOCH MILLISECONDS, like every instant these measures handle — both
 #: `decision_log.ts` and `messages.ts` are ms, and a seconds-valued tolerance
@@ -133,9 +133,7 @@ async def gather(url: str, *, since: int) -> GatheredRows:
 
     `since` is EPOCH MILLISECONDS. `decision_log.ts` and `messages.ts` are
     BIGINT ms, so a seconds-valued bound is smaller than every row and the
-    window silently becomes ALL TIME — which on live data returned 108
-    `proactive_decide` rows and 54 tags labelled "last 7 days" (caught
-    2026-09-16).
+    window silently becomes ALL TIME.
 
     One engine for the command's life, disposed by the caller's `async with`.
     `note` is read WITHOUT a `since` filter: a note established months ago can
@@ -194,10 +192,10 @@ async def gather(url: str, *, since: int) -> GatheredRows:
 def measure(
     rows: GatheredRows, refusals: Sequence[Refusal], *, now: int,
 ) -> tuple[Measure, ...]:
-    """The four, in the order `02-measurement §2` states them.
+    """The four, in a fixed order.
 
-    Returned as a tuple rather than a dict so the order is the document's and
-    a reader comparing the two never has to sort.
+    Returned as a tuple rather than a dict so the order is explicit and a
+    reader never has to sort.
     """
     return (
         expiry_without_action(rows.notes, rows.reminds, now=now),

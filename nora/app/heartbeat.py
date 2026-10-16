@@ -72,16 +72,15 @@ log = logging.getLogger("nora.app.heartbeat")
 TurnKey = tuple[str, str, str, str]
 
 # The ONE outcome that means the group heard something. Everything else the fire
-# path can answer (§8.1: `failed_policy`, `failed_timeout`, `failed_error`) is a
+# path can answer (`failed_policy`, `failed_timeout`, `failed_error`) is a
 # reminder that did NOT arrive, and the row must say so.
 SENT = "sent"
 
-# The ONE outcome that means the turn ran, said nothing, and that was RIGHT
-# (design/dreamer-agent-loop/39 D12): a `kind="proactive"` act turn reading
-# its own earlier intention against the room now and declining it. DONE, not
-# FAILED — the decision log (39 D7) reads every row of Nora's own, and a
-# restraint recorded as a failure teaches the next decider that
-# restraint fails. The same string `nora.app.fire.SILENT` answers with; a
+# The ONE outcome that means the turn ran, said nothing, and that was RIGHT: a
+# `kind="proactive"` act turn reading its own earlier intention against the room
+# now and declining it. DONE, not FAILED — the decision log reads every row of
+# Nora's own, and a restraint recorded as a failure teaches the next decider
+# that restraint fails. The same string `nora.app.fire.SILENT` answers with; a
 # spelling drift here would turn every restraint back into a failure.
 SILENT = "silent"
 
@@ -145,16 +144,16 @@ class HeartbeatLoop:
         self._metrics = metrics
         self._tick_seconds = tick_seconds
         self._fire = fire
-        # The `kind="proactive"` screen (39 D5/D11): the room's `proactive`
-        # flag instead of persons membership, and the note the row is about
-        # — retired, or revised on the tag path since the row was linked,
-        # cancels it. `None` (no proactive adaptor composed) FAILS every
-        # proactive row `failed_policy` rather than firing it unscreened.
+        # The `kind="proactive"` screen: the room's `proactive` flag instead
+        # of persons membership, and the note the row is about — retired, or
+        # revised on the tag path since the row was linked, cancels it. `None`
+        # (no proactive adaptor composed) FAILS every proactive row
+        # `failed_policy` rather than firing it unscreened.
         self._proactive = proactive
         # Seeded at construction, not left None: before the first tick the
         # honest reading is "this long since we started", which climbs like any
-        # other stall. A None-guarded gauge that publishes 0 until the first
-        # tick would report perfect health for a loop that never started.
+        # other stall. A gauge that published 0 until the first tick would
+        # report perfect health for a loop that never started.
         self._last_tick_at = clock()
         metrics.gauge_function(
             "nora_heartbeat_last_tick_age_seconds", self._last_tick_age_seconds,
@@ -167,7 +166,7 @@ class HeartbeatLoop:
         return (self._clock() - self._last_tick_at).total_seconds()
 
     async def tick(self) -> None:
-        """One pass: due rows, grouped by conversation AND requester (§5.2), one
+        """One pass: due rows, grouped by conversation AND requester, one
         turn each.
 
         Raises nothing a caller must handle for a single group's sake — a group
@@ -185,11 +184,10 @@ class HeartbeatLoop:
             try:
                 await self._one_turn(rows, slot=slot, now=now)
             except Exception:
-                # The docstring's promise, made true. Anything this group's
-                # screening, claiming or resolving raises stops HERE — every
-                # conversation ordered after it in the same batch still gets its
-                # tick, and the batch's tail is not silently skipped until the
-                # fault clears.
+                # Anything this group's screening, claiming or resolving
+                # raises stops HERE — every conversation ordered after it in the
+                # same batch still gets its tick, and the batch's tail is not
+                # silently skipped until the fault clears.
                 log.exception(
                     "heartbeat: %d reminder(s) for %s in %s failed; "
                     "the rest of the tick continues",
@@ -226,9 +224,8 @@ class HeartbeatLoop:
 
         Split out of `tick()` so the per-group `try/except` there wraps ALL of a
         group's work — the policy screen and the terminal writes included, not
-        just the fire call. The earlier shape guarded `fire` alone, so a store
-        that failed while claiming left rows FIRING with no counter and took the
-        whole tick down with them.
+        just the fire call: a store that failed while claiming would otherwise
+        leave rows FIRING with no counter and take the whole tick down.
         """
         allowed = await self._screen(rows, now=now)
         if not allowed:
@@ -237,14 +234,13 @@ class HeartbeatLoop:
             # A tag owns this conversation. The rows stay PENDING and the next
             # tick finds them again — never queued, never shed.
             #
-            # COUNTED, not merely logged, and that is not decoration: a deferral
-            # is the one way a reminder goes hours late with every other signal
-            # reading healthy. Nothing fired, so `nora_reminders_fired_total`
-            # does not move; the tick itself completed, so the liveness gauge
-            # returns to zero. A group under continuous tag load could starve
-            # its own reminders indefinitely and the only trace was a log line
-            # at INFO. See the series' spec for why it counts TURNS per tick
-            # rather than distinct reminders.
+            # COUNTED, not merely logged: a deferral is the one way a reminder
+            # goes hours late with every other signal reading healthy. Nothing
+            # fired, so `nora_reminders_fired_total` does not move; the tick
+            # itself completed, so the liveness gauge returns to zero. A group
+            # under continuous tag load could starve its own reminders
+            # indefinitely. The series counts TURNS per tick rather than
+            # distinct reminders.
             log.info("heartbeat deferred %d reminder(s) in %s: slot held",
                      len(allowed), slot[1])
             self._metrics.inc("nora_heartbeat_deferrals_total")
@@ -261,24 +257,24 @@ class HeartbeatLoop:
     async def _screen(
         self, rows: Sequence[Reminder], *, now: datetime,
     ) -> list[Reminder]:
-        """§5.1's fire-time policy check, per ROW.
+        """The fire-time policy check, per ROW.
 
         The grant is (room, person), and two people may have reminders due in
         the same group with only one of them having since lost the room — which
-        is why the whole tick can never screen a CONVERSATION as a unit. Since
-        §5.2 the group is already one requester's, so every row here gets the
-        same answer; the loop stays per row because that is what the predicate
-        is about, and because it is what keeps the revoked person's row failing
-        without touching the other person's group.
+        is why the whole tick can never screen a CONVERSATION as a unit. The
+        group is already one requester's, so every row here gets the same
+        answer; the loop stays per row because that is what the predicate is
+        about, and because it keeps the revoked person's row failing without
+        touching the other person's group.
         """
         allowed: list[Reminder] = []
         for row in rows:
             if row.kind == PROACTIVE_KIND:
-                # A DIFFERENT grant (39 D5): the owner is Nora's own ai_peer
-                # id, which `is_allowed` can never admit, so the screen is
-                # the room's flag plus the note's state (D11). Fail-closed
-                # with no screen wired: an unscreened proactive row must not
-                # fire on the strength of nothing.
+                # A DIFFERENT grant: the owner is Nora's own ai_peer id, which
+                # `is_allowed` can never admit, so the screen is the room's flag
+                # plus the note's state. Fail-closed with no screen wired: an
+                # unscreened proactive row must not fire on the strength of
+                # nothing.
                 if self._proactive is None:
                     log.error(
                         "proactive reminder %s not fired: no ProactiveScreen is "
@@ -319,22 +315,21 @@ class HeartbeatLoop:
         """One conversation's fire turn, from FIRING to a terminal state.
 
         The rows are CLAIMED — `PENDING -> FIRING`, compare-and-set — before
-        `fire` is called, which is what makes §8.2's at-most-once real: a crash
-        mid-turn leaves them FIRING, and boot recovery resolves those to FAILED
-        rather than re-queueing them. Nothing links a row to a delivered
-        message, so a retry would double-send anything that died after egress.
+        `fire` is called, which makes delivery at-most-once: a crash mid-turn
+        leaves them FIRING, and boot recovery resolves those to FAILED rather
+        than re-queueing them. Nothing links a row to a delivered message, so a
+        retry would double-send anything that died after egress.
 
         `claim`, not `mark`: `due()`'s batch is a snapshot, and this coroutine
         awaits a whole turn for the groups ahead of it, so a row here may since
-        have been cancelled. `mark` matched on id alone and would resurrect it.
+        have been cancelled. `mark` matches on id alone and would resurrect it.
 
-        A recurring row's SUCCESSOR is written by the same `claim` (DEC-85), and
-        this loop is deliberately unchanged by that: the tick owns *when* a
-        reminder fires and *what the row then says*, never the calendar. Putting
-        the successor here instead would have put it after the turn, where a
-        crash mid-fire — the one case `recover()` exists for — would end the
-        series silently. `now` is the tick's instant, threaded through for the
-        same reason it is threaded to `due()`: the catch-up rule is a comparison
+        A recurring row's SUCCESSOR is written by the same `claim` (DEC-85): the
+        tick owns *when* a reminder fires and *what the row then says*, never
+        the calendar. Writing the successor after the turn instead would let a
+        crash mid-fire — the one case `recover()` exists for — end the series
+        silently. `now` is the tick's instant, threaded through for the same
+        reason it is threaded to `due()`: the catch-up rule is a comparison
         against it, and a store reading its own clock would put that beyond
         this module's tests.
         """
@@ -369,8 +364,8 @@ class HeartbeatLoop:
                 firing, ReminderState.FAILED, outcome="failed_error", now=now,
             )
             return
-        # §8.1: the STATE comes from the OUTCOME. Only `sent` is DONE — a turn
-        # that timed out or reported its own error answers without raising, and
+        # The STATE comes from the OUTCOME. Only `sent` is DONE — a turn that
+        # timed out or reported its own error answers without raising, and
         # writing those `done` records a delivery that never happened.
         await self._resolve_all(firing, _state_for(outcome), outcome=outcome, now=now)
 
@@ -380,12 +375,10 @@ class HeartbeatLoop:
     ) -> None:
         """`_resolve` over a turn's rows, where one failure costs ONE row.
 
-        Per row rather than per loop because the alternative is what the
-        unguarded version did: a store that failed writing the first row's
-        terminal state skipped every row after it, leaving them FIRING — and
-        FIRING is only recoverable at the next boot, so the reminders after the
-        first one were lost for as long as the process kept running. The row
-        whose write failed is still FIRING here too, but it is the only one, and
+        Per row rather than per loop: a store that failed writing the first
+        row's terminal state would otherwise skip every row after it, leaving
+        them FIRING — recoverable only at the next boot. The row whose write
+        failed is still FIRING here too, but it is the only one, and
         `recover()` sweeps it.
         """
         for row in rows:
@@ -412,19 +405,18 @@ class HeartbeatLoop:
 
 
 def _state_for(outcome: str) -> ReminderState:
-    """§8.1's outcome, as §5's `done|failed`.
+    """The fire outcome, as `done|failed`.
 
-    The loop owns this state machine and used to ignore the outcome it was
-    handed: only an EXCEPTION produced FAILED, so `failed_timeout`,
-    `failed_error` and the `not_wired` stub all wrote `state=done`. The row then
-    reads "delivered" to every query that filters on state, with the truth
-    surviving only in a free-text column nothing joins on.
+    The outcome decides the state, not just an exception: `failed_timeout`,
+    `failed_error` and the `not_wired` stub are FAILED. Writing them `done`
+    would read as "delivered" to every query that filters on state, with the
+    truth surviving only in a free-text column nothing joins on.
 
-    THE THIRD MAPPING (39 D12): `silent` is DONE too. Only a proactive act
-    turn can answer it (`nora.app.fire`), and for that turn saying nothing
-    is the healthy default, not a delivery that never happened. Mapped to
-    FAILED it would read as one in every query, in the metric, and in the
-    decision log the next decider learns from.
+    `silent` is DONE too. Only a proactive act turn can answer it
+    (`nora.app.fire`), and for that turn saying nothing is the healthy default,
+    not a delivery that never happened. Mapped to FAILED it would read as one in
+    every query, in the metric, and in the decision log the next decider learns
+    from.
     """
     return ReminderState.DONE if outcome in (SENT, SILENT) else ReminderState.FAILED
 
@@ -433,14 +425,13 @@ def _by_turn(rows: Sequence[Reminder]) -> dict[TurnKey, list[Reminder]]:
     """Group into ONE turn per (conversation, requester, kind), preserving
     `due()`'s order.
 
-    §5.2, both halves — plus the kind component (DEC-139,
-    design/event-abstraction/04):
+    One CONVERSATION, one REQUESTER and one KIND (DEC-139):
 
     - One CONVERSATION, because a turn has one Room, one policy decision and one
       Deliverer binding. Rows for two conversations sharing a turn would leak
       one room's reminder into the other. `(platform, conversation_id)` because
       a conversation id alone is not unique across platforms.
-    - One REQUESTER, because §6.4 derives the entire turn from a single
+    - One REQUESTER, because the entire turn derives from a single
       `requester_person_id` — the `tagger`, the `Room` scope that tagger grants,
       the peer card, and the synthetic message's `sender_name`. Two people's
       rows in one turn would put person B's sentence into a turn wearing person
@@ -456,9 +447,8 @@ def _by_turn(rows: Sequence[Reminder]) -> dict[TurnKey, list[Reminder]]:
     kinds for the same requester. They are safe precisely because they are
     separate: each takes the conversation slot in turn, so they are serialised
     exactly as a tag and a fire turn are. The deliberate accounting
-    consequence of splitting kinds (turns and per-turn deferrals double;
-    `nora_reminders_fired_total` is per-row and does not move) is documented
-    in design/event-abstraction/04 ("Deliberate accounting consequence").
+    consequence of splitting kinds is that turns and per-turn deferrals double
+    while `nora_reminders_fired_total`, which is per-row, does not move.
     """
     groups: dict[TurnKey, list[Reminder]] = {}
     for row in rows:
@@ -474,11 +464,9 @@ def publish_idle_gauge(metrics: Metrics) -> None:
 
     Called unconditionally at startup, because the gauge's whole purpose is to
     be readable when the loop is NOT. Bound only inside `HeartbeatLoop.__init__`
-    it was absent from every deployment running the shipped default
-    (`[heartbeat] enabled = false`), and an unbound prometheus gauge exports
-    `0.0` — the same number a healthy loop exports a moment after it ticks. The
-    series existed to distinguish exactly those two states and reported the
-    healthy one for both.
+    it would be absent from every deployment running with
+    `[heartbeat] enabled = false`, and an unbound prometheus gauge exports
+    `0.0` — the same number a healthy loop exports a moment after it ticks.
 
     A climbing age would be the other option and is worse: a deliberately
     disabled heartbeat would page someone every time the threshold passed. The
@@ -494,12 +482,12 @@ def publish_idle_gauge(metrics: Metrics) -> None:
 
 
 async def recover(*, store: ReminderStore, metrics: Metrics, now: datetime) -> int:
-    """Boot recovery (§8.2): rows a crash left FIRING resolve to FAILED, counted.
+    """Boot recovery: rows a crash left FIRING resolve to FAILED, counted.
 
     `now` is the moment the sweep ran, stamped onto every row it resolves. The
     clock arrives as a VALUE rather than being read here for the reason it
     arrives as a callable on `HeartbeatLoop`: this module reads no wall clock of
-    its own, so the whole of §8.2 is assertable at a fixed instant.
+    its own, so recovery is assertable at a fixed instant.
 
     A module-level function, not a method on `HeartbeatLoop`, and called
     UNCONDITIONALLY — a heartbeat that has been switched off is exactly the
@@ -507,11 +495,10 @@ async def recover(*, store: ReminderStore, metrics: Metrics, now: datetime) -> i
     at-most-once must not stop applying on the config that looks safest. Only
     the LOOP is gated by `[heartbeat] enabled`.
 
-    The counter is not decoration. `nora_reminders_fired_total`'s spec says a
-    reminder that vanishes must never vanish from the metrics too, and the sweep
-    is the ONE path that resolves reminders with no tick running: without this
-    the rows a crash ate appeared on no dashboard and in no alert, only in a log
-    line nobody greps for.
+    The counter matters: a reminder that vanishes must never vanish from the
+    metrics too (`nora_reminders_fired_total`), and the sweep is the ONE path
+    that resolves reminders with no tick running; without it the rows a crash
+    ate would appear on no dashboard and in no alert.
     """
     swept = await store.sweep_firing(now=now)
     if not swept:

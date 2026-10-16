@@ -1,5 +1,5 @@
 """Where each unit's memory lives: workspace > unit > room, resolved once
-(operator decision 2026-09-28, DEC-214).
+(DEC-214).
 
 Three files each hold one part, and this is the one place they meet:
 
@@ -135,14 +135,13 @@ def workspaces_of_person(policy: Policy, person_id: str) -> tuple[str, ...]:
 
     WITHOUT `[units]` there is one workspace and everyone is in it: the
     answer is `(DEFAULT_WORKSPACE,)` for any person, which reads the one
-    Honcho workspace exactly as the page did before DEC-214 — including for
-    a person who is only in `persons = "*"` rooms.
+    Honcho workspace — including for a person who is only in `persons = "*"`
+    rooms.
 
     WITH `[units]`, a `persons = "*"` room establishes nobody's membership —
     it admits whoever is in the room, and the policy cannot say who that is —
     so it is not counted, and a person who is ONLY in such rooms belongs to no
-    workspace and is shown nothing, rather than a guessed one. (Every live
-    room lists its persons, read back 2026-09-28.)"""
+    workspace and is shown nothing, rather than a guessed one."""
     if not policy.units_declared:
         return (DEFAULT_WORKSPACE,)
     return tuple(sorted({

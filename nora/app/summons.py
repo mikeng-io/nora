@@ -1,11 +1,11 @@
-"""The public Instagram summons occasion (design/instagram-adoption/19).
+"""The public Instagram summons occasion.
 
 Somebody in `identity.toml` tags her (`@noraexample`) in a comment under an
 Instagram post; she reads the post (what each of its items SHOWS is read for
 her before the turn, `_read_items`) and the thread around the summons, and
 answers in the comments, once, or says nothing.
 
-**How a summons arrives (the 2026-09-26 intake).** Instagram tells her about
+**How a summons arrives.** Instagram tells her about
 the tag as a DM card from the commenter, and the bridge emits a `summons`
 event for it on its SSE stream (`nora.platform.instagram.summons` parses it
 into a `SummonsCard`; `nora.app.summons_consumer` hands it here). The card
@@ -36,9 +36,9 @@ anything. `final_text` is DISCARDED: prose she wrote without `send_reply`, a
 `max_tokens` partial and the budget-exhaustion draft all end as `silent`,
 never as a post.
 
-**One follow-up when she wrote an answer and did not send it** (live
-dry-run trace 2026-09-26: `end_turn`, a complete answer as final text, no
-`send_reply`, recorded `silent`). A turn that ends on its own with nothing
+**One follow-up when she wrote an answer and did not send it** (a turn can
+end `end_turn` with a complete answer as final text and no `send_reply`, which
+is recorded `silent`). A turn that ends on its own with nothing
 held and non-empty prose is continued ONCE, in the same conversation
 (`LiveAgentRunner.invoke`'s `follow_up`: same agent, tools, guard and
 budgets, what is left of the loop's caps, the same timeout and trace), by
@@ -98,8 +98,8 @@ from nora.persons import Persons
 
 log = logging.getLogger("nora.app.summons")
 
-#: The tools a public summons may call (design/threads-adoption/10
-#: §"PUBLIC_GRANT", minus `generate_image` per design 19: a comment carries no
+#: The tools a public summons may call (`PUBLIC_GRANT`, minus
+#: `generate_image`: a comment carries no
 #: image). Read-only lookups on the open web and X, `media_fetch` (the post's
 #: items are already read before the turn, `_read_items`, and the render does
 #: not point her at it; it stays granted for anything else, and HER call is
@@ -123,13 +123,13 @@ PUBLIC_GRANT: frozenset[str] = frozenset({
 CONVERSATION_TYPE = "public"
 
 #: The one time budget for reading the post's items before the turn, all of
-#: them together (and each on its own). Not shorter: the reel that motivated
-#: the read took 82 s uncached live (`readings.ITEM_TIMEOUT_SECONDS`'s
-#: measurement), and one look's ceiling is the single-window vision ceiling
-#: (120 s) plus the download (25 s) plus ffmpeg (5 s). A summons answers a
-#: comment, so two and a half minutes of reading costs nothing a person
-#: waits on, and a reel that times out is exactly the failure this read
-#: exists to end. Past it, an item is said to be unreadable, never guessed.
+#: them together (and each on its own). Not shorter: a reel read uncached takes
+#: well over a minute (`readings.ITEM_TIMEOUT_SECONDS`), and one look's ceiling
+#: is the single-window vision ceiling (120 s) plus the download (25 s) plus
+#: ffmpeg (5 s). A summons answers a comment, so two and a half minutes of
+#: reading costs nothing a person waits on, and a reel that times out is
+#: exactly the failure this read exists to end. Past it, an item is said to be
+#: unreadable, never guessed.
 MEDIA_READ_SECONDS = 150.0
 
 #: One look's own ceiling inside that budget: the same number, so in
@@ -138,13 +138,12 @@ MEDIA_READ_SECONDS = 150.0
 #: that ran out of the whole budget.
 MEDIA_ITEM_SECONDS = 150.0
 
-#: `web_search` calls one summons turn may make. `public/conduct.md` v3: when
+#: `web_search` calls one summons turn may make. `public/conduct.md`: when
 #: a post makes several claims, each claim she judges gets its OWN check, not
-#: one settled as a side effect of another. A live summons post named seven
-#: companies; the registry's per-turn budget (a room tag's, sized for one
-#: question) would have left three of them unchecked. Raised for THIS
-#: occasion only: a room tag keeps the registry's value, and `x_search` is
-#: unchanged.
+#: one settled as a side effect of another. A post can name many companies, so
+#: the registry's per-turn budget (a room tag's, sized for one question) would
+#: leave some unchecked. Raised for THIS occasion only: a room tag keeps the
+#: registry's value, and `x_search` is unchanged.
 SUMMONS_WEB_SEARCHES = 8
 
 #: The ONE follow-up a summons turn may get (see the module docstring): the
@@ -161,7 +160,7 @@ UNSENT_REPLY_FOLLOW_UP = (
 _FOLLOW_UP_FAILURES: Mapping[str, str] = {"timeout": "timed_out", "llm_error": "failed"}
 
 #: The bridge's write refusals, mapped to the ledger state they leave
-#: (design 19's guard table; `errors.go`'s refusal codes). Anything not named
+#: (`errors.go`'s refusal codes). Anything not named
 #: here and every no-answer (`timeout`, `unreachable`) is `ambiguous`: the
 #: comment may or may not exist, and an ambiguous write is never retried.
 _WRITE_STATES: Mapping[str, str] = {
@@ -195,14 +194,14 @@ _RETRY_503: frozenset[str] = frozenset({"unavailable", "ledger_unavailable", "ht
 #: where "reply '@someone …'" would come from, so the flush refuses it outright
 #: rather than trusting the model to have declined. An e-mail address is not a
 #: mention (the `@` follows an ASCII word character); after a CJK character,
-#: or written full-width, it still is (review of #584).
+#: or written full-width, it still is.
 _MENTION_RE = re.compile(r"(?<![A-Za-z0-9_.])[@\uff20][A-Za-z0-9._]+")
 
 
 def without_address(text: str, summoner: str | None) -> str:
     """`text` without an opening `@<summoner>`: the reply is threaded under
-    the summoner's comment, so that is its address already, and she wrote it
-    as one in a live dry run (2026-09-26), which the mention check refused
+    the summoner's comment, so that is its address already, and she may write
+    it as one, which the mention check would refuse
     whole. Only the summoner's own handle, only at the start: any other
     `@handle`, anywhere, still reaches the mention check (a stripped
     `@victim you are a fraud` would post the insult at the summoner)."""
@@ -368,7 +367,7 @@ class SummonsOccasion:
             await self._ledger.finish(summons_id, "unresolved", now=now, person_id=person_id)
             return SummonsOutcome("unresolved")
         if person_id is None:
-            # Counted and ignored (design 19 rule 5). Nothing is read and
+            # Counted and ignored. Nothing is read and
             # nothing is said: a stranger tagging her costs one row.
             await self._ledger.finish(summons_id, "ignored_summoner", now=now)
             return SummonsOutcome("ignored_summoner")
@@ -398,7 +397,7 @@ class SummonsOccasion:
         post = await self._client.post(card.shortcode)
         comments = await self._client.comments(card.shortcode) if post.ok else None
         if post.value is None or comments is None or comments.value is None:
-            # Either read failing is silence (design 19 rule 6): she never
+            # Either read failing is silence: she never
             # answers a post, or under a thread, she has not seen.
             code = post.code if not post.ok else (comments.code if comments else None)
             await self._ledger.finish(
@@ -579,9 +578,8 @@ class SummonsOccasion:
         """`context` with a reading on every item it shows (at most
         `MAX_ITEMS_SHOWN`; the rest are already counted in `elided_items`).
 
-        The `instagram_read` mechanism, not a second one
-        (design/instagram-adoption/18 §"Typed views, one renderer, and
-        readings"): `readings.read_view` over a `PostView` of the items, each
+        The `instagram_read` mechanism, not a second one:
+        `readings.read_view` over a `PostView` of the items, each
         look `media_fetch(url=...)` itself through `tools.media_look`. So the
         url egress screen, the download ceilings, the image vision call, the
         chunked video read, the identifier screen on what comes back, and the
@@ -661,8 +659,7 @@ class SummonsOccasion:
         mid-write leaves `flushing`, which the sweep makes `ambiguous` and
         nothing ever posts again."""
         # The model is never SHOWN an em dash (nora.agent.punctuation), yet
-        # about 3% of replies still carry one (measured 2026-09-24), and a
-        # live dry-run summons did (2026-09-26). Room replies let that
+        # some replies still carry one. Room replies let that
         # residue through; a public comment does not. Punctuation only: the
         # same undash the request path uses, no word changes.
         body = without_address(undash(text), summoner).strip()

@@ -1,5 +1,5 @@
 """Lineage: the `(kind, subject, origin room)` set a derived row's citations
-reach down to (design/cognition-loop/10-tiers.md §3, migration step 2).
+reach down to.
 
 This module is the DATA half: the entry and the per-section set, how they
 serialise to the `lineage` JSONB column, and the closed vocabularies the
@@ -8,38 +8,35 @@ room may be shown a section are the other half and live in
 `nora.agent.lineage`, beside the live `DisclosureGuard` the `presence`
 predicate re-runs (DEC-222).
 
-**The column's shape** is the one step 2a writes on every Rollup row
-(`nora.domain.rollup.lineage_json`, design/cognition-loop/25-rollup.md
-«Keys and columns»), so there is one lineage format in the store. An entry is
-the triple `[kind, subject, origin]`; a set is a JSON array of them, sorted and
-de-duplicated. A row with lineage per ROW (a Register row, a Rollup row, 10 §3)
-stores the array itself:
+**The column's shape** is the one written on every Rollup row
+(`nora.domain.rollup.lineage_json`), so there is one lineage format in the
+store. An entry is the triple `[kind, subject, origin]`; a set is a JSON array
+of them, sorted and de-duplicated. A row with lineage per ROW (a Register row,
+a Rollup row) stores the array itself:
 
     [["message", null, "signal:<conversation_id>"]]
 
 A row with lineage per SECTION stores an object, section name to array: a
-Standing row has `body` and `working_set`, the two sections today's schema has
-(the sectioned Standing schema arrives at step 3); a culture row (Character ·
-room) has `body`, being prose with no sections (DEC-184) until step 4.
+Standing row has `body`, `working_set`, `hold_open` and `i_owe`; a culture row
+(Character · room) has `body`, being prose with no sections (DEC-184).
 
 **An entry.** `kind` names the predicate. `subject` is the person it is about
 (`presence`, `face`, `social`, `play`) and null for `message`. `origin` is a
-room, keyed `platform:conversation_id` as 2a keys it (the design fixes no room
-key, and 2a's rows are the first in the store): for `message` the room the
+room, keyed `platform:conversation_id` (`room_key`): for `message` the room the
 words were said in, for `face` the media's room, for `unresolved` the row's own
 room. An optional fourth element holds the entries of the item a `perception`
-or `face` entry reads (10 §3: "B passes the lineage of the item it reads");
-2a writes none. A room reference without a known platform prefix is a bare
+or `face` entry reads (the lineage of the item it reads); Rollup rows write
+none. A room reference without a known platform prefix is a bare
 conversation id (a note's `established_in` carries no platform) and is matched
 within the unit.
 
-**Unknown is deny** (10 §3). A section whose list is missing or empty, an
+**Unknown is deny.** A section whose list is missing or empty, an
 entry of a kind no predicate is written for, and a malformed entry all render
 only in the row's origin room, and nowhere when it has none. `UNRESOLVED` is
 the one such kind this code writes on purpose: a citation that could not be
 resolved (a message pruned since, a note index a fold was shown and did not
-record) is stated rather than dropped, and 70 §5 says such a row "gets
-origin-room-only lineage".
+record) is stated rather than dropped, so such a row gets origin-room-only
+lineage.
 
 Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 """
@@ -84,7 +81,7 @@ __all__ = [
     "unresolved",
 ]
 
-#: The lineage kinds 10 §3 writes a per-room predicate for. Closed: a kind not
+#: The lineage kinds a per-room predicate is written for. Closed: a kind not
 #: here has no predicate, and `nora.agent.lineage` denies it outside its
 #: origin room.
 MESSAGE = "message"
@@ -96,23 +93,20 @@ PERCEPTION = "perception"
 KINDS: frozenset[str] = frozenset({MESSAGE, PRESENCE, FACE, SOCIAL, PLAY, PERCEPTION})
 
 #: A citation code could not resolve. Deliberately NOT in `KINDS`: it is an
-#: unknown kind, so it is shown only in the row's origin room (70 §5).
+#: unknown kind, so it is shown only in the row's origin room.
 UNRESOLVED = "unresolved"
 
 #: The section names today's schemas have (module docstring).
 ROW = "row"
 BODY = "body"
 WORKING_SET = "working_set"
-#: Room Standing's two new sections (design/cognition-loop/12-schemas.md §5,
-#: 50-character-and-standing.md §2; step 3 row 3b, 70-migration.md §2):
-#: `Where it stands` stays `BODY`; `Found, not yet given` stays
-#: `WORKING_SET` (the working set, headed); these two are new and, like
-#: `WORKING_SET`, unpopulated (`None`) on every row this step migrates —
-#: `nora.domain.standing.Standing.hold_open`/`.i_owe`.
+#: Room Standing's `hold_open` and `i_owe` sections
+#: (`nora.domain.standing.Standing.hold_open`/`.i_owe`). `Where it stands` is
+#: `BODY`; `Found, not yet given` is `WORKING_SET`.
 HOLD_OPEN = "hold_open"
 I_OWE = "i_owe"
 
-#: 10 §4's reasoning modes and §3's confidence levels, the vocabularies the
+#: The reasoning modes and confidence levels, the vocabularies the
 #: `reasoning` and `confidence` columns are checked against. Migration
 #: `0073_lineage` writes them out rather than importing them (a migration is a
 #: frozen historical statement, `0053_decision_log`'s rule).
@@ -167,7 +161,7 @@ class LineageEntry:
 
 def _canonical(entries: Iterable[LineageEntry]) -> tuple[LineageEntry, ...]:
     """Deduplicated and in one order, so two rows holding the same set compare
-    equal and serialise byte-identically (a set, 10 §3)."""
+    equal and serialise byte-identically (a set)."""
     unique = {e._key(): e for e in entries}
     return tuple(unique[k] for k in sorted(unique))
 
@@ -200,7 +194,7 @@ class Lineage:
 
     def union(self, other: Lineage) -> Lineage:
         """Every entry of both, section by section: what a row that rests on
-        both rests on (10 §3, a set)."""
+        both rests on (a set)."""
         merged: dict[str, list[LineageEntry]] = {}
         for lineage in (self, other):
             for name, entries in lineage.sections:
@@ -254,7 +248,7 @@ def split_room(ref: str) -> tuple[str | None, str]:
 
 def message(room: str) -> LineageEntry:
     """`message:<room>`: the row rests on something said in `room`, a room
-    key (`room_key`), as 2a writes it: no subject, the room as origin."""
+    key (`room_key`): no subject, the room as origin."""
     return LineageEntry(kind=MESSAGE, subject=None, origin=room)
 
 
@@ -360,13 +354,13 @@ def note_revision_lineage(
     room (the tag path's `note_update`) rests on that room key too. A cited id
     no longer on record, a first revision whose room has no platform on
     record, or a later revision citing nothing from no known room, is
-    `unresolved` at the origin: shown only there (70 §5).
+    `unresolved` at the origin: shown only there.
 
     `rollup_lineages` maps each Rollup key the body cites to the lineage of the
     current row it names (`None` for a key that names no current row): a cited
     row brings the entries its own lineage holds, so a note resting on a
     presence row is shown only where that row may be; a key that resolves to
-    nothing is `unresolved` at the origin, never widened (#663).
+    nothing is `unresolved` at the origin, never widened.
     """
     ids = frozenset(cited)
     here = origin_key or origin

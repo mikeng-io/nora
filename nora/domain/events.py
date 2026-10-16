@@ -1,8 +1,6 @@
 """The Event abstraction — WHY an unprompted turn is happening (DEC-139).
 
-Promoted from `Occasion`, a private type in `nora/app/fire.py`, into a
-first-class domain type. The shape is unchanged — this is a promotion, not
-a redesign — and the factories that BUILD events remain app-layer code in
+A first-class domain type. The factories that BUILD events are app-layer code in
 `nora/app/fire.py` (they close over the rows and jobs a turn is about). What a
 header SAYS is not there: each kind's situation paragraph is a typed builder in
 `nora.domain.framing` (`FIRE_HEADERS`), and a factory only names its inputs.
@@ -75,7 +73,7 @@ class Event:
     media_blobs: tuple[MediaBlob, ...] = ()
     # The brief's intent (`tell`/`ask`, nora.domain.cognition_remind.INTENTS) when the occasion has
     # one; None otherwise. The Deliverer records it on every message the turn sends, so the
-    # Rollup knows whether the send expected an answer (design/cognition-loop/25 §3).
+    # Rollup knows whether the send expected an answer.
     intent: str | None = None
 
 
