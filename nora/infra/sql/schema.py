@@ -4680,6 +4680,7 @@ SOCIAL_POLL = sa.Table(
     sa.Column("media_count", sa.Integer),
     sa.Column("total_clips_count", sa.Integer),
     sa.Column("advanced_marker", sa.Boolean, nullable=False, server_default=sa.text("false")),
+    sa.Column("advanced_counts", sa.Boolean, nullable=False, server_default=sa.text("false")),
     sa.Column("latency_ms", sa.Integer),
     _recorded_at(),
     sa.CheckConstraint("stage IN ('probe', 'story', 'items', 'item')", name="ck_social_poll_stage"),

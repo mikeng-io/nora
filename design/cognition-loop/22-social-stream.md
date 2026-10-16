@@ -231,7 +231,10 @@ after insert. Everything that changes about an item is a new row elsewhere.
   `stage`, `outcome` (`unchanged`, `story_due`, `items_due`, `partial`,
   `count_fell`, `read_ok`, `halted`, `backed_off`, `error`), the probed
   `latest_reel_media`, `media_count` and `total_clips_count` (null when
-  absent), whether this read advanced the marker, the latency and
+  absent), whether this row advanced the marker and whether it advanced the
+  counts (a probe that made no list read due, or a completed list read; a
+  probe that made one due does not, so a failed list read leaves the rise
+  due), the latency and
   `recorded_at`. This is the per-call detail; `source_health` holds the
   login's transitions.
 

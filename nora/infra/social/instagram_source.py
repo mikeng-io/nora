@@ -135,17 +135,17 @@ class InstagramSocialSource:
         if found is not True:
             log.warning("instagram bridge story body carried no boolean `found`")
             return _UNAVAILABLE
-        reel_expiry = payload.get("expiring_at")
         raw = payload.get("items")
         frames = tuple(
             frame for row in (raw if isinstance(raw, list) else [])
-            if (frame := _frame(row, reel_expiry)) is not None
+            if (frame := _frame(row)) is not None
         )
         if not frames:
-            # `found: true` with nothing usable is our failure to read a body,
-            # not "no story": the route has `found: false` for that.
+            # `found: true` with nothing usable (the bridge drops a frame with
+            # no URL, and this drops one off the CDN) is still a completed
+            # read: it advances the marker, so the same probe value never
+            # sends the story read again.
             log.warning("instagram bridge found a story with no usable frames")
-            return _UNAVAILABLE
         return StorySnapshot(found=True, frames=frames)
 
     async def _list_items(self, account: Account, after: str | None) -> Page | Failed:
@@ -269,11 +269,12 @@ def _text(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _frame(row: Any, reel_expiry: Any) -> StoryFrame | None:
+def _frame(row: Any) -> StoryFrame | None:
     """One story item → a frame, or None when it is not usable: no id, no time,
     a kind that is neither image nor video, or a media URL off the CDN. A frame
-    without an expiry of its own takes the reel's, else the platform's 24
-    hours."""
+    without an expiry of its own takes the platform's 24 hours from its own
+    `taken_at`, never the reel's: the bridge fills that with the newest
+    frame's expiry, which would date an older frame too late."""
     if not isinstance(row, dict):
         return None
     item_id = _text(row.get("id"))
@@ -283,7 +284,7 @@ def _frame(row: Any, reel_expiry: Any) -> StoryFrame | None:
     if item_id is None or taken is None or kind not in ("image", "video") \
             or not _is_cdn_url(url):
         return None
-    expires = _when(row.get("expiring_at")) or _when(reel_expiry) \
+    expires = _when(row.get("expiring_at")) \
         or datetime.fromtimestamp(int(taken.timestamp()) + STORY_LIFETIME_SECONDS, UTC)
     thumbnail = row.get("thumbnail_url")
     return StoryFrame(

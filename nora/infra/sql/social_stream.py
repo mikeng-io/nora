@@ -13,7 +13,10 @@ perception.
 
 **The marker is read, not stored.** A person's read marker is the probe value
 of their last completed story read: the latest `story` row of `social_poll`
-that advanced it. The last counts are the latest probe row that had both.
+that advanced it. The last counts follow the same rule: the latest row that
+advanced them, which is a probe that made no list read due or a completed
+list read carrying its probe's counts. A probe that made a list read due does
+not advance them, so a list read that fails leaves the rise still due.
 
 There is ONE implementation and therefore no port and no fake, for the reason
 `nora.infra.sql.otp` gives: every test points this class at a real throwaway
@@ -70,7 +73,7 @@ class SqlSocialStreamStore:
         self, *, network: str, person: str, stage: Stage, outcome: str,
         latest_reel_media: int | None = None, media_count: int | None = None,
         total_clips_count: int | None = None, advanced_marker: bool = False,
-        latency_ms: int | None = None,
+        advanced_counts: bool = False, latency_ms: int | None = None,
     ) -> None:
         """Append one probe or read."""
         async with self._engine.begin() as conn:
@@ -78,7 +81,7 @@ class SqlSocialStreamStore:
                 network=network, person=person, stage=stage, outcome=outcome,
                 latest_reel_media=latest_reel_media, media_count=media_count,
                 total_clips_count=total_clips_count, advanced_marker=advanced_marker,
-                latency_ms=latency_ms,
+                advanced_counts=advanced_counts, latency_ms=latency_ms,
             ))
 
     async def record_state(
@@ -107,12 +110,13 @@ class SqlSocialStreamStore:
             return (await conn.execute(stmt)).scalar_one_or_none()
 
     async def last_counts(self, *, network: str, person: str) -> Counts | None:
-        """The counts of this person's latest probe that had both, or None."""
+        """The counts of this person's latest row that advanced them, or None
+        when none has."""
         p = SOCIAL_POLL
         stmt = (
             sa.select(p.c.media_count, p.c.total_clips_count)
             .where(
-                p.c.network == network, p.c.person == person, p.c.stage == "probe",
+                p.c.network == network, p.c.person == person, p.c.advanced_counts,
                 p.c.media_count.is_not(None), p.c.total_clips_count.is_not(None),
             )
             .order_by(p.c.recorded_at.desc(), p.c.id.desc())

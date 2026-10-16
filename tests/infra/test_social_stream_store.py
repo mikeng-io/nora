@@ -96,22 +96,37 @@ async def test_the_marker_is_the_probe_value_of_the_last_advancing_story_read(st
     assert await store.read_marker(network="threads", person="ada") is None
 
 
-async def test_last_counts_are_the_latest_probe_that_had_both(stores) -> None:
+async def test_last_counts_advance_only_with_a_row_that_advanced_them(stores) -> None:
     store, _ = stores
     assert await store.last_counts(network="instagram", person="ada") is None
     await store.record_poll(
+        network="instagram", person="ada", stage="probe", outcome="unchanged",
+        media_count=10, total_clips_count=2, advanced_counts=True,
+    )
+    # The probe that made a list read due, and the list read that then
+    # failed: the rise is still due on the next probe.
+    await store.record_poll(
         network="instagram", person="ada", stage="probe", outcome="items_due",
-        media_count=10, total_clips_count=2,
+        media_count=11, total_clips_count=2,
+    )
+    await store.record_poll(
+        network="instagram", person="ada", stage="items", outcome="backed_off",
     )
     await store.record_poll(
         network="instagram", person="ada", stage="probe", outcome="partial",
     )
     assert await store.last_counts(network="instagram", person="ada") == Counts(10, 2)
     await store.record_poll(
+        network="instagram", person="ada", stage="items", outcome="read_ok",
+        media_count=11, total_clips_count=2, advanced_counts=True,
+    )
+    assert await store.last_counts(network="instagram", person="ada") == Counts(11, 2)
+    await store.record_poll(
         network="instagram", person="ada", stage="probe", outcome="count_fell",
-        media_count=9, total_clips_count=2,
+        media_count=9, total_clips_count=2, advanced_counts=True,
     )
     assert await store.last_counts(network="instagram", person="ada") == Counts(9, 2)
+    assert await store.last_counts(network="instagram", person="bea") is None
 
 
 async def test_an_unknown_outcome_is_refused(stores) -> None:

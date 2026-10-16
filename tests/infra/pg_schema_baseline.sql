@@ -1228,6 +1228,7 @@ address text
 address text
 address text NOT NULL,
 address text,
+advanced_counts boolean DEFAULT false NOT NULL,
 advanced_marker boolean DEFAULT false NOT NULL,
 agenda jsonb NOT NULL,
 aliases text[] DEFAULT '{}'::text[] NOT NULL,

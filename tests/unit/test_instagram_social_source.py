@@ -170,12 +170,14 @@ async def test_story_frames_off_the_cdn_are_dropped(bridge) -> None:
     assert isinstance(got, StorySnapshot) and len(got.frames) == 2
 
 
-async def test_story_found_with_no_usable_frame_is_unavailable(bridge) -> None:
+async def test_story_found_with_no_usable_frame_is_a_completed_read(bridge) -> None:
+    # A failure would leave the marker where it was, so every later probe
+    # would send the same story read again until the story expired.
     fake, source = bridge
     fx = copy.deepcopy(fixture("story_found.json"))
     fx["body"]["items"] = []
     fake.answers["story"] = fx
-    assert await source.story(account=_ACCOUNT) == Failed(FailureKind.UNAVAILABLE)
+    assert await source.story(account=_ACCOUNT) == StorySnapshot(found=True, frames=())
 
 
 async def test_story_without_a_boolean_found_is_unavailable(bridge) -> None:
@@ -186,7 +188,8 @@ async def test_story_without_a_boolean_found_is_unavailable(bridge) -> None:
     assert await source.story(account=_ACCOUNT) == Failed(FailureKind.UNAVAILABLE)
 
 
-async def test_a_frame_without_an_expiry_takes_the_reels_then_the_day(bridge) -> None:
+async def test_a_frame_without_an_expiry_takes_a_day_from_its_own_time(bridge) -> None:
+    # The reel's expiry is the newest frame's, so an older frame never takes it.
     fake, source = bridge
     fx = copy.deepcopy(fixture("story_found.json"))
     for item in fx["body"]["items"]:
@@ -194,11 +197,10 @@ async def test_a_frame_without_an_expiry_takes_the_reels_then_the_day(bridge) ->
     fake.answers["story"] = fx
     got = await source.story(account=_ACCOUNT)
     assert isinstance(got, StorySnapshot)
-    assert got.frames[0].expires_at == datetime.fromtimestamp(1700086400, UTC)
-    del fx["body"]["expiring_at"]
-    got = await source.story(account=_ACCOUNT)
-    assert isinstance(got, StorySnapshot)
-    assert got.frames[0].expires_at == datetime.fromtimestamp(1700000000 + 86400, UTC)
+    assert [f.expires_at for f in got.frames] == [
+        datetime.fromtimestamp(t + 86400, UTC)
+        for t in (1700000000, 1700003600, 1700007200)
+    ]
 
 
 async def test_list_items_pages_newest_first_with_a_cursor(bridge) -> None:
