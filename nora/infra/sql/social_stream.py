@@ -63,6 +63,8 @@ from nora.domain.social_stream import (
     Reading,
     SocialItem,
     cursor_is_bad,
+    from_us,
+    to_us,
 )
 from nora.infra.sql import memory_index
 from nora.infra.sql.blob_refs import held_elsewhere
@@ -633,46 +635,65 @@ class SqlSocialStreamStore:
         return list(reads.values())
 
     # -- the reader: a person's Character session (§6) -------------------------
+    #
+    # Positioned by `recorded_at`, which follows commit order here: the poller
+    # is the one writer and records items one transaction at a time.
+    # ponytail: a second concurrent writer could commit an earlier
+    # `recorded_at` after a later one was read; a serial column if one appears.
 
-    async def polled_count(self, *, person: str, since: datetime | None) -> int:
-        """How many readable items of `person` a poll recorded after `since`
-        (ever, when None): their wake pressure on Character. A back-filled
-        item never counts: a back-fill of 50 items is history, not 50 items
-        of news (§6)."""
+    async def polled_count(self, *, person: str, after_us: int) -> int:
+        """How many readable items of `person` a poll recorded after
+        `after_us` (microseconds since the epoch, `to_us`): their wake
+        pressure on Character. A back-filled item never counts: a back-fill
+        of 50 items is history, not 50 items of news (§6)."""
         i = SOCIAL_ITEM
-        where = [*self._readable(), i.c.person == person, i.c.origin == "poll"]
-        if since is not None:
-            where.append(i.c.recorded_at > since)
+        stmt = sa.select(sa.func.count()).select_from(i).where(
+            *self._readable(), i.c.person == person, i.c.origin == "poll",
+            i.c.recorded_at > from_us(after_us),
+        )
         async with self._engine.connect() as conn:
-            return int((await conn.execute(
-                sa.select(sa.func.count()).select_from(i).where(*where),
-            )).scalar_one())
+            return int((await conn.execute(stmt)).scalar_one())
 
     async def person_items(
-        self, *, person: str, since: datetime | None, limit: int,
+        self, *, person: str, after_us: int, limit: int,
     ) -> list[PersonSocialItem]:
-        """The readable items of `person` recorded after `since` (ever, when
-        None), polled and back-filled alike, newest posted first, at most
-        `limit`, each with what perception made of its media in `media_ref`'s
-        order. A medium nothing has read yet has an empty reading."""
+        """The OLDEST `limit` readable items of `person` recorded after
+        `after_us`, polled and back-filled alike, in the order recorded, each
+        with what perception made of its media in `media_ref`'s order (a
+        medium nothing has read yet has an empty reading). The read ends
+        before a microsecond it would split, so a cursor advanced to its last
+        item skips none. Handed in that order and resumed from the
+        last one handed, every item is handed once, however many arrive at
+        once (a back-fill records 50)."""
         if limit <= 0:
             return []
         i = SOCIAL_ITEM
-        where = [*self._readable(), i.c.person == person]
-        if since is not None:
-            where.append(i.c.recorded_at > since)
-        stmt = (
-            sa.select(
-                i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at,
-                i.c.origin, i.c.caption, i.c.media_ref,
-            )
-            .where(*where)
-            .order_by(i.c.taken_at.desc(), i.c.id)
-            .limit(limit)
+        cols = (
+            i.c.id, i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at,
+            i.c.origin, i.c.caption, i.c.media_ref, i.c.recorded_at,
         )
+        mine = [*self._readable(), i.c.person == person]
         m = MEDIA_OBJECTS
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
+            rows = list((await conn.execute(
+                sa.select(*cols)
+                .where(*mine, i.c.recorded_at > from_us(after_us))
+                .order_by(i.c.recorded_at, i.c.id)
+                .limit(limit + 1)
+            )).all())
+            if len(rows) > limit:
+                # A cursor at the last one handed must skip nothing recorded in
+                # the same microsecond: when the next row shares it, stop short
+                # of that microsecond, or, when every row is in it, take all of it.
+                last = rows[limit - 1].recorded_at
+                if rows[limit].recorded_at != last:
+                    rows = rows[:limit]
+                else:
+                    rows = [r for r in rows if r.recorded_at < last] or list(
+                        (await conn.execute(
+                            sa.select(*cols).where(*mine, i.c.recorded_at == last)
+                            .order_by(i.c.id)
+                        )).all())
             shas = sorted({sha for r in rows for sha in _media(r.media_ref)})
             read = {
                 r.sha256: Reading(r.title, r.description, r.content)
@@ -686,6 +707,7 @@ class SqlSocialStreamStore:
                 network=r.network, item_id=r.item_id, kind=r.kind, collab=r.collab,
                 taken_at=r.taken_at, origin=r.origin, caption=r.caption,
                 readings=tuple(read.get(sha, Reading()) for sha in _media(r.media_ref)),
+                recorded_us=to_us(r.recorded_at),
             )
             for r in rows
         ]

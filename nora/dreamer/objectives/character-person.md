@@ -31,7 +31,7 @@ without being a stranger. That is the whole test.
 - `<person_messages>`: what they have said since you last wrote, in every room
   of this group, oldest first, each with its number `n` and its room.
 - `<social_items>`, when there are any: what they published on a social network
-  (a story, a post, a reel) that reached you since you last wrote, however old,
+  (a story, a post, a reel) that you have not been shown before, however old,
   newest first, each with its `cite`, when it was posted, and what its picture
   or video shows. The caption is their own words, written for whoever follows
   them, not to this group. Either block may be missing.

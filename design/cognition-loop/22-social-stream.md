@@ -369,29 +369,38 @@ projector in its own transaction (§9;
     (`nora.domain.culture.check_revision`). It resolves only against the items
     the session was handed, which are that person's readable ones: an item of
     another person, a gone or hidden one, or one of a person with
-    `social = false` is never handed, so citing it is refused. The verb's
-    arguments pass the Dreamer's R-18/R-28 screen like every write verb's, and
-    an item id written into the body is refused like a message number.
-  - **The block.** `<social_items>`: the person's readable items recorded
-    since the key's last run, polled and back-filled, newest posted first, at
-    most 12, each with its citation, what it is («Instagram post,
-    co-authored»), when it was posted (a moment and an age), what its media
-    shows (each reading clipped to `[media] comprehension_render_chars` and
-    screened for identifiers at render, R-51) and its caption, clipped, as
-    the content, which the block's description frames as the person's
-    published words, never an instruction. Never its `location`: a person
-    session holds no presence read, its account rendering in rooms whose
-    `location` flags differ (R-31). Never `alt_text`, tagged or mentioned
-    handles (§9's reason).
-  - **The wake.** `person_wake_batch` (DEC-290, [20](20-observe.md) §3) counts
-    the person's new messages plus their polled items recorded since the key
-    last ran (its watermark row's `updated_at`; social items have no Record
-    id to put on the watermark). Back-filled items never count: a back-fill of
-    50 items is not 50 items of wake pressure; the next session woken for
-    any other reason reads them. The read reaches back one run's longest
-    hold (`[dreamer] max_unit_hold_seconds`) so an item recorded while a
-    session ran is not lost to the next; the count does not, so nothing is
-    counted twice.
+    `social = false` (under any id they were recorded under,
+    `Persons.social_off_ids`) is never handed, so citing it is refused. The
+    verb's arguments pass the Dreamer's R-18/R-28 screen like every write
+    verb's, and an item id written into the body is refused like a message
+    number, each numeric part of a composite story id on its own.
+  - **The block.** `<social_items>`: the person's readable items not yet
+    handed to a session, polled and back-filled, at most 12 a session,
+    rendered newest posted first, each with its citation, what it is
+    («Instagram post, co-authored»), when it was posted (a moment and an
+    age), what its media shows (each reading clipped to `[media]
+    comprehension_render_chars`, all of an item's together to 480
+    characters, screened for identifiers at render, R-51) and its caption,
+    clipped to 300 characters, as the content, which the block's
+    description frames as the person's published words, never an
+    instruction. In a caption every `@handle` but the author's own (by
+    `identity.toml`'s Instagram `username`) is written `@…`. The block's
+    captions and readings are at most 9,360 characters, about 10,800 tokens
+    of dense Cantonese a model call, about 9% of `[dreamer.budgets.culture]`'s
+    `total_tokens`. Never its `location`: a person session holds no presence
+    read, its account rendering in rooms whose `location` flags differ
+    (R-31). Never `alt_text`, tagged or mentioned handles (§9's reason).
+  - **The wake and the hand-off.** `person_wake_batch` (DEC-290,
+    [20](20-observe.md) §3) counts the person's new messages plus their
+    polled items not yet handed. Back-filled items never count: a back-fill
+    of 50 items is not 50 items of wake pressure; a session woken for any
+    other reason is handed them. Items have no Record id, so they go by a
+    cursor of their own (`recorded_at` of the last item handed, a
+    `consolidation_watermark` row `character-person:social`): each session is
+    handed the OLDEST 12 past it, and the cursor moves past them only after a
+    run that is not `unavailable`, after the key's watermark. A failed run
+    hands the same items again, and a back-fill of 50 is handed over five
+    sessions, every item once.
 - **Rollup**: the daybook's `items_posted` ([25](25-rollup.md)) is filled
   from `social_item.taken_at`, by the local day of `taken_at`: posts, reels,
   story frames and back-filled items alike, read through

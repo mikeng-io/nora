@@ -30,6 +30,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import EPISODE_EVIDENCE_OUTCOMES, Episode, RoomMessage
@@ -174,6 +175,38 @@ class SqlCharacterEvidence:
         async with self._engine.connect() as conn:
             at = (await conn.execute(stmt)).scalar_one_or_none()
         return None if at is None else int(at.timestamp() * 1000)
+
+    # -- a person's social items -----------------------------------------------
+
+    async def social_cursor(self, *, adaptor: str, key: str) -> int:
+        """How far `adaptor`'s sessions for `key` have been handed the
+        person's social items: the `recorded_at` of the last one handed, in
+        microseconds since the epoch (0: none yet). Kept on its own
+        `consolidation_watermark` row (`<adaptor>:social`), beside the key's
+        message watermark, because an item has no Record id."""
+        stmt = sa.select(CONSOLIDATION_WATERMARK.c.last_message_id).where(
+            CONSOLIDATION_WATERMARK.c.consolidator_name == f"{adaptor}:social",
+            CONSOLIDATION_WATERMARK.c.scope_id == key,
+        )
+        async with self._engine.connect() as conn:
+            val = (await conn.execute(stmt)).scalar_one_or_none()
+        return int(val or 0)
+
+    async def advance_social_cursor(self, *, adaptor: str, key: str, cursor: int) -> None:
+        """Move that cursor to `cursor`, never back."""
+        t = CONSOLIDATION_WATERMARK
+        stmt = (
+            pg.insert(CONSOLIDATION_WATERMARK)
+            .values(consolidator_name=f"{adaptor}:social", scope_id=key,
+                    last_message_id=cursor, updated_at=sa.func.now())
+            .on_conflict_do_update(
+                index_elements=[t.c.consolidator_name, t.c.scope_id],
+                set_={"last_message_id": sa.func.greatest(t.c.last_message_id, cursor),
+                      "updated_at": sa.func.now()},
+            )
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
 
     # -- a unit --------------------------------------------------------------
 

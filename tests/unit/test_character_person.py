@@ -254,3 +254,17 @@ async def test_a_person_with_messages_is_counted_from_their_watermark_as_before(
     assert await evidence.count(key=KEY, after=0) == 1
     assert await evidence.count(key=KEY, after=0) == 1
     assert store.afters == [0, 0]
+
+
+def test_a_composite_item_ids_numbers_in_the_body_are_refused():
+    """A story frame's id is `<digits>_<digits>`: either half written into
+    the account is an item number in the body, as a message number is."""
+    from nora.domain.culture import Citable, check_revision
+
+    shown = Citable(social=frozenset({"instagram:3001_4002"}))
+    for body in ("posts a lot (3001)", "posts a lot, see 4002", "see 3001_4002"):
+        refusal = check_revision(body=body, citations=("social:instagram:3001_4002",),
+                                 citable=shown)
+        assert refusal is not None and refusal.reason == "ids_in_body", body
+    assert check_revision(body="posts a lot", citations=("social:instagram:3001_4002",),
+                          citable=shown) is None

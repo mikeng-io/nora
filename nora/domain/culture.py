@@ -387,7 +387,12 @@ def check_revision(
                        "this entity as unchanged")
     shown = citable.messages
     numbers = re.findall(r"(?<![\d.])\d{3,}(?![\d.])", body)
-    shown_items = {key.partition(":")[2] for key in citable.social}
+    # An item id may be composite (a story frame's `<digits>_<digits>`): each
+    # numeric part counts on its own.
+    shown_items = {
+        part for key in citable.social
+        for part in re.findall(r"\d{3,}", key.partition(":")[2])
+    }
     if any(int(n) in shown or n in shown_items for n in numbers):
         return Refusal("ids_in_body", "the account's text carries message or item numbers; put "
                        "them in `citations` only, and write the account as a description")

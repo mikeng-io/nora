@@ -401,3 +401,27 @@ async def test_last_run_is_the_watermark_the_dream_loop_writes(_db):
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text("truncate consolidation_watermark"))
         await engine.dispose()
+
+
+async def test_the_social_cursor_starts_at_zero_moves_forward_only_and_is_its_own_row(_db):
+    """A person session's social cursor: 0 before any item was handed, moved
+    by `advance_social_cursor`, never back (a late settle of an older read
+    must not re-hand what a newer one moved past), and on a row of its own,
+    so the key's message watermark is untouched."""
+    from nora.infra.sql.language import SqlLanguageStore
+
+    engine = create_sql_engine(_db)
+    try:
+        for store in (SqlCharacterEvidence(engine), InMemoryCharacterEvidence()):
+            assert await store.social_cursor(adaptor="character-person", key="k") == 0
+            await store.advance_social_cursor(adaptor="character-person", key="k", cursor=900)
+            await store.advance_social_cursor(adaptor="character-person", key="k", cursor=500)
+            assert await store.social_cursor(adaptor="character-person", key="k") == 900
+            assert await store.social_cursor(adaptor="character-person", key="j") == 0
+        assert await SqlLanguageStore(engine).watermark_for(
+            consolidator_name="character-person", scope_id="k") == 0
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text("truncate consolidation_watermark"))
+        await engine.dispose()

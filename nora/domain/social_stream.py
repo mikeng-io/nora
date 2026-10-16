@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from enum import StrEnum
 from typing import Literal, get_args
 
@@ -511,3 +511,20 @@ class PersonSocialItem:
     origin: Origin
     caption: str | None
     readings: tuple[Reading, ...] = ()
+    #: When it was recorded, in microseconds since the epoch: the position a
+    #: person session's social cursor advances to once it is handed.
+    recorded_us: int = 0
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def to_us(moment: datetime) -> int:
+    """`moment` in whole microseconds since the epoch, exactly (a float
+    timestamp loses the last digit)."""
+    return (moment - _EPOCH) // timedelta(microseconds=1)
+
+
+def from_us(us: int) -> datetime:
+    """The inverse of `to_us`."""
+    return _EPOCH + timedelta(microseconds=us)
