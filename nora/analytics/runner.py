@@ -42,7 +42,7 @@ log = logging.getLogger("nora.analytics.runner")
 
 #: The version of what a run computes. Build 1 is `legacy` (the rows the
 #: wall-clock rollup wrote).
-CODE_VERSION = "rollup-2a.3"
+CODE_VERSION = "rollup-2a.4"
 
 #: RollupConfig fields that pace or bound the work and cannot change a row.
 _PACING = frozenset({
