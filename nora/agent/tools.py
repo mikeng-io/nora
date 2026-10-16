@@ -6,23 +6,20 @@ Strands derives BOTH halves of what the model sees from the callable itself
 `Args:` block becomes the tool `description`, and each annotated parameter becomes one
 `inputSchema` property carrying its `Args:` line as that property's description. So a
 parameter that exists here is a value the model is REQUIRED to invent on every call —
-which is why none of them describe a conversation any more (DEC-24): both scoped tools
-resolve their conversation from the closure, so asking for it bought nothing and cost
-one reply per wrong guess.
+which is why none of them describes a conversation (DEC-24): both scoped tools resolve
+their conversation from the closure, so asking for it adds nothing and costs one
+reply per wrong guess.
 
-feed_honcho is deliberately NOT a tool: the handler owns the single post-reply feed
-(audit fix #5).
+feed_honcho is deliberately NOT a tool: the handler owns the single post-reply feed.
 
 `conversation_type` and `context_window` are injected but unread. They stay on the
 builder because `ToolRegistry` passes the same set to every tool it will ever
-register, not because anything here uses them. `metrics` WAS in that list — DEC-24
-moved the scope counter to `ReplyGuard` — and is now read by EVERY tool, where the
-counter cannot live anywhere else: Honcho answers 200-with-an-empty-string for a
-peer it has never heard of, so "asked and nothing known" and "could not ask" are
-indistinguishable at the transport and only the call site knows which it got. That
-exact ambiguity is what hid a dead `peer_card` endpoint for the whole life of the
-deployment. See `_log_call` for the other half of the same argument — the one an
-operator greps rather than alerts on.
+register, not because anything here uses them. `metrics` is injected too, and is read
+by EVERY tool, because the counter cannot live anywhere else: Honcho answers
+200-with-an-empty-string for a peer it has never heard of, so "asked and nothing
+known" and "could not ask" are indistinguishable at the transport and only the call
+site knows which it got. See `_log_call` for the other half of the same argument —
+the one an operator greps rather than alerts on.
 
 `room` and `question` are what the three room-scoped tools close over so the model
 never has to supply them: `room` is this conversation's membership (see
@@ -339,40 +336,35 @@ class NativeTool:
     `ToolRegistry.budgets()` (DEC-10); `terminal` feeds the guard's turn-ending
     hook through `ToolRegistry.terminal_tools()` (DEC-32). Both are read from
     here and nowhere else, so a tool that exists has a ceiling AND a stated
-    answer to "does calling this end the turn", or it does not build. (The
-    third answer this table used to carry — when to be reached for — was the
-    generated capability block's job (DEC-29); that block was deleted (DEC-150)
-    and the routing trigger lives in each tool's schema docstring instead.)
+    answer to "does calling this end the turn", or it does not build. The
+    routing trigger (when to reach for a tool) lives in each tool's schema
+    docstring, not here.
 
     `terminal` defaults to False because almost nothing is terminal and because
     the wrong default truncates a turn rather than merely lengthening one.
-    Today exactly one tool sets it: `send_reply`. The next one — `send_gif`
-    (`design/proposed/15-gif-replies.md` §1), or a distinct feed step on the tag
-    path — is a one-line edit here rather than an edit to `guards.py`.
+    Marking another tool terminal is a one-line edit here rather than an edit
+    to `guards.py`.
 
-    `time_shiftable` is the third (design/14 §5.1), and it is the one field
-    here that is not a boolean: `None` means the tool has no time dimension,
-    `False` means its answer describes this instant and decays, `True` means it
-    accepts a target time. See `nora.agent.ports.ToolSpec` for the full
-    argument. It is load-bearing as a per-tool declaration even though the
-    renderer (`ToolRegistry.live_only_tools()`, which fed the capability block)
-    died with the block (DEC-150): the answer to "does this answer go stale"
-    is declared here, once, and
-    `tests/unit/test_tool_registry.py::test_every_tool_declares_a_time_axis`
+    `time_shiftable` is the third, and it is the one field here that is not a
+    boolean: `None` means the tool has no time dimension, `False` means its
+    answer describes this instant and decays, `True` means it accepts a target
+    time. See `nora.agent.ports.ToolSpec` for the full argument. The answer to
+    "does this answer go stale" is declared here, once, and
+    `tests/unit/test_tool_registry.py::test_every_tool_declares_whether_it_can_be_asked_about_another_moment`
     pins the values.
 
-    `plugin` is the fourth (DEC-50, the activation of DEC-48). It marks a tool
-    this table gives a BUDGET but does NOT itself build or describe: the
-    `skills` activation tool is registered by
-    `strands.vended_plugins.skills.AgentSkills` (wired in `nora.agent.factory`),
-    not by `build_tool_specs`, and it advertises itself through the plugin's own
-    `<available_skills>` block. So a `plugin=True` entry is present ONLY so
-    R-7's default-deny admits the tool (`ReplyGuard` reads `NATIVE_TOOL_BUDGETS`);
-    it is filtered out of `tool_names()` (the doctrine catalogue gate) and is
-    never built or described by this registry, because the offline/eval
-    compositions never wire the plugin — promising a tool that composition does
-    not have is what the filter prevents. The budget is the one thing that MUST
-    be shared; the description is the one thing that must not.
+    `plugin` is the fourth (DEC-48, DEC-50). It marks a tool this table gives a
+    BUDGET but does NOT itself build or describe: the `skills` activation tool
+    is registered by `strands.vended_plugins.skills.AgentSkills` (wired in
+    `nora.agent.factory`), not by `build_tool_specs`, and it advertises itself
+    through the plugin's own `<available_skills>` block. So a `plugin=True`
+    entry is present ONLY so R-7's default-deny admits the tool (`ReplyGuard`
+    reads `NATIVE_TOOL_BUDGETS`); it is filtered out of `tool_names()` (the
+    doctrine catalogue gate) and is never built or described by this registry,
+    because the offline/eval compositions never wire the plugin — promising a
+    tool that composition does not have is what the filter prevents. The budget
+    is the one thing that MUST be shared; the description is the one thing that
+    must not.
     """
 
     budget: int
@@ -2015,14 +2007,14 @@ def _modality_of(media_type: str) -> str | None:
     describer whether it is aac, ogg or opus. A subtype the chosen model cannot
     decode is the MODEL's `unavailable` to report, not a routing decision to
     guess at here — guessing would turn an honest «I couldn't read it» into a
-    silent «that's not media», which is the R-27 collapse this split undoes.
+    silent «that's not media», which is the R-27 collapse.
     """
     top, _, _ = media_type.partition("/")
     return top if top in _MODALITIES else None
 
 
 async def _download_media(url: str) -> tuple[bytes, str]:
-    """Fetch a remote picture/video under hard ceilings (DEC-56 extension).
+    """Fetch a remote picture/video under hard ceilings (DEC-56).
 
     Wraps `download_media` (the byte/time-bounded GET) and resolves the media
     type the describer needs: the response's declared Content-Type first, then
@@ -2145,7 +2137,7 @@ def _send_status(
 
 
 def _record(metrics, tool: str, status: str, **detail: object) -> None:
-    """Count and log a call to a tool that had no counter before."""
+    """Count and log a call to a tool that has no counter of its own."""
     metrics.inc("nora_tool_calls_total", tool=tool, status=status)
     _log_call(tool, status, **detail)
 
@@ -2153,11 +2145,11 @@ def _record(metrics, tool: str, status: str, **detail: object) -> None:
 def _record_room(metrics, tool: str, status: str, **detail: object) -> None:
     """The same, for the three room-scoped tools.
 
-    They keep `nora_room_lookups_total{tool,status}`, which predates this and
-    is already alerted on (R-22). Metric names are append-only and a second
-    series counting the same calls would silently double any dashboard summing
-    tool volume, so the counters stay split and only the log line is uniform.
-    Paired in one function so a status can never reach one and not the other.
+    They keep `nora_room_lookups_total{tool,status}`, which is alerted on
+    (R-22). Metric names are append-only and a second series counting the same
+    calls would silently double any dashboard summing tool volume, so the
+    counters stay split and only the log line is uniform. Paired in one
+    function so a status can never reach one and not the other.
     """
     metrics.inc("nora_room_lookups_total", tool=tool, status=status)
     _log_call(tool, status, **detail)
@@ -2246,11 +2238,10 @@ def _stored_reading(obj) -> str:
     """The stored comprehension, as one string for `media_fetch` to serve.
 
     Everything the model pass produced — the title, what it shows, and what is
-    written in it — because `media_fetch` is exactly the surface issue #116
-    kept the untruncated `content` for: the transcript renders the short form,
-    and this is where the rest is. Assembled rather than returned as three
-    fields so the tool's result shape is unchanged; a caller reading
-    `description` gets more than it used to and never less.
+    written in it — because `media_fetch` is the surface that serves the
+    untruncated `content`: the transcript renders the short form, and this is
+    where the rest is. Assembled rather than returned as three fields so the
+    tool's result shape stays one string.
     """
     parts = []
     if obj.title:
@@ -2295,10 +2286,10 @@ def _parse_when(raw: str) -> datetime | None:
     (R-5), and `Reminder(due_at="等陣")` would reach the port and raise there.
 
     A value with no offset is read as `_HKT`, not refused. The prefill states
-    the time as prose — «Right now it is Saturday 8 August 2026, 19:00, Hong
-    Kong time (HKT, Asia/Hong_Kong)» — so a model asked for ISO-8601 will
-    sometimes hand back `2026-08-08T21:00`, and `_HKT` is the zone that
-    header itself named. Refusing would spend a model round trip on
+    the time as prose — «Right now it is <weekday> <date>, HH:MM, Hong Kong
+    time (HKT, Asia/Hong_Kong)» — so a model asked for ISO-8601 will sometimes
+    hand back `YYYY-MM-DDTHH:MM`, and `_HKT` is the zone that header itself
+    named. Refusing would spend a model round trip on
     punctuation; GUESSING a different zone would invent an instant, which is
     why the answer is this one specific zone and not `astimezone()` of
     whatever the host happens to be set to. What must never happen is a naive
@@ -2407,8 +2398,8 @@ def _parse_repeat(
 ) -> RecurrenceRule | _RepeatRefusal | None:
     """The model's three recurrence arguments as one rule — or None, or a refusal.
 
-    `None` is «this does not repeat», and it is the default, so nothing about a
-    one-shot reminder passes through a single new decision here.
+    `None` is «this does not repeat», and it is the default, so a one-shot
+    reminder passes through no extra decision here.
 
     EVERY SERIES IS BOUNDED, and this is where that becomes true rather than
     merely intended. `RecurrenceRule.count` is required by the type, so the only
@@ -2538,11 +2529,9 @@ def _resolve_count(
 ) -> int | _RepeatRefusal:
     """How many occurrences the series may hold — the TIGHTER of every bound.
 
-    `until` is applied to the NUMBER, not only at fire time. It always narrowed
-    the series when it fired; what it did not do was reach `rule.count`, so
-    `repeat_left` — documented as "the bound she has to SAY" — was computed
-    from `times` (or the cap) alone. That is how a run bounded 「直到 23:00」
-    announced fifty-nine more firings when it had none.
+    `until` is applied to the NUMBER, not only at fire time, so `rule.count`
+    and `repeat_left` — documented as "the bound she has to SAY" — reflect it
+    rather than `times` (or the cap) alone.
     """
     count = caps.max_occurrences_per_series
     if ends_at is not None:
@@ -2627,8 +2616,8 @@ def _owner_name(persons, person_id: str, *, ai_peer: str = "") -> str:
     so what `list_reminders` calls a person and what she is called when the
     reminder actually goes out cannot drift apart.
 
-    `ai_peer` names the one owner that is not a person: a proactive row's
-    (39 D5). Checked FIRST, because the persons lookup answers «nobody» for
+    `ai_peer` names the one owner that is not a person: a proactive row's owner.
+    Checked FIRST, because the persons lookup answers «nobody» for
     it and «nobody» is false.
 
     `getattr(..., {})` for `_known_names`'s reason: `persons` arrives here
@@ -2674,9 +2663,8 @@ class RoomDirectory(Protocol):
     """The rooms of a turn's unit, as the room tools need them.
 
     `nora.engagement.self_presence.PresenceReader.rooms` is the one
-    implementation: the same resolution `<presence>` renders from
-    (design/self-awareness/07). A Protocol because `nora.agent` sits below
-    `nora.engagement` and may not import it.
+    implementation: the same resolution `<presence>` renders from. A Protocol
+    because `nora.agent` sits below `nora.engagement` and may not import it.
     """
 
     async def rooms(
@@ -2808,13 +2796,11 @@ def _joined(names: Sequence[str]) -> str:
 
 def _busiest_sentence(listed: Sequence[Mapping[str, object]]) -> str:
     """The activity comparison `room_list` states in its `note`, so she does
-    not re-derive it by reading every room (design/self-awareness/07).
+    not re-derive it by reading every room.
 
     Two measures, because a room can lead on one and not the other: the most
-    MESSAGES, and the most PEOPLE talking. Asked which group has the most
-    people talking, she read every room to count heads while only the
-    message count was on offer. When one room leads on both the sentence says
-    so once; when they differ it names each, plainly.
+    MESSAGES, and the most PEOPLE talking. When one room leads on both the
+    sentence says so once; when they differ it names each, plainly.
 
     Names rooms only by the name `room_list` already hands out, never an id.
     A room whose activity could not be read is never counted as quiet: if
@@ -2879,17 +2865,15 @@ def _transcript_messages(
     the rows given, never an extra query from inside a tool; an unresolved
     parent drops the key rather than reporting a null.
 
-    AN EDIT SAYS SO HERE TOO (design/message-edits/02 §1): `edited_ts` and
-    `was`. Measured live 2026-09-24: asked to «read again» after an edit, she
-    called `load_transcript`, saw the new text with no marker, and answered
-    «冇變», nothing changed.
+    AN EDIT SAYS SO HERE TOO: an edited row carries `edited` (when) and `was`
+    (the text before), so a re-read after an edit does not show new text with
+    no marker.
 
-    **A row's time is `when`, never `ts`** (design/self-awareness/08 §1). It
-    returned the epoch-millisecond integer until 2026-09-25: the prefill gave
-    the SAME rows an age and these tools gave a 13-digit number, for the reads
-    she makes precisely to look back in time, and put a raw handle on the wire
-    that `prefill` keeps off it on purpose (R-18). `now` is the caller's clock
-    in the zone the clock line names, so `stamp` renders a local day.
+    **A row's time is `when`, never `ts`.** The prefill gives the SAME rows an
+    age; a 13-digit epoch number here would differ from it and put a raw
+    handle on the wire that `prefill` keeps off it on purpose (R-18). `now` is
+    the caller's clock in the zone the clock line names, so `stamp` renders a
+    local day.
     """
     by_ts = first_by_ts(rows)
     out: list[dict] = []
@@ -2933,25 +2917,25 @@ _BEFORE_SHAPE = re.compile(
 
 def _before_bound(before: str | None, now: datetime) -> int | None:
     """`before` as an exclusive epoch-ms bound on `ts`, or `None` to read the
-    newest rows (design/self-awareness/08 §2). Raises `ValueError` on a value
-    it cannot read, which the tools report and never read past.
+    newest rows. Raises `ValueError` on a value it cannot read, which the
+    tools report and never read past.
 
     A time a PERSON gives names a span, and the span is included: a date alone
     is the end of that day, «21:14» is up to the end of that minute, a second
     to the end of that second. The paging note's cursor names a POINT, the
     oldest row already shown, to the millisecond, and is EXCLUSIVE, so every
-    page is strictly older than the last. An inclusive minute there looped
-    forever once one minute held more rows than `limit` (caught by
-    `test_paging_across_a_crowded_minute_moves_on_and_skips_nothing`, before
-    it shipped). All of it is Hong Kong time, the zone the clock line names.
+    page is strictly older than the last. An inclusive minute there would loop
+    forever once one minute held more rows than `limit`
+    (`test_paging_across_a_crowded_minute_moves_on_and_skips_nothing`). All of
+    it is Hong Kong time, the zone the clock line names.
 
     Lenient about what a model copies from a row's `when`
-    («2026-09-24 Thu 21:14 (13h ago)»): the age in brackets, a weekday, `HKT`
+    («YYYY-MM-DD Thu 21:14 (13h ago)»): the age in brackets, a weekday, `HKT`
     and an ISO `T` are dropped before the shape is checked. NOTHING else is:
     `UTC`, `PST` or any other word makes the value unreadable, because reading
     «21:14 UTC» as Hong Kong time is a window eight hours off that looks like
-    an answer (review of #538). A bound at or after `now` is the same read as
-    no bound, so it returns `None`.
+    an answer. A bound at or after `now` is the same read as no bound, so it
+    returns `None`.
     """
     if before is None:
         return None
@@ -3094,11 +3078,10 @@ def _readable_rooms(
 ) -> tuple[list[RoomFacts], int]:
     """The rooms `record_query` may read for `here`, and how many of the
     unit's other rooms it may not. A room is read when its `message` lineage
-    passes for `here` (design/cognition-loop/10-tiers.md §3, DEC-225): itself
-    always; another room of the unit only when this room's listed persons are
-    a subset of that room's, neither lists `*`, and `target.live` (this
-    room's roster, read now) names everyone in it and holds only that room's
-    listed persons."""
+    passes for `here` (DEC-225): itself always; another room of the unit only
+    when this room's listed persons are a subset of that room's, neither lists
+    `*`, and `target.live` (this room's roster, read now) names everyone in it
+    and holds only that room's listed persons."""
     if not all_rooms:
         return [here], 0
     rooms: list[RoomFacts] = []
@@ -3167,8 +3150,8 @@ async def _read_window(
     **A page never ends inside a group of rows sharing one `ts`.** The next
     page's cursor is exclusive at the oldest kept row's `ts`, so a same-`ts`
     row left behind would never be read. WhatsApp stamps whole seconds, so two
-    messages in one second are ordinary there (review of #538: a burst paged as
-    a, c, d, e with b gone and nothing said). When the probe row ties the
+    messages in one second are ordinary there (a same-second burst would page
+    as a, c, d, e with b gone and nothing said). When the probe row ties the
     oldest kept row, that tie group moves to the next page. Only a tie group
     larger than a whole page (`asked` rows in one timestamp) is kept whole, and
     then the rows of it that did not fit are not reachable by paging."""
@@ -3205,23 +3188,20 @@ def _older_note(rows: Sequence[TranscriptRow]) -> str:
 def _spec(name: str, call) -> ToolSpec:
     """One `ToolSpec`, with every declared field taken from `NATIVE_TOOLS[name]`.
 
-    Written as a helper rather than nine hand-written constructor calls
-    because the hand-written form is how a field gets forgotten: `terminal`
-    (DEC-32) was the third field on that table and `time_shiftable` (DEC-40) is
-    the fourth, and copying `when=`/`budget=` nine times to add either would
-    eventually miss one and silently give that tool the dataclass default —
-    which for `time_shiftable` means a live-only tool quietly declaring it has
-    no time dimension. A name absent from the table raises `KeyError` here,
-    which is R-7's default-deny arriving at build time instead of at the
-    model's first call.
+    One helper rather than hand-written constructor calls, because the
+    hand-written form is how a field such as `terminal` (DEC-32) gets forgotten
+    and silently takes the dataclass default; for `time_shiftable` (DEC-40)
+    that is a live-only tool quietly declaring it has no time dimension. A name
+    absent from the table raises `KeyError` here, which is R-7's default-deny
+    arriving at build time instead of at the model's first call.
     """
     declared = NATIVE_TOOLS[name]
     return ToolSpec(
         name=name, description="", schema={}, call=call,
         budget=declared.budget, terminal=declared.terminal,
         time_shiftable=declared.time_shiftable,
-        # The contract triple (ADR 0008), copied for the same reason the three
-        # above are: a hand-written constructor call is how a field gets the
+        # The contract triple (ADR 0008), copied for the same reason as the
+        # fields above: a hand-written constructor call is how a field gets the
         # dataclass default instead of the declaration, and for these three the
         # default is `none`/`non_idempotent`/`never` — which would quietly turn
         # every write verb on this table into a tool that wrote nothing.
@@ -3244,17 +3224,16 @@ def _asked_about(name: str) -> dict:
     answer belongs to which name. But `name` is MODEL-SUPPLIED, so a model that
     passes a phone number — because it invented one, or lifted one from
     somewhere — would get it handed straight back inside a tool result, and
-    R-18 fails closed on the whole reply. That found a real hole in the first
-    draft of these tools: the room-scoped tools were safe by construction on
-    everything they LOOKED UP and unsafe on the one field they parroted.
+    R-18 fails closed on the whole reply. The room-scoped tools are safe by
+    construction on everything they LOOK UP; this is the one field they parrot.
 
     `scan_identifiers`, not `scan_reply`, and the difference is deliberate. The
     hole this closes is a phone number or an ACI arriving back inside a tool
     result — an identifier is unsafe at every exit. A MODEL NAME here is not a
     disclosure at all: the model supplied the word, so echoing it tells the
-    model nothing it did not just write, and the reply predicate no longer
-    refuses model names either (the R-18 model-name veto was disabled
-    2026-08-31 — see `egress.py`), so echoing it cannot cost the message.
+    model nothing it did not just write, and the reply predicate does not
+    refuse model names either (there is no model-name veto; see `egress.py`),
+    so echoing it cannot cost the message.
     """
     return {} if scan_identifiers(name) else {"asked_about": name}
 
@@ -3267,7 +3246,7 @@ def _miss(name: str, view: RoomView) -> dict:
     written down at all produce this identical payload, on purpose: returning
     "they exist but are not here" would disclose membership — and the existence
     of people in other rooms — through a behaviour difference, which is the
-    same leak as printing the roster, just spelled slowly. See design/12 §3.
+    same leak as printing the roster, just spelled slowly.
 
     A DEGRADED view (the platform roster was unreadable, so the scope narrowed
     to the tagger) cannot say `not_found` honestly at all: almost every name
@@ -3340,9 +3319,8 @@ def _memory_result(payload: dict) -> dict:
     anything.
 
     Status is untouched on purpose. R-27's three states are what the model keys
-    on first (`search_memory`'s `withheld` shipped as `nothing_found` for one
-    commit and an external review was right to hold it), so the framing is
-    ADDITIVE — two new keys, never a change to `status` or to what it means.
+    on first, so the framing is ADDITIVE — two keys, never a change to
+    `status` or to what it means.
     """
     return {**payload, "untrusted": True, "framing": _MEMORY_FRAMING}
 
@@ -3351,16 +3329,15 @@ def _memory_hits_result(
     *, hits: Sequence[tuple[str, str]], roster: Mapping[str, str],
     record: Callable[..., None], partial_view: bool | None,
 ) -> dict:
-    """The shared tail of both memory-search verbs (32 §3.4): roster filter,
-    withhold, and status shaping over Honcho's raw hits.
+    """The shared tail of both memory-search verbs: roster filter, withhold,
+    and status shaping over Honcho's raw hits.
 
-    Factored OUT of `search_memory` when `search_memory_workspace` landed,
-    because a second copy of this filter is how the room path and the
-    unit path drift into two different disclosure decisions. What the
-    callers do NOT share stays with them: the room verb keeps
-    `nora_room_lookups_total` (its `record`), its roster comes from the
-    room's live view, and it carries `partial_view`; the unit verb
-    counts on `nora_tool_calls_total`, builds its roster from
+    Shared by `search_memory` and `search_memory_workspace`, because a second
+    copy of this filter is how the room path and the unit path drift into two
+    different disclosure decisions. What the callers do NOT share stays with
+    them: the room verb keeps `nora_room_lookups_total` (its `record`), its
+    roster comes from the room's live view, and it carries `partial_view`; the
+    unit verb counts on `nora_tool_calls_total`, builds its roster from
     `persons.by_person`, and has no room view to degrade.
 
     The guard is per MESSAGE, not per roster: a hit is surfaced only if its
@@ -3368,22 +3345,19 @@ def _memory_hits_result(
     roster narrowed by a degraded view, falls out of the same filter
     automatically, so fewer names means fewer hits, never a blanket refusal.
 
-    `scan_reply` here, and `scan_identifiers` at `about`, and the difference
-    is the POINT of each tool rather than an inconsistency. `about` yields
-    KNOWLEDGE she paraphrases, so it filters on the floor predicate only:
-    screening it with the reply predicate is what silently withheld every
-    memory naming `claude`/`gemini`/`opus` from a group of software engineers
-    (fixed 2026-08-06), and the principle there is that she may KNOW what she
-    may not SAY. The search verbs yield the exact WORDS, and DEC-95 makes
-    those the top of the escalation ladder — doctrine tells her to quote them
-    verbatim and forbids hedging with 「好似」. So a hit she cannot legally
-    utter is not knowledge, it is a trap: she quotes it, `Deliverer` refuses
-    the WHOLE message (R-18 fails closed), the refusal still spends one of
-    her sends, and the burst dies mid-argument with nothing on screen. The
-    model-name veto is now disabled (2026-08-31, see `egress.py`) — a quote
-    naming a model is deliverable — but an IDENTIFIER still is not, and that
-    is what this filter keeps. Filter it where the quote is CHOSEN, not where
-    it is already too late.
+    `scan_reply` here, and `scan_identifiers` at `about`, and the difference is
+    the POINT of each tool rather than an inconsistency. `about` yields
+    KNOWLEDGE she paraphrases, so it filters on the floor predicate only: she
+    may KNOW what she may not SAY. The search verbs yield the exact WORDS, and
+    DEC-95 makes those the top of the escalation ladder — doctrine tells her to
+    quote them verbatim and forbids hedging with 「好似」. So a hit she cannot
+    legally utter is not knowledge, it is a trap: she quotes it, `Deliverer`
+    refuses the WHOLE message (R-18 fails closed), the refusal still spends one
+    of her sends, and the burst dies mid-argument with nothing on screen. The
+    reply predicate has no model-name veto (see `egress.py`) — a quote naming a
+    model is deliverable — but an IDENTIFIER is not, and that is what this
+    filter keeps. Filter it where the quote is CHOSEN, not where it is already
+    too late.
     """
     kept: list[dict] = []
     withheld = 0
@@ -3402,8 +3376,7 @@ def _memory_hits_result(
         # the egress filter means the words exist and she may not repeat
         # them — telling the group nobody said anything would be false, and
         # DEC-95 makes it likelier by sending her here more often AND by
-        # filtering on the reply predicate (this group talks about `claude`
-        # and `gemini` constantly, and every such line is withheld).
+        # filtering on the reply predicate.
         if withheld:
             # A DISTINCT status, not `nothing_found` with a note attached: the
             # model reads `status` first and prose second, so encoding «I found things I
@@ -3460,16 +3433,15 @@ def _speaker(row: TranscriptRow) -> str:
     SOMEBODY rather than collapsing to "unknown".
 
     Shared by `load_transcript` and `who_said`, and the sharing is the point.
-    DEC-80's original bug was three renderers of the same rows disagreeing
-    inside one context window; two tools that both hand back transcript lines
-    are two more renderers, and a second hand-written copy of this fallback
-    order is how the third one drifts.
+    DEC-80's bug was three renderers of the same rows disagreeing inside one
+    context window; two tools that both hand back transcript lines are two more
+    renderers, and a second hand-written copy of this fallback order is how the
+    third one drifts.
 
-    `"Nora"` for her own rows is `load_transcript`'s pre-existing literal, kept
-    rather than widened: `nora.agent.prefill._label` uses `[doctrine]
-    display_name` here, which `build_tool_specs` does not hold. The two agree in
-    this deployment (`display_name = "Nora"`) and would diverge in one that
-    renames her — a known, single-line gap now in ONE place instead of two.
+    `"Nora"` for her own rows is a literal: `nora.agent.prefill._label` uses
+    `[doctrine] display_name` here, which `build_tool_specs` does not hold. The
+    two agree in this deployment (`display_name = "Nora"`) and would diverge in
+    one that renames her — a known single-line gap, held in one place.
     """
     if row.is_nora:
         return "Nora"
@@ -3531,8 +3503,8 @@ def _known_names(persons) -> frozenset[str]:
 def _count_known_names(text: str, names: frozenset[str]) -> int:
     """How many distinct known person-names/aliases appear in `text`.
 
-    For `search`'s COUNT-not-block rule (design/14 §2.2): the same normalised
-    substring match `_names_a_person` uses, but a count rather than a boolean —
+    For `search`'s COUNT-not-block rule: the same normalised substring match
+    `_names_a_person` uses, but a count rather than a boolean —
     the query is not blocked, only observed (`nora_search_alias_total`)."""
     key = _key(text)
     return sum(1 for name in names if name in key)
@@ -3590,7 +3562,7 @@ _FETCH_NOTES: Mapping[str, str] = {
 
 
 def _without_map_coordinates(spec: dict[str, Any]) -> dict[str, Any]:
-    """`spec` with every Map's `lat`, `lng` and `route` removed (design/artifact §40).
+    """`spec` with every Map's `lat`, `lng` and `route` removed.
     A stored Map carries the pair `DocumentService` looked up; DEC-24 keeps a coordinate out
     of what the model reads, and publishing the spec back re-looks each place up by name."""
     out = copy.deepcopy(spec)
@@ -3793,13 +3765,10 @@ def _resolve_url_alias(
 
     Why it is declared at all: Strands validates a call through a model built
     from the signature, which silently drops any key the signature does not
-    name, so an undeclared `url=` arrived as no input (design 13,
-    2026-09-24: every deferred-catalogue `instagram_read` call used `url`).
-    R-99 now refuses such a call instead of dropping it, and on 2026-09-25
-    the deployed build still reached for `url=` in 7 of 20 `x_read`/
-    `linkedin_read` eval draws, each costing a retry; the operator took
-    design 30's decision 2 on that evidence. Two different links name no
-    one thing, so neither is read and neither is echoed back."""
+    name, so an undeclared `url=` would arrive as no input. R-99 refuses such
+    a call instead of dropping it, but models still reach for `url=`, and a
+    refusal costs a retry. Two different links name no one thing, so neither
+    is read and neither is echoed back."""
     if not (isinstance(url, str) and url.strip()):
         return link, False
     if isinstance(link, str) and link.strip() and not _same_link(link, url, parse):
@@ -3810,8 +3779,7 @@ def _resolve_url_alias(
 
 def social_read_vocabulary() -> Mapping[str, frozenset[tuple[str, str]]]:
     """Every `(platform, what)` each social tool can SEND to the router — the
-    ONE read-only vocabulary table R-86 derives its three layers from
-    (design/instagram-adoption/18 §"Read-only, at three layers").
+    ONE read-only vocabulary table R-86 derives its three layers from.
 
     Derived from the per-tool constants above rather than restated, so the
     table cannot drift from what the closures actually construct. The tools'
@@ -3926,10 +3894,9 @@ _SHARED_PAGE_LINE_RE = re.compile(
 def _shared_page_link(body: str) -> str:
     """The validated post or reel link of the shared line in `body`, or `""`.
 
-    For a cover whose row ALSO carries the item's link: a share stored
-    before the parser stopped keeping a linked post's or reel's thumbnail
-    (design 13, «a linked share carries no picture»). The last shared line
-    wins, since the parser renders the sharer's own words first."""
+    For a cover whose row ALSO carries the item's link (a share stored with
+    both a picture and a link). The last shared line wins, since the parser
+    renders the sharer's own words first."""
     for kind, link in reversed(_SHARED_PAGE_LINE_RE.findall(body or "")):
         parsed = _parse_instagram_link(link)
         if parsed is not None and parsed.kind == kind:
@@ -3940,22 +3907,18 @@ def _shared_page_link(body: str) -> str:
 def _other_link_owner(
     text: str, this_tool: str, unwired: frozenset[str] = frozenset(),
 ) -> tuple[LinkOwner, LinkClaim] | None:
-    """`owner_of(text)` (design/social-per-network/30-link-owner-registry.md,
-    "Migration" step 3, "the owners use the registry"), filtered to a claim by
-    a DIFFERENT tool than `this_tool` — the one thing each owner's replaced
-    hand-written branch (`x_read`, `linkedin_read`, `instagram_read`) needs
-    that a fetcher's `_apply_link_owners` post-pass does not: a fetcher never
-    owns a network, so every claim it gets IS someone else's, but an owner
-    calling this from the exact spot its OWN `parse_link` just returned
-    `None` can still get a claim back for its OWN network — Instagram's and
-    LinkedIn's unreadable `mobile_page` shape (`m.instagram.com`,
-    `m.linkedin.com`) is a claim `owner_of` returns for THAT network even
-    when its own raw parser refuses the host. Redirecting a tool to itself
-    would be circular, so that claim is filtered out here and the caller
-    falls through to its own long-standing refusal instead — unchanged
-    behaviour for a link no fetcher-side redirect ever touched (the design
-    node's "Migration" step 3: "Behaviour is otherwise unchanged. Same-network
-    links read exactly as before.")."""
+    """`owner_of(text)`, filtered to a claim by a DIFFERENT tool than
+    `this_tool`. That filter is what an owner (`x_read`, `linkedin_read`,
+    `instagram_read`) needs and a fetcher's `_apply_link_owners` post-pass does
+    not: a fetcher never owns a network, so every claim it gets IS someone
+    else's, but an owner calling this from the exact spot its OWN `parse_link`
+    just returned `None` can still get a claim back for its OWN network —
+    Instagram's and LinkedIn's unreadable `mobile_page` shape
+    (`m.instagram.com`, `m.linkedin.com`) is a claim `owner_of` returns for THAT
+    network even when its own raw parser refuses the host. Redirecting a tool
+    to itself would be circular, so that claim is filtered out here and the
+    caller falls through to its own refusal. Same-network links read as the
+    owner's parser reads them."""
     found = _owner_of(text, unwired=unwired)
     if found is None or found[0].tool == this_tool:
         return None
@@ -4047,9 +4010,9 @@ _VERSION_OFF: Mapping[str, object] = {
 def _weather_result(obs: WeatherObservation) -> dict[str, object]:
     """Render a `WeatherObservation` into the model-facing tool result — only the
     fields that are actually present, so an empty outlook or an absent typhoon
-    note does not bloat the input that is re-sent on every subsequent turn
-    (the fetch-token lesson, 2026-08-08). `temperatures` stays a list of
-    (place, °C) so the model picks the station nearest what it was asked."""
+    note does not bloat the input that is re-sent on every subsequent turn.
+    `temperatures` stays a list of (place, °C) so the model picks the station
+    nearest what it was asked."""
     result: dict[str, object] = {
         "status": "ok",
         "as_of": obs.as_of,
@@ -4184,10 +4147,10 @@ SUPERSEDED_SHOWN = 5
 
 
 def _superseded(chain: Sequence[MemoRevision]) -> list[str]:
-    """A memo's `## Superseded` (12-schemas §3), rendered by CODE from its
-    revision chain (`chain`, newest first), never written by a model: each
-    earlier revision's `## Kept` lines and the day the next one replaced it, the
-    newest `SUPERSEDED_SHOWN`."""
+    """A memo's `## Superseded`, rendered by CODE from its revision chain
+    (`chain`, newest first), never written by a model: each earlier revision's
+    `## Kept` lines and the day the next one replaced it, the newest
+    `SUPERSEDED_SHOWN`."""
     lines: list[str] = []
     for newer, older in itertools.pairwise(chain):
         kept: list[str] = []
@@ -4212,14 +4175,13 @@ class NoteCollaborator(Protocol):
     `nora.agent` may not import `nora.infra` under the layered import contract,
     and `nora.testing` is not a production dependency either — so this module
     can only name the SHAPE. There is no port in `nora.domain.ports` to import
-    instead; the two implementations already share
+    instead; the two implementations share
     `tests/contract/test_note_store_contract.py`, which is what actually holds
-    them to one behaviour. This declares the verbs the tool layer calls
-    and no more: `standing` (title resolution, §16.1), `read`, `search`,
-    `create`, `append_revision`,
-    `merged_successor_by_title` (a merged note's title forwards, design 41
-    §7.5), and `revision_chain`/`successor` (`remind`'s one-open-row check,
-    issue #158).
+    them to one behaviour. This declares the verbs the tool layer calls and no
+    more: `standing` (title resolution), `read`, `search`, `create`,
+    `append_revision`, `merged_successor_by_title` (a merged note's title
+    forwards), and `revision_chain`/`successor` (`remind`'s one-open-row
+    check).
 
     `StaleNoteHeadError` lives in `nora.domain.notes` for the identical reason
     `GatheringNotFoundError` lives in `nora.domain.gatherings` — an exception TYPE has
@@ -4784,25 +4746,23 @@ def build_tool_specs(
     """Every native tool, closed over one turn's collaborators.
 
     `fire_turn` is this turn's PROVENANCE: True when the heartbeat's fire path
-    built it (`nora.app.fire.FirePath`), False for a tag. Nothing carried that
-    before, and a tool cannot otherwise tell the two apart — the synthetic
-    message a fire turn is built from is a well-formed `NormalizedMessage` by
-    construction (design spec §6.4), which is exactly what makes it
-    indistinguishable.
+    built it (`nora.app.fire.FirePath`), False for a tag. A tool cannot
+    otherwise tell the two apart — the synthetic message a fire turn is built
+    from is a well-formed `NormalizedMessage` by construction, which is exactly
+    what makes it indistinguishable.
 
-    It defaults False so every existing caller is unchanged, and it is threaded
-    from `ToolRegistry.build`. The consumer is `remind`, which refuses inside a
-    fire turn — a reminder that can set a reminder is a loop with no bound, and
-    the turn it would fire into is the one it is already in.
+    It defaults False and is threaded from `ToolRegistry.build`. The consumer
+    is `remind`, which refuses inside a fire turn — a reminder that can set a
+    reminder is a loop with no bound, and the turn it would fire into is the
+    one it is already in.
 
-    `dream_adaptor` is the SECOND provenance, the same shape (design/
-    dreamer-agent-loop/39 D3, DEC-162): the Dreamer adaptor's NAME when
-    `nora.agent.dreamer.RegistryToolSource` built this set, `""` otherwise.
-    `remind` is again the consumer, and under it the closure stamps what the
-    model cannot: `kind="proactive"`, the `ai_peer` as owner, the home room
-    as destination, and a payload naming the note the row is about — with
-    the model's text screened by `dream_screen` before `create`, because the
-    tool call is the one sink a Dreamer write has.
+    `dream_adaptor` is the SECOND provenance, the same shape (DEC-162): the
+    Dreamer adaptor's NAME when `nora.agent.dreamer.RegistryToolSource` built
+    this set, `""` otherwise. `remind` is again the consumer, and under it the
+    closure stamps what the model cannot: `kind="proactive"`, the `ai_peer` as
+    owner, the home room as destination, and a payload naming the note the row
+    is about — with the model's text screened by `dream_screen` before
+    `create`, because the tool call is the one sink a Dreamer write has.
 
     `reminders`/`reminder_caps`/`clock` come from `ToolRegistry`, which owns all
     three for the life of the process. `reminders=None` is the honest
@@ -4816,39 +4776,35 @@ def build_tool_specs(
     `version` answer `unavailable`, which is the same honest wiring-gap state
     `reminders=None` gives `remind`, and never `nothing_found`.
 
-    `tool_call_log_store` is `recall_lookups`'s own collaborator (tool-recall-log
-    spec §4), wired the identical way: `None` in the offline/eval compositions
-    and any composition that has not wired the tool-recall log, which is what
-    makes `recall_lookups` answer `unavailable` (R-5) rather than crash.
+    `tool_call_log_store` is `recall_lookups`'s own collaborator, wired the
+    identical way: `None` in the offline/eval compositions and any composition
+    that has not wired the tool-recall log, which is what makes
+    `recall_lookups` answer `unavailable` (R-5) rather than crash.
 
-    `mobility` is `where_been`'s own collaborator (DEC-155, presence-analytics
-    P1): the derived-presence read the tool answers from — `SqlMobilityStore`,
-    the SAME instance the composition root builds for the web dashboards (one
-    pool, one lifecycle; the tool reads through the store only, never
-    `nora.analytics` internals). Wired the honest way `reminders`/
-    `versions` are: `None` in the offline/eval compositions and any
-    composition that has not built the substrate, which is what makes
-    `where_been` answer `unavailable` (R-5), never `nothing_found` — an
-    unwired store is «I could not check», never «no derived pattern». The
-    disclosure side (`room`, `presence_circles`, `location_trusted`) is the
-    SAME seam `where_is` speaks through; only the read is new.
+    `mobility` is `where_been`'s own collaborator (DEC-155): the
+    derived-presence read the tool answers from — `SqlMobilityStore`, the SAME
+    instance the composition root builds for the web dashboards (one pool, one
+    lifecycle; the tool reads through the store only, never `nora.analytics`
+    internals). Wired the honest way `reminders`/`versions` are: `None` in the
+    offline/eval compositions and any composition that has not built the
+    substrate, which is what makes `where_been` answer `unavailable` (R-5),
+    never `nothing_found` — an unwired store is «I could not check», never «no
+    derived pattern». The disclosure side (`room`, `presence_circles`,
+    `location_trusted`) is the SAME seam `where_is` speaks through.
 
     `notes`/`note_unit` are the note tier's pair, and they are ONE piece of
     wiring in two arguments rather than two independent ones: a note is keyed on
-    the unit (spec §3), so a store with no unit to read is as unusable
+    the unit, so a store with no unit to read is as unusable
     as no store, and both states answer `unavailable` — never `nothing_found`,
     which would report an unconsulted notebook as an empty one.
 
-    **`note_unit` RESOLVES a room to its unit; it is not a constant.**
-    It was written as a per-process string, on the reasoning that the
-    conversation→unit seam is fixed by the deployment. That is false for
-    every deployment with more than one unit, and this one has two:
-    `policy.toml` puts the operator's own rooms in `ridgeline` and the group in
-    `friends`, deliberately never paired. A single string would hand one room
-    the OTHER's notebook — a cross-unit read and write, which is the exact
-    boundary §3's scope decision exists to hold, and DEC-105/R-49 hold for
-    `send_to`. So it takes `(platform, conversation_id)` and answers `None` for
-    a room policy cannot name, which is `unavailable` rather than a guess.
+    **`note_unit` RESOLVES a room to its unit; it is not a constant.** A
+    deployment with more than one unit, deliberately never paired in
+    `policy.toml`, would otherwise hand one room the OTHER's notebook — a
+    cross-unit read and write, the boundary the note scope exists to hold and
+    DEC-105/R-49 hold for `send_to`. So it takes `(platform, conversation_id)`
+    and answers `None` for a room policy cannot name, which is `unavailable`
+    rather than a guess.
 
     `transcript` is the window the prefill SHOWED (`TagContext.transcript`,
     what `nora.agent.prefill._transcript_block` numbered `#1..#N`): `send_reply`'s
@@ -4871,34 +4827,31 @@ def build_tool_specs(
     reply), so at this seam "the read broke" and "the room has said nothing"
     are one value, and R-27 resolves that ambiguity towards `unavailable`.
 
-    `music` is `MusicToolBridge` (`nora.domain.ports`, design/discord-music/
-    07-agent-tool.md) — `None` in every composition that has not wired
-    `DiscordMusicToolBridge`, the same honest wiring-gap shape every other
-    optional collaborator above uses. All four music tools ALSO refuse on
-    `room.platform != "discord"` before ever touching it, so a non-Discord
-    room never reaches this collaborator at all.
+    `music` is `MusicToolBridge` (`nora.domain.ports`) — `None` in every
+    composition that has not wired `DiscordMusicToolBridge`, the same honest
+    wiring-gap shape every other optional collaborator above uses. All four
+    music tools ALSO refuse on `room.platform != "discord"` before ever
+    touching it, so a non-Discord room never reaches this collaborator at all.
 
     `online_source`/`voice_source`/`presence` are `online_now`'s live-state
-    reads (design/online-status/): the Steam summaries client, the Discord
-    voice-membership source (the narrow `voice` sub-arm), and the Discord
-    per-person PRESENCE source (the `online` arm's Discord half — status +
-    rich presence, the 2026-09-15 correction: presence, never voice
-    membership, is what "Discord online" means). Each is `None` in every
+    reads: the Steam summaries client, the Discord voice-membership source
+    (the narrow `voice` sub-arm), and the Discord per-person PRESENCE source
+    (the `online` arm's Discord half — status + rich presence; presence, not
+    voice membership, is what "Discord online" means). Each is `None` in every
     composition that has not wired it — the same honest wiring-gap shape as
     `mobility` above: an arm whose source is missing answers `unavailable`
     (R-5), never `nothing_found`, and never crashes; the `online` arm
     answers from whichever half IS wired and says so
     (`steam_wired`/`discord_wired`/`voice_wired`).
 
-    `supplied_unit` is the Dreamer's half of the key-path fix (32 §3.4,
-    and `08-state.md` §10's named trap): a UNIT-keyed adaptor's key IS
-    the unit, so the runtime SUPPLIES it here rather than letting
-    `_unit()` derive it from the room — the Dreamer's synthetic `Room`
-    has no platform and carries the unit in its conversation slot, so
-    the derived path answers `None` and every unit-scoped verb would
-    read `unavailable` forever while looking wired. When truthy it WINS over
-    the resolver; `None` (every tag-path caller) leaves `_unit()`
-    exactly as it was.
+    `supplied_unit` is the Dreamer's half of the key path: a UNIT-keyed
+    adaptor's key IS the unit, so the runtime SUPPLIES it here rather than
+    letting `_unit()` derive it from the room — the Dreamer's synthetic `Room`
+    has no platform and carries the unit in its conversation slot, so the
+    derived path answers `None` and every unit-scoped verb would read
+    `unavailable` forever while looking wired. When truthy it WINS over the
+    resolver; `None` (every tag-path caller) leaves `_unit()` deriving it from
+    the room.
     """
     caps = reminder_caps or ReminderCaps()
     now_fn = clock or utc_now
@@ -5519,8 +5472,8 @@ def build_tool_specs(
         took them back (`RecordStore.hide_message` hides it).
 
         Each row carries its number `n` ONLY for the Cognition session, the
-        citation handle a note's line rests on (DEC-250, #663 review major 2);
-        never on a tag turn or any other pass (R-18)."""
+        citation handle a note's line rests on (DEC-250); never on a tag turn
+        or any other pass (R-18)."""
         names = {
             (r.platform, cid): (r.label or platform_name(r.platform))
             for r in rooms for cid in r.ids
@@ -6083,13 +6036,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         search: MemorySearch, text: str, ref: PersonRef | None, view: RoomView,
         kinds: tuple[str, ...], since_ms: int | None, until_ms: int | None,
     ) -> dict:
-        """`memory_search` while `[memory_index] enabled` (design/unified-
-        memory/25 §4, 60 S5): the one retrieval service, scoped to this
-        room's unit from the live policy and this room's live roster, seeded
-        by the question (and by the person, when one is named), and narrowed
-        by `ref`, `kinds`, `since_ms` and `until_ms` INSIDE the index's reads
-        (`nora.agent.memory_search`). Every status carries a note;
-        `unavailable` is any failure, `partial` an index not yet complete."""
+        """`memory_search` while `[memory_index] enabled`: the one retrieval
+        service, scoped to this room's unit from the live policy and this
+        room's live roster, seeded by the question (and by the person, when
+        one is named), and narrowed by `ref`, `kinds`, `since_ms` and
+        `until_ms` INSIDE the index's reads (`nora.agent.memory_search`).
+        Every status carries a note; `unavailable` is any failure, `partial`
+        an index not yet complete."""
         asked: dict = {"person": ref.name} if ref is not None else {}
         if lineage is None:
             _record_room(metrics, "memory_search", "unavailable", reason="unwired")
@@ -7063,9 +7016,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     def _been_iso(ts_ms: int) -> str:
         """RFC 3339 with the substrate's timezone — the model-readable form of
         a timestamp. DEC-156: unix-ms epoch values are unreadable to the model
-        (the 02:16 max-tokens incident burned its budget on `calculate` calls
-        converting them), so every timestamp the tool emits carries this form
-        alongside the raw ms."""
+        (it spends `calculate` calls converting them), so every timestamp the
+        tool emits carries this form alongside the raw ms."""
         return (
             datetime.fromtimestamp(ts_ms / 1000, tz=ZoneInfo(_been_tz_name))
             .isoformat(timespec="seconds")
@@ -7111,8 +7063,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     ) -> tuple[tuple[Any, ...], dict | None]:
         """Who a DERIVED-presence answer may be about, or why not: `(refs,
         None)` when the guard passes, `((), refusal)` otherwise. ONE copy for
-        `where_been` and `routine_read` (design/27 §4.3) so the two cannot
-        drift; `anyone` and `people_phrase` only word the notes.
+        `where_been` and `routine_read` so the two cannot drift; `anyone`
+        and `people_phrase` only word the notes.
 
         THE SAME three-way fail-closed `Whereis.locate` runs
         (nora/agent/whereis.py), composed directly against `DisclosureGuard`
@@ -7311,10 +7263,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return fix.ts if fix is not None else None
 
         async def _been_usual_trips(subject_id: str, owner: str) -> list[dict]:
-            """design/27 §4.4 M2: the journeys this person repeats, from one of
-            their places to another, with how long they actually take at that
-            time of day, worked out as words. FAIL-SOFT: an annotation, so a
-            failure answers the routes without it."""
+            """The journeys this person repeats, from one of their places to
+            another, with how long they actually take at that time of day,
+            worked out as words. FAIL-SOFT: an annotation, so a failure
+            answers the routes without it."""
             try:
                 stays = await mobility.stays_for_subject(subject_id=subject_id)
                 trips = await mobility.trips_for_subject(subject_id=subject_id)
@@ -7349,8 +7301,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return out
 
         async def _been_mark_unusual(subject_id: str, day_stays: list[dict]) -> None:
-            """design/27 §4.3: each of the day's stays gains `unusual`, how it
-            differed from the subject's OWN past at that place, when it did
+            """Each of the day's stays gains `unusual`, how it differed from
+            the subject's OWN past at that place, when it did
             (`detect_stay_anomalies`, computed on read). FAIL-SOFT: the flags
             are an annotation, and losing them must never cost the day's
             answer, so any failure leaves the stays exactly as read."""
@@ -7530,8 +7482,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             """How to report an `ok` (ADR 0015 §3), per arm and with the window
             this answer was read over, so a number is never quoted without it.
             The `unlabeled` and unmatched-stay clauses only when one is there:
-            they carry the 2026-09-06 rule (a neighbourhood guessed from lat/lng,
-            wrong, caught by the group) to the answer it is about."""
+            they carry the rule against guessing a neighbourhood from lat/lng
+            to the answer it is about."""
             if what == "day":
                 note = (
                     f"Give the date ({day_iso}) with anything you quote, and "
@@ -7583,7 +7535,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         async def _been_through(circle) -> dict:
             """`where_been`'s read for one circle, behind `_presence_audience`
-            (the guard it shares with `routine_read`, design/27 §4.3)."""
+            (the guard it shares with `routine_read`)."""
             asked = None if name is None else str(name).strip()
             refs, refusal = await _presence_audience(
                 circle, asked, tool="where_been",
@@ -7955,7 +7907,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """The window shared out between named places, their own small
         places (under 5% each, pooled), and stops that are none of theirs.
         Largest-remainder rounding, so the percents always sum to exactly 100
-        (plain rounding gave 99 and 101, independent review 2026-09-28)."""
+        (plain rounding can give 99 or 101)."""
         raw: dict[tuple[str, str], float] = {}
         for chance in chances:
             place = places.get(chance.place_id) if chance.place_id is not None else None
@@ -7990,10 +7942,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     def _routine_window_words(start: datetime, end: datetime) -> str:
         """The asked hours the way a person names them («Wednesday evening»),
-        not a clock range she would recite back (live 2026-09-28: the window
-        read back in two replies to a question that said «tomorrow night»).
-        00:00-05:00 is «early morning» of that day, never «late night», which
-        reads as the night before."""
+        not a clock range she would recite back. 00:00-05:00 is «early
+        morning» of that day, never «late night», which reads as the night
+        before."""
         hours = (end - start).total_seconds() / 3600
         day = _routine_day[start.weekday()]
         if hours >= 16:
@@ -8491,9 +8442,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return out
 
         def _online_ok_note(out: dict) -> str:
-            """How to report an `ok` (ADR 0015 §3): the honesty rules that used
-            to sit in the description on every call, each clause only when the
-            field it is about is in THIS answer."""
+            """How to report an `ok` (ADR 0015 §3): the honesty rules, each
+            clause only when the field it is about is in THIS answer."""
             entries = out["people"]
             parts = [
                 "This is live, so report it as right now and do not repeat it "
@@ -8752,7 +8702,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """Whether the library (`media_search`, `media_send`) may show this row
         to THIS room. What Nora generated is hers and global (DEC-138). A picture
         she kept from the web belongs to the room whose look kept it: it is
-        found and sent there only (design/artifact §35)."""
+        found and sent there only."""
         if obj.source == "generated":
             return True
         return obj.source == "fetched" and born_in_room(
@@ -9544,9 +9494,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         later call would be a lie to the model.
 
         The description is text a vision model wrote about bytes a group member
-        sent — the trust class of a fetched web page (design/14 §2.1). It runs
-        through `scan_identifiers` here, on every serve INCLUDING a cache hit, so
-        the screen can never be bypassed by an earlier describe having populated
+        sent — the trust class of a fetched web page. It runs through
+        `scan_identifiers` here, on every serve INCLUDING a cache hit, so the
+        screen can never be bypassed by an earlier describe having populated
         the cache.
 
         **Honest about what the screen does NOT catch.** `scan_identifiers`
@@ -9558,12 +9508,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         R-18's, not a solved case — stated here rather than papered over.
 
         `cover` says the handle is a shared item's still picture
-        (`MediaBlob.role`), and the result then SAYS so in its `note`
-        (2026-09-24). What the model read is one frame, and without that
-        sentence a correct description of it read as a description of the
-        reel: she answered "what is in this reel" off the thumbnail and told
-        the room she could not see the clip, with the link to it in the line
-        she was answering about.
+        (`MediaBlob.role`), and the result then SAYS so in its `note`. What the
+        model read is one frame; without that sentence a correct description of
+        it reads as a description of the whole reel.
         """
         if scan_identifiers(description) is not None:
             # An identifier the model transcribed off the image — dropped with a
@@ -11870,12 +11817,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         `persons.platform_ids` is the reverse of the resolution `room.tagger`
         already went through once; the FULL set is handed to the bridge
         rather than an arbitrary pick, because identity.toml can map one
-        person to more than one Discord account (found live 2026-08-24: a
-        real person with two) — only the bridge, which can see who is
-        actually sitting in a voice channel right now, is in a position to
-        say which one is real for this request, the same
+        person to more than one Discord account. Only the bridge, which can
+        see who is actually sitting in a voice channel right now, can say
+        which one is real for this request: the same
         intersect-against-what-the-platform-asserts principle
-        `nora.agent.outbound` already uses for mention resolution."""
+        `nora.agent.outbound` uses for mention resolution."""
         tagger = room.tagger
         if tagger is None:
             return frozenset()
@@ -12979,7 +12925,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """The wired store, or None — BOTH halves of the wiring checked as one.
 
         A store with no unit is as unusable as no store at all (a note is
-        unit-keyed, §3), and answering «nothing found» from either state
+        unit-keyed), and answering «nothing found» from either state
         is the `unavailable`-reported-as-`nothing_found` failure R-27 exists to
         prevent. Returning the store rather than a bool is what lets each tool
         bind a non-optional local, so the narrowing is the type checker's job
@@ -12990,15 +12936,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     def _unit() -> str | None:
         """This turn's unit, or `None` when it cannot be named.
 
-        **`supplied_unit` WINS when set** (design/dreamer-agent-loop/32
-        §3.4): a unit-keyed Dreamer adaptor's key IS the unit, and
-        the Dreamer's synthetic `Room` carries it in the conversation slot
-        with no platform, so the resolver below could never name it — every
-        unit-scoped verb answered `unavailable` on a fully-wired store,
-        the `08-state.md` §10 trap of a seam that looks like it works while
-        every call fails closed. A SUPPLIED unit is the truth about what
-        the run is keyed on; the resolver is the fallback for the tag path,
-        which has a real room and no supplier.
+        **`supplied_unit` WINS when set**: a unit-keyed Dreamer adaptor's key
+        IS the unit, and the Dreamer's synthetic `Room` carries it in the
+        conversation slot with no platform, so the resolver below could never
+        name it and every unit-scoped verb would answer `unavailable` on a
+        fully-wired store. A SUPPLIED unit is the truth about what the run is
+        keyed on; the resolver is the fallback for the tag path, which has a
+        real room and no supplier.
 
         Resolved per turn from `room.platform` and the bound conversation —
         never a process-wide constant. `None` means policy could not name the
@@ -13008,11 +12952,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         **Shared by every unit-keyed verb**, because it is one value —
         `policy.conversation(...).unit` — and two resolvers for it would
         be two definitions of which social unit a room belongs to.
-        `unit_for` is the parameter; `note_unit` is its older name,
-        still accepted so the note tier's call sites keep working. Preferring
-        one over the other rather than requiring both means a verb outside the
-        note tier does not silently depend on the NOTE tier being wired, which
-        it would have if it had simply read `note_unit`.
+        `unit_for` is preferred and `note_unit` is the fallback, so a verb
+        outside the note tier does not depend on the NOTE tier being wired,
+        which it would if it read only `note_unit`.
         """
         if supplied_unit:
             return supplied_unit
@@ -13041,7 +12983,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         return {"conversation_id": bound_conversation_id}
 
     async def _resolve(book: NoteCollaborator, title: str) -> list[Note]:
-        """Title → the standing notes that answer to it (§16.1).
+        """Title → the standing notes that answer to it.
 
         Resolution is in the TOOL layer, not the store, and that is the whole
         decision: no store method changes and no id ever enters the prompt.
@@ -13392,13 +13334,13 @@ Args:
         }
 
     def _held_to_schema(tool: str, body: str, *, carried: frozenset[int]) -> str | dict:
-        """The tag path's body held to design 42 §4 (S4b): her `[#n]`
-        positions mapped to the row ids her transcript showed (G4), then
-        parsed against those rows, the roster and the ids the note already
-        cites. The normalised body, or the refusal she reads, naming the
-        rule so she can correct the call (27 §5.3). Unlike the deleted note-candidates pass
-        there is no carry-forward check: `note_update` replaces freely, with
-        a person in the turn, which is where a conflated line comes out."""
+        """The tag path's body held to the note-body schema: her `[#n]`
+        positions mapped to the row ids her transcript showed, then parsed
+        against those rows, the roster and the ids the note already cites.
+        Returns the normalised body, or the refusal she reads, naming the
+        rule so she can correct the call. There is no carry-forward check:
+        `note_update` replaces freely, with a person in the turn, which is
+        where a conflated line comes out."""
         rows = [r.id for r in bound_window]
         try:
             mapped = resolve_positions(body, rows=rows, carried=carried)
@@ -14211,7 +14153,7 @@ Args:
     async def _computer_lease(
         tool: str, operation_id: UUID, session_id: UUID | None,
     ) -> AsyncIterator[str | None]:
-        """The lease on this room's task (§15.4) around a call: the session's
+        """The lease on this room's task around a call: the session's
         key, or the scope's when the call has no session. A live turn waits
         its bound; a background pass never waits. Yields None when held (or
         when no lease table is wired), else `"live"` or `"background"`: the
@@ -15184,9 +15126,9 @@ Args:
         described: ExternalFile | None = None
 
         async def take_shared(ref: ExternalFileRef) -> _Inbound | _Stopped:
-            """A shared file's bytes, fetched afresh through the source
-            (design/external-files §5). Only bytes come back: the source
-            holds the credential. Nothing keeps them past this call."""
+            """A shared file's bytes, fetched afresh through the source. Only
+            bytes come back: the source holds the credential. Nothing keeps
+            them past this call."""
             nonlocal described
             if external_files is None:
                 return _Stopped("unavailable", {"code": ref.handle, "reason": "unwired"}, {
@@ -15352,7 +15294,7 @@ Args:
         copied: Callable[[_Inbound, str], dict[str, object]],
     ) -> dict[str, object]:
         """Copy one file into this room's `inbox/`, `computer_import`'s write
-        path for a sent file and a shared one alike (design/external-files §5).
+        path for a sent file and a shared one alike.
 
         In order: the computer off is `_COMPUTER_OFF`; the room's session;
         `take` finds the bytes (a shared file's Drive fetch included), or
@@ -16182,9 +16124,7 @@ def on_memory_surface(name: str, *, graph: bool, everything: bool = False) -> bo
 def _apply_link_owners(
     specs: tuple[ToolSpec, ...], *, metrics, unwired: frozenset[str] = frozenset(),
 ) -> tuple[ToolSpec, ...]:
-    """`build_tool_specs`'s one post-pass (design/social-per-network/
-    30-link-owner-registry.md, "Where the lookup runs" §C, the option chosen
-    over a per-fetcher helper and a Strands `BeforeToolCallEvent` hook).
+    """`build_tool_specs`'s one post-pass.
 
     Every spec whose `NATIVE_TOOLS` row declares `link_inputs` gets its `call`
     wrapped by `_link_owner_wrapped` below; every other spec passes through
@@ -16211,15 +16151,14 @@ def _link_owner_wrapped(
     """`call`, with each of `link_inputs` checked against the link-owner
     registry before `call` ever runs.
 
-    The first named argument that both (a) is not held back by its own
-    `unless` parameter and (b) `owner_of` claims returns that claim's
-    `redirect(...)` at once — counted through `_record_media` for
-    `media_fetch` (its own series, `nora_media_fetch_total`) or `_record` for
-    every other tool, `reason="link_owner"`, naming the owner's network AND
-    `claim.kind` (so a page and a mobile-page redirect can still be told
-    apart in the log, the way the old `reason="instagram_page"`/
-    `"instagram_mobile_page"` pair could). Nothing here changes an UNCLAIMED
-    argument's path: `call` still runs with every argument exactly as given.
+    The first named argument that both (a) is not held back by its own `unless`
+    parameter and (b) `owner_of` claims returns that claim's `redirect(...)` at
+    once — counted through `_record_media` for `media_fetch` (its own series,
+    `nora_media_fetch_total`) or `_record` for every other tool,
+    `reason="link_owner"`, naming the owner's network AND `claim.kind` (so a
+    page and a mobile-page redirect can still be told apart in the log).
+    Nothing here changes an UNCLAIMED argument's path: `call` still runs with
+    every argument exactly as given.
 
     `functools.wraps` is load-bearing, not cosmetic (the same note `ports.
     _validated` carries): Strands derives the model-facing schema from the
@@ -16269,16 +16208,11 @@ def _link_owner_wrapped(
 def platform_message_id_of(raw: object) -> str | None:
     """The platform's own id for a stored row, out of its raw event.
 
-    TWO spellings, because the platforms genuinely disagree and a quote is
-    dropped SILENTLY when the wrong one is read. Discord and WhatsApp key it
-    `id`; Instagram's bridge event keys it `message_id`
-    (`design/instagram-adoption/03-transport-contract.md`).
-
-    Reading only `id` meant every threaded reply the model made on Instagram
-    went out UNTHREADED — `status: sent`, message delivered, nothing logged,
-    and no visual thread in the app. `nora/platform/instagram/send.py` warns
-    that a quote without this id "sends unthreaded"; the warning was right and
-    the id was being thrown away one layer above it.
+    TWO spellings, because the platforms disagree and a quote is dropped
+    SILENTLY when the wrong one is read. Discord and WhatsApp key it `id`;
+    Instagram's bridge event keys it `message_id`. Reading only `id` would
+    send every threaded Instagram reply UNTHREADED: `status: sent`, nothing
+    logged, no visual thread in the app.
 
     A module-level function rather than a closure so the disagreement it
     encodes is testable on its own. Anything unparseable is None: a quote is
