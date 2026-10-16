@@ -674,7 +674,7 @@ async def test_a_dense_seed_still_reaches_the_outing_it_was_said_during() -> Non
                             embed_model=M)
     q = "where did we eat ramen at the night market with everyone last weekend"
     near = cosine(bag_of_words(q), bag_of_words(said.text))
-    assert DENSE_FLOOR <= near and near * 0.5 < DENSE_FLOOR
+    assert near >= DENSE_FLOOR and near * 0.5 < DENSE_FLOOR
     found = await MemorySearch(index, Metrics(), embedder=FakeQueryEmbedder(), model=M).search(
         query=q, person_id=None, target=_target(), depth="low", now_ms=NOW,
         kinds=("outing",), social_off=())

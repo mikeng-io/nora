@@ -183,7 +183,8 @@ What V2 decided where the plan above left room (DEC-315; the code is
    its filter.
 4. **Score.** A dense seed's relevance is its cosine. An exact seed's is 1
    (literal containment, which is what the lexical seed also scores 1). The
-   walk's floor stays at 0.1. **Consequence:** a dense search returns its
+   walk's floor stays at 0.1 (in V2; V3 floors a cosine-scored seed at
+   0.38 and keeps 0.1 for hops, §6). **Consequence, in V2:** a dense search returns its
    nearest even when nothing is relevant, so `nothing_found` comes only
    from an empty scope or vectors orthogonal to the question. A higher
    floor needs the cosine distribution of real hits and misses, which V3
@@ -383,30 +384,32 @@ production's `LlamaEmbedder.embed_query`. Ids, scores and counts only.
    of nothing (hit p10 0.46 against that median 0.46), so the floor only
    trims tails.
 4. **Rendered size** (2,131 items rendered by `render_packet` for 52 queries,
-   `estimate_tokens` over the item's JSON): median 60 tokens, p90 100, max
-   329; the fixed part (kind, age, room, path) about 49.
+   `estimate_tokens` over the item's JSON): p10 52 tokens, median 60, p90
+   100, max 329; the fixed part (kind, age, room, path) about 49.
 
-**Set, by replaying the cut over the measured ranked lists** (the walk's
-own ranking, age decay included):
+**Set**, by replaying candidate cuts over the measured ranked lists (the
+walk's own ranking, age decay included), then **run as built** on the same
+index against master's search for the same 143 queries:
 
 | rule | value | why |
 |---|---|---|
-| dense floor (walk and answer, with a query vector) | 0.38 | under every hit ranked in a top 20 (lowest 0.387); 3 of the 20 empty questions then find nothing, none of the 143 with a hit does |
-| lexical floor (no vector, and the lexical seed beside a dense one) | 0.1, unchanged | a lexical score is a share of terms held, another scale: one term of three is 0.33 |
-| budget | 2,000 tokens of rendered items | known item shown: 102 at 1,000, 115 at 1,500, **118 at 2,000**, 124 at 2,500; the old cut of ten showed 100 |
-| score-gap stop | a drop over 0.2 in relevance from one unpinned item to the next | fired on 6 of 163 queries and cost no hit; 0.15 on the age-decayed rank cost 7 |
-| minimum | 3 items, over the gap and the budget, not the floor | a sparse question still shows its best few |
-| hard cap | 30 | the budget admits about 38 short items; a safety cap |
+| dense floor, on a seed scored by its cosine (dense, or exact past the pins) | 0.38 | under every hit ranked in a top 20 (lowest 0.387); 3 of the 20 empty questions then seed nothing and answer `nothing_found`, none of the 143 with a hit does |
+| walk floor: every hop, a lexical search, the lexical seed beside a dense one | 0.1, unchanged | a hop's relevance is its seed's times the weights: a median hit (0.65) reaches the outing it was said during (`during`, 0.5) at 0.32, and an episode has no vector, so a cosine floor on hops would cut every episode (review of this PR); a lexical score is a share of terms held, another scale |
+| budget | 2,000 tokens of rendered items | known item shown, as built: **107**, master's ten: **98** (and every one of master's 98 among the 107); a median 20 items and 1,930 tokens a packet, master's 1,020. Replayed: 97 at 1,000, 111 at 1,500, 112 at 2,000, 115 at 2,500 |
+| score-gap stop | a drop over 0.2 in relevance from one unpinned item to the next | replayed, it shortened 4 of 163 lists and cost none its hit; 0.15 on the age-decayed rank cost 7 |
+| minimum | 3 items, over the gap and the budget, not the floor | a sparse question still shows its best few. The V3 row asked for one item before the identifier screen; this counts items after it, so a withheld hit never stands in for one |
+| hard cap | 30 | at 52 tokens (the 10th percentile) the budget admits about 38; a safety cap |
 | pinned | 5, its own value; always shown, outside the gap and the budget | about a sixth of the budget |
 | `about` seed | 0.45, was 0.6 | 0.6 sat level with the best non-hit (median 0.597) and above four in ten true hits, so twenty newest stays or trips of a named person outranked them; 0.45 is under nine in ten, over the floor |
 
-The walk keeps the same floor as the answer: a hop below 0.38 can only
-lead lower, so stopping there spends no node budget on what cannot show.
-The cut is in `render_packet`, where an item's size is known; a withheld
-item costs nothing. It only shortens a list that has items, so `ok`,
-`partial`, `nothing_found` and `unavailable` mean what they meant (R-27);
-the floor is the one rule that can empty a list, never past a pinned
-literal, which scores 1.
+The cut is in `render_packet`, where an item's size is known. A withheld
+item is screened first and takes no part in it: it spends no budget, is
+not one of the minimum and is no baseline for the next drop. The cut never
+empties a list holding an item the screen lets through, so `ok`, `partial`,
+`nothing_found` and `unavailable` keep their meaning (R-27). The floor can
+empty one, never past a pinned literal, which scores 1. One visible change:
+the packet now draws on up to 30 hits, so a search whose first ten were all
+withheld (the tool's `withheld`) can now answer `ok` with later ones.
 
 **Ceilings.** n is small: 143 known items from two rooms, model-written
 queries (easier than a member's own words, so a real question's hit

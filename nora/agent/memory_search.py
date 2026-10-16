@@ -219,19 +219,19 @@ PINNED_LIMIT = 5
 #: rank order until the next would take the packet past `PACKET_TOKENS`, or
 #: its relevance drops more than `SCORE_GAP` below the hit before it, never
 #: past `RESULT_MAX`; the pinned hits always, and at least `MIN_RESULTS`
-#: whatever the budget or the gap. Measured against the old cut of ten on 143
-#: known-item queries (65 §6): the known item was shown for 100 of them at ten,
-#: and for 118 under this cut, at about 20 items and 1,900 tokens a packet.
-#: About 2,000 tokens of rendered packet: 1,000 found 102 of the 143, 1,500
-#: found 115, 2,000 found 118, 2,500 found 124 at a quarter more text every
-#: call.
+#: whatever the budget or the gap. Run on the production index for 143
+#: known-item queries (65 §6), this showed the known item for 107, the old
+#: cut of ten for 98 (every one of which this showed too), at a median 20
+#: items and 1,930 tokens a packet against 1,020. Replaying the budget over
+#: the same lists: 1,000 tokens found 97, 1,500 found 111, 2,000 found 112,
+#: 2,500 found 115 for a quarter more text every call.
 PACKET_TOKENS = 2_000
 #: A drop in relevance from one unpinned hit to the next past which the rest
 #: is another topic. Between neighbouring non-hits in a top 20 the drop was
-#: under 0.017 nine times in ten (2,733 pairs), so 0.2 fires only after a
-#: standout: it fired on 6 of 163 measured queries and cost none a hit,
-#: where 0.15 on the age-decayed rank cost seven (65 §6). On relevance, not
-#: on the age-decayed rank, whose drops mix age with meaning.
+#: under 0.017 nine times in ten (2,733 pairs, 65 §6), so 0.2 stops only
+#: after a standout: replayed over the 163 measured queries it shortened 4
+#: and cost none its hit. On relevance, not on the age-decayed rank, whose
+#: drops mix age with meaning: 0.15 on that rank cost seven hits.
 SCORE_GAP = 0.2
 #: However tight the budget or steep the drop, a search that found anything
 #: shows its best few: the first this many items the identifier screen
