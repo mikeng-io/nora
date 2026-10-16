@@ -291,7 +291,7 @@ function ComingUp() {
                       .join(" · ") || t("details")}
                   </span>
                 </span>
-                {p.status === "proposed" ? <Badge>{t("proposed")}</Badge> : null}
+                {p.status === "proposed" ? <Badge>{t("proposed")}</Badge> : p.status === "staged" ? <Badge>{t("staged")}</Badge> : null}
               </Link>
             </li>
           ))}

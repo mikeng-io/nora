@@ -149,8 +149,8 @@ function PlanRow({ plan: p, now, past }: { plan: Plan; now: number; past: boolea
             <Badge tone="danger" icon={<Ban aria-hidden="true" />}>
               {t("status.cancelled")}
             </Badge>
-          ) : p.status === "proposed" ? (
-            <Badge>{t("status.proposed")}</Badge>
+          ) : p.status !== "confirmed" ? (
+            <Badge>{t(`status.${p.status}`)}</Badge>
           ) : null}
           {!past && at !== null && !cancelled ? (
             <span className="text-label text-ink-muted">{formatRelative(at, locale, now)}</span>

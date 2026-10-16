@@ -52,3 +52,29 @@ describe("episodes", () => {
     expect(out).toEqual(["new", "old", "b", "a"]);
   });
 });
+
+describe("every status the backend sends", () => {
+  it("parses a list holding a lapsed plan instead of failing the whole page", async () => {
+    const { PlansSchema } = await import("./api/people");
+    for (const status of ["staged", "proposed", "confirmed", "happened", "cancelled", "lapsed", "evicted"]) {
+      expect(PlansSchema.safeParse([plan("x", null, status as Plan["status"])]).success, status).toBe(true);
+    }
+  });
+
+  it("puts a plan that is over or off in the past even when its date is ahead", () => {
+    const ahead = "2026-10-02T19:00:00+08:00";
+    const ended = (["happened", "lapsed", "evicted"] as const).map((s) => plan(s, ahead, s));
+    expect(upcomingPlans(ended, NOW)).toEqual([]);
+    expect(pastPlans(ended, NOW).map((p) => p.id).sort()).toEqual(["evicted", "happened", "lapsed"]);
+  });
+});
+
+describe("a calendar export says what the plan is", () => {
+  it("is cancelled for a plan that is off and tentative for one not yet settled", () => {
+    const at = "2026-10-02T19:00:00+08:00";
+    expect(planToIcs(plan("c", at, "cancelled"), NOW)).toContain("STATUS:CANCELLED");
+    expect(planToIcs(plan("l", at, "lapsed"), NOW)).toContain("STATUS:CANCELLED");
+    expect(planToIcs(plan("s", at, "staged"), NOW)).toContain("STATUS:TENTATIVE");
+    expect(planToIcs(plan("h", at, "happened"), NOW)).toContain("STATUS:CONFIRMED");
+  });
+});
