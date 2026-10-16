@@ -5,7 +5,9 @@ lets an item recorded under a retired id through (design/cognition-loop/22
 §2).
 
 The construction sites are found, not listed: every `SqlSocialStreamStore(...)`
-call in the composition roots that passes `opted_out=`."""
+call in the composition roots that passes `opted_out=`, one of them inside
+`readable_social_store`, which builds the poller's, `social_read`'s and
+Character's store."""
 
 from __future__ import annotations
 
@@ -29,9 +31,21 @@ def _sites() -> list[tuple[str, int, ast.expr]]:
     return found
 
 
+def _helper_calls() -> int:
+    tree = ast.parse((ROOT / ROOTS[0]).read_text(encoding="utf-8"))
+    return sum(
+        1 for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        and node.func.id == "readable_social_store"
+    )
+
+
 def test_every_social_reader_excludes_every_id_of_an_opted_out_person():
     sites = _sites()
-    assert len(sites) >= 3, sites  # the poller's, Character's and the Rollup's
+    # The reader helper's own construction and the Rollup's; the helper is
+    # called for the poller's, `social_read`'s and Character's store.
+    assert len(sites) >= 2, sites
+    assert _helper_calls() >= 3
     for rel, line, value in sites:
         ok = (
             isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
