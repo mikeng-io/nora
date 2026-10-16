@@ -4752,6 +4752,17 @@ _MEMORY_NO_UNIT: Mapping[str, str] = MappingProxyType({
     "note": "I can't tell which group this pass is for, so I didn't search. Say "
             "you couldn't check, and do not say there was nothing.",
 })
+#: The adaptors whose `memory_search`, with the index off and no person, is
+#: Honcho's search over the whole UNIT: the cognition session alone, the one
+#: catalogue that held `search_memory_workspace` (independent review of #32).
+#: Every other turn, a Dreamer adaptor included, searches its own session.
+_UNIT_SEARCH_ADAPTORS: frozenset[str] = frozenset({COGNITION_ADAPTOR})
+_MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
+    "status": "unavailable",
+    "note": "That person is not one of this room's members, so I can't search "
+            "for what is theirs here. Say you can't check, and do not say "
+            "there was nothing.",
+})
 #: With the index off, Honcho answers, and neither of its verbs can narrow by
 #: a date or a kind: said, not pretended (operator ruling 2026-10-16).
 _MEMORY_NOT_NARROWED = (
@@ -6365,13 +6376,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """`memory_search` with no person and the index off, holding BOTH old
         tools' gates exactly (security review of #32):
 
-        - **A Dreamer pass** (`dream_adaptor`) is what `search_memory_workspace`
-          was, the only place it was offered (#350): Honcho's message search
+        - **The cognition session** (`_UNIT_SEARCH_ADAPTORS`) is what
+          `search_memory_workspace` was. It was the only catalogue that held
+          that verb (#350; the culture and character-person adaptors held
+          `search_memory`, the room session, and keep it here: independent
+          review of #32). Honcho's message search
           over the UNIT (`scope=<unit>`, DEC-214), with that verb's roster,
           the whole address book less Nora. A unit that cannot be named is
           refused here (`unavailable`), never sent unrouted to a default
           workspace.
-        - **Any other turn** stays in THIS channel, as `search_memory` does:
+        - **Any other turn**, a Dreamer adaptor included, stays in THIS
+          channel, as `search_memory` does:
           the room's own Honcho session (`conversation_id`, captured once,
           DEC-24), filtered to the people this room's live view resolves.
           A room turn never reaches another room's words through this verb;
@@ -6381,7 +6396,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         The filter, the withhold and the statuses are `search_memory`'s own
         (`_memory_hits_result`)."""
         partial_view: bool | None = None
-        if dream_adaptor:
+        if dream_adaptor in _UNIT_SEARCH_ADAPTORS:
             by_person = getattr(persons, "by_person", None)
             if by_person is None:
                 # A WIRING gap (identity.toml never threaded into this build),

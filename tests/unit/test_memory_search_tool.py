@@ -3,9 +3,10 @@ states of `[memory_index] enabled` (design/unified-memory/60 S5, 65 V2).
 
 Off (no `MemorySearch`, the shipped default and the rollback): Honcho, as the
 two verbs it replaced did. With a person, `chat` (what `ask_memory` did);
-without one, in a Dreamer pass the unit's message search (what
-`search_memory_workspace` did, Dreamer-only), and in a room turn that room's
-own session search (what `search_memory` does), never another room's. A
+without one, in the cognition session the unit's message search (what
+`search_memory_workspace` did, held by that catalogue alone), and in any
+other turn, a Dreamer adaptor included, that room's own session search
+(what `search_memory` does), never another room's. A
 date or kind it cannot honour is said in the note.
 
 On: the index answers and Honcho is not called. `person`, `since`, `until`
@@ -20,10 +21,13 @@ from typing import Any
 
 import pytest
 
+from nora.agent.dreamer import AdaptorGrant, HomeRoom, RegistryToolSource
 from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import SEED_LIMIT, MemorySearch
 from nora.agent.room import Room
+from nora.agent.registry import ToolRegistry
 from nora.agent.tools import build_tools
+from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.lineage import RoomFacts
 from nora.domain.memory_index import IndexedNode, IndexState
 from nora.domain.ports import MessageHits
@@ -122,13 +126,15 @@ class _TwoRooms(FakeMemoryStore):
 
     ROOM_A = ("miles_novak", "booked the pitch for sunday")
     ROOM_B = ("miles_novak", "the pitch thing I only said in the other room")
+    #: In this room's session, from someone the room does not list.
+    UNLISTED = ("elsewhere_liu", "a pitch line from a person not listed here")
 
     async def search(self, *, query: str, conversation_id: str | None = None,
                      limit: int = 8, unit: str | None = None) -> MessageHits:
         self.routes.append(("search", conversation_id, unit))
         self.searches.append(query)
         if conversation_id == GROUP:
-            return MessageHits(reachable=True, hits=(self.ROOM_A,))
+            return MessageHits(reachable=True, hits=(self.ROOM_A, self.UNLISTED))
         if conversation_id is None and unit is not None:
             return MessageHits(reachable=True, hits=(self.ROOM_A, self.ROOM_B))
         return MessageHits(reachable=False)
@@ -150,15 +156,64 @@ async def test_off_a_room_turn_without_a_person_stays_in_this_channel(
     assert "other room" not in str(result)
 
 
-async def test_off_a_dreamer_pass_searches_the_unit(persons: Any) -> None:
-    """The unit search is the Dreamer's, as `search_memory_workspace` was."""
+async def test_off_the_cognition_session_searches_the_unit(persons: Any) -> None:
+    """The unit search is the cognition session's, as
+    `search_memory_workspace` was."""
     honcho = _TwoRooms()
     tool = _build_with(
-        persons, honcho, None, unit_for=lambda *_: "u1", dream_adaptor="proactive",
+        persons, honcho, None, unit_for=lambda *_: "u1", dream_adaptor=COGNITION_ADAPTOR,
     )["memory_search"]
     result = await _call(tool, query="pitch")
     assert [r for r in honcho.routes if r[0] == "search"] == [("search", None, "u1")]
     assert len(result["results"]) == 2
+
+
+def _dream_source(persons: Any, honcho: FakeMemoryStore) -> RegistryToolSource:
+    """The Dreamer's tool source over the real registry, with this room as
+    the culture adaptor's scope room, as the composition root builds it."""
+    here = HomeRoom(unit="u1", platform="signal", conversation_id=GROUP)
+    return RegistryToolSource(
+        registry=ToolRegistry(), store=_NullStore(), persons=persons,
+        honcho=honcho, metrics=Metrics(),
+        scope_rooms={GROUP: here}, home_rooms={"u1": here},
+        rosters={"signal": FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)})},
+        self_ids=NORA,
+    )
+
+
+@pytest.mark.parametrize(("adaptor", "key", "unit", "grant"), [
+    # Scope-keyed, granted its room: the room's own session.
+    ("culture", GROUP, None, AdaptorGrant(home_room=True)),
+    # Entity-keyed, no room: the synthetic room, which cannot be read, so
+    # «I could not check», never the unit.
+    ("character-person", "miles_novak", "u1", AdaptorGrant()),
+])
+async def test_off_a_dreamer_adaptor_other_than_cognition_keeps_the_room_session(
+    persons: Any, adaptor: str, key: str, unit: str | None, grant: AdaptorGrant,
+) -> None:
+    """Independent review of #32: on origin/master only the cognition
+    catalogue held `search_memory_workspace`; the culture and
+    character-person adaptors held `search_memory`, the room session. Built
+    through `RegistryToolSource` as a dream pass builds them, `memory_search`
+    never takes the unit route there, and neither another room's line nor
+    a person the room does not list comes back."""
+    honcho = _TwoRooms()
+    built = _dream_source(persons, honcho).build(
+        key=key, names=frozenset({"memory_search"}), unit=unit,
+        adaptor=adaptor, grant=grant,
+    )
+    (tool,) = [t for t in built if t.tool_name == "memory_search"]
+    result = await _call(tool, query="pitch")
+    searched = [r for r in honcho.routes if r[0] == "search"]
+    assert all(r[2] is None for r in searched), searched
+    assert "other room" not in str(result)
+    assert "not listed here" not in str(result)
+    if adaptor == "culture":
+        assert searched == [("search", GROUP, None)]
+        assert result["results"] == [
+            {"who": "Miles Novak", "said": "booked the pitch for sunday"}]
+    else:
+        assert result["status"] == "unavailable" and result["note"]
 
 
 async def test_off_a_dreamer_pass_with_no_unit_is_refused_not_widened(
@@ -167,7 +222,7 @@ async def test_off_a_dreamer_pass_with_no_unit_is_refused_not_widened(
     """No unit to name is `unavailable`, never an unrouted search of a
     default workspace."""
     honcho = _TwoRooms()
-    tool = _build_with(persons, honcho, None, dream_adaptor="proactive")["memory_search"]
+    tool = _build_with(persons, honcho, None, dream_adaptor=COGNITION_ADAPTOR)["memory_search"]
     result = await _call(tool, query="pitch")
     assert result["status"] == "unavailable" and result["note"]
     assert honcho.searches == []
@@ -181,7 +236,7 @@ async def test_off_in_a_dreamer_pass_searches_with_the_whole_address_book(
     honcho = FakeMemoryStore()
     honcho.messages = [("elsewhere_liu", "said in another room of the unit")]
     tool = _build_with(
-        persons, honcho, None, unit_for=lambda *_: "u1", dream_adaptor="proactive",
+        persons, honcho, None, unit_for=lambda *_: "u1", dream_adaptor=COGNITION_ADAPTOR,
     )["memory_search"]
     result = await _call(tool, query="room")
     assert result["status"] == "ok"

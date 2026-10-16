@@ -17,6 +17,7 @@ from nora.agent.tools import (
     note_handle,
 )
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
 from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, SendResult
@@ -1676,10 +1677,11 @@ def _unit_memory_tools(wiring, **over):
         metrics=over.pop("metrics", wiring["metrics"]),
         room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         question="who is here", context_window=40,
-        # `dream_adaptor` picks `memory_search`'s Dreamer roster (the whole
-        # address book, over the unit, what `search_memory_workspace` did); a
-        # room turn searches its own channel (tests/unit/test_memory_search_tool.py).
-        unit_for=lambda *_a: "ws-main", dream_adaptor="proactive", **over,
+        # The cognition adaptor picks `memory_search`'s unit roster (the whole
+        # address book, over the unit, what `search_memory_workspace` did);
+        # every other turn searches its own channel
+        # (tests/unit/test_memory_search_tool.py).
+        unit_for=lambda *_a: "ws-main", dream_adaptor=COGNITION_ADAPTOR, **over,
     )
     return {t.tool_name: t for t in tools}
 
