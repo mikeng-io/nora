@@ -13,11 +13,11 @@ from aiohttp import web
 
 def config_staleness(paths: dict[str, str | Path], started_at: float) -> dict:
     """For each named bind-mounted config file, whether it changed on disk AFTER
-    this process started — the tell for the single-file bind-mount inode gotcha
-    that silently served a stale identity.toml/policy.toml TWICE on 2026-08-08
-    (a recreate is needed, not a restart). `stale=True` means: the file the
-    operator edited is NOT the one this process loaded — recreate the container.
-    Never raises: a missing/unreadable file reports `mtime=None, stale=False`."""
+    this process started — the tell for the single-file bind-mount inode
+    problem (a recreate is needed, not a restart). `stale=True` means: the file
+    the operator edited is NOT the one this process loaded — recreate the
+    container. Never raises: a missing/unreadable file reports
+    `disk_mtime=None, stale=False`."""
     out: dict[str, dict] = {}
     for name, path in paths.items():
         try:
@@ -54,16 +54,14 @@ def build_health_app(
 ) -> web.Application:
     app = web.Application()
     app["adapter"] = adapter
-    # Every platform's adapter, keyed by name — ADDITIVE beside `adapter`, which
-    # stays the Signal one because `sse` is a pinned top-level contract
+    # Every platform's adapter, keyed by name, beside `adapter`, which is the
+    # Signal one because `sse` is a pinned top-level contract
     # (`deploy/watchdog.sh` parses `body['sse']['last_event_age_seconds']`;
-    # `tests/test_health.py::test_health_sse_key_set_is_pinned`). Without this a
-    # second platform could be wedged — Gateway down, every Discord message
-    # dropped — while `/health` reported 200 on Signal alone, which is exactly
-    # the silent wiring gap R-5 exists to make loud.
+    # `tests/test_health.py::test_health_sse_key_set_is_pinned`). Without the
+    # per-platform map a wedged second platform would leave `/health` at 200 on
+    # Signal alone (R-5).
     # `is not None`, so an explicitly empty mapping means "no platforms" rather
-    # than silently falling back to `adapter` — the fallback is for callers
-    # predating this parameter, not a way to mean nothing.
+    # than falling back to `adapter`.
     if adapters is not None:
         app["adapters"] = dict(adapters)
     else:
@@ -91,11 +89,10 @@ def build_health_app(
                 "last_event_age_seconds": adapter_health.last_event_age_seconds,
                 "platform": adapter_health.platform,
             }
-            # `account` comes from resolve_identity(), not a new AdapterHealth
-            # field (Trap A, spec's platforms phase): identity and connectivity
-            # are different concerns, and SignalAdapter.resolve_identity() is
-            # memoized, so this costs a network round trip at most once per
-            # process, not once per poll.
+            # `account` comes from resolve_identity(), not an AdapterHealth
+            # field: identity and connectivity are different concerns, and
+            # SignalAdapter.resolve_identity() is memoized, so this costs a
+            # network round trip at most once per process, not once per poll.
             try:
                 identity = await a["adapter"].resolve_identity()
                 sse["account"] = identity.primary
@@ -108,10 +105,8 @@ def build_health_app(
 
         # One entry per enabled platform, same three facts `sse` carries. A
         # platform that cannot report at all is recorded disconnected rather
-        # than omitted — an absent key would read as "not enabled" and hide
-        # exactly the outage this block exists to surface. Every enabled
-        # platform counts toward `healthy`: Nora deaf on Discord is not a
-        # healthy Nora just because Signal happens to be up.
+        # than omitted, since an absent key would read as "not enabled". Every
+        # enabled platform counts toward `healthy`.
         platforms = {}
         for name, plat_adapter in a["adapters"].items():
             try:
@@ -119,11 +114,9 @@ def build_health_app(
                 entry = {
                     "connected": plat_health.connected,
                     "last_event_age_seconds": plat_health.last_event_age_seconds,
-                    # M0 (design/instagram-adoption/01 §Degradation). A
-                    # degraded adapter is registered, answers no sends and
-                    # emits no events — and without this field it is
-                    # indistinguishable from a quiet room, which is the
-                    # failure the degradation path was allowed to exist for.
+                    # A degraded adapter is registered, answers no sends and
+                    # emits no events; without this field it is
+                    # indistinguishable from a quiet room.
                     "degraded": plat_health.degraded,
                     "detail": plat_health.detail,
                 }
@@ -134,12 +127,9 @@ def build_health_app(
             except Exception:                  # noqa: BLE001 — a health check never raises
                 entry = {"connected": False, "last_event_age_seconds": None, "account": None,
                          "degraded": False, "detail": ""}
-            # A DEGRADED platform does not make Nora unhealthy, and that is the
-            # whole point of the state. An Instagram checkpoint is a normal
-            # overnight event; flipping /health to 503 for it would fail the
-            # container healthcheck and take Signal and Discord down with it —
-            # the exact outcome M0 exists to prevent, arriving one layer later.
-            # It is reported LOUDLY instead, which is what the field is for.
+            # A DEGRADED platform does not make Nora unhealthy: a 503 would
+            # fail the container healthcheck and take the other platforms down
+            # with it. It is reported in the entry instead.
             if not entry["connected"] and not entry.get("degraded"):
                 healthy = False
             platforms[name] = entry
@@ -176,22 +166,18 @@ def build_health_app(
             "doctrine_sha256": doctrine_sha256,
             "strands_version": _strands_version(),
         }
-        # Staleness canary (obs review 2026-08-08): identity.toml/policy.toml are
-        # bind-mounted and loaded ONCE at startup, and an atomic edit changes the
-        # inode so a restart keeps serving the OLD file — a recreate is needed.
-        # `config.<file>.stale=true` says the operator's edit hasn't taken; it
-        # silently served a stale policy.toml AND identity.toml the same day.
+        # Staleness canary: identity.toml/policy.toml are bind-mounted and
+        # loaded ONCE at startup, and an atomic edit changes the inode so a
+        # restart keeps serving the OLD file; a recreate is needed.
+        # `config.<file>.stale=true` says the operator's edit hasn't taken.
         if a["config_files"]:
             body["config"] = config_staleness(a["config_files"], a["started_at"])
         return web.json_response(body, status=200 if healthy else 503)
 
     async def metrics_endpoint(request: web.Request) -> web.Response:
-        # Deliberately not prometheus-client's own CONTENT_TYPE_LATEST: in this
-        # version it advertises "version=1.0.0" even though generate_latest()
-        # still renders the classic 0.0.4-style text format actually produced
-        # below — using it here would be an accidental behaviour change this
-        # task never asked for. This header is unchanged from before the
-        # prometheus-client swap.
+        # Deliberately not prometheus-client's own CONTENT_TYPE_LATEST: it
+        # advertises "version=1.0.0" even though generate_latest() renders the
+        # classic 0.0.4-style text format.
         text = request.app["metrics"].render()
         return web.Response(text=text, headers={"Content-Type": "text/plain; version=0.0.4"})
 
@@ -201,20 +187,10 @@ def build_health_app(
 
 
 async def serve(app: web.Application, port: int) -> web.AppRunner:
-    # `access_log=None` — NO PER-REQUEST LINE FOR THIS SERVER, and it is the
-    # single largest thing that was in the log.
-    #
-    # Measured over 37 days on the deployment: 205,099 log lines, of which
-    # 108,441 (53%) were `aiohttp.access` at INFO. This server routes exactly
-    # two paths — `/health` and `/metrics` — polled by a container healthcheck
-    # and by whatever scrapes the metrics. One line per poll is not evidence of
-    # anything: the health of this endpoint is the healthcheck's own verdict,
-    # and how often it was scraped is a question for the scraper.
-    #
-    # It is the same judgement R-76 makes for traces one signal over — a
-    # collector that is 97% plumbing cannot be read for the events that matter —
-    # applied to the log. What it costs is the ability to see WHO called
-    # `/metrics`, which is a question this file has never been asked.
+    # `access_log=None`: no per-request line for this server. It routes only
+    # `/health` and `/metrics`, polled by a healthcheck and a scraper, so an
+    # access line per poll would dominate the log (cf. R-76). The cost is not
+    # seeing who called `/metrics`.
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     # health/metrics must be reachable from outside the container.
