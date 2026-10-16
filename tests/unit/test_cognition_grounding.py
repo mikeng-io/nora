@@ -1060,7 +1060,8 @@ async def test_the_memos_shown_are_the_sessions_units_and_never_another_units():
 async def test_her_pending_reminder_is_shown_on_the_note_it_is_linked_to():
     """A session that reads the room settling a thing can only cancel the ask it
     queued if it sees that ask: the note's index row names her pending row and
-    when it comes due. A row linked to no note, or to another note, is not on it."""
+    when it comes due. A row linked to no note, to another note, or in a room
+    off this agenda (whose id `remind_cancel` would refuse) is not on it."""
     import uuid
 
     from nora.domain.reminders import Reminder, ReminderState
@@ -1082,6 +1083,8 @@ async def test_her_pending_reminder_is_shown_on_the_note_it_is_linked_to():
         )
 
     linked, unlinked, elsewhere = row("n-dinner"), row(None), row("n-other")
+    off_agenda = dataclasses.replace(row("n-dinner"), conversation_id=B.conversation_id,
+                                     platform=B.platform)
 
     async def notes(unit: str) -> Sequence[Note]:
         return (note,)
@@ -1090,7 +1093,7 @@ async def test_her_pending_reminder_is_shown_on_the_note_it_is_linked_to():
         return ()
 
     async def pending() -> Sequence[Reminder]:
-        return (linked, unlinked, elsewhere)
+        return (linked, unlinked, elsewhere, off_agenda)
 
     s = _stim(1, A, ago=10, mid=1)
     grounder = build_grounder(
@@ -1105,3 +1108,4 @@ async def test_her_pending_reminder_is_shown_on_the_note_it_is_linked_to():
     prompt = _prompt([s], g)
     assert f'reminds="{linked.id} due 2026-10-16 19:00"' in prompt
     assert str(unlinked.id) not in prompt and str(elsewhere.id) not in prompt
+    assert str(off_agenda.id) not in prompt  # its room is not on this agenda

@@ -455,11 +455,15 @@ def build_grounder(
         today = now.year * 10_000 + now.month * 100 + now.day
         indexed = list(await note_index(unit))
         twins = likely_duplicates(indexed)
-        # Her own pending rows, by the note each is linked to (`payload.note_id`).
+        # Her own pending rows, by the note each is linked to (`payload.note_id`),
+        # and only those of a room on this agenda: `remind_move` and
+        # `remind_cancel` refuse a row whose room is not, so naming it here would
+        # point at an id the session cannot act on.
+        on_agenda = {(r.platform, r.conversation_id) for r in agenda_rooms}
         held: dict[str, list[str]] = {}
         for r in (await pending_reminds()) if pending_reminds is not None else ():
             note_id = (r.payload or {}).get("note_id")
-            if isinstance(note_id, str):
+            if isinstance(note_id, str) and (r.platform, r.conversation_id) in on_agenda:
                 due = r.due_at.astimezone(tz).strftime("%Y-%m-%d %H:%M")
                 held.setdefault(note_id, []).append(f"{r.id} due {due}")
         for n in indexed:
