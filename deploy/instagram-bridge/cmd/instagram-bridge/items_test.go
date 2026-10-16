@@ -433,6 +433,13 @@ func TestItemsErrorsBesideThePageStillReadThePage(t *testing.T) {
 		t.Errorf("errors with no page answered %d %s, want 502", rec.Code, rec.Body.String())
 	}
 
+	staleBeside := strings.Replace(fakeig.TimelineFirstPageJSON, `{"data":`,
+		`{"errors":[{"message":"PersistedQueryNotFound: unknown doc_id","code":1675002}],"data":`, 1)
+	rec = getItems(t, newTestBridge(t, &fakeIG{TimelineBody: []byte(staleBeside)}), fakeig.TimelineOwnerIGID, "")
+	if rec.Code != http.StatusNotImplemented || decodeEnvelope(t, rec).Error.Code != "stale_query" {
+		t.Errorf("a stale-document error beside data answered %d %s, want 501 stale_query", rec.Code, rec.Body.String())
+	}
+
 	checkpoint := `{"status":"fail","message":"checkpoint_required","checkpoint_url":"https://i.instagram.com/challenge/x","errors":[{"message":"x"}],"data":{"xdt_api__v1__feed__user_timeline_graphql_connection":{"edges":[],"page_info":{"has_next_page":false}}}}`
 	rec = getItems(t, newTestBridge(t, &fakeIG{TimelineBody: []byte(checkpoint)}), fakeig.TimelineOwnerIGID, "")
 	if rec.Code != http.StatusConflict {
