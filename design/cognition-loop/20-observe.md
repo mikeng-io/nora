@@ -41,8 +41,9 @@ past the cap (starting at 200 vision calls per unit per day) is recorded
 unperceived, which is a true state, not an error.
 
 **On scheduling** (operator: "should it be scheduled?"): a source that cannot
-push is polled. Stories disappear in 24 hours, so the social poller runs at
-least every 12 hours; Steam every 1–5 minutes per member; the presence
+push is polled. Stories disappear in 24 hours; the social poller's cadence is
+per person and adaptive, under one budget per login ([22](22-social-stream.md)
+§4, which supersedes the fixed 12-hour clock first written here); Steam every 1–5 minutes per member; the presence
 collector already polls. That is ingestion's clock, not cognition's.
 Cognition has no schedule of its own: it runs only when stimuli wake it (§3),
 and `time` stimuli are the only ones a clock raises.
@@ -84,6 +85,9 @@ section of that name) and rewrites its test,
 `test_a_story_is_never_opened_in_a_turn_nobody_asked_for`, to pin the new
 rule: stories are read by the ingestion poller, for members only. R-98's
 *who* is kept; its *only on request* is reversed ([70](70-migration.md) §3).
+
+The source interface, the poll, the Record tables and the back-fill of past
+posts and reels are in [22](22-social-stream.md).
 
 **What it needs from the bridge.** Stories by platform account exist
 (`/accounts/{igid}/story`). Listing a member's posts and reels has no
