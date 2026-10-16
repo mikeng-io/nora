@@ -361,6 +361,19 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "body": f"## Kept\n- kept {n} [{n + 1}]", "citations": [str(n + 1)], "mode": "told",
         "state": "kept", "written_at": MS0 + n, "established_by": "test",
     },
+    # 0107_social_stream: an item, a probe of it, and a state it was given.
+    "social_item": lambda n: {
+        "id": _uuid("si", n), "network": "instagram", "item_id": f"item{n}",
+        "person": "ken", "account": "10000001", "kind": "post", "taken_at": T0,
+        "seen_at": T0, "origin": "poll",
+    },
+    "social_poll": lambda n: {
+        "id": _uuid("sp", n), "network": "instagram", "person": "ken", "stage": "probe",
+        "outcome": "unchanged",
+    },
+    "social_item_state": lambda n: {
+        "id": _uuid("ss", n), "network": "instagram", "item_id": f"item{n}", "state": "gone",
+    },
     # 0101_self_tension (design/self-growth/40, L3): a lesson refused by the law.
     "self_tension": lambda n: {
         "id": _uuid("st", n), "unit": "friends", "source": "lesson",
