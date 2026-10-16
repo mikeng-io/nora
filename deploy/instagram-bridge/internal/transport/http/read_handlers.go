@@ -2,6 +2,8 @@ package httptransport
 
 import (
 	"net/http"
+	"strings"
+	"unicode"
 
 	"instagram-bridge/internal/domain"
 )
@@ -92,4 +94,43 @@ func (s *Server) handleStory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, storyOf(story))
+}
+
+// maxCursorLength bounds `?after=`. The cursor is Instagram's opaque
+// `end_cursor`, handed back unchanged; nothing longer than this has a reason
+// to be one, and an unbounded query value would ride into the request body.
+const maxCursorLength = 1024
+
+// handleItems answers GET /accounts/{igid}/items?after=<cursor>&username=<u>:
+// one page of the account's posts and reels, newest first. `next_cursor` is
+// null at the end of the timeline. `username` is optional: given, the bridge
+// skips the profile read and pages that username, refusing the page unless
+// every item's owner is the igid; it must be a bare handle (no `@`).
+func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
+	igid, ok := igidFromPath(w, r)
+	if !ok {
+		return
+	}
+	after := r.URL.Query().Get("after")
+	if len(after) > maxCursorLength || strings.ContainsFunc(after, unicode.IsControl) {
+		invalidRequest(w, "after must be the next_cursor a previous page returned")
+		return
+	}
+	var username domain.Username
+	if raw := r.URL.Query().Get("username"); raw != "" {
+		u, err := domain.ParseUsername(raw)
+		// Strict: the bare handle only. ParseUsername also accepts a leading
+		// `@`, which a caller holding the profile's own value never sends.
+		if err != nil || u.String() != raw {
+			invalidRequest(w, "username must be an instagram username, without @")
+			return
+		}
+		username = u
+	}
+	page, err := s.app.ReadItems(r.Context(), igid, username, after)
+	if err != nil {
+		failEnvelope(r.Context(), w, "items", err, "igid", igid.String())
+		return
+	}
+	writeJSON(w, http.StatusOK, itemsOf(page))
 }

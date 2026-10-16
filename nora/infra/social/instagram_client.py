@@ -407,6 +407,14 @@ class InstagramSocialClient(SocialProvider):
             # The story route has NO "no such account" answer, so no non-200
             # here is a fact about the subject: 409 needs a human, 503 is
             # reconnecting, 400/500 and anything unmapped are ours.
+            #
+            # The envelope's `code` is logged, never shown: a 501
+            # `stale_query` (the story doc_id rotated, or names another
+            # document) and a 501 `unsupported` (none configured) both need
+            # an operator, and without this line both read as one more
+            # «unavailable».
+            code = _error_code(payload) if isinstance(payload, dict) else None
+            log.warning("instagram bridge story read answered %s (code=%s)", status, code)
             return dict(UNAVAILABLE)
         found = payload.get("found")
         if found is False:

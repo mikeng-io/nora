@@ -23,11 +23,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"instagram-bridge/internal/gateway/instameow/fakeig"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
-	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 )
 
 func getProfile(t *testing.T, b *testBridge, query string) *httptest.ResponseRecorder {
@@ -76,7 +78,7 @@ func TestProfileCarriesTheGateIncludingUnmodelledKeys(t *testing.T) {
 	}
 	if !body.HasStory {
 		t.Error("has_story was false with latest_reel_media set; a caller uses " +
-			"this to SKIP a story fetch, and Nora opens a story only when asked")
+			"this to SKIP a story fetch, and the social stream reads a story only when it moved")
 	}
 }
 
@@ -310,9 +312,9 @@ func decodeStory(t *testing.T, rec *httptest.ResponseRecorder) storyBody {
 	return body
 }
 
-// ONE igid per call, never a list, although FetchReel accepts several. Each
-// extra id in a batch is another person who sees that Nora watched their story
-// — paid to answer a question about somebody else.
+// ONE igid per call, never a list, although `reel_ids_arr` accepts several.
+// Each extra id in a batch is another person's story opened to answer a
+// question about somebody else. Asserted on the variables that went OUT.
 func TestStoryNeverBatchesTheRead(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
@@ -320,12 +322,25 @@ func TestStoryNeverBatchesTheRead(t *testing.T) {
 	if rec := getStory(t, b, "246967358"); rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(f.ReelIDs) != 1 {
-		t.Fatalf("FetchReel called %d times, want 1", len(f.ReelIDs))
+	if len(f.DocRequests) != 1 {
+		t.Fatalf("%d documents sent, want 1", len(f.DocRequests))
 	}
-	if len(f.ReelIDs[0]) != 1 || f.ReelIDs[0][0] != "246967358" {
-		t.Errorf("FetchReel was addressed with %v, want exactly one igid — a "+
-			"batched read opens stories nobody asked about", f.ReelIDs[0])
+	req := f.DocRequests[0]
+	if req.FriendlyName != fakeig.StoryDocument || req.DocID != testStoryDocID ||
+		req.Endpoint != "https://www.instagram.com/api/graphql" {
+		t.Errorf("sent %s (doc %s) to %s, want the story document, its configured "+
+			"doc_id, at /api/graphql", req.FriendlyName, req.DocID, req.Endpoint)
+	}
+	var vars map[string]any
+	if err := json.Unmarshal([]byte(req.Variables), &vars); err != nil {
+		t.Fatalf("variables are not JSON: %v (%s)", err, req.Variables)
+	}
+	ids, _ := vars["reel_ids_arr"].([]any)
+	if len(ids) != 1 || ids[0] != "246967358" {
+		t.Errorf("reel_ids_arr = %v, want exactly the one igid asked about", vars["reel_ids_arr"])
+	}
+	if vars["__relay_internal__pv__PolarisCommunityNoteStoriesLabelEnabledrelayprovider"] != true {
+		t.Errorf("the relay flag the web client sends is missing: %s", req.Variables)
 	}
 }
 
@@ -342,23 +357,23 @@ func TestStoryFramesKeepBothTheClipAndTheStill(t *testing.T) {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
 	}
 	body := decodeStory(t, rec)
-	if !body.Found {
-		t.Fatal("found was false for a reel that is present")
+	if !body.Found || body.Username != "nka_bpumvg" {
+		t.Fatalf("found=%v username=%q for a reel that is present", body.Found, body.Username)
 	}
 	if len(body.Items) != 2 {
 		t.Fatalf("got %d frames, want 2", len(body.Items))
 	}
 
 	image := body.Items[0]
-	if image.Kind != "image" {
-		t.Errorf("frame 1 kind = %q, want image", image.Kind)
+	if image.ID != "1001" || image.Kind != "image" || image.TakenAt != 1790000432 {
+		t.Errorf("frame 1 = %+v, want pk 1001, an image, its own taken_at", image)
 	}
 	if image.URL != "https://cdn/large.jpg" {
 		t.Errorf("frame 1 url = %q, want the LARGEST candidate", image.URL)
 	}
-	if image.AltText != "a photo of a plate" {
-		t.Errorf("frame 1 alt_text = %q; Instagram's own description is free "+
-			"and often answers the question with no fetch at all", image.AltText)
+	if image.Caption != "synthetic story caption" || image.AltText != "a photo of a plate" {
+		t.Errorf("frame 1 caption=%q alt_text=%q; both are free and often answer "+
+			"the question with no fetch at all", image.Caption, image.AltText)
 	}
 
 	video := body.Items[1]
@@ -373,28 +388,43 @@ func TestStoryFramesKeepBothTheClipAndTheStill(t *testing.T) {
 			"video story too and that cover frame is what makes a cheap look "+
 			"possible", video.ThumbnailURL)
 	}
-	// The retention bound. A story is gone in 24 hours, so anything kept
-	// outlives its source — 06's rule with a number behind it.
-	if video.ExpiringAt == 0 || body.ExpiringAt == 0 {
-		t.Error("expiring_at was dropped; it is the natural retention bound")
+	if video.Caption != "" {
+		t.Errorf("frame 2 caption = %q from a null caption", video.Caption)
 	}
 }
 
-// "media_type says video" and "there is a clip" are different facts. A delta
-// claiming video with no video url must degrade to its cover frame rather than
-// promise bytes that are not there.
-func TestStoryVideoWithNoClipDegradesToItsCover(t *testing.T) {
-	item := &responses.ReelItem{}
-	item.Pk = "1"
-	item.MediaType = 2
-	item.ImageVersions2.Candidates = []responses.Candidates{
-		{Width: 1080, URL: "https://cdn/cover.jpg"},
+// The retention bound, per frame. S0 measured the REEL's `expiring_at` as null
+// and each frame's as its own taken_at + 86400, so each frame keeps its own,
+// and the story's is the latest of them (the set ends when its newest frame
+// does). A reel that does send its own keeps it.
+func TestStoryExpiryIsPerFrameAndTheReelTakesTheLatest(t *testing.T) {
+	body := decodeStory(t, getStory(t, newTestBridge(t, &fakeIG{}), "246967358"))
+	if len(body.Items) != 2 {
+		t.Fatalf("got %d frames, want 2", len(body.Items))
 	}
-	f := &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{
-		Reels: map[string]responses.ReelInfo{
-			"246967358": {ID: "246967358", Items: []*responses.ReelItem{item}},
-		},
-	}}
+	if body.Items[0].ExpiringAt != 1790086832 || body.Items[1].ExpiringAt != 1790098244 {
+		t.Errorf("frame expiries = %d, %d, want each frame's own",
+			body.Items[0].ExpiringAt, body.Items[1].ExpiringAt)
+	}
+	if body.ExpiringAt != 1790098244 {
+		t.Errorf("story expiring_at = %d, want the latest frame's (the reel's was null)", body.ExpiringAt)
+	}
+
+	withOwn := strings.Replace(fakeig.MeasuredStoryJSON, `"expiring_at": null`, `"expiring_at": 1790099999`, 1)
+	body = decodeStory(t, getStory(t, newTestBridge(t, &fakeIG{StoryBody: []byte(withOwn)}), "246967358"))
+	if body.ExpiringAt != 1790099999 {
+		t.Errorf("story expiring_at = %d, want the reel's own when it sends one", body.ExpiringAt)
+	}
+}
+
+// "media_type says video" and "there is a clip" are different facts. A frame
+// claiming video with no video url must degrade to its cover frame rather
+// than promise bytes that are not there.
+func TestStoryVideoWithNoClipDegradesToItsCover(t *testing.T) {
+	f := &fakeIG{StoryBody: []byte(`{"data":{"xdt_api__v1__feed__reels_media":{"reels_media":[{
+		"id": "246967358", "user": {"pk": "246967358"},
+		"items": [{"pk": "1", "media_type": 2,
+			"image_versions2": {"candidates": [{"width": 1080, "url": "https://cdn/cover.jpg"}]}}]}]}}}`)}
 	b := newTestBridge(t, f)
 
 	rec := getStory(t, b, "246967358")
@@ -416,14 +446,13 @@ func TestStoryVideoWithNoClipDegradesToItsCover(t *testing.T) {
 }
 
 // The distinction the whole route turns on. "No story up" and "Nora may not
-// see it" BOTH come back as zero frames, and reporting the second as the first
-// states something about a person on the strength of a permission error.
+// see it" BOTH come back as an empty `reels_media`, and reporting the second
+// as the first states something about a person on the strength of a
+// permission error.
 //
 // `found` is what separates them, and a caller has to be able to read it.
 func TestStoryEmptyIsNotAClaimThatNothingWasPosted(t *testing.T) {
-	f := &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{
-		Reels: map[string]responses.ReelInfo{},
-	}}
+	f := &fakeIG{StoryBody: []byte(fakeig.NoStoryJSON)}
 	b := newTestBridge(t, f)
 
 	rec := getStory(t, b, "246967358")
@@ -433,7 +462,7 @@ func TestStoryEmptyIsNotAClaimThatNothingWasPosted(t *testing.T) {
 	}
 	body := decodeStory(t, rec)
 	if body.Found {
-		t.Error("found was true for a reel that is not in the response")
+		t.Error("found was true for an empty reels_media")
 	}
 	if len(body.Items) != 0 {
 		t.Errorf("items = %v, want none", body.Items)
@@ -443,30 +472,50 @@ func TestStoryEmptyIsNotAClaimThatNothingWasPosted(t *testing.T) {
 	}
 }
 
-// The response declares BOTH `reels` (a map) and `reels_media` (a list) and
-// which one arrives has not been measured for this call. Reading only the map
-// would report "no story" for a shape that carried one — a silent false
-// negative about a person.
-func TestStoryReadsTheFlatReelsMediaShapeToo(t *testing.T) {
-	item := &responses.ReelItem{}
-	item.Pk = "1"
-	item.ImageVersions2.Candidates = []responses.Candidates{{Width: 1080, URL: "https://cdn/a.jpg"}}
-	f := &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{
-		ReelsMedia: []responses.ReelInfo{
-			{ID: "246967358", Items: []*responses.ReelItem{item}},
-		},
-	}}
-	b := newTestBridge(t, f)
-
-	rec := getStory(t, b, "246967358")
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
+// A 200 with no reel LIST, or with a reel for somebody else, is not "no story"
+// either: neither is ever read as `found: false` about the person asked
+// about. No list at all (and no error) is an answer to some OTHER document,
+// so it is `stale_query`, halting the read (items_test.go has the seen-mark
+// case); a stranger's reel is a 502.
+func TestStoryWithoutTheAskedReelIsRefusedNotEmpty(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body   string
+		status int
+		code   string
+	}{
+		"no reel list":   {`{"data":{"xdt_api__v1__feed__reels_media":null}}`, 501, "stale_query"},
+		"another's reel": {`{"data":{"xdt_api__v1__feed__reels_media":{"reels_media":[{"id":"999","user":{"pk":"999"},"items":[]}]}}}`, 502, "upstream_rejected"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := getStory(t, newTestBridge(t, &fakeIG{StoryBody: []byte(tc.body)}), "246967358")
+			if rec.Code != tc.status || decodeEnvelope(t, rec).Error.Code != tc.code {
+				t.Errorf("answered %d %s, want %d %s", rec.Code, rec.Body.String(), tc.status, tc.code)
+			}
+		})
 	}
-	body := decodeStory(t, rec)
-	if !body.Found || len(body.Items) != 1 {
-		t.Errorf("the flat shape was not read: found=%v items=%d",
-			body.Found, len(body.Items))
+}
+
+// A GraphQL error BESIDE the reel does not lose the story: the reel is read
+// (and the errors logged). Without the reel, the same error is a 502, and a
+// checkpoint keeps its precedence over both.
+func TestStoryErrorsBesideTheReelStillReadTheReel(t *testing.T) {
+	withErr := strings.Replace(fakeig.MeasuredStoryJSON, `"extensions":{"is_final":true}`,
+		`"errors":[{"message":"A server error field_exception occured.","code":1675030,"summary":"Query Error","path":["x"]}]`, 1)
+	body := decodeStory(t, getStory(t, newTestBridge(t, &fakeIG{StoryBody: []byte(withErr)}), "246967358"))
+	if !body.Found || len(body.Items) != 2 {
+		t.Errorf("found=%v items=%d; a partial error must not drop the reel", body.Found, len(body.Items))
+	}
+
+	noReel := `{"data":{"xdt_api__v1__feed__reels_media":null},"errors":[{"message":"A server error field_exception occured.","code":1675030,"summary":"Query Error"}]}`
+	rec := getStory(t, newTestBridge(t, &fakeIG{StoryBody: []byte(noReel)}), "246967358")
+	if rec.Code != http.StatusBadGateway || decodeEnvelope(t, rec).Error.Code != "upstream_rejected" {
+		t.Errorf("errors with no reel answered %d %s, want 502", rec.Code, rec.Body.String())
+	}
+
+	checkpoint := `{"status":"fail","message":"checkpoint_required","checkpoint_url":"https://i.instagram.com/challenge/x","errors":[{"message":"x"}],"data":{"xdt_api__v1__feed__reels_media":{"reels_media":[]}}}`
+	rec = getStory(t, newTestBridge(t, &fakeIG{StoryBody: []byte(checkpoint)}), "246967358")
+	if rec.Code != http.StatusConflict {
+		t.Errorf("a checkpoint beside data answered %d, want 409", rec.Code)
 	}
 }
 

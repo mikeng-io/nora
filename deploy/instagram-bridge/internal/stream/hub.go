@@ -32,7 +32,7 @@ const (
 
 type Hub struct {
 	mu      sync.Mutex
-	clients map[cortez []byte]struct{}
+	clients map[chan []byte]struct{}
 	buf     [][]byte
 	dropped int
 	// notice is set when something was dropped and not yet announced. It is
@@ -44,7 +44,7 @@ type Hub struct {
 }
 
 func NewHub() *Hub {
-	return &Hub{clients: map[cortez []byte]struct{}{}}
+	return &Hub{clients: map[chan []byte]struct{}{}}
 }
 
 // Emit serializes once and fans out. Marshalling here rather than per client
@@ -101,10 +101,10 @@ func (h *Hub) push(payload []byte) {
 // order has a window in which an event arrives after the snapshot and before
 // registration, is buffered, and is then dropped by the caller's clear() — a
 // loss that would show up as nothing at all.
-func (h *Hub) Subscribe() (cortez []byte, [][]byte, int) {
+func (h *Hub) Subscribe() (chan []byte, [][]byte, int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	ch := make(cortez []byte, clientQueue)
+	ch := make(chan []byte, clientQueue)
 	h.clients[ch] = struct{}{}
 	replay := h.buf
 	h.buf = nil
@@ -116,7 +116,7 @@ func (h *Hub) Subscribe() (cortez []byte, [][]byte, int) {
 	return ch, replay, notice
 }
 
-func (h *Hub) Unsubscribe(ch cortez []byte) {
+func (h *Hub) Unsubscribe(ch chan []byte) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.clients[ch]; ok {

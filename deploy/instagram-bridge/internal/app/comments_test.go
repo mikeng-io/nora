@@ -525,7 +525,7 @@ func otherMedia(t *testing.T) string {
 func TestConcurrentRepliesToOneSummonsWriteOnce(t *testing.T) {
 	r := newCommentRig(t, openPolicy())
 	r.serve(t, summonsA)
-	release := make(cortez struct{})
+	release := make(chan struct{})
 	var mu sync.Mutex
 	entered := 0
 	r.port.onPost = func() {
@@ -535,7 +535,7 @@ func TestConcurrentRepliesToOneSummonsWriteOnce(t *testing.T) {
 		<-release
 	}
 	const n = 16
-	errs := make(cortez error, n)
+	errs := make(chan error, n)
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
 		wg.Add(1)

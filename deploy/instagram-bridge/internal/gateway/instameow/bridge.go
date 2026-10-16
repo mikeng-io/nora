@@ -68,6 +68,13 @@ type Options struct {
 	// RESTIssuer replaces the client's own raw REST issuer (mentions.go's
 	// `rest` helper). Nil in production.
 	RESTIssuer RESTIssuer
+	// DocIssuer replaces the client's own issuer for the configured GraphQL
+	// documents (docs.go). Nil in production.
+	DocIssuer DocIssuer
+	// Docs is the configured doc_id of each document (docs.go): read from
+	// INSTAGRAM_STORY_DOC_ID and INSTAGRAM_TIMELINE_DOC_ID by main. An empty
+	// one makes that read answer 501.
+	Docs QueryDocs
 }
 
 // NewBridge builds the session with no client; Supervise builds one.
@@ -77,6 +84,8 @@ func NewBridge(o Options) *Bridge {
 		sink:       o.Sink,
 		issuer:     o.Issuer,
 		restIssuer: o.RESTIssuer,
+		docIssuer:  o.DocIssuer,
+		docs:       o.Docs,
 		state:      o.State,
 		detail:     o.Detail,
 		connected:  o.Connected,
@@ -173,6 +182,11 @@ type Bridge struct {
 	// restIssuer, when set, replaces the session client's own raw REST
 	// issuer (mentions.go). Production leaves it nil.
 	restIssuer RESTIssuer
+	// docIssuer, when set, replaces the session client's own issuer for the
+	// configured GraphQL documents (docs.go). Production leaves it nil.
+	docIssuer DocIssuer
+	// docs is set once at construction and never written after.
+	docs QueryDocs
 
 	mu  sync.RWMutex
 	cli *instameow.Client

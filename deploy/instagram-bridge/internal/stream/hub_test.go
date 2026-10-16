@@ -10,7 +10,7 @@ type probe struct {
 	N    int    `json:"n"`
 }
 
-func drain(ch cortez []byte) [][]byte {
+func drain(ch chan []byte) [][]byte {
 	var out [][]byte
 	for {
 		select {
@@ -151,7 +151,7 @@ func TestLiveClientBypassesTheBuffer(t *testing.T) {
 // rather than discarded.
 func TestUnserializableEventIsCountedAsADrop(t *testing.T) {
 	h := NewHub()
-	h.Emit(make(cortez int)) // channels have no JSON representation
+	h.Emit(make(chan int)) // channels have no JSON representation
 	_, buffered, dropped := h.Stats()
 	if dropped != 1 || buffered != 0 {
 		t.Fatalf("dropped=%d buffered=%d, want 1/0", dropped, buffered)

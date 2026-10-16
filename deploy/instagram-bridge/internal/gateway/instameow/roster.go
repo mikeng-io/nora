@@ -17,7 +17,7 @@ package instameow
 // can answer "did this person speak here?".
 //
 // `igid` is `User.ID`, the PUBLIC Instagram numeric id — a different number
-// for the same account, and the one `GetProfile`/`FetchReel` take. It is NOT a
+// for the same account, and the one `GetProfile` and the story read take. It is NOT a
 // messaging address (02-identity-and-policy.md opens by naming exactly this
 // confusion, whose whole cost is that it produces no error anywhere).
 //

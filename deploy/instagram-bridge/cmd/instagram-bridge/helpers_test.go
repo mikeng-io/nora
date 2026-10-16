@@ -64,6 +64,16 @@ func withNoClient() bridgeOpt { return func(o *gateway.Options) { o.Client, o.Up
 
 func withIssuer(i gateway.GraphQLIssuer) bridgeOpt { return func(o *gateway.Options) { o.Issuer = i } }
 
+// The doc_ids every test bridge is configured with. Obviously fake: the real
+// ones are config on the host and never in the repo.
+const (
+	testStoryDocID    = "1234"
+	testTimelineDocID = "5678"
+)
+
+// withDocs replaces the configured doc_ids ("" is an unconfigured read).
+func withDocs(docs gateway.QueryDocs) bridgeOpt { return func(o *gateway.Options) { o.Docs = docs } }
+
 // newTestBridge wires the whole path over a fake session. Nothing here
 // touches the network: the live account is in use and cannot be probed.
 func newTestBridge(t *testing.T, f *fakeIG, opts ...bridgeOpt) *testBridge {
@@ -85,6 +95,10 @@ func newTestBridgeWithComments(t *testing.T, f *fakeIG, commentPolicy app.Commen
 		// The fake records every upload, so a test can assert what reached
 		// the library (filename, mimetype, bytes), not only that one happened.
 		Upload: f.Upload,
+		// The configured GraphQL documents go through the same fake, which
+		// records every request they send.
+		DocIssuer: f,
+		Docs:      gateway.QueryDocs{Story: testStoryDocID, Timeline: testTimelineDocID},
 	}
 	for _, opt := range opts {
 		opt(&o)

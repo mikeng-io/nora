@@ -27,8 +27,8 @@ import (
 
 // Events is the SSE hub as /events and /health read it.
 type Events interface {
-	Subscribe() (cortez []byte, [][]byte, int)
-	Unsubscribe(cortez []byte)
+	Subscribe() (chan []byte, [][]byte, int)
+	Unsubscribe(chan []byte)
 	Stats() (clients, buffered, dropped int)
 }
 
@@ -80,10 +80,16 @@ func (s *Server) Routes() http.Handler {
 	// given a path of their own. The response says which upstream halves
 	// answered.
 	mux.HandleFunc("GET /accounts/{igid}", observability.Route("GET /accounts/{igid}", s.handleProfile))
-	// The only path to a story anywhere. Whether the author sees the view
-	// is unmeasured (design 04, 05 §Reading a story); Nora opens one only
-	// when asked. A sub-resource of the account, because that is what it is.
+	// The only path to a story anywhere. The social stream's poller reads
+	// members' stories (design/cognition-loop/22-social-stream.md §3), and
+	// the read never marks one seen (§1). A sub-resource of the account,
+	// because that is what it is.
 	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", s.handleStory))
+	// One page of the account's posts and reels, newest first, paged by
+	// `?after=` (§1a, §7). PatternOnlyRoute: the page is somebody's content,
+	// and the cursor is Instagram's opaque state, neither of which may become
+	// a span attribute value.
+	mux.HandleFunc("GET /accounts/{igid}/items", observability.PatternOnlyRoute("GET /accounts/{igid}/items", s.handleItems))
 	// One post, every item in it (17 P12). Traced by PATTERN ONLY: the
 	// shortcode names somebody's post and never becomes a span attribute
 	// value.

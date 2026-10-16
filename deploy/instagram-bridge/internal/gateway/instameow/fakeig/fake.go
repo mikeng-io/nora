@@ -153,18 +153,24 @@ type IG struct {
 	ProfileUserSet bool
 	ProfileErr     error
 
-	// --- the story read ----------------------------------------------------
+	// --- the configured GraphQL documents (docs.go) -------------------------
 	//
-	// reelIDs records every CALL's id list, not a flattened set, so the "one
-	// igid, never a batch" rule can actually be asserted. A batched read
-	// would open several people's stories to answer a question about one
-	// (whether the author sees the view is unmeasured, design 04, 05
-	// §Reading a story).
-	ReelIDs [][]string
-	// reelResp overrides the answer. nil means "the measured reel".
-	ReelResp *responses.ReelInfoResponse
-	ReelSet  bool
-	ReelErr  error
+	// DocRequests records EVERY request the bridge sent through
+	// MakeDocRequest, in order, with its endpoint, referer, friendly name,
+	// doc_id and variables, so a test asserts what went out (one igid, never
+	// a batch; never a seen-mark) rather than what the bridge meant to send.
+	DocRequests []DocRequest
+	// StoryBody and TimelineBody override each document's answer. nil means
+	// the measured-shape story (MeasuredStoryJSON) and the synthetic last
+	// timeline page (TimelineLastPageJSON).
+	StoryBody    []byte
+	TimelineBody []byte
+	// DocStatus, when set, is the HTTP status every document answers with;
+	// >= 400 comes back the library's way (an error AND the response).
+	DocStatus int
+	// DocErr fails every document before an answer (a transport error, or a
+	// sentinel the library found in a redirect).
+	DocErr error
 
 	// --- the account search --------------------------------------------------
 	//
@@ -282,59 +288,6 @@ func (f *IG) GetProfile(_ context.Context, igid string) (*slidetypes.ProfilePage
 		User:   user,
 		Viewer: &slidetypes.User{ID: "79597894900", Username: "not_____nora"},
 	}, nil
-}
-
-// The measured reel shape: a two-frame story, one image and one video, with
-// the video also carrying a cover still. That combination is the point — the
-// route must call the video a video AND keep the still as the thumbnail, so a
-// caller can look without downloading a clip.
-func MeasuredReel() *responses.ReelInfoResponse {
-	image := &responses.ReelItem{ExpiringAt: 1790097673}
-	image.Pk = "3811649187021092147"
-	image.TakenAt = 1790000432
-	image.MediaType = 1
-	image.AccessibilityCaption = "a photo of a plate"
-	image.ImageVersions2.Candidates = []responses.Candidates{
-		{Width: 640, Height: 1136, URL: "https://cdn/small.jpg"},
-		{Width: 1080, Height: 1920, URL: "https://cdn/large.jpg"},
-	}
-
-	video := &responses.ReelItem{ExpiringAt: 1790097673}
-	video.Pk = "3236689281856363849"
-	video.TakenAt = 1790011844
-	video.MediaType = 2
-	video.ImageVersions2.Candidates = []responses.Candidates{
-		{Width: 1080, Height: 1920, URL: "https://cdn/cover.jpg"},
-	}
-	video.VideoVersions = []responses.VideoVersions{
-		{Width: 480, URL: "https://cdn/small.mp4"},
-		{Width: 1080, URL: "https://cdn/large.mp4"},
-	}
-
-	return &responses.ReelInfoResponse{
-		Reels: map[string]responses.ReelInfo{
-			"246967358": {
-				ID:         "246967358",
-				ExpiringAt: 1790097673,
-				Seen:       1789935673,
-				User:       &responses.User{Username: "nka_bpumvg"},
-				Items:      []*responses.ReelItem{image, video},
-			},
-		},
-	}
-}
-
-func (f *IG) FetchReel(_ context.Context, reelIDs []string, _ string) (*responses.ReelInfoResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.ReelIDs = append(f.ReelIDs, reelIDs)
-	if f.ReelErr != nil {
-		return nil, f.ReelErr
-	}
-	if f.ReelSet {
-		return f.ReelResp, nil
-	}
-	return MeasuredReel(), nil
 }
 
 // MeasuredSearchResults is two hits in the SHAPE SearchUsers actually

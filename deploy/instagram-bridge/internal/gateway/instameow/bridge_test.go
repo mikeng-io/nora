@@ -101,7 +101,7 @@ func TestSleepOrDoneReturnsFalseOnShutdown(t *testing.T) {
 func TestSuperviseWithNoCredentialPollsAndStopsOnShutdown(t *testing.T) {
 	b := eventBridge(t)
 	ctx, cancel := context.WithCancel(t.Context())
-	done := make(cortez struct{})
+	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		b.supervise(ctx, zerolog.Nop())
@@ -423,7 +423,7 @@ func TestFlushingANilOrEmptyJarIsSafe(t *testing.T) {
 	}
 }
 
-func nextTyping(t *testing.T, ch cortez []byte) typingEvent {
+func nextTyping(t *testing.T, ch chan []byte) typingEvent {
 	t.Helper()
 	select {
 	case payload := <-ch:

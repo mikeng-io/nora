@@ -1,7 +1,8 @@
 package httptransport
 
-// The response shapes, and the three READ routes that answer about people
-// rather than about the bridge: a thread's members, an account, its story.
+// The response shapes, and the READ routes that answer about people rather
+// than about the bridge: a thread's members, an account, its story, its
+// posts and reels.
 //
 // Every shape here is built from DOMAIN types (internal/domain), never from
 // Instagram's wire structs, which stay inside internal/gateway/instameow
@@ -129,9 +130,9 @@ type profileBody struct {
 	// HasStory is `latest_reel_media != 0` — a timestamp, not a count, and the
 	// only "is there a story up right now" signal on this query. Exposed so a
 	// caller can skip a story fetch entirely rather than fetch-then-find-empty,
-	// which matters because Nora opens a story only when asked (a privacy
-	// choice; whether the author sees the view is unmeasured, design 04, 05
-	// §Reading a story), and an unnecessary fetch cannot be taken back.
+	// which matters because a story read is a deliberate act: the social
+	// stream's poller reads one only when this probe moved
+	// (design/cognition-loop/22-social-stream.md §3).
 	HasStory bool `json:"has_story"`
 	// LatestReelMedia is the raw value behind HasStory, forwarded because it
 	// is a timestamp and a caller comparing it against
@@ -321,4 +322,36 @@ func storyOf(s domain.Story) storyBody {
 		IGID: s.IGID, Found: s.Found, Username: s.Username,
 		ExpiringAt: s.ExpiringAt, Seen: s.Seen, Items: items,
 	}
+}
+
+// --- GET /accounts/{igid}/items -----------------------------------------------
+
+// timelineItem is one post or reel as the timeline lists it.
+type timelineItem struct {
+	// Code is the shortcode `GET /posts/{shortcode}` reads the item by.
+	Code string `json:"code"`
+	PK   string `json:"pk"`
+	// TakenAt is Unix seconds.
+	TakenAt int64 `json:"taken_at"`
+	// Kind is "reel" for Instagram's `product_type: clips`, else "post".
+	Kind      string `json:"kind"`
+	MediaType int    `json:"media_type"`
+	// Caption is the author's own words, "" when there are none.
+	Caption       string `json:"caption"`
+	CarouselCount int    `json:"carousel_count"`
+}
+
+// itemsBody is the 200 shape, on the list conventions `GET /accounts`
+// already uses: `items` never null, `next_cursor` null at the end.
+type itemsBody struct {
+	Items      []timelineItem `json:"items"`
+	NextCursor *string        `json:"next_cursor"`
+}
+
+func itemsOf(p domain.TimelinePage) itemsBody {
+	items := make([]timelineItem, 0, len(p.Items))
+	for _, it := range p.Items {
+		items = append(items, timelineItem(it))
+	}
+	return itemsBody{Items: items, NextCursor: p.NextCursor}
 }
