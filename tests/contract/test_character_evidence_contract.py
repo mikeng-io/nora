@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -20,6 +21,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.domain.culture import RoomMessage
+from nora.domain.social_stream import to_us
 from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -414,9 +416,13 @@ async def test_the_social_cursor_starts_at_zero_moves_forward_only_and_is_its_ow
     try:
         for store in (SqlCharacterEvidence(engine), InMemoryCharacterEvidence()):
             assert await store.social_cursor(adaptor="character-person", key="k") == 0
-            await store.advance_social_cursor(adaptor="character-person", key="k", cursor=900)
-            await store.advance_social_cursor(adaptor="character-person", key="k", cursor=500)
-            assert await store.social_cursor(adaptor="character-person", key="k") == 900
+            # A real cursor: a `recorded_at` in microseconds, past INTEGER.
+            live = to_us(datetime(2026, 10, 17, 9, 30, 15, 123456, tzinfo=UTC))
+            assert live > 2**31
+            await store.advance_social_cursor(adaptor="character-person", key="k", cursor=live)
+            await store.advance_social_cursor(
+                adaptor="character-person", key="k", cursor=live - 1)
+            assert await store.social_cursor(adaptor="character-person", key="k") == live
             assert await store.social_cursor(adaptor="character-person", key="j") == 0
         assert await SqlLanguageStore(engine).watermark_for(
             consolidator_name="character-person", scope_id="k") == 0

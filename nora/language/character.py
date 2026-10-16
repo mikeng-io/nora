@@ -54,6 +54,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -419,9 +420,11 @@ def _clip(text: str, limit: int) -> str:
     return text[:limit - 1].rstrip() + "…"
 
 
-#: An `@handle` in a caption: an Instagram username's characters, not inside
-#: a word or an email address.
-_HANDLE = re.compile(r"(?<![\w@.])@([A-Za-z0-9_][A-Za-z0-9_.]{0,29})")
+#: An `@handle` in a caption: an Instagram username's characters, not after
+#: an ASCII name character (an email address). The lookbehind is ASCII on
+#: purpose: `\w` matches CJK, and `你好@someone` is a handle. Read after NFKC,
+#: so a full-width `＠` is an `@`.
+_HANDLE = re.compile(r"(?<![A-Za-z0-9_.@+\-])@([A-Za-z0-9_][A-Za-z0-9_.]{0,29})")
 
 
 def _caption(
@@ -435,7 +438,8 @@ def _caption(
     def redact(m: re.Match[str]) -> str:
         return m.group(0) if person in owners(m.group(1).rstrip(".")) else "@…"
 
-    return _clip(_HANDLE.sub(redact, (text or "").strip()), SOCIAL_CAPTION_CHARS)
+    normal = unicodedata.normalize("NFKC", (text or "").strip())
+    return _clip(_HANDLE.sub(redact, normal), SOCIAL_CAPTION_CHARS)
 
 
 def _social_items(

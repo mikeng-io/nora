@@ -310,3 +310,19 @@ async def test_items_recorded_under_a_former_id_are_the_persons_own(social) -> N
     assert await revise(entity="Ada", body="x",
                         citations=["social:instagram:9101"]) == {"status": "ok"}
     assert await adaptor.evidence.count(key=CY_KEY, after=0) == 0
+
+
+async def test_a_handle_after_cjk_or_written_full_width_is_redacted(social) -> None:
+    """Captions here are Cantonese: a handle written straight after a CJK
+    character, or with a full-width `＠`, names somebody just the same. An
+    email address is not a handle."""
+    store, _engine = social
+    await _record(store, "9201", caption=(
+        "同你好@bo.runs 去游水，影相＠bo.runs，email me@example.com，我係@ada.swims"
+    ))
+    out = await _wake(_session(store))
+
+    assert "bo.runs" not in out
+    # NFKC also writes full-width punctuation half-width.
+    assert "同你好@… 去游水,影相@…" in out
+    assert "me@example.com" in out and "@ada.swims" in out
