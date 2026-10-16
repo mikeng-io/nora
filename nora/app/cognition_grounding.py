@@ -77,6 +77,7 @@ from nora.domain.memo import Memo
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
 from nora.domain.notes import Note, likely_duplicates
 from nora.domain.record_query import RecordHit, RecordRefHit
+from nora.domain.reminders import Reminder
 from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import read_culture
@@ -359,6 +360,7 @@ def build_grounder(
     self_account: Callable[[str], Awaitable[CultureRevision | None] | None] | None = None,
     metrics: Any = None,
     memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
+    pending_reminds: Callable[[], Awaitable[Sequence[Reminder]]] | None = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -453,6 +455,13 @@ def build_grounder(
         today = now.year * 10_000 + now.month * 100 + now.day
         indexed = list(await note_index(unit))
         twins = likely_duplicates(indexed)
+        # Her own pending rows, by the note each is linked to (`payload.note_id`).
+        held: dict[str, list[str]] = {}
+        for r in (await pending_reminds()) if pending_reminds is not None else ():
+            note_id = (r.payload or {}).get("note_id")
+            if isinstance(note_id, str):
+                due = r.due_at.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+                held.setdefault(note_id, []).append(f"{r.id} due {due}")
         for n in indexed:
             # LINEAGE: shown only where it passes for every room the session reads.
             if applies and not all(derived_view(
@@ -469,6 +478,7 @@ def build_grounder(
             notes_out.append(NoteLine(
                 id=n.id, title=n.title, description=n.description, review=review,
                 may_duplicate=twins.get(n.id),
+                reminds="; ".join(held[n.id]) if n.id in held else None,
             ))
         notes = tuple(notes_out)
         # The unit's kept memos (DEC-306): unit-wide, no lineage (the unit is the

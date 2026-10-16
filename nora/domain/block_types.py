@@ -599,6 +599,10 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
               "has come). A fact, not a verdict: read the note before retiring it",
        may_duplicate="present when another open note's title shares most of its "
                      "words: that note's id. Read both before merging them",
+       reminds="present when a reminder of yours is waiting on this note: its id "
+               "and when it comes due, what moving or cancelling it takes. It "
+               "still reaches the room unless you move or cancel it, or retire "
+               "the note",
        not_listed="present when more notes were left out to fit: how many"),
     _t("events",
        "the events already recorded for each room of the agenda, one "
