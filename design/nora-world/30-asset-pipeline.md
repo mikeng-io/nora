@@ -34,7 +34,7 @@ library item until the job finishes, then swaps.
 
 Step 2 matters more than it looks: a large share of "memory" objects are
 pictures on a standard object, and a texture swap never produces a broken
-mesh. Nora already has image generation (`design/proposed/29-image-generation.md`);
+mesh. Nora already has image generation (`nora/infra/image_gen/`);
 the world's text-to-image prompt carries the fixed world style so the result
 matches the palette.
 
@@ -57,8 +57,8 @@ start does not re-download them.
 
 **Shape of the service.** One Modal function `generate(image) -> glb`, called
 by the outbox backend over Modal's API with a shared secret; Modal never
-reaches into norty. Its inputs are a generated image and a job id, never
-anything from the Record.
+reaches into norty. Its inputs are an image Nora generated for the spec and a
+job id, never an observation of a person (no chat photo, no face).
 
 **To measure before choosing settings** (none of these is known yet):
 cold-start time with weights on a Volume; warm time per item, shape and

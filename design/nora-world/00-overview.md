@@ -30,24 +30,27 @@ channel, `40-shared-venue.md`) and grew. The venue stays as the first building.
 
 **The world is a View, not a store.** In the data model (DEC-249,
 `design/cognition-loop/05-data-model.md` §1 and §6) a View is a per-reader
-slice assembled at read time through one path, under lineage and withdrawal,
-and never stored as data. The world is one more portal View:
+slice assembled at read time through one path, under withdrawal, and never
+stored as data. The world is one more portal View:
 
-- it reads the **Notebook** (Register: note, memo, event; Character;
-  Standing) and the **Rollup** (places, rhythm, ties), never the Record;
-- lineage is applied for the viewer's rooms, so a viewer sees only what their
-  rooms may see;
+- **one world per unit.** The unit is the read boundary (DEC-231) and lineage
+  stays off (operator, 2026-10-03), so the boundary is drawn by scope, not by
+  a filter: every member of a unit sees the same world, and nothing of one
+  unit appears in another's;
+- it draws knowledge from the **Notebook** (Register: note, memo, event;
+  Character; Standing) and the **Rollup** (places, rhythm, ties), and never
+  shows an observation of a person from the Record;
 - withdrawal applies, so a withdrawn or forgotten entry takes its object out
   of the world with it.
 
-Two things follow. The world never needs its own privacy model; it inherits
-the one the Notebook already has. And the world can be rebuilt from scratch
-at any time, because nothing in it is the source of anything.
+The world therefore needs no privacy model of its own; it inherits the unit
+boundary the Notebook already has.
 
-What the world does store is presentation state: which asset stands for an
-entry, where it was placed, the person's own avatar. That is decoration on
-top of the View, keyed by entry id, and deleting it loses looks, never
-knowledge (`10-world-as-a-view.md` §3).
+The world's own rows each have a place in the data model
+(`10-world-as-a-view.md` §4): Nora's placement choices and the assets made
+for them are her acts in the Record; a person's avatar and hides are their
+acts in the Record; the projection's placements are a rebuildable cache; the
+scene is the View, never stored.
 
 ## 3. Who decides what
 
@@ -73,9 +76,9 @@ the same page can be wrapped as an Activity later (`50-open-questions.md` §1).
 
 | part | can start | waits on |
 |---|---|---|
-| base, avatars (person's layer), the venue | now | nothing in memory |
+| base, avatars (the person's look), the venue | now | nothing in memory |
 | the projection | after the Register, Character and Standing kinds converge on the entry | the entry migration (`design/cognition-loop/05-data-model.md` §9) |
-| Nora's layer on avatars | with the projection | per-district lineage (`20-presentation-and-avatars.md` §3) |
+| Nora's reading on avatars | with the projection | Character · person on the entry (`20-presentation-and-avatars.md` §3) |
 | `world_place` | after the projection is read back | Cognition's write verbs |
 | asset generation | any time; it is independent | a Modal account and the license read (`30-asset-pipeline.md` §5) |
 
