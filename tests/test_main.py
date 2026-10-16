@@ -399,7 +399,7 @@ async def test_the_dream_loop_is_not_spawned_when_the_dreamer_is_off(env, monkey
 async def test_the_dream_loop_is_spawned_by_the_dreamer_flag_alone(
     env, monkeypatch,
 ):
-    """**The case that was silently false.**
+    """**The dreamer flag alone spawns the clock.**
 
     `[dreamer] enabled = true` is the live production configuration and must
     spawn the clock: the runtime, its adaptors, budgets and instructions are

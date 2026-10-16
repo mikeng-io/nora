@@ -9,15 +9,15 @@ carries the identical table/function/trigger shape with no rows of its own.
 
 `pg_dump` emits `SELECT pg_catalog.set_config('search_path', '', false);`
 ahead of the data section -- `test_schema_parity.py`'s own `_normalise`
-already strips that exact line out of its schema dumps. The restore then
-runs every table's `COPY`, which fires the same AFTER
-INSERT/UPDATE/DELETE row triggers a live write would, with an EMPTY
-search_path in force. Without `0072` pinning `nora_row_history()`'s own path,
-that trigger's unqualified `row_history` fails to resolve and the whole
-restore aborts (`ON_ERROR_STOP=1` below is what turns that into a non-zero
-`psql` exit rather than a partially-applied dump); with it, the function
-resolves `row_history` regardless of the caller's path and the restore
-succeeds with the row's history intact.
+already strips that exact line out of its schema dumps. The restore then runs
+every table's `COPY`, which fires the same AFTER INSERT/UPDATE/DELETE row
+triggers a live write would, with an EMPTY search_path in force. Without
+`0072` pinning `nora_row_history()`'s own path, that trigger's unqualified
+`row_history` fails to resolve and the whole restore aborts (`ON_ERROR_STOP=1`
+below is what turns that into a non-zero `psql` exit rather than a
+partially-applied dump); with it, the function resolves `row_history`
+regardless of the caller's path and the restore succeeds with the row's
+history intact.
 """
 
 from __future__ import annotations

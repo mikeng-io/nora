@@ -1,12 +1,9 @@
-"""The facade `evals/` reads config, agent, doctrine, and tag pieces through.
+"""Config, agent, doctrine, and tag pieces the offline eval harness reads.
 
-`evals/` may import `nora.app` and `nora.testing` — nothing else from `nora/`
-(a boundary test enforces this: `tests/test_boundaries.py`). The pieces from
-`nora.agent.factory`, `nora.agent.guards`, `nora.config`, `nora.doctrine.loader`,
-`nora.persons`, and `nora.tag` are not `nora.app`, so they funnel through here.
-Every name below is a straight re-export or a thin pass-through wrapper;
-nothing here changes behavior, it only relocates which module gets to import
-the lower-level pieces.
+Pieces from `nora.agent.factory`, `nora.agent.guards`, `nora.config`,
+`nora.doctrine.loader`, `nora.persons`, and `nora.tag` funnel through here.
+Most names below are straight re-exports or thin pass-through wrappers that
+change no behavior.
 
 This is test support, not deployed code: `nora/__main__.py` does not import it
 and no deployed path reaches it. Its consumer is `tests/offline_eval_harness.py`,
@@ -215,12 +212,9 @@ def build_live_runner(
     skills_dir: str | Path | None = None,
 ) -> LiveAgentRunner:
     """Build the REAL, networked `LiveAgentRunner` — Nora's actual model — for
-    the eval harness's live path (`evals.harness.run_case(..., live=True)`).
+    the eval harness's live path (`tests.offline_eval_harness.run_case(..., live=True)`).
 
-    This is the one place `evals/` reaches a live model, and it exists HERE, in
-    `nora.app`, rather than in `evals/` for the boundary reason the whole module
-    exists (`tests/test_boundaries.py`): only `nora.app` may import
-    `nora.agent.factory` and `nora.app.agent_runner`. It mirrors
+    This is the one place the offline eval harness reaches a live model. It mirrors
     `nora.app.composition.build_dependencies`'s runner tail EXACTLY — same
     `cfg.llm` tier, same `ModelSource` over one client, same retry policy — so a
     live eval drives the SAME model configuration production does. The one
@@ -326,9 +320,7 @@ def build_eval_tool_registry(
     confounds a real leak with a fallback-on-failure. `BACKED_TOOLS` names exactly
     what this backs. The presence tools clear the R-31 subset gate because the
     eval `Circle`'s roster is the one eval person and the harness room is that same
-    person (a verified subset). Lives here, not in `evals/`, for the boundary
-    reason `build_live_runner` does: only `nora.app` may import
-    `nora.agent.registry`, `nora.agent.whereis` and `nora.testing`'s doubles.
+    person (a verified subset).
 
     `route`/`transit` are `cast` because `ToolRegistry` types them as the concrete
     `RouteClient`/`TransitClient`, not a port — the canned doubles match the one
@@ -345,11 +337,11 @@ def build_eval_tool_registry(
     row lands in the eval unit by construction (`seed_from_dict`), and a
     row keyed anywhere else silently never renders.
 
-    `reminders`/`clock` are the proactive suites' pair (design/dreamer-agent-
-    loop/39 §5): without a store `remind` answers `unavailable` and every
-    decide case is ERROR, and the clock must be the CASE's `now`, not the
-    wall clock, or `remind`'s past/too-soon checks measure the day the suite
-    happened to run. `None` leaves every other caller unchanged.
+    `reminders`/`clock` are the proactive suites' pair: without a store `remind`
+    answers `unavailable` and every decide case is ERROR, and the clock must be
+    the CASE's `now`, not the wall clock, or `remind`'s past/too-soon checks
+    measure the day the suite happened to run. `None` leaves every other caller
+    unchanged.
     """
     extra: dict[str, Any] = {}
     if clock is not None:
@@ -375,7 +367,7 @@ def build_eval_tool_registry(
 class ProductionSeed:
     """Read-only production-context snapshot an eval can start from.
 
-    `evals.harness.run_case(..., live=True, seed=...)` injects REAL production
+    `tests.offline_eval_harness.run_case(..., live=True, seed=...)` injects REAL production
     context into the fake stores so the model sees a prompt SHAPE close to what
     production assembles — real transcript rows and real Honcho cards — while
     every write the run makes still lands in the fakes (zero contamination of
@@ -394,7 +386,7 @@ class ProductionSeed:
     model-visible prompt without pretending the eval is something it is not.
 
     `standing` is the single latest row across every conversation, remapped
-    onto the eval room by the caller (`evals.harness.run_case`) — there is no
+    onto the eval room by the caller (`tests.offline_eval_harness.run_case`) — there is no
     "the eval room's own position" in production, so the closest production
     shape is whatever position Nora most recently held anywhere. `notes` pairs
     a `Note` with its HEAD `NoteRevision` (what `InMemoryNoteStore.standing`
@@ -416,21 +408,18 @@ async def build_production_seed(
     """Read a production-shaped context snapshot from the REAL stores
     (Postgres transcript + Honcho peer card), read-only, for `ProductionSeed`.
 
-    This is the one place the eval path touches the live stores, and it lives
-    HERE in `nora.app` for the boundary reason `build_live_runner` does: only
-    `nora.app` may import the infra modules (`evals/` is limited to `nora.app`
-    + `nora.testing`). It reads exactly what `TranscriptInjection` would
-    assemble in production and returns it as a fixed snapshot — the caller
-    (e.g. `evals/run.py --seed-production`) hands it to `run_case`, which
-    injects it into the FAKE stores, so no eval run ever writes to the live
-    database or Honcho.
+    This is the one place the eval path touches the live stores. It reads
+    exactly what `TranscriptInjection` would
+    assemble in production and returns it as a fixed snapshot — the caller hands
+    it to `run_case`, which injects it into the FAKE stores, so no eval run ever
+    writes to the live database or Honcho.
 
     `recents_limit` rows are taken from the transcript, newest-first across
     EVERY conversation (a production room's id is not the eval room's, and the
     point is a realistic prompt shape, not one exact thread), remapped onto the
     eval room. If the deployment env is missing (`cfg.store.database_url_env`)
     this raises rather than silently seeding an empty snapshot — a
-    `--seed-production` run without the deployment env would measure nothing.
+    seeded run without the deployment env would measure nothing.
     """
 
     database_url = os.environ.get(cfg.store.database_url_env, "")
@@ -634,7 +623,7 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
     age it prints keeps growing every calendar day it sits untouched.
     Defaults to `datetime.now(UTC)` so direct callers (the two direct-call
     tests in `tests/test_evals_participation.py`) need not pass it;
-    `evals.harness.run_case` passes the SAME `now_ms` it
+    `tests.offline_eval_harness.run_case` passes the SAME `now_ms` it
     then stamps the judged (incoming, untagged) line with, so the transcript
     ends strictly BEFORE that line — oldest to newest, judged line last —
     instead of the two being computed from two independent reads of the
@@ -718,12 +707,8 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
 
 # --- the Relevance Gate's eval seam -----------------------------------------
 #
-# `evals/` may import `nora.app` and `nora.testing` and nothing else, so the
-# gate's construction lives HERE rather than in `evals/relevance_gate.py`:
-# building it there would reach into `nora.ingest`, `nora.obs`,
-# `nora.doctrine`, `nora.domain` and `nora.agent` directly, violating the
-# one boundary this module exists to hold. The suite keeps
-# what is genuinely its own — the cases, the four measurements, the report.
+# The gate's construction lives HERE because its consumers are tests. The suite
+# keeps what is genuinely its own — the cases, the four measurements, the report.
 
 
 @dataclass(frozen=True)
@@ -752,9 +737,9 @@ async def _gate_records(bodies: tuple[str, ...]) -> FakeRecordStore:
 
     That fake PASSES `tests/contract/test_audit_store_contract.py`, which pins
     the two properties this suite depends on: `recent` returns rows
-    OLDEST-first and its `limit` takes the NEWEST. A convenient local fake got
-    the first one wrong would render every conversation backwards while a
-    test fed rows in the wrong order still passed. A store that a contract
+    OLDEST-first and its `limit` takes the NEWEST. A local fake that
+    gets the first one wrong renders every conversation backwards while a test
+    fed rows in that wrong order still passes. A store that a contract
     suite has already judged is the only kind worth measuring against.
     """
     store = FakeRecordStore()
@@ -855,10 +840,10 @@ class _StrandsGateClient:
     """The gate's model call through the Agent SDK instead of a raw completion.
 
     Satisfies the SAME `nora.ingest.relevance_gate.ModelClient` and returns a
-    `Completion` whose `content` is the verdict JSON, so the gate's own
-    parsing, fail-closed rules and metrics are byte-for-byte the same path.
-    The only variable is how the bytes were obtained — a comparison
-    that also changed the parser would measure two things and attribute the
+    `Completion` whose `content` is the verdict JSON, so the gate's own parsing,
+    fail-closed rules and metrics are byte-for-byte the path the deployed gate
+    runs. The only variable is how the bytes were obtained — a comparison that
+    also changed the parser would measure two things and attribute the
     difference to one.
 
     The SDK call itself lives in `nora.agent.structured`, because `strands`

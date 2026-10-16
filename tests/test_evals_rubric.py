@@ -214,19 +214,19 @@ def test_the_contradiction_criterion_decides_on_one_property_not_a_menu():
     The criterion is one deciding question — is the reply's position worth what
     her evidence is worth — with every verdict a consequence of that reading.
 
-    **WHICH HALF OF THIS TEST IS THE GUARD.** The
-    substantive asserts are: the deciding property is stated, and the separator
-    that decides the two hardest cases is stated with it. Those, together with
+    **WHICH HALF OF THIS TEST IS THE GUARD.** The substantive asserts are: the
+    deciding property is stated, and the separator that decides the two hardest
+    cases is stated with it. Those, together with
     `test_the_contradiction_criterion_still_covers_both_overcorrections`, are what
     hold the shape — each names a clause that has to fall OUT of the property, so
     a rewrite that reintroduces branches loses one of them.
 
     The lettering check at the bottom is a TRIPWIRE, not a guard. It catches
     lettered branches under a "decide first which" instruction, and a menu
-    written without letters walks straight past it. No
-    substring test can tell an enumeration from prose, so this is not a gap a
-    stricter pattern closes. Read a green there as "the old shape has not come
-    back verbatim", never as "this is not a menu".
+    written without letters walks straight past it. No substring test can tell
+    an enumeration from prose, so this is not a gap a stricter pattern closes.
+    Read a green there as "lettered branches have not come back", never as
+    "this is not a menu".
     """
     import re
 

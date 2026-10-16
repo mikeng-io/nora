@@ -451,9 +451,9 @@ def _format_as_markdown(docs: list[_Doc]) -> str:
 def _representation_engine(corpus=_CORPUS, seen: list | None = None):
     """A server that spends `max_conclusions` the way the real one does.
 
-Reproduces `_get_working_representation_internal` exactly, including the
-three details that make a mis-sized call shape a no-op rather than a mistake of
-degree: `search_top_k` REPLACES `total // 3` when supplied, the derived
+    Reproduces `_get_working_representation_internal` exactly, including the
+    three details that make a mis-sized call shape a no-op rather than a mistake
+    of degree: `search_top_k` REPLACES `total // 3` when supplied, the derived
     channel is skipped entirely unless `include_most_frequent` is true, and the
     recent budget is whatever the other two left — so `search_top_k == total`
     leaves nothing for either.

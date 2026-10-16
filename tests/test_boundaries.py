@@ -24,7 +24,7 @@ def test_doctrine_read_boundary():
     The boundary this test protects (doctrine files have a single reader) is
     untouched by that.
 
-    `instructions/frontmatter.py` is exempt for a third reason: it is the
+    `instructions/frontmatter.py` is exempt for a second reason: it is the
     GENERIC reader the doctrine's own loader delegates to (the parse/hash
     skeleton, shared so the Dreamer's instruction store does not fork it). It
     knows nothing about doctrine — no kinds, no authority graph, no `<section>`

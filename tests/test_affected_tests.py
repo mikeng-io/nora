@@ -67,7 +67,7 @@ META = "tests/architecture"
 
 
 def test_tests_only_change_selects_those_files_and_the_meta_tests():
-    """A test change is no longer "exactly those files": the architecture
+    """A test change is not "exactly those files": the architecture
     tests read tests/ itself (a new tests/test_zz.py plus a release fragment
     must not pass the gate with test_tests_root_takes_no_new_files red)."""
     changed = ["tests/test_whereis.py", "tests/unit/test_blocks.py"]

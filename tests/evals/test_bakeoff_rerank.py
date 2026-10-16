@@ -109,7 +109,7 @@ RESULTS = Path(__file__).resolve().parents[2] / "evals" / "retrieval_bakeoff" / 
 
 
 def test_a_tie_on_misses_goes_to_the_two_stage_arm_by_its_indexed_dimension():
-    """Fewest total misses first ; on a tie, the lower
+    """Fewest total misses first; on a tie, the lower
     dimension, and a two-stage arm's is the one its index searches (256),
     not the one it re-ranks with (2048)."""
     d = decide.decide({**INCUMBENT, "dense:qwen3vl-q4@2048": _arm(0.95, misses=4),

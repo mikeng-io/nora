@@ -118,8 +118,8 @@ def test_a_missing_incumbent_decides_error() -> None:
 
 
 def test_several_passing_the_fewest_total_misses_wins_not_the_best_images() -> None:
-    """Among passing arms, the fewest misses summed
-    over text_image, cantonese and names; better images alone do not decide."""
+    """Among passing arms, the fewest misses summed over text_image, cantonese and
+    names; better images alone do not decide."""
     d = _decide(**{
         "dense:wemm@2048": _arm(1.00, 0.76, 0.70, misses=(0, 16, 5)),
         "dense:qwen3vl@2048": _arm(0.96, 0.88, 0.70, misses=(1, 7, 5)),
@@ -192,7 +192,7 @@ def test_a_subset_whose_queries_are_not_listed_has_unknown_misses(tmp_path: Path
 
 def test_the_five_way_comparison_picks_qwen_by_fewest_total_misses() -> None:
     """The committed files: Qwen@2048 misses 12 queries (text_image 0,
-    cantonese 7, names 5), WeMM@2048 21 (0, 16, 5), Qwen@256 17; WeMM wins
+    cantonese 7, names 5), WeMM@2048 21 (0, 16, 5), Qwen@256 17; WeMM would win
     on text_image recall alone (1.000 against 0.9855)."""
     g = lambda pat: sorted(RESULT.parent.glob(pat))  # noqa: E731
     files = (g("20261015T105051Z-stage2-*.json") + g("20261015T125057Z-stage2-wemm-*.json")

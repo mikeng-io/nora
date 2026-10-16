@@ -139,11 +139,11 @@ async def test_only_the_duplicate_has_an_open_row_is_repointed(stores) -> None:
     assert got.outcome is None
     assert got.payload is not None
     assert got.payload["note_id"] == survivor.id, "re-pointed to the survivor"
-# `revision_id` must move onto the FOLD's own new revision, not stay on the
-# duplicate's (which is not in the survivor's chain — see the module
-# docstring). Falsification: `_repoint_stmt` moving only `note_id` leaves
-# this asserting `duplicate.head_revision_id`, and hides a row that would be
-# wrongly cancelled at fire time.
+    # `revision_id` must move onto the FOLD's own new revision, not stay on the
+    # duplicate's (which is not in the survivor's chain — see the module
+    # docstring). Falsification: `_repoint_stmt` moving only `note_id` leaves
+    # this asserting `duplicate.head_revision_id`, and hides a row that would be
+    # wrongly cancelled at fire time.
     assert got.payload["revision_id"] == fold.id
     assert got.payload["note_title"] == "Neway booking", (
         "the rest of the payload survives the JSONB merge untouched"
@@ -370,7 +370,7 @@ async def test_a_repointed_row_is_cancelled_moved_when_the_survivor_moved_first(
 
 
 async def test_a_stale_survivor_row_does_not_win_the_collision(stores) -> None:
-    """The parity suite's S6 case, on Postgres. The SURVIVOR's own row
+    """Mirrors the parity suite's stale-survivor case, on Postgres. The SURVIVOR's own row
     was linked, then a person revised the survivor, then the duplicate's row
     was linked (after that write, so it is live). The survivor's row is due
     first, so an unclassified tie-break would keep it and cancel the live

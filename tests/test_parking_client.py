@@ -164,7 +164,7 @@ async def test_parking_client_no_status_when_basic_unavailable(monkeypatch):
     assert out["vacancy"] == 30  # vacancy survives the basic-info miss
 
 
-# ---- the parking_status TOOL: ADR 0015 §3, reporting rides in the result ----
+# ---- the parking_status TOOL: ADR 0015, reporting rides in the result ----
 
 
 def _parking_status_tool(parking_source):

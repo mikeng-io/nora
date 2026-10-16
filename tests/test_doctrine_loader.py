@@ -78,7 +78,6 @@ def test_sections_are_ordered_by_order_not_filename(doctrine_dir):
 
 
 def test_applies_to_filters_the_assembly(doctrine_dir):
-    # A REAL audience, not an invented one: `applies_to` is a closed
     # A REAL audience, not an invented one: `applies_to` is a closed vocabulary, so a
     # fictional name is a parse error rather than a file that quietly reaches nobody —
     # which is the whole point of the gate and would make this test pass for the wrong

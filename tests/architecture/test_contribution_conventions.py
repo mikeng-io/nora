@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE_DIR = ROOT / ".github" / "ISSUE_TEMPLATE"
 
 # The declared issue shapes, from CONTRIBUTING.md §Issues. This list is the
-# contract: any heading not here is drift, exactly like `Summary` for PRs.
+# contract: any heading not here is drift, exactly like an undeclared PR heading.
 # The prose shape opens with a `**Design:** <bundle> §n (<what it covers>).`
 # line; the form renders that line as two fields, `Design anchor` + `What it
 # covers`, then carries the four declared headings verbatim.

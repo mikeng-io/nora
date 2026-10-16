@@ -176,11 +176,11 @@ async def test_a_long_reason_is_truncated_rather_than_dropped():
 
 
 async def test_two_decisions_in_one_millisecond_keep_their_insertion_order():
-    """Both stores order on
-    `(ts, id)`, and with a bare `uuid4` id that tie-break is RANDOM — so one
-    Dreamer `commit` walking a four-item envelope with no `await` that yields
-    between items would render its own decisions in arbitrary order, «remind,
-    then decline because X» as often backwards as forwards.
+    """Both stores order on `(ts, id)`, and with a bare `uuid4` id that
+    tie-break is RANDOM — so one Dreamer `commit` walking a four-item
+    envelope with no `await` that yields between items would render its own
+    decisions in arbitrary order, «remind, then decline because X» as often
+    backwards as forwards.
 
     `_next_id` fixes it with a monotonic counter inside the id. A block whose
     rows are out of order is the undated-transcript failure one axis over.
@@ -261,8 +261,8 @@ def test_the_block_names_itself_and_every_row_carries_an_age():
 
 def test_the_blocks_note_says_what_it_is_and_gives_no_instruction():
     """AGENTS.md's rule: telling a model what it is READING beats telling it
-    what it CAN DO. So the note describes the rows, their axis of time, and what they are not —
-    and contains no verb aimed at the model.
+    what it CAN DO. So the note describes the rows, their axis of time, and what
+    they are not — and contains no verb aimed at the model.
 
     Asserted as the two halves that matter: it says what the rows ARE, and it
     says explicitly what they are NOT (notes, memory, anybody's speech), which
@@ -391,12 +391,12 @@ async def test_a_blank_unit_answers_nothing():
 
 
 def test_the_note_names_only_the_writers_it_carries():
-    """Both readers filter,
-    in opposite directions. A static gloss enumerating all four deciders tells
-    each reader its block contains rows it will never be shown — and absence
-    then reads as FACT: «participation never ran here», «she has raised
-    nothing», when it is a filter. A block describing a superset of itself is
-    the same defect as a block with no age on its rows, one axis over.
+    """Both readers filter, in opposite directions. A static gloss enumerating
+    all four deciders tells each reader its block contains rows it will never
+    be shown — and absence then reads as FACT: «participation never ran here»,
+    «she has raised nothing», when it is a filter. A block describing a
+    superset of itself is the same defect as a block with no age on its rows,
+    one axis over.
 
     **The block DOES describe a superset of itself, deliberately.** Naming
     only the writers it was handed needs the sentence composed per render, and
@@ -426,11 +426,11 @@ def test_the_note_names_only_the_writers_it_carries():
 
 
 def test_the_note_speaks_to_the_model_in_the_second_person():
-    """This block renders beside `<decisions>`, whose
-    note says «what YOU decided to raise». A neighbour speaking about «Nora's
-    own loop» and «her deciders» invites the model — which IS Nora — to read
-    the second block as somebody else's record. Same agent, same prompt, one
-    grammatical person."""
+    """This block renders beside `<decisions>`, whose note says «what YOU
+    decided to raise». A neighbour speaking about «Nora's own loop» and «her
+    deciders» invites the model — which IS Nora — to read the second block as
+    somebody else's record. Same agent, same prompt, one grammatical
+    person."""
     block = _text(render_decisions([("", ())], now=NOW))
     assert "your own ambient loop" in block
     assert "Nora" not in block

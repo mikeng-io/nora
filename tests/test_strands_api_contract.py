@@ -160,7 +160,7 @@ def test_obligation_6b_strands_evals_surface():
 def test_obligation_7_the_tool_choice_flip_is_reachable_from_a_before_model_hook():
     """DEC-42's whole mechanism, verified against the SDK rather than assumed.
 
-    `BeforeModelCallEvent` "cannot write it" because `_can_write` is `return
+    `BeforeModelCallEvent` "cannot write `tool_choice`" because `_can_write` is `return
     name == "cancel"`, but that is about the EVENT: the event refuses attribute
     assignment on itself. It says nothing about reachability. `HookEvent.agent`
     is a plain required field, `Agent.model` is public, and

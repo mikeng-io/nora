@@ -282,7 +282,7 @@ async def test_an_episode_answered_only_by_follows_is_not_evidence_in_either_sto
 
 
 async def test_lessons_count_and_read_every_closed_episode(episodes):
-    """Lessons (L2) reads every CLOSED episode of the current build:
+    """Lessons reads every CLOSED episode of the current build:
     `unanswered` and follow-only ones too, since the session judges from her
     send's text whether an unanswered one asked something. Still never `open`
     (its outcome can change), `unknown` (an outage, R-27), another unit's or a

@@ -8,7 +8,8 @@ A snapshot that copied only the room's account would give an eval turn neither
 block: the case would grade a prompt missing the very thing a Character change
 is about. The source also holds what must NOT come across: an account written
 after the instant, a person the room does not list, and the same person's
-account in another unit. """
+account in another unit.
+"""
 
 from __future__ import annotations
 

@@ -19,10 +19,10 @@ repo's "Never" list is made of — so it gets a structural brake rather than a
 comment.
 
 WHAT IT PINS, AND WHY THE PINS ARE SHAPED THIS WAY
---------------------------------------------------- The hazard is not merely tested
-against but UNREACHABLE, in four layers. Three of them are properties of code shape,
-which is what this file asserts; the fourth is a runtime invariant on the type
-(`Styled.__post_init__`) and lives with its own tests.
+---------------------------------------------------
+The hazard is not merely tested against but UNREACHABLE, in four layers. Three of
+them are properties of code shape, which is what this file asserts; the fourth is a
+runtime invariant on the type (`Styled.__post_init__`) and lives with its own tests.
 
 1. **`Deliverer.deliver` must hand `adapter.send` an ATTRIBUTE of the composed
    result** (`outbound.text`), never a bare local — so a transformation added

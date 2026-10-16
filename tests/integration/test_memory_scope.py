@@ -279,7 +279,7 @@ async def test_f_a_hidden_message_is_never_a_hit(engine: Any, seeds: str) -> Non
 async def test_g_a_stay_only_where_its_person_is_listed_and_presence_passes(
     engine: Any, seeds: str,
 ) -> None:
-    # A stay is never embedded (lexical only, 65 §1.4): under dense seeds it
+    # A stay is never embedded (lexical only): under dense seeds it
     # is reached as Kit's `about` seed, under lexical ones by its text too.
     stay = "kit|2026-09-01T10:00:00+08:00/2026-09-01T12:00:00+08:00"
     await _node(

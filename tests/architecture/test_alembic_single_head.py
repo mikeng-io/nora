@@ -30,8 +30,8 @@ MIGRATIONS_DIR = ROOT / "nora" / "infra" / "sql" / "migrations" / "versions"
 
 # The floor is "just under" the real revision count, not a round number far
 # below it (CLAUDE.md's own rule for a positive control) — a walk that stopped
-# reading revision modules must fail loud, not report a
-# suspiciously-empty-but-technically-single head set.
+# reading revision modules must fail loud, not report a suspiciously-empty-but-
+# technically-single head set.
 _MIN_REVISIONS = 50
 
 

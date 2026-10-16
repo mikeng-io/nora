@@ -258,8 +258,8 @@ async def _run_returning_text(
 
 
 def test_a_guard_cancelled_model_call_is_not_treated_as_her_words():
-    """THE PROBE at the seam that produces the defect
-    (`tests/unit/test_engagement_pipeline.py` covers the consumer).
+    """THE PROBE for a guard-cancelled call read as her words, at the seam that
+    produces it (`tests/unit/test_engagement_pipeline.py` covers the consumer).
 
     When `ReplyGuard` cancels a model call, Strands synthesises
     `message={"content":[{"text": cancel_text}]}` with `stop_reason="end_turn"`

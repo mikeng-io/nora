@@ -182,11 +182,11 @@ async def test_concurrent_tags_same_conversation(harness_factory):
     assert h.handler.slots.held(GROUP) is True
     await h.handler.on_event(group_event(body="nora.000 two"))
     # R-10 still holds: exactly one in-flight turn — the second is QUEUED behind
-    # it, not running concurrently. (Only `g1` is ever tagged here. It is not
-    # also asserted that the second tag is ALREADY queued:
-    # `Dispatcher.on_message` SPAWNS the engagement run, so at this instant it
-    # may not have reached admission yet — the drained assertions below are what
-    # prove it queued.)
+    # it, not running concurrently. (Only `g1` is ever tagged here, so
+    # `held(GROUP)` is the whole in-flight set.) It is not also asserted that
+    # the second tag is ALREADY queued: `Dispatcher.on_message` SPAWNS the
+    # engagement run, so at this instant it may not have reached admission yet —
+    # the drained assertions below are what prove it queued.
     assert h.handler.slots.held(GROUP) is True
 
     await h.drain()
@@ -273,9 +273,9 @@ async def test_a_vetoed_send_reply_leaves_the_budget_for_the_correction(harness_
 
     This is an END-TO-END probe on purpose: `nora.testing.FakeAgentRunner` must
     dispatch the guard's after-tool hook on a veto, or the bug cannot be
-    reproduced at any layer. Revert `_after_tool`'s `cancel_message` check and this goes
-    red; revert the fake's hook dispatch and it goes green again while the live
-    bug is still there.
+    reproduced at any layer. Revert `_after_tool`'s `cancel_message` check and
+    this goes red; revert the fake's hook dispatch and it goes green again while
+    the live bug is still there.
     """
     h = await harness_factory(script=[ScriptedTurn(
         tool_calls=[("send_reply", {"text": ""}),

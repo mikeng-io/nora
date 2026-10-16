@@ -100,9 +100,9 @@ async def test_a_budget_stop_is_distinguishable_from_a_silent_model(harness_fact
 
 async def test_the_budget_fallback_says_nothing_diagnostic_to_the_group(harness_factory):
     """R-5/R-23 spirit through the fallback: the group sees ONE generic line.
-    Naming the cause in a METRIC must never put
-    it in the room: the fallback the group reads must be the generic apology, and
-    must NOT leak the stop reason (`limit_total_tokens`, `budget`, token counts)."""
+    Naming the cause in a METRIC must never put it in the room: the fallback the
+    group reads must be the generic apology, and must NOT leak the stop reason
+    (`limit_total_tokens`, `budget`, token counts)."""
     h = await harness_factory(script=_spent_the_budget_without_replying())
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()

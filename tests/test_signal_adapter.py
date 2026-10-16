@@ -45,11 +45,10 @@ def test_adapter_declares_its_platform():
 
 
 def test_parse_is_not_on_the_public_surface():
-    """`PlatformAdapter` deliberately has no
-    `parse()` — every adapter parses its own transport internally, inside
-    `listen()`. Keeping `parse` around as a public method would let a caller
-    bypass the drop rules `listen()` enforces (DMs, sync messages, self-sends,
-    empty bodies)."""
+    """`PlatformAdapter` deliberately has no `parse()` — every adapter
+    parses its own transport internally, inside `listen()`. Keeping `parse`
+    around as a public method would let a caller bypass the drop rules
+    `listen()` enforces (DMs, sync messages, self-sends, empty bodies)."""
     assert not hasattr(SignalAdapter, "parse")
 
 

@@ -8,7 +8,7 @@ nodes, and a hub only as a direct neighbour. One database for the module,
 truncated between tests. Texts are whole words, where pg_trgm and the fake's
 containment agree.
 
-The seeds too: `dense` compares only vectors of the asked model,
+The seeds: `dense` compares only vectors of the asked model,
 nearest first; `exact` matches a term literally and whole (an ASCII term not
 inside a longer word, any other script as a substring); `index_state` with a
 model counts the vector coverage, leaving out nodes the worker gave up on.

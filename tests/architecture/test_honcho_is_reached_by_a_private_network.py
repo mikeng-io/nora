@@ -11,8 +11,8 @@ Honcho's own compose file is outside this repository, so what this pins is the
 half that is here: nora joins that network and nothing else does, the network
 is declared external under the name the runbook creates, and the eval suite on
 the host, which cannot resolve a container-network name, is rewritten to
-loopback. The other half, that the port
-is in fact refused, is `deploy/honcho-closed-probe.sh`, run on norty.
+loopback. The other half, that the port is in fact refused, is
+`deploy/honcho-closed-probe.sh`, run on norty.
 """
 
 from __future__ import annotations

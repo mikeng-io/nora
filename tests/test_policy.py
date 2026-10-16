@@ -1,4 +1,4 @@
-"""`policy.toml` — the two allowlists and the grant predicate (§4)."""
+"""`policy.toml` — the two allowlists and the grant predicate."""
 
 import pytest
 
@@ -44,7 +44,7 @@ def _allowed(policy, conversation_id, person_id, platform="signal"):
     )
 
 
-# ── the grant predicate (§4.3) ───────────────────────────────────────────────
+# ── the grant predicate ──────────────────────────────────────────────────────
 
 
 def test_a_listed_person_in_a_listed_room_is_allowed(policy):
@@ -53,7 +53,7 @@ def test_a_listed_person_in_a_listed_room_is_allowed(policy):
 
 
 def test_an_unlisted_person_in_a_listed_room_is_refused(policy):
-    """A new group member is ignored until the operator adds them (§7.1)."""
+    """A new group member is ignored until the operator adds them."""
     assert _allowed(policy, GROUP, "stranger") is False
 
 
@@ -97,7 +97,7 @@ def test_platforms_do_not_leak_into_each_other(policy):
 
 def test_also_ids_match_identically(policy):
     """Telegram changes chat.id on supergroup migration and reports the old id
-    once; without also_ids the allowlist silently stops matching (§4.2)."""
+    once; without also_ids the allowlist silently stops matching."""
     assert _allowed(policy, "-987654321", "anyone", platform="telegram") is True
 
 
@@ -109,7 +109,7 @@ def test_dm_persons_are_parsed(policy):
     assert policy.dm_persons == frozenset({"miles"})
 
 
-# ── refusing to start (§4.1) ─────────────────────────────────────────────────
+# ── refusing to start ────────────────────────────────────────────────────────
 
 
 def test_an_empty_allowlist_refuses_to_start(tmp_path):
@@ -220,7 +220,7 @@ def test_an_also_id_colliding_with_another_room_is_refused(tmp_path):
         load_policy(_write(tmp_path, body))
 
 
-# ── MCP tool allowlist (§2.3) ───────────────────────────────────────────────
+# ── MCP tool allowlist ──────────────────────────────────────────────────────
 
 
 def test_conversation_tools_defaults_to_empty(tmp_path):

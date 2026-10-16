@@ -505,12 +505,11 @@ def test_r53_is_covered_by_the_source_scope_corpus():
     question at the right scope (she answers plainly). Without those, a fix that
     overcorrected into hedging everything would score as a pass.
 
-    It is deliberately NOT in `evals/run.py`'s gated `adversarial` corpus: it is
-    a measured record of the doctrine gap, not a gate the shipped doctrine is
-    known to clear. It IS selectable — `--suite source_scope` — because being
-    ungated and being unrunnable are different decisions and only the first was
-    made. This test pins that the measurement exists and
-    is findable, not that the rule holds.
+    It is a measured record of the doctrine gap, not a gate the shipped doctrine
+    is known to clear. It IS selectable —
+    `python -m evals source_scope` — because being ungated and being unrunnable
+    are different things. This test pins that the measurement exists and is
+    findable, not that the rule holds.
     """
     assert (ROOT / "evals" / "corpora" / "source_scope.yaml").exists()
 
@@ -530,11 +529,10 @@ def test_r83_is_covered_by_the_being_contradicted_corpus():
     BOTH controls — real evidence arriving (updating is correct) and a claim she
     never grounded (R-83's own carve-out, where neither holding nor conceding is
     right) — so a fix that overcorrected into never moving cannot score as a pass.
-    It is deliberately NOT in `evals/run.py`'s gated `adversarial` corpus: a
-    measured record of the gap, not a gate the shipped doctrine is known to
-    clear. `--suite being_contradicted` runs it; `--repeat N`
-    is how it is read, because one window is not a rate. This test pins that the
-    measurement exists and is findable, not that the rule holds.
+    It is a measured record of the gap, not a gate the shipped doctrine is known
+    to clear. `python -m evals being_contradicted` runs it; one window is not a
+    rate. This test pins that the measurement exists and is findable, not that
+    the rule holds.
     """
     assert (ROOT / "evals" / "corpora" / "being_contradicted.yaml").exists()
 
@@ -712,9 +710,9 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     hold her there: this file's own «not remembering having checked is not
     evidence that you did not check» (DEC-112), `voice.md`'s 「冇錯就冇嘢認 …
     企硬」, and `send_reply`'s «never invent a mistake you did not make just to
-    have something to concede» (DEC-92). Each is right for a claim with a lookup behind it. Put
-    together they convert an UNGROUNDED assertion into a defended one, because
-    not one of them has a branch for «I never grounded this».
+    have something to concede» (DEC-92). Each is right for a claim with a lookup
+    behind it. Put together they convert an UNGROUNDED assertion into a defended
+    one, because not one of them has a branch for «I never grounded this».
 
     The branch is R-27's three states read off her own record: found is `ok`
     and she holds it; not found — or not readable — is `unavailable`, and
@@ -723,7 +721,7 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     one place nothing else wires it.
 
     Pinned as a POSITION and not as one example's nouns, the same way R-53 is,
-    so it cannot be satisfied by a sentence about one example:
+    so it cannot be satisfied by a sentence naming the example's words:
 
       1. holding is conditional — it is what checking bought,
       2. a claim she cannot find herself having grounded is not one she stands
@@ -956,9 +954,8 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
     """R-87. The standing fold reads
     `since_including_nora(after_id=last_folded_row_id, limit=fold_batch)` —
     everything since the last fold, capped at the batch — NOT the reply path's
-    recency window. A conversation that passes 40 messages between tags must
-    not lose the middle, which a fold over only the last `window` (40) rows
-    would.
+    recency window. A conversation that passes 40 messages between tags must not
+    lose the middle, which a fold over only the last `window` (40) rows would.
 
     Driven through the REAL debrief stage with a prior that carries a
     watermark of 10 and a store holding 60 rows: the fold's prompt must

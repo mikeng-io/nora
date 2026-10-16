@@ -12,9 +12,8 @@ The probe this file exists to be: `test_a_second_verb_declared_terminal_ends_
 the_turn` drives the REAL loop with `now` marked terminal and asserts the model
 is called ONCE. Revert `_before_model` to asking `deliverer.delivered` and it
 goes red — the deliverer in that test has delivered nothing, and `now` has no
-side effect for it to observe. That is the whole content of the refactor: a
-second terminal verb (`send_gif`, or a distinct feed step on the tag path) is
-a table edit, not a guard edit.
+side effect for it to observe. So a second terminal verb (`send_gif`, or a
+distinct feed step on the tag path) is a table edit, not a guard edit.
 """
 
 from __future__ import annotations

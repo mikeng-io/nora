@@ -1,6 +1,6 @@
 """Who each doctrine file is assembled for.
 
-Every authored file reaches every audience she reads, not only `tag`: a non-tag
+Every authored file reaches the room audiences, not only `tag`: a non-tag
 turn that received only the minimal sections (no identity, no voice, no conduct,
 no constraints) would also make `LeakGuard`'s verbatim-leak corpus (R-6) far
 thinner on the path that speaks unprompted.
@@ -13,7 +13,7 @@ construction. See the block above `SILENCE` for where polarity IS pinned.
 
 The multi-message rule (DEC-40, DEC-88: a second message is a second ACT, and
 one of the acts it may be is asking the person who knows) is true on any turn,
-so its assertion holds in every audience.
+so its assertion holds in both the tag and heartbeat audiences.
 """
 
 import re
@@ -42,7 +42,7 @@ AUTHORED = (
 # Relevance Gate's instruction and must never resolve into a turn she reads.
 #
 # Deleting `proactive` from identity/voice/conduct/constraints would leave that
-# audience resolving to `sections=['silence']` — no identity, no voice, no
+# audience resolving to almost nothing — no identity, no voice, no
 # constraints, on a path that speaks UNCALLED — and deleting `tag` from
 # identity/voice/constraints would gut her primary path. Per-audience routing
 # tests alone would not notice either.
@@ -97,7 +97,7 @@ MIN_BODY_CHARS = 400
 #
 # `SILENCE` below is a substring of its own inversion — write "it is never true
 # that silence is a complete answer — a success, not a failure" into
-# `silence.md` and every assertion here still passes, because the needle is
+# `rooms/conduct.md` and every assertion here still passes, because the needle is
 # still in the haystack. That is structural: `in` is a containment test and
 # containment is blind to the words wrapped around it. Lengthening the needle
 # moves the blind spot, it does not close it.
@@ -109,8 +109,8 @@ MIN_BODY_CHARS = 400
 # "not" — turns it red unless the author also bumps the file's `version` and
 # repins, which is the deliberate act that gate exists to force.
 #
-# With that inversion applied to `silence.md`, this file passes, and the
-# `[silence]` case of `test_doctrine_version_parity.py`'s
+# With that inversion applied to `rooms/conduct.md`, this file passes, and the
+# `[conduct]` case of `test_doctrine_version_parity.py`'s
 # `test_the_served_section_has_not_moved_without_the_version_moving` fails. A
 # second sha pin here would duplicate that, and a duplicated pin is two places
 # to update and one place to forget.
@@ -119,7 +119,7 @@ MIN_BODY_CHARS = 400
 # inversion WITH a `version:` bump turns red only the version literal in
 # `PINNED`, which the author then repins — that is the documented workflow, not
 # an abuse of it. After the repin NOTHING IN THIS REPO CATCHES AN INVERTED
-# DOCTRINE RULE. That is sharpest on `silence.md`, which is
+# DOCTRINE RULE. That is sharpest on `rooms/conduct.md`, which is
 # `change_policy: agent-may-edit`, so the agent inverting the sentence is the
 # same one filling in the paperwork that would have flagged it.
 #
@@ -222,9 +222,10 @@ def test_no_audience_of_hers_is_degenerate(doctrine_store, audience: str):
     """Every audience she reads gets the full authored set, and every section
     it gets arrives with a body.
 
-    Without the authored files she delivers with no persona and no constraints, and `LeakGuard`'s
-    verbatim-leak corpus (R-6) is built from whatever the audience resolves to,
-    so a thin audience is a thin corpus on exactly the path that speaks.
+    Without the authored files she delivers with no persona and no constraints,
+    and `LeakGuard`'s verbatim-leak corpus (R-6) is built from whatever the
+    audience resolves to, so a thin audience is a thin corpus on exactly the
+    path that speaks.
 
     `proactive` is the sharpest case: it speaks UNCALLED, off her own earlier
     intention, so an audience that resolved to almost nothing would go unnoticed.
@@ -306,7 +307,7 @@ def test_the_gate_instruction_reaches_no_audience_of_hers(doctrine_store):
 
 def test_the_multi_message_rule_survives_in_both_audiences(doctrine_store):
     """DEC-40 is not a silence rule and is true on a turn nobody called, so it
-    must reach every audience.
+    must reach both the tag and heartbeat audiences.
 
     The needle is a fragment that does NOT span a line break — a longer phrase
     fails on whitespace, not on meaning.

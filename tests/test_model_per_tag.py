@@ -6,7 +6,7 @@ wrong. The engagement in-flight lock (`nora.engagement.slots`) keys on
 `(platform, conversation_id)`, so two conversations run at the same time, and a
 flip made for tag A would apply to tag B's FIRST call.
 
-A first call under `auto` makes the model answer in plain prose and call
+A first call under `auto` can answer in plain prose and call
 nothing — zero messages end to end. That is R-5's failure shape exactly, and it
 would appear only under concurrent load, i.e. almost never in testing.
 
@@ -214,14 +214,14 @@ def _real_source() -> factory.ModelSource:
 
 
 def test_the_real_source_hands_out_a_fresh_model_over_the_same_client():
-    """Audit T2 intact: one client, many models. Both halves in one assertion,
+    """One pooled client per process: one client, many models. Both halves in one assertion,
     because keeping the client and splitting the model is the whole change."""
     source = _real_source()
     a, b = source.create(), source.create()
     assert a is not b
     # `_custom_client` is where `OpenAIModel.__init__` parks an injected client
-    # (1.50.2). Asserting identity on it is what says audit T2 — one pooled
-    # `AsyncOpenAI` per process — survived the model being split per tag; a
+    # (1.50.2). Asserting identity on it is what says one pooled
+    # `AsyncOpenAI` per process survived the model being split per tag; a
     # source that built its own client per model would pass every other
     # assertion in this file and quietly open a connection pool per tag.
     assert a._custom_client is b._custom_client is not None

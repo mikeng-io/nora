@@ -389,9 +389,9 @@ def test_a_picture_of_her_is_a_new_picture_not_the_reference_again(store):
 
 def test_the_image_skill_copies_dates_times_and_places_from_the_clock_line(store):
     """The image model has no clock and no location, so dated pictures come out
-    wrong. Whatever date, time, zone or place the
-    picture states comes from the turn's clock line, written absolutely,
-    with a relative date resolved against it first."""
+    wrong. Whatever date, time, zone or place the picture states comes from the
+    turn's clock line, written absolutely, with a relative date resolved against
+    it first."""
     body = _flat(_image_skill(store).instructions)
     section = body.split("## What the picture states", 1)[1].split("## ", 1)[0]
     for needle in (
@@ -593,8 +593,8 @@ def test_the_image_skill_is_not_in_the_assembled_doctrine():
 # A substring DENYLIST (`_SCENARIOS`) cannot guard a file whose failure mode is a
 # SENTENCE: deleting the whole web-view sentence would pass, and so would
 # rewriting it to name two of the portal's own pages under a synonym the list
-# missed ("portal"). So each claim is pinned by BOTH halves. The sentence has to still be in the
-# body, and the property it asserts has to still hold when something re-reads it
+# missed ("portal"). So each claim is pinned by BOTH halves. The sentence has to
+# still be in the body, and the property it asserts has to still hold when something re-reads it
 # — the portal payload builders, the live tool registry, her actual prompt
 # inputs, the shipped config. Deleting or rewording the sentence reddens the
 # first half; the code changing under it reddens the second. That is the
@@ -639,9 +639,9 @@ def self_account() -> str:
     ).get(applies_to="tag")
     # The self-account a ROOM receives is three sections: identity.md (true on
     # any surface), belonging.md (her place in a group, and the two halves that
-    # serve a room) and rooms/constraints.md (its law lines, among them the W2
-    # caveat below). The claims pinned below span all three, so the fixture is
-    # all three, in the order a tag assembles them.
+    # serve a room) and rooms/constraints.md (its law lines, among them the
+    # absence-proves-nothing caveat below). The claims pinned below span all
+    # three, so the fixture is all three, in the order a tag assembles them.
     bodies = {s.name: s.body for s in doctrine.sections}
     missing = {"identity", "belonging", "room-constraints"} - set(bodies)
     if missing:
@@ -1048,7 +1048,7 @@ def test_the_self_account_says_the_build_is_asked_not_inferred(self_account):
 
 def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
         self_account, example_config_path):
-    """W2: the ambient half and what carries between turns are BOTH config-gated,
+    """The ambient half and what carries between turns are BOTH config-gated,
     this file is baked into the image (`COPY nora/` — `nora/skills` is not a
     bind-mount the way `nora/doctrine` is), and the flags live in a
     per-deployment `config.toml` the file does not travel with.
@@ -1064,12 +1064,13 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
         "the half of you that speaks unasked, is a setting you cannot read"
     ) in _flat(self_account)
 
-    # W2, the second half of the same sentence: presence of a block proves ON,
-    # absence proves NOTHING, so wording like «only your own turns say what is
-    # on» would invite reading an absence as "off" — the fail-open direction.
-    # Grounded on the renderer: with nothing standing it returns None (no block
-    # to inject), so a turn with no `<notes>` is byte-identical whether the tier
-    # is switched off or merely has nothing to say.
+    # The absence-proves-nothing caveat, the second half of the same sentence:
+    # presence of a block proves ON, absence proves NOTHING, so wording like
+    # «only your own turns say what is on» would invite reading an absence as
+    # "off" — the fail-open direction. Grounded on the renderer: with nothing
+    # standing it returns None (no block to inject), so a turn with no `<notes>`
+    # is byte-identical whether the tier is switched off or merely has nothing to
+    # say.
     from nora.language.note_render import render_notes
 
     assert render_notes(()) is None

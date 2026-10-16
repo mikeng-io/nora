@@ -507,7 +507,7 @@ def test_a_quote_with_no_id_is_not_threadable_and_is_dropped():
 
 
 def test_quote_carries_no_author_name_because_signal_cli_never_sends_one():
-    """A field that is provably always empty misleads readers. The parent ROW's
+    """A field that is provably always empty reads as data while carrying none. The parent ROW's
     own `sender_name` is the attribution."""
     from dataclasses import fields
 

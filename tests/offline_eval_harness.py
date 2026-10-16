@@ -11,12 +11,8 @@ Two drive modes, mutually exclusive on `run_case`:
 - **Live (`live=True`)** — Nora's actual model through the actual Strands loop
   (`tests.offline_eval_support.build_live_runner` + `nora.app.agent_runner.
   LiveAgentRunner`, which wraps `nora.agent.factory.create_agent`/`invoke` — the
-  same code path production runs), reaching the network. This is what
-  `evals/run.py --suite journeys` and `--suite participation` drive.
-
-  **The adversarial suites do NOT drive this.** They call
-  `evals.run._invoke_agent`, which builds a bare `Agent` on `doctrine.text`
-  with no prefill and no tools, and never enters `run_case`.
+  same code path production runs), reaching the network. Nothing in `evals/`
+  drives `run_case`; `python -m evals <corpus>` runs through `evals.backbone`.
 
   The graph around the model stays fakes (db/memory/adapter) so a live run
   measures the MODEL's behaviour without touching a real platform or store;
@@ -26,9 +22,8 @@ Two drive modes, mutually exclusive on `run_case`:
 Design note (this file's `run_case`/`Case` are design guidance, not pinned by
 `tests/test_evals_gate.py` — that test only exercises `Trajectory` + the evaluators):
 `run_case` builds its own pipeline graph from `tests.offline_pipeline.build_offline_pipeline`
-plus `nora.testing`'s fakes, rather than reusing `tests/integration/harness.py` —
-`evals/` may import `nora.app` and `nora.testing` and nothing else from `nora/`, and
-may not import `tests/` at all (`tests/test_boundaries.py`). The live-model branch
+plus `nora.testing`'s fakes, rather than reusing `tests/integration/harness.py`.
+The live-model branch
 is the `live=True` path in `run_case` below (see `nora/app/agent_runner.py`);
 per-dataset (`--suite trigger/no_trigger/all`) live wiring is not done and still
 runs scripted.
@@ -118,7 +113,7 @@ def _configured_trigger() -> str:
 
 # DERIVED from the config, not transcribed from it: a hand-copied value drifts
 # from the trigger the deployment runs, and `evals/corpora/no_trigger.yaml` is
-# only a corpus of near-misses against that trigger.
+# a corpus of near-misses, meaningful only against that trigger.
 TRIGGER_TEXT = _configured_trigger()
 
 # The harness drives `group_event(body=...)` with its DEFAULTS — conversation "g1",
@@ -245,11 +240,10 @@ def load_cases(path: Path | str) -> list[Case]:
 async def _drain(background) -> None:
     """Await every background task spawned so far — ambient memory-feeds,
     spawned tags, AND `EngagementPipeline`'s post-reply exchange feed all land
-    in the same shared `BackgroundTasks` (`EngagementPipeline` takes an
-    injected `spawn`;
-    `tests.offline_pipeline.build_offline_pipeline` wires both pipelines' spawns to
-    this one `background.spawn`) — including ones spawned by tasks that are
-    themselves still in flight.
+    in the same shared `BackgroundTasks` (`EngagementPipeline` takes an injected
+    `spawn`; `tests.offline_pipeline.build_offline_pipeline` wires both
+    pipelines' spawns to this one `background.spawn`) — including ones spawned
+    by tasks that are themselves still in flight.
 
     Mirrors `tests/integration/harness.py::Harness.drain` exactly (same
     `asyncio.sleep(0)`-after-`gather` shape, for the same reason: a task's own
@@ -386,12 +380,11 @@ def _tool_calls_from_metrics(metrics: Metrics) -> list[str]:
     that refused a person name still reached for place_info. But this counts only
     calls that reached the tool body: a call `ReplyGuard` VETOES first (R-7 budget,
     an unknown/hallucinated name) records `nora_guard_vetoes_total{rule}` — NO
-    `tool` label — and is invisible here. So the
-    reconstructed count is a LOWER BOUND on attempts, capped by the ReplyGuard
-    budgets: `ConvergesInBudget` therefore cannot see the worst flail (a tool
-    hammered past its budget), and a journey budget ≥ a tool's guard budget can
-    never fail on that tool. Good enough for tool-CHOICE grading, not for a true
-    attempt count.
+    `tool` label — and is invisible here. So the reconstructed count is a LOWER
+    BOUND on attempts, capped by the ReplyGuard budgets: `ConvergesInBudget`
+    therefore cannot see the worst flail (a tool hammered past its budget), and a
+    journey budget ≥ a tool's guard budget can never fail on that tool. Good enough
+    for tool-CHOICE grading, not for a true attempt count.
     """
     calls: list[str] = []
     for (name, labels), value in metrics.snapshot().items():
@@ -416,9 +409,9 @@ def _build_body(case: Case) -> str:
 
 
 class _MutableClock:
-    """The participation trigger's clock: the harness advances it
-    past `settle_seconds` between noting the message and closing the window, so
-    a case runs in milliseconds rather than wall-clock seconds. Monotonic-shaped
+    """The participation trigger's clock: the harness advances it past
+    `settle_seconds` between noting the message and closing the window, so a
+    case runs in milliseconds rather than wall-clock seconds. Monotonic-shaped
     (`float` seconds), matching `ParticipationTrigger`'s `clock` type."""
 
     def __init__(self, start: float = 1_000_000.0) -> None:
@@ -540,7 +533,7 @@ async def run_case(
         # shipped `config.toml`/`config.example.toml` production reads, so a
         # tier off in the deployment stays `None` in the eval too rather than
         # rendering a block production never would. In-memory doubles, never
-        # the real SQL stores (`evals/` may not import `nora.infra`).
+        # the real SQL stores: an eval run writes nothing real.
         #
         # EXCEPT the participation suite, which wires both
         # UNCONDITIONALLY: the grounded-value gate is meaningless with
@@ -650,6 +643,7 @@ async def run_case(
         # HER feeds, counted by PEER rather than by a text prefix: Honcho takes
         # one-speaker-per-peer streams (DEC-36), so no `"[Nora]"` prefix exists
         # anywhere in `nora/` and a prefix count would be structurally 0.
+        # Vacuously true while nothing delivers on this path.
         feeds = len([f for f in memory.fed if f[0] == cfg.memory.ai_peer])
         sent = list(adapter.texts)
         # Live mode has no script to read tool intent from — reconstruct it from

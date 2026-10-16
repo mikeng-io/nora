@@ -294,8 +294,8 @@ async def test_computerd_accepts_and_ignores_the_limits_slot(served):
 
 
 def test_the_lifecycle_script_starts_computerd_with_flags_it_accepts():
-    """`nora-computer ensure` once passed `--run-as computer` after computerd
-    dropped that flag: computerd exited at start and the computer stayed down.
+    """Every flag the lifecycle script passes computerd must be one computerd's
+    parser accepts, or computerd exits at start and the computer stays down.
     Parse the script's own computerd command line with computerd's parser."""
     import re
     import shlex

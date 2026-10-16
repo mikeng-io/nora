@@ -1,6 +1,6 @@
 """`rollup_read` over a REAL Rollup build.
 
-The world is the step-2 gate's own: two members' fixes and polls, their unit's
+The world is the rollup gate's own: two members' fixes and polls, their unit's
 messages, replies, reactions and Nora's sends, folded by the real builder
 (`tests/integration/test_rollup_builds.py`). The store reads what that build
 holds, and the tool reads it under lineage for the room it is bound to.

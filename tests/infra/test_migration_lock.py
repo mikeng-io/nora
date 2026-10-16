@@ -18,12 +18,13 @@ slower machine.
 
 `test_concurrent_run_migrations_all_succeed_and_reach_head` is NOT that proof:
 five unlocked racers against a fresh database do not reliably raise
-`DuplicateColumn` the way the original race does — `CREATE INDEX CONCURRENTLY`
+`DuplicateColumn` the way the race described above does — `CREATE INDEX CONCURRENTLY`
 (migrations 0013/0014/0019) can instead make the whole group HANG (see
 `MIGRATION_LOCK_POLL_INTERVAL_S`'s docstring for the exact deadlock). This test
 carries a single deadline shared across all five threads (daemon, so a hang
 doesn't block interpreter exit), so a missing lock fails it within that deadline
-instead of the up-to-5x-60s a per-thread timeout would allow. """
+instead of the up-to-5x-60s a per-thread timeout would allow.
+"""
 
 from __future__ import annotations
 

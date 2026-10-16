@@ -82,9 +82,15 @@ PINNED: dict[str, tuple[int, str]] = {
     # Her place in a group; loaded for room occasions only.
     "belonging": (2, "f3ff3a2a543b624fe87aab92446350172539dd986775fd8692e3a59ad96e543a"),
     "voice": (24, "49090de88f668090ce93a4889e129ca0abfc9375516b3465b45a1275727e4e74"),
+    # Eight of its behavioural rules read as restatement and are not; a later
+    # compression must not treat them as duplication. It is English because it
+    # describes what she does; `voice.md` and quoted speech stay Cantonese.
+    # Dashes are removed at the transport (`nora.agent.punctuation`), not by a
+    # doctrine rule.
     "conduct": (41, "b3a4d6434e958e902ea446913eb1ab4564d62e2e0c8ca1fdc7102446f0661e39"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
+    # An edit to it needs the gate's 40-case eval suite.
     "participation": (
         7, "d227d69d7f62971df6c8b1e0c5934d75a55e1919657213d7e322d68606db1525",
     ),

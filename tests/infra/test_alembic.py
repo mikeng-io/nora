@@ -184,11 +184,12 @@ def test_pre_0033_row_inserted_before_kind_columns_gets_the_reminder_default(pg_
 
 
 def test_0062_backfills_source_fold_on_a_pre_existing_revision(pg_url):
-    """A `standing_revision` row written before the `source` column existed
-    is, by construction, a fold: `SqlStandingStore.write` had one caller shape.
-    The server default does the backfill in the same `ADD COLUMN` statement; no
-    rewrite pass is needed, mirroring `test_pre_0033_row_inserted_before_kind_
-    columns_gets_the_reminder_default` one migration family over.
+    """A `standing_revision` row from before the `source` column is, by
+    construction, a fold: `SqlStandingStore.write` had one caller shape until the
+    column existed. The server default does the backfill in the same `ADD COLUMN`
+    statement; no rewrite pass is needed, mirroring
+    `test_pre_0033_row_inserted_before_kind_columns_gets_the_reminder_default`
+    one migration family over.
     """
     from alembic import command as alembic_command
 

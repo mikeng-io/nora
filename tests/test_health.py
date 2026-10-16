@@ -272,6 +272,6 @@ async def test_a_merely_DISCONNECTED_platform_is_still_unhealthy(aiohttp_client,
 
 async def test_health_platforms_defaults_to_the_single_adapter(client):
     """No `adapters=` (a single-adapter caller) still reports
-    the one adapter, so the new block is never empty on a Signal-only deploy."""
+    the one adapter, so the block is never empty on a Signal-only deploy."""
     body = await (await client.get("/health")).json()
     assert set(body["platforms"]) == {"signal"}

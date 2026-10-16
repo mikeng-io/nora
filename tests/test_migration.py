@@ -1,7 +1,8 @@
 """Alembic's baseline IS the schema.
 
 The single Postgres-native baseline builds the schema on a fresh, empty
-database; there is no data migration.
+database; there is no data migration. Rolling this phase back is `git revert`
+plus `DROP TABLE messages, alembic_version`.
 """
 
 from __future__ import annotations

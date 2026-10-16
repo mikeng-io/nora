@@ -1483,7 +1483,7 @@ async def test_an_ordinary_photo_carries_no_cover_note(wiring):
     out = await _call(wiring["build"](), code=PNG_SHA[:6])
 
     assert out["status"] == "ok"
-    # ADR 0015 §3: every description carries the how-to-report note; only
+    # (ADR 0015) every description carries the how-to-report note; only
     # the cover clause is absent.
     assert _COVER_NOTE not in out["note"]
 
@@ -1498,7 +1498,7 @@ async def test_bytes_that_were_also_sent_as_a_photo_are_not_called_a_cover(wirin
     out = await _call(wiring["build"](), code=PNG_SHA[:6])
 
     assert out["status"] == "ok"
-    # ADR 0015 §3: every description carries the how-to-report note; only
+    # (ADR 0015) every description carries the how-to-report note; only
     # the cover clause is absent.
     assert _COVER_NOTE not in out["note"]
 
@@ -1839,7 +1839,7 @@ async def test_a_describer_that_raises_on_a_clip_is_wrapped_not_propagated(
 async def test_a_second_look_at_a_capped_clip_still_admits_what_it_missed(
     wiring, monkeypatch,
 ):
-    """**A chunked video description is never cached.** Cached without its
+    """**A chunked video description never enters the byte-keyed `VisionCache`.** Cached without its
     coverage sentence and served verbatim, the first call on a twenty-minute
     clip would say «…I have not seen the rest» and the second would return the
     ten-window run and nothing else. Layer 1 masks it whenever a comprehension
@@ -1879,7 +1879,7 @@ async def test_a_second_look_at_a_capped_clip_still_admits_what_it_missed(
 
 async def test_a_still_is_still_cached(wiring):
     """The control for the exclusion above: an image's description IS a pure
-    function of its bytes, so it caches exactly as it always has — the second
+    function of its bytes, so it caches — the second
     look makes no model call."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     cache = VisionCache()
@@ -2014,13 +2014,13 @@ async def test_a_screened_question_is_refused_rather_than_stripped(wiring):
     assert "description" not in out, "a stripped question was answered anyway"
 
 
-# ---- ADR 0015 §3: how to report a status rides in the result ----------------
+# ---- ADR 0015: how to report a status rides in the result -------------------
 
 _DASHES = ("—", "–")
 
 
 async def test_every_non_ok_status_carries_a_note(wiring, monkeypatch):
-    """ADR 0015 §3/§6: the description only NAMES the statuses; what to say for
+    """The description only NAMES the statuses (ADR 0015); what to say for
     each is the result's `note`. Every non-ok path is driven here, so a path
     that loses its note (the reporting rule for that status) goes red."""
     async def dead_download(url: str) -> tuple[bytes, str]:

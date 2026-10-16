@@ -187,10 +187,10 @@ async def test_a_failed_wake_falls_back_to_the_newest_wake_that_did_not_fail(sto
 
 
 async def test_consecutive_failures_and_the_mark_of_the_newest_failed_wake(stores):
-    """What the backoff and the strike read. Failed and
-    timed-out wakes count, a shutdown (`cancelled`) neither counts nor ends the
-    run, an EXPIRED wake counts, and one `closed` wake resets it: the same rule
-    in both stores, `nora.domain.stimuli.failure_run`."""
+    """What the backoff and the strike read. Failed and timed-out wakes count, a
+    shutdown (`cancelled`) neither counts nor ends the run, an EXPIRED wake
+    counts, and one `closed` wake resets it: the same rule in both stores,
+    `nora.domain.stimuli.failure_run`."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 6)
     assert (await _view(stimuli, stale_before_ms=NOW)).failures == 0
@@ -227,9 +227,9 @@ async def test_consecutive_failures_and_the_mark_of_the_newest_failed_wake(store
 
 
 async def test_a_failed_outcome_stores_its_cause_and_only_agenda_counts_toward_a_strike(stores):
-    """DEC-244: the cause is written with the outcome and
-    read back by the same rule in both stores. `infra` is the default and the
-    reading of anything unrecorded; an unknown cause is refused."""
+    """DEC-244: the cause is written with the outcome and read back by the same
+    rule in both stores. `infra` is the default and the reading of anything
+    unrecorded; an unknown cause is refused."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 4)
     infra = await _wake(stimuli, through=2, at=NOW)
@@ -277,9 +277,9 @@ async def test_an_untracked_wake_is_a_watermark_with_or_without_a_clock(stores):
 
 
 async def test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_timeout(stores):
-    """A wake whose session row was never written (an exit before it, a
-    crash) is OPEN while young — in flight, its range claimed, so no later wake
-    can take it — and EXPIRED, read as failed, past the timeout."""
+    """A wake whose session row was never written (an exit before it, a crash)
+    is OPEN while young — in flight, its range claimed, so no later wake can
+    take it — and EXPIRED, read as failed, past the timeout."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
     wake = await _wake(stimuli, through=2, at=NOW)
@@ -327,10 +327,9 @@ async def test_one_outcome_per_wake_and_the_first_stands(stores):
 
 
 async def test_a_close_for_a_wake_a_later_wake_superseded_is_timeout_with_no_carry(stores):
-    """A session whose wake EXPIRED and whose stimuli a later wake
-    took must not close over them (that is the same stimuli processed twice,
-    with doubled strikes). The store records it `timeout` and writes none of
-    its carries."""
+    """A session whose wake EXPIRED and whose stimuli a later wake took must not
+    close over them (that is the same stimuli processed twice, with doubled
+    strikes). The store records it `timeout` and writes none of its carries."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
     old = await _wake(stimuli, through=2, at=NOW)
@@ -363,9 +362,9 @@ async def test_carries_ride_only_a_closed_outcome(stores):
 
 
 async def test_a_close_that_fails_part_way_writes_nothing(stores):
-    """The outcome and every carry are one write. A carry the table
-    refuses (a state outside `ck_cognition_carry_state`) after good ones leaves
-    NO outcome and NO carry — not a closed wake with half its carries."""
+    """The outcome and every carry are one write. A carry the table refuses (a
+    state outside `ck_cognition_carry_state`) after good ones leaves NO outcome
+    and NO carry — not a closed wake with half its carries."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 3)
     wake = await _wake(stimuli, through=3)
@@ -429,9 +428,9 @@ async def test_a_retracted_stimulus_is_never_pending_and_retracting_twice_is_a_n
 
 
 async def test_a_retracted_stimulus_never_returns_through_carry(stores):
-    """A self-wake a closed session carried (deferred, or left open) and
-    that was then cancelled or moved must not come back through the carry side
-    door: the carry read applies the same predicate the pending read does."""
+    """A self-wake a closed session carried (deferred, or left open) and that
+    was then cancelled or moved must not come back through the carry side door:
+    the carry read applies the same predicate the pending read does."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 1)
     sid = await _self(stimuli, "w1")
@@ -534,9 +533,9 @@ async def test_a_self_wake_whose_stimulus_is_retracted_is_not_pending(stores):
 
 
 async def test_pending_self_wakes_reads_a_bounded_window_by_ref(stores):
-    """Only refs with a transition since `since_ms` are read. A ref
-    set long ago and never touched is out; one set long ago and MOVED inside
-    the window is in, at its moved time (its whole chain is read)."""
+    """Only refs with a transition since `since_ms` are read. A ref set long ago
+    and never touched is out; one set long ago and MOVED inside the window is
+    in, at its moved time (its whole chain is read)."""
     _stimuli, ledger = stores
     day = 24 * 3600 * 1000
     await ledger.record_pace(pace=_pace(wake_ref="old", stimulus_id=1), recorded_at_ms=NOW)
@@ -559,8 +558,8 @@ async def test_pending_self_wakes_reads_a_bounded_window_by_ref(stores):
 # ---- what a write is refused for ------------------------------------------
 
 async def test_an_outcome_for_a_wake_nobody_wrote_is_refused(stores):
-    """An outcome keyed by a wake that does not exist is a row no reader
-    finds; both stores refuse it and write nothing."""
+    """An outcome keyed by a wake that does not exist is a row no reader finds;
+    both stores refuse it and write nothing."""
     stimuli, _ledger = stores
     with pytest.raises(ValueError, match="no cognition wake 999"):
         await _close(stimuli, 999)
@@ -571,8 +570,8 @@ async def test_an_outcome_for_a_wake_nobody_wrote_is_refused(stores):
 
 
 async def test_an_outcome_from_another_units_session_is_refused(stores):
-    """The outcome's unit is the wake's unit. A `closed` written under
-    another unit's name would take that unit's lock and advance nothing."""
+    """The outcome's unit is the wake's unit. A `closed` written under another
+    unit's name would take that unit's lock and advance nothing."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 1)
     wake = await _wake(stimuli, through=1)
@@ -588,9 +587,9 @@ async def test_an_outcome_from_another_units_session_is_refused(stores):
 
 
 async def test_a_tracked_wake_without_a_guard_is_refused_and_an_untracked_one_is_not(stores):
-    """A tracked wake is the one whose fate a session settles, so it is
-    written under the unit's lock or not at all; an untracked wake (no hook)
-    has nothing to race and needs none."""
+    """A tracked wake is the one whose fate a session settles, so it is written
+    under the unit's lock or not at all; an untracked wake (no hook) has nothing
+    to race and needs none."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
     new = NewWake(
@@ -622,12 +621,12 @@ async def sql_stores(request: Any) -> AsyncIterator[tuple[Any, Any, Any]]:
 
 
 async def test_a_wake_write_and_a_close_wait_for_the_units_lock(sql_stores):
-    """The deterministic half: with the unit's advisory lock held by
-    another transaction, neither the guarded wake write nor the close may
-    finish; both finish once it is released. A no-op lock lets them through
-    while it is held. The lock is taken with the store's own key spelling
-    (`_LOCK_CLASS`, `hashtext(unit)`), so a lock keyed on anything else does
-    not block them either."""
+    """The deterministic half: with the unit's advisory lock held by another
+    transaction, neither the guarded wake write nor the close may finish; both
+    finish once it is released. A no-op lock lets them through while it is held.
+    The lock is taken with the store's own key spelling (`_LOCK_CLASS`,
+    `hashtext(unit)`), so a lock keyed on anything else does not block them
+    either."""
     import asyncio
 
     from nora.infra.sql.stimuli import _LOCK_CLASS
@@ -652,12 +651,12 @@ async def test_a_wake_write_and_a_close_wait_for_the_units_lock(sql_stores):
 
 @pytest.mark.parametrize("round_", range(12))
 async def test_a_guarded_wake_and_a_close_never_both_take_the_same_stimuli(sql_stores, round_):
-    """The race: a second wake written under a guard that read «wake 1 has
-    no outcome» RACES the close of wake 1. Under the lock exactly one order
-    happened: the close first (the guard then sees a new outcome and refuses
-    the write), or the write first (the close then finds a later wake, is
-    recorded `timeout` and writes no carries). Never both: a new wake that
-    claimed the range AND a `closed` with carries over it."""
+    """The race: a second wake written under a guard that read «wake 1 has no
+    outcome» RACES the close of wake 1. Under the lock exactly one order
+    happened: the close first (the guard then sees a new outcome and refuses the
+    write), or the write first (the close then finds a later wake, is recorded
+    `timeout` and writes no carries). Never both: a new wake that claimed the
+    range AND a `closed` with carries over it."""
     import asyncio
 
     stimuli, _ledger, _engine = sql_stores

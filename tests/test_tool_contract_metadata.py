@@ -1,7 +1,7 @@
 """ADR 0008 enforcement: every native tool declares its contract triple.
 
-The ADR (docs/adr/0008-tool-contract-metadata.md, DEC-152)
-adds three machine-readable fields to `NativeTool` — what an interrupted call
+The ADR (docs/adr/0008-tool-contract-metadata.md, DEC-152) adds three
+machine-readable fields to `NativeTool` — what an interrupted call
 may have DONE (`side_effect_state`), whether replaying it produces the same
 effect (`idempotency`), and whether the harness may replay it (`retry`). This
 file is their READER.

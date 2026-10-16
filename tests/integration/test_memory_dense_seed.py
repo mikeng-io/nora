@@ -239,8 +239,8 @@ async def test_the_planner_scans_the_hnsw_index_with_the_scope_inside(engine: An
 
 
 async def test_an_exact_name_outranks_a_closer_dense_neighbour(engine: Any) -> None:
-    """A literal name match must not lose to a
-    near-duplicate. The near-duplicate is the question's own vector and newer."""
+    """A literal name match must not lose to a near-duplicate. The near-duplicate
+    is the question's own vector and newer."""
     await _node(engine, "named", "Rin booked the table", MID, at=NOW - 86_400_000 * 30)
     await _node(engine, "near-duplicate", "Ren booked the table", SAME, at=NOW - 3_600_000)
     found = await _search(engine, "did Rin book the table",

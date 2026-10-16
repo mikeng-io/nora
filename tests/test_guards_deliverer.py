@@ -411,7 +411,7 @@ async def test_a_key_kept_verbatim_in_a_memo_is_still_refused_in_a_reply(store, 
 
 async def test_a_reply_naming_a_model_is_delivered_after_the_veto_was_disabled(store, doctrine):
     """The model-name veto is OFF (see `egress.py`): a reply that names a model
-    — including relaying what a `social_fetch` post said about one — must reach
+    — including relaying what an `x_read` post said about one — must reach
     the group. The identifier floor is covered by the three tests above; this
     asserts a reply quoting "Opus 5" is not refused."""
     ok, sink, m = await _deliver_text("個 post 話 Opus 5 好差", store, doctrine)
@@ -597,9 +597,9 @@ async def test_emphasis_cannot_smuggle_an_identifier_past_r18(store, doctrine):
     group — the unrecoverable leak `nora.agent.egress` exists to prevent.
 
     Under CONVERSION the hole is identical: the asterisks still go, so the
-    boundary is still destroyed, and the ACI would reach the group in bold. Asserted against
-    `render_markdown(...).text` — the exact bytes `deliver` composes — rather
-    than against a lookalike transformation.
+    boundary is still destroyed, and the ACI would reach the group in bold.
+    Asserted against `render_markdown(...).text` — the exact bytes `deliver`
+    composes — rather than against a lookalike transformation.
 
     Drop the `or scan_reply(drafted)` and this reds."""
     metrics = Metrics()

@@ -743,7 +743,7 @@ async def test_place_info_tool_answers_a_real_place(google):
     assert out["rating"] == 4.2
 
 
-# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+# ── ADR 0015: how to report a status rides in the result ─────────────────
 
 _DASHES = ("—", "–")
 

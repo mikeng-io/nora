@@ -70,7 +70,8 @@ NORA_ACI = "a1000000-0000-4000-8000-000000000000"
 async def test_an_at_mention_of_nora_engages():
     """The real envelope from the live group. Signal puts U+FFFC in the body
     and the mentioned ids in a parallel array, so `is_tagged` cannot see the
-    mention in the text alone."""
+    mention in the text alone, so a tag the obvious way would be recorded and
+    never answered."""
     from nora.ingest.policy import MentionPolicy
     policy = MentionPolicy(frozenset({"+85290000100", NORA_ACI}))
     d = await policy.should_engage(message=_mention_msg({NORA_ACI}))
@@ -92,8 +93,8 @@ async def test_no_mentions_at_all_does_not_engage():
 
 
 async def test_an_empty_self_id_set_never_engages():
-    """Degraded identity (an alias set of just `{primary}`, DEC-19) must not
-    make her answer everything."""
+    """Degraded identity (an empty self-id set) must not make her
+    answer everything."""
     from nora.ingest.policy import MentionPolicy
     policy = MentionPolicy(frozenset())
     assert (await policy.should_engage(message=_mention_msg({NORA_ACI}))).engage is False

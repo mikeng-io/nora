@@ -450,7 +450,7 @@ async def test_every_outcome_is_counted_by_name(kwargs, outcome):
 
 
 # ---------------------------------------------------------------------------
-# ADR 0015 §3: what to tell the asker rides in the result
+# ADR 0015: what to tell the asker rides in the result
 # ---------------------------------------------------------------------------
 
 _DASHES = ("—", "–")

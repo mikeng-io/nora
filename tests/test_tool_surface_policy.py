@@ -238,7 +238,8 @@ def test_the_opening_paragraph_is_an_l1(tool: str, doc: str) -> None:
 # the docstring minus `Args:`), not the AST docstring the tests above read:
 # that is the text every call pays for.
 
-#: ADR 0015 §3's ceilings, cl100k tokens over the sent description.
+#: ADR 0015's ceilings, cl100k tokens over the sent description; each moves only
+#: with a measurement recorded beside it.
 LEVEL_CEILINGS = {1: 80, 2: 160, 3: 320}
 
 #: The tools not yet rewritten to ADR 0015. It only SHRINKS: it must stay a

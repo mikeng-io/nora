@@ -35,6 +35,8 @@ THE ASSERTIONS, EACH AT THE STAGE WHERE IT BECOMES DECIDABLE
    row in the window was delivered (`3a2`)
 5. across the whole run — zero sends into the home room  (`test_5_*`)
 
+(There is no stage 4; the numbers follow the test names.)
+
 WHY IT IS NOT GREEN FOR THE WRONG REASON
 ----------------------------------------
 Every stage that must RUN is asserted to have run, because the failure mode of
@@ -682,8 +684,9 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     and says nothing about whether it went out.
 
     The header is cut out of the haystack first, on purpose: an `llm_error`
-    header may contain the word «sent» («nothing was sent»), and a search that
-    counted it would read the defect as the fix.
+    header may contain the word «sent» («this turn's model call failed, so THIS
+    TURN sent nothing»), and a search that counted it would read the defect as
+    the fix.
     """
     header_block = journey.fold_input.split("<what_happened ")[1].split(
         "</what_happened>",

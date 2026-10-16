@@ -420,8 +420,8 @@ def test_every_builder_is_used_somewhere(modules):
 
 
 def test_a_builder_named_only_in_the_tables_is_not_used():
-    """The positive control: a table row is not a use. The real tree counted every
-    builder as used through the `FRAMING` tuple."""
+    """The positive control: a table row is not a use. Counting the `FRAMING`
+    tuple as a use would mark every builder used."""
     tree = ast.parse(
         "FRAMING = {c.__name__: c for c in (RepeatClause, ReminderHeader)}\n"
         "FIRE_HEADERS = {'reminder': ReminderHeader}\n"

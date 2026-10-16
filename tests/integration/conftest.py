@@ -1,4 +1,4 @@
-"""Registers the shared `harness` fixture used by every M5 integration test."""
+"""Registers the shared `harness` fixture used by every integration test."""
 
 import importlib
 
@@ -10,7 +10,7 @@ from tests.integration.harness import build_handler
 
 @pytest.fixture
 async def draw_honcho(monkeypatch):
-    """A Honcho for `evals.backbone._drive`'s per-draw workspace .
+    """A Honcho for `evals.backbone._drive`'s per-draw workspace.
 
     Every draw creates a workspace of its own before its subject is
     composed, and refuses to run when it cannot, so a test driving `_drive`

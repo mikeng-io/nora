@@ -24,16 +24,17 @@ It still asserts, from the catalogue and independent of the baseline:
     and the honesty note below.
 
 **The CHECK constraints are enforced, not documentation.** The bullet above
-covers one constraint by name; the rest are covered by the metadata comparison.
+covers one constraint by name; the rest are covered by the CHECK comparison
+against `schema.py` (`_check_constraint_problems`).
 `compare_metadata` is blind to CHECKs (this file's opening paragraph says so),
 and the dump/baseline test compares the migrated database against a file
 regenerated from that same database — `schema.py` is in neither loop, so
 deleting a CHECK from `schema.py` alone, migrations untouched, would leave
 everything else green.
 
-Parameterised over every table in `nora`'s metadata, so a new table's
-alembic-check-blind DESC index is covered by adding a row to
-`EXPECTED_DESC_INDEXES`.
+Parameterised over every table in `nora`'s metadata, so a new table's CHECKs
+and existence need no new test, and its alembic-check-blind DESC index needs
+only a row in `EXPECTED_DESC_INDEXES`.
 """
 
 from __future__ import annotations
@@ -545,7 +546,8 @@ def _diff_kinds(diffs: list) -> set[str]:
     None, 'sticker_index', 'size', …)]]`). Iterating naively yields a `list`
     where a tuple was expected and the operation name is never seen — which
     reads as "no drift detected" against a database that has drifted. Flatten
-    one level before looking. """
+    one level before looking.
+    """
     kinds: set[str] = set()
     for entry in diffs:
         for op in (entry if isinstance(entry, list) else [entry]):

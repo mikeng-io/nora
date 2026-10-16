@@ -120,9 +120,9 @@ async def test_long_content_is_clamped_and_flagged(tavily):
     assert long_result["truncated"] is True
     # The wrapped body carries at most the clamp (plus the untrusted envelope).
     # THE BOUND IS ON THE TEXT, not on the wrapped string: the block carries its
-    # own description, so the wrapper is ~250 characters rather than a constant
-    # ~30 (`<untrusted source="…" untrusted="true">`), and a bound on the whole
-    # string would measure the description and call it a clamp.
+    # own description, so the wrapper is ~250 characters (the
+    # `<untrusted source="…" untrusted="true">` tag plus that description), and a
+    # bound on the whole string would measure the description and call it a clamp.
     #
     # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
     # times however many results come back. It buys a model that can read what
@@ -194,9 +194,9 @@ async def test_long_fetched_text_is_clamped_and_flagged(tavily):
     out = await provider.fetch(url="https://hko.gov.hk/x")
     assert out["truncated"] is True
     # THE BOUND IS ON THE TEXT, not on the wrapped string: the block carries its
-    # own description, so the wrapper is ~250 characters rather than a constant
-    # ~30 (`<untrusted source="…" untrusted="true">`), and a bound on the whole
-    # string would measure the description and call it a clamp.
+    # own description, so the wrapper is ~250 characters (the
+    # `<untrusted source="…" untrusted="true">` tag plus that description), and a
+    # bound on the whole string would measure the description and call it a clamp.
     #
     # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
     # times however many results come back. It buys a model that can read what

@@ -311,8 +311,8 @@ def test_the_objective_names_a_file_that_exists(adaptor):
 def test_the_envelope_key_is_declared(adaptor):
     """Declared per adaptor rather than fixed at one shared literal, because it
     is half of a promise whose other half lives in the objective text. Asserted
-    as non-empty only: the value is each adaptor's own, so the contract cannot
-    bind it to the objective's prose."""
+    as non-empty only: this test does not check the binding to the objective's
+    prose."""
     assert isinstance(adaptor.envelope_key, str)
     assert adaptor.envelope_key
 

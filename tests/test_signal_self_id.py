@@ -76,7 +76,7 @@ def _rpc_app(*, contacts=None, status=None, contacts_error=False):
 
 def _accounts_only_app():
     """The daemon as it actually is: `/api/v1/rpc` exists, `/api/v1/accounts`
-    does not. Serving only the endpoint a naive reader would use is what makes
+    does not. Serving only `/api/v1/accounts`, the endpoint the daemon lacks, is what makes
     this a regression test rather than a generic 404 test."""
 
     async def handler(request: web.Request) -> web.Response:

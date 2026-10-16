@@ -338,9 +338,9 @@ async def test_the_planner_can_use_the_hnsw_index_and_the_pick_index(engine, lla
 async def test_an_image_embedded_from_its_reading_loses_the_vector_when_the_reading_changes(
     engine, llama,
 ):
-    """An image whose bytes Nora no longer holds is embedded from
-    its reading, and `embed_input` records it, so a new reading clears it; an
-    image embedded from its bytes keeps its vector through the same change."""
+    """An image whose bytes Nora no longer holds is embedded from its reading,
+    and `embed_input` records it, so a new reading clears it; an image
+    embedded from its bytes keeps its vector through the same change."""
     _fake, url = llama
     blobs = FakeBlobStore()
     held = await blobs.put(data=png_bytes())
@@ -373,9 +373,9 @@ async def test_an_image_embedded_from_its_reading_loses_the_vector_when_the_read
 async def test_an_unexpected_failure_is_recorded_and_a_node_is_given_up_after_the_cap(
     engine, llama, monkeypatch,
 ):
-    """Any exception one node raises is recorded on that
-    node, never escaping the tick, and after `EMBED_MAX_ATTEMPTS` the node is
-    not picked again, counted `given_up`."""
+    """Any exception one node raises is recorded on that node, never escaping
+    the tick, and after `EMBED_MAX_ATTEMPTS` the node is not picked again,
+    counted `given_up`."""
     _fake, url = llama
     store = SqlRecordStore(engine)
     bad = await store.append(message=_message("a node that always breaks", ts=1000))
@@ -458,9 +458,9 @@ async def test_a_text_cut_to_fit_is_stored_and_counted_by_kind(engine, llama):
 
 
 async def test_an_unavailable_embedder_never_gives_a_node_up(engine, llama):
-    """Only a failure of the input itself counts toward the
-    give-up cap. An outage backs the node off, never past the cap, so it is
-    embedded when the server is back."""
+    """Only a failure of the input itself counts toward the give-up cap. An
+    outage backs the node off, never past the cap, so it is embedded when
+    the server is back."""
     fake, url = llama
     store = SqlRecordStore(engine)
     mid = await store.append(message=_message("a message during an outage", ts=1000))
@@ -484,9 +484,9 @@ async def test_an_unavailable_embedder_never_gives_a_node_up(engine, llama):
 async def test_a_cut_text_whose_vector_was_not_stored_is_not_counted(
     engine, llama, monkeypatch,
 ):
-    """The truncation counter counts stored vectors only. A
-    node edited while it was embedded is not stored (it is embedded again,
-    and counted then if it is still cut)."""
+    """The truncation counter counts stored vectors only. A node edited
+    while it was embedded is not stored (it is embedded again, and counted
+    then if it is still cut)."""
     _fake, url = llama
     store = SqlRecordStore(engine)
     long_id = await store.append(message=_message("x" * 9000, ts=1000))

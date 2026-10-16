@@ -44,7 +44,7 @@ an accepted blind spot rather than silently matched or silently failed:
   AST match can never see it. This gate accepts any selector that resolves to
   a module-level **assignment** target as this form and does not attempt to
   verify the DICT KEY it may also carry (`RULE_TESTS["R-29"]`) — that would
-  need evaluating the dict, which is exactly the kind of thing the R-29 story
+  need evaluating the dict, which is exactly the kind of thing a noisy gate
   warns against building a second version of.
 - **The `-k`-style partial name**, e.g. `` `::test_resolve_identity_` `` (a
   trailing-underscore prefix of several real tests in `test_signal_adapter.py`)

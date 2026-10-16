@@ -264,7 +264,7 @@ async def test_every_rollup_recomputes_identically_from_the_record(pg_url):
 
 
 async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(pg_url):
-    """25 §3: a member's message that quotes nothing answers her latest send in
+    """A member's message that quotes nothing answers her latest send in
     its room when it comes within 120 s and mentions no one else, or at any time
     inside the response window when it names her; a multi-part turn is answered
     at its last part; a quoted reply is a reply, counted once."""
@@ -475,7 +475,7 @@ async def test_a_colocation_start_and_an_arrival_are_raised_once(pg_url):
 
 @pytest.mark.parametrize("outage", [False, True])
 async def test_a_deviation_is_raised_only_on_healthy_sources(pg_url, outage):
-    """D3: a silent day (nothing posted, never at home) raises a deviation
+    """A silent day (nothing posted, never at home) raises a deviation
     only when the collector's polls were proved healthy for the span; a poll
     outage inside it suppresses the stimulus (R-27: missing data is not
     absence). Silence here is a synthetic third day with no fixes at home
@@ -550,7 +550,7 @@ async def test_a_run_with_nothing_new_rewrites_no_settled_row(pg_url):
     await engine.dispose()
 
 
-# --- the memory index's episodes --
+# --- the memory index's episodes ----------------------------------------
 
 _SAVED_NAME = "Hidden Den"  # a saved place's name: its existence is the secret (R-35)
 

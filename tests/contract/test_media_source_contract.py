@@ -17,8 +17,8 @@ hold, in the shape the live daemon uses:
 
 and that error is provably distinct from an unimplemented method, which answers
 `-32601 "Method not implemented"`. Reverting `SignalMediaSource.fetch`'s method
-name to something signal-cli does not serve
-makes `test_a_missing_attachment_is_not_found` red rather than leaving it green
+name to something signal-cli does not serve makes
+`test_a_missing_attachment_is_not_found` red rather than leaving it green
 against a daemon that says yes to everything.
 
 What no test here can establish is the shape of a SUCCESSFUL `getAttachment`

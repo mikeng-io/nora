@@ -276,8 +276,8 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     `inputSchema` is what Strands actually sends the model, derived from the
     callable by `FunctionToolMetadata.extract_metadata`, so this is the only
     assertion that fails if a conversation parameter comes back under any name
-    or any default. A parameter whose value the model cannot guess leaks
-    across groups or kills the tag.
+    or any default. A conversation parameter lets the model steer a read
+    into another group, or kills the tag when it cannot guess the value.
     """
     for name, tool in wiring["tools"].items():
         properties = set(tool.tool_spec["inputSchema"]["json"].get("properties") or {})
@@ -411,11 +411,12 @@ async def test_load_transcript_returns_only_model_relevant_fields(wiring):
 
 
 async def test_load_transcript_names_speakers_the_same_way_the_prefill_does(wiring):
-    """DEC-80's THIRD renderer, `store.recent` hands back rows with `person_name` unset, so without
-    the projection this tool renders the self-set Signal profile name while the
-    prefill, `group_members` and `lookup_person` all render the identity one.
+    """DEC-80's THIRD renderer. `store.recent` hands back rows with
+    `person_name` unset, so without the projection this tool renders the
+    self-set Signal profile name while the prefill, `group_members` and
+    `lookup_person` all render the identity one.
 
-    That reproduces the original bug INSIDE ONE CONTEXT WINDOW, on the path that
+    That reproduces the two-names defect INSIDE ONE CONTEXT WINDOW, on the path that
     exists precisely for looking further back than the prefill: one prompt would
     hold 「Miles」 in the prefilled lines and 「陳志明 Chi Ming」 in these rows.
 
@@ -770,9 +771,10 @@ async def test_the_new_counter_never_double_counts_a_room_scoped_tool(wiring):
 async def test_a_tool_that_could_not_answer_is_counted_apart_from_one_that_did(
     wiring, monkeypatch,
 ):
-    """R-22's distinction, applied to the four tools. A
-    counter that reported `ok` for a `load_transcript` whose store was down would
-    be the `peer_card` failure again — a green series over a dead path."""
+    """R-22's distinction, applied to the tools counted in
+    `nora_tool_calls_total`. A counter that reported `ok` for a `load_transcript`
+    whose store was down would be the `peer_card` failure again — a green series
+    over a dead path."""
     metrics = wiring["metrics"]
 
     async def boom(*a, **kw):

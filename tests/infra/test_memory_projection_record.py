@@ -185,7 +185,7 @@ async def test_a_hidden_message_leaves_with_its_attachments(engine):
     assert ("media", f"{mid}:{_SHA}") not in nodes
     assert ("message", str(keep)) in nodes, "positive control: the other message stays"
     edges = await _edges(engine)
-    # S4: a delete removes the edges the node owns (out of it and out of its
+    # A delete removes the edges the node owns (out of it and out of its
     # attachments); the memo's citation is the memo's, and stays dangling,
     # exactly as a rebuild writes it (it drops itself at a read's join).
     assert not {e for e in edges if e[1] == str(mid) or e[1].startswith(f"{mid}:")}
@@ -363,7 +363,7 @@ async def _drain(engine: Any, metrics: Any = None) -> int:
 
 
 async def test_a_drain_reprojects_what_was_queued_and_is_idempotent(engine, monkeypatch):
-    """60 S3: the analytics run drains the queue once per tick. A drain that
+    """The analytics run drains the queue once per tick. A drain that
     lands clears the row; one that fails again counts an attempt and keeps it;
     a second drain over an empty queue does nothing."""
     def _broken(conn: Any, source_id: str) -> Any:

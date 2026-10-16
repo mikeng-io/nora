@@ -658,11 +658,11 @@ async def test_another_rooms_reminder_does_not_leak_in(engine: Any) -> None:
 
 
 async def test_an_edit_folds_only_once_it_had_happened(engine: Any) -> None:
-    """The transcript reads fold a message's
-    newest edit onto it; the reconstruction must fold only an edit made AT OR
-    BEFORE the instant — a message corrected five minutes later still said
-    its first text one minute in, and a snapshot that showed the correction
-    there would be today's room wearing a past timestamp."""
+    """The transcript reads fold a message's newest edit onto it; the
+    reconstruction must fold only an edit made AT OR BEFORE the instant — a
+    message corrected five minutes later still said its first text one minute
+    in, and a snapshot that showed the correction there would be today's room
+    wearing a past timestamp."""
     import dataclasses
 
     from nora.domain.models import EditTarget

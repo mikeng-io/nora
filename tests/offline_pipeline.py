@@ -1,11 +1,9 @@
 """Pipeline wiring shared by every offline (no real platform/network) composition root —
-`tests/integration/harness.py` and `evals/harness.py` both assemble a real
-`IngestPipeline` + `EngagementPipeline`, glued by a real `Dispatcher`, against
+`tests/integration/harness.py` and `tests/offline_eval_harness.py` both assemble a
+real `IngestPipeline` + `EngagementPipeline`, glued by a real `Dispatcher`, against
 already-built collaborators (fakes for the adapter, memory store, and model runner
-everywhere except production). This is the one definition of that wiring, so `evals/` does
-not need a second copy of it (or `tests/` itself) to build one: `evals/` may import
-`nora.app` and `nora.testing` and nothing else from `nora/` — this module is the
-`nora.app` side of that boundary.
+everywhere except production). This is the one definition of that wiring, so neither
+harness needs a second copy of it.
 
 Deliberately builds NO collaborator itself — no `PlatformAdapter`, `MemoryStore`,
 `AgentRunner`, or `RecordStore` is constructed here. The caller always supplies those
@@ -94,8 +92,7 @@ def build_offline_pipeline(
     `participation_runner` is the participation occasion's eval seam: when given, this
     builds a REAL `FirePath` — same `deliver.build`, guards and accounting as production —
     plus the quiescence `ParticipationTrigger`, and wires the trigger into the dispatcher,
-    so an eval drives the participation path exactly as deployed (`evals/` may not import
-    `nora.app.fire` itself — the boundary that put this module here). The trigger is the
+    so an eval drives the participation path exactly as deployed. The trigger is the
     fourth return value (`None` when neither `participation` nor `participation_runner`
     was given); the caller drives `close_due_windows` on it, with `participation_clock`
     injecting the clock the settle/cooldown durations are measured against, and
@@ -115,8 +112,7 @@ def build_offline_pipeline(
     # `RelevanceGatePolicy` over THIS harness's `permissive_policy()` (whose
     # rooms are all opted in), so an untagged message is marked
     # `EngageDecision.relevance_gate` exactly as production's opted-in rooms
-    # do. `evals/` may not import `nora.ingest.policy` itself — the boundary
-    # this module exists for.
+    # do.
     if participation_opt_in:
         extra_engage_policies = (
             *extra_engage_policies, RelevanceGatePolicy(permissive_policy()),
@@ -141,7 +137,7 @@ def build_offline_pipeline(
         # `notes`/`standing`.
         media_join=media_join,
         # DEC-195's shared quote-window resolver. `None` is the plain `context_window`
-        # shape, no growth; an eval exercising the threading builds one over the SAME
+        # shape, no growth; an eval exercising quote-window growth builds one over the SAME
         # `audit` this module already takes.
         quote_window=quote_window,
         presence=presence_reader,
@@ -319,18 +315,19 @@ def build_offline_pipeline(
             # passes and the harness does not means every participation eval measures a
             # prompt production never builds.
             #
-            # `None` is the right value here rather than a gap: the harness reconstructs a
-            # room's real culture at a real instant (`evals/corpora/participation.yaml`),
-            # so this seam does not supply one, and a case with no account should see no
-            # block.
+            # `None` is the right value here rather than a gap: the rebuilt eval subject
+            # (`nora.subject`) reconstructs a room's real culture at a real instant
+            # (`evals/corpora/participation.yaml`), so this seam does not supply one,
+            # and a case with no account should see no block.
             culture=None,
             lessons=None,
             policy=permissive_policy(),
             participation_runner=participation_runner,
-            # The proactive act turn's runner: its OWN, as the composition root builds it
-            # (a separate runner at `[proactive] reasoning_effort`). The act suite drives
-            # `FirePath.run` through `nora.app.eval_support` rather than this seam, so
-            # this is parity with production's kwarg names.
+            # The proactive act turn's runner: its OWN, as the composition root builds
+            # it (a separate runner at `[proactive] reasoning_effort`). The act suite
+            # drives `FirePath.run` through
+            # `tests/offline_eval_support.run_proactive_act_case` rather than this seam,
+            # so this is parity with production's kwarg names.
             proactive_runner=proactive_runner,
             # The shadow mirror, mirrored from the composition root's gating (the parity
             # test pins these kwarg NAMES to production's): an offline/eval run can review

@@ -3,8 +3,8 @@
 Three readings the harness must give before a single model call is spent on it:
 
 - **the arm is measurable** — the fold's rendered input, printed without a
-  model, carries what this branch changed: `<standing_prior written=…>`,
-  `<steps>`, a tool result past the 600-character clip. And it reads the
+  model, carries `<standing_prior written=…>`,
+  `<steps>`, a tool result longer than 600 characters, inside the 4000 bound. And it reads the
   RIGHT stretch: the sandbox renumbers every row, so the prior's watermark and
   the trace's own rows have to be translated or the fold reads a different
   batch than production's did;
@@ -74,9 +74,8 @@ _TAG = "t-fold-probe"
 _PRIOR = "I owe the room an answer about the venue; nobody has confirmed the date."
 #: What production's fold wrote AFTER the turn — must never be read as the prior.
 _PRODUCTION_FOLD = "PRODUCTION-FOLD-OUTPUT"
-#: Placed PAST the old 600-character clip and inside the new 4000 bound, so
-#: its presence in the fold's input is the branch's arm and its absence is
-#: master's.
+#: Placed past 600 characters and inside the 4000 bound, so its presence in the
+#: fold's input shows the 4000 bound is applied.
 _FINDING = "FINDING-PAST-THE-OLD-CLIP"
 _RESULT = ("r" * 3000) + _FINDING + ("r" * 500)
 #: Her `recovered` reply: written 300 ms AFTER the turn's record closed, and

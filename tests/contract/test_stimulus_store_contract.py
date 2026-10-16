@@ -139,7 +139,7 @@ async def test_the_newest_wake_is_the_watermark(store):
 
 
 async def test_a_stimulus_due_later_stays_pending_across_an_earlier_wake(store):
-    """20 §3: a self-wake set for 19:40 does not count at 15:00, and a wake at
+    """A self-wake set for 19:40 does not count at 15:00, and a wake at
     15:00 does not consume it, though its id is under the watermark."""
     due = NOW + 60_000
     later = await store.append(
@@ -543,7 +543,7 @@ async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_read
             "FROM cognition_wake ORDER BY id DESC LIMIT 1"
         ))).one()
         assert (typed.d, typed.u) == ("object", "array")
-        # A row as the old code wrote it: a jsonb string holding the JSON.
+        # A legacy row: a jsonb string holding the JSON.
         await conn.execute(sa.text(
             "UPDATE cognition_wake SET detail = to_jsonb(detail::text) "
             "WHERE id = (SELECT max(id) FROM cognition_wake)"

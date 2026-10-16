@@ -1,11 +1,10 @@
 """Every raw `chat.completions.create` carries what the SDK path gets for free.
 
-**Some paths in this repo call the model without Strands**: the relevance
-gate, the debrief, the standing-event fold (which shares the debrief's client)
-and the vision read. That is a deliberate architecture: `03-no-agent-loop.md`
+**Two paths in this repo call the model without Strands**: the relevance
+gate and the vision read. That is a deliberate architecture: `03-no-agent-loop.md`
 argues a tools-less adaptor is «a completion wearing an agent's construction»,
-and the debrief's inputs are all knowable before the call, so there is no loop
-to justify.
+and such an adaptor's inputs are all knowable before the call, so there is no
+loop to justify.
 
 A raw client must therefore carry for itself what the Strands path gets for
 free: a declared `RetryPolicy`, bounded turns and tokens (`build_limits`),
@@ -28,7 +27,7 @@ machinery. The debrief and the standing fold stay on the SDK: neither decides
 whether Nora may speak.
 
 **A STATIC read, and an INVERTED allowlist.** The question is «was a raw call
-forgotten», and a hand-written list of the four cannot answer that about a
+forgotten», and a hand-written list cannot answer that about a
 fifth. `test_media_join_reaches_every_transcript.py` uses the same shape —
 «never listed» is the failure mode a hand-written list cannot catch — so the
 call sites are DISCOVERED and each one is either required to carry the

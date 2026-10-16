@@ -1,8 +1,8 @@
 """The entry point is a port: one runner drives both a component and a whole turn.
 
-> If driving `RelevanceGate.decide` and `FirePath.speak` through one runner > needs
-different lifecycles, different setup order, or different outcome > shapes, then the
-boundary is drawn wrong.
+> If driving `RelevanceGate.decide` and `FirePath.speak` through one runner
+> needs different lifecycles, different setup order, or different outcome
+> shapes, then the boundary is drawn wrong.
 
 Two entry points chosen for being maximally unalike: one drives a component and no turn,
 the other a whole turn and no gate. These are the mechanical halves of that reading;

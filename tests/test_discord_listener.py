@@ -143,9 +143,9 @@ async def test_resuming_also_counts_as_liveness():
 
 
 async def test_on_ready_extra_is_awaited_once_the_client_is_ready():
-    """The slash-command registration hook: only a full re-IDENTIFY needs it, so it lands on
-    `on_ready`, never `on_resumed` — Discord already has the commands from
-    the earlier `on_ready` in the same session."""
+    """The slash-command registration hook: only a full re-IDENTIFY needs it, so
+    it lands on `on_ready`, never `on_resumed` — Discord already has the
+    commands from the earlier `on_ready` in the same session."""
     client = FakeClient()
     calls = []
 

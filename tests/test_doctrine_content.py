@@ -15,8 +15,8 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # which is what the section tag renders and what the authority graph uses, and
 # which is unique across the doctrine. A file-STEM key would not do:
 # `public/conduct.md` has the same stem as `rooms/conduct.md`, so it would read
-# one file for the other and pass by coincidence. `_SCOPE_FOLDER` below maps each name to its
-# file.
+# one file for the other and pass by coincidence. `_SCOPE_FOLDER` below maps each
+# name to its file.
 #
 # The audience is pinned per file, not asserted as one blanket `("tag",)`,
 # because that is the whole point of the split: everything occasion-neutral
@@ -156,7 +156,7 @@ def test_the_summons_doctrine_assembles_in_strict_mode_from_core_and_public_only
 
 
 def test_every_shipped_file_says_what_it_must_not_contain():
-    """`soul.md` states its boundary: where capability lives instead.
+    """Every shipped file's `not_here` names where its excluded content lives.
 
     A line saying capability lives elsewhere keeps a capability claim from going
     stale unnoticed. The loader rejects an empty `not_here`; this asserts the
@@ -318,9 +318,8 @@ def test_identity_makes_no_claim_about_what_she_can_find_out():
     assert "Two things, and only these" not in body
     assert "What you actually know" not in body
     assert "who is in this conversation" not in body
-    # The three core headings, plus «What you are» — the self-account. The
-    # fourth heading is a deliberate widening of this file and is pinned here so
-    # a fifth cannot arrive quietly.
+    # Exactly these three headings, the last of them the self-account «What you
+    # are»; pinned so a fourth cannot arrive quietly.
     assert [line for line in body.splitlines() if line.startswith("# ")] == \
         ["# Who you are", "# Where you come from", "# What you are"]
 

@@ -483,7 +483,7 @@ def test_a_label_is_never_matchable(tmp_path):
 
 def test_the_retired_single_table_form_names_its_replacement(tmp_path):
     """pydantic's own "Input should be a valid list" names neither the new
-    shape nor why it changed; §7.3 set the precedent that this file's breaks
+    shape nor why it changed; this file's breaks
     get a readable error."""
     body = '[persons.miles]\nname = "Miles"\n[persons.miles.signal]\nphone = "+852111"\n'
     with pytest.raises(PersonsError, match=r"array of tables"):

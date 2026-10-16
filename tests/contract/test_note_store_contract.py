@@ -862,8 +862,8 @@ async def test_successor_follows_a_merged_chain_to_the_open_note(
 
 
 async def test_only_a_merged_note_forwards(notes: _Harness) -> None:
-    """A `replaced_by` on a closed note is provenance (the triage pass
-    writes some), not a promise the successor carries the same question."""
+    """A `replaced_by` on a closed note is provenance (written by
+    hand), not a promise the successor carries the same question."""
     kept = await _make(notes.store, title="kept")
     closed = await _make(notes.store, title="closed")
     await notes.store.supersede(

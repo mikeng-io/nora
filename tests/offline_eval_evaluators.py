@@ -1,5 +1,5 @@
 """These are GRADERS, kept under `tests/` because their only consumers are tests, and because
-the import contract that forces constants through `nora.app.eval_support` applies to
+the `evals/` import contract (`[tool.importlinter]` in `pyproject.toml`) applies to
 `evals/` alone. `NoRedundantRead` is R-15's subject.
 """
 

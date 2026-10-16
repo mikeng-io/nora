@@ -137,7 +137,7 @@ async def test_remember_keeps_the_fact_text_verbatim():
     assert honcho.writes[0][2] == "我下個月返新工"  # stripped, not wrapped
 
 
-# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+# ── ADR 0015: how to report a status rides in the result ─────────────────
 
 async def test_every_non_ok_status_carries_a_note_that_nothing_was_saved():
     """The description only NAMES the statuses. «Never claim 記低咗 on a
@@ -159,7 +159,7 @@ async def test_every_non_ok_status_carries_a_note_that_nothing_was_saved():
 
 
 async def test_only_the_ok_note_licenses_saying_it_was_remembered():
-    """«Say 記低咗 only when it is saved» is an output rule (ADR 0015 §3): it
+    """«Say 記低咗 only when it is saved» is an output rule (ADR 0015): it
     rides on `ok`, and no refusal or outage note offers the word as allowed."""
     ok = await _tools()["remember"](content="屋企有兩隻貓")
     assert "Only now may you say 記低咗" in ok["note"]

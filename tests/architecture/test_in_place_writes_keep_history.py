@@ -58,8 +58,8 @@ _VARIABLE_TARGETS: dict[str, frozenset[str]] = {
     }),
 }
 #: How far above an `on_conflict_do_update` its `insert(T)` may be. The
-#: widest in the tree is in `media_objects.py`, and
-#: `test_every_upsert_finds_its_insert` fails before one outgrows this.
+#: widest current reach (`media_objects.py`) is well under this, and
+#: `test_every_upsert_finds_its_insert` fails before one outgrows it.
 _UPSERT_REACH = 40
 _INSERT = re.compile(r"\b(?:pg_insert|pg\.insert|insert)\(\s*([A-Z_]+)\s*\)")
 

@@ -1,6 +1,6 @@
 """`nora.subject` is the ONE way the graph is obtained, and it cannot be assembled.
 
-`design/evaluation/` in one sentence: different evaluation suites, different
+In one sentence: different evaluation suites, different
 input, ONE Nora. A suite that composes its own graph measures something the
 deployment does not send.
 

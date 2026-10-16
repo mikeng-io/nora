@@ -420,7 +420,7 @@ def test_the_presence_section_is_optional_and_ships_inert(toml_path):
 def test_the_instagram_social_backend_is_declared_live_in_the_example(toml_path):
     """A wholly commented-out section is not "the default, shown".
 
-    `[social.instagram]` shipped with its HEADER commented out too, so
+    A commented-out `[social.instagram]` header would mean
     `InstagramSocialConfig` is never constructed from `config.example.toml`
     and `extra="forbid"` never runs against it — a typo'd key in that block
     would be found by an operator rather than here. `[social]` above ships a
@@ -699,7 +699,8 @@ def test_min_trip_fixes_defaults_to_two_and_refuses_a_one_fix_trip():
 def test_corridor_cluster_batch_limit_defaults_to_the_measured_bound():
     """Tier 5. How many not-yet-clustered trips one corridor-clustering
     pass may re-cluster. `cluster_trips` is O(n^2) over an edit-distance
-    metric, which is why the pool is capped."""
+    metric, which is why the pool is capped; 500 keeps a pass under about 2%
+    of a tick."""
     assert AnalyticsConfig().corridor_cluster_batch_limit == 500
     assert AnalyticsConfig(corridor_cluster_batch_limit=50).corridor_cluster_batch_limit == 50
     with pytest.raises(ValidationError):
@@ -707,12 +708,12 @@ def test_corridor_cluster_batch_limit_defaults_to_the_measured_bound():
 
 
 def test_max_trip_duration_seconds_defaults_to_three_hours():
-    """Tier 5. Trip settlement: the safety valve against a stuck `is_driving` signal — if Life360
-    ever reports `True` indefinitely (a stale flag, a phone that stopped
-    updating mid-drive), a trip could otherwise never settle and hold the
-    watermark back forever. The default is a judgment call, not a measured
-    value: 3 hours is generous enough to cover a real long drive without
-    leaving a stuck signal unbounded."""
+    """Tier 5. Trip settlement: the safety valve against a stuck `is_driving`
+    signal — if Life360 ever reports `True` indefinitely (a stale flag, a phone
+    that stopped updating mid-drive), a trip could otherwise never settle and
+    hold the watermark back forever. The default is a judgment call, not a
+    measured value: 3 hours is generous enough to cover a real long drive
+    without leaving a stuck signal unbounded."""
     assert AnalyticsConfig().max_trip_duration_seconds == 10800.0
     assert AnalyticsConfig(max_trip_duration_seconds=7200.0).max_trip_duration_seconds == 7200.0
 
@@ -1257,8 +1258,7 @@ def test_a_standing_cap_above_the_database_ceiling_refuses_to_start(toml_path):
     `standing_body_fits_the_ceiling_check` is DDL that cannot be one, so a
     config above the ceiling means every fold the sink accepted is refused by
     Postgres — a config error discovered on the live reply path rather than
-    at boot. `policy.toml`'s own refuse-to-start shape,
-    applied to a number.
+    at boot. `policy.toml`'s own refuse-to-start shape, applied to a number.
     """
     toml_path.write_text(
         toml_path.read_text().replace("max_chars = 1200", "max_chars = 5000"))
@@ -1596,9 +1596,9 @@ def test_one_guild_listed_twice_refuses_to_start(toml_path):
 
 
 def test_an_endpoint_is_stripped_not_merely_checked(toml_path):
-    """The validator must reject what the client would choke on: it accepted on `.strip()` while
-    composition passed the RAW value to the client, so a leading space loaded
-    clean and died at the first request with a URL error instead of at load."""
+    """The loaded endpoint is the stripped value: validating on `.strip()` while
+    passing the raw value would load clean and fail at the first request with a
+    URL error instead of at load."""
     toml_path.write_text(_with_sidecars(
         toml_path.read_text(),
         '[{ guild = "g1", endpoint = "  http://voice-sidecar:4600  " }]',

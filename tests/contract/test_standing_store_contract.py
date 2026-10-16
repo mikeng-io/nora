@@ -116,7 +116,7 @@ def _standing(body: str = "They are picking a restaurant.", *,
 async def test_a_conversation_with_no_position_reads_as_none(store):
     """`None` is a first-class state, not an error: a conversation Nora has not
     folded has no position, and the fold is told so explicitly rather than
-    handed an empty one (§4.2 — `prior` is "always present, even when empty")."""
+    handed an empty one (`prior` is "always present, even when empty")."""
     assert await store.read(platform=PLATFORM, conversation_id=CONV) is None
 
 

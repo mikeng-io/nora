@@ -195,7 +195,7 @@ def test_the_practice_and_character_examples_in_30_section_1_are_not_law():
     assert "Banter is how this group talks" in everything
 
 
-#: The operator's rulings (12 Oct 2026, DEC-309) on the eleven rows the sort marked
+#: The operator's rulings (DEC-309) on the eleven rows the sort marked
 #: AMBIGUOUS. Each names the part by its file and its opening words, so a ruling
 #: reverted in classification.yaml, or a split folded back into one part, fails
 #: here. Law parts that live in rooms/constraints.md or public/constraints.md are

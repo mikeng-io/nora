@@ -162,7 +162,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     "sticker_index": lambda i: {
         "platform": "signal", "fetch_token": f"t{i}", "sha256": f"{i:064x}",
     },
-    # (0071): the Rollup's builds, fold states, presence rows and
+    # Migration 0071: the Rollup's builds, fold states, presence rows and
     # unit rollups, and the collector's saved places.
     "presence_places": lambda i: {
         "circle_id": "c", "place_id": f"pl{i}", "name": f"place {i}", "lat": 22.25,
@@ -225,13 +225,13 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "conversation_id": "g1", "sent_ts": MS0 + i, "replies": 0, "reactions": 0,
         "edits": 0, "outcome": "open", **_UNIT_ROLLUP(i),
     },
-    # (0074_event_revision): the head, still updated in place (a
+    # Migration 0074_event_revision: the head, still updated in place (a
     # compare-and-swap cache over `event_revision`, APPEND below).
     "events": lambda i: {
         "id": _uuid("event", i), "conversation_id": "g1", "title": f"event {i}",
         "created_by": "p", "status": "proposed", "created_at": T0,
     },
-    # (0082): one open session per scope.
+    # Migration 0082: one open session per scope.
     "computer_sessions": lambda i: {
         "id": _uuid("cs", i), "platform": "signal", "conversation_id": f"g{i}",
         "scope": f"{i:02x}" * 16, "objective": f"task {i}", "status": "open",
@@ -367,7 +367,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "citations": [f"response:{n + 1}"], "why": "it loosens the rule",
         "written_at": MS0 + n, "established_by": "test",
     },
-    # (0083): one row per file that left the computer.
+    # Migration 0083: one row per file that left the computer.
     "computer_exports": lambda n: {
         "id": _uuid("cx", n), "platform": "signal", "conversation_id": "g1",
         "scope": "ab" * 16, "path": f"out/{n}.png", "destination": "link",
@@ -383,7 +383,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "file": "policy.toml", "path": "/p", "content_sha256": f"{n:064x}", "loaded_at": T0,
     },
     "deploy_revision": lambda n: {"started_at": T0, "manifest_status": "absent"},
-    # (0069/0070, DEC-234): the cognition loop's stimuli, wake log and source
+    # Migration 0069/0070 (DEC-234): the cognition loop's stimuli, wake log and source
     # health.
     "stimulus": lambda n: {
         "unit": "u", "kind": "message", "item": "message", "ref": f"messages:{n}",
@@ -397,7 +397,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "source": "presence", "scope": "c1", "event": "poll", "outcome": "ok",
         "at_ms": MS0 + n,
     },
-    # (0074_event_revision): the chain `events` is a compare-and-swap cache
+    # Migration 0074_event_revision: the chain `events` is a compare-and-swap cache
     # over, and RSVPs, append-only.
     "event_revision": lambda n: {
         "id": _uuid("evr", n), "event_id": _uuid("event", 0), "status": "proposed",
@@ -407,12 +407,12 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("rsvp", n), "event_id": _uuid("event", 0), "person_id": f"p{n}",
         "response": "yes", "responded_at": T0,
     },
-    # (0077_assess_report): the Assess adaptor's one store.
+    # Migration 0077_assess_report: the Assess adaptor's one store.
     "assess_report": lambda n: {
         "kind": "nightly_dq", "run_at_ms": MS0 + n,
         "results": [{"check": "cross_room_duplicate_events", "status": "ok"}],
     },
-    # (0078_cognition_session): the Cognition adaptor's session and
+    # Migration 0078_cognition_session: the Cognition adaptor's session and
     # its write verbs. `session_id` on the other tables is left unset
     # (nullable, no FK — see the migration's own FOREIGN KEYS paragraph):
     # this fixture appends each table's row independently, with no ordering
@@ -581,11 +581,11 @@ async def test_a_history_version_missing_a_later_column_restores_it_as_null(
     pg_url: str, pg_template: str,
 ) -> None:
     """0075_withdrawal added `hidden_at` to `messages` with no row_history
-    catch-up: a version recorded before that migration has no `hidden_at` key
-    in its `image` at all, never a `null` value. A restore
-    to an instant covered by such a version must still produce a row —
-    with `hidden_at` NULL, the column's own default for a row nothing ever
-    hid — not an error and not a spuriously-hidden one."""
+    catch-up: a version recorded before that migration has no `hidden_at` key in
+    its `image` at all, never a `null` value. A restore to an instant covered by
+    such a version must still produce a row — with `hidden_at` NULL, the column's
+    own default for a row nothing ever hid — not an error and not a
+    spuriously-hidden one."""
     engine = create_sql_engine(pg_url)
     try:
         async with engine.begin() as conn:

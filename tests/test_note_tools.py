@@ -79,8 +79,8 @@ def _tools(
     return {spec.name: spec.call for spec in specs}
 
 
-#: The transcript the tools' turn rendered: position 1 is row 501, Miles's. A body's
-#: `[#n]` is mapped to the row id at that position.
+#: The transcript the tools' turn rendered: `[#1]` is row 501, Miles's. A body's
+#: `[#n]` is mapped to the row id of that handle.
 _WINDOW = (
     TranscriptRow(
         id=501, sender_id="+85200000001", sender_name="miles", ts=NOW - 60_000,
@@ -92,7 +92,7 @@ _WINDOW = (
 
 
 def _b(text: str) -> str:
-    """A tag-path body in the note's form, citing transcript position 1."""
+    """A tag-path body in the note's form, citing the transcript handle `[#1]`."""
     return f"## Decided\n## Open\n- {text} [#1]"
 
 
@@ -775,7 +775,7 @@ async def test_a_missing_title_note_says_to_check_the_index_not_to_guess_variant
 
 
 async def test_note_create_maps_positions_to_row_ids_and_stores_the_normalised_body():
-    """She cites what she sees (position 1), the store keeps ids (501)."""
+    """She cites the `[#n]` handle she sees, the store keeps ids (501)."""
     store = InMemoryNoteStore()
     tools = _tools(notes=store)
 

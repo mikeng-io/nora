@@ -40,32 +40,30 @@ Six scenarios, five synthetic `person_id`s (one split across a rename):
                              never a guess either way.
 
 **The `synthetic_wfh_b` vs `synthetic_ambiguous_e` near-miss (reproduced here
-on purpose)**: `label_place`'s
-`is_home` floor (`_HOME_NIGHT_SHARE_MIN = 0.3`,
-`nora/domain/mobility.py`) cannot be met by ANY realistic
-work-from-home pattern without also admitting the genuinely-ambiguous
-"substantial dwell in both windows" case — because `night_share`'s
-denominator (`total_dwell`, all hours) grows with every hour of honest
-daytime presence at the same cell, `night_share` FALLS as a real
-work-from-home subject's day gets more honestly represented, not as her
-home-ness falls. Computed against this fixture (`night_share` = total
-night-window dwell / total dwell across every closed `Stay` in the
-cluster, exactly as `label_place` computes it):
+on purpose)**: `label_place`'s `is_home` floor (`_HOME_NIGHT_SHARE_MIN = 0.3`,
+`nora/domain/mobility.py`) cannot be met by ANY realistic work-from-home
+pattern without also admitting the genuinely-ambiguous "substantial dwell in
+both windows" case — because `night_share`'s denominator (`total_dwell`, all
+hours) grows with every hour of honest daytime presence at the same cell,
+`night_share` FALLS as a real work-from-home subject's day gets more honestly
+represented, not as her home-ness falls. Computed against this fixture
+(`night_share` = total night-window dwell / total dwell across every closed
+`Stay` in the cluster, exactly as `label_place` computes it):
 
     synthetic_wfh_b       night_share = 0.1818   (40h night / 220h total)
     synthetic_ambiguous_e night_share = 0.2353   (20h night /  85h total)
 
-Both are below the 0.3 floor (neither becomes `home`), and
-`synthetic_wfh_b`'s share is LOWER than `synthetic_ambiguous_e`'s by a
-0.0535 margin: the work-from-home case's honest daytime dwell dilutes her
-`night_share` more than the ambiguous case's narrower, more night-concentrated pattern does.
+Both are below the 0.3 floor (neither becomes `home`), and `synthetic_wfh_b`'s
+share is LOWER than `synthetic_ambiguous_e`'s by a 0.0535 margin: the
+work-from-home case's honest daytime dwell dilutes her `night_share` more than
+the ambiguous case's narrower, more night-concentrated pattern does.
 Reproduced here via two DIFFERENT stay-span shapes, not by hand-tuning one
-threshold: `synthetic_wfh_b` sits 22h/day (00:00-22:00, four hours of
-night PLUS a long daytime tail); `synthetic_ambiguous_e` sits a narrower
-17h/day (01:00-18:00, the same four hours of night against a shorter
-daytime tail) — this is exactly the trade-off `nora/domain/mobility.py`'s
-`label_place` docstring describes: no single window width separates the
-two, so the fixture keeps both patterns distinct.
+threshold: `synthetic_wfh_b` sits 22h/day (00:00-22:00, four hours of night
+PLUS a long daytime tail); `synthetic_ambiguous_e` sits a narrower 17h/day
+(01:00-18:00, the same four hours of night against a shorter daytime tail) —
+this is exactly the trade-off `nora/domain/mobility.py`'s `label_place`
+docstring describes: no single window width separates the two, so the fixture
+keeps both patterns distinct.
 
 Columns match the `presence_fixes` row shape: person_id, ts (ms), lat, lng,
 accuracy_m, wire_state, recorded_at (ms).

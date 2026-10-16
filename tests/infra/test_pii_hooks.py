@@ -475,7 +475,7 @@ def test_a_declaration_pushed_together_with_its_payload_exempts_nothing(repo):
     assert rc != 0 and "phone" in out
 
 
-# ---- declarations, acknowledgements and forged local state
+# ---- declarations, acknowledgements, commit headers and forged local state
 
 
 def test_a_denylisted_name_in_a_new_directory_is_refused_and_not_printed(repo):

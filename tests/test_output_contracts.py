@@ -98,8 +98,8 @@ def test_ambiguous_declares_the_sense_it_is_actually_used_in() -> None:
     `ambiguous` means "several candidates, cannot pick one". The person index returns
     every igid on file, and NONE is `nothing_found` with a note saying no account is on
     file. So the declaration names the one sense in use and says, in so many words, that
-    the other (no index entry AT ALL) is not this word, so a reviewer reading an old trace
-    that used it can tell a retired sense from a drift.
+    the other (no index entry AT ALL) is not this word, so a reviewer reading a trace
+    can tell the two senses apart.
     """
     meaning = DECLARED_STATUS_EXTENSIONS["ambiguous"]
     assert "several candidates" in meaning, "the sense in use is gone"
@@ -122,7 +122,7 @@ def test_the_vocabulary_is_derived_from_the_core_and_the_extensions() -> None:
 def test_the_contract_table_pins_what_each_shape_requires() -> None:
     """ADR 0009 §2's whole point: `messages` must NOT require a status.
 
-    This is the assertion that would have caught the superseded §3 enum. Under a
+    This is the assertion that fails for a status enum on every shape. Under a
     universal `required: ["status"]`, `load_transcript`'s every SUCCESSFUL call
     became `{"status": "unavailable", "reason": "malformed_result"}` — the recall
     ladder's middle rung dying silently rather than loudly.
@@ -348,7 +348,7 @@ async def test_a_valid_result_passes_through_untouched() -> None:
 
 
 async def test_a_status_free_result_passes_its_own_contract() -> None:
-    """ADR 0009 §2 at runtime — the assertion the superseded enum would fail."""
+    """ADR 0009 §2 at runtime — the assertion a universal status enum would fail."""
     payload = {"messages": []}
     tool = adapt(_adapted("messages", payload))
     assert await tool._tool_func(thing="x") is payload

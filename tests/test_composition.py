@@ -627,7 +627,7 @@ async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg
     deps = await build_dependencies(cfg)
     try:
         registry = deps.engagement._tool_registry
-        # §9's caps came from `[reminders]`, converted at the composition root —
+        # The caps come from `[reminders]`, converted at the composition root —
         # `nora.agent` may not import `nora.config`, so a caps object that
         # silently fell back to its defaults would ignore every operator value.
         assert registry._caps == ReminderCaps(**cfg.reminders.model_dump())
@@ -691,10 +691,10 @@ async def test_boot_recovery_counts_the_rows_it_swept(cfg, pg_url):
 
 
 async def test_the_liveness_gauge_is_seeded_even_with_the_heartbeat_off(cfg):
-    """`[heartbeat] enabled = false` SHIPS, so the gauge's callback must be bound outside
-    `HeartbeatLoop.__init__`. Bound inside it, on every default deployment the series
-    exports `0.0` forever, which reads exactly like "ticked a moment ago"; the one reading
-    an operator must be able to trust is the one it could not give.
+    """`[heartbeat] enabled = false` SHIPS, so the gauge must also be seeded outside
+    `HeartbeatLoop.__init__`; bound only inside it, on every default deployment the
+    series exports `0.0` forever, which reads exactly like "ticked a moment ago". The one
+    reading an operator must be able to trust is the one it could not give.
     """
     deps = await build_dependencies(cfg)
     assert cfg.heartbeat.enabled is False
@@ -757,11 +757,11 @@ async def test_computer_refuses_to_start_without_its_token(cfg, monkeypatch, tok
 async def test_compute_enabled_without_an_adapter_boots_and_spawns_no_poller(
     cfg, monkeypatch, no_build_stamp,
 ):
-    """The outbox, the poller and boot recovery are generic deferred delivery for a future
-    `delegate_task`, with no `ComputeBackend` adapter. A deployment whose `config.toml`
-    says `[compute] enabled = true` must therefore still BOOT, and the poller must not be
-    spawned: it has no backend to poll, so a spawned one would claim `pending` rows it
-    cannot answer for. Reaching into `background._tasks` for the same reason
+    """The outbox, the poller and boot recovery are generic deferred delivery. With
+    `[subagent]` off no `ComputeBackend` is registered, so a deployment whose
+    `config.toml` says `[compute] enabled = true` must still BOOT, and the poller must
+    not be spawned: it has nothing to poll, so a spawned one would claim `pending` rows
+    it cannot answer for. Reaching into `background._tasks` for the same reason
     `test_the_heartbeat_is_wired_to_the_real_fire_path` does."""
     on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
     deps = await build_dependencies(on)
@@ -793,7 +793,7 @@ async def test_subagent_off_registers_no_backend(cfg, no_build_stamp):
     deps = await build_dependencies(cfg)
     try:
         assert deps.subagent_backend is None
-        # and the four model-facing tools are withheld from every turn (step 3)
+        # and the four model-facing tools are withheld from every turn
         from nora.agent.tools import SUBAGENT_TOOLS
 
         assert deps.engagement._tool_registry._withheld >= SUBAGENT_TOOLS
@@ -815,7 +815,7 @@ async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_r
     deps = await build_dependencies(on)
     try:
         assert isinstance(deps.subagent_backend, SubagentBackend)
-        # step 3: the tools are offered, and their desk launches into THIS backend
+        # the tools are offered, and their desk launches into THIS backend
         from nora.agent.tools import SUBAGENT_TOOLS
 
         registry = deps.engagement._tool_registry
@@ -1007,7 +1007,7 @@ async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
 
 
 
-# --- Standing / the debrief stage ---
+# --- Standing / the debrief stage ---------------------------------------
 
 async def test_standing_disabled_wires_no_debrief_and_no_block(cfg):
     """`[standing] enabled = false` is the shipped default, and OFF has to mean
@@ -1021,7 +1021,7 @@ async def test_standing_disabled_wires_no_debrief_and_no_block(cfg):
 
 
 async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg):
-    """**One instance, two callers**, and this is the structural half of §4's
+    """**One instance, two callers**, and this is the structural half of a
     non-negotiable: the fold must read the position it is about to overwrite.
     Two separate store objects would still satisfy every type here and still be
     the same row, but it is the kind of wiring that invites a later change to
@@ -1067,25 +1067,21 @@ def _effort_of(client: object) -> str:
 
 
 async def test_the_debrief_declares_a_reasoning_effort_rather_than_inheriting_silently(cfg):
-    """It passed none at all, so the fold ran at the provider's default — an
-    unchosen setting on a call that spends the conversation's slot, while the
-    tag path passes `[llm] reasoning_effort` explicitly.
+    """Passing none runs the fold at the provider's default — an unchosen setting
+    on a call that spends the conversation's slot, while the tag path passes
+    `[llm] reasoning_effort` explicitly.
 
-    Empty means inherit `[llm]`, which is the honest default while the spike
-    that would CHOOSE a value has not been run: `18-flows.md` calls the fold's
-    effort "a measurement, not a setting" and `09-measurement.md` forbids
-    asserting the plausible-sounding answer without it.
+    Empty means inherit `[llm]`, the honest default while no measurement has
+    chosen a value for the fold.
     """
     # PRECEDENCE, not one branch of it: an explicit `[standing]` value wins,
-    # and empty falls back to `[llm]`. The first version asserted only the
-    # fallback and went red the moment the operator set a value — which is a
-    # test pinning today's config rather than the rule.
+    # and empty falls back to `[llm]`. Asserting only the fallback goes red once
+    # the operator sets a value, which pins today's config rather than the rule.
     explicit = await build_dependencies(override_config(
         cfg, {"standing.enabled": True, "standing.reasoning_effort": "none"}))
-    # Read off the PROVIDER the client built, not a field it stored. Since the
-    # fold moved onto the Agent SDK the effort's whole job is to reach the
-    # request; an attribute nobody sends would satisfy a stored-field check and
-    # change nothing about the call.
+    # Read off the PROVIDER the client built, not a field it stored. The
+    # effort's whole job is to reach the request; an attribute nobody sends would
+    # satisfy a stored-field check and change nothing about the call.
     assert _effort_of(explicit.engagement._debrief_wiring.client) == "none"
 
     inherited = await build_dependencies(override_config(
@@ -1222,8 +1218,8 @@ async def test_a_misspelt_inherited_effort_refuses_to_start(cfg):
     LOADS and resolves to `"hgh"`, which reaches the provider as a 400 mid-tick and
     surfaces as one more `unavailable` in a background pass nobody watches.
 
-    `StandingConfig`'s declaration needs its RESOLUTION too: `_reasoning_effort` is the
-    other half and exists for this case.
+    A declaration copied from `StandingConfig` needs its RESOLUTION too:
+    `_reasoning_effort` is that half and exists for this case.
     """
     with pytest.raises(StartupError, match="reasoning effort"):
         await build_dependencies(override_config(cfg, {
@@ -1254,7 +1250,7 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
 
 
 
-# --- the proactive adaptor (DEC-162) -----------
+# --- the proactive adaptor (DEC-162) ------------------------------------
 
 
 
@@ -1354,7 +1350,7 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
 async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent(
     cfg, tmp_path,
 ):
-    """39 D5/D11/D12 at the root: the heartbeat holds a `ProactiveScreen` over
+    """At the root: the heartbeat holds a `ProactiveScreen` over
     the SAME allowlist and note store, `event_registry` maps the kind, and
     the fire path holds an auto-runner under `proactive_runner` even with
     participation off. Reached the way the heartbeat wiring test reaches
@@ -1500,7 +1496,7 @@ async def test_the_summons_consumer_is_spawned_with_both_flags_on_and_no_poller_
     that never wires at all. The consumer drains an ENABLED inbox (the same
     `summons_wired` gate), its occasion holds an `AFTER_SPEAKING` runner
     (silence is expressible) and the mode the config names. And nothing polls
-    the notification feed any more: no poller task, no poller module."""
+    the notification feed: no poller task, no poller module."""
     import importlib.util
 
     on = override_config(cfg, {
@@ -1524,7 +1520,7 @@ async def test_the_summons_consumer_is_spawned_with_both_flags_on_and_no_poller_
 async def test_cognition_off_builds_no_stimulus_stage_and_no_evaluator(cfg):
     """`[cognition] enabled = false` is the shipped default: nothing is written
     to `stimulus`, no evaluator is spawned. Adapter health is recorded anyway —
-    it is Record, not a subsystem that acts (20-observe.md §1)."""
+    it is Record, not a subsystem that acts."""
     deps = await build_dependencies(cfg)
     assert deps.wake_evaluator is None
     assert deps.ingest._stimulus_wiring is None
@@ -1617,8 +1613,8 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     assert all("room" in names for names in agent._param_names.values())
     assert set(agent._param_names) <= runner._read_only_tools
     # The session's instruction is the Dreamer's objective for it, read from
-    # the bind-mounted corpus, its own prelude first (not the shared doctrine,
-    # step 4 PR-1), and the composed runner injects the Register skill for a
+    # the bind-mounted corpus, its own prelude first (not the shared doctrine),
+    # and the composed runner injects the Register skill for a
     # `message` agenda and records it; `time` is mapped, so the floors wake.
     text, sha = runner._doctrine()
     assert text.startswith('<dreamer_doctrine name="cognition-prelude">')
@@ -1647,8 +1643,8 @@ async def test_a_session_whose_prelude_or_skill_is_missing_is_a_startup_error(
     cfg, tmp_path, how,
 ):
     """Without its prelude, `cognition` silently reads the shared Dreamer doctrine («you
-    look; you do not act»), and a mapped skill that is not installed raised a raw
-    `LookupError` out of the composition. Both are a named `StartupError` now."""
+    look; you do not act»), and a mapped skill that is not installed would raise a raw
+    `LookupError` out of the composition. Both must be a named `StartupError`."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     root = _dreamer_tree(tmp_path)
     prelude = root / "preludes" / "cognition-prelude.md"

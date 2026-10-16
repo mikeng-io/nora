@@ -21,7 +21,7 @@ it exists to catch.
 
 Rooms, people and words are placeholders.
 
-What each test would catch if reverted is named in
+What each test would catch if its guard were removed is named in
 `scripts/mutations/cognition-step3a3-review.json`.
 """
 

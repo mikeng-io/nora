@@ -8,13 +8,12 @@ and the outbound sender faked. The wiring below is the harness-side mirror of
 `nora.app.composition.build_dependencies`, using `nora.testing`/local fakes
 wherever `build_dependencies` would use a real collaborator.
 
-`ScriptedTurn`, `FakeAgentRunner`, and `group_event` live in `nora.testing`:
-`evals/harness.py` needs the same scripted-model double and event builder
-without importing `tests/`, so there is one definition, imported here and
-there. The ingest+engagement+dispatcher wiring tail itself lives in
-`tests.offline_pipeline.build_offline_pipeline` for the same reason — `evals/`
-may import `nora.app` and `nora.testing` only, so that function is what it
-calls instead of duplicating this module's pipeline assembly.
+`ScriptedTurn`, `FakeAgentRunner`, and `group_event` live in `nora.testing`,
+one definition shared with the offline eval harness. The
+ingest+engagement+dispatcher wiring tail lives in
+`tests.offline_pipeline.build_offline_pipeline`, which `run_case` in
+`tests/offline_eval_harness.py` calls instead of duplicating this module's
+pipeline assembly.
 """
 
 from __future__ import annotations
@@ -166,9 +165,9 @@ class Harness:
     # Port, not the concrete SqlRecordStore: under db_append_fails/context_read_fails
     # this is a _StoreProxy subclass instead (see the two subclasses above).
     store: RecordStore
-    # The reasoning-continuity retention store — sharing `store`'s own
-    # engine (see its construction in `build_handler`), so `store.aclose()`
-    # tears it down too. Exposed for the tests that assert a driven tag left a
+    # The reasoning-continuity retention store — sharing `store`'s own engine
+    # (see its construction in `build_handler`), so `store.aclose()` tears it
+    # down too. Exposed for the tests that assert a driven tag left a
     # retrievable `TagTrace` row.
     tag_trace_store: SqlTagTraceStore
     # Cumulative call log fed by every `FakeAgentRunner` this harness has ever used
@@ -180,9 +179,9 @@ class Harness:
     _tmp_path: Path
     _identity_toml: str
     _register: Callable[[Harness], None] | None = None
-    # The participation occasion's quiescence trigger,
-    # None unless `participation_script` was given. Tests drive
-    # `close_due_windows()` directly against the injected clock — never a sleep.
+    # The participation occasion's quiescence trigger, None unless
+    # `participation_script` was given. Tests drive `close_due_windows()`
+    # directly against the injected clock — never a sleep.
     participation_trigger: ParticipationTrigger | None = None
 
     async def aclose(self) -> None:
@@ -331,12 +330,12 @@ async def build_handler(
     other caller's behavior unchanged.
 
     `participation_script`, when given, wires the participation occasion the way
-    the composition root does: the rooms named in
-    `participation_rooms` get `relevance_gate = true` in policy.toml, a REAL
-    `FirePath` is built with the scripted model as its `participation_runner`,
-    and a `ParticipationTrigger` over the engagement pipeline's own slots is
-    handed to the dispatcher — so an untagged message in an opted-in room is
-    NOTED, and nothing runs until the test closes the window itself with
+    the composition root does: the rooms named in `participation_rooms` get
+    `relevance_gate = true` in policy.toml, a REAL `FirePath` is built with the
+    scripted model as its `participation_runner`, and a `ParticipationTrigger`
+    over the engagement pipeline's own slots is handed to the dispatcher — so an
+    untagged message in an opted-in room is NOTED, and nothing runs until the
+    test closes the window itself with
     `harness.participation_trigger.close_due_windows()` (the clock is
     `participation_clock`, injected for the same reason `Debounce`'s is).
     """
@@ -465,11 +464,11 @@ async def build_handler(
         doctrine_store.get(applies_to="tag")     # warm the last-good cache before corrupting
         (doctrine_copy_dir / "core" / "constraints.md").write_text("not valid doctrine content\n")
 
-    # The participation occasion's runner: built
-    # BEFORE the pipeline so it can be threaded into `build_offline_pipeline`,
-    # which then builds the real FirePath + quiescence trigger itself — the one
-    # definition of that wiring, shared with `evals/` (which may not import
-    # `nora.app.fire` to build its own).
+    # The participation occasion's runner: built BEFORE the pipeline so it can
+    # be threaded into `build_offline_pipeline`, which then builds the real
+    # FirePath + quiescence trigger itself — the one definition of that wiring,
+    # shared with `evals/` (which may not import `nora.app.fire` to build its
+    # own).
     participation_runner = None
     if participation_script is not None:
         participation_runner = (

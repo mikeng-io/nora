@@ -108,6 +108,7 @@
  "nora/infra/sql/migrations/versions/0106_memory_vectors.py": 3,
  "site/scripts/make_images.py": 1,
  "tests/integration/test_ambient.py": 2,
+ "tests/test_note_tools.py": 2,
  "tests/unit/test_reminder_recurrence.py": 2,
  "tests/unit/test_shown_window_vs_lookup_window.py": 2,
  "tests/unit/test_unit_rollups.py": 1,

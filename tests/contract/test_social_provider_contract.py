@@ -19,12 +19,10 @@ bridge signals a miss with `{"status": "nothing_found"}` over an exit-66
 subprocess; the instagram-bridge answers `GET /accounts/{igid}/story` with
 `found: false` (its bodies here are the shared contract fixtures the Go
 handlers generate, `tests/fixtures/instagram_bridge/`). They are refused
-differently too — each backend's allowlist is its own process's and
-answers 400 from a different program. A fake that answered both clients
-identically would be the "fake that answers every request the same way"
-this repo has been bitten by, and would prove
-nothing: the point is that DIFFERENT wire shapes must reduce to the SAME
-states.
+differently too — each backend's allowlist is its own process's and answers 400
+from a different program. A fake that answered both clients identically would be
+the "fake that answers every request the same way", and would prove nothing: the
+point is that DIFFERENT wire shapes must reduce to the SAME states.
 
 **The router is treated as an arm, not as a wrapper.** It is parametrized
 twice — once on a default-backend read and once on the exception row — because

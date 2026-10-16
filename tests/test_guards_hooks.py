@@ -132,7 +132,7 @@ def test_register_hooks_subscribes_to_both_events():
     assert BeforeToolCallEvent in registered
     assert AfterToolCallEvent in registered
     assert BeforeModelCallEvent in registered
-    # A11: without the AFTER half the model-call counter has nothing to count
+    # Without the AFTER half the model-call counter has nothing to count
     # completions with, and falls back to counting attempts.
     assert AfterModelCallEvent in registered
 
@@ -205,7 +205,7 @@ def test_a_vetoed_call_does_not_release_a_siblings_reservation():
         C's after-hook releases    -> in_flight = 1
         D admitted                 -> a third call runs against a budget of 2
 
-    which is the nine-`place_info` trace `call_ledger` exists to prevent,
+    which is the over-budget parallel batch `call_ledger` exists to prevent,
     needing only one veto in the batch to reopen. Asserted through `evaluate`
     rather than through the ledger, because the veto is where the leak costs
     the model something."""

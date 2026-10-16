@@ -235,9 +235,9 @@ async def test_the_double_relaxes_tool_choice_after_a_terminal_verb_runs():
     """THE PROBE for the before-model half.
 
     `now` is terminal with a budget of 2, so the guard permits a second model
-    call and relaxes it — the `required → auto` relaxation
-    sequence. Drop `agent` from `_BeforeModelCall` (or stop passing a
-    model) and this goes red while every other scripted scenario stays green.
+    call and relaxes it — the `required → auto` relaxation sequence. Drop
+    `agent` from `_BeforeModelCall` (or stop passing a model) and this goes red
+    while every other scripted scenario stays green.
     """
     guard = ReplyGuard(conversation_id="g1", budgets={"now": 2}, terminal={"now"},
                        metrics=Metrics())
@@ -252,9 +252,9 @@ async def test_the_double_relaxes_tool_choice_after_a_terminal_verb_runs():
 
 
 async def test_each_invocation_gets_its_own_scripted_model():
-    """Per-tag, mirroring `LiveAgentRunner`'s `ModelSource` (step 5a). Share one
-    and the second tag would start where the first left off — `auto` on its
-    first call, which can answer in prose and send nothing."""
+    """Per-tag, mirroring `LiveAgentRunner`'s `ModelSource`. Share one and the
+    second tag would start where the first left off — `auto` on its first call,
+    which can answer in prose and send nothing."""
     runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("now", {})])])
     tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
                           budget=2, terminal=True))

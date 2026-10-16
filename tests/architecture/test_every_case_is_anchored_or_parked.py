@@ -1,7 +1,7 @@
 """Every corpus case is a real moment, a parked one, or a visibly unanchored one.
 
-A case runs a COMPLETE Nora rebuilt from production data, or it does not run
-(`design/evaluation/11-the-sandbox-rebuild.md` §7.1). There is no third
+A case runs a COMPLETE Nora rebuilt from production data, or it does not run.
+There is no third
 assembly. This pins that at the corpus surface, where it decays first:
 
 - the loader refuses every key that would smuggle an assembly in (`knows`,
@@ -44,16 +44,16 @@ KNOWN_ROOMS = {
 FIRST_ROW_MS = 1_785_928_686_349
 
 #: The cases that are UNANCHORED on purpose: the tool-result seam
-#: (`11-the-sandbox-rebuild.md` §7.2) does not exist yet, so they load, run,
-#: and ERROR until it does. A case blocked on unfinished work is not parked.
+#: does not exist yet, so they load, run, and ERROR until it does. A case
+#: blocked on unfinished work is not parked.
 #: Adding a name here is a decision; removing one is the seam landing.
 UNANCHORED_BY_DESIGN = {
-    # Blocked on the <computer> block (design/sandbox-runtime §15), a seam
+    # Blocked on the <computer> block, a seam
     # this work owes: a correct `computer_read` turn needs to know the file
     # exists, and an anchor carries no workspace state.
     "tool_selection": {"route_computer_read_named_file"},
     "being_contradicted": {"real_evidence_may_overturn"},
-    # Blocked on the DISCORD ADAPTER divergence (§1.2), which is also a seam
+    # Blocked on the DISCORD ADAPTER divergence, which is also a seam
     # this rebuild owes: their premise exists only in a Discord room, and a
     # turn cannot run where no adapter is wired. They are unfinished, not
     # parked: parking would retire them to make the rebuild look complete.
@@ -137,7 +137,7 @@ def test_a_case_that_speaks_anchors_where_an_adapter_is_wired(name: str) -> None
 
     `FirePath._turn` resolves the room's own adapter before she says anything
     — speaking into a room on a platform she is not on is worse than staying
-    quiet — and the sandbox composes no Discord adapter (§1.2's declared
+    quiet — and the sandbox composes no Discord adapter (a declared
     divergence). So a turn case anchored there cannot run, whatever the model
     would have said. `gate` and `dreamer` read and write without speaking and
     are unaffected, which is why the rule reads `drives_a_turn` rather than a

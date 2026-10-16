@@ -269,8 +269,8 @@ async def test_a_reply_naming_nothing_is_sent_exactly_as_written(store, doctrine
 async def test_the_leak_guard_sees_the_appended_bytes(store, doctrine):
     """The carry runs BEFORE R-6/R-18, so the guards measure what LEAVES. A
     transformation sitting in front of a fail-closed guard without the guard
-    seeing its output is the hole DEC-82's strip avoids; this proves the
-    ordering by carrying a poisoned url."""
+    seeing its output opens a hole; this proves the ordering by carrying a
+    poisoned url."""
     links = LinkCarry()
     links.offer(anchor="Soi.29", url="https://x.test/+85298765432")
     sink = SinkSender()

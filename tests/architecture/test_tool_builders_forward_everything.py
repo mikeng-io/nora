@@ -102,7 +102,7 @@ _SPECS_ONLY = frozenset({
     # `computer_export`'s record of what left the computer and its link's
     # portal origin (ADR 0023), threaded the same way.
     "computer_exports", "artifact_link_base",
-    # `computer_browse`'s sub-agent threaded the
+    # `computer_browse`'s sub-agent, threaded the
     # same way as the computer runtime above; its tests build through
     # `build_tool_specs` (tests/unit/test_computer_browse_tool.py).
     "browser",

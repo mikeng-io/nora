@@ -304,7 +304,7 @@ async def test_a_sender_absent_from_listcontacts_reads_unknown(env, capsys):
 
 
 async def test_a_spoofable_profile_name_is_never_the_identification(env, capsys):
-    """`sourceName` is chosen by the sender and changeable at will (§1.3). It
+    """`sourceName` is chosen by the sender and changeable at will. It
     is reported and labelled, never printed as who this account IS."""
     await audit(env, sender=STRANGER,
                 raw=envelope(source=STRANGER, name="Miles Novak"))
@@ -484,7 +484,7 @@ async def test_reminders_list_shows_what_is_still_waiting(env, capsys):
 
 
 async def test_reminders_list_never_shows_a_row_that_already_resolved(env, capsys):
-    """A reminder resolves ONCE and is never re-run (§8.2), so a `done` row in
+    """A reminder resolves ONCE and is never re-run, so a `done` row in
     the "what is still coming" listing would read as a message about to be sent
     twice."""
     await _seed_reminder(env, state=ReminderState.DONE, text="already gone")
@@ -545,9 +545,9 @@ async def test_the_reminder_store_the_cli_opens_refuses_a_write(env):
     the reminders table, so this is the store `nora reminders list` really uses.
 
     `cancel` is the write that matters: it is the one subcommand this module
-    could plausibly grow, and design spec §7.4 says it must not — the operator's
-    kill switch is `[heartbeat] enabled = false` plus a restart. The driver
-    refuses it, so no future edit can add it by accident.
+    could plausibly grow, and it must not — the operator's kill switch is
+    `[heartbeat] enabled = false` plus a restart, so the CLI must not cancel. The
+    driver refuses it, so no future edit can add it by accident.
     """
     row = await _seed_reminder(env)
     store = cli.readonly_reminder_store(env["url"])
@@ -565,7 +565,7 @@ async def test_the_reminder_store_the_cli_opens_refuses_a_write(env):
 
 
 async def test_there_is_no_way_to_cancel_a_reminder_from_the_cli(env):
-    """§7.4, as a test rather than a promise. `nora reminders cancel` must not
+    """A test rather than a promise. `nora reminders cancel` must not
     parse — the read-only guarantee is structural, and a subcommand that existed
     and then failed at the driver would be a worse answer than one that never
     existed."""
@@ -594,9 +594,9 @@ async def _rows(env):
 
 @pytest.mark.parametrize("argv", [("groups",), ("persons", "pending")])
 async def test_neither_command_writes_a_host_file(env, capsys, argv):
-    """D6 is not negotiable: identity.toml stays authoritative and hand-edited.
+    """identity.toml stays authoritative and hand-edited; this is not negotiable.
     Hashing the whole tree catches a rewritten config.toml, a rewritten
-    identity.toml, and any file the command invented. The record store is now
+    identity.toml, and any file the command invented. The record store is
     Postgres, not a file in this tree — its rows are covered by
     `test_neither_command_changes_a_single_audit_row`."""
     env["groups"] = [group_row(members=[MILES_MEMBER])]
@@ -630,7 +630,7 @@ async def test_the_store_the_cli_actually_opens_refuses_a_write(env):
 
     It is `set_person_id` rather than a raw DELETE on purpose: that is the one
     write on the whole `RecordStore` port a pending-sender tool could plausibly
-    grow into ("adopt them for me"), and D6 says it must not. The driver
+    grow into ("adopt them for me"), and it must not. The driver
     refuses it, so no future edit can add it by accident.
     """
     row_id = await audit(env, sender=MILES_PHONE, raw=envelope(source=MILES_PHONE))
@@ -717,7 +717,7 @@ def test_render_presence_members_is_paste_ready():
     assert "[[persons.CHANGEME.life360]]" in out
     assert 'member_id = "m-miles"' in out
     assert 'circle_id = "cir-1"' in out
-    # no config.toml id block anymore
+    # ids live in identity.toml, never a config.toml block
     assert "[[presence.circles]]" not in out
     assert "config.toml carries no ids" in out
 
