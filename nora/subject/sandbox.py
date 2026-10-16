@@ -21,21 +21,14 @@ TWO DATABASES, AND WHICH IS WHICH.
   deployment's own `policy.toml` and `identity.toml`, and it is dropped when
   the case ends.
 
-Isolation is by database, not by room. An earlier design shared one database
-across every case and minted a hashed room per case (`room_for`), which then
-needed a swapped policy entry, a Discord-shaped id, a per-case Honcho
-workspace and a clock shift to look like the real room — and still was not
-it. A database per case makes the real ids usable and the copied files
-verbatim, which is the whole point of copying them.
+Isolation is by database, not by room: a database per case makes the real ids
+usable and the copied files verbatim.
 
 THE COPY IS AT THE MOMENT'S OWN CLOCK. Every seeded row keeps its real `ts`,
 the standing keeps its real `updated_at`, and the subject's clock is frozen
 at `before_ms` (`SubjectSpec.now`) — so a row that was four minutes old at
 the instant is four minutes old to the model, because the model's "now" IS
-the instant. Nothing is shifted. The previous design shifted every timestamp
-onto the wall clock instead, which was the faithful thing to do to the
-DATABASE and the wrong thing to do to the MODEL only because the clock was not
-yet a port; it is one now (`01-boundaries.md` §3).
+the instant. Nothing is shifted.
 
 WHAT IS STILL NOT BYTE-IDENTICAL, each a stated limitation of the extraction:
 
@@ -45,42 +38,33 @@ WHAT IS STILL NOT BYTE-IDENTICAL, each a stated limitation of the extraction:
   Nora's own rows retain minted ids. `person_id` is copied to identify the
   roster person; it is not itself the name projection's lookup key.
 - **Media is NOT reconstructed.** `snapshot.py` returns `messages.body` as
-  stored, which since issue #116 carries a handle (`[image a3f2c1]`) rather
-  than a description; `Message.media` would synthesise a `MediaBlob` with a
-  DIFFERENT digest, so the handle in the body would name a blob that is not
-  the one attached.
+  stored, which carries a handle (`[image a3f2c1]`) rather than a description;
+  `Message.media` would synthesise a `MediaBlob` with a DIFFERENT digest, so
+  the handle in the body would name a blob that is not the one attached.
 - **A note's loop state is whatever `snapshot.py` could recover.** `NoteSeed`
   writes through `SqlNoteStore.create`, so every seeded note is freshly open.
 - **Reply threading is FLATTENED.** `TranscriptRow.quoted_ts` names which
-  earlier row a message replied to; `Message` has no quote field. Closing it
-  needs a citation-style translation, a second piece of work.
-- **Only four tiers are extracted** by this path. `sandbox_as_of` (step 1b)
-  restores every store as of T instead, row for row; the corpora
+  earlier row a message replied to; `Message` has no quote field.
+- **Only four tiers are extracted** by this path. `sandbox_as_of` restores
+  every store as of T instead, row for row; the corpora
   `evals.scenarios.FULL_RESTORE_CORPORA` names are seeded that way, and
   `restored_room` hands their drive what this path's `Sandboxed` carries.
   For every other corpus, reminders, note candidates and the
-  debounce/window state tables are EMPTY in the sandbox. That is the same
-  emptiness the hashed-room design had, now visible in one place; extending
-  `snapshot.py` is how it closes, and `11-the-sandbox-rebuild.md` §6 R1 is
-  the rule that will refuse a case once the extraction can say a tier is
-  missing rather than merely unread.
+  debounce/window state tables are EMPTY in the sandbox; extending
+  `snapshot.py` is how that closes.
 
 THE SOURCE AND THE TEMPLATE ARE BOTH SHARED, AND NEITHER MAY EVER BE
-MIGRATED BY A RUN (2026-09-25 hazard, fixed here). `nora_eval` (the source)
-and `nora_eval_blank` (the template `sandbox_database` clones every case
-from) are read by every session on the host, not just this run's. Measured
-2026-09-25: a run from a branch whose alembic head was AHEAD of
-`nora_eval_blank` called `run_migrations` on it — the ONLY place in this
-package that ever calls `run_migrations` on a shared, not per-case, name —
-which upgraded the shared template to that branch's head. Every OTHER
-session's run then failed at seeding, from master, with `Can't locate
-revision '0065_…'`: `command.upgrade(cfg, "head")` has to find the
-database's CURRENT revision in ITS OWN script directory to plan a path from
-it, and master's script directory had never heard of a revision only the
-ahead branch defined. Fixed by hand with a downgrade at the time; fixed
-structurally here:
+MIGRATED BY A RUN. `nora_eval` (the source) and `nora_eval_blank` (the
+template `sandbox_database` clones every case from) are read by every session
+on the host, not just this run's. `command.upgrade(cfg, "head")` has to find
+the database's CURRENT revision in ITS OWN script directory to plan a path
+from it, so upgrading the shared template to a branch's head would make every
+other session's run (from a checkout that has never heard of that revision)
+fail at seeding with `Can't locate revision '0065_…'`. `_blank_template` is
+the ONLY place in this package that calls `run_migrations` on a shared, not
+per-case, name, and it guards it:
 
-- `_blank_template` now upgrades the shared template ONLY the first time it
+- `_blank_template` upgrades the shared template ONLY the first time it
   is ever created (nothing depends on it yet) or when it is already at this
   process's own head (a no-op skipped entirely, not even attempted). Any
   other relationship — this branch ahead OR behind what is already there —
@@ -100,8 +84,7 @@ structurally here:
   — this repo's ONE linear alembic chain makes "known at all" the same fact
   as "an ancestor of head"). A source BEHIND head runs — refusing there
   would refuse nearly every ordinary run from master, since most migrations
-  add nothing `snapshot()` selects (measured 2026-09-25: source at `0063`,
-  head at `0064`, an index-only migration) — and `nora.infra.sql.snapshot.
+  add nothing `snapshot()` selects — and `nora.infra.sql.snapshot.
   snapshot` is the second, fail-closed layer: a read that actually hits a
   missing column or table there raises the SAME `SourceRevisionMismatchError`
   (defined in `nora.infra.sql.migrations_runner`, the lower layer both
@@ -211,13 +194,11 @@ async def _blank_template(source_url: str) -> str:
     it except to ESTABLISH it the first time it is ever created — nothing
     depends on it yet at that point. Once established, it is reused AS IS
     when its revision already equals this process's own `head_revision()`
-    (no upgrade call at all, not even the idempotent no-op the old code paid
-    for on every process). Anything else — this branch ahead of what is
+    (no upgrade call at all). Anything else — this branch ahead of what is
     there, or behind it — is a DIVERGENCE, and upgrading the SHARED database
-    is exactly the 2026-09-25 hazard this function exists to end (module
-    docstring): a branch ahead of `nora_eval_blank` upgraded it to its own
-    head, and every OTHER session's run then failed at seeding, from an
-    older head, with `Can't locate revision '0065_…'`.
+    is the hazard this function exists to end (module docstring): every OTHER
+    session's run, from an older head, would fail at seeding with
+    `Can't locate revision '0065_…'`.
 
     So a divergence never touches the shared template. It clones a
     throwaway PRIVATE copy (`<template>_run_<nonce>`) from the shared one AT
@@ -525,9 +506,8 @@ def refuse_if_source_diverges_from_head(source_url: str) -> None:
     `revision_is_known` — is by construction an ANCESTOR of head: the
     source is behind or current, never on a separate branch. Refusing on
     every routine deploy lag would refuse nearly every ordinary run from
-    master (measured 2026-09-25: source at `0063_note_merge_decision`, head
-    at `0064_proactive_open_note`, which only adds an index nothing here
-    selects) — most migrations add nothing `snapshot()`'s five reads name.
+    master — most migrations (an index-only one, for instance) add nothing
+    `snapshot()`'s five reads name.
     What a behind source cannot promise is that EVERY later migration was
     that harmless, so `snapshot()` itself is the fail-closed second layer:
     a read that actually hits a missing column or table there raises this
@@ -567,8 +547,7 @@ async def sandbox_database(
 
     `CREATE DATABASE ... TEMPLATE <blank>` is a file-level clone inside
     Postgres — the mechanism `tests/conftest.py`'s `pg_url` already uses per
-    test, and the reason `obtain()` costs ~64ms against one
-    (`03-step0-results.md` §3). Stragglers on the template are terminated
+    test, and the reason `obtain()` is cheap against one. Stragglers on the template are terminated
     first, because Postgres refuses to copy a database with any other
     session connected and a pooled handle is exactly what lingers.
 
@@ -607,8 +586,7 @@ async def sandbox_as_of(
 ) -> AsyncGenerator[tuple[str, SeedReport]]:
     """A fresh sandbox (`sandbox_database`) holding EVERY restorable store as
     it stood at `at` in the source — `nora snapshot --at T`'s seeding, into
-    the per-case database the harness already clones from the blank template
-    (design/cognition-loop/70-migration.md §2, step 1b).
+    the per-case database the harness clones from the blank template.
 
     Unlike `sandbox_from_snapshot`, which reconstructs one room's four tiers
     and rewrites them through the stores, this copies every row with its own
@@ -634,16 +612,13 @@ def _collapse_duplicate_proactive_notes(
 ) -> tuple[Reminder, ...]:
     """At most ONE open proactive reminder per note — reproducing what
     production would hold AFTER migration 0064's own collapse
-    (`nora/infra/sql/migrations/versions/0064_proactive_open_note.py`,
-    issue #158).
+    (`nora/infra/sql/migrations/versions/0064_proactive_open_note.py`).
 
     Production HISTORY holds instants with TWO open proactive rows on one
-    note — the double-booking #517 fixed going forward, never undone in the
-    past (`0064`'s own upgrade cancelled what was open on 2026-09-25, not
-    what a `before_ms` anchored earlier ever held). `Snapshot.reminders`
-    reconstructs the room AS IT WAS, so it still carries both, and seeding
-    both into the sandbox's own store — which, since #517, enforces the same
-    `uq_reminders_proactive_open_note` production does — raises
+    note. `Snapshot.reminders` reconstructs the room AS IT WAS, so it still
+    carries both, and seeding both into the sandbox's own store — which
+    enforces the same `uq_reminders_proactive_open_note` production does —
+    raises
     `DuplicateProactiveNoteError` on the second one. This collapses BEFORE
     seeding, using 0064's OWN rule (its `_RESOLVE_DUPLICATES` — pending
     before firing, then earliest `due_at`, then `created_at`, then `id`), so
@@ -749,9 +724,9 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
         # `now_ms=shot.before_ms`, so `base + due_in_seconds` reproduces the
         # real `due_at` exactly, and an overdue row stays overdue by the
         # number of seconds it really was. COLLAPSED to one open proactive
-        # row per note FIRST (`_collapse_duplicate_proactive_notes`, issue
-        # #158): production history can hold two, and seeding both would hit
-        # #517's own `uq_reminders_proactive_open_note` on the second.
+        # row per note FIRST (`_collapse_duplicate_proactive_notes`):
+        # production history can hold two, and seeding both would hit
+        # `uq_reminders_proactive_open_note` on the second.
         reminders=tuple(
             _reminder_seed(r, before_ms=shot.before_ms)
             for r in _collapse_duplicate_proactive_notes(shot.reminders)
@@ -794,11 +769,10 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
 
     **The anchor goes across whole**: `anchor_date` and `anchor_entity_ids`
     both, so a note anchored by entity ids alone seeds like any other instead
-    of being refused (it once was, and every case built on such a note
-    errored before the turn ran).
+    of being refused.
 
-    **`id=note.id` — the SOURCE's own id, not left for `know()` to assign
-    (issue #158, review).** A reminder seeded alongside keeps this SAME id in
+    **`id=note.id` — the SOURCE's own id, not left for `know()` to assign.**
+    A reminder seeded alongside keeps this SAME id in
     its payload's `note_id` (`_reminder_seed` copies `payload` verbatim), and
     letting `know()` assign the sandbox note a fresh one (`NoteSeed.id`'s own
     docstring) would leave nothing in the sandbox agreeing on what a note's id
@@ -829,9 +803,9 @@ class Sandboxed:
     #: ITEM — the SOURCE a judge grades grounding against (`evals.backbone`).
     #: Each item is the `<m>` element she was shown for that row, speaker and
     #: all (`judge_source`), so `"\n".join(transcript)` is her
-    #: `<group_transcript>` body byte for byte. It was one BODY per line until
-    #: #458, and a judge told to fail any unlinked attribution was handed a
-    #: source that linked nobody to anything.
+    #: `<group_transcript>` body byte for byte; one BODY per line would hand a
+    #: judge told to fail any unlinked attribution a source that links nobody to
+    #: anything.
     transcript: tuple[str, ...]
 
 
@@ -850,7 +824,7 @@ def judge_source(
     now: datetime,
 ) -> tuple[str, ...]:
     """The window as SHE was shown it, one `<m>` element per row — what a
-    judge verifies «X said Y» against (#458).
+    judge verifies «X said Y» against.
 
     PRODUCTION'S OWN NAMING AND RENDERER, not a format of the eval layer's:
     `Persons.name_transcript` is the projection both context assemblers run
@@ -959,7 +933,7 @@ async def sandbox_from_snapshot(
     )
     # READ BACK through the store her turn reads, so the source is the rows
     # she is shown rather than the rows they were copied from — and JOINED as
-    # every transcript builder joins them (#116): the judge is a model too, and
+    # every transcript builder joins them: the judge is a model too, and
     # a bare `[image a3f2c1]` where she read what the photo showed would grade
     # her against less than she had. Its own `path=` label, for
     # `nora/subject/dreaming.py`'s reason.
@@ -1089,7 +1063,7 @@ async def seed_lessons(
     subject: Subject, case_name: str, lessons: Sequence[str], *, now_ms: int,
 ) -> None:
     """Write the lessons a `lessons` counterfactual attaches into the subject's
-    unit (design/self-growth/40 §8), active, oldest first and a millisecond
+    unit, active, oldest first and a millisecond
     apart so `<lessons>` renders them in the order stated. Written straight to
     the store: the case states the lesson as it was held, so the doctrine check
     a session's write passes is not re-run here."""
@@ -1122,7 +1096,7 @@ async def seed_lessons(
 
 
 async def seed_documents(subject: Subject, case_name: str, specs: Sequence[dict[str, Any]]) -> None:
-    """Put the documents a case names into the subject's own room (design/artifact §29).
+    """Put the documents a case names into the subject's own room.
 
     The production source holds none, so a case about revising a document has to make
     the document it revises. Each spec is `{id, title, body}`: a one-paragraph Page,

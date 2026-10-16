@@ -1,7 +1,7 @@
-"""signal-cli JSON-RPC send (spec C.3). Returns SendResult; never raises to the caller.
+"""signal-cli JSON-RPC send. Returns SendResult; never raises to the caller.
 
-THE WIRE NAMES, AND HOW THEY WERE ESTABLISHED
-----------------------------------------------
+THE WIRE NAMES
+--------------
 `nora.platform.signal.react` set the precedent: a JSON-RPC method IS the CLI
 command name and "parameter names are provided in camelCase format instead of
 the hyphen format on the cli" (`signal-cli-jsonrpc(5)`). That sentence is
@@ -12,7 +12,7 @@ for `--mention` the documentation admits both `mention` and `mentions` without
 saying which, and picking by eye is how a silently-ignored parameter ships (the
 message goes out, unmentioned, with no error anywhere — R-5's shape).
 
-So the names below were read out of the shipped **0.14.7 jar**, not inferred:
+So the names below are read out of the **0.14.7 jar**, not inferred:
 
 * `org.asamk.signal.commands.JsonRpcNamespace` is the adapter between the JSON
   `params` object and argparse4j's `Namespace`. It overrides `get(name)` to try
@@ -31,11 +31,11 @@ So the names below were read out of the shipped **0.14.7 jar**, not inferred:
 `mention` and `textStyle` are the spellings used below: the singular because
 that is the literal key `SendCommand` asks for and it needs no fallback at all,
 the camelCase because that is the form `signal-cli-jsonrpc(5)` documents as
-public. Both resolve on the first or second lookup, and — unlike in the release
-that shipped mentions — that is no longer an argument from bytecode alone.
+public. Both resolve on the first or second lookup, and the live probe below
+confirms them.
 
-**VERIFIED AGAINST THE LIVE DAEMON, 2026-08-10.** The parameter names were
-probed on the running `signal-cli` 0.14.7 container without sending anything,
+**Verified against the live daemon** (signal-cli 0.14.7). The parameter names
+were probed on the running container without sending anything,
 by exploiting the ORDER in which `SendCommand.handleCommand` validates: text
 styles are parsed at bytecode offset 428 and the quote author is checked at
 464, so a request carrying a deliberately invalid style AND a quote timestamp
@@ -52,7 +52,7 @@ returned the same error for both would have measured nothing. A valid
 `0:1:BOLD` also falls through to the quote error, and a lowercase `0:1:bold`
 comes back «Invalid style: bold» — the style names are case-sensitive.
 
-**What that probe does NOT cover, stated rather than glossed:**
+**What that probe does NOT cover:**
 
 * **The four `preview*` scalars.** They are read with `getString`, which takes
   the `JsonRpcNamespace.get` path (literal key, then camelCase) and has no
@@ -121,11 +121,11 @@ def _mention_params(mentions: tuple[Mention, ...]) -> list[str]:
 def _text_style_params(styles: tuple[TextStyle, ...], text: str) -> list[str]:
     """`TextStyle`s as signal-cli's `start:length:STYLE` strings.
 
-    The same shape as `_mention_params` above, for the same measured reason: a
+    The same shape as `_mention_params` above, for the same reason: a
     range signal-cli's `(\\d+):(\\d+):(.+)` regex rejects throws
-    `UserErrorException` and fails the WHOLE send. Confirmed on the live daemon
-    rather than reasoned about — `-1:3:BOLD` came back «Invalid textStyle
-    syntax (-1:3:BOLD) expected 'start:length:STYLE'» with nothing delivered.
+    `UserErrorException` and fails the WHOLE send — the daemon answers
+    `-1:3:BOLD` with «Invalid textStyle syntax (-1:3:BOLD) expected
+    'start:length:STYLE'» and nothing is delivered.
     So a range that cannot be expressed is DROPPED here: the group gets the
     sentence without the bold, which is the whole point of R-5's ordering.
 
@@ -189,14 +189,12 @@ def _sent_timestamp(body: object) -> int | None:
     `org.asamk.signal.util.SendMessageResultUtils.outputResult` writes exactly
     that `Map.of` to the JsonWriter, and `SignalJsonRpcCommandHandler.runCommand`
     returns the single written object as the JSON-RPC `result`. (Read out of
-    the shipped 0.14.7 jar; no live send was made to confirm it, since the only
-    live group is a real one.)
+    the shipped 0.14.7 jar; not confirmed by a live send.)
 
-    This body used to be discarded after the `error` check, which is Bug B:
-    `Deliverer` stamps `time.time()` locally, Signal assigns this instead, and
-    this is what a reply's `dataMessage.quote.id` points at. Measured 8 ms
-    apart on live data — close enough to look right, never equal, so a join by
-    `ts` silently resolved every sender except Nora herself.
+    This is what a reply's `dataMessage.quote.id` points at: `Deliverer`
+    stamps `time.time()` locally and Signal assigns this instead, milliseconds
+    apart — close enough to look right, never equal, so a join by `ts` would
+    silently resolve every sender except Nora herself.
 
     Anything unparseable degrades to `None` rather than raising: a send that
     reached the group must never be reported as failed over a missing field.
@@ -214,7 +212,7 @@ def _sent_timestamp(body: object) -> int | None:
 
 
 def __getattr__(name: str):
-    # Task 16 guard (spec E.3): `_PYTEST_GUARD` reads True whenever the caller is
+    # Test guard: `_PYTEST_GUARD` reads True whenever the caller is
     # currently running under pytest, so tests can assert the real send path is
     # inert. Evaluated live via PEP 562 module __getattr__ (not frozen at import
     # time): PYTEST_CURRENT_TEST is only set during a test's setup/call/teardown,
@@ -237,21 +235,13 @@ _DECORATION_KEYS = ("mention", "textStyle", "previewUrl", "previewTitle",
 #: Seconds allowed for a send that CARRIES BYTES, as opposed to one that
 #: carries a sentence.
 #:
-#: Measured 2026-09-22, five consecutive failures in the Friends room: an
-#: `image_gen` picture was generated, `send` raised `TimeoutError` about ten
-#: seconds later, and **the image arrived in the group anyway**. The flat 10 s
-#: below is sized for a text send, which returns in well under a second; an
-#: attachment rides as a base64 `data:` URI in the JSON-RPC body, so a
-#: megabyte-scale picture is two orders of magnitude more to serialize, ship
+#: The flat 10 s below is sized for a text send, which returns in well under a
+#: second; an attachment rides as a base64 `data:` URI in the JSON-RPC body, so
+#: a megabyte-scale picture is two orders of magnitude more to serialize, ship
 #: and have signal-cli hand to the service. It regularly needs longer than ten
-#: seconds and it is not stuck.
-#:
-#: The cost of the old value was not a lost picture — it was a LIE. `send`
-#: returned `ok=False`, `send_reply` reported a failure, and Nora then told the
-#: room that it was stuck for the fifth time and the path was genuinely
-#: broken, then described the image in words instead. She was being honest
-#: about what she had been told; what she
-#: had been told was false.
+#: seconds and it is not stuck. A send that times out while the image still
+#: arrives makes `send` return `ok=False`, `send_reply` report a failure, and
+#: Nora tell the room the path is broken when it is not.
 #:
 #: 60 s is the wall for "signal-cli is genuinely wedged", not a budget anybody
 #: is waiting against: nothing blocks on this send, and a picture that takes 40
@@ -266,8 +256,7 @@ class SignalSender:
     ) -> None:
         # The direct-message addresses this sender may reach: every Signal id
         # in `identity.toml` (`Persons.direct_addresses`). Empty by default, so
-        # a sender nobody handed the set to refuses every direct message, which
-        # is how it behaved before 1:1 sends existed.
+        # a sender nobody handed the set to refuses every direct message.
         self._dm_recipients = dm_recipients
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
@@ -310,8 +299,8 @@ class SignalSender:
         quote: OutboundQuote | None = None,
         request_id: str = "",
     ) -> SendResult:
-        # A direct message goes only to somebody in `identity.toml` (operator
-        # rule 2026-10-05): any other address is refused here, before a byte
+        # A direct message goes only to somebody in `identity.toml`: any
+        # other address is refused here, before a byte
         # leaves, whatever path asked. Its logs name it "dm", never the
         # number or ACI, which would be an identifier at rest in a log file.
         where = target.conversation_id
@@ -343,11 +332,9 @@ class SignalSender:
             params.update(_preview_params(preview))
         if quote is not None:
             # `quoteTimestamp` + `quoteAuthor`, and BOTH are required: the
-            # 2026-08-10 live probe of `SendCommand.handleCommand` found the
-            # author check at bytecode offset 464 — a request carrying a
-            # timestamp and no author fails with "Quote author parameter is
-            # missing", which is how that probe read every other key's
-            # validity in the first place. Sending one without the other is a
+            # daemon checks the author at bytecode offset 464 — a request
+            # carrying a timestamp and no author fails with "Quote author
+            # parameter is missing". Sending one without the other is a
             # refused send, not an unthreaded one.
             params["quoteTimestamp"] = quote.ts
             params["quoteAuthor"] = quote.author_id
@@ -380,19 +367,17 @@ class SignalSender:
                           status, where, request_id)
                 return SendResult(ok=False)
         except TimeoutError:
-            # ITS OWN BRANCH, and the log line says the thing the old one hid:
-            # a timeout is «I stopped waiting», never «it did not arrive», and
-            # on 2026-09-22 the message HAD arrived every time. `SendResult`
-            # carries no third state, so this still returns `ok=False` and the
-            # model is still told it failed — the honest fix for that is a
-            # `confirmed` axis on `SendResult`, which every caller on four
-            # platforms would have to learn, and which must NOT be `retryable`,
-            # because retrying a send that already landed posts the picture
-            # twice. Recorded here rather than done hastily.
+            # ITS OWN BRANCH, and the log line says what a timeout means: «I
+            # stopped waiting», never «it did not arrive» (a timed-out send
+            # may have landed). `SendResult` carries no third state, so this
+            # still returns `ok=False` and the model is told it failed. The
+            # honest fix is a `confirmed` axis on `SendResult`, which every
+            # caller on four platforms would have to learn, and which must NOT
+            # be `retryable`, because retrying a send that already landed posts
+            # the picture twice.
             #
-            # What the wider budget above buys is that this branch stops firing
-            # for the ordinary case, which is what actually made her announce a
-            # broken path to the room.
+            # The wider budget above keeps this branch from firing for the
+            # ordinary case.
             log.error(
                 "send timed out after %ss — the message may STILL have arrived; "
                 "this is not evidence it did not (conversation=%s, id=%s, "
@@ -406,16 +391,15 @@ class SignalSender:
                       type(exc).__name__, where, request_id)
             return SendResult(ok=False)
         if isinstance(body, dict) and body.get("error"):
-            # RETRY ONCE, UNDECORATED, and this is the one retry in the send path
-            # (external review 2026-08-10). Decoration is a nicety; the message is
-            # not. Four of the params here — the `preview*` scalars — were never
-            # covered by the live-daemon probe, because `getString` has no parse
-            # step and a read key is indistinguishable from an ignored one; and
-            # `previewImage`'s `data:` URI acceptance rests on a jar reading. If
-            # any of that is wrong, signal-cli rejects the CALL, not the card, so
-            # `ok=False` here means the group hears NOTHING — and DEC-89 has just
-            # made URL-carrying replies more common, so that would be the common
-            # case rather than a corner.
+            # RETRY ONCE, UNDECORATED, and this is the one retry in the send path.
+            # Decoration is a nicety; the message is not. Four of the params
+            # here — the `preview*` scalars — are not covered by the live-daemon
+            # probe, because `getString` has no parse step and a read key is
+            # indistinguishable from an ignored one; and `previewImage`'s `data:`
+            # URI acceptance rests on a jar reading. If any of that is wrong,
+            # signal-cli rejects the CALL, not the card, so `ok=False` here means
+            # the group hears NOTHING — and URL-carrying replies are common
+            # (DEC-89), so that would be the common case rather than a corner.
             #
             # R-5 says silence beats a wrong answer; it does not say silence beats
             # a PLAIN answer. Losing a preview card is invisible to the group;

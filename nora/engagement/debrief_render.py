@@ -1,36 +1,33 @@
-"""What the debrief is actually SHOWN — the rendering contract from
-`design/dreamer-agent-loop/26-standing.md` §4.2, in its own module because the
-gap between "the type carries everything" and "something renders it" is how the
-fact tier failed: identity present on the row, dropped at the prompt, noticed
-months later (`21-substrate-contract.md` §7.1).
+"""What the debrief is actually SHOWN — the rendering contract, in its own
+module because the gap between "the type carries everything" and "something
+renders it" is how the fact tier failed: identity present on the row, dropped
+at the prompt, noticed months later.
 
-**Seven mappings, each one a defect another tier has already shipped.** They are
+**Seven mappings, each guarding a defect a render can silently have.** They are
 tested individually rather than through the whole block, because a render that
 gets six right and drops the seventh still looks correct:
 
 - **`ts`** — local wall-clock time. Prevents the model reasoning about
-  `1756012345`; *"you are not even including the timestamp"* is the fact
-  tier's critique verbatim.
+  `1756012345`.
 - **`is_nora`** — always rendered, as a distinct speaker. Prevents the fact
   tier's exact defect: a batch where nobody can tell who said what.
-- **`person_name`** — the DISPLAY name, never `person_id`. §4.3, and this one
-  is a leak rather than a legibility bug; see below.
+- **`person_name`** — the DISPLAY name, never `person_id`. This one is a leak
+  rather than a legibility bug; see below.
 - **`quoted_ts`** — rendered as a reply relation. Without it *"yeah that one"*
   is unresolvable and the debrief mis-reads what the turn was about.
-- **`outcome`** — always, including a silence. §2 makes silence the case most
-  worth reviewing; a render that omits it defeats the stage's own purpose.
-- **`prior`** — always present, **even when empty**. §4's non-negotiable: a
-  fold that cannot see the prior position cannot correct it.
+- **`outcome`** — always, including a silence. Silence is the case most worth
+  reviewing; a render that omits it defeats the stage's own purpose.
+- **`prior`** — always present, **even when empty**: a fold that cannot see the
+  prior position cannot correct it.
 - **`delivery_status`** — on Nora's OWN rows, as `(delivered)` /
   `(not delivered)`, with a legend above the transcript saying what the mark
-  means. **Issue #199 is the defect this one exists for.** A tag turn died with
-  `llm_error`, the header said *"the model call failed; nothing was sent"*, and
-  the fold generalised a TURN outcome into a ROOM position — *"I have sent
-  nothing at all today"* — with her own delivered answer sitting two rows above
-  the tag in the very window it was reading. The row was present and carried
-  nothing that said it had reached anybody, so the header won. This is
-  `AGENTS.md`'s rule in its rarest form: the input DID carry the truth, and a
-  block that did not say what it was scoped to overrode it.
+  means. Without it a turn-scoped header such as *"the model call failed;
+  nothing was sent"* gets generalised into a ROOM position (*"I have sent
+  nothing at all today"*) even though her own delivered answer sits in the
+  window being read: the row carried nothing that said it had reached
+  anybody, so the header won. This is `AGENTS.md`'s rule in its rarest form:
+  the input DID carry the truth, and a block that did not say what it was
+  scoped to overrode it.
 
 **Wall-clock, not `prefill._age`'s relative form, and the difference is not
 cosmetic.** The prefill renders "2h ago" because the question a reply needs
@@ -40,7 +37,7 @@ needs to place the turn on a clock — and an age rendered from a clock the fold
 reads at a different instant is a second source of truth about when the turn
 happened.
 
-**`person_id` never appears here** (§4.3, and this is the rule this module
+**`person_id` never appears here** (the rule this module
 exists to hold). `Standing` is injected into every subsequent turn for as long
 as the row lives, so anything reaching the fold's prompt can persist **by
 design** rather than by attack. R-18/R-28 screen egress from a REPLY; Standing
@@ -80,17 +77,12 @@ from nora.domain.tag_trace import TagTrace
 from nora.language.culture_render import render_culture
 from nora.obs.metrics import Metrics
 
-#: What this renderer carries, declared as data
-#: (`design/context-assembly/01-the-registry.md`) instead of left as the
-#: f-strings and `"\n".join`s that wrote `render_debrief_input` and
-#: `render_debrief_turn`.
+#: What this renderer carries, declared as data.
 #:
 #: **A table cannot say «nested».** The fold's input is `culture`,
 #: `standing_prior`, `standing_working_set_prior`, then ONE `turn`. Those are
-#: the blocks `assemble()` walks
-#: at the top, joined by a blank line, so their `order` IS the order the model
-#: reads (the numbers are the order the f-strings wrote them, step 2b of
-#: `design/context-assembly/04-every-occasion.md`; the goldens in
+#: the blocks `assemble()` walks at the top, joined by a blank line, so their
+#: `order` IS the order the model reads (the goldens in
 #: `tests/unit/test_step2b_assembly_goldens.py` pin it byte for byte).
 #:
 #: The rest are text INSIDE one of those, never in the list `assemble` sorts
@@ -99,11 +91,11 @@ from nora.obs.metrics import Metrics
 #: reader meets them reading INTO the block.
 #:
 #: **`key="turn"` throughout, and `when_empty="render"` on every block.** The
-#: debrief's own contract is that a block is ALWAYS rendered, empty or not
+#: debrief's contract is that a block is ALWAYS rendered, empty or not
 #: (`_standing_prior`: an absent block and one the fold failed to read look
-#: identical from inside the prompt), and the hand join kept a window with no
-#: rows, a turn with no steps, or a body that escapes to nothing as an empty
-#: pair. `assemble` would drop them, which this step is not allowed to do.
+#: identical from inside the prompt), including a window with no rows, a turn
+#: with no steps, or a body that escapes to nothing. `assemble` would
+#: otherwise drop them.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("culture", 10, "turn"),
     ("standing_prior", 20, "turn"),
@@ -128,45 +120,36 @@ def _stamp(block: ContextBlock) -> ContextBlock:
 
 #: The scope clause every «sent nothing» gloss carries. ONE constant, spliced
 #: into all four of them, so the four cannot drift into saying four different
-#: things about the same boundary — and so reverting it is one edit a test can
-#: be pointed at.
+#: things about the same boundary.
 _THIS_TURN_ONLY = (
     ". That is a fact about THIS TURN and nothing else — it does not describe "
     "what any other turn of yours sent."
 )
 
 #: What each `outcome` MEANS, spelled out rather than left as a bare token.
-#: §2's whole argument is that a deliberate silence produced just as much
-#: reasoning as a reply and is the case most worth reviewing — a fold shown
+#: A deliberate silence produced just as much reasoning as a reply and is the
+#: case most worth reviewing — a fold shown
 #: `outcome="silent"` and nothing else has to guess whether that was a choice,
 #: a veto or a crash, and those are three different reviews.
-# KNOWN GAP, recorded rather than papered over (review, 2026-08-27). A turn
-# where the never-silent fallback delivered `_EXHAUSTED_FALLBACK` is labelled
-# `send_reply` by `EngagementPipeline` — `recovered_delivered` is only set on
-# the DEC-93 prose-recovery branch, not on the fallback one — so the gloss
-# below tells the fold "you replied, through the send_reply tool" while the
-# rendered `<steps>` shows no such call. A self-contradictory input.
+# KNOWN GAP. A turn where the never-silent fallback delivered
+# `_EXHAUSTED_FALLBACK` is labelled `send_reply` by `EngagementPipeline` —
+# `recovered_delivered` is only set on the DEC-93 prose-recovery branch, not
+# on the fallback one — so the gloss below tells the fold "you replied,
+# through the send_reply tool" while the rendered `<steps>` shows no such
+# call. A self-contradictory input.
 #
-# NOT fixed here, deliberately. The honest fix is a SEVENTH outcome, and
-# `VALID_OUTCOMES` is a closed set backed by `tag_trace_outcome_check` — so it
-# needs a migration against a live table, which is Phase 1's territory and not
-# something a Phase 2 fix branch should carry (the same reasoning that kept the
-# engine-wide `command_timeout` out of this branch).
+# The honest fix is a SEVENTH outcome, but `VALID_OUTCOMES` is a closed set
+# backed by `tag_trace_outcome_check`, so it needs a migration of a live
+# table. The case is rare: `nora_loop_exhausted_fallbacks_total` counts it.
 #
-# Currently unreachable in practice: `nora_loop_exhausted_fallbacks_total` has
-# never fired in production, and all 29 retained traces are `recovered` (15) or
-# `send_reply` (14). Latent, not active — which is why it is a note and not a
-# migration.
-#
-#: **Every gloss is scoped to THIS TURN, and issue #199 is why the scope is
-#: spelled out rather than implied.** `llm_error` read "the model call failed;
-#: nothing was sent" — true of the turn, silent about its scope — and the fold
-#: read it as a statement about the conversation: it wrote «I have not sent a
-#: single reply today» while a delivered answer of hers sat in the same
-#: transcript window, then proposed a note on the same false premise and the
-#: verdict blessed it. The four outcomes that sent nothing now say WHOSE
-#: nothing it is, in the same sentence, because a scope the reader has to infer
-#: is a scope the reader gets to choose.
+#: **Every gloss is scoped to THIS TURN, and the scope is spelled out rather
+#: than implied.** A bare «the model call failed; nothing was sent» is true of
+#: the turn but silent about its scope, and the fold reads it as a statement
+#: about the conversation («I have not sent a single reply today») while a
+#: delivered answer of hers sits in the same transcript window. The four
+#: outcomes that sent nothing say WHOSE nothing it is, in the same sentence,
+#: because a scope the reader has to infer is a scope the reader gets to
+#: choose.
 _OUTCOME_GLOSS: Mapping[str, str] = {
     "send_reply": "you replied, through the send_reply tool",
     "recovered": "you wrote a reply as prose without calling send_reply; "
@@ -187,42 +170,41 @@ _OUTCOME_GLOSS: Mapping[str, str] = {
 #: about what is worth keeping, this one is about what fits beside a transcript
 #: and a prior position inside one bounded completion.
 #:
-#: **Two bounds, not one** (design/standing-compact/10 §3). A tool result and a
+#: **Two bounds, not one.** A tool result and a
 #: step of private reasoning are the only content in the turn that exists
 #: NOWHERE ELSE: the transcript does not hold what a search returned, and once
 #: the turn ends the fold is the last reader it will ever have. At one flat 600
-#: the fold was shown a sixteenth of a median `web_search` (9.6k), so a search
-#: that found eight restaurants and sent two left no trace of the other six.
-#: 4000 carries `web_fetch` and `ask_memory` whole at p90 (measured on 1000
-#: production tool calls, 2026-09-09..24). Her own narration and her tool
+#: the fold would see a small fraction of a typical `web_search` result, so a
+#: search that found eight restaurants and sent two would leave no trace of
+#: the other six. 4000 carries most `web_fetch` and `ask_memory` results
+#: whole. Her own narration and her tool
 #: CALLS keep 600: what she wrote is in the transcript when it was sent, and a
 #: call's arguments are hers and short.
 _BLOCK_CHARS = 600
 _CARRIED_CHARS = 4000
 
-#: WHICH block `_clip` cut — issue #189 step 1. Grounded on `_block`'s own four
-#: branches rather than copied from the issue's prose: `text` and
+#: WHICH block `_clip` cut, grounded on `_block`'s own four branches: `text`
+#: and
 #: `reasoningContent` are both the MODEL'S OWN output (what it said, what it
 #: thought) and share the `reasoning` label; `toolUse` is the model's own
 #: request to a tool and gets its own label because a clipped CALL and a
 #: clipped RESULT are different failures for a grounding judge — one hides
-#: what she asked, the other hides what she was told. `transcript` — the third
-#: word in the issue's own list — is deliberately NOT a value here: nothing in
+#: what she asked, the other hides what she was told. `transcript` is
+#: deliberately NOT a value here: nothing in
 #: this module clips a `TranscriptRow.body` (`_transcript` renders it whole),
 #: so a `transcript` label would be a declared value with no call site ever
-#: incrementing it — the CMS rule this whole issue is about, one level down.
+#: incrementing it.
 ClipKind = Literal["reasoning", "tool_call", "tool_result", "thinking"]
 CLIP_KINDS: tuple[str, ...] = get_args(ClipKind)
 
-#: The metric issue #189 step 1 asks for: one clip, one increment, labelled by
-#: `ClipKind`. Declared in `nora.obs.metric_specs` (append-only names); this is
+#: The clip metric: one clip, one increment, labelled by
+#: `ClipKind`. Declared in `nora.obs.metric_specs`; this is
 #: the name the two modules must agree on.
 _CLIPS_METRIC = "nora_debrief_clips_total"
 
-#: The mark a clipped block carries, and the legend that explains it — issue
-#: #189 step 2. `_TRANSCRIPT_LEGEND` below is the precedent this follows:
-#: **telling the model what it is READING beat telling it what it can do**,
-#: measured on the Relevance Gate (#78's closing comment). A block cut at
+#: The mark a clipped block carries, and the legend that explains it.
+#: **Telling the model what it is READING beats telling it what it can do.**
+#: A block cut at
 #: its bound and handed to a model with no mark reads as a complete account
 #: that simply doesn't support the claim; the reader cannot
 #: tell "the support isn't there" from "I was shown a fragment" unless the
@@ -231,10 +213,10 @@ _CLIP_MARK = "clipped"
 
 
 #: The mark on one of Nora's OWN rows, and the LEGEND that says what it means.
-#: Issue #199: `is_nora` was rendered as a distinct speaker and stopped there,
-#: so a row of hers that had actually reached the room looked exactly like one
-#: that had not — and a turn-scoped «nothing was sent» header was free to
-#: explain it away. The mark binds to `messages.delivery_status`, the column the
+#: Without it, a row of hers that had actually reached the room looks exactly
+#: like one that had not, and a turn-scoped «nothing was sent» header is free
+#: to explain it away. The mark binds to `messages.delivery_status`, the
+#: column the
 #: sender writes back after the platform accepts the message, so it is the
 #: record's own answer to «did this reach anybody» rather than an inference from
 #: the turn.
@@ -264,11 +246,11 @@ def _clock(ts_ms: int, tz: tzinfo | None) -> str:
     prompt (`prefill._now_line`); it is a parameter so a test can pin one and
     so a deployment in another zone renders its own.
     """
-    # WITH the date (design/standing-compact, review 2026-09-24). A watermark
+    # WITH the date. A watermark
     # batch can span days, and the objective asks the fold to write dates
     # instead of «tomorrow»: a row stamped only «22:12» leaves a member's
-    # «tomorrow» from three days back unconvertible, which is the Relevance
-    # Gate's defect — a judgement about WHEN over an input with no date.
+    # «tomorrow» from three days back unconvertible — a judgement about WHEN
+    # over an input with no date.
     return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime("%Y-%m-%d %H:%M")
 
 
@@ -289,9 +271,8 @@ def _speaker(row: TranscriptRow, display_name: str) -> str:
 
 
 #: A wall CLOCK rather than an age: the fold is read against a calendar («what
-#: happened at 11:00») where the reply prompt is read against now. That was
-#: `RowStyle(time="clock")` on a flat line until #292 and is now the `at`
-#: attribute — same fact, a name instead of a bracket position.
+#: happened at 11:00») where the reply prompt is read against now. Rendered as
+#: the `at` attribute.
 
 
 def _transcript(
@@ -301,11 +282,10 @@ def _transcript(
     can never ship apart from the sentence explaining it (the block's own
     `fields=`).
 
-    **There is no legend block.** It was a SIBLING of the transcript whose whole
-    body was prose describing the transcript's fields (everything between the
-    transcript's tags is a message somebody sent, so a sentence of ours cannot
-    go in there). Its content is the type's own `fields=` now (#314): the thing
-    that renders `delivery` is the thing that says what `delivery` means.
+    **There is no legend block.** The delivery mark's meaning is the type's own
+    `fields=`: the thing that renders `delivery` is the thing that says what
+    `delivery` means. (Everything between the transcript's tags is a message
+    somebody sent, so a sentence of ours cannot go in there.)
     """
     by_ts = first_by_ts(rows)
 
@@ -324,7 +304,7 @@ def _transcript(
         return f"(replying to {_clock(parent.ts, tz)})"
 
     def _mark(row: TranscriptRow) -> str:
-        """THE DELIVERY MARK (issue #199). Hers only, and never escaped from the
+        """THE DELIVERY MARK. Hers only, and never escaped from the
         row's own text — it is the render's word about the record, not anybody's
         content."""
         return f"({_delivery(row)})" if row.is_nora else ""
@@ -341,7 +321,7 @@ def _transcript(
             # invites the model to emit one).
             ("replying_to", None if parent is None or parent.id == row.id
              else _clock(parent.ts, tz)),
-            # THE DELIVERY MARK (issue #199), hers only. The render's word
+            # THE DELIVERY MARK, hers only. The render's word
             # about the record, never anybody's content — which is why it is an
             # attribute rather than something appended to the speaker field.
             ("delivery", _delivery(row) if row.is_nora else None),
@@ -350,16 +330,12 @@ def _transcript(
     return render_elements(rows, tag="m", attrs=_attrs, body=lambda row: row.body)
 
 
-#: **There is no indent helper, and there was one for about ten minutes.** The
-#: fold's nested blocks used to be hand-written two spaces in, so the first cut
-#: of this conversion added `_indent` to keep the bytes where they were. It
-#: indented EVERY line of the rendered block — including the lines inside a
-#: member's multi-line message, which silently rewrote their text. Caught by
-#: `test_a_multi_line_message_keeps_its_own_speaker_in_the_fold`, which is the
-#: test that exists because a body spanning lines is the whole point of the
-#: element form. Indentation cannot be applied to a rendered block at all once
-#: bodies carry newlines: the block's own lines and the content's lines are the
-#: same lines to any string operation. So the nesting is flat now.
+#: **There is no indent helper.** Nested blocks are flat: indenting a rendered
+#: block would indent EVERY line, including the lines inside a member's
+#: multi-line message, silently rewriting their text. Indentation cannot be
+#: applied to a rendered block once bodies carry newlines: the block's own
+#: lines and the content's lines are the same lines to any string operation
+#: (`test_a_multi_line_message_keeps_its_own_speaker_in_the_fold` pins it).
 
 
 def _standing_prior(prior: Standing | None, *, now_ms: int) -> ContextBlock:
@@ -367,18 +343,14 @@ def _standing_prior(prior: Standing | None, *, now_ms: int) -> ContextBlock:
 
     This is HER fold from a previous turn, and the type says so — «yours to
     continue, not a record of what anybody said». The absent-position sentence
-    is this module's own words about that absence, and since 2026-09-24 it is
-    TRUE whenever it is rendered: nothing withholds an existing prior any more
-    (design/standing-compact/10 §1).
+    is this module's own words about that absence, and it is TRUE whenever it
+    is rendered: nothing withholds an existing prior.
 
-    **`written` is how long before this fold the prior was written**
-    (design/standing-compact/10 §2). The fold is told to re-judge every
-    inherited clause, and a clause saying «tomorrow at 10» cannot be re-judged
-    by a reader who does not know which day it was written on: a production
-    position carried «today (6 September)» for 17 days, re-affirmed on every
-    fold. The Relevance Gate's defect, one tier over — a judgement about WHEN
-    over an input with no time. Same `age` vocabulary `<standing>` already
-    uses on the tag turn.
+    **`written` is how long before this fold the prior was written.** The fold
+    is told to re-judge every inherited clause, and a clause saying «tomorrow
+    at 10» cannot be re-judged by a reader who does not know which day it was
+    written on. Same `age` vocabulary `<standing>` already uses on the tag
+    turn.
     """
     if prior is None or not prior.body.strip():
         return _stamp(ContextBlock(
@@ -400,14 +372,14 @@ def _standing_working_set_prior(
     """Her current working set, exactly as `_standing_prior` shows the
     paragraph — ALWAYS rendered, even empty, `_standing_prior`'s own reason:
     an absent block and a block the fold failed to read look identical from
-    inside the prompt (§4.2), and the field's ordinary state is empty on
+    inside the prompt, and the field's ordinary state is empty on
     most turns, which must not be indistinguishable from "the read failed".
 
     **Unfiltered by TTL, deliberately — unlike its `<standing_working_set>`
     sibling.** This is the fold's OWN re-judgment input, not a downstream
     reader's: the render function that builds `<standing_working_set>` for
     the tag/participation prompt filters on `now - found_at` before it
-    builds the block (design §2), but the fold is where an item is meant to
+    builds the block, but the fold is where an item is meant to
     age OUT by the model's own judgement — "re-judge it the same way [as the
     paragraph]" — the same reason `_standing_prior` shows the WHOLE paragraph
     rather than pre-editing it for staleness.
@@ -433,11 +405,10 @@ def _standing_working_set_prior(
 def _clip(
     text: str, *, kind: ClipKind, metrics: Metrics, limit: int = _BLOCK_CHARS,
 ) -> str:
-    """Cut at `limit`, COUNTED and MARKED — issue #189 steps 1 and 2.
+    """Cut at `limit`, COUNTED and MARKED.
 
     The increment fires only on an actual cut, never on every call: a series
-    that moved on every block, clipped or not, would say nothing about how
-    often the ceiling is hit, which is the number step 3 needs. The mark is
+    often the ceiling is hit. The mark is
     appended to the TEXT itself, ahead of the element render's escape, so it
     travels with the block through whichever prefix wraps it
     (`(called … with …)`, `(tool result: …)`) and reaches the model as part of what
@@ -454,9 +425,7 @@ def _clip(
 def shown_step_tool_names(messages: Sequence[Mapping[str, Any]]) -> frozenset[str]:
     """Every tool name this turn's `<steps>` block actually shows —
     `nora.engagement.stages.debrief`'s check that a working-set item's
-    `source` references a step the fold was shown
-    (design/standing-compact/30-working-set.md §3), rather than a paraphrase
-    of the room's own question.
+    `source` references a step the fold was shown, rather than a paraphrase
 
     The SAME `toolUse` blocks `_steps`/`_block` render as `(called NAME
     with …)`, walked independently here rather than threading a second
@@ -513,19 +482,17 @@ def _steps(messages: Sequence[Mapping[str, Any]], *, metrics: Metrics) -> str:
                 rows.append((role, rendered, kind))
     # ONE STEP, ONE ELEMENT — and this block is not all hers. A `toolResult`
     # from `load_transcript` or `who_said` is a member's own body and their
-    # self-set profile name, so the flat `role: rendered` joined with newlines
-    # let a quoted transcript line forge
+    # self-set profile name, so a flat `role: rendered` joined with newlines
+    # would let a quoted transcript line forge
     # `assistant: (called send_reply with …)` and `user: (tool result: …)` —
     # byte-identical to real steps, in the block the fold reads to decide what
-    # happened, which then WRITES Standing. R-13c inside the one place the
-    # conversion had framed as her own record.
+    # happened, which then WRITES Standing (R-13c).
     #
     # `kind` is set on a step of PRIVATE REASONING and on nothing else, and a
     # `None` drops the attribute (`render_elements`). So a turn whose model
     # produced no reasoning renders no `kind` anywhere and the block says
     # nothing about thinking; a model that does produce it is shown it, with
-    # no change here or in the objective (operator 2026-09-24: «make it depend
-    # on whether there is reasoning»).
+    # no change here or in the objective.
     return render_elements(
         rows, tag="step",
         attrs=lambda r, _i: (("role", r[0]), ("kind", r[2])),
@@ -548,11 +515,11 @@ _URL_RE = re.compile(r"https?://[^\s\"'<>\\]+")
 def _compact_json_or_text(text: str) -> str:
     """One `content[]` entry's `text`, as compactly as it can be shown.
 
-    Issue #445's study: production tool results (`web_search`, `place_info`)
+    Production tool results (`web_search`, `place_info`)
     return a raw JSON body as this `text`, and rendering the LIST it sits in
-    with `str()` stacked Python's own repr-escaping on top of the JSON's —
-    a nested HTML attribute like `source="URL"` reached the fold as
-    `source=\\\\"URL\\\\"` inside a Python-list repr, spending the 4000-character
+    with `str()` would stack Python's own repr-escaping on top of the JSON's —
+    a nested HTML attribute like `source="URL"` would reach the fold as
+    `source=\\\\"URL\\\\"` inside a Python-list repr, spending the
     clip on brackets and doubled backslashes before a single restaurant name.
     Text that parses as JSON is loaded and re-serialised compactly
     (`json.dumps(..., separators=(",", ":"))`), which keeps the one escaping
@@ -571,13 +538,13 @@ def _clean_urls(text: str) -> str:
     """Percent-decode every URL in `text`, then drop a URL once it has already
     appeared once.
 
-    Issue #445's study: the same page URL reaches the fold twice per search
+    The same page URL reaches the fold twice per search
     result — once as the result's own `url` field, once more inside the
     fetched page's `<untrusted source="...">` wrapper — and each is
     percent-encoded when the path holds non-ASCII (a Chinese restaurant
     listing's URL slug), which roughly triples its length. Neither copy is
-    something the fold needs to carry into a position (§ "What does NOT
-    belong" already bars a URL from the position itself); decoding shrinks
+    something the fold needs to carry into a position (the objective's «What
+    does NOT belong» already bars a URL from the position itself); decoding shrinks
     each one and de-duplication removes the second copy outright, so more of
     the clip's fixed budget is left for content — a restaurant's name, not
     the address it was found at.
@@ -599,13 +566,11 @@ def _tool_result_text(content: Any) -> str:
     """A tool result's `content`, as the fold actually needs it.
 
     Strands' own shape is a list, `[{"text": "<json or plain text>"}, ...]`;
-    `str()` on that list is the shape issue #445's study found reaching the
-    fold. Each `text` entry is compacted (`_compact_json_or_text`), the
+    `str()` on that list would reach the fold as stacked repr-escaping. Each
+    `text` entry is compacted (`_compact_json_or_text`), the
     entries are joined, and the whole thing is URL-cleaned (`_clean_urls`). A
     `content` that is not this list shape — a plain string, which some tools
-    return directly and which every fixture predating this shape still
-    exercises — renders exactly as it did before, `str(content)`, URL-cleaned
-    the same way.
+    return directly — renders as `str(content)`, URL-cleaned the same way.
     """
     if isinstance(content, Sequence) and not isinstance(content, str | bytes):
         parts = [
@@ -627,9 +592,9 @@ def _block(
     step of private reasoning and `None` for everything else.
 
     RAW text: `render_elements` escapes every step body, so escaping here too
-    rendered `<` as `&amp;lt;` — harmless to the boundary, but 4000 characters
-    of web content reached the fold garbled and a URL it carried into the
-    position came out mangled (review, 2026-09-24)."""
+    would render `<` as `&amp;lt;` — harmless to the boundary, but web content
+    would reach the fold garbled and a URL it carried into the position would
+    come out mangled."""
     text = block.get("text")
     if isinstance(text, str) and text.strip():
         return _clip(text, kind="reasoning", metrics=metrics), None
@@ -664,7 +629,7 @@ def _fold_rows(
     turn's own rows (`trace.transcript`), deduped by id and ascending.
 
     The turn's own rows are always included, even when the batch already
-    covers them (D8): a fold must never review a turn it cannot see.
+    covers them: a fold must never review a turn it cannot see.
     """
     by_id = {row.id: row for row in since_rows}
     by_id.update({row.id: row for row in trace.transcript})
@@ -679,27 +644,24 @@ def render_debrief_turn(
 
     `since_rows` is the watermark batch: every row since the last fold's
     `last_folded_row_id`, read via `RecordStore.since_including_nora` and
-    capped at `[standing] fold_batch` (design/standing-watermark/20). The
+    capped at `[standing] fold_batch`. The
     transcript is that batch PLUS the turn's own rows (`trace.transcript`),
     deduped by id — see `_fold_rows` for why the turn's rows must always be
     present.
 
     The fold prepends `<standing_prior>` to it (`render_debrief_input`).
 
-    `metrics` is required, not defaulted — issue #189: a render this module
-    cannot count is exactly the defect the issue is about, one level up from
-    the model it feeds.
+    `metrics` is required, not defaulted: a render this module cannot count is
+    unobservable.
 
     What the clip mark MEANS is the `<steps>` type's `clipped` annotation,
     so it is on the block that can carry the mark and is present whether or not
     this turn clipped anything — the model reads the same contract every turn
     rather than learning a mark whose explanation appears only sometimes.
 
-    It was a sibling `<how_to_read_reasoning>` block until #314 (and the block
-    was `<reasoning>` until 2026-09-24, a name asserting a reasoning the
-    deployed model does not produce): a block whose
+    There is no sibling block explaining the reasoning mark: a block whose
     entire content was prose about the block beside it, kept next to it by an
-    `order` number, which existed only because a field's meaning had nowhere to
+    `order` number, would exist only because a field's meaning had nowhere to
     live. Travelling WITH the block is what a sibling could never do.
     """
     return _turn_block(
@@ -731,8 +693,7 @@ def _turn_block(
             # and `who_said` hand back member-authored bodies and self-set
             # profile names, so this block carries what people typed even though
             # the steps around it are hers. `tests/test_prefill.py`'s own
-            # classification names "a tool result" in the marked class; this
-            # block was the exception to a rule the tree states in writing.
+            # classification names "a tool result" in the marked class.
             body=_steps(trace.messages, metrics=metrics),
         )),
     ], sep="\n")
@@ -760,11 +721,11 @@ def render_debrief_input(
     `culture` (DEC-207) is the room's own account, rendered FIRST when the room
     has one: a position is where she had got to in this room, and the account
     is what the room is, which is how «had got to» is meant to be read. Absent,
-    the prompt is byte-identical to the one before the tier was widened.
+    nothing is rendered in its place.
 
     `<standing_prior>` is emitted **even when there is none**, carrying an
-    explicit "no position yet" rather than being omitted. §4.2 fixes that: an
-    absent block and a block the fold failed to read look identical from inside
+    explicit "no position yet" rather than being omitted: an absent block and
+    a block the fold failed to read look identical from inside
     the prompt, and the one thing this tier cannot afford is a fold that writes
     a second position beside the first because it never saw the first.
 
@@ -773,7 +734,7 @@ def render_debrief_input(
 
     `<standing_working_set_prior>` sits right after `<standing_prior>`,
     `_standing_working_set_prior`'s own reason and the same always-emitted
-    contract (design/standing-compact/30-working-set.md §4): "here is my
+    contract: "here is my
     position, here is what I have not told you" — before the turn being
     folded, which is what both are being re-judged AGAINST.
     """
@@ -813,10 +774,9 @@ def _culture_blocks(
 # The text the fold SENDS around the rendered input
 # ---------------------------------------------------------------------------
 #
-# Moved here from `nora.engagement.stages.debrief` (`_prompt`,
-# `_consolidate_prompt`, `_working_set_rule`) by step 2b of
-# `design/context-assembly/04-every-occasion.md`: the stage runs the call and
-# this module is the one place that says what the model reads. Two kinds of
+# The stage (`nora.engagement.stages.debrief`) runs the call and this module
+# is the one place that says what the model reads. Two kinds of text, kept
+# apart on purpose.
 # text, kept apart on purpose.
 #
 # * CONTEXT is the rendered input above (`render_debrief_input`), built from
@@ -834,7 +794,7 @@ def _working_set_rule(*, working_set_max_items: int, working_set_max_chars: int)
     """The working set's own length rule — `working_set_max_chars`/`_max_items`'s
     sentence, stated in both `fold_prompt` and `consolidate_prompt` the same way
     `max_chars`' rule already is, so the system message is consistent across
-    the fold and its retry (design/standing-compact/30-working-set.md §1)."""
+    the fold and its retry."""
     return (
         f"The working set can hold at most {working_set_max_items} items "
         f"and must fit inside {working_set_max_chars} characters combined, "
@@ -867,10 +827,10 @@ def fold_prompt(
     """`(system, user)` — the objective and its length rule in the SYSTEM
     role, the turn being folded in the USER role.
 
-    They were one concatenated string. That is not merely untidy: the rendered
-    half is a transcript of what people typed, so with both in one user
-    message an instruction written by a member sits in the same role as the
-    operator's, and nothing downstream can tell which is which.
+    Keeping them in separate roles matters: the rendered half is a transcript
+    of what people typed, so with both in one user message an instruction
+    written by a member would sit in the same role as the operator's, and
+    nothing downstream could tell which is which.
     """
     return (
         system_prompt(
@@ -894,36 +854,27 @@ def consolidate_prompt(
     has silently become a recency slice.
 
     **TWO ordering rules, and the SECOND one is the OVERRIDE.** The position
-    prefers what Nora CONCLUDED over what the room said (issue #78 Phase 2's
-    tiebreak reversal): room-said belongs in the transcript, and a shrink that
-    drops her synthesis first leaves the tier carrying other people's words
-    wearing her name. Recency alone cannot govern the tie, because the most
+    prefers what Nora CONCLUDED over what the room said: room-said belongs in
+    the transcript, and a shrink that drops her synthesis first leaves the
+    tier carrying other people's words wearing her name. Recency alone cannot
+    govern the tie, because the most
     recent thing in a position is just as likely to be a room quote as one of
     her judgements — so recency is scoped to a tie between two things of the
     SAME KIND, and the synthesis rule outranks it when the kinds differ.
 
-    Since 2026-09-24 there is a THIRD kind between the two: what she FOUND on
-    a turn and has not shared (design/standing-compact/10 §4). It ranks below
-    what she concluded or owes, because it is the part of the position most
-    harmless to lose, and above what the room said, because the transcript
-    keeps the room's words and nothing keeps an unsent tool result. Without a
-    rank it was always the most recent clause and so the last one dropped,
-    which evicted older commitments first (review 2026-09-24).
-
-    The rule ran the OPPOSITE way until 2026-08-29 — «what the room SAID
-    outranks what you concluded about it» — and that phrasing is part of why a
-    recap-shaped standing row survived: the shrink was taught to prefer exactly
-    the clauses that made it a recap (the falsifier and the flip condition live
-    in `design/standing-split-fold/20-ratchet-and-tiebreak.md`).
+    There is a THIRD kind between the two: what she FOUND on a turn and has
+    not shared. It ranks below what she concluded or owes, because it is the
+    part of the position most harmless to lose, and above what the room said,
+    because the transcript keeps the room's words and nothing keeps an unsent
+    tool result. Without a rank it would always be the most recent clause and
+    so the last one dropped, which would evict older commitments first.
     """
     # `(system, user)`: the objective, the length rule and the consolidation
     # rules are the OPERATOR's and go in the system role; the turn and the
     # model's own over-long answer are the material being worked on.
     #
-    # `over` is the model's own previous output, and it is appended exactly as
-    # it came back: neither escaped nor wrapped in a block. That is what the
-    # hand-built text did, and wrapping it is a model-visible change that
-    # belongs in a step that says so, not in the one that moved this.
+    # `over` is the model's own previous output, appended exactly as it came
+    # back: neither escaped nor wrapped in a block.
     return (
         system_prompt(
             instructions=instructions, max_chars=max_chars,

@@ -4,7 +4,7 @@ pairs against the LIVE presence_fixes corpus and report fragmentation
 radius_m any stay actually reached — approaching the candidate radius = it
 is too loose) per candidate, so an operator can pick a validated value
 instead of the inherited guess `stay_radius_m = 120` / `stay_min_dwell_seconds
-= 600` (design/27 §7.1, issue #6).
+= 600`.
 
 Run deliberately, read-only, writes nothing:
 

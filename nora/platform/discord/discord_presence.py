@@ -1,12 +1,12 @@
 """`DiscordPresence` — the `DiscordPresenceSource` port's real
-implementation (design/online-status/, the 2026-09-15 CORRECTION).
+implementation.
 Answers "what is this person's Discord presence right now" — per-person
 status (`online` / `idle` / `dnd` / `offline`) plus rich presence (game
 title, listening activity) — from the LIVE client's guild cache, pointed
 at every guild the client can see because the `online_now` question is
 room-scoped, not channel-scoped.
 
-This is the read v1 got wrong: "Discord online" is `member.status` and
+"Discord online" is `member.status` and
 `member.activities`, NOT voice-channel membership — a member typing in a
 forum thread is online on Discord and in no voice channel. Voice
 membership stays with `DiscordVoicePresence`, the narrow `voice` sub-arm.

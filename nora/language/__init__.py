@@ -1,19 +1,14 @@
 """The Dreamer adaptors' prompts and the renderers they share: the note tier,
 `<standing>`, and the Cognition session's agenda.
 
-**The package name is now wrong and is kept anyway, deliberately.** It was
-"language and lexicon tools" and held the room-language tier — the lexeme
-scorer, the observer that made the one LLM call, the consolidator that
-persisted it. That tier is deleted. What is left never had anything to do with
-language: the note tier's two Dreamer adaptors (`note_candidates`/`note_curator`,
-with `note_merge` and `proactive`) are deleted (2026-10-03, DEC-277),
-`note_render` renders `<notes>`, and
-`standing_render` renders `<standing>` for a tag-path stage, and
-`cognition_render` builds the Cognition session's prompt (it lives here, not in
-`nora.domain`, because it uses the renderers above).
+**The package name is misleading and kept deliberately.** It once held the
+room-language tier (lexeme scorer, observer, consolidator); none of that
+exists. What is here never had anything to do with language: `note_render`
+renders `<notes>`, `standing_render` renders `<standing>` for a tag-path
+stage, and `cognition_render` builds the Cognition session's prompt (it lives
+here, not in `nora.domain`, because it uses the renderers above).
 
-Renaming the package is a separate change with its own import churn across
-`nora.agent`, `nora.app` and the layer contract, and doing it inside the
-deletion would make the deletion unreviewable. Recorded rather than done —
-`nora.infra.sql.language` carries the same note for the same reason.
+Renaming the package would churn imports across `nora.agent`, `nora.app` and
+the layer contract; `nora.infra.sql.language` carries the same note for the
+same reason.
 """

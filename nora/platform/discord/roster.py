@@ -138,10 +138,9 @@ class DiscordRoster:
             if not isinstance(user_id, str) or not user_id:
                 # UNDER-REPORTING, which this module's own docstring calls the
                 # unsafe direction — a roster that has quietly forgotten
-                # somebody is one the disclosure gate will happily approve. It
-                # used to `continue` with no log and no count at all, so the
-                # one branch that can drop a real member was the only one with
-                # no trace whatsoever. Counted and reported below rather than
+                # somebody is one the disclosure gate will happily approve. So
+                # the one branch that can drop a real member is counted and
+                # reported below rather than
                 # refusing the whole read: an entry with no usable id is a
                 # shape Discord should never send, and losing the room over one
                 # malformed row would be worse than saying so loudly.

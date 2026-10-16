@@ -48,9 +48,9 @@ NON_IDENTIFYING_KEYS = {"label"}
 PROJECT_IDENTITY = {"mikeng-io", "mikeng-io".removesuffix("-io"), "mikeng.io", "iam@mikeng.io"}
 
 # Terms the owner has declared PUBLIC: an ordinary name that stays out of the
-# denylist even though a private source lists it. Owner decision 2026-09-27:
-# the deploy host's short name (and its home directory) is an ordinary server
-# name. Matched on the whole value's words, so a longer sibling that is still
+# denylist even though a private source lists it. The deploy host's short name
+# (and its home directory) is an ordinary server name. Matched on the whole
+# value's words, so a longer sibling that is still
 # sensitive -- `<term>-dev`, a tailnet name, an address -- stays denylisted.
 # Add more with --keep / --keep-file (a private file when the term is not
 # itself public).

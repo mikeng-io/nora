@@ -1,4 +1,4 @@
-"""Discord REST send: `POST /channels/{id}/messages` (design/discord-integration/02).
+"""Discord REST send: `POST /channels/{id}/messages`.
 
 Mirrors `nora.platform.signal.send.SignalSender` deliberately — same session
 construction, same status handling, same "log and return, never raise"
@@ -7,17 +7,15 @@ should not have to re-read the other.
 
 `styles`/`preview` are the port's DECORATION parameters
 (`nora.domain.ports.PlatformAdapter.send`'s own docstring: "a platform with
-no mention concept ignores them") and remain unused here — Discord expresses
+no mention concept ignores them") and are unused here — Discord expresses
 rich text inline in `content` itself (markdown), a different mechanism from
-Signal's out-of-band style ranges, and wiring that up is not in v1 scope
-(design/discord-integration/00-overview.md).
+Signal's out-of-band style ranges.
 
-**`mentions` IS honoured (#211), and it is populated upstream, never by the
-model.** `send_reply(text: str)` still has no mention parameter for the model
-to fill (`nora/agent/tools.py`) — it writes plaintext `@Name` exactly as
-before. What changed is who reads that name: `nora.agent.outbound.
-OutboundComposer` (platform-aware since #211 — a Discord snowflake is now a
-preferred recipient form, not just Signal's ACI/E164) resolves it against
+**`mentions` IS honoured, and it is populated upstream, never by the
+model.** `send_reply(text: str)` has no mention parameter for the model
+to fill (`nora/agent/tools.py`) — it writes plaintext `@Name`.
+`nora.agent.outbound.OutboundComposer` (platform-aware: a Discord snowflake is a
+preferred recipient form, as are Signal's ACI/E164) resolves it against
 `identity.toml` AND this room's live roster and hands `send` a `Mention` —
 `(start, length, recipient)` in UTF-16 code units, the same contract Signal's
 `bodyRange` uses. `nora.platform.discord.mention_resolve.
@@ -27,7 +25,7 @@ converts the UTF-16 offsets to Python string indices
 mention's offset survives a later one's splice.
 
 `nora.platform.discord.mention_resolve.resolve_outbound_mentions` is the
-OLDER, name-matching path, and it still runs — but only over whatever `@Name`
+name-matching fallback path, run only over whatever `@Name`
 the composer's `Mention`s did NOT already cover (a handle unmapped in
 `identity.toml`, or mapped but not confirmed in THIS room's roster): it looks
 up the target guild's live member list and splices any exact `@<display name>`
@@ -35,8 +33,8 @@ match, server-side, right before the POST. A handle neither path resolves goes
 out exactly as the model wrote it — never guessed. See that module's
 docstring for the full reasoning and the fail-closed contract on both paths.
 
-**A spliced `<@id>` chip is never handed to that second pass** (external
-review, 2026-09-11) — `<@100000000000000002>` contains an `@` itself, so a
+**A spliced `<@id>` chip is never handed to that second pass** —
+`<@100000000000000002>` contains an `@` itself, so a
 naive `"@" in resolved_text` check after the splice would (a) fire a live
 member-list fetch on every composed-mention send even when nothing is left
 to resolve, and (b) let an all-digit guild nickname `str.replace` a match
@@ -47,11 +45,10 @@ itself — see the comment at the call site.
 **`attachments` is the payload and IS supported: a multipart upload.**
 When `attachments` are present, the message is sent as a Discord multipart
 form — `payload_json` carries the message fields, `files[i]` carries each
-attachment's bytes — one request, Discord's documented shape. Before this
-landed (2026-08-26, image-gen direct-send), attachments were REFUSED rather
-than silently dropped: dropping them and answering `ok=True` would have the
-audit row, the model, the ✅ and `nora_replies_total{status="sent"}` all
-assert a delivery the channel never received.
+attachment's bytes — one request, Discord's documented shape. Attachments are
+never silently dropped: answering `ok=True` without them would have the audit
+row, the model, the ✅ and `nora_replies_total{status="sent"}` all assert a
+delivery the channel never received.
 """
 
 from __future__ import annotations
@@ -126,15 +123,14 @@ class DiscordSender:
             # the POST below would address `/channels//messages` — a URL whose
             # own route does not exist, which Discord answers 405. That is a
             # rejection about a malformed request, not about this message, and
-            # reading it as one cost a fortnight of Relevance Gate verdicts:
-            # `config.toml` held a bare channel snowflake, every GO 405'd, and
-            # the log upstream reported it as a guard refusal (NORA-4).
+            # a caller that read it as one would misreport every send as a
+            # guard refusal.
             #
             # Refused HERE, before the request, for the reason the
             # `conversation_type` guard above is: a send that cannot be
             # addressed is a wiring fault, and one named on its own terms is
             # worth more than an HTTP status an operator has to decode. The
-            # config schema now refuses this at boot too — this is the floor
+            # config schema refuses this at boot too — this is the floor
             # under a target that reaches the adapter from anywhere else.
             log.error(
                 "refusing to send to conversation_id=%r — discord needs "
@@ -143,7 +139,7 @@ class DiscordSender:
             )
             return SendResult(ok=False)
 
-        # Two vocabularies, two passes, in a fixed order (issue #211).
+        # Two vocabularies, two passes, in a fixed order.
         #
         # `mentions` first: these ranges came out of `OutboundComposer`, which
         # already resolved a handle against `identity.toml` AND this room's
@@ -157,8 +153,8 @@ class DiscordSender:
         # The SECOND pass runs `resolve_outbound_mentions` only over whatever
         # `@` the composer did NOT already resolve — but a splice just wrote
         # `<@100000000000000002>` into `resolved_text`, and that chip has an
-        # `@` in it too. A plain `"@" in resolved_text"` check (review finding,
-        # #211) would therefore fire a member-list fetch on EVERY composed
+        # `@` in it too. A plain `"@" in resolved_text"` check would
+        # therefore fire a member-list fetch on EVERY composed
         # mention even when nothing is left to resolve, and worse: an all-
         # digit guild nickname could `str.replace` a match INSIDE a chip
         # already-spliced id, corrupting it. `_SPLICED_MENTION_RE.split`

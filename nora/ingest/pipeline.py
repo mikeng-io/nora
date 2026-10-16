@@ -1,18 +1,16 @@
-"""`IngestPipeline` — runs the ambient stages in order (spec §4.3).
+"""`IngestPipeline` — runs the ambient stages in order.
 
 A readable table of contents, not a decision-maker: every branch belongs to
 the stage that owns it (`nora.ingest.stages.*`). This module only sequences
 the four calls and assembles the result — nothing here inspects message
 content, catches an exception, or decides anything.
 
-`run` takes an already-normalized `message`, not a raw event: parsing (the
-former stage 1) moved onto the adapter itself
-(`nora.platform.signal.adapter.SignalAdapter.listen`), which drops anything
+`run` takes an already-normalized `message`, not a raw event: parsing happens on the
+adapter itself (`nora.platform.signal.adapter.SignalAdapter.listen`), which drops anything
 that parses to `None` — a DM, a sync message, a self-send, an empty body —
 before this pipeline ever sees it. `PlatformAdapter` deliberately has no
 `parse()` (`nora.domain.ports`'s module docstring), so `IngestPipeline` is not
-the place that could do this parsing generically even if it wanted to. See
-Trap B in `docs/superpowers/plans/2026-08-05-nora-phase4-platforms.md`.
+the place that could do this parsing generically.
 
 `message=None` in the returned `IngestResult` means either that the
 conversation is not allowlisted (the scope stage refuses BEFORE the audit, so
@@ -70,23 +68,23 @@ log = logging.getLogger("nora.ingest.pipeline")
 #: loose string so the vocabulary is DERIVED from the code — the test that says
 #: "every exit stamps an outcome" reads `get_args` off this and never
 #: hand-copies a list that could drift from the call sites. It is also the label
-#: vocabulary of `nora_ingest_outcomes_total`, which is where an operator now
+#: vocabulary of `nora_ingest_outcomes_total`, which is where an operator
 #: READS these (R-76): the ingest trace is plumbing and is not exported, so the
 #: counter is the live instrument and the span attribute is latent.
 #:
-#: Five names over three `return` statements: the two refusals stop early, and
-#: the third return covers the three dispositions a message that got all the way
-#: through can have. A SIXTH ending is not in here on purpose — an exception —
-#: because `nora.obs.tracing.span` already stamps `nora.outcome` with the
-#: exception's type name and sets the span status to ERROR, and a name this
-#: module also owned would let a crash be reported as one of these.
+#: The ambient path has five endings: the two refusals stop early, and the
+#: third `return` covers the three dispositions a message that got all the way
+#: through can have. An exception is not an ending here on purpose:
+#: `nora.obs.tracing.span` already stamps `nora.outcome` with the exception's
+#: type name and sets the span status to ERROR, and a name this module also
+#: owned would let a crash be reported as one of these.
 IngestOutcome = Literal[
     "scope_refused",        # the room is not allowlisted; nothing was recorded
     "audit_refused",        # the audit write failed; the message was dropped
     "sender_not_allowed",   # recorded, and deliberately not answered
     "engaged",              # recorded, and handed to the engagement path
     "recorded",             # recorded, and that is all — the ambient majority
-    # The EDIT path (design/message-edits/02 §4). An edit is not a message, so
+    # The EDIT path. An edit is not a message, so
     # it gets its own endings rather than borrowing `recorded`/`engaged`: a
     # rate of edits is a different question from a rate of messages.
     "edit_recorded",        # folded onto the message it edits
@@ -95,7 +93,7 @@ IngestOutcome = Literal[
     "edit_stale",           # older than the edit on record (a redelivery); nothing written
     "edit_orphaned",        # no original on record; dropped, whoever sent it
     "edit_refused",         # the original is hers, or its author is not the editor
-    # REACTIONS and DELETES (design/cognition-loop/20-observe.md §1, step 1):
+    # REACTIONS and DELETES:
     # Record items attached to the message they touch, never messages, so
     # they get their own endings for the edit path's reason.
     "reaction_recorded",    # recorded beside the message it reacts to
@@ -203,7 +201,7 @@ class IngestPipeline:
         way — see `nora/ingest/stages/media.py`'s docstring for why.
 
         `comprehension` is `[media] comprehension`'s wiring state and the
-        SPAWNED read (issue #116): `None` — the inert default, and every
+        SPAWNED read: `None` — the inert default, and every
         offline/eval composition — leaves every attachment with a bare handle
         and nothing MODEL-READ. It does NOT silence the voice-note lane: the
         custody stage writes an STT transcript to `media_objects.content`
@@ -214,12 +212,12 @@ class IngestPipeline:
 
         `transcriber` is `[speech.stt]`'s wiring state, the same shape as
         `stickers`: `None` (deployment default) records a voice note with a
-        bare handle, exactly as before speech existed. When supplied, voice
+        bare handle, with no transcript. When supplied, voice
         notes are transcribed inline during custody and their transcript rides
         the body beside the handle. `language` is the BCP-47 hint forwarded to
         the transcriber.
 
-        `stimulus_wiring` is the stimulus stage (design/cognition-loop/20 §3):
+        `stimulus_wiring` is the stimulus stage:
         `None` — the default, `[cognition] enabled = false`, and every offline/
         eval composition — writes no stimulus. Present, every recorded
         person-authored item (a message, a changed edit, a reaction, a delete)
@@ -244,12 +242,11 @@ class IngestPipeline:
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
         loop, via `nora.app.dispatch.Dispatcher.on_message`) never hands this a
-        `None`. The `nora_messages_total` increment replaces what the deleted
-        parse stage used to do right after a successful `adapter.parse()`."""
-        # THE ROOT, and what it carries is the point (issue #64's ingest half).
-        # It used to carry a platform and a room key and nothing else, so an
-        # ambient message — every ambient message — rendered in Langfuse as a
-        # trace with six named children and no statement of what the ingest DID.
+        `None`. The `nora_messages_total` increment happens here, once per
+        normalized message."""
+        # THE ROOT, and what it carries is the point: without these attributes an
+        # ambient message would render in Langfuse as a trace with six named
+        # children and no statement of what the ingest DID.
         # These four are what tell one ingest from another WITHOUT expanding a
         # child, and `nora.outcome` joins them on the way out.
         #
@@ -257,9 +254,8 @@ class IngestPipeline:
         # structural fact: no sender id, no display name, no message body, no
         # coordinate. `conversation_id` is the one borderline value and it is the
         # repo's own definition that settles it (`scan_identifiers` returns None
-        # for both the Signal base64 and the Discord snowflake form); the test
-        # section asserts that of every attribute on every span this opens,
-        # rather than leaving it to review.
+        # for both the Signal base64 and the Discord snowflake form); a test
+        # asserts that of every attribute on every span this opens.
         #
         # `nora.attachments` is what the PLATFORM said arrived, read before
         # custody runs — so a slow `ingest.media` child explains itself, and a
@@ -270,10 +266,10 @@ class IngestPipeline:
         # these spans reaching Langfuse. There is no model call anywhere under
         # this root — six deterministic stages, a row, a feed — and Langfuse is
         # for traces that contain a generation. Ingest is the highest-volume
-        # entry point in the system, so this one attribute is the difference
-        # between a collector an operator can read and one that is 97% messages
-        # Nora was never going to answer (measured, 2026-08-28). What the trace
-        # carried is not lost: it moved to `nora_ingest_outcomes_total`, which
+        # entry point in the system, and most of its messages are ones Nora was
+        # never going to answer, so this one attribute is the difference
+        # between a collector an operator can read and one swamped by them. What
+        # the trace would carry lives in `nora_ingest_outcomes_total`, which
         # `_outcome` writes on every exit. The declaration must be passed HERE,
         # at span start, because a sampler cannot see an attribute set later.
         with span(
@@ -299,10 +295,9 @@ class IngestPipeline:
         without re-deriving it, and it would also swallow the exception ending
         that `span` already records for itself."""
         m = self._metrics
-        # Messages and edits, as it always counted. A reaction or a delete is
-        # not a message (design/cognition-loop/20 §1): it is counted on
-        # `nora_ingest_outcomes_total` (`reaction_*`, `delete_*`), never here,
-        # so this series keeps the meaning its dashboards were built on.
+        # Messages and edits. A reaction or a delete is not a message: it is
+        # counted on `nora_ingest_outcomes_total` (`reaction_*`, `delete_*`),
+        # never here.
         if message.touch is None:
             m.inc("nora_messages_total", platform=message.platform)
 
@@ -318,7 +313,7 @@ class IngestPipeline:
             _outcome(m, message, "scope_refused")
             return IngestResult(message=None, decision=None)
 
-        # AN EDIT takes its own path from here (design/message-edits/02 §4):
+        # AN EDIT takes its own path from here:
         # it is recorded beside the message it changes, never as a message of
         # its own — and an edit of nothing on record is dropped, not ingested.
         if message.edit_of is not None:
@@ -334,7 +329,7 @@ class IngestPipeline:
                 message=found.message, original=found.original,
             )
 
-        # A REACTION or a DELETE (design/cognition-loop/20-observe.md §1):
+        # A REACTION or a DELETE:
         # recorded beside the message it touches, never as a message, and
         # never a turn — a reaction is not an utterance, a delete says nothing.
         if message.touch is not None:
@@ -371,14 +366,14 @@ class IngestPipeline:
                 # resolves identity nor reads it for anything else.
                 person=person, language=self._language,
             )
-        # Shared file links become handles in the record (design/external-
-        # files §1): pure, no network, on every platform, and before the audit
+        # Shared file links become handles in the record: pure, no network, on every platform, and
+        # before the audit
         # so the refs land in the same INSERT as the row.
         with span("ingest.external_files"):
             message = await external_files_stage.run(message=message)
         # A reply to an EDITED message quotes the revision's timestamp on
         # Signal; point it at the row the transcript holds before it is
-        # written, so every reader resolves the parent as it always has.
+        # written, so every reader resolves the parent against the transcript.
         with span("ingest.quote_target"):
             message = await quote_target_stage.run(
                 message=message, audit=self._audit, metrics=m,
@@ -390,7 +385,7 @@ class IngestPipeline:
         if row_id is None:
             _outcome(m, message, "audit_refused")
             return IngestResult(message=None, decision=None)
-        # The STIMULUS, right behind the Record row it names (20 §3). Inside the
+        # The STIMULUS, right behind the Record row it names. Inside the
         # guard: a span for a stage that cannot run would claim work that never
         # happened.
         if self._stimulus_wiring is not None:
@@ -436,9 +431,8 @@ class IngestPipeline:
             decision = EngageDecision(engage=False, reason="sender_not_allowed")
             _outcome(m, message, "sender_not_allowed")
         else:
-            # The ambient majority ends `recorded`, and it is the ending that had
-            # NOTHING before this change — a message that passed cleanly produced
-            # a root with a room key and six children saying only that they ran.
+            # The ambient majority ends `recorded`, so a message that passed
+            # cleanly still says how it ended.
             _outcome(m, message, "engaged" if decision.engage else "recorded")
 
         return IngestResult(message=message, decision=decision)
@@ -446,7 +440,7 @@ class IngestPipeline:
     async def _run_edit(
         self, *, message: NormalizedMessage, original: EditedMessage,
     ) -> IngestResult:
-        """An edit whose original is on record (design/message-edits/02 §4).
+        """An edit whose original is on record.
 
         The ambient path's stages, in its order, with three differences:
         the record is a `message_edit` row and is skipped when the text did not
@@ -518,7 +512,7 @@ class IngestPipeline:
         return IngestResult(message=answered_as, decision=decision)
 
     async def _run_touch(self, *, message: NormalizedMessage, touch: Touch) -> IngestResult:
-        """A reaction or a delete/unsend (design/cognition-loop/20 §1):
+        """A reaction or a delete/unsend:
         found, recorded beside its target, raising a stimulus — never a turn,
         never fed to Honcho, never a transcript line. `touch` decides and
         records; this only sequences."""

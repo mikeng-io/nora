@@ -1,7 +1,7 @@
-"""Step 1b's block gate, live: a real tag turn's recorded blocks against the
+"""The block gate, live: a real tag turn's recorded blocks against the
 same turn rendered from `nora snapshot` at its moment.
 
-design/cognition-loop/70-migration.md §2 row 1b. The offline form is
+The offline form is
 `tests/integration/test_snapshot_renders_the_recorded_blocks.py`; this runs
 the same comparison (`nora.subject.as_of`) against a trace from production.
 Run it ON the deploy host, from a worktree at the source's migration head,
@@ -21,7 +21,7 @@ AFTER the turn:
    recorded by then):
 
        uv run python scripts/snapshot_block_equivalence.py \\
-         --source "$EVAL_SOURCE_URL" --at 2026-10-02T21:14:05+08:00 \\
+         --source "$EVAL_SOURCE_URL" --at YYYY-MM-DDTHH:MM:SS+08:00 \\
          --message-id 123456 --prefill /tmp/turn-prefill.txt \\
          --workdir /tmp/snap-turn --set notes.enabled=true \\
          --set standing.enabled=true --set culture.enabled=true
@@ -33,7 +33,7 @@ It prints the blocks compared, excepted (memory: `peer_card`,
 `peer_history`; Live: `tool_catalogue`, `presence`) and any that differ, and
 exits 0 only when every compared block is byte-identical and at least one
 was compared. A doctrine, Dreamer or config load not recorded by `--at`
-(before step 1b shipped) is composed from the template, and the script says
+is composed from the template, and the script says
 so; that affects no block this gate compares.
 """
 

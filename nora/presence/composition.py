@@ -3,8 +3,7 @@
 Mirrors `nora.app.composition`: everything downstream receives dependencies, and
 only this module (plus `nora.presence.__main__`, which passes `cfg` straight
 through) knows `Config`'s shape. It is a SECOND top-level composition root
-because the collector is a second process (§4) — the same DDD/CA shape design/20
-§3 lays the substrate for.
+because the collector is a second process.
 
 `build_collector` returns a wired `PresenceCollector`, or `None` when presence is
 disabled — the inert default (DEC-54/55). A disabled collector is not an error:
@@ -42,13 +41,13 @@ class PresenceStartupError(Exception):
 
 def _circles_from_identity(persons: Persons) -> list[CircleSpec]:
     """Build the circles to collect from identity.toml's `[[persons.<id>.life360]]`
-    blocks (design/19 §3), grouping members by their `circle_id`. config.toml
+    blocks grouping members by their `circle_id`. config.toml
     carries no ids — the mapping lives in one place, gitignored.
 
     Fail-closed (R-5): a life360 block with no `circle_id` cannot be placed in a
     circle, and presence-enabled-but-no-collectable-members is a silent no-op —
     both refuse to start. The resolved `person_id`s per circle ARE the R-21
-    disclosure roster (§5)."""
+    disclosure roster."""
     by_circle: dict[str, dict[str, str]] = {}
     unplaced: list[str] = []
     for membership in persons.life360:
@@ -107,7 +106,7 @@ def build_collector(cfg: Config) -> PresenceDependencies:
     username = os.environ.get(presence.username_env, "")
     password = os.environ.get(presence.password_env, "")
     # Token mode: an operator-supplied bearer replaces the password grant, so
-    # the three login vars are no longer what the collector needs to start.
+    # the three login vars are not what the collector needs to start.
     access_token = os.environ.get(presence.auth_token_env, "")
     missing = [
         name
@@ -162,7 +161,7 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         cadence_moving_seconds=presence.cadence_moving_seconds,
         cadence_still_seconds=presence.cadence_still_seconds,
         metrics=metrics,
-        # Every poll's outcome, as Record (design/cognition-loop/20 §1): what
+        # Every poll's outcome, as Record: what
         # lets a later step prove «the collector was healthy for the span».
         health_log=SqlSourceHealthLog(engine),
     )

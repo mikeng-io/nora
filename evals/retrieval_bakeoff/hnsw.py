@@ -1,5 +1,5 @@
 """The two-stage arm inside Postgres: the HNSW approximation, measured
-(design/unified-memory/20, operator's index design 2026-10-16).
+against the exact arms.
 
 The design: store the full vector as `halfvec(<full>)`, index ONLY its
 leading `subvector(embedding, 1, <search>)::halfvec(<search>)` with HNSW and

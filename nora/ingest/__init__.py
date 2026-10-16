@@ -1,6 +1,6 @@
 """The ambient path: every message, deterministic, no Agent SDK — ever (D1/R-1).
 
-Five stages (spec §4.3): parse, audit, identity, memory-feed, engage-gate. The
+Five stages: parse, audit, identity, memory-feed, engage-gate. The
 pipeline's only branch is the last one, and its output is an `EngageDecision`,
 not a bool, so a future classifier can carry a rationale and a confidence
 without changing the seam.

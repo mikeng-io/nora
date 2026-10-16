@@ -1,4 +1,4 @@
-"""Are the HF and Ollama paths the same EmbeddingGemma 2? (design/unified-memory/20)
+"""Are the HF and Ollama paths the same EmbeddingGemma 2?
 
 The same prefixed texts and the same pool images, embedded by HF at float32
 (sentence-transformers, the pinned commit) and by Ollama's Q8_0 tag; one
@@ -8,8 +8,6 @@ default) and at 70, the latter information only. Run on the deploy host
 from the bake-off venv, with Ollama serving `embeddinggemma-2:latest`:
 
     nice -n 10 /home/norty/nora-bakeoff/venv/bin/python -I agreement.py > out.json
-
-Result: `results/20261015T112457Z-agreement-hf-vs-ollama.json`.
 """
 
 import base64

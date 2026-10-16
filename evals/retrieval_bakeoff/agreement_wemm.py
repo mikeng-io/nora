@@ -1,5 +1,5 @@
 """Is the Q4_K_M GGUF on llama-server the same WeMM-Embedding-2B as the HF
-checkpoint? (design/unified-memory/20, PR #21)
+checkpoint?
 
 24 inputs from the locked set: 11 pool images (img-001 to img-010, and img-012,
 the one-bowl near miss of img-001), 3 probe queries, the first 5 text_image
@@ -21,9 +21,6 @@ On the deploy host, from a checkout of this commit:
     # start llama-server (run_wemm.sh's flags), then
     nice -n 10 ~/nora-bakeoff-wemm/venv52/bin/python -I agreement_wemm.py gguf /tmp/x.json \\
         http://127.0.0.1:11439 <pid> > results/<stamp>-wemm-probe-agreement.json
-
-Result: `results/20261015T125057Z-wemm-probe-agreement.json` (reproduces the first
-record, 20261015T111644Z, item for item: mean cosine 0.9755, min 0.9506).
 """
 
 import json

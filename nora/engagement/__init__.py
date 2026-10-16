@@ -1,4 +1,4 @@
-"""The tag-response path (spec §4.4): admission, context assembly,
+"""The tag-response path: admission, context assembly,
 invocation, delivery and feedback for a tag `nora.ingest` already decided to
 engage. `nora.engagement.pipeline.EngagementPipeline` sequences the stages;
 import it from there directly, the way `nora.ingest.pipeline.IngestPipeline`

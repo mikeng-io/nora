@@ -1,4 +1,4 @@
-"""Stage 5 — the engagement gate. A policy error degrades closed.
+"""The engagement gate. A policy error degrades closed.
 
 `TriggerTextPolicy` is deterministic and cannot raise (see `nora.ingest.
 policy`), but `EngagePolicy.should_engage` is declared `async` ahead of the

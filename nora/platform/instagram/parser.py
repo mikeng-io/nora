@@ -1,8 +1,8 @@
-"""instagram-bridge SSE event → NormalizedMessage
-(design/instagram-adoption/03-transport-contract.md).
+"""instagram-bridge SSE event → NormalizedMessage.
 
 The bridge owns the Instagram wire; this module owns the normalization into
-Nora's vocabulary, and `03` is the only place the shapes are defined — a drift
+Nora's vocabulary, and the bridge's transport contract is the only place the
+shapes are defined — a drift
 here is a contract-test failure, not a judgment call. Field names below
 (`kind`, `room_id`, `sender.fbid`, `mentions`, `reply_to`, `media`,
 `timestamp_ms`, `from_me`) are the bridge's, verbatim.
@@ -13,29 +13,25 @@ Dropped before a `NormalizedMessage` is built:
   `heartbeat`, `dropped` and `typing` are listener-level or not ingested, and
   this function still answers None for them so it stays total on its own.
   A `reaction` and an `unsend` become a `Touch` (`_parse_touch`), recorded
-  beside the message they touch and never as a message
-  (design/cognition-loop/20-observe.md §1);
+  beside the message they touch and never as a message;
 - `from_me` — R-12's first pass, never ingest Nora's own sends. Unlike
   WhatsApp this field is **structural rather than derived**: the bridge
   compares `sender_fbid` against `client.GetOwnFBID()` itself, so the adapter
   is not inferring its own echo from a config value;
 - a turn carrying neither text nor media, which is how the system deltas
-  (`ADD_PARTICIPANT_XMAT` and friends — they arrive as ordinary messages,
-  measured 02) leave without a special case. **A shared reel used to leave
-  through this same line and it was a bug, not a drop**: `MessageContentXMA`
-  had no case in the bridge's content switch, so it produced no text and no
-  media and was discarded here — Nora did not fail to read the reel, she never
-  learned one had been posted. The bridge now emits `shared`, and
-  `_shared_line` turns it into text, so these turns survive;
+  (`ADD_PARTICIPANT_XMAT` and friends — they arrive as ordinary messages)
+  leave without a special case. A shared reel is NOT one of them: the bridge
+  emits `shared`, and `_shared_line` turns it into text, so these turns
+  survive;
 - a `room_id` that is missing or empty. There is no `is_broadcast` sibling to
   check: Instagram has no status feed or newsletter address in this transport,
   so the WhatsApp parser's two feed drops have no analogue here.
 
 ## The one field this contract cannot ground: `conversation_type`
 
-**Reported as an ambiguity rather than papered over.** The inbound event
-(`03` §"Inbound event shape", and `deploy/instagram-bridge/inbound.go`'s
-`messageEvent`) carries NO group/DM discriminator of any kind, and the bridge
+The inbound event (the transport contract's inbound event shape, and
+`deploy/instagram-bridge/inbound.go`'s `messageEvent`) carries NO group/DM
+discriminator of any kind, and the bridge
 exposes no thread-info route to ask. WhatsApp reads it off the JID's server
 and Discord off `message.guild is None`; Instagram hands over an opaque
 numeric thread id that is spelled identically either way.
@@ -53,8 +49,8 @@ change.
 
 An EDIT arrives as its own `kind: "edit"` event rather than as a message with
 an `edit_of` (WhatsApp's shape), and `_parse_edit` turns it into the same
-`NormalizedMessage.edit_of` every network produces (design/message-edits/03
-§1). It carries the target's `message_id`, the new text and usually a
+`NormalizedMessage.edit_of` every network produces. It carries the target's
+`message_id`, the new text and usually a
 timestamp — and NO sender: `from_me` is null by contract, because the delta
 names nobody. So `sender_id` is `""` and ingest takes the sender from the
 message the edit targets; an edit of a message Nora never recorded cannot be
@@ -112,21 +108,17 @@ _MEDIA_TYPE_BY_KIND = {
 def _media_ref(media: dict) -> MediaRef | None:
     """The bridge's single `media` object reduced to what labelling needs.
 
-    Singular, not a list: `03`'s `media` is one object and `firstAttachment`
+    Singular, not a list: the contract's `media` is one object and `firstAttachment`
     on the bridge side surfaces exactly one. A tuple still leaves here,
     because `NormalizedMessage.media` is a tuple everywhere and a
     platform-shaped exception would push the difference into every consumer.
 
-    **`fetch_token` IS the CDN url**, and it took a live defect to get here.
-    This function recorded an empty `platform_id` and an empty `fetch_token`
-    on the reasoning that the bridge exposes no media-fetch route, so a handle
-    would name something no code could resolve. The premise is true and the
-    conclusion did not follow: `media.url` is a directly fetchable url whose
-    query string carries its own signature, measured returning `200` with no
-    cookies, no user-agent and no referer. There is nothing to ask the bridge
-    for — the url IS the handle, and `InstagramMediaSource` is what resolves
-    it. Until it was recorded, every image Miles sent landed as a bare
-    `[image]` with no handle and Nora could not read one of them.
+    **`fetch_token` IS the CDN url.** The bridge exposes no media-fetch route,
+    but `media.url` is a directly fetchable url whose query string carries its
+    own signature (no cookies, user-agent or referer needed). There is nothing
+    to ask the bridge for — the url IS the handle, and `InstagramMediaSource`
+    is what resolves it. Without it an image lands as a bare `[image]` with no
+    handle and Nora cannot read it.
 
     `platform_id` is `attachment_fbid` when the delta carried one: Instagram's
     own id for the stored attachment, the same KIND of thing signal-cli's
@@ -135,7 +127,7 @@ def _media_ref(media: dict) -> MediaRef | None:
 
     A `one_time` (`RAVEN_*`) delta carries `attachment: null` and so has NO
     url by design; it therefore gets no token and stays unfetchable, which is
-    the decision `03-transport-contract.md` made and not an oversight. On
+    deliberate. On
     Instagram, fetching view-once media IS viewing it and is visible to the
     sender.
 
@@ -165,7 +157,7 @@ def _media_ref(media: dict) -> MediaRef | None:
     )
 
 
-# The link rules (#435) live in ONE module, `nora.domain.instagram_links`, which
+# The link rules live in ONE module, `nora.domain.instagram_links`, which
 # `instagram_read` reads too, so the transcript and the tool cannot disagree
 # about what a valid Instagram link is. `_is_handle` stays this module's name
 # for the shared predicate.
@@ -176,13 +168,12 @@ def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
     """`(kind, link)` for a shared item, both read off `target_url`'s PATH.
 
     **The kind comes from the url, because nothing else on the wire carries
-    it.** Measured 2026-09-24 on a live shared reel and a live shared story:
-    `typename` was `SlideMessagePortraitXMA` for BOTH, and `caption`, `title`,
-    `subtitle` and `layout` were empty or absent. The path is the only field
-    that told them apart: `/reel/<code>/` (or `/reels/<code>/`) is a reel,
+    it.** A shared reel and a shared story both arrive with `typename`
+    `SlideMessagePortraitXMA`, and `caption`, `title`, `subtitle` and `layout`
+    empty or absent. The path is the only field that tells them apart:
+    `/reel/<code>/` (or `/reels/<code>/`) is a reel,
     `/p/<code>/` a post, `/stories/<user>/<pk>` a story. Anything else is
-    `post`, which is what every share was called before this — no new word is
-    invented for a shape nobody has measured.
+    `post`: no new word is invented for an unmeasured shape.
 
     **The link is REBUILT, never passed through.** The raw url's query is
     tracking flags plus, on a story, `reel_owner_id`: the owner's igid, an
@@ -207,7 +198,7 @@ def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
     kind = link_shape(target_url, story_ring=False)
     if kind not in ("reel", "post", "story"):
         # A profile link, an unknown path, or no path at all: the label this
-        # renders has always been `post` for those, with no link.
+        # renders is `post` for those, with no link.
         return "post", ""
     link = parse_link(target_url)
     if link is None or link.kind != kind:
@@ -306,13 +297,10 @@ def _caption_excerpt(caption: str) -> str:
     characters before that `…`. A caption that is all one short sentence
     comes back unchanged, with no `…`.
 
-    **Why the transcript does not carry the whole caption** (design 13,
-    2026-09-24). A shared post whose line carried its full ~1,000 character
-    caption was asked about («what do u see») and answered from the line
-    alone, «no pictures, only text», which was false; no tool was called.
-    Replayed 12 times per variant: as recorded, 0 of 12 first calls reached
-    for the post; with the caption cut to its first sentence and `…`, 9 of 12
-    did. A whole caption reads as the whole post. An excerpt that visibly
+    **Why the transcript does not carry the whole caption.** A line carrying a
+    full ~1,000 character caption is answered from the line alone, as if it
+    were the whole post, and no tool is called. A whole caption reads as the
+    whole post. An excerpt that visibly
     stops reads as a pointer to something she has not seen, and the link
     beside it is how she sees it: `instagram_read` returns the full caption
     from Instagram itself. That is also why only a linked share is cut
@@ -360,23 +348,22 @@ def _shared_line(shared: object) -> tuple[str, str, str]:
     item reaches for the item itself, through its link (`instagram_read`),
     or, when the line has no link, for the cover (`media_fetch`).
 
-    **The caption is usually absent.** `design/instagram-adoption/13` called
-    it the free depth; measured 2026-09-24, a live shared reel and a live
-    shared story each carried only `author`, `target_url` and `typename`. So
-    the line that is actually free is «somebody shared a reel by @x, here is
-    the link», and the caption is rendered when a delta carries one.
+    **The caption is usually absent.** A shared reel or story typically carries
+    only `author`, `target_url` and `typename`. So the line that is free is
+    «somebody shared a reel by @x, here is the link», and the caption is
+    rendered when a delta carries one.
 
     **When there is one and the line has a link, it carries the caption's
-    opening, not all of it** (`_caption_excerpt`, 2026-09-24): a line
-    holding a whole long caption was answered as if it were the whole post.
+    opening, not all of it** (`_caption_excerpt`): a line
+    holding a whole long caption is answered as if it were the whole post.
     The `…` says there is more, and the link reads it. A line with NO link
     keeps the whole caption: nothing can fetch the rest for it, so cutting
     it would lose words for good.
 
-    Until this existed, a shared reel arrived with no text and no media and was
-    dropped for having neither, so Nora never learned anything had been posted
-    at all. That is why this renders even when there is no caption: «somebody
-    shared a reel» is a fact about the room, and it was previously invisible.
+    A shared reel arrives with no text and no media, so without this line it
+    would be dropped for having neither and Nora would never learn anything had
+    been posted. That is why this renders even when there is no caption:
+    «somebody shared a reel» is a fact about the room.
 
     ## Where the link goes
 
@@ -414,9 +401,9 @@ def _shared_line(shared: object) -> tuple[str, str, str]:
     # nothing. A dict WITH keys whose values happen to be blank is the bridge
     # saying "there was a shared post here and I could not read its text",
     # which still deserves the bare `[shared post]` below. Collapsing the two
-    # put `[shared post]` on ordinary messages — caught by
-    # `test_a_message_with_no_shared_object_is_unchanged`, which is the test
-    # that matters most here because it fires on EVERY message rather than on
+    # put `[shared post]` on ordinary messages;
+    # `test_a_message_with_no_shared_object_is_unchanged` guards it, and it
+    # matters most here because it fires on EVERY message rather than on
     # the rare one this function was written for.
     if not isinstance(shared, dict) or not shared:
         return "", "", ""
@@ -432,7 +419,7 @@ def _shared_line(shared: object) -> tuple[str, str, str]:
     caption = str(shared.get("caption") or "").strip()
     if not caption:
         # `title` is sometimes the only text on the delta — the library
-        # declares both and no probe has shown which a live one populates.
+        # declares both, so either may carry it.
         caption = str(shared.get("title") or "").strip()
     # NO SQUARE BRACKETS FROM A STRANGER. A caption of `x] [image 0a1b2c] [y`
     # closes this bracket and opens a forged placeholder, and
@@ -547,7 +534,7 @@ def _parse_edit(event: dict) -> NormalizedMessage | None:
 
 def _parse_touch(event: dict) -> NormalizedMessage | None:
     """A `kind: "reaction"` or `kind: "unsend"` event → a `Touch` on the
-    message it names (design/cognition-loop/20-observe.md §1).
+    message it names.
 
     A reaction carries its reactor (`sender_fbid`), the emoji, `removed` and
     usually a time; `from_me` true is Nora's own reaction and is dropped
@@ -625,14 +612,9 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             # disagree.
             #
             # A POST OR REEL WITH A LINK DROPS THE THUMBNAIL: no placeholder, no
-            # `MediaRef`, no custody. Measured live twice (2026-09-24, after
-            # #454): the line read `[shared reel by @x <link>] [cover image
-            # <handle>]`, the question was «what is in this reel», and she
-            # called `media_fetch` on the handle, got a real one-frame reading
-            # WITH the note saying it was only the cover, and answered from
-            # that frame. Renaming the handle and annotating the result were
-            # both wording; a handle in the line is an affordance that a
-            # cheap call SUCCEEDS on, and success ends the turn. So the line
+            # `MediaRef`, no custody. A `[cover image <handle>]` in the line
+            # is an affordance a cheap `media_fetch` call SUCCEEDS on, with a
+            # one-frame reading, and success ends the turn. So the line
             # carries no handle to settle for, and the link is the one thing
             # left to open (`instagram_read`, whose result hands each item's
             # url to `media_fetch`). The cover is not kept for later either:
@@ -645,9 +627,8 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             # copy of what was shared, so it is held on demand like the
             # no-link fallback below.
             #
-            # WITHOUT A LINK, the cover is all there is, and #454's fallback
-            # stands: held like any photo, read only when `media_fetch` asks
-            # (the operator's rule is that Nora reads shared content when
+            # WITHOUT A LINK, the cover is all there is: held like any photo,
+            # read only when `media_fetch` asks (Nora reads shared content when
             # tagged, never on every share; `MediaRef.on_demand`), and
             # rendered `[cover image]` (`label_for`) so the line says the
             # picture is the item's cover and not the item.
@@ -685,8 +666,7 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             # gate that actually holds.
             conversation_type="group" if is_group is None or is_group else "dm",
             # The MESSAGING id, never `sender.igid` and never `sender.username`
-            # — 02's opening failure is choosing the wrong one of the three,
-            # which produces no error anywhere.
+            # — choosing the wrong one of the three produces no error anywhere.
             sender_id=fbid_form(sender.get("fbid")),
             # DISPLAY ONLY, exactly like a Signal profile name or a WhatsApp
             # push name: shown to the operator and rendered in a transcript,

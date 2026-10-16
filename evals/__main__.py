@@ -1,9 +1,8 @@
 """`python -m evals CORPUS...` — run selected corpora, print the measurements.
 
-Runs whichever corpora you name, not "everything." A run over 150 cases is
-hours (5 judged corpora at ~211s/sample x 3 samples each), and there is no
-reason a one-line change should cost that every time — `--corpus` /
-`--class` / `--all` are three ways to say how much you actually want.
+Runs whichever corpora you name, not "everything." A full run over every case
+is hours of judged samples, so `--corpus` / `--class` / `--all` are three ways
+to say how much you actually want.
 """
 
 from __future__ import annotations
@@ -60,21 +59,21 @@ from nora.subject import (
 )
 from nora.subject.context_filter import exposure
 
-#: Coarse S-class grouping for `--class`, per `10-the-scenario-map.md` §2/§15.
-#: Approximate on purpose where a corpus is not wholly one class — good enough
-#: to pick "which corpora" without re-deriving the map's own nuance here.
+#: Coarse S-class grouping for `--class`. Approximate on purpose where a
+#: corpus is not wholly one class — good enough to pick
+#: "which corpora" without re-deriving the map's own nuance here.
 #: S2/S4/S5 have no corpus at all (hand-written `Case`s only, not part of
 #: `evals/corpora/`), so they are not selectable through this script.
 CORPUS_CLASS: dict[str, str] = {
     "proactive_act": "S1",
     "being_contradicted": "S3",
-    # design/self-growth/40 §8: what a held lesson does to a reply (judged).
+    # What a held lesson does to a reply (judged).
     "lessons": "S3",
     "identity_grounding": "S3",
     "source_scope": "S3",
-    # ADR 0015 §4: what she SAYS after a tool returns (judged).
+    # (ADR 0015) what she SAYS after a tool returns (judged).
     "tool_reporting": "S3",
-    # S2, tool routing: which tool EXECUTED (design/tool-catalogue §2c).
+    # S2, tool routing: which tool EXECUTED.
     "tool_selection": "S2",
     "no_trigger": "S7",
     "near_miss": "S7",
@@ -87,10 +86,10 @@ CORPUS_CLASS: dict[str, str] = {
     "appearance": "S3",
     # The character cut's instrument: whether an ordinary reply still sounds like her (judged).
     "personality": "S3",
-    # design/unified-memory "Sequence" step 0: is what she REMEMBERS supported (judged).
+    # Is what she REMEMBERS supported (judged).
     "conversational_recall": "S3",
-    # What a WRITE keeps: `carry` is #228's shape (an unrelated pass lost a
-    # thread it did not touch), the nearest class the map has. Its `stale`
+    # What a WRITE keeps: `carry` is an unrelated pass losing a thread it did
+    # not touch, the nearest class the map has. Its `stale`
     # cases are S5-shaped (time misread) — approximate, as this map says.
     "standing": "S6",
 }
@@ -173,10 +172,9 @@ def _print_spend() -> None:
     """What this corpus actually spent, and whether any call was TRUNCATED.
 
     Printed on every run because it is free — the numbers ride on spans this
-    process already captures for `agent.prefill` — and because the
-    alternative is what happened on 2026-09-22: a truncation was diagnosed by
-    changing a ceiling and re-running, twice, while the call's own
-    `finish_reason` sat in memory unread.
+    process already captures for `agent.prefill` — and because a truncation is
+    otherwise diagnosed by changing a ceiling and re-running while the call's
+    own `finish_reason` sits in memory unread.
     """
     spend = drain_spend()
     if not spend["calls"]:
@@ -190,7 +188,7 @@ def _print_spend() -> None:
     print(line)
     # The SUBJECT'S OWN TURNS only — the calls under her `invoke_agent` span,
     # without background passes the drive also spawns (the standing fold).
-    # This is the per-turn unit `design/tool-catalogue/05` §3 gates on.
+    # This is the per-turn unit.
     turn = spend.get("turn") or {}
     if turn.get("turns"):
         n = turn["turns"]
@@ -203,7 +201,7 @@ def _print_spend() -> None:
 
 
 def _print_memory_overhead() -> None:
-    """What giving every draw its own Honcho workspace cost (issue #462):
+    """What giving every draw its own Honcho workspace cost:
     the create and the delete, per draw, and any workspace left behind.
 
     Printed on every run for `_print_spend`'s reason: it is free, and the
@@ -268,7 +266,7 @@ def _case_state(case_row: dict[str, Any], name: str) -> Any:
 
 def _print_positions(report: Any) -> None:
     """Every draw's WRITTEN position, with its length, and — separately,
-    labelled, never folded into the position — its working set (issue #445).
+    labelled, never folded into the position — its working set.
 
     The judge's reason says a finding was left out and cannot say WHY: a fold
     that never tried and a fold that was squeezed out by `[standing]
@@ -364,13 +362,10 @@ def _run_one(
 def _print_input(name: str, case_name: str, *, source_url: str) -> int:
     """Render one case's model input and print it; no model is called.
 
-    `design/standing-compact/20-verification.md` §1: «before any model call,
-    each arm's rendered input for one case is printed and diffed. A suite that
-    cannot see the change measures noise.» Run it once on each arm's checkout
-    and `diff` the two outputs. The master arm is master with the harness
-    commit applied — the corpus, `evals/` and `nora/subject/standing_fold.py`
-    apply to it unchanged — and the branch arm is the branch; the corpus
-    header (`evals/corpora/standing.yaml`) states the whole recipe.
+    Before any model call, each arm's rendered input for one case is printed
+    and diffed: a suite that cannot see the change measures noise. Run it once
+    on each arm's checkout and `diff` the two outputs; the corpus header
+    (`evals/corpora/standing.yaml`) states the whole recipe.
 
     The case runs the ONE path — sandbox, snapshot, frozen clock — with the
     fold's model client swapped for a recorder, so what prints is exactly what
@@ -563,7 +558,7 @@ def main() -> int:
     # — see `sweep_stale_private_blank_templates`'s own age+connection guard.
     _sweep_stale_private_blanks(source_url)
 
-    # THE GUARD (2026-09-25 hazard). Recorded here, before any case, and
+    # THE GUARD. Recorded here, before any case, and
     # re-read in the `finally` below through `assert_shared_databases_unchanged`
     # — a run must never change the alembic version of `nora_eval` or
     # `nora_eval_blank`, the two databases every OTHER session on the host

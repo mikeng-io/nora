@@ -54,9 +54,9 @@ class Pass:
     #: could not reach it, and a pass that never needed to ask because nothing
     #: was due. Both end as `nothing_found` with an empty diff.
     #:
-    #: Measured, not assumed: with no provider reachable, four cases of a
-    #: since-deleted pass returned `nothing_found` and NO error, and the one
-    #: expecting silence scored a PASS. That is ERROR-as-PASS inside the layer built to end it.
+    #: Without them, a pass with no provider reachable would return
+    #: `nothing_found` and NO error, and a case expecting silence would score a
+    #: PASS: ERROR-as-PASS.
     samples_ok: int = 0
     samples_failed: int = 0
 
@@ -66,11 +66,11 @@ def with_roster_senders(
     batch: Sequence[TranscriptRow], *, persons: Persons, platform: str,
 ) -> list[TranscriptRow]:
     """The batch with each member's row carrying a sender id the roster
-    resolves, as production's rows do (design 42 S1a).
+    resolves, as production's rows do.
 
-    The sandbox now seeds known humans with loaded roster accounts. This
-    projection also supports older or generated batches with minted sender ids
-    and a copied `person_id`. Production's rows carry the member's real account
+    The sandbox seeds known humans with loaded roster accounts. This
+    projection also supports generated batches with minted sender ids and a
+    copied `person_id`. Production's rows carry the member's real account
     id, and a scope-keyed adaptor names
     its batch through `Persons.name_transcript`, which keys on
     `(platform, sender_id)`, never on `person_id`. Against minted ids that
@@ -125,15 +125,11 @@ async def _notebook(subject: Subject, workspace: str) -> dict[str, tuple[str, st
     note's head, so a snapshot recording only presence could not tell an update
     from nothing happening at all.
 
-    Keyed by ID and not by TITLE, which is how it was and was wrong: `NOTE` has
-    no unique constraint on `(workspace, title)`, three cases of the
-    since-deleted note-candidates pass seed a note called "Dinner 19 Sept" into one workspace, and
-    a title-keyed
-    dict collapses them. A pass that FILED A DUPLICATE instead of revising the
-    tracked note then showed up as `("update", "Dinner 19 Sept")` — reported as
-    the success, when filing a duplicate is precisely the failure
-    `p5_already_tracked_gains_a_decision` existed to catch (note-candidates, deleted 2026-10-03,
-    DEC-277).
+    Keyed by ID and not by TITLE: `NOTE` has no unique constraint on
+    `(workspace, title)`, so a case can seed several notes with one title, and a
+    title-keyed dict collapses them. A pass that FILED A DUPLICATE instead of
+    revising the tracked note would then show up as an `("update", title)`,
+    reported as success when filing a duplicate is the failure to catch.
     """
     engine = create_sql_engine(subject.database_url)
     try:
@@ -154,8 +150,7 @@ def batch_after(batch: Sequence[Any], after_ms: int | None) -> list[Any]:
     have read: those strictly after it. `None` keeps the whole window. An
     eval case states `after_ms` (`metadata.batch_after_ms`) when the newest
     `limit` rows at its anchor are wider than the batch production actually
-    judged (design 42 plan item 5: p5's sandbox showed 59 rows where
-    production's fire saw about 32, which pulled updates onto other notes)."""
+    judged."""
     if after_ms is None:
         return list(batch)
     return [row for row in batch if row.ts > after_ms]
@@ -181,15 +176,13 @@ async def dream(
         )
 
     # THE KEY DEPENDS ON THE ADAPTOR, and the loop resolves it the same way
-    # (`nora/app/runtime.py:976`, `_keys_for`): a `key_kind == "scope"` adaptor
+    # (`nora/app/runtime.py`, `_keys_for`): a `key_kind == "scope"` adaptor
     # is keyed by the ROOM, a `key_kind == "unit"` one by the UNIT.
     #
-    # Keying everything by the room was silently wrong for the (since-deleted,
-    # DEC-277) proactive adaptor: it read `notes.standing(unit=key)` and its home-room check
-    # walks that unit's rooms, so a conversation id found no home room and
-    # the pass returned before rendering anything. It answered `nothing_found`
-    # with an empty diff — which every case expecting `none` scored as a PASS
-    # until the decline reason was carried out.
+    # Keying everything by the room would be silently wrong for a unit-keyed
+    # adaptor: it reads notes by unit, so a conversation id finds nothing and
+    # the pass returns `nothing_found` with an empty diff, which every case
+    # expecting `none` would score as a PASS.
     # The ROOM'S unit (`Subject.unit`, resolved from its policy entry) — not
     # `memory.workspace_id`, which is Honcho's per-deployment workspace and in
     # production is not the unit of any room.
@@ -208,14 +201,11 @@ async def dream(
     # THE MOMENT'S batch, not the room's oldest. Production reads
     # `since(after_id=<watermark>, limit=batch)` — the unread backlog past the
     # cursor. A sandbox seeded with a room's whole history has no cursor, and
-    # `after_id=0` read the OLDEST rows: on a room with 1,500 rows at the
-    # anchor, a batch from the room's first week. The cursor a real deployment
+    # `after_id=0` would read the OLDEST rows. The cursor a real deployment
     # would hold at the moment is "everything but the newest `limit` rows has
-    # been read", so the backlog is exactly those — found by the corpus
-    # conversion, whose every anchor assumed the newest rows.
+    # been read", so the backlog is exactly those.
     # THE ADAPTOR'S OWN batch size, asked of the runtime rather than assumed.
-    # A hardcoded default here is a number production does not use: it hands
-    # culture 300 (`composition.py`).
+    # A hardcoded default here would be a number production does not use.
     # `limit` stays a parameter for a caller that is deliberately probing a
     # smaller window, and `None` means "whatever this adaptor is given".
     if limit is None:
@@ -233,14 +223,12 @@ async def dream(
         batch = batch_after(batch, after_ms)
         batch = with_roster_senders(batch, persons=subject.deps.persons, platform=platform)
     # Joined ONCE here rather than inside the adaptor, which is where
-    # `_run_adaptor` does it and for the reason issue #116 gives: every
-    # scope-keyed adaptor reads this one batch. Without it an image-only message
-    # reaches the Dreamer as an empty body.
+    # `_run_adaptor` does it: every scope-keyed adaptor reads this one batch.
+    # Without it an image-only message reaches the Dreamer as an empty body.
     #
     # `path="dreamer_eval"` and not `"dreamer"`: one label per reader is the
     # rule `tests/architecture/test_media_join_reaches_every_transcript.py`
-    # holds, so that two readers cannot land in one histogram. Reusing the
-    # loop's label was tried and the control refused it, correctly. Nothing is
+    # holds, so that two readers cannot land in one histogram. Nothing is
     # split by the difference — a `Subject` carries its OWN `Metrics()`, built
     # per case and scraped by nobody — and the distinct label says something
     # true: this read was made by the eval seam.

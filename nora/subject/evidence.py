@@ -1,9 +1,7 @@
 """The records a recall case names, read from its sandbox AS THEY STOOD AT THE
 INSTANT — the ground a judge grades a recalled claim against.
 
-design/unified-memory/00-intent.md "Sequence" step 0 runs the conversational-
-recall journeys on existing tools (design/conversational-recall/30-measurement.md
-«measure the user journey before building more»). A recall reply is graded on
+A recall reply is graded on
 whether what it claims to remember is supported, and the support is not the
 window she was shown: it is the photo's stored reading, the note's revision
 chain, the outing the Rollup recorded. A case names those records by TYPED ID

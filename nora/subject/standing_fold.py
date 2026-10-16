@@ -1,9 +1,6 @@
 """The standing fold, driven as the tag path drives it — on ONE real turn.
 
-`design/standing-compact/20-verification.md` §1: nothing measured a fold. The
-debrief ran inside every eval turn and nobody graded what it wrote, so a change
-to what the fold is shown and told had no instrument. This is the seam that
-makes one: a real tag turn's `tag_trace` row, the position as it stood BEFORE
+The seam that measures a fold: a real tag turn's `tag_trace` row, the position as it stood BEFORE
 that turn, and the deployed pipeline's own `_debrief` run against them.
 
 **Why `EngagementPipeline._debrief` and not `debrief.run`.** The two arms the
@@ -29,9 +26,9 @@ seam only.**
   duplicates the turn. Both are translated through the snapshot's own
   `rows` map, and an id the map does not hold is an ERROR rather than a guess.
 - *Delivery.* `know()` writes her rows `PENDING`, so every row of hers in the
-  batch would render `(not delivered)` — the exact input defect issue #199 was
-  (a fold that concluded she had sent nothing with her delivered answer in
-  front of it). Her rows get back the status the source recorded.
+  batch would render `(not delivered)` — an input defect (a fold
+  that concludes she sent nothing with her delivered answer in front of it).
+  Her rows get back the status the source recorded.
 
 **Two instants, and which one each input is read at is the point.** The
 turn finished at `tag_trace.created_at`; production's fold ran a few hundred
@@ -54,7 +51,7 @@ exists in both arms' schema and nothing on this branch reads it, so seeding it
 changes one arm's behaviour only where production's behaviour changed.
 
 **One counterfactual: an ABSENT prior** (`read_fold_turn(prior_absent=True)`).
-A turn from before the chain began (2026-09-20) has a real record and a real
+A turn from before the chain began has a real record and a real
 room but no recoverable position. A case may declare that tier varied — the
 fold is given no prior and renders «no position yet» — and it is refused
 wherever the chain DOES hold a revision at or before the turn, so the
@@ -68,8 +65,8 @@ after the record closes), or `created_at` when she wrote none there.
 False` swaps the client for a recorder that returns an empty completion: the
 fold renders its whole input, records it, and stops at the parse (`malformed`)
 without any provider being reached. That is how the two arms are proven to
-DIFFER before a model call is spent (`20-verification` §1: «a suite that cannot
-see the change measures noise»).
+DIFFER before a model call is spent («a suite that cannot see the change
+measures noise»).
 """
 
 from __future__ import annotations
@@ -106,9 +103,8 @@ __all__ = ["FoldCall", "FoldTurn", "Folded", "fold", "read_fold_turn"]
 _OUTCOMES = "nora_debrief_total"
 
 #: How long after a turn's record closes her own reply to it may land and still
-#: be the turn's. MEASURED on the `recovered` turns in the clone: 14-553 ms.
-#: Five seconds is headroom, not a guess at the tail: a later row of hers is
-#: another turn's.
+#: be the turn's. Five seconds is headroom over the observed `recovered` delays: a
+#: later row of hers is another turn's.
 _REPLY_GRACE_MS = 5_000
 
 
@@ -120,9 +116,8 @@ class FoldTurn:
     trace: TagTrace
     #: The position as it stood before the turn — the newest `standing_revision`
     #: at or before the turn's `created_at`. `None` when the chain holds none
-    #: then, which is ALSO what an instant before migration 0059's chain began
-    #: reads as; the two cannot be told apart from here, so a caller that needs
-    #: a prior must refuse rather than fold against a blank.
+    #: then, which is ALSO what an instant before the chain began reads as; the two cannot be told
+    #: apart from here, so a caller that needs a prior must refuse rather than fold against a blank.
     prior: Standing | None
     #: Her rows' delivery status as the source recorded it, by source row id,
     #: at `folded_at`.
@@ -171,7 +166,7 @@ class Folded:
     #: The position the store holds after the fold, when `outcome == "written"`.
     position: str | None
     #: `Standing.working_set` the store holds after the fold — what it found
-    #: this turn and has not given the room (issue #445), read back beside
+    #: this turn and has not given the room, read back beside
     #: `position` and by the SAME condition: `()` unless `outcome == "written"`.
     #: Never backfilled and never guessed at — `working_set_from_json`'s own
     #: reading of a row with nothing in the column is `()`, which is exactly
@@ -413,8 +408,8 @@ async def fold(
         ))
 
     # The verdict chain as of the turn (see the module docstring). Written
-    # through the table rather than a store: the branch deleted the store, the
-    # schema kept the table, and master's arm reads it through its own.
+    # through the table rather than a store: the branch has no store for it, and
+    # master's arm reads it through its own.
     if turn.verdicts:
         engine = create_sql_engine(subject.database_url)
         try:

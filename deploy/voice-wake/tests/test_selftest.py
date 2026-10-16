@@ -1,11 +1,11 @@
 """The boot self-test — the guard against a process that starts up unable to
 wake and says nothing about it.
 
-The real failure this reproduces: on 2026-09-18 the service restarted with
-byte-identical code, config, model and threshold, armed 24 gates over three
-days and fired zero times, while the container reported healthy and /health
-answered 200. PASS / FAIL / ERROR are asserted as three distinct outcomes
-because collapsing FAIL or ERROR into "not pass" is how that state hid.
+The failure this reproduces: a restarted service with identical code, config,
+model and threshold arms gates and never fires, while the container reports
+healthy and /health answers 200. PASS / FAIL / ERROR are asserted as three
+distinct outcomes because collapsing FAIL or ERROR into "not pass" hides that
+state.
 """
 
 from pathlib import Path
@@ -34,7 +34,7 @@ def test_a_scorer_that_wakes_passes_and_reports_its_peak():
 
 
 def test_a_scorer_that_never_crosses_the_threshold_FAILS_and_is_not_an_error():
-    """The Sep-2026 shape: audio is scored fine, nothing wakes.
+    """Audio is scored fine, nothing wakes.
 
     FAIL and ERROR must stay distinct — they point at opposite things. FAIL
     says the model saw the audio and did not match it; ERROR says the path
@@ -82,7 +82,7 @@ def test_the_clip_is_driven_through_the_real_conditioning_in_real_chunk_sizes():
 
 def test_the_shipped_clip_wakes_the_shipped_model():
     """The end-to-end assertion: the REAL model, the REAL clip, the REAL
-    conditioning. This is the one that would have gone red on 2026-09-18."""
+    conditioning. This is the one that goes red when the service is deaf."""
     model_path = Path(__file__).parents[1] / "models" / "喂Nora.onnx"
     if not model_path.is_file():
         pytest.skip("the wake model is not present")

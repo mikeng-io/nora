@@ -1,4 +1,4 @@
-"""The bake-off's embedders: one adapter per serving path (design/unified-memory/20).
+"""The bake-off's embedders: one adapter per serving path.
 
 Every adapter has the same three calls: `embed_text(texts, role)`,
 `embed_media(paths)` and `provenance()`. An adapter returns raw vectors or
@@ -13,17 +13,17 @@ compared fairly lives HERE, never in a caller:
 - **No float16**: the card says float16 "can silently produce NaN or degraded
   embeddings", so an adapter built with it refuses at construction.
 
-The serving paths, as probed on the deploy host 2026-10-15:
+The serving paths:
 
 - `OllamaEmbedder`: bge-m3 and any other tag Ollama serves. Text only:
   Ollama 0.35 answers an `images` field on /api/embed with the text-only
   vector and refuses an object input, so `embed_media` refuses.
 - `LlamaServerEmbedder`: a native llama-server with `--embedding --pooling
-  last` and a multimodal projector, in the request shape recorded in
-  design/conversational-recall/30 (WeMM-2B's image path), with WeMM's
+  last` and a multimodal projector, in the request shape of
+  WeMM-2B's image path, with WeMM's
   wrapper as its own template files render it (the class says how).
 - `HFEmbedder`: a sentence-transformers model on CPU, for a model no runtime
-  above serves yet (Gemma 2 before Ollama 0.36).
+  above serves yet (Gemma 2).
 """
 
 from __future__ import annotations
@@ -111,9 +111,9 @@ def _is_wemm(model: str) -> bool:
     return "wemm-embedding" in model.lower()
 
 
-#: WeMM's text input, as llama-server's /tokenize rendered it for this probe
-#: (2026-10-15, ids equal to the HF processor's under transformers 5.2.0): the
-#: HF path must render the same pieces, or it is not the model's embedding.
+#: WeMM's text input, as llama-server's /tokenize renders it (ids equal to the HF
+#: processor's under transformers 5.2.0): the HF path must render the same
+#: pieces, or it is not the model's embedding.
 WEMM_PROBE = "two bowls of noodles"
 WEMM_PIECES = ("<|im_start|>", "user", "\n", "two", " bowls", " of", " noodles", "<|im_end|>",
                "<embedding>")
@@ -261,7 +261,7 @@ class OllamaEmbedder:
 #: another newline, or by the end of the text, is dropped. It runs on the text
 #: between special tokens. Checked against the official tokenizer.json
 #: (sha256 40e444c744512f423da4c8443c47c21e22ff76056ba4e9796a81c04c13a9daf0,
-#: tokenizers 0.22.2, 2026-10-15); llama-server applies neither step.
+#: tokenizers 0.22.2); llama-server applies neither step.
 _WEMM_NEWLINE = re.compile(r"\n(?=\n|\Z)")
 
 
@@ -332,7 +332,7 @@ def _proc_cmdline(pid: int) -> list[str] | None:
 
 class LlamaServerEmbedder:
     """A native llama-server started with `--embedding --pooling last` and,
-    for media, `--mmproj` (design/conversational-recall/30).
+    for media, `--mmproj`.
 
     WeMM-Embedding-2B's input is fixed by its own files (tencent/WeMM-Embedding-2B
     at `bbd6cd4b`: `embedding_chat_template.jinja`, the sentence-transformers
@@ -346,8 +346,7 @@ class LlamaServerEmbedder:
 
     The GGUF's EOS is `<embedding>` and llama-server appends it as a special
     token, so the prompt here stops at `<|im_end|>`: writing `<embedding>` too
-    embeds it twice (measured 2026-10-15, cosine to the HF reference 0.928 on
-    a Cantonese query, 0.968 without the duplicate).
+    embeds it twice and moves the vector away from the HF reference.
 
     What the server would embed is checked, never assumed, and anything else
     is an `unsupported` ERROR before a vector is asked for:
@@ -365,7 +364,7 @@ class LlamaServerEmbedder:
     #: llama.cpp's default multimodal marker (mtmd), where the image goes. mtmd
     #: wraps a Qwen-VL image in `<|vision_start|>`...`<|vision_end|>` itself.
     #: A newer server randomises it per start and publishes it as `media_marker`
-    #: in /props (b42b7e6d3, 2026-10-15: the default then fails to tokenize), so
+    #: in /props (the default then fails to tokenize), so
     #: the marker is read from the server, and the default is only for a server
     #: whose /props does not name one.
     MEDIA_MARKER = "<__media__>"
@@ -523,8 +522,8 @@ class HFEmbedder:
     render `WEMM_PROBE` as exactly `WEMM_PIECES`. `text_only` loads it without
     the two parts a text embedding never reaches (`lm_head`: `embedding()`
     pools hidden states; `visual`: only image inputs use it), each replaced by
-    a module that raises if called, so its fp32 weights fit on the deploy host
-    (10.1 GiB whole, about 7 GiB without them); a text vector is unchanged,
+    a module that raises if called, so its fp32 weights fit on the deploy host;
+    a text vector is unchanged,
     and media refuses."""
 
     #: A Hugging Face commit; a branch or tag name can move under a result.
@@ -659,7 +658,7 @@ def _library_versions() -> dict[str, Any]:
 #
 # Each model's input is fixed by its own files at the pinned commit, never by
 # a guess, and every sequence that reaches the model is checked against it
-# (`OfficialEmbedder`). Read 2026-10-15 from:
+# (`OfficialEmbedder`). Read from:
 #
 # - Qwen/Qwen3-VL-Embedding-2B @ 9f2f7e71: `config_sentence_transformers.json`
 #   (`prompts.default` = "Represent the user's input."), `chat_template.jinja`
@@ -673,7 +672,7 @@ def _library_versions() -> dict[str, Any]:
 #   MMEB text-to-image eval give a QUERY "Retrieve images or text relevant to
 #   the user's query." and a document or image the default. That is the
 #   scored format; the default on every role is kept as a recorded variant
-#   (`QWEN3VL_DEFAULT_INSTRUCTION_VARIANT`, the first run). Matryoshka 64 to
+#   (`QWEN3VL_DEFAULT_INSTRUCTION_VARIANT`). Matryoshka 64 to
 #   2048 (card).
 # - jinaai/jina-embeddings-v5-omni-small @ 950200ab: `config_sentence_transformers.json`
 #   (`Query: ` / `Document: `), `custom_st.py` (text is the prompt plus the
@@ -755,8 +754,7 @@ QWEN3VL_EMBEDDING_2B = OfficialFormat(
     right_padding_only=False,
 )
 
-#: The first Qwen run (results 20261015T135707Z): the default instruction on
-#: queries too. A recorded variant, never the scored arm.
+#: The default instruction on queries too. A recorded variant, never the scored arm.
 QWEN3VL_DEFAULT_INSTRUCTION_VARIANT = dataclasses.replace(
     QWEN3VL_EMBEDDING_2B, label="qwen3vl-defaultinst",
     text={"query": _QWEN3VL_TURN, "document": _QWEN3VL_TURN},
@@ -767,7 +765,7 @@ JINA_V5_OMNI_SMALL = OfficialFormat(
     label="jina5omni",
     repo="jinaai/jina-embeddings-v5-omni-small",
     revision="950200abde3a3bcf3d5bdfe5d28fb5bb5e7dfbb0",
-    # Non-commercial: measured here only; shipping it would need another licence.
+    # Non-commercial: measurement only; shipping it would need another licence.
     licence="cc-by-nc-4.0 (non-commercial; measurement only)",
     native_dim=1024,
     text={"query": "Query: {x}", "document": "Document: {x}"},
@@ -800,12 +798,12 @@ class OfficialEmbedder:
     - the snapshot is the pinned commit (its directory is the 40-hex sha),
       loaded from disk with the hub offline, so `trust_remote_code` runs only
       that commit's code;
-    - every parameter is at the requested dtype. Measured 2026-10-15 under
-      transformers 5.4.0: jina's model, loaded through sentence-transformers,
+    - every parameter is at the requested dtype. Under
+      transformers 5.4.0, jina's model, loaded through sentence-transformers,
       through `AutoModel.from_pretrained` or through its remote base class's
       own `from_pretrained`, each given `dtype` or `torch_dtype` float32,
       returns its base (902M parameters) in bf16 beside fp32 LoRA weights.
-      The cause is not established. So the loaded model is cast, and the
+      So the loaded model is cast, and the
       check is equality over every parameter. Both checkpoints are stored
       bf16, so the cast to float32 is exact;
     - every sequence the model's `forward` receives, decoded, equals

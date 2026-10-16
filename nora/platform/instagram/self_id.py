@@ -1,10 +1,8 @@
-"""Nora's own Instagram identity, via the bridge's `GET /health`
-(design/instagram-adoption/03-transport-contract.md §"`/health` carries
-identity").
+"""Nora's own Instagram identity, via the bridge's `GET /health`.
 
 **`/health`, not `/self`.** WhatsApp's bridge has a `GET /self`; this one does
-not, and the contract gives the reason: the alternative — the adapter carrying
-`GetOwnFBID()` in config — is a value whose drift has **no symptom**. R-12
+not, because the alternative — the adapter carrying `GetOwnFBID()` in config —
+is a value whose drift has **no symptom**. R-12
 (`nora.engagement.stages.admission`) would simply stop recognising Nora's own
 mentions, in every room, forever, with nothing logged. So the id comes from the
 live session or it does not come at all.
@@ -15,8 +13,8 @@ declares:
 - **`fbid`** — `interop_messaging_user_fbid`, which is `client.GetOwnFBID()`,
   which is what `mentions[].fbid` carries. It is the PRIMARY, and it is the
   only number "was I tagged?" may compare against. `viewer.GetFBID()` is a
-  different number for the same account and matches nothing (02, measured).
-- **`igid`** — the public Instagram id the Phase 2 social surface takes. It
+  different number for the same account and matches nothing.
+- **`igid`** — the public Instagram id the social surface takes. It
   rides along because an `Identifier` set is how `nora.persons` and
   `PlatformIdentity` both flatten identity, and leaving it out would mean the
   social axis had a second, private answer to "who is Nora".
@@ -25,9 +23,9 @@ declares:
 therefore never a matchable kind on any platform (`nora.domain.identity`'s
 `_ID_KINDS` note) — `Identifier` refuses to carry one, so there is no way to
 record it by accident. It IS read, separately and as plain text, by
-`read_username`: the name people type to reach her, rendered in `<presence>`
-(design/self-awareness/02). The two functions share a response shape and
-nothing else, so the handle cannot drift into `derive_identity`'s set.
+`read_username`: the name people type to reach her, rendered in `<presence>`.
+The two functions share a response shape and nothing else, so the handle cannot drift into
+`derive_identity`'s set.
 
 ## The session state is part of the measurement, not a detail
 
@@ -41,8 +39,8 @@ So "200 with an fbid" is NOT evidence that Nora can act. An adapter that
 resolved identity from a checkpointed bridge would register as fully healthy
 and then 409 every single send. `derive_identity` therefore refuses any
 session that is not `authenticated`, and names the state in the error — which
-is what `nora.platform.registry` turns into M0's degraded registration and
-its startup log line.
+is what `nora.platform.registry` turns into a degraded registration and its
+startup log line.
 """
 
 from __future__ import annotations
@@ -54,10 +52,9 @@ from .ids import fbid_form, igid_form
 
 #: The one `session` value that means Nora can send, react and hear. The other
 #: two the bridge declares (`checkpointed`, `logged_out`) both need a HUMAN —
-#: see `03`'s status table, where a checkpoint is a 409 and explicitly not
-#: retryable. Matched positively rather than by excluding the two known bad
-#: values: a session state this adapter has never heard of is "cannot act",
-#: never "probably fine" (fail-closed).
+#: a checkpoint is a 409 and not retryable. Matched positively rather than by
+#: excluding the two known bad values: a session state this adapter has never
+#: heard of is "cannot act", never "probably fine" (fail-closed).
 AUTHENTICATED = "authenticated"
 
 
@@ -128,9 +125,8 @@ async def read_username(
 
     DISPLAY TEXT, never an `Identifier` (the module docstring): it is what
     `<presence>` tells her she is called on Instagram, read from the same
-    `GET /health` `derive_identity` reads, because the account was renamed
-    once already (`not_____nora` -> `noraexample`, 2026-09-22/23) and a copy
-    in config would have gone stale in silence.
+    `GET /health` `derive_identity` reads, because the operator can rename
+    the account and a copy in config would go stale in silence.
 
     `None` on anything short of a 200 carrying a non-empty `self.username`.
     A checkpointed session still answers with its cached `self` block, and the

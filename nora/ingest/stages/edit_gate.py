@@ -1,5 +1,4 @@
-"""May an edit open a turn? Only when it NEWLY addresses Nora
-(design/message-edits/02 §3; operator decision 2026-09-23).
+"""May an edit open a turn? Only when it NEWLY addresses Nora.
 
 The same engage policy every message meets runs twice: on the edit, and on the
 version the edit replaced — the same message with that version's `body` and

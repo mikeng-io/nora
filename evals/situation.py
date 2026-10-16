@@ -1,6 +1,6 @@
 """Where she is — held for the subject, stated for the judge.
 
-`<presence>` (design/self-awareness/02) is the one block whose input is not in
+`<presence>` is the one block whose input is not in
 the database: it is the room table (`policy.toml`) plus each network's LIVE
 state and her own handles. This module is the eval layer's side of that, and
 it does three things, all ARM-INDEPENDENT so one harness drives a build with
@@ -19,7 +19,7 @@ it does three things, all ARM-INDEPENDENT so one harness drives a build with
 
 Ground truth goes to the JUDGE only. It never reaches her prompt, and the
 judge is told which part of it she was actually shown — a true answer she was
-never given is a guess (05's «answers from memory» failure).
+never given is a guess («answers from memory»).
 """
 
 from __future__ import annotations
@@ -30,21 +30,19 @@ import tomllib
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-#: A LIVE handle the sandbox cannot read, and what production read for it.
+#: A LIVE handle the sandbox cannot read, and what production reads for it.
 #:
 #: Instagram's handle is read live from the bridge's `GET /health`
 #: (`InstagramAdapter.own_handle`) and is deliberately NOT declared in the
-#: deployment's `[agent.handles]` — the account was renamed once already
-#: (design/self-awareness/02). The bridge answers on a docker network the
-#: host cannot resolve, so in a sandbox the read fails and the handle is
-#: simply absent, which is not what production sends.
+#: deployment's `[agent.handles]`, because the account can be renamed. The
+#: bridge answers on a docker network the host cannot resolve, so in a sandbox
+#: the read fails and the handle is simply absent, which is not what
+#: production sends.
 #:
-#: The value is a READ-BACK, not an authored one: production's own rendered
-#: `<presence>` on 2026-09-23T16:35Z (Langfuse, four consecutive chat calls)
-#: said «@noraexample on WhatsApp, Instagram, X and Threads». It is a COPY,
-#: with exactly the risk 02 names — a rename makes it wrong in silence — so it
-#: is confined to the eval harness and dated here. Re-read it before trusting a
-#: handle case after any rename.
+#: The value is a COPY of production's rendered `<presence>` («@noraexample on
+#: WhatsApp, Instagram, X and Threads»), not an authored one. A rename makes it
+#: wrong in silence, so it is confined to the eval harness; re-read it before
+#: trusting a handle case after any rename.
 LIVE_HANDLE_STANDINS: Mapping[str, str] = {"instagram": "@noraexample"}
 
 #: Display names, for the judge's facts. `nora.domain.self_presence.

@@ -1,8 +1,7 @@
 """Whose `<character>` account a turn renders (DEC-278/DEC-290, narrowed).
 
-The block used to carry one account for EVERY person the room lists: seven
-accounts, 9,065 characters, re-sent on each model call of a turn. A turn is
-about the people in it, so the rule is deterministic and reads only ids the
+The block carries only the accounts of the people a turn is about, not every
+person the room lists. The rule is deterministic and reads only ids the
 pipeline already resolved, never the text:
 
 * **tag** - the tagger, anyone the tag message @-mentions, the author of the
@@ -12,8 +11,8 @@ pipeline already resolved, never the text:
   person who spoke in the window.
 
 Always intersected with the room's listed persons, in roster order: an
-account still renders only in a room that lists its person
-(design/cognition-loop/50 section 5), and the rest of the roster is out. Nobody
+account still renders only in a room that lists its person,
+and the rest of the roster is out. Nobody
 is lost to the unit: `character_read` serves any account, but only on the
 Dreamer loop surface (`DREAMER_LOOP_TOOLS`), not on a tag or fire turn.
 """

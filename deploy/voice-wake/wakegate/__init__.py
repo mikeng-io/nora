@@ -1,4 +1,4 @@
-"""wakegate — Nora's stage-3 voice wake-gate service (design/voice-channel/).
+"""wakegate — Nora's voice wake-gate service.
 
 The only consumer of the voice-sidecar's TCP seam: per-user PCM in, wake
 detection (openWakeWord), utterance collection, STT via the local `stt`

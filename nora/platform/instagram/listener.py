@@ -1,5 +1,4 @@
-"""SSE client for the instagram-bridge (`GET /events`,
-design/instagram-adoption/03-transport-contract.md).
+"""SSE client for the instagram-bridge (`GET /events`).
 
 Mirrors `nora.platform.whatsapp.listener` almost exactly — long-lived GET,
 full-jitter exponential backoff, one bad line logged and skipped, a raising
@@ -10,18 +9,18 @@ other.
 The discriminator is `kind`, not WhatsApp's `type`. Two kinds are handled HERE,
 at listener level, and never reach `on_event`:
 
-- **`heartbeat`** — the real socket-death detector. `03` says so plainly, and
+- **`heartbeat`** — the real socket-death detector, and
   it is the reason `last_event_age_seconds` means anything: a quiet room and a
   dead socket are indistinguishable without it. It updates `last_event_at` like
   any other event, because that is what it is FOR.
 
   It also carries `connected` and `session`, which the WhatsApp heartbeat does
-  not, and this listener KEEPS BOTH. That is M0's "visibly saying so" for the
+  not, and this listener KEEPS BOTH. That makes a degraded session visible in the
   case startup cannot see: a session that was `authenticated` when Nora booted
   and got checkpointed at 4am. Without it, Nora's `/health` would report a
   connected adapter in a room that has gone silent because every send is
   409ing — the exact "silently degraded adapter is indistinguishable from a
-  quiet room" failure `01` §Degradation names.
+  quiet room" failure.
 
 - **`dropped`** — the bridge's drop-and-count report: while no SSE client was
   connected its bounded buffer overflowed and OLDEST events were discarded.
@@ -30,8 +29,8 @@ at listener level, and never reach `on_event`:
 
 `reaction`, `edit`, `unsend` and `typing` are NOT handled here. They are part
 of the contract and they reach `on_event`, where `parser.parse_event` turns an
-`edit` into an edit (design/message-edits/03), a `reaction` or an `unsend`
-into a `Touch` (design/cognition-loop/20 §1), and answers None for the rest —
+`edit` into an edit, a `reaction` or an `unsend`
+into a `Touch`, and answers None for the rest —
 the same posture WhatsApp takes toward event types it does not ingest, and the
 reason the parser stays total on its own rather than relying on
 this module to pre-filter.

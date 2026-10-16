@@ -1,4 +1,4 @@
-"""Canned-data tool backends for the LIVE eval (F4, external review 2026-08-10).
+"""Canned-data tool backends for the LIVE eval.
 
 The eval harness drives the REAL model through the real pipeline but, by default,
 wires NO tool backends — so `weather`, `web_search`, `place_info`, `route`,
@@ -6,8 +6,7 @@ wires NO tool backends — so `weather`, `web_search`, `place_info`, `route`,
 gate: a tool that always fails drives fallback calls, so `[web_search →
 unavailable → place_info]` (she web-searched, it failed, she fell back) grades
 identically to `[place_info]` (she preferred the right tool). `NoSiblingLeakage`
-cannot tell a real leak from a fallback artifact, which is why it shipped
-advisory.
+cannot tell a real leak from a fallback artifact.
 
 These deterministic canned providers return a fixed, well-formed `ok` result so
 each tool SUCCEEDS. With the backend up, a call into a sibling is a real routing
@@ -42,14 +41,14 @@ from nora.domain.presence import PresenceFix, SavedPlace, WireState
 #: (`evals/harness.py`), threaded as `memory=` into `build_offline_pipeline`,
 #: which the registry's `build()` passes as `honcho=`. A journey whose required
 #: or sibling set is in `BACKED_TOOLS` has its leakage/budget checks promoted to
-#: hard (F4); keeping the memory verbs here is what makes the remember/recall
+#: hard; keeping the memory verbs here is what makes the remember/recall
 #: journeys hard-gated rather than advisory.
 #:
 #: `note_create` is likewise NOT wired here (the live harness has no note
 #: store), yet it stays in the set ON PURPOSE: it is the note-lane sibling in
 #: the remember journey's confusability cluster, and a wrong-lane call — even
 #: one that answers `unavailable` — is still a leak the gate must catch. The
-#: membership is about the GATE, not about the backend (Kimi audit F1, 2026-08-30).
+#: membership is about the GATE, not about the backend.
 BACKED_TOOLS = frozenset(
     {
         "weather", "web_search", "web_fetch", "place_info", "route", "transit",
@@ -92,12 +91,11 @@ class CannedWeatherProvider:
 class CannedParkingProvider:
     """`nora.domain.ports.ParkingProvider` — a fixed vacancy, always `ok`.
 
-    ECHOES the asked name back (measured 2026-08-31): a provider that
-    answers every query with a fixed "Sai Kung" record made the model
-    distrust the result for a different venue («時代廣場» → sees "Sai
-    Kung" → re-searches to budget). Echoing the name gives the model
-    grounds to accept it, the same self-terminating shape as the search
-    provider's content.
+    ECHOES the asked name back: a provider that answers every query with a
+    fixed "Sai Kung" record makes the model distrust the result for a
+    different venue («時代廣場» → sees "Sai Kung" → re-searches to budget).
+    Echoing the name gives the model grounds to accept it, the same
+    self-terminating shape as the search provider's content.
     """
 
     async def vacancy(self, *, name: str, strict: bool = False) -> dict[str, Any] | None:
@@ -113,7 +111,7 @@ class CannedParkingProvider:
             "opening_status": "OPEN",
             "address": "Man Nin Street No 24, Sai Kung",
             # carpark_alt asks «泊車貴唔貴» — vacancy alone drove a follow-up
-            # web_search for price (measured 2026-08-31). Carry the fee so
+            # web_search for price. Carry the fee so
             # the model has the whole answer in one call.
             "fee": "HK$27/hour (Mon-Thu), HK$40/hour (Fri-Sun & PH)",
         }
@@ -122,7 +120,7 @@ class CannedParkingProvider:
 class CannedStreetParkingProvider:
     """`nora.domain.ports.StreetParkingProvider` — a fixed summary, always `ok`.
 
-    Completeness matters (measured 2026-08-31): a find_parking result that
+    Completeness matters: a find_parking result that
     omits the street row would look like "no streets", so return a real
     summary with names the model can repeat.
     """
@@ -148,21 +146,19 @@ class CannedSearchProvider:
     complete-looking answer lets the model stop after one call, so the budget
     check measures the model's behaviour, not the fake's unhelpfulness.
 
-    IMPORTANT (measured 2026-08-31): the previous single template answered
-    EVERY query with the same "daily 10:00-22:00... parking is available now"
-    text. A real model reading that against a LIVE-STATUS ask ("而家仲有冇車
-    位?") correctly did not believe it — the answer carried no source, no
-    timestamp, no query-specific numbers — and re-searched to its budget
-    (web_search × 4, guard-vetoed; reply "搵極都係垃圾結果"), a canned-data
-    artifact exactly like the vague-snippet trap. The content now echoes the
-    query, names a source and a timestamp, and answers the SHAPE the query
-    asks (hours vs rating vs vacancy) so the model has grounds to stop.
-    """  # noqa: RUF002 — the multiplication sign matches the audit's own notation (as in nora/language/render.py)
+    The content echoes the query, names a source and a timestamp, and answers
+    the SHAPE the query asks (hours vs rating vs vacancy). A single template
+    answering EVERY query with the same "daily 10:00-22:00... parking is
+    available now" text would not be believed against a LIVE-STATUS ask
+    ("而家仲有冇車位?") — no source, no timestamp, no query-specific numbers —
+    and the model would re-search to its budget, a canned-data artifact
+    exactly like the vague-snippet trap.
+    """
 
     async def search(self, *, query: str) -> dict[str, Any]:
         # Echo the query so the result is visibly ABOUT it; name an authority
-        # ("Pacific Place official site") and a time ("checked 2026-08-31
-        # 09:00 HKT") so the model has grounds to accept it as a CURRENT answer
+        # ("Pacific Place official site") and a time (a "checked HH:MM HKT"
+        # stamp) so the model has grounds to accept it as a CURRENT answer
         # instead of a template. The body answers the common live shapes at
         # once — hours, rating AND a parking/vacancy sentence — so whatever the
         # ask, one call plausibly settles it.
@@ -213,9 +209,7 @@ class CannedRouteSource:
     async def place_info(self, name: str) -> dict[str, Any]:
         # `status` is REQUIRED: the place_info tool does `_record(..., out["status"])`
         # (a direct key access, tools.py) — omit it and place_info raises KeyError,
-        # errors silently, records nothing, and vanishes from the trajectory (this
-        # bit once: the router forced place_info, she called it, and the eval showed
-        # web_search because the call never recorded).
+        # errors silently, records nothing, and vanishes from the trajectory.
         return {
             "status": "ok",
             "name": name, "address": "1 Example Road, Hong Kong",
@@ -227,8 +221,7 @@ class CannedRouteSource:
         self, *, lat: float, lng: float, radius_m: float | None = None,
     ) -> tuple[NearbyParking, ...]:
         # Complete, fixed list — the model accepts it and does not re-search
-        # (the self-terminating shape `find_parking` needs, measured with the
-        # live Google call on 2026-08-31).
+        # (the self-terminating shape `find_parking` needs).
         return (
             NearbyParking("g1", "Langham Place Car Park",
                           "31 Ashcombe St, Mong Kok", lat, lng, 50),

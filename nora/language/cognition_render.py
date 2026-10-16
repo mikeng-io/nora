@@ -1,39 +1,32 @@
 """The agenda as the model reads it: a clock, one block per item and the index
-of what is already recorded, every one a context-assembly block
-(design/cognition-loop/30-cognition.md §1; #637 review, major 2; step 3b of
-design/context-assembly/04-every-occasion.md). Pure: strings in, a string out, no
-store, no clock.
+of what is already recorded, every one a context-assembly block.
+Pure: strings in, a string out, no store, no clock.
 
 **Every question the session is asked, the input answers first** (AGENTS.md's
 spine). She is asked whether a room settled a plan, is still deciding, or is
 talking around it: that turns on WHO said WHAT, WHEN, and whether anyone
 answered, so each item carries its messages with an author, a time and an age
-(a block that cannot say which end is newest reads every line as «just now»,
-measured on the relevance gate); a note may cite only the ids it rests on, so
+(a block that cannot say which end is newest reads every line as «just now»);
+a note may cite only the ids it rests on, so
 each message carries its id; «is this already written down» turns on the
 Register, so the index follows the agenda. A row states what happened and never
-what to conclude (§1): attributes say «edited» and name a cue's kind, and stop
+what to conclude: attributes say «edited» and name a cue's kind, and stop
 there.
 
-**The id shown IS the id required** (step 3b, and the whole bug). Until it
-shipped the prompt wrote `[#7998] Ann, 16:35: body` and the verb it then asked
-for, `note_create`, required the citation as a bare `[7998]` and the attribution
-as `(Ann)`: the input contradicted its own validator, and a live trace showed
-three refusals in four calls for exactly that. Every message is now
-`<m n="7998" from="Ann" ...>` through the shared row-id window
-(`nora.domain.blocks.render_row_window`), the way the deleted note-candidates and curator
-showed theirs: `n` is the real message id and `from` the name the validator
-compares a `(<names>)` slot to. `speaker_of` is that one name, read here for the
-render and by the session for the validator (`shown_for`), so the two cannot
-differ, and the block types say what each is for
-(`nora.domain.block_types`: `agenda`).
+**The id shown IS the id required.** `note_create` requires the citation as a
+bare `[7998]` and the attribution as `(Ann)`, so the prompt must not show a
+different form. Every message is `<m n="7998" from="Ann" ...>` through the
+shared row-id window (`nora.domain.blocks.render_row_window`): `n` is the real
+message id and `from` the name the validator compares a `(<names>)` slot to.
+`speaker_of` is that one name, read here for the render and by the session for
+the validator (`shown_for`), so the two cannot differ, and the block types say
+what each is for (`nora.domain.block_types`: `agenda`).
 
 **One block says what it is once.** The agenda is ONE `agenda` block whose body is
 the items, each an `<item>` holding its rows, and the events are ONE `events`
 block holding a `<room_events>` per room; the type's description and field
-glosses are written once per prompt, not once per item (an `agenda_item` block
-per item repeated about 1.7k characters on each: 43k against 12k for twelve
-items). The nesting wrapper is `nora.domain.blocks.render_group`.
+glosses are written once per prompt, not once per item. The nesting wrapper is
+`nora.domain.blocks.render_group`.
 
 **Bounded, and it says when it cut.** The Record rows spend at most
 `RenderBudget.record_chars`, shared across the items by what each needs, counted
@@ -54,14 +47,12 @@ exceeds the allowance by that overhead, the only place it yields.
 collapsed to one line (`nora.domain.prompt.clip`, which is `one_line` and a cut)
 and escaped by the shared renderer, and every attribute value is collapsed and
 escaped there: a body that contained a newline, a closing tag or a quote can
-neither write a second row nor an element (R-13, R-13c; the forgery the
-relevance gate measured).
+neither write a second row nor an element (R-13, R-13c; a forged
+row).
 
-**Where it lives.** In `nora.language`, not `nora.domain`: it was a domain module
-until step 3a and moved whole, no rendered byte changed (the pre-3b baseline is
-`tests/fixtures/cognition_render_pre3b_baseline.json`), so that step 3b could
-build it from the `nora.language` renderers, which a domain module may not
-import. The types it renders (`AgendaItem`, `Room`, `Stimulus`, `Grounding` and
+**Where it lives.** In `nora.language`, not `nora.domain`, because it is built
+from the `nora.language` renderers, which a domain module may not import. The
+types it renders (`AgendaItem`, `Room`, `Stimulus`, `Grounding` and
 its lines) stay in `nora.domain`.
 """
 
@@ -98,21 +89,18 @@ from nora.language.event_render import render_event_rows
 from nora.language.memo_render import memo_rows
 from nora.language.note_render import render_note_rows
 
-#: What this prompt carries, declared as data
-#: (`design/context-assembly/01-the-registry.md`). `render_agenda` builds its
+#: What this prompt carries, declared as data. `render_agenda` builds its
 #: blocks from this table and walks it with `assemble`, so `order` IS the order
 #: the model reads: the clock, which room(s) the read tools look through, one
 #: `agenda` (ONE block, the items nested in it in the agenda's own order), then
 #: what is already recorded, the notes and then ONE `events` block holding each
-#: agenda room's events. The numbers are the order of the lines they replace
-#: (the 3a baseline).
+#: agenda room's events.
 #:
 #: `key="turn"` throughout: this prompt is its own call pattern with no
 #: established cache boundary, so a key borrowed from `prefill._BLOCKS` would not
-#: describe the same thing here, and nothing routes on `key` yet either way
-#: (`design/context-assembly/00-overview.md` §3).
+#: describe the same thing here, and nothing routes on `key` yet either way.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    # Her own Character · Nora for the unit (design/self-growth/20), first, directly
+    # Her own Character · Nora for the unit first, directly
     # after the doctrine (the system prompt). No block while the unit has no account.
     ("self", 5, "turn"),
     ("clock", 10, "turn"),
@@ -122,7 +110,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("events", 50, "turn"),
     # What the unit settled and keeps (DEC-306), LAST of the Register and on
     # its own budget, so no number of memos can push an agenda room's events
-    # out (review of #781).
+    # out.
     ("memos", 55, "turn"),
 )
 
@@ -140,8 +128,7 @@ _SEP = "\n\n"
 @dataclass(frozen=True, slots=True)
 class RenderBudget:
     """How much of the prompt the grounding may spend. Every value is a
-    STARTING guess like every number in this migration, sized from live
-    sessions and set in `[cognition]`."""
+    STARTING guess, set in `[cognition]`."""
 
     #: All items' Record rows together, counted as rendered.
     record_chars: int = 8000
@@ -242,12 +229,11 @@ def _words(text: str, limit: int) -> str:
     """A message's words as one line cut to `limit`; none at all for a limit of
     nothing (the measure of what a row costs without them).
 
-    A shared file link becomes its handle BEFORE the cut (design/external-
-    files §1): cut first, a link split by the cut no longer parses, so half a
-    URL and a prefix of the file id would reach the model, and a stub long
-    enough to parse would carry a different id and a wrong code. Swapping
-    first also keeps `_shrunk`'s search monotonic: the text being cut no
-    longer depends on where it is cut."""
+    A shared file link becomes its handle BEFORE the cut: cut first, a link
+    split by the cut no longer parses, so half a URL and a prefix of the file
+    id would reach the model, and a stub long enough to parse would carry a
+    different id and a wrong code. Swapping first also keeps `_shrunk`'s search
+    monotonic: the text being cut no longer depends on where it is cut."""
     return clip(render_file_links(text), limit) if limit > 0 else ""
 
 
@@ -320,7 +306,7 @@ def _shrunk(row: _Row, room: int) -> str:
     at most `room` characters; with one character of words when even the bare
     element is longer. The cut is measured on the rendered row, never on the raw
     words: `&` renders as five characters and `<` as four, so a cut by raw
-    length let a run of them spend three times its share."""
+    length would let a run of them spend three times its share."""
     lo, hi = 1, max(len(row.show(None)), 1)
     while lo < hi:                     # the largest cut that still fits
         mid = (lo + hi + 1) // 2
@@ -336,8 +322,7 @@ def _shrunk(row: _Row, room: int) -> str:
 def _fit(rows: Sequence[_Row], allowance: int) -> tuple[list[str], int]:
     """The NEWEST rows that fit `allowance`, rendered, in order, and how many
     older ones were left out. At least one row is always kept, its WORDS cut to
-    fit when the newest is longer than its share: `record_chars` is a hard cap
-    (#637 second review: a per-item floor let 12 items spend 10,418 of 8,000).
+    fit when the newest is longer than its share: `record_chars` is a hard cap.
     Cost and cut are both the RENDERED length (`_shrunk`), so the cap holds for
     markup-heavy words too. The cut is in the words and never in the element, so
     a kept row is always a whole row; an allowance smaller than the element's own

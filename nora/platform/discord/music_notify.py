@@ -1,21 +1,20 @@
-"""The ONE place a music announcement's destination is decided
-(design/discord-music/10-notification-routing.md).
+"""The ONE place a music announcement's destination is decided.
 
-Three surfaces used to build their own notify closure — `/music play`
+Three surfaces announce music: `/music play`
 (`music_commands._notify_factory`, off `interaction.channel`), the agent tool
 bridge (`DiscordMusicToolBridge._notify`, off the `conversation_id`'s channel
 half) and boot resume (`music_commands.resume_persisted_sessions`, off the
-persisted row) — three closures that each answered "which channel" a
-different way and only agreed by accident. `music_messages.py` did this for
+persisted row). Left to themselves they would each answer "which channel" a
+different way and agree only by accident. `music_messages.py` does this for
 the WORDING of a music message; this module does it for the DESTINATION, and
 for the same reason: a surface can only change where an announcement lands
 by changing THIS file.
 
-**Resolved at send time, not at capture time.** The old closures captured a
-channel when the session started and were then stuck with it for the
-session's whole life. Two things follow from resolving per-post instead: a
-boot resume honours a `music_channel` set while Nora was down (fresh policy,
-old session), and there is one code path where there were three. It does NOT
+**Resolved at send time, not at capture time.** A closure that captured a
+channel when the session started would be stuck with it for the session's
+whole life. Resolving per-post means a boot resume honours a `music_channel`
+set while Nora was down (fresh policy, old session), and there is one code
+path for all three surfaces. It does NOT
 mean an operator edit lands mid-session — `load_policy` runs once per process
 and `Policy` is frozen, so within a process the resolver is a constant
 function. An edit needs a restart, exactly as `voice = true` does.
@@ -23,16 +22,14 @@ function. An edit needs a restart, exactly as `voice = true` does.
 **Announcements only** (`MusicPlayerManager._notify_now_playing` and
 `_announce_teardown`). A slash command still replies where it was invoked —
 the person who typed it is looking there — and Nora's conversational reply on
-the tag path still lands in the room she was tagged in
-(design/discord-music/09-message-conventions.md's announcement contract is
-unchanged; only the notify path's channel moves).
+the tag path still lands in the room she was tagged in.
 
 **Nothing here may raise.** `Notify` is awaited inside
 `MusicPlayerManager`'s transitions — `_notify_now_playing` at the end of
-`skip()` and `on_track_finished()` — and neither guards it. An escape was
-traced (audit, 2026-09-21) all the way out: a `Forbidden` from `send` left
+`skip()` and `on_track_finished()` — and neither guards it. An escape would
+propagate all the way out: a `Forbidden` from `send` would leave
 `/music skip`'s deferred interaction unresolved ("The application did not
-respond") while the skip had actually happened, and turned every natural
+respond") while the skip had actually happened, and turn every natural
 track-end into an HTTP 500 back to the audio-controller with the event
 unconsumed, freezing the `last_event_seq` baseline. The manager already
 treats a `Notify` as non-raising in `_announce_teardown` (which wraps it);
@@ -69,8 +66,8 @@ ClientGetter = Callable[[], "discord.Client | None"]
 
 def no_music_channel(_guild_id: str) -> None:
     """The unwired default: no guild names a channel, so every announcement
-    falls back to where its session started — the pre-`music_channel`
-    behaviour, exactly. Named rather than inlined as `lambda _: None` so a
+    falls back to where its session started — the behaviour without a
+    `music_channel`. Named rather than inlined as `lambda _: None` so a
     caller that has no policy to thread says so."""
     return None
 
@@ -79,13 +76,13 @@ def is_snowflake(value: str) -> bool:
     """Whether `value` is usable as a Discord channel id.
 
     ASCII decimal digits with a plausible snowflake length — NOT
-    `str.isdigit()`, which was the first implementation and is fail-open in
-    both directions (audit, 2026-09-21): it accepts superscripts (`"²"`) and
-    other non-decimal digit characters that `int()` then refuses, so a line
-    that can NEVER route passed startup and failed at send time
-    indistinguishably from a deleted channel — PASS standing in for ERROR.
-    It also accepted Arabic-Indic digits, which `int()` DOES parse, so such
-    an id silently routed while reading as something else entirely.
+    `str.isdigit()`, which is fail-open in both directions: it accepts
+    superscripts (`"²"`) and other non-decimal digit characters that `int()`
+    then refuses, so a line that can NEVER route would pass startup and fail
+    at send time indistinguishably from a deleted channel — PASS standing in
+    for ERROR. It also accepts Arabic-Indic digits, which `int()` DOES parse,
+    so such an id would silently route while reading as something else
+    entirely.
 
     The length bound additionally rejects `"0"` and a 30-digit number, both
     of which parse and neither of which can name a channel."""
@@ -117,8 +114,8 @@ def make_notify(
 
     `fallback_channel_id` is "the channel where it started" — the persisted
     `MusicSession.notify_channel_id`. It stays the fallback rather than
-    becoming dead weight: a guild naming no `music_channel` keeps the old
-    behaviour, and a guild WITH one still needs somewhere to go if that
+    becoming dead weight: a guild naming no `music_channel` announces there,
+    and a guild WITH one still needs somewhere to go if that
     channel stops resolving.
     """
 
@@ -150,8 +147,7 @@ def make_notify(
             # not usable from here — deleted, access lost, or in another
             # guild. Fall back rather than drop: a misrouted announcement is
             # recoverable, a silent session is the failure this whole path
-            # exists to prevent (found live 2026-09-15,
-            # `connection_lost_line`'s own story).
+            # exists to prevent.
             log.warning(
                 "music notify: guild %s routes to channel %s (policy.toml "
                 "music_channel) but it is not usable — falling back to %s",
@@ -249,7 +245,7 @@ def _messageable(
     `ConnectionState.get_channel` searches private channels first and then
     every guild the bot is in, so without this it resolves happily. A DM
     channel is `Messageable` too, so one guild's `Now playing:` lines could
-    have been posted into another guild, or as a DM (audit, 2026-09-21).
+    have been posted into another guild, or as a DM.
     Digits-only blocked the SYNTAX that expresses cross-guild routing, never
     the capability."""
     if channel_id is None or not is_snowflake(channel_id):

@@ -1,11 +1,11 @@
 """One-shot live smoke test for the xAI image-gen lane (DEC-137).
 
 Runs the REAL adapter against the REAL xAI API using the refresh token the
-operator just minted via `nora xai-login`. This is a deliberate, small,
+operator minted via `nora xai-login`. This is a deliberate, small,
 operator-authorized burn of subscription quota (~$0.02, one image) — NOT a
 unit test; it never runs in `make gate`.
 
-Usage:  uv run python scripts/smoke_xai_generate.py
+Usage:  uv run python scripts/smoke_xai_imagegen.py
 """
 from __future__ import annotations
 

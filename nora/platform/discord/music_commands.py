@@ -1,5 +1,5 @@
 """`/music play|skip|queue|pause|resume|stop` — the slash-command control
-surface (design/discord-music/02-control-surface.md).
+surface.
 
 **Not unit-tested.** Every function here takes a real `discord.Interaction`
 — a `discord.Member`'s `.voice`, a `discord.VoiceChannel.connect()` — and
@@ -43,11 +43,9 @@ from nora.platform.discord.voice_gate import voice_join_decision
 
 log = logging.getLogger("nora.music")
 
-# `/music queue` used to reply with every track in one message, which blew
-# past Discord's 2000-char cap outright (HTTPException 50035) once playlist
-# expansion (01-playback-and-source.md) made a 50-track queue routine
-# instead of a "someone pasted an enormous list" edge case. Real navigation
-# (`_QueuePaginator`, below) replaced the truncate-with-a-trailer fix.
+# `/music queue` pages through the queue (`_QueuePaginator`, below): one message
+# listing every track would blow past Discord's 2000-char cap (HTTPException
+# 50035) on a long queue, which playlist expansion makes routine.
 _QUEUE_PAGE_SIZE = 10
 _QUEUE_VIEW_TIMEOUT_SECONDS = 180.0
 # Longer than the queue paginator's -- a listening session runs far longer
@@ -64,13 +62,12 @@ def _notify_factory(
 ):
     """The announcement destination for a session started by `/music play`:
     the `music_channel` one of this guild's `policy.toml` rooms names, else
-    the channel this command was invoked from (`03-state-and-persistence.md`'s
-    "where it started"). Both halves live in `music_notify.make_notify` — the
-    ONE place any surface decides where a music announcement goes
-    (design/discord-music/10-notification-routing.md).
+    the channel this command was invoked from ("where it started"). Both
+    halves live in `music_notify.make_notify` — the ONE place any surface
+    decides where a music announcement goes.
 
-    `client` is the ADAPTER's getter, deliberately not `interaction.client`
-    (audit, 2026-09-21): this closure is stored in `MusicPlayerManager._notify`
+    `client` is the ADAPTER's getter, deliberately not `interaction.client`:
+    this closure is stored in `MusicPlayerManager._notify`
     and outlives the connection attempt the interaction belonged to, and a
     closed `discord.Client` keeps its channel cache — so a captured one
     resolves a channel and then fails at `send`, on every announcement for the
@@ -88,11 +85,11 @@ def _notify_factory(
 
 def _connect_factory(hub: VoiceControllerHub | None, guild_id: str, channel_id: str) -> Connect:
     """Built only when the invoker IS in a voice channel — `None` reaching
-    `MusicPlayerManager.play` is what triggers the design's join-rejection,
+    `MusicPlayerManager.play` is what triggers the join-rejection,
     so this function is never called at all in the rejection case.
 
-    The join goes through the hub (the audio-controller owns the connection,
-    design/voice-channel/07): first join for a guild POSTs `/voice/join`,
+    The join goes through the hub (the audio-controller owns the connection):
+    first join for a guild POSTs `/voice/join`,
     later ones reuse the cached session. A `None` hub means music is enabled
     without an audio-controller configured — the join then fails CLOSED as
     `VoiceControllerUnavailable`, which the command layer already renders as
@@ -198,9 +195,8 @@ class _QueuePaginator(discord.ui.View):
 class MusicCommands(app_commands.Group):
     """Registered as `/music` on the `CommandTree` built inside
     `DiscordAdapter.listen()` — one instance per connection attempt, same
-    lifecycle as the `discord.Client` it's attached to
-    (`02-control-surface.md`'s "the command tree lives where the client
-    lives" note)."""
+    lifecycle as the `discord.Client` it's attached to (the command tree lives
+    where the client lives)."""
 
     def __init__(
         self,
@@ -238,7 +234,7 @@ class MusicCommands(app_commands.Group):
             guild_id, _who(interaction), query,
         )
         channel = _requester_voice_channel(interaction)
-        # The auto-join gate (design/voice-channel/07 §12.2): a FRESH session
+        # The auto-join gate: a FRESH session
         # may only join the caller's current channel, and only when that
         # channel is on the configured allow-list. An EXISTING session is
         # reused regardless (no join happens), so the gate binds only when
@@ -321,10 +317,10 @@ class MusicCommands(app_commands.Group):
         try:
             skipped = await self._manager.skip(guild_id)
         except VoiceControllerError:
-            # B-3 (2026-09-16 audit): a controller outage mid-skip used to
-            # leave this deferred interaction unresolved ("The application
-            # did not respond") — the manager's own `commit_pending` errors
-            # are already logged there, so this is just the reply.
+            # A controller outage mid-skip would leave this deferred
+            # interaction unresolved ("The application did not respond") —
+            # the manager's own `commit_pending` errors are already logged
+            # there, so this is just the reply.
             log.exception("music skip failed for guild %s", guild_id)
             await interaction.followup.send(m.controller_unavailable_line(), silent=True)
             return
@@ -384,8 +380,8 @@ class MusicCommands(app_commands.Group):
         try:
             ok = await self._manager.pause(guild_id)
         except GenerationConflict:
-            # Speech holds the connection (controller's `pause_during_speech`,
-            # design/voice-channel/07 §5) — a refusal, not a crash.
+            # Speech holds the connection (controller's `pause_during_speech`)
+            # — a refusal, not a crash.
             await interaction.followup.send(m.cannot_pause_now_line(), silent=True)
             return
         except VoiceControllerError:
@@ -426,7 +422,7 @@ class MusicCommands(app_commands.Group):
         try:
             await self._manager.stop(guild_id)
         except VoiceControllerError:
-            # B-3: `MusicPlayer.stop` now deletes the persisted row before
+            # `MusicPlayer.stop` deletes the persisted row before
             # this can be raised (a controller outage), so the session is
             # already gone even though the reply below reports the outage.
             log.exception("music stop failed for guild %s", guild_id)
@@ -480,15 +476,13 @@ async def register(
     attempt (`adapter.py`'s own reasoning), so a fresh `CommandTree` every
     attempt too. Re-syncing identical commands on every reconnect is
     slightly wasteful but always correct; tracking "already synced" to skip
-    it is a real optimization left for if reconnects turn out frequent
-    enough to matter (design/discord-music/04-deferred.md's evidence-bar
-    pattern, applied here rather than pre-optimized).
+    it is worth doing only if reconnects turn out frequent enough to
+    matter.
 
     Registers `/music` AND the `/discord` voice-control group. There is NO
-    `on_voice_state_update` empty-channel handler here anymore: the
+    `on_voice_state_update` empty-channel handler here: the
     audio-controller observes the channel itself and POSTs `channel-emptied`
-    to `/app/v1/voice/event` (design/voice-channel/07 §10, B10) — nora no
-    longer holds a voice client to watch."""
+    to `/app/v1/voice/event` — nora holds no voice client to watch."""
     tree = app_commands.CommandTree(client)
     tree.add_command(MusicCommands(
         manager, hub=hub, voice_guild_ids=voice_guild_ids,
@@ -509,8 +503,7 @@ async def resume_persisted_sessions(
     resolve_music_channel: ResolveMusicChannel = no_music_channel,
     client_getter: ClientGetter | None = None,
 ) -> None:
-    """Boot-time resume (design/discord-music/06-session-persistence.md
-    stage 2): reconnects a guild's session ONLY if its voice channel still
+    """Boot-time resume: reconnects a guild's session ONLY if its voice channel still
     has a human in it right now -- symmetric with the "leave when a channel
     empties of humans" rule: a deploy must not make Nora silently rejoin and
     play into an empty room. A channel that's gone entirely, or emptied
@@ -519,8 +512,7 @@ async def resume_persisted_sessions(
 
     The connect closure goes through `hub.join`, which ADOPTS the
     controller's existing connection + generation when the controller
-    outlived a nora restart — that adoption IS the design/voice-channel/07
-    §12.1 boot reconciliation.
+    outlived a nora restart.
 
     Safe to run on every `on_ready`, not just a genuine process boot --
     `MusicPlayerManager.resume_persisted_session` already refuses to
@@ -549,8 +541,7 @@ async def resume_persisted_sessions(
                 # The persisted `notify_channel_id` is the FALLBACK, not the
                 # destination: a resume re-reads `policy.toml`'s `music_channel`
                 # like every other post does, so an operator who set one while
-                # Nora was down gets it honoured on the way back up
-                # (design/discord-music/10-notification-routing.md).
+                # Nora was down gets it honoured on the way back up.
                 notify=make_notify(
                     # The adapter's getter, not the `on_ready` client this
                     # scan is running under — see `_notify_factory` for what a

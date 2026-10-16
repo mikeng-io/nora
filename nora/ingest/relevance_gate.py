@@ -1,31 +1,24 @@
 """The Relevance Gate — one cheap structured call that decides whether an
-untagged burst is worth Nora's attention at all
-(design/dreamer-agent-loop/36).
+untagged burst is worth Nora's attention at all.
 
 WHAT THIS MODULE IS
 -------------------
-The judgement that used to cost a full agent turn. The participation design
-(35) answered "is this worth speaking to?" by running Nora — whole doctrine,
-every tool, the turn's whole budget — on every quiescence-closed window. That
-is not an evaluation, it is the answer done twice; and the trace that settled
-it showed the determination opening a weather tool on a path whose only job
-was to decide whether to open its mouth.
-
-This module is the opposite shape: ONE call, transcript + standing, no tools,
-no doctrine, no loop, JSON out. It is admission control and nothing else.
+Admission control and nothing else: ONE call, transcript + standing, no tools,
+no doctrine, no loop, JSON out. It is deliberately not a full agent turn (whole
+doctrine, every tool, the turn's whole budget) run on every quiescence-closed
+window to answer "is this worth speaking to?".
 
 WHAT IT DELIBERATELY CANNOT ANSWER
 ----------------------------------
 "Does NORA hold something true to add?" It never sees notes, facts or the
 peer card, so it cannot — and must not pretend to. That question belongs to
-the participation turn behind the gate, which keeps its right to silence
-(design 36 §7). The two questions are separate on purpose:
+the participation turn behind the gate, which keeps its right to silence. The
+two questions are separate on purpose:
 
     gate  — is this worth a reply from anyone?      ~1-2k, transcript+standing
     turn  — do I hold anything real to add?         the full turn, everything
 
-A gate that started guessing the second question would be the 35 design again
-in a cheaper coat.
+A gate that guessed the second question would be a full turn in a cheaper coat.
 
 FAIL-CLOSED, AND THE THREE STATES ARE KEPT APART (R-27)
 -------------------------------------------------------
@@ -38,35 +31,32 @@ But it is never counted as a clean `no_go`. `GateVerdict.source` keeps
 observable outcome and completely different operational facts: the first is
 the gate working, the second is the gate DOWN while looking exactly like a
 quiet room. Both counters carry `conversation_id`, so a refusal can be joined
-to what she was holding for that room (design/culture-tier/02-measurement
-section 3, was issue #221); before that label they said only «somewhere on
-Signal» and neither HOLDING refusal nor override was computable.
+to what she was holding for that room.
 
 The counters follow that split — `nora_relevance_gate_total`
 moves only on a real verdict, `nora_relevance_gate_errors_total` carries the
 reason a fail-closed one happened.
 
 A truncated body is treated as an error and not parsed, for
-`nora.engagement.stages.debrief`'s already-paid-for reason: a cut-off JSON
+`nora.engagement.stages.debrief`'s reason: a cut-off JSON
 document can still parse into something shorter and wrong, which is an ERROR
 wearing a PASS's face.
 
-THE CEILING IS THE GATE'S OWN, AND IT IS ITS OWN ERROR KIND (issue #163)
------------------------------------------------------------------------
-`decide` promises never to raise. It did not promise to RETURN, and that is a
+THE CEILING IS THE GATE'S OWN, AND IT IS ITS OWN ERROR KIND
+-----------------------------------------------------------
+`decide` promises never to raise. It does not promise to RETURN, and that is a
 different property: `ModelClient.complete` is a structural type with no
-timeout in its contract, so «the gate never hangs» was a property of whichever
-client the composition root happened to wire rather than of this class. It
-matters here more than it would elsewhere, because the trigger holds the
-conversation's SLOT across `decide` and walks its due windows serially — one
-hanging call is not a slow background job, it is that room refusing tags and
-every other room's window never being judged.
+timeout in its contract, so «the gate never hangs» would be a property of
+whichever client the composition root happened to wire rather than of this
+class. It matters here more than it would elsewhere, because the trigger holds
+the conversation's SLOT across `decide` and walks its due windows serially —
+one hanging call is not a slow background job, it is that room refusing tags
+and every other room's window never being judged.
 
 So the bound is taken here, in `_ask`, on top of whatever the client carries.
-And it is COUNTED APART from `call_failed`: 8 of 41 calls in the 20.3h after
-the shadow flip produced no verdict, all of them timeouts, and nothing in the
-metric said so. `nora_relevance_gate_seconds` is the other half — the ceiling
-can only be argued against a latency distribution, and there was none.
+And it is COUNTED APART from `call_failed`: a timeout and a provider refusal
+need different fixes. `nora_relevance_gate_seconds` is the other half — the
+ceiling can only be argued against a latency distribution.
 """
 
 from __future__ import annotations
@@ -111,17 +101,11 @@ VerdictSource = Literal["model", "fail_closed"]
 
 #: The fail-closed reasons, one label per distinguishable failure. This tuple
 #: IS the metric's label vocabulary — `nora/obs/metric_specs.py` reads it from
-#: here rather than restating it, because a hand-copied vocabulary is what
-#: drifts (the `nora_ingest_outcomes_total` precedent).
+#: here rather than restating it, because a hand-copied vocabulary drifts.
 GATE_ERROR_KINDS: tuple[str, ...] = (
     "call_failed",     # transport error, provider refusal — never reached a body
-    # SPLIT OUT OF `call_failed` (issue #163). Measured over the 20.3h after
-    # the shadow flip, 8 of 41 gate calls — 19.5% — produced no verdict, and
-    # every one was a `TimeoutError`: the model did not finish inside
-    # `[relevance_gate] timeout_seconds`. Pooled with `call_failed` that fact
-    # was readable only from a stack trace in the log, so the one series an
-    # operator watches could not tell «the provider refused» from «the ceiling
-    # is too low for this arm» — two different fixes wearing one label.
+    # Split out of `call_failed`: pooled, the series cannot tell «the provider
+    # refused» from «the ceiling is too low for this arm», two different fixes.
     "timeout",         # the ceiling fired: no body, and the call was still running
     "truncated",       # finish_reason="length": a body exists and must not be trusted
     "unparseable",     # not JSON, or not an object
@@ -162,11 +146,10 @@ class GateVerdictSchema(BaseModel):
 
     Production does not use it: the gate forms its verdict through a raw
     `json_object` completion, because the SDK's structured output breached the
-    suite's safety bar on this exact call (#186). Its one caller is the eval
-    harness's `--via-sdk` arm, which is what MEASURES that — so this stays
-    here, beside `parse_verdict`, rather than moving into the harness: the
-    comparison is only worth reading while both arms are asked the same
-    question.
+    suite's safety bar on this call. Its one caller is the eval harness's
+    `--via-sdk` arm, which MEASURES that — so this stays here, beside
+    `parse_verdict`, rather than moving into the harness: the comparison is
+    only worth reading while both arms are asked the same question.
 
     `relevance_score` defaults to the `-1.0` sentinel `parse_verdict` already
     uses for absent, because the score is optional by design: a gate that must
@@ -220,10 +203,8 @@ class _Instruction:
     """A non-empty gate instruction, with the provenance a verdict is read
     against.
 
-    `version` and `sha256` ride along because the file HOT-RELOADS: an
-    operator tunes it three times during a soak and then reads a week of
-    verdicts, and without these there is nothing tying a verdict to the text
-    that produced it — which is the whole purpose of the soak.
+    `version` and `sha256` ride along because the file HOT-RELOADS: without
+    them nothing ties a verdict to the text that produced it.
 
     The prompt digest already on the span cannot do this job: it hashes
     instruction PLUS the room, so it changes on every call and is not
@@ -253,7 +234,7 @@ def _has_body(doctrine_text: str) -> bool:
 class GateVerdict:
     """What the gate decided, and whether it was the model that decided it.
 
-    `score` is REFERENCE ONLY (design 36 decision 5). It rides into the
+    `score` is REFERENCE ONLY. It rides into the
     participation turn as context and shows in the shadow post; it is never a
     threshold. The verdict is the only enforcement surface, which is why there
     is nothing here to compare a score against.
@@ -262,9 +243,8 @@ class GateVerdict:
     verdict: Verdict
     #: `None` means the model returned no usable score. NOT 0.0 — the score is
     #: reference only, so an ABSENT one must render as nothing rather than as
-    #: a low one. Collapsing the two put «this room scored 0.00» in front of
-    #: her on a window the gate had just admitted, and showed the operator a
-    #: weak admission where no score was given at all.
+    #: a low one: collapsing the two would show «this room scored 0.00» for a
+    #: window the gate admitted.
     score: float | None
     source: VerdictSource
     #: Set only when `source == "fail_closed"`; one of `GATE_ERROR_KINDS`.
@@ -294,38 +274,26 @@ class PromptSource(Protocol):
     doctrine directory is bind-mounted and hot-reloads on mtime, so a gate
     handed its prompt at construction would keep sending whatever was on disk
     when the process started and an operator's edit would look like it did
-    nothing. That argument is at its strongest here — the whole point of the
-    shadow soak is reading verdicts and adjusting the instruction, and a
-    rebuild between every adjustment would make the loop useless.
+    nothing. That argument is at its strongest here: an operator reads
+    verdicts and adjusts the instruction without a rebuild.
     """
 
     def get(self, *, applies_to: str = ...) -> Any: ...
 
 
 #: The audience `nora/doctrine/instruments/participation.md` declares. Nothing else uses
-#: it, which is the isolation: the gate never receives Nora's doctrine (the
-#: superseded design injected all of it, and the trace that killed that design
-#: showed the determination opening a weather tool), and she never receives
-#: the gate's instruction — it describes an instrument, not a person.
+#: it, which is the isolation: the gate never receives Nora's doctrine, and she
+#: never receives the gate's instruction — it describes an instrument, not a
+#: person.
 GATE_AUDIENCE = "relevance_gate"
 
 #: Everything ABOVE this is `participation.md`, which the operator edits; this
 #: line and the JSON contract below are the parts the code owns because the
 #: parser depends on them.
 #:
-#: **THE CATALOGUE THAT WAS HERE IS GONE** (#314). It described the two blocks
-#: — what order the transcript is in, what `(none)` on the standing means, that
-#: the standing is the only thing that can establish what she owes the room —
-#: in a string this module maintained by hand, while the prefill path described
-#: the same two blocks in its own words somewhere else. Two descriptions of one
-#: block, free to disagree, and `standing` was one of the four that did.
-#:
-#: Every sentence it carried is now in `nora.domain.block_types`, on the type,
-#: rendered into each block's own opening tag — so it arrives attached to the
-#: block it is about rather than in a list above it, and there is exactly one
-#: of it. It also opened with «two untrusted blocks», a word this audience has
-#: no definition of: the gate loads `participation.md` and nothing else, and
-#: the one file defining `untrusted` is not it.
+#: The blocks are described by type in `nora.domain.block_types`, rendered into
+#: each block's own opening tag, so each has exactly one description and none
+#: lives in this module.
 _CONTEXT = """{context}
 
 Respond with JSON only:
@@ -336,15 +304,13 @@ def build_user_message(context: str) -> str:
     """The room, and only the room.
 
     The instruction is NOT in here. It is the system prompt
-    (`build_system_prompt`), which is the difference between the two roles the
-    Chat Completions shape gives you and the one string this used to be.
+    (`build_system_prompt`), a different role from the user message.
 
-    That single string is why a member could forge a turn at all: with the
-    rules and the transcript concatenated into one `user` message, the eight
-    characters `[assistant]:` typed by a person were structurally identical to
-    a turn Nora actually took — same role, same block, nothing to tell them
-    apart. `_one_line` stops a row producing a second ROW; it cannot make a
-    role out of text that has none.
+    Rules and transcript concatenated into one `user` message would let a
+    member forge a turn: the eight characters `[assistant]:` typed by a person
+    are structurally identical to a turn Nora actually took. `_one_line` stops
+    a row producing a second ROW; it cannot make a role out of text that has
+    none.
     """
     return _CONTEXT.format(context=context)
 
@@ -363,21 +329,21 @@ ACTS is never the reason a window is worth her turn.
 
 
 def build_system_prompt(instruction: str, capabilities: str = "") -> str:
-    """`participation.md`, as the system prompt it always should have been —
+    """`participation.md` as the system prompt,
     plus the capability digest it cannot write down without going stale.
 
     A system message is not merely «first»: it is a different role, one the
     group's own words can never occupy, so an instruction here cannot be
     imitated by anything a member types into the transcript below it.
 
-    `capabilities` is `ToolRegistry.capability_digest()` (issue #144). It is
+    `capabilities` is `ToolRegistry.capability_digest()`. It is
     APPENDED rather than interpolated so an operator editing the instruction
     cannot accidentally delete it, and it is derived on every start so a tool
     added on master is a capability the gate knows about on the next deploy.
 
-    Empty is allowed and changes nothing: the gate ran without it until
-    2026-09-10, and a composition that cannot build a registry should degrade
-    to the old behaviour rather than fail closed on every window.
+    Empty is allowed and appends nothing: a composition that cannot build a
+    registry degrades to the bare instruction rather than failing closed on
+    every window.
     """
     text = instruction.rstrip()
     if not capabilities.strip():
@@ -389,44 +355,31 @@ def build_system_prompt(instruction: str, capabilities: str = "") -> str:
 
 
 # `_one_line` is `nora.domain.prompt.one_line`, imported under this module's own
-# name because its call sites and its two tests read it. It was BORN here, as a
-# private copy, and that is precisely what went wrong: the gate was one of six
-# renderers with this hole and the only one that got the fix, so the tag path
-# kept forging rows for two more days while this file's tests stayed green. The
-# shared version also widens the separator set to everything `str.splitlines`
-# breaks on — a superset of the four this copy collapsed, so both tests below
-# still pin exactly what they pinned.
+# name because its call sites and its two tests read it. It collapses everything
+# `str.splitlines` breaks on.
 
 
 #: Her own rows are `assistant` here, not her display name: this prompt speaks
-#: of her in the third person, unlike the tag prefill. That was
-#: `RowStyle(self_name=...)` on a flat line until #292 and is now what the
-#: `from` accessor returns — the bracketing and the handle went with the line,
-#: because an attribute needs no delimiter and this prompt addresses nothing.
+#: of her in the third person, unlike the tag prefill. It is what the `from`
+#: accessor returns; an attribute needs no delimiter and this prompt addresses
+#: nothing.
 _GATE_SELF_NAME = "assistant"
 
 
-#: The two blocks the gate is allowed to see, and no third
-#: (`design/context-assembly/02-the-gate-stays-closed.md`). Declared as data
+#: The two blocks the gate is allowed to see, and no third. Declared as data
 #: for the same reason `nora.agent.prefill._BLOCKS` is: so «what does the gate
 #: carry» is a table to read rather than a trace through `render_context`, and
-#: so a third row can be caught by a test rather than noticed by a reviewer.
-#:
-#: `key="turn"` for both, matching what this function already did before this
-#: table existed (`ContextBlock.key` defaults to `"turn"`) — S1 changes no
-#: output. Whether either belongs at `prefill`'s `"room"` instead is a
-#: separate, later question: the gate's prompt is not part of the tag path's
-#: cached prefix at all, so a key copied from prefill would not mean the same
-#: thing here (`03-sequencing.md` S3 acceptance #4).
+#: so a third row can be caught by a test. `key="turn"` for both
+#: (`ContextBlock.key` defaults to it); the gate's prompt is not part of the tag
+#: path's cached prefix, so a key copied from prefill would not mean the same
+#: thing here.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("group_transcript", 10, "turn"),
     ("standing", 20, "turn"),
 )
 
 #: `name -> (order, key)`, derived so `render_context` cannot restate a row
-#: `_BLOCKS` already gives it — the drift `nora.agent.prefill._ROW`'s own
-#: comment records (`_BLOCKS` and `_ROW` disagreeing once shipped two blocks
-#: with no entry at all).
+#: `_BLOCKS` already gives it, which would let the two drift.
 _ROW: dict[str, tuple[int, BlockKey]] = {
     name: (order, key) for name, order, key in _BLOCKS
 }
@@ -445,41 +398,31 @@ def render_context(
     input is a closed set, so it is built by a function that can only produce
     a closed set.
 
-    **What that decision does NOT license is dropping R-13.** The first
-    version of this function joined raw room text with no escaping and no
-    framed block around it, and the failure was not theoretical: this prompt
-    ends
-    with the literal verdict schema, so a member whose message contained that
-    JSON could write the gate's own answer. `nora.agent.prefill` has escaped
-    and labelled group text since R-13 was written; declining to reuse the
-    ASSEMBLER never meant declining the RULE.
+    **What that decision does NOT license is dropping R-13.** Raw room text
+    with no escaping and no framed block would let a member whose message
+    contained the verdict JSON write the gate's own answer, because this prompt
+    ends with the literal verdict schema. `nora.agent.prefill` escapes and
+    labels group text (R-13); declining to reuse the ASSEMBLER never meant
+    declining the RULE.
 
-    Rows arrive **oldest-first** from `RecordStore.recent` — its docstring
-    says so and `tests/contract/test_audit_store_contract.py` pins it for
-    every implementation — so they are rendered in the order given. The first
-    version reversed them, on a docstring that asserted the opposite, and
-    every verdict would have been judged on a conversation read backwards.
+    Rows arrive **oldest-first** from `RecordStore.recent` —
+    `tests/contract/test_audit_store_contract.py` pins it for every
+    implementation — so they are rendered in the order given.
 
     Speakers are labelled `person_name or sender_name or "unknown"`, the
     canonical order (DEC-80, `prefill._label`). Never `sender_id`: a raw ACI
     or E.164 in this string is an identifier on the wire to the provider,
     which is the egress R-18 exists to keep closed.
 
-    **A newline inside a body no longer forges a row, and the defence is now
-    the element boundary rather than a collapse** (#292). Rows used to be
-    joined with `\n` as `[who]: body`, so a member whose message CONTAINED a
-    newline wrote a second line byte-identical to a real row — including
-    `[assistant]: …`, a sentence from Nora she never said. Measured then: a
-    forged commitment line took the gate to `go` 5/5. Each message is now its
-    own `m` element inside `<group_transcript>`, so a body keeps its newlines
-    and produces no row: `escape` makes a closing tag unwritable (R-13b) and
-    the speaker is an attribute `escape_attr` closes. The collapse that used to
-    carry this is gone from the body and kept on every ATTRIBUTE value, in
-    `render_elements`. The measurement stands as the reason the defence has to
-    be structural: the forged line stayed `go` 5/5 against a HARDENED PROMPT
-    too, which is what says this is the renderer's job and not the
-    instruction's. The separator still has to be something a row's content
-    cannot contain — it is now a tag rather than a newline.
+    **A newline inside a body cannot forge a row; the defence is the element
+    boundary.** Each message is its own `m` element inside
+    `<group_transcript>`, so a body keeps its newlines and produces no row:
+    `escape` makes a closing tag unwritable (R-13b) and the speaker is an
+    attribute `escape_attr` closes. The newline collapse is kept on every
+    ATTRIBUTE value, in `render_elements`. A forged `[assistant]: …` line
+    would take the gate to `go` even against a hardened prompt, which is why
+    this is the renderer's job and not the instruction's. The separator has to
+    be something a row's content cannot contain: a tag.
     """
     clock = now or datetime.now(UTC)
     # A row with nothing left after the collapse is DROPPED, not rendered as an
@@ -495,8 +438,7 @@ def render_context(
             else speaker_name(r.person_name, r.sender_name)
         ),
         body=lambda r: r.body,
-        # `or None` preserves the pre-existing reading of a FALSY ts — a row
-        # stamped 0 renders no age rather than «56y ago».
+        # `or None`: a row stamped 0 renders no age rather than «56y ago».
         timestamp=lambda r: r.ts or None,
         now=clock,
         edited=lambda r: r.edit.ts if r.edit else None,
@@ -505,16 +447,13 @@ def render_context(
     # Standing is Nora's own folded text rather than a member's, but it is
     # rendered in the same document and a fold summarises what people said —
     # so the same collapse applies rather than trusting the tier above.
-    # `(body, updated_at)` since 2026-09-10; a bare string still works and
-    # renders no age, which is what every test that predates the pair passes.
+    # `(body, updated_at)`; a bare string still works and renders no age.
     standing_body, written = (
         standing if isinstance(standing, tuple) else (standing, None)
     )
     standing_block = escape(_one_line(standing_body or "")) or "(none)"
-    # THROUGH THE INJECTOR (#292), and DESCRIBED BY TYPE (#314). The framing
-    # that used to sit ABOVE these two blocks — first as bare prose, then as a
-    # hand-written `_CONTEXT` catalogue — is now each block's own
-    # `description=`, where content cannot reach it and where it cannot
+    # THROUGH THE INJECTOR, and DESCRIBED BY TYPE. Each block's framing is its
+    # own `description=`, where content cannot reach it and where it cannot
     # disagree with how the prefill path describes the same two blocks.
     #
     # `<standing>` renders `(none)` rather than nothing, and that is load-
@@ -577,7 +516,7 @@ class RelevanceGate:
     ) -> None:
         self._client = client
         # `ToolRegistry.capability_digest()`, rendered once by the composition
-        # root (issue #144). A STRING and not the registry: this class's whole
+        # root. A STRING and not the registry: this class's whole
         # contract is that it never constructs an agent, and holding the thing
         # that builds tools would be the first step away from that.
         self._capabilities = capabilities
@@ -628,21 +567,17 @@ class RelevanceGate:
 
         The verdict JSON is the gate's OWN output, safe for the wire (no room
         content), and WITHOUT it the span renders in Langfuse as a bare
-        rectangle — usage and latency, no readable payload (measured
-        2026-09-14: every 7-day `relevance_gate` trace was a single
-        observation with `output = null`). The early returns (`no_context`,
-        `no_instruction`) used to skip this — the exact traces an operator
-        most needs to read — so both now emit the same tiny document, with
+        rectangle — usage and latency, no readable payload. The early returns
+        (`no_context`, `no_instruction`) emit the same tiny document, with
         `finish_reason=""` saying «the model never answered».
         """
         annotate(**{
             # The gate's own verdict JSON, safe for the wire (no room
             # content) — already includes `finish_reason` (`_verdict_json`'s
-            # own docstring). Plain `annotate()` now, not `annotate_
-            # generation()`: this span stopped being a "generation" span
-            # itself once the model call moved to its own child span inside
-            # `_RelevanceGateModelClient.complete()` (`nora.agent.telemetry`,
-            # a strands.telemetry replacement for the retired helper).
+            # own docstring). Plain `annotate()`, not `annotate_generation()`:
+            # this span is not itself a generation span; the model call opens
+            # its own child span inside `_RelevanceGateModelClient.complete()`
+            # (`nora.agent.telemetry`).
             "nora.relevance_gate.verdict_json": _verdict_json(verdict),
             "nora.relevance_gate.verdict": verdict.verdict,
             # OTel attributes cannot carry `None`: an absent score is
@@ -661,7 +596,7 @@ class RelevanceGate:
         counted `no_go`, because a gate that propagates an exception to the
         trigger is a gate that stops the whole ambient path on one bad call.
 
-        And never HANGS, which is the other half and was missing: the model
+        And never HANGS, which is the other half: the model
         call is bounded by `call_timeout_seconds` here rather than only in
         whichever client is wired, so the worst case is a `timeout` verdict at
         the ceiling. The trigger holds the room's slot across this and judges
@@ -673,8 +608,7 @@ class RelevanceGate:
             # A ROOT: the trigger is driven from the runtime loop, not from
             # under a turn, so nothing above it opens a span. It must be set
             # AT START or `build_sampler` decides without it and the trace is
-            # dropped — issue #111 is the same rule going wrong one path
-            # over, and the gate is the path where a dropped trace hurts
+            # dropped, and the gate is the path where a dropped trace hurts
             # most: nobody is waiting on it, so an unmeasured gate failure
             # has no human to notice it.
             #
@@ -682,11 +616,11 @@ class RelevanceGate:
             # verdict may never reach the model — a gate refused before the
             # call is still a gate decision worth seeing, DEC-141's point
             # about a tag refused at admission, one path over. This span is
-            # no longer itself shaped like a generation (no `model=`, no
+            # not itself shaped like a generation (no `model=`, no
             # GenAI attributes) — the model call, when one happens, opens
             # its OWN child span inside `_RelevanceGateModelClient.complete`
             # (`nora.agent.telemetry.start_raw_model_span`), which is the
-            # thing R-76's `TRACE_KIND` label was always describing: whether
+            # thing R-76's `TRACE_KIND` label describes: whether
             # a model call CAN happen under this root, not whether this
             # exact span is one.
             **{
@@ -709,19 +643,15 @@ class RelevanceGate:
                 transcript, standing, window=self._transcript_limit,
             ))
             # The digest is retained regardless — the retained transcript
-            # re-derives the prompt exactly, which matters now that the
-            # prompt ALSO reaches a span by a separate path (below): `_ask`
-            # hands `system`/`prompt` to `self._client.complete`, whose
-            # production implementation (`_RelevanceGateModelClient`) passes
-            # them into `nora.agent.telemetry.start_raw_model_span`, which
-            # Strands records as real `gen_ai.system.message`/
-            # `.user.message` span events — the room's own words, and every
-            # room's, including ones Nora does not serve, UNSCREENED. Until
-            # 2026-09-19 this comment said the prompt was never put on the
-            # wire at all; the operator was told this specific exposure
-            # directly and accepted it (`design/evaluation/08-the-sdk-
-            # surface.md` §4.2 records the fork and the reason: closing the
-            # gate's evaluation-mapper gap required exactly this).
+            # re-derives the prompt exactly. The prompt ALSO reaches a span by
+            # a separate path: `_ask` hands `system`/`prompt` to
+            # `self._client.complete`, whose production implementation
+            # (`_RelevanceGateModelClient`) passes them into
+            # `nora.agent.telemetry.start_raw_model_span`, which Strands
+            # records as real `gen_ai.system.message`/`.user.message` span
+            # events — the room's own words, and every room's, including ones
+            # Nora does not serve, UNSCREENED. The gate's evaluation mapper
+            # needs exactly this.
             annotate(**{
                 # The INSTRUCTION, separately from the whole prompt: the digest
                 # below hashes the room too, so it cannot fingerprint what the
@@ -731,9 +661,8 @@ class RelevanceGate:
                 "nora.relevance_gate.prompt_sha256": instruction_sha256(system + prompt),
                 "nora.relevance_gate.transcript_rows": len(transcript),
                 # Whether the gate was told what she can call, on the trace
-                # that carries the verdict: a run of no_go verdicts read very
-                # differently depending on this, and #144's whole finding was
-                # that nothing recorded it.
+                # that carries the verdict: a run of no_go verdicts reads very
+                # differently depending on this.
                 "nora.relevance_gate.capabilities": bool(self._capabilities),
                 "nora.relevance_gate.standing": standing is not None,
             })
@@ -749,9 +678,8 @@ class RelevanceGate:
                 timeout=self._call_timeout_seconds,
             )
         except TimeoutError:
-            # Its OWN kind, not `call_failed`. See the module docstring: every
-            # one of the 8-in-41 no-verdict calls behind #163 arrived here, and
-            # pooled with a transport error the series could not say so.
+            # Its OWN kind, not `call_failed`: pooled with a transport error
+            # the series could not say the ceiling fired.
             #
             # `TimeoutError` and not `asyncio.TimeoutError` — the same object
             # since 3.11, and the builtin is what a client's own `wait_for`
@@ -790,8 +718,7 @@ class RelevanceGate:
             # The PROVIDER's own stop reason, only when the model actually
             # answered. A fail-closed verdict (unparseable, bad_verdict)
             # must NOT carry a reason that would read as «the model answered
-            # and stopped» — the same lie the review caught in
-            # `finish_reason="tool_use"`, one call site over.
+            # and stopped».
             return replace(verdict, finish_reason=completion.finish_reason)
         return verdict
 
@@ -816,9 +743,8 @@ class RelevanceGate:
         instruction, reporting as a working one.
 
         That is the same substitution `_read_transcript` refuses one layer in.
-        Refusing it here too is the difference between a mid-soak typo costing
-        a quiet hour and, after the flip, costing an uninvited voice in every
-        opted-in room.
+        Refusing it here too means a typo in the instruction costs a quiet
+        hour rather than an uninvited voice in every opted-in room.
 
         **`.doctrine_text`, never `.text`.** `.text` appends
         `<runtime_context>`, which carries the CANARY — the string LeakGuard
@@ -850,11 +776,10 @@ class RelevanceGate:
         """The window, or `None` — and `None` means FAIL CLOSED, not "empty
         room".
 
-        The first version returned `()` here and let `decide` ask the model
-        anyway. That is the R-27 substitution this module was written to
-        refuse, one layer in from where it was being careful: a Postgres
-        outage rendered `(no messages)`, the model dutifully answered `no_go`
-        about a room it had never seen, and the verdict landed on
+        Returning `()` and asking the model anyway would be the R-27
+        substitution this module refuses: a Postgres outage would render
+        `(no messages)`, the model would answer `no_go` about a room it had
+        never seen, and the verdict would land on
         `nora_relevance_gate_total` wearing `source="model"` — an outage
         reading as a healthy gate declining a quiet estate. And nothing
         forces `no_go` on an empty transcript, so the same path could return
@@ -906,12 +831,9 @@ class RelevanceGate:
         # The BODY AND ITS AGE. The instruction's fourth category — «a
         # commitment SHE made that is being followed up … only the standing
         # block can establish this» — is a question about WHEN, and so is
-        # «anything the room has already moved past». Both were being decided
-        # against a paragraph with no time on it, so «has not reported back»
-        # was undecidable from the gate's own input.
-        #
-        # The prefill's renderer closed the identical gap on 2026-09-10; this
-        # is the same block, one call site over.
+        # «anything the room has already moved past». Both are undecidable
+        # against a paragraph with no time on it, so the age renders with the
+        # body, as in the prefill's renderer.
         return (row.body, row.updated_at) if row is not None else None
 
     def _count(self, verdict: GateVerdict, platform: str, conversation_id: str) -> None:
@@ -933,7 +855,7 @@ class RelevanceGate:
 
 
 def parse_verdict(raw: str) -> GateVerdict:
-    """`raw` -> a verdict, fail-closed (design 36 decision 2).
+    """`raw` -> a verdict, fail-closed.
 
     A module-level function because it is the one piece worth testing without
     a model, a store or a metric in the way.
@@ -976,7 +898,7 @@ def _verdict_json(verdict: GateVerdict) -> str:
 def _score(value: object) -> float | None:
     """A number in [0, 1], or `None`.
 
-    The score never blocks anything (decision 5), so a missing or malformed
+    The score never blocks anything, so a missing or malformed
     one is not a failure of the verdict — it is a missing annotation, and
     rejecting an otherwise good verdict over it would let a reference field
     behave like enforcement.

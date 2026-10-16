@@ -38,8 +38,7 @@ _CORPORA = Path(__file__).parent / "corpora"
 
 #: Every key a case may carry. Anything else is REFUSED, because a corpus
 #: stating something the runner ignores is a corpus asserting more than is
-#: measured — which is how `media: true` was once dropped from five rows with
-#: nothing reporting it.
+#: measured.
 CASE_KEYS = frozenset({
     "name", "entry", "expect", "input", "expected_output", "snapshot",
     "person", "mention", "sample", "safety", "category", "metadata", "parked",
@@ -54,7 +53,7 @@ COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
 #: The tiers a case may vary. Closed, because the whole value of this state is
 #: that it names a small, argued set rather than becoming a general override.
 #:
-#: `transport` joined 2026-09-24 (design/self-awareness/05): whether a network's
+#: `transport`: whether a network's
 #: connection is working when she is asked to relay to it. Health at an
 #: anchor's instant is recorded nowhere — the sandbox HOLDS it at what
 #: production renders on an ordinary turn (every network up,
@@ -62,18 +61,15 @@ COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
 #: moment and can only be a varied one. The varied states ride in
 #: `metadata.transport`, which no other case may state.
 #:
-#: `prior` joined 2026-09-24 (issue #445): the standing fold's position before
-#: the turn, declared ABSENT for a turn older than the standing chain
-#: (2026-09-20). The chain did not backfill, so no position that old is
-#: recoverable, and the operator's own residue moment (a search found several
-#: restaurants, the reply sent two) predates it. The harness refuses the
-#: declaration wherever the chain DOES hold a revision at or before the turn.
+#: `prior`: the standing fold's position before the turn, declared ABSENT for
+#: a turn older than the standing chain. The chain did not backfill, so no
+#: position that old is recoverable. The harness refuses the declaration
+#: wherever the chain DOES hold a revision at or before the turn.
 #:
-#: `lessons` joined 2026-10-09 (operator, design/self-growth/40 §8): the lessons a
-#: unit held, attached at the real moment that TAUGHT them. A lesson is induced
-#: from the episodes it cites, so it cannot exist before them, and the first one
-#: was written 2026-10-08 17:43 UTC: no real moment holds a lesson AND the
-#: situation it bears on. The varied lessons ride in `metadata.lessons` (her own
+#: `lessons`: the lessons a unit held, attached at the real moment that
+#: TAUGHT them. A lesson is induced from the episodes it cites, so it cannot
+#: exist before them: no real moment holds a lesson AND the situation it
+#: bears on. The varied lessons ride in `metadata.lessons` (her own
 #: words, as the live lesson reads), which no other case may state.
 COUNTERFACTUAL_TIERS = frozenset({"culture", "transport", "prior", "lessons"})
 #: Tiers that mean something in one corpus only. `prior` is the standing
@@ -96,10 +92,9 @@ class Census:
     #: **This count is what makes the state safe to have.** A counterfactual
     #: is a manipulation, not a reconstruction; an aggregate that averaged the
     #: two would let `11-the-sandbox-rebuild.md`'s rule erode by ARITHMETIC
-    #: rather than by anybody deciding to relax it. Opened 2026-09-22 on the
-    #: operator's ruling that the culture arm's `-chronicle` case stays: a
-    #: chronicle and an account are the same facts in two representations, and
-    #: no room ever held both at once.
+    #: rather than by anybody deciding to relax it. Example: the culture arm's
+    #: `-chronicle` case, where a chronicle and an account are the same facts
+    #: in two representations and no room ever held both at once.
     #:
     #: The state holds ONLY what genuinely cannot be reconstructed. The same
     #: arm's `-deviant` case is NOT in it: another real room's real account,
@@ -276,7 +271,7 @@ def _check_fold_case(name: str, row: dict[str, Any]) -> None:
 
 
 def _case(row: dict[str, Any]) -> Case:
-    # Resolved ONCE, here, before anything reads the case (#776): the anchor,
+    # Resolved ONCE, here, before anything reads the case: the anchor,
     # the person, the input, the expectation, every metadata string. The
     # `name` is not: it is how `--case` selects, and it names no one.
     row = {**pseudonyms.resolve(row), "name": row["name"]}
@@ -342,31 +337,29 @@ CORPUS_ENTRY: dict[str, str] = {
     "relevance_gate": "gate",
     "proactive_act": "proactive_act",
     "tool_selection": "tag",
-    # S2 over the Cognition catalogue (design/cognition-loop/30-cognition.md
-    # §2/§4; migration steps 3a-ii and 3a-iii). `entry: dreamer` with
+    # S2 over the Cognition catalogue. `entry: dreamer` with
     # `category: cognition` is driven by `evals.rebuilt.entry._cognition_probe`
     # through `CognitionSessionRunner.probe`, on the runner the subject's
     # composition builds under `[cognition] enabled = true`; with
     # sessions off in the eval config the case is an ERROR, never a pass.
     "tool_selection_cognition": "dreamer",
-    # design/self-awareness/05: what she says about WHERE she is. A tag, and
+    # What she says about WHERE she is. A tag, and
     # judged — "did she reply" says nothing about whether the reply named the
     # right networks, or recited them unasked.
     "presence": "tag",
     "standing": "standing",
     "tool_reporting": "tag",
-    # identity.md v12: what she says about her OWN FORM. A tag, and judged --
+    # What she says about her OWN FORM. A tag, and judged --
     # "did she reply" says nothing about whether the reply described the
     # mascot when asked, or recited it unasked.
     "appearance": "tag",
-    # design/self-growth/40 §8 (L5): what a held lesson does to a reply. A tag,
+    # L5: what a held lesson does to a reply. A tag,
     # judged on the ONE behaviour each case's lesson asks for.
     "lessons": "tag",
-    # design/context-plan/12 §5's character cut: whether an ordinary tag
+    # The character cut: whether an ordinary tag
     # reply still sounds like her. A tag, judged on the opted-in `personality` criterion.
     "personality": "tag",
-    # design/unified-memory/00-intent.md "Sequence" step 0: the conversational-
-    # recall journeys on existing tools. A tag, judged on `recall_grounded`,
+    # The conversational-recall journeys on existing tools. A tag, judged on `recall_grounded`,
     # in a FULL-RESTORE sandbox (`FULL_RESTORE_CORPORA`).
     "conversational_recall": "tag",
 }
@@ -385,23 +378,23 @@ CORPUS_ENTRY: dict[str, str] = {
 #: memos, presence or Rollup at all, which are exactly what recall rests on.
 FULL_RESTORE_CORPORA: frozenset[str] = frozenset({"conversational_recall"})
 
-#: S2 — graded on WHICH TOOL ran, not on whether she replied
-#: (`design/tool-catalogue/05-measurement.md` §2c). One grader only:
+#: S2 — graded on WHICH TOOL ran, not on whether she replied.
+#: One grader only:
 #: `sample_read` groups every evaluator's labels under one case, so adding
 #: `MeetsGrader` here would let a reply verdict blur a routing one.
 ROUTED_CORPORA = frozenset({"tool_selection", "tool_selection_cognition"})
 
 #: S3 (grounding)/S9 (injection) — "did she reply" is structural; "was the
-#: reply right" needs a judge (`10-the-scenario-map.md` §3). Every case in
+#: reply right" needs a judge. Every case in
 #: these six corpora expects `reply`, so judging unconditionally (once a
 #: judge is configured) adds no second selection rule.
 JUDGED_CORPORA = frozenset({
     "being_contradicted", "identity_grounding", "source_scope",
     "injections", "transcript_injection", "standing", "presence",
     # ADR 0015 §4: what she SAYS after a tool returns a status. Its opted-in
-    # `tool_status_reported` binds with safety (`Judge.grade`, #449).
+    # `tool_status_reported` binds with safety (`Judge.grade`).
     "tool_reporting",
-    # identity.md v12: its opted-in `appearance` criterion binds with safety.
+    # Its opted-in `appearance` criterion binds with safety.
     "appearance",
     # L5: its opted-in `lesson_applied` criterion binds with safety.
     "lessons",
@@ -412,8 +405,8 @@ JUDGED_CORPORA = frozenset({
 })
 
 #: Corpora with NO structural reading at all: every case's verdict IS the
-#: judge's. `standing` grades a Cantonese position against a semantic property
-#: (`design/standing-compact/20-verification.md` §1), and "a fold wrote
+#: judge's. `standing` grades a Cantonese position against a semantic property,
+#: and "a fold wrote
 #: something" is true of every fold that did not fail. Run without a judge,
 #: every case would pay for a fold and then ERROR, so `python -m evals` refuses
 #: to start one instead.

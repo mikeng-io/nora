@@ -10,7 +10,7 @@ fake that guessed at it would answer differently from the store on exactly
 the near-miss cases. The contract suite uses whole words, where the two
 agree.
 
-Vectors (65 V2): `vectors` maps a node's key to `(model, vector)`. The dense
+Vectors: `vectors` maps a node's key to `(model, vector)`. The dense
 read is an exact cosine search, which the store's two-stage search equals on
 any set no larger than its candidates; given-up nodes (`given_up`) are what
 the store counts at `EMBED_MAX_ATTEMPTS`, and what `seed(given_up_of=...)`

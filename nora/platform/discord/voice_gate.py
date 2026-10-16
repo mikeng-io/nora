@@ -1,4 +1,4 @@
-"""The voice-join admission gate (design/voice-channel/07 §12.2/§12.3).
+"""The voice-join admission gate.
 
 Pure and shared: `/music play`'s auto-join, `/discord join`, and the agent
 tool bridge all apply the SAME rule — the caller must be a guild member
@@ -6,13 +6,12 @@ physically sitting in a voice channel, and that channel's GUILD must be on the
 configured `voice_guild_ids` allow-list. Fail-closed: anything else is a
 rejection, never a best-effort join.
 
-**The guild, not the channel** (§12.2, reversed 2026-09-17 by the operator).
-Phase 1 admitted exactly one configured channel. A real server does not hold
-still: Zone 42 has 10+ voice channels and gains more, and every one of them
-would have had to be listed by hand — an allow-list nobody can keep true is an
-allow-list that is quietly wrong. The guild binding the controller already
-enforces (§12.5: any `guild_id` ≠ configured → 400) is the one that was doing
-the work; this drops the channel half and keeps it.
+**The guild, not the channel.** Admitting one configured channel would mean
+every voice channel of a real server has to be listed by hand — an allow-list
+nobody can keep true is an allow-list that is quietly wrong. The guild binding
+the controller already enforces (any `guild_id` other than the configured one
+is a 400) is the one doing the work; this gate keeps it and has no channel
+half.
 
 What that widens, stated plainly: any member of an allowed guild, sitting in
 any of its voice channels, can make Nora join them. That is the same posture

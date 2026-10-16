@@ -1,4 +1,4 @@
-"""`render_computer`: the `<computer>` block (design/sandbox-runtime §15.3).
+"""`render_computer`: the `<computer>` block .
 
 A deterministic window, never a model's fold, over `ComputerView`:
 
@@ -8,7 +8,7 @@ A deterministic window, never a model's fold, over `ComputerView`:
 - processes the room's user owns (`nohup … &` jobs have no tmux session):
   `max_processes`, newest first;
 - files changed within `recent_file_days`: `max_files`, newest first;
-- links the room made with `computer_export` (S3a): `max_links`, newest
+- links the room made with `computer_export`: `max_links`, newest
   first, each with the artifact_id that revises it under the same link;
 - recent commands: `max_runs`, the command cut to 80 characters, with its
   exit code.

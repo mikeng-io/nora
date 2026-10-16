@@ -1,11 +1,10 @@
 """The Lessons adaptor: one Dreamer session per unit, woken by closed response
-episodes, writing through `lesson_write` and `lesson_retire`
-(design/self-growth/40-lessons.md, step L2).
+episodes, writing through `lesson_write` and `lesson_retire`.
 
 **The evidence is a closed `response` episode** (`nora.infra.sql.rollups`): one
 of her sends with the replies, reactions, edits and unquoted follows inside its
 window, or `silent` where an answer was expected and none came. Every CLOSED
-episode is read, `unanswered` included (40 §6): the session is handed each send's
+episode is read, `unanswered` included: the session is handed each send's
 text with its outcome and judges whether an unanswered send asked something.
 `open` (its outcome can still change) and `unknown` (an outage, R-27) are never
 shown.
@@ -23,7 +22,7 @@ whether the session SETTLED (wrote, retired, or closed with
 to `MAX_CONSECUTIVE_REJECTIONS` times for one batch (DEC-280's bound, the
 Character sessions' rule).
 
-**Decay is code, in `commit`** (40 §2 step 7): a lesson whose head is older than
+**Decay is code, in `commit`**: a lesson whose head is older than
 `[lessons] horizon_seconds` after the session ran (it may have reinforced it from
 new episodes) is retired. `commit` runs on every run, a blank one too, so a
 horizon wake with no new episode still retires what is due.
@@ -32,9 +31,8 @@ horizon wake with no new episode still retires what is due.
 argument carrying a UUID, so each held lesson is shown as `L1`, `L2`, ... and the
 book maps the handle back (`LessonBook.verbs(handles=...)`).
 
-**Nothing renders a lesson yet** (the block is L5), and the doctrine check is L3:
-`[lessons] enabled` is off by default and the session writes into a store that
-no prompt reads.
+**Nothing renders a lesson yet:** `[lessons] enabled` is off by default and the
+session writes into a store that no prompt reads.
 """
 
 from __future__ import annotations
@@ -166,7 +164,7 @@ class LessonEvidence:
         correction_quiet_seconds: int | None = None, stale_seconds: int = 604_800,
         metrics: Metrics | None = None, self_ids: frozenset[str] = frozenset(),
     ) -> None:
-        """`correction_quiet_seconds` turns on the correction fast path (L4):
+        """`correction_quiet_seconds` turns on the correction fast path:
         `None` is off. A correction wakes the key once it is that old, so the
         conversation around it has settled."""
         self._store = store
@@ -218,7 +216,7 @@ class LessonEvidence:
         if n >= self._wake_batch:
             return n
         if await self.corrections(key):
-            # L4's fast path: one correction is enough to look now.
+            # The fast path: one correction is enough to look now.
             if self._metrics is not None:
                 self._metrics.inc("nora_lessons_correction_wake_total")
             return self._wake_batch
@@ -243,7 +241,7 @@ class LessonEvidence:
         )
         corrections = await self.corrections(key)
         if corrections:
-            # A correction is enough on its own (40 §3); the episodes beside it
+            # A correction is enough on its own; the episodes beside it
             # are context, however few.
             handed: list[Episode | RoomMessage] = [*found, *corrections]
             return handed, cursor
@@ -265,7 +263,7 @@ class _Run:
 
 
 class LessonsAdaptor:
-    """One unit's lessons, per wake of its closed episodes (L2)."""
+    """One unit's lessons, per wake of its closed episodes."""
 
     name = LESSONS_ADAPTOR_NAME
     key_kind = "entity"
@@ -316,8 +314,8 @@ class LessonsAdaptor:
     def _episode(self, e: Episode, labels: Mapping[str, str]) -> str:
         """One `<episode>`: her send and the replies that quoted it, each an `m`
         with its Record id, inside one element carrying the handle, room,
-        outcome and counts. `follows` is a count of unquoted answers (inferred,
-        design 25 §3), so it is shown apart from the quoted replies."""
+        outcome and counts. `follows` is a count of unquoted answers (inferred), so it is shown
+        apart from the quoted replies."""
         rows = render_row_window(
             [(e.send_id, "you", e.text), *(
                 (r.id, self._name_of(r.person_id), r.body or "") for r in e.replies
@@ -356,15 +354,15 @@ class LessonsAdaptor:
                           | frozenset(r.id for e in episodes for r in e.replies)),
                 nora=sends,
                 # Every shown episode, `unanswered` included: whether one asked
-                # something is the session's judgement (40 §6). Her send cited
+                # something is the session's judgement. Her send cited
                 # as a bare message id is still her own words (the echo rule).
                 episodes=sends,
                 echo_rule=True,
-                # A lesson is a pattern across many outcomes, never one (40 §1).
+                # A lesson is a pattern across many outcomes, never one.
                 # Not lowered to what was shown: a stale wake on two episodes
                 # may retire or close, but not induce.
                 min_episodes=LESSON_MIN_EPISODES,
-                # L4: a lesson citing a correction needs no three episodes.
+                # A lesson citing a correction needs no three episodes.
                 corrections=told,
             ),
             handles=handles,

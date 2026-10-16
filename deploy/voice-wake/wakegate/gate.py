@@ -16,15 +16,13 @@ the wake word.
 is given (Silero VAD in production, `vad.py`): a chunk with no speech in it is
 quiet however loud the music, TV or mic noise behind it. Without a detector
 the gate falls back to loudness — per-chunk RMS below `silence_rms` — which
-is what shipped first and which ducked music defeats (measured 2026-09-17:
-music floor ~1,000 RMS against a 400 threshold, utterances ran 4.7–7.4 s
-for 2 s phrases and swallowed the next 「喂 Nora」).
+ducked music defeats: a music floor above the threshold never reads as quiet,
+so utterances run long and swallow the next 「喂 Nora」.
 
 The gate counts CHUNKS, so it can only end an utterance while chunks keep
 arriving. The Discord client sends packets only while its own mic gate is
 open — after the phrase there is nothing to count, and a COLLECTING gate
-would wait for the user's NEXT sound (measured 2026-09-17: a 0.99 wake
-sat collecting for 10 minutes and swallowed two later wakes). `flush()`
+would wait for the user's NEXT sound. `flush()`
 is the owner's wall-clock end-pointer: the service calls it when no frame
 has arrived for the silence tail, and the utterance ends on real time.
 
@@ -85,10 +83,8 @@ class WakeGate:
 
     @property
     def last_score(self) -> float:
-        """The score of the most recent chunk. Exposed because the gate used
-        to compute a score for every chunk and discard it: when the gate
-        stopped firing there was no number anywhere to say whether the model
-        was seeing near-misses or silence, and the two need opposite fixes."""
+        """The score of the most recent chunk. Exposed so a caller can tell whether the
+        model is seeing near-misses or silence, which need opposite fixes."""
         return self._last_score
 
     def take_listening_peak(self) -> float:
@@ -107,10 +103,8 @@ class WakeGate:
         preprocessor holds the rolling melspectrogram/embedding window — so
         starving it during collection would freeze the wake word's features
         in that window, and the first chunk scored after the utterance would
-        re-fire on audio that is by then seconds of silence (measured: the
-        negative clip scored 0.985 right after a positive on a shared,
-        `reset()`-ed model — `reset()` clears the prediction buffer, not the
-        preprocessor)."""
+        re-fire on audio that is by then seconds of silence (`reset()` clears
+        the prediction buffer, not the preprocessor)."""
         if chunk.size != OWW_CHUNK:
             raise ValueError(f"chunk of {chunk.size}, expected {OWW_CHUNK}")
         score = self._score(chunk)

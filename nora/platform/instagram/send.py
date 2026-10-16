@@ -1,12 +1,12 @@
 """instagram-bridge send: `POST /threads/{thread_fbid}/messages`, once for the
-text and once per attachment (design/instagram-adoption/16 §Resources, 17 §P14).
+text and once per attachment.
 Never raises.
 
 **The route.** One resource, a thread's messages, takes either a text message
 `{text, mentions?, reply_to?}` or one attachment `{media: {data_base64,
-filename, mimetype}, reply_to?}`, never both. It replaced `POST /send` and
-`POST /send-media` on 2026-09-24 (P14), and the bridge DELETED those paths in
-the same change, so this module and the bridge deploy together. The room key is
+filename, mimetype}, reply_to?}`, never both. It replaces `POST /send` and
+`POST /send-media`, which the bridge does not serve, so this module and the
+bridge deploy together. The room key is
 the SHORT thread id, in the path. A 200 is the message the bridge sent,
 `{id, timestamp_ms}`, with no `ok` field: the status says it succeeded. A
 failure is the envelope `{"error": {code, message}}`, and only its STATUS is
@@ -16,7 +16,7 @@ which the bridge's own handlers generate.
 **What is read from a 200: `timestamp_ms`, and nothing else.** It is the
 platform's own sent-timestamp, which `Deliverer` records and a later reply's
 quote resolves against. The bridge also returns the sent message's `id`
-(`mid.$…`), and nothing in Nora reads it today: `SendResult` has no field for
+(`mid.$…`), and nothing in Nora reads it: `SendResult` has no field for
 it, a `reply_to` is taken from an INGESTED row's own `mid.$…` (someone else's
 message, off `/events`; the parser drops Nora's own echoes as `from_me`), and
 no Nora code reacts to or unsends her own Instagram message. The bridge keeps
@@ -31,7 +31,7 @@ one is a real difference on the wire rather than a stylistic choice.
 ## 1. Text and media are ALWAYS two messages, and this INVERTS WhatsApp
 
 `slidetypes.SendMediaRequest` has fields for attachment, thread, threading id
-and reply — and **no text field of any kind** (`03` §"Outbound"). A caption
+and reply — and **no text field of any kind**. A caption
 cannot be expressed on this wire; a media message carries no caption field, and
 the bridge answers 400 to a body carrying both `text` and `media`.
 
@@ -47,9 +47,10 @@ explanation of why it arrived.
 
 ## 2. 409 is a checkpoint and is NOT retryable
 
-The bridge's status table (`16` §Resources): 409 means the Instagram session is
-checkpointed or logged out, and clearing it needs a human. Retrying a 409 is how a captcha becomes a
-ban, so it is `ok=False` with `retryable=False` and an error line that says a
+The bridge's status table: 409 means the Instagram session is
+checkpointed or logged out, and clearing it needs a human. Retrying a 409 is
+how a captcha becomes a ban, so it is `ok=False` with `retryable=False` and an error line that
+says a
 human is needed. 503 (socket down or reconnecting) stays retryable, the same
 as WhatsApp's — the bridge heals that one on its own.
 
@@ -63,15 +64,12 @@ the same way.
 ## 3. `mentions` are FORWARDED, not ignored — and the TEXT is rewritten to match
 
 WhatsApp v1 accepts and ignores them. Instagram's text message takes
-`mentions: [{fbid, offset, length}]` and `02` measured the round trip, so the
-field is filled — a decoration parameter that the wire supports and the
-adapter dropped would be a capability lost at the last inch.
+`mentions: [{fbid, offset, length}]`, so the field is filled.
 
-**Forwarding the fbid was not enough — measured live, 2026-09-22.** Nora sent
+**Forwarding the fbid is not enough.** A text like
 `"@Miles Novak 同一條友嚟㗎，唔使歡迎兩次"` with a correctly-resolved `mentions`
-entry (fbid right, offsets right) and it rendered as PLAIN TEXT, no ping.
-Confirmed against upstream mautrix-meta (`igconv/from-matrix.go` +
-`textfmt/from-matrix.go`): the reference client builds the request text as
+entry (fbid right, offsets right) renders as PLAIN TEXT, no ping. Upstream
+mautrix-meta (`igconv/from-matrix.go` + `textfmt/from-matrix.go`) builds the request text as
 `"@" + mention.Name` — the account's OWN username — and sizes `offset`/
 `length` off THAT string, never off whatever the sender typed. Instagram
 renders a mention chip only when the span at `offset:offset+length` reads,
@@ -90,33 +88,30 @@ this is the one place in the codebase that needs the OPPOSITE direction from
 `nora.platform.discord.mention_resolve.splice_composed_mentions`: Discord's
 splice never has to report an offset back, and this one does, for every
 mention in the message, substituted or not. A `Mention` with no `.handle` (no
-`username` on file yet) is forwarded with its span unchanged, only its
-`offset` corrected for any earlier rewrite in the same message — today's
-degraded-but-not-wrong behaviour: the fbid still rides in `mentions`, the text
-just stays whatever Nora wrote and no chip renders.
+`username` on file) is forwarded with its span unchanged, only its
+`offset` corrected for any earlier rewrite in the same message: the fbid still
+rides in `mentions`, the text stays whatever Nora wrote and no chip renders.
 
-**The offset unit is a narrower ambiguity than it was.** `Mention.start`/
-`length` are UTF-16 code units (signal-cli's documented unit, and the one
-`nora.domain.utf16` computes); `03` pins the field NAMES and never states
-Instagram's own unit. `utf16_index` is what turns a `Mention`'s UTF-16 offset
+**The offset unit.** `Mention.start`/`length` are UTF-16 code units
+(signal-cli's documented unit, and the one `nora.domain.utf16` computes); the
+bridge contract pins the field NAMES and does not state Instagram's own unit.
+`utf16_index` is what turns a `Mention`'s UTF-16 offset
 into the Python string index this module slices the ORIGINAL text with — the
 same conversion Discord's splice needs and for the same reason (`nora.domain.
 utf16`'s own docstring) — so a rewritten mention's span is correct in Python
 terms whatever the platform's wire unit turns out to be; what remains
-unmeasured is only whether Instagram's OWN `offset`/`length` on the WIRE want
-UTF-16 units or something else, and that is still true of every Mention this
-module has ever forwarded, substituted or not. No probe has isolated it, and
-none was run for this fix (composing a live Instagram mention to find out is
-exactly the write this repo's Hard Limits forbid taking against a real
-account) — this is the line to measure first if a chip ever renders over the
-wrong span.
+unmeasured is whether Instagram's OWN `offset`/`length` on the WIRE want
+UTF-16 units or something else, for every Mention forwarded, substituted or
+not. No probe has isolated it (composing a live Instagram mention to find out
+is a write this repo's Hard Limits forbid against a real account) — this is the
+line to measure first if a chip ever renders over the wrong span.
 
 `styles` and `preview` stay accepted-and-IGNORED: the port's own docstring
 says a platform with no such concept ignores them, and this wire has neither.
 
 1:1 sends are REFUSED — `conversation_type != "group"` logs an error and
-returns `SendResult(ok=False)` without an HTTP call. Deny-by-default this
-phase, exactly like Signal v2, Discord v1 and WhatsApp v1. Note the limit of
+returns `SendResult(ok=False)` without an HTTP call. Deny-by-default, like Signal v2, Discord v1
+and WhatsApp v1. Note the limit of
 what this can catch: the inbound event carries no group/DM discriminator
 (`parser` docstring), so an Instagram DM arrives typed `group` and this guard
 never sees it. It still fires for every caller that builds a
@@ -202,7 +197,7 @@ def _apply_mention_handles(
     still shifts if an earlier one in the same message grew or shrank).
 
     A `Mention` with no `recipient` is dropped rather than sent with an empty
-    fbid, unchanged from before this function existed: a mention that names
+    fbid, a mention that names
     nobody is not a mention, and the bridge would have to guess what it meant.
     """
     if not mentions:
@@ -349,12 +344,12 @@ class InstagramSender:
         # owns the drafted TEXT (audited, guarded, identical for every
         # platform) and must keep owning it — see `Mention.handle`'s own
         # docstring for why the wire-only substitution belongs on this side of
-        # that boundary. The row `nora.agent.guards.Deliverer` already wrote
-        # to A9 before this call still holds the drafted `"@Miles Novak"` form,
-        # which is deliberate: it is what Nora MEANT, in the name she and the
+        # that boundary. The row `nora.agent.guards.Deliverer` writes to A9
+        # before this call holds the drafted `"@Miles Novak"` form, which is
+        # deliberate: it is what Nora MEANT, in the name she and the
         # transcript already use for this person, and it is what Honcho's
         # memory should read back — not a bare `nka_bpumvg` handle a future
-        # rename could orphan. The exact precedent already on file for
+        # rename could orphan. The precedent for
         # "the audited string and the wire string may differ" is `send_gif`'s
         # `record_text` (`tests/architecture/test_outbound_offsets_are_
         # computed_last.py`); this is the same shape one layer further out.

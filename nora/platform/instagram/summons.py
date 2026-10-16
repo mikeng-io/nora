@@ -1,5 +1,4 @@
 """The bridge's `summons` SSE event → `SummonsCard`, parsed once
-(design/instagram-adoption/19, the 2026-09-26 intake contract).
 
 A comment that tags her reaches her as a DM card from the commenter; the
 bridge refetches the card's thread to find the post it points at and emits
@@ -39,7 +38,7 @@ _MESSAGE_ID_RE = re.compile(r"[A-Za-z0-9._$:+/=-]{1,256}")
 _DECIMAL_RE = re.compile(r"[0-9]{1,25}")
 _MAX_TEXT = 2200
 
-#: 2020-01-01 in ms: a `received_at_ms` before it is not a time this bridge
+#: Start of 2020 in ms: a `received_at_ms` before it is not a time this bridge
 #: could have stamped (a seconds value, a zero, a sentinel), and a card with
 #: no believable time is refused rather than read as "now".
 _MIN_RECEIVED_MS = 1_577_836_800_000

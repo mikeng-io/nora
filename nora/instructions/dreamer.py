@@ -6,34 +6,27 @@ row for that turn carries the digest; here the assembly is the Dreamer's own
 doctrine plus the running adaptor's objective, and every row that adaptor writes
 carries `instruction_sha256` over the pair.
 
-**Why the hash covers the pair and not the objective alone** (substrate spec
-§4.3). `objective_sha256` was considered and rejected: it names half the input,
-so an edit to the shared doctrine — which changes the behaviour of every adaptor
-at once, and is therefore the largest blast radius in the subsystem — would
-leave no trace on any row anywhere. That is the worst case the column exists to
-catch, so it is the case the hash has to cover.
+**The hash covers the pair, not the objective alone.** A hash of the objective
+names half the input, so an edit to the shared doctrine, which changes every
+adaptor at once, would leave no trace on any row. That is the case the column
+exists to catch.
 
-**Two artifact kinds, because they have different lifetimes** (spec §2.1). The
+**Two artifact kinds, because they have different lifetimes.** The
 doctrine is what is true of every Dreamer run and changes when the runtime's
 constraints change; an objective is what one adaptor is for and changes when
 that one job is retuned. Folding the doctrine into each objective would copy the
-read/act line once per adaptor, which is the hand-maintained-catalogue shape
-DEC-29 already showed goes stale with nothing to catch it.
+read/act line once per adaptor, a hand-maintained catalogue that goes stale
+with nothing to catch it (DEC-29).
 
-**The assembled text names its two halves** (`render_part`). This is D9's
-second bullet — *"give the assembled text a structural boundary between
-doctrine and objective, as Nora's own doctrine has"* — the one bullet of that
-decision D10 strengthens rather than retires, since a doctrine that has stopped
-making claims about the job still has to be legible as a different document
-from the one that does. It is a rendering, not a gate: nothing here validates
-either half, and the tags carry `name` and `description` only.
+**The assembled text names its two halves** (`render_part`): a structural
+boundary between doctrine and objective, as Nora's own doctrine has. It is a
+rendering, not a gate: nothing here validates either half, and the tags carry
+`name` only.
 
 **No gates.** The doctrine's `check_kind_boundaries`,
-`check_normative_register` and `check_authority_graph` encode design/17's rules
-about Nora's own prompt — kinds, RFC 2119 register, an authority ordering — and
-none of them means anything for a research objective (spec §5). `kind` here is
-descriptive. If Dreamer objectives want gates later, that is its own decision
-with its own evidence.
+`check_normative_register` and `check_authority_graph` encode rules about Nora's
+own prompt — kinds, RFC 2119 register, an authority ordering — and none of them
+means anything for a research objective. `kind` here is descriptive.
 """
 
 from __future__ import annotations
@@ -71,12 +64,10 @@ REQUIRED = ("name", "kind", "version", "applies_to", "description", "change_poli
 
 _DOCTRINE_SUBDIR = "doctrine"
 _OBJECTIVES_SUBDIR = "objectives"
-# Their own directories, not more files in `doctrine/`: an image older than
-# these kinds scans `doctrine/` and `objectives/` only, and a second file in
-# `doctrine/` is its startup failure ("expected exactly one Dreamer doctrine
-# file"). `nora/dreamer` is bind-mounted and any pull of the deploy checkout
-# ships it ahead of the image, so a new kind in an old directory would stop
-# the old image at its next restart; a new directory is one it never reads.
+# Their own directories, not more files in `doctrine/`: a second file in
+# `doctrine/` fails startup ("expected exactly one Dreamer doctrine file"), and
+# `nora/dreamer` is bind-mounted, so it can reach an older image that scans
+# only `doctrine/` and `objectives/`. A new directory is one it never reads.
 _PRELUDES_SUBDIR = "preludes"
 _SKILLS_SUBDIR = "skills"
 
@@ -95,26 +86,19 @@ def render_part(*, tag: str, name: str, body: str) -> str:
 
     `nora.doctrine.loader.render_section`'s shape, and it exists for the same
     reason: ONE function, so `for_objective` cannot build the text one way and
-    hash it another. That is not a hypothetical — #175 was a served
-    `<section …>` attribute that no digest named, and the fix there was this
-    function's ancestor.
+    hash it another.
 
     **`name` and nothing else, where the doctrine's tag also carries
-    `description` — and the difference is measured, not stylistic.** Nora's
-    doctrine descriptions were authored as prompt text. These were authored as
-    repo metadata, and it shows the moment they are rendered: `dreamer.md`'s is
-    five hundred characters that end *"NOTE: none of the doctrine loader's gates
-    run on this file … (instruction-substrate spec §5)"*. Rendering it would put
-    a note about which startup checks the repo does not run into the system
-    prompt of every Dreamer run. Every one of these files is
-    `change_policy: operator-only`, so promoting the field would also change
-    seven documents' audience without their author's say.
+    `description`.** Nora's doctrine descriptions are authored as prompt text;
+    these are repo metadata (`dreamer.md`'s ends with a note about which loader
+    gates do not run on the file), and rendering them would put that into the
+    system prompt of every Dreamer run.
 
     `name` is safe to promote because it is the one field already constrained to
     `NAME_RE` — `nora.instructions.frontmatter` keeps it to a charset that
     "needs no escaping anywhere" precisely because it is used as an attribute
     value. It is escaped here regardless, for the reason `nora.domain.prompt`
-    gives: the cost of doing it is nothing and the cost of the habit is R-13.
+    gives: escaping costs nothing and skipping it is the habit R-13 forbids.
 
     **An attribute says what a part IS, never what it contains.** A `tools="…"`
     or an `applies_to="…"` here would be the hand-maintained catalogue
@@ -136,7 +120,7 @@ class InstructionSet:
     stamped into `instruction_sha256` on every row the run writes. `versions` is
     `{"dreamer": 3, "room-language": 1}` — the same shape the tag path already
     logs as `doctrine_versions={…}`, so a trace can be tied to a revision
-    without opening the database (spec §4.4).
+    without opening the database.
 
     Both parts ride one object because they must not be able to disagree: a
     caller that read the text here and the digest from somewhere else would
@@ -151,7 +135,7 @@ class InstructionSet:
 @dataclass(frozen=True)
 class DreamerSkill:
     """A skill the Cognition session injects after its instruction, per agenda
-    kind (design/cognition-loop/30-cognition.md §4, `AgendaSkills`).
+    kind (`AgendaSkills`).
 
     `instructions` is exactly the text injected (the body, its leading and
     trailing blank lines dropped) and `sha256` is over exactly that, so the
@@ -184,7 +168,7 @@ class DreamerInstructions:
     (`applies_to`, objective names). The shared doctrine tells every Dreamer
     «Nobody is waiting for you, nobody sees this… You look; you do not act»,
     which is true of a judge and false of the Cognition session, whose verbs
-    write the group's notebook (operator decision D2, step 4). Editing the
+    write the group's notebook. Editing the
     shared file would change every adaptor's instruction and digest at once;
     a prelude changes the one adaptor that needs it, and every other adaptor's
     assembled text stays byte-identical
@@ -199,10 +183,7 @@ class DreamerInstructions:
 
     Hot-reloads on mtime through `nora.instructions.reload.DirectoryWatcher`, so
     an operator editing an objective on the bind mount sees it on the next tick
-    rather than after a rebuild. That matters more here than for the doctrine:
-    the Dreamer has the slowest loop in the system, and an objective that steers
-    a research loop will want more revisions than a one-shot prompt did (spec
-    §4.1).
+    rather than after a rebuild.
 
     `strict` follows `DoctrineStore`'s meaning — a malformed file aborts the
     scan, or, lenient, is skipped with a warning. Skipping is not silent
@@ -238,13 +219,10 @@ class DreamerInstructions:
     def for_objective(self, name: str) -> InstructionSet:
         """The doctrine plus one objective, assembled, hashed and versioned.
 
-        Each half arrives inside its own tag (`render_part`). Before this the
-        two were joined by a bare newline — no separator, no heading, no marker
-        that a second document with different authority had begun — while the
-        adaptor's rendered INPUT, which follows as the first user message, has
-        been XML-framed the whole time (`<transcript>`, `<notes>`,
-        `<standing_prior>`, and every `ContextBlock`). The model was reading a
-        structured lower half under an unstructured upper one.
+        Each half arrives inside its own tag (`render_part`), so the model sees
+        where a second document with different authority begins, matching the
+        XML-framed INPUT that follows as the first user message
+        (`<transcript>`, `<notes>`, `<standing_prior>`, every `ContextBlock`).
         """
         corpus = self._current()
         cached = self._cache.get(name)
@@ -326,7 +304,7 @@ class DreamerInstructions:
 
         The corpus-wide sibling of `InstructionSet.versions`, which names only
         the two parts one adaptor assembled. This one is what a Dreamer TICK
-        logs (substrate spec §4.4), the way a tag start logs
+        logs, the way a tag start logs
         `doctrine_versions={…}`: a line that ties a trace to a revision without
         anyone opening the database.
         """

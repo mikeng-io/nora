@@ -1,6 +1,5 @@
 """`MusicPlayerManager` — per-guild lookup, join-or-reject, and the
-idle/empty-channel teardown policies (design/discord-music/
-03-state-and-persistence.md).
+idle/empty-channel teardown policies.
 
 This is the ACTUAL entry point the slash-command layer calls — `MusicPlayer`
 is an internal implementation detail this class constructs and owns one of
@@ -10,13 +9,12 @@ is how the caller hands over "the requester's channel is joined" —
 class enforces BEFORE `MusicPlayer` or a `VoiceSession` ever exists for a
 guild that doesn't have one yet.
 
-Lifecycle split (design/voice-channel/07 §10, B3): **end-music** (`/music
+Lifecycle split: **end-music** (`/music
 stop`, the idle-expiry timer) tears down the session but STAYS in the voice
 channel — the audio-controller keeps the connection, e.g. for the wake
 path. **Leave-voice** (`/discord exit` via `leave_voice`, an emptied
 channel, a voice-death event, the dead-session eviction) additionally
-destroys the connection. The old convergence of both onto one teardown is
-deliberately gone.
+destroys the connection. The two are separate teardowns.
 """
 
 from __future__ import annotations
@@ -61,17 +59,17 @@ ClockSleep = Callable[[float], Awaitable[None]]
 Notify = Callable[[str], Awaitable[None]]
 # Reads the playback id nora currently expects the controller to be playing
 # for a guild (`VoiceControllerHub.expected_playback_id` in production) —
-# the B5 staleness probe `on_track_finished` applies UNDER the guild lock.
+# the staleness probe `on_track_finished` applies UNDER the guild lock.
 PlaybackProbe = Callable[[str], str | None]
 # Reads the generation nora currently believes is live for a guild
-# (`VoiceControllerHub.generation_for` in production) — the B8 staleness
+# (`VoiceControllerHub.generation_for` in production) — the staleness
 # probe the lifecycle events (`voice-death`, `channel-emptied`) apply UNDER
 # the guild lock before they may tear anything down.
 GenerationProbe = Callable[[str], str | None]
 # Forgets a guild's cached voice session WITHOUT an exit call
 # (`VoiceControllerHub.drop` in production) — for events where the
 # connection is already gone (voice-death) or is being exited by the
-# player's own `leave` (channel-emptied). Runs INSIDE the guild lock (B8).
+# player's own `leave` (channel-emptied). Runs INSIDE the guild lock.
 DropVoiceSession = Callable[[str], None]
 # Exits a guild's voice connection through the hub
 # (`VoiceControllerHub.exit` in production) — the channel-emptied policy
@@ -89,17 +87,15 @@ ReadPlayback = Callable[[str], Awaitable[PlaybackReading]]
 _LIVENESS_POLL_SECONDS = 30.0
 
 #: How many times ONE track may be re-resolved after a `stream-failed`
-#: before the queue advances past it (design/voice-channel/07 §5, audit
-#: B14 — "nora may bounded-retry re-resolve").
+#: before the queue advances past it.
 #:
 #: Two, because the two failures this bounds are cheap to tell apart by
 #: trying: a single CDN address that expired mid-track, which one re-resolve
 #: fixes, and a source session that has gone bad, which `refresh_session` +
 #: one re-resolve fixes. Neither needs a third. The bound matters as much as
 #: the retry does — an unbounded retry on a genuinely dead track is a guild
-#: stuck on silence with no way out, which is strictly worse than the
-#: advance it replaced, and every attempt costs a resolve round-trip plus a
-#: play POST while the room hears nothing.
+#: stuck on silence with no way out, and every attempt costs a resolve
+#: round-trip plus a play POST while the room hears nothing.
 _MAX_STREAM_RETRIES = 2
 
 
@@ -159,8 +155,8 @@ class MusicPlayerManager:
         # connect" is a check-then-act across an `await`, and enqueuing a
         # track is another; without a lock, two `/music play` calls for the
         # same guild can both pass the check and both connect (orphaning
-        # the loser's voice connection), or both enqueue at once (subagent
-        # review, 2026-08-23). One lock per guild, created on first use --
+        # the loser's voice connection), or both enqueue at once. One lock
+        # per guild, created on first use --
         # `setdefault` is a single synchronous dict operation, so creating
         # the LOCK itself cannot race the same way.
         self._guild_locks: dict[str, asyncio.Lock] = {}
@@ -180,14 +176,13 @@ class MusicPlayerManager:
         """`None` is the rejection: no existing player for `guild_id` AND
         `connect is None` (the requester is not in any voice channel).
         Reuses an existing player regardless of `connect` — only STARTING a
-        session requires the requester to be present
-        (03-state-and-persistence.md's own rule).
+        session requires the requester to be present.
 
         `notify`/`voice_channel_id`/`notify_channel_id` are captured ONLY
         when this call actually creates the player (a fresh session) — a
         later `/music play` reusing an existing session does not move the
         now-playing notification channel, matching "the channel where it
-        started" (design/discord-music/06-session-persistence.md).
+        started".
         `voice_channel_id`/`notify_channel_id` are the raw Discord IDs, not
         derivable from `connect`/`notify` (opaque closures) -- persisted so
         a restart can reconnect to the right channels.
@@ -199,7 +194,7 @@ class MusicPlayerManager:
         UNIQUE-constraint-plus-retry is a second, independent line of
         defence for whatever this lock doesn't cover — a future multi-
         process deployment, say — not the mechanism this one relies on).
-        The lock is RELEASED for the outbound play POST (B14 — see
+        The lock is RELEASED for the outbound play POST (see
         `_commit_and_finish`): a hanging audio-controller must not block
         the guild's other commands."""
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
@@ -215,8 +210,7 @@ class MusicPlayerManager:
             # Cancel BEFORE the slow resolve/enqueue await below, not only
             # in `_after_transition` at the end — an idle timer left
             # running across that await can fire and tear the player down
-            # mid-`play()` (subagent review, 2026-08-23: reusing an idle
-            # player raced its own idle-disconnect timer).
+            # mid-`play()`.
             self._cancel_idle_disconnect(guild_id)
             queued, pending, was_idle = await player.play_prepare(
                 query_or_url=query_or_url, requested_by=requested_by, added_at=added_at,
@@ -229,9 +223,8 @@ class MusicPlayerManager:
         # race a natural track-end's `_advance` (or the monitor's
         # `on_voice_death`): without serialization a skip could advance a
         # player the finish path is mid-`pop_next` on, or hold a stale
-        # reference to a player a teardown already removed (external audit
-        # Codex MAJOR-2, 2026-08-26). Released around the outbound POST
-        # (B14) like every transition.
+        # reference to a player a teardown already removed. Released around the
+        # outbound POST like every transition.
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
             player = self._players.get(guild_id)
@@ -241,7 +234,7 @@ class MusicPlayerManager:
         if stop_audio:
             # The queue ran out behind the skipped track — nothing
             # supersedes its still-live audio, so the controller is told
-            # to go silent. Outside the lock, same B14 reason as the play
+            # to go silent. Outside the lock, same reason as the play
             # POST. (A play racing this stop can still land after it; the
             # controller serializes the two and whichever arrives last
             # wins — a momentary edge the next command resolves.)
@@ -257,7 +250,7 @@ class MusicPlayerManager:
         """Advance after a track end. Returns `True` when the queue actually
         advanced — `False` when the event was stale or there was no player.
 
-        `playback_id` is the controller's (design/voice-channel/07 §3.3, B5):
+        `playback_id` is the controller's:
         the voice-event consumer passes it from the callback, and the match
         against the currently-expected playback is checked UNDER the guild
         lock — never before taking it. That ordering is the whole point: a
@@ -272,9 +265,9 @@ class MusicPlayerManager:
         # can fire while a natural track-end is mid-`_advance`; without
         # serialization the two transitions would interleave
         # `stop()`/`queue.clear()`/`session.delete()` with
-        # `pop_next()`/`resolve()`/`voice.play()` on the same `MusicPlayer`
-        # (external audit MAJOR-3, 2026-08-26). The lock is RELEASED for
-        # the advance's outbound play POST (B14 — `_commit_and_finish`).
+        # `pop_next()`/`resolve()`/`voice.play()` on the same `MusicPlayer`. The
+        # lock is RELEASED for the advance's outbound play POST
+        # (`_commit_and_finish`).
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
             if (
@@ -310,7 +303,7 @@ class MusicPlayerManager:
         try:
             status = await self._commit_and_finish(guild_id, player, pending)
         except BaseException:
-            # B7: a transition that RAISES is left unconsumed so the outbox
+            # A transition that RAISES is left unconsumed so the outbox
             # retry gets a genuine second attempt; the consumed mark must not
             # turn that retry into a "duplicate" and leave the room silent.
             self._release_finish(guild_id, playback_id)
@@ -342,22 +335,19 @@ class MusicPlayerManager:
     async def on_stream_failed(
         self, guild_id: str, *, playback_id: str | None = None, reason: str | None = None,
     ) -> bool:
-        """ffmpeg failed on a track that had NOT finished (design/voice-
-        channel/07 §5, audit B14). Re-resolves the same track for a fresh
+        """ffmpeg failed on a track that had NOT finished.
+        Re-resolves the same track for a fresh
         stream address up to `_MAX_STREAM_RETRIES` times, and only then
         advances the way a natural end does.
 
-        **This is not `on_track_finished` with a different log line.** Until
-        2026-09-18 it was: `stream-failed` called straight through to the
-        advance, so a rejected address cost not one song but the whole
-        session — each failure advanced, the next track was resolved through
-        the same broken source session, failed identically, and autoplay
-        emptied the queue into silence in about a minute. Four plays, four
-        `ffmpeg-exit-1`, zero seconds of audio. A failure to START playing
-        is a reason to try that track AGAIN; it is not evidence the track is
-        over.
+        **This is not `on_track_finished` with a different log line.** A
+        rejected address must not cost the whole session: advancing on each
+        failure would resolve the next track through the same broken source
+        session, fail identically, and empty the queue into silence. A failure
+        to START playing is a reason to try that track AGAIN; it is not
+        evidence the track is over.
 
-        The B5 staleness check is the same one and for the same reason: a
+        The staleness check is the same one and for the same reason: a
         failure belonging to a superseded playback must not move a queue the
         skip that superseded it already moved. Checked HERE, under the lock,
         never before taking it.
@@ -365,7 +355,7 @@ class MusicPlayerManager:
         No `_notify_now_playing` on the retry path — the room is hearing
         (or about to hear) the track it was already told about, and
         announcing it again on every stumble is noise. The advance
-        fall-through notifies exactly as it always did."""
+        fall-through notifies as a natural end does."""
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
             if (
@@ -416,18 +406,16 @@ class MusicPlayerManager:
     async def _commit_and_finish(
         self, guild_id: str, player: MusicPlayer, pending: _PendingPlay | None,
     ) -> PlayerStatus:
-        """B14 (design/voice-channel/07, 2026-09-16 audit): the outbound
-        play POST runs with the guild lock RELEASED — a hung audio-
-        controller must not block `/music skip`, `/music stop` or
-        `/discord exit` for the guild (the advance used to hold the lock
-        across the whole 30s-timeout HTTP round-trip). The finish step
+        """The outbound play POST runs with the guild lock RELEASED — a hung
+        audio-controller must not block `/music skip`, `/music stop` or
+        `/discord exit` for the guild. The finish step
         then RE-ACQUIRES the lock and verifies the session is still on the
         track the POST started — a stop or skip may have landed meanwhile
         — before persisting; `MusicPlayer.finish_pending` owns that
         re-check, including killing the just-started audio when a stop
         left nothing to supersede it.
 
-        N-2 (2026-09-16 audit): when the transition leaves the session
+        When the transition leaves the session
         DEAD (R-65), `_after_transition` only DETACHES the player here —
         its `leave()` (another controller HTTP round-trip, `/voice/exit`)
         runs below with the lock already released, same reason as the
@@ -459,8 +447,8 @@ class MusicPlayerManager:
         return status
 
     async def pause(self, guild_id: str) -> bool:
-        # Same per-guild lock as `play()`/`stop()` (B6, 2026-09-16 audit):
-        # pause's HTTP response used to persist the session AFTER a
+        # Same per-guild lock as `play()`/`stop()`: without it, pause's HTTP
+        # response could persist the session AFTER a
         # concurrent stop had deleted it, resurrecting the row. Under the
         # lock the two are serialized in arrival order — the pause's
         # persist lands BEFORE the stop's delete (or the stop runs first
@@ -472,7 +460,7 @@ class MusicPlayerManager:
             return False if player is None else await player.pause()
 
     async def resume(self, guild_id: str) -> bool:
-        # Same per-guild lock as `pause` (B6).
+        # Same per-guild lock as `pause`.
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
             player = self._players.get(guild_id)
@@ -493,7 +481,7 @@ class MusicPlayerManager:
         `False` (a player exists but `volume` was out of range) — the same
         distinction `pause`/`resume`'s bare `False` doesn't need, because
         those have only one way to fail."""
-        # Same per-guild lock as `pause` (B6): the volume response must not
+        # Same per-guild lock as `pause`: the volume response must not
         # persist over a concurrent stop's delete.
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
@@ -505,19 +493,19 @@ class MusicPlayerManager:
         return None if player is None else await player.status()
 
     async def stop(self, guild_id: str) -> None:
-        """`/music stop` — END-MUSIC (design/voice-channel/07 §10, B3): the
+        """`/music stop` — END-MUSIC: the
         session ends but the voice connection STAYS (the controller keeps it,
         e.g. for the wake path). Same shape as leaving, an explicit command
         rather than a timer/event triggering it."""
         # Same per-guild lock as `play()` — a stop can race a natural
         # track-end's `_advance` or the monitor's `on_voice_death`; without
         # serialization a post-stop advance could resurrect persisted state
-        # or double-teardown (external audit Codex MAJOR-2, 2026-08-26).
+        # or double-teardown.
         #
-        # N-2 (2026-09-16 audit): `player.stop()` itself (below, lock
-        # released) makes a controller HTTP round-trip (`/music/stop`) —
-        # holding the lock across it used to block this guild's OWN next
-        # `/music play`/`/discord exit` on a hung controller. Only the
+        # `player.stop()` itself (below, lock released) makes a controller HTTP
+        # round-trip (`/music/stop`) — holding the lock across it would block
+        # this guild's OWN next `/music play`/`/discord exit` on a hung
+        # controller. Only the
         # dict/timer detach needs the lock; once popped, no other lock
         # holder can reach this player through `self._players` anymore.
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
@@ -529,8 +517,8 @@ class MusicPlayerManager:
     async def leave_voice(self, guild_id: str) -> None:
         """`/discord exit` — LEAVE-VOICE (end-music AND destroy the
         connection), with no announcement: the command replies itself."""
-        # Same per-guild lock as `play()`/`stop()`; same N-2 lock-release
-        # reasoning as `stop()` above — `player.leave()` is TWO controller
+        # Same per-guild lock as `play()`/`stop()`; same lock-release reasoning
+        # as `stop()` above — `player.leave()` is TWO controller
         # HTTP round-trips (`/music/stop` then `/voice/exit`).
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
@@ -543,11 +531,10 @@ class MusicPlayerManager:
         generation: str | None = None, channel_id: str | None = None,
     ) -> None:
         """The channel's human count dropped to zero — LEAVE-VOICE
-        immediately, no idle grace period (03's disconnect-timer rules,
-        trigger 1). Fires from the controller's `channel-emptied` event
-        (design/voice-channel/07 §10, B10).
+        immediately, no idle grace period. Fires from the controller's
+        `channel-emptied` event.
 
-        B8: the event's `generation`/`channel_id` are validated UNDER the
+        The event's `generation`/`channel_id` are validated UNDER the
         guild lock before anything is torn down — an outbox delivery
         delayed across an exit/rejoin must not drop the NEW session. A
         session with NO music player (a voice-only join) still leaves: the
@@ -585,7 +572,7 @@ class MusicPlayerManager:
                     # nothing reuses a dead generation.
                     self._drop_voice_session(guild_id)
                 leaving, _ = self._detach_for_leave(guild_id)
-        # N-2 (2026-09-16 audit): the exit/leave HTTP call runs with the
+        # The exit/leave HTTP call runs with the
         # lock released, same reason as `stop()`/`leave_voice()` above.
         if exit_only is not None:
             await exit_only(guild_id)
@@ -595,20 +582,18 @@ class MusicPlayerManager:
     async def on_voice_death(self, guild_id: str, *, generation: str | None = None) -> None:
         """The voice connection died while a track was supposedly audible —
         a silent voice-websocket drop that discord.py's `is_connected()`
-        never reflects (R-66, found live 2026-08-26: "now its NOT even
-        playing" after a `discord gateway resumed`, while every subsequent
-        `voice.play()` raised `Not connected to voice.`). The player still
+        never reflects (R-66: after a `discord gateway resumed`, every
+        subsequent `voice.play()` raises `Not connected to voice.`). The player still
         believes it is playing; end the session like a stop so a fresh
         `/music play` joins a clean connection instead of streaming into a
         dead socket. Announces the teardown — this is the one transition
-        with no command reply of its own, and the room used to have no idea
-        (found live 2026-09-15).
+        with no command reply of its own.
 
-        B8: the event's `generation` is compared against the live one UNDER
+        The event's `generation` is compared against the live one UNDER
         the guild lock, and the hub's cached session is dropped inside the
         same lock — a delayed death from an OLD generation (the outbox
         retried across an exit/rejoin) must not tear down the NEW session.
-        The teardown itself tolerates the dead connection (B7):
+        The teardown itself tolerates the dead connection:
         `HttpVoiceSession.stop`/`disconnect` treat a 409
         `generation_conflict` as the end state already reached, so local
         cleanup completes without the controller answering."""
@@ -624,18 +609,18 @@ class MusicPlayerManager:
             if self._drop_voice_session is not None:
                 # The connection is already gone controller-side — forget
                 # the session WITHOUT an exit call, INSIDE the same lock as
-                # the teardown (B8: outside the lock, a delayed event could
+                # the teardown (outside the lock, a delayed event could
                 # drop the NEW session).
                 self._drop_voice_session(guild_id)
             player, notify = self._detach_for_leave(guild_id)
-        # N-2 (2026-09-16 audit): `leave()` runs with the lock released,
+        # `leave()` runs with the lock released,
         # same reason as `stop()`/`leave_voice()` above.
         if player is not None:
             await player.leave()
         await self._announce_teardown(guild_id, notify, player)
 
     def _generation_matches(self, guild_id: str, generation: str | None) -> bool:
-        """The B8 staleness probe, with the B5 probe's fail-open-if-
+        """The generation staleness probe, with the playback probe's fail-open-if-
         unanswerable discipline: a wiring that cannot answer (tests, a
         partial composition) or an event carrying no generation is never
         GUESSED stale. No live session on record is likewise not provable
@@ -649,8 +634,7 @@ class MusicPlayerManager:
 
     async def persisted_sessions(self) -> Sequence[MusicSession]:
         """Every session a PRIOR process left behind — the boot-time
-        resume scan's input (design/discord-music/06-session-persistence
-        .md stage 2). The Discord platform layer owns deciding whether
+        resume scan's input. The Discord platform layer owns deciding whether
         each one is actually resumable (channel still exists, still has
         humans in it); this just hands back what's on record."""
         return await self._session_store.all()
@@ -663,13 +647,9 @@ class MusicPlayerManager:
         Clears the guild's queue too, not just the session row: those rows
         belonged to the session being discarded, and leaving them behind
         orphans them in `music_queue` forever — silently jumping the line
-        ahead of whatever a future, unrelated `play()` call actually asks
-        for once someone starts a fresh session in this guild. This is the
-        same cleanup `MusicPlayer.stop()` already does for an explicit
-        `/music stop`; the boot-time "this session is dead" path needs the
-        same symmetry (found live 2026-08-24 — a K-pop batch orphaned by an
-        earlier un-resumed session silently played instead of a fresh
-        "play apt" request, while the reply claimed APT was playing)."""
+        ahead of whatever a future, unrelated `play()` call asks for. This is
+        the same cleanup `MusicPlayer.stop()` does for an explicit
+        `/music stop`."""
         await self._queue_store.clear(guild_id)
         await self._session_store.delete(guild_id)
 
@@ -682,15 +662,15 @@ class MusicPlayerManager:
         query here, just an already-known track to restart from position
         0 (`MusicPlayer.resume_from_persisted`'s own limitation).
 
-        The WHOLE reconciliation runs under the guild lock (B5, 2026-09-16
-        audit): a `track-finished` for the pre-restart playback must wait
+        The WHOLE reconciliation runs under the guild lock: a `track-finished`
+        for the pre-restart playback must wait
         for the resume to settle, after which the staleness probe
         recognises it as the old track's tail. Without the lock the event
-        advanced the queue MID-resume and the resume then re-played the
-        persisted track OVER the advanced one — the advanced track was
-        already popped, so it was lost outright (Codex probe).
+        advances the queue MID-resume and the resume then re-plays the
+        persisted track OVER the advanced one — the advanced track is
+        already popped, so it is lost outright.
 
-        §12.1 live reconcile comes first: when the adopted connection is
+        Live reconcile comes first: when the adopted connection is
         ACTUALLY playing (the controller outlived the restart), the
         persisted track is recorded as now-playing WITHOUT a play call —
         replaying it would cut live audio, and the controller's own
@@ -760,7 +740,7 @@ class MusicPlayerManager:
                         )
                     await player.on_track_finished()
             status, to_leave = await self._after_transition(session.guild_id, player)
-        # N-2 (2026-09-16 audit): same lock-released `leave()` as
+        # Same lock-released `leave()` as
         # `_commit_and_finish` — see its docstring.
         if to_leave is not None:
             await to_leave.leave()
@@ -799,7 +779,7 @@ class MusicPlayerManager:
     ) -> tuple[PlayerStatus, MusicPlayer | None]:
         """Returns the status and, when the session died mid-transition
         (R-65), the DETACHED player the caller must `.leave()` with the
-        guild lock RELEASED (N-2, 2026-09-16 audit) — `leave()`'s
+        guild lock RELEASED — `leave()`'s
         `disconnect()` is a controller HTTP round-trip, and this always
         runs from inside a caller's `async with lock:` block, so doing it
         here would hold the lock across it."""
@@ -809,7 +789,7 @@ class MusicPlayerManager:
             # session row deleted, voice disconnected) but cannot remove
             # itself from `_players` — drop the dead player entirely so the
             # next `/music play` joins a clean connection and the idle timer
-            # is not armed for a zombie (external audit MAJOR-2, 2026-08-26).
+            # is not armed for a zombie.
             # `leave()` (the caller's job) re-runs the leave-voice path,
             # which is safe on the torn state (`HttpVoiceSession.disconnect`
             # tolerates an already-invalid generation; clear/stop on empty
@@ -843,7 +823,7 @@ class MusicPlayerManager:
             guild_id, now_playing.title,
         )
         # Tells apart a track someone actually queued from one autoplay
-        # picked (`AUTOPLAY_PERSON_ID`, design/discord-music/08-autoplay.md)
+        # picked (`AUTOPLAY_PERSON_ID`)
         # -- otherwise a listener has no way to tell why a track nobody
         # requested just started. Wording comes from the canonical message
         # table (`music_messages.py`) — this module never formats its own.
@@ -856,7 +836,7 @@ class MusicPlayerManager:
         await notify(line)
 
     def _schedule_idle_disconnect(self, guild_id: str) -> None:
-        """03's disconnect-timer rule 2: queue empty and nothing playing ->
+        """Disconnect-timer rule 2: queue empty and nothing playing ->
         leave after `idle_timeout_seconds`. Cancels-and-replaces any timer
         already pending for this guild, so repeated empty transitions never
         stack more than one."""
@@ -873,13 +853,11 @@ class MusicPlayerManager:
     def start_liveness_watch(self) -> None:
         """Begin asking the controller whether sound is actually moving.
 
-        Until this existed, nora asked for status exactly twice in her life:
-        once at boot and once after a version conflict. Everything else was
-        event-driven, so a controller that stopped producing audio WITHOUT
-        sending an event — which is precisely what a wedge does — left her
-        believing a track was playing forever. Nothing timed out, the queue
-        never advanced, and the only thing that ever noticed was a person in
-        the room."""
+        Without polling, status is read only at boot and after a version
+        conflict; everything else is event-driven, so a controller that
+        stopped producing audio WITHOUT sending an event — which is precisely
+        what a wedge does — would leave her believing a track was playing
+        forever. Nothing would time out and the queue would never advance."""
         if self._read_playback is None or self._liveness_task is not None:
             return
         self._liveness_task = self._spawn(self._liveness_loop())
@@ -1006,15 +984,15 @@ class MusicPlayerManager:
 
     async def _idle_disconnect_after_timeout(self, guild_id: str) -> None:
         await self._clock_sleep(self._idle_timeout_seconds)
-        # Same per-guild lock (Codex MAJOR-2, 2026-08-26): the idle timer can
+        # Same per-guild lock: the idle timer can
         # fire while a track-end `_advance` or a `/music play` is mid-flight.
         #
-        # N-2 (2026-09-16 audit): only the dict/timer detach needs the
+        # Only the dict/timer detach needs the
         # lock; `player.stop()` below (a controller HTTP round-trip) runs
         # with it released, same reason as `stop()`.
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
-            # Idle expiry is END-MUSIC (design/voice-channel/07 §10, B3) —
+            # Idle expiry is END-MUSIC —
             # the session ends but the connection STAYS; the controller
             # keeps it, e.g. for the wake path.
             player = self._detach_for_end_music(guild_id)
@@ -1022,7 +1000,7 @@ class MusicPlayerManager:
             await player.stop()
 
     def _detach_for_end_music(self, guild_id: str) -> MusicPlayer | None:
-        """The synchronous half of END-MUSIC (N-2, 2026-09-16 audit): pops
+        """The synchronous half of END-MUSIC: pops
         this guild's player and cancels its idle timer. Always run INSIDE
         the caller's guild lock — `player.stop()`, the other half (an
         HTTP round-trip to the controller), is the caller's job to run
@@ -1048,9 +1026,7 @@ class MusicPlayerManager:
         """Announce a `_leave` teardown — ONLY the one transition with no
         command reply of its own, `on_voice_death`. `/music stop` already
         replies `Stopped.`, an idle timeout is expected, and an emptied
-        channel has nobody left to read it (found live 2026-09-15: voice
-        death tore the session down with zero notification — listeners
-        only noticed the silence). `notify`/`player` are both `None` on an
+        channel has nobody left to read it. `notify`/`player` are both `None` on an
         already-torn-down guild (idempotent re-run), which must not
         double-post."""
         if notify is None or player is None:
@@ -1066,7 +1042,7 @@ class MusicPlayerManager:
         """END-MUSIC composed for callers holding no guild lock (e.g.
         direct test calls) — every LOCKED call site drives the split
         phases itself (`_detach_for_end_music` under the lock,
-        `player.stop()` released, N-2 above)."""
+        `player.stop()` released)."""
         player = self._detach_for_end_music(guild_id)
         if player is not None:
             await player.stop()

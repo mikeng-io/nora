@@ -1,4 +1,4 @@
-"""Fakes for the `online_now` tool's ports (design/online-status/).
+"""Fakes for the `online_now` tool's ports.
 
 `FakeSteamPresenceProvider` (`SteamPresenceProvider`, bound to
 `nora.infra.steam.SteamPresenceClient` by

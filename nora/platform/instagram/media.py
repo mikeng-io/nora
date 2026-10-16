@@ -168,8 +168,8 @@ async def _read_limited(stream: aiohttp.StreamReader, limit: int) -> bytes:
     the reason is the defect it encodes rather than tidiness. `StreamReader.
     read(n)` returns as soon as the FIRST buffered chunk arrives — it does not
     wait for `n` bytes or EOF — so `read(max_bytes + 1)` on a 2.3 MB image
-    returned 1.4 KB and the truncated body was stored as if complete (DEC-118
-    live defect, 2026-08-31). Each adapter owns its own fetch loop here
+    returned 1.4 KB and the truncated body was stored as if complete (DEC-118).
+    Each adapter owns its own fetch loop here
     (Signal's is a base64 decode and shares nothing with either), and the one
     thing that must never be re-derived from scratch is this loop; the
     contract suite runs a chunked-body case against BOTH copies so a drift is

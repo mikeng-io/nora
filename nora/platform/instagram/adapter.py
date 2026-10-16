@@ -1,22 +1,18 @@
-"""InstagramAdapter — the fourth `PlatformAdapter` implementation
-(design/instagram-adoption/).
+"""InstagramAdapter — a `PlatformAdapter` implementation.
 
 Mirrors `nora.platform.whatsapp.adapter.WhatsAppAdapter`'s composition
 exactly: a thin class wiring a listener, parser, sender and reactor against the
 instagram-bridge's HTTP/SSE surface (`deploy/instagram-bridge`, the Go/instameow
-daemon). The wire shapes are pinned in
-`design/instagram-adoption/03-transport-contract.md`; this adapter holds no
-normalization logic of its own — that lives in `parser.py`/`ids.py`, tested
-directly against the contract.
+daemon). This adapter holds no normalization logic of its own — that lives in
+`parser.py`/`ids.py`, tested directly against the bridge's wire contract.
 
-## The one thing it has that no sibling does: a DEGRADED state (M0)
+## The one thing it has that no sibling does: a DEGRADED state
 
 `nora.platform.registry.AdapterRegistry.from_config` is fail-fast by design,
 and that is right for Signal and Discord, where "cannot resolve my own
 identity" means a misconfiguration somebody typed. On Instagram it means **a
 captcha happened overnight**, and under the unmodified rule one checkpoint
-stops Nora starting at all — Signal and Discord included
-(`design/instagram-adoption/01-bridge-container.md` §Degradation).
+stops Nora starting at all — Signal and Discord included.
 
 So an enabled Instagram adapter that cannot authenticate is BUILT and
 REGISTERED in a degraded state rather than refused. Degraded means, precisely:
@@ -41,9 +37,7 @@ visible to `from_config`.
 
 **This is an Instagram-shaped exception with a stated reason, not a general
 loosening.** Signal and Discord stay fail-fast. WhatsApp carries the same
-latent exposure and has never hit it because QR pairing is stable; whether the
-exception should extend there is a decision for that bundle, not a side effect
-of this one.
+latent exposure, but QR pairing is stable and it is not treated this way.
 """
 
 from __future__ import annotations
@@ -92,7 +86,7 @@ class InstagramAdapter:
         self._identity: PlatformIdentity | None = None
         self._degraded_reason: str = ""
 
-    # --- M0: the degraded state ------------------------------------------
+    # --- the degraded state ------------------------------------------
 
     @property
     def degraded(self) -> bool:
@@ -120,7 +114,7 @@ class InstagramAdapter:
         """Register this adapter as present-but-unable, with a stated reason.
 
         Called by `AdapterRegistry.from_config` when `resolve_identity()`
-        failed. The ERROR line is the startup half of M0's visibility
+        failed. The ERROR line is the startup half of the visibility
         requirement; `health()` is the other half, and neither replaces the
         other — a log line scrolls away and a health field says nothing about
         when it started.
@@ -260,7 +254,7 @@ class InstagramAdapter:
 
         Read per call and never memoized, unlike `resolve_identity`: the
         identity is ids that never change, and this is a name the operator
-        can change from a phone (design/self-awareness/02). Display text for
+        can change from a phone. Display text for
         `<presence>` only — it never enters `PlatformIdentity`, so it can
         never become a mention id.
         """

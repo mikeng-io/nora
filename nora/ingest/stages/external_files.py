@@ -1,14 +1,13 @@
-"""Shared file links become handles in the record
-(design/external-files/00-design.md §1, build step S1).
+"""Shared file links become handles in the record.
 
 Every link in an inbound message that a provider recognises as one of its
 files is attached to the message as an `ExternalFileRef`, and the audit stage
 writes them to `messages.external_files_json` in the same INSERT as the row,
 for `media_blobs`' reason. On EVERY platform: the text is all it reads.
 
-**No network call, and no config.** Recognising a URL needs no account (§4),
+**No network call, and no config.** Recognising a URL needs no account,
 so this runs whether or not `[external_files]` is enabled; that switch is
-the open tool's (S3). Nothing is fetched, named or read here: all that is
+the open tool's. Nothing is fetched, named or read here: all that is
 known about the file is that somebody sent this link. The body is left
 verbatim; what a model sees is rendered from it
 (`nora.domain.external_files.render_file_links`).

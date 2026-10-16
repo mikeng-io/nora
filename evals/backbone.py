@@ -1,22 +1,22 @@
 """The SDK-native spine — layers 3 and 4, and nothing else.
 
-`design/evaluation/GOAL-2-backbone.md`. The basis: the evaluation suite IS
+The basis: the evaluation suite IS
 `strands-agents-evals`. Layer 1 (corpus, harness, report, caching) and layer 2
 (content grading) are the SDK's and are not written here. This module holds
 only what no SDK can supply:
 
 - **layer 3, the subject** — `nora_task`, which obtains the deployed Nora,
   isolates the case, drives one entry point, and *never raises*;
-- **layer 4, the absence** — `AbsenceGrader`, because 75 of 150 cases expect
+- **layer 4, the absence** — `AbsenceGrader`, because many cases expect
   her to say nothing and every built-in evaluator judges `actual_output`.
 
-**THE ERROR CHANNEL, and why it is where it is.** MEASURED 2026-09-18 against
-the installed 1.0.3: `Experiment._run_task_async` reads exactly five keys off a
-task's dict — `output`, `trajectory`, `interactions`, `environment_state`,
-`input`. A `metadata` key is **silently dropped** (the `metadata` on the
-`EvaluationData` is the CASE's, never the task's), so the first draft of this
-probe put the failure reason there and watched it vanish. `environment_state`
-is the surviving channel and is what `NORA_*` below rides in.
+**THE ERROR CHANNEL, and why it is where it is.** In the installed SDK
+(1.0.3) `Experiment._run_task_async` reads exactly five keys off a task's dict
+— `output`, `trajectory`, `interactions`, `environment_state`, `input`. A
+`metadata` key is **silently dropped** (the `metadata` on the `EvaluationData`
+is the CASE's, never the task's), so a failure reason cannot ride there.
+`environment_state` is the surviving channel and is what `NORA_*` below rides
+in.
 
 **Why the task must never raise.** `Experiment._worker` wraps the task in
 `except Exception` and writes `test_pass=False, score=0` for **every evaluator
@@ -104,19 +104,16 @@ NORA_DELIVERY = "nora.delivery"
 #: other one (`evals/rebuilt/domain.py`'s own docstring: "both answer *was she
 #: admitted* and *what did the room hear*, and the gate simply never reaches
 #: the second"). Carried separately from `NORA_SAID` because `gate()` never
-#: writes room speech at all — `AbsenceGrader` read only `NORA_SAID` before
-#: this existed, so it graded EVERY `gate` case as silence, verdict ignored
-#: (`09-the-backbone-measured.md` §1.1, found while re-running Step 0 against
-#: `relevance_gate`).
+#: writes room speech at all — `AbsenceGrader` reading only `NORA_SAID` would
+#: grade EVERY `gate` case as silence, verdict ignored.
 NORA_ADMITTED = "nora.admitted"
 #: `nora.agent.prefill.build_prefill`'s own `nora.prefill.blocks_empty`
 #: attribute (a comma-joined list of block names whose body was empty),
 #: carried through unmapped. `StrandsInMemorySessionMapper` (what
 #: `TracedHandler` uses) drops any span whose `gen_ai.operation.name` is not
 #: `chat`/`execute_tool`/`invoke_agent` — a Nora plumbing span like
-#: `agent.prefill` never survives into a `Session`, mapped or not. So S4
-#: ("the blocks she needs were rendered non-empty",
-#: `10-the-scenario-map.md` §3) reads the raw span directly via
+#: `agent.prefill` never survives into a `Session`, mapped or not. So the
+#: "blocks she needs were rendered non-empty" check reads the raw span directly via
 #: `_prefill_capture()` rather than through the SDK's trajectory machinery —
 #: the property in question is what `build_prefill` assembled, not anything
 #: shaped like a model turn. Empty string for every entry point that never
@@ -126,10 +123,9 @@ NORA_BLOCKS_EMPTY = "nora.blocks_empty"
 #: already captures for `agent.prefill` — NOT from an external collector.
 #:
 #: Eval runs force `[obs.tracing]` off, deliberately: a run's spans would land
-#: in the deployment's own collector beside real ones. The cost of that was
-#: measured on 2026-09-22 — a note-candidates case (since deleted, DEC-277) failed with a truncation
-#: and the call that truncated was invisible, so the only way to ask "cut off
-#: at what?" was to change a ceiling and re-run. Reading the numbers HERE
+#: in the deployment's own collector beside real ones. The cost of that is that
+#: a truncated call is invisible, so the only way to ask "cut off at what?"
+#: would be to change a ceiling and re-run. Reading the numbers HERE
 #: needs no second Langfuse project, no credential, and cannot pollute
 #: anything: `_prefill_capture()` already attaches an in-memory exporter to
 #: this process's own provider, and Strands puts `gen_ai.usage.*` and
@@ -160,7 +156,7 @@ NORA_TOOL_RESULTS = "nora.tool_results"
 #: `execute_tool` span. `ToolRouteGrader` reads it for a case that grades an
 #: argument (`metadata.args_include` / `args_exclude` / `args_date`), because
 #: routing alone cannot tell «drew herself with her reference» from «drew an
-#: empty room» (2026-09-24): both are one `generate_image` call.
+#: empty room»: both are one `generate_image` call.
 NORA_TOOL_INPUTS = "nora.tool_inputs"
 #: The clock line the turn was shown (`nora.agent.prefill._now_line`), read
 #: back off the first model call. A case that grades a date she had to work
@@ -178,7 +174,7 @@ NORA_SHOWN_WHERE = "nora.shown_where"
 #: where there is nothing to hold and the prompt carries no transport state.
 NORA_TRANSPORT = "nora.transport_held"
 #: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
-#: never surfaced to a grader before this (S6, `10-the-scenario-map.md` §3).
+#: the idempotence grader's input.
 #: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
 #: diffs the notebook `before`/`after` inside one call), so a second call on
 #: the SAME subject naturally reports "what run 2 added", not a cumulative
@@ -193,60 +189,57 @@ NORA_STAGED_COUNT = "nora.staged_count"
 NORA_WRITTEN_2 = "nora.written_2"
 NORA_CHANGED_COUNT_2 = "nora.changed_count_2"
 NORA_STAGED_COUNT_2 = "nora.staged_count_2"
-#: The repeat run's OWN `Outcome.error` — found missing by review, 2026-09-19.
+#: The repeat run's OWN `Outcome.error`.
 #: Entry points return `Outcome(error=...)` rather than raising
 #: (`evals/rebuilt/entry.py`'s fail-closed branches), so a repeat run that
 #: failed closed comes back with `written=0, changed=(), staged=()` and no
 #: exception at all — indistinguishable from "ran cleanly and added
-#: nothing" unless this is carried and checked. `evals/rebuilt/domain.py`'s
-#: own `Outcome.error` docstring: "An Outcome with an error is never
-#: graded" — `IdempotenceGrader` was violating that for the repeat half.
+#: nothing" unless this is carried and checked: "An Outcome with an error is
+#: never graded" (`evals/rebuilt/domain.py`) holds for the repeat half too.
 NORA_ERROR_2 = "nora.error_2"
 #: `Outcome.changed`/`.judged`/`.checks_failed` — the three signals
 #: `Outcome.meets()` needs beyond `admitted`/`said`/`written` to grade
-#: `create`/`update`/`either` and a judge's verdict. Added for the corpus
-#: port (`10-the-scenario-map.md`, 2026-09-20): `MeetsGrader` reconstructs a
-#: real `Outcome` from these and delegates to the SAME, already-correct
-#: `.meets(expect)` the old harness graded 150 cases with, rather than
-#: reimplementing its eleven-vocabulary logic a second time.
+#: `create`/`update`/`either` and a judge's verdict. `MeetsGrader`
+#: reconstructs a real `Outcome` from these and delegates to the SAME
+#: `.meets(expect)`, rather than reimplementing its eleven-vocabulary logic.
 NORA_CHANGED = "nora.changed"
 NORA_JUDGED = "nora.judged"
 NORA_CHECKS_FAILED = "nora.checks_failed"
 #: The character length of every body a dream pass WROTE (a staged candidate
 #: whose status is `created`: a new note or an appended revision), one per
-#: body, in no particular order. Printed on the grader's reason so `--reasons` carries it per draw:
+#: body, in no particular order. Printed on the grader's reason so `--reasons`
+#: carries it per draw:
 #: the body is what every later reader gets instead of the room's messages,
 #: and a change to how the objective demonstrates one is measured on it.
 NORA_BODY_CHARS = "nora.body_chars"
 #: Per written body, in `NORA_BODY_CHARS`' order: `ok` when it parses under
-#: design 42 §4 (`nora.domain.note_body.parse_note_body`) against the draw's
-#: shown set, else the rule it broke. A READING printed on the grader's reason
-#: as `body_schema=[...]`, not a verdict: bodies are prose until S2 puts the
-#: schema in the objective, and a verdict here would fail every create case
-#: before then. A case opts into it as a check with `body_schema: true`.
+#: the note-body schema (`nora.domain.note_body.parse_note_body`) against the
+#: draw's shown set, else the rule it broke. A READING printed on the grader's
+#: reason as `body_schema=[...]`, not a verdict: bodies are prose until the
+#: objective carries the schema, and a verdict here would fail every create
+#: case. A case opts into it as a check with `body_schema: true`.
 NORA_BODY_SCHEMA = "nora.body_schema"
 #: The rule of each create the pass REFUSED for its body before staging
-#: (design 42 S2), printed as `body_refused=[...]`. A refused body is never
+#: printed as `body_refused=[...]`. A refused body is never
 #: written, so `body_schema` cannot see it: conformance is `ok` over written
 #: plus refused, and this is the second half.
 NORA_BODY_REFUSED = "nora.body_refused"
-#: The standing corpus (`design/standing-compact/20-verification.md` §1).
+#: The standing corpus.
 #: `NORA_POSITION` is the position a fold wrote (`Outcome.position`), what
 #: `MeetsGrader` needs for `expect: fold`. `NORA_SHOWN` is what the subject's
 #: model call was given, verbatim — `--print-input` prints it, so two arms are
 #: diffed before a model is paid for. `NORA_JUDGED_WHY` is the judge's own
 #: rationale, so a FAIL says why without another run.
 NORA_POSITION = "nora.position"
-#: The `working_set` the SAME fold wrote beside `position` (issue #445, PR
-#: #541) — `Outcome.working_set`, a `WorkingSetFinding` tuple. Carried as its
-#: own state, never folded into `NORA_POSITION`'s string: the judge and
-#: `--positions` both have to show a reader which of the two things they are
-#: reading, and a single string cannot label its own halves.
+#: The `working_set` the SAME fold wrote beside `position` — `Outcome.working_set`, a
+#: `WorkingSetFinding` tuple. Carried as its own state, never folded into `NORA_POSITION`'s
+#: string: the judge and `--positions` both have to show a reader which of the two things they
+#: are reading, and a single string cannot label its own halves.
 NORA_WORKING_SET = "nora.working_set"
 NORA_SHOWN = "nora.shown"
 NORA_JUDGED_WHY = "nora.judged_why"
 #: The Honcho workspace this draw's subject read and wrote: a workspace of
-#: the draw's own, created empty and deleted after (issue #462). Carried so a
+#: the draw's own, created empty and deleted after. Carried so a
 #: reading names the memory it was taken against.
 NORA_MEMORY_WORKSPACE = "nora.memory_workspace"
 
@@ -285,11 +278,7 @@ def scrub(text: str, secret: str) -> str:
 
 async def _close(subject: Any) -> None:
     """Best-effort teardown. Never raises: a case's RESULT must not depend on
-    whether its cleanup worked, and a teardown error is not a reading.
-
-    **Moved here from `evals/rebuilt/runner.py`, 2026-09-20**, same reason
-    the seeding helpers once here.
-    """
+    whether its cleanup worked, and a teardown error is not a reading."""
     for shut in (
         subject.deps.background.cancel_all(),
         subject.deps.audit.aclose(),
@@ -319,9 +308,8 @@ def _prefill_capture() -> InMemorySpanExporter:
     `StrandsEvalsTelemetry.__init__` falls back to
     `trace_api.get_tracer_provider()` when its own `set_tracer_provider`
     call is refused — so both exporters end up attached to the ONE shared
-    provider and both receive every span. Verified empirically both ways
-    (`_prefill_capture()` first and `TracedHandler()` first); an earlier
-    version of this docstring claimed the opposite without checking.
+    provider and both receive every span. This holds in either
+    construction order (`_prefill_capture()` first or `TracedHandler()` first).
     """
     global _prefill_exporter
     if _prefill_exporter is None:
@@ -338,13 +326,13 @@ def _blocks_empty(exporter: InMemorySpanExporter) -> str | None:
     """`nora.prefill.blocks_empty` off the `agent.prefill` span, or `None` if
     no such span was captured at all.
 
-    **`None` and `""` are different facts, and collapsing them was a bug**
-    (found by review, 2026-09-19): `""` means "a span was captured and no
+    **`None` and `""` are different facts, and must not be collapsed**:
+    `""` means "a span was captured and no
     block was empty" — a real PASS-worthy fact. No span at all means
     `build_prefill` never ran, OR ran but the span was lost (provider
     ordering, a sampler, the entry point never calls it at all —
     `gate`/`dreamer`) — an ungradable fact. `ContextGrader` reading both as
-    "nothing was empty" turned every one of those failure modes into a
+    "nothing was empty" would turn every one of those failure modes into a
     silent PASS, exactly the ERROR-as-PASS substitution this whole bundle
     exists to refuse.
     """
@@ -358,8 +346,8 @@ def _blocks_empty(exporter: InMemorySpanExporter) -> str | None:
 #:
 #: A module-level accumulator and not a field on the report, because the SDK's
 #: report does NOT carry `environment_state`: `Experiment` builds each row from
-#: `result["case"]` alone (`experiment.py:672`), so the graders see the spend
-#: and the report never does. Measured by printing nothing on the first try.
+#: `result["case"]` alone, so the graders see the spend and the report never
+#: does.
 #:
 #: Safe as process state for the reason `nora_task`'s own docstring already
 #: gives: `TracedHandler` forces `max_workers=1`, so cases are driven one at a
@@ -367,7 +355,7 @@ def _blocks_empty(exporter: InMemorySpanExporter) -> str | None:
 _SPEND: list[dict[str, Any]] = []
 
 #: Every draw's Honcho workspace in this process, with what its create and
-#: delete cost (issue #462). Process state for `_SPEND`'s reason.
+#: delete cost. Process state for `_SPEND`'s reason.
 _DRAWS: list[DrawWorkspace] = []
 
 
@@ -405,9 +393,7 @@ def drain_spend() -> dict[str, Any]:
         "turn": turn,
         "calls": calls, "input": inp, "output": out, "cached": cached,
         "fresh": inp - cached, "stops": stops,
-        # NAMED, not inferred. A `max_tokens` finish reason is the truncation
-        # that cost two ceiling changes and two re-runs to identify on
-        # 2026-09-22, and it was in this attribute the whole time.
+        # NAMED, not inferred: a `max_tokens` finish reason is the truncation.
         "truncated": [r for r in stops if "max_token" in r or "length" in r],
     }
 
@@ -426,7 +412,7 @@ def _under_agent(spans: Sequence[Any], agent: str) -> list[Any]:
     guessing at a span name.
 
     Shared by `_model_calls` (spend, per-turn) and `_shown_transcript`
-    (#459: the rendered window, per-turn) — both need "this turn's own
+    (the rendered window, per-turn) — both need "this turn's own
     calls, not the drive's other passes or its other model users."
     """
     by_id = {span.context.span_id: span for span in spans}
@@ -451,19 +437,16 @@ def _under_agent(spans: Sequence[Any], agent: str) -> list[Any]:
 def _model_calls(exporter: InMemorySpanExporter, *, agent: str | None = None) -> dict[str, Any]:
     """What the model calls captured so far spent, and how they stopped.
 
-    **One span per model call: `gen_ai.operation.name == "chat"`.** This used
-    to count every span carrying `gen_ai.usage.output_tokens`, on the claim
-    that Strands sets it on model calls alone. It does not: the enclosing
-    `invoke_agent` span carries the AGENT's accumulated usage too, so every
-    call was counted twice and every agent's tokens once more on top.
-    Measured 2026-09-23 on one tag case: 16 `chat` spans, 10+2+1
-    `invoke_agent` spans, all 29 counted. Matching the operation name is
-    Strands' own convention (`_get_common_attributes`), not a span name.
+    **One span per model call: `gen_ai.operation.name == "chat"`.** Counting
+    every span carrying `gen_ai.usage.output_tokens` would be wrong: the
+    enclosing `invoke_agent` span carries the AGENT's accumulated usage too, so
+    every call would be counted twice and every agent's tokens once more on
+    top. Matching the operation name is Strands' own convention
+    (`_get_common_attributes`), not a span name.
 
     `agent`, when given, keeps only the calls made UNDER that agent's
     `invoke_agent` span (`_under_agent`) — the subject's own turn, without the
-    background passes the same drive spawns (the standing fold alone was 10 of
-    those 29). A per-TURN comparison (`design/tool-catalogue/05` §3) is
+    background passes the same drive spawns. A per-TURN comparison is
     meaningless with them mixed in.
     """
     spans = exporter.get_finished_spans()
@@ -532,18 +515,17 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
                   blocks: tuple[tuple[str, str], ...] = ()) -> str | None:
     """The source data a judge grades against — `transcript` is what
     `_shown_transcript` read back off the turn's own call, i.e. the window
-    her turn actually rendered (#459), never the whole seeded room. The tool
+    her turn actually rendered, never the whole seeded room. The tool
     results too when the case grades REPORTING (`tool_status_reported`),
     since that criterion is about what the results were worth.
 
     `blocks` (`_shown_blocks`) are the OTHER context blocks the same model
     call carried — notes, events, standing, culture, character… — and are
     read ONLY for `recall_grounded`: a recall grounded in a note she was shown
-    is not a fabrication, and a judge that never saw the note graded it as
-    one (2026-10-15, `j4_where_have_we_been_together_lately`). Every other
-    criterion's source is byte-for-byte what it was before `blocks` existed
-    (`test_the_judge_source_is_unchanged_for_every_other_criterion`). Never
-    the doctrine: that is the system prompt, not a block, and the judge is
+    is not a fabrication, and a judge that never saw the note would grade it as
+    one. Every other criterion's source is byte-for-byte what it is without
+    `blocks` (`test_the_judge_source_is_unchanged_for_every_other_criterion`).
+    Never the doctrine: that is the system prompt, not a block, and the judge is
     handed it separately."""
     parts = [transcript] if transcript else []
     if "recall_grounded" in criteria:
@@ -566,12 +548,10 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
     return "\n\n".join(parts) or None
 
 
-#: Where Strands puts a tool call's INPUT (strands 1.50.2,
-#: `Tracer.start_tool_call_span`): the legacy convention emits a
-#: `gen_ai.tool.message` event whose `content` is the serialised input; the
-#: latest one records `gen_ai.input.messages` as an event or a span attribute.
-#: The call's OUTPUT goes under other names, so a result's `note` is never
-#: read as something she passed.
+#: Where Strands puts a tool call's INPUT (`Tracer.start_tool_call_span`): the legacy
+#: convention emits a `gen_ai.tool.message` event whose `content` is the serialised input; the
+#: latest one records `gen_ai.input.messages` as an event or a span attribute. The call's
+#: OUTPUT goes under other names, so a result's `note` is never read as something she passed.
 _TOOL_INPUT_EVENT = "gen_ai.tool.message"
 _INPUT_MESSAGES = "gen_ai.input.messages"
 
@@ -633,15 +613,13 @@ def _shown_now(exporter: InMemorySpanExporter) -> str | None:
 #: cannot appear inside one and end the match early; `re.DOTALL` lets `.`
 #: cross the row boundaries a multi-row window always has.
 #:
-#: Runs on the DECODED text (`_texts_in`), never on the raw span attribute —
-#: Strands writes that as `json.dumps(..., ensure_ascii=False)`
-#: (`strands.telemetry.tracer.serialize`), so a real body's newline is the
-#: two characters `\` `n` there, not the one this pattern's `\n?`/`re.DOTALL`
-#: assume. Matching the raw JSON text found `</group_transcript>` a line
-#: early and left a literal `\n` at each end of the captured group (review,
-#: 2026-09-25) — the exact shape `_shown_now`'s own clock-line pattern
-#: already hedges for with `(?=\s|\\n|$)`, which this module's regexes are
-#: not otherwise immune to just because they look like plain text.
+#: Runs on the DECODED text (`_texts_in`), never on the raw span attribute — Strands writes
+#: that as `json.dumps(..., ensure_ascii=False)` (`strands.telemetry.tracer.serialize`), so a
+#: real body's newline is the two characters `\` `n` there, not the one this pattern's
+#: `\n?`/`re.DOTALL` assume. Matching the raw JSON text would find `</group_transcript>` a line
+#: early and leave a literal `\n` at each end of the captured group — the exact shape
+#: `_shown_now`'s own clock-line pattern already hedges for with `(?=\s|\\n|$)`, which this
+#: module's regexes are not otherwise immune to just because they look like plain text.
 _GROUP_TRANSCRIPT = re.compile(
     r'<group_transcript\b[^>]*>\n?(.*?)\n?</group_transcript>', re.DOTALL,
 )
@@ -678,7 +656,7 @@ def _texts_in(raw: str) -> list[str]:
     modelling the shape is how a convention change breaks this silently.
 
     `raw` that is not JSON — `gen_ai.operation.name`'s own value, a `finish_
-    reason`, or a plain-string test fixture built before this existed — is
+    reason`, or a plain-string test fixture — is
     returned as itself: the search this feeds already tolerates a value with
     nothing to find, and a caller that built a fixture with a bare Python
     string (real newlines, real quotes) still gets searched correctly.
@@ -696,9 +674,9 @@ def _shown_transcript(
     """The `<group_transcript>` block's body exactly as the turn's own model
     call carried it — the window HER TURN rendered, quote-chase growth
     included, read back off the call rather than re-derived from
-    `context_window` (#459: `sandbox_from_snapshot`'s `Sandboxed.transcript`
-    is every row up to the instant, unbounded, and the residual it left was
-    that a judge could be handed a line she was never shown).
+    `context_window` (`sandbox_from_snapshot`'s `Sandboxed.transcript` is every
+    row up to the instant, unbounded, so a judge could be handed a line she was
+    never shown).
 
     **`agent` scopes this to the TURN's own calls (`_under_agent`), and that
     is load-bearing, not a nicety.** The relevance gate renders its OWN
@@ -716,8 +694,8 @@ def _shown_transcript(
     with no `invoke_agent` span at all.
 
     Same scan `_shown_now` runs for the clock line otherwise: every string on
-    every captured `chat`-operation span (decoded through `_texts_in`,
-    #459 review), attributes then events, earliest span first. The block is
+    every captured `chat`-operation span (decoded through `_texts_in`),
+    attributes then events, earliest span first. The block is
     assembled once per turn and rides on every model call the turn makes, so
     the first match, within the scoped spans, is the turn's own render.
 
@@ -736,7 +714,7 @@ def _shown_transcript(
     `None` here as an ERROR draw when the case was going to be judged
     (`_judge_source`'s call site) rather than a silent blind grade — see that
     call site's own comment for why `source=None` is not, on its own,
-    fail-closed (DEC-75, review 2026-09-25).
+    fail-closed (DEC-75).
     """
     spans = exporter.get_finished_spans()
     if agent is not None:
@@ -868,7 +846,7 @@ def this_weekday(today: datetime, weekday: str) -> datetime:
 
 def states_the_date(text: str, day: datetime) -> bool:
     """Whether `text` writes `day` out absolutely, in any of the usual forms:
-    «26 September», «September 26», «Sep 26», 2026-09-26, 9月26日, 26/9."""
+    «26 September», «September 26», «Sep 26», an ISO date, 9月26日, 26/9."""
     month, mon, d, m = day.strftime("%B"), day.strftime("%b"), day.day, day.month
     # «Sept» as well as «Sep»: the abbreviation, then any letters.
     name = rf"(?:{month}|{mon}[a-z]*)"
@@ -894,13 +872,13 @@ class Spec:
     source_url: str
     entry: str = "participation"
     overrides: dict[str, Any] | None = None
-    #: S6 idempotence (`10-the-scenario-map.md` §3): drive the SAME subject
+    #: Idempotence: drive the SAME subject
     #: through the SAME case `repeat` times, at the SAME `now_ms`, and carry
     #: the LAST run's `written`/`changed`/`staged` separately from the
     #: first's — no re-`obtain()` between runs, unlike every other case,
     #: because idempotence needs run 2 to see what run 1 actually left.
     repeat: int = 1
-    #: S3/S9 (`10-the-scenario-map.md` §3): "did she reply" is structural;
+    #: Judging: "did she reply" is structural;
     #: "was the reply right" needs a model that did not produce it —
     #: `evals.rebuilt.grading.Judge`, built ONCE per experiment batch (its
     #: own docstring), not per case. `None` skips judging. Typed `Any` to
@@ -961,11 +939,10 @@ def refuse_a_memory_surface_mismatch(selected: str | None, enabled: bool) -> Non
 #: names, phone numbers, real room ids), and that does not change because an
 #: eval wants them.
 #:
-#: Read from the deployment rather than authored, on the operator's call
-#: (2026-09-21): an authored roster drifts from the real one, and faking the
-#: NAMES while the bodies keep them is worse than either — 647 of 4294 message
-#: bodies (15%, measured) name a roster member outright, so a faked roster
-#: makes the room talk about people who are not in it.
+#: Read from the deployment rather than authored: an authored roster drifts
+#: from the real one, and faking the NAMES while the bodies keep them is worse
+#: than either — message bodies name roster members outright, so a faked
+#: roster makes the room talk about people who are not in it.
 _DEPLOYMENT_DIR = Path(
     os.environ.get("NORA_DEPLOYMENT_DIR")
     or str(Path.home() / "workspace" / "nora")
@@ -989,8 +966,8 @@ def _deployment_config() -> str:
 
 def _hold_the_transport_tier(subject: Any, spec: Spec, md: Mapping[str, Any]) -> Any:
     """Hold `<presence>`'s live inputs at what production renders
-    (`nora.subject.transport`'s docstring has the measurement). Only when the
-    graph HAS a reader: a build from before `<presence>` has nothing to hold,
+    (`nora.subject.transport`). Only when the
+    graph HAS a reader: a build without `<presence>` has nothing to hold,
     and reading the deployment's config for it would be a failure about
     nothing."""
     if getattr(subject.deps, "self_presence", None) is None:
@@ -1000,8 +977,8 @@ def _hold_the_transport_tier(subject: Any, spec: Spec, md: Mapping[str, Any]) ->
     elif spec.policy is not None:
         # A caller that states its OWN room set (a test reconstructing a room
         # of its own) composed its own world: the networks it runs are the
-        # ones its subject enabled. Reading the deployment's config here is
-        # what broke every integration test off the deploy host.
+            # ones its subject enabled. Reading the deployment's config here would
+            # fail every integration test off the deploy host.
         networks = tuple(sorted(
             name for name in ("signal", "discord", "whatsapp", "instagram")
             if getattr(getattr(subject.cfg.platforms, name, None), "enabled", False)
@@ -1083,15 +1060,14 @@ def _read_deployment(name: str) -> str:
 def substitute_trigger(text: str, trigger: str) -> str:
     """Render `{trigger}` / `{trigger_split}` against the CONFIGURED trigger.
 
-    Carried across from `evals/run.py:510` because dropping it broke ten cases
-    silently and in both directions: `near_miss.yaml`'s four cases assert that
+    Dropping it would break cases silently: `near_miss.yaml`'s cases assert that
     trigger-SHAPED text does not fire, and a literal `{trigger}` does not fire
-    either — so they PASSED while asserting nothing.
+    either — so they would PASS while asserting nothing.
 
     The corpus holds RULES about `nora.tag.is_tagged`'s boundaries, not
     literals. Rendered at DRIVE time against the composed subject's own
-    `engagement.trigger.text`, which is the deployment's — a corpus can no
-    longer state a trigger of its own.
+    `engagement.trigger.text`, which is the deployment's — a corpus cannot
+    state a trigger of its own.
 
     `{trigger_split}` is the same trigger with a space after its first
     character — how "broken by whitespace" is expressed for an arbitrary
@@ -1120,7 +1096,7 @@ def _written_bodies(outcome: Any) -> list[str]:
 def _shown_set(outcome: Any) -> Shown:
     """What the draw's model was shown, as `parse_note_body` takes it: the
     batch rows by the name each was rendered under, the roster, Nora's name,
-    and the ids the notebook already cited (design 42 §4.5)."""
+    and the ids the notebook already cited."""
     return Shown(
         rendered=tuple(
             ShownMessage(id=int(i), sender=str(name))
@@ -1150,14 +1126,12 @@ def _parsed_bodies(
 def _check_the_sections(
     sections: Mapping[str, Any], outcome: Any, rows: Mapping[Any, int], *, require_open: bool,
 ) -> list[str]:
-    """`body_sections` — `body_names`/`body_mentions`, PLACED (design 42
-    §10.1). A mapping of heading to items. An item that is a row LABEL (an
-    int) names that row's sender, by the name the model was shown: under
-    `Owed` they must own a line, under `Decided`/`Proposed`/`Ruled out` a
-    line must name them, under `Open` a line must cite the row. Any other
-    item is a fact (a string, or a list of alternatives) some line of that
-    section must contain, case-insensitively. Only bodies that parse count:
-    a fact in the wrong section, or in prose, is not placed."""
+    """`body_sections` — `body_names`/`body_mentions`, PLACED. A mapping of heading to items.
+    An item that is a row LABEL (an int) names that row's sender, by the name the model was
+    shown: under `Owed` they must own a line, under `Decided`/`Proposed`/`Ruled out` a line
+    must name them, under `Open` a line must cite the row. Any other item is a fact (a string,
+    or a list of alternatives) some line of that section must contain, case-insensitively.
+    Only bodies that parse count: a fact in the wrong section, or in prose, is not placed."""
     parsed = [b for rule, b in _parsed_bodies(outcome, require_open=require_open) if b]
     if not parsed:
         return ["body_sections: no written body holds to the schema"]
@@ -1233,7 +1207,7 @@ def _check_the_body(
 
     No written body at all fails both: there is nothing to carry the thread.
 
-    `body_schema: true` fails a draw whose written body breaks design 42 §4,
+    `body_schema: true` fails a draw whose written body breaks the note-body schema,
     naming the rule; `body_sections` places facts (`_check_the_sections`).
     `require_open` is the create case's rule that `## Open` holds a line.
     """
@@ -1275,16 +1249,15 @@ def _check_the_body(
 def _updates_named(
     named: str | Sequence[str] | None, updates: Sequence[str],
 ) -> list[str]:
-    """`updates_named` (design 42 §10.1): the revision landed on the note the
+    """`updates_named`: the revision landed on the note the
     case names and on no other. Three failures, each its own words, so a
-    tally separates «wrong note» from «no update», which #513 could report
-    only in prose: a similarly titled sibling revised INSTEAD, nothing
-    revised, or the named note revised ALONG WITH another.
+    tally separates «wrong note» from «no update»: a similarly titled sibling
+    revised INSTEAD, nothing revised, or the named note revised ALONG WITH another.
 
     `named` may be a LIST of equally correct notes: a unit holding several
-    open restatements of one arrangement (p6: ten, merged later) has no one
-    right target, and grading one of them made the case a coin the model
-    called the same way every draw. Revising exactly one of the list passes."""
+    open restatements of one arrangement has no one right target, and grading
+    one of them would make the case a coin. Revising exactly one of the list
+    passes."""
     if not named:
         return []
     if not isinstance(named, str):
@@ -1310,9 +1283,9 @@ def _updates_named(
 
 
 def _date_split(spec: Any, outcome: Any, rows: Mapping[Any, int]) -> list[str]:
-    """`date_split` — a batch that mixes two dates (design 42 S2-S4's
-    production defect: a booking on one day and a dinner on another, merged
-    into one note under the wrong date). A mapping of:
+    """`date_split` — a batch that mixes two dates (a booking on one day and a
+    dinner on another, merged into one note under the wrong date). A mapping
+    of:
 
     - `anchor`: the day the plan is on. PASS needs a note dated it that this
       pass CREATED, or one it REVISED (the unit may already hold it; either
@@ -1410,9 +1383,9 @@ def _check_the_corpus_assertions(
             # A text `must_cite` grades the MESSAGE, so it binds only when
             # there was one or the case requires one. On `either` (and
             # `silence`) staying quiet is a legal answer, and the corpus
-            # header says what is graded there is «the message, if there was
-            # one»; checking an empty reply for a word failed every correct
-            # silence (proactive_act a10, 0/5 at effort low, 2026-10-12).
+                # header says what is graded there is «the message, if there was
+                # one»; checking an empty reply for a word would fail every correct
+                # silence.
             elif not negate and absent and (said or case.expect not in ("either", "silence")):
                 failed.append(f"{key}: the reply does not contain {absent}")
     failed += _check_the_body(meta, outcome, rows, require_open=case.expect == "create")
@@ -1439,9 +1412,9 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     """One DRAW, in a Honcho workspace of its own. Raises; `nora_task` catches.
 
     The sandbox database isolates what she knows in Postgres; Honcho is an
-    external service and needs its own isolation. Before issue #462 every
-    draw fed the one shared `<deployment>-eval` workspace and the tag path
-    read it back, so draw 3 read draws 1 and 2 as the tagger card.
+    external service and needs its own isolation. A shared
+    `<deployment>-eval` workspace would be fed by every draw and read back by
+    the tag path, so draw 3 would read draws 1 and 2 as the tagger card.
 
     The workspace is the OUTERMOST scope: created before the subject is
     composed, and deleted only after `_drive_draw` has returned, by which
@@ -1467,8 +1440,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
     composes the deployment's own Nora against a sandbox database of its own,
     is seeded with what that room held then, and is driven at that instant.
     There is no authored branch: a case with no anchor is UNANCHORED and is an
-    ERROR here — never a skip, never a case quietly run in an empty room
-    (`11-the-sandbox-rebuild.md` §7.1).
+    ERROR here — never a skip, never a case quietly run in an empty room.
     """
     from evals.rebuilt.domain import Moment
     from evals.rebuilt.entry import ENTRY_POINTS
@@ -1537,7 +1509,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         workdir=workdir,
                         room=room,
                         # LAST, so nothing a spec states can redirect it: THIS
-                        # DRAW'S Honcho workspace, created empty (issue #462).
+                        # DRAW'S Honcho workspace, created empty.
                         overrides={
                             **port.config,
                             # A full restore turns the presence READER back on
@@ -1550,11 +1522,11 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         },
                         # The deployment's OWN roster and room set, verbatim.
                         # `_DEFAULT_IDENTITY` knows ONE person; a real room has
-                        # ten, and a snapshot copies each row's real `person_id`
-                        # — so nine speakers in ten would resolve to "the
-                        # identity does not know them" and render nameless,
-                        # while 15% of message BODIES name a roster member
-                        # outright. A real policy entry also carries
+                                    # many, and a snapshot copies each row's real `person_id`
+                                    # — so most speakers would resolve to "the
+                                    # identity does not know them" and render nameless,
+                                    # while message BODIES name roster members
+                                    # outright. A real policy entry also carries
                         # `description` (which REACHES THE MODEL), the
                         # `relevance_gate`/`home_room`/`voice` opt-ins and the
                         # room's tool grant; a minimal invented one measures a
@@ -1611,12 +1583,12 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     before_ms=before_ms,
                     leave_room_for_arrival=port.delivers_input,
                 )
-            # design/artifact §29: a case about a document she already made
-            # has to make it, the production source holding none. Refused on a
+            # A case about a document she already made
+                    # has to make it, the production source holding none. Refused on a
             # subject with `[documents]` off, never read as a model failure.
             await seed_documents(subject, case.name, md.get("documents") or ())
-            # design/self-growth/40 §8: the lessons a `lessons` counterfactual
-            # attaches, written into the subject's unit. Seeded in EVERY arm; only
+            # The lessons a `lessons` counterfactual
+                    # attaches, written into the subject's unit. Seeded in EVERY arm; only
             # `[lessons] render` decides whether the turn reads them.
             await seed_lessons(subject, case.name, varied_lessons(md), now_ms=seeded.now_ms)
             exporter = _prefill_capture()
@@ -1647,7 +1619,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             tool_inputs = _tool_inputs(exporter)
             shown_now = _shown_now(exporter)
             # `agent=agent_name`: the turn's own render, never the relevance
-            # gate's (`_shown_transcript`'s own docstring, #459 review).
+            # gate's (`_shown_transcript`'s own docstring).
             shown_transcript = _shown_transcript(exporter, agent=agent_name or None)
             shown_blocks = _shown_blocks(exporter, agent=agent_name or None)
             blocks_rendered = _blocks_rendered(exporter)
@@ -1656,8 +1628,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
             judged_why = ""
-            # The standing fold (`design/standing-compact/20-verification.md`
-            # §1): the judged thing is the POSITION a fold wrote, against the
+            # The standing fold: the judged thing is the POSITION a fold wrote, against the
             # case's one stated property, read over the turn's RECORD — the
             # same evidence on both arms of a comparison. Selected by the
             # port's declared `judged_on`, not by its name.
@@ -1676,7 +1647,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 outcome = dataclasses.replace(
                     outcome, judged=judgement.verdict, error=judgement.error,
                 )
-            # S3/S9 (`10-the-scenario-map.md` §3) — judged HERE, while the
+            # Judged HERE, while the
             # subject is alive, because the judge needs the doctrine she
             # actually ran ON, not a copy read off disk.
             elif spec.judge is not None and outcome.said and outcome.error is None:
@@ -1692,7 +1663,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     # scoped to this turn's own agent, is the CAPTURE breaking
                     # — an ERROR about the instrument, never a verdict about
                     # her, and it must cost a judged draw rather than spend one
-                    # on nothing (review, 2026-09-25).
+                    # on nothing.
                     outcome = dataclasses.replace(
                         outcome,
                         error=(
@@ -1724,8 +1695,8 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         asked=nora_case.input,
                         doctrine=subject.deps.doctrine.doctrine_text,
                         # The SOURCE the reply had to ground against — the
-                        # window her turn actually RENDERED (`shown_transcript`,
-                        # #459), not `seeded.transcript` (every row
+                        # window her turn actually RENDERED (`shown_transcript`),
+                                    # not `seeded.transcript` (every row
                         # `sandbox_from_snapshot` read back, unbounded — the
                         # room up to the instant, not what she was shown), and
                         # for a reporting case the tool results too.
@@ -1806,8 +1777,8 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 ],
             }
     except RoomNotInPolicyError as exc:
-        # A pseudonymised anchor with no map in effect (#776) refuses exactly
-        # as before, and now says what would resolve it.
+        # A pseudonymised anchor with no map in effect is refused, and the
+                    # message says what would resolve it.
         if pseudonyms.active():
             # With a map in effect the room in the message is a REAL id: the
             # log is read and quoted, so the room is withheld here.
@@ -1817,7 +1788,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             ) from None
         raise RoomNotInPolicyError(f"{exc}; {pseudonyms.HINT}") from exc
     finally:
-        # 150 cases at five samples is 750 connection pools. `EvalTaskHandler`'s
+        # Hundreds of cases at several samples is as many connection pools. `EvalTaskHandler`'s
         # own hooks are SYNC and `_close()` is not, so teardown cannot live
         # there and lives here.
         if subject is not None:
@@ -1857,7 +1828,7 @@ def nora_task(spec: Spec):
     bare `async def` (which the SDK does await) and lose `TracedHandler` with
     it, or `asyncio.run` inside a sync function. This takes the second, because
     `TracedHandler` is the only thing that produces a `Session`, and a
-    `Session` is what all 13 level-bearing evaluators read.
+    `Session` is what the level-bearing evaluators read.
 
     The cost is stated rather than hidden: this forces `max_workers=1`. That is
     not a concession — `TracedHandler` shares one span exporter and is
@@ -1912,27 +1883,26 @@ def nora_task(spec: Spec):
 
 
 def traced_nora_task(spec: Spec) -> tuple[Any, TracedHandler]:
-    """S2 — *tool routing* (`10-the-scenario-map.md` §3), and it needs no new
-    grader at all. `ToolCalled`/`ToolSelectionAccuracyEvaluator`/
-    `ToolParameterAccuracyEvaluator`/`TrajectoryEvaluator` all read
-    `actual_trajectory`, and `09-the-backbone-measured.md` §1 already
-    measured that a real `participation` case's `Session` carries a genuine
-    `ToolExecutionSpan` — so the only thing missing was a `Session` at all,
-    which `nora_task(spec)` alone never produces.
+    """Tool routing, which needs no new grader at all. `ToolCalled`/
+    `ToolSelectionAccuracyEvaluator`/`ToolParameterAccuracyEvaluator`/
+    `TrajectoryEvaluator` all read `actual_trajectory`, and a real
+    `participation` case's `Session` carries a genuine `ToolExecutionSpan` —
+    so the only thing needed is a `Session` at all, which `nora_task(spec)`
+    alone never produces.
 
     `eval_task(TracedHandler())(nora_task(spec))` is the whole of it:
     `TracedHandler.after()` does `processed.setdefault("trajectory",
     session)`, and `nora_task`'s dict never sets that key, so this ADDS a
     trajectory onto the exact same `output`/`environment_state` shape every
-    other grader in this module already reads — S2 and S7 (`AbsenceGrader`)
+    other grader in this module already reads — routing and `AbsenceGrader`
     can grade the SAME case.
 
     Returns `(task, handler)` — the caller must hold `handler` for the run's
     lifetime (one shared exporter) and pass `max_workers=1`, the same
     constraint `nora_task`'s own docstring already states for the reason
     `TracedHandler` itself gives (serial-only). Coexists with
-    `_prefill_capture()` in the same process (verified both construction
-    orders — see its docstring); does NOT coexist with a SECOND
+    `_prefill_capture()` in the same process (either construction order —
+    see its docstring); does NOT coexist with a SECOND
     `TracedHandler` instance run concurrently in the same process.
     """
     handler = TracedHandler()
@@ -1940,11 +1910,10 @@ def traced_nora_task(spec: Spec) -> tuple[Any, TracedHandler]:
 
 
 def render_transcript_at(case: Case) -> dict[str, Any]:
-    """S5 — *a dated question is answered against the case's clock*
-    (`10-the-scenario-map.md` §3). Pure, no `Subject`, no database, no
-    network: `RelevanceGate` has no clock seam at all (`SubjectSpec.now` has
-    zero effect on what it renders — a genuine gap, not routed around here),
-    and `participation`/`tag` DO (`FirePath` calls `self._clock()` and
+    """A dated question is answered against the case's clock. Pure, no
+    `Subject`, no database, no network: `RelevanceGate` has no clock seam at
+    all (`SubjectSpec.now` has no effect on what it renders), and
+    `participation`/`tag` do (`FirePath` calls `self._clock()` and
     threads it into `build_prefill(now=...)`), but a full driven case pays
     for a `Subject`/database to exercise a computation that is a pure
     function of rows and a clock: `nora.domain.blocks.render_messages`, the
@@ -1956,16 +1925,14 @@ def render_transcript_at(case: Case) -> dict[str, Any]:
     `output`, for a grader to search (`SubstringGrader`, `case.
     expected_output` naming the exact `age="..."` attribute expected).
 
-    **Never raises** (found missing by review, 2026-09-19) — this module's
-    own docstring states the rule and every other task follows it, but this
-    one did not: a malformed case (`now` missing, an unparseable timestamp, a
-    row missing `name`) raised straight out, and `Experiment._worker`'s own
-    `except Exception` (see module docstring) turns that into
-    `test_pass=False, score=0` for EVERY evaluator **without writing a row to
-    `detailed_results` at all** — worse than the ERROR-as-FAIL substitution
-    the module docstring warns about, because the case does not even survive
-    into `read()`'s count. It disappears from the denominator rather than
-    landing in it.
+    **Never raises**, per this module's rule: a malformed case (`now`
+    missing, an unparseable timestamp, a row missing `name`) that raised
+    straight out would hit `Experiment._worker`'s own `except Exception` (see
+    module docstring), which turns it into `test_pass=False, score=0` for EVERY
+    evaluator **without writing a row to `detailed_results` at all** — worse
+    than the ERROR-as-FAIL substitution the module docstring warns about,
+    because the case would not even survive into `read()`'s count. It would
+    disappear from the denominator rather than landing in it.
     """
     from nora.domain.blocks import render_messages
     from nora.domain.models import DeliveryStatus, TranscriptRow
@@ -2000,7 +1967,7 @@ class SubstringGrader(Evaluator):
     """A per-case `Contains`. `strands_evals.evaluators.deterministic.
     Contains` takes one fixed `value` at construction, so one instance
     cannot check a different expected substring for each case in a suite —
-    which S5 needs, since every case expects a different rendered age.
+    which the dated-question cases need, since every case expects a different rendered age.
     `Case.expected_output` carries it instead.
     """
 
@@ -2030,8 +1997,7 @@ class SubstringGrader(Evaluator):
 
 
 class IdempotenceGrader(Evaluator):
-    """S6 — *a second identical pass writes nothing new*
-    (`10-the-scenario-map.md` §3). Only meaningful with `Spec.repeat > 1` —
+    """*A second identical pass writes nothing new.* Only meaningful with `Spec.repeat > 1` —
     a case run without a repeat carries no `_2` signals at all and is
     ungradable here, the same rule every other grader in this module follows
     for a signal it cannot find.
@@ -2041,10 +2007,10 @@ class IdempotenceGrader(Evaluator):
     answer for those two. `staged` is an absolute snapshot, not a diff, so
     it needs both runs' counts compared.
 
-    **Scoped to notes/staging, not room speech** (review, 2026-09-19): this
+    **Scoped to notes/staging, not room speech**: this
     reads `written`/`changed`/`staged` only. `dreamer()`
-    (`evals/rebuilt/entry.py`) never populates `Outcome.said` at all — the
-    (deleted) decide pass wrote notes and reminders, not room messages — so there is
+    (`evals/rebuilt/entry.py`) never populates `Outcome.said` at all — it
+    writes notes and reminders, not room messages — so there is
     no `said` signal here to check, and "writes nothing new" means exactly
     the notes/staging surface, not a broader claim about speech.
     """
@@ -2058,9 +2024,9 @@ class IdempotenceGrader(Evaluator):
         if written_2 is None:
             return [self._out(ERROR, 0.0, "no repeat run — Spec.repeat must be > 1")]
 
-        # Found by review, 2026-09-19: the repeat run's OWN error was never
-        # checked. Entry points fail closed by returning `Outcome(error=...)`
-        # rather than raising, so a repeat run that broke comes back with
+        # The repeat run's OWN error is checked too. Entry points fail closed by
+        # returning `Outcome(error=...)` rather than raising, so a repeat run
+        # that broke comes back with
         # written=0/changed=()/staged=() and no exception — indistinguishable
         # from a clean, idempotent no-op unless this is checked separately
         # from the first run's `NORA_ERROR`.
@@ -2101,8 +2067,8 @@ class AbsenceGrader(Evaluator):
     `Equals(value="")` is not an instrument here because **a crash produces the
     same empty string**.
 
-    `04-the-convention` §5.1 measured why the signal has to come from the task:
-    with no provider reachable, three of four entry points return a VERDICT
+    The signal has to come from the task: with no provider reachable, three of
+    four entry points return a VERDICT
     rather than an error — the gate fails closed to `no_go`, a failed turn
     writes no row and reads as silence, `Dispatcher.on_message` returns `None`.
     There is no shared fail-closed signal because the DEPLOYMENT does not offer
@@ -2125,7 +2091,7 @@ class AbsenceGrader(Evaluator):
         # IS its verdict, and `said` is permanently `0` for it. Every other
         # entry point leaves `admitted` at `None` (never ran a gate), so
         # `said` is still the right signal there. Reading `said` alone for a
-        # gate case graded every one of them as silence, verdict ignored.
+        # gate case would grade every one of them as silence, verdict ignored.
         spoke = bool(admitted) if admitted is not None else bool(said)
         detail = f"admitted={admitted}" if admitted is not None else f"{said} row(s)"
         if expect in ("silence", "no_reply", "none", "no_go"):
@@ -2144,13 +2110,12 @@ class AbsenceGrader(Evaluator):
         # answering is. Something must have happened, or it is ungradable —
         # EXCEPT for a gate, where `admitted=False` already IS an answer.
         #
-        # Found by review, 2026-09-19, one branch over from the fix
-        # `747348bd` made: for a gate case (`admitted is not None`), both
+        # For a gate case (`admitted is not None`), both
         # `True` and `False` are the gate having run and decided — there is
         # no third "nothing happened" reading distinct from those two,
         # because a gate that truly failed to run reports through
         # `NORA_ERROR`, already checked above. Reading `spoke=False` here as
-        # "ungradable" scored a correct, successful refusal as ERROR.
+        # "ungradable" would score a correct, successful refusal as ERROR.
         if admitted is not None:
             return [self._out(PASS, 1.0, f"the gate decided ({detail})")]
         return [
@@ -2171,16 +2136,14 @@ class AbsenceGrader(Evaluator):
 
 
 class MeetsGrader(Evaluator):
-    """The corpus port (`10-the-scenario-map.md`, 2026-09-20) — delegates to
+    """The corpus port — delegates to
     `evals.rebuilt.domain.Outcome.meets()` rather than reimplementing its
     eleven-vocabulary logic (`go`/`no_go`/`speak`/`silence`/`reply`/
     `no_reply`/`create`/`update`/`none`/`either`/`remind`) a second time.
 
     `AbsenceGrader` covers a SUBSET of this (silence/speak/go/no_go) for the
-    hand-written S4-S7 cases already shipped this session and is left as is —
-    changing an already-verified grader's internals for cases that do not
-    need the extra vocabulary is not this port's job. `MeetsGrader` is for
-    the PORTED corpora, several of which need `create`/`update`/`remind`/
+    hand-written cases. `MeetsGrader` is for the PORTED corpora, several of
+    which need `create`/`update`/`remind`/
     `either`/a judge's verdict, which `AbsenceGrader` was never built to
     read.
 
@@ -2249,8 +2212,8 @@ class MeetsGrader(Evaluator):
 
 #: How much of a call's input an argument verdict quotes, PASS or FAIL. A
 #: failure that names what was expected and not what was PASSED cannot be
-#: read: the first run of the poster case (2026-09-24) said «no call wrote out
-#: Saturday 26 September» four times and showed none of the prompts. A PASS
+#: read: «no call wrote out Saturday 26 September» with none of the prompts
+#: shown says nothing about what the call carried. A PASS
 #: is quoted too, because a pass on an exclusion («no «mascot»») says nothing
 #: about whether the case can separate two arms until the prompt is read. 900
 #: characters, because a poster prompt states its date near the end.
@@ -2265,8 +2228,7 @@ def _seen(texts: list[str]) -> str:
 
 
 class ToolRouteGrader(Evaluator):
-    """S2 — did the turn reach for the RIGHT tool? (`design/tool-catalogue/
-    05-measurement.md` §2c.)
+    """Did the turn reach for the RIGHT tool?
 
     `metadata.tools` names the acceptable tools — any one of them executing
     is a PASS, because «what is the weather» may honestly be answered by
@@ -2282,10 +2244,10 @@ class ToolRouteGrader(Evaluator):
 
     `metadata.before` is an ORDER criterion: `{instagram_read: [media_fetch]}`
     says `media_fetch` must not run before the first `instagram_read`, and
-    may run after it. Some errors are an order, not a choice: the shared-reel
-    failure (2026-09-24) called `media_fetch` on the cover, read one frame and
-    stopped, and a case whose `media_fetch` finds nothing then points her at
-    the link, so without the order the defect grades PASS. `NORA_TOOLS` is in
+    may run after it. Some errors are an order, not a choice: calling `media_fetch` on a
+    shared reel's cover, reading one frame and stopping, is a defect that a case
+    whose `media_fetch` finds nothing then points her at the link, so without
+    the order it grades PASS. `NORA_TOOLS` is in
     start order (`_tools_called`), which is what makes this readable at all. A
     `before` that is not a mapping of tool to a list of tools is an ERROR: a
     criterion the grader cannot read is not one it applied.
@@ -2293,7 +2255,7 @@ class ToolRouteGrader(Evaluator):
     ERROR, never FAIL, when the case did not run or recorded no tools state:
     a broken instrument is not a wrong answer.
 
-    **What the call carried** (2026-09-24), read from `NORA_TOOL_INPUTS` and
+    **What the call carried**, read from `NORA_TOOL_INPUTS` and
     checked only once routing has passed, each keyed by tool name:
 
     - `args_include: {tool: [text, ...]}`: some call of `tool` carries every
@@ -2407,8 +2369,7 @@ class ToolRouteGrader(Evaluator):
 
 
 class ContextGrader(Evaluator):
-    """S4 — *the blocks she needs were rendered non-empty*
-    (`10-the-scenario-map.md` §3). Deterministic: no model call, reads only
+    """*The blocks she needs were rendered non-empty.* Deterministic: no model call, reads only
     what `build_prefill` assembled, off `NORA_BLOCKS_EMPTY`.
 
     `Case.metadata["must_render"]` names the block(s) THIS case seeded data
@@ -2477,7 +2438,7 @@ class Reading:
 def read(report: Any) -> Reading:
     """The gate's own reader. **Keys on `label`, never on `test_pass`.**
 
-    MEASURED 2026-09-18: `label` survives in exactly one place —
+    `label` survives in exactly one place —
     `EvaluationReport.detailed_results`, a `list[list[EvaluationOutput]]`. It is
     NOT on `report.cases` (those rows are the `EvaluationData`), and it is not
     reachable from `report.scores`, `report.test_passes` or
@@ -2503,10 +2464,8 @@ def sampled(base: Case, n: int) -> list[Case]:
     """`n` independently-named copies of `base`, for a case whose signal is
     stochastic rather than reading it once.
 
-    `09-the-backbone-measured.md` §3.1 measured two model-dependent cases
-    SWAP verdicts across two runs at `sample: 1` — "the only stable verdict
-    was the ERROR." `08-the-sdk-surface.md` §4.4 found why the obvious fix
-    (run the same `Case` N times) does not work as written: `Experiment`
+    A model-dependent case can swap verdicts across runs at `sample: 1`. The
+    obvious fix (run the same `Case` N times) does not work as written: `Experiment`
     has no repeat parameter, and `EvaluationDataStore`/the SDK's own caching
     key on `case_name`, so N draws under `base.name` unchanged would
     silently collide rather than produce N rows. Each draw needs a name of
@@ -2539,20 +2498,18 @@ def sample_read(report: Any) -> dict[str, SampleReading]:
     """Group a report's rows by the base name `sampled()` drew them from,
     and read each group's stability rather than picking a winner.
 
-    **MEASURED, not assumed**: `report.cases` (a `list[dict]`) and
+    `report.cases` (a `list[dict]`) and
     `report.detailed_results` (a `list[list[EvaluationOutput]]`) are
     aligned 1:1 — one entry per (case, evaluator) PAIR, not one entry per
     case, which is easy to misread from `detailed_results`'s own docstring
-    ("Attributes: cases: ... Each record carries an `evaluator` key") on a
-    first pass. `read()`'s flat tally never needed this distinction;
-    grouping draws back into their base case does, so it is written down
-    here rather than assumed a second time.
+    ("Attributes: cases: ... Each record carries an `evaluator` key").
+    `read()`'s flat tally never needs this distinction; grouping draws back
+    into their base case does.
 
     **`UNSTABLE` is a fourth answer, deliberately not a majority vote.** A
     case only reads `PASS` or `FAIL` here when every draw agreed. Collapsing
     disagreement into whichever verdict happened to win would hide exactly
-    the instability `09-the-backbone-measured.md` §3.1 measured — the
-    finding this bundle's own discipline says to surface, not smooth over.
+    the instability, which should be surfaced, not smoothed over.
     `ERROR` is the ONE exception: if EVERY draw for a base case reads ERROR,
     the group is `ERROR`, matching rule 3 (ERROR is not FAIL and is never
     PASS) rather than reading a case that never once ran as merely

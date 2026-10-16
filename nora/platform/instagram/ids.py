@@ -1,7 +1,4 @@
-"""Instagram id normalization — the pure half of the wire contract
-(design/instagram-adoption/02-identity-and-policy.md,
-design/instagram-adoption/03-transport-contract.md §"Room key is the SHORT
-thread id").
+"""Instagram id normalization — the pure half of the wire contract.
 
 This is `nora/platform/whatsapp/jid.py`'s seat in the package, and it does a
 much smaller job, because Instagram hands the adapter **bare numeric strings
@@ -23,7 +20,7 @@ string. An Instagram id is digits and nothing else; every question about it
 is answered by WHICH FIELD it arrived in, never by its shape. So these
 functions normalise (strip, reject empty) and refuse to classify.
 
-**Do not validate an id by shape** (02 §"Measured"). The measured interop
+**Do not validate an id by shape.** Real interop
 fbids on one three-person room were `186217604552756` (15 digits) and
 `18457536310970624` (17 digits, sharing the `1784…` prefix with Nora's own
 `18247361241432477`). Any length or prefix check would reject real members —
@@ -32,8 +29,8 @@ silently, because a rejected sender is simply a sender Nora cannot name.
 The one shape check a reader reaches for — "is this all digits?" — is also
 useless in the one place it is tempting: the LONG thread id
 (`340282366841710301281152937372201004392`) is all digits too, which is
-exactly why `03`'s status table lists a long id in `room_id` as a **400 from
-the bridge** rather than something this module could catch.
+exactly why a long id in `room_id` is a **400 from the bridge** rather than
+something this module could catch.
 
 Standard library only, no I/O — the same rule `nora/domain` holds itself to,
 because these helpers are the contract's executable half and must be testable
@@ -81,8 +78,8 @@ def igid_form(value: object) -> str:
     A SEPARATE function from `fbid_form` despite doing the same thing today,
     because the two answer different questions and only one of them is a
     messaging address. Collapsing them into one helper is how an igid ends up
-    in a mention comparison — the exact failure `02` opens by naming, where
-    the wrong id produces no error anywhere and Nora simply never notices she
+in a mention comparison — the failure where the wrong id produces no error
+anywhere and Nora simply never notices she
     was tagged.
     """
     if not isinstance(value, str):
@@ -96,7 +93,7 @@ def conversation_id_for(room_id: object) -> str:
 
     Verbatim and not decorated. WhatsApp's `conversation_id_for` has a real
     decision to make (group JID, phone JID, or the raw `@lid`); here the
-    bridge has already made it — `03` exposes only the short id, inbound
+    bridge has already made it — the contract exposes only the short id, inbound
     deltas carry only the short id, and every send route takes the short id.
     A second spelling invented here would be a second thing for the operator's
     `policy.toml` line to fail to equal.
@@ -117,7 +114,7 @@ def is_person_mention(range_type: object) -> bool:
     put a ROOM's id into the set `MentionPolicy` and `nora.persons` resolve
     PEOPLE from. It can never equal Nora's own fbid, so it would not make her
     answer an @everyone; what it would do is make a room id a matchable
-    person-shaped value, which is the id-confusion hole `02` exists to close.
+    person-shaped value, which is the id-confusion hole this module exists to close.
 
     An ABSENT `range_type` is admitted: the field is `omitempty` on the wire,
     so a plain profile mention may arrive without it, and refusing those would

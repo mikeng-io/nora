@@ -1,6 +1,6 @@
 """Operator one-shot: put Nora's canonical self picture into her media library.
 
-DEC-193 (`design/self-reference/`). The `image-generation` skill names her
+DEC-193. The `image-generation` skill names her
 canonical picture by its full sha256; `generate_image`'s resolver lets exactly
 one kind of row resolve outside its own conversation, the one whose
 `provenance.role` is `"self"`. This script is the ONLY writer of that marker,

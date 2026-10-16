@@ -6,32 +6,25 @@ Bearer-authed with `PULSE_API_TOKEN`.
 This is a plain web app reading a REST API, not an agent calling a tool —
 Pulse's MCP mount (`[tools.mcp.pulse]`, `PULSE_MCP_TOKEN`) is a SEPARATE
 credential for the LLM tool-calling path (`nora.agent.mcp`) and is not used
-here. An earlier version of this module went through that MCP mount
-instead, because `PULSE_API_TOKEN` was believed not to exist for Nora; it
-was in `.env` the whole time. Confirmed live (2026-08-18) via
-`curl -H "Authorization: Bearer $PULSE_API_TOKEN" .../pulse/api/v1/servers`
-that the REST API returns the full container-metrics shape
+here. The REST API returns the full container-metrics shape
 (`app/src/lib/api/games.ts`'s `ContainerMetricsSchema`) — cgroup memory
 limit, network/block I/O, pids, restart count — that the MCP surface's
-`pulse_server_status` tool never exposed.
+`pulse_server_status` tool does not expose.
 
-`/servers/{id}/graph` — the route game-server-monitor's README documents
-next to the JSON `/status`/`/servers` routes — turned out live to answer
-`image/png` (a rendered chart), NOT JSON; `/servers/{id}/history` is
-Pulse's real JSON time-series route (confirmed live: `content-type:
-application/json`, same point shape `GraphPointSchema` already expects) —
-`PulseGamesClient.server_graph` calls `/history`, keeping the `graph`
-name only for this module's own method/payload-builder, matching the
-`/app/v1/.../graph` route name `nora/web/api.py` already exposes.
+Pulse's `/servers/{id}/graph` answers `image/png` (a rendered chart), NOT
+JSON; `/servers/{id}/history` is its JSON time-series route (same point shape
+`GraphPointSchema` expects). `PulseGamesClient.server_graph` calls `/history`,
+keeping the `graph` name only for this module's own method/payload-builder,
+matching the `/app/v1/.../graph` route name `nora/web/api.py` exposes.
 
 Every response is passed through as Pulse returns it — Pulse is Nora's own
 sibling service, its shapes are the documented, versioned wire contract
-`games-schema.ts`'s zod schemas already validate client-side, and this
+`games-schema.ts`'s zod schemas validate client-side, and this
 module is a thin projection (same posture as `nora/web/status.py`,
 `nora/web/memory.py`), not a second parser of a third-party format the way
 `nora/infra/weather/hko.py` has to be.
 
-Pulse is GAME-NEUTRAL as of game-server-monitor@67ce88a (AGENTS.md's
+Pulse is GAME-NEUTRAL (AGENTS.md's
 "abstracted server model"): a server is either container-backed (Abiotic
 Factor — Docker metrics, a game log, live sessions) or local-save
 (Big Walk — the host PC uploads a save file over its own, Nora-unrelated

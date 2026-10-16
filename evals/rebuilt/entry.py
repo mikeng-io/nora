@@ -1,27 +1,21 @@
 """The entry-point port: where a case's input enters Nora.
 
-`01-boundaries` §3.1 makes this a PORT rather than a taxonomy, and §7 names the
-reading that would refute it. This module is that reading, run:
+This is a PORT rather than a taxonomy; two implementations run through it:
 
     gate           `deps.relevance_gate.decide`   — a real component, no turn
     participation  `deps.fire_path.speak`         — a whole turn, no gate
 
 Two entry points chosen for being maximally unalike. They share a lifecycle
-(obtain → know → deliver → read) and one `Outcome`, so the port holds. What it
-COST to make them share is worth stating, because it is the finding:
+(obtain → know → deliver → read) and one `Outcome`, so the port holds.
 
-**Neither was reachable.** `RelevanceGate` lived only at
-`ParticipationTrigger._gate` and `FirePath` only at `._speak`. Every other
-entry point — `dispatcher`, `engagement`, `participation_trigger`,
-`dreamer_runtime` — is already a field on `Dependencies`; these two were not,
-and building a second one was easier than reaching the deployed one. That is a
-fair part of the mechanism behind seven assemblies, and it is now closed by two
-fields that add no object and change no behaviour.
+Both are fields on `Dependencies` (`relevance_gate`, `fire_path`), like every
+other entry point (`dispatcher`, `engagement`, `participation_trigger`,
+`dreamer_runtime`), so a case drives the deployed object rather than a second
+assembly of it.
 
-The gate is NOT run on the participation path, deliberately — the decision this
-rebuild keeps rather than re-litigates: *"a suite that had to get past a live
-gate call first would be measuring the gate's verdict and the turn's behaviour
-in one number"*. `speak` is called directly, exactly as the trigger calls it
+The gate is NOT run on the participation path, deliberately: *"a suite that had
+to get past a live gate call first would be measuring the gate's verdict and the
+turn's behaviour in one number"*. `speak` is called directly, exactly as the trigger calls it
 once the gate has admitted.
 """
 
@@ -71,11 +65,9 @@ async def gate(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     verdict = await g.decide(platform=platform, conversation_id=conversation_id)
     # `source` decides whether this is a READING or an ERROR. The gate never
     # raises: a timeout, a provider refusal and an unparseable body all come
-    # back as `no_go`, which is the same token a correct refusal produces. The
-    # first run of the old gate suite reported PASS with every safety case held
-    # and every capability "dead" while not one call had succeeded — that is
-    # the ERROR-as-PASS substitution, reproduced inside the instrument built to
-    # measure it, and this branch is what refuses it.
+    # back as `no_go`, which is the same token a correct refusal produces.
+    # Without this branch every safety case would hold and every capability
+    # read "dead" while no call succeeded (ERROR scored as PASS).
     if verdict.source == "fail_closed":
         return Outcome(
             admitted=None,
@@ -116,7 +108,7 @@ async def participation(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     )
 
     hers = await heard(subject, after_id=watermark)
-    # THE SAME FAIL-CLOSED RULE THE GATE HAS, and this path needs it more.
+    # THE SAME FAIL-CLOSED RULE THE GATE HAS.
     #
     # `speak` answers one of five tokens, and only `sent` and `silent` are
     # decisions. The three `failed_*` tokens are a turn that never happened —
@@ -125,11 +117,9 @@ async def participation(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     # grades as SILENCE.
     #
     # So without this branch an unreachable provider makes every `expect:
-    # silence` case pass. That is ERROR scored as PASS, on precisely the half
-    # of the corpus the knowledge-cut twins live in: the twin that must fall
-    # silent would "hold" while nothing ran at all. It is the same substitution
-    # the old gate suite made on its first run — every safety case held, every
-    # capability dead, not one call successful — one entry point over.
+    # silence` case pass. That is ERROR scored as PASS, on the half of the
+    # corpus the knowledge-cut twins live in: the twin that must fall silent
+    # would "hold" while nothing ran at all.
     if token not in (SENT, SILENT):
         return Outcome(
             admitted=None,
@@ -210,16 +200,15 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
             error="the turn never settled within the timeout",
         )
 
-    # THE FAIL-CLOSED RULE, and this path had no other signal for it.
+    # THE FAIL-CLOSED RULE, and this path has no other signal for it.
     #
     # `Dispatcher.on_message` returns `None` and hands the turn to a background
     # task, so unlike the gate (`source`) and the turn (`speak`'s token) there
-    # is nothing here to read. Measured: with no provider reachable this entry
-    # point returned `error=None, admitted=False, said=()` — a verdict, from a
-    # run that reached no model. Every corpus that lands here expects a REPLY,
-    # so that is not a near miss: it is every case failing for a reason no
-    # number would have shown, or — one flipped expectation away — every case
-    # passing.
+    # is nothing here to read. With no provider reachable it would return
+    # `error=None, admitted=False, said=()` — a verdict from a run that reached
+    # no model. Every corpus that lands here expects a REPLY, so that would
+    # fail (or, with an expectation flipped, pass) every case for a reason no
+    # number shows.
     #
     # `nora_silent_failures_total` is production's own counter for "she did not
     # speak and it was not a choice". Reading the deployment's instrumentation
@@ -272,34 +261,21 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     is nothing to deliver.
 
     `case.category` names the adaptor, because which adaptor runs is a property
-    of the CASE and not of the runner: `note-candidates` and the proactive
-    adaptor (both deleted 2026-10-03, DEC-277) were two passes over one runtime, and branching on
-    them in the
-    runner would be the eight drivers growing back inside one file.
+    of the CASE and not of the runner: adaptors are passes over one runtime, and branching on
+    them in the runner would grow a driver per adaptor inside one file.
     """
-    # `now:` used to be refused here. It no longer is: `build_dependencies`
-    # takes a `clock` and `SubjectSpec.now` sets it, so a case that states the
-    # time is judged AT that time. The refusal stood for as long as the graph
-    # could not be told, which was the honest answer then and is the wrong one
-    # now — see `01-boundaries` §3.
-    # AN INPUT THE GRAPH CANNOT HONOUR IS AN ERROR — the same rule the Honcho
-    # conclusions follow, and the clock used to.
+    # `build_dependencies` takes a `clock` and `SubjectSpec.now` sets it, so a
+    # case that states the time is judged AT that time.
+    # AN INPUT THE GRAPH CANNOT HONOUR IS AN ERROR.
     #
-    # The proactive corpora are MULTI-ROOM: a case names two rooms and keys its
-    # standing per room, because the (deleted) decide pass judged a workspace and picks
-    # which of its rooms to stand in. `nora.subject.Knowledge` is single-room —
-    # one transcript, one standing, one `DEFAULT_ROOM`.
-    #
-    # Refused rather than run, and this one had to be caught rather than
-    # noticed: with the rooms unseeded the pass finds nothing due, writes
-    # nothing, and returns `nothing_found` with no error — so every case
-    # expecting `none` PASSES, having measured an empty workspace. That is the
-    # shape this whole layer exists to refuse, and it survived one round of
-    # fixing here because the clock was the louder problem.
-    # `rooms` and `standing` are SEEDABLE now (GOAL step 1) and have moved to
-    # `knows`. What is still not is `rows` — the reminder rows a decide pass was
-    # asserted to WRITE, which is an expectation rather than an input, and is
-    # checked against `Outcome.written` instead.
+    # `nora.subject.Knowledge` is single-room — one transcript, one standing,
+    # one `DEFAULT_ROOM` — so a multi-room case is refused rather than run:
+    # with the rooms unseeded the pass finds nothing due, writes nothing, and
+    # returns `nothing_found` with no error, so every case expecting `none`
+    # PASSES having measured an empty workspace. `rooms` and `standing` are
+    # seedable (`knows`). `rows` — the reminder rows a pass is asserted to
+    # WRITE — is an expectation rather than an input, and is checked against
+    # `Outcome.written` instead.
     unseeded = [k for k in ("row",) if case.metadata.get(k)]
     if unseeded:
         return Outcome(
@@ -324,16 +300,13 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
 
     # THE FAIL-CLOSED RULE, and `status` alone cannot carry it.
     #
-    # `unavailable` is the obvious half: the adaptor could not run, and an
-    # un-run pass produces an empty notebook diff byte-identically to a pass
-    # that correctly found nothing.
+    # `unavailable` is one half: the adaptor could not run, and an un-run pass
+    # produces an empty notebook diff byte-identically to a pass that correctly
+    # found nothing.
     #
-    # The half that was MISSING is `nothing_found` after a model call that
-    # failed. Measured with no provider reachable: four cases of the (since-deleted,
-    # DEC-277) proactive-decide pass came
-    # back `nothing_found` with NO error, and the one expecting silence scored
-    # a PASS — ERROR-as-PASS inside the layer built to end it, found by
-    # checking rather than by reading.
+    # The other half is `nothing_found` after a model call that failed: with no
+    # provider reachable a pass comes back `nothing_found` with NO error, and a
+    # case expecting silence would PASS.
     #
     # `samples_failed` is production's own per-sample counter
     # (`nora_dream_sample_total{status="unavailable"}`), which is the only
@@ -342,9 +315,8 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # corpus expects; the first is not a verdict at all.
     # `samples_failed and not samples_ok`, NOT `or samples_failed`: the
     # runtime's own rule is that a pass is `unavailable` only when NONE was
-    # readable, because one good read is a read (`dreamer.py:1470`). Erroring on
-    # one bad sample of three made this layer stricter than the thing it
-    # measures, which is its own kind of wrong number.
+    # readable, because one good read is a read. Erroring on one bad sample of
+    # three would make this layer stricter than the thing it measures.
     if result.status == "unavailable" or (
         result.samples_failed and not result.samples_ok
     ):
@@ -371,9 +343,7 @@ async def proactive_act(subject: Subject, case: Case, *, now_ms: int) -> Outcome
 
     NOT a dream pass, and that distinction is the corpus's own: the DECIDE pass
     writes a reminder row, and this is what happens when that row comes due. It
-    is a fire turn, which is why the old driver's `FirePath(21)` lived in
-    `run_proactive_act_case` — the seventh assembly, and the one no parity test
-    covered.
+    is a fire turn, which is why `FirePath.run` is the driver.
 
     The screen runs first, as the heartbeat runs it. A row it refuses is NOT a
     failure: the room lost its `proactive` trust, the note was retired, or the
@@ -411,9 +381,7 @@ async def proactive_act(subject: Subject, case: Case, *, now_ms: int) -> Outcome
         # `failed_*` is WIRING: the room is not proactive-trusted, no note
         # store, a workspace the note cannot be reached from. Those are ERROR.
         # They produce an identical empty `said`, so without this split every
-        # `silence` case passes on a misconfigured policy — which is how this
-        # was found: three cases in one database, two of them screening an
-        # earlier case's row.
+        # `silence` case passes on a misconfigured policy.
         if result.screened.startswith("failed_"):
             return Outcome(
                 admitted=None, source="fail_closed",
@@ -442,7 +410,7 @@ def _outcome_working_set(items: tuple[WorkingSetItem, ...]) -> tuple[WorkingSetF
     """`Folded.working_set` (`nora.domain.standing.WorkingSetItem`, `nora`-side)
     into `Outcome.working_set` (`WorkingSetFinding`, domain-side) — the one
     place this boundary is crossed, so `standing()` itself stays a single
-    `Outcome(...)` call (issue #445). `found_at` is dropped here: `Outcome`'s
+    `Outcome(...)` call. `found_at` is dropped here: `Outcome`'s
     own docstring says why.
     """
     return tuple(
@@ -454,7 +422,7 @@ def _outcome_working_set(items: tuple[WorkingSetItem, ...]) -> tuple[WorkingSetF
 async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     """The standing FOLD on one real tag turn, graded on the position it wrote.
 
-    `design/standing-compact/20-verification.md` §1. The case names a turn
+    The case names a turn
     (`metadata.tag_id`) and the instant it finished (`snapshot.before_ms`, the
     turn's own `tag_trace.created_at`). The sandbox already holds the room up
     to that instant; this reads the turn's record and the position as it stood
@@ -467,10 +435,10 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     and "nothing was written, so nothing stale was re-affirmed" would pass every
     `stale` case on a dead provider.
 
-    **A turn with no prior is refused, not folded against a blank.** Migration
-    0059's chain did not backfill, so «no revision at or before this instant»
-    reads the same for a room that had never folded and for one whose position
-    simply predates the chain. Folding the second against «no position yet»
+    **A turn with no prior is refused, not folded against a blank.** The
+    standing chain (migration 0059) does not backfill, so «no revision at or
+    before this instant» reads the same for a room that had never folded and for
+    one whose position simply predates the chain. Folding the second against «no position yet»
     would grade a fold on an input it never had. Such a moment is parked in the
     corpus, or declared as the counterfactual above; one reaching here
     undeclared is a mistake in the corpus, and says so.
@@ -521,8 +489,8 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
                     "case is anchored there and nowhere else"
                 ),
             )
-    # THE FOLD'S INSTANT, not the turn's: production's fold ran after the
-    # turn finished and read the room then, and on a `recovered` turn her
+    # THE FOLD'S INSTANT, not the turn's: production's fold runs after the
+    # turn finishes and reads the room then, and on a `recovered` turn her
     # reply is written in between. The anchor is the first revision the room
     # got after the turn; a case anchored anywhere else seeds a different room
     # than the fold read.
@@ -592,12 +560,10 @@ class EntryPoint:
     """One port implementation, plus the configuration it needs to EXIST.
 
     `config` is here and not left to each caller because leaving it to each
-    caller is the mechanism this whole rebuild is about. It was found the hard
-    way: the first version of `tests/integration/test_two_entry_points_one_
-    runner.py` went green while `deps.relevance_gate` and `deps.fire_path` were
-    both `None` — `config.example.toml` ships `[participation] enabled = false`
-    and `[relevance_gate] enabled = false`, so NEITHER entry point ran and the
-    test passed on the error it was written to catch.
+    caller is the mechanism this whole rebuild is about:
+    `config.example.toml` ships `[participation] enabled = false` and
+    `[relevance_gate] enabled = false`, so `deps.relevance_gate` and
+    `deps.fire_path` are `None` unless the entry point turns them on.
 
     The committed template is not the deployed configuration. That is correct
     for a template — a subsystem ships off — and it means an entry point has to
@@ -608,8 +574,8 @@ class EntryPoint:
 
     #: Does a line ARRIVE after the window this entry point is given?
     #:
-    #: Declared here rather than branched on in the runner, for §3.1's reason:
-    #: the entry point is a selection on a case. The gate is handed a closed
+    #: Declared here rather than branched on in the runner: the entry point is
+    #: a selection on a case. The gate is handed a closed
     #: window and nothing follows it; the other three are handed a window and
     #: then a line.
     delivers_input: bool = False
@@ -630,11 +596,9 @@ class EntryPoint:
     #: real at startup), which makes a Discord-anchored turn case unrunnable
     #: by construction.
     #:
-    #: MEASURED LIVE 2026-09-21: three `participation` cases and two
-    #: `proactive_act` cases anchored in Discord rooms and came back
-    #: `failed_error` with a `KeyError` out of `fire.py:1615` — an ERROR, so
-    #: nothing was scored as a verdict, but a confusing one. `gate` and
-    #: `dreamer` are unaffected: they read and write, and never speak.
+    #: A `participation` or `proactive_act` case anchored in a Discord room
+    #: comes back `failed_error` with a `KeyError` — an ERROR, never a verdict.
+    #: `gate` and `dreamer` are unaffected: they read and write, and never speak.
     drives_a_turn: bool = False
 
     #: What a judge grades, when a judge is configured: `"reply"` — what she
@@ -644,8 +608,8 @@ class EntryPoint:
     judged_on: Literal["reply", "position"] = "reply"
 
 
-#: Both entry points turn on the SAME pair, and that is not duplication: since
-#: design 36 the quiescence trigger and the room policy belong to the gate, so
+#: Both entry points turn on the SAME pair, and that is not duplication: the
+#: quiescence trigger and the room policy belong to the gate, so
 #: `[participation]` and `[relevance_gate]` are one subsystem with two
 #: switches. `nora/config.py`'s `_the_gate_needs_something_behind_it` refuses a
 #: gate with no turn behind it, which is the same fact as a config validator.
@@ -658,9 +622,7 @@ _PARTICIPATION_SUBSYSTEM = {
     # enabled = false`, and composition gates the readers on them: no note
     # store, no standing reader, on the fire path AND on the gate.
     #
-    # The old harness forced both on for a participation case regardless of
-    # config — `evals/harness.py:553`, literally `or participation` — and no
-    # corpus ever said so. Without it every `-known` case in
+    # A participation case needs both on regardless of config. Without it every `-known` case in
     # `participation.yaml` is byte-identical to its `-unknown` twin: `know()`
     # writes the note and the standing, and the turn cannot read either. The
     # pair would report "the knowledge cut works" having cut nothing, which is
@@ -675,8 +637,7 @@ _PARTICIPATION_SUBSYSTEM = {
 }
 
 #: The port's implementations, by the name a case selects. A new suite over an
-#: existing entry point adds NOTHING here — that is `01-boundaries` §5(3), and
-#: it is the property that decays first, so it is pinned by a test.
+#: existing entry point adds NOTHING here; a test pins that.
 ENTRY_POINTS = {
     "gate": EntryPoint(drive=gate, config=_PARTICIPATION_SUBSYSTEM),
     "participation": EntryPoint(
@@ -688,8 +649,7 @@ ENTRY_POINTS = {
     # cheapest of the three to drive.
     "tag": EntryPoint(drive=tag, delivers_input=True, drives_a_turn=True),
     # `[dreamer] enabled` ships false. The RUNTIME only: which adaptor is built is
-    # the corpus's business (the culture adaptor needs `[culture] enabled`; the
-    # note-candidates and proactive adaptors are deleted, DEC-277). Putting an
+    # the corpus's business (the culture adaptor needs `[culture] enabled`). Putting an
     # adaptor's flag here would make one corpus's requirement look like the
     # entry point's.
     "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),

@@ -6,7 +6,7 @@ control plane's half of the daemon conversation and nothing else. `_METHODS`
 below is an allowlist, checked at the one call site, so a write method cannot
 be added here by accident; `tests/test_signal_directory.py` asserts on it.
 
-Field names are VERIFIED against the live daemon (2026-08-05), not taken from
+Field names are as the live daemon returns them, not taken from
 documentation:
 
     listGroups   -> id, name, description, isMember, isBlocked, members[],
@@ -23,8 +23,8 @@ stores as `conversation_id`, which is what makes `nora groups` able to print a
 policy verdict beside it.
 
 `members[]` entries pair `number` WITH `uuid` for every member, and that turns
-out to matter more than it looks: on the live daemon only 3 of 83 contacts
-carry both forms, while every group member does. Sealed sender means the same
+out to matter more than it looks: few contacts carry both forms, while
+every group member does. Sealed sender means the same
 account reaches Nora as a phone number on one message and as an ACI on
 another, so the group roster is in practice the stronger correlator of the two
 — `nora.app.pending` consumes both.
@@ -37,7 +37,7 @@ from typing import Any
 
 import aiohttp
 
-# Reads only. `nora groups`/`nora persons pending` are read-only commands (D6),
+# Reads only. `nora groups`/`nora persons pending` are read-only commands,
 # and this list is what makes that a property of the module rather than a
 # promise in a docstring.
 _METHODS = frozenset({"listGroups", "listContacts"})
@@ -66,9 +66,9 @@ class SignalContact:
     """One row of `listContacts`, reduced to what the control plane needs:
     the id forms that name one account, and the display name to print.
 
-    `name` may be empty — 4 of 83 contacts on the live daemon have no name at
-    all. An empty name is reported as such rather than back-filled from a
-    number, because a fabricated name is worse than an absent one (§1.3)."""
+    `name` may be empty — some contacts have no name at all. An empty name is
+    reported as such rather than back-filled from a number, because a
+    fabricated name is worse than an absent one."""
 
     ids: frozenset[str]
     name: str = ""

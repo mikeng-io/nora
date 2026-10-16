@@ -1,14 +1,14 @@
 """Renders a unit's kept memos into the `<memos>` block: the INDEX, not the memos
-(DEC-306, design/cognition-loop/15-map.md: titles pushed, body pulled).
+(DEC-306: titles pushed, body pulled).
 
 One `memo` element per kept memo: its id (what `memo_read`, `memo_revise` and
 `memo_withdraw` take), the day it last changed, and its title as the content.
 Never a `## Kept` line: what a memo keeps is read on demand, so a value kept
-verbatim (a password, D5) is never pushed into every turn of every room. Unit-
-wide like `<notes>`: a memo kept in one room renders in every room of its unit
-(operator, 2026-10-09). No block at all when nothing is kept.
+verbatim (a password) is never pushed into every turn of every room. Unit-
+wide like `<notes>`: a memo kept in one room renders in every room of its unit.
+No block at all when nothing is kept.
 
-**Capped, newest first** (review of #781): at most `lines` rows and `chars`
+**Capped, newest first**: at most `lines` rows and `chars`
 characters as rendered, the most recently changed first, and the block says
 how many it left out (`not_listed`) rather than cutting a row. One function for
 the tag, fire and Cognition prompts, so the three cannot cap differently.
@@ -24,7 +24,7 @@ from ..domain.memo import Memo
 
 #: The tag and fire prompts' cap: the same numbers the Cognition prompt's
 #: `RenderBudget` starts from (`memo_lines`, `memo_chars`). A starting guess, like
-#: every cap here; nothing measures a live memo index yet.
+#: every cap here.
 MEMO_LINES = 20
 MEMO_CHARS = 1200
 

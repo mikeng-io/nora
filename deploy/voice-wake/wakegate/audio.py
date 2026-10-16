@@ -2,8 +2,7 @@
 
 The sidecar's frames are 20 ms of 48 kHz stereo s16le (3840 bytes);
 openWakeWord expects 80 ms chunks of 16 kHz mono **int16** PCM. The int16
-part is load-bearing, measured in the training lab
-(`voice-lab/scripts/gate_int16.py`): feeding float [-1, 1] silently
+part is load-bearing: feeding float [-1, 1] silently
 truncates every sample to 0 and the model scores nothing — the wake gate
 would look healthy and never fire.
 

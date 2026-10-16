@@ -1,16 +1,12 @@
 """instagram-bridge reactions:
 `PUT /threads/{thread_fbid}/messages/{message_id}/reaction` with
-`{emoji, remove}` (design/instagram-adoption/16 §Resources, 17 §P14). Never
-raises.
+`{emoji, remove}`. Never raises.
 
-It replaced `POST /react {room_id, message_id, emoji, remove}` on 2026-09-24
-(P14), and the bridge DELETED that path in the same change. The room and the
-message are now the path: the SHORT thread id, and the message id quoted as one
+The room and the message are the path: the SHORT thread id, and the message id quoted as one
 segment (it carries `$`, and nothing promises it never carries `/`). A 200 is
 `{"confirmed": bool}`: `false` means the reaction was accepted and the
-mutation's own post-state did not show it, which production showed on every
-reaction while the reaction landed. It is a success either way, so only the
-STATUS is read here. The bodies are pinned by
+mutation's own post-state did not show it, though the reaction lands. It is a success either way, so
+only the STATUS is read here. The bodies are pinned by
 `tests/fixtures/instagram_bridge/reaction_*`, which the bridge generates.
 
 Mirrors `nora.platform.whatsapp.react` rather than Signal's, for the same
@@ -21,13 +17,10 @@ handle from the parser; an EMPTY `to_message_id` is answered
 `supported=False, ok=False`, never guessed at — a reaction pointed at nothing
 is not a reaction.
 
-**`room_id` on this route is the SHORT thread id, and that is a CORRECTION.**
-`03` said until 2026-09-22 that every send takes the long id; measurement says
-`/react` addressed with the LONG id is **accepted and never arrives** — a 200
-for a reaction nobody sees. Text works with either, which is why the wrong rule
-went unnoticed. The contract now exposes only the short id and the bridge owns
-the translation, so this module has nothing to choose; the note exists so a
-reader who finds an older copy of the document knows which way it was settled.
+**The thread in the path is the SHORT thread id.** A reaction addressed with
+the LONG id is accepted and never arrives — a 200 for a reaction nobody sees —
+though text works with either. The contract exposes only the short id and the
+bridge owns the translation, so this module has nothing to choose.
 
 `remove` rides as its own field, **and the emoji goes WITH it**. The bridge
 refuses an empty `emoji` even on a removal (400), because Instagram's mutation

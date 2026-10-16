@@ -1,13 +1,12 @@
-"""Stage: stimulus — append one stimulus per recorded person-authored item
-(design/cognition-loop/20-observe.md §3, migration step 1).
+"""Stage: stimulus — append one stimulus per recorded person-authored item.
 
 **Per item, code appends one row to the unit's `stimulus` table with its cues,
-and nothing else: no model** (20 §3). It runs after the Record write it
+and nothing else: no model**. It runs after the Record write it
 raises a stimulus for — a message's audit row, an edit's `message_edit` row,
 a reaction's or a delete's — so every stimulus names an item that exists
 (`ref`).
 
-**Nora's own items raise no stimulus** (20 §3; 10 §2 rule 4, the echo rule).
+**Nora's own items raise no stimulus** (the echo rule).
 Her sends never pass through ingest (the parsers drop them, R-12), so this is
 the second line and it is checked HERE, not assumed from upstream: an item
 whose sender is one of her ids, or whose platform names no sender and whose
@@ -15,7 +14,7 @@ target is hers (an Instagram unsend or a Discord delete of her message), is
 skipped.
 
 **A person's reply to her message inside `reply_quiet_seconds` is recorded
-and marked `waits`** (20 §3): it is a real stimulus, consumed by the next wake
+and marked `waits`**: it is a real stimulus, consumed by the next wake
 like any other, but it never starts one by itself. Two things count as a
 reply here: a message whose quote names her, and a reaction on her message;
 the window is measured from her message's time.

@@ -7,7 +7,7 @@ identifier in either script.
 
 Data: the single-character entries of OpenCC's `TSCharacters.txt`
 (https://github.com/BYVoid/OpenCC, Apache License 2.0) whose Simplified form
-is one character, first candidate only; 4,105 pairs. Written as hex code
+is one character, first candidate only. Written as hex code
 points `<traditional>:<simplified>`, never as the characters themselves: two
 characters side by side can spell a two-character name, and this file is
 scanned like any other.

@@ -1,6 +1,6 @@
 """A tag turn's blocks, rendered from a restore, against what the turn saw.
 
-Step 1b's second gate (design/cognition-loop/70-migration.md §2): a recorded
+The restore-equivalence gate: a recorded
 tag turn's blocks, rendered from a snapshot at its moment, equal the blocks
 its Langfuse trace recorded — memory and the Live blocks excepted, the
 transcript rendered through the media join as of T.
@@ -21,7 +21,7 @@ This module is the comparison, used two ways:
 What is excepted, by name, and why:
 
 - **memory** — `peer_card`, `peer_history`: Honcho has no chain
-  to read backwards (10-tiers §8), so a restore cannot hold what it said.
+  to read backwards, so a restore cannot hold what it said.
 - **Live** — `tool_catalogue` (built from the tools admitted at the turn, not
   from any store), `presence` (her platform presence: transport health read
   at turn start), and the clock line that opens the block message (`now`,

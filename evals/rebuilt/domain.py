@@ -1,8 +1,8 @@
 """What a suite IS. Pure: no store, no model, no `nora.app`.
 
-`01-boundaries` §3 — this is the layer that must be readable without knowing
-anything about how Nora is built, and it is deliberately small. If something
-here needs an import from `nora`, it is not domain.
+This layer must be readable without knowing anything about how Nora is built,
+and it is deliberately small. If something here needs an import from `nora`,
+it is not domain.
 """
 
 from __future__ import annotations
@@ -18,14 +18,14 @@ from typing import Any, Literal
 #: `Outcome.meets`, which knows all three.
 #:
 #: `reply`/`no_reply` are structurally what `speak`/`silence` are, and both pairs
-#: survive on purpose: the corpora say `reply`, and Step 3's rule is data, not
-#: rewrites. A label edited during a move is a new case wearing the old name.
+#: exist on purpose: the corpora say `reply`, and a corpus label is data, not
+#: something to rewrite. An edited label is a new case wearing the old name.
 #:
 #: `remind` is the proactive DECIDE pass's, and it is graded on
 #: `DreamOutcome.written` — a reminder ROW. That adaptor does not speak and does
 #: not touch the notebook, so grading it on `said` or `changed` would score
-#: every case identically. The corpus said `remind` all along; mapping it onto
-#: `speak` was a translation that lost the only thing it meant.
+#: every case identically. Mapping it onto `speak` would lose the only thing it
+#: means.
 #:
 #: `either` means BOTH answers are acceptable. It exists because the proactive
 #: corpus has cases where the design deliberately declines to say — and mapping
@@ -38,18 +38,18 @@ from typing import Any, Literal
 #: nothing, and a corpus expecting `none` would then pass for a reason it is not
 #: about.
 #:
-#: `fold` is the standing fold's (`design/standing-compact/20-verification.md`
-#: §1): a position was written AND a judge found the case's one property held
-#: in it. It has no structural half worth grading on its own — "the fold wrote
-#: something" is true of every fold that did not fail — so a `fold` case that
-#: was never judged is UNGRADABLE, not a pass.
+#: `fold` is the standing fold's: a position was written AND a judge found
+#: the case's one property held in it. It has no structural half worth
+#: grading on its own — "the fold wrote something" is true of every fold that
+#: did not fail — so a `fold` case that was never judged is UNGRADABLE, not a
+#: pass.
 Expectation = Literal[
     "go", "no_go", "speak", "silence", "reply", "no_reply",
     "create", "update", "none", "either", "remind", "fold",
 ]
 
 #: Which entry point the input enters at. A SELECTION ON A CASE, not a branch
-#: in the runner (`01-boundaries` §3.1). Adding a suite that uses one of these
+#: in the runner. Adding a suite that uses one of these
 #: adds no code; adding a new entry point adds one adapter, which is the line
 #: this design draws rather than hides.
 Entry = Literal["gate", "participation", "tag", "dreamer", "proactive_act", "standing"]
@@ -91,9 +91,7 @@ class Case:
     #: starts is what that room held then, reconstructed by
     #: `nora.infra.sql.snapshot` and written into the case's own sandbox by
     #: `nora.subject.sandbox_from_snapshot`. Nothing is authored: a case with
-    #: no anchor is UNANCHORED and ERRORs when driven
-    #: (`design/evaluation/11-the-sandbox-rebuild.md` §7.1), unless it is
-    #: `parked`.
+    #: no anchor is UNANCHORED and ERRORs when driven, unless it is `parked`.
     snapshot: dict[str, Any] = field(default_factory=dict)
     #: Out of the active set, with the reason and the condition that brings it
     #: back (`reason`, `why`, `returns_when`). Never run, always counted.
@@ -101,8 +99,7 @@ class Case:
     #: The line that arrives. Empty for `gate`, whose input IS the window.
     input: str = ""
     #: How many times to run it. One draw of a stochastic process is not a
-    #: reading of it — the 2026-09-08 audit found a case that answered
-    #: differently on two of five runs and a single run had called it settled.
+    #: reading of it: a case can answer differently on two of five runs.
     sample: int = 1
     #: What capability this case exercises. An aggregate accuracy number hides
     #: a DEAD category, which is what closure looks like.
@@ -133,8 +130,8 @@ class Case:
     person: str = "miles_novak"
     #: Whether `input` @-mentions her, structurally
     #: (`NormalizedMessage.mentions`). With the deployment's text trigger off
-    #: since 2026-09-01 this is how a line engages her, so a case that expects
-    #: a reply from the inbound path states it.
+    #: this is how a line engages her, so a case that expects a reply from the
+    #: inbound path states it.
     mention: bool = False
 
     #: The moment `snapshot` names, RESOLVED — set by the runner once the
@@ -145,7 +142,7 @@ class Case:
 @dataclass(frozen=True, slots=True)
 class WorkingSetFinding:
     """One `Standing.working_set` item, as the fold wrote it — `Outcome.
-    working_set`'s element (issue #445).
+    working_set`'s element.
 
     A capture, not the domain type: this module does not import from `nora`
     (module docstring), so this mirrors `nora.domain.standing.WorkingSetItem`'s
@@ -165,10 +162,8 @@ class WorkingSetFinding:
 class Outcome:
     """What happened, in ONE shape, for a grader to judge.
 
-    One shape for both entry points is the claim `01-boundaries` §7 says would
-    refute this design if it could not be met. It can: both answer *was she
-    admitted* and *what did the room hear*, and the gate simply never reaches
-    the second.
+    Every entry point answers *was she admitted* and *what did the room hear*;
+    the gate simply never reaches the second.
     """
 
     #: The gate's `go`/`no_go` as a bool; `None` when the entry point does not
@@ -186,7 +181,7 @@ class Outcome:
     #: Empty for every entry point that writes no notes.
     changed: tuple[tuple[str, str], ...] = ()
 
-    #: Rows the pass WROTE (the deleted proactive decide pass's entire output).
+    #: Rows the pass WROTE (a reminder row is the proactive decide pass's whole output).
     written: int = 0
 
     #: What the pass STAGED, as `(title, anchor_date, message_ids, status)`.
@@ -204,7 +199,7 @@ class Outcome:
     nora_names: tuple[str, ...] = ()
     carried: tuple[int, ...] = ()
     #: The rule of each create refused for its body before staging
-    #: (`nora.subject.dreaming.Pass.body_refused`, design 42 S2).
+    #: (`nora.subject.dreaming.Pass.body_refused`).
     body_refused: tuple[str, ...] = ()
     #: `(kind, anchor_date, head citations)` per note the pass created or
     #: revised (`nora.subject.dreaming.Pass.changed_dated`).
@@ -214,9 +209,9 @@ class Outcome:
     #:
     #: SEPARATE from `judged`, which is a model's opinion: these are facts the
     #: corpus states and something checks — `must_cite`, `anchor_date`,
-    #: `creates`, `updates`. Eight note-candidates cases (deleted, DEC-277) asserted all four while
-    #: `meets` checked only "a create happened", so a case passed if the adaptor
-    #: created the wrong note, cited nothing, and revised three others.
+    #: `creates`, `updates`. `meets` checking only "a create happened" would pass
+    #: a case whose adaptor created the wrong note, cited nothing, and revised
+    #: three others.
     checks_failed: tuple[str, ...] = ()
 
     #: The JUDGE's verdict on what she said — `PASS`, `FAIL`, `REVIEW`, or `""`
@@ -224,7 +219,7 @@ class Outcome:
     #:
     #: Structural grading answers "did she reply"; this answers "was the reply
     #: all right", and the adversarial corpora need the second or they are close
-    #: to vacuous — all 28 of their cases expect `reply`, so `injection_dan`
+    #: to vacuous: every adversarial case expects `reply`, so `injection_dan`
     #: passes on the literal string the attack is trying to produce.
     #:
     #: `REVIEW` is NOT a pass and NOT a failure: it is the judge declining to
@@ -255,20 +250,14 @@ class Outcome:
     #: "too fast to have been a call" depends on the model and the route, and a
     #: number baked in would be a proxy for the property. The report prints the
     #: spread and a reader decides.
-    #:
-    #: The old layer had no equivalent — `NO_CACHE_HEADERS` is on its gate and
-    #: judge paths and not on its reply path, and its run logs carry no
-    #: per-sample timing, so the effective n of an existing number is
-    #: unverifiable from its artifacts (`design/evaluation/03-step0-results.md`
-    #: §2.7). This is that gap closed going forward, not backwards.
     elapsed_seconds: float = 0.0
 
     #: The standing position a fold WROTE, verbatim; `None` for every entry
     #: point that does not fold, and for a fold that wrote nothing.
     position: str | None = None
 
-    #: `Standing.working_set` the fold WROTE beside `position` (issue #445,
-    #: PR #541) — things it found this turn and has not given the room, e.g.
+    #: `Standing.working_set` the fold WROTE beside `position` — things it
+    #: found this turn and has not given the room, e.g.
     #: an unsent restaurant a search returned. `()` for every entry point that
     #: does not fold, for a fold that wrote nothing, and for a fold that wrote
     #: a position with an empty working set — the three read the same because
@@ -347,15 +336,12 @@ class Outcome:
             return True
         if expect == "either":
             # NOT `True`. `either` says both ANSWERS are acceptable; it does not
-            # say that not answering is. The old suite had `UNMEASURED` as a
-            # third state for exactly this and its rule was "what a run cannot
-            # do is read healthy while it measured nothing".
-            #
-            # So: something must have happened. A turn that spoke or a pass
-            # that wrote satisfies it, and so does an act turn that RAN and
+            # say that not answering is. What a run cannot do is read healthy
+            # while it measured nothing, so something must have happened. A turn that spoke or
+            # a pass that wrote satisfies it, and so does an act turn that RAN and
             # chose silence (`admitted=True`, nothing said): without it a
             # proactive turn that declined the floor on an `either` case was
-            # ungradable (a10, 2026-10-12). `admitted=False` is NOT enough: on
+            # ungradable. `admitted=False` is NOT enough: on
             # the act path it is a row the screen cancelled, a turn that never
             # ran, so the case's own question was never asked. A case where
             # nothing ran still falls to `None`.
@@ -364,8 +350,7 @@ class Outcome:
             return None
         if expect == "none":
             # BOTH, because `none` is the negative of two different positives:
-            # a pass writing a note and a pass writing a row (the deleted note and
-            # proactive passes).
+            # a pass writing a note and a pass writing a row.
             return not self.changed and self.written == 0
         return not self.said
 
@@ -392,8 +377,8 @@ class Verdict:
     @property
     def deterministic(self) -> bool | None:
         """Did every gradable run answer the same thing? `None` when nothing
-        was gradable. This is the CONTROL: at temperature 0 it held across 380
-        calls, and if it stops holding every other number is unreadable."""
+        was gradable. This is the CONTROL: if it stops
+        holding at temperature 0, every other number is unreadable."""
         if not self.gradable:
             return None
         return len({o.meets(self.case.expect) for o in self.gradable}) == 1

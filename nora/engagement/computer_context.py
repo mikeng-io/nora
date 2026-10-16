@@ -1,5 +1,5 @@
-"""`ComputerContextReader`: the `<computer>` block's one read
-(design/sandbox-runtime §15.3), shared by the tag path
+"""`ComputerContextReader`: the `<computer>` block's one read,
+shared by the tag path
 (`TranscriptInjection`) and the fire path (`FirePath`).
 
 **The gate comes first and costs one database read.** A room renders the

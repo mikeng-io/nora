@@ -88,9 +88,8 @@ def test_a_non_oww_sized_chunk_is_refused():
 
 
 # --- end-of-speech by an injected speech detector (VAD) -------------------
-# The 2026-09-17 defect: under ducked music the RMS floor (~1000) never
-# dropped under 400 for a second, so a 2 s phrase collected for 4.7-7.4 s and
-# a second 「喂 Nora」 inside that window was swallowed. With a speech detector
+# Under ducked music the RMS floor (~1000) never drops under 400, so an RMS-only
+# gate keeps collecting and swallows a second 「喂 Nora」. With a speech detector
 # injected, LOUD-but-not-speech chunks are quiet and end the utterance.
 
 
@@ -100,7 +99,7 @@ def _gate_with_speech(scores, speech_script, **kwargs):
 
 
 def test_loud_non_speech_ends_the_utterance_when_a_speech_detector_is_injected():
-    # RMS 10000 on every chunk — the old gate would never end this (ceiling only).
+    # RMS 10000 on every chunk — an RMS-only gate would never end this (ceiling only).
     gate = _gate_with_speech([0.9], speech_script=[True, False, False, False])
     gate.feed(LOUD)  # fire (pre-roll)
     results = [gate.feed(LOUD) for _ in range(4)]  # speech, then 3 x loud-but-no-speech
@@ -162,10 +161,9 @@ def test_flush_while_listening_is_a_no_op():
 def test_the_listening_peak_is_reported_and_reset_so_a_silent_gate_is_measurable():
     """A gate that never fires must still say what it is SEEING.
 
-    Four days of live running produced 37 armed gates and 0 fires, with no
-    number anywhere to say whether the model was scoring near-misses or
-    scoring nothing — and those two need opposite fixes. The peak over a
-    window is that number.
+    Armed gates with no fires cannot say whether the model is scoring
+    near-misses or scoring nothing, and those need opposite fixes. The peak
+    score over a window is the number that separates them.
     """
     scores = iter([0.02, 0.41, 0.07, 0.0, 0.0])
     gate = WakeGate(score=lambda _chunk: next(scores), threshold=0.5)

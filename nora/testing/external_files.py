@@ -1,5 +1,5 @@
 """`FakeExternalFilesSource`: an `ExternalFilesSource` with its files in
-memory (design/external-files/00-design.md §4). `recognise` is the domain's
+memory. `recognise` is the domain's
 own pure recogniser, so the fake recognises exactly what production does;
 the three reads answer from `files` and raise `ExternalFileError` the way an
 adapter must. Pinned by `tests/contract/test_external_files_source_contract.py`.

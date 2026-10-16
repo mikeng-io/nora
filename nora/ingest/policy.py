@@ -1,16 +1,14 @@
 """The engagement gate that ships now.
 
-`TriggerTextPolicy` is deterministic and does no I/O, so it cannot fail — which
-is why spec §4.3's failure table has no row for stage 5. `EngagePolicy` is
-nonetheless `async` because the `ClassifierPolicy` that joins it later is a
+`TriggerTextPolicy` is deterministic and does no I/O, so it cannot fail.
+`EngagePolicy` is nonetheless `async` because a `ClassifierPolicy` is a
 network call, and a sync-to-async change would break every call site on the
 ingest pipeline.
 
-When the classifier lands it is `CompositePolicy([TriggerTextPolicy,
+A classifier belongs in `CompositePolicy([TriggerTextPolicy,
 ClassifierPolicy])` — first-match-wins, deterministic trigger first and
 short-circuiting — NOT a replacement. Replacing this gate would mean an LLM
-outage silently stops explicit `nora.000` tags from working, which under R-5 is
-strictly worse than today.
+outage silently stops explicit `nora.000` tags from working (R-5).
 """
 
 from __future__ import annotations
@@ -40,16 +38,13 @@ class TriggerTextPolicy:
 class MentionPolicy:
     """Engage when the sender @-mentioned Nora. Satisfies `EngagePolicy`.
 
-    This is the trigger an operator reaches for first, and until now it could
-    never fire: a Signal mention puts U+FFFC in the body and the mentioned ids
-    in a parallel array, so `is_tagged` — a substring match — cannot see it.
-    Tagging her the obvious way produced ingest, attribution, and silence.
+    A Signal mention puts U+FFFC in the body and the mentioned ids in a
+    parallel array, so `is_tagged` — a substring match — cannot see it; this
+    policy reads the array.
 
     Matching is against Nora's OWN identifier set, the same one R-12 uses to
-    refuse self-tags (`nora.platform.signal.self_id`). That set only became
-    trustworthy when alias derivation was fixed (DEC-19); before that it was
-    `{primary}`, so a mention carrying only her ACI — which is what Signal
-    actually sends — would not have matched.
+    refuse self-tags (`nora.platform.signal.self_id`). That set includes her ACI
+    (alias derivation, DEC-19), which is what a Signal mention carries.
 
     It is a stronger signal than trigger text, not a weaker one. R-11 exists to
     separate tagging INTENT from string presence (a trigger quoted as code is
@@ -71,16 +66,14 @@ class ReplyToNoraPolicy:
 
     Replying to somebody is how you address them in a group chat — arguably
     more directly than @-mentioning, since it points at a specific thing they
-    said. Without this, answering Nora meant either typing the trigger text or
-    tagging her again, which is not how anyone talks.
+    said.
 
     Signal carries the reply as `dataMessage.quote` with the quoted author, so
     this matches that author against Nora's OWN identifier set — the same set
-    R-12 uses to refuse self-tags, and the same one `MentionPolicy` uses. It
-    became trustworthy only when DEC-19 fixed alias derivation: the quote
-    carries her ACI, and before that the set was `{primary}`.
+    R-12 uses to refuse self-tags, and the same one `MentionPolicy` uses. The
+    quote carries her ACI, which the set includes (DEC-19).
 
-    Matched on the author's ID, never their display name (design/10 §1.3) — a
+    Matched on the author's ID, never their display name — a
     profile name is settable by anyone, so matching it would let a member
     impersonate Nora and trigger her by quoting themselves.
     """
@@ -96,10 +89,9 @@ class ReplyToNoraPolicy:
 
 
 class VoiceNotePolicy:
-    """Engage when the message carried a voice note (operator directive 2026-08-26).
+    """Engage when the message carried a voice note.
 
-    Miles: 「總之任何 Voice Note 都會直入上 Nora 度先囉」 — a voice note is
-    conversation content whose transcription the ingest pipeline already put in
+    A voice note is conversation content whose transcription the ingest pipeline already put in
     the body (`[voice note #hex: …]`), so any voice note addressed to the group
     is addressed to Nora too: she reads it, and replies when the words warrant
     it. This policy exists so that engagement does not depend on the
@@ -129,8 +121,7 @@ class VoiceWakePolicy:
     said the wake word, which is the closest thing a voice channel has to an
     explicit tag, and the whole point of the stage is that the reply comes
     back ALOUD. Without this policy the transcript lands in the audit row but
-    the engage gate says `no_trigger` and the turn never runs — the 2026-09-16
-    live test's exact failure (DB row inserted, reply count 0).
+    the engage gate says `no_trigger` and the turn never runs.
 
     It checks `message.raw["voice"]`, the marker `voice.py` sets — NOT the
     body text. A failed STT still engages (Nora should see that somebody said
@@ -145,7 +136,7 @@ class VoiceWakePolicy:
 
 
 class RelevanceGatePolicy:
-    """The Relevance Gate's ROOM gate (design/dreamer-agent-loop/36 §1).
+    """The Relevance Gate's ROOM gate.
 
     Never engages: an untagged message in a room the operator opted in
     (`relevance_gate = true` on its `[[conversations]]` entry) comes back
@@ -160,8 +151,8 @@ class RelevanceGatePolicy:
     model call later, and it is the whole reason the two are separate.
 
     Wired LAST in the composite and only when `[relevance_gate] enabled` — so
-    a real tag keeps its own reason, and a deployment with the gate off has
-    exactly the gate it always had. The room lookup is against policy.toml's
+    a real tag keeps its own reason, and a deployment with the gate off is
+    unchanged. The room lookup is against policy.toml's
     allowlist (`Policy.conversation`), not config, because "may answer when
     tagged" vs "may speak uncalled" is a trust distinction and trust lives in
     the policy file.
@@ -182,8 +173,7 @@ class RelevanceGatePolicy:
 class CompositePolicy:
     """First match wins. Satisfies `EngagePolicy`.
 
-    The shape this module's docstring already anticipated for the classifier:
-    deterministic policies first, short-circuiting, so a later failing or
+    Deterministic policies first, short-circuiting, so a later failing or
     slower policy can never stop an explicit tag from working.
 
     A `relevance_gate` verdict short-circuits the same way an engage verdict

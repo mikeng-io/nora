@@ -1,16 +1,15 @@
-"""A reply's quote, pointed at the message the transcript actually holds
-(design/message-edits/01 §3).
+"""A reply's quote, pointed at the message the transcript actually holds.
 
 Signal quotes an edited message by the timestamp of the REVISION the replier
 saw. The transcript keeps an edited message at its ORIGINAL timestamp — that is
-the fold — so a reply to it carried a `quoted_ts` no row had, and resolved to
-nothing: no `replying_to`, no parent (measured on norty, 2026-09-24). This
+the fold — so a reply to it carries a `quoted_ts` no row has, and would resolve
+to nothing: no `replying_to`, no parent. This
 stage rewrites such a pointer to the edited message's own `ts`, once, before
 the audit write, so every reader downstream resolves it as it always has.
 
 An exact match on a message always wins, so a quote that already points at a
 row is never moved. A failed lookup leaves the quote as it was: a reply that
-renders unthreaded is the pre-existing behaviour, never a dropped message.
+renders unthreaded, never a dropped message.
 """
 
 from __future__ import annotations

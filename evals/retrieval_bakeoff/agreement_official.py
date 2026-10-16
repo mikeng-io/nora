@@ -1,5 +1,5 @@
 """Does the bake-off's adapter embed Qwen3-VL-Embedding-2B and
-jina-embeddings-v5-omni-small the way their vendors do? (design/unified-memory/20)
+jina-embeddings-v5-omni-small the way their vendors do?
 
 The scored runs go through `adapters.OfficialEmbedder` (sentence-transformers,
 every sequence checked against `OfficialFormat`). This compares its vectors

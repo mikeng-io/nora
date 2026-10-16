@@ -1,4 +1,4 @@
-"""SignalAdapter — the one PlatformAdapter implementation in v2 (spec C.3)."""
+"""SignalAdapter — the one PlatformAdapter implementation."""
 
 from __future__ import annotations
 
@@ -77,9 +77,8 @@ class SignalAdapter:
         pretend its transport is dict-shaped is wrong for Discord/Telegram). Parsing
         happens here, internally, via `nora.platform.signal.parser.parse_event`; a
         `None` result — a DM, a sync message, a self-send, an empty body (R-12's
-        first pass) — is dropped before `on_message` is ever called. `Trap B`
-        (docs/superpowers/plans/2026-08-05-nora-phase4-platforms.md) is what moved
-        this parse-and-drop step out of `nora.ingest.pipeline` and in here.
+        first pass) — is dropped before `on_message` is ever called. This
+        parse-and-drop step lives here, not in `nora.ingest.pipeline`.
         """
 
         async def _on_event(raw_event: dict) -> None:

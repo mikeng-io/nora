@@ -1,15 +1,15 @@
 """An edit's attachments — given the handles Nora already holds, not fetched
-again (design/message-edits/02 §4).
+again.
 
 No network lets an edit ADD media: Signal, WhatsApp and Instagram edit text or
 a caption, and Discord can only remove attachments. So an edit that carries as
 many attachments as the original holds blobs for gets the original's handles
-back on its placeholders, and nothing is downloaded. Running custody instead
-(the first draft) re-fetched every attachment on every update — a Discord pin
-of an edited message included — and a re-fetch that failed left `[image]`
-where the record said `[image a3f2c1]`, which then compared as a CHANGE: the
-edit was recorded, fed to Honcho as a correction, and the handle was gone
-from the transcript.
+back on its placeholders, and nothing is downloaded. Running custody instead would re-fetch every
+attachment on every update — a
+Discord pin of an edited message included — and a re-fetch that failed would
+leave `[image]` where the record said `[image a3f2c1]`, which then compares as
+a CHANGE: the edit would be recorded, fed to Honcho as a correction, and the
+handle lost from the transcript.
 
 When the counts differ (an attachment removed, or one the original never
 held), custody runs as for any message, because there is no positional match
@@ -43,7 +43,7 @@ async def run(
     # attachment: all its placeholders carry a handle, and there are as many
     # as there are blobs. A bare placeholder (`[image]`, no handle) in the
     # original IS such a gap — `placeholders_in` only sees handled ones, so
-    # it is looked for directly. Otherwise (review, 2026-09-24) a removed attachment
+    # it is looked for directly. Otherwise a removed attachment
     # could hand its neighbour's handle to the wrong placeholder.
     labels = tuple(label_for(ref) for ref in message.media)
     first = original.first_body or ""

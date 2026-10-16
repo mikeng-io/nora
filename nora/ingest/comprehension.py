@@ -1,21 +1,20 @@
 """One model pass per medium, off the ingest path — the SPAWNED half of media
-custody (issue #116).
+custody.
 
 **Custody stays inline; comprehension does not, and the asymmetry is the whole
 argument.** `[image a3f2c1]` is a promise that `a3f2c1` can be produced, so the
 copy runs before the audit write — spawning it would write the promise first
-and keep it second, which is the exact A9 violation `nora/ingest/stages/
+and keep it second, which is the A9 violation `nora/ingest/stages/
 media.py` exists to end. **Comprehension has no such property.** An
-un-comprehended image is exactly the state every image was in before this
-module existed: the row says Nora holds the bytes and claims nothing about
-them, so a comprehension that lands late, or never, has not made anything
-untrue. `memory_feed` is already spawned on precisely this reasoning and Honcho
+un-comprehended image is a row that says Nora holds the bytes and claims
+nothing about them, so a comprehension that lands late, or never, has not made
+anything untrue. `memory_feed` is already spawned on precisely this reasoning and Honcho
 is already never load-bearing.
 
 **And inline would be untenable in the one case that matters.** Signal ingest
 is serialized: the listener awaits each message's stages in turn, so an inline
-video read — chunked, several model calls, tens of seconds (issue #117) — would
-stall every message behind it in the room. What waits today is a loopback HTTP
+video read — chunked, several model calls, tens of seconds — would
+stall every message behind it in the room. What waits is a loopback HTTP
 fetch and a disk write.
 
 **What lands, lands ONCE.** The job keys on the sha256 and refuses a row that
@@ -39,15 +38,9 @@ context of the task that CALLS it, so a job scheduled here would otherwise
 attach to the ingest root and hold that trace open for as long as a video read
 takes. It opens its own root instead, declared `generation` (R-76): every call
 under it is a model call — a describer for a photo or a clip, a summarizer for
-a voice note's transcript — and the volume is one root per attachment.
-
-That declaration read `plumbing` until 2026-09-09, and this paragraph argued
-for it in the same breath as admitting "every call under it is a model call",
-which is the exact condition R-76 keeps a trace FOR. The cost was measured
-rather than reasoned about: 1041 live traces held zero `comprehend` roots while
-`nora_media_comprehension_total{status="ok"}` counted the reads happening.
-DETACHING AND DROPPING ARE TWO DECISIONS — the detach above is right and stays;
-the drop was not.
+a voice note's transcript — which is the condition R-76 keeps a trace FOR, and
+the volume is one root per attachment. DETACHING AND DROPPING ARE TWO
+DECISIONS: the detach keeps the ingest trace short; the trace itself is kept.
 """
 
 from __future__ import annotations
@@ -194,11 +187,9 @@ class MediaComprehension:
         try:
             # THE CONCURRENCY SLOT, held around the WHOLE job. `_inflight`
             # dedupes identical bytes, not volume, and `spawn` is a bare
-            # `create_task` — so fifty photos in a minute was fifty concurrent
-            # describer calls, each holding a decrypted blob plus its base64
-            # copy against an 8 MiB still ceiling and a 100 MiB video one, and
-            # three long clips was thirty jobs each running up to eleven
-            # minutes of sequential model calls.
+            # `create_task` — without a bound, fifty photos in a minute would be fifty
+            # concurrent describer calls, each holding a decrypted blob plus its base64
+            # copy against an 8 MiB still ceiling and a 100 MiB video one.
             #
             # Around the whole job rather than around the model call alone: the
             # blob read and the ffmpeg chunking ARE the memory, and a semaphore
@@ -223,24 +214,17 @@ class MediaComprehension:
         """One job, inside the concurrency slot and under its own trace root."""
         try:
             # `attached(None)` DETACHES first, and that is the whole of it:
-            # `asyncio.create_task` copies the caller's contextvars (measured
-            # 2026-08-28, `nora/obs/tracing.py`), so this span was a CHILD of
-            # `ingest.media` — which made the `plumbing` declaration inert
-            # under `ParentBased` and held the ingest trace open for as long as
-            # a chunked video read takes. The same one-liner
-            # `nora/engagement/pipeline.py` already uses for spawned work.
+            # `asyncio.create_task` copies the caller's contextvars, so without it
+            # this span would be a CHILD of `ingest.media` and hold the ingest trace
+            # open for as long as a chunked video read takes. The same one-liner
+            # `nora/engagement/pipeline.py` uses for spawned work.
             #
-            # DETACHING AND DROPPING ARE TWO DECISIONS, and until 2026-09-09
-            # this declared `plumbing` and conflated them. Detaching is right;
-            # dropping was not. R-76 keeps the traces whose work CAN contain a
-            # generation, and every branch below this line is a model call —
-            # `MediaInterpreter.describe` for a photo or a clip,
-            # `.summarize` for a voice note's transcript. Declaring it plumbing
-            # made the media read the one modality with no trace at all: 1041
-            # live traces held zero `comprehend` roots (read back from Langfuse
-            # 2026-09-09) while `nora_media_comprehension_total{status="ok"}`
-            # counted the reads happening. `root=True` keeps it its OWN trace —
-            # it still does not hold `ingest.media` open.
+            # DETACHING AND DROPPING ARE TWO DECISIONS. R-76 keeps the traces whose
+            # work CAN contain a generation, and every branch below this line is a
+            # model call — `MediaInterpreter.describe` for a photo or a clip,
+            # `.summarize` for a voice note's transcript — so the span is declared
+            # `generation`, not `plumbing`. `root=True` keeps it its OWN trace: it
+            # does not hold `ingest.media` open.
             with attached(None), span(
                 "comprehend",
                 **{
@@ -314,14 +298,12 @@ class MediaComprehension:
             self._count(platform, label, "unavailable", result.reason or "vision")
             if label in CONTENT_LABELS and content:
                 if existing is not None and existing.content == content:
-                    # ALREADY THERE, and this is the shipped default's own
-                    # path: with `comprehension_text_model = ""` the text pass
-                    # answers `no_text_describer` every time, and
-                    # `_already_read` keys on title/description for a content
-                    # label — so a forwarded voice note re-ran the pass and
-                    # re-fed the SAME words to memory on every sighting. The
-                    # words are already stored and already remembered; nothing
-                    # here has anything to add.
+                    # ALREADY THERE, and this is the default config's own path: with
+                    # `comprehension_text_model = ""` the text pass answers
+                    # `no_text_describer` every time, and `_already_read` keys on
+                    # title/description for a content label, so re-running would re-feed the
+                    # SAME words to memory on every sighting. The words are already stored
+                    # and already remembered; nothing here has anything to add.
                     return
                 # A voice note whose SUMMARY failed still has its words, and
                 # those words are the thing the room actually needs. Store the
@@ -359,19 +341,15 @@ class MediaComprehension:
         # ABOUT somebody's photo, and the row plus `nora.media_handle` already
         # re-derives it — the same reasoning `nora/ingest/relevance_gate.py`
         # gives for keeping a room's own words off its span.
-        # Plain `annotate()`, not `annotate_generation()`: this span stopped
-        # being a "generation"-shaped span itself when that helper was
-        # retired (nora.obs.tracing, replaced by nora.agent.telemetry) — it
-        # is still the R-76 root a model call can happen under, just no
-        # longer decorated with the GenAI dialect the helper used to add.
-        # There is still no child span for the describe call itself: neither
+        # Plain `annotate()`: this span is the R-76 root a model call can happen
+        # under, not a GenAI-dialect generation span.
+        # There is no child span for the describe call itself: neither
         # this module (`nora.ingest`) nor `nora.infra.vision.client` may
         # import `nora.agent` for one (the layered-import contract has
         # `nora.agent` above both), and threading a span handle through
         # `MediaInterpreter.describe`'s return would widen a port for a
-        # value only the collector reads — the same argument this file
-        # already makes for keeping usage off `MediaDescription`. Recorded,
-        # not fixed, in `nora.agent.telemetry`'s own module docstring.
+        # value only the collector reads — the same argument this file makes for
+        # keeping usage off `MediaDescription`.
         annotate(**{"nora.media_describe_model": model})
         stored = await self._store.comprehend(
             sha256=blob.sha256, title=result.title, description=result.text,
@@ -379,13 +357,13 @@ class MediaComprehension:
             # RETURNED with the result rather than read off the adapter — this
             # job spawns one task per subject, so a video and a photo on one
             # message run two `describe` calls concurrently on one shared
-            # interpreter, and stashed state raced.
+            # interpreter, and stashed state would race.
             provenance=provenance,
         )
         if not stored:
-            # THE READ HAPPENED AND NOTHING KEPT IT. Counting `ok` here is the
-            # «a tick that wrote nothing reporting ok» shape CONVENTIONS.md
-            # names: under load the metric says the pipeline is healthy while
+            # THE READ HAPPENED AND NOTHING KEPT IT. Counting `ok` here would be
+            # «a tick that wrote nothing reporting ok»: under load the metric says the
+            # pipeline is healthy while
             # the index is empty. And the feed is skipped with it — Honcho
             # would otherwise hold a description of bytes `media_objects` has
             # no row for, and a redelivery would feed the same words twice with
@@ -438,27 +416,22 @@ class MediaComprehension:
     ) -> None:
         """ALL THREE FIELDS to Honcho, under the sender's own peer, SCREENED.
 
-        This is the half of issue #116 the story is about. The marker already
-        rode into memory in `messages.body`; what it pointed at was empty, so
-        every reply around a photo was preserved and unreadable. The
-        comprehension follows the marker in, keyed by the SAME handle the
-        transcript renders, so a later recall can join the two.
+        The marker already rides into memory in `messages.body`; the
+        comprehension follows it in, keyed by the SAME handle the transcript
+        renders, so a later recall can join the two.
 
-        **The identifier screen runs HERE, and it has to.** Design §5's claim
-        that moving `scan_identifiers` to render time is the stricter position
-        is true of the TRANSCRIPT and false of Honcho: before this change the
-        same text rode in `message.body`, which the custody stage screened
-        before `memory_feed` forwarded it, and the fork has two consumers. Only
-        one of them renders. A voice note carrying a phone number would
+        **The identifier screen runs HERE, and it has to.** Screening at render
+        time covers the TRANSCRIPT but not Honcho, which has two consumers and
+        only one of them renders. A voice note carrying a phone number would
         otherwise be written verbatim and DURABLY into the sender's peer, where
         it can resurface in a later peer card — a worse surface than the
         transcript, because nothing re-screens a card at render.
 
-        A hit costs the DETAIL and never the marker, which is the shape the
-        custody stage used on master and the shape the render join uses now:
-        memory still records that a photo arrived, and claims nothing about it.
+        A hit costs the DETAIL and never the marker, the shape the render join
+        also uses: memory still records that a photo arrived, and claims
+        nothing about it.
 
-        Mapped senders only (D6), like `memory_feed`: an unmapped sender is
+        Mapped senders only, like `memory_feed`: an unmapped sender is
         never fed to the semantic store, and a photo does not change that.
         Never load-bearing and never raised into: `MemoryStore` swallows its
         own failures and this is already off the listener path.

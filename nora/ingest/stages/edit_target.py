@@ -1,5 +1,5 @@
 """The edit path's first stage — which recorded message does this edit change,
-and may it change it? (design/message-edits/02 §4)
+and may it change it?
 
 Runs after the room gate and before anything is written. It answers one of
 three things, and the pipeline acts on each:
@@ -13,11 +13,10 @@ three things, and the pipeline acts on each:
   platform says sent it. An orphan is an edit to something Nora never
   recorded — pruned past the retention window, from before she joined, from
   before the room was allowlisted — or, on Discord, an update racing the
-  message it updates. Ingesting it as a new message (the first draft of this
-  stage) put an OLD message at the bottom of the transcript as if said just
-  now, where a tag in it opened a turn on something long settled, and a race
-  wrote a duplicate row. Losing the rare genuine edit of an unrecorded message
-  is the smaller cost.
+  message it updates. Ingesting it as a new message would put an OLD message at
+  the bottom of the transcript as if said just now, where a tag in it would open
+  a turn on something long settled, and a race would write a duplicate row.
+  Losing the rare genuine edit of an unrecorded message is the smaller cost.
   The same ending when the original IS on record but withdrawn (a delete or
   unsend hid it, `EditedMessage.hidden`): an edit after a delete must not fold a
   new version onto a hidden row, feed Honcho a correction «of» it (which would
@@ -119,8 +118,8 @@ def _is_stale(
     Decided HERE, before custody, so a stale update fetches nothing.
 
     Older than the NEWEST CLOCK on record — the maximum, not the version
-    shown, which a skewed edit can make lower (review, 2026-09-24: judging
-    against it let a redelivered older edit bring old text back). An edit
+    shown, which a skewed edit can make lower (judging against it would let a
+    redelivered older edit bring old text back). An edit
     whose timestamp is already on record is a redelivery. And a Signal edit that names the latest
     revision's own timestamp is newer BY DEFINITION, whatever its clock says:
     each device stamps its own sends, so a linked desktop running behind the

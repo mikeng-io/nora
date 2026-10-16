@@ -1,4 +1,4 @@
-"""discord.py `Message` -> `NormalizedMessage` (design/discord-integration/02).
+"""discord.py `Message` -> `NormalizedMessage`.
 
 Guild channels only in v1 — a DM message (`message.guild is None`) is dropped,
 mirroring Signal's own "DM — out of scope" rule
@@ -104,7 +104,7 @@ def _sticker_ref(item: object) -> MediaRef | None:
 
     `item.name` is deliberately unread. A guild sticker's name is unbounded
     text a server admin chose, and putting it in the body is what
-    `nora/domain/media.py` stopped doing when it removed sender-supplied
+    `nora/domain/media.py` avoids for sender-supplied
     filenames — "a filename is unbounded text: it can hold a phone number, an
     ACI, or an instruction."
     """
@@ -152,13 +152,10 @@ def _resolve_inbound_mentions(content: str, mentions: list[_DiscordUser]) -> str
 def _body_parts(message: _DiscordMessage, refs: tuple[MediaRef, ...]) -> list[str]:
     """The renderable body, or an empty list if there is genuinely nothing.
 
-    THE PLACEHOLDERS ARE NOT DECORATION. This function was a copy of
-    `nora.platform.signal.parser.body_parts` MINUS its sticker branch — and
-    that branch exists on the Signal side because dropping a sticker made a
-    sticker-only message vanish entirely, so the sender watched Nora ignore
-    something they had clearly sent. Discord has more ways to send a turn with
-    an empty `content` than Signal does (a sticker, a poll, a forward, an
-    embed-only post), so the same defect was reintroduced here and was wider.
+    THE PLACEHOLDERS ARE NOT DECORATION. Dropping a content-less turn makes a
+    sticker-only message vanish entirely, so the sender watches Nora ignore
+    something they clearly sent. Discord has more ways to send a turn with an
+    empty `content` than Signal does (a poll, a forward, an embed-only post).
 
     The cost is worse than one ignored message: a dropped turn never reaches
     the audit store, so Nora later reasons over a transcript with a hole she
@@ -171,7 +168,7 @@ def _body_parts(message: _DiscordMessage, refs: tuple[MediaRef, ...]) -> list[st
     a turn happened and what kind, which is exactly what the transcript needs
     to stop lying by omission.
 
-    Stickers left this chain: they are ordinary `MediaRef`s now (`_sticker_ref`),
+    Stickers are not in this chain: they are ordinary `MediaRef`s (`_sticker_ref`),
     so they render through the same `render_placeholder` line as an attachment,
     in `refs` order, above. What remains here is ordered most specific first;
     a message carries at most one of these in practice.
@@ -221,7 +218,7 @@ def parse_discord_message(
         if message is None:
             return None
         if message.guild is None:
-            return None  # DM — out of scope in v1 (design/discord-integration/00)
+            return None  # DM — out of scope in v1
         if str(message.author.id) == own_id:
             return None  # never ingest Nora's own sends (Signal's R-12, mirrored)
 
@@ -276,7 +273,7 @@ def parse_discord_edit(
     message: _DiscordMessage | None, *, own_id: str
 ) -> NormalizedMessage | None:
     """An edited message (`on_raw_message_edit`'s `payload.message`) → an
-    edit of the message it is (design/message-edits/03 §1).
+    edit of the message it is.
 
     The same parse as a new message, so the edit's body, mentions and media
     are built by exactly the rules the original's were — then marked with
@@ -311,8 +308,7 @@ def parse_discord_reaction(
     payload: Any, *, own_id: str, removed: bool,
 ) -> NormalizedMessage | None:
     """`on_raw_reaction_add`/`on_raw_reaction_remove`'s
-    `RawReactionActionEvent` → a `Touch` on the message it names
-    (design/cognition-loop/20-observe.md §1).
+    `RawReactionActionEvent` → a `Touch` on the message it names.
 
     The RAW events, for `on_raw_message_edit`'s reason: the cached ones fire
     only for a message still in discord.py's cache. Guild channels only (a DM

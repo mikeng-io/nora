@@ -1,12 +1,9 @@
 """Speech-or-not per 80 ms chunk — Silero VAD, the model openWakeWord ships.
 
-Why this exists (2026-09-17, measured on Miles's recording): the gate ended an
-utterance after 0.96 s of chunks whose RMS was under 400, and under ducked
-music the floor is ~1,000 RMS — 43 % of chunks ever dip under 400 and the
-longest quiet run in 21 s was 1.44 s. So "finished speaking" was decided by
-the music, not the speaker: 2 s phrases collected for 4.7 s and 7.4 s, and a
-second 「喂 Nora」 inside that window was appended to the first utterance
-instead of starting a new one. RMS measures LOUD; the question is SPEECH.
+RMS measures LOUD; the end of an utterance is decided by SPEECH. Under ducked
+music the RMS floor sits near 1,000, so a quiet-RMS threshold never sees the
+speaker stop, and a second 「喂 Nora」 inside that window would be appended to the
+first utterance instead of starting a new one.
 
 Silero VAD answers that question: trained speech-vs-everything-else, ~2 MB,
 sub-millisecond per chunk on CPU, and `openwakeword.vad.VAD` already wraps
