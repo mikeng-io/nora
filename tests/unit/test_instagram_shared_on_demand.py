@@ -1,12 +1,9 @@
 """A shared reel's, post's or story's thumbnail is HELD at ingest and READ only
-when asked (operator rule, 2026-09-24), and only when the share has no link:
-a share whose link validated carries no thumbnail at all (later the same day,
-after #454), so it is neither held nor read.
+when asked, and only when the share has no link: a share whose link validated
+carries no thumbnail at all, so it is neither held nor read.
 
-Measured before this: a live shared reel and a live shared story, with nobody
-tagging Nora, each had its thumbnail described by the vision model at ingest
-(`media_objects.description` filled). The rule is that Nora reads shared
-content only when tagged, never on every share or forward.
+The rule is that Nora reads shared content only when tagged, never on every
+share or forward.
 
 These drive the real chain — `parse_event` → the custody stage → the real
 `MediaComprehension` job → `FakeMediaInterpreter` — because the property is

@@ -1,5 +1,4 @@
-"""`InstagramSocialClient`'s OWN surface — the part of it that is not the port
-(design/instagram-adoption/17 P4).
+"""`InstagramSocialClient`'s OWN surface — the part of it that is not the port.
 
 Its three states and never-raises discipline are also held against every
 other implementation in `tests/contract/test_social_provider_contract.py`.
@@ -257,7 +256,7 @@ def _outside_text(out: dict) -> str:
 
 
 async def test_a_story_carries_caption_alt_text_and_author_inside_the_wrap(client):
-    """design/instagram-adoption/18: every frame carries its text layer, so
+    """Every frame carries its text layer, so
     Nora can answer from the caption and Instagram's own description without a
     vision call. It goes into the wrapped, clamped `text` — and ONLY there:
     the result dict reaches the model whole, so a caption in `items` would be
@@ -296,7 +295,7 @@ async def test_an_instruction_in_a_caption_stays_inside_the_wrap(client):
 
 async def test_a_non_string_caption_is_dropped_not_stringified(client):
     """`str()` is how a structure becomes content nobody checked — the same
-    channel the `id` slot once opened."""
+    channel an `id` slot would open."""
     fake, provider = client
     fake.story = _story_with([
         _frame(caption={"secret": "smuggled-by-dict"}, alt_text=["smuggled-by-list"]),
@@ -327,7 +326,7 @@ async def test_a_caption_cannot_forge_a_frame_line(client):
 
 
 async def test_a_frame_id_never_reaches_the_model(client):
-    """The `id` slot is not read at all (2026-09-24). It was a content channel
+    """The `id` slot is not read at all. It is a content channel
     — a dict there put its contents in the result while a key whitelist did
     not notice — and an identifier leak: the bridge falls back to `item.ID`,
     shaped `<pk>_<owner igid>`, when a reel item has no `pk`. The generated
@@ -381,8 +380,7 @@ async def test_a_bridge_error_text_never_reaches_the_model(client):
 
 
 async def test_the_item_url_rides_items_in_the_order_the_text_numbers_them(client):
-    """The urls left the text on 2026-09-24 (18 §"Typed views, one renderer,
-    and readings"): a CDN url is hundreds of characters of signature, re-sent
+    """The urls are not in the text: a CDN url is hundreds of characters of signature, re-sent
     on every later model call, and `items` already carries each one,
     UNESCAPED, for `media_fetch(url=...)`. The text numbers the frames in
     the same order."""
@@ -442,7 +440,7 @@ async def test_a_story_line_carries_an_age_not_an_epoch(client):
 
 
 async def test_a_story_result_says_that_it_is_a_story(client):
-    """design/instagram-adoption/06 §"a story must be SAID to be a story"."""
+    """A story must be SAID to be a story."""
     _, provider = client
     out = await provider.read(**_STORY)
     assert out["source_kind"] == "instagram_story"
@@ -526,9 +524,9 @@ async def test_the_profile_render_is_clamped(bridge, make_client):
     assert len(body) < 120
 
 
-# ---- one post or reel: `GET /posts/{shortcode}` (P12) -------------------------
+# ---- one post or reel: `GET /posts/{shortcode}` -------------------------------
 #
-# The post route is on the NEW conventions (`16` §Resources): success has no
+# The post route's conventions: success has no
 # `ok` field, failure is `{"error": {"code", "message"}}`. A catch-all fake
 # records every request, so «nothing was sent» is on the bridge's own log.
 
@@ -588,7 +586,7 @@ async def test_a_post_is_a_get_on_the_post_resource_and_keeps_every_item_in_orde
 
 
 async def test_a_post_result_says_its_item_urls_are_what_media_fetch_looks_at(post_bridge):
-    """The other half of a shared reel's route (design 13, 2026-09-24): the
+    """The other half of a shared reel's route: the
     transcript line carries only the link, `media_fetch` sends an Instagram
     page link here, and this result is where the files are. Its note has to
     say that each item's url goes to `media_fetch(url=...)`, and every item
@@ -631,8 +629,8 @@ async def test_a_post_caption_is_wrapped_last_and_cannot_forge_a_marker(post_bri
 
 
 async def test_a_long_caption_comes_back_whole_where_the_transcript_cuts_it(post_bridge):
-    """The transcript carries a shared item's FIRST SENTENCE (design 13,
-    2026-09-24) on the promise that the post read returns the rest. This is
+    """The transcript carries a shared item's FIRST SENTENCE
+    on the promise that the post read returns the rest. This is
     that promise: a caption of about a thousand characters, several
     sentences and a newline, comes back whole, its newline folded to a
     space, under the default clamp. Synthetic text."""
@@ -713,7 +711,7 @@ async def test_a_target_that_is_not_a_shortcode_never_reaches_the_bridge(post_br
     assert fake.calls == []
 
 
-# ---- the username lookup: `GET /accounts?username=` (P10) ----------------------
+# ---- the username lookup: `GET /accounts?username=` -----------------------------
 
 
 def _lookup_with(items: list[dict]) -> dict:

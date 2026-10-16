@@ -43,9 +43,7 @@ def test_an_empty_or_whitespace_dsn_is_off_rather_than_an_init_attempt(
     return-value assertion passes either way and guards nothing. What changes
     is which STATE the operator is told about: "not configured" (INFO,
     expected) versus "init failed" (WARNING, reads like a bug in a deployment
-    that simply has a blank line in its dotenv). Probed by removing the strip:
-    the return-value version stayed green, this one goes red.
-    """
+    that simply has a blank line in its dotenv)."""
     monkeypatch.setenv("SENTRY_DSN", "   ")
     with caplog.at_level(logging.INFO, logger="nora.errors"):
         assert setup_errors(enabled=True, dsn_env="SENTRY_DSN") is False
@@ -126,7 +124,7 @@ def test_it_reports_errors_without_starting_a_second_tracing_pipeline(monkeypatc
     )
     # The logging integration is what turns this codebase's `log.exception`
     # sites into issues; without it Sentry would only see what escapes to the
-    # top, which in a codebase that catches 223 times is almost nothing.
+    # top, which in a codebase that catches broadly is almost nothing.
     integrations = captured["integrations"]
     assert any(
         type(i).__name__ == "LoggingIntegration" for i in integrations  # type: ignore[union-attr]
@@ -134,11 +132,10 @@ def test_it_reports_errors_without_starting_a_second_tracing_pipeline(monkeypatc
 
 
 def test_a_logged_exception_is_the_shape_the_integration_captures():
-    """The 223 `log.exception` sites are `ERROR` records carrying `exc_info`.
+    """The `log.exception` sites are `ERROR` records carrying `exc_info`.
 
     Not a test of Sentry — a test of the ASSUMPTION this module's docstring
-    makes about the codebase, which is what would silently stop being true.
-    """
+    makes about the codebase, which is what would silently stop being true."""
     records: list[logging.LogRecord] = []
 
     class _Capture(logging.Handler):

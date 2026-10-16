@@ -1,4 +1,4 @@
-"""The bridge's `summons` SSE event (the 2026-09-26 intake contract): parsed
+"""The bridge's `summons` SSE event: parsed
 ONCE into a `SummonsCard`, handed to the summons sink, and NEVER to room
 ingest.
 
@@ -237,12 +237,11 @@ async def test_the_registry_hands_the_inbox_to_the_instagram_adapter():
 async def test_a_summons_never_reaches_the_room_parser_even_if_it_would_accept_it(
     monkeypatch,
 ):
-    """The adapter's early return, pinned directly. Today `parse_event`
-    answers None for `kind: "summons"`, so the positive tests above would stay
-    green without the early return. Here the room parser is replaced by one
-    that ACCEPTS every event and records what it was handed: a summons must
-    never be among them, and so never reaches `on_message`. Falsified by
-    removing the early return: the summons is parsed and ingested as a room
+    """The adapter's early return, pinned directly. `parse_event` answers None for `kind:
+    "summons"`, so the positive tests above would stay green without the early return. Here the
+    room parser is replaced by one that ACCEPTS every event and records what it was handed: a
+    summons must never be among them, and so never reaches `on_message`. Without the early return
+    the summons is parsed and ingested as a room
     message."""
     import nora.platform.instagram.adapter as adapter_module
 

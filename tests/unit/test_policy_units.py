@@ -1,8 +1,8 @@
 """`policy.toml`'s `[units]` — workspace > unit > room (DEC-214).
 
 The structure half of the hierarchy: which Nora workspace each unit belongs
-to, and DEC-105's one-room-per-platform-per-unit rule, which nothing
-enforced before. Every id below is a placeholder.
+to, and DEC-105's one-room-per-platform-per-unit rule, which the loader
+enforces. Every id below is a placeholder.
 """
 
 from __future__ import annotations
@@ -73,8 +73,8 @@ def test_units_parse_into_the_workspace_hierarchy(tmp_path):
 
 
 def test_without_units_every_unit_is_in_the_one_implicit_workspace(tmp_path):
-    """Back-compat: a policy written before the hierarchy loads unchanged,
-    every unit — listed or not — in `DEFAULT_WORKSPACE`."""
+    """A policy written without the hierarchy loads unchanged, every unit —
+    listed or not — in `DEFAULT_WORKSPACE`."""
     policy = _load(tmp_path, _ROOMS)
     assert policy.units_declared is False
     assert policy.workspace_of("alpha") == DEFAULT_WORKSPACE

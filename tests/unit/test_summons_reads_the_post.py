@@ -1,10 +1,7 @@
 """The public summons READS THE POST'S MEDIA BEFORE ITS TURN
-(design/instagram-adoption/19, operator rule #435: a summons is a tag, and
-shared content is read when she is tagged).
+(a summons is a tag, and shared content is read when she is tagged).
 
-Measured live on 2026-09-26: the summons post was a reel, she called
-`media_fetch` once with the signed CDN url as a `code` instead of a `url`, it
-failed, and she answered from the caption. Now every item she is shown (at
+Every item she is shown (at
 most `MAX_ITEMS_SHOWN`) is read first, by `instagram_read`'s own mechanism:
 `readings.read_view` with each look `media_fetch(url=...)` itself. What each
 item shows is in her context, inside the post's `social_post` block.
@@ -20,9 +17,8 @@ off them, beside a positive control that the vision client really ran.
 
 Every name, handle, url and id here is synthetic.
 
-The falsification this file carries (removed by hand, the named test went
-red, restored): the pre-read in `SummonsOccasion._turn` —
-`test_an_image_post_is_read_and_what_it_shows_is_in_her_context`.
+Guarded by `test_an_image_post_is_read_and_what_it_shows_is_in_her_context`: it
+fails without the pre-read in `SummonsOccasion._turn`.
 """
 
 from __future__ import annotations

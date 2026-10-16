@@ -1,4 +1,4 @@
-"""THE PROBE for issue #325: the counter moves when the condition occurs, and
+"""THE PROBE: the counter moves when the condition occurs, and
 does not when it does not.
 
 A test that asserts `reasoning_strip_log` exists would be decoration. What is
@@ -40,7 +40,7 @@ BUDGETS = {"now": 4}
 # Five turns of rope, so nothing here is bounded by R-8: the loop stops
 # because the MODEL stops, which is what keeps the call counts below a
 # property of this probe rather than of the budget. It also keeps the
-# budget-exhaustion draft (#110) out of the picture — that is a second
+# budget-exhaustion draft out of the picture — that is a second
 # `invoke_async` on the same agent, and it would add a fourth model call
 # whose presence depends on a decision this file is not about.
 LIMITS = {"turns": 5, "output_tokens": 12_000, "total_tokens": 64_000}
@@ -63,7 +63,7 @@ class _ScriptedModel(Model):
     `agent.messages`, and the next completion is formed from it.
 
     `reasons=False` is the same loop at `reasoning_effort = "none"`. It is the
-    control, and it is the population the tag path moved into on 2026-09-17.
+    control, and it is the population the tag path runs in.
     """
 
     def __init__(self, *, reasons: bool, tool_passes: int = 2) -> None:
@@ -192,14 +192,13 @@ async def _drive(
 
 
 async def test_a_tool_using_turn_that_reasons_is_recorded_as_stripped():
-    """THE ASSERTION THIS PR EXISTS FOR.
+    """The core assertion.
 
     Three model calls: the first carries nothing to lose, and the two
     continuations each carry the previous pass's reasoning into a request the
     Chat Completions transport will not take it in. Both continuation calls are
     opportunities and both are strips — a 2-of-2 turn, which is precisely the
-    reading production's two hits in two hours could not be given a denominator
-    for (#325).
+    reading a bare strip count cannot give.
     """
     model, _watch, store, _ = await _drive(reasons=True)
     assert model.calls == 3, "the loop did not go multi-turn; there is nothing to probe"
@@ -226,11 +225,9 @@ async def test_the_same_turn_with_no_reasoning_is_recorded_as_clean():
     above and fail here, which is the failure mode CLAUDE.md names as "a fake
     that answers every request the same way".
 
-    It is also a real population rather than a hypothetical: the tag path went
-    `reasoning_effort = "low" -> "none"` on 2026-09-17, so the turns this
-    describes are the ones actually running there now — and a zero here reads
-    «cannot happen», not «fixed», which is why `reasoning_effort` is on the
-    row beside the counts.
+    It is also a real population rather than a hypothetical: the tag path runs
+    at `reasoning_effort = "none"` — and a zero here reads «cannot happen», not
+    «fixed», which is why `reasoning_effort` is on the row beside the counts.
     """
     model, _, store, _ = await _drive(reasons=False)
     assert model.calls == 3
@@ -267,9 +264,7 @@ async def test_both_halves_of_the_ratio_reach_prometheus():
 async def test_the_provenance_on_the_row_is_read_off_the_model_not_from_config():
     """`model` and `reasoning_effort` come from the provider the call actually
     used. That is the whole reason they are on the row: config says what was
-    configured, and on 2026-09-17 the combo behind the alias changed upstream
-    while two paths' effort moved in opposite directions, and it took two hours
-    and a log dive to see it."""
+    configured, not what ran."""
     _, _, store, _ = await _drive(reasons=True)
     (row,) = store.rows
     assert (row.model, row.reasoning_effort) == ("nora", "low")
@@ -351,10 +346,10 @@ async def test_the_budget_exhaustion_draft_is_counted_into_the_same_row():
     """A DECISION, recorded here because the row it produces looks like a bug.
 
     A turn cut off by one of R-8's caps with no prose gets one more completion
-    over its own accumulated context (#110,
-    `factory.draft_from_exhausted_loop`) — a SECOND `invoke_async` on the SAME
-    agent, with this watch still registered. Its request genuinely carries the
-    accumulated reasoning and the transport genuinely drops it.
+    over its own accumulated context (`factory.draft_from_exhausted_loop`) — a
+    SECOND `invoke_async` on the SAME agent, with this watch still registered.
+    Its request genuinely carries the accumulated reasoning and the transport
+    genuinely drops it.
 
     So it is counted, and the stated unit of a row is the TURN rather than the
     invocation. The alternative — excluding it — would under-report a real
@@ -425,11 +420,9 @@ def test_every_audience_deliver_build_can_be_given_reaches_the_row():
     """`path` IS `audience`, and the vocabulary is the declared one.
 
     Parametrized over `SPEAKING_AUDIENCES` rather than over a list written
-    here: the first version of this instrument tested `tag` and
-    `participation` and documented only those two, while `fire.py` was already
-    sending `heartbeat` (every reminder and gathering turn — tool-using and
-    multi-turn) and `proactive`. A dashboard filtered off the documentation
-    dropped the reminder path in silence.
+    here, so a path such as `heartbeat` (every reminder and gathering turn —
+    tool-using and multi-turn) or `proactive` cannot be missing from the
+    documented vocabulary.
     """
     for audience in SPEAKING_AUDIENCES:
         handle = _handle(audience=audience, store=None)
@@ -443,7 +436,7 @@ def test_the_participation_occasion_labels_its_rows_participation():
     required with no default there for the reason a second spelling of the same
     fact would undo — a row labelled `tag` from the participation occasion
     cannot be read beside `nora_silent_failures_total{audience="participation"}`,
-    and "which path" is one of the three questions #325 asks.
+    and "which path" is one of the questions the row answers.
     """
     tag = _handle(audience="tag", store=None)
     participation = _handle(audience="participation", store=None)

@@ -240,8 +240,8 @@ async def test_a_store_that_is_down_is_unavailable_never_ok_or_missing() -> None
 
 
 async def test_an_unavailable_publish_tells_her_the_map_fallback() -> None:
-    """Review of #708: the Map fallback (name each place in Markdown) was lost with the skill's
-    old sections. A publish that could not be saved says it, and that nothing was stored."""
+    """A publish that could not be saved says so, and that nothing was stored; the Map
+    fallback (name each place in Markdown) is part of the note."""
     class _Down(FakeDocumentStore):
         async def create(self, **kw: Any):
             raise RuntimeError("db down")
@@ -499,8 +499,8 @@ async def test_a_handle_another_room_shares_is_resolved_among_this_rooms_documen
 
 
 async def test_a_spec_that_is_not_json_is_told_to_send_an_object_and_not_claim_it() -> None:
-    """2026-10-02, trace c3619636: a long spec sent as text broke at one quote; she saved the draft
-    elsewhere and said the document was made. The note names the fix and the claim."""
+    """A long spec sent as text can break at one quote. The note names the fix and
+    the claim, so she does not say the document was made when it was not."""
     broken = '{"version": 1, "root": {"type": "Page" "props": {"title": "T"}}}'
     out = await _tools(_service())["document_publish"](spec=broken)
     assert out["status"] == "bad_arguments"
@@ -565,8 +565,8 @@ def _map_spec(*names: str) -> dict[str, Any]:
 
 
 async def test_the_tool_hands_the_address_book_to_the_map_screen() -> None:
-    """Review of #703: only the service-level test passed the names, so dropping the argument at
-    the tool (`person_names=_route_person_names`) left the suite green and a person's name went to
+    """The tool passes the person names to the service
+    (`person_names=_route_person_names`); dropping the argument would send a person's name to
     Google."""
     asked: list[str] = []
     out = await _tools(_map_service(asked))["document_publish"](spec=_map_spec(
@@ -578,7 +578,7 @@ async def test_the_tool_hands_the_address_book_to_the_map_screen() -> None:
 
 
 async def test_an_address_reverse_geocode_gave_out_this_turn_cannot_be_pinned_on_a_map() -> None:
-    """Review of #703 (R-57): `route` refuses an address `reverse_geocode` disclosed this turn; a
+    """R-57: `route` refuses an address `reverse_geocode` disclosed this turn; a
     Map would have stored it as a pin. The tool passes the turn's set to the service."""
     asked: list[str] = []
     service = _map_service(asked)

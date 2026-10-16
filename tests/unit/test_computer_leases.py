@@ -1,4 +1,4 @@
-"""`ComputerLeases` (design/sandbox-runtime §15.4): a live caller waits its
+"""`ComputerLeases`: a live caller waits its
 bound; a background caller never waits; a released key is dropped."""
 
 from __future__ import annotations

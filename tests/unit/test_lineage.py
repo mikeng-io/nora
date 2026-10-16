@@ -1,5 +1,5 @@
 """The lineage predicates and their application at assembly
-(design/cognition-loop/10-tiers.md §3, DEC-222, DEC-225; migration step 2).
+(DEC-222, DEC-225).
 
 One predicate per kind, each with the room it must pass and the room it must
 not; unknown is deny; a surprise withholds; a failing section is dropped and
@@ -81,8 +81,8 @@ def test_message_passes_in_its_own_room_and_in_a_subset_room_of_the_unit():
     (LiveRoom(person_ids=frozenset({"p1", "p9"})), "p9 is in B and not listed in A"),
 ])
 def test_message_needs_who_is_actually_in_the_room_not_only_who_it_lists(live, why):
-    """B lists a subset of A's people; who is IN B right now must be too
-    (review of the first cut). Unverifiable is refused."""
+    """B lists a subset of A's people; who is IN B right now must be too.
+    Unverifiable is refused."""
     assert not entry_permits(message("signal:a"), _in(B, live=live), origin="a"), why
 
 
@@ -291,14 +291,11 @@ def _body_at(ctx: TagContext, now: datetime) -> str:
 def test_the_working_set_ages_against_the_clock_the_prefill_was_given():
     """The block is aged against `build_prefill`'s `now`, not the wall clock.
 
-    It called `render_standing_working_set` without `now`, so it fell back to
-    `datetime.now()` while every other block used the prefill's. The lineage
-    tests pin `now` to 2026-09-29 12:00 UTC and give the item `found_at=NOW`,
-    so on 2026-10-01 12:00 UTC (48 h on) the item expired in the real world and
+    The lineage tests pin `now` and give the item `found_at=NOW`; a block that
+    fell back to `datetime.now()` would expire the item on a later day and turn
     `test_a_same_room_read_renders_exactly_what_it_rendered_without_lineage`
-    went red on an untouched master. A prefill built for a given instant must
-    render the same on any day; that is also what makes a replayed turn
-    reproducible."""
+    red. A prefill built for a given instant must render the same on any day;
+    that is also what makes a replayed turn reproducible."""
     ctx = _ctx(A, standing=_standing("a"))
     assert "<standing_working_set" in _body_at(ctx, NOW + timedelta(hours=47))
     assert "<standing_working_set" not in _body_at(ctx, NOW + timedelta(hours=49))
@@ -315,7 +312,7 @@ NOTE_A_LEGACY = _note("0191f2c4-0000-7000-8000-0000000000a3", "legacy revision",
 
 def test_a_same_room_read_renders_exactly_what_it_rendered_without_lineage():
     """Every block a backfilled room's OWN rows produce is byte-identical with
-    lineage on and with it absent (15 §3; the reading this step must keep)."""
+    lineage on and with it absent."""
     rows = {"notes": (NOTE_A, NOTE_A_LEGACY), "standing": _standing("a"),
             "culture": _culture("a")}
     policy = LineagePolicy(rooms=ROOMS, circles=(CIRCLE,), mode="on",
@@ -388,7 +385,7 @@ def test_mode_off_computes_nothing():
 
 
 def test_a_rows_origin_may_be_a_room_key_or_a_bare_id():
-    """Room keys are `platform:conversation_id` (step 2a's); a note's
+    """Room keys are `platform:conversation_id`; a note's
     `established_in` is a bare id, matched within the unit. A key on another
     platform is not this room."""
     assert A.is_room("signal:a") and A.is_room("a")
@@ -400,7 +397,7 @@ def test_a_rows_origin_may_be_a_room_key_or_a_bare_id():
 
 def test_a_room_with_nobody_resolved_verifies_nothing_so_no_cross_room_entry_shows():
     """An available, fully named roster with NO person in it is «could not verify»,
-    never a vacuous subset (review of #647, M2): `frozenset() <= anything`."""
+    never a vacuous subset: `frozenset() <= anything`."""
     empty = LiveRoom(person_ids=frozenset())
     assert not entry_permits(message("signal:a"), _in(B, live=empty), origin="a")
     assert not entry_permits(

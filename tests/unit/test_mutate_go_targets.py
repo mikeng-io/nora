@@ -4,8 +4,7 @@ The rule the runner exists for: a mutant that does not COMPILE has proved
 nothing, so it is a BROKEN ENTRY (zero collected), never a caught one. With
 `./...` that is easy to get wrong: the packages that still compile run and
 print `=== RUN` lines, and only the exit code says one package did not build.
-The runner once counted those lines alone, and that would have reported an
-uncompilable mutant as caught.
+Counting those lines alone would report an uncompilable mutant as caught.
 """
 
 from __future__ import annotations

@@ -1,6 +1,4 @@
-"""`nora.platform.instagram.ids` — the pure half of the wire contract
-(design/instagram-adoption/02-identity-and-policy.md,
-design/instagram-adoption/03-transport-contract.md).
+"""`nora.platform.instagram.ids` — the pure half of the wire contract.
 
 Everything here is about a value NOT being normalised into something it is
 not. The Instagram id spaces are three sets of bare digits and the whole
@@ -17,7 +15,7 @@ from nora.platform.instagram.ids import (
     is_person_mention,
 )
 
-# The two shapes 02 measured on ONE three-person room. They are 15 and 17
+# Two real shapes from ONE three-person room. They are 15 and 17
 # digits, and the 17-digit one shares the `1784…` prefix with Nora's own fbid —
 # which is exactly why no length or prefix check may exist anywhere.
 SHORT_FBID = "186217604552756"
@@ -61,7 +59,7 @@ def test_the_conversation_id_is_the_short_thread_id_VERBATIM():
 
 def test_the_conversation_id_does_not_reject_a_LONG_thread_id():
     """Not a gap — a stated non-goal. The long id is all digits too
-    (`03`'s status table says a long id in `room_id` is the bridge's 400), so
+    (a long id in `room_id` is the bridge's 400), so
     a shape check here would buy nothing and would be a second place to keep
     a rule the bridge already owns."""
     long_id = "340282366841710301281152937372201004392"

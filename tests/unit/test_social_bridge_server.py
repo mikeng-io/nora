@@ -87,8 +87,8 @@ async def test_every_write_ish_command_is_refused_and_never_spawns(bridge, what)
 
 
 async def test_instagram_post_is_refused_and_never_spawns(bridge):
-    """Host-side: OpenCLI 1.8.7 has no caption-by-URL command, and since P11
-    OpenCLI serves no Instagram read at all (`x_read` and `x_search` are X only). A
+    """Host-side: OpenCLI has no caption-by-URL command and serves no Instagram
+    read at all (`x_read` and `x_search` are X only). A
     request for one could only have been constructed around the tool, so it
     is refused here."""
     runner, session, base = bridge
@@ -106,8 +106,7 @@ async def test_instagram_post_is_refused_and_never_spawns(bridge):
 async def test_instagram_reads_moved_to_the_bridge_are_refused_and_never_spawn(
     bridge, what,
 ):
-    """The per-verb cutover, host-side (design/instagram-adoption/15, /18 P5,
-    P11). Instagram profile and story are `instagram_read`'s and account
+    """Host-side, per verb. Instagram profile and story are `instagram_read`'s and account
     search is `instagram_search`'s, all over the instagram-bridge, and
     `posts` has no mechanism anywhere, so OpenCLI serves none of them. A
     request for one could only have been built around the tools, and it is
@@ -193,9 +192,7 @@ async def test_an_allowed_combo_invokes_the_exact_argv(
 
 def test_every_allowlisted_command_has_a_validator():
     """Validation is TOTAL over the allowlist: a command added without a
-    validator would be refused (fail closed), and this names it first. It
-    replaced a chain whose last branch validated any command it did not name
-    as free text (design/social-per-network/10)."""
+    validator would be refused (fail closed), and this names it first."""
     from nora.infra.social.bridge_server import _VALIDATORS, _validate_target
 
     assert set(READ_ONLY_ALLOWLIST.values()) <= set(_VALIDATORS)
@@ -260,8 +257,7 @@ async def test_every_allowlisted_pair_is_covered_by_the_argv_test():
         ("linkedin", "search", "a\nb"),                     # control character
         ("linkedin", "search", "q" * 201),
         # A target that starts with a dash would reach OpenCLI's argv as a
-        # FLAG (Sonnet review, 2026-09-24): `/company/-f/` collided with the
-        # bridge's own `-f json`.
+        # FLAG: `/company/-f/` would collide with the bridge's own `-f json`.
         ("linkedin", "company", "-f"),
         ("linkedin", "company", "--evil"),
         ("linkedin", "search", "--limit"),
@@ -309,10 +305,9 @@ async def test_exit_0_with_malformed_json_is_unavailable(bridge):
 
 @pytest.mark.parametrize("stdout", ["[]", "{}", "null", " [ ] "])
 async def test_exit_0_with_an_empty_result_is_nothing_found(bridge, stdout):
-    """Measured 2026-09-24: `opencli twitter thread <an id that names no
-    post>` exits 0 and prints `[]`. That is «the read ran and found nothing»,
-    not an `ok`: an `ok` with no data reached the model as an empty post it
-    was asked to describe."""
+    """`opencli twitter thread <an id that names no post>` exits 0 and prints
+    `[]`. That is «the read ran and found nothing», not an `ok`: an `ok` with
+    no data reaches the model as an empty post it is asked to describe."""
     runner, session, base = bridge
     runner.stdout = stdout
     _status, body = await _read(

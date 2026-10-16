@@ -1,28 +1,22 @@
-"""`nora.agent.link_owners` — the registry itself, and the enforcement tests
-`design/social-per-network/30-link-owner-registry.md` names for PR 1
-("Migration" step 1): every owner names a real tool and a real parameter on
+"""`nora.agent.link_owners` — the registry itself, and its enforcement tests:
+every owner names a real tool and a real parameter on
 it, the redirect shape is `nothing_found` with the exact note pinned, the
 note is COMPOSED from owner and fetcher slots rather than fetcher-held
 literal text, and registering a network touches no fetcher.
 
-**PR 2** ("Migration" step 2) adds X and LinkedIn: `LINK_OWNERS` now has
-three rows, and this file's matrix grows an X and a LinkedIn section beside
-Instagram's. The negatives carry every host the design's "What live traffic
-shows" and "Types" sections name as one a registry must never claim: X's and
-LinkedIn's own CDN hosts, `t.co` and `lnkd.in` (neither is its network's own
-page — the one live `lnkd.in` link led off-LinkedIn), a lookalike host
-(`x.com.evil.example`), a reserved X path (`/explore`), and a LinkedIn post
-link (recognised by the parser, but `linkedin_read` cannot read one from its
-link, so it is never claimed — design 30, "Design" §"Types").
+The matrix has an Instagram, an X and a LinkedIn section. The negatives
+carry every host a registry must never claim: X's and LinkedIn's own CDN
+hosts, `t.co` and `lnkd.in` (neither is its network's own page), a lookalike
+host (`x.com.evil.example`), a reserved X path (`/explore`), and a LinkedIn
+post link (recognised by the parser, but `linkedin_read` cannot read one
+from its link, so it is never claimed).
 
-**PR 3** ("Migration" step 3, "the owners use the registry") adds the
-three-by-three matrix at the bottom of this file: `x_read`, `linkedin_read`
-and `instagram_read` now call `owner_of` (through `nora.agent.tools.
-_other_link_owner`, which filters out a claim on the asking tool's OWN
-network — Instagram's and LinkedIn's unreadable mobile shape is a claim on
-their OWN network too) from the exact spot their own `parse_link` returned
-`None`, replacing three disagreeing hand-written "not mine" branches with
-one call each.
+The three-by-three matrix at the bottom of this file covers `x_read`,
+`linkedin_read` and `instagram_read`, which call `owner_of` (through
+`nora.agent.tools._other_link_owner`, which filters out a claim on the asking
+tool's OWN network — Instagram's and LinkedIn's unreadable mobile shape is a
+claim on their OWN network too) from the exact spot their own `parse_link`
+returned `None`.
 """
 
 from __future__ import annotations
@@ -98,7 +92,7 @@ _CLAIMED_MOBILE = (
     "m.instagram.com/p/SynthPost01/",
 )
 
-# ---- X (PR 2): the parser's own host allowlist already accepts every
+# ---- X: the parser's own host allowlist already accepts every
 # mobile/alternate spelling (`x_links.X_HOSTS`), so every one of these is
 # `readable=True` with no separate mobile shape.
 _X_POST_URL = "https://x.com/synth_user01/status/9000000000000000001"
@@ -112,7 +106,7 @@ _CLAIMED_X = (
     "x.com/synth_user01/status/9000000000000000001",  # no scheme
 )
 
-# ---- LinkedIn (PR 2): a person or company link is readable; `m.linkedin.com`
+# ---- LinkedIn: a person or company link is readable; `m.linkedin.com`
 # is claimed but not readable (the same shape as Instagram's mobile host);
 # a post is never claimed at all (below, in `_UNCLAIMED`).
 _LINKEDIN_PERSON_URL = "https://www.linkedin.com/in/synth-person-01"
@@ -138,7 +132,7 @@ _UNCLAIMED = (
     "https://t.co/synthShort1",  # X's own shortener, a different host
     "https://pbs.twimg.com/media/synthetic.jpg",  # X's own CDN file
     "https://x.com.evil.example/synth_user01",  # a lookalike host, not x.com
-    "https://x.com/explore",  # a reserved X page, not an account (non-goals)
+    "https://x.com/explore",  # a reserved X page, not an account
     "https://media.licdn.com/dms/image/synthetic.jpg",  # LinkedIn's own CDN file
     # A LinkedIn post: recognised by the parser, never claimed (linkedin_read
     # cannot read one from its link; web_fetch may).
@@ -232,10 +226,10 @@ def test_redirect_composes_the_unreadable_note_from_owner_and_fetcher_slots():
 
 
 def test_the_composed_note_matches_every_live_string():
-    """The coordinator's own requirement: the four strings `web_fetch` and
-    `media_fetch` returned before design 30 (`_INSTAGRAM_PAGE_LINK`,
+    """The four strings `web_fetch` and
+    `media_fetch` return for an Instagram link (`_INSTAGRAM_PAGE_LINK`,
     `_INSTAGRAM_MOBILE_PAGE_LINK`, `_WEB_FETCH_INSTAGRAM_PAGE`,
-    `_WEB_FETCH_INSTAGRAM_MOBILE_PAGE`, all still imported by
+    `_WEB_FETCH_INSTAGRAM_MOBILE_PAGE`, all imported by
     `tests/test_media_fetch.py`/`tests/unit/test_social_tool_notes.py`
     unchanged) are reproduced byte-for-byte by composing `owner.label`/
     `.tool`/`.param` and each fetcher's OWN `link_inputs` entry off
@@ -302,7 +296,7 @@ def test_redirect_composes_the_x_and_linkedin_notes():
     }
 
 
-# ---- an unreadable claim must carry a real note (ADR 0015 §3) --------------
+# ---- an unreadable claim must carry a real note (ADR 0015) -----------------
 
 def test_an_unreadable_claim_with_no_template_fails_at_construction():
     """An empty `note` satisfies `test_every_status_carries_a_note.py`'s
@@ -315,7 +309,7 @@ def test_an_unreadable_claim_with_no_template_fails_at_construction():
 
 def test_an_unreadable_templates_unknown_slot_fails_at_construction():
     """`redirect()` only ever fills `{not_clause}`/`{verb}`; a template
-    naming anything else used to raise a bare `KeyError` at `redirect()`'s
+    naming anything else would raise a bare `KeyError` at `redirect()`'s
     own `.format()` call — reachable only the day a model actually hit that
     claim. Constructing the `LinkClaim` is the earliest point this can be
     caught, and it is cheap enough to always run."""
@@ -330,7 +324,7 @@ def test_a_readable_claim_needs_no_template():
     LinkClaim(network="instagram", kind="page", readable=True)
 
 
-# ---- adding a network touches no fetcher (the operator's own requirement) --
+# ---- adding a network touches no fetcher -----------------------------------
 
 def _fake_claim(text: str) -> LinkClaim | None:
     if "fakenet.example" not in text:
@@ -348,7 +342,7 @@ _FAKE_URL = "https://fakenet.example/p/1"
 async def test_a_registered_network_needs_no_fetcher_change(monkeypatch):
     """Register ONE new `LinkOwner` — nothing else — and both `web_fetch` and
     `media_fetch` redirect its link, naming the fake tool and parameter. This
-    is the property the operator asked for directly: adding a network is one
+    is the property: adding a network is one
     `LinkOwner` row, and touches neither fetcher's declaration nor its body."""
     monkeypatch.setattr("nora.agent.link_owners.LINK_OWNERS", (*LINK_OWNERS, _FAKE_OWNER))
     calls = _built_calls()
@@ -364,12 +358,11 @@ async def test_a_registered_network_needs_no_fetcher_change(monkeypatch):
     assert "handle" in media_result["note"]
 
 
-# ---- the signature test (design 30, "Tests and enforcement") ---------------
+# ---- the signature test ----------------------------------------------------
 
 @pytest.mark.parametrize("owner", LINK_OWNERS, ids=lambda o: o.network)
 def test_every_owner_names_a_built_tool_and_a_real_parameter(owner):
-    """Renaming `instagram_read`'s `link` — the shape design 30 names for
-    `x_read`'s, once it registers in PR 2/3 — must turn this red: a redirect
+    """Renaming `instagram_read`'s `link` must turn this red: a redirect
     naming a parameter that does not exist on the tool it points at is a
     dead end no test built from the fetcher's side would ever catch."""
     calls = _built_calls()
@@ -380,11 +373,10 @@ def test_every_owner_names_a_built_tool_and_a_real_parameter(owner):
     )
 
 
-# ---- PR 3 ("the owners use the registry"): the three-by-three matrix -------
+# ---- the three-by-three matrix ---------------------------------------------
 #
-# design/social-per-network/30-link-owner-registry.md's own falsification for
-# "Migration" step 3: "a three-by-three test (each owner handed each other
-# network's link) reddens when any owner falls back to its own hand branch."
+# Each owner is handed each other network's link; the matrix reddens when any
+# owner falls back to its own hand branch.
 # Each owner tool's OWN canonical link, so the six off-diagonal cells (every
 # owner asked about every OTHER network) exercise the real production
 # closures built with no backend wired at all — the redirect happens before
@@ -395,7 +387,7 @@ _OWNER_CANONICAL_LINK = {
     "instagram_read": _INSTAGRAM_PAGE_URL,
     "x_read": _X_POST_URL,
     "linkedin_read": _LINKEDIN_PERSON_URL,
-    # design/external-files §3 (S3): a shared document link. `file_fetch`
+    # A shared document link. `file_fetch`
     # reaches its own link through the wrapper's self-skip, and every other
     # owner's link through the wrapper's redirect (it declares `link_inputs`).
     "file_fetch": "https://docs.google.com/document/d/1SynthDocLink000000000000/edit",
@@ -417,12 +409,10 @@ assert len(_CROSS_NETWORK_CASES) == 12, _CROSS_NETWORK_CASES
     ids=[f"{a}-given-{t}-link" for a, t in _CROSS_NETWORK_CASES],
 )
 async def test_every_owner_redirects_every_other_owners_canonical_link(asking_tool, target_tool):
-    """The falsification: reverting ANY ONE of `x_read`'s, `linkedin_read`'s
-    or `instagram_read`'s `owner_of` call back to a hand-written "not mine"
-    branch turns the two cases where it is `asking_tool` red — either the
-    status stays `unavailable` (the old status this PR retires) or the note
-    never names the right tool (`instagram_read`'s old branch named no other
-    network at all)."""
+    """Each of `x_read`'s, `linkedin_read`'s and `instagram_read`'s `owner_of`
+    call must stay: a hand-written "not mine" branch in its place turns the
+    two cases where it is `asking_tool` red — either the status stays
+    `unavailable` or the note never names the right tool."""
     calls = _built_calls()
     target_url = _OWNER_CANONICAL_LINK[target_tool]
 
@@ -475,7 +465,7 @@ async def test_a_hostile_mobile_link_to_its_own_network_is_not_a_self_redirect()
     assert out["status"] != "nothing_found", out
 
 
-# ---- review of PR 802: an owner with nothing wired claims nothing ----------
+# ---- an owner with nothing wired claims nothing ----------------------------
 
 _FILE_LINK = "https://docs.google.com/document/d/1SynthDocLink000000000000/edit"
 

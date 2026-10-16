@@ -1,10 +1,9 @@
 """`ConversationSlots` — R-10's single-in-flight lock and R-30's per-conversation
 FIFO queue, hoisted out of `EngagementPipeline` into one collaborator.
 
-The pair used to live as two private attributes with their ownership split
-across `admission.run` (acquires) and the pipeline's `finally` (releases). The
-tests below pin the contract that split relied on and that a second acquirer
-(the heartbeat fire path) now needs: releasing and dispatching are ONE
+Acquire (`admission.run`) and release (the pipeline's `finally`) are split
+across callers. The tests below pin the contract both acquirers (the pipeline
+and the heartbeat fire path) rely on: releasing and dispatching are ONE
 operation, and a drained conversation retains nothing.
 """
 

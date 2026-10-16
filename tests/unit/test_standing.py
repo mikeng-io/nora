@@ -1,5 +1,5 @@
 """`Standing` and `<standing>` — the domain type's two caps and the block's
-own framing (`design/dreamer-agent-loop/26-standing.md` §4/§4.0).
+own framing.
 """
 
 from __future__ import annotations
@@ -22,10 +22,9 @@ from nora.language.standing_render import render_standing, render_standing_worki
 def _text(block) -> str:
     """The block's bytes, or `""` when there is no block.
 
-    The three renderers return a `ContextBlock` since #220's second half — the
-    block declares itself and `ContextBlock.render()` is the only thing that
-    turns one into text. These tests assert on the bytes, so they render here.
-    A `None` is «no block at all», which is what `""` used to mean.
+    The three renderers return a `ContextBlock` — the block declares itself and
+    `ContextBlock.render()` is the only thing that turns one into text. These
+    tests assert on the bytes, so they render here. A `None` is «no block at all».
     """
     return block.render() if block is not None else ""
 
@@ -36,15 +35,12 @@ def _standing(body: str = "They are picking a restaurant.") -> Standing:
 
 #: `render_standing`'s output on two real-shaped EXISTING heads
 #: (`hold_open`/`i_owe` both `None`, `0076_standing_sections`'s migrated
-#: state for every pre-existing row), as `origin/master`'s
-#: `nora/language/standing_render.py` rendered them at commit `39dc271d` —
-#: this branch's fork point, before `hold_open`/`i_owe` or the two-new-
-#: sections append existed. Generated once (`git show 39dc271d:nora/
-#: language/standing_render.py`, run against the two fixtures
-#: `test_an_existing_head_renders_every_fact_it_held_unchanged` builds below)
+#: state for every pre-existing row), as `nora/language/standing_render.py`
+#: rendered them before `hold_open`/`i_owe` or the two-new-sections append
+#: existed. Generated once, against the two fixtures
+#: `test_an_existing_head_renders_every_fact_it_held_unchanged` builds below,
 #: and pinned as literals — a golden string, not a live comparison against a
-#: second call into the code under test (PR #624 review finding; see that
-#: test's docstring for why the earlier version proved nothing).
+#: second call into the code under test (see that test's docstring).
 _MASTER_RENDER_OF_EXISTING_HEADS = (
     '<standing written="1m ago" description="where you had got to in this '
     'conversation when you last folded it, in your own words, a working '
@@ -84,7 +80,7 @@ _MASTER_RENDER_OF_EXISTING_HEADS = (
 
 
 def test_the_operating_cap_sits_below_the_database_ceiling():
-    """§4.0's two layers, asserted as a RELATION rather than as two numbers.
+    """The two layers, asserted as a RELATION rather than as two numbers.
 
     Either constant can move — the operating cap is config's default and the
     ceiling is DDL — but the ordering is the thing that makes the pair
@@ -130,10 +126,8 @@ def test_a_negative_fold_count_is_refused():
 
 
 def test_the_row_id_watermark_is_a_row_id_or_none():
-    """The fold's row-id watermark (design/standing-watermark/20), and the
-    same "two null values" argument `consumed_verdict_tag` made (deleted
-    2026-09-24):
-    `None` means "never folded — read from the beginning" (D5), so `0` would
+    """The fold's row-id watermark.
+    `None` means "never folded — read from the beginning", so `0` would
     be a second spelling of that state that compares unequal to it — and
     messages ids start at 1 anyway. A watermark satisfiable by accident is how
     a conversation re-reads from the beginning on every fold.
@@ -165,12 +159,11 @@ def test_the_block_says_it_is_carried_forward_and_is_not_an_instruction():
     contradictory and is the single most important property here: Standing is
     the only injected block revised IN PLACE rather than rebuilt from the store
     each turn, so an injection that lives one turn everywhere else persists
-    here until a later fold happens to drop it (§4.1).
+    here until a later fold happens to drop it.
 
-    It used to say that with `untrusted="true"`, a token defined in one
-    doctrine file that this audience does not load — so the block carrying the
-    subtlest reason for the hedge was the one whose hedge said least. #314
-    puts the reason itself in the tag.
+    The reason is carried in the tag itself, not as a token
+    (`untrusted="true"`) defined in a doctrine file that this audience does not
+    load.
     """
     block = _text(render_standing(_standing()))
     tag = block[: block.index(">") + 1]
@@ -179,23 +172,20 @@ def test_the_block_says_it_is_carried_forward_and_is_not_an_instruction():
 
 
 def test_the_block_says_it_keeps_nothing():
-    """§8/`19-between-tiers`: Standing must not become the place a wedding
+    """Standing must not become the place a wedding
     venue lives. The tier is lossy by design, so the model has to be TOLD it
     forgets — otherwise the cheapest place to put something is the place least
     able to hold it.
 
-    The phrasing changed 2026-09-17 because the old one contradicted its own
-    neighbour: «keeps nothing» sat 400 characters from «a line that got into it
-    once is still in it», and a reader asked «does standing persist» could
-    answer either way. Both clauses are load-bearing — §8 says it is lossy,
-    §4.1 says it is revised in place — so they are now ONE sentence that cuts
-    both ways rather than two that disagree.
+    Both clauses are load-bearing — the tier is lossy, and it is revised in
+    place — so they are ONE sentence that cuts both ways rather than two that
+    could answer «does standing persist» differently.
     """
     tag = _text(render_standing(_standing()))
     assert "what you do not carry forward is gone" in tag
     assert "is still in it until a later fold drops it" in tag
-    # "a note", not "a note or a fact" — the fact tier was deleted 2026-09-07
-    # and the block stopped offering a destination that does not exist.
+    # "a note", not "a note or a fact": there is no fact tier to offer as a
+    # destination.
     assert "belongs in a note" in tag
 
 
@@ -209,12 +199,11 @@ def test_the_body_is_escaped():
     assert block.count("</standing>") == 1
 
 
-# --- the sectioned schema (design/cognition-loop/12-schemas.md §5, step 3
-# row 3b): `hold_open` ("I hold open") and `i_owe` ("I owe") ------------
+# --- the sectioned schema: `hold_open` ("I hold open") and `i_owe` ("I owe") ---
 
 
 def test_hold_open_and_i_owe_default_to_none():
-    """The correct reading of every row this step migrates: additive
+    """The correct reading of every pre-existing row: additive
     columns, no backfill — `nora.infra.sql.migrations.versions.
     0076_standing_sections`'s own argument."""
     standing = _standing()
@@ -266,31 +255,27 @@ def test_render_standing_escapes_the_two_new_sections_too():
 
 
 def test_an_existing_head_renders_every_fact_it_held_unchanged():
-    """The migration/render-parity case `70-migration.md` step 3 row 3b asks
-    for: a real-shaped EXISTING Standing head — `hold_open`/`i_owe` absent,
-    exactly what `0076_standing_sections` migrates every pre-existing row
-    to — renders the SAME block byte-for-byte as it did the moment before
-    this step, because `render_standing` only APPENDS the two new sections
-    and only when they are non-empty.
+    """The migration/render-parity case: a real-shaped EXISTING Standing head —
+    `hold_open`/`i_owe` absent, exactly what `0076_standing_sections` migrates
+    every pre-existing row to — renders the SAME block byte-for-byte as before
+    the sections existed, because `render_standing` only APPENDS the two new
+    sections and only when they are non-empty.
 
-    **This has to be checked against the OLD renderer, not the new one
-    compared with itself** (PR #624 review finding): an earlier version of
-    this test built a SECOND `Standing` with only the pre-existing fields and
-    rendered it through THIS branch's `render_standing`, then compared that
-    against the branch's own render of `existing_head` — two calls into the
-    same function, proving only that omitting `hold_open`/`i_owe` and setting
-    them to `None` render identically, which `render_standing`'s `if
-    standing.hold_open:` guard makes true by construction. It could not have
-    caught a regression in the SHARED part of the render (the age, the
-    framing, the escape) because both sides run the code under test.
+    **This has to be checked against the OLD renderer's output, not the new one
+    compared with itself.** Building a SECOND `Standing` with only the
+    pre-existing fields and rendering it through the current `render_standing`,
+    then comparing it against the render of `existing_head`, is two calls into
+    the same function: it proves only that omitting `hold_open`/`i_owe` and
+    setting them to `None` render identically, which `render_standing`'s `if
+    standing.hold_open:` guard makes true by construction. It cannot catch a
+    regression in the SHARED part of the render (the age, the framing, the
+    escape) because both sides run the code under test.
 
     So `_MASTER_RENDER_OF_EXISTING_HEADS` below is not computed here: it is
-    two golden strings, generated ONCE by running `origin/master`'s
-    `nora/language/standing_render.py` (git ref `39dc271d`, the commit this
-    branch forked from) against these same two fixtures — before `hold_open`/
-    `i_owe` or the two-new-sections append existed at all — and pinned as
-    literals. The branch's OWN `render_standing` is asserted to reproduce
-    them byte-for-byte, which is the real "an existing head's rendered facts
+    two golden strings, generated ONCE by running the renderer from before
+    `hold_open`/`i_owe` existed against these same two fixtures, and pinned as
+    literals. The current `render_standing` is asserted to reproduce them
+    byte-for-byte, which is the real "an existing head's rendered facts
     survive this migration" claim.
     """
     existing_head = Standing(
@@ -329,7 +314,7 @@ def test_an_existing_head_renders_every_fact_it_held_unchanged():
     assert "a second restaurant the search returned" in working_set_block.render()
 
 
-# --- working_set (design/standing-compact/30-working-set.md, issue #445) ---
+# --- working_set ---
 
 _NOW_MS = 1_756_000_000_000
 
@@ -382,7 +367,7 @@ def test_a_working_set_at_the_item_ceiling_is_accepted():
 
 
 def test_the_working_sets_own_ttl_expiry_renders_absent():
-    """Fail-closed on the TTL, by construction (design §2, §4): an item
+    """Fail-closed on the TTL, by construction: an item
     older than `WORKING_SET_TTL_HOURS` renders ABSENT — not stale, not
     marked, simply not emitted, identical to a room with nothing found. No
     new deterministic sweep: this is a render-time filter, run fresh every

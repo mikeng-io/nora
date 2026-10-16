@@ -1,4 +1,4 @@
-"""The identifier detector's rules, each against GENERATED values (#283).
+"""The identifier detector's rules, each against GENERATED values.
 
 Every value here is built at run time from a seeded generator
 (`tests/pii_synth.py`'s `Synth`, plus invented names); none is copied
@@ -148,10 +148,10 @@ PROJECT_TOKENS = {_ORG, _ORG.removesuffix("-io"), "mikeng.io", "iam@mikeng.io"}
 
 
 def test_project_identity_is_the_org_and_the_domain_only():
-    """Round 3 item 2: project identity in code is the public org/domain
-    tokens and nothing else. A personal name in it would be rewritten by the
-    history rewrite -- the hook's own source would change under it -- and
-    would exempt a person from the denylist."""
+    """Project identity in code is the public org/domain tokens and nothing
+    else. A personal name in it would be rewritten by the history rewrite -- the
+    hook's own source would change under it -- and would exempt a person from the
+    denylist."""
     assert set(P.PROJECT_IDENTITY) == PROJECT_TOKENS
     assert set(B.PROJECT_IDENTITY) == PROJECT_TOKENS
     for v in P.PROJECT_IDENTITY:
@@ -181,10 +181,9 @@ def test_project_identity_is_never_denied_and_a_personal_name_always_is():
 def test_an_owner_name_that_spells_the_org_stem_never_fires_inside_the_org():
     """The owner's name, written with a separator, is denied (the test
     above); with the separator gone it is the org's stem, so separator-free
-    matching found it inside `mikeng-io`, `mikeng.io` and the project email
-    and refused every `mikeng-io/<slug>` branch (2026-10-14, the first push
-    after the cutover). Project identity is blanked before matching, like a
-    keep-phrase; the name on its own still fires."""
+    matching would find it inside `mikeng-io`, `mikeng.io` and the project email
+    and refuse every `mikeng-io/<slug>` branch. Project identity is blanked
+    before matching, like a keep-phrase; the name on its own still fires."""
     stem = _ORG.removesuffix("-io")
     owner = f"{stem[:4].title()} {stem[4:].title()}"
     d = P.parse_denylist(f"text\t{owner}\n", "t")
@@ -291,7 +290,7 @@ def test_value_allowlist_exempts_a_shape_but_never_a_denylist_hit():
     assert "denylist:number" in _rules(f'p = "{PHONE}"\n', _scanner(allow=allow))
 
 
-# ---- coordinates: fields, rows x places (#283 criterion 1)
+# ---- coordinates: fields, rows x places
 
 
 def _rows(points, fmt="{:.6f}, {:.6f}"):
@@ -434,8 +433,8 @@ def test_editing_a_line_that_already_held_a_value_is_not_new():
 
 
 def test_utf16_and_a_trailing_non_utf8_byte_are_errors_not_skips():
-    """An ERROR, never a skip -- and since round 3 (a) the denylist hit in
-    what can still be read is reported beside it."""
+    """An ERROR, never a skip -- and the denylist hit in what can still be
+    read is reported beside it."""
     payload = f"x = {NAME!r}\n"
     hit = ("FAIL", "denylist:text")
     fs = _judge(_job(payload.encode("utf-16")))
@@ -555,7 +554,7 @@ def test_malformed_declaration_is_an_error(line):
 
 def test_the_whole_message_file_is_scanned_comments_and_scissors_included(tmp_path, monkeypatch):
     """`git commit -m` and --cleanup=verbatim keep `#` lines and text past the
-    scissors, so neither may be skipped (review of #591 finding 8)."""
+    scissors, so neither may be skipped."""
     scissors = "# " + "-" * 24 + " >8 " + "-" * 24
     for body in (f"feat: x\n\n# {NAME}\n", f"feat: x\n\n{scissors}\n{NAME}\n"):
         msg = tmp_path / "MSG"
@@ -570,8 +569,8 @@ def test_the_whole_message_file_is_scanned_comments_and_scissors_included(tmp_pa
 
 
 def test_trailer_acks_honour_a_human_claim_and_never_an_agent_verdict():
-    """Round 3 (c): the model adjudicator is gone, so an `(agent ...)` trailer
-    has nothing deterministic behind it and clears nothing."""
+    """There is no model adjudicator, so an `(agent ...)` trailer has nothing
+    deterministic behind it and clears nothing."""
     msg = (
         "feat: x\n\nPII-Ack: 0123456789ab\nPII-Ack: 1a2b3c4d5e6f (human)\n"
         "PII-Ack: ba9876543210 (agent sonnet: fake, generated)\n"
@@ -596,7 +595,7 @@ def test_coords_a_constant_offset_is_still_a_table():
     assert P.scan_coords(_rows(shifted)).over
 
 
-# ---- review of #591: spellings the first version missed (finding 2)
+# ---- spellings of a name beyond the plain one
 
 
 def _pct(s: str) -> str:
@@ -658,8 +657,8 @@ def test_denylisted_phone_across_unicode_separators(sep):
 
 
 def test_a_shape_inside_a_denylisted_number_is_not_acknowledgeable():
-    """Finding 3: part of a real number, written so the denylist's own
-    matcher does not bridge it, must not become an ack-able phone shape."""
+    """Part of a real number, written so the denylist's own matcher does not
+    bridge it, must not become an ack-able phone shape."""
     part = "+" + P.digits_of(PHONE)[:9]
     fs = _scanner().scan_text(f"call {part} please\n", "f.py").findings
     assert [(f.rule, f.ackable) for f in fs] == [("denylist:number", False)]
@@ -671,7 +670,7 @@ def test_a_malformed_denylist_line_does_not_echo_its_value():
     assert NAME not in str(exc.value) and GIVEN not in str(exc.value)
 
 
-# ---- cheap phone and id shapes (finding 13)
+# ---- cheap phone and id shapes
 
 
 def test_phone_links_bare_e164_and_worded_local_numbers():
@@ -688,7 +687,7 @@ def test_a_dashless_uuid_needs_an_id_word():
     assert _rules(f"md5 {h}\n") == []
 
 
-# ---- coordinates the first version passed (finding 6 and probes)
+# ---- coordinates in less obvious shapes
 
 
 def test_coords_one_fix_labelled_home_fails():
@@ -721,7 +720,7 @@ def test_a_merge_that_assembles_a_table_fails():
     assert [f.rule for f in fs] == ["coords"]
 
 
-# ---- binaries (finding 5)
+# ---- binaries
 
 
 def _png(*chunks: tuple[bytes, bytes]) -> bytes:
@@ -779,7 +778,7 @@ def test_a_decompression_bomb_is_an_error(monkeypatch):
     assert [(f.status, f.rule) for f in fs] == [("ERROR", "undecodable-container")]
 
 
-# ---- the scanner itself (findings 7, 11)
+# ---- the scanner itself
 
 
 @pytest.mark.parametrize(
@@ -816,7 +815,7 @@ def test_bad_configuration_is_an_error_not_a_fail(env, tmp_path):
     assert p.returncode == P.ERROR and "config" in p.stderr
 
 
-# ---- second review of #591
+# ---- directory and file names, archive caps, layered encodings
 
 
 EMAIL_USER = _invented_word().lower() + "77"
@@ -842,7 +841,7 @@ def _deny2():
     ],
 )
 def test_a_new_path_is_scanned_and_never_printed(path, capsys):
-    """r2 finding 1: names, emails and numbers in directory and file names."""
+    """Names, emails and numbers in directory and file names."""
     fs = P.judge_blob(
         P.BlobJob(path, "100644", b"hello\n", [None], True), _deny2(), P.Allowlist(), set()
     ).findings
@@ -958,7 +957,7 @@ def test_a_zip_with_too_many_members_is_an_error(monkeypatch):
 
 
 def test_the_expansion_budget_is_shared_across_members(monkeypatch):
-    """r2 finding 9: members each under the cap, together over it."""
+    """Members each under the cap, together over it."""
     import bz2
     import io
     import zipfile
@@ -983,7 +982,7 @@ def test_expansion_is_time_boxed(monkeypatch):
 
 
 def test_a_2mb_line_of_encoded_segments_scans_in_linear_time():
-    """r2 finding 10: 28 s before the layer caps."""
+    """A 2 MB line of layered encoded segments scans in bounded time."""
     import base64
     import time
 
@@ -1056,7 +1055,7 @@ def test_ls_remote_never_waits_for_a_prompt(monkeypatch):
         P.ls_remote("https://example.invalid/x.git")
 
 
-# ---- the denylist builder's public keep-list (owner decision 2026-09-27)
+# ---- the denylist builder's public keep-list
 
 
 def test_a_kept_public_term_is_dropped_but_its_longer_siblings_stay():
@@ -1106,7 +1105,7 @@ def test_decoding_is_capped_per_line():
     assert len(P._b64_texts(line)) == P.LAYER_SEGMENTS
 
 
-# ---- round 3 (g): invisible and format characters inside a name
+# ---- invisible and format characters inside a name
 
 _INVISIBLE = [
     *(chr(c) for c in range(0x200B, 0x2010)),
@@ -1141,7 +1140,7 @@ def test_invisible_characters_inside_a_number_are_dropped():
     assert "denylist:number" in _rules(f'p = "{spread}"\n')
 
 
-# ---- item 3: keep-phrases, a private file of exact credit lines
+# ---- keep-phrases, a private file of exact credit lines
 
 CREDIT = f"Character design by {NAME}, 2026"
 
@@ -1206,7 +1205,7 @@ def test_no_keep_phrase_file_is_off_not_an_error(tmp_path, monkeypatch):
     ]
 
 
-# ---- item 1 (c): the pseudonym registry, values the scrub map produced
+# ---- the pseudonym registry, values the scrub map produced
 
 
 def _pseudo(tmp_path, monkeypatch, *values):
@@ -1269,7 +1268,7 @@ def test_no_pseudonym_registry_is_off_not_an_error(tmp_path, monkeypatch):
     ]
 
 
-# ---- round 3 (a): an acknowledged or declared ERROR still gets every
+# ---- an acknowledged or declared ERROR still gets every
 # denylist check the scanner can run on what it can read
 
 
@@ -1333,7 +1332,7 @@ def test_a_binary_already_holding_the_value_is_not_new():
     assert _judge(_job(new, old, path="tests/fixtures/x.bin"), allow) == []
 
 
-# ---- round 3 (d): no declaration form escapes the breadth rules
+# ---- no declaration form escapes the breadth rules
 
 
 @pytest.mark.parametrize(

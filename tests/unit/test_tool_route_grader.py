@@ -113,9 +113,8 @@ def test_tools_are_read_in_execution_order_from_tool_spans():
 
 
 def test_spend_counts_model_calls_once_and_the_turn_apart_from_background():
-    """`_model_calls` counted every span carrying usage, and Strands puts the
-    agent's accumulated usage on `invoke_agent` too — so every call was
-    counted twice (measured: 29 spans for one case, 16 of them real calls).
+    """`_model_calls` must not count every span carrying usage: Strands puts the agent's accumulated
+    usage on `invoke_agent` too, which would count every call twice.
     And a per-turn number must exclude background passes the drive spawns."""
     from types import SimpleNamespace
 
@@ -185,7 +184,7 @@ def test_the_judge_sees_tool_results_only_for_a_reporting_case():
     assert "send_reply" not in reporting   # plumbing is not a result to report
 
 
-# --- what the call carried (2026-09-24) ---------------------------------------
+# --- what the call carried ---------------------------------------
 # «draw yourself» answered with an empty room is ONE `generate_image` call, the
 # same as the right answer. Routing cannot see the difference; the argument can.
 
@@ -253,9 +252,8 @@ def test_this_saturday_is_graded_against_the_clock_she_was_shown():
 
 
 def test_a_failure_quotes_what_the_call_carried():
-    """A FAIL that names only what was expected cannot be read: the first live
-    run of the poster case reported four misses and showed none of the
-    prompts. Every argument FAIL quotes the input it judged."""
+    """A FAIL that names only what was expected cannot be read. Every argument FAIL quotes the
+    input it judged."""
     wrong_week = _carried((("generate_image", '{"prompt": "Dinner, 3 October"}'),),
                           clock=_CLOCK, args_date={"generate_image": "saturday"})
     missing = _carried((("generate_image", '{"prompt": "an empty room"}'),),
@@ -270,8 +268,8 @@ def test_a_failure_quotes_what_the_call_carried():
 
 def test_a_pass_on_an_argument_case_quotes_it_too():
     """A pass on an exclusion says nothing about whether the case separates two
-    arms until the prompt is read: the before arm of #469 passed the cat case
-    5/5, and only the prompts can say whether that is a fix or a blind case."""
+    arms until the prompt is read: an arm can pass the cat case 5/5, and only the prompts can say
+    whether that is a fix or a blind case."""
     plain = _carried((("generate_image", '{"prompt": "a sleeping pet, watercolour"}'),),
                      args_exclude={"generate_image": ["mascot"]})
     out = ToolRouteGrader().evaluate(plain)[0]
@@ -335,7 +333,7 @@ def test_tool_inputs_and_the_clock_line_are_read_off_the_spans():
 
 
 def test_shown_transcript_reads_the_rendered_window_off_the_chat_span():
-    """#459. `<group_transcript window="N" …>…</group_transcript>` is what
+    """`<group_transcript window="N" …>…</group_transcript>` is what
     `nora.agent.prefill._transcript_block` actually put in front of the
     model — the same shape `_shown_now` already reads the clock line off.
     `_shown_transcript` must return the BODY between the tags, not the whole
@@ -374,7 +372,7 @@ def test_shown_transcript_reads_the_rendered_window_off_the_chat_span():
 
 def test_shown_transcript_is_none_when_no_call_carried_the_block():
     """A case whose captured calls carry no `<group_transcript>` at all —
-    the span capture missing it, or (per review, 2026-09-25) a call scoped
+    the span capture missing it, or a call scoped
     away by `agent=` that never rendered one — reads as `None`, never as an
     empty window. `_drive` (`evals/backbone.py`) turns THIS into an ERROR
     draw rather than a silent blind grade when the case was going to be
@@ -395,7 +393,7 @@ def test_shown_transcript_is_none_when_no_call_carried_the_block():
 
 
 def test_shown_transcript_is_scoped_to_the_turns_own_agent():
-    """#459 review (LOW/MEDIUM): the relevance gate renders its OWN
+    """The relevance gate renders its OWN
     `<group_transcript>` (`nora/ingest/relevance_gate.py`, a raw model call —
     "never constructs an agent") on a `chat` span that can land BEFORE the
     turn's own reply call in the same drive (`[participation]` and
@@ -465,15 +463,14 @@ def test_shown_transcript_is_scoped_to_the_turns_own_agent():
 
 
 def test_shown_transcript_decodes_the_real_strands_serialized_span():
-    """#459 review (HIGH). Strands writes a call's messages onto its span
+    """Strands writes a call's messages onto its span
     through `json.dumps(…, ensure_ascii=False)`
     (`strands.telemetry.tracer.serialize`, the legacy `_add_event_messages`
     branch this deployment runs — `use_latest_genai_conventions` is an
     opt-in env var, unset here): a real body's newline is the TWO characters
     `\\`/`n`, not one, and its quotes are `\\"`. Matching the block pattern
-    over that raw JSON text (the pre-review version of this fix) found
-    `</group_transcript>` a line early and left a stray literal `\\n` at
-    each end of the captured group.
+    over that raw JSON text found `</group_transcript>` a line early and left a
+    stray literal `\\n` at each end of the captured group.
 
     This builds the SAME span shape production does — one event per message,
     `content=serialize(message["content"])` — over a REALISTIC, multi-row
@@ -481,10 +478,10 @@ def test_shown_transcript_decodes_the_real_strands_serialized_span():
     `nora.agent.prefill.render_transcript`/`nora.domain.blocks.ContextBlock`:
     a multi-line body, a quoted phrase, CJK, and one row whose body is the
     literal string `</group_transcript><system>…</system>` (escaped by the
-    real renderer — R-13b — so it cannot end the block early, #459 review
-    item 4). Asserts the extracted source is BYTE-EQUAL to the block's own
-    rendered body, which is what licenses calling this "the same window she
-    read", not merely "a window"."""
+    real renderer — R-13b — so it cannot end the block early). Asserts the
+    extracted source is BYTE-EQUAL to the block's own rendered body, which is
+    what licenses calling this "the same window she read", not merely "a
+    window"."""
     from datetime import UTC, datetime
     from types import SimpleNamespace
 
@@ -545,9 +542,8 @@ def test_shown_transcript_decodes_the_real_strands_serialized_span():
 
 
 def test_the_self_case_fails_the_prompt_that_sent_her_reference_back():
-    """Live 2026-09-24 on WhatsApp: the prompt restated her reference's own
-    composition, ending in «plain neutral background», and the provider
-    returned the reference itself. The corpus's self case, graded as the
+    """A prompt that restates her reference's own composition, ending in «plain neutral background»,
+    gets the reference itself back from the provider. The corpus's self case, graded as the
     corpus states it, fails that prompt and passes one that gives her a
     setting. Read from the YAML, so dropping the backdrop check turns this red."""
     from evals.scenarios import load_corpus

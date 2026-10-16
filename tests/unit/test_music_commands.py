@@ -136,11 +136,10 @@ def test_the_only_view_in_the_music_surface_is_the_queue_paginator() -> None:
     """Music is controlled by asking Nora or by a slash command -- there is no
     third control path.
 
-    The now-playing reply used to carry Skip/Pause/Stop buttons. They were a
+    The now-playing reply carries no Skip/Pause/Stop buttons: they would be a
     second surface for every verb the slash commands already own, each click
     an interaction with its own ~3s acknowledgement deadline over a control
-    plane whose round-trips routinely outlast it (the defer-first fixes at
-    N-1, 2026-09-16, were that deadline biting three times in one view).
+    plane whose round-trips routinely outlast it.
 
     This pins the ABSENCE structurally rather than by name: any new
     `discord.ui.View` in this module fails it, so re-adding controls is a

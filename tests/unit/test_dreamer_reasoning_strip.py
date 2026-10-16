@@ -1,15 +1,13 @@
-"""The Dreamer half of issue #325's instrument, through the REAL loop.
+"""The Dreamer half of the reasoning-strip instrument, through the REAL loop.
 
 `tests/unit/test_reasoning_strip_probe.py` proves the detector on the tag path. This
-file proves it on the path the 2026-09-17 config change moved the exposure
-ONTO, and the difference is not symmetry for its own sake:
+file proves it on the Dreamer path, and the difference is not symmetry for its own sake:
 
-* `[dreamer] reasoning_effort` went `none -> low` in the same session
-  `[llm]` went `low -> none`, so the tag path can no longer emit anything for
-  the transport to drop and every Dreamer adaptor now can;
-* `CultureAdaptor.tools` went `frozenset()` -> nine read verbs in the same
-  week, and `proactive` already holds tools — a tool-using Dreamer run at `low`
-  is exactly the multi-turn shape that gets stripped;
+* with `[llm]` reasoning off the tag path emits nothing for the transport to
+  drop, while a Dreamer adaptor whose `[dreamer] reasoning_effort` is above
+  `none` can;
+* a tool-using Dreamer run with reasoning on is exactly the multi-turn shape
+  that gets stripped;
 * a Dreamer run produces one row a day rather than a reply somebody reads, so
   a discarded reasoning there is both closer to being the verdict and much
   harder to notice.

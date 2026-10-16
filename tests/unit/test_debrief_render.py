@@ -1,11 +1,9 @@
-"""The debrief's rendering contract — `26-standing` §4.2's six mappings, one
-test each.
+"""The debrief's rendering contract — the six mappings, one test each.
 
 **One test per mapping, deliberately, not one test of the whole block.** A
 render that gets five right and drops the sixth still looks correct read end to
-end, and every one of the six is a defect another tier in this bundle has
-already shipped. A single "the block looks right" assertion would go green on
-five of the six failures it exists to catch.
+end. A single "the block looks right" assertion would go green on five of the
+six failures it exists to catch.
 """
 
 from __future__ import annotations
@@ -50,11 +48,9 @@ def _trace(*, rows=(), messages=(), outcome="send_reply") -> TagTrace:
 def _inner(rendered: str, tag: str) -> str:
     """The body of one rendered block, by tag name.
 
-    A helper rather than a literal split at each site: since #292 routed these
-    blocks through `ContextBlock`, every opening tag carries attributes — since
-    #314 a `description=` on every block and a `fields=` wherever the type
-    annotates one — so splitting on `"<transcript>"` stopped matching in seven
-    places at once.
+    A helper rather than a literal split at each site: every opening tag carries
+    attributes (a `description=` on every block, a `fields=` wherever the type
+    annotates one), so splitting on `"<transcript>"` does not match.
     """
     after_open = rendered.split(f"<{tag} ", 1)[1].split(">\n", 1)[1]
     return after_open.split(f"</{tag}>", 1)[0].rstrip("\n").rstrip()
@@ -72,43 +68,40 @@ def _render(**kw) -> str:
 # --- the six mappings ------------------------------------------------------
 
 def test_a_timestamp_renders_as_a_clock_and_never_as_the_raw_bigint():
-    """Mapping 1. The fact tier's critique verbatim — *"you are not even
-    including the timestamp"* — and the failure mode it names is a model
-    reasoning about `1756012345` as if it were a quantity."""
+    """Mapping 1. A timestamp renders as a readable time, not an epoch number:
+    a model reasons about `1756012345` as if it were a quantity."""
     out = _render(trace=_trace(rows=(_row(1, 1_756_000_920_000, "Miles", "去邊食"),)))
     assert "1756000920000" not in out
     assert 'at="2025-08-24 02:02"' in out
 
 
 def test_nora_is_rendered_as_a_distinct_speaker():
-    """Mapping 2. The fact tier's exact defect was a batch where nobody could
-    tell who said what — and for a stage whose whole job is reviewing HER turn,
-    a render that cannot separate her from the room reviews nothing."""
+    """Mapping 2. A batch must show who said what; for a stage whose whole job
+    is reviewing HER turn, a render that cannot separate her from the room
+    reviews nothing."""
     out = _render(trace=_trace(rows=(
         _row(1, 1_756_000_920_000, "Miles", "去邊食"),
         _row(2, 1_756_000_980_000, None, "睇下先", is_nora=True),
     )))
     assert '<m at="2025-08-24 02:02" from="Miles">去邊食</m>' in out
-    # Her line also carries its DELIVERY (mapping 7, issue #199) — see
+    # Her line also carries its DELIVERY (mapping 7) — see
     # `test_her_own_rows_carry_whether_the_room_actually_got_them`.
     assert 'from="Nora" delivery="delivered">睇下先</m>' in out
 
 
 def test_the_person_id_never_reaches_the_prompt():
-    """Mapping 3, and it is the one that is a LEAK rather than a legibility
-    bug (§4.3). Standing is injected into every subsequent turn for as long as
-    the row lives, so an identifier reaching the fold persists **by design**
-    rather than by attack — R-18/R-28 screen egress from a REPLY, and this is
-    an input."""
+    """Mapping 3, a LEAK rather than a legibility bug. Standing is injected
+    into every subsequent turn for as long as the row lives, so an identifier
+    reaching the fold persists **by design** rather than by attack — R-18/R-28
+    screen egress from a REPLY, and this is an input."""
     out = _render(trace=_trace(rows=(
         _row(1, 1_756_000_920_000, "Miles", "hi", person_id="person-miles-uuid"),
     )))
     assert "person-miles-uuid" not in out
-    # `sender_id` too, and it is the WORSE one — review finding, 2026-08-27.
-    # §4.3 names `person_id`, so that is what this test pinned; the row carries
-    # a live E.164 in the adjacent field and nothing guarded it. `_speaker`
-    # falls back `person_name -> sender_name -> "unknown"` and `sender_name` is
-    # the self-set profile name, so this passes today — but a regression to
+    # `sender_id` too, and it is the WORSE one: the row carries a live E.164 in
+    # the field adjacent to `person_id`. `_speaker` falls back
+    # `person_name -> sender_name -> "unknown"` and `sender_name` is the
+    # self-set profile name, so this passes today — but a regression to
     # `row.sender_id` would put a phone number into a prompt whose output
     # PERSISTS across turns, and the assertion above would stay green because
     # `person_id` still would not appear.
@@ -139,7 +132,7 @@ def test_an_unresolvable_reply_pointer_renders_no_relation_at_all():
 
 
 def test_the_outcome_is_rendered_and_a_silence_says_it_was_a_choice():
-    """Mapping 5. §2 makes silence the case most worth reviewing, so a render
+    """Mapping 5. Silence is the case most worth reviewing, so a render
     that carries the bare token `silent` and nothing else asks the fold to
     guess between a choice, a veto and a crash — three different reviews."""
     out = _render(trace=_trace(outcome="silent"))
@@ -149,22 +142,19 @@ def test_the_outcome_is_rendered_and_a_silence_says_it_was_a_choice():
 
 
 def test_the_outcome_gloss_speaks_in_the_first_person():
-    """The person contract (issue #78), render half: the fold is Nora revising
+    """The person contract, render half: the fold is Nora revising
     HER OWN turn, so the outcome gloss must address her as "you" — a
-    third-person gloss ("she replied") is the same cast that made the
+    third-person gloss ("she replied") is the same cast that makes the
     objective produce transcript recaps instead of positions. Every gloss
     must address her as "you", and none of them may name her in the third
     person.
 
-    **AMENDED 2026-09-11 (issue #199).** This used to require `timeout` and
-    `llm_error` to contain no `"you "` at all, on the argument that the two
-    glosses named nobody and should stay that way. Person-NEUTRALITY was
-    never the rule — never-third-person is — and the neutral wording is
-    precisely what let the fold decide for itself whose "nothing was sent"
-    it was reading: it generalised a turn outcome into «I have sent nothing
-    today» with her own delivered answer in the same window. The two crash
-    glosses now say whose nothing it is, in the second person like every
-    other one."""
+    Person-NEUTRALITY is not the rule; never-third-person is. A neutral
+    wording lets the fold decide for itself whose "nothing was sent" it is
+    reading: it generalises a turn outcome into «I have sent nothing today»
+    with her own delivered answer in the same window. So the two crash
+    glosses (`timeout`, `llm_error`) say whose nothing it is, in the second
+    person like every other one."""
     for outcome, expected in (
         ("send_reply", "you replied, through the send_reply tool"),
         ("recovered", "you wrote a reply as prose"),
@@ -185,10 +175,10 @@ def test_the_outcome_gloss_speaks_in_the_first_person():
 
 
 def test_the_prior_block_is_present_even_when_there_is_no_prior():
-    """Mapping 6, and it is §4's non-negotiable in render form. An OMITTED
+    """Mapping 6, the non-negotiable one in render form. An OMITTED
     block and a block the fold failed to read look identical from inside the
     prompt — and a fold that cannot see the prior position writes a second one
-    beside it, which is the live failure this whole tier exists to not repeat.
+    beside it.
     """
     out = _render(prior=None)
     assert "<standing_prior " in out
@@ -208,12 +198,11 @@ def test_the_prior_body_is_rendered_when_there_is_one():
 # --- the window, the reasoning, and escaping -------------------------------
 
 def test_the_fold_sees_the_watermark_batch_plus_the_turns_own_rows():
-    """design/standing-watermark/20 + D8: the transcript is the watermark
-    batch (`since_rows`, the rows since the last fold's row-id watermark)
-    PLUS the turn's own rows (`trace.transcript`), deduped by id and
-    ascending — the event check fires BEFORE the tag reply, so the tag fold
-    must include the turn's trace rows even when the watermark already covers
-    them."""
+    """The transcript is the watermark batch (`since_rows`, the rows since the
+    last fold's row-id watermark) PLUS the turn's own rows (`trace.transcript`),
+    deduped by id and ascending — the event check fires BEFORE the tag reply, so
+    the tag fold must include the turn's trace rows even when the watermark
+    already covers them."""
     batch = (_row(1, 1_756_000_000_000, "Miles", "m1"),
              _row(2, 1_756_000_060_000, "Miles", "m2"))
     turn_rows = (_row(2, 1_756_000_060_000, "Miles", "m2"),   # overlap: deduped
@@ -244,39 +233,34 @@ def test_a_tool_call_and_its_result_are_rendered_as_such():
     assert "at home" in out
 
 
-# --- issue #189: the clip counter and the mark it explains -----------------
+# --- the clip counter and the mark it explains -----------------------------
 
 
 def _steps_body(out: str) -> str:
     """The `<steps>` block's own text, BODY ONLY — opening tag excluded.
 
-    Excluding it is the point rather than tidiness. The sentence explaining the
-    clip mark used to be a sibling `<how_to_read_reasoning>` block and is now
-    this block's `fields=`, which puts a worked example of «…[clipped]» inside
-    the opening tag on every turn, clipped or not. A slice that kept the tag
-    would read one clip on a turn that clipped nothing, and
+    Excluding it is the point rather than tidiness. The clip mark's explanation
+    is this block's `fields=`, which puts a worked example of «…[clipped]»
+    inside the opening tag on every turn, clipped or not. A slice that kept the
+    tag would read one clip on a turn that clipped nothing, and
     `test_a_block_under_the_ceiling_is_not_counted_and_carries_no_mark` — the
-    zero-assertion — would be the test that never went red.
+    zero-assertion — could never go red.
     """
     return _inner(out, "steps")
 
 
 def test_an_oversize_tool_result_is_clipped_counted_and_marked():
-    """Issue #189 steps 1 and 2. Before this, `_BLOCK_CHARS` cut a tool
-    result and said nothing to anybody: not a series an operator could read,
-    not a mark the grading model could read. Both now exist off one cut —
-    at `_CARRIED_CHARS` for a tool result since design/standing-compact/10 §3.
+    """A tool result cut at `_CARRIED_CHARS` is counted and marked: a series an
+    operator can read and a mark the grading model can read, both off one cut.
 
-    Issue #445's fix 2: `long_result` here does not parse as JSON, so
-    `_compact_json_or_text` returns it as-is — the rendered text is
-    `long_result` itself, not `str([{"text": long_result}])`. Before #445 the
-    list-repr wrapping (`[{'text': '...'}]`) spent part of the clip's fixed
-    budget on brackets and quotes that carried no content; that overhead is
-    gone, so the same 4000-character clip now keeps more of the actual
-    result."""
+    `long_result` here does not parse as JSON, so `_compact_json_or_text`
+    returns it as-is — the rendered text is `long_result` itself, not
+    `str([{"text": long_result}])`. A list-repr wrapping
+    (`[{'text': '...'}]`) would spend part of the clip's fixed budget on
+    brackets and quotes that carry no content."""
     metrics = Metrics()
     long_result = "x" * (_CARRIED_CHARS + 50)
-    full_rendered = long_result  # what `_block` now renders — no list wrapping
+    full_rendered = long_result  # what `_block` renders — no list wrapping
     out = _render(trace=_trace(messages=(
         {"role": "user", "content": [
             {"toolResult": {"content": [{"text": long_result}]}},
@@ -286,20 +270,20 @@ def test_an_oversize_tool_result_is_clipped_counted_and_marked():
     assert f"…[{_CLIP_MARK}]" in body
     assert full_rendered[:_CARRIED_CHARS] in body
     assert full_rendered not in body  # the tail is genuinely gone
-    assert "[{'text'" not in body  # the old Python-repr wrapping is gone
+    assert "[{'text'" not in body  # no Python-repr wrapping
     assert metrics.get("nora_debrief_clips_total", block="tool_result") == 1
 
 
-# --- issue #445 fix 2: a tool result's own content reaches the fold, not a --
-# --- Python repr of the list Strands wraps it in ----------------------------
+# --- a tool result's own content reaches the fold, not a Python repr of the --
+# --- list Strands wraps it in -----------------------------------------------
 
 def test_a_name_inside_a_tool_results_json_reaches_the_fold_as_plain_text():
-    """Issue #445's study, on production `web_search`/`place_info` shapes: a
-    tool result is `[{"text": "<json>"}]`, and `str()` of that list stacked
-    the list/dict repr's own quoting on top of the JSON's — a name inside it
-    reached the fold behind enough escaped punctuation that a judge scanning
-    the rendered position could not tell it was there. Parsed and re-emitted
-    compactly instead, it reaches the fold once-escaped, as plain text.
+    """On `web_search`/`place_info` shapes: a tool result is
+    `[{"text": "<json>"}]`, and `str()` of that list would stack the list/dict
+    repr's own quoting on top of the JSON's — a name inside it would reach the
+    fold behind enough escaped punctuation that a judge scanning the rendered
+    position could not tell it was there. Parsed and re-emitted compactly, it
+    reaches the fold once-escaped, as plain text.
 
     The name here is a fixture, not room text — CLAUDE.md bars quoting real
     room content in a committed test."""
@@ -321,13 +305,12 @@ def test_a_name_inside_a_tool_results_json_reaches_the_fold_as_plain_text():
 
 
 def test_tool_result_urls_are_percent_decoded_and_a_repeat_is_dropped():
-    """Issue #445's study: the SAME page url reaches a search result twice —
-    once as its own `url` field, once more inside the fetched page's
-    `<untrusted source="...">` wrapper — and is percent-encoded when the path
-    holds non-ASCII, roughly tripling its length. Neither copy is content the
-    fold needs to carry into a position, so decoding shrinks it and the
-    second copy is dropped outright, leaving more of the clip's budget for
-    the result's actual content."""
+    """The SAME page url reaches a search result twice — once as its own `url`
+    field, once more inside the fetched page's `<untrusted source="...">`
+    wrapper — and is percent-encoded when the path holds non-ASCII, roughly
+    tripling its length. Neither copy is content the fold needs to carry into a
+    position, so decoding shrinks it and the second copy is dropped outright,
+    leaving more of the clip's budget for the result's actual content."""
     url = "https://example.test/" + quote("九龍城餐廳")
     decoded = "https://example.test/九龍城餐廳"
     payload = json.dumps({
@@ -349,18 +332,16 @@ def test_tool_result_urls_are_percent_decoded_and_a_repeat_is_dropped():
 
 
 def test_the_clip_keeps_more_content_than_before():
-    """Issue #445's study, on the shape it found: a `web_search` result
-    dominated by several near-identical entries, each carrying the SAME
-    percent-encoded url twice. Fix 2 is a SIZE claim, not just a legibility
-    one — decoding and de-duplicating the urls, and dropping the python-repr
-    wrapping, must leave more of the result's own content inside the same
-    4000-character clip, not merely prettier syntax around the same cut
+    """A `web_search` result dominated by several near-identical entries, each
+    carrying the SAME percent-encoded url twice. This is a SIZE claim, not just
+    a legibility one: decoding and de-duplicating the urls, and dropping the
+    python-repr wrapping, must leave more of the result's own content inside the
+    same 4000-character clip, not merely prettier syntax around the same cut
     point.
 
-    The fixture is built, not copied from the study's room text (CLAUDE.md);
-    it reproduces the shape — several duplicated, percent-encoded urls ahead
-    of one unsent option — that made a real restaurant name fall outside the
-    clip.
+    The fixture is built, not copied from room text (CLAUDE.md); it reproduces
+    the shape — several duplicated, percent-encoded urls ahead of one unsent
+    option — that pushes a restaurant name outside the clip.
     """
     url = "https://example.test/" + quote("九龍城餐廳推介大全九龍城餐廳推介大全")
     entry = {
@@ -375,7 +356,7 @@ def test_the_clip_keeps_more_content_than_before():
     })
 
     # Positive control: the fixture must actually reproduce the failure — the
-    # marker has to fall outside the OLD (pre-#445) rendering's clip, or this
+    # marker has to fall outside the clip of the un-compacted rendering, or this
     # test would pass on a fixture too small to prove anything.
     old_rendered = str([{"text": payload}])
     assert marker not in old_rendered[:_CARRIED_CHARS], (
@@ -393,12 +374,11 @@ def test_the_clip_keeps_more_content_than_before():
 
 
 def test_the_steps_block_frames_the_transcript_row_as_all_the_room_saw():
-    """Issue #445's coordinator review: a fold that can see everything a tool
-    handed back has no way to tell, from the steps alone, which of it ever
-    reached the room — only the delivered `<transcript>` row did. Put in the
-    `<steps>` type's own description (`nora.domain.block_types` convention,
-    #314) rather than ad hoc, so it cannot ship detached from the block it
-    explains."""
+    """A fold that can see everything a tool handed back has no way to tell,
+    from the steps alone, which of it ever reached the room — only the
+    delivered `<transcript>` row did. Put in the `<steps>` type's own
+    description (`nora.domain.block_types` convention) rather than ad hoc, so
+    it cannot ship detached from the block it explains."""
     out = _render()
     opening = out.split("<steps ", 1)[1].split(">\n", 1)[0]
     assert "ALL the room saw of this turn" in opening
@@ -406,11 +386,11 @@ def test_the_steps_block_frames_the_transcript_row_as_all_the_room_saw():
 
 
 def test_the_steps_block_description_names_the_working_set():
-    """Issue #445: the working-set concept lived only in the distant
-    objective and an abstract, empty prior block — never at the point of the
-    candidate data itself, `<steps>`. The fold reasons at effort `none`, so an
-    instruction it must reach for two hops away is one it mostly does not
-    reach for; the annotation must sit where the data is."""
+    """The working-set concept sits at the point of the candidate data itself,
+    `<steps>`, not only in the distant objective and an abstract, empty prior
+    block. The fold reasons at effort `none`, so an instruction it must reach
+    for two hops away is one it mostly does not reach for; the annotation must
+    sit where the data is."""
     out = _render()
     opening = out.split("<steps ", 1)[1].split(">\n", 1)[0]
     assert "was never given to the room" in opening
@@ -435,9 +415,9 @@ def test_an_oversize_tool_call_and_an_oversize_reasoning_text_are_labelled_apart
     )), metrics=metrics)
     assert _steps_body(out).count(f"…[{_CLIP_MARK}]") == 3
     assert metrics.get("nora_debrief_clips_total", block="tool_call") == 1
-    # Narration and a thinking step were ONE label until 2026-09-24 and are two
-    # now (design/standing-compact/10 §5): they clip at different bounds (600
-    # and 4000), and one series summing both could not say which was hit.
+    # Narration and a thinking step are two labels: they clip at different
+    # bounds (600 and 4000), and one series summing both could not say which
+    # was hit.
     assert metrics.get("nora_debrief_clips_total", block="reasoning") == 1
     assert metrics.get("nora_debrief_clips_total", block="thinking") == 1
 
@@ -463,15 +443,11 @@ def test_the_clip_mark_is_explained_ON_the_block_that_can_carry_it():
     on EVERY turn, clipped or not, so the model learns one contract rather than
     a sometimes-explained mark.
 
-    **It is an ATTRIBUTE of `<steps>` now, not a sibling block** (#314).
-    `<how_to_read_reasoning>` was a block whose entire content was prose about
-    the block beside it, which existed only because a field's meaning had
-    nowhere to live. It has one: `BlockType.annotations`, rendered as `fields=`
-    on the block itself. Travelling WITH the block is what the sibling could
-    never do — it sat next to `<steps>` (then `<reasoning>`) by an `order`
-    number, and a
-    renderer that moved one and not the other would ship an explanation
-    describing something else.
+    **It is an ATTRIBUTE of `<steps>`, not a sibling block.**
+    `BlockType.annotations` renders as `fields=` on the block itself.
+    Travelling WITH the block is what a sibling could never do — it could be
+    separated from `<steps>` by an `order` number, and a renderer that moved one
+    and not the other would ship an explanation describing something else.
     """
     out = _render()
     assert "<how_to_read_reasoning" not in out, (
@@ -514,8 +490,7 @@ def test_group_authored_text_is_escaped():
 
 def test_the_standing_render_is_the_prior_plus_the_same_turn_block():
     """The standing render prepends the prior to EXACTLY the turn block
-    `render_debrief_turn` produces. (It had a second consumer, the grounding
-    verdict, until 2026-09-24 — design/standing-compact/.)"""
+    `render_debrief_turn` produces."""
     trace = _trace(rows=(_row(1, 1_756_000_920_000, "Miles", "去邊食"),),
                    messages=({"role": "assistant",
                               "content": [{"text": "我諗諗"}]},))
@@ -535,13 +510,13 @@ def test_the_standing_render_is_the_prior_plus_the_same_turn_block():
     assert "\nold position\n" in standing
 
 
-# --- issue #199: the seventh mapping, and the scope of a failure header -----
+# --- the seventh mapping, and the scope of a failure header ---------------
 
 
 def test_her_own_rows_carry_whether_the_room_actually_got_them():
-    """Mapping 7. `is_nora` made her a distinct SPEAKER and stopped there, so
-    a reply that had reached the room looked exactly like one that had not —
-    and a turn-scoped «nothing was sent» header was then free to explain it
+    """Mapping 7. `is_nora` makes her a distinct SPEAKER and nothing more, so
+    a reply that reached the room would look exactly like one that did not —
+    and a turn-scoped «nothing was sent» header would be free to explain it
     away. The mark is read off `delivery_status`, the column the sender writes
     back once the platform has accepted the message, so it is the record's own
     answer to «did this reach anybody» rather than an inference from the turn.
@@ -581,17 +556,17 @@ def test_a_row_from_the_room_carries_no_delivery_mark():
 def test_the_transcript_says_what_the_delivery_mark_means():
     """A mark with no legend is a token the model gets to interpret, which is
     the whole defect one level down. The block explains itself: what the mark
-    is read from, and — the sentence issue #199 turns on — that a delivered
+    is read from, and — the sentence that matters — that a delivered
     line of hers was delivered whatever any turn's outcome says, because
     another turn may have sent it."""
     out = _render(trace=_trace(rows=(
         _row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),
     )))
-    # AN ATTRIBUTE of `<transcript>`, never a line inside it and no longer a
-    # sibling block either (#314). Everything between those tags is a message
-    # somebody sent; a sentence of ours in there is one more thing the reader
-    # has to work out is not one. And a sibling could be separated from what it
-    # explains by an `order` number, which an attribute cannot.
+    # AN ATTRIBUTE of `<transcript>`, never a line inside it nor a sibling
+    # block. Everything between those tags is a message somebody sent; a
+    # sentence of ours in there is one more thing the reader has to work out is
+    # not one. And a sibling could be separated from what it explains by an
+    # `order` number, which an attribute cannot.
     assert "<how_to_read_the_transcript" not in out
     tag = out.split("<transcript ", 1)[1].split(">", 1)[0]
     assert "read off the send record" in tag
@@ -601,9 +576,9 @@ def test_the_transcript_says_what_the_delivery_mark_means():
 
 
 def test_a_crashed_turns_header_says_it_is_this_turn_that_sent_nothing():
-    """`llm_error` read «the model call failed; nothing was sent» — true of
-    the turn, silent about its scope. The fold read it as a statement about
-    the conversation and wrote «我今日冇出過任何回覆» with her delivered answer
+    """`llm_error` reads «the model call failed; nothing was sent» — true of
+    the turn, silent about its scope. A fold that reads it as a statement about
+    the conversation writes «我今日冇出過任何回覆» with her delivered answer
     two rows above the tag."""
     out = _render(trace=_trace(outcome="llm_error"))
     assert "this turn's model call failed, so THIS TURN sent nothing" in out
@@ -620,10 +595,9 @@ def test_a_sent_nothing_header_denies_the_room_reading_outright():
     assert "a fact about THIS TURN and nothing else" in header
     assert "does not describe what any other turn of yours sent" in header
     # **The header talks about the TURN and nothing else**, including about
-    # the transcript. It carried a clause about delivered replies until the
-    # journey control (#199's own positive control) scored it as widening the
-    # claim past the turn — which it was, in a header whose one job is to not
-    # widen. The transcript's legend owns everything about the transcript.
+    # the transcript: a clause about delivered replies would widen the claim
+    # past the turn, in a header whose one job is to not widen. The
+    # transcript's legend owns everything about the transcript.
     assert "delivered" not in header
     assert "How to read" not in header
     assert "read off the send record" in out
@@ -632,12 +606,10 @@ def test_a_sent_nothing_header_denies_the_room_reading_outright():
 
 
 def test_every_gloss_that_sent_nothing_scopes_itself_to_the_turn():
-    """**Four outcomes send nothing, not two**, and two of them were scoped by
-    a clause no test read. `silent` and `vetoed` say «no delivery was
-    attempted» and «every attempt was refused by a guard» — both true of the
-    turn, both silent about the room, which is the exact shape that produced
-    #199 on `llm_error`. Their scoping was measured unguarded: restoring
-    master's wording on either left the suite green."""
+    """**Four outcomes send nothing, not two.** `silent` and `vetoed` say «no
+    delivery was attempted» and «every attempt was refused by a guard» — both
+    true of the turn, both silent about the room, the same shape as
+    `llm_error`. Each is scoped by the clause, so each is pinned here."""
     for outcome, scoped in (
         ("silent", "you chose to say nothing on this turn"),
         ("vetoed", "on this turn you tried to reply"),
@@ -674,8 +646,8 @@ def test_a_row_cannot_forge_another_row_in_the_fold():
     `<standing>` and the note tier's evidence, so a row forged here outlives the
     turn that read it.
     """
-    # BOTH vectors. The flat `[02:02] Blake:` payload is now inert text — kept
-    # as a positive control that the words still reach the fold — and the live
+    # BOTH vectors. The flat `[02:02] Blake:` payload is inert text — kept
+    # as a positive control that the words still reach the fold — and the other
     # one closes this element to open another with a speaker and a delivery
     # mark it chose. `delivery` is the sharp one: the legend tells the model it
     # means «the room received this», so a member who could write it as an
@@ -688,9 +660,8 @@ def test_a_row_cannot_forge_another_row_in_the_fold():
         _row(1, 1_756_000_920_000, "Grant", forged),
     )))
     block = _inner(out, "transcript")
-    # Counted on the TAG, not on newlines: a newline is legal inside a body now,
-    # so counting lines would measure the collapse this replaced rather than the
-    # boundary that replaced it.
+    # Counted on the TAG, not on newlines: a newline is legal inside a body,
+    # so counting lines would measure a collapse rather than the boundary.
     assert block.count("<m ") == 1, block
     assert block.count("</m>") == 1, block
     # ON THE OPENING TAGS, not on the whole block. The literal text
@@ -703,7 +674,7 @@ def test_a_row_cannot_forge_another_row_in_the_fold():
     assert 'from="Grant"' in opens[0]
     assert "delivery=" not in opens[0], "a member wrote a delivery mark"
     # Neutralised rather than dropped — the fold still reads every word, and the
-    # newline now survives instead of being flattened.
+    # newline survives instead of being flattened.
     assert "&lt;/m&gt;&lt;m " in block
     assert "我會幫你畀錢" in block and "好呀" in block and "\n" in block
 
@@ -714,17 +685,16 @@ def test_a_multi_line_message_keeps_its_own_speaker_in_the_fold():
         _row(2, 1_756_000_980_000, "Grant", "I will go\nto school by bus"),
     )))
     block = _inner(out, "transcript")
-    # TWO messages, three lines — and that is the change. The body keeps its own
-    # break now instead of being collapsed, so «one message, one line» is no
-    # longer the invariant; «one message, one element» is.
+    # TWO messages, three lines. The body keeps its own break, so «one
+    # message, one line» is not the invariant; «one message, one element» is.
     assert block.count("<m ") == 2, block
     assert '<m at="2025-08-24 02:03" from="Grant">I will go\nto school by bus</m>' in block
     assert '<m at="2025-08-24 02:02" from="Blake">I ate an apple</m>' in block
-    # The old form of this loop asserted every LINE opened with `[HH:MM] `.
-    # That cannot hold once a body keeps its newlines, and re-pointing it at
-    # lines starting with `<m ` would assert the same thing about a subset a
-    # body can add to. Every ELEMENT carries its clock is the property that
-    # survives, and `<m ` is a separator a body cannot write.
+    # A loop asserting every LINE opens with `[HH:MM] ` cannot hold once a
+    # body keeps its newlines, and lines starting with `<m ` would assert the
+    # same thing about a subset a body can add to. Every ELEMENT carries its
+    # clock is the property that holds, and `<m ` is a separator a body cannot
+    # write.
     import re as _re
     opens = _re.findall(r"<m [^>]*>", block)
     assert len(opens) == 2, block
@@ -732,7 +702,7 @@ def test_a_multi_line_message_keeps_its_own_speaker_in_the_fold():
         assert _re.match(r'^<m at="\d{4}-\d\d-\d\d \d\d:\d\d" from="[^"]+"', tag), tag
 
 
-# --- design/standing-compact: the prior's clock, the steps, the carried bound -
+# --- the prior's clock, the steps, the carried bound -------------------------
 
 _DAY_MS = 86_400_000
 
@@ -744,9 +714,8 @@ def _prior(*, updated_at: int, body: str = "tomorrow at 10 I owe Miles the route
 
 
 def test_the_prior_carries_when_it_was_written_against_the_turns_time():
-    """design/standing-compact/10 §2. A clause saying «tomorrow at 10» cannot
-    be re-judged by a reader who does not know which day it was written on —
-    a production position carried «today (6 September)» for 17 days.
+    """A clause saying «tomorrow at 10» cannot be re-judged by a reader who
+    does not know which day it was written on, so the prior carries its age.
 
     Against the TURN's `created_at`, not the wall clock: the trace here is
     from 2025, so an age measured against `now` would read hundreds of days,
@@ -777,10 +746,10 @@ def test_no_prior_renders_no_age_and_a_prior_renders_no_first_fold_sentence():
 
 
 def test_the_steps_block_replaces_reasoning_and_marks_a_thinking_step():
-    """design/standing-compact/10 §3. The block was `<reasoning>` and the
-    deployed model produces none, so the name asserted a thing that was not
-    there. A `reasoningContent` step is marked `kind="thinking"` when the
-    model produced one — an ATTRIBUTE, not the old «(thinking) » prefix."""
+    """The block is `<steps>`, not `<reasoning>`: the deployed model produces
+    none, so that name would assert a thing that is not there. A
+    `reasoningContent` step is marked `kind="thinking"` when the model produced
+    one — an ATTRIBUTE, not a «(thinking) » prefix."""
     out = _render(trace=_trace(messages=(
         {"role": "assistant", "content": [
             {"reasoningContent": {"reasoningText": {"text": "should I check first"}}},
@@ -823,9 +792,9 @@ def _tool_result_turn(text: str) -> TagTrace:
 
 
 def test_a_tool_result_at_the_carried_bound_renders_whole():
-    """design/standing-compact/10 §3: a tool result exists only inside the
-    turn, and at 600 characters the fold saw a sixteenth of a median
-    `web_search`. 4000 renders whole: no mark, no count."""
+    """A tool result exists only inside the turn, and at 600 characters the
+    fold would see a sixteenth of a median `web_search`. 4000 renders whole:
+    no mark, no count."""
     assert _CARRIED_CHARS == 4000
     metrics = Metrics()
     result = "a" * _CARRIED_CHARS
@@ -872,7 +841,7 @@ def test_narration_and_tool_calls_still_clip_at_the_block_bound():
     assert metrics.get("nora_debrief_clips_total", block="tool_call") == 1
 
 
-# --- design/standing-compact/10 §5: amended after review (2026-09-24) -------
+# --- the thinking label, the carried bound, escaping once --------------------
 
 
 
@@ -880,9 +849,9 @@ def test_narration_and_tool_calls_still_clip_at_the_block_bound():
 
 
 def test_a_thinking_clip_is_counted_on_its_own_label_and_narration_on_reasoning():
-    """§5 «Thinking has its own clip label». A thinking step cut at 4000 and
-    narration cut at 600 read apart on `nora_debrief_clips_total{block}`; one
-    of each, and each lands on its own label and not on the other's."""
+    """A thinking step cut at 4000 and narration cut at 600 read apart on
+    `nora_debrief_clips_total{block}`; one of each, and each lands on its own
+    label and not on the other's."""
     assert "thinking" in CLIP_KINDS
     metrics = Metrics()
     _render(trace=_trace(messages=(
@@ -902,10 +871,9 @@ def test_a_thinking_clip_is_counted_on_its_own_label_and_narration_on_reasoning(
 
 
 def test_a_thinking_step_between_the_two_bounds_renders_whole():
-    """M1 from the review. The earlier test used 4010 characters, which clips
-    at 600 AND at 4000 — so reverting the thinking step to the narration bound
-    left it green. 2000 is past 600 and inside 4000: whole, unmarked, uncounted
-    only if the carried bound is the one applied."""
+    """2000 characters is past 600 and inside 4000: whole, unmarked, uncounted
+    only if the carried bound is the one applied. (4010 characters clips at 600
+    AND at 4000, so it cannot tell the two bounds apart.)"""
     thought = "思" * 1000 + "t" * 1000
     assert _BLOCK_CHARS < len(thought) < _CARRIED_CHARS
     metrics = Metrics()
@@ -920,11 +888,10 @@ def test_a_thinking_step_between_the_two_bounds_renders_whole():
 
 
 def test_step_text_is_escaped_exactly_once():
-    """§5 «Step text is escaped once». `_block` escaped each step and
-    `render_elements` escaped it again, so `<` reached the fold as `&amp;lt;`
-    — 4000 characters of web content garbled, and a URL carried into the
-    position mangled. Through a tool result, a tool call's name and input, and
-    her narration: every branch of `_block` that used to escape."""
+    """Step text is escaped once. `_block` escaping each step and
+    `render_elements` escaping it again would deliver `<` to the fold as
+    `&amp;lt;` — web content garbled, a URL mangled. Through a tool result, a
+    tool call's name and input, and her narration: every branch of `_block`."""
     body = _steps_body(_render(trace=_trace(messages=(
         {"role": "assistant", "content": [
             {"text": "a <i> & b"},

@@ -1,6 +1,5 @@
-"""`speakable()` — the fail-closed content gate for TTS (design/voice-
-channel/01 §7). Anything that reads as a long opaque string stays a machine
-token; the bias is deliberate: a false negative costs one reply its voice,
+"""`speakable()` — the fail-closed content gate for TTS. Anything that reads as a long opaque
+string stays a machine token; the bias is deliberate: a false negative costs one reply its voice,
 a false positive reads a 40-character token aloud in a shared channel.
 """
 

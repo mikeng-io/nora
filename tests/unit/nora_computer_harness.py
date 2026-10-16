@@ -9,9 +9,8 @@ make is visible and an unexpected one exits 1 rather than succeeding silently.
 What a stub cannot show is the real binary: that `sbx` takes these arguments and
 answers in these words is the README's read-back on the deploy host. Where that
 read-back has been made, the stub reproduces it, exit status included: `sbx
-policy check network` exits 1 for a denied host (2026-10-01), and a stub that
-exited 0 there once kept the suite green on a script that read every denial as
-unknown.
+policy check network` exits 1 for a denied host, so a stub that exited 0 there
+would keep the suite green on a script that read every denial as unknown.
 """
 
 from __future__ import annotations

@@ -1,13 +1,11 @@
 """The one Instagram link parser (`nora.domain.instagram_links`), read by the
-adapter's transcript render and by `instagram_read` (design/instagram-adoption
-/13 §2026-09-24, /15 §Links, /17 P10).
+adapter's transcript render and by `instagram_read`.
 
 The parser's own behaviour through the transcript is pinned in
-`tests/unit/test_instagram_parser.py` (unchanged by the move), and the tool's
-«a hostile link never reaches the bridge» in
-`tests/unit/test_instagram_read_links.py`. What is here is the module's own
-surface: which link becomes which `(kind, key)`, and the rebuilt URL. Every
-handle and shortcode is synthetic.
+`tests/unit/test_instagram_parser.py`, and the tool's «a hostile link never
+reaches the bridge» in `tests/unit/test_instagram_read_links.py`. What is here
+is the module's own surface: which link becomes which `(kind, key)`, and the
+rebuilt URL. Every handle and shortcode is synthetic.
 """
 
 from __future__ import annotations
@@ -105,9 +103,9 @@ def test_a_story_ring_link_has_no_frame_id():
 
 
 def test_the_transcript_render_keeps_its_measured_shapes():
-    """The adapter passes `story_ring=False`: a shared item's kind was measured
-    on the three-segment story form only, so a two-segment one keeps the
-    label it always had (none, which the adapter renders as `post`)."""
+    """The adapter passes `story_ring=False`: only the three-segment story form
+    is labelled; a two-segment one gets no label (the adapter renders it as
+    `post`)."""
     ring = "https://www.instagram.com/stories/some.account/"
     assert link_shape(ring) == "story"
     assert link_shape(ring, story_ring=False) is None

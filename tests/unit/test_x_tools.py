@@ -1,5 +1,4 @@
-"""`x_read` and `x_search` (design/social-per-network, DEC-201): the closures
-in `nora.agent.tools` that replaced `social_fetch`.
+"""`x_read` and `x_search` (DEC-201): the closures in `nora.agent.tools`.
 
 Layer one of the read-only boundary: which inputs each tool accepts, the
 egress screen on exactly what leaves, the unwired and raising degradations,
@@ -111,10 +110,9 @@ async def test_an_ok_carries_how_to_report_it(social):
         {"handle": "nasa", "what": "story"},
         {"handle": "not a name!", "what": "profile"},
         {"handle": "na.sa", "what": "profile"},
-        # A link that names nothing. A link to another network is no longer
-        # here: it is a registry redirect (`nothing_found`), not a bad input
-        # (design/social-per-network/30-link-owner-registry.md, "Migration"
-        # step 3) — see test_an_instagram_link_names_the_tool_that_reads_it.
+        # A link that names nothing. A link to another network is not here: it is a registry
+        # redirect (`nothing_found`), not a bad input — see
+        # test_an_instagram_link_names_the_tool_that_reads_it.
         {"link": "https://x.com/explore"},
         {"link": "https://evil.example/nasa/status/42"},
         # `what` beside a link must name the same read.
@@ -138,9 +136,7 @@ async def test_an_instagram_link_names_the_tool_that_reads_it(social):
 
 
 async def test_a_linkedin_link_names_the_tool_that_reads_it(social):
-    """The registry lookup (design/social-per-network/30-link-owner-registry.md,
-    "Migration" step 3) catches a LinkedIn link too, which the old
-    hand-written branch never did (it named only Instagram)."""
+    """The registry lookup catches a LinkedIn link too, not only Instagram."""
     out = await _tools(social)["x_read"](link="https://www.linkedin.com/in/williamhgates/")
     assert out["status"] == "nothing_found"
     assert "linkedin_read" in out["note"]
@@ -262,7 +258,7 @@ def test_social_fetch_is_gone():
     assert "social_fetch" not in UNIT_SAFE_TOOLS
 
 
-# ---- `url` is `link` (design 30 decision 2, triggered 2026-09-25) ----------
+# ---- `url` is `link` ----------
 
 
 @pytest.mark.parametrize(

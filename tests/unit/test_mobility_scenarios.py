@@ -1,55 +1,33 @@
-"""The load-bearing test (spec §7): replays a SYNTHETIC fixture engineered
-to reproduce the same six qualitative scenarios `design/27` §2 originally
-measured against a real slice of the live `presence_fixes` corpus, and
-asserts the derived output against that same measurement. Reverting the
-accuracy gate or the dwell cap must turn this red — a fixture that stays
-green either way is decorative (CLAUDE.md).
+"""The load-bearing test: replays a SYNTHETIC fixture engineered to reproduce
+six qualitative scenarios of a live `presence_fixes` corpus, and asserts the
+derived output against them. Reverting the accuracy gate or the dwell cap must
+turn this red — a fixture that stays green either way is decorative
+(CLAUDE.md).
 
-This file (and its fixture, `tests/fixtures/mobility_scenarios.py`)
-previously replayed real GPS/timestamp data covering six real named people,
-extracted verbatim from a real slice of the `presence_fixes` table, as
-`tests/unit/test_mobility_real_corpus.py` / `tests/fixtures/
-presence_corpus_sample.py`. That real data was replaced with synthetic,
-programmatically-generated data
-at the operator's request (2026-08-19) rather than committing real people's
-location history to git history — see `mobility_scenarios.py`'s own
-docstring for the generator design and the exact numbers this replacement
-was checked against.
+The fixture (`tests/fixtures/mobility_scenarios.py`) is synthetic,
+programmatically generated data rather than real people's location history;
+see `mobility_scenarios.py`'s own docstring for the generator design and the
+numbers.
 
-Task 13 originally found that three of the six assertions below failed
-against `nora.domain.mobility.label_place`'s `is_home`/`is_work` thresholds
-(`night_share`/`work_share` computed against a cluster's TOTAL all-hours
-dwell against a 4h-wide night window made `is_home`'s `>= 0.5` floor
-unreachable for realistic overnight-plus-daytime patterns; `is_work` had no
-minimum-absolute-dwell floor). See
-`.superpowers/sdd/2026-08-19-presence-analytics-substrate-plan/task-13-report.md`
-for that investigation.
+`nora.domain.mobility.label_place` labels a cluster home above
+`_HOME_NIGHT_SHARE_MIN = 0.3` (comfortably above the ambiguous case's share,
+~0.235, while making realistic overnight patterns up to ~13.3h reachable), and
+work only with `_MIN_WORK_DWELL_MS` (8h) of dwell. The `synthetic_home_only_c`
+and `synthetic_renamed_*` assertions pass under those thresholds.
 
-Task 13b (`task-13b-report.md`, same directory) recalibrated
-`label_place`: `is_home`'s floor moved from 0.5 to
-`_HOME_NIGHT_SHARE_MIN = 0.3` (comfortably above the ambiguous case's
-share, ~0.235, while making realistic overnight patterns up to ~13.3h
-reachable), and `is_work` gained `_MIN_WORK_DWELL_MS` (8h). That fix makes
-the `synthetic_home_only_c` and `synthetic_renamed_*` assertions pass for
-real — their `xfail` markers below were removed only after confirming both
-actually pass, not just deleted.
-
-`synthetic_wfh_b`'s assertion remains `xfail(strict=True)`. Task 13b's
-investigation (on the real corpus this fixture replaces) proved, by
-exhaustively sweeping every night-window denominator width from 4h (the
-bare night window) to 24h (all hours), that NO single `night_share`
+`synthetic_wfh_b`'s assertion is `xfail(strict=True)`. No single `night_share`
 threshold can accept a work-from-home pattern while still rejecting the
-substantial-dwell-in-both-windows ambiguous case — the ambiguous case's
-share is higher at every width tested, so any threshold that admits the
-former also admits the latter. This fixture's `synthetic_wfh_b` (night_share
-≈ 0.1818) and `synthetic_ambiguous_e` (night_share ≈ 0.2353) reproduce that
-exact near-miss relationship (see `mobility_scenarios.py`'s docstring for
-the full numeric derivation) — keeping the ambiguous case unlabeled is the
-non-negotiable, explicitly-required regression (fail-closed labelling's
-central proof case), so this assertion is left `xfail` rather than
-curve-fit around it. `strict=True` means an XPASS (this assertion starts
-passing on some future change) fails the suite, forcing someone to notice
-and remove the marker — this is a live tripwire, not a permanent excuse.
+substantial-dwell-in-both-windows ambiguous case: the ambiguous case's share is
+higher at every night-window denominator width from 4h (the bare night window)
+to 24h (all hours), so any threshold that admits the former also admits the
+latter. This fixture's `synthetic_wfh_b` (night_share ≈ 0.1818) and
+`synthetic_ambiguous_e` (night_share ≈ 0.2353) reproduce that near-miss
+relationship (see `mobility_scenarios.py`'s docstring for the numeric
+derivation) — keeping the ambiguous case unlabeled is the non-negotiable
+regression (fail-closed labelling's central proof case), so this assertion is
+`xfail` rather than curve-fit around it. `strict=True` means an XPASS (this
+assertion starts passing on some future change) fails the suite, forcing
+someone to notice and remove the marker — a tripwire, not a permanent excuse.
 """
 from __future__ import annotations
 
@@ -86,25 +64,18 @@ def _derive(person_id: str, *, now_ms: int):
     return labels
 
 
-# 2026-08-19T00:00:00Z — the correct "past every fix in the fixture" instant
-# for this data (the fixture runs 2026-08-03 through 2026-08-14 HKT).
-# NOTE: an earlier draft of this constant mis-derived it a year off
-# ("2026-08-19T00:00:00Z" labelled but actually computed as
-# 2025-08-19T00:00:00Z) — that value would put `now_ms` BEFORE every fix,
-# making `label_place`'s `now_ms - support > freshness_ms` staleness check
-# trivially never fire (a negative "age" is never greater than a positive
-# freshness window), silently defeating the freshness gate rather than
-# exercising it. `1_787_097_600_000` is the value that actually names
-# 2026-08-19T00:00:00Z; verified with
-# `date -d "2026-08-19T00:00:00Z" +%s` (multiplied by 1000).
+# 19 Aug 2026 00:00 UTC — past every fix in the fixture (which runs 3 through
+# 14 Aug 2026 HKT). `now_ms` must come after every fix: before them, a
+# negative "age" is never greater than a positive freshness window, so
+# `label_place`'s `now_ms - support > freshness_ms` staleness check never fires
+# and the freshness gate is silently defeated rather than exercised.
 NOW_MS = 1_787_097_600_000
 
 
 def test_synthetic_worker_a_yields_a_work_place_with_zero_night_dwell():
-    # design/27 §2's clean-office-worker shape: 09:00-
-    # 18:00 weekdays, zero night dwell at that cell — the cluster's own
-    # is_work gate (night_share < 0.1) is what lets it resolve to "work"
-    # at all.
+    # The clean-office-worker shape: 09:00-18:00 weekdays, zero night dwell at
+    # that cell — the cluster's own is_work gate (night_share < 0.1) is what
+    # lets it resolve to "work" at all.
     labels = _derive("synthetic_worker_a", now_ms=NOW_MS)
     work = [(c, r) for c, r in labels if r.kind == "work"]
     assert len(work) == 1, "synthetic_worker_a should yield exactly one work cluster"
@@ -148,7 +119,7 @@ def test_synthetic_wfh_b_yields_home_only_despite_heavy_working_window_dwell():
     labels = _derive("synthetic_wfh_b", now_ms=NOW_MS)
     kinds = {r.kind for _, r in labels}
     assert "home" in kinds
-    # She works from home (design/27 §2's work-from-home shape) — must NOT
+    # She works from home (the work-from-home shape) — must NOT
     # ALSO produce a distinct 'work' cluster at a different location.
     work_clusters = [c for c, r in labels if r.kind == "work"]
     home_clusters = [c for c, r in labels if r.kind == "home"]
@@ -158,20 +129,20 @@ def test_synthetic_wfh_b_yields_home_only_despite_heavy_working_window_dwell():
 
 
 def test_synthetic_home_only_c_yields_no_work_place_at_all():
-    # design/27 §2's home-only shape: a real home cluster, plus a
+    # The home-only shape: a real home cluster, plus a
     # minor secondary location (3 stays, 3h total across 3 distinct
     # weekdays) that clears cluster_places' min_samples but never
-    # _MIN_WORK_DWELL_MS (8h) — task 13b's fix rejects it correctly.
+    # _MIN_WORK_DWELL_MS (8h), so it is correctly rejected.
     labels = _derive("synthetic_home_only_c", now_ms=NOW_MS)
     assert not any(r.kind == "work" for _, r in labels)
 
 
 def test_synthetic_renamed_subject_merged_across_her_rename_yields_one_work_place():
-    # The rename case (design/27 §1.2): synthetic_renamed_before and
+    # The rename case: synthetic_renamed_before and
     # synthetic_renamed_after are ONE subject, one physical desk, split
     # only by a simulated mid-tenure identity rename. This replay merges
-    # them manually (the real subject_id_for resolution is Task 5/9's job
-    # in production) to prove the DOMAIN layer produces one clean work
+    # them manually (production resolves them through `subject_id_for`)
+    # to prove the DOMAIN layer produces one clean work
     # cluster once fed the merged fix stream — not two half-people.
     # Neither half alone reaches cluster_places' min_samples=3 (2 stays
     # each), so segmenting them separately would yield NO work cluster at
@@ -196,10 +167,9 @@ def test_synthetic_renamed_subject_merged_across_her_rename_yields_one_work_plac
 
 
 def test_synthetic_ambiguous_e_yields_unlabeled_at_its_ambiguous_cell():
-    # The canonical fail-closed proof cited everywhere in this programme
-    # (design/27 §2, §3; DEC-115) — this cell carries substantial dwell in
-    # BOTH the night and working-window terms and must resolve to
-    # unlabeled, never a guess either way.
+    # The canonical fail-closed proof case (DEC-115) — this cell carries
+    # substantial dwell in BOTH the night and working-window terms and must
+    # resolve to unlabeled, never a guess either way.
     labels = _derive("synthetic_ambiguous_e", now_ms=NOW_MS)
     ambiguous_cell = [
         (c, r) for c, r in labels
@@ -216,14 +186,12 @@ def test_synthetic_ambiguous_e_yields_unlabeled_at_its_ambiguous_cell():
 
 
 def test_reverting_the_accuracy_gate_would_change_the_result():
-    # Resolves Task 13 Step 3: the accuracy_m <= 100 filter is doing real
-    # work, not vacuously true. `CORPUS_ROWS_UNFILTERED` carries the one
-    # purpose-built row this fixture uses to prove it: an accuracy_m=110
-    # reading ~100m off synthetic_worker_a's true office centroid,
-    # timestamped inside her first (2026-08-03) work session. Feeding it
-    # into segmentation measurably shifts that stay's centroid and
-    # inflates its radius (computed once — see task-13c-report.md for the
-    # full derivation).
+    # The accuracy_m <= 100 filter is doing real work, not vacuously true.
+    # `CORPUS_ROWS_UNFILTERED` carries the one purpose-built row this fixture
+    # uses to prove it: an accuracy_m=110 reading ~100m off
+    # synthetic_worker_a's true office centroid, timestamped inside her first
+    # work session (3 Aug 2026). Feeding it into segmentation measurably
+    # shifts that stay's centroid and inflates its radius.
     assert all(r[4] <= 100 for r in CORPUS_ROWS)
     assert all(r[4] > 100 for r in CORPUS_ROWS_UNFILTERED)
     assert len(CORPUS_ROWS_UNFILTERED) > 0, (
@@ -254,10 +222,9 @@ def test_reverting_the_accuracy_gate_would_change_the_result():
         circle_id="c1", radius_m=120.0, min_dwell_ms=600_000,
     )
 
-    # The stay spanning the excluded fix's timestamp starts at
-    # 2026-08-03T09:00:00 HKT (1785718800000) in both runs (the fix falls
-    # inside its span, not at its boundary, so segmentation still finds
-    # the same started_ts).
+    # The stay spanning the excluded fix's timestamp starts at 09:00 HKT on
+    # 3 Aug 2026 (1785718800000) in both runs (the fix falls inside its span,
+    # not at its boundary, so segmentation still finds the same started_ts).
     gated_stay = next(s for s in gated.closed if s.started_ts == 1785718800000)
     reverted_stay = next(s for s in reverted.closed if s.started_ts == 1785718800000)
 

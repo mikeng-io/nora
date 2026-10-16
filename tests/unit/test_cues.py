@@ -1,4 +1,4 @@
-"""`nora.domain.cues.cues_of` — the deterministic cues of 20-observe.md §3,
+"""`nora.domain.cues.cues_of` — the deterministic cues,
 in English and in Cantonese, and the ones it must NOT see.
 
 Phrases here are generic examples of how people in a group chat say these
@@ -44,7 +44,7 @@ def test_keep_instructions_carry_the_keep_cue(text):
     "do you remember the trip",
 ])
 def test_banter_and_reminiscing_carry_no_keep_cue(text):
-    """DEC-306 review: the widened keep cue stays narrow; a cue only wakes a
+    """DEC-306: the widened keep cue stays narrow; a cue only wakes a
     session, but a wake per joke is a model call paid for nothing."""
     assert "keep" not in cues_of(text)
 

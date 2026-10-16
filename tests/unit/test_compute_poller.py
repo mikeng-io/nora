@@ -1,13 +1,11 @@
 """`ComputeJobPoller` — a finished compute job, delivered through
 `FirePath.speak`, with no real model call. A stub `speak` that
-answers one of §8.1's four outcome strings, a real `ConversationSlots` (its
+answers an outcome string, a real `ConversationSlots` (its
 `spawn` is a no-op — nothing here ever queues), and a real `Metrics()`.
 
-`tests/unit/test_heartbeat_loop.py` defines no SHARED `fake_slots`/
-`fake_metrics` fixture — it builds `ConversationSlots(maxlen=..., spawn=lambda c: None)`
-and `Metrics()` inline, per test. `fake_slots`/`fake_metrics` below are that
-same construction, lifted into local fixtures once rather than repeated in
-every test in this module — not a third invented double.
+`fake_slots`/`fake_metrics` below are the construction
+`ConversationSlots(maxlen=..., spawn=lambda c: None)` and `Metrics()`, the same
+one `tests/unit/test_heartbeat_loop.py` builds inline per test.
 """
 
 from __future__ import annotations
@@ -99,27 +97,19 @@ async def test_a_finished_job_is_delivered_and_marked_done(fake_slots, fake_metr
 
 
 async def test_a_job_never_delivered_twice(fake_slots, fake_metrics):
-    """The compare-and-set claim (Global Constraints), tested directly rather
-    than by calling `tick()` twice sequentially. An earlier draft of this
-    test did exactly that — but by the second `tick()`, the job is already
-    `DONE` and `pending()` correctly excludes it, so `_maybe_deliver` is
-    never even called a second time; the test would pass identically even if
-    `claim()` had no compare-and-set at all (i.e. always returned `True`),
-    which is precisely the defect this test exists to catch (CLAUDE.md: "if
-    reverting the code under test doesn't turn the test red, the test is
-    decorative"). Racing two concurrent `_maybe_deliver` calls doesn't work
-    either — `_maybe_deliver` acquires the conversation SLOT before it claims
-    the row, so a second concurrent call would already be blocked by the slot
-    gate regardless of whether `claim`'s own CAS works, testing the wrong
-    thing.
+    """`claim()` is a compare-and-set: a row another claimant already won is not
+    delivered.
 
-    The real test: PRE-CLAIM the row directly (simulating "a claim already
-    won it," the exact state `_maybe_deliver` must respect), then call
-    `_maybe_deliver` on the still-PENDING-looking `job` value and confirm it
-    never calls `speak`. If `claim()` had no compare-and-set — i.e. it
-    unconditionally returned `True` regardless of the row's current state —
-    this test fails, because `_maybe_deliver` would proceed to deliver a row
-    something else already claimed.
+    Calling `tick()` twice would not test it: by the second `tick()` the job is
+    `DONE` and `pending()` excludes it, so `_maybe_deliver` is not called again.
+    Racing two concurrent `_maybe_deliver` calls would not either: it acquires the
+    conversation SLOT before it claims the row, so the slot gate blocks the second
+    call whether or not `claim`'s own CAS works.
+
+    So the test PRE-CLAIMS the row directly (the state `_maybe_deliver` must
+    respect), then calls `_maybe_deliver` on the still-PENDING-looking `job` value
+    and confirms it never calls `speak`. A `claim()` that unconditionally returned
+    `True` would proceed to deliver a row something else already claimed.
     """
     store = FakeComputeJobStore()
     job = _pending_job()
@@ -158,9 +148,9 @@ async def test_a_turn_that_did_not_speak_still_ends_the_job(fake_slots, fake_met
     would break at-most-once. `FAILED` with the outcome recorded is the only
     honest end.
 
-    Reverting the `else FAILED` half to «leave it alone» turns this red on the
-    state assertion; the counter assertion catches the other half, a row
-    marked terminal without the series ever saying it happened."""
+    A row left alone instead of `FAILED` fails the
+    state assertion; the counter assertion catches a row marked terminal without
+    the series ever saying it happened."""
     store = FakeComputeJobStore()
     job = _pending_job()
     await store.create(job)
@@ -197,8 +187,7 @@ async def test_a_held_slot_defers_the_delivery_and_says_so_in_the_series(
     barging in — the heartbeat's own rule. Nothing is claimed and nothing is
     said, so the row stays PENDING and the next tick tries again.
 
-    The counter is the point of this test, not the deferral (which
-    the retired version announcer established and this poller already did). A deferral
+    The counter is the point of this test, not the deferral. A deferral
     that only logs is invisible to whoever is watching `nora_compute_jobs_
     delivered_total`: a slot that never frees looks EXACTLY like a job that
     never finished — both are silence on every series — and that is the one
@@ -263,7 +252,7 @@ async def test_boot_recovery_fails_pending_rows_a_restart_orphaned(fake_metrics)
 
     # The ROWS, not a count — boot recovery returns them so each requester can
     # be told she lost track of their job. They were promised «I'm working on
-    # it» and, before 2026-08-14, heard nothing ever again.
+    # it».
     assert len(swept) == 2
     assert all(j.conversation_id and j.requester_person_id for j in swept), (
         "a swept row must carry WHERE and WHO, or nobody can be told"
@@ -290,8 +279,7 @@ async def test_a_lost_job_says_it_lost_track_and_never_that_it_failed():
     A requester was told «I'm working on it» and then the process restarted.
     Sweeping the row terminal is right, and NOT saying the job failed is right
     — the handle lived in an in-memory registry and the container may have
-    finished perfectly well. But before 2026-08-14 those two correct decisions
-    added up to a third, wrong one: nobody was told anything at all, ever.
+    finished perfectly well. Together they would tell the requester nothing.
 
     So what is spoken is R-27's `unavailable` — «I lost track of it» — which is
     the only statement that is true. The header must forbid both other claims
@@ -445,7 +433,7 @@ async def test_delivery_keeps_the_report_and_document_ids_on_the_row(fake_slots,
 
 
 async def test_delivery_writes_the_workers_trace_id_on_the_row(fake_slots, fake_metrics):
-    """A finished job links to every call its worker made (design/subagent §4b)."""
+    """A finished job links to every call its worker made."""
     store = FakeComputeJobStore()
     job = _pending_job()
     await store.create(job)

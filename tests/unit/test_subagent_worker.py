@@ -1,11 +1,10 @@
-"""The sub-agent worker, step 2 (design/subagent §4-§5, DEC-282): built, off by default.
+"""The sub-agent worker (DEC-282): off by default.
 
 Driven through the real `ToolRegistry`, the real `SubagentToolSource`, the real `DreamGuard`
 and a real Strands loop with a scripted model, so every assertion is on what the worker did,
-not on what it was constructed with. Two guards are load-bearing and are proved by reverting
-them (see the commit that added this file): the CLOSED TOOL LIST (`test_the_worker_holds_none_
-of_the_never_list`) and the rule that `document_ids` come from `document_publish` RESULTS
-(`test_a_report_that_names_a_document_adds_no_id`).
+not on what it was constructed with. Two guards are load-bearing: the CLOSED TOOL LIST
+(`test_the_worker_holds_none_of_the_never_list`) and the rule that `document_ids` come from
+`document_publish` RESULTS (`test_a_report_that_names_a_document_adds_no_id`).
 """
 
 from __future__ import annotations
@@ -424,7 +423,7 @@ async def test_an_unknown_job_polls_failed_lost(tmp_path):
 
 
 def test_the_workers_guard_has_no_call_ceiling_and_every_other_adaptors_keeps_its_own(tmp_path):
-    """DEC-247, amended (DEC-282): the sub-agent is exempt BY NAME; the default guard, which is
+    """DEC-247, DEC-282: the sub-agent is exempt BY NAME; the default guard, which is
     what every other adaptor gets, still vetoes the call over a tool's ceiling."""
     rig = _Rig(tmp_path)
     guard = rig.runner(_Script([]))._guard(["about"])
@@ -507,13 +506,13 @@ def test_the_doctrine_loads_beside_constraints_and_never_states_a_limit():
     assert not re.search(r"\d", text), "a number in the worker's doctrine is a stated limit"
     for word in ("limit", "budget", "turns", "tokens", "timeout", "at most", "no more than"):
         assert word not in text.lower(), word
-    # the three points of design/subagent §4
+    # the three points the doctrine must make
     for must in ("report to Nora", "read it back", "cannot ask anyone", "list each decision"):
         assert must in text, must
 
 
 def test_the_workers_model_is_built_with_the_configured_reasoning_effort(tmp_path):
-    """`[subagent] reasoning_effort` (default low, operator 2026-10-04) reaches the model the
+    """`[subagent] reasoning_effort` (default low) reaches the model the
     worker's loop talks to, through the same `ModelSource` the Dreamer's model is built by."""
     from types import SimpleNamespace
 
@@ -544,7 +543,7 @@ def test_the_workers_model_is_built_with_the_configured_reasoning_effort(tmp_pat
             "reasoning_effort") == effort
 
 
-# -- review fixes (PR #724) ----------------------------------------------------------------
+# -- staging, limits and eviction ---------------------------------------------------------
 
 
 class _Raises(Model):

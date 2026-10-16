@@ -1,4 +1,4 @@
-"""The four measures (design/culture-tier/02-measurement §2).
+"""The four measures.
 
 Written negative-first. Each measure's value is that it can FAIL to fire —
 a measure that fires on everything is the `no_go` problem one layer over, where
@@ -109,8 +109,8 @@ def test_a_refusal_after_the_note_retired_is_not_a_hit():
 
 
 def test_the_ceiling_names_the_standing_arm_and_the_counter():
-    """#222 and the counter's lossiness both change how the number reads, so
-    neither may travel only in a docstring."""
+    """The standing-arm caveat and the counter's lossiness both change how the
+    number reads, so neither may travel only in a docstring."""
     m = holding_refusals([Refusal("discord/g1", T0, provenance="counter")], [])
     assert "#222" in m.ceiling and "COUNTER" in m.ceiling
     row = holding_refusals([Refusal("discord/g1", T0, provenance="row")], [])
@@ -292,7 +292,7 @@ def test_every_measure_prints_its_own_ceiling_under_its_own_number():
 
 def test_nothing_considered_renders_as_n_a_never_as_zero_percent():
     """An absent denominator read as a measured zero is the exact error
-    `00-overview §1.1` exists to forbid, one layer up."""
+    these measures exist to forbid, one layer up."""
     from nora.app import report
 
     lines = report.render_measures(
@@ -303,16 +303,15 @@ def test_nothing_considered_renders_as_n_a_never_as_zero_percent():
     assert "n/a (nothing considered)" in body and "0.0%" not in body
 
 
-# --- units: the bug live data caught ---------------------------------------
+# --- units: calendar days against epoch ms ------------------------------------
 
 
 def test_anchor_date_is_a_CALENDAR_DAY_and_is_not_compared_against_epoch_ms():
     """`note.anchor_date` is `YYYYMMDD`; every other instant here is epoch ms.
 
     Compared raw, `20260914 > 1_789_...` is false for EVERY note, so every
-    anchored note is classified as expired. Against live data that produced a
-    tidy «5 of 10 notes expired unremarked» which was pure unit error. This
-    test is that number's gravestone.
+    anchored note would be classified as expired, a tidy «notes expired
+    unremarked» count that is pure unit error.
     """
     future = _Note("n1", anchor_date=20991231)
     assert expiry_without_action([future], [], now=T0).considered == 0

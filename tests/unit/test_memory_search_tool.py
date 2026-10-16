@@ -42,7 +42,7 @@ _FRIENDS = RoomFacts(
     label="Friends",
 )
 _LINEAGE = LineagePolicy(rooms=(_FRIENDS,), _by_id={("signal", GROUP): _FRIENDS})
-#: 2023-11-14 22:13 UTC, and a day of milliseconds.
+#: 22:13 UTC on 14 Nov 2023, and a day of milliseconds.
 _T = 1_700_000_000_000
 _DAY = 86_400_000
 
@@ -80,7 +80,7 @@ def _build_with(
 
 
 def _dense(index: FakeMemoryIndex, metrics: Metrics) -> MemorySearch:
-    """The search as `[memory_index] embed` builds it (65 V2): dense seeds
+    """The search as `[memory_index] embed` builds it: dense seeds
     over the fake's vectors of model `m`, the question embedded by a fake."""
     return MemorySearch(index, metrics, embedder=FakeQueryEmbedder(), model="m")
 
@@ -107,7 +107,7 @@ async def test_a_bad_date_is_unavailable_and_searches_nothing(
     persons: Any, dates: dict[str, str],
 ) -> None:
     """Never silently ignored: a narrowing dropped would answer a question
-    nobody asked (operator ruling 2026-10-16)."""
+    nobody asked."""
     honcho = FakeMemoryStore(conclusions={"miles_novak": ["x"]})
     index = _index()
     result = await _call(
@@ -244,7 +244,7 @@ async def test_on_partial_with_no_items_is_recorded_as_partial(persons: Any) -> 
 
 
 async def test_on_a_listed_persons_name_in_the_question_is_pinned(persons: Any) -> None:
-    """65 V2: the names the room's roster resolves reach the search, and a
+    """The names the room's roster resolves reach the search, and a
     node holding one literally ranks first."""
     index = FakeMemoryIndex(
         [
@@ -297,7 +297,7 @@ async def test_on_an_out_of_window_node_is_never_returned_and_takes_no_slot(
 
 async def test_on_until_is_the_end_of_that_day(persons: Any) -> None:
     """`until` names a day, not its midnight (`_parse_until`'s reading): a
-    node at 22:13 UTC on 2023-11-14 is 06:13 HKT on the 15th, so `until`
+    node at 22:13 UTC on 14 Nov 2023 is 06:13 HKT on the 15th, so `until`
     the 14th leaves it out and `until` the 15th keeps it."""
     tool = _tool(persons, FakeMemoryStore(), _dense(_index(), Metrics()))
     out = await _call(tool, query="football", until="2023-11-14")
@@ -336,7 +336,7 @@ def _lineage_listing(listed: frozenset[str] | None) -> LineagePolicy:
 async def test_on_a_person_the_room_does_not_list_is_unavailable_not_nothing(
     persons: Any, listed: frozenset[str] | None,
 ) -> None:
-    """Independent review of #32: a person the live roster resolves but
+    """A person the live roster resolves but
     policy does not list for this room would be narrowed to false in every
     read, a false `nothing_found` over an index that holds their words. It
     is `unavailable` with a note, before any read."""
@@ -415,7 +415,7 @@ def _two_rooms_index() -> FakeMemoryIndex:
 async def test_a_culture_pass_never_reads_another_rooms_line(
     persons: Any, person: str | None,
 ) -> None:
-    """DEC-316 (coordinator ruling 2026-10-16): a room's culture is written
+    """DEC-316: a room's culture is written
     from that room's own speech, as the culture adaptor's Honcho
     `search_memory` read only its own session. Its `memory_search` reads its
     own room alone; the unit's other rooms never reach the pass."""
@@ -435,7 +435,7 @@ async def test_every_other_occasion_reads_the_unit_under_the_listed_room_rule(
 ) -> None:
     """The positive control, and the rule for everything that is not the
     culture fold: the unit's other rooms are read (a member both rooms list
-    said it), as `ask_memory` over the index was on master."""
+    said it)."""
     tool = _build_with(
         persons, FakeMemoryStore(), _dense(_two_rooms_index(), Metrics()),
         lineage=_TWO_ROOMS, dream_adaptor=adaptor,

@@ -1,17 +1,17 @@
-"""Every prompt builder's WHOLE output, parsed as a document (#292).
+"""Every prompt builder's WHOLE output, parsed as a document.
 
 **The gap this fills is a level, not a case.** `tests/unit/test_blocks.py` tests
 one renderer; `tests/architecture/test_one_block_injector.py` reads the SOURCE
 and answers «was a block forgotten»; `tests/test_prefill.py` reads ONE builder's
-render with `str.index` and `in`. Nothing reads what the other eight builders
+render with `str.index` and `in`. Nothing reads what the other builders
 actually emit, and nothing anywhere PARSES a prompt — every existing check is a
 substring against a hand-cut window of the text.
 
 A substring cannot see nesting. `'untrusted="true"' in tag` is true of a block
 whose marker sits on its own opening tag AND of one where the marker is on some
 element that happens to precede it in the same slice; `"</m>" in text` is true
-whether the transcript closed one element or seven. The failures #292 exists to
-prevent are structural — a body that closes its container, an element opened
+whether the transcript closed one element or seven. The failures this guards against
+are structural — a body that closes its container, an element opened
 and never closed, a marker that lands on the wrong element — and structure is
 what a parser reads and a substring does not.
 
@@ -28,12 +28,12 @@ and attribute NAMES — never attribute values and never prose. `test_blocks.py`
 own warning applies («a table of expected strings goes stale»), and it is
 answered by holding no strings: the prose in these prompts is graded by the eval
 suites and changes without this file having an opinion, while the shape is the
-thing #292 made a property of one type.
+thing that is a property of one type.
 
 **The two classes, read off the render rather than off the source.** Class 1 is
 member-authored and carries `untrusted="true"`; class 2 is Nora's own framing
 and carries no marker at all. `test_one_block_injector`'s census asserts that
-distinction exists in the SOURCE of nine modules. These outlines assert which
+distinction exists in the SOURCE of the modules. These outlines assert which
 side each element actually lands on in the bytes a model receives — including
 the container that carries no marker while wrapping one that does
 (`<turn>`), which is a shape no source-level census can tell apart from a
@@ -213,10 +213,10 @@ def standing() -> Standing:
 
 
 async def culture(body: str = "去邊食", *, name: str = "Ada") -> str:
-    # The three policy accessors are REQUIRED since master gave the culture fold
-    # its own `<room>` block: without them the adaptor cannot name the room it
-    # is reading, which is #161's defect one tier over. `None` for the unit
-    # keeps this builder to the blocks this file is about.
+    # The three policy accessors are REQUIRED because the culture fold has its
+    # own `<room>` block: without them the adaptor cannot name the room it is
+    # reading. `None` for the unit keeps this builder to the blocks this file
+    # is about.
     return await CultureAdaptor(
         culture=InMemoryCultureStore(),
         unit_for=lambda _k: None,
@@ -307,7 +307,7 @@ def tag_message(body: str = "去邊食", *, name: str = "Grant") -> str:
 #: the BYTES a builder emits, and the only way to get those is to run it.
 #:
 #: Each entry takes `(body, name=...)` — one member-authored body and one
-#: speaker name — so `test_prompt_adversarial.py` can drive the same nine
+#: speaker name — so `test_prompt_adversarial.py` can drive the same builders
 #: through the same hostile corpus without a second roster.
 BUILDERS = {
     "prefill.header": prefill_header,
@@ -328,7 +328,7 @@ BUILDERS = {
 
 
 async def render(name: str, body: str = "去邊食", *, who: str = "Grant") -> str:
-    """One builder's bytes. `await`s the one adaptor and calls the eight pure
+    """One builder's bytes. `await`s the one adaptor and calls the pure
     functions, so a caller never has to know which is which."""
     result = BUILDERS[name](body, name=who)
     return await result if hasattr(result, "__await__") else result
@@ -341,7 +341,7 @@ async def render(name: str, body: str = "去邊食", *, who: str = "Grant") -> s
 #:
 #: **These are OUTLINES, not goldens.** They hold no prose and no attribute
 #: value, so the eval-graded wording of any of these prompts can change without
-#: touching this dict. What they pin is the thing #292 made structural: which
+#: touching this dict. What they pin is the structure: which
 #: elements exist, what contains what, where the marker is, and that a framing
 #: clause is present.
 #:
@@ -422,10 +422,10 @@ async def test_every_block_says_what_it_is(name: str):
     The shapes above are a literal and a literal only fails on what somebody
     wrote in it. This walks whatever the builder actually emitted: every block
     must say what it is, and must say it in the words its TYPE declares rather
-    than words the call site invented. That second half is the whole point of
-    #314 — before `nora.domain.block_types`, 27 of 39 call sites wrote their
-    own description inline and four block types described themselves two
-    different ways in two different modules, with nothing able to notice.
+    than words the call site invented. That second half is the point of
+    `nora.domain.block_types`: a call site that wrote its own description
+    inline could let one block type describe itself two ways in two modules,
+    with nothing able to notice.
     """
     served = blocks(await render(name))
     assert served, (
@@ -458,10 +458,8 @@ async def test_every_row_element_sits_inside_a_framed_block(name: str):
     A row — `<m>`, a `<note>` index line, `<skill>`, `<person>` — says nothing
     about what it is, by design: it is a field-bearing record, and what it is
     is its container's `description=`. That only holds while it HAS a
-    container. A renderer whose block wrapper was dropped — which is exactly
-    what a renderer's `<note>` elements were on master before #292, «shipped
-    with no container at all» — leaves rows sitting at the top level of a
-    prompt with nothing saying what they are.
+    container. A renderer whose block wrapper was dropped leaves rows sitting
+    at the top level of a prompt with nothing saying what they are.
     """
     root = parse(await render(name))
     parents = {id(child): parent for parent in root.iter() for child in parent}
@@ -479,7 +477,7 @@ async def test_every_row_element_sits_inside_a_framed_block(name: str):
 async def test_a_row_is_explained_by_its_fields_and_never_by_its_own_prose(
     name: str,
 ):
-    """The other half of the split this branch landed: a row carries DATA.
+    """The other half: a row carries DATA.
 
     A block says what it is; a row's fields are annotated once, on the type,
     and rendered in the block's `fields=`. What a row may not do is describe
@@ -525,28 +523,24 @@ async def test_a_prompt_never_serves_the_same_block_twice(name: str):
 async def test_every_attribute_a_render_emits_is_annotated_by_its_type(name: str):
     """A field with no gloss is a token the model gets to invent a meaning for.
 
-    **Found by hand, twice, because nothing looked.** `<batch>` renders
-    `reply_to=` and annotated four of its five attributes — a bare TIMESTAMP,
-    beside an `at` glossed as «when it was sent», so the unexplained one reads
-    as a second send time. Before that, `title`, `about`, `written`, `person`
-    and `name` all reached the model undefined for months, and #292 added five
-    more (`at`, `room`, `reply_to`, `delivery`, `role`) without anything
-    noticing.
+    **An unglossed attribute is easy to miss by eye.** A bare `reply_to=`
+    TIMESTAMP rendered beside an `at` glossed as «when it was sent» reads as a
+    second send time.
 
     Derived from the RENDER, which is the half the registry cannot do on its
     own: `BLOCK_TYPES` knows what a type declares and not what a renderer
-    emits, and the gap between those two is where every one of these lived.
+    emits, and the gap between those two is where an unglossed attribute lives.
 
     `description` and `fields` are excluded because they ARE the annotation.
 
     **What it does NOT cover, stated because the fixture is the bound.** It can
-    only see attributes these fixtures actually produce. `<batch>`'s
-    `reply_to` needs a row with a `quoted_ts`, which no fixture here has — so
-    the field this test was written after is one it would still miss. A census
-    over the registry cannot replace it either (that direction is
-    `test_every_declared_type_is_actually_rendered`, one file over); what
-    closes the gap is a richer fixture, and until there is one this gate is a
-    floor rather than a proof.
+    only see attributes these fixtures actually produce. An `<m>`'s `replying_to`
+    needs a row whose `quoted_ts` resolves to another row in the window, which
+    no fixture here has (`row()` sets none) — so a missing gloss on that field
+    would go unseen. A census over the registry cannot replace it either (that
+    direction is `test_every_declared_type_is_actually_rendered`, one file
+    over); what closes the gap is a richer fixture, and until there is one this
+    gate is a floor rather than a proof.
     """
     root = parse(await render(name))
     parents = {id(child): parent for parent in root.iter() for child in parent}

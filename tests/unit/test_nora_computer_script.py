@@ -1,8 +1,7 @@
 """`deploy/computer/nora-computer`'s egress policy, driven through a stub `sbx`.
 
-The operator's ruling (2026-10-07, ADR 0022 Decision 2): the VM may reach the
-public web (`**` over TCP) with the private ranges denied. It replaced the
-2026-10-01 allowlist (PyPI and the Ubuntu archive only). The stub behaves like
+The operator's ruling (ADR 0022 Decision 2): the VM may reach the
+public web (`**` over TCP) with the private ranges denied. The stub behaves like
 the real binary on the properties the script reads: `policy check network`
 answers `Allowed:`/`Denied:` from the allow and deny rules that `policy allow
 network` and `policy deny network` append to (a CIDR deny binds IP literals
@@ -12,8 +11,8 @@ The harness is `tests/unit/nora_computer_harness.py`.
 
 The stub's `policy check network` reproduces the real tool's exit status, not
 only its words: 0 and `Allowed:` for an allowed host, 1 and `Denied:` for a
-denied one (measured on the deploy host, 2026-10-01). A stub that exited 0 for a
-denial let the script read every denial as unknown and stayed green on it.
+denied one. A stub that exited 0 for a denial would let the script read every
+denial as unknown and stay green.
 
 What this cannot show is sbx itself: that the real daemon takes these rules and
 answers in these words is the README's read-back on norty, UNVERIFIED until run.
@@ -33,7 +32,7 @@ from tests.unit.nora_computer_harness import HOST_IP, HOST_PORT, NAME, SCRIPT, H
 README = SCRIPT.parent / "README.md"
 
 #: Written out here, not read from the script: the test must be able to fail
-#: when the script's lists change. The operator's ruling, 2026-10-07.
+#: when the script's lists change. The operator's ruling.
 EXPECTED_EGRESS = {"**"}
 EXPECTED_DENY = {
     "10.0.0.0/8",
@@ -129,11 +128,11 @@ def test_check_fails_when_the_wildcard_allow_is_gone(host: Host) -> None:
 def test_a_name_resolving_to_a_private_address_is_not_caught_the_accepted_limit(
     host: Host,
 ) -> None:
-    """KNOWN, ACCEPTED RISK (operator, 2026-10-07; measured on norty, sbx 0.46.0,
-    design/browser-runtime/04-s1-runbook.md step 4): a CIDR deny binds IP
-    literals only, so a public NAME that resolves to 127.0.0.1 is Allowed. This
-    pins that the policy does not claim otherwise; if sbx ever closes the gap
-    this test goes red and the README's limit paragraph is to be rewritten."""
+    """KNOWN, ACCEPTED RISK (operator-accepted; sbx 0.46.0): a CIDR deny binds
+    IP literals only, so a public NAME that resolves to 127.0.0.1 is Allowed.
+    This pins that the policy does not claim otherwise; if sbx ever closes the
+    gap this test goes red and the README's limit paragraph is to be
+    rewritten."""
     host.run("egress", "apply")
     literal = host.run("egress", "check")
     assert literal.returncode == 0, literal.stdout
@@ -259,7 +258,8 @@ def test_an_unreadable_rule_list_withholds_the_web(host: Host) -> None:
 def test_a_rule_scoped_to_another_sandbox_does_not_count_as_ours(host: Host) -> None:
     """Denies listed for `nora-computer-eval` (a name that merely starts with
     ours) are not ours: every range is still denied for this sandbox before
-    `**` is allowed. A substring match skipped them and opened the ranges."""
+    `**` is allowed. A substring match would skip them and leave the ranges
+    open."""
     (host.dir / "foreign_denied").write_text("".join(f"{c}\n" for c in EXPECTED_DENY))
     result = host.run("egress", "apply")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -344,7 +344,7 @@ def test_the_fake_sbx_exits_like_the_real_one(host: Host) -> None:
     assert denied.returncode == 1 and allowed.returncode == 0
     assert denied.stdout.splitlines()[0] == "Denied: 172.17.0.1:18765"
     assert allowed.stdout.splitlines()[0] == "Allowed: pypi.org:443"
-    # sbx 0.46.0, measured on norty 2026-10-07: a CIDR deny names a local rule,
+    # sbx 0.46.0: a CIDR deny names a local rule,
     # an allowed host carries no Reason line.
     assert re.search(r'^Reason: denied by local rule rule "local:[0-9a-f-]+"$',
                      denied.stdout, re.M), denied.stdout
@@ -358,8 +358,8 @@ def test_the_fake_sbx_exits_like_the_real_one(host: Host) -> None:
 
 
 def test_a_denial_that_exits_1_reads_denied_not_unknown(host: Host) -> None:
-    """The measured defect: the real sbx exits 1 for a denied host, and any
-    non-zero exit was read as `unknown`, so `egress check` could never pass."""
+    """The real sbx exits 1 for a denied host; reading any non-zero exit as
+    `unknown` would mean `egress check` could never pass."""
     assert host.run("egress", "apply").returncode == 0
     result = host.run("egress", "check")
     assert result.returncode == 0, result.stdout

@@ -1,14 +1,11 @@
 """The Cognition prompt shows a message by the id its verbs require, and a name by
-the string its validator compares (step 3b of `design/context-assembly/
-04-every-occasion.md` §5; the bug it closes).
+the string its validator compares.
 
-The prompt used to show `[#7998] Ann, 16:35 (32 min ago): body`. The verb it then
-asked for, `note_create`, requires the citation as a bare `[7998]` and, under
-`## Decided`, `## Proposed` and `## Ruled out`, the author as `(<names>)`, so the
-input contradicted its own validator: a live trace (2026-10-01) showed three
-refusals in four `note_create` calls for exactly that. Every message is now
-`<m n="7998" from="Ann" ...>`, `n` the real id and `from` the name the validator
-compares to.
+Every message is `<m n="7998" from="Ann" ...>`: `n` is the real id and `from`
+the name the validator compares to. `note_create` requires the citation as a
+bare `[7998]` and, under `## Decided`, `## Proposed` and `## Ruled out`, the
+author as `(<names>)`; a prompt showing `[#<id>] Ann, 16:35 (32 min ago): body`
+would contradict its own validator.
 
 What these hold, each with the revert that reddens it
 (`scripts/mutations/context-assembly-3b-cognition.json`):
@@ -118,7 +115,7 @@ class ReadingModel:
                     f"## Open\n- which place [{n}]\n"
                 )
                 # One title per note: a second note under the title of the first is
-                # refused `duplicate_title` (the session now holds its own earlier
+                # refused `duplicate_title` (the session holds its own earlier
                 # writes), and this test is about the ids and names, not titles.
                 self.answers.append(await by["note_create"](
                     **{**NOTE, "title": f"dinner {n}"}, body=body,
@@ -212,8 +209,8 @@ def test_a_name_that_cannot_render_as_it_is_is_the_one_the_floor_or_the_collapse
 
 async def test_a_reaction_is_not_citable_from_its_own_row():
     """The `reaction` field says «cite a message from its own row»: a message seen
-    only through a reaction row is refused, as it always was. Pinned so the type's
-    sentence stays true."""
+    only through a reaction row is refused. Pinned so the type's sentence stays
+    true."""
     react = Stimulus(
         id=1, unit="u", kind="message", item="reaction", ref="message_reaction:1",
         at_ms=NOW, recorded_at_ms=NOW, platform=A.platform, conversation_id=A.conversation_id,

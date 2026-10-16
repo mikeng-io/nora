@@ -1,11 +1,10 @@
-"""Each agenda item's reads resolve through that item's own room (30-cognition.md
-§1, DEC-231, R-21; #637 review, major 3).
+"""Each agenda item's reads resolve through that item's own room (DEC-231, R-21).
 
-The first cut bound a multi-room agenda to the unit's HOME room, so a read about
-another room's people failed closed on the wrong roster, or answered through
-the wrong room. Now the session holds ONE tool per name that takes a `room`
-argument and routes the read to that room's own build; a room that is not on
-the agenda is refused. The tools here are REAL Strands tools (built the way the
+A multi-room agenda is not bound to the unit's HOME room: a read about another
+room's people must not fail closed on the wrong roster or answer through the
+wrong room. The session holds ONE tool per name that takes a `room` argument
+and routes the read to that room's own build; a room that is not on the agenda
+is refused. The tools here are REAL Strands tools (built the way the
 registry builds them, `nora.agent.ports.adapt`) called through their real
 `stream`, so the schema the model reads and the routing it gets are what ship.
 

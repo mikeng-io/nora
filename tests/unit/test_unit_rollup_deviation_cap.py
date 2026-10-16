@@ -1,4 +1,4 @@
-"""D3 (DEC-245): at most `deviation_stimuli_per_person_per_day` deviation stimuli
+"""DEC-245: at most `deviation_stimuli_per_person_per_day` deviation stimuli
 per person per local day, until a session can read the rows behind them
 (`rollup_read`). Driven through `UnitRollups._raise` with the in-memory stimulus
 store, whose `count_rollup` is bound to the SQL one by the store contract; only

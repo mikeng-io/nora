@@ -1,17 +1,16 @@
 """`ToolRegistry.surface()` — the one builder every loop takes its tools from.
 
-Phase B of `design/tool-catalogue/`. Three properties, each pinned here:
+Three properties, each pinned here:
 
-1. `defer=False` is byte-for-byte the old build: same tools, no loader. Every
-   production caller ships in this mode until phase C flips the switch, so a
-   difference here would be a behaviour change nobody decided.
+1. `defer=False` is byte-for-byte the plain build: same tools, no loader. A
+   difference here would change the behaviour of every caller that does not
+   defer.
 2. The catalogue, the resident set and the shelf are derived from ONE admitted
    set. The catalogue cannot advertise a tool the turn cannot reach — the
    defect a declared-table catalogue has in a Signal room.
 3. `load_tools` actually works inside a Strands loop: the named tool is absent
    from the first model call's `tools`, present in the next, and dispatches.
-   That is gate 2b's replacement (`05-measurement.md`), run against the real
-   SDK rather than asserted from reading it.
+   That is run against the real SDK rather than asserted from reading it.
 """
 
 from __future__ import annotations
@@ -56,7 +55,7 @@ def _names(tools: list[Any]) -> set[str]:
     return {t.tool_name for t in tools}
 
 
-# ---- 1. defer=False is the old build ---------------------------------------
+# ---- 1. defer=False is the plain build --------------------------------------
 
 
 def test_without_deferral_every_admitted_tool_is_resident_and_there_is_no_loader():
@@ -192,7 +191,7 @@ def test_the_per_call_cap_refuses_the_overflow_and_loads_the_rest():
 
 
 def test_a_non_ok_load_carries_a_note():
-    """ADR 0015 §3: the description only NAMES `nothing_found` and
+    """ADR 0015: the description only NAMES `nothing_found` and
     `unavailable`; how to report them is the result's `note`."""
     cases = {
         "nothing_found": load_onto(_agent(set()), _shelf("route"), ["teleport"]),
@@ -297,7 +296,7 @@ class _LoadThenCall(Model):
 
 
 async def test_a_shelved_tool_is_absent_then_loaded_then_dispatched():
-    """Gate 2b's replacement, end to end against strands 1.50.2: the loader
+    """End to end against the real Strands SDK: the loader
     registers onto the running agent, the NEXT call carries the tool, and the
     executor dispatches it. Revert `adapt()`'s `context=` and the loader gets
     no agent; drop the registration and call 2 is not offered `calculate`."""
@@ -328,8 +327,7 @@ def test_a_loaded_schema_is_never_a_lookup_for_r97():
 
 
 class _CallDirectly(_LoadThenCall):
-    """Calls a SHELVED tool straight from its catalogue line, never loading it
-    — what arm B measured her doing on most deferred turns."""
+    """Calls a SHELVED tool straight from its catalogue line, never loading it."""
 
     _SCRIPT: Sequence[tuple[str, dict] | None] = (
         ("calculate", {"expression": "6*7"}),
@@ -338,10 +336,9 @@ class _CallDirectly(_LoadThenCall):
 
 
 async def test_a_shelved_tool_called_by_name_runs_on_the_first_call():
-    """The measured failure (design/tool-catalogue arm B): she called
-    `calculate` from its catalogue line without loading it, Strands answered
-    «Unknown tool», and she paid a round trip to load and retry. `ShelfLoader`
-    registers it at the call. Drop `surface.hooks` from the agent and this
+    """She calls `calculate` from its catalogue line without loading it:
+    Strands would answer «Unknown tool» and she would pay a round trip to load
+    and retry. `ShelfLoader` registers it at the call. Drop `surface.hooks` from the agent and this
     turn's first result is an error instead of 42."""
     surface = _surface(defer=True)
     model = _CallDirectly()
@@ -377,7 +374,7 @@ async def test_a_name_off_the_shelf_is_left_unknown():
     assert any("Unknown tool" in r.get("text", "") for r in model.results)
 
 
-# ---- the two Dreamer-only reads of PR B (DEC-246) -----------------------------------------
+# ---- the two Dreamer-only reads (DEC-246) -----------------------------------------
 
 _LOOP_ONLY = ("rollup_read", "standing_read", "character_read")
 
@@ -400,7 +397,7 @@ def test_the_dreamer_loop_reads_are_never_a_tag_turns_tools():
 
 def test_rollup_read_is_a_tag_turns_tool_and_no_other_occasions():
     """«Where have we been together lately» reaches the outing rows from a tag
-    turn (unified-memory step 0). A fire turn and the sub-agent worker are not
+    turn. A fire turn and the sub-agent worker are not
     a person asking, and stay without it."""
     from nora.agent.surface import TAG_READABLE_LOOP_TOOLS
 
@@ -440,18 +437,18 @@ def test_each_read_is_withheld_from_every_surface_until_its_read_is_wired():
 
 # ---- 4. tools resident on one occasion (DEC-256) ---------------------------
 
-#: The voice members, as MEASURED (`scripts/measure_voice_tool_calls.py`,
-#: 2026-10-01: 26 voice turns, 2026-09-17 .. 09-30). A literal on purpose: a
-#: test that read the members back off `NativeTool.hot_on` would agree with any
-#: declaration, including a dropped one. Changing this set means re-running the
-#: measurement and putting its output in the PR, not editing the line to fit.
+#: The voice members, as MEASURED (`scripts/measure_voice_tool_calls.py`). A
+#: literal on purpose: a test that read the members back off
+#: `NativeTool.hot_on` would agree with any declaration, including a dropped
+#: one. Changing this set means re-running the measurement, not editing the
+#: line to fit.
 _VOICE_MEASURED = frozenset({
     "play_music", "set_music_volume", "stop_music", "music_status", "top_music",
 })
 
 #: Schema tokens (cl100k, `json.dumps(tool_spec)`) a voice turn carries on top
 #: of a text turn's resident set, on every model call of the turn. Measured
-#: 658 on 2026-10-01 (play 218, volume 118, top 158, status 84, stop 80); the
+#: at 658 (play 218, volume 118, top 158, status 84, stop 80); the
 #: ceiling holds one more small verb (`skip_music` is 85). A new `hot_on`
 #: member that does not fit re-sets this with its own measured count.
 _VOICE_EXTRA_TOKEN_CEILING = 750
@@ -518,7 +515,7 @@ def test_a_text_turn_is_byte_identical_with_or_without_any_occasion_declared(mon
     """What a text turn is handed (every tool schema in order, the catalogue
     and the loop limits) is the same bytes whether or not any tool declares
     `hot_on`. The comparison arm strips every declaration, which is the table
-    as it was before DEC-256."""
+    without `hot_on` (DEC-256)."""
     from nora.agent import tools as tools_module
 
     stripped = {name: dataclasses.replace(spec, hot_on=frozenset())

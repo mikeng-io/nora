@@ -1,11 +1,11 @@
 """`VoiceEventConsumer` (nora/app/voice_events.py) — the controller → nora
-callback routing (design/voice-channel/07 §5, B5/B7/B8/B9/B10).
+callback routing.
 
 The manager and the hub's client are inline stubs: neither is a
 `nora/domain/ports.py` port (`MusicPlayerManager` and `VoiceControllerClient`
 are concrete application/infra classes), so the port-fake gate does not
 apply. What is pinned here is the CONSUMER's own contract: shape validation,
-exactly-once dedupe COMMITTED ONLY ON SUCCESS (B7 — a failed delivery is
+exactly-once dedupe COMMITTED ONLY ON SUCCESS (a failed delivery is
 retryable, never acknowledged as a duplicate), stale-playback rejection,
 and which manager method each event type reaches with which generation.
 The generation/channel staleness checks themselves live in the REAL
@@ -116,7 +116,7 @@ async def test_an_unknown_event_type_is_a_400():
 
 
 async def test_a_validation_failure_leaves_the_event_retryable():
-    """B7: consumption is committed ONLY on success — a 400 must not burn
+    """Consumption is committed ONLY on success — a 400 must not burn
     the `event_id`, so a corrected re-delivery of the same id is
     processed, not answered `duplicate`."""
     consumer, manager, _ = await _consumer()
@@ -146,7 +146,7 @@ async def test_an_event_id_is_consumed_exactly_once():
 
 
 async def test_a_failed_delivery_is_500_and_the_retry_is_processed():
-    """B7 (the audit's probe): the first delivery raises mid-transition —
+    """The first delivery raises mid-transition —
     the `event_id` must NOT be consumed, so the controller's outbox retry
     is PROCESSED instead of acknowledged as a duplicate while the work is
     still undone."""
@@ -187,15 +187,13 @@ async def test_a_stale_track_finished_never_advances():
 
 async def test_stream_failed_is_its_own_transition_not_a_track_end():
     """A track that failed to START has not finished, so this must NOT reach
-    `on_track_finished`. It did until 2026-09-18, and routing a failure to
-    the advance is what made one rejected CDN address cost a whole session:
-    every failure advanced, the next track resolved through the same broken
-    source session and failed identically, and autoplay emptied the queue
-    into silence in about a minute (design/voice-channel/07 §5, audit B14).
+    `on_track_finished`: routing a failure to the advance makes one rejected CDN
+    address cost a whole session — every failure advances, the next track
+    resolves through the same broken source session and fails identically, and
+    autoplay empties the queue into silence.
 
     The reason is forwarded because the manager logs it — a failure whose
-    cause is unreadable is the thing that made this take a live incident to
-    find."""
+    cause is unreadable is hard to diagnose."""
     consumer, manager, _ = await _consumer()
 
     status, _ = await consumer.consume(
@@ -217,9 +215,9 @@ async def test_a_stale_stream_failed_never_advances():
 
 
 async def test_voice_death_reaches_the_manager_with_its_generation():
-    """B8: the generation check and the hub-session drop moved INTO the
-    manager (under the guild lock) — the consumer's own contract is just
-    forwarding the generation faithfully."""
+    """The generation check and the hub-session drop live INSIDE the manager
+    (under the guild lock) — the consumer's own contract is just forwarding the
+    generation faithfully."""
     consumer, manager, hub = await _consumer()
 
     status, _ = await consumer.consume(_event("voice-death"))
@@ -261,7 +259,7 @@ async def test_a_missing_guild_id_is_a_400():
 
 
 async def test_an_event_seq_gap_is_warned_about(caplog):
-    """§3.3 consumption guard: an event whose seq skips ahead of the last
+    """The consumption guard: an event whose seq skips ahead of the last
     successfully processed one means deliveries were lost in between."""
     consumer, _manager, hub = await _consumer()
 
@@ -294,15 +292,14 @@ async def test_a_failed_delivery_does_not_move_the_seq_bookmark():
 
 
 async def test_an_event_for_a_guild_with_no_controller_is_refused():
-    """THE HOLE THIS CLOSES (found by review, 2026-09-17). This route has no
+    """An event for a guild that is not configured is refused. This route has no
     auth by design — its only caller is a controller on the private compose
-    network. The hub's seq bookmark became a per-guild DICT with multi-guild,
-    where a scalar used to be, and nothing checked the `guild_id` against the
-    configured controllers: every distinct value a caller invented added a
-    permanent entry to a map keyed by request input.
+    network. The hub's seq bookmark is a per-guild DICT, so without a check of
+    the `guild_id` against the configured controllers every distinct value a
+    caller invented would add a permanent entry to a map keyed by request input.
 
-    It was also fail-OPEN — an event for a guild nora can do nothing about was
-    answered `200 ok`."""
+    Accepting it would also be fail-OPEN — an event for a guild nora can do
+    nothing about would be answered `200 ok`."""
     consumer, manager, hub = await _consumer()
 
     status, payload = await consumer.consume(

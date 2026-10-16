@@ -5,20 +5,19 @@ from nora.domain.notes import DESCRIPTION_MAX_CHARS, TITLE_MAX_CHARS, Note
 from nora.domain.prompt import escape_attr
 from nora.language.note_render import render_notes
 
-#: What `<notes>` says it is, declared once on the type (#314). It used to be
-#: a `NOTES_BLOCK_NOTE` constant here AND a `NOTES_HEADER` catalogue line in
-#: `prefill` — two strings for one fact, free to disagree, which four block
-#: types managed to do before the registry existed.
+#: What `<notes>` says it is, declared once on the type: a separate constant
+#: here and a catalogue line in `prefill` would be two strings for one fact,
+#: free to disagree.
 NOTES_BLOCK_NOTE = BLOCK_TYPES["notes"].description
 
 
 def _text(block) -> str:
     """The block's bytes, or `""` when there is no block.
 
-    The three renderers return a `ContextBlock` since #220's second half — the
+    The three renderers return a `ContextBlock` — the
     block declares itself and `ContextBlock.render()` is the only thing that
     turns one into text. These tests assert on the bytes, so they render here.
-    A `None` is «no block at all», which is what `""` used to mean.
+    A `None` is «no block at all».
     """
     return block.render() if block is not None else ""
 
@@ -39,11 +38,9 @@ def _note(
 
 
 def test_an_empty_tier_renders_no_block_at_all():
-    """Its sibling's rule (`render_facts`, and `RoomLanguage.__bool__` before
-    it): empty is a REAL state, and the renderer emits nothing rather than an
-    empty block. This is what lets the tier ship dormant — `TagContext.notes`
-    defaults to `()` and nothing writes it yet, so today this renders nothing
-    in production and adds no tokens to any tag."""
+    """Its sibling's rule (`render_facts`): empty is a REAL state, and the
+    renderer emits nothing rather than an empty block, so a deployment with no
+    notes adds no tokens to any tag."""
     assert _text(render_notes(())) == ""
 
 
@@ -54,7 +51,7 @@ def test_the_index_carries_the_title_and_the_description():
 
 
 def test_the_body_is_not_in_the_index():
-    """§5.1/§5.2: the index buys AWARENESS, `note_read` buys the content. The
+    """The index buys AWARENESS, `note_read` buys the content. The
     only free-text a `Note` carries beyond title/description is `uncertainty`
     and `closing_condition`, and neither renders — see `render_notes`'s
     docstring for the closing-condition ruling in particular. This is the test
@@ -78,23 +75,23 @@ def test_the_note_does_not_claim_the_room_produced_this():
 
 
 def test_the_note_says_whose_words_the_index_is_in():
-    """Issue #226. The block said what the lines were ABOUT and never whose
-    words they were, so a description her own curator wrote for triage — capped
-    at 200 characters, hedged — was read back to the room it was about as a
-    flat claim about that room. The three properties the sentence now has to
-    carry, asserted separately so dropping any one of them reddens on its own:
+    """The block says whose words the lines are, not only what they are ABOUT. A
+    description her own curator wrote for triage — capped at 200 characters,
+    hedged — must not be read back to the room it was about as a flat claim
+    about that room. The three properties the sentence has to carry, asserted
+    separately so dropping any one of them reddens on its own:
 
       - authorship — hers, for herself;
       - not the room's — neither something said here nor a record of what was;
       - where a claim about the room comes from instead — the room's own
         messages.
 
-    That last clause used to name «the transcript», and it stopped being true
-    of every reader when this block became one type across four passes (#314):
-    the proactive decide turn renders no message block at all, so it was told
-    to prefer a thing its prompt does not contain. It now says «where you can
-    ALSO see the room's own messages» — vacuous where there are none, true
-    where there are, and never pointing at an absent block.
+    That last clause cannot name «the transcript»: this block is one type
+    across four passes, and the proactive decide turn renders no message block
+    at all, so naming it would point at a block its prompt does not contain.
+    It says «where you can ALSO see the room's own messages» — vacuous where
+    there are none, true where there are, and never pointing at an absent
+    block.
     """
     note = NOTES_BLOCK_NOTE.lower()
     assert "your own notes" in note and "written by you for yourself" in note
@@ -102,17 +99,17 @@ def test_the_note_says_whose_words_the_index_is_in():
     assert "not a record of what happened" in note
     assert "from what the room actually did" in note
     # And the tie-break said outright, because a summary is the thing that
-    # reads as settled: on `a10` the stale line is what she reached for.
+    # reads as settled.
     assert "an entry is what you wrote, not what happened" in note
     assert "where you can also see the room's own messages and they "\
            "disagree with an entry, the messages are what happened" in note
 
 
 def test_the_note_forbids_reading_a_line_out_as_well_as_acting_on_one():
-    """The pointer clause was a read-before-WRITE latch: it stopped her
-    revising a body she had not read and said nothing about SPEAKING, which is
-    the path the message actually took. Both halves are pinned — the latch
-    (`read one before acting`) and the new one (`never read a line out`) —
+    """The pointer clause covers SPEAKING as well as writing: a read-before-WRITE
+    latch alone stops her revising a body she had not read and says nothing
+    about reading one out. Both halves are pinned — the latch
+    (`read one before acting`) and the other (`never read a line out`) —
     because an author tightening one is exactly how the other goes."""
     note = NOTES_BLOCK_NOTE.lower()
     assert "read one before acting on what it holds" in note
@@ -120,14 +117,14 @@ def test_the_note_forbids_reading_a_line_out_as_well_as_acting_on_one():
 
 
 def test_the_note_keeps_the_machinery_out_of_the_room():
-    """The second half of the same incident: asked point-blank what she had
-    changed, she answered by explaining the mechanism — that the room's 「open
-    note」 was still unsettled and the deadline near. 「open note」 is the tool
-    layer's phrase, never the room's. The block she reads on every turn is
-    where the tier says its own vocabulary stays inside it.
+    """Asked point-blank what she changed, she must not explain the mechanism —
+    that the room's 「open note」 was still unsettled and the deadline near.
+    「open note」 is the tool layer's phrase, never the room's. The block she
+    reads on every turn is where the tier says its own vocabulary stays inside
+    it.
 
     Scoped to the APPARATUS, and both halves are asserted, because the ban on
-    its own is wider than the defect. #226(b) was the tool layer's WORD, not
+    its own is wider than the defect. The ban is on the tool layer's WORD, not
     the subject; an unqualified «never mention the notes» would forbid the
     honest answer `nora/doctrine/rooms/conduct.md` already requires when she has
     looked and found nothing, and would contradict, on the same turn, a skill
@@ -141,29 +138,20 @@ def test_the_note_keeps_the_machinery_out_of_the_room():
 
 
 def test_the_note_still_invites_her_to_raise_what_a_note_is_about():
-    """Why the permission is here, said at the strength the instrument
-    supports and no higher.
+    """Why the permission is here, said at the strength the evidence supports
+    and no higher.
 
-    A first wording of this work said only what she may NOT do with a note —
-    never read one out, never name the apparatus — and nothing about raising
-    the subject, which is the entire purpose of the tier. Stacking those
-    prohibitions across this block, the fire header and the tool schemas read
-    2/15 and 3/15 on the act suite's `a01`, the case that measures whether she
-    still speaks at all.
-
-    **That is not a demonstrated regression, and no number here is a
-    prediction.** The same UNCHANGED prompt read 5/15, 8/15, 10/15 and 12/15
-    across four windows of one session, so a 2-3/15 reading sits inside a band
-    the instrument cannot separate from noise, and nothing attributes it to
-    this clause rather than the other two. Issue #158 is the general form: this
-    suite's n does not support a per-clause causal claim, and a docstring that
-    made one would be telling the next author a fact nothing measured.
+    A clause that said only what she may NOT do with a note — never read one
+    out, never name the apparatus — and nothing about raising the subject, which
+    is the entire purpose of the tier, would stack prohibitions across this
+    block, the fire header and the tool schemas. No measurement attributes a
+    per-clause effect: the act suite's n does not separate a single clause from
+    noise.
 
     So the clause stays on an argument, not a number: it costs one sentence,
     and what it guards against — three prohibitions reading as «leave the notes
     alone» — is the tier's whole point going quiet. A later tightening that
-    drops it is making the same unmeasured bet in the other direction, and
-    should re-run the suite rather than trust either figure above."""
+    drops it is making an unmeasured bet and should re-run the suite."""
     note = NOTES_BLOCK_NOTE.lower()
     assert "raise what one of them is about whenever it would help" in note
 
@@ -175,10 +163,10 @@ def test_the_opening_tag_carries_what_the_block_is():
     load-bearing at the un-spoofable position — would pass every other test in
     this file.
 
-    There is no `untrusted="true"` beside it any more and its absence is the
-    point (#314): that token's definition lived in one doctrine file which this
-    audience does not load, so the marker reached the model as a word with no
-    meaning attached. The clauses above are the meaning, and they are here.
+    There is no `untrusted="true"` beside it, and its absence is the point:
+    that token's definition lived in one doctrine file which this audience does
+    not load, so the marker would reach the model as a word with no meaning
+    attached. The clauses above are the meaning, and they are here.
     """
     out = _text(render_notes((_note(),)))
     opening_tag = out[: out.index(">") + 1]
@@ -217,7 +205,7 @@ def test_the_index_is_uncapped_and_every_standing_note_appears():
     """**The decision most likely to be quietly "optimised" away**, so it gets
     the test that turns red when it is.
 
-    §5.1: no top-N, no elision, no relevance scoring. A note missing from the
+    No top-N, no elision, no relevance scoring. A note missing from the
     index is invisible to her, and invisible is indistinguishable from absent —
     the `unavailable`-reported-as-`nothing_found` failure R-27 exists to
     prevent, and a relevance-scored subset has the same defect with extra
@@ -239,7 +227,7 @@ def test_the_index_is_uncapped_and_every_standing_note_appears():
 
 
 def test_the_entries_are_capped_upstream_not_here():
-    """The other half of §5.1's bargain: uncapped index, capped entries. The
+    """The other half of the bargain: uncapped index, capped entries. The
     caps are `Note.__post_init__`'s, so an over-long entry is unrepresentable
     rather than truncated at render — truncation at render is silent loss, and
     a renderer that quietly shortened would make this renderer the place the

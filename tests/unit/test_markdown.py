@@ -2,10 +2,10 @@
 
 Four things can go wrong here, and they are tested in that order:
 
-1. **The text half regresses.** DEC-82 shipped as a STRIP, and everything it
-   deliberately left alone was bought with a real bug — the Cantonese one most
-   of all. `strip_markdown` is now the text half of the conversion, so every
-   one of those cases has to answer identically or the rewrite ate a war story.
+1. **The text half drifts.** DEC-82 began as a STRIP, and what it deliberately
+   leaves alone matters — the Cantonese cases most of all. `strip_markdown` is
+   the text half of the conversion, so every one of those cases has to answer
+   identically.
 2. **The ranges do not match the text.** A style is `(start, length)` in UTF-16
    code units over the string that is LEFT once the asterisks are gone. Almost
    every assertion below re-derives the substring a range covers rather than
@@ -53,10 +53,9 @@ def _char_slice(text: str, start: int, length: int) -> str:
 # ── 1. everything the strip did, it still does ──────────────────────────────
 
 def test_bold_labels_no_longer_reach_the_group_as_asterisks():
-    """THE PROBE, from the live leak (2026-08-10). Signal renders no Markdown,
-    so `**投資** — …` reached the group as literal asterisks. `voice.md` already
-    forbade bold labels and the model emitted them anyway on long answers, which
-    is DEC-78's lesson exactly: enforce at the surface, not in prose."""
+    """Signal renders no Markdown, so `**投資** — …` would reach the group as literal
+    asterisks. `voice.md` forbids bold labels and the model emits them anyway on
+    long answers, which is DEC-78's lesson: enforce at the surface, not in prose."""
     out = strip_markdown("**投資** — 月供 ETF\n\n**Side hustle** — freelance")
     assert out == "投資 — 月供 ETF\n\nSide hustle — freelance"
     assert "*" not in out
@@ -107,18 +106,17 @@ def test_a_bare_heading_marker_is_left_as_literal_text():
     assert strip_markdown("###") == "###"
 
 
-# ── 2. the CJK case the regex was rewritten for ─────────────────────────────
+# ── 2. the CJK case ──────────────────────────────────────────────
 
 def test_emphasis_adjacent_to_chinese_converts_cleanly():
-    """The bug the first version shipped (review 2026-08-10). `\\w` is
-    Unicode-aware, so 投 and 資 ARE word characters; a `(?!\\w)` guard failed on
-    the real closing delimiter and the engine backtracked onto the INNER
+    """`\\w` is Unicode-aware, so 投 and 資 ARE word characters; a `(?!\\w)` guard
+    fails on the real closing delimiter and the engine backtracks onto the INNER
     asterisk of each pair, emitting `*投資*方面`. Chinese has no spaces, so this
-    is the COMMON shape here, not an edge case — and under conversion it would
-    be worse than before, because the ranges would index the mangled string.
+    is the COMMON shape here, not an edge case — and under conversion the ranges
+    would index the mangled string.
 
-    PROBE: put `(?<!\\w)`/`(?!\\w)` back around `_MD_EMPHASIS` and this goes red
-    on the text, not just on the styles.
+    PROBE: with `(?<!\\w)`/`(?!\\w)` around `_MD_EMPHASIS` this goes red on the
+    text, not just on the styles.
     """
     out = render_markdown("**投資**方面")
     assert out.text == "投資方面"
@@ -237,16 +235,15 @@ def test_a_render_that_raises_degrades_to_the_draft_with_no_styles(monkeypatch):
     ["**投資**", "## 推介", "###", "*", "3 * 4", "**a *b* c**", "😅 **好正**"],
 )
 def test_no_non_empty_reply_is_ever_rendered_empty(text):
-    """DEC-82's original promise, restated because the reverse is the obvious
-    guess: this cannot rescue R-4 and it cannot CAUSE it either."""
+    """DEC-82's promise: rendering cannot rescue R-4 and it cannot CAUSE it
+    either."""
     assert render_markdown(text).text.strip()
 
 
 def test_the_strip_is_the_text_half_of_the_render_and_not_a_second_grammar():
     """`LeakGuard` builds its haystack through `strip_markdown` and `Deliverer`
     sends `render_markdown(...).text`; a haystack that spoke a different
-    Markdown dialect from the reply is the exact hole the 2026-08-10
-    fail-closed audit found (405 bold-caused and 831 heading-caused misses).
+    Markdown dialect from the reply is a hole in the fail-closed check.
     One function, so they cannot drift."""
     for text in ("**投資**方面", "## 推介\n*平*", "**a *b* c**", "3 * 4", "_x_"):
         assert strip_markdown(text) == render_markdown(text).text, text

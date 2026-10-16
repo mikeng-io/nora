@@ -1,4 +1,4 @@
-"""`ReasoningStripWatch`'s accounting, at the event level (issue #325).
+"""`ReasoningStripWatch`'s accounting, at the event level.
 
 `tests/unit/test_reasoning_strip_probe.py` drives the REAL Strands loop and is what
 proves the instrument detects. This file is the half that loop cannot reach: a
@@ -237,7 +237,7 @@ def test_an_unreadable_model_records_the_absence_rather_than_a_guess():
 async def test_the_dreamer_path_records_the_adaptor_by_name():
     """«Which path» is one of the three questions the instrument exists to
     answer, and on the Dreamer the useful answer is the ADAPTOR — one run a day
-    each, and after 2026-09-17 the population most at risk."""
+    each, and the population most at risk."""
     agent = _Agent([])
     store = _Store()
     watch = _watch(store=store)
@@ -286,7 +286,7 @@ async def _watch_with_one_opportunity(store: Any, **kwargs: Any):
 
 
 async def test_a_wedged_store_does_not_hold_the_conversation_slot():
-    """THE BLOCKER'S TEST (#325, review 2026-09-17).
+    """THE BOUND ON `flush`.
 
     Every caller awaits `flush` with the conversation's slot held, and
     `release_and_dispatch` cannot run until it returns. `create_sql_engine`
@@ -310,9 +310,8 @@ async def test_a_wedged_store_does_not_hold_the_conversation_slot():
 
 
 async def test_a_wedged_store_is_counted_as_a_failed_write():
-    """And the abandoned row is REPORTED, not merely dropped. A record that
-    goes blind with no series moving is the defect this whole PR is about, one
-    level down."""
+    """And the abandoned row is REPORTED, not merely dropped: a record that
+    goes blind with no series moving is the defect to avoid."""
     metrics = Metrics()
     watch = ReasoningStripWatch(
         path="tag", store=_WedgedStore(), metrics=metrics,
@@ -355,8 +354,8 @@ async def test_a_later_unreadable_provenance_does_not_erase_an_earlier_read():
 
     `_model_identity` answers `("", "")` for four distinct conditions and all
     four land in a NOT NULL TEXT column as the same empty string. Overwriting
-    unconditionally meant one failed read on the LAST call of a turn silently
-    turned a known model into an unknown one — on the two columns an operator
+    unconditionally would let one failed read on the LAST call of a turn silently
+    turn a known model into an unknown one — on the two columns an operator
     uses to decide whether a clean row means «healthy» or «impossible»."""
     agent = _Agent([])
     agent.model = _FlakyModel()  # type: ignore[assignment]
@@ -386,10 +385,7 @@ async def test_an_impossible_row_is_refused_and_named_as_such():
     and letting it get that far would surface as an `IntegrityError` counted
     `failed`: the same signal a wedged or restarting database gives.
 
-    So it is refused here, before the write, under `impossible`. An earlier
-    version of this module claimed such a row «should reach whoever looks»,
-    which the CHECK made untrue — two documents disagreeing about the same
-    row."""
+    So it is refused here, before the write, under `impossible`."""
     metrics = Metrics()
     store = _Store()
     watch = ReasoningStripWatch(path="tag", store=store, metrics=metrics)
@@ -430,11 +426,9 @@ async def test_a_turn_with_no_opportunity_moves_no_write_counter():
 @pytest.mark.parametrize("path", list(SPEAKING_AUDIENCES))
 async def test_every_speaking_audience_is_a_path_this_watch_accepts(path: str):
     """`heartbeat` and `proactive` reach `path` through `deliver.build`'s
-    `audience`, and the first version of this instrument documented neither —
-    the metric help text, the migration, the runbook and the ADR all said
-    «tag / participation / dreamer:<adaptor>» while `fire.py` was sending four
-    values. Anyone filtering a dashboard off that sentence dropped the reminder
-    path in silence.
+    `audience`, so `path` takes every declared audience value, not only
+    «tag / participation / dreamer:<adaptor>». A dashboard filtered off a shorter
+    list would drop the reminder path in silence.
 
     Parametrized over the DECLARED set rather than a list written here, so a
     fifth audience cannot arrive untested."""

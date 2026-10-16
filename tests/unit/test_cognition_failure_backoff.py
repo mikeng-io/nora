@@ -1,12 +1,10 @@
 """A failing Cognition session is not woken again every cooldown, for ever
-(#637 review, major 1: 283 failed sessions a day measured, one per
-`cooldown_seconds`; 20 §3: «per-unit backoff after a failed session»).
+(per-unit backoff after a failed session).
 
 The REAL evaluator over the REAL session runner and the in-memory store the SQL
 store's contract suite holds to, one fake clock ticked every 30 s for whole
-days, and only the model scripted. The numbers asserted here are the measured
-ones: the same run with the backoff and the strike switched off is 288
-sessions a day, which is the reviewer's number.
+days, and only the model scripted. With the backoff and the strike switched off
+the same run is 288 sessions a day, one per `cooldown_seconds`.
 
 What each test would catch if the fix were reverted is named in
 `scripts/mutations/cognition-step3a3-review.json`.
@@ -69,7 +67,7 @@ async def _run(rig: Rig, *, ticks: int, chatty: bool) -> None:
 
 
 def _unguarded() -> WakePolicy:
-    """The behaviour before the fix: the cooldown and nothing else."""
+    """The cooldown alone, no backoff."""
     return dataclasses.replace(
         POLICY, backoff_max_seconds=POLICY.cooldown_seconds, max_consecutive_failures=10**9,
     )
@@ -136,11 +134,11 @@ def test_the_failed_mark_is_the_newest_failed_wakes_watermark():
     assert only_infra == (1, 0, None)
 
 
-# ---- the measured day ------------------------------------------------------------
+# ---- the positive control ------------------------------------------------------------
 
 async def test_an_always_failing_agenda_without_the_fix_is_288_sessions_a_day():
     """The positive control: the measurement means something only if the same
-    run WITHOUT the backoff reproduces the reviewer's ~283."""
+    run WITHOUT the backoff reproduces one session per cooldown."""
     rig = _rig(agent=ScriptedAgent(script=[boom]), policy=_unguarded())
     for _ in range(3):
         await rig.say()
@@ -236,7 +234,7 @@ async def test_a_strong_cue_does_not_cut_a_backoff():
     assert rig.agent.calls == calls
 
 
-# ---- infrastructure failures back off and never strike (DEC-244, #637 second review) ----
+# ---- infrastructure failures back off and never strike (DEC-244) ----
 
 @pytest.mark.parametrize(("exc", "cause"), [
     (RuntimeError("the model loop blew up"), "infra"),
@@ -247,7 +245,7 @@ async def test_a_strong_cue_does_not_cut_a_backoff():
     (AgendaError("an overflow proven to be this agenda's"), "agenda"),
     # a SUBCLASS of AgendaError is the agenda's too
     (type("Mine", (AgendaError,), {})("w"), "agenda"),
-    # an SDK class alone proves nothing (DEC-244, third review): see
+    # an SDK class alone proves nothing (DEC-244): see
     # tests/unit/test_cognition_failure_cause.py for the proof each needs
     (type("ContextWindowOverflowException", (Exception,), {})("window"), "infra"),
     (type("MaxTokensReachedException", (Exception,), {})("cut"), "infra"),

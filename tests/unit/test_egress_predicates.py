@@ -5,13 +5,12 @@ string is unsafe *wherever* it goes — into the group, into a tool result the
 model then reasons over, or out in a tool ARGUMENT to a third party.
 
 `scan_reply` is the same identifier floor, scoped to text addressed to the
-GROUP (R-6/R-18). It once ALSO refused the name of the model she runs on
-(`_MODELNAME`) — that veto is DISABLED by operator decision (2026-08-31) after
-`social_fetch` (DEC-151) relayed third-party posts that legitimately name
-models and the whole-reply veto cost the answer (see `egress.py`). The two
-functions remain distinct names because the reply path is a different audience
-with a different fail-closed cost, even though today they check the same
-patterns.
+GROUP (R-6/R-18). It does not refuse the name of the model she runs on
+(`_MODELNAME`): that veto is disabled because `social_fetch` (DEC-151) relays
+third-party posts that legitimately name models and a whole-reply veto costs
+the answer (see `egress.py`). The two functions remain distinct names because
+the reply path is a different audience with a different fail-closed cost, even
+though today they check the same patterns.
 
 The split is the point, so every test here asserts on BOTH predicates: a test
 that only ever called one of them would pass just as well if the two were
@@ -24,7 +23,7 @@ import pytest
 
 from nora.agent.egress import scan_identifiers, scan_reply
 
-# What she runs on. Only `scan_reply` may refuse these.
+# What she runs on. Neither predicate refuses these (the model-name veto is off).
 MODEL_WORDS = (
     "搵首 haiku 嚟聽下",
     "gemini 星座 準唔準",
@@ -51,9 +50,8 @@ ORDINARY = (
 
 @pytest.mark.parametrize("text", MODEL_WORDS)
 def test_a_model_name_passes_both_predicates_after_the_veto_was_disabled(text):
-    """The model-name veto is OFF (operator, 2026-08-31 — see `egress.py`).
-    These words were once refused by `scan_reply` and withheld whole replies;
-    now both predicates pass them. The identifier floor is unchanged and is
+    """The model-name veto is OFF (see `egress.py`): both predicates pass these
+    words, so a reply naming a model is not withheld. The identifier floor is
     covered by the IDENTIFIERS tests below."""
     assert scan_identifiers(text) is None, text
     assert scan_reply(text) is None, text
@@ -88,8 +86,8 @@ def test_the_reply_scan_still_reports_the_identifier_when_both_are_present():
 
 
 def test_a_coordinate_pair_is_blocked_by_the_reply_scan_after_dec156():
-    """DEC-156 put lat/lng into where_been/where_is results — the model now
-    holds the material a reply could echo, so the reply screen blocks the
+    """where_been/where_is results carry lat/lng (DEC-156) — the model holds
+    the material a reply could echo, so the reply screen blocks the
     pair (the same shape `looks_like_coordinate` uses for tool ARGUMENTS;
     redefined here because security.py imports from this module). Ordinary
     numbers — prices, dates, counts — still pass."""

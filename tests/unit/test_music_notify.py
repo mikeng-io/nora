@@ -1,5 +1,4 @@
-"""`music_notify.make_notify` — WHERE a music announcement lands
-(design/discord-music/10-notification-routing.md).
+"""`music_notify.make_notify` — WHERE a music announcement lands.
 
 **Unit-testable where `music_commands.py` is not**, and for the reason that
 module's docstring gives in reverse: it touches no `discord.Interaction`, no
@@ -27,7 +26,7 @@ MUSIC_CHANNEL = "1480387369830973999"
 class _Channel(discord.abc.Messageable):
     """A real `Messageable` whose `send` records instead of posting.
 
-    Carries a `guild`, because `_messageable` now checks it — a channel object
+    Carries a `guild`, because `_messageable` checks it — a channel object
     with no guild is a DM, and `discord.abc.Messageable` covers those too."""
 
     def __init__(self, channel_id: str, guild_id: str = GUILD, *, raises=None) -> None:
@@ -100,8 +99,8 @@ def _notify(client, *, routes_to: str | None = None, fallback: str | None = STAR
 
 
 async def test_with_no_music_channel_it_announces_where_the_session_started():
-    """The pre-field behaviour, kept exactly: a deployment that never names a
-    `music_channel` must be byte-identical to before this module existed."""
+    """A deployment that never names a `music_channel` announces where the session
+    started."""
     started = _Channel(STARTED_IN)
     client = _Client(started)
 
@@ -124,8 +123,7 @@ async def test_a_named_music_channel_takes_the_announcement_instead():
 async def test_the_route_is_resolved_per_post_not_captured_once():
     """The whole reason this is a send-time lookup: an operator who names a
     `music_channel` mid-session gets it honoured on the NEXT announcement, not
-    the next session. Capturing the channel when the closure was built is the
-    behaviour this replaced."""
+    the next session. Capturing the channel when the closure is built would miss it."""
     room = _Channel(MUSIC_CHANNEL)
     started = _Channel(STARTED_IN)
     client = _Client(room, started)
@@ -216,10 +214,10 @@ def test_no_music_channel_answers_none_for_every_guild():
 
 # --- the send half: nothing here may raise into a manager transition ---------
 # `_notify_now_playing` awaits this closure at the end of `skip()` and
-# `on_track_finished()` and guards neither. An escape was traced out to
-# `/music skip` leaving its deferred interaction unresolved while the skip had
-# happened, and to every natural track-end returning HTTP 500 to the
-# audio-controller with the event unconsumed (audit, 2026-09-21).
+# `on_track_finished()` and guards neither. An escape would leave `/music skip`'s
+# deferred interaction unresolved while the skip had happened, and make every
+# natural track-end return HTTP 500 to the audio-controller with the event
+# unconsumed.
 
 
 async def test_a_forbidden_send_falls_back_instead_of_raising():

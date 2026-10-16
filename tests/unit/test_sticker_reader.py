@@ -1,21 +1,20 @@
-"""The sticker dedup ladder, one test per rung (sticker spec §4). These are the
+"""The sticker dedup ladder, one test per rung. These are the
 tests that would go green against a reader that always went back to the
 platform, so each one asserts on the CALL LOGS of the collaborators rather than
 only on the returned blob — "no RPC happened" is the property that matters, and
 a blob alone cannot prove it.
 
-**The MODEL rung is gone (issue #116).** This ladder is custody now: identity
-resolves to a blob before any bytes move, a miss fetches once and records the
-identity so the next sighting does not. The description that used to sit at the
-bottom of it is the spawned comprehension job's
-(`tests/unit/test_media_comprehension.py`), keyed on the same sha256 — one
-mechanism for every medium instead of one for stickers and none for photos.
+**There is no MODEL rung.** This ladder is custody: identity resolves to a
+blob before any bytes move, a miss fetches once and records the identity so
+the next sighting does not. The description is the spawned comprehension
+job's (`tests/unit/test_media_comprehension.py`), keyed on the same sha256 —
+one mechanism for every medium instead of one for stickers and none for
+photos.
 
 **On the single-flight test specifically.** `asyncio.gather` alone does NOT
 force two `reader.read()` calls to race: every fake collaborator in this module
 is synchronous code wrapped in `async def`, with no genuine suspension point
-anywhere in the ladder. Verified separately (a throwaway probe script mirroring
-this exact shape) that when neither coroutine truly `await`s anything
+anywhere in the ladder. When neither coroutine truly `await`s anything
 unresolved, the first Task runs to FULL completion — in-flight entry
 registered, used, and cleaned up — before the event loop ever schedules the
 second Task. Two plain `reader.read()` calls under `asyncio.gather` would
@@ -86,7 +85,7 @@ class _SlowMediaSource(FakeMediaSource):
 
 
 async def test_an_identity_hit_makes_no_platform_call_at_all():
-    """The 41% case, and the whole reason the identity level exists: it is the
+    """The common case, and the whole reason the identity level exists: it is the
     only level checkable BEFORE the bytes move, on a path the listener awaits."""
     store = FakeMediaDescriptionStore()
     blob = MediaBlob(sha256="a" * 64, media_type="image/png", size=len(BYTES))
@@ -106,7 +105,7 @@ async def test_an_identity_hit_makes_no_platform_call_at_all():
 
 async def test_a_cold_sticker_fetches_once_and_records_its_identity():
     """The identity write is what makes the NEXT sighting free. Without it the
-    ladder would fetch every time and the 41% would be 0%."""
+    ladder would fetch every time."""
     store = FakeMediaDescriptionStore()
     source = _source()
 
@@ -147,8 +146,8 @@ async def test_two_simultaneous_sightings_make_one_platform_call():
     first = asyncio.create_task(
         reader.read(platform="signal", ref=REF, source=source))
     # One tick is enough for `first` to register itself in the in-flight map
-    # and reach the fetch's real suspension point — see the module docstring's
-    # probe. Bounded implicitly: `first` is awaited below, so a `first` that
+    # and reach the fetch's real suspension point — see the module docstring.
+    # Bounded implicitly: `first` is awaited below, so a `first` that
     # never reaches that point fails the test rather than hanging it.
     await asyncio.sleep(0)
     second = await reader.read(platform="signal", ref=REF, source=source)
@@ -208,12 +207,11 @@ async def test_a_reader_raising_mid_ladder_degrades_to_unavailable_and_cleans_up
 
 
 async def test_an_identity_hit_whose_blob_is_gone_claims_no_custody():
-    """I2 (whole-branch review). `blob_missing` used to return `blob=blob`
-    after `BlobStore.get` had just PROVEN the bytes absent — the custody
-    stage would then append `blob.handle`, render `[sticker a3f2c1]`, and
-    count a stored hit, all for a hash that had just been shown NOT to be
-    producible. This is the identity-hit-then-gone-blob path the module
-    docstring calls out as "the subtle case", and it was untested."""
+    """`blob_missing` must not return `blob=blob` after `BlobStore.get` has
+    just PROVEN the bytes absent: the custody stage would append
+    `blob.handle`, render `[sticker a3f2c1]`, and count a stored hit, all for a
+    hash just shown NOT to be producible. This is the identity-hit-then-gone-blob
+    path."""
     store = FakeMediaDescriptionStore()
     blob = MediaBlob(sha256="b" * 64, media_type="image/png", size=123)
     store.index[("signal", TOKEN)] = blob
@@ -231,21 +229,19 @@ async def test_an_identity_hit_whose_blob_is_gone_claims_no_custody():
 
 
 async def test_a_real_signal_sticker_envelope_survives_the_ladder():
-    """C1 (whole-branch review, CRITICAL). Every other test in this file
-    hand-builds a `MediaRef` with `media_type="image/png"` — but the REAL
-    Signal parser emits a sticker ref with NO media type at all (spec §3.1:
-    the envelope declares none). Feeding that ref through the ladder used to
-    reach `StickerInterpreter`'s `_INTERPRETABLE` gate with `media_type=""`,
-    which correctly refuses it — so 100% of real Signal stickers failed with
-    `unsupported_format`, on the one platform whose entire evidence case this
-    feature is built from. This test drives the real `parse_event` output
-    into the real ladder rather than a hand-built ref, so it fails against
-    that bug instead of a fake with the fix already baked into its fixture.
+    """The real Signal parser emits a sticker ref with NO media type at all
+    (the envelope declares none), while every other test here hand-builds a
+    `MediaRef` with `media_type="image/png"`. A ref with `media_type=""` would
+    reach `StickerInterpreter`'s `_INTERPRETABLE` gate and be refused, so every
+    real Signal sticker would fail with `unsupported_format`. This test drives
+    the real `parse_event` output into the real ladder, not a hand-built ref,
+    so it fails against that bug instead of a fake with the fix baked into its
+    fixture.
 
-    The sniff still matters after issue #116 moved the model rung out: the
-    sha256 is computed from these bytes and `media_type` is what the
-    comprehension job branches on to pick a describer, so an unresolved `""`
-    would send every real Signal sticker down the `unreadable` path instead.
+    The sniff matters because the sha256 is computed from these bytes and
+    `media_type` is what the comprehension job branches on to pick a
+    describer: an unresolved `""` would send every real Signal sticker down
+    the `unreadable` path.
     """
     envelope = {
         "envelope": {
@@ -282,11 +278,11 @@ async def test_a_real_signal_sticker_envelope_survives_the_ladder():
 
 
 async def test_a_cancelled_winner_does_not_hang_its_waiters():
-    """Measured as `LOSER HUNG`. `except Exception` in `read` never catches
-    `asyncio.CancelledError` (a `BaseException` since 3.8), so a cancelled
-    winner used to skip `future.set_result` entirely while `finally` still
-    deleted the in-flight map entry — every waiter already awaiting that
-    future then blocked forever on a future nobody would ever resolve."""
+    """`except Exception` in `read` never catches `asyncio.CancelledError` (a
+    `BaseException` since 3.8), so a cancelled winner would skip
+    `future.set_result` entirely while `finally` still deleted the in-flight
+    map entry, and every waiter awaiting that future would block forever on a
+    future nobody would resolve."""
     store = FakeMediaDescriptionStore()
     reader = _reader(store)
     slow = _SlowMediaSource({TOKEN: BYTES}, delay=0.2)
@@ -328,24 +324,14 @@ def _animated_webp(n_frames: int = 3) -> bytes:
 
 
 async def test_an_animated_sticker_keeps_all_its_frames():
-    """A (whole-branch review, round 2). C1's sniffer fix made a Signal
-    sticker arrive at the ladder with `media_type="image/webp"` instead of
-    `""` — which activated `strip_exif`'s Pillow re-encode where it used to
-    be a no-op. `strip_exif` does not pass `save_all`, so a real animated
-    WebP was silently flattened to ONE frame before it was ever hashed,
-    held, or sent to the model (measured: 328B -> 84B on a 3-frame sticker).
-    That made the 2026-08-07 probe's headline result — MiMo reads an
-    animated WebP correctly, not just its first frame — unreachable in the
-    shipped path.
-
-    Stickers now skip `strip_exif` entirely and hash the fetched bytes
-    directly (DEC-47's PII argument does not apply to published pack art,
-    and content-addressing a re-encoded copy would make the cache key
-    depend on the Pillow version). This asserts on the STORED bytes'
-    frame count, not merely that something was stored — a re-encode that
-    happened to preserve frame count would still fail the "stable hash"
-    half of the fix, so the byte-for-byte equality check below is the one
-    that actually proves the strip was skipped.
+    """Stickers skip `strip_exif` and hash the fetched bytes directly:
+    `strip_exif`'s Pillow re-encode does not pass `save_all`, so a real
+    animated WebP would be flattened to ONE frame before it was hashed, held,
+    or sent to the model, and content-addressing a re-encoded copy would make
+    the cache key depend on the Pillow version (DEC-47's PII argument does not
+    apply to published pack art). This asserts on the STORED bytes' frame
+    count, not merely that something was stored; the byte-for-byte equality
+    check below is what proves the strip was skipped.
     """
     original = _animated_webp(3)
     with Image.open(BytesIO(original)) as probe:

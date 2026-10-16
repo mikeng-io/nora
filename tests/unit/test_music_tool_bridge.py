@@ -1,4 +1,4 @@
-"""`DiscordMusicToolBridge` (design/discord-music/07-agent-tool.md).
+"""`DiscordMusicToolBridge`.
 
 **Partially not unit-tested**, same reason `music_commands.py`'s own
 docstring gives for the slash-command layer: `_member_voice_channel`
@@ -191,7 +191,7 @@ async def test_set_volume_with_nothing_playing_is_nothing_found() -> None:
 
 
 async def test_set_volume_out_of_range_or_race_is_unavailable_not_nothing_found() -> None:
-    """F1 (PR #270 audit): `False` from the manager is out-of-range or the
+    """`False` from the manager is out-of-range or the
     N-4 teardown race — never a 'nothing playing' claim. `unavailable`
     (couldn't apply) beats `nothing_found` (there's no session), which
     would contradict the note."""

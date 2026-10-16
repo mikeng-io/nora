@@ -1,6 +1,6 @@
-"""The lifecycle audit of `deploy/computer/nora-computer` (design/sandbox-runtime
-§12, DEC-262): a row for each VM create, recreate, computerd restart, token
-rotation and policy-log read, and for destroy and the egress change beside them.
+"""The lifecycle audit of `deploy/computer/nora-computer` (DEC-262): a row for each VM
+create, recreate, computerd restart, token rotation and policy-log read, and
+for destroy and the egress change beside them.
 
 The script runs on the host as the operator, outside the nora container, so the
 first record is a host-side spool and Postgres' `computer_events` is replayed

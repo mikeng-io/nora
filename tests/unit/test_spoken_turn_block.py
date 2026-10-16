@@ -1,4 +1,4 @@
-"""`<spoken_turn>` (design/context-plan/11 §4 layer E, §6 step 3): the per-turn
+"""`<spoken_turn>`: the per-turn
 situation fact that the message being answered was spoken in a voice channel and
 the reply will be heard.
 

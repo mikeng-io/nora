@@ -1,4 +1,4 @@
-"""The Character write check's synthesis guard (design/self-growth/60).
+"""The Character write check's synthesis guard.
 
 An account whose text carries the message numbers it was handed is a record of
 messages, not a description; `check_revision` refuses it as `ids_in_body` and

@@ -1,4 +1,4 @@
-"""The edit path through `IngestPipeline` (design/message-edits/02).
+"""The edit path through `IngestPipeline`.
 
 Every test here drives the REAL pipeline over `FakeRecordStore`, which the
 contract suite binds to `SqlRecordStore`, so what is asserted is the ingest
@@ -128,7 +128,7 @@ async def test_an_unchanged_edit_opens_no_turn_and_feeds_nothing_but_keeps_the_c
     """Same text and mentions (a style-only Signal edit): no correction for
     Honcho, no turn — but the row IS written when it is newer, because the
     sender's next edit names THIS edit's timestamp, and leaving it unrecorded
-    made every later edit an orphan (audit, 2026-09-24)."""
+    would make every later edit an orphan."""
     store = FakeRecordStore()
     memory = RecordingMemory()
     spawned: list = []
@@ -181,8 +181,8 @@ async def test_a_mention_only_change_is_a_change():
 
 async def test_an_edit_whose_timestamp_is_on_record_is_a_redelivery():
     """On Signal an edit's timestamp IS its identity; on every network a
-    repeated one is a redelivery. Recording it again flipped the fold back to
-    older text (review, 2026-09-24)."""
+    repeated one is a redelivery. Recording it again would flip the fold back to
+    older text."""
     store = FakeRecordStore()
     metrics = Metrics()
     await store.append(message=_msg("v0", message_id="m1"), person_id="miles")
@@ -198,7 +198,7 @@ async def test_an_edit_whose_timestamp_is_on_record_is_a_redelivery():
 async def test_a_skewed_clock_edit_cannot_let_a_redelivery_bring_back_old_text():
     """Phone edits at 1000 (v1); a desktop 200 ms behind edits v1 at 800
     (v2, admitted by the waiver). Signal then redelivers the phone's edit.
-    Judged against the version SHOWN (800) it looked newer and resurrected
+    Judged against the version SHOWN (800) it would look newer and resurrect
     v1, fed to Honcho as a correction. Judged against the newest clock on
     record, and by its timestamp already being there, it is stale."""
     store = FakeRecordStore()
@@ -272,7 +272,7 @@ async def test_signal_finds_the_message_when_the_sender_id_form_changed():
 async def test_a_reply_quoting_an_edits_timestamp_points_at_the_message():
     """Signal quotes the REVISION the replier saw. The transcript keeps the
     edited message at its original ts, so the pointer is rewritten once, at
-    ingest, and the reply resolves its parent (norty, row 2167)."""
+    ingest, and the reply resolves its parent."""
     store = FakeRecordStore()
     await store.append(message=_msg("dinner at 7", ts=1), person_id="miles")
     await _pipeline(store).run(message=_edit("dinner at 8", ts=5))
@@ -434,7 +434,7 @@ async def test_an_edit_that_adds_the_trigger_text_opens_a_turn():
 
 
 async def test_fixing_a_typo_in_a_message_that_tagged_her_does_not_answer_again():
-    """Operator decision 2026-09-23: she has answered it or is answering it."""
+    """She has answered it or is answering it, so a typo fix does not open a turn."""
     store = FakeRecordStore()
     await store.append(
         message=_msg("@nora dinnr?", mentions=frozenset({NORA})), person_id="miles",
@@ -566,9 +566,9 @@ async def test_an_edit_is_never_a_relevance_gate_candidate():
 async def test_an_edited_caption_keeps_the_attachment_handle_without_refetching():
     """No network lets an edit ADD media, so an edit with as many attachments
     as the original holds gets the original's handles back — nothing is
-    downloaded. Re-running custody (the first draft) re-fetched on every
-    update, and a failed re-fetch left `[image]` where the record said
-    `[image a3f2c1]`: compared as a change, and the handle vanished."""
+    downloaded. Re-running custody would re-fetch on every update, and a failed
+    re-fetch would leave `[image]` where the record said `[image a3f2c1]`:
+    compared as a change, and the handle would vanish."""
     from nora.domain.media import MediaBlob, MediaRef, label_for, render_placeholder
 
     ref = MediaRef(platform_id="att1", media_type="image/png")

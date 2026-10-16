@@ -1,5 +1,5 @@
 """`nora.agent.speech_format.SpeechFormatter`: the model's pacing, or her
-words as written (design/voice-channel/08).
+words as written.
 
 The fake model answers the way a cheap one does, including wrong: it rewrites
 a word, invents a tag, stacks pauses, wraps the answer in prose, stalls, or

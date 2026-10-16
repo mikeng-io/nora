@@ -1,19 +1,17 @@
-"""R-91 / issue #160: ONE memory ration for the whole Dreamer pass.
+"""R-91: ONE memory ration for the whole Dreamer pass.
 
 The per-tool budgets bound each verb on its own, which is exactly what a pass
-spends by asking four different verbs the same question. The live decide turn (deleted
-2026-10-03, DEC-277)
-this file exists for (Langfuse `340373cd`, 2026-09-10 18:03 HKT) held two notes
-whose two handles its own `<people>` block already carried and still made six
-held-state reads — `note_read` three times, then `about`, then
-`search_memory_workspace`, then `ask_memory`. Every per-tool budget was inside
-its ceiling the whole time.
+spends by asking four different verbs the same question. A decide turn holding
+two notes whose two handles its own `<people>` block already carries can still
+make six held-state reads — `note_read` three times, then `about`, then
+`search_memory_workspace`, then `ask_memory` — with every per-tool budget inside
+its ceiling.
 
 **The headline test runs the REAL Strands loop**, not a hand-driven pair of hook
 calls, because the property under test is what the MODEL receives back: a
 refusal that arrives as an error `ToolResult` is a correction, and a model
 corrects by retrying. `_after_tool` rewriting the SDK's cancellation error into
-R-27's `unavailable` is the whole fix, and nothing below the SDK can observe
+R-27's `unavailable` is the whole point, and nothing below the SDK can observe
 whether it happened. The guard-level tests underneath it are the arithmetic:
 across verbs, within a parallel batch, and never charged for a call that did
 not run.
@@ -57,9 +55,8 @@ BUDGET = AdaptorBudget(
     max_memory_calls=2,
 )
 
-#: Three memory verbs asked in sequence, the shape the live trace took. The
-#: envelope is what the fourth turn says instead of calling anything, so the
-#: pass has somewhere to finish.
+#: Three memory verbs asked in sequence. The envelope is what the fourth turn
+#: says instead of calling anything, so the pass has somewhere to finish.
 ENVELOPE = '{"observations": [{"term": "bath tonight, place and hour open"}]}'
 
 
@@ -158,11 +155,11 @@ class _ScriptedModel(Model):
     ) -> None:
         self._script = list(script)
         # Per-turn tool-call input, as the raw JSON string Strands streams
-        # (`contentBlockDelta.delta.toolUse.input`). `None` (every caller
-        # before R-99) keeps every turn's the same hardcoded `person`, which
-        # is all the memory-budget property needs; a caller measuring an
-        # ARGUMENT itself (`test_dream_guard_wiring.py`) supplies its own,
-        # one string per script entry that calls a tool.
+        # (`contentBlockDelta.delta.toolUse.input`). `None` keeps every turn's
+        # the same hardcoded `person`, which is all the memory-budget property
+        # needs; a caller measuring an ARGUMENT itself
+        # (`test_dream_guard_wiring.py`) supplies its own, one string per
+        # script entry that calls a tool.
         self._inputs = list(inputs) if inputs is not None else None
         self.turn = 0
         self.seen: list[list[dict]] = []
@@ -226,10 +223,10 @@ def _runtime(model: Model, tools: _Tools, *, budget: AdaptorBudget = BUDGET) -> 
         retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
         metrics=metrics,
         model_name="scripted",
-        # The production grant (39 D3). Without it a unit-keyed adaptor
-        # may hold no room-scoped verb, which is three of the four this file
-        # counts — so the ceiling would be measured on a tool set the decide
-        # turn does not have.
+        # The production grant. Without it a unit-keyed adaptor may hold no
+        # room-scoped verb, which is three of the four this file counts — so
+        # the ceiling would be measured on a tool set the decide turn does not
+        # have.
         grants={"proactive": _REMIND_GRANT()},
         store_timeout_seconds=10.0,
     ), metrics
@@ -259,8 +256,8 @@ def _tool_results(model: _ScriptedModel) -> list[dict]:
 
 
 async def test_a_third_memory_read_is_answered_unavailable_and_the_pass_completes():
-    """The live trace's shape, through the real loop: three memory verbs in
-    sequence against a pass ration of two.
+    """Three memory verbs in sequence against a pass ration of two, through
+    the real loop.
 
     Four assertions, and each is a separate way the fix could be absent:
 
@@ -299,9 +296,8 @@ async def test_a_third_memory_read_is_answered_unavailable_and_the_pass_complete
 
 async def test_the_ceiling_counts_across_verbs_rather_than_per_verb():
     """The control that names the defect. Every one of these three calls is the
-    FIRST call of its own verb, so every per-tool budget is untouched — this is
-    the arrangement the old code admitted in full and the live trace made six
-    times over.
+    FIRST call of its own verb, so every per-tool budget is untouched — the
+    arrangement a per-tool-only budget admits in full.
     """
     model = _ScriptedModel(["about", "search_memory_workspace", "ask_memory", None])
     tools = _Tools(["about", "ask_memory", "search_memory_workspace"])
@@ -337,11 +333,10 @@ async def test_a_pass_inside_its_ration_is_untouched():
 
 
 async def test_a_non_memory_verb_is_never_charged_to_the_memory_ration():
-    """`note_read` is deliberately OUT of `MEMORY_TOOLS` (39 D9 — the index
-    sends her to it for a body), so a pass that reads two notes still holds its
-    whole memory ration. The live trace made three `note_read` calls; a ceiling
-    that swept them in would have refused the one read the objective REQUIRES
-    before any reminder.
+    """`note_read` is deliberately OUT of `MEMORY_TOOLS` (the index sends her
+    to it for a body), so a pass that reads two notes still holds its whole
+    memory ration. A ceiling that swept it in would refuse the one read the
+    objective REQUIRES before any reminder.
     """
     model = _ScriptedModel(["note_read", "note_read", "about", "ask_memory", None])
     tools = _Tools(["note_read", "about", "ask_memory"])
@@ -359,9 +354,7 @@ async def test_the_ration_resets_for_the_next_pass():
     single object is the whole test. A ledger built at `DreamerRuntime.__init__`
     or hung off the runtime would leave the second pass with nothing to spend
     and nothing saying so, and a test that built a second runtime for the second
-    pass could not tell that apart from a correct one. (It was written that way
-    first; it passed against every mutation, which is what a decorative test
-    does.)
+    pass could not tell that apart from a correct one.
     """
     tools = _Tools(["about", "ask_memory"])
     model = _ScriptedModel(["about", "ask_memory", None, "about", "ask_memory", None])
@@ -399,7 +392,7 @@ async def test_a_pass_that_keeps_asking_ends_visibly_rather_than_silently():
     cap, and the refusal counter carries the count. An operator reading
     `nora_dream_guard_vetoes_total{rule="memory-budget"}` climbing beside
     `nora_dream_stop_reason_total{reason="limit_turns"}` is reading this exact
-    shape. Issue #205 is the live measurement of how often it happens.
+    shape.
     """
     turns = 5
     tools = _Tools(["about", "ask_memory"])
@@ -497,8 +490,7 @@ def _run(guard: DreamGuard, name: str, ref: str) -> _Before:
 def test_a_parallel_batch_of_memory_verbs_is_measured_against_itself():
     """`CallLedger`'s own lesson at the pass grain: a model emitting three
     memory verbs in ONE batch is asked about all three before any completes, so
-    a check that read only completed calls would admit the lot. This is the
-    2026-08-13 nine-`place_info` trace's shape one level up.
+    a check that read only completed calls would admit the lot.
     """
     guard = _guard()
     first, second, third = (_Before(n, f"t{i}") for i, n in enumerate(
@@ -571,8 +563,8 @@ def test_a_refused_read_is_rewritten_into_an_unavailable_result():
 
 
 def test_an_id_less_call_cannot_hand_back_a_memory_reservation():
-    """The sibling-release defect at the PASS grain, and it is worse here than
-    at the per-tool one.
+    """The sibling-release defect at the PASS grain, worse here than at the
+    per-tool one.
 
     `CallLedger.release` only takes its id-keyed path when there IS an id;
     given an empty one it falls through to the NAME-keyed path. The pass
@@ -619,22 +611,19 @@ def test_an_id_less_refusal_never_answers_another_call():
 
 
 def test_the_guard_rule_labels_come_from_one_vocabulary():
-    """`nora_dream_guard_vetoes_total{rule}` had no vocabulary while it had one
-    value. The second is where a typo starts a new series instead of raising,
-    so the label set is DERIVED off a `Literal` (AGENTS.md) and all three
-    emitters are pinned to it — R-7 for a tool never granted, tool-budget for
-    one tool's own per-pass ceiling spent, memory-budget for the pass's memory
-    ration spent, and the three are different findings that must not collapse.
-
-    `tool-budget` was carried on `R-7` until 2026-09-17, which is what made
-    «is a ceiling binding» unanswerable from this series — see
+    """`nora_dream_guard_vetoes_total{rule}` has a vocabulary: a typo in a
+    label starts a new series instead of raising, so the label set is DERIVED
+    off a `Literal` (AGENTS.md) and all emitters are pinned to it — R-7 for a
+    tool never granted, tool-budget for one tool's own per-pass ceiling spent,
+    memory-budget for the pass's memory ration spent. They are different
+    findings that must not collapse: `tool-budget` is not carried on `R-7`, or
+    «is a ceiling binding» would be unanswerable from this series — see
     `GuardRule`'s own note and `nora/obs/metric_specs.py`.
 
-    **`R-99` is the fourth** (design/social-per-network/30-link-owner-registry.md,
-    2026-09-25): an argument the tool's own signature does not declare, from
-    the SAME `nora.agent.guards.unknown_arguments_veto` `ReplyGuard` calls —
-    see that function's docstring rather than a second copy of the reasoning
-    here.
+    **`R-99` is the fourth**: an argument the tool's own signature does not
+    declare, from the SAME `nora.agent.guards.unknown_arguments_veto`
+    `ReplyGuard` calls — see that function's docstring rather than a second
+    copy of the reasoning here.
     """
     assert set(GUARD_RULES) == {
         "R-7", "memory-budget", "tool-budget", "R-99", "pass-budget",
@@ -663,7 +652,7 @@ def test_the_guard_rule_labels_come_from_one_vocabulary():
 
 
 def test_a_guard_with_no_memory_budget_refuses_nothing():
-    """The pre-#160 posture, kept reachable: `memory_budget=None` is no ceiling
+    """The pre-ration posture, kept reachable: `memory_budget=None` is no ceiling
     at all. It is what every adaptor holding no memory verb gets, and what a
     deployment gets if this is ever unwired — so it must be a behaviour rather
     than an accident.
@@ -697,11 +686,10 @@ def test_the_configured_memory_ceiling_reaches_the_runtime():
         timeout_seconds=13.5, max_memory_calls=5,
         # EVERY field has to be set to something other than its default, or
         # the walk below compares two defaults and passes on a conversion
-        # that was never written. `tool_calls` was added 2026-09-17 and is
-        # the second defaulted field on both sides, so it inherits exactly
+        # that was never written. `tool_calls` and `max_tool_calls` are
+        # defaulted on both sides too, so they inherit exactly
         # `max_memory_calls`' silence.
         tool_calls={"note_read": 8},
-        # The third (design 43 §4), silent the same way.
         max_tool_calls=4,
     )
     budget = _adaptor_budget(configured)
@@ -719,7 +707,7 @@ def test_the_configured_memory_ceiling_reaches_the_runtime():
 
 
 def test_the_shipped_default_is_the_number_d11_grades_at():
-    """Two memory reads per pass, the shipped default (#206)."""
+    """Two memory reads per pass, the shipped default."""
     from nora.config import DreamBudgetConfig
 
     assert DreamBudgetConfig().max_memory_calls == 2
@@ -743,15 +731,15 @@ def test_the_memory_verbs_are_these_five():
 
 
 def test_note_read_is_not_a_memory_verb():
-    """Stated as its own assertion because it is the judgement call in the set,
-    and the live trace made three of them: `note_read` reads a note the prompt
-    already INDEXED, which is the depth the index deliberately withholds.
+    """Stated as its own assertion because it is the judgement call in the set:
+    `note_read` reads a note the prompt already INDEXED, which is the depth the
+    index deliberately withholds.
     """
     assert "note_read" not in MEMORY_TOOLS
 
 
 # ---------------------------------------------------------------------------
-# design/dreamer-agent-loop/43 §4: the pass-wide tool ceiling
+# the pass-wide tool ceiling
 # ---------------------------------------------------------------------------
 
 

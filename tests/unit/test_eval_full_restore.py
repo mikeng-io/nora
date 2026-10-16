@@ -1,6 +1,6 @@
 """The full-restore mode, the `recall_grounded` criterion and its facts, with
 no database: which seams `_drive()` reaches in each mode, that every other
-corpus keeps today's path, the load-time evidence check, and the facts'
+corpus keeps the snapshot path, the load-time evidence check, and the facts'
 wording (`evals.recall.render` is pure).
 
 The database half (the restore itself, the identity row map, the as-of
@@ -126,7 +126,7 @@ def _case(name: str) -> Case:
 
 
 async def test_every_other_corpus_keeps_the_snapshot_path_unchanged(seams) -> None:
-    """`full_restore` defaults off, and off is TODAY'S path: the empty sandbox,
+    """`full_restore` defaults off, and off is the snapshot path: the empty sandbox,
     the four-tier snapshot seeding with the entry point's window rule, and the
     subject's overrides exactly the port's, the spec's and the draw's
     workspace, in that order, with nothing of the restore's among them."""
@@ -267,8 +267,8 @@ def judged(seams, monkeypatch) -> dict[str, list[Any]]:
     return calls
 
 
-#: A block her turn was shown that names a fact the evidence does not: the
-#: 2026-10-15 J4 shape, a trip a note held open at the instant.
+#: A block her turn was shown that names a fact the evidence does not: a trip a
+#: note held open at the instant.
 _NOTE_BLOCK = (
     '<notes description="what the group has planned">\n'
     "[7] (2d ago) the trip on the 17th is on\n"
@@ -374,12 +374,11 @@ def test_the_judge_source_carries_tool_results_for_a_recall_case() -> None:
 
 
 async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged) -> None:
-    """2026-10-15, `j4_where_have_we_been_together_lately`: the judge called
-    «the trip on the 17th is still there» fabricated while a note saying so
-    was open in the `<notes>` block she was shown, because its source was
-    only the window and her tool results. Reverting `_judge_source`'s
-    `recall_grounded` branch (or `_drive`'s `shown_blocks` argument) drops
-    the note from the source and this fails."""
+    """A note open in the `<notes>` block she was shown is evidence: a judge
+    sourced from only the window and her tool results calls «the trip on the 17th
+    is still there» fabricated (`j4_where_have_we_been_together_lately`).
+    Reverting `_judge_source`'s `recall_grounded` branch (or `_drive`'s
+    `shown_blocks` argument) drops the note from the source and this fails."""
     judge = _Judge()
     await backbone._drive(
         _judged_case("recall", [CRITERION], evidence={"messages": [1]}),
@@ -402,8 +401,8 @@ _BLOCKS = (("notes", _NOTE_BLOCK), ("group_transcript", _WINDOW))
     ("personality", "source_scope", "being_contradicted", "appearance"),
 ])
 def test_the_judge_source_is_unchanged_for_every_other_criterion(criteria) -> None:
-    """Byte for byte what `_judge_source` returned before it took `blocks`:
-    only `recall_grounded` reads them."""
+    """Byte for byte the window-and-tools source: only `recall_grounded` reads
+    `blocks`."""
     reporting = {"tool_status_reported", "lesson_applied"} & set(criteria)
     expected = "<m>hi</m>" + (
         '\n\nTool results this turn:\n- media_fetch: {"status": "unavailable"}'

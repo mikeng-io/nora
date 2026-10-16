@@ -26,9 +26,8 @@ from nora.infra.vision.preprocess import (
 # pytest-aiohttp already provides `aiohttp_server`. Registering aiohttp's own
 # plugin from a test module re-registers same-named fixtures SESSION-WIDE
 # (module-level pytest_plugins is global once collected), and its `loop`/
-# client fixtures are incompatible with pytest-asyncio auto mode — every
-# tests/web/ module collected after this one then failed (measured
-# 2026-09-02: 62/62 in test_api.py red, green again with the line removed).
+# client fixtures are incompatible with pytest-asyncio auto mode, which would
+# fail every tests/web/ module collected after this one.
 
 # A 1x1 red PNG, decoded ASCII — tiny enough for quick real-ffmpeg runs.
 RED_PNG = base64.b64decode(
@@ -150,8 +149,8 @@ async def test_download_follows_relative_redirect(aiohttp_server):
 
 async def test_download_refuses_a_hop_the_screen_rejects(aiohttp_server):
     """Each redirect hop is re-validated: a fetch that STARTS at an allowed
-    host but lands on a screen-refused target comes back empty — the
-    external-audit SSRF regression pin (2026-08-31)."""
+    host but lands on a screen-refused target comes back empty (SSRF
+    regression pin)."""
     from aiohttp import web
 
     async def redirect(request):
@@ -216,13 +215,11 @@ async def test_download_timeout_returns_empty(aiohttp_server):
     assert ctype == ""
 
 
-# ---- the chunked video read (issue #117) -----------------------------------
+# ---- the chunked video read -----------------------------------------
 #
-# The bug this closes was never "a clip is bounded" — a bounded read is a
-# legitimate policy. It was that NOTHING recorded the cut: no metric, no log
-# line, and nothing in the description admitting the clip was longer than what
-# was read. A ten-minute video produced a description of its first two minutes,
-# phrased as a description of the video. So every test here checks what the cut
+# A bounded read is a legitimate policy; what must not happen is the cut
+# going unrecorded: no metric, no log line, and a description that reads as
+# a description of the whole video. So every test here checks what the cut
 # SAYS as well as what it did.
 
 
@@ -276,8 +273,8 @@ async def test_a_long_clip_is_read_in_order_and_seeked_per_window():
 
 
 async def test_every_window_is_encoded_with_its_audio_track():
-    """DEC-197 overrode DEC-161's silent-chunk clause: no window may be cut
-    with `-an`, and each names its audio encode rather than inheriting
+    """Per DEC-197 (overriding DEC-161's silent-chunk clause): no window may be
+    cut with `-an`, and each names its audio encode rather than inheriting
     ffmpeg's per-container default (so token cost cannot depend on which
     container a clip arrived in)."""
     run = _runner(duration="100.0")
@@ -294,11 +291,11 @@ async def test_every_window_is_encoded_with_its_audio_track():
 
 
 async def test_an_undecodable_audio_track_still_gets_a_silent_window():
-    """DEC-197 review: a selected audio stream ffmpeg cannot decode fails the
-    AUDIBLE encode outright, where the old `-an` encode succeeded — so keeping
-    audio would have turned a readable clip into `unavailable`. Such a window
-    is retried once without audio, on both the chunked read and the single
-    view `media_fetch` falls back to."""
+    """A selected audio stream ffmpeg cannot decode fails the AUDIBLE encode
+    outright (a `-an` encode would succeed), so keeping audio would turn a
+    readable clip into `unavailable`. Such a window is retried once without
+    audio, on both the chunked read and the single view `media_fetch` falls
+    back to."""
     calls: list[list[str]] = []
 
     async def run(args, timeout_seconds, data):
@@ -353,8 +350,7 @@ async def _stream_types(data: bytes) -> list[str]:
 @pytest.mark.skipif(not _HAS_FFMPEG, reason="real ffmpeg not installed in this environment")
 async def test_the_video_view_keeps_its_audio_track():
     """Through REAL ffmpeg: a clip that has sound reaches the describer with
-    it. Before DEC-197 every window was silent by construction, so Nora could
-    see a clip but never hear it."""
+    it."""
     clip = await _synth_clip(with_audio=True)
     assert await _stream_types(clip) == ["audio", "video"], "fixture must carry audio"
 
@@ -378,10 +374,10 @@ async def test_a_clip_with_no_audio_stream_still_produces_a_chunk():
 
 
 async def test_the_cap_binding_is_recorded_and_said():
-    """**The actual fix.** Chunking without a REPORTED ceiling would only move
-    the same silent lie to a larger number — so when the ceiling binds, the
-    clip's length, how much was read, and the fact that the rest was not, are
-    all on the cut, and `note()` is a sentence the answer can carry."""
+    """Chunking without a REPORTED ceiling would only move the same silent lie
+    to a larger number — so when the ceiling binds, the clip's length, how much
+    was read, and the fact that the rest was not, are all on the cut, and
+    `note()` is a sentence the answer can carry."""
     run = _runner(duration="1200.0")     # 20 minutes
 
     cut = await cut_video(b"video", chunk_seconds=90, max_chunks=3, runner=run)
@@ -396,10 +392,9 @@ async def test_the_cap_binding_is_recorded_and_said():
 
 async def test_an_unmeasurable_clip_is_read_once_and_admits_it_does_not_know():
     """ffprobe could not read the duration. UNMEASURABLE is not SHORT: the read
-    falls back to one view — the exact pre-#117 behaviour — and `complete` is
-    False, so nothing downstream may claim it saw the whole thing. Degrading to
-    the old SHAPE is right; degrading to the old SILENCE is what this issue
-    exists to end."""
+    falls back to one view and `complete` is False, so nothing downstream may
+    claim it saw the whole thing. Degrading to one view is right; degrading to
+    silence about it is not."""
     run = _runner(duration=None)
 
     cut = await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
@@ -436,12 +431,11 @@ async def test_one_refused_window_shortens_the_read_rather_than_failing_it():
 
 
 async def test_a_read_shortened_by_a_refused_window_says_so_too():
-    """**`note()` keys on `complete`, never on `capped`.** The first cut of it
-    returned `""` whenever the ceiling had not bound, so a read shortened by a
-    refused window went out with a confident description and no caveat while
-    `complete` sat correctly False and nothing acted on it. DEC-161 is «never
-    truncate silently», not «never truncate» — and the test above builds this
-    exact case and stopped one assertion short of the defect."""
+    """**`note()` keys on `complete`, never on `capped`.** A `note()` that
+    returned `""` whenever the ceiling had not bound would let a read
+    shortened by a refused window go out with a confident description and no
+    caveat while `complete` is correctly False. DEC-161 is «never truncate
+    silently», not «never truncate»."""
 
     async def run(args, timeout_seconds, data):
         if args[0] == "ffprobe":

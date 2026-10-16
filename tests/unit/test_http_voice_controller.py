@@ -86,9 +86,9 @@ async def test_join_returns_the_state_snapshot(aiohttp_client):
 async def test_status_returns_the_full_get_body(aiohttp_client):
     vc = await _client(aiohttp_client, _app())
 
-    # The guild rides the query string on this GET since 2026-09-17: one
-    # controller process serves several, so an unqualified status could only
-    # answer for whichever it picked.
+    # The guild rides the query string on this GET: one controller process
+    # serves several, so an unqualified status could only answer for whichever
+    # it picked.
     snapshot = await vc.status("guild-1")
 
     assert snapshot["generation"] == "gen-1"
@@ -242,7 +242,7 @@ async def test_an_injected_session_is_used_instead_of_a_per_call_one(aiohttp_cli
 
 
 async def test_play_sends_resumable_only_when_given(aiohttp_client):
-    """§5 position policy: `resumable` rides the play body when the caller
+    """Position policy: `resumable` rides the play body when the caller
     marks a live source, and is absent otherwise (the controller's default
     applies)."""
     record: list = []
@@ -260,7 +260,7 @@ async def test_play_sends_resumable_only_when_given(aiohttp_client):
 
 
 async def test_a_generation_conflict_reconciles_and_retries_once(aiohttp_client):
-    """Stale generation after a controller restart (§12.1): the session
+    """Stale generation after a controller restart: the session
     reads `/voice/status`, ADOPTS the live generation into itself — the
     hub's cache and the manager's player hold this same object, so both
     agree afterwards — and retries the verb, which then succeeds. No
@@ -315,7 +315,7 @@ async def test_an_arbiter_rejection_is_not_retried(aiohttp_client):
 
 
 async def test_stop_tolerates_a_dead_generation(aiohttp_client):
-    """B7: a 409 `generation_conflict` on /music/stop means the controller
+    """A 409 `generation_conflict` on /music/stop means the controller
     already forgot this generation — the music slot is definitionally
     stopped, so the teardown that called stop COMPLETES instead of dying
     on a controller that is already gone."""

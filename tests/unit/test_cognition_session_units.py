@@ -1,9 +1,8 @@
-"""A unit that cannot run a session is still watched (#637 review, minor 1).
+"""A unit that cannot run a session is still watched.
 
-#637 dropped a unit with no home room from the wake evaluator entirely, so its
-would-wakes (the shadow week's evidence for it) vanished without a word. Now
-it stays: the evaluator keeps recording its would-wakes exactly as it does with
-sessions off (untracked, the shadow assumption, no hook), and only the units
+A unit with no home room stays in the wake evaluator, so its would-wakes (the
+shadow evidence for it) are not lost: the evaluator keeps recording them exactly
+as it does with sessions off (untracked, the shadow assumption, no hook), and only the units
 that CAN run a session start one.
 
 What each test would catch if the fix were reverted is named in

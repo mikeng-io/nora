@@ -1,5 +1,5 @@
 """The shared event index (`nora.language.event_render`), built for the Cognition
-session's register in step 3b of `design/context-assembly/04-every-occasion.md`.
+session's register.
 
 One event is one `<event>` element carrying everything the flat line it replaced
 did (id, status, when, venue, revision, the title), and nothing a title or a venue

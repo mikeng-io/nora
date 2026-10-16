@@ -1,5 +1,5 @@
-"""The pure checks a lesson write must clear (`nora.domain.lessons.check_lesson`,
-design/self-growth/40-lessons.md §4, step L1): citation, echo, no re-learn, cap.
+"""The pure checks a lesson write must clear (`nora.domain.lessons.check_lesson`):
+citation, echo, no re-learn, cap.
 
 No store, no model: `check_lesson` is handed everything it judges, so each
 refusal is one call. The same checks through the book and Postgres are
@@ -159,11 +159,10 @@ def test_a_lesson_at_the_per_lesson_cap_is_accepted(n):
 
 
 def test_only_the_cli_and_the_lessons_session_build_a_book():
-    """L2 put the verbs on ONE model surface, the Lessons session, which the
+    """The lesson verbs sit on ONE model surface, the Lessons session, which the
     composition root builds only under `[lessons] enabled`; the operator's CLI
     is the other builder. A third importer would be a second model surface for
-    the verbs (a turn, Cognition), which the design does not have: a turn reads
-    lessons (L5), it never writes one."""
+    the verbs (a turn, Cognition): a turn reads lessons, it never writes one."""
     root = Path(__file__).resolve().parents[2] / "nora"
     users = {
         str(p.relative_to(root.parent)) for p in root.rglob("*.py")

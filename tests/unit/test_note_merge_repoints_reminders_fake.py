@@ -1,9 +1,7 @@
-"""`InMemoryNoteStore.merge_into` models the reminders half (issue #158
-residue) too, when a `FakeReminderStore` is wired in — the "preferred" fix
-from #520's review round 1 (point 2): the fake used to have no `reminders`
-dict at all, so `tests/unit/test_note_merge.py`'s own coverage of
-`NoteMergeAdaptor` could not see this defect regardless of which store it
-ran against. This is that store's own contract, run directly against
+"""`InMemoryNoteStore.merge_into` models the reminders half too,
+when a `FakeReminderStore` is wired in, so `tests/unit/test_note_merge.py`'s
+coverage of `NoteMergeAdaptor` can see reminders re-pointed. This is that
+store's own contract, run directly against
 `InMemoryNoteStore` — the sibling of `tests/infra/
 test_note_merge_repoints_reminders.py`, which runs the identical scenarios
 against `SqlNoteStore` and real Postgres. Two implementations, one rule,
@@ -67,8 +65,7 @@ async def _fold(
 
 async def test_reminders_none_is_the_default_and_skips_the_step() -> None:
     """No `reminders` wired: `merge_into` still folds the notes and simply
-    has nothing to say about reminders — the gap this fake used to hide
-    completely, now an explicit, opt-in `None`."""
+    has nothing to say about reminders; reminders are an explicit, opt-in `None`."""
     notes = InMemoryNoteStore()
     survivor = await _make_note(notes, title="Saturday dinner")
     duplicate = await _make_note(notes, title="Neway booking")

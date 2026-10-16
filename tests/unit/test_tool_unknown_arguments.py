@@ -1,20 +1,17 @@
 """R-99 — a call carrying an argument the tool does not declare must not run
-silently (design/social-per-network/30-link-owner-registry.md).
+silently.
 
 THE DEFECT. `strands.tools.decorator.FunctionToolMetadata._create_input_model`
-(`.venv/lib/python3.12/site-packages/strands/tools/decorator.py:190-231`)
 builds a pydantic model from exactly a tool's own signature, with no
 `model_config` set anywhere in that class — so pydantic v2's own default
-(`extra="ignore"`) makes `validate_input` (decorator.py:369-393) SILENTLY DROP
-any key a call carries that the tool never declared. Live traffic showed it:
-`media_fetch` was called twice with `file=`, which `media_fetch` has never
-accepted, and both calls arrived empty (design 30's read-only measurement).
-The same class of bug broke `instagram_read(url=...)` earlier, fixed there by
-adding a deliberate `url` alias — this file is the GENERIC fix, so the next
-tool does not need one.
+(`extra="ignore"`) makes `validate_input` SILENTLY DROP any key a call carries
+that the tool never declared. E.g. `media_fetch` called with `file=`, which it
+does not accept, arrives empty. `instagram_read` carries a deliberate `url`
+alias for one such case; this rule is the GENERIC guard, so the next tool does
+not need one.
 
-THE FIX. `ReplyGuard.evaluate` (`nora/agent/guards.py`) now vetoes such a call
-BEFORE Strands' own validation ever drops anything, from `ToolRegistry.
+THE GUARD. `ReplyGuard.evaluate` (`nora/agent/guards.py`) vetoes such a call
+BEFORE Strands' own validation drops anything, from `ToolRegistry.
 tool_param_names()` — each tool's accepted argument names, read off its own
 signature, never hand-copied. `conversation_id` is exempted: R-3, right below
 R-99 in `evaluate`, is the deliberate DEC-24 decision that an invented one is
@@ -42,8 +39,7 @@ PARAM_NAMES = REGISTRY.tool_param_names()
 #: DEC-50) is registered by `strands.vended_plugins.skills.AgentSkills`, not
 #: by `build_tool_specs`, so there is no callable here to read a signature
 #: off. Named explicitly so the parametrized coverage test below states what
-#: it does NOT reach rather than silently skipping an unnamed subset — the
-#: same "say so" the task this file closes out asked for.
+#: it does NOT reach rather than silently skipping an unnamed subset.
 UNCOVERED = frozenset(name for name in BUDGETS if name not in PARAM_NAMES)
 
 
@@ -83,7 +79,7 @@ def test_a_well_formed_media_fetch_call_is_not_vetoed():
 
 
 def test_instagram_reads_deliberate_url_alias_still_works():
-    """The design-13 alias this fix must not break: `instagram_read` declares
+    """The `url` alias this rule must not break: `instagram_read` declares
     `url` as a REAL second parameter (`nora.agent.tools`), so it is in
     `PARAM_NAMES` like any other declared name and a call naming it is not
     an R-99 violation."""
@@ -121,8 +117,8 @@ def test_a_tool_this_registry_cannot_introspect_is_left_alone():
 
 def test_a_guard_built_with_no_param_names_never_fires_r99():
     """The default (`param_names=None`) is the rule OFF, the same shape
-    `lookups=None` already takes — every pre-existing test that builds a
-    `ReplyGuard` without this axis must keep its old, veto-free behaviour."""
+    `lookups=None` takes — every test that builds a `ReplyGuard` without this
+    axis keeps a veto-free behaviour."""
     guard = ReplyGuard(
         conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=Metrics(),
     )

@@ -6,15 +6,11 @@ concludes about it, because it was created by a real `feed()` call first. The
 eval harness's `know()` is a second caller of `conclude()` that skips straight
 to the write — the sandbox's Honcho workspace is `_baseline()`'s `-eval`
 sibling of the deployment's, not the one production feeds, so the peer may
-never have been created in it. Live-run evidence
-(`design/evaluation/10-the-scenario-map.md`): `participation`'s
-`admin-joke-known`/`asked-before-known` cases errored against a real,
-tunnelled Honcho with "did not accept it" — traced to a live 404, `Peer
-miles_novak not found in workspace nora`, confirmed by curling the endpoint
-directly.
+never have been created in it, and Honcho answers 404 (`Peer miles_novak not
+found in workspace nora`).
 
-`FakeMemory` below mirrors that real behaviour (`conclude` 404s for an
-unensured peer) rather than a mock the fix can trivially satisfy without
+`FakeMemory` below mirrors that behaviour (`conclude` 404s for an
+unensured peer) rather than a mock that can trivially be satisfied without
 actually calling `ensure_peer` correctly.
 """
 
@@ -159,7 +155,7 @@ async def test_know_raises_loudly_if_the_peer_was_never_ensured() -> None:
     async def _broken_conclude(*, peer_id: str, content: str, target: str,
                                 conversation_id: str | None = None,
                                 unit: str | None = None) -> bool:
-        return False  # simulates the old code path: no ensure_peer ever ran
+        return False  # simulates a path where ensure_peer never ran
 
     subject.deps.memory.conclude = _broken_conclude  # type: ignore[method-assign]
 
@@ -182,9 +178,8 @@ async def _forever() -> None:
 
 @pytest.mark.asyncio
 async def test_settle_returns_once_the_turn_is_done_though_a_loop_is_still_running():
-    """MEASURED LIVE on the deploy host, 2026-09-21: every `near_miss` case
-    ERRORed with "the turn never settled" against a subject composed from the
-    DEPLOYMENT's config, and passed under the example's.
+    """Against a subject composed from the DEPLOYMENT's config, `settle()` waits
+    for THIS case's turn, not for an empty process.
 
     Composition spawns ENDLESS loops into the same set the turn is spawned
     into — `ComputeJobPoller.run()` when `[compute]` is enabled,
@@ -204,9 +199,9 @@ async def test_settle_returns_once_the_turn_is_done_though_a_loop_is_still_runni
 
 @pytest.mark.asyncio
 async def test_settle_waits_for_the_turn_when_an_earlier_task_finishes_first():
-    """MEASURED 2026-10-15: the presence pre-flight was still running when the
-    line arrived and finished mid-turn, so a count fell back to its baseline
-    with the turn still running; three turns were torn down and graded silent."""
+    """A presence pre-flight still running when the line arrives and finishing
+    mid-turn must not let a count fall back to its baseline with the turn still
+    running: that would tear the turn down and grade it silent."""
     from nora.subject import settle, watch
 
     subject = _subject()

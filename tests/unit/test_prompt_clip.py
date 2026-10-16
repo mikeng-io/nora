@@ -1,6 +1,5 @@
-"""`nora.domain.prompt.clip` and `legal`, the two helpers step 3b of
-`design/context-assembly/04-every-occasion.md` made shared (they were a private
-function of the Cognition renderer and of `escape`)."""
+"""`nora.domain.prompt.clip` and `legal`, the two helpers shared by the
+Cognition renderer and `escape`."""
 
 from __future__ import annotations
 

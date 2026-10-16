@@ -1,5 +1,4 @@
-"""`file_fetch`: a shared file link opened by its handle's code or by a link
-(design/external-files/00-design.md §3, build step S3).
+"""`file_fetch`: a shared file link opened by its handle's code or by a link.
 
 Built through `ToolRegistry.specs`, as production builds it, over the REAL
 Google Drive adapter driven by `FakeDriveServer` (no network) wherever the
@@ -214,7 +213,7 @@ async def test_every_call_fetches_afresh():
     assert server.reads(ID) == 2 * once and "changed" in out["text"]
 
 
-# ---- review of PR 802 -------------------------------------------------------
+# ---- handle forms the model passes ------------------------------------------
 
 OTHER = "1SynthOtherDoc00000000000"
 
@@ -274,8 +273,8 @@ async def test_a_parse_past_its_deadline_says_it_took_too_long():
     "https://docs.google.com/spreadsheets/d/{c}", "drive.google.com/file/d/{c}/view",
 ])
 async def test_a_link_built_around_a_handles_code_reads_that_file(made_up):
-    # Live 2026-10-11: shown `[Google Sheet link 98b65b]`, she passed
-    # `link="https://docs.google.com/spreadsheets/d/98b65b"`, which read as
+    # Shown `[Google Sheet link 98b65b]`, she may pass
+    # `link="https://docs.google.com/spreadsheets/d/98b65b"`, which would read as
     # "not a file link". It is the code.
     store = await _store(("g1", f"budget {SHEET_URL}"))
     out = await _tool(_drive(_server()), store)(link=made_up.format(c=_code(SHEET)))

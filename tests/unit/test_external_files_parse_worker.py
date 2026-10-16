@@ -1,5 +1,5 @@
 """Fetched bytes are parsed in a killable child, never on the event loop
-(review of PR 801: a 12 KB crafted PDF held the loop 17.9 s).
+(a small crafted PDF can hold the loop for many seconds).
 
 `parse_isolated` is the one parse path the adapter has: a deadline kills the
 child and answers `refused` `TOO_SLOW`, the loop keeps running meanwhile, and
@@ -21,7 +21,7 @@ from nora.infra.external_files.parse import parse_isolated
 
 def _slow_pdf(pages: int = 40, mb: float = 1.0) -> bytes:
     """Many pages sharing one large content stream: about 12 KB that pypdf
-    takes tens of seconds over (the review's probe)."""
+    takes tens of seconds over."""
     unit = b"BT /F1 1 Tf 0 0 Td ET\n"
     comp = zlib.compress(unit * int(mb * (1 << 20) / len(unit)), 9)
     kids = " ".join(f"{4 + i} 0 R" for i in range(pages)).encode()

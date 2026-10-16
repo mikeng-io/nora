@@ -1,4 +1,4 @@
-"""`routine_read` (design/proposed/27-presence-analytics.md §4.3, P1b).
+"""`routine_read`.
 
 «Where will Grant be on Wednesday night?» answered from the Tier 4
 forecast, behind `where_been`'s own guard (`_presence_audience`). The legs:
@@ -31,7 +31,7 @@ from tests.test_where_been import (
     _room,
 )
 
-# Saturday 2026-09-05 12:00 HKT: the history below ends before it.
+# A Saturday noon (HKT): the history below ends before it.
 NOW = datetime(2026, 9, 5, 12, 0, tzinfo=HK)
 HOME, SECOND, GYM = 11, 12, 13
 _AT = {HOME: (22.388, 114.037), SECOND: (22.410, 114.177), GYM: (22.300, 114.170)}
@@ -133,14 +133,13 @@ async def test_where_will_grant_be_on_wednesday_night(persons):
     }
     [grant] = out["people"]
     assert grant["person"] == "Grant Carver"
-    # A forecast said the way a friend would (design/27 §4.3, amended
-    # 2026-09-28): the hedge is in the words, and no number reaches her.
+    # A forecast said the way a friend would: the hedge is in the words, and no
+    # number reaches her.
     assert grant["routine"] == "Wednesday night: should be at Carver Home"
     assert grant["usually_at"] == "Carver Home"
     assert set(grant) == {"person", "routine", "usually_at", "also"}
-    # The hedge carries the doubt; a «forecast, not a record» line came out
-    # as a «this is only an estimate, not real-time» disclaimer in two live
-    # replies.
+    # The hedge carries the doubt; a «forecast, not a record» line comes out
+    # as a «this is only an estimate, not real-time» disclaimer.
     assert "friend" in out["note"] and "record" not in out["note"]
     for word in ("will be", "can't", "cannot", "not where"):
         assert word not in out["note"]  # nothing that reads as a reason to disclaim
@@ -236,7 +235,7 @@ async def test_not_found_and_ambiguous(persons):
     assert mobility.calls == []
 
 
-# ---- independent review, 2026-09-28 -----------------------------------------
+# ---- more guard and rendering cases -----------------------------------------
 
 
 async def test_a_person_known_only_to_a_later_circle_is_still_answered(persons):
@@ -290,7 +289,7 @@ async def test_a_second_place_is_sometimes_never_no_usual_place(persons):
     assert person["also"] == ["Carver Home"]
 
 
-# ---- independent review of the reshaping, 2026-09-28 ------------------------
+# ---- reshaped answers ------------------------
 
 
 def _wednesdays(segments, weeks=6):
@@ -314,8 +313,8 @@ async def test_with_no_usual_place_the_most_frequent_is_still_named(persons):
 
 
 async def test_no_number_reaches_her(persons):
-    """A percent, share, week or day count in her input came out in her
-    reply (live, 2026-09-28: «過去七個禮拜 100%»). None is in the result."""
+    """No percent, share, week or day count reaches her reply («過去七個禮拜
+    100%» is the failure). None is in the result."""
     for window in ((WEDNESDAY, 22, 6), (WEDNESDAY, 19, 22), ("2026-09-08", 19, 23)):
         out = await _tool(persons, _FakeMobility(stays=_history(6)))(*window, name="Chi")
         for person in out["people"]:
@@ -355,7 +354,7 @@ async def test_the_ladder_reads_probably_between_60_and_85(persons):
     assert (p["usually_at"], p["also"]) == ("Carver Home", ["a place they go"])
 
 
-# ---- the movement model's views (design/27 §4.4 M1, M3, M4) ---------------
+# ---- the movement model's views ---------------
 
 from types import SimpleNamespace  # noqa: E402
 
@@ -388,7 +387,7 @@ async def test_when_is_he_usually_back_home_on_wednesday_night(persons):
     assert out["status"] == "ok"
     [p] = out["people"]
     # Two homes (one unnamed): «home» is either, and the answer says so
-    # instead of borrowing one home's name for both (review 2026-09-28).
+    # instead of borrowing one home's name for both.
     assert (p["what"], p["place"]) == ("arrival", "one of their homes")
     # Wednesdays in the fixture: gym 19-21, home from 21:30, every week.
     assert p["routine"] == "Wednesdays: should get to one of their homes around 21:30"
@@ -415,7 +414,7 @@ async def test_when_does_he_leave_a_named_place(persons):
     out = await _tool(persons, _FakeMobility(stays=_history(6)))(
         WEDNESDAY, 16, 23, name="Chi", what="departure", place="gym")
     # «gym» matches no label or kind: they have no such place, which is not
-    # the same as a thin history (review 2026-09-28).
+    # the same as a thin history.
     assert out["status"] == "nothing_found"
     assert "don't know a place of theirs" in out["note"]
     assert "history" not in out["note"]
@@ -449,7 +448,7 @@ async def test_today_against_the_routine_names_where_they_usually_are(persons):
 
 async def test_no_result_carries_a_handle(persons):
     """Places are named in words `route` takes back this turn, never an id
-    (DEC-216 M3, amended: an id in a result is a low-level identifier)."""
+    (DEC-216 M3: an id in a result is a low-level identifier)."""
     out = await _tool(persons, _FakeMobility(stays=_history(6)))(WEDNESDAY, 22, 6, name="Chi")
     assert "ref" not in str(out) and "place:" not in str(out)
 
@@ -477,7 +476,7 @@ async def test_tonight_is_still_tonight_after_midnight(persons):
     assert out["people"][0]["today"].startswith("now a place they go")
 
 
-# ---- evidence on request (operator 2026-09-28) -------------------------------
+# ---- evidence on request -------------------------------
 
 
 async def test_evidence_only_when_asked_and_as_counts_of_the_past(persons):
@@ -517,7 +516,7 @@ async def test_two_kinds_of_night_are_said_as_probably_though_some_nights(person
         "though some nights not till around 23:45")
 
 
-# ---- the hedge ladder, at its edges (review 2026-09-28) ----------------------
+# ---- the hedge ladder, at its edges ----------------------
 
 
 def _minutes(*parts):
@@ -567,8 +566,8 @@ async def test_an_unknown_detail_is_refused_as_bad_input(persons):
 
 
 async def test_evidence_says_the_record_in_words_not_a_second_percent(persons):
-    """A second percent beside the shares was read as one of them (2 of 8
-    replay draws): how much is on record is words."""
+    """A second percent beside the shares would be read as one of them: how
+    much is on record is words."""
     out = await _tool(persons, _FakeMobility(stays=_history(6)))(
         WEDNESDAY, 22, 6, name="Chi", detail="evidence")
     evidence = out["people"][0]["evidence"]
@@ -632,7 +631,7 @@ async def test_a_day_they_never_went_is_not_a_day_they_stayed_late(persons):
     assert line.endswith("and some days not in these hours")
 
 
-# ---- names and windows as a person says them (live 2026-09-28) -----------------
+# ---- names and windows as a person says them -----------------
 
 
 async def test_an_unsaved_label_is_the_street_it_is_near_not_its_name(persons):
@@ -683,8 +682,8 @@ async def test_evidence_names_the_top_two_and_sums_up_the_rest(persons):
 
 async def test_every_answer_calls_an_unsaved_place_by_the_same_words(persons):
     """routine_read's movement view, its `also`, and a later `place=` all use
-    «… near <street>», and the words it gave are taken back (review
-    2026-09-28: `place=` rejected the name routine_read had just said)."""
+    «… near <street>», and the words it gives are taken back (`place=` accepts
+    the name routine_read has just said)."""
     from nora.domain.mobility import DerivedPlace
 
     office = DerivedPlace(GYM, "grant_carver", "c", *_AT[GYM], 100.0, "work", 1.0,

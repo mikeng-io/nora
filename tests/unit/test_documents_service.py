@@ -1,5 +1,5 @@
 """`DocumentService`: what publishing does in what order, what a media code may
-resolve to, and who a room names (ADR 0020, design/artifact §5, §16).
+resolve to, and who a room names (ADR 0020).
 
 The same-room rule is tested from both sides: a photo in room A is unknown in room B,
 and a code that fits two photos is refused rather than picked.
@@ -454,8 +454,8 @@ async def test_an_outcome_the_store_reports_as_not_found_is_refused() -> None:
 
 
 async def test_a_revision_must_say_which_revision_it_started_from() -> None:
-    # Without it a stale edit silently replaced newer work: a model's revision of v1
-    # was stored as revision 3 over someone else's revision 2 (review of PR 654).
+    # Without it a stale edit would silently replace newer work: a model's revision of v1 would be
+    # stored as revision 3 over someone else's revision 2.
     svc, store = _service()
     first = await _publish(svc, _doc(title="v1"))
     result = await _publish(svc, _doc(title="v2"), document_id=first.document_id)
@@ -517,8 +517,8 @@ async def test_only_a_known_person_can_publish() -> None:
 
 
 async def test_a_malformed_picture_entry_is_not_a_picture() -> None:
-    # A media_json entry that is not a 64-hex content address never resolves: it used to
-    # be rewritten into the document and then fail the second check as `unavailable`.
+    # A media_json entry that is not a 64-hex content address never resolves, so it is refused
+    # (`media_unknown`) rather than rewritten into the document.
     svc, _ = _service(rooms={"room-1": [["abcdef/../../x"]]})
     result = await _publish(svc, _doc(_image("abcdef")))
     assert result.status == "refused"
@@ -772,7 +772,7 @@ def test_the_service_says_which_origin_a_link_is_built_under() -> None:
     assert _service()[0].link_base == ""
 
 
-# ---- Map: the model names places, the service looks them up (design/artifact §40) ---------------
+# ---- Map: the model names places, the service looks them up ---------------
 
 
 class _Places:
@@ -867,8 +867,8 @@ async def test_a_name_used_twice_is_looked_up_once() -> None:
 
 
 async def test_a_coordinate_written_with_a_space_instead_of_a_comma_is_refused_too() -> None:
-    """Review of #703: Google Text Search locates a bare pair either way, and the comma-only
-    pattern let `22.4106 114.1245` through as a place name."""
+    """Google Text Search locates a bare pair either way, so a pair such as `22.4106 114.1245` is
+    refused as a place name with or without a comma."""
     places = _Places()
     svc, _ = _service(places=places)
     for name in ("22.4106 114.1245", "22.4106,114.1245", "-33.8 151.2"):
@@ -916,8 +916,8 @@ async def test_fifty_unknown_places_are_ten_findings_not_fifty() -> None:
 
 
 async def test_a_stale_revision_is_answered_before_any_place_is_looked_up() -> None:
-    """Review of #703: the lookups ran before the store checks, so «read it again and publish again»
-    after a conflict paid for the same places twice."""
+    """The store checks run before the place lookups, so «read it again and publish again» after a
+    conflict does not pay for the same places twice."""
     places = _Places()
     svc, _ = _service(places=places)
     first = await _publish(svc, _doc(title="v1"))
@@ -929,9 +929,8 @@ async def test_a_stale_revision_is_answered_before_any_place_is_looked_up() -> N
 
 
 async def test_coordinates_that_push_a_document_over_the_size_limit_are_a_fixable_refusal() -> None:
-    """Review of #703: grounding adds a pair per place, so a document that passed the first
-    check could fail the second as «could not be re-checked», which she cannot fix and a retry
-    pays for."""
+    """Grounding adds a pair per place, so a document that passes the first check could fail the
+    second as «could not be re-checked», which she cannot fix and a retry pays for."""
     import json
 
     from nora.documents.check import MAX_BYTES

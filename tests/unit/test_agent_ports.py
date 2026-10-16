@@ -1,4 +1,4 @@
-"""`ToolSpec`/`adapt` (Task 1, spec §4.2) — plain, framework-free tool
+"""`ToolSpec`/`adapt` — plain, framework-free tool
 description and the one boundary that turns it into a Strands tool object.
 """
 

@@ -1,7 +1,7 @@
-"""The debrief stage — `26-standing` §1/§4/§4.0/§4.3/§5.
+"""The debrief stage.
 
-**The fake model client answers DIFFERENTLY per call and can be asked to fail
-the way the real route fails** (CLAUDE.md: never write a test whose fake answers
+The fake model client answers DIFFERENTLY per call and can be asked to fail
+the way the real route fails (CLAUDE.md: never write a test whose fake answers
 every request the same way). A stub that always returned one well-formed JSON
 body would go green on every failure this module exists to handle — the
 truncated `finish_reason="length"`, the overflow-then-consolidate round trip,
@@ -38,8 +38,7 @@ class _Client:
         self.prompts: list[str] = []
         #: One entry per `complete()` call, in order — what `_complete`
         #: passed as `trace_attributes`. `_Client` never calls Strands
-        #: itself (see the module-level note above the retired trace-shape
-        #: tests), so this is how a debrief-level test verifies the
+        #: itself, so this is how a debrief-level test verifies the
         #: DELEGATION is correct without needing a real Agent invocation.
         self.trace_attributes: list[dict | None] = []
 
@@ -61,7 +60,7 @@ class _Client:
 class _Objective:
     """The fold's one objective, as a marker string, so a test can tell the
     objective reached the prompt. Any other name is refused: the stage reads
-    exactly one objective since the verdict's was deleted (2026-09-24)."""
+    exactly one objective."""
 
     def objective_body(self, name: str) -> str:
         assert name == debrief.OBJECTIVE, name
@@ -74,8 +73,7 @@ def _ok(body: str) -> debrief.Completion:
 
 
 def _ok_ws(body: str, working_set: list) -> debrief.Completion:
-    """The fold's answer with a `working_set` array beside `standing`
-    (design/standing-compact/30-working-set.md §3)."""
+    """The fold's answer with a `working_set` array beside `standing`."""
     return debrief.Completion(
         json.dumps({"standing": body, "working_set": working_set}), "stop")
 
@@ -131,11 +129,8 @@ async def test_a_fold_writes_the_position_keyed_on_platform_and_conversation():
 
 
 async def test_the_fold_reads_the_current_standing_before_writing_the_next():
-    """**§4's non-negotiable**, and the one requirement in this bundle with
-    live evidence behind it: across 963 processed messages the Dreamer wrote
-    two rows, both wrong, both about the same thing — the second run knew MORE
-    than the first and still wrote a second wrong row beside it, because
-    nothing in its write path could see what was already there.
+    """The fold reads the existing position before it writes. A write path that
+    cannot see what is already there writes a second row beside a wrong one.
 
     Asserted through the PROMPT rather than through a spy on the store: what
     matters is not that `read` was called, it is that what it returned reached
@@ -157,7 +152,7 @@ async def test_the_fold_reads_the_current_standing_before_writing_the_next():
 
 
 async def test_the_fold_is_shown_its_own_working_set_prior():
-    """design/standing-compact/30-working-set.md §4: `<standing_working_set_
+    """`<standing_working_set_
     prior>` rides beside `<standing_prior>` in the FOLD's own input — the
     same always-present contract, so the model can re-judge it rather than
     re-deriving it from nothing every turn."""
@@ -199,12 +194,12 @@ async def test_a_store_that_cannot_be_read_folds_nothing():
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
 
 
-# --- §2: every completed turn, not only the ones that sent -----------------
+# --- every completed turn, not only the ones that sent ---------------------
 
 @pytest.mark.parametrize(
     "outcome", ["send_reply", "recovered", "silent", "vetoed", "timeout", "llm_error"])
 async def test_every_outcome_is_debriefed_including_the_silences(outcome):
-    """§2, and it is the decision most easily lost to an inherited gate: a turn
+    """Every completed turn is reviewed, not only the ones that sent: a turn
     that deliberately said nothing produced just as much reasoning as one that
     replied, and R-5 silence is the decision most likely to be wrong in a way
     nobody complains about. A debrief that only reviews successful replies
@@ -214,7 +209,7 @@ async def test_every_outcome_is_debriefed_including_the_silences(outcome):
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
 
 
-# --- §4.0: refuse and consolidate, never truncate --------------------------
+# --- refuse and consolidate, never truncate --------------------------------
 
 async def test_an_over_long_fold_is_refused_and_the_model_is_asked_to_consolidate():
     client = _Client(_ok("x" * 60), _ok("short"))
@@ -230,24 +225,19 @@ async def test_an_over_long_fold_is_refused_and_the_model_is_asked_to_consolidat
 
 
 async def test_the_tiebreak_is_reversed_and_recency_scoped_in_the_retry():
-    """**§4.0.1's ordering rule, REVERSED by Phase 2 and still paired with its
-    recency scope.**
+    """The shrink's ordering rule: Nora's own synthesis outranks what the room
+    SAID, and recency is scoped to a tie between two things of the SAME KIND.
 
-    The old rule — what the room SAID outranks what Nora concluded — taught
-    the shrink to prefer exactly the recap-shaped clauses that kept the
-    standing row an event list; the flip and its falsifier live in
-    `design/standing-split-fold/20-ratchet-and-tiebreak.md`. The position is
-    hers, so her synthesis wins against any room quote, and recency is scoped
-    to a tie between two things of the SAME KIND.
+    The position is hers, and ranking room quotes first would prefer exactly
+    the recap-shaped clauses that keep the standing row an event list. Asserts
+    the rule is present, the recency scope is present, and the inverted rule is
+    absent.
 
-    Asserts the reversed rule is present, the recency scope survived it, and
-    the old inversion is gone.
-
-    **Three ranks since 2026-09-24** (design/standing-compact/10 §5): what
-    she found and has not shared sits between the two. Unranked, a finding
-    was always the most recent clause and so the last to go, and it evicted
-    older commitments first. Asserted on the prompt the fake client actually
-    RECEIVED, and on the ORDER of the three, not merely their presence.
+    There are three ranks: what she found and has not shared sits between the
+    other two. Unranked, a finding would always be the most recent clause and
+    so the last to go, evicting older commitments first. Asserted on the
+    prompt the fake client actually RECEIVED, and on the ORDER of the three,
+    not merely their presence.
     """
     client = _Client(_ok("x" * 60), _ok("short"))
     await _run(client=client, max_chars=50)
@@ -292,15 +282,13 @@ def test_the_objective_states_the_synthesis_tiebreak_too():
 
 
 def test_the_objective_speaks_in_the_first_person_about_the_position():
-    """The person contract (issue #78): the fold is Nora revising HER OWN
-    position, so the objective must speak in the first person about the
-    standing — a third-person cast ("you are not the assistant who answered
-    it") is what produced transcript recaps instead of positions, because an
-    observer who is not a participant has no position to revise.
+    """The person contract: the fold is Nora revising HER OWN position, so the
+    objective must speak in the first person about the standing — a
+    third-person cast ("you are not the assistant who answered it") produces
+    transcript recaps instead of positions, because an observer who is not a
+    participant has no position to revise.
 
-    The grounding verdict had its own objective from Phase 2 until it was
-    deleted on 2026-09-24 (design/standing-compact/); its rubric must not
-    drift back into the position writer's prompt.
+    A grounding-verdict rubric must not appear in the position writer's prompt.
     """
     from tests.objectives import shipped_objectives
 
@@ -325,12 +313,9 @@ def test_the_objective_speaks_in_the_first_person_about_the_position():
 
 
 def test_the_ratchet_rejudges_whole_rather_than_revising_in_place():
-    """Phase 2's ratchet (AC5): «keep its wording and change only what this
-    turn changed» is what preserved inherited third-person recap clauses —
-    Phase 1 re-voiced the rule as prose and the first post-deploy fold still
-    wrote an event list. The fold now re-judges the whole paragraph every
-    turn, and inherited clauses survive only if they still hold AND are
-    re-voiced in the fold's own voice.
+    """The ratchet: «keep its wording and change only what this turn changed» would preserve
+    inherited third-person recap clauses. The fold re-judges the whole paragraph every turn, and
+    inherited clauses survive only if they still hold AND are re-voiced in the fold's own voice.
 
     Pinned on the shipped objective through the real loader, like the
     deployment's hot-reload reads it — not on `read_text()`, which cannot
@@ -351,12 +336,11 @@ def test_the_ratchet_rejudges_whole_rather_than_revising_in_place():
 
 
 def test_the_objective_gives_a_concrete_recap_vs_position_contrast():
-    """The recap-shape failure survived the person contract and the ratchet:
-    post-split rows are first-person but still event lists — a position that
-    duplicates the transcript. Prose rules ("if it reads like a recap, it is
-    wrong") did not move behaviour; the objective now carries a concrete
-    contrast of the SAME turn in both shapes, plus a derivability test that
-    names the failure mode directly.
+    """The objective guards against the recap shape: first-person rows that are
+    still event lists, a position that duplicates the transcript. It carries a
+    concrete contrast of the SAME turn in both shapes, plus a derivability test
+    that names the failure mode directly, rather than a prose rule ("if it
+    reads like a recap, it is wrong").
 
     Pinned on the shipped objective through the real loader, like the
     deployment's hot-reload reads it.
@@ -382,14 +366,12 @@ def test_the_objective_gives_a_concrete_recap_vs_position_contrast():
 
 
 def test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding():
-    """Issue #445 review: v8 first added "found and have not yet given the
-    room" to the derivability test and the closing line without the bullet's
-    own condition, "while it is still useful to someone here" (line "what I
-    found or worked out..." above). Without it, the every-sentence test lets
-    in a finding that is mere trivia — another placing, a field size, a team
-    background — because those too are "found and not yet given". Both
-    sentences must carry the full clause, not just "found ... not yet given
-    the room".
+    """The derivability test and the closing line carry the bullet's own condition, "while it is
+    still useful to someone here" (line "what I found or worked out..." above), not only "found
+    and have not yet given the room". Without it, the every-sentence test lets in a finding that
+    is mere trivia — another placing, a field size, a team background — because those too are
+    "found and not yet given". Both sentences must carry the full clause, not just "found ...
+    not yet given the room".
 
     Pinned on the shipped objective through the real loader, like the
     deployment's hot-reload reads it. Guarded by
@@ -409,10 +391,10 @@ def test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding
 
 
 async def test_a_second_overflow_writes_nothing_and_the_prior_position_stands():
-    """§4.0's fail-closed half. Truncating here would be the silent eviction
-    that turns a rolling position into a recent summary; writing the over-long
-    body would be refused by the database anyway. A coherent stale position
-    beats a sentence cut in half."""
+    """Fail-closed: an over-long body that survives the retry is not written.
+    Truncating here would be the silent eviction that turns a rolling position
+    into a recent summary; writing the over-long body would be refused by the
+    database anyway. A coherent stale position beats a sentence cut in half."""
     store = InMemoryStandingStore()
     await store.write(standing=Standing(
         platform="signal", conversation_id="g1", body="the old position",
@@ -438,10 +420,10 @@ async def test_a_fold_exactly_at_the_cap_is_written():
 
 async def test_a_truncated_body_is_never_parsed():
     """The price of admission for a raw `chat.completions.create`. A Strands
-    agent RAISES `MaxTokensReachedException` on a cut-off — and, since
-    `ask_text` now catches it too (2026-09-19), the debrief's real production
-    client also arrives here with `finish_reason="length"`, not just this
-    test's fake. Either way, this checks the CONSUMING side: a
+    agent RAISES `MaxTokensReachedException` on a cut-off, and `ask_text`
+    catches it too, so the debrief's real production client also arrives here
+    with `finish_reason="length"`, not just this test's fake. Either way, this
+    checks the CONSUMING side: a
     `finish_reason="length"` body must never be parsed, and a truncated
     JSON document can parse into something shorter and wrong. That is R-27's
     substitution one layer down: an ERROR reported as a PASS.
@@ -483,14 +465,14 @@ async def test_unavailable_and_malformed_are_different_readings():
     assert _counter(bad, "nora_debrief_total", outcome="unavailable") == 0
 
 
-# --- §4.3: screened before the write ---------------------------------------
+# --- screened before the write ---------------------------------------------
 
 @pytest.mark.parametrize("body, reason", [
     ("Miles said to call +85290000101 about it.", "identifier"),
     ("They agreed to meet at 22.4106,114.1245.", "coordinate"),
 ])
 async def test_an_identifier_or_a_coordinate_never_reaches_the_row(body, reason):
-    """§4.3, and this is the path nobody had recorded: `tag_trace.messages`
+    """The fold is screened before the write: `tag_trace.messages`
     holds raw tool results, a `where_is` result contains a live position, and
     Standing is injected into every subsequent turn — so a coordinate that gets
     in persists **by design** rather than by attack. R-18/R-28 guard egress
@@ -502,11 +484,11 @@ async def test_an_identifier_or_a_coordinate_never_reaches_the_row(body, reason)
         metrics, "nora_dream_screened_total", adaptor="debrief", reason=reason) == 1
 
 
-# --- §5: it never turns a delivered turn into a failure --------------------
+# --- it never turns a delivered turn into a failure ------------------------
 
 async def test_a_cancellation_is_absorbed_and_never_re_raised():
-    """§5's second failure shape, and `except Exception` is exactly what does
-    NOT catch it: `CancelledError` derives from `BaseException`. Escaping here
+    """A cancellation never escapes the stage, and `except Exception` is exactly
+    what does NOT catch it: `CancelledError` derives from `BaseException`. Escaping here
     reaches `EngagementPipeline`'s own outer handler, which counts
     `nora_silent_failures_total{reason="handler_error"}` and logs a silent
     failure **on a turn that just delivered a complete reply** — a false alarm
@@ -547,13 +529,9 @@ async def test_the_two_calls_share_one_budget():
     independently-bounded calls add up to twice it on exactly the turn that
     was already slow enough to need a retry.
 
-    **The first version of this test could not fail** (found by review,
-    2026-08-27). It made call 1 instant and call 2 sleep past the timeout, so
-    the two-independent-budgets implementation — the very defect it is named
-    for — still timed out on call 2 and still produced `outcome="timeout"`. The
-    assertion was identical either way.
-
-    The fix is to spend MOST of the budget on the FIRST call. Each call is under
+    The test spends MOST of the budget on the FIRST call. Making call 1 instant
+    and call 2 sleep past the timeout would not tell the two implementations
+    apart: independent budgets would also time out on call 2. Each call is under
     the per-call timeout, so two independent budgets would let both through and
     the fold would SUCCEED; only a shared budget is exhausted by their sum.
     Asserting `written` rather than `timeout` is what makes the two
@@ -589,7 +567,7 @@ async def test_the_two_calls_share_one_budget():
     (lambda: _Client(RuntimeError("boom")), "error"),
 ])
 async def test_latency_is_observed_on_every_exit_including_the_failures(client, expected):
-    """§2's own argument applied to this stage's instrument instead of its
+    """The every-completed-turn argument applied to this stage's instrument instead of its
     input: a latency series that only records successes describes the path that
     already works, and the exits worth timing are the ones that went wrong."""
     _, metrics = await _run(client=client())
@@ -609,14 +587,13 @@ async def test_the_objective_text_reaches_the_prompt():
     assert "at most 1200 characters" in client.prompts[0]
 
 
-# --- the store calls are bounded too (review finding, 2026-08-27) -----------
+# --- the store calls are bounded too ----------------------------------------
 
 async def test_a_hanging_store_read_cannot_hold_the_slot_forever():
-    """The stage's docstring used to say it was "bounded twice" and named only
-    the model call. `store.read` sat OUTSIDE the `wait_for`, and
-    `create_sql_engine` sets no `command_timeout` — so a Postgres connection
-    hanging mid-query during the post-reply fold held the per-conversation lock
-    indefinitely, on a turn that had already delivered its reply.
+    """`store.read` is inside the `wait_for`: `create_sql_engine` sets no
+    `command_timeout`, so a Postgres connection hanging mid-query during the
+    post-reply fold would hold the per-conversation lock indefinitely, on a turn
+    that had already delivered its reply.
 
     Falsification: move `store.read` back outside `asyncio.wait_for` and this
     hangs rather than failing.
@@ -633,7 +610,7 @@ async def test_a_hanging_store_read_cannot_hold_the_slot_forever():
 
 
 async def test_a_hanging_store_write_cannot_hold_the_slot_forever():
-    """The write half of the same defect — and it is the worse one: it happens
+    """The write half of the same bound — the worse one: it happens
     AFTER the reply was delivered and after the model call succeeded, so the
     turn is already a success by every measure the user can see."""
     class _Hangs(InMemoryStandingStore):
@@ -650,20 +627,16 @@ async def test_a_hanging_store_write_cannot_hold_the_slot_forever():
 async def test_an_oversized_hold_open_reaching_the_write_is_refused_not_unavailable(
     monkeypatch,
 ):
-    """R-27 regression (PR #624 review): master built `Standing(...)` OUTSIDE
-    the `try` around the store write for exactly this reason — a
-    domain-invariant `ValueError` (a schema violation `__post_init__`
+    """R-27: a domain-invariant `ValueError` (a schema violation `__post_init__`
     refuses on) is a REFUSAL, never a store failure, and must not be caught
-    by the `except Exception` below and counted `unavailable`. The branch
-    under review moved the construction into `standing_revise` and lost that
-    discipline in both callers.
+    by the `except Exception` below and counted `unavailable`.
 
     Neither caller passes `hold_open`/`i_owe` today (the fold's objective
     does not ask the model for them yet — `nora.domain.standing_revise`'s
     module docstring) — so this reaches the invariant by wrapping the REAL
     `standing_revise` and forcing an oversized `hold_open` onto the call
     this stage makes, then runs every line of real validation and
-    construction the fix touches: `check_schema`'s ceiling check, and the
+    construction involved: `check_schema`'s ceiling check, and the
     belt-and-suspenders `except ValueError` around `Standing(...)` in
     `nora.infra.sql.standing_revise`.
     """
@@ -709,12 +682,12 @@ async def test_a_cancellation_is_not_counted_as_an_error():
     """Alert fatigue, not correctness — but on the one counter meant to mean
     «something is wrong».
 
-    Swallowing the cancellation is design-mandated (26 §5) and
+    Swallowing the cancellation is by design and
     `test_a_cancellation_is_absorbed_and_never_re_raised` above pins that. What
-    this pins is that ordinary shutdown does not look like a defect: every
-    routine cancel of an in-flight tag used to write an ERROR traceback and
-    increment `outcome="error"`, so the series fired on healthy shutdowns and
-    stopped being readable. A noisy gate is a disabled gate.
+    this pins is that ordinary shutdown does not look like a defect: a routine
+    cancel of an in-flight tag must not write an ERROR traceback or increment
+    `outcome="error"`, or the series fires on healthy shutdowns and stops being
+    readable. A noisy gate is a disabled gate.
     """
     _, metrics = await _run(client=_Client(asyncio.CancelledError()))
     assert _counter(metrics, "nora_debrief_total", outcome="cancelled") == 1
@@ -733,10 +706,10 @@ async def _with_prior(fold_count: int, *, body: str = "the carried position",
 
 
 async def test_a_normal_fold_advances_the_watermark_to_the_last_row_read():
-    """design/standing-watermark/20: the fold reads `since_including_nora`
+    """The fold reads `since_including_nora`
     since the prior's watermark and advances it to the LAST row of the batch —
     written in the SAME statement as the position. NULL watermark reads from
-    the beginning (D5: no backfill)."""
+    the beginning (no backfill)."""
     store = await _with_prior(3, body="the carried position")
     record = FakeRecordStore()
     # 5 rows since the watermark (NULL -> from the beginning), fold_batch 200:
@@ -752,17 +725,16 @@ async def test_a_normal_fold_advances_the_watermark_to_the_last_row_read():
     assert row.fold_count == 4  # and the fold still counts itself
 
 
-# --- design/standing-compact: one call, the prior every turn, a plain count -
+# --- one call, the prior every turn, a plain count ------------------------
 
-# The fold count the deleted re-derivation ceiling fired at in production
-# (`[standing] rebuild_after_folds`, default 20). Named so the tests below say
-# what they straddle.
+# The default of the retired `[standing] rebuild_after_folds` re-derivation
+# ceiling, kept as the fold count the tests below straddle: no fold-count
+# threshold may withhold the prior at or around it.
 _OLD_CEILING = 20
 
 
 async def test_a_tag_fold_makes_exactly_one_model_call():
-    """design/standing-compact/10 §1: the verdict call is deleted, so a fold
-    that fits is ONE completion — on a first fold and on a fold over a prior
+    """A fold that fits is ONE completion — on a first fold and on a fold over a prior
     alike. The `trace_attributes` label is read as well as the count, so a
     second call wearing any label shows up as a second entry."""
     client = _Client(_ok("a position"))
@@ -777,7 +749,7 @@ async def test_a_tag_fold_makes_exactly_one_model_call():
 
 
 async def test_a_tag_fold_makes_two_calls_only_on_a_consolidate_retry():
-    """The one path to a second call is §4.0's retry, and it is labelled as
+    """The one path to a second call is the consolidate retry, and it is labelled as
     such. Nothing else rides beside it."""
     client = _Client(_ok("x" * 60), _ok("short"))
     store, _ = await _run(client=client, max_chars=50)
@@ -788,12 +760,9 @@ async def test_a_tag_fold_makes_two_calls_only_on_a_consolidate_retry():
 
 
 async def test_the_prior_reaches_the_fold_on_every_turn_including_past_the_old_ceiling():
-    """design/standing-compact/10 §1: **the fold always reads, and always is
-    shown, the prior.** Both deleted triggers — an ungrounded verdict and the
-    fold-count ceiling — withheld it, and the prompt then told the model «no
-    position yet — this is the first fold», which in production wrote a
-    145-character position over a 435-character one and dropped three threads
-    held for days.
+    """The fold always reads, and is always shown, the prior. Withholding it
+    would make the prompt tell the model «no position yet — this is the first
+    fold», and a short new position would overwrite a long one.
 
     Driven through the real stage across the old ceiling: each turn's prompt
     must carry the body the PREVIOUS turn wrote, by its exact words, and must
@@ -833,9 +802,8 @@ async def test_a_prior_far_past_the_old_ceiling_is_still_shown():
 
 
 async def test_fold_count_increments_by_one_per_tag_fold_and_is_never_reset():
-    """`fold_count` is a plain count since 2026-09-24. It used to RESET to 1
-    on a re-derivation; nothing resets it now, and it crosses the old ceiling
-    like any other number."""
+    """`fold_count` is a plain count: nothing resets it, and it crosses
+    `_OLD_CEILING` like any other number."""
     store = InMemoryStandingStore()
     counts = []
     for _ in range(3):
@@ -861,32 +829,17 @@ async def test_a_cancel_before_the_write_is_still_a_cancel():
 
 
 def test_the_slot_hold_counts_every_store_await_the_stage_makes():
-    """**The arithmetic has been wrong four times; this is what stops a fifth.**
+    """`STANDING_STORE_CALLS_PER_FOLD` matches the store calls the stage makes.
 
-    `STANDING_STORE_CALLS_PER_FOLD` feeds
-    `Config._the_standing_slot_hold_fits_its_budget`, the gate that decides
-    whether the declared ceiling is honest. It said 2 while the stage made 4,
-    then 4 while it made 5.
+    It feeds `Config._the_standing_slot_hold_fits_its_budget`, the gate that
+    decides whether the declared ceiling is honest.
 
-    **It walks the AST, and the two earlier versions of this test were each
-    blind in the direction they advertised.**
-
-    v1 counted `asyncio.wait_for` occurrences in two named functions. The
-    ORIGINAL defect was a store call with NO `wait_for` at all, which a count of
-    wrappers cannot see, and a call in a third function was invisible.
-
-    v2 claimed to find "every collaborator call in the module" and was a
-    hardcoded regex over three receiver names and five method names. It passed
-    with `notes_sink.supersede` unbounded (a real `DreamSink` method), with a
-    `facts_sink` the module's own docstring names as the next output, and with
-    an unbounded `store.write` sitting under an unrelated `wait_for` that
-    happened to fall inside its 160-character backwards text window.
-
-    So the receiver set is DERIVED from the stage's own parameter names rather
-    than written down: a collaborator this stage gains is caught the moment it
-    is awaited, without anyone remembering to extend a list. That derivation is
-    the half that matters — v2 caught exactly what it had been written against
-    and nothing else (cold review, 2026-08-28).
+    The test walks the AST. A count of `asyncio.wait_for` occurrences cannot see
+    a store call with NO `wait_for` at all, and a hardcoded list of receiver and
+    method names misses an unbounded call that happens to sit near an unrelated
+    `wait_for`. So the receiver set is DERIVED from the stage's own parameter
+    names: a collaborator this stage gains is caught the moment it is awaited,
+    without anyone extending a list.
     """
     import ast
     import inspect
@@ -941,19 +894,14 @@ def test_the_slot_hold_counts_every_store_await_the_stage_makes():
                 continue          # not awaited at all — not a store call
             calls.append((f"{f.value.id}.{f.attr}", bounded))
             continue
-        # `standing_revise` (design/cognition-loop/70-migration.md step 3 row
-        # 3b) is a WRITE VERB: a plain function, not a method on a
+        # `standing_revise` is a WRITE VERB: a plain function, not a method on a
         # collaborator, that takes `store=` as a keyword and makes exactly
         # one bounded store call inside itself
         # (`nora.infra.sql.standing_revise`'s own docstring). A call shaped
-        # `f.value.id.attr` cannot see it — it is `standing_revise(store=
-        # store, ...)`, a bare `Name` call — so a collaborator handed as a
-        # KEYWORD ARGUMENT to an awaited bare-name call counts too, the same
-        # "awaited, directly or via wait_for" rule above. This is what keeps
-        # the validator seeing the write after it moved behind the verb,
-        # rather than silently dropping one call the way v1's `wait_for`
-        # count and v2's hardcoded receiver list each went blind in their
-        # own way (this test's own docstring).
+        # `f.value.id.attr` cannot see it (it is `standing_revise(store=
+        # store, ...)`, a bare `Name` call), so a collaborator handed as a
+        # KEYWORD ARGUMENT to an awaited bare-name call counts too, under the
+        # same "awaited, directly or via wait_for" rule above.
         if isinstance(f, ast.Name) and awaited:
             for kw in node.keywords:
                 if isinstance(kw.value, ast.Name) and kw.value.id in receivers:
@@ -977,38 +925,22 @@ def test_the_slot_hold_counts_every_store_await_the_stage_makes():
     )
 
 # ---------------------------------------------------------------------------
-# THE FOLD IS TRACED (issue #64) — now through strands.telemetry, not a
-# hand-rolled span. `_complete` no longer opens any span itself (see its own
-# docstring): `client.complete` — `_DebriefModelClient.complete` in
-# production — calls `nora.agent.structured.ask_text`, a real Strands `Agent`
-# invocation that Strands instruments from the inside, the same way it always
-# has for the tag path's own agent loop.
+# THE FOLD IS TRACED through strands.telemetry. `_complete` opens no span
+# itself: `client.complete` (`_DebriefModelClient.complete` in production)
+# calls `nora.agent.structured.ask_text`, a real Strands `Agent` invocation
+# that Strands instruments from the inside.
 #
-# `_Client`, this file's fake, does NOT call Strands — it returns a scripted
-# `Completion` directly, which is why it never produced a span even before
-# this change (the OLD `with generation(...)` lived in `_complete` itself,
-# independent of the client). So this file's own tests can verify only
-# `_complete`'s DELEGATION — that it hands `client.complete` the right
-# `trace_attributes` — not the span Strands eventually produces from them.
-# That deeper claim ("does `ask_text(trace_attributes=...)` really land on a
-# Strands span") is `nora.agent.structured`'s to test, with a real or
-# stubbed Agent; it is not covered here, and is a known gap left by this
-# change rather than a defect this file was ever positioned to catch.
+# `_Client`, this file's fake, does NOT call Strands: it returns a scripted
+# `Completion` directly and produces no span. So this file's tests verify only
+# `_complete`'s DELEGATION (that it hands `client.complete` the right
+# `trace_attributes`), not the span Strands produces from them. Whether
+# `ask_text(trace_attributes=...)` lands on a Strands span is
+# `nora.agent.structured`'s to test; it is not covered here.
 #
-# TWO GUARANTEES THIS STAGE USED TO HOLD ARE GONE, not moved: `trace_safe`'s
-# identifier/coordinate screen no longer runs before the fold's real
-# prompt/completion reaches a span, because Strands' own event recording
-# writes the real message content directly (`Tracer._add_event_messages`) —
-# there is no seam left to hand it a pre-screened substitute without
-# reintroducing the double-instrumentation this change removes. The fold's
-# content now reaches Langfuse exactly as unscreened as the tag path's own
-# agent loop already does (`design/13-trace-content-and-redaction.md`,
-# `status: open-decision`) — this makes the fold CONSISTENT with that
-# existing precedent rather than introducing a new exposure class, but it is
-# a real, disclosed behavior change from what `test_an_identifier_never_
-# reaches_the_collector` and `test_a_coordinate_in_the_answer_never_reaches_
-# the_collector` asserted before this change, and those two tests are
-# deleted rather than inverted to assert the new, weaker guarantee silently.
+# The fold's content reaches Langfuse exactly as unscreened as the tag path's
+# own agent loop does: Strands' event recording writes the real message content
+# directly (`Tracer._add_event_messages`), so `trace_safe`'s
+# identifier/coordinate screen does not run before a span.
 # ---------------------------------------------------------------------------
 
 
@@ -1017,10 +949,10 @@ def _spans(exporter) -> dict[str, object]:
 
 
 async def test_the_fold_hands_its_trace_attributes_to_the_client(exported_spans):
-    """`_complete` no longer traces the call itself; it must still hand the
-    client enough to trace it — `nora.tag_id`, `nora.conversation_id`, and
-    `nora.debrief.call` (the replacement for the old per-call span NAME,
-    since fold/consolidate share one Strands `agent_name`).
+    """`_complete` does not trace the call itself; it must hand the client
+    enough to trace it — `nora.tag_id`, `nora.conversation_id`, and
+    `nora.debrief.call` (the per-call label, since fold/consolidate share one
+    Strands `agent_name`).
 
     PROBE: drop `trace_attributes=` from `_complete`'s call to
     `client.complete` and every entry below becomes `None`.
@@ -1035,7 +967,7 @@ async def test_the_fold_hands_its_trace_attributes_to_the_client(exported_spans)
 
 
 async def test_the_consolidate_retry_carries_its_own_label(exported_spans):
-    """§4.0's retry is a DIFFERENT call from the fold, and must be labelled as
+    """The consolidate retry is a DIFFERENT call from the fold, and must be labelled as
     one rather than silently reusing `"fold"`."""
     client = _Client(_ok("x" * 60), _ok("short"))
     await _run(client=client, max_chars=40)
@@ -1049,8 +981,7 @@ async def test_the_folds_outcome_lands_on_the_span_the_pipeline_opened(
     """`nora_debrief_total{outcome}` is a series; it cannot answer «what
     happened on THIS tag». The `engagement.debrief` span the PIPELINE opens
     (not `_complete` — this stage annotates it, `annotate()`, not `span()`)
-    can, and this is unaffected by the strands.telemetry change: it was
-    never part of the retired `generation()` wrapper.
+    can, independently of the strands.telemetry path.
 
     PROBE: delete the `annotate(...)` in `run`'s `finally`.
     """
@@ -1070,18 +1001,13 @@ async def test_a_refused_fold_says_so_on_the_span(exported_spans):
         "nora.debrief.outcome"] == "malformed"
 
 
-# --- issue #199: a turn outcome is not a room position ----------------------
+# --- a turn outcome is not a room position ----------------------------------
 
 
 def _incident_trace(outcome: str = "llm_error") -> TagTrace:
-    """The 2026-09-11 shape, as the record holds it (issue #199).
-
-    Miles asked for a route at 16:42; the participation turn answered at
-    16:43:57 and the row is `is_nora=1 delivery_status=sent`. He tagged her in
-    the same second, having not seen it. The tag turn started 7 seconds later,
-    re-derived the route from scratch, and died with `APIError` --
-    `outcome="llm_error"`. So her delivered answer is the second-to-last row
-    of the window the dead turn was reading, and the tag is the last.
+    """A window where her delivered answer is the second-to-last row and the tag
+    is the last, on a tag turn that died with `APIError` --
+    `outcome="llm_error"`.
     """
     answer = TranscriptRow(
         id=132, sender_id="nora", sender_name=None, ts=1_757_666_637_000,
@@ -1102,8 +1028,8 @@ def _incident_trace(outcome: str = "llm_error") -> TagTrace:
 
 def _ok_with_note(body: str) -> debrief.Completion:
     """The fold answering with a position AND the note the live fold raised —
-    the shape the objective asked for until 2026-09-24. Kept so the tests can
-    show a stray `notes` field reaches nothing."""
+    kept so the tests can show a stray
+    `notes` field reaches nothing."""
     return debrief.Completion(json.dumps({
         "standing": body,
         "notes": [{
@@ -1118,19 +1044,13 @@ def _ok_with_note(body: str) -> debrief.Completion:
 
 
 async def test_a_dead_turn_never_becomes_a_claim_that_she_never_answered():
-    """**The incident, whole** (issue #199). A tag turn died with
-    `llm_error`; the fold was handed "the model call failed; nothing was
-    sent" beside a transcript whose second-to-last row was her own delivered
-    answer, and wrote the ROOM position "I have not sent a single reply
-    today". It then proposed a note on the same premise, the verdict returned
-    `grounded: true`, and ninety minutes later the proactive pass raised it at
-    the operator in a different room.
+    """A tag turn that died with `llm_error` must not make the fold write a ROOM
+    position from the turn's failure alone ("I have not sent a single reply
+    today") when her delivered answer is in the transcript.
 
-    What the fold is TOLD is the fix that remains here: the header is scoped
-    to the turn and her delivered row is marked as delivered. The stage cannot
-    assert what a model concludes, and the render IS the fix, so this is the
-    honest place to measure it. (The note refusal went with note proposals on
-    2026-09-24, and the grounding-verdict override with the verdict.)
+    What the fold is TOLD is the guard: the header is scoped to the turn and her
+    delivered row is marked as delivered. The stage cannot assert what a model
+    concludes, and the render is the guard, so this is where to measure it.
     """
     client = _Client(_ok_with_note("he is waiting on a route"))
     await _run(trace=_incident_trace(), client=client)
@@ -1156,10 +1076,9 @@ async def test_a_dead_turn_still_revises_the_position():
 
 
 async def test_the_fold_writes_the_position_and_nothing_else():
-    """The debrief compresses the room's position; it does not create notes
-    (removed 2026-09-24). It made 52 of the 64 live notes: it never saw the
-    unit's open notes and could only create, so every rewording was a new
-    note that never got revised.
+    """The debrief compresses the room's position; it does not create notes. A
+    debrief that created notes, blind to the unit's open notes, could only
+    create, so every rewording would be a new note that never got revised.
 
     Two halves. `run` is handed no note collaborator at all, so there is no
     path from a fold to the note store to leave switched on. And a model that
@@ -1178,11 +1097,11 @@ async def test_the_fold_writes_the_position_and_nothing_else():
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
 
 
-# --- design/standing-compact/10 §5 and the review's older gaps (2026-09-24) -
+# --- fold edge cases: updated_at and the watermark --------------------------
 
 
 async def test_the_priors_age_is_measured_from_the_last_write_on_the_tag_path():
-    """M6 from the review. `written` is only honest if every fold REWRITES
+    """`written` is only honest if every fold REWRITES
     `updated_at`: a write that kept the prior's would show the second fold a
     position «written» at whatever instant the row was first created, and a
     clause saying «tomorrow» would be re-judged against the wrong day. Two
@@ -1204,7 +1123,7 @@ async def test_the_priors_age_is_measured_from_the_last_write_on_the_tag_path():
 
 
 async def test_a_fold_with_an_empty_batch_carries_the_watermark_forward():
-    """M5 from the review. The watermark advances on ONE condition — a fold
+    """The watermark advances on ONE condition — a fold
     that read new rows — and is otherwise carried forward. A fold whose batch
     came back empty still WRITES (the turn's own rows are in the render), and
     a write that dropped the watermark to NULL would make the next fold
@@ -1219,7 +1138,7 @@ async def test_a_fold_with_an_empty_batch_carries_the_watermark_forward():
     assert row.last_folded_row_id == 42
 
 
-# --- the objective, v6 (design/standing-compact/10 §5) ----------------------
+# --- the objective -----------------------------------------------------------
 
 
 def _objective_body() -> str:
@@ -1229,10 +1148,9 @@ def _objective_body() -> str:
 
 
 def test_the_objective_says_a_finding_is_never_a_commitment():
-    """§5 «A finding is a finding», and it answers the security review's first
-    finding: web text shown at 4000 characters could otherwise be written as
-    her own promise, and a promise in `<standing>` is read on every later turn
-    as hers."""
+    """«A finding is a finding»: web text shown at 4000 characters could
+    otherwise be written as her own promise, and a promise in `<standing>` is
+    read on every later turn as hers."""
     body = _objective_body()
     assert "when and where I found it" in body
     assert (
@@ -1243,8 +1161,8 @@ def test_the_objective_says_a_finding_is_never_a_commitment():
 
 
 def test_the_objective_scopes_the_date_rule_to_a_day_dependent_clause():
-    """§5 «The dated rule is scoped». «Write every time as a date»
-    contradicted the worked example («而家», «下次») and the exclusion of
+    """«The dated rule is scoped»: a blanket «write every time as a date» would
+    contradict the worked example («而家», «下次») and the exclusion of
     settled dates. The absence check is paired with the presence of its
     replacement, so it cannot pass on an objective that lost both."""
     body = _objective_body()
@@ -1267,7 +1185,7 @@ def test_the_objective_describes_the_rollups_input():
 
 
 def test_the_objective_ranks_a_finding_between_a_commitment_and_the_room():
-    """§5 «A third consolidation rank», in the objective as well as the retry
+    """«A third consolidation rank», in the objective as well as the retry
     prompt: the two texts must not disagree about what to drop first."""
     body = _objective_body()
     rule = (
@@ -1278,13 +1196,12 @@ def test_the_objective_ranks_a_finding_between_a_commitment_and_the_room():
     assert "What you CONCLUDED outranks what the room SAID" not in body
 
 
-# --- the objective, v9 (design/standing-compact/30-working-set.md) --------
+# --- the objective: working set ---------------------------------------------
 
 
 def test_the_objective_v9_states_the_working_set_schema_and_its_own_sentence():
     """The objective tells the model what a working-set item IS — one
-    sentence, not a menu of cases (`context-framing-beats-capability-listing`,
-    `judgement-not-a-menu`) — and the JSON schema gains the key beside
+    sentence, not a menu of cases — and the JSON schema gains the key beside
     `standing`."""
     body = _objective_body()
     assert (
@@ -1296,7 +1213,7 @@ def test_the_objective_v9_states_the_working_set_schema_and_its_own_sentence():
 
 
 def test_the_objective_v9_does_not_enumerate_working_set_cases():
-    """`judgement-not-a-menu`: no bulleted list of "restaurants found by
+    """No bulleted list of "restaurants found by
     web_search", "other candidates from place_info", "alternate time
     slots" — exactly the shape that cost the Relevance Gate accuracy."""
     body = _objective_body()
@@ -1319,7 +1236,7 @@ async def test_the_fold_reads_the_rooms_account_the_turn_read():
     assert prompt.index("<culture") < prompt.index("<standing_prior")
 
 
-# --- working_set (design/standing-compact/30-working-set.md, issue #445) ---
+# --- working_set -------------------------------------------------------------
 
 _TOOL_STEP = (
     {"role": "assistant", "content": [
@@ -1332,7 +1249,7 @@ _TOOL_STEP = (
 
 
 async def test_found_at_is_stamped_by_the_write_path_not_the_model():
-    """§3: `found_at` is NEVER read off the model's JSON — the model is not
+    """`found_at` is NEVER read off the model's JSON — the model is not
     even asked for it, and a value it supplies anyway (a rogue or confused
     answer) is silently ignored in favour of the write path's own clock.
     `WorkingSetItem`'s own rule: "there is no second clock"."""
@@ -1352,13 +1269,12 @@ async def test_a_carried_forward_item_keeps_its_original_found_at():
     """The other half of the same rule: an item the model re-states UNCHANGED
     from its prior (same `what` AND `source`) is a CARRY-FORWARD, not a new
     find, and keeps the `found_at` it already had — without this, TTL
-    (render-time, §2) would never fire, because every fold would re-stamp
+    (render-time) would never fire, because every fold would re-stamp
     every surviving item to the current instant.
 
-    `found_at` is one hour before `now_ms_override`, deliberately WELL
-    inside the TTL: a value near epoch would (correctly, since #541's
-    review) be dropped by the write path's own TTL check, which is a
-    different guard with its own test below.
+    `found_at` is one hour before `now_ms_override`, deliberately WELL inside the TTL: a value
+    near epoch would be dropped by the write path's own TTL check, which is a different guard
+    with its own test below.
     """
     now_ms = 1_756_000_931_000
     found_at = now_ms - 3_600_000
@@ -1385,13 +1301,11 @@ async def test_a_carried_forward_item_keeps_its_original_found_at():
 
 
 async def test_a_carried_item_past_its_ttl_is_not_written():
-    """Review of #541: the write path used to preserve `found_at` on a
-    carry-forward WITHOUT checking whether that `found_at` was already past
-    the TTL — so a model that kept re-stating a stale item kept it written
-    back forever, occupying a budget slot no live item could use. The write
-    path now drops a carry-forward past `WORKING_SET_TTL_HOURS`
-    deterministically, whatever the model does — this is a SEPARATE guard
-    from `render_standing_working_set`'s own read-time filter
+    """The write path drops a carry-forward whose `found_at` is past
+    `WORKING_SET_TTL_HOURS`; otherwise a model that kept re-stating a stale item
+    would keep it written back forever, occupying a budget slot no live item
+    could use. The drop is deterministic, whatever the model does — this is a
+    SEPARATE guard from `render_standing_working_set`'s own read-time filter
     (tests/unit/test_standing.py), enforced where the row is written."""
     from nora.domain.standing import WORKING_SET_TTL_HOURS
 
@@ -1468,7 +1382,7 @@ async def test_an_item_sourced_to_a_tool_the_fold_was_shown_survives():
 
 
 async def test_an_item_whose_source_does_not_match_a_shown_step_is_dropped():
-    """§3: `source` is constrained to the SAME `<steps>` the fold was
+    """`source` is constrained to the SAME `<steps>` the fold was
     actually shown — never a paraphrase of the room's question. An item
     naming a tool this turn never called (or naming nothing at all,
     `"I reasoned it out"`) is dropped rather than written, and counted."""
@@ -1484,7 +1398,7 @@ async def test_an_item_whose_source_does_not_match_a_shown_step_is_dropped():
 
 
 async def test_a_source_that_merely_mentions_a_shown_tool_is_dropped():
-    """§3, review of #541: the check is EQUALITY, not a substring match. A
+    """The check is EQUALITY, not a substring match. A
     description that happens to contain a real tool's name —
     `"the room's own web_search question, paraphrased"` — must not pass as
     sourced just because `web_search` appears inside it somewhere; only the
@@ -1516,10 +1430,10 @@ async def test_an_unsourced_item_with_no_tool_calls_this_turn_is_dropped():
 
 
 async def test_an_over_budget_working_set_is_refused_and_the_prior_is_kept():
-    """§1: the OPERATING budget, enforced at write — an oversized new working
+    """The OPERATING budget, enforced at write — an oversized new working
     set is refused AS A WHOLE and the PRIOR one is kept unchanged, never a
     silent truncation, the same "a coherent stale position beats one cut in
-    half" argument §4.0 makes for the body."""
+    half" argument made for the body."""
     store = InMemoryStandingStore()
     kept_item = WorkingSetItem(
         what="the prior's own item", source="web_search", found_at=1_000,
@@ -1580,7 +1494,7 @@ async def test_a_missing_working_set_key_leaves_it_empty():
 
 
 async def test_a_working_set_item_is_screened_like_the_body():
-    """§3/§4.3: screened before the write, item by item, exactly like
+    """Screened before the write, item by item, exactly like
     `body`. An identifier reaching a working-set item does not get a second,
     unscreened path into the prompt just because it sits in a new field."""
     client = _Client(_ok_ws("revised", [

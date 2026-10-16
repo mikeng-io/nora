@@ -1,14 +1,9 @@
-"""Step 3b of `design/context-assembly/04-every-occasion.md` §5: the Cognition
-session's prompt is built from context-assembly blocks, and THIS is what it now
-reads, over the fixtures step 3a captured its old format from.
+"""Golden test of the Cognition session's prompt, built from context-assembly blocks.
 
-The cases are the ones step 3a froze (`tests/fixtures/cognition_render_pre3b_
-baseline.json`, captured from `master` at `2ae69a51` before the module moved,
-kept untouched and renamed: it is the old-format oracle that
-`test_cognition_render_parity.py` reads facts out of). What is compared here is
-`render_agenda`'s whole prompt (and `clock_line` and `ago` themselves) against the
-capture of the NEW format, `tests/fixtures/cognition_render_step3b_goldens.json`,
-over what a later rewrite could disagree on:
+Compared here: `render_agenda`'s whole prompt (and `clock_line` and `ago`
+themselves) against the capture in
+`tests/fixtures/cognition_render_step3b_goldens.json`, over what a later
+rewrite could disagree on:
 
 * messages: one, many, an older day, an edit, a withdrawn body, a reaction, a
   delete, cues, a body with a newline, a body past its clip;
@@ -446,12 +441,13 @@ def _() -> str:
     return _render(stims, _g(*recs), budget=cr.RenderBudget(record_chars=3000, min_item_chars=500))
 
 
-@_case("budget-drops-exactly-one-earlier-message")  # in the 3a format; see the parity test
+@_case("budget-drops-exactly-one-earlier-message")
 def _() -> str:
     stims, recs = _chatty(count=5, width=80)
-    # 645 is what the step 3a baseline's own `need - 40` came to for these five
-    # rows (685 characters of old lines): a literal, so this case asks the same
-    # question of both formats and not one measured by the format under test.
+    # 645 is the old format's `need - 40` for these five rows (685 characters of
+    # old lines): a literal, so the budget is the same whatever the rendering.
+    # Only the old format drops exactly one message at it; the parity test
+    # treats every `budget-*` case as a tight budget.
     return _render(stims, _g(*recs), budget=cr.RenderBudget(
         record_chars=645, min_item_chars=50,
     ))

@@ -1,5 +1,5 @@
 """A draw workspace's NAME: in the eval namespace, legal to Honcho, traceable,
-unique (issue #462). The lifecycle against a server is
+unique. The lifecycle against a server is
 `tests/integration/test_eval_draws_isolate_honcho.py`."""
 
 from __future__ import annotations

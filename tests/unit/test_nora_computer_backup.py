@@ -1,14 +1,14 @@
 """`nora-computer backup`, `restore` and the backup `destroy` takes first.
 
-A recreate deletes /workspace and the audit saw three recreates in 24 hours, so
-the VM's disk is backed up nightly to the host and `destroy` refuses to run
-without a backup. Driven through the stub host with a directory standing in for
-the VM (`tests/unit/nora_computer_harness.py`): a real `tar`, a real `sha256`,
-real files, and stubs only where a VM is needed (users, ownership, `sbx`).
+A recreate deletes /workspace, so the VM's disk is backed up nightly to the host
+and `destroy` refuses to run without a backup. Driven through the stub host with
+a directory standing in for the VM (`tests/unit/nora_computer_harness.py`): a
+real `tar`, a real `sha256`, real files, and stubs only where a VM is needed
+(users, ownership, `sbx`).
 
 What this cannot show is a real sbx: `sbx exec` carrying a tar and `sbx cp`
 moving it with the same digest on both sides is the README's read-back on norty,
-UNVERIFIED until run (the 2026-09-30 spike measured `sbx cp` as digest-exact).
+UNVERIFIED until run.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ def test_a_backup_holds_the_rooms_files_and_leaves_the_cookies_out(host: Host) -
     assert f"{ROOM_A}/projects/report/data.csv" in names
     assert f"{ROOM_A}/inbox/a.txt" in names
     assert f"{ROOM_B}/projects/other/main.py" in names
-    # A Chromium profile is a credential store: never backed up (design sec 7).
+    # A Chromium profile is a credential store: never backed up.
     assert not any("/browser/Default" in n for n in names), names
     # But a PROJECT directory that happens to be called `browser` is the room's
     # own work, and a wildcard exclude would have eaten it.

@@ -1,7 +1,6 @@
-"""`instagram_search` end to end below the model (design/instagram-adoption/18
-§`instagram_search`, /17 P11): the tool validates and screens the query, the
-REAL router dispatches the `named` read to the bridge row, and the REAL
-client reads `GET /accounts?query=`.
+"""`instagram_search` end to end below the model: the tool validates and
+screens the query, the REAL router dispatches the `named` read to the bridge
+row, and the REAL client reads `GET /accounts?query=`.
 
 Only the bridge is fake: an aiohttp server answering the shared contract
 fixtures the Go handlers generate (`tests/fixtures/instagram_bridge/
@@ -217,8 +216,8 @@ async def test_a_display_name_is_one_line_and_clamped(world):
 async def test_a_display_name_cannot_forge_the_verified_badge(world):
     """The badge comes before the name and is stated either way; the name is
     labelled and last, so a name claiming the badge is read as part of the
-    name. With the old `@handle (name), verified` shape this exact name
-    rendered as a verified account."""
+    name. A `@handle (name), verified` shape would render this exact name
+    as a verified account."""
     fake, search = world()
     fake.search = _ok_with([_hit("nike_example", "Nike), verified (official")])
     out = await search(query="example")
@@ -350,9 +349,8 @@ async def test_the_limit_is_the_bridges_and_the_query_leaves_trimmed(world):
 
 @pytest.mark.parametrize("query", ["+85212345678", "22.31,114.16"])
 async def test_an_identifier_or_coordinate_never_leaves_in_a_search(world, query):
-    """The egress screen the X tools apply to what they send (design/14
-    §2.2): a phone number or a raw coordinate is not a search Instagram gets
-    to see."""
+    """The egress screen the X tools apply to what they send: a phone number or a raw
+    coordinate is not a search Instagram gets to see."""
     fake, search = world()
     out = await search(query=query)
 
@@ -362,7 +360,7 @@ async def test_an_identifier_or_coordinate_never_leaves_in_a_search(world, query
 
 
 async def test_every_request_is_a_get_on_the_accounts_resource(world):
-    """Read-only at the client layer (18 §"Read-only, at three layers"): the
+    """Read-only at the client layer: the
     bridge also serves writes, so on this path the client is what keeps them
     out of reach."""
     fake, search = world()
@@ -383,7 +381,7 @@ async def test_every_request_is_a_get_on_the_accounts_resource(world):
 async def test_a_search_runs_in_a_background_turn_too(world, turn):
     """Unlike a story read, the TOOL has no turn rule: built into a fire or
     Dreamer turn, it searches. Whether any adaptor is granted it is an open
-    operator decision (design/instagram-adoption/18), and none is today; this
+    operator decision, and none is today; this
     pins the tool's behaviour, not that decision."""
     fake, search = world(**turn)
     assert (await search(query="example"))["status"] == "ok"
@@ -398,7 +396,7 @@ async def test_unwired_is_unavailable_saying_so():
 
 async def test_an_unwired_bridge_row_never_fails_over_to_the_default():
     """Only the OpenCLI default is composed. The search is `unavailable`, and
-    the default, which serves X only, is never asked (`15`)."""
+    the default, which serves X only, is never asked."""
     default = FakeSocialProvider({("instagram", "search"): {"status": "ok"}})
     out = await _tool(SocialRouter(default=default))(query="example")
 

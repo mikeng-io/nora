@@ -1,5 +1,4 @@
-"""The step-2 gate for the presence Rollup (design/cognition-loop/25-rollup.md
-§2, 70-migration.md §2 row 2): «incremental and batch builds of each rollup
+"""The gate for the presence Rollup: «incremental and batch builds of each rollup
 agree exactly».
 
 One synthetic Record — two people, four days of resting fixes at Life360's
@@ -13,8 +12,8 @@ presence rollup, and where each fold stands, must be identical across the
 three. Surrogate ids differ between builds by design; rows are compared by
 what they say.
 
-The 3.4% this replaces (design 27): the old incremental path decided every
-tail on the wall clock it was handed and a batch decided it on the next fix;
+The wall-clock case: an incremental path that decided every tail on the wall
+clock it was handed would disagree with a batch that decides on the next fix;
 `test_a_quiet_phone_at_home_is_one_stay_on_every_schedule` is that case in
 isolation.
 """
@@ -245,10 +244,10 @@ async def test_every_schedule_folds_the_record_into_the_same_rollup(seed, shuffl
 
 
 async def test_a_quiet_phone_at_home_is_one_stay_on_every_schedule():
-    """The 3.4% root cause, alone: one fix at home, then 40 minutes with no
-    fix at all, then fixes at home again. The old incremental path closed the
-    stay on the wall clock after `DWELL_CAP_MS` and opened a second; a batch
-    re-derive saw the next fix and kept one. On the fold, the close needs a
+    """The wall-clock case, alone: one fix at home, then 40 minutes with no
+    fix at all, then fixes at home again. A path that closed the stay on the
+    wall clock after `DWELL_CAP_MS` would open a second; a batch
+    re-derive sees the next fix and keeps one. On the fold, the close needs a
     poll proving the time passed, so the answer depends on the Record only:
     with no poll in the silence it is one stay on every schedule, and with
     polls in the silence it is two on every schedule."""

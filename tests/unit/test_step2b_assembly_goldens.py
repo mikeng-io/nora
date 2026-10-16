@@ -1,12 +1,11 @@
-"""Step 2b of `design/context-assembly/04-every-occasion.md` §5: the reaction
-picker and the debrief declare a `_BLOCKS` table and are built through
-`assemble`, and the debrief's hand-built prompt text moves out of the stage into
-its renderer. NOT ONE BYTE any model reads changes.
+"""The reaction picker and the debrief declare a `_BLOCKS` table and are built
+through `assemble`, and the debrief's prompt text lives in its renderer. NOT ONE
+BYTE any model reads differs from the hand-joined form.
 
 **The goldens in `tests/fixtures/context_assembly_step2b_goldens.json` were
-captured from `master` at `a6d780d5`, BEFORE either was touched**, over
-synthetic fixtures, and are the criterion. What is compared is the whole text
-each occasion sends, not a substring of it:
+captured from the hand-joined occasions**, over synthetic fixtures, and are the
+criterion. What is compared is the whole text each occasion sends, not a
+substring of it:
 
 * the reaction picker: BOTH prompts it sends (the first question's and the
   second's), each as `(system, prompt)`. A first question over an empty window,
@@ -22,22 +21,21 @@ each occasion sends, not a substring of it:
   caps, a multi-paragraph objective. The pair is read at the model client, so
   the capture does not depend on where the prompt text is built.
 
-Nothing here regenerates a golden. Changing one is a model-visible change and
-belongs in a step that says so.
+Nothing here regenerates a golden. Changing one is a model-visible change.
 
-**One golden value was edited by step 4c, and only its two speaker fields**
-(`reaction-names-and-bodies-carrying-markup`, both prompts): `render_recent` now
-strips `[ ] :` from a speaker as every other transcript renderer does, so master's
-`Zoe [admin]: ...` and `Miles [owner]: Novak: c` read `Zoe admin ...` and `Miles
-owner Novak: c`. Every other byte of that case, and every other case here, is
-master's. `tests/unit/test_step4c_edge_goldens.py` states the difference.
+**Two speaker fields of one golden differ from the hand-joined form**
+(`reaction-names-and-bodies-carrying-markup`, both prompts): `render_recent`
+strips `[ ] :` from a speaker as every other transcript renderer does, so the
+hand-joined `Zoe [admin]: ...` and `Miles [owner]: Novak: c` read `Zoe admin ...`
+and `Miles owner Novak: c`. Every other byte of that case, and every other case
+here, is the hand-joined form's. `tests/unit/test_step4c_edge_goldens.py` states
+the difference.
 
 `test_the_empty_pairs_a_hand_join_kept_are_kept` pins the one thing the
 conversion could have changed and does not: `assemble` drops an empty body, and
 every one of these occasions hand-joined its pieces, so a block that is
 empty (or escapes to nothing) was rendered as an empty pair. Each such block
-opts in with `when_empty="render"`, which is why there is no accepted
-difference in this step.
+opts in with `when_empty="render"`, so there is no accepted difference.
 """
 
 from __future__ import annotations
@@ -515,7 +513,7 @@ def test_the_empty_pairs_a_hand_join_kept_are_kept():
     """The shapes `assemble` would DROP, each in its golden: a window with no
     rows (an empty `<transcript>`), a turn with no steps (an empty `<steps>`),
     an empty reaction window and a reply that escapes to nothing, a prior and a
-    culture that escape to nothing,."""
+    culture that escape to nothing."""
     empty = GOLDEN["input-an-empty-window-and-a-turn-with-no-steps"]
     assert ">\n\n</transcript>" in empty and ">\n\n</steps>" in empty
     window = GOLDEN["reaction-an-empty-window"][0][1]

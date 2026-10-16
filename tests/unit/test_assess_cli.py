@@ -1,9 +1,8 @@
-"""`nora assess run-nightly`'s exit code (design/cognition-loop/30-cognition.md
-§6, DEC-240; `nora.app.cli.cmd_assess_run_nightly`). Everything below `_config`
-and `assess_run_nightly` is faked — no config file, no database — because the
-one fact under test is the exit-code arithmetic: nonzero when ANY check came
-back `fail` OR `error` (PR #623 review: an errored check must not read as a
-clean, zero-exit night)."""
+"""`nora assess run-nightly`'s exit code (DEC-240; `nora.app.cli.cmd_assess_run_nightly`).
+Everything below `_config` and `assess_run_nightly` is faked (no config file, no
+database) because the one fact under test is the exit-code arithmetic: nonzero
+when ANY check came back `fail` OR `error`.
+"""
 
 from __future__ import annotations
 
@@ -53,10 +52,9 @@ async def test_exit_code_is_nonzero_on_a_fail(monkeypatch):
 
 
 async def test_exit_code_is_nonzero_on_an_error_with_no_fail(monkeypatch):
-    """PR #623 review: a check that raised (status=error) must make the exit
-    code nonzero exactly like a check that ran clean and found a violation —
-    an operator scripting on this exit code must not see an errored check as
-    a quiet, all-clear night."""
+    """A check that raised (status=error) makes the exit code nonzero exactly like
+    a check that ran clean and found a violation: an operator scripting on this
+    exit code must not see an errored check as an all-clear night."""
     rc = await _run(monkeypatch, (
         DqCheckResult(check="cross_room_duplicate_events", status="ok"),
         DqCheckResult(

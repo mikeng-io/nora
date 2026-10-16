@@ -1,5 +1,4 @@
-"""`nora events backfill-units` (B3(b), `nora.app.events_backfill`,
-design/cognition-loop/70-migration.md §8, DEC-237): sets `unit_id` on every
+"""`nora events backfill-units` (`nora.app.events_backfill`, DEC-237): sets `unit_id` on every
 pre-migration event (`unit_id=""`) from its conversation's `policy.toml`
 unit. Dry run by default; only `--apply` writes, through the SAME
 `GatheringStore.update` `update_event` writes through."""

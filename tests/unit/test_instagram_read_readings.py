@@ -1,6 +1,5 @@
 """`instagram_read` returns what each item of a post, reel or story SHOWS,
-read by `media_fetch` itself (design/instagram-adoption/18 §"Typed views, one
-renderer, and readings").
+read by `media_fetch` itself.
 
 Two halves:
 
@@ -143,8 +142,8 @@ class ScriptedLook:
 
 
 def test_the_budgets_are_the_ones_the_design_states():
-    """18 §Readings states these numbers and their reasons; a change to one
-    is a design change, not a tweak."""
+    """These numbers are design limits; a change to one is a design change, not
+    a tweak."""
     assert (MAX_READ_ITEMS, MAX_READ_VIDEOS, READ_CONCURRENCY) == (8, 3, 4)
     assert (ITEM_TIMEOUT_SECONDS, TOTAL_TIMEOUT_SECONDS) == (150.0, 180.0)
 
@@ -223,8 +222,8 @@ async def test_the_turns_own_deadline_bounds_the_readings():
 async def test_cancelling_the_read_stops_every_look_before_it_returns():
     """The turn's `wait_for` fired, or the read was stopped: every look still
     running is cancelled AND finished before the cancellation propagates,
-    and no further look starts. Before this, `asyncio.wait` left all eight
-    running after the tool had returned, and each wrote its cache later."""
+    and no further look starts. Looks left running after the tool returned
+    would each write their cache later."""
     look = ScriptedLook(delay=0.3)
     task = asyncio.ensure_future(read_view(_post(8), TurnLook(look)))
     await asyncio.sleep(0.05)
@@ -351,8 +350,8 @@ async def test_a_look_that_never_got_a_slot_says_it_never_started():
     ids=["partial", "whole", "only_a_sentence"],
 )
 def test_a_videos_coverage_sentence_is_split_off_its_description(description, body, coverage):
-    """#117's sentence is the reading's last line, in parentheses. Split off,
-    the renderer can clamp the description and never the admission."""
+    """The coverage sentence is the reading's last line, in parentheses. Split
+    off, the renderer can clamp the description and never the admission."""
     got = split_coverage(description)
     assert got == ((body, coverage) if body else (description, None))
     reading = reading_of({"status": "ok", "description": description}, video=True)

@@ -1,13 +1,9 @@
-"""`generate_image`'s text, held to ADR 0015 ahead of the policy's own tests.
+"""`generate_image`'s text, held to ADR 0015.
 
-0015 §5 lands its level, dash and note tests with the first rewrite batch,
-and `generate_image` is not in it. It was rewritten on 2026-09-24 when the
-operator split it from the image-generation skill: the docstring describes
-the TOOL (what it does, when to call it, its parameters and statuses), the
-skill carries the JUDGEMENT (whether she is in the picture, her look, what
-the picture states, each model's conventions). These pin both halves of that
-for this one tool, so the split cannot drift back while the general tests
-are still to come.
+The docstring describes the TOOL (what it does, when to call it, its parameters
+and statuses); the image-generation skill carries the JUDGEMENT (whether she is
+in the picture, her look, what the picture states, each model's conventions).
+These pin both halves of that split for this one tool.
 
 Read from the source with `ast`, the way `tests/test_tool_surface_policy.py`
 reads every tool, and counted over what Strands sends: the whole docstring
@@ -28,8 +24,7 @@ TOOLS = Path(__file__).resolve().parents[2] / "nora" / "agent" / "tools.py"
 SKILLS_DIR = Path(__file__).resolve().parents[2] / "nora" / "skills"
 
 #: ADR 0015 §3's Level 3 ceiling: Level 1 plus a contract of statuses she
-#: acts on differently. Measured at 307 on 2026-09-25 (275 before the skill
-#: pointer, 667 before ADR 0015).
+#: acts on differently.
 LEVEL_3_CEILING = 320
 
 
@@ -99,7 +94,7 @@ def test_the_description_fits_level_3():
 
 def test_the_description_lists_exactly_the_statuses_the_tool_returns():
     """The description names the statuses, the result explains them (0015
-    §3). `held_for_review` was returned and never named until 2026-09-24."""
+    §3)."""
     listed = set(re.findall(r"^- `([a-z_]+)`:", _description(), re.MULTILINE))
     assert listed == _returned_statuses() == {
         "ok", "held_for_review", "nothing_found", "unavailable",
@@ -107,8 +102,8 @@ def test_the_description_lists_exactly_the_statuses_the_tool_returns():
 
 
 def test_every_result_carries_a_note():
-    """How to report a result is in the result: the `ok` branches carried no
-    note, and what to do on `ok` (never quote the handle, paste no link) was
+    """How to report a result is in the result: the `ok` branches carry a note,
+    and what to do on `ok` (never quote the handle, paste no link) is not
     description text paid on every call."""
     missing = [
         ast.unparse(node) for node in _result_dicts()
@@ -145,10 +140,9 @@ def test_fixed_options_are_types_not_prose():
         assert listed not in _description(), listed
 
 
-#: The live failure (2026-09-24, WhatsApp): the operator asked "draw yourself
-#: again", the model called `generate_image` straight from memory with no
-#: `reference` and never loaded the skill that holds the canonical handle and
-#: the appearance rules. The fix points the tool AT the skill rather than
+#: A model asked to draw herself could call `generate_image` straight from
+#: memory with no `reference`, never loading the skill that holds the canonical
+#: handle and the appearance rules. So the tool points AT the skill rather than
 #: copying the skill's content into the tool (single source of truth); these
 #: two tests pin the pointer and that it cannot dangle.
 _SKILL_NAME_RE = re.compile(r"\bthe ([a-z][a-z0-9-]*) skill\b")

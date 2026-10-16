@@ -1,7 +1,6 @@
-"""`media_fetch` looks at a picture or a video somebody shared a LINK to
-(design/external-files/00-design.md §2): one neutral question, «the bytes for
-this code or link», answered in order by a chat attachment's code, then a
-shared file's link handle or a pasted file link (the one
+"""`media_fetch` looks at a picture or a video somebody shared a LINK to: one
+neutral question, «the bytes for this code or link», answered in order by a chat
+attachment's code, then a shared file's link handle or a pasted file link (the one
 `ExternalFilesSource`), then a public download.
 
 Built through `build_tool_specs`, as production builds it (the link-owner
@@ -218,7 +217,7 @@ async def test_a_shared_picture_is_looked_at_through_the_source(args):
 
 
 async def test_two_looks_are_two_fetches_and_nothing_is_kept():
-    """NEVER CACHED (operator, 2026-10-10): a linked file changes. A cache
+    """NEVER CACHED: a linked file changes. A cache
     that would answer anything is never asked, nothing is written to it, to
     custody or to the index, and each call fetches the bytes afresh."""
     server = _server()

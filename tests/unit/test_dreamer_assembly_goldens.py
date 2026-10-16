@@ -1,11 +1,9 @@
-"""Step 2a of `design/context-assembly/04-every-occasion.md` §5: the culture
-adaptor, which declared `_BLOCKS` and joined its blocks by hand, now WALKS
-`assemble`, so the table's `order` is the order the model reads, and NOT ONE
-BYTE any model reads changes.
+"""The culture adaptor WALKS `assemble`, so the table's `order` is the order the
+model reads, and the text it reads is byte-identical to the hand-joined form.
 
 **The goldens in `tests/fixtures/context_assembly_step2a_goldens.json` were
-captured from `master` at `7fd3cbb6`, BEFORE any adaptor was touched**, over
-synthetic fixtures, and are the criterion. What is compared is the adaptor's
+captured from the hand-joined adaptor**, over synthetic fixtures, and are the
+criterion. What is compared is the adaptor's
 whole `inputs()` text, not a substring of it, over the cases a hand join and
 `assemble` could disagree on:
 
@@ -19,12 +17,10 @@ whole `inputs()` text, not a substring of it, over the cases a hand join and
   restamped with the occasion's own row;
 * long content: a long account, a batch of many rows.
 
-Nothing here regenerates a golden. Changing one is a model-visible change and
-belongs in a step that says so. The one such change so far: the culture
-adaptor stopped reading the room's `standing` (self-growth C2b review,
-2026-10-07, R-31: its account is input to accounts shown in every room of the
-unit), so the culture goldens no longer carry a `<standing>` block and the
-case that varied it alone is gone.
+Nothing here regenerates a golden. Changing one is a model-visible change.
+The culture adaptor does not read the room's `standing` (R-31: its account is
+input to accounts shown in every room of the unit), so no culture golden
+carries a `<standing>` block.
 """
 
 from __future__ import annotations
@@ -51,11 +47,10 @@ CASES: dict[str, Callable[[], Awaitable[str]]] = {}
 
 
 #: The wall clock the culture block's `written=` age is measured against.
-#: `render_culture` defaults to `datetime.now()`
-#: (production wants exactly that), so a golden that records "391d ago" was true
-#: on the day it was captured and false the next day: it went red on
-#: 2026-10-02, a day after merging. 391 days and half a day after the culture
-#: fixtures' `T0` (`cul.T0`), so every age lands well inside its bucket.
+#: `render_culture` defaults to `datetime.now()` (production wants exactly
+#: that), so a golden recording "391d ago" would go stale as days pass. The
+#: fixed clock is 391 days and half a day after the culture fixtures' `T0`
+#: (`cul.T0`), so every age lands well inside its bucket.
 _FROZEN_NOW = datetime.fromtimestamp((cul.T0 + 391 * 86_400_000 + 43_200_000) / 1000, tz=UTC)
 
 
@@ -231,14 +226,12 @@ def test_the_goldens_vary_the_blocks_this_step_is_about():
 
 async def test_a_body_that_escapes_to_nothing_is_dropped_like_the_tag_path():
     """A block whose body is non-empty but escapes to NOTHING (control
-    characters only; `\\x01\\x08` is storable, `\\x00` is not in Postgres) used
-    to render as an empty `<previous_account>` pair, because a hand join keeps
-    every string it is handed. `assemble` drops an empty body, as the tag turn
-    already does, so the empty pair is gone. That is a change to what the model
-    reads, for input no person produces; step 2a accepts it rather than
-    carrying a `when_empty` flag for every block that can come out empty
-    (found by the independent review of #683). The goldens above cover none of
-    these inputs, so this pins the decision."""
+    characters only; `\\x01\\x08` is storable, `\\x00` is not in Postgres) renders
+    no empty `<previous_account>` pair: `assemble` drops an empty body, as the
+    tag turn does, where a hand join would keep every string it is handed. This
+    differs from the hand-joined form for input no person produces, and the
+    adaptor carries no `when_empty` flag for blocks that can come out empty.
+    The goldens above cover none of these inputs, so this pins the behaviour."""
     store = InMemoryCultureStore()
     await store.append(
         key=cul.KEY, body="\x01\x08", written_at=cul.T0, established_by="t",

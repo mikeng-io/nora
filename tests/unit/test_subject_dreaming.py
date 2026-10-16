@@ -1,8 +1,8 @@
 """`nora.subject.dreaming.with_roster_senders` — the eval dream path's batch
-carries sender ids the roster resolves, as production's rows do (design 42
-S1a). Without it the sandbox's minted ids resolve nobody, a scope-keyed adaptor's
-own roster projection is a no-op in every eval run, and a before/after on
-S1a measures the old input on both arms."""
+carries sender ids the roster resolves, as production's rows do. Without it
+the sandbox's minted ids resolve nobody, a scope-keyed adaptor's
+own roster projection is a no-op in every eval run, and a before/after
+measures the old input on both arms."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def test_rows_production_could_not_resolve_either_are_left_alone():
 
 
 def test_batch_after_keeps_only_rows_after_the_watermark_instant():
-    """design 42 plan item 5: a case can pin production's own batch window."""
+    """A case can pin production's own batch window."""
     from nora.subject.dreaming import batch_after
 
     rows = [_row(i, sender_id="s", person_id=None) for i in (1, 2, 3)]

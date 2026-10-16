@@ -1,14 +1,12 @@
-"""The Cognition prompt's size budget after step 3b of `design/context-assembly/
-04-every-occasion.md` §5: `_fit`, `_shares` and `RenderBudget` are a row-SELECTION
-pre-step, the blocks render what they chose, and a row is never cut through its
-own element.
+"""The Cognition prompt's size budget: `_fit`, `_shares` and
+`RenderBudget` are a row-SELECTION pre-step, the blocks render what they chose,
+and a row is never cut through its own element.
 
-What stayed (and is held by the ported tests in `test_cognition_grounding.py`
-and by the baseline parity test): the floors, the shares by need, the hard cap
-on the Record rows together, the NEWEST rows kept, the cut said with a count and
-a range. What these add is what changing the unit of a row from a line to an
-element could break: a row clipped to its share is still a whole element, the
-cap holds across every budget a real item can be handed, and the Register's
+Held by `test_cognition_grounding.py` and by the baseline parity test: the
+floors, the shares by need, the hard cap on the Record rows together, the NEWEST
+rows kept, the cut said with a count and a range. What these add is what a row
+being an element, not a line, could break: a row clipped to its share is still a
+whole element, the cap holds across every budget a real item can be handed, and the Register's
 rows are left out whole and counted.
 """
 
@@ -197,8 +195,8 @@ def test_every_note_and_event_is_listed_with_its_own_id_and_an_old_description_i
 def _markup_prompt(record_chars: int, *, items_: int = 12, text: str = '&<"' * 140) -> str:
     """`items_` items of one message each, every message 420 characters that
     escape to about 1,900 (`&` is five characters, `<` four, `"` six in an
-    attribute and one in text), the shape that let a cut by RAW length spend 3.1
-    times its share: 12 such items rendered 24.6k characters at the default 8,000."""
+    attribute and one in text): the shape on which a cut by RAW length would
+    overspend its share many times over."""
     stimuli: dict[int, Stimulus] = {}
     records: dict[str, RecordItem] = {}
     agenda: list[AgendaItem] = []
@@ -279,8 +277,8 @@ def test_the_memos_block_comes_last_newest_first_and_never_shows_what_a_memo_kee
 
 
 def test_many_memos_never_push_an_agenda_rooms_events_out():
-    """Review of #781: memos drew on `register_chars` and could leave every
-    event unlisted. On their own budget, after the events, they cannot."""
+    """Memos do not draw on `register_chars`: on their own budget, after the events,
+    they cannot leave every event unlisted."""
     agenda, stimuli, grounding = _world(per_room=1, words=5)
     grounding = Grounding(
         records=grounding.records, room_labels=LABELS,

@@ -1,15 +1,11 @@
 """The deterministic evaluators — mechanical facts, no judge, no model.
 
-Split out of `tests/test_evals_gate.py` when the old eval CLI was deleted
-(`design/evaluation/` Step 5). That file also drove `evals.run`, `evals.sink`
-and `evals.proactive`, which went; these assertions need only the evaluators
-themselves and `Trajectory`.
+These assertions need only the evaluators themselves and `Trajectory`.
 
-**It carries an ACCEPTANCE RULE.** `test_no_redundant_read_fails_when_prefill_
-was_sufficient` is R-15's only named test (`tests/test_acceptance_rules.py`),
-and the delete would otherwise have taken a rule with it — which is how the
-first attempt at Step 5 was found unsafe. A grader that dies with its driver
-takes whatever it enforced along with it.
+**It carries an ACCEPTANCE RULE.** `test_no_redundant_read_fails_when_prefill_was_sufficient`
+is R-15's only named test (`tests/test_acceptance_rules.py`), so deleting this
+file would take a rule with it. A grader that dies with its driver takes
+whatever it enforced along with it.
 """
 from __future__ import annotations
 
@@ -53,7 +49,7 @@ def test_no_send_without_trigger_fails_on_any_send():
 
 
 def test_tool_budget_enforces_the_r7_limits():
-    # Derived from the live budgets (doubled per operator 2026-08-08), so a
+    # Derived from the live budgets, so a
     # budget change cannot silently un-test the R-7 ceiling: exactly the budget
     # is allowed, one more is refused.
     from nora.agent.tools import NATIVE_TOOL_BUDGETS as B
@@ -85,6 +81,6 @@ def test_honcho_fed_once_per_delivered_reply():
 
 
 def test_deterministic_evaluators_are_hard_gates():
-    """No confidence weighting — these are mechanical facts (spec E.4)."""
+    """No confidence weighting — these are mechanical facts."""
     result = RepliesAtLeastOnce().evaluate(_t([], [], None))
     assert not hasattr(result, "confidence")

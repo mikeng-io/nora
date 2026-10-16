@@ -1,5 +1,4 @@
-"""`[speech.tts]`'s knobs added with the speech formatter
-(design/voice-channel/08): refused at load, not by the vendor mid-turn."""
+"""`[speech.tts]`'s knobs are refused at load, not by the vendor mid-turn."""
 
 from __future__ import annotations
 
@@ -17,7 +16,7 @@ def test_the_formatter_ships_off(example_config):
 
 
 def test_whisper_is_refused_because_speech_2_8_does_not_support_it():
-    """The vendor's page (2026-10-01): speech-2.8 models do not support
+    """Per the vendor's documentation, speech-2.8 models do not support
     `whisper`. Accepting it would fail every synthesis and send every spoken
     reply as text."""
     with pytest.raises(ValidationError):

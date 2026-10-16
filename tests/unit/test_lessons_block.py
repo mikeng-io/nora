@@ -1,4 +1,4 @@
-"""The `<lessons>` block (design/self-growth/40-lessons.md, L5).
+"""The `<lessons>` block.
 
 What must hold, each with the way it would fail:
 

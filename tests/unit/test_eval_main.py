@@ -1,8 +1,7 @@
 """`python -m evals` — corpus selection, no DB/network.
 
-Miles's own framing: no reason a one-line change should cost a 4-5 hour full
-run, so `--corpus`/`--class`/`--all` must actually narrow what runs, and
-picking nothing must refuse rather than silently running everything.
+A one-line change must not cost a full run, so `--corpus`/`--class`/`--all` must actually narrow
+what runs, and picking nothing must refuse rather than silently running everything.
 """
 
 from __future__ import annotations
@@ -59,7 +58,7 @@ def test_judged_corpora_are_reachable_by_class():
     otherwise `--class S3` silently runs nothing."""
     s3 = set(_corpora_for(_args(cls=["S3"])))
     s9 = set(_corpora_for(_args(cls=["S9"])))
-    # `standing` (the fold, design/standing-compact) is judged and sits in S6,
+    # `standing` (the fold) is judged and sits in S6,
     # the class of what a WRITE keeps.
     s6 = set(_corpora_for(_args(cls=["S6"])))
     assert s3 | s9 | (s6 & JUDGED_CORPORA) == JUDGED_CORPORA
@@ -67,7 +66,7 @@ def test_judged_corpora_are_reachable_by_class():
 
 
 def test_positions_prints_each_draws_written_position_and_its_length(capsys):
-    """#445: the judge's reason cannot say WHY a finding was left out, and the
+    """The judge's reason cannot say WHY a finding was left out, and the
     position's length against the cap is the first thing that does. The row
     is the `EvaluationData` dump, so the position rides on its
     `actual_environment_state` — read by NAME, so a sibling state cannot be

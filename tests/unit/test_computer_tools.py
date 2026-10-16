@@ -1,4 +1,4 @@
-"""The computer tools (design/sandbox-runtime §4, §12, DEC-243):
+"""The computer tools (DEC-243):
 `computer_run`, `computer_read`, `computer_write`, `computer_edit`.
 
 Driven through `build_tool_specs`, the wiring the tag path uses, against the
@@ -322,7 +322,7 @@ async def test_the_actor_follows_the_turns_provenance(persons):
 async def test_a_read_stores_the_content_it_received_and_says_it_was_cut(persons):
     """computerd answers at most the limit the tool asks for, so the blob holds
     exactly what the client received and `truncated` records that the file
-    had more (design: store what was received, never pretend it is all)."""
+    had more (store what was received, never pretend it is all)."""
     events = FakeComputerEventStore()
     blobs = FakeBlobStore()
     tools = _tools(persons, computer=FakeSandboxRuntime(), events=events, blobs=blobs,

@@ -1,11 +1,10 @@
 """`nora.subject.sandbox.judge_source` — the window a judge grades a reply
-against, rendered the way SHE was shown it (#458).
+against, rendered the way SHE was shown it.
 
 The judge is told to fail any reply that attributes a line to a person unless
-the data links the person to it. Until #458 the data was one BODY per line: no
-speaker, nothing marking her own lines. So a reply that correctly said «you
-asked that twice yesterday» was graded a fabrication, because the source
-linked nobody to anything (measured 2026-09-24 re-judging the presence corpus).
+the data links the person to it. The data carries a speaker per line and marks her own lines: with
+one BODY per line, a reply that correctly said «you asked that twice yesterday» would be graded a
+fabrication, because the source would link nobody to anything.
 
 What is pinned here, each on its own:
 
@@ -16,7 +15,7 @@ What is pinned here, each on its own:
 - the joined source IS the `<group_transcript>` body she was shown, byte for
   byte — so the judge verifies against what she read, not a second format;
 - one element per row, even when a body carries newlines or a forged tag;
-- the attribution the issue was about: the source links the asker to both of
+- the attribution case: the source links the asker to both of
   their questions, and links a bystander to neither.
 
 The judge's own verdict is a model call and is not in the gate; what the gate
@@ -93,7 +92,7 @@ def _speaker(element: str) -> str:
     return match.group(1)
 
 
-#: The issue's own shape: Miles asked the same thing twice yesterday, Grant
+#: The attribution shape: Miles asked the same thing twice yesterday, Grant
 #: answered something else, she replied once, and today Miles asks again.
 #: Grant's profile name is a nickname, so a render that used it would name
 #: somebody the roster does not.
@@ -192,10 +191,10 @@ def test_one_element_per_row_whatever_a_body_carries() -> None:
 def test_an_attribution_is_linked_by_the_source_only_when_it_is_true(
     claimed: str, linked: bool,
 ) -> None:
-    """The judgement #458 found the judge could not make. «You asked that
+    """The judgement the judge cannot make without speakers. «You asked that
     twice yesterday» is grounded exactly when the source puts the claimed
-    speaker on two earlier elements carrying that question, a day old — the
-    fact the judge reads, now present in what it is handed."""
+    speaker on two earlier elements carrying that question, a day old — the fact the judge reads,
+    present in what it is handed."""
     source = _source(ROOM)
     asked = [e for e in source if "幾點開始？" in e and _speaker(e) == claimed]
     assert (len(asked) == 2) is linked

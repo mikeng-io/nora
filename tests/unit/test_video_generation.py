@@ -1,9 +1,9 @@
-"""`video_create` (design/video-generation): the MiniMax CN adapter, the daily cap, the tool's
+"""`video_create`: the MiniMax CN adapter, the daily cap, the tool's
 gates, boot recovery for a durable kind, and the link-delivered clip.
 
 The adapter runs against `httpx.MockTransport` answering the way the provider does, including
 its two wrong-call shapes: a refusal at create, and a task id followed by a failure that only
-the POLL reports (`task.error`, measured 2026-10-02). No test reaches the network.
+the POLL reports (`task.error`). No test reaches the network.
 """
 
 from __future__ import annotations
@@ -149,7 +149,7 @@ async def test_create_sends_the_fixed_settings_and_each_reference_as_a_data_uri(
 
 
 async def test_a_first_frame_opens_the_clip_with_an_adaptive_ratio():
-    """Image-to-video (amended 2026-10-10): the photo goes as `role: "first_frame"`, never as a
+    """Image-to-video: the photo goes as `role: "first_frame"`, never as a
     reference, and `ratio` is `adaptive` (the API reference: the frame decides the shape), while
     the configured `3:4` stays for every other task. The row records the ratio actually sent."""
     provider = _Provider()
@@ -207,7 +207,7 @@ async def test_a_reference_that_is_not_an_image_is_refused_before_any_call():
     assert provider.requests == []
 
 
-# ---- clips and voice notes as references (amended 2026-10-10) ------------------------------
+# ---- clips and voice notes as references ---------------------------------------------------
 
 _HAS_FFMPEG = __import__("shutil").which("ffmpeg") is not None
 needs_ffmpeg = pytest.mark.skipif(not _HAS_FFMPEG, reason="real ffmpeg not installed here")
@@ -240,8 +240,7 @@ def _uri_bytes(uri: str) -> bytes:
 async def test_each_kind_goes_in_its_own_item_in_the_order_given(tmp_path):
     """MiniMax numbers references per type in connection order (`<Video 1>`, `<Audio 1>`), so
     the order she passed them is the order sent. A clip and a voice note are fitted first:
-    the 12 fps clip would otherwise fail at the poll, the Opus note at the format check
-    (both measured 2026-10-10)."""
+    the 12 fps clip would otherwise fail at the poll, the Opus note at the format check."""
     clip = _ffmpeg(tmp_path, "c.mp4", "-f", "lavfi", "-i", "testsrc=size=640x480:rate=12",
                    "-t", "8", "-c:v", "libx264")
     note = _ffmpeg(tmp_path, "n.ogg", "-f", "lavfi", "-i", "sine=d=8", "-c:a", "libopus")
@@ -257,7 +256,7 @@ async def test_each_kind_goes_in_its_own_item_in_the_order_given(tmp_path):
     assert first["video_url"]["url"].startswith("data:video/mp4;base64,")
     assert (second["type"], second["role"]) == ("image_url", "reference_image")
     assert (third["type"], third["role"]) == ("audio_url", "reference_audio")
-    # `audio/mpeg` was refused live; the subtype the provider takes is `mp3`.
+    # The subtype the provider takes is `mp3`, not `audio/mpeg`.
     assert third["audio_url"]["url"].startswith("data:audio/mp3;base64,")
     sent = tmp_path / "sent.mp4"
     sent.write_bytes(_uri_bytes(first["video_url"]["url"]))
@@ -311,7 +310,7 @@ async def test_poll_reads_queued_then_running_then_the_succeeded_clip():
 
 
 async def test_a_failure_only_the_poll_reports_is_read_from_task_error_and_logged(caplog):
-    """Create returned a task id; the refusal arrives seconds later in the poll (2026-10-02)."""
+    """Create returned a task id; the refusal arrives seconds later in the poll."""
     provider = _Provider(polls=[_task("failed", error={
         "code": 2013, "message": 'aspect ratio "adaptive" is not supported for task ref2va'})])
     with caplog.at_level(logging.WARNING, logger="nora.video_gen"):
@@ -352,7 +351,7 @@ async def test_succeeded_without_a_link_is_a_failure_not_a_blank_delivery():
     assert (out.status, out.failure_reason) == (JobStatus.FAILED, "no_url")
 
 
-# ---- fetching the finished clip (operator, 2026-10-10: keep it, send it) --------------------
+# ---- fetching the finished clip (keep it, send it) ------------------------------------------
 
 
 def _done(clips: list[httpx.Response | Exception], clock: _Clock | None = None,
@@ -443,7 +442,7 @@ async def test_a_fetch_that_never_finishes_is_cut_at_its_wall(monkeypatch):
 
 
 async def test_a_held_room_costs_no_download_and_the_clip_is_fetched_once_it_is_free():
-    """Review 2026-10-10: the fetch waits for the room's slot. Held on tick 1: no fetch, the
+    """The fetch waits for the room's slot. Held on tick 1: no fetch, the
     row stays pending. Free on tick 2: one fetch, delivered with the clip."""
     store = FakeComputeJobStore()
     job = _row(VIDEO_KIND)
@@ -507,7 +506,7 @@ async def test_a_fetch_that_must_wait_leaves_the_row_unclaimed_for_the_next_tick
 
 
 def test_the_signed_link_never_reaches_the_log(tmp_path):
-    """Review 2026-10-10: httpx logs `HTTP Request: GET <url>` at INFO on every request, and
+    """httpx logs `HTTP Request: GET <url>` at INFO on every request, and
     the clip's URL is a signed link. Through the real `setup_logging`: the line is still
     written (host and path), on the retry and the success, with no query string."""
     buffer = io.StringIO()
@@ -578,7 +577,7 @@ async def test_the_cap_is_read_from_the_table_so_a_restart_does_not_reset_it():
 
 
 async def test_each_room_has_its_own_cap():
-    """Operator 2026-10-09: the cap is per room. A second room starts its own clip while the
+    """The cap is per room. A second room starts its own clip while the
     first is at its limit, and a third clip in either is refused; the refusal is that room's."""
     store = FakeComputeJobStore()
     starter = _Starter()
@@ -654,7 +653,7 @@ async def _deliver_through_the_poller(
 
 
 async def test_a_clip_the_provider_failed_does_not_count_once_its_failure_is_delivered():
-    """Review 2026-10-09: the poller marks a delivered failure `done`, so the cap cannot read
+    """The poller marks a delivered failure `done`, so the cap cannot read
     the row's state; it reads `failure_reason`."""
     store = FakeComputeJobStore()
     starter = _Starter()
@@ -783,7 +782,7 @@ CLIP_SHA, VOICE_SHA, PDF_SHA = (
 async def _tool_rig(
     *, refs: bool, cap: int = 1, kinds: frozenset[str] | None = None,
 ) -> tuple[Any, _Starter, FakeComputeJobStore]:
-    """`refs` allows photos only (the gate as it stood); `kinds` names the allowed kinds."""
+    """`refs` allows photos only; `kinds` names the allowed kinds."""
     blobs = FakeBlobStore()
     sha = await blobs.put(data=PNG)
     held = [(sha, "image/png")]
@@ -818,8 +817,8 @@ async def test_a_reference_is_refused_when_references_are_off():
 
 
 async def test_after_a_refused_reference_the_words_only_call_still_runs():
-    """2026-10-10, live: the refusal offered a clip from words alone, and the per-turn
-    budget vetoed that call because the refused one had spent it."""
+    """The refusal offers a clip from words alone, and the per-turn
+    budget must not veto that call because the refused one spent it."""
     (call, sha), starter, _ = await _tool_rig(refs=False)
     guard = ReplyGuard(conversation_id=ROOM, budgets=ToolRegistry().budgets(),
                        terminal=ToolRegistry().terminal_tools(), metrics=Metrics())
@@ -939,7 +938,7 @@ class _Preparing(_Starter):
 
 
 async def test_a_refused_fit_starts_nothing_and_the_desk_never_takes_its_lock():
-    """Fitting runs before the lock every room waits on (review); its refusal spends nothing."""
+    """Fitting runs before the lock every room waits on; its refusal spends nothing."""
     store = FakeComputeJobStore()
     backend = _Preparing()
     desk = _desk(store, backend)
@@ -957,7 +956,7 @@ async def test_a_refused_fit_starts_nothing_and_the_desk_never_takes_its_lock():
 
 async def test_a_room_at_its_cap_is_answered_before_any_fit():
     """The cap bounds the encoding work as well as the spend: a room that has used its clips
-    today gets `at_cap` without ffmpeg running for it (security review)."""
+    today gets `at_cap` without ffmpeg running for it."""
     store = FakeComputeJobStore()
     backend = _Preparing()
     desk = _desk(store, _Starter(), cap=1)
@@ -1156,7 +1155,7 @@ async def _deliver_a_finished_clip(
 
 
 async def test_a_finished_clip_is_kept_and_reaches_the_room_as_an_attachment(doctrine_store):
-    """Operator, 2026-10-10: the clip is in Nora's own storage, the room receives the video
+    """The clip is in Nora's own storage, the room receives the video
     itself, and the provider's link appears neither in the room nor in what she read."""
     blobs, media = FakeBlobStore(), FakeMediaObjectStore()
     out = await _deliver_a_finished_clip(

@@ -3,7 +3,7 @@
 Mirrors `tests/test_whatsapp_listener.py`'s coverage on the shared half (the
 stream, the backoff, one bad line skipped, a raising handler not killing the
 stream) and adds the half only this bridge has: a heartbeat that carries the
-SESSION STATE, which is M0's only view of a checkpoint that happens after
+SESSION STATE, which is the only runtime view of a checkpoint that happens after
 startup.
 
 The discriminator is `kind`, not WhatsApp's `type` — every event body below
@@ -95,8 +95,8 @@ async def test_a_raising_callback_does_not_kill_the_stream(aiohttp_server):
 
 
 async def test_a_heartbeat_updates_last_event_at_without_reaching_on_event(aiohttp_server):
-    """The heartbeat IS the socket-death detector — `03` says so, and a quiet
-    room and a dead socket are indistinguishable without it — so it must
+    """The heartbeat IS the socket-death detector — a quiet room and a dead socket are
+    indistinguishable without it — so it must
     advance `last_event_at` and must never reach the parse/deliver path."""
     server = await aiohttp_server(await _sse_app(
         ['data: {"kind":"heartbeat","ts_ms":1,"connected":true,"session":"authenticated"}\n\n']
@@ -128,7 +128,7 @@ async def test_a_dropped_event_logs_a_warning_and_is_not_delivered(aiohttp_serve
     assert "dropped" in caplog.text
 
 
-# --- the session state a heartbeat carries (M0's runtime half) ---------------
+# --- the session state a heartbeat carries ---------------
 
 
 def test_no_heartbeat_yet_is_not_a_claim_that_the_session_is_FINE():

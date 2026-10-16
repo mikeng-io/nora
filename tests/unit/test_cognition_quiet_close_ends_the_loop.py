@@ -1,10 +1,8 @@
 """A session whose every item closed `no_change` or `covered`, with no other verb
 called, ends at the last close: no further model call (DEC-279).
 
-Measured live 2026-10-03: after the model closed the last item, Strands made one
-more model call that wrote nothing, on every session that closed quiet. A
-session that wrote, closed an item `waiting`, or called any other verb keeps
-that call, as before.
+Without the early end, Strands makes one more model call that writes nothing after the last close. A
+session that wrote, closed an item `waiting`, or called any other verb keeps that call.
 
 Driven through the REAL session runner, the REAL `LiveCognitionAgentRunner` and
 a real Strands loop over a scripted model, so `model.turn` counts the model
@@ -98,7 +96,7 @@ async def test_any_other_verb_called_keeps_the_follow_up_call_even_when_it_was_r
     assert model.turn == 3
 
 
-# ---- one model turn holding `close` and another verb (the review of #720) ----
+# ---- one model turn holding `close` and another verb ----
 
 
 class _BatchModel(Model):

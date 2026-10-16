@@ -1,23 +1,18 @@
-"""`EngagementPipeline.run` — reproduces `Handler.handle_tag`'s exit-path
-guarantees (task-6-brief.md): the in-flight lock is released on every exit
+"""`EngagementPipeline.run` — the exit-path guarantees: the in-flight lock is released on every exit
 path, the latency/overhead histograms are observed on every path, and the
 outer `except BaseException` (not `except Exception`) is what keeps R-5's
 silence guarantee unconditional.
 
-Admission is acquired by `nora.engagement.stages.admission` and released by
-this pipeline's own `finally` — see both modules' docstrings for the split.
-A `ScriptedRunner` stands in for the real `AgentRunner` (Task 8's
-composition-root collaborator), replaying scripted tool calls against the
-REAL tools/guards, the same shape `tests/integration/harness.py`'s `FakeLLM`
-uses for `Handler`.
+Admission is acquired by `nora.engagement.stages.admission` and released by this pipeline's own
+`finally` — see both modules' docstrings for the split. A `ScriptedRunner` stands in for the real
+`AgentRunner`, replaying scripted tool calls against the REAL tools/guards, the same shape
+`tests/integration/harness.py`'s `FakeLLM` uses.
 
 `_invoke_tool` is imported from `nora.testing.scripted_agent` rather than
-re-written here. This module used to keep its own copy that called
-`tool(**kwargs)` directly, which raises `TypeError` on any argument the tool
-does not declare — a failure mode production does not have, because Strands
-drops out-of-schema arguments during pydantic validation
-(`nora.testing.scripted_agent._accepted_arguments`). DEC-24 is what made the
-difference between the copy and the real thing observable.
+re-written here: calling `tool(**kwargs)` directly would raise `TypeError` on
+any argument the tool does not declare, a failure mode production does not have,
+because Strands drops out-of-schema arguments during pydantic validation
+(`nora.testing.scripted_agent._accepted_arguments`).
 """
 
 from __future__ import annotations
@@ -74,11 +69,11 @@ G1 = ("signal", "g1")
 G2 = ("signal", "g2")
 
 
-# R-10's lock and R-30's queue are no longer private attributes of the pipeline
+# R-10's lock and R-30's queue are not private attributes of the pipeline
 # — they are the injected `ConversationSlots` both it and the heartbeat fire
 # path share (`nora/engagement/slots.py`). These three read that collaborator
 # through its PUBLIC surface; the one private hop (`pipeline._slots`) is spelled
-# out here once instead of at each of the twenty assertions below.
+# out here once instead of at each assertion.
 def _held(pipeline: EngagementPipeline, key: tuple[str, str] = G1) -> bool:
     return pipeline._slots.held(key)
 
@@ -98,10 +93,9 @@ async def _wait_for(
     """Poll `predicate()` until true, bounded by a DEADLOCK GUARD rather than
     a measurement.
 
-    Replaces `await asyncio.sleep(0.02)` followed by a state assertion
-    (`assert _held(pipeline) is True`, ...) across this file's queueing tests
-    (#180): that fixed window is a guess about how long admission takes to
-    reach "mid-invoke", true on an idle loop and false on a loaded one.
+    Used instead of a fixed `asyncio.sleep` followed by a state assertion: a
+    fixed window is a guess about how long admission takes to reach
+    "mid-invoke", true on an idle loop and false on a loaded one.
     """
     deadline = time.monotonic() + timeout_seconds
     while not predicate():
@@ -176,14 +170,13 @@ class _RecordingMemory(_FakeMemory):
 
     Unknown peers are reachable-with-nothing, exactly as the live Honcho is
     (200 and an empty string, never a 404) — a fake that 404'd instead would
-    make «no such peer» and «could not ask» look like the same event, which is
-    the ambiguity this whole feature is built to keep apart.
+    make «no such peer» and «could not ask» look like the same event.
     """
 
     def __init__(self) -> None:
         super().__init__()
         # (observer, observed, search_query) — the `about` tool reads Nora's
-        # model of a person, `(observer=nora, observed=person)` (design/24 §4).
+        # model of a person, `(observer=nora, observed=person)`.
         self.queries: list[tuple[str, str, str]] = []
 
     async def representation(
@@ -209,9 +202,9 @@ class _LLMState:
 
 class _FakeTagTraceStore:
     """Records every `TagTrace` `save` is called with, in call order — the
-    unit-level double for `nora.infra.sql.tag_traces.SqlTagTraceStore`
-    (Task 6). No `recent()`: nothing here reads it back through the pipeline,
-    that is the integration test's job against the real store."""
+    unit-level double for `nora.infra.sql.tag_traces.SqlTagTraceStore`.
+    No `recent()`: nothing here reads it back through the pipeline, that is the
+    integration test's job against the real store."""
 
     def __init__(self) -> None:
         self.saved: list[TagTrace] = []
@@ -223,13 +216,10 @@ class _FakeTagTraceStore:
 class ScriptedRunner(FakeAgentRunner):
     """`nora.testing.FakeAgentRunner`, plus this file's `calls` bookkeeping.
 
-    It used to be a SECOND, hand-written replay that called `guard.evaluate`
-    and `guard.record` directly and never dispatched `BeforeModelCallEvent` at
-    all. That is the divergence DEC-33 already removed once from
-    `nora.testing.FakeAgentRunner`, kept alive here — and DEC-42 made it
-    actively misleading: the guard's before-model hook is now what ENDS a turn
-    and what relaxes `tool_choice`, so a double that never fired it would let
-    a multi-message scenario "pass" against a mechanism it never exercised.
+    It reuses the shared double rather than replaying the guard by hand: the
+    guard's before-model hook is what ENDS a turn and what relaxes
+    `tool_choice`, so a double that never fired it would let a multi-message
+    scenario "pass" against a mechanism it never exercised.
 
     `calls` is the only thing this subclass adds, and it is wired through the
     shared double's own `on_call` seam.
@@ -349,7 +339,7 @@ def _build_pipeline(
 
 async def _drain(background: BackgroundTasks) -> None:
     """Wait for every background task the pipeline's injected `spawn` (i.e.
-    `background.spawn`, see Important 2's fix) has launched.
+    `background.spawn`) has launched.
 
     Deliberately `asyncio.sleep(0)`, not `asyncio.gather(*background._tasks)`:
     a task's own coroutine can finish (and be reported `done()`) before its
@@ -415,7 +405,7 @@ async def test_authorized_conversation_receives_pulse_tools():
 
 
 # ---------------------------------------------------------------------------
-# design/tool-catalogue phase C — `[llm] defer_tools` on the tag path.
+# `[llm] defer_tools` on the tag path.
 # ---------------------------------------------------------------------------
 
 
@@ -430,7 +420,7 @@ def _prompt_text(call: dict) -> str:
 async def test_the_clock_line_states_the_injected_clock():
     """The tag turn's clock line reads the injected clock, as the fire path's
     does and as the `now` tool does, so a turn frozen at a past instant (an
-    eval sandbox) states one time everywhere. It read the wall regardless.
+    eval sandbox) states one time everywhere.
 
     Revert `now=` on the pipeline's `build_prefill` call and this goes RED."""
     frozen = datetime(2026, 10, 11, 1, 5, tzinfo=UTC)
@@ -494,7 +484,7 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
 
 
 async def test_without_deferral_nothing_changes():
-    """`defer_tools = false` is the pre-phase-C turn: every admitted schema,
+    """`defer_tools = false`: every admitted schema,
     no loader, no catalogue block, the configured turn ceiling."""
     from nora.agent.tools import LOADER_TOOL
 
@@ -528,8 +518,7 @@ async def test_a_successful_tag_delivers_releases_the_lock_and_feeds_the_exchang
     assert _held(pipeline) is False
     assert llm_state.last_success_at is not None
     # DEC-36: the tagger's own words, under the tagger's peer, and nothing
-    # else. This used to look for `"[Nora]"` in the fed text — the marker of
-    # the two-speaker transcript that made her replies evidence about him.
+    # else (no `"[Nora]"` marker of a two-speaker transcript in the fed text).
     assert memory.fed == [("nora", "今晚七點半得", "g1")]
     assert len(metrics.observations("nora_tag_latency_seconds")) == 1
     assert len(metrics.observations("nora_overhead_seconds")) == 1
@@ -545,10 +534,10 @@ async def test_an_unmapped_sender_delivers_with_no_honcho_feed():
 
     assert memory.fed == []
     assert _held(pipeline) is False
-    # Task 6 (review finding 2): `feedback.run`'s own gate — `if sent and
+    # `feedback.run`'s own gate — `if sent and
     # ctx.tagger is not None` — is exactly what leaves `memory.fed == []`
     # above for this UNMAPPED sender. The `TagTrace` save must NOT inherit
-    # that gate (§7.4); this is the one scenario in the suite that actually
+    # that gate; this is the one scenario in the suite that actually
     # exercises `ctx.tagger is None` on a turn that still delivered, so it is
     # the only place independence from the `ctx.tagger` half of the gate (as
     # opposed to the `sent` half, which the silent/vetoed/timeout/llm_error
@@ -558,11 +547,11 @@ async def test_an_unmapped_sender_delivers_with_no_honcho_feed():
 
 
 # ---------------------------------------------------------------------------
-# Important 2: the feedback feed is spawned through the INJECTED tracker, not
-# a private set the pipeline rolls itself — see nora/engagement/pipeline.py's
-# `spawn` constructor parameter and nora/app/composition.py:172/offline.py:79,
-# which both pass `background.spawn`. Without that wiring, `App.run`'s
-# `finally: await deps.background.cancel_all()` (nora/__main__.py:124) would
+# The feedback feed is spawned through the INJECTED tracker, not a private set
+# the pipeline rolls itself — see nora/engagement/pipeline.py's `spawn`
+# constructor parameter, which the composition roots pass as `background.spawn`.
+# Without that wiring, `App.run`'s
+# `finally: await deps.background.cancel_all()` would
 # neither see nor cancel a still-running feedback feed on shutdown.
 # ---------------------------------------------------------------------------
 
@@ -588,9 +577,8 @@ async def test_the_feedback_feed_is_spawned_through_the_injected_tracker():
 
     await pipeline.run(_request())
     # Bounded, not a bare `await memory.started.wait()`: if the feed is never
-    # actually spawned (the discrimination probe this test is written against
-    # — see nora/engagement/pipeline.py's history), `.started` never fires and
-    # an unbounded wait would hang the suite instead of failing it.
+    # actually spawned, `.started` never fires and an unbounded wait would hang
+    # the suite instead of failing it.
     await asyncio.wait_for(memory.started.wait(), timeout=2.0)
 
     # The feedback feed is still in flight — it must be tracked by the
@@ -656,10 +644,9 @@ async def test_an_llm_error_releases_the_lock_and_counts_llm_error():
 async def test_a_max_tokens_partial_reply_is_salvaged_not_silent():
     """A `max_tokens` cut-off with real prose is delivered, not dropped.
 
-    The Raft-password case measured live 2026-09-02: Strands appends the
-    partial message to `agent.messages` before raising, `factory.invoke`
+    Strands appends the partial message to `agent.messages` before raising, `factory.invoke`
     carries the words up as `PartialReplyError`, and the pipeline must
-    deliver them — silence here is the exact failure the group saw.
+    deliver them — silence here would be the failure the group sees.
     """
     adapter = _FakeAdapter()
     pipeline, metrics, _audit, _memory, _background = _build_pipeline(
@@ -712,22 +699,11 @@ async def test_a_base_exception_only_fault_is_absorbed_silently():
 
 
 async def test_a_reply_written_without_calling_send_reply_is_recovered():
-    """DEC-93, and a REVERSAL of what this test asserted before 2026-08-10.
+    """DEC-93: a turn that ends in prose with no `send_reply` is recovered.
 
-    It used to script exactly this — prose, no `send_reply` — and assert
-    silence, on the reasoning that a plain `end_turn` is a DELIBERATE silence
-    she is allowed. That was true while `tool_choice="required"` was honoured:
-    under `required` the model COULD NOT answer in prose, so prose meant she had
-    chosen not to speak.
-
-    DEC-84 moved the deployment to a route that ACCEPTS `required` AND IGNORES
-    IT. A probe found `auto` and `required` behaving identically there and it
-    was written off as "inert, harmless"; it was not. Live, 2 of the first 4
-    tags produced a complete, correct, group-addressed reply in a `text` block
-    and the group heard nothing — the group asking whether she was broken.
-
-    So prose no longer distinguishes "chose not to speak" from "spoke without
-    using the tool", and the words are recovered rather than discarded."""
+    The deployment's route can ACCEPT `tool_choice="required"` AND IGNORE IT, so
+    prose does not distinguish "chose not to speak" from "spoke without using
+    the tool". The words are recovered and delivered rather than discarded."""
     adapter = _FakeAdapter()
     pipeline, metrics, _audit, memory, background = _build_pipeline(
         adapter=adapter,
@@ -754,8 +730,7 @@ async def test_a_reply_written_without_calling_send_reply_is_recovered():
 
 
 async def test_a_partial_multi_message_turn_is_not_topped_up_by_the_recovery():
-    """DEC-93's interaction with DEC-40, which the two features were built apart
-    from.
+    """DEC-93's interaction with DEC-40.
 
     `send_reply`'s budget is 3, so a turn may send one message and then write
     its SECOND as prose. The recovery must not deliver that: the group already
@@ -780,10 +755,9 @@ async def test_a_partial_multi_message_turn_is_not_topped_up_by_the_recovery():
 
 async def test_a_heads_up_then_work_then_prose_answer_is_recovered(monkeypatch):
     """DEC-294's heads-up meets DEC-93. A line sent with `more=true` IS
-    delivered, so the recovery's «nothing delivered» gate used to drop an
-    answer she then wrote as prose, while the turn read as `replied` (review
-    of #754, 2026-10-09). The heads-up owes its answer until a send lands
-    after the work.
+    delivered, so the recovery's «nothing delivered» gate must not drop an
+    answer she then wrote as prose while the turn reads as `replied`. The
+    heads-up owes its answer until a send lands after the work.
 
     `reply_still_owed` is pinned here: this double hands hooks the tool's raw
     return, not Strands' envelope, so the guard cannot read `sent` in it. The
@@ -867,9 +841,8 @@ async def test_a_turn_that_wrote_nothing_at_all_is_still_a_silent_failure():
 
 
 async def test_the_never_silent_fallback_delivers_when_the_loop_is_cut_off():
-    """operator 2026-08-09: a turn cut off by a token/turn cap BEFORE `send_reply`
-    used to leave the group with SILENCE (the repeated weather/carpark failure).
-    Now Nora delivers one honest fallback line — and, having recovered, the turn
+    """A turn cut off by a token/turn cap BEFORE `send_reply` must not leave the
+    group with SILENCE: Nora delivers one honest fallback line — and, having recovered, the turn
     is NOT also counted a silent failure. One tool call spends the `total_tokens`
     cap, so the next cycle trips `limit_total_tokens` before any reply."""
     adapter = _FakeAdapter()
@@ -894,7 +867,7 @@ async def test_the_never_silent_fallback_delivers_when_the_loop_is_cut_off():
 
 
 async def test_the_fallback_reply_is_not_fed_to_honchos_self_model():
-    """Review 2026-08-09 #2: the fallback is a canned apology, NOT Nora's authored
+    """The fallback is a canned apology, NOT Nora's authored
     words, so it must NOT feed her Honcho self-model card — only real replies do.
     It still DELIVERED (the group saw it), it is just kept out of `sent_texts`."""
     adapter = _FakeAdapter()
@@ -913,12 +886,12 @@ async def test_the_fallback_reply_is_not_fed_to_honchos_self_model():
 
 
 # ---------------------------------------------------------------------------
-# Task 6 — the placeholder `TagTrace.outcome` `invoke.run` hands back
+# The placeholder `TagTrace.outcome` `invoke.run` hands back
 # (`LiveAgentRunner`/`FakeAgentRunner` both stamp `"send_reply"` unconditionally)
 # is CORRECTED here to the turn's real disposition, mirroring
 # `deliver.check_outcome`'s own delivered/called split, and the corrected trace
 # is unconditionally saved — on every completed turn, not gated on
-# `feedback.run`'s own `if sent and ctx.tagger is not None` (§7.4).
+# `feedback.run`'s own `if sent and ctx.tagger is not None`.
 # ---------------------------------------------------------------------------
 
 
@@ -1053,7 +1026,7 @@ async def test_a_fault_before_invoke_run_ever_returns_saves_nothing():
 
 
 async def test_a_tag_trace_save_failure_never_takes_down_an_otherwise_successful_turn():
-    """The failure-containment discipline the task brief calls for: a
+    """Failure containment: a
     `SqlTagTraceStore`-shaped save is SPAWNED (`self._spawn`, `BackgroundTasks`),
     not awaited inline — so a raising store logs (`BackgroundTasks._on_done`)
     and the turn's own delivery, metrics and lock release are all unaffected."""
@@ -1078,8 +1051,8 @@ class _FaultingMetricsAfterInvoke:
     of `fault_name` — which raises instead. Every existing fault double in
     this file (`_FaultingContextAssembler`, `ScriptedRunner(raises=...)`)
     only reaches BEFORE or DURING `invoke.run` — none can land a fault
-    strictly AFTER `invoke.run` returns but BEFORE the pipeline's Task 6
-    outcome correction (`dataclasses.replace`, review finding 1's window).
+    strictly AFTER `invoke.run` returns but BEFORE the pipeline's outcome
+    correction (`dataclasses.replace`).
     `"nora_loop_exhausted_fallbacks_total"` is incremented at exactly one
     site in the whole codebase (`pipeline.py`, immediately after the
     never-silent-fallback's `deliver()` call succeeds) — squarely inside that
@@ -1102,12 +1075,11 @@ class _FaultingMetricsAfterInvoke:
 
 
 async def test_a_crash_after_invoke_run_never_saves_a_stale_placeholder_outcome():
-    """Review finding 1: a fault landing between `invoke.run` returning and
-    the outcome correction used to leave `trace` bound with its PLACEHOLDER
-    `"send_reply"` outcome — the `except BaseException` handler absorbed the
-    fault (as R-5 requires) but never reset `trace`, so the unconditional
-    `finally` save would persist a turn that actually crashed and delivered
-    nothing as if it had succeeded normally.
+    """A fault landing between `invoke.run` returning and the outcome correction
+    must not leave `trace` bound with its PLACEHOLDER `"send_reply"` outcome:
+    the `except BaseException` handler absorbs the fault (as R-5 requires) and
+    resets `trace`, so the unconditional `finally` save does not persist a turn
+    that crashed and delivered nothing as if it had succeeded normally.
 
     Reuses the never-silent-fallback fixture
     (`test_the_never_silent_fallback_delivers_when_the_loop_is_cut_off`'s
@@ -1132,7 +1104,7 @@ async def test_a_crash_after_invoke_run_never_saves_a_stale_placeholder_outcome(
     # R-5 held: the outer `except BaseException` absorbed the fault silently.
     assert metrics.get("nora_silent_failures_total", reason="handler_error") == 1
     assert _held(pipeline) is False
-    # The fix: nothing saved at all, rather than a stale "send_reply".
+    # Nothing saved at all, rather than a stale "send_reply".
     assert pipeline._tag_trace_store.saved == []
 
 
@@ -1162,17 +1134,15 @@ async def test_latency_and_overhead_are_observed_on_every_path():
 
 
 # ---------------------------------------------------------------------------
-# nora_messages_per_tag — the baseline for multi-message
+# nora_messages_per_tag
 # ---------------------------------------------------------------------------
 
 
 async def test_a_delivered_tag_observes_one_message():
     """Flat at 1 by construction today: R-2 latches after the first delivery.
 
-    That is what makes it worth recording NOW. Multi-message's predicted
-    failure is that the cap becomes a quota always spent in full, and a
-    histogram first written after the behaviour changes has nothing to be a
-    change from.
+    That makes it a baseline: multi-message's predicted failure is that the cap
+    becomes a quota always spent in full.
     """
     metrics = Metrics()
     pipeline, _, _, _, background = _build_pipeline(metrics=metrics)
@@ -1190,9 +1160,8 @@ async def test_a_silent_tag_observes_zero_rather_than_nothing_at_all():
     metrics = Metrics()
     pipeline, _, _, _, background = _build_pipeline(
         metrics=metrics,
-        runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. It used to carry prose here,
-        # which since DEC-93 is RECOVERED and delivered — this test is
-        # about a genuinely silent turn, so it needs one.
+        runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. Prose would be RECOVERED and
+        # delivered; this test is about a genuinely silent turn.
         ScriptedTurn(final_text="")]),
     )
 
@@ -1281,8 +1250,8 @@ async def test_three_tags_for_one_conversation_are_answered_in_fifo_order():
     """R-29, the whole point: three people tagging at once each get a reply, in
     arrival order — not one reply and two silences.
 
-    PROBE: restore admission's old `return Admission.REJECTED` (drop) for the
-    in-flight branch and only the first reply is delivered."""
+    PROBE: make admission `return Admission.REJECTED` (drop) for the in-flight
+    branch and only the first reply is delivered."""
     adapter = _FakeAdapter()
     runner = _EchoRunner(delay=0.2)
     pipeline, metrics, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
@@ -1440,7 +1409,7 @@ class _ReactingAdapter(_FakeAdapter):
         self._react_ok = react_ok
         self._react_delay = react_delay
         # `react_gate`, when given, BLOCKS `react()` until the test sets it —
-        # a condition, not a duration, for the one test (#430) that needs the
+        # a condition, not a duration, for the one test that needs the
         # reaction to still be unresolved no matter how long `pipeline.run`
         # itself takes under load.
         self._react_gate = react_gate
@@ -1481,9 +1450,9 @@ async def test_accepting_a_tag_reacts_to_the_tagging_message_then_resolves():
 async def test_a_queued_tag_gets_its_eyes_promptly_while_it_waits():
     """The cheap independent win: the 👀 fires at ADMISSION, before a tag's turn
     starts — so a person queued behind another sees they were SEEN while they
-    wait, instead of the silence a dropped tag used to give them.
+    wait, instead of the silence a dropped tag would give them.
 
-    PROBE: move `_begin_indicator` back inside `_run_admitted` (fire on turn
+    PROBE: move `_begin_indicator` inside `_run_admitted` (fire on turn
     start, not admission) and the queued tag's 👀 does not appear until the tag
     ahead of it finishes."""
     adapter = _ReactingAdapter()
@@ -1504,10 +1473,9 @@ async def test_a_queued_tag_gets_its_eyes_promptly_while_it_waits():
                 if emoji == indicate.ACK and not remove]
 
     # Wait for the CONDITION (the queued tag's 👀 landing), not for a fixed
-    # count of event-loop turns — the previous form pumped exactly 5 bare
-    # `asyncio.sleep(0)`s and hoped that was enough for the spawned reaction
-    # task to run, which is the same "guess how long it takes" shape as a
-    # wall-clock sleep, just measured in turns instead of seconds (#180).
+    # count of event-loop turns: pumping a fixed number of bare
+    # `asyncio.sleep(0)`s is the same "guess how long it takes" shape as a
+    # wall-clock sleep, just measured in turns instead of seconds.
     await _wait_for(
         lambda: 2 in _ack_timestamps(),
         message=f"the queued tag's 👀 never landed; reactions={adapter.reactions}",
@@ -1565,11 +1533,10 @@ async def test_reactions_do_not_consume_the_reply_budget():
     `Deliverer`, so they neither consume nor re-arm the reply budget.
 
     (cap+1) `send_reply` calls still deliver exactly `cap` and the last is
-    vetoed — the reaction lifecycle is untouched by any of it. (Was
-    `..._so_r2_still_allows_one_reply`, from the cap-of-1 era.)
+    vetoed — the reaction lifecycle is untouched by any of it.
 
     The cap is read from the registry, not spelled here: DEC-10/DEC-32 keep one
-    copy of that number, and the literal rotted at 3→6 (DEC-95)."""
+    copy of that number, so a literal would go stale."""
     cap = ToolRegistry().budgets()["send_reply"]
     sent = [f"msg{i}" for i in range(cap)]
     adapter = _ReactingAdapter()
@@ -1621,9 +1588,8 @@ async def test_a_turn_that_never_replied_resolves_to_a_caution_and_says_nothing(
     adapter = _ReactingAdapter()
     pipeline, metrics, _audit, _memory, background = _build_pipeline(
         adapter=adapter,
-        runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. It used to carry prose here,
-        # which since DEC-93 is RECOVERED and delivered — this test is
-        # about a genuinely silent turn, so it needs one.
+        runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. Prose would be RECOVERED and
+        # delivered; this test is about a genuinely silent turn.
         ScriptedTurn(final_text="")]),
     )
 
@@ -1656,8 +1622,8 @@ async def test_a_crashed_turn_still_resolves_the_indicator():
 
 
 async def test_the_reply_does_not_wait_for_the_reaction():
-    """Constraint: reactions must not delay the reply measurably — not even by
-    a bounded amount (#430).
+    """Reactions must not delay the reply measurably — not even by a bounded
+    amount.
 
     `gate` is an `asyncio.Event` the fake reaction BLOCKS on inside `react()`,
     and this test never sets it until after the check below. There is no
@@ -1671,22 +1637,22 @@ async def test_the_reply_does_not_wait_for_the_reaction():
     `pytest-timeout`, an unbounded hang here would otherwise hang `make gate`
     forever rather than fail it (fail-open). `pipeline.run` is therefore
     called through `asyncio.wait_for(..., timeout=5.0)`, so that regression
-    surfaces as a clean `TimeoutError`, `pytest.fail`ed with a message naming
-    #430, in about 5s — not a hang.
+    surfaces as a clean `TimeoutError`, `pytest.fail`ed with a message, in
+    about 5s — not a hang.
 
     It does NOT catch a BOUNDED wait — production could `wait_for(indicator
     .placed.wait(), timeout=1.5)` before replying, time out, and continue:
     `emojis` and the task-tracking check both still pass, because the
     reaction is still exactly as unresolved as before, yet the reply was 1.5s
-    late. `elapsed < 1.0` is kept for exactly that: 4x the 0.23s wall-clock
-    flake #430 was originally filed against, so it catches a bounded wait of
+    late. `elapsed < 1.0` is kept for exactly that: 4x the 0.23s
+    wall-clock flake a loaded box shows, so it catches a bounded wait of
     >= 1.0s. It does NOT catch one under 1.0s — nothing in this test does.
 
     PROBE 1 (unbounded): make `indicate.begin`/`EngagementPipeline
     ._begin_indicator` `await _place(indicator)` directly instead of
     spawning it, and `pipeline.run` never returns — the `wait_for` below
     times out after 5s and this fails on `pytest.fail("pipeline.run awaited
-    the reaction (#430)")`, not on any assertion further down.
+    the reaction")`, not on any assertion further down.
     PROBE 2 (bounded, 1.5s): add `await asyncio.wait_for(indicator.placed
     .wait(), timeout=1.5)` right after `_begin_indicator` in `pipeline.run`
     (suppressing the timeout). `run` returns well inside the 5s ceiling,
@@ -1723,12 +1689,10 @@ async def test_a_slow_reaction_is_not_counted_as_tag_overhead():
     creeping onto the critical path, so it is asserted directly rather than
     inferred from wall-clock.
 
-    The reaction's delay and the bound sit FAR apart on purpose. They were
-    both 0.2 s, so the test could not tell «the reaction is on the critical
-    path» (overhead >= 0.2) from «the machine is busy» — and under `make
-    gate`'s parallel load an ordinary tag measured 0.228 s and went red
-    (2026-09-24). With a 1.0 s reaction, a critical-path regression reads
-    >= 1.0 and a loaded box stays well under 0.5."""
+    The reaction's delay and the bound sit FAR apart on purpose, so the test can
+    tell «the reaction is on the critical path» from «the machine is busy»:
+    with a 1.0 s reaction, a critical-path regression reads >= 1.0 and a loaded
+    box stays well under 0.5."""
     adapter = _ReactingAdapter(react_delay=1.0)
     pipeline, metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
 
@@ -1867,7 +1831,7 @@ async def test_recall_asks_about_the_tagging_message_without_being_told_it():
 
 
 # ---------------------------------------------------------------------------
-# DEC-42 — multi-message, shipped inert, and what it breaks when it is not
+# DEC-42 — multi-message
 # ---------------------------------------------------------------------------
 
 
@@ -1884,7 +1848,7 @@ class _RaisedCap(ToolRegistry):
     """
 
     def __init__(self, messages: int) -> None:
-        super().__init__()          # DEC-41: the base now wires a TransitClient
+        super().__init__()          # DEC-41: the base wires a TransitClient
         self._messages = messages
 
     def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()):
@@ -1901,9 +1865,8 @@ def _multi_turns(*texts: str) -> list[ScriptedTurn]:
 
 
 async def test_multi_message_is_active_and_the_default_cap_is_three():
-    """DEC-42 ACTIVATED (was `..._still_produces_exactly_one_message`, the inert
-    proof). The shipped `send_reply` budget is now 3, and the machinery that was
-    already in place delivers up to three distinct messages with no other edit.
+    """The shipped `send_reply` budget is 3, and the pipeline delivers up to
+    three distinct messages with no other edit.
     This runs the REAL default registry — not an override — so it pins the actual
     shipped number, and it is the test that has to track any future change to it.
     """
@@ -1954,7 +1917,7 @@ async def test_the_raised_cap_is_still_a_cap():
 
 
 async def test_the_canary_and_r18_run_on_every_message_not_just_the_first():
-    """design/16 §4's own probe: a turn whose SECOND message carries a phone
+    """A turn whose SECOND message carries a phone
     number. A guard that ran once per turn would clear message one and wave
     the rest of the turn through — which turns multi-message from a feature
     into a leak."""
@@ -1988,9 +1951,8 @@ async def test_every_message_gets_its_own_audit_row():
 
 
 async def test_a_multi_message_turn_feeds_each_of_noras_messages_under_her_peer():
-    """Honcho v2 (design/24 §3): the tag path feeds NORA's replies under her
-    aiPeer, and a multi-message turn feeds EACH message — the exact thing
-    `last_text` got wrong (design/16 §4 fed the last, dropped the rest). All
+    """The tag path feeds NORA's replies under her aiPeer, and a multi-message
+    turn feeds EACH message, not only the last. All
     three go under `nora` into the conversation session; none under the human's
     peer (DEC-36 at the message level)."""
     memory = _FakeMemory()
@@ -2009,8 +1971,8 @@ async def test_a_multi_message_turn_feeds_each_of_noras_messages_under_her_peer(
 
 
 async def test_a_turn_cut_off_between_messages_is_counted_as_partial():
-    """THE PROBE for 5c. Two of three messages went out and the loop was cut
-    off by R-8's turn cap.
+    """THE PROBE: two of three messages went out and the loop was cut off by
+    R-8's turn cap.
 
     Everything else about this turn looks successful: `delivered` is True,
     `check_outcome` returns True, the indicator resolves ✅, Honcho is fed and
@@ -2033,8 +1995,8 @@ async def test_a_turn_cut_off_between_messages_is_counted_as_partial():
 
     assert adapter.texts == ["一", "二"]
     assert metrics.get("nora_partial_replies_total", reason="limit_total_tokens") == 1
-    # The turn is NOT silent, and that is the whole point: nothing R-23 built
-    # can see it.
+    # The turn is NOT silent, and that is the whole point: R-23's label
+    # cannot see it.
     assert metrics.get("nora_silent_failures_total", reason="limit_total_tokens") == 0
     assert metrics.observations("nora_messages_per_tag") == [2.0]
 
@@ -2047,9 +2009,8 @@ async def test_a_turn_that_said_nothing_is_a_silent_failure_not_a_partial_one():
     metrics = Metrics()
     pipeline, _, _, _, background = _build_pipeline(
         metrics=metrics,
-        runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. It used to carry prose here,
-        # which since DEC-93 is RECOVERED and delivered — this test is
-        # about a genuinely silent turn, so it needs one.
+        runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. Prose would be RECOVERED and
+        # delivered; this test is about a genuinely silent turn.
         ScriptedTurn(final_text="")]),
     )
     await pipeline.run(_request())
@@ -2090,7 +2051,7 @@ async def test_a_timeout_after_the_messages_went_out_is_counted_as_partial():
     assert metrics.get("nora_partial_replies_total", reason="invocation_failed") == 1
     # The timeout is still counted as itself. The two answer different
     # questions — "why did the turn end" and "did the group get everything" —
-    # and one has never been able to answer the other.
+    # and neither can answer the other.
     assert metrics.get("nora_silent_failures_total", reason="invocation_timeout") == 1
 
 
@@ -2123,13 +2084,14 @@ async def test_a_complete_turn_is_never_counted_as_partial():
 
 
 async def test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string():
-    """THE PROBE for the defect the pre-deploy review caught, at the consumer.
+    """THE PROBE at the consumer: a guard-cancelled turn never delivers the
+    guard's own veto string.
 
     `ReplyGuard._before_model` cancels a model call once the terminal budget is
     spent, and Strands turns that cancel into an assistant message carrying the
     veto text with `stop_reason="end_turn"` — shape-identical to the model
-    having written prose. Reproduced against the real loop, `final_text` came
-    back as «Reply already sent — the turn is finished.»
+    having written prose. On the real loop `final_text` is «Reply already
+    sent — the turn is finished.»
 
     Without `cancelled_model_call` the recovery sends that to the group, writes
     it to the audit as her authored body, and feeds it to Honcho as her own
@@ -2141,17 +2103,16 @@ async def test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string(
     # `_turn_is_over` fires while `delivered` is still False — the one state in
     # which the recovery would otherwise engage.
     #
-    # All `cap` sends in ONE turn, which is both what production does now
+    # All `cap` sends in ONE turn, which is both what production does
     # (DEC-95's burst) and what `LIMITS["turns"] = 4` can hold — one send per
     # turn would hit `max_turns` before spending a cap of 6, and that is a
     # BUDGET stop reason, so the never-silent fallback would fire and this would
     # fail on a line it was not written to probe.
     #
-    # The turn still ends with the budget spent and `delivered` False, a further
-    # model call is still attempted, and `_before_model` still cancels it —
-    # verified by positive control: reverting the fix (cancel without setting
-    # the flag) delivers «Reply already sent — the turn is finished.» to the
-    # group in exactly this scripting.
+    # The turn ends with the budget spent and `delivered` False, a further
+    # model call is attempted, and `_before_model` cancels it — cancelling
+    # without setting the flag would deliver «Reply already sent — the turn is
+    # finished.» to the group in exactly this scripting.
     cap = ToolRegistry().budgets()["send_reply"]
     adapter = _FakeAdapter()
     pipeline, metrics, _audit, memory, background = _build_pipeline(
@@ -2175,14 +2136,14 @@ async def test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string(
 
 
 async def test_the_scripted_double_returns_the_cancel_text_like_the_real_sdk():
-    """Pins the DOUBLE, because the double's fidelity is now load-bearing.
+    """Pins the DOUBLE, because the double's fidelity is load-bearing.
 
     `test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string` is
     only non-vacuous because `FakeAgentRunner` returns the cancel string: revert
     the double to `""` and that test passes with the production guard DELETED.
     That is the same class as the defect it defends against — a fake that
     answers more tidily than the real server — so the double needs a probe of
-    its own (re-review 2026-08-10, follow-up 1).
+    its own.
 
     Drives the REAL `ReplyGuard`: spending the terminal budget makes
     `_before_model` cancel, exactly as production does, and Strands then
@@ -2234,16 +2195,15 @@ def _discord_msg(conversation_id: str = "111/222") -> NormalizedMessage:
 
 
 async def test_a_discord_tag_is_answered_on_discord_not_signal():
-    """The defect this whole mapping exists for.
+    """A reply leaves on the platform its tag arrived on.
 
-    `EngagementPipeline` held ONE adapter until Nora reached a second platform,
-    so every reply left on Signal regardless of where its tag arrived — a
-    Discord question answered into a Signal group, in front of people who never
-    asked it. Both adapters are wired here and only one may speak.
+    With one adapter every reply would leave on Signal regardless — a Discord
+    question answered into a Signal group, in front of people who never asked
+    it. Both adapters are wired here and only one may speak.
     """
-    # DISTINCT accounts, deliberately: both doubles defaulted to the same one,
-    # so a turn that resolved the WRONG platform's identity was invisible — the
-    # rows it wrote were byte-identical either way.
+    # DISTINCT accounts, deliberately: with the same one on both doubles, a turn
+    # that resolved the WRONG platform's identity would be invisible — the rows
+    # it wrote would be byte-identical either way.
     signal_adapter = _FakeAdapter(account="+852000")
     discord_adapter = _DiscordFakeAdapter(account="555000111")
     pipeline, _m, audit, *_ = _build_pipeline(
@@ -2290,10 +2250,10 @@ async def test_each_platform_resolves_its_own_identity_for_the_self_tag_check():
     Nora could neither recognise her own Discord messages nor be sure she was
     recognising anyone else's.
 
-    Driven through `run()` on purpose. An earlier version of this test called
-    `_adapter_for(...).resolve_identity()` directly, which asserts that a dict
-    lookup returns what was put in the dict: hardcoding BOTH call sites in the
-    pipeline to `self._adapters["signal"]` left it green.
+    Driven through `run()` on purpose: calling
+    `_adapter_for(...).resolve_identity()` directly would assert only that a dict
+    lookup returns what was put in the dict, and stay green with BOTH call sites
+    in the pipeline hardcoded to `self._adapters["signal"]`.
     """
     signal_adapter = _FakeAdapter(account="+852000")
     discord_adapter = _DiscordFakeAdapter(account="555000111")
@@ -2314,7 +2274,7 @@ async def test_each_platform_resolves_its_own_identity_for_the_self_tag_check():
 
 async def test_an_unwired_platform_refuses_rather_than_picking_an_adapter():
     """Fail closed, loudly. A fallback to «whatever adapter is wired» is the
-    exact bug the mapping replaced, so the absence of a route must raise rather
+    bug the mapping prevents, so the absence of a route must raise rather
     than quietly deliver a reply into a room on another platform (R-5: a reply
     sent to the wrong group is a wrong answer made public)."""
     signal_adapter = _FakeAdapter()
@@ -2337,7 +2297,7 @@ async def test_an_unwired_platform_refuses_rather_than_picking_an_adapter():
 
 
 # ---------------------------------------------------------------------------
-# The debrief stage's wiring (design/dreamer-agent-loop/26-standing, R-69).
+# The debrief stage's wiring (R-69).
 #
 # The stage's OWN behaviour — the fold, the overflow retry, the screen, the
 # `finish_reason` check — is `tests/unit/test_debrief.py`'s. What is asserted
@@ -2394,7 +2354,7 @@ class _FakePerfCounter:
     (a single shared module object, so patching either name patches both),
     and this class replaces it for exactly one test: `total`s and `elapsed`s
     computed from it become exact and load-independent instead of a race
-    against the scheduler (#503's class of flake)."""
+    against the scheduler."""
 
     def __init__(self) -> None:
         self.value = 0.0
@@ -2426,7 +2386,7 @@ class _ClockAdvancingDebrief:
 async def test_no_debrief_wiring_means_the_stage_is_never_reached(monkeypatch):
     """`[standing] enabled = false` — the shipped default and every offline/
     eval composition. It must cost NOTHING: no await, so the slot is held for
-    exactly as long as it was before the stage existed."""
+    exactly as long as without the stage."""
     spy = _RecordingDebrief()
     _patch_debrief(monkeypatch, spy)
     pipeline, _metrics, _audit, _memory, background = _build_pipeline()
@@ -2444,7 +2404,7 @@ async def test_no_debrief_wiring_means_the_stage_is_never_reached(monkeypatch):
 async def test_the_debrief_runs_on_a_delivered_turn_and_on_a_silence(
     monkeypatch, turns, outcome,
 ):
-    """§2, and the silence is the half that matters. A debrief hung off the end
+    """The silence is the half that matters. A debrief hung off the end
     of the `try` block would review only the turns that reached
     `completed = True` — which excludes every silence, every veto, every
     timeout — and a stage that only reviews successful replies measures the
@@ -2505,11 +2465,10 @@ async def test_a_turn_with_no_attributable_trace_is_not_debriefed(monkeypatch):
 
 
 async def test_the_debrief_holds_the_slot_and_then_releases_it(monkeypatch):
-    """§5: it is a STAGE, which is what «holds the slot» means concretely — the
+    """It is a STAGE, which is what «holds the slot» means concretely — the
     lock is still held while it runs, and the conversation's next tag waits.
-    That is the design's own claim about where the cost lands (on the second
-    person queued, never on the person being reviewed), and it is only true if
-    the release happens after.
+    The cost lands on the second person queued, never on the person being
+    reviewed, and that is only true if the release happens after.
     """
     held_during: list[bool] = []
     pipeline_ref: list = []
@@ -2552,7 +2511,7 @@ async def test_a_debrief_that_blows_up_still_releases_the_lock(monkeypatch):
 
 
 async def test_a_debrief_failure_never_reports_a_partial_reply(monkeypatch):
-    """**R-69's other half** (§5's first failure shape). The turn is marked
+    """**R-69's other half.** The turn is marked
     completed BEFORE the debrief is awaited — expressed here by the debrief
     living in the `finally`, after `completed` is already final. Get that
     ordering wrong and a fault in the debrief leaves `completed` False, which
@@ -2575,23 +2534,19 @@ async def test_a_debrief_failure_never_reports_a_partial_reply(monkeypatch):
 
 
 async def test_the_debriefs_cost_is_excluded_from_the_tag_latency_series(monkeypatch):
-    """§5, and the reason it is a decision rather than an accident: folding the
+    """Folding the
     debrief into `nora_tag_latency_seconds` would move an existing SLO series by
     changing what it measures — a broken gate wearing a passing number. The
     debrief's cost is real and user-visible; it belongs on
     `nora_debrief_seconds`, which is the series the p95 <= 5s gate reads.
 
-    PROVEN WITHOUT THE WALL CLOCK (same class as #430 / PR #503). The
-    previous version slept the fake debrief for 0.25s and asserted
-    `observed[0] < 0.25` — a threshold exactly equal to the debrief's own
-    delay, with zero margin against ordinary scheduling jitter in the
-    pipeline's OWN (non-debrief) work. Under `make gate`'s `-n 8` parallel
-    load that jitter alone pushed `observed[0]` to 0.29, and the test read
-    that as the debrief leaking in when nothing had leaked.
+    PROVEN WITHOUT THE WALL CLOCK: a real sleep with a threshold at the
+    debrief's own delay has zero margin against scheduling jitter in the
+    pipeline's OWN (non-debrief) work.
 
     `time.perf_counter` is replaced with `_FakePerfCounter`, which only
     moves when told to. `pipeline.py`'s `total = time.perf_counter() -
-    started` is read BEFORE the debrief is awaited (26-standing §5) — so on
+    started` is read BEFORE the debrief is awaited — so on
     this fake clock `total` is fixed at `0.0` the instant it is computed, no
     matter how large a "cost" the debrief racks up afterwards. The debrief
     (`_ClockAdvancingDebrief`) advances the fake clock by `debrief_seconds`
@@ -2626,7 +2581,7 @@ async def test_the_debriefs_cost_is_excluded_from_the_tag_latency_series(monkeyp
 
 
 async def test_every_retained_trace_is_counted_by_outcome(monkeypatch):
-    """15-roadmap §6.2b's required-before-Phase-2 reading. `tag_trace` is
+    """`tag_trace` is
     written in a `finally` on every exit path and `nora_tag_latency_seconds`
     observes once per admitted tag, so the expected ratio is exactly 1.0 — and
     a recording layer that silently stopped writing would otherwise be
@@ -2643,12 +2598,11 @@ async def test_every_retained_trace_is_counted_by_outcome(monkeypatch):
 
 
 async def test_nora_engagement_outcomes_total_counts_a_send_reply_turn():
-    """The standing counter behind the 56%-recovered measurement: one
-    increment per admitted tag, labelled with the turn's real disposition.
-    Positive control for the ordinary path — `outcome="send_reply"` — paired
-    with the recovered/silent/no-store controls below so a `== 0` reading
-    anywhere in this file can be told apart from an instrument that never
-    fires."""
+    """The standing outcome counter: one increment per admitted tag, labelled with
+    the turn's real disposition. Positive control for the ordinary path —
+    `outcome="send_reply"` — paired with the
+    recovered/silent/no-store controls below so a `== 0` reading anywhere in
+    this file can be told apart from an instrument that never fires."""
     pipeline, metrics, _audit, _memory, background = _build_pipeline()
 
     await pipeline.run(_request())
@@ -2662,8 +2616,8 @@ async def test_nora_engagement_outcomes_total_counts_a_recovered_reply_as_recove
     """DEC-93's own split, on the standing counter rather than a one-off
     Langfuse query. A reply the model wrote as prose (no `send_reply` call)
     must land under `outcome="recovered"`, not `"send_reply"` — collapsing
-    the two is exactly what would have hidden the 56% figure this counter
-    exists to keep visible."""
+    the two would hide the recovered share this counter exists to keep
+    visible."""
     adapter = _FakeAdapter()
     pipeline, metrics, _audit, _memory, background = _build_pipeline(
         adapter=adapter,
@@ -2718,13 +2672,12 @@ async def test_nora_engagement_outcomes_total_does_not_depend_on_the_trace_store
 
 
 # ---------------------------------------------------------------------------
-# ONE TRACE PER TAG (issue #64). The three spans this pipeline opened had no
-# parent, and a rootless span IS a trace — so one tagged message rendered as
-# three near-empty Langfuse traces, and a busy minute as a page of them.
+# ONE TRACE PER TAG. A rootless span IS a trace, so spans without a shared
+# parent would render one tagged message as several near-empty Langfuse traces.
 #
 # These assert on EXPORTED spans (the `exported_spans` fixture), because the
-# defect lives entirely in the trace ids and the parent links. A test that
-# checked `span` had been CALLED would have stayed green throughout the bug.
+# property lives entirely in the trace ids and the parent links. A test that
+# checked `span` had been CALLED would stay green regardless.
 # ---------------------------------------------------------------------------
 
 
@@ -2736,12 +2689,11 @@ def _by_name(exporter) -> dict[str, list]:
 
 
 async def test_one_tagged_message_produces_exactly_one_trace(exported_spans):
-    """The defect, stated as a property: every span a tag opens shares one trace
-    id, and there is exactly ONE root.
+    """Every span a tag opens shares one trace id, and there is exactly ONE root.
 
     PROBE: delete the `with span("engagement", ...)` wrapper in `run` and the
     admission and turn spans become roots of their own traces — three trace ids,
-    three roots, which is what the operator was looking at.
+    three roots.
     """
     pipeline, _metrics, _audit, _memory, background = _build_pipeline()
 
@@ -2781,8 +2733,8 @@ async def test_every_stage_span_hangs_under_the_tag_root(exported_spans):
 
 
 async def test_the_turn_span_records_the_outcome_the_turn_actually_had(exported_spans):
-    """The other half of #64: the spans carried a name and nothing else, so
-    Langfuse rendered a trace with nothing in it. A turn's disposition is only
+    """The spans carry more than a name, or Langfuse renders a trace with nothing
+    in it. A turn's disposition is only
     known in the `finally`, which is what `annotate` is for.
 
     PROBE: delete the `annotate(...)` in `_run_turn`'s `finally`.
@@ -2811,8 +2763,8 @@ async def test_a_turn_that_says_nothing_is_recorded_as_silent(exported_spans):
 
 async def test_a_rejected_tag_leaves_a_trace_that_says_it_was_rejected(exported_spans):
     """A self-tag is dropped at admission and never reaches a turn. It still
-    leaves a trace, and one that NAMES the verdict rather than the unexplained
-    one-span stub the skeleton left.
+    leaves a trace, and one that NAMES the verdict rather than an unexplained
+    one-span stub.
 
     PROBE: drop `annotate(nora.admission=...)` in `run` and a refused tag is
     indistinguishable from one that crashed before its first stage.
@@ -2831,7 +2783,7 @@ async def test_a_rejected_tag_leaves_a_trace_that_says_it_was_rejected(exported_
 
 async def test_a_tag_turn_still_reaches_the_collector(exported_spans):
     """R-76's OTHER DIRECTION, and the one a fix aimed at trace volume is most
-    likely to break. Ingest stopped being exported because it has no generation
+    likely to break. Ingest is not exported because it has no generation
     in it; a tag turn is the thing the collector exists for, and it must come
     through whole — root, stages, and the invoke span the model call hangs
     under — with the same trace id.
@@ -2886,7 +2838,7 @@ async def test_a_tag_refused_at_admission_still_reaches_the_collector(exported_s
 
 
 async def test_a_queued_tag_lands_in_the_trace_that_admitted_it(exported_spans):
-    """THE CONTEXT-PROPAGATION PROPERTY — the reason #64 is not a one-line wrap.
+    """THE CONTEXT-PROPAGATION PROPERTY — why one trace per tag is not a one-line wrap.
 
     A queued tag runs on a task `ConversationSlots.release_and_dispatch` spawns
     from the PREVIOUS turn's `finally`. `asyncio.create_task` COPIES contextvars
@@ -2930,8 +2882,7 @@ async def test_a_queued_tag_lands_in_the_trace_that_admitted_it(exported_spans):
 async def test_a_queued_tag_with_no_carried_context_starts_its_own_trace(exported_spans):
     """The fail-closed direction, driven through the real dispatch path.
 
-    `_run_queued`'s `carrier` defaults to `None` — the shape a factory built
-    before it existed would have — and `attached(None)` attaches an EMPTY
+    `_run_queued`'s `carrier` defaults to `None` and `attached(None)` attaches an EMPTY
     context. So the worst case of a lost capture is a turn that traces on its
     own, never one silently adopted by whatever task happened to spawn it.
 
@@ -2968,7 +2919,7 @@ async def test_a_queued_tag_with_no_carried_context_starts_its_own_trace(exporte
     assert t2_turn.context.trace_id != t1_root.context.trace_id
 
 
-# --- the shared decision log (issue #199) ---------------------------------
+# --- the shared decision log ---------------------------------
 
 
 def _decision_recorder(store=None, *, metrics=None):
@@ -2986,8 +2937,8 @@ async def test_a_tag_turn_that_replies_is_written_to_the_decision_log():
     """**The writer.** The tag path is the one decider never in doubt about
     whether it should speak — somebody addressed her — so it reads nothing from
     the log and only writes. What it writes is what the other two could not
-    see: issue #199's incident is a tag turn one second behind a participation
-    answer, re-deriving it from scratch and dying.
+    see: a tag turn one second behind a participation answer would
+    re-derive it from scratch.
 
     `reason` is the disposition `real_outcome` already derived, reused rather
     than derived a second way — a second derivation is a third place the two
@@ -3025,7 +2976,7 @@ async def test_a_tag_turn_that_said_nothing_is_written_too():
     prompt. `failed` is kept for a turn a guard vetoed or a fault killed.
 
     Falsification: move the `record` call below the `if not delivered: return`,
-    or collapse the three-way verdict back to `replied`/`failed`.
+    or collapse the three-way verdict to `replied`/`failed`.
     """
     store = InMemoryDecisionLogStore()
     pipeline, _, _, _, background = _build_pipeline(
@@ -3071,12 +3022,11 @@ async def test_a_decision_log_that_is_down_never_fails_a_tag_reply():
 
 
 async def test_a_tag_turn_that_faults_is_written_too():
-    """**The incident's own failure mode.** 2026-09-10's tag turn re-derived an
-    answer participation had just sent and DIED doing it. The write beside
-    `check_outcome` never runs for such a turn — the fault lands in the
-    pipeline's `except BaseException` — so without a row there, the log says
-    nothing happened in that room at 16:44 and the very turn it exists to make
-    visible is the one it misses.
+    """A tag turn that DIES after participation just answered still logs a row.
+    The write beside `check_outcome` never runs for such a turn — the fault
+    lands in the pipeline's `except BaseException` — so without a row there, the
+    log says nothing happened in that room and misses the very turn it exists to
+    make visible.
 
     Written even though the TRACE is deliberately dropped on the same branch,
     and the two are not in tension: the trace is dropped because that branch
@@ -3145,7 +3095,7 @@ async def test_the_debrief_is_handed_the_account_the_turn_read(monkeypatch):
 
 # ---------------------------------------------------------------------------
 # The Room a tag builds carries the Record row that raised it, so an event the
-# turn writes cites it (the review of PR #669; `Room.trigger_message_ids`).
+# turn writes cites it (`Room.trigger_message_ids`).
 # ---------------------------------------------------------------------------
 
 

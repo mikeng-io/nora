@@ -1,6 +1,5 @@
 """`SocialRouter`'s own rules — the ones that are about ROUTING rather than
-about the port (design/instagram-adoption/08-social-adapter-architecture,
-/15, /18).
+about the port.
 
 Its port obligations (three states, never raises, no status re-mapping) are in
 `tests/contract/test_social_provider_contract.py`, where they are checked
@@ -11,20 +10,16 @@ the one with teeth — failing over.
 Every test asserts WHICH backend was asked, not only what came back. A router
 that returned the right status from the wrong backend would pass a
 status-only test while answering a different question from the one it was
-given, which is exactly the failure the design forbids in those words: *a
-router that improvises is a router that lies about what it looked at.*
+given: *a router that improvises is a router that lies about what it looked at.*
 
-The second half of this file is RESOLUTION and REACH, which moved here from
-`InstagramSocialClient` on 2026-09-22 (design/instagram-adoption/10 §"Who
-owns what") and were split into two keys on 2026-09-24 (/18: resolution by
-`(platform, what, input kind)`, reach by the read alone). It is tested here
-for the reason it moved: inside one backend it could only ever govern that
-backend's rows, and the rest had no subject authorization at all. So the
-assertions are about TOTALITY and about the negatives — that a `named` target
-is never resolved through the index, and that a profile is never
-reach-checked — as much as about the two refusal statuses, because "nothing
-was looked up" is invisible in a status and an unclassified row is invisible
-in a green suite.
+The second half of this file is RESOLUTION and REACH, keyed separately:
+resolution by `(platform, what, input kind)`, reach by the read alone. They are
+enforced in the router because inside one backend they could only govern that
+backend's rows. So the assertions are about TOTALITY and about the negatives —
+that a `named` target is never resolved through the index, and that a profile
+is never reach-checked — as much as about the two refusal statuses, because
+"nothing was looked up" is invisible in a status and an unclassified row is
+invisible in a green suite.
 """
 
 from __future__ import annotations
@@ -48,7 +43,7 @@ from nora.testing import (
 )
 
 #: Both Instagram rows arrive as a PERSON — the tool resolved a spoken name to
-#: this person id inside the room (design/instagram-adoption/18).
+#: this person id inside the room.
 _STORY = {
     "platform": "instagram", "what": "story", "target": "miles", "limit": 1,
     "target_kind": TARGET_PERSON,
@@ -74,11 +69,10 @@ def _router(*, default=None, instagram=None, subjects=None):
 
 
 def test_the_exception_list_has_exactly_the_rows_the_design_records():
-    """Pinned as a VALUE, not a shape. Since 15 the list is the Instagram rows
-    the bridge serves END TO END, and a row joins it in the change that
-    removes its OpenCLI row (the per-verb cutover). A row appearing here
-    without that change should cost somebody an edit to this line and a
-    reason."""
+    """Pinned as a VALUE, not a shape. The list is the Instagram rows the
+    bridge serves END TO END; a row joins it only when its OpenCLI row is
+    removed. A row appearing here otherwise should cost somebody an edit to
+    this line and a reason."""
     assert frozenset({
         ("instagram", "story"), ("instagram", "profile"), ("instagram", "search"),
         ("instagram", "post"),
@@ -86,10 +80,9 @@ def test_the_exception_list_has_exactly_the_rows_the_design_records():
 
 
 async def test_x_goes_to_the_default_and_instagram_search_to_the_bridge():
-    """P11: `instagram/search` moved to the bridge with its OpenCLI row
-    deleted, so OpenCLI serves X only. The default is offered an Instagram
-    search here and must never be asked: a router that still sent it there
-    would be two backends for one read."""
+    """`instagram/search` is served by the bridge, so OpenCLI serves X only. The
+    default is offered an Instagram search here and must never be asked: a
+    router that sent it there would be two backends for one read."""
     default = FakeSocialProvider({
         ("instagram", "search"): {"status": "ok", "text": "accounts"},
         ("x", "post"): {"status": "ok", "text": "a post"},
@@ -223,9 +216,7 @@ def test_a_row_the_exception_list_does_not_carry_is_refused_at_construction():
 
 # ---- resolution and reach --------------------------------------------------
 #
-# Moved here from `InstagramSocialClient` (design/instagram-adoption/10 §"Who
-# owns what") and split into two keys by /18: resolution on `(platform, what,
-# input kind)`, reach on the read alone.
+# Resolution is keyed on `(platform, what, input kind)`, reach on the read alone.
 
 
 def test_every_row_a_backend_can_serve_says_how_its_subject_resolves():
@@ -240,11 +231,10 @@ def test_every_row_a_backend_can_serve_says_how_its_subject_resolves():
     """
     servable = set(READ_ONLY_ALLOWLIST) | EXCEPTION_ROUTES
     assert {(platform, what) for platform, what, _kind in SUBJECT_INPUTS} == servable
-    # And the split is the one 07 and 18 describe: every OpenCLI row takes a
-    # string a human typed; the bridge's profile and story take a PERSON (P5)
-    # or a HANDLE (P10: typed, or a link's username), never a bare string;
-    # the bridge's SEARCH takes the free text a person typed (P11) and its
-    # POST the shortcode of a pasted link (P12), neither ever resolved.
+    # Every OpenCLI row takes a string a human typed; the bridge's profile and
+    # story take a PERSON or a HANDLE (typed, or a link's username), never a
+    # bare string; the bridge's SEARCH takes the free text a person typed and
+    # its POST the shortcode of a pasted link, neither ever resolved.
     named = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_NAMED}
     person = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_PERSON}
     handle = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_HANDLE}
@@ -257,7 +247,7 @@ def test_every_row_a_backend_can_serve_says_how_its_subject_resolves():
 
 
 async def test_a_named_row_is_allowed_and_is_never_resolved_through_the_index():
-    """Tier 2 is «allowed, never resolved implicitly» (`07`), and the second
+    """Tier 2 is «allowed, never resolved implicitly», and the second
     clause is the one code below the tool can hold.
 
     Whether a human typed `nasa` is a fact about the conversation that this
@@ -305,10 +295,9 @@ async def test_a_person_row_reaches_the_backend_as_the_RESOLVED_subject():
 async def test_a_profile_has_no_reach_check():
     """Reach is keyed on the READ. Only a story has a reach check (a privacy
     choice: Nora opens only listed people's stories), so a profile needs
-    resolution alone (15 §"Resolution is not authorization"); refusing it
-    for an out-of-reach person would be a boundary nobody set. The same
-    person's story is refused — the control that says the index DID say
-    «out of reach»."""
+    resolution alone; refusing it for an out-of-reach person would be a
+    boundary nobody set. The same person's story is refused — the control
+    that says the index DID say «out of reach»."""
     instagram = FakeSocialProvider({
         ("instagram", "story"): {"status": "ok"},
         ("instagram", "profile"): {"status": "ok"},
@@ -326,7 +315,7 @@ async def test_a_profile_has_no_reach_check():
 @pytest.mark.parametrize("read", [_STORY, _PROFILE], ids=["story", "profile"])
 async def test_a_typed_handle_on_a_bridge_row_is_not_served(read):
     """A `named` target on an Instagram profile or story row is not
-    admitted, even with P10's username lookup: a handle must arrive AS a
+    admitted, even with the username lookup: a handle must arrive AS a
     `handle`, which the lookup resolves and the reach check covers. A bare
     `named` string would be a handle nobody resolved, and for a story it would
     skip the reach check entirely (a handle names no person to check).
@@ -424,10 +413,8 @@ async def test_an_index_that_cannot_be_read_is_unavailable_and_never_a_read():
     (`None`) costs a read that should have happened rather than granting one
     that should not have. It is `unavailable` — «I couldn't check» — and not
     `ambiguous` or `nothing_found`, which are claims about the person's
-    accounts that nobody could make. Until 2026-09-24 this pinned `ambiguous`,
-    because the port's single `None` could not tell the cases apart. Pinned as
-    ONE status: «either of these is fine» is how a fail-closed path quietly
-    stops being one."""
+    accounts that nobody could make. Pinned as ONE status:
+    «either of these is fine» is how a fail-closed path quietly stops being one."""
     instagram = FakeSocialProvider({("instagram", "story"): {"status": "ok"}})
     router = _router(
         instagram=instagram,
@@ -499,7 +486,7 @@ def test_a_person_keyed_backend_cannot_be_wired_without_a_subject_index(row):
 
 
 def test_the_post_row_alone_needs_no_index():
-    """`instagram/post` (P12) takes the shortcode of a pasted link: no
+    """`instagram/post` takes the shortcode of a pasted link: no
     person resolved and no reach checked, so like the search row it composes
     without an index."""
     router = SocialRouter(
@@ -532,10 +519,10 @@ def test_the_default_backend_alone_needs_no_index():
     assert isinstance(router, SocialRouter)
 
 
-# ---- a handle or a link's username (P10) -----------------------------------
+# ---- a handle or a link's username -----------------------------------
 #
 # Resolved by the bridge's EXACT username lookup, never the person index
-# (15 §Links: `identity.toml`'s username is display metadata). A story's
+# (`identity.toml`'s username is display metadata). A story's
 # reach check then runs on the igid the handle NAMED, reversed to a person,
 # never re-derived through `igids_for`.
 
@@ -628,7 +615,7 @@ async def test_a_handle_story_of_a_listed_person_is_read_on_that_igid():
 
 
 async def test_a_handle_story_of_a_stranger_is_refused_and_never_requested():
-    """The NEGATIVE the design names (17 P10): an account that maps to nobody
+    """The negative: an account that maps to nobody
     is in no room, so its story is `refused` and no story request is made.
     The lookup DID run (it had to, to know whose account this is), and the
     same stranger's PROFILE is read: the empty dispatch log is the reach
@@ -655,7 +642,7 @@ async def test_a_handle_story_of_a_person_listed_in_no_room_is_refused():
 
 
 async def test_a_handle_to_one_of_two_accounts_reads_that_account_by_name_it_is_ambiguous():
-    """15 §Links: a handle NAMES one account, so a friend with two accounts is
+    """A handle NAMES one account, so a friend with two accounts is
     read on the one named, never re-derived through `igids_for` (which would
     answer `ambiguous`). Asked BY NAME the same friend stays `ambiguous`. The
     index's forward lookup is asked only for the by-name read."""
@@ -701,7 +688,7 @@ async def test_a_post_by_person_or_handle_is_not_served(kind):
 
 
 async def test_a_handle_story_of_a_listed_person_in_another_room_only_is_refused():
-    """The operator's conservative default (18, 2026-09-24): a story by handle
+    """The conservative default: a story by handle
     or link must name someone on the ASKING room's roster, the scope a name
     resolves in. Miles is Tier 0, and is not in this room: `refused`, with the
     SAME payload as a stranger's, so the answer does not reveal that he is in

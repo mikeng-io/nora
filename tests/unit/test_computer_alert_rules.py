@@ -3,7 +3,7 @@ code emits, and fire as the cases in `deploy/prometheus/tests/computer.test.yml`
 say they do.
 
 A rule on a label nobody emits is silent forever and looks exactly like a healthy
-one (the Life360 rule's lesson, `tests/test_deploy_assets.py`). So the names and
+one (see the Life360 rule in `tests/test_deploy_assets.py`). So the names and
 the status word are read off the code here, and the behaviour is run through
 promtool: the binary when it is installed, the pinned Prometheus image when docker
 is, and a skip otherwise (the same posture as the presence rules' test).

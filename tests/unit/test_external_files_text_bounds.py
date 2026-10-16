@@ -1,6 +1,6 @@
 """`nora.infra.external_files.text` and the adapter's body read stay bounded on
 crafted input: every count is charged while it is read, cumulatively, on the
-bytes and characters actually held (security review of PR S2, 2026-10-10)."""
+bytes and characters actually held."""
 
 from __future__ import annotations
 
@@ -145,8 +145,8 @@ def test_a_cell_at_the_last_column_costs_its_padding_before_it_exists():
 
 
 def test_empty_rows_are_charged_for_the_lines_they_make():
-    """Re-review of PR 801: a row's `| ... |` was never charged, so 1.5M empty
-    rows (13.9 KB zipped) made 7.5M chars past a 2M cap."""
+    """A row's `| ... |` is charged: 1.5M empty rows (13.9 KB zipped) must not
+    make 7.5M chars past a 2M cap."""
     rows = '<row r="1"/>' * 1_500_000
     data = _workbook({"Empty": rows})
     assert len(data) < 100_000
@@ -163,9 +163,9 @@ def test_a_full_row_is_charged_once_not_twice():
 
 
 def test_out_of_memory_in_a_parser_is_not_called_not_text(monkeypatch):
-    """Re-review of PR 801: the parsers' catch-all turned a MemoryError into
-    `not_text` ("a picture, a video, an archive"). It propagates, and the
-    parse child answers it as too large."""
+    """The parsers' catch-all must not turn a MemoryError into `not_text`
+    ("a picture, a video, an archive"). It propagates, and the parse child
+    answers it as too large."""
     import pypdf
 
     from nora.infra.external_files import text as text_mod
@@ -211,12 +211,12 @@ def test_plain_text_and_pdf_text_are_bounded_too():
     _refused(lambda: pdf_text(_pdf("Lunch set 88"), max_chars=10), TOO_LARGE)
 
 
-# ---- review of PR 801: ZIP methods, nesting, one Sheets budget ----
+# ---- ZIP methods, nesting, one Sheets budget ----
 
 @pytest.mark.parametrize("method", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
 def test_a_bzip2_or_lzma_member_is_refused_before_it_is_opened(method):
     """`zipfile` inflates these whole on a read, past any chunked budget (a
-    697-byte bzip2 docx peaked at 1.12 GB). Office never writes them."""
+    697-byte bzip2 docx peaks at 1.12 GB). Office never writes them."""
     xml = (
         f"<w:document {W}><w:body><w:p><w:r><w:t>" + "A" * 5_000_000
         + "</w:t></w:r></w:p></w:body></w:document>"
@@ -237,7 +237,7 @@ def _nested_docx(n: int) -> bytes:
 
 def test_nesting_past_the_depth_cap_is_refused():
     """Tables in tables 20,000 deep: refused at the start tag that passes the
-    cap, before any of it is walked (it took 5.5 s, quadratic, before)."""
+    cap, before any of it is walked."""
     started = time.monotonic()
     _refused(lambda: docx_text(_nested_docx(20_000), 10_000_000), NOT_TEXT)
     assert time.monotonic() - started < 1

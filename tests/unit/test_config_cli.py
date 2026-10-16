@@ -1,4 +1,4 @@
-"""`nora config` — the safe config mutation surface (deploy convention §4.5).
+"""`nora config` — the safe config mutation surface.
 
 Drives the REAL argparse surface (`nora.__main__.build_parser`) against a
 small real config.toml, because the properties that matter are end-to-end:
@@ -147,8 +147,8 @@ def test_set_wrong_type_fails_closed(cfg_path: Path, capsys):
     before = cfg_path.read_text(encoding="utf-8")
     rc = run_cli("config", "set", "llm.budgets.web_fetch", "hello", "--config", str(cfg_path))
     assert rc != 0
-    # Fail happens in PRE-write validation now (Kimi review MAJOR #4 fix) —
-    # the on-disk config is never invalid, not even for a moment.
+    # Failure happens in PRE-write validation: the on-disk config is never
+    # invalid, not even for a moment.
     assert "change rejected" in capsys.readouterr().err
     # File untouched: same bytes, still loads, still the old value
     assert cfg_path.read_text(encoding="utf-8") == before
@@ -184,7 +184,7 @@ def test_atomic_write_preserves_mode(cfg_path: Path):
     run_cli("config", "set", "llm.budgets.web_fetch", "7", "--config", str(cfg_path))
     assert (cfg_path.stat().st_mode & 0o777) == 0o640
 
-# ── Codex review fixes (2026-09-08) ────────────────────────────────────────
+# ── env-name fields and candidate-file permissions ─────────────────────────
 
 def test_unset_prints_restart(cfg_path: Path, capsys):
     rc = run_cli("config", "unset", "llm.budgets.web_fetch", "--config", str(cfg_path))
@@ -241,7 +241,7 @@ def test_no_temp_files_left_after_failure(cfg_path: Path, capsys):
 
 def test_candidate_preserves_mode(cfg_path: Path):
     """The pre-write validation candidate never briefly exposes a 0600/0640
-    config as 0644 (Codex audit: candidate file permission leak)."""
+    config as 0644."""
     os.chmod(cfg_path, 0o640)
     run_cli("config", "set", "llm.budgets.web_fetch", "7", "--config", str(cfg_path))
     # No candidate/tmp leftovers at all after success, and config still 0640.

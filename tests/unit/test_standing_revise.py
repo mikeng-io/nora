@@ -1,5 +1,4 @@
-"""`standing_revise` — the write verb for room Standing
-(design/cognition-loop/70-migration.md step 3 row 3b).
+"""`standing_revise` — the write verb for room Standing.
 
 Two halves, two test classes: `nora.domain.standing_revise` (the pure checks
 — mode, schema, stale base) needs no store and is tested directly; the async
@@ -32,8 +31,8 @@ def test_every_allowed_mode_passes():
 
 
 def test_computed_told_and_induced_are_not_standing_modes():
-    """`10-tiers.md` §4: Standing allows only `deduced`, `abduced`, `said` —
-    the three modes other tiers do not share are exactly the ones refused."""
+    """Standing allows only `deduced`, `abduced`, `said` — the three modes
+    other tiers do not share are exactly the ones refused."""
     for mode in ("computed", "told", "induced"):
         refusal = check_mode(mode)
         assert refusal is not None
@@ -59,15 +58,13 @@ def test_an_omitted_optional_section_is_never_refused():
 
 
 def test_an_oversized_hold_open_or_i_owe_is_refused_by_check_schema():
-    """R-27 regression (PR #624 review): `check_schema` used to check only
-    that `hold_open`/`i_owe` were non-blank, leaving the body-length ceiling
-    (`STANDING_BODY_CEILING_CHARS`) to `Standing.__post_init__` alone — which
-    means an oversized section reached `standing_revise` (the impure half)
-    and raised `ValueError` OUTSIDE this function, uncaught by anything this
-    verb controls, where a caller's `except Exception` around the whole call
-    reads it as a store failure. `check_schema` now mirrors the ceiling for
-    both optional sections, so the refusal is typed and returned here,
-    before a `Standing` is ever built."""
+    """R-27: `check_schema` mirrors the body-length ceiling
+    (`STANDING_BODY_CEILING_CHARS`) for both optional sections, not only that
+    `hold_open`/`i_owe` are non-blank. Left to `Standing.__post_init__` alone,
+    an oversized section would reach `standing_revise` (the impure half) and
+    raise `ValueError` OUTSIDE this function, where a caller's `except
+    Exception` around the whole call reads it as a store failure. The refusal
+    is typed and returned here, before a `Standing` is ever built."""
     too_long = "x" * (STANDING_BODY_CEILING_CHARS + 1)
     for kwargs in (
         {"hold_open": too_long, "i_owe": None},
@@ -130,7 +127,7 @@ async def test_a_cold_start_write_creates_fold_count_one():
 
 
 async def test_increments_fold_count_is_the_one_thing_that_differs_between_callers():
-    """D3 (`nora.ingest.stages.standing_event`'s own module docstring): the
+    """`nora.ingest.stages.standing_event`'s own module docstring: the
     tag path's fold counts; the rollup fold does not. One parameter, both
     behaviours."""
     store = InMemoryStandingStore()
@@ -228,13 +225,12 @@ async def test_a_matching_base_revision_id_is_accepted():
 
 async def test_an_oversized_hold_open_is_refused_not_raised():
     """The async wrapper (`nora.infra.sql.standing_revise.standing_revise`)
-    must never let `Standing.__post_init__`'s `ValueError` escape uncaught —
-    that is exactly the R-27 regression PR #624's review caught: a caller's
-    `except Exception` around the whole call reads an uncaught `ValueError`
-    as `unavailable` («I could not check»), when a schema violation is a
+    must never let `Standing.__post_init__`'s `ValueError` escape uncaught: a
+    caller's `except Exception` around the whole call would read it as
+    `unavailable` («I could not check»), when a schema violation is a
     `refused` outcome the caller's own domain, not its store, is responsible
-    for. `check_schema` now refuses this before `Standing(...)` is built, so
-    this asserts the outcome as the caller sees it: a `Revision` with
+    for. `check_schema` refuses this before `Standing(...)` is built, so this
+    asserts the outcome as the caller sees it: a `Revision` with
     `committed=False`, never an exception."""
     store = InMemoryStandingStore()
     too_long = "x" * (STANDING_BODY_CEILING_CHARS + 1)
@@ -282,7 +278,7 @@ async def test_the_verb_refuses_a_prior_from_a_different_room():
 
 async def test_working_set_passes_through_unvalidated():
     """`Found, not yet given` is code-written, never a model argument this
-    verb parses (12-schemas.md §1 rule 5) — its own validator
+    verb parses — its own validator
     (`nora.engagement.stages.debrief._working_set`) already ran before this
     verb is reached, so this only asserts the value survives unchanged."""
     store = InMemoryStandingStore()
