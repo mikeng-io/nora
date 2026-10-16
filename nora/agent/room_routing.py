@@ -20,7 +20,7 @@ removed from its arguments. A call with no `room` or a room that is not on the
 agenda is REFUSED with a result the model can read, never guessed from the
 first item and never widened. The `room` picks the BINDING a read resolves
 through (its roster and lineage); it does not fence the data: `record_query
-scope="all_rooms"` and `memory_search` read the unit's other rooms
+scope="all_rooms"` and `search_memory_workspace` read the unit's other rooms
 too, because the unit is the read boundary (DEC-231).
 
 One room on the agenda needs none of this and gets the registry's tools

@@ -492,9 +492,9 @@ const TOOLS = [
     idempotency: "idempotent", retry: "safe", output_contract: "three_state",
   },
   {
-    name: "memory_search",
+    name: "ask_memory",
     description:
-      "Search what this group said, shared, kept, planned and where people went. Call this when an answer needs something older than what you see.\n\nIt returns what matches, with each item's age and how it was found. The other arguments narrow it to one person, a span of dates or some kinds of memory.\n\nSHOULD: write `query` yourself, as what you are looking for, not the raw tag message.\n\nReturns `status`: ok (`results`, or an `answer` about a person), partial, nothing_found, withheld, unavailable, not_found or ambiguous, with a `note` on how to report it.",
+      "Work out an answer to a specific QUESTION about someone, not a profile dump. Reach for it when a profile lookup is not enough.\n\nIt reasons over everything you have gathered about the person, where `about` returns the stored conclusions: use it for a judgement that has to be pieced together. It is slow (several seconds or more), so call it only when `about` would not answer. It knows only people in THIS conversation.\n\nSHOULD: write `query` yourself, as the question you need answered, not the raw tag message.\n\nReturns `status`: ok (`answer`), nothing_known, unavailable, not_found or ambiguous, with a `note` on how to report it.",
     budget: 4, terminal: false, time_shiftable: null, source_tier: "remembered",
     cacheable: false, read_only: true, side_effect_state: "none",
     idempotency: "idempotent", retry: "safe", output_contract: "three_state",
@@ -502,7 +502,7 @@ const TOOLS = [
   {
     name: "search_memory",
     description:
-      "Find where something was actually SAID in this group's history, in the exact words. Use it to recall a specific thing somebody said a long time ago.\n\nIt reaches past `load_transcript`, and returns words, not a profile (`about`).\n\nReturns `status`: ok, nothing_found, withheld or unavailable, with a `note`.",
+      "Find where something was actually SAID in this group's history, in the exact words. Use it to recall a specific thing somebody said a long time ago.\n\nIt reaches past `load_transcript`, and returns words, not a profile (`about`) or a judgement (`ask_memory`).\n\nReturns `status`: ok, nothing_found, withheld or unavailable, with a `note`.",
     budget: 4, terminal: false, time_shiftable: null, source_tier: "remembered",
     cacheable: false, read_only: true, side_effect_state: "none",
     idempotency: "idempotent", retry: "safe", output_contract: "three_state",
@@ -598,7 +598,7 @@ const TOOLS = [
   {
     name: "remember",
     description:
-      "Record a settled fact about the person speaking. Call this when somebody tells you something about themselves that is now just TRUE.\n\nThe trigger word is «記低». It writes to your long-term memory of THAT person, which `about` and `memory_search` read back; nothing else can write a person's settled fact.\n\nReturns `status`: ok, refused or unavailable, with a `note` on how to report it.",
+      "Record a settled fact about the person speaking. Call this when somebody tells you something about themselves that is now just TRUE.\n\nThe trigger word is «記低». It writes to your long-term memory of THAT person, which `about` and `ask_memory` read back; nothing else can write a person's settled fact.\n\nReturns `status`: ok, refused or unavailable, with a `note` on how to report it.",
     budget: 1, terminal: false, time_shiftable: null, source_tier: null,
     cacheable: false, read_only: false, side_effect_state: "confirmed",
     idempotency: "non_idempotent", retry: "never", output_contract: "three_state",

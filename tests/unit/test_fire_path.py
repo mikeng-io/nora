@@ -3095,7 +3095,7 @@ async def test_a_deferred_participation_turn_gets_the_same_surface_as_a_tag(
     SAME `ToolRegistry.surface()` the tag path does, so `[llm] defer_tools`
     means the same thing on both — hot tools plus the loader, the catalogue
     in the prompt, one more turn for the load."""
-    from nora.agent.tools import HOT_TOOLS, LOADER_TOOL
+    from nora.agent.tools import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
 
     calls: list = []
     path = _fire_path(
@@ -3109,7 +3109,10 @@ async def test_a_deferred_participation_turn_gets_the_same_surface_as_a_tag(
     await path.speak(_participation())
 
     call = calls[-1]
-    assert {t.tool_name for t in call["tools"]} == HOT_TOOLS | {LOADER_TOOL}
+    # No index wired: the Honcho memory surface, so the graph's hot verb is
+    # not built and not resident (DEC-316).
+    assert {t.tool_name for t in call["tools"]} == (
+        HOT_TOOLS - GRAPH_MEMORY_TOOLS) | {LOADER_TOOL}
     prompt = "\n".join(
         block.get("text", "") for m in call["pre_fill"] for block in m["content"]
     )

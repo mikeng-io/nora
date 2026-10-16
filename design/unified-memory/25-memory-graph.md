@@ -130,8 +130,7 @@ removing it later is a migration.
 
 ## 4. One retrieval service
 
-Every reader calls one service: `ask_memory` (built as `memory_search`,
-DEC-316) in a turn, the pre-fetch into a
+Every reader calls one service: `ask_memory` in a turn, the pre-fetch into a
 prompt, the Cognition session, the portal.
 
 1. **Scope** first (operator, 2026-10-15). **The unit is the read boundary.**
@@ -154,9 +153,6 @@ prompt, the Cognition session, the portal.
    yields nodes above a relevance floor**, within a node budget and a token
    budget, and never past a hard ceiling (proposed: 4 hops). `ask_memory`
    takes an optional `depth` so Nora can ask for more, up to the ceiling.
-   (Not built: `memory_search`, DEC-316, takes no depth and searches at the
-   two-hop default; a depth argument returns only if the journey slices
-   show two hops missing what deeper reaches.)
    Adaptive depth ships only if it beats a fixed two hops on the journey
    slices ([20](20-embedding-bakeoff.md)); until then two hops is the
    setting. Personalized PageRank from the seeds (HippoRAG) is the candidate

@@ -3038,7 +3038,8 @@ async def build_dependencies(
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
         # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
-        # `memory_search` answers from the index; off, from Honcho as before.
+        # one memory surface: `memory_search` over the index; off, the Honcho
+        # verbs as before (DEC-316, `nora.agent.tools.GRAPH_MEMORY_TOOLS`).
         memory_search=(
             MemorySearch(
                 SqlMemoryIndex(engine), metrics,
@@ -4255,6 +4256,7 @@ async def build_dependencies(
                 enabled_flags=(
                     *(("record_query.enabled",) if cfg.record_query.enabled else ()),
                     *(("culture.enabled",) if cfg.culture.enabled else ()),
+                    *(("memory_index.enabled",) if cfg.memory_index.enabled else ()),
                 ),
             )
             log.info(

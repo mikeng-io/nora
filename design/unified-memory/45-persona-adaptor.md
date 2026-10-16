@@ -176,8 +176,7 @@ others say about them only if it thinks to search for it, through Honcho's
 `nora/language/character.py:119-121`), and that is where "Rin is Sam's
 sister" lives. After, those messages are an input, not a search it may skip.
 
-**Tools:** `ask_memory` over the index (built as `memory_search`, DEC-316;
-replacing Honcho's `ask_memory` and
+**Tools:** `ask_memory` over the index (replacing Honcho's `ask_memory` and
 `search_memory`), `about` reading Persona, the Record reads, `lookup_person`,
 `group_members`. No act verb.
 

@@ -12,8 +12,7 @@ in [group-situation/20](../group-situation/20-context-awareness-target-shape.md)
 
 1. **Coherent, not scattered.** The state stores become one whole: files,
    media, what she has concluded about people and groups, and their state.
-2. **One way to search it.** A single verb (`ask_memory` or `search_memory`;
-   built as `memory_search`, DEC-316)
+2. **One way to search it.** A single verb (`ask_memory` or `search_memory`)
    reaches everything, instead of the model having to know which of a dozen
    tools holds the answer.
 3. **Any subject, not only people.** Honcho models a person (a peer). Nora

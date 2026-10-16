@@ -77,7 +77,7 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
 # home_room = true             # (default false) THIS room is where Nora stands when she acts
                              # for the unit with nobody asking (design/dreamer-agent-loop/
                              # 39 D2): the proactive adaptor's roster-gated reads (`where_is`,
-                             # `about`, `memory_search`, `group_members`) resolve through this
+                             # `about`, `ask_memory`, `group_members`) resolve through this
                              # room, its `location` flag applies exactly as on a tag, and the
                              # rows it writes fire into this room. Exactly one per unit;
                              # a second is a startup error. No home room, no proactive pass.

@@ -55,7 +55,7 @@ decision, not this file's.
 | hours to days | each room's position, and her unsent work there | Standing and its working set (DEC-199, #445) | `<standing>` |
 | days to weeks | the group's open questions | the note tier and its three Dreamer writers (DEC-202) | `<notes>`, `note_read` |
 | weeks to months | people's usual places; what each room has become | `analytics/` (`design/proposed/27`); the culture tier (DEC-207) | `where_been`, `saved_places`, `<culture>` |
-| long-lived | conclusions about each person, and about herself | Honcho, an interpretation and never the record (ADR 0001) | `about`, `memory_search` |
+| long-lived | conclusions about each person, and about herself | Honcho, an interpretation and never the record (ADR 0001) | `about`, `ask_memory` |
 
 **Where the build is behind that table.** Measured, not assumed:
 
@@ -167,7 +167,7 @@ Signal / Discord / WhatsApp / Instagram room
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
    → the native tools (`ToolRegistry.tool_names()`, 63 plus the `skills`
      plugin row; each tool's schema is its only description, DEC-150) — `load_transcript`/`who_said`/
-     `search_memory`, `about`/`memory_search`/`remember`, the room-scoped
+     `search_memory`, `about`/`ask_memory`/`remember`, the room-scoped
      `group_members`/`lookup_person`/`where_is`/`route`…, the note verbs, the
      event verbs, `remind`, the web/media/social reads, and the terminal
      `send_reply`/`send_gif` plus `send_to` (a relay to a sibling room)

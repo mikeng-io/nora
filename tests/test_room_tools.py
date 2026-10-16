@@ -401,57 +401,54 @@ async def test_recall_is_blind_to_someone_who_is_not_in_this_room(persons):
     assert honcho.queries == []          # her peer is never even asked about
 
 
-async def test_memory_search_about_a_person_reasons_from_noras_model_of_them(persons):
-    """With the index off, `memory_search` naming a person is what `ask_memory`
-    was, the DIALECTIC verb: `(observer=nora, observed=person)` through
-    `chat` (design/24 §4), at `ask_memory`'s default depth, with the query
-    the model wrote. The answer is the reasoned string; no search runs."""
+async def test_ask_memory_reasons_from_noras_model_of_the_person(persons):
+    """`ask_memory` is the DIALECTIC verb: it reads `(observer=nora,
+    observed=person)` through `chat`, carrying the tagging question and the
+    model's chosen depth (design/24 §4). The answer is the reasoned string."""
     honcho = FakeMemoryStore(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
     tools = _build(persons=persons, honcho=honcho, question="佢鍾唔鍾意踢波")
-    result = await _call(tools["memory_search"], query="does he play football", person="Miles")
-    assert honcho.chats == [("nora", "miles_novak", "does he play football", "low")]
-    assert honcho.searches == []
+    result = await _call(tools["ask_memory"], person="Miles", depth="high")
+    assert honcho.chats == [("nora", "miles_novak", "佢鍾唔鍾意踢波", "high")]
     assert result["status"] == "ok"
     assert result["answer"] == "plays five-a-side on Sundays"
-    assert result["note"]
 
 
-async def test_memory_search_about_a_person_falls_back_to_the_tag_message(persons):
-    """A blank `query` is the tagging question, as `ask_memory`'s was (DEC-24)."""
+async def test_ask_memory_depth_falls_back_to_low_when_off_list(persons):
+    """Depth is the model's per-question choice, but only from Honcho's ladder;
+    anything off-list is the fast default, never passed through raw."""
     honcho = FakeMemoryStore(conclusions={"miles_novak": ["likes hiking"]})
-    tools = _build(persons=persons, honcho=honcho, question="佢鍾唔鍾意行山")
-    await _call(tools["memory_search"], query=" ", person="Miles")
-    assert honcho.chats == [("nora", "miles_novak", "佢鍾唔鍾意行山", "low")]
+    tools = _build(persons=persons, honcho=honcho)
+    await _call(tools["ask_memory"], person="Miles", depth="turbo")
+    assert honcho.chats[0][3] == "low"
 
 
-async def test_memory_search_is_blind_to_someone_not_in_this_room(persons):
+async def test_ask_memory_is_blind_to_someone_not_in_this_room(persons):
     """Same roster gate as `about`: a reasoning call that could reach any peer
     in the unit is a cross-room leak with extra steps. Never asked."""
     honcho = FakeMemoryStore(conclusions={"elsewhere_liu": ["a secret about her"]})
-    result = await _call(
-        _build(persons=persons, honcho=honcho)["memory_search"], query="her", person="外人")
+    result = await _call(_build(persons=persons, honcho=honcho)["ask_memory"], person="外人")
     assert result["status"] == "not_found"
     assert honcho.chats == []
 
 
-async def test_memory_search_withholds_a_reasoned_answer_that_names_an_identifier(persons):
+async def test_ask_memory_withholds_a_reasoned_answer_that_names_an_identifier(persons):
     """R-18 fails closed on the whole reply, and this answer is ONE indivisible
     string — if it carries an identifier it is withheld whole, never handed to
     the model to echo (the `about` rationale, applied to a reasoned blob)."""
     honcho = FakeMemoryStore(conclusions={"miles_novak": ["reach him on +85298765432"]})
     tools = _build(persons=persons, honcho=honcho)
-    result = await _call(tools["memory_search"], query="his number", person="Miles")
-    assert result["status"] == "withheld"
-    assert result["found_but_unquotable"] == 1 and result["note"]
+    result = await _call(tools["ask_memory"], person="Miles")
+    assert result["status"] == "nothing_known"
+    assert result["withheld"] == 1
     assert "98765432" not in str(result)
 
 
-async def test_memory_search_is_unavailable_when_honcho_cannot_answer(persons):
+async def test_ask_memory_is_unavailable_when_honcho_cannot_answer(persons):
     """`chat` returns None for both unreachable and nothing-to-say; neither is a
     licence to claim ignorance of the PERSON — the tool says `unavailable`."""
     honcho = FakeMemoryStore(conclusions={})           # miles_novak seeds nothing → chat None
     tools = _build(persons=persons, honcho=honcho)
-    result = await _call(tools["memory_search"], query="anything", person="Miles")
+    result = await _call(tools["ask_memory"], person="Miles")
     assert result["status"] == "unavailable"
     assert result["person"] == "Miles Novak"
 
@@ -821,7 +818,7 @@ async def test_a_person_with_neither_is_still_nothing_known(persons):
 # and `untrusted="true"` on the tag; `_self_card_block`/`_peer_history_block`
 # carry the same demotion in a `note=`. These four tools hand the model the SAME
 # text — `search_memory` and `load_transcript` return verbatim group-authored
-# bodies, `memory_search` returns free-form prose written by Honcho's dialectic
+# bodies, `ask_memory` returns free-form prose written by Honcho's dialectic
 # reasoner over them — through a channel that carried none of it.
 #
 # One rule, four tools: `untrusted: True` plus the identical `framing` sentence,
@@ -843,7 +840,7 @@ async def test_about_frames_its_conclusions_as_untrusted_memory(persons):
     assert out["framing"] == _MEMORY_FRAMING
 
 
-async def test_memory_search_frames_the_reasoners_prose_as_untrusted_memory(persons):
+async def test_ask_memory_frames_the_reasoners_prose_as_untrusted_memory(persons):
     """The sharpest of the four: `answer` is free-form text an LLM wrote, and
     until this it reached the model as a bare string with nothing saying so."""
     from nora.agent.tools import _MEMORY_FRAMING
@@ -851,7 +848,7 @@ async def test_memory_search_frames_the_reasoners_prose_as_untrusted_memory(pers
     honcho = FakeMemoryStore(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
     tools = _build(persons=persons, honcho=honcho, question="佢鍾唔鍾意踢波")
 
-    out = await _call(tools["memory_search"], query="football", person="Miles")
+    out = await _call(tools["ask_memory"], person="Miles", depth="high")
 
     assert out["status"] == "ok"
     assert out["answer"] == "plays five-a-side on Sundays"   # R-18 screen intact
@@ -904,7 +901,7 @@ async def test_all_four_memory_tools_carry_one_identical_framing(persons):
 
     returns = [
         await _call(tools["about"], person="Miles"),
-        await _call(tools["memory_search"], query="hotpot", person="Miles"),
+        await _call(tools["ask_memory"], person="Miles"),
         await _call(tools["search_memory"], query="枱"),
         await _call(tools["load_transcript"], limit=40),
     ]
@@ -979,38 +976,18 @@ async def test_every_non_ok_room_tool_status_carries_a_note(persons, tmp_path):
             {"person": "Miles"},
         ),
         "nothing_known/about": (_build(persons=persons)["about"], {"person": "Miles"}),
-        "unavailable/memory_search_scope": (
-            down["memory_search"], {"query": "x", "person": "阿豹"}),
-        "not_found/memory_search": (
-            _build(persons=persons)["memory_search"], {"query": "x", "person": "外人"}),
-        "ambiguous/memory_search": (twins["memory_search"], {"query": "x", "person": "阿星"}),
-        "unavailable/memory_search": (
-            _build(persons=persons, honcho=FakeMemoryStore(conclusions={}))["memory_search"],
-            {"query": "x", "person": "Miles"},
+        "unavailable/ask_memory_scope": (down["ask_memory"], {"person": "阿豹"}),
+        "not_found/ask_memory": (_build(persons=persons)["ask_memory"], {"person": "外人"}),
+        "ambiguous/ask_memory": (twins["ask_memory"], {"person": "阿星"}),
+        "unavailable/ask_memory": (
+            _build(persons=persons, honcho=FakeMemoryStore(conclusions={}))["ask_memory"],
+            {"person": "Miles"},
         ),
-        "withheld/memory_search": (
+        "nothing_known/ask_memory": (
             _build(persons=persons, honcho=FakeMemoryStore(
                 conclusions={"miles_novak": ["reach him on +85298765432"]},
-            ))["memory_search"],
-            {"query": "x", "person": "Miles"},
-        ),
-        "unavailable/memory_search_no_roster": (down["memory_search"], {"query": "x"}),
-        "unavailable/memory_search_search": (
-            _build(persons=persons, honcho=FakeMemoryStore(fail=True))["memory_search"],
-            {"query": "x"},
-        ),
-        "nothing_found/memory_search": (
-            _build(persons=persons, honcho=only_nora)["memory_search"], {"query": "x"},
-        ),
-        "withheld/memory_search_search": (
-            _build(persons=persons, honcho=withheld)["memory_search"], {"query": "script"},
-        ),
-        "unavailable/memory_search_bad_date": (
-            _build(persons=persons)["memory_search"], {"query": "x", "since": "last week"},
-        ),
-        "unavailable/memory_search_bad_span": (
-            _build(persons=persons)["memory_search"],
-            {"query": "x", "since": "2026-10-10", "until": "2026-10-01"},
+            ))["ask_memory"],
+            {"person": "Miles"},
         ),
         "unavailable/search_memory": (
             _build(persons=persons, honcho=FakeMemoryStore(fail=True))["search_memory"],

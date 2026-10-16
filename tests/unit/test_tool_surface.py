@@ -121,12 +121,9 @@ def test_a_grant_is_a_ceiling_on_every_part_of_the_surface():
     assert _names(surface.tools) == {"now", "where_is"}
 
 
-def test_the_dreamer_only_verbs_need_the_dreamer():
-    """`standing_read` is Dreamer-only; `memory_search`, which replaced the
-    old Dreamer-only `search_memory_workspace` (2026-10-16), is not."""
-    assert "standing_read" not in _surface().admitted
-    assert "memory_search" in _surface().admitted
-    assert "memory_search" in _surface(dream_adaptor="proactive").admitted
+def test_the_dreamer_only_verb_needs_the_dreamer():
+    assert "search_memory_workspace" not in _surface().admitted
+    assert "search_memory_workspace" in _surface(dream_adaptor="proactive").admitted
 
 
 def test_the_declared_table_scope_admits_everything():

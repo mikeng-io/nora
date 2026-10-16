@@ -34,10 +34,7 @@ removing Honcho are not in this step ([00](00-intent.md) «Sequence»).
 7. **`ask_memory` already has a `depth`** (a reasoning-level Literal) and a
    required `person`. Hop depth maps onto it (low 2, medium 3, high and max 4).
    A person-free single verb changes the tool's text: a later `nora-tool` PR
-   with its `tool_selection` measurement. **Built 2026-10-16 (DEC-316):**
-   `memory_search(query, person?, since?, until?, kinds?)` replaced
-   `ask_memory` and `search_memory_workspace`; it takes no depth and searches
-   at two hops, and its narrowing applies inside the index's reads.
+   with its `tool_selection` measurement.
 8. **Two Character key schemes.** Only unit-keyed heads are indexed; the old
    room-keyed ones would widen disclosure (`character_key`).
 9. **A second note writer**, `nora/subject/knowledge.py` (sandbox seeding),

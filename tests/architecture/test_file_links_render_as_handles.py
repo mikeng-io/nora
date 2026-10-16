@@ -102,7 +102,7 @@ def _memory_backfill() -> str:
 
 
 def _memory_hits() -> str:
-    """search_memory / memory_search's unit search: Honcho's stored words, which
+    """search_memory / search_memory_workspace: Honcho's stored words, which
     hold raw links for everything fed before external-files S1."""
     from nora.agent.tools import _memory_hits_result
 
@@ -211,9 +211,9 @@ HAND_BUILT = {
     ("nora/agent/tools.py", "_transcript_messages"):
         "load_transcript / room_read / record_query results",
     ("nora/agent/tools.py", "who_said"): "who_said hits",
-    ("nora/agent/tools.py", "_memory_hits_result"): "search_memory / memory_search hits",
+    ("nora/agent/tools.py", "_memory_hits_result"): "search_memory(_workspace) hits",
     ("nora/agent/tools.py", "about"): "about's Honcho conclusions and card",
-    ("nora/agent/tools.py", "_memory_reason_honcho"): "memory_search's Honcho answer",
+    ("nora/agent/tools.py", "ask_memory"): "ask_memory's Honcho answer",
     ("nora/ingest/stages/memory_feed.py", "run"): "the live Honcho feed",
     ("nora/app/adoption.py", "backfill"): "adoption's Honcho back-feed",
     ("nora/app/memory_backfill.py", "_items"): "`nora memory backfill`",

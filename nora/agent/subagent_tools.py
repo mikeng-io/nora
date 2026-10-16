@@ -14,7 +14,7 @@ or schedules. So the list is one allowlist, derived where the registry can answe
   `document_publish`. `skills` is the model's on-demand know-how and is wired by
   the agent factory, not built here, so it is in `granted_names` for the guard only.
 - `NOT_LOOKUPS` is what is read-only and still not the worker's: every read that
-  leaves the room (`room_list`, `room_read`, `memory_search`), the
+  leaves the room (`room_list`, `room_read`, `search_memory_workspace`), the
   social reads, and the reads that only make sense to a live turn.
 - `NEVER` is what must never be held, stated so a test can walk it and so `build`
   can refuse a surface that contains one. It is a CHECK on the allowlist, not the
@@ -53,9 +53,10 @@ ACTS: frozenset[str] = frozenset({
 #: Read-only tools that are still not the worker's.
 NOT_LOOKUPS: frozenset[str] = frozenset({
     # reads that leave the launching room: the worker's reach is one room (§4c)
-    # `memory_search` searches the unit (2026-10-16; it replaced
-    # `search_memory_workspace`, here before it, and `ask_memory`)
-    "room_list", "room_read", "memory_search",
+    "room_list", "room_read", "search_memory_workspace",
+    # `memory_search` (DEC-316) reads the memory index across the unit's
+    # rooms, so it is not the worker's either
+    "memory_search",
     # the social reads stay on the tag path (a person asked for that account, now)
     "instagram_read", "instagram_search", "x_read", "x_search",
     "linkedin_read", "linkedin_search",

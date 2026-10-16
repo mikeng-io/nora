@@ -1096,7 +1096,7 @@ class HonchoClient:
 
         `peer_id` is the OBSERVER (Nora, `self._ai_peer`), `target` the
         OBSERVED person — the exact mirror of `representation`'s pair
-        (design/24 §4), so what this writes is what `about`/`memory_search` read
+        (design/24 §4), so what this writes is what `about`/`ask_memory` read
         back over the same pair. This is the only legitimate write lane for a
         settled fact about a person: notes are TRACKED UNCERTAINTY and the
         fact lane excludes person descriptions by design, so before this
@@ -1357,7 +1357,7 @@ class HonchoClient:
         question** (minimal→max), because it is the depth/latency trade and only
         the caller knows how hard the question is: a name-lookup takes `low`; a
         «what would he think about X» takes `high`. The model picks it in the
-        `memory_search` tool — Nora decides. NEVER streamed: one synchronous answer
+        `ask_memory` tool — Nora decides. NEVER streamed: one synchronous answer
         inside the loop budget.
 
         Returns the answer string, or None on any failure (unreachable, non-200,

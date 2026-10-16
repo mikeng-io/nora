@@ -163,7 +163,7 @@ async def test_metadata_rides_the_message_without_touching_the_text(adapter):
 
 async def test_chat_returns_the_reasoned_string_when_there_is_something_to_say(adapter):
     """The dialectic verb, now on the port (design/24 §4): both implementations
-    return a non-empty string when the store can reason, so `memory_search` gets an
+    return a non-empty string when the store can reason, so `ask_memory` gets an
     answer. Without this in the shared suite, `chat` joins `representation` as a
     port method whose fake behaviour is bound to nothing real — the drift class
     this file exists to catch."""

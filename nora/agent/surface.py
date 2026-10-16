@@ -44,13 +44,10 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
     "set_music_volume",
 })
 
-#: Admitted only when a Dreamer adaptor built the set. (#350 put
-#: `search_memory_workspace` here: verbatim lines from Honcho's workspace, so
-#: a room could surface words said by people in none of its units, the
-#: crossing `send_to` refuses, R-49. Its successor `memory_search` (operator
-#: ruling 2026-10-16) is every occasion's, and holds the gate in its body:
-#: with the index off, only a Dreamer pass searches the unit; a room turn
-#: searches its own channel, as `search_memory` does.)
+#: Admitted only when a Dreamer adaptor built the set (#350):
+#: `search_memory_workspace` returns verbatim lines from Honcho's WHOLE
+#: workspace, every unit, and a room could otherwise surface words said by
+#: people in none of its units — the crossing `send_to` refuses (R-49).
 #:
 #: `rollup_read` supersedes `where_been`'s 90-day cap (25 §5), and is also a
 #: tag-path tool (`TAG_READABLE_LOOP_TOOLS`, below). `standing_read` shows her
@@ -73,7 +70,8 @@ DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(
 #: `DREAMER_LOOP_TOOLS` name an adaptor declares).
 TAG_READABLE_LOOP_TOOLS: frozenset[str] = frozenset({"rollup_read"})
 
-DREAMER_ONLY_TOOLS: frozenset[str] = DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS
+DREAMER_ONLY_TOOLS: frozenset[str] = frozenset({"search_memory_workspace"}) | (
+    DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS)
 
 #: Tag-turn tools only (design/subagent §3): the four `subagent_*` tools are a person's
 #: tool for handing work to a background worker, and `video_create` starts a clip delivered
@@ -102,7 +100,9 @@ class ToolScope:
     everything.
 
     `dreamer` is True when a Dreamer adaptor built this set (`dream_adaptor`
-    is non-empty). `DREAMER_ONLY_TOOLS` are admitted only then.
+    is non-empty). `search_memory_workspace` is admitted only then (#350): it
+    returns verbatim lines from Honcho's WHOLE workspace, every unit, and a
+    room could otherwise surface words from people in none of its units.
 
     `grant` is a ceiling by name, or `None` for no ceiling. The Dreamer passes
     its adaptor's granted tools intersected with what it may hold

@@ -219,6 +219,13 @@ def _check(name: str, row: dict[str, Any]) -> None:
                 f"{name}: case {row['name']!r}'s `metadata.transport` must map "
                 f"networks to one of {sorted(TRANSPORT_STATES)}; got {varied!r}"
             )
+    surface = (row.get("metadata") or {}).get("memory_surface")
+    if surface is not None and surface not in MEMORY_SURFACES:
+        raise ValueError(
+            f"{name}: case {row['name']!r}'s `metadata.memory_surface` must be one "
+            f"of {sorted(MEMORY_SURFACES)}, or absent for a case that routes on "
+            f"both; got {surface!r}"
+        )
     if CORPUS_ENTRY.get(name) == "standing":
         _check_fold_case(name, row)
     evidence = evidence_problems(row.get("metadata") or {})
@@ -418,9 +425,27 @@ JUDGED_CORPORA = frozenset({
 JUDGE_REQUIRED = frozenset({"standing", "conversational_recall"})
 
 
+#: `metadata.memory_surface` (DEC-316): a case whose expected route exists on
+#: ONE memory surface. `graph` (`memory_search`) runs only under
+#: `--memory-index`; `honcho` (`ask_memory`, `search_memory`,
+#: `search_memory_workspace`, `who_said`) only without it. A case that states
+#: none runs on both. The other arm skips it rather than FAIL it by
+#: construction: a verb that is not offered cannot be routed to.
+MEMORY_SURFACES = frozenset({"graph", "honcho"})
+
+#: `python -m evals --memory-index`: the subject composed with the memory
+#: GRAPH's tool surface (DEC-316: `memory_search`, and none of the Honcho
+#: memory verbs), the after arm of a routing measurement whose deployment
+#: still runs the Honcho surface. Applied as a subject override
+#: (`Spec.overrides`), never written into the generated config, so the drift
+#: gate still compares that config with the deployment's own. Routing grades
+#: which tools ran, so the sandbox's index may be empty for it.
+MEMORY_INDEX_OVERRIDES: dict[str, object] = {"memory_index.enabled": True}
+
+
 def experiment_for(
     name: str, *, source_url: str, judge: Any = None, sample: int = 1,
-    only: frozenset[str] | None = None,
+    only: frozenset[str] | None = None, memory_index: bool = False,
 ) -> tuple[Experiment, Any]:
     """A ready-to-run `(Experiment, task)` pair for one corpus.
 
@@ -436,6 +461,9 @@ def experiment_for(
     moved does not cost the whole corpus. `sample_read`'s UNSTABLE is the
     answer that needs draws, and draws are what a corpus-sized bill makes
     people skimp on.
+
+    `memory_index` composes the subject on the memory graph's tool surface
+    (`MEMORY_INDEX_OVERRIDES`).
     """
     from evals.backbone import sampled
 
@@ -454,6 +482,17 @@ def experiment_for(
                 f"or misspelt. Active: {sorted(known)}"
             )
         cases = [c for c in cases if c.name in only]
+    # One memory surface per arm (`MEMORY_SURFACES`). A case NAMED with
+    # `--case` on the other arm is refused, never silently dropped: that run
+    # would report a clean corpus it never drew.
+    arm = "graph" if memory_index else "honcho"
+    other = sorted(c.name for c in cases if c.metadata.get("memory_surface") not in (None, arm))
+    if only is not None and other:
+        raise ValueError(
+            f"{name}: {other} route on the other memory surface; "
+            + ("drop --memory-index" if memory_index else "pass --memory-index")
+        )
+    cases = [c for c in cases if c.metadata.get("memory_surface") in (None, arm)]
     if sample > 1:
         cases = [draw for base in cases for draw in sampled(base, sample)]
     spec = Spec(
@@ -461,6 +500,7 @@ def experiment_for(
         entry=CORPUS_ENTRY[name],
         judge=judge if name in JUDGED_CORPORA else None,
         full_restore=name in FULL_RESTORE_CORPORA,
+        overrides=dict(MEMORY_INDEX_OVERRIDES) if memory_index else None,
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
     experiment = Experiment(cases=cases, evaluators=[grader])

@@ -283,13 +283,13 @@ async def _drain(background) -> None:
 # The counters that carry a per-tool `tool` label, so a live call's tool NAME can
 # be read back. `nora.agent.tools` does NOT record every tool through one series:
 # native tools use `nora_tool_calls_total{tool,status}` (`_record`), but the
-# room/memory tools — group_members, lookup_person, about, memory_search,
+# room/memory tools — group_members, lookup_person, about, ask_memory,
 # search_memory — use `nora_room_lookups_total{tool,status}` (`_record_room`), a
 # SEPARATE series (`tests/test_tools.py::test_the_new_counter_never_double_counts_a
 # _room_scoped_tool` pins the split, asserting `nora_tool_calls_total == 0` and
 # `nora_room_lookups_total == 3` for a room tool). Reading only the first would be
 # BLIND to the whole MEMORY cluster of `SEED_INTENT_GRAPH`, silently false-PASSing
-# a `NoSiblingLeakage` leak into `about`/`memory_search`. `media_fetch` records
+# a `NoSiblingLeakage` leak into `about`/`ask_memory`. `media_fetch` records
 # `nora_media_fetch_total` which carries NO `tool` label and so cannot be
 # reconstructed by name — it is deliberately not an intent-graph node, and
 # `evals.evaluators.UNMEASURABLE_LIVE` + its guard test fail closed if one is added.

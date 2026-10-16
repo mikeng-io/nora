@@ -17,7 +17,6 @@ from nora.agent.tools import (
     note_handle,
 )
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
 from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, SendResult
@@ -145,11 +144,14 @@ def test_every_declared_tool_is_built(wiring):
         # design/cognition-loop/25 §5, 50 §2: built here like every closure; only a
         # Dreamer loop is OFFERED them (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
         "rollup_read", "standing_read", "character_read",
-        "group_members", "lookup_person", "about", "search_memory",
+        "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
-        # One memory verb since 2026-10-16, replacing `ask_memory` and
-        # `search_memory_workspace`.
-        "memory_search",
+        # `search_memory_workspace` IS built here — `build_tools` builds every
+        # closure. Which ones a ROOM sees is `ToolScope`'s decision, applied
+        # by `ToolRegistry.surface()` (design/tool-catalogue, phase B), and the
+        # Dreamer-only cut (#350) is pinned there:
+        # tests/unit/test_tool_registry.py (`dreamer - tag`).
+        "search_memory_workspace",
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
@@ -1677,19 +1679,17 @@ def _unit_memory_tools(wiring, **over):
         metrics=over.pop("metrics", wiring["metrics"]),
         room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         question="who is here", context_window=40,
-        # The cognition adaptor picks `memory_search`'s unit roster (the whole
-        # address book, over the unit, what `search_memory_workspace` did);
-        # every other turn searches its own channel
-        # (tests/unit/test_memory_search_tool.py).
-        unit_for=lambda *_a: "ws-main", dream_adaptor=COGNITION_ADAPTOR, **over,
+        # `dream_adaptor` is what SHIPS this verb at all (#350): it is
+        # Dreamer-only, and a tag-path build no longer carries it. Naming an
+        # adaptor here is not decoration — drop it and `tools` has no
+        # `search_memory_workspace` to call.
+        unit_for=lambda *_a: "ws-main", dream_adaptor="proactive", **over,
     )
     return {t.tool_name: t for t in tools}
 
 
-async def test_memory_search_in_a_dreamer_pass_filters_by_the_address_book(wiring):
-    """With no person and the index off, `memory_search` is what
-    `search_memory_workspace` was. In a Dreamer pass the roster is
-    `persons.by_person` — identity.toml's WHOLE address book,
+async def test_search_memory_workspace_filters_by_the_address_book(wiring):
+    """The roster is `persons.by_person` — identity.toml's WHOLE address book,
     not one room's live view and not one unit's people (`PersonRef` has no
     unit). This pins the per-message guard only: a peer nobody can name never
     comes back, and neither does Nora's own. It pins the ROUTE KEY the verb
@@ -1703,7 +1703,7 @@ async def test_memory_search_in_a_dreamer_pass_filters_by_the_address_book(wirin
     ))
     tools = _unit_memory_tools(wiring, honcho=honcho)
 
-    out = await tools["memory_search"](query="big walk")
+    out = await tools["search_memory_workspace"]("big walk")
 
     assert out["status"] == "ok"
     assert out["results"] == [{"who": "Miles", "said": "big walk 聽日朝早"}]
@@ -1717,7 +1717,7 @@ async def test_memory_search_in_a_dreamer_pass_filters_by_the_address_book(wirin
     assert "partial_view" not in out
 
 
-async def test_memory_search_unit_search_withholds_what_she_may_not_repeat(
+async def test_search_memory_workspace_withholds_what_she_may_not_repeat(
     wiring,
 ):
     """The egress filter is SHARED with `search_memory`
@@ -1728,28 +1728,28 @@ async def test_memory_search_unit_search_withholds_what_she_may_not_repeat(
     metrics = Metrics()
     tools = _unit_memory_tools(wiring, honcho=honcho, metrics=metrics)
 
-    out = await tools["memory_search"](query="script")
+    out = await tools["search_memory_workspace"]("script")
 
     assert out["status"] == "withheld"
     assert out["found_but_unquotable"] == 1
     assert "90000101" not in json.dumps(out)
-    # Counted on `nora_room_lookups_total`, the series `ask_memory` used:
-    # one tool, one counter, whichever path answered.
-    assert metrics.get("nora_room_lookups_total",
-                       tool="memory_search", status="withheld") == 1
+    # Counted on the TOOL series, not `nora_room_lookups_total` — this verb
+    # has no room, and the room series' alert would mislabel it.
+    assert metrics.get("nora_tool_calls_total",
+                       tool="search_memory_workspace", status="withheld") == 1
 
 
-async def test_memory_search_unit_search_outage_is_unavailable(wiring):
+async def test_search_memory_workspace_an_outage_is_unavailable(wiring):
     """`reachable=False` is the adapter's own signal that nothing ran — the
     outage must not read as «nothing was said»."""
     tools = _unit_memory_tools(wiring, honcho=_RecordingHoncho(reachable=False))
 
-    out = await tools["memory_search"](query="big walk")
+    out = await tools["search_memory_workspace"]("big walk")
 
-    assert out["status"] == "unavailable" and out["note"]
+    assert out["status"] == "unavailable"
 
 
-async def test_memory_search_in_a_dreamer_pass_without_a_roster_is_unavailable(wiring):
+async def test_search_memory_workspace_without_a_roster_is_unavailable(wiring):
     """No persons wired at all is a WIRING gap, not an empty address book:
     an empty one legitimately filters every hit, a missing one means «I
     could not check» — and the two never share a status."""
@@ -1758,9 +1758,9 @@ async def test_memory_search_in_a_dreamer_pass_without_a_roster_is_unavailable(w
         persons=None,
     )
 
-    out = await tools["memory_search"](query="big walk")
+    out = await tools["search_memory_workspace"]("big walk")
 
-    assert out["status"] == "unavailable" and out["note"]
+    assert out["status"] == "unavailable"
 
 
 async def test_find_parking_unavailable_without_route_source(wiring):

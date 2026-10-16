@@ -517,7 +517,7 @@ async def test_search_scopes_to_the_conversations_session_not_the_workspace(serv
 
 
 async def test_chat_sends_the_observed_peer_as_target_and_the_chosen_depth(server_factory):
-    """`peer_id`=observer, `target`=observed (design/24 §4): `memory_search` about a person reads
+    """`peer_id`=observer, `target`=observed (design/24 §4): `ask_memory` reads
     Nora's model of a person via `chat(peer_id="nora", target="miles_novak", …)`, and
     the model's chosen `reasoning_level` rides the body. Pins the WIRE — reverting
     the client's `if target is not None` or the reasoning_level pass-through turns

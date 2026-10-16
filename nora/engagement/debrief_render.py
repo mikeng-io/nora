@@ -193,7 +193,7 @@ _OUTCOME_GLOSS: Mapping[str, str] = {
 #: the turn ends the fold is the last reader it will ever have. At one flat 600
 #: the fold was shown a sixteenth of a median `web_search` (9.6k), so a search
 #: that found eight restaurants and sent two left no trace of the other six.
-#: 4000 carries `web_fetch` and `ask_memory` (now `memory_search`) whole at p90 (measured on 1000
+#: 4000 carries `web_fetch` and `ask_memory` whole at p90 (measured on 1000
 #: production tool calls, 2026-09-09..24). Her own narration and her tool
 #: CALLS keep 600: what she wrote is in the transcript when it was sent, and a
 #: call's arguments are hers and short.

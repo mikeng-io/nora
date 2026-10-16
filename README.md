@@ -109,7 +109,7 @@ Signal / Discord / WhatsApp / Instagram room
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
    → 63 native tools (`NATIVE_TOOLS`, plus the `skills` plugin row); each tool's schema is its only
      description (DEC-150 deleted the generated capability section). Among them:
-       transcript & memory   load_transcript / who_said / search_memory / about / memory_search / remember
+       transcript & memory   load_transcript / who_said / search_memory / about / ask_memory / remember
        people & places       group_members / lookup_person / where_is / saved_places / route / transit / weather / parking
        what the group holds  note_read / note_search / note_create / note_update / event_search / event_propose / event_rsvp
        later                 remind / list_reminders / cancel_reminder
@@ -172,7 +172,7 @@ the stores, pre-filled into each fresh agent's context:
 | what she carries between turns | where | tier |
 |---|---|---|
 | the words, verbatim | Postgres `messages` | the record (`load_transcript`, `search_memory`) |
-| conclusions about each person, and about herself | Honcho | memory (`about`, `memory_search`) |
+| conclusions about each person, and about herself | Honcho | memory (`about`, `ask_memory`) |
 | the group's open questions — a dinner not yet placed, a trip not yet booked | Postgres `note` | the note tier (`<notes>`, `note_read`; written by people on a tag and by the Cognition session) |
 | her own position on where each room's conversation stands, plus a working set of options she found and has not yet given the room | Postgres `standing` | Standing (design 26; the room's compact, DEC-199; folded after each tag turn and, from ingest, whenever `[standing] fold_batch` new messages have piled up since the last fold; working set #445) |
 | her account of what each room has become — how they talk, how things get decided | Postgres, one chain per room | the culture tier (`<culture>`; written daily by the `culture` adaptor, read by every occasion in a room but the Relevance Gate, DEC-207) |

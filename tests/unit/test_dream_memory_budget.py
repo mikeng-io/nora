@@ -227,7 +227,7 @@ def _runtime(model: Model, tools: _Tools, *, budget: AdaptorBudget = BUDGET) -> 
         metrics=metrics,
         model_name="scripted",
         # The production grant (39 D3). Without it a unit-keyed adaptor
-        # may hold no room-scoped verb, which is two of the three this file
+        # may hold no room-scoped verb, which is three of the four this file
         # counts — so the ceiling would be measured on a tool set the decide
         # turn does not have.
         grants={"proactive": _REMIND_GRANT()},
@@ -275,14 +275,14 @@ async def test_a_third_memory_read_is_answered_unavailable_and_the_pass_complete
     4. the pass still finishes `ok` and commits, because a spent ration is a
        narrower pass and not a broken one.
     """
-    model = _ScriptedModel(["about", "memory_search", "lookup_person", None])
-    tools = _Tools(["about", "memory_search", "lookup_person"])
+    model = _ScriptedModel(["about", "ask_memory", "search_memory_workspace", None])
+    tools = _Tools(["about", "ask_memory", "search_memory_workspace"])
     runtime, _ = _runtime(model, tools)
     adaptor = _Adaptor(frozenset(tools.read_only()))
 
     outcome = await runtime.run(adaptor=adaptor, key="friends", batch=())
 
-    assert tools.ran == ["about", "memory_search"], (
+    assert tools.ran == ["about", "ask_memory"], (
         "the third memory read must never reach the store"
     )
     third = _tool_results(model)[2]
@@ -303,13 +303,13 @@ async def test_the_ceiling_counts_across_verbs_rather_than_per_verb():
     the arrangement the old code admitted in full and the live trace made six
     times over.
     """
-    model = _ScriptedModel(["about", "lookup_person", "memory_search", None])
-    tools = _Tools(["about", "memory_search", "lookup_person"])
+    model = _ScriptedModel(["about", "search_memory_workspace", "ask_memory", None])
+    tools = _Tools(["about", "ask_memory", "search_memory_workspace"])
     runtime, metrics = _runtime(model, tools)
 
     await runtime.run(adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=())
 
-    assert tools.ran == ["about", "lookup_person"]
+    assert tools.ran == ["about", "search_memory_workspace"]
     assert metrics.get(
         "nora_dream_guard_vetoes_total", adaptor="proactive", rule="memory-budget",
     ) == 1
@@ -321,15 +321,15 @@ async def test_a_pass_inside_its_ration_is_untouched():
     something because this run genuinely RAN (AGENTS.md: pair every
     zero-assertion with a positive control).
     """
-    model = _ScriptedModel(["about", "memory_search", None])
-    tools = _Tools(["about", "memory_search", "lookup_person"])
+    model = _ScriptedModel(["about", "ask_memory", None])
+    tools = _Tools(["about", "ask_memory", "search_memory_workspace"])
     runtime, metrics = _runtime(model, tools)
 
     outcome = await runtime.run(
         adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=(),
     )
 
-    assert tools.ran == ["about", "memory_search"]
+    assert tools.ran == ["about", "ask_memory"]
     assert outcome.status == "ok"
     assert metrics.get(
         "nora_dream_guard_vetoes_total", adaptor="proactive", rule="memory-budget",
@@ -343,13 +343,13 @@ async def test_a_non_memory_verb_is_never_charged_to_the_memory_ration():
     that swept them in would have refused the one read the objective REQUIRES
     before any reminder.
     """
-    model = _ScriptedModel(["note_read", "note_read", "about", "memory_search", None])
-    tools = _Tools(["note_read", "about", "memory_search"])
+    model = _ScriptedModel(["note_read", "note_read", "about", "ask_memory", None])
+    tools = _Tools(["note_read", "about", "ask_memory"])
     runtime, _ = _runtime(model, tools)
 
     await runtime.run(adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=())
 
-    assert tools.ran == ["note_read", "note_read", "about", "memory_search"]
+    assert tools.ran == ["note_read", "note_read", "about", "ask_memory"]
 
 
 async def test_the_ration_resets_for_the_next_pass():
@@ -363,18 +363,18 @@ async def test_the_ration_resets_for_the_next_pass():
     first; it passed against every mutation, which is what a decorative test
     does.)
     """
-    tools = _Tools(["about", "memory_search"])
-    model = _ScriptedModel(["about", "memory_search", None, "about", "memory_search", None])
+    tools = _Tools(["about", "ask_memory"])
+    model = _ScriptedModel(["about", "ask_memory", None, "about", "ask_memory", None])
     runtime, metrics = _runtime(model, tools)
 
     await runtime.run(adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=())
-    assert tools.ran == ["about", "memory_search"]
+    assert tools.ran == ["about", "ask_memory"]
 
     outcome = await runtime.run(
         adaptor=_Adaptor(frozenset(tools.read_only())), key="g", batch=(),
     )
 
-    assert tools.ran == ["about", "memory_search", "about", "memory_search"], (
+    assert tools.ran == ["about", "ask_memory", "about", "ask_memory"], (
         "the second pass gets its own ration, on the same runtime"
     )
     assert outcome.status == "ok"
@@ -402,7 +402,7 @@ async def test_a_pass_that_keeps_asking_ends_visibly_rather_than_silently():
     shape. Issue #205 is the live measurement of how often it happens.
     """
     turns = 5
-    tools = _Tools(["about", "memory_search"])
+    tools = _Tools(["about", "ask_memory"])
     model = _ScriptedModel(["about"] * (turns + 2))
     runtime, metrics = _runtime(
         model, tools,
@@ -436,8 +436,8 @@ async def test_the_configured_ration_is_what_binds():
     DEFAULTED at every layer — a wiring gap would read as «the default is
     fine» rather than as a break.
     """
-    model = _ScriptedModel(["about", "memory_search", "lookup_person", None])
-    tools = _Tools(["about", "memory_search", "lookup_person"])
+    model = _ScriptedModel(["about", "ask_memory", "search_memory_workspace", None])
+    tools = _Tools(["about", "ask_memory", "search_memory_workspace"])
     runtime, _ = _runtime(
         model, tools,
         budget=AdaptorBudget(
@@ -448,7 +448,7 @@ async def test_the_configured_ration_is_what_binds():
 
     await runtime.run(adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=())
 
-    assert tools.ran == ["about", "memory_search", "lookup_person"]
+    assert tools.ran == ["about", "ask_memory", "search_memory_workspace"]
 
 
 # ---------------------------------------------------------------------------
@@ -502,7 +502,7 @@ def test_a_parallel_batch_of_memory_verbs_is_measured_against_itself():
     """
     guard = _guard()
     first, second, third = (_Before(n, f"t{i}") for i, n in enumerate(
-        ["about", "memory_search", "lookup_person"]))
+        ["about", "ask_memory", "search_memory_workspace"]))
     for event in (first, second, third):
         guard._before_tool(event)
 
@@ -530,7 +530,7 @@ def test_a_memory_read_that_failed_does_not_consume_the_pass_ration():
     guard._after_tool(_After("about", "t1", exception=RuntimeError("honcho is down")))
 
     assert _run(guard, "about", "t2").cancel_tool is None
-    assert _run(guard, "memory_search", "t3").cancel_tool is None, (
+    assert _run(guard, "ask_memory", "t3").cancel_tool is None, (
         "the outage must not have cost a read"
     )
     assert _run(guard, "lookup_person", "t4").cancel_tool is not None, (
@@ -545,17 +545,17 @@ def test_a_refused_memory_read_leaves_the_per_tool_budget_intact():
     """
     guard = _guard()
     _run(guard, "about", "t1")
-    _run(guard, "memory_search", "t2")
-    _run(guard, "lookup_person", "t3")
+    _run(guard, "ask_memory", "t2")
+    _run(guard, "search_memory_workspace", "t3")
 
-    assert guard._ledger.spent("lookup_person") == 0
+    assert guard._ledger.spent("search_memory_workspace") == 0
     assert guard._ledger.spent("about") == 1
 
 
 def test_a_refused_read_is_rewritten_into_an_unavailable_result():
     guard = _guard()
     _run(guard, "about", "t1")
-    _run(guard, "memory_search", "t2")
+    _run(guard, "ask_memory", "t2")
 
     before = _Before("lookup_person", "t3")
     guard._before_tool(before)
@@ -586,7 +586,7 @@ def test_an_id_less_call_cannot_hand_back_a_memory_reservation():
     worse than none.
     """
     guard = _guard()
-    for ref, name in (("t1", "about"), ("t2", "memory_search")):
+    for ref, name in (("t1", "about"), ("t2", "ask_memory")):
         before = _Before(name, ref)
         guard._before_tool(before)
         assert before.cancel_tool is None
@@ -608,9 +608,9 @@ def test_an_id_less_refusal_never_answers_another_call():
     cancel message instead and neither is answered with the other's."""
     guard = _guard()
     _run(guard, "about", "t1")
-    _run(guard, "memory_search", "t2")
+    _run(guard, "ask_memory", "t2")
 
-    first, second = _Before("about", ""), _Before("memory_search", "")
+    first, second = _Before("about", ""), _Before("ask_memory", "")
     guard._before_tool(first)
     guard._before_tool(second)
     assert MEMORY_BUDGET_REASON in (first.cancel_tool or "")
@@ -733,10 +733,13 @@ def test_the_shipped_default_is_the_number_d11_grades_at():
 # ---------------------------------------------------------------------------
 
 
-def test_the_memory_verbs_are_these_three():
-    """The verbs the memory ceiling counts: four until `memory_search`
-    replaced `ask_memory` and `search_memory_workspace` (2026-10-16)."""
-    assert set(MEMORY_TOOLS) == {"about", "memory_search", "lookup_person"}
+def test_the_memory_verbs_are_these_five():
+    """The verbs the memory ceiling counts: every memory verb of both memory
+    surfaces (DEC-316), so the ration binds whichever one is registered."""
+    assert set(MEMORY_TOOLS) == {
+        "about", "ask_memory", "search_memory_workspace", "lookup_person",
+        "memory_search",
+    }
 
 
 def test_note_read_is_not_a_memory_verb():

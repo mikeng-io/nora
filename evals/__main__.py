@@ -301,9 +301,11 @@ def _run_one(
     only: frozenset[str] | None = None, all_reasons: bool = False,
     positions: bool = False,
     context_receipts: list[dict] | None = None,
+    memory_index: bool = False,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
+        memory_index=memory_index,
     )
     report = experiment.run_evaluations(task=task)
     context_complete = True
@@ -474,6 +476,14 @@ def main() -> int:
             "smoke run and says so"
         ),
     )
+    ap.add_argument(
+        "--memory-index", action="store_true",
+        help="compose every subject with [memory_index] enabled = true: the "
+             "memory graph's tool surface (memory_search, no Honcho memory "
+             "verb; DEC-316). The after arm of a memory routing run while the "
+             "deployment runs the Honcho surface. A subject override, so the "
+             "drift gate is unchanged",
+    )
     ap.add_argument("--context-arm", choices=("full", "rules", "flash"), default="full",
                     help="experiment-only tag exposure filter; retrieval stays unchanged")
     ap.add_argument("--context-report", type=Path,
@@ -592,6 +602,11 @@ def main() -> int:
             # AFTER the rebuild: the sweep reads Honcho's address and the
             # deployment's workspace off the config every subject composes.
             print(f"run {RUN_ID}: every draw gets its own Honcho workspace")
+            print(
+                "memory surface: "
+                + ("graph ([memory_index] enabled = true, --memory-index)"
+                   if args.memory_index else "the deployment's")
+            )
             print(pseudonyms.status())
             _sweep_stale_workspaces()
 
@@ -608,6 +623,7 @@ def main() -> int:
                     ok = _run_one(
                         name, source_url=source_url, judge=judge, sample=args.sample,
                         only=only, all_reasons=args.reasons, positions=args.positions,
+                        memory_index=args.memory_index,
                         context_receipts=(receipts if args.context_arm != "full"
                                           or args.context_report else None),
                     ) and ok

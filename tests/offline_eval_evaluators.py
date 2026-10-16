@@ -242,7 +242,7 @@ UNMEASURABLE_LIVE = frozenset({"media_fetch"})
 #     (`saved_places`, a remembered label) vs "what's at this place"
 #     (`place_info`) vs "how do I get there" (`transit`/`route`) — four short
 #     questions, four different tools, the "我邊度返工" bug.
-#   - MEMORY: `about` / `memory_search` / `search_memory` are three verbs over the
+#   - MEMORY: `about` / `ask_memory` / `search_memory` are three verbs over the
 #     same store and the model picks among them on phrasing alone.
 SEED_INTENT_GRAPH = IntentGraph(
     [
@@ -269,7 +269,7 @@ SEED_INTENT_GRAPH = IntentGraph(
         ("transit", "route"),
         ("place_info", "route"),
         # the memory verbs — READ-READ edges DELIBERATELY ABSENT (audit
-        # 2026-08-31): `about`/`memory_search`/`search_memory`/`search_knowledge`
+        # 2026-08-31): `about`/`ask_memory`/`search_memory`/`search_knowledge`
         # are different READ verbs over the SAME store, and a model that
         # reaches for a raw-message search before/after a profile read is doing
         # a normal multi-step lookup, not a routing error. The old

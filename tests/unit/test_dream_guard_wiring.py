@@ -19,7 +19,7 @@ This drives the REAL `DreamerRuntime.run()` through the real Strands loop
 test_dream_memory_budget`, which already builds this exact rig for the
 memory-ration property) with a scripted model that calls `place_info` naming
 `bogus=`, a key `place_info` has never declared. `place_info` rather than a
-memory verb (`about`/`memory_search`) on purpose: the
+memory verb (`about`/`ask_memory`/`search_memory_workspace`) on purpose: the
 per-pass memory ceiling is a SEPARATE mechanism, and mixing it in here would
 leave it unclear which one refused the call.
 """

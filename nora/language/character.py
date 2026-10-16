@@ -13,7 +13,7 @@ store and revision chain:
   human messages across the unit's rooms since its watermark. It is handed its
   previous account, those messages (newest `batch_limit`, each with its Record
   id and room) and the current culture of each of the unit's rooms, read by
-  code from the store. Memory is a tool it MAY call (`memory_search`,
+  code from the store. Memory is a tool it MAY call (`ask_memory`,
   `search_memory`), never a pre-fetch: the account must not depend on Honcho
   (#736). Its citations are the ids of the messages it was handed.
 - **the unit** (C3a), key `unit_culture_key(unit)`: what the unit is across
@@ -106,7 +106,7 @@ CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
 #: The read verbs a person session holds, each for what it reads that the
 #: handed messages do not:
 #:
-#: - `memory_search`, `search_memory`: what Nora has concluded about them, and
+#: - `ask_memory`, `search_memory`: what Nora has concluded about them, and
 #:   what they said before this batch. A hint the account may weigh, never a
 #:   citation (DEC-249) and never a pre-fetch (§3.3, #736).
 #: - `about`, `lookup_person`, `group_members`: who a name or handle in their
@@ -116,8 +116,12 @@ CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
 #: docstring), every act verb (the read-only ceiling), and `web_search`,
 #: `web_fetch`: the design never asked a person session to look a reference up,
 #: so they were the least that was not needed (DEC-290).
+#:
+#: `memory_search` is the same reach on the graph surface (DEC-316): built
+#: instead of `ask_memory` and `search_memory` while `[memory_index] enabled`.
 CHARACTER_PERSON_TOOLS: frozenset[str] = frozenset({
-    "memory_search", "search_memory", "about", "lookup_person", "group_members",
+    "ask_memory", "search_memory", "about", "lookup_person", "group_members",
+    "memory_search",
 })
 
 #: `inputs` holds two sites (the previous account; the rooms' cultures, one

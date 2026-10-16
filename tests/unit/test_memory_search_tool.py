@@ -1,18 +1,11 @@
-"""`memory_search`, the one memory verb (operator ruling 2026-10-16), in both
-states of `[memory_index] enabled` (design/unified-memory/60 S5, 65 V2).
+"""`memory_search`, the memory graph's one search verb (DEC-316).
 
-Off (no `MemorySearch`, the shipped default and the rollback): Honcho, as the
-two verbs it replaced did. With a person, `chat` (what `ask_memory` did);
-without one, in the cognition session the unit's message search (what
-`search_memory_workspace` did, held by that catalogue alone), and in any
-other turn, a Dreamer adaptor included, that room's own session search
-(what `search_memory` does), never another room's. A
-date or kind it cannot honour is said in the note.
-
-On: the index answers and Honcho is not called. `person`, `since`, `until`
-and `kinds` narrow the search INSIDE the index's reads, so a node outside
-them is never returned and never takes a slot; every status carries a note,
-and nothing in the result is an id.
+It is offered only while `[memory_index] enabled` (the surface tests are
+`tests/unit/test_memory_surfaces.py`), and there is no Honcho behind it: the
+index answers. `person`, `since`, `until` and `kinds` narrow the search
+INSIDE the index's reads, so a node outside them is never returned and never
+takes a slot; every status carries a note, and nothing in the result is an
+id.
 """
 
 from __future__ import annotations
@@ -21,16 +14,12 @@ from typing import Any
 
 import pytest
 
-from nora.agent.dreamer import AdaptorGrant, HomeRoom, RegistryToolSource
 from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import SEED_LIMIT, MemorySearch
-from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.tools import build_tools
-from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.lineage import RoomFacts
 from nora.domain.memory_index import IndexedNode, IndexState
-from nora.domain.ports import MessageHits
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeMemoryStore, FakeRosterSource
@@ -43,7 +32,6 @@ from tests.test_room_tools import (
     MILES,
     NORA,
     TYLER,
-    _build,
     _call,
     _NullStore,
 )
@@ -76,7 +64,8 @@ def _build_with(
 ) -> Any:
     room = Room(
         platform="signal", conversation_id=GROUP,
-        roster_source=FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)}),
+        roster_source=FakeRosterSource(
+            groups={GROUP: tuple(extra.pop("members", (MILES, TYLER, NORA)))}),
         persons=persons, tagger=None, self_ids=NORA,
     )
     built = build_tools(
@@ -108,189 +97,33 @@ def _index(**kw: Any) -> FakeMemoryIndex:
     )
 
 
-# ---- the index off: Honcho ---------------------------------------------------
-
-
-async def test_off_with_a_person_is_what_ask_memory_did(persons: Any) -> None:
-    honcho = FakeMemoryStore(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
-    result = await _call(_tool(persons, honcho, None), query="football", person="Miles")
-    assert honcho.chats == [("nora", "miles_novak", "football", "low")]
-    assert honcho.searches == []
-    assert result["status"] == "ok" and result["answer"] == "plays five-a-side on Sundays"
-
-
-class _TwoRooms(FakeMemoryStore):
-    """Honcho as it routes: the room's session search returns only that
-    room's messages; the unit's workspace search returns every room of the
-    unit, here room A's line and room B's (spoken by a member of THIS room,
-    so the roster filter alone would not stop it)."""
-
-    ROOM_A = ("miles_novak", "booked the pitch for sunday")
-    ROOM_B = ("miles_novak", "the pitch thing I only said in the other room")
-    #: In this room's session, from someone the room does not list.
-    UNLISTED = ("elsewhere_liu", "a pitch line from a person not listed here")
-
-    async def search(self, *, query: str, conversation_id: str | None = None,
-                     limit: int = 8, unit: str | None = None) -> MessageHits:
-        self.routes.append(("search", conversation_id, unit))
-        self.searches.append(query)
-        if conversation_id == GROUP:
-            return MessageHits(reachable=True, hits=(self.ROOM_A, self.UNLISTED))
-        if conversation_id is None and unit is not None:
-            return MessageHits(reachable=True, hits=(self.ROOM_A, self.ROOM_B))
-        return MessageHits(reachable=False)
-
-
-async def test_off_a_room_turn_without_a_person_stays_in_this_channel(
-    persons: Any,
-) -> None:
-    """Parity with origin/master: a room turn never had the unit search
-    (`search_memory_workspace` was Dreamer-only, #350), so `memory_search`
-    in a room searches this room's own session, as `search_memory` does,
-    and another room's words never come back, even a member's."""
-    honcho = _TwoRooms()
-    tool = _build_with(persons, honcho, None, unit_for=lambda *_: "u1")["memory_search"]
-    result = await _call(tool, query="pitch")
-    assert [r for r in honcho.routes if r[0] == "search"] == [("search", GROUP, None)]
-    assert result["status"] == "ok"
-    assert result["results"] == [{"who": "Miles Novak", "said": "booked the pitch for sunday"}]
-    assert "other room" not in str(result)
-
-
-async def test_off_the_cognition_session_searches_the_unit(persons: Any) -> None:
-    """The unit search is the cognition session's, as
-    `search_memory_workspace` was."""
-    honcho = _TwoRooms()
-    tool = _build_with(
-        persons, honcho, None, unit_for=lambda *_: "u1", dream_adaptor=COGNITION_ADAPTOR,
-    )["memory_search"]
-    result = await _call(tool, query="pitch")
-    assert [r for r in honcho.routes if r[0] == "search"] == [("search", None, "u1")]
-    assert len(result["results"]) == 2
-
-
-def _dream_source(persons: Any, honcho: FakeMemoryStore) -> RegistryToolSource:
-    """The Dreamer's tool source over the real registry, with this room as
-    the culture adaptor's scope room, as the composition root builds it."""
-    here = HomeRoom(unit="u1", platform="signal", conversation_id=GROUP)
-    return RegistryToolSource(
-        registry=ToolRegistry(), store=_NullStore(), persons=persons,
-        honcho=honcho, metrics=Metrics(),
-        scope_rooms={GROUP: here}, home_rooms={"u1": here},
-        rosters={"signal": FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)})},
-        self_ids=NORA,
-    )
-
-
-@pytest.mark.parametrize(("adaptor", "key", "unit", "grant"), [
-    # Scope-keyed, granted its room: the room's own session.
-    ("culture", GROUP, None, AdaptorGrant(home_room=True)),
-    # Entity-keyed, no room: the synthetic room, which cannot be read, so
-    # «I could not check», never the unit.
-    ("character-person", "miles_novak", "u1", AdaptorGrant()),
-])
-async def test_off_a_dreamer_adaptor_other_than_cognition_keeps_the_room_session(
-    persons: Any, adaptor: str, key: str, unit: str | None, grant: AdaptorGrant,
-) -> None:
-    """Independent review of #32: on origin/master only the cognition
-    catalogue held `search_memory_workspace`; the culture and
-    character-person adaptors held `search_memory`, the room session. Built
-    through `RegistryToolSource` as a dream pass builds them, `memory_search`
-    never takes the unit route there, and neither another room's line nor
-    a person the room does not list comes back."""
-    honcho = _TwoRooms()
-    built = _dream_source(persons, honcho).build(
-        key=key, names=frozenset({"memory_search"}), unit=unit,
-        adaptor=adaptor, grant=grant,
-    )
-    (tool,) = [t for t in built if t.tool_name == "memory_search"]
-    result = await _call(tool, query="pitch")
-    searched = [r for r in honcho.routes if r[0] == "search"]
-    assert all(r[2] is None for r in searched), searched
-    assert "other room" not in str(result)
-    assert "not listed here" not in str(result)
-    if adaptor == "culture":
-        assert searched == [("search", GROUP, None)]
-        assert result["results"] == [
-            {"who": "Miles Novak", "said": "booked the pitch for sunday"}]
-    else:
-        assert result["status"] == "unavailable" and result["note"]
-
-
-async def test_off_a_dreamer_pass_with_no_unit_is_refused_not_widened(
-    persons: Any,
-) -> None:
-    """No unit to name is `unavailable`, never an unrouted search of a
-    default workspace."""
-    honcho = _TwoRooms()
-    tool = _build_with(persons, honcho, None, dream_adaptor=COGNITION_ADAPTOR)["memory_search"]
-    result = await _call(tool, query="pitch")
-    assert result["status"] == "unavailable" and result["note"]
-    assert honcho.searches == []
-
-
-async def test_off_in_a_dreamer_pass_searches_with_the_whole_address_book(
-    persons: Any,
-) -> None:
-    """A Dreamer pass keeps `search_memory_workspace`'s roster: everyone in
-    identity.toml but Nora, because a unit-keyed pass has no room view."""
-    honcho = FakeMemoryStore()
-    honcho.messages = [("elsewhere_liu", "said in another room of the unit")]
-    tool = _build_with(
-        persons, honcho, None, unit_for=lambda *_: "u1", dream_adaptor=COGNITION_ADAPTOR,
-    )["memory_search"]
-    result = await _call(tool, query="room")
-    assert result["status"] == "ok"
-    assert result["results"] == [
-        {"who": "Elsewhere Liu", "said": "said in another room of the unit"}]
-
-
-@pytest.mark.parametrize("narrowing", [
-    {"since": "2026-10-01"}, {"until": "2026-10-01"}, {"kinds": ["media"]},
-])
-async def test_off_a_narrowing_honcho_cannot_honour_is_said_in_the_note(
-    persons: Any, narrowing: dict[str, Any],
-) -> None:
-    honcho = FakeMemoryStore()
-    honcho.messages = [("miles_novak", "booked the pitch")]
-    result = await _call(_tool(persons, honcho, None), query="pitch", **narrowing)
-    assert result["status"] == "ok"
-    assert "could not narrow this by date or kind" in result["note"]
-
-
-async def test_off_without_a_narrowing_says_nothing_about_one(persons: Any) -> None:
-    honcho = FakeMemoryStore()
-    honcho.messages = [("miles_novak", "booked the pitch")]
-    result = await _call(_tool(persons, honcho, None), query="pitch")
-    assert "could not narrow" not in str(result)
-
-
 # ---- arguments ---------------------------------------------------------------
 
 
 @pytest.mark.parametrize("dates", [
     {"since": "last week"}, {"until": "2026-13-01"}, {"since": "yesterday-ish"},
 ])
-@pytest.mark.parametrize("enabled", [False, True])
 async def test_a_bad_date_is_unavailable_and_searches_nothing(
-    persons: Any, dates: dict[str, str], enabled: bool,
+    persons: Any, dates: dict[str, str],
 ) -> None:
     """Never silently ignored: a narrowing dropped would answer a question
     nobody asked (operator ruling 2026-10-16)."""
     honcho = FakeMemoryStore(conclusions={"miles_novak": ["x"]})
     index = _index()
-    search = _dense(index, Metrics()) if enabled else None
-    result = await _call(_tool(persons, honcho, search), query="x", person="Miles", **dates)
+    result = await _call(
+        _tool(persons, honcho, _dense(index, Metrics())), query="x", person="Miles", **dates)
     assert result["status"] == "unavailable" and "YYYY-MM-DD" in result["note"]
     assert honcho.chats == [] and honcho.searches == [] and index.calls == []
 
 
 async def test_a_span_that_ends_before_it_starts_is_unavailable(persons: Any) -> None:
+    index = _index()
     result = await _call(
-        _tool(persons, FakeMemoryStore(), None),
+        _tool(persons, FakeMemoryStore(), _dense(index, Metrics())),
         query="x", since="2026-10-10", until="2026-10-01",
     )
     assert result["status"] == "unavailable" and result["note"]
+    assert index.calls == []
 
 
 async def test_an_ambiguous_person_is_asked_about_not_searched(tmp_path: Any) -> None:
@@ -301,18 +134,18 @@ async def test_an_ambiguous_person_is_asked_about_not_searched(tmp_path: Any) ->
         '[persons.b]\nname = "Ming Chai"\naliases = ["阿星"]\n'
         '[[persons.b.signal]]\nphone = "+85222222222"\n'
     )
-    honcho = FakeMemoryStore()
-    tools = _build(
-        persons=load_persons(path), honcho=honcho,
+    index = _index()
+    tools = _build_with(
+        load_persons(path), FakeMemoryStore(), _dense(index, Metrics()),
         members=(frozenset({"+85211111111"}), frozenset({"+85222222222"})),
     )
     result = await _call(tools["memory_search"], query="x", person="阿星")
     assert result["status"] == "ambiguous" and result["note"]
     assert sorted(result["could_be"]) == ["Ah Ming", "Ming Chai"]
-    assert honcho.chats == [] and honcho.searches == []
+    assert index.calls == []
 
 
-# ---- the index on ------------------------------------------------------------
+# ---- answers -----------------------------------------------------------------
 
 
 async def test_on_answers_from_the_index_and_never_calls_honcho(persons: Any) -> None:

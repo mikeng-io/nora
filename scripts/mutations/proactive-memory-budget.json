@@ -23,7 +23,7 @@
   {
     "name": "#160 the ration is spent by any memory verb, not by one of them",
     "file": "nora/agent/dreamer.py",
-    "old": "MEMORY_TOOLS: frozenset[str] = frozenset({\n    \"about\", \"memory_search\", \"lookup_person\",\n})",
+    "old": "MEMORY_TOOLS: frozenset[str] = frozenset({\n    \"about\", \"ask_memory\", \"search_memory_workspace\", \"lookup_person\",\n    \"memory_search\",\n})",
     "new": "MEMORY_TOOLS: frozenset[str] = frozenset({\"about\"})",
     "target": "tests/unit/test_dream_memory_budget.py -k ceiling_counts_across_verbs"
   },

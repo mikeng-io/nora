@@ -37,7 +37,7 @@ from nora.domain.presence import PresenceFix, SavedPlace, WireState
 #: checks to hard. Kept in sync with what `build_eval_tool_registry` wires
 #: directly AND what the harness backs through the pipeline's `memory=` slot.
 #:
-#: The memory verbs (`remember`/`about`/`memory_search`/`search_memory`) are NOT
+#: The memory verbs (`remember`/`about`/`ask_memory`/`search_memory`) are NOT
 #: backed here — they are backed by the `FakeMemoryStore` the harness constructs
 #: (`evals/harness.py`), threaded as `memory=` into `build_offline_pipeline`,
 #: which the registry's `build()` passes as `honcho=`. A journey whose required
@@ -54,7 +54,7 @@ BACKED_TOOLS = frozenset(
     {
         "weather", "web_search", "web_fetch", "place_info", "route", "transit",
         "where_is", "saved_places",
-        "remember", "about", "memory_search", "search_memory", "note_create",
+        "remember", "about", "ask_memory", "search_memory", "note_create",
         "parking_status", "find_parking",
     }
 )

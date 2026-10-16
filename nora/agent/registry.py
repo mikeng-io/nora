@@ -287,8 +287,10 @@ class ToolRegistry:
         # `unavailable`.
         external_files: ExternalFilesSource | None = None,
         # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
-        # the retrieval service `memory_search` answers from instead of Honcho.
-        # Process-lifetime like `record`; `None` keeps the Honcho path.
+        # the retrieval service `memory_search` answers from, and the switch
+        # between the two memory surfaces (DEC-316): wired, every build offers
+        # `memory_search` and none of the Honcho memory verbs; `None` keeps the
+        # Honcho surface. Process-lifetime like `record`.
         memory_search: MemorySearch | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
@@ -443,7 +445,7 @@ class ToolRegistry:
         # rather than a guessed empty (R-5).
         self._mobility = mobility
         # The OBSERVER peer — Nora's Honcho peer id (cfg.memory.ai_peer). The
-        # `about`/`memory_search` tools read her model of a person as
+        # `about`/`ask_memory` tools read her model of a person as
         # (observer=ai_peer, observed=person), so the registry threads it like any
         # other long-lived collaborator (design/24 §4). A future `[agent] name`
         # config feeds this same seam.
@@ -802,8 +804,7 @@ class ToolRegistry:
         FIRST SENTENCE, not a separate authored field. That was measured rather
         than assumed: the existing first sentences already discriminate on
         `find_parking`/`parking_status`, `search_memory`/
-        `search_memory_workspace` (since replaced by `memory_search`) and
-        `note_read`/`note_search`. Only
+        `search_memory_workspace` and `note_read`/`note_search`. Only
         `where_is` needed repair, and it was repaired at the docstring rather
         than worked around here — one source of truth per tool, not two.
 
@@ -905,6 +906,10 @@ class ToolRegistry:
             # (#350). Both gates live in `build_tool_specs`, and an endpoint
             # that dropped either would under-report what the agent can do.
             dream_adaptor="catalog",
+            # Both memory surfaces, for the same reason (DEC-316): the flag
+            # picks one per deployment, and the catalog and R-99's argument
+            # table describe what the code declares, not one config.
+            all_memory_surfaces=True,
             question="",
             context_window=40,
             transit_source=self._transit,

@@ -1073,13 +1073,11 @@ refresh_timeout_seconds = 8
 # store's own write. A projection that fails is queued, and the nora process
 # re-projects the queue every `drain_seconds` (the analytics process drains it
 # on its own tick as well). `nora memory rebuild` rebuilds the whole index;
-# leaving the section out keeps the default. `enabled` is the read: on,
-# `memory_search` answers from the index (scoped to the room's unit, with the
-# path that reached each item; `person`, `since`, `until` and `kinds` narrow it
-# inside the index's reads) and Honcho is not called; off, it is the Honcho
-# path (`chat` about a named person, else the room's own message search, or
-# the unit's in a Dreamer pass), which
-# cannot narrow by date or kind and says so in its result.
+# leaving the section out keeps the default. `enabled` is the read, and it
+# selects ONE memory tool surface (DEC-316): on, `memory_search` answers from
+# the index (scoped to the room's unit, with the path that reached each item)
+# and `ask_memory`, `search_memory`, `search_memory_workspace` and `who_said`
+# are not offered; off, those Honcho verbs as before and no `memory_search`.
 [memory_index]
 drain_seconds = 60.0
 enabled = false
@@ -2077,7 +2075,7 @@ output_tokens = 6000
 #
 # Memory reads per pass. 4 rather than the default 2: the decide turn asks
 # about the one or two people a note names, and this pass is asking what a
-# ROOM is — several members, each a separate `about`/`memory_search`. Still a
+# ROOM is — several members, each a separate `about`/`ask_memory`. Still a
 # ceiling and still fail-closed (the Nth+1 read is answered `unavailable` with
 # a reason, never an error and never a silent empty). The reading that would
 # raise it is a fold that spends all of them and still names people it could

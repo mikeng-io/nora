@@ -1309,13 +1309,13 @@ class MemoryIndexConfig(BaseModel):
     (`nora.app.runtime.memory_drain_loop`). Optional and defaulted, so a
     `config.toml` without the section keeps loading.
 
-    `enabled` (S5) is the READ: on, `memory_search` answers from the index
-    through `nora.agent.memory_search`, its `person`, `since`, `until` and
-    `kinds` applied inside the index's reads, and Honcho is not called; off
-    (the default), `memory_search` is Honcho: `chat` about a named person,
-    without one, the unit's message search in a Dreamer pass and the room's
-    own session search in any other turn, neither narrowed by date or kind
-    (the result says so). Undo is this flag and a restart.
+    `enabled` (S5, DEC-316) is the READ, and it selects ONE memory tool
+    surface wherever tools are built: on, the memory graph's, `memory_search`
+    over the index through `nora.agent.memory_search`, with no Honcho behind
+    it and none of `ask_memory`, `search_memory`, `search_memory_workspace`
+    or `who_said` offered; off (the default), the Honcho surface exactly as
+    before, and no `memory_search`. `about`, `remember` and `load_transcript`
+    are on both. Undo is this flag and a restart.
 
     `embed` (design/unified-memory/65-build-step-3-vectors.md V1) starts the
     embedding worker on the same drain tick: up to `embed_batch` nodes per
@@ -3225,7 +3225,7 @@ class DreamBudgetConfig(BaseModel):
     timeout_seconds: float = Field(default=120.0, gt=0)
     #: **The per-PASS memory ceiling** (issue #160): how many reads a single
     #: run may make across `nora.agent.dreamer.MEMORY_TOOLS` TOGETHER — `about`,
-    #: `memory_search`, `lookup_person`. The per-tool
+    #: `ask_memory`, `search_memory_workspace`, `lookup_person`. The per-tool
     #: budgets above it (`[llm.budgets]`, `NativeTool.budget`) bound each verb
     #: on its own, which a pass spends by asking four verbs the same question:
     #: the (deleted, DEC-277) decide turn's live trace held two notes whose two handles its own

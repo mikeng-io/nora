@@ -60,13 +60,22 @@ holds two windows onto the same layer, the **Record**, not memory:
 |---|---|---|---|---|
 | **hot** | Record | PostgreSQL | last 40 messages, verbatim | *(injected, no tool)* |
 | **deeper** | Record | **same PostgreSQL** | everything older, verbatim | `load_transcript`, `who_said` |
-| **derived** | memory | Honcho | conclusions *about people*, and about herself | `about` (retrieve), `memory_search` (search every room of the unit by question, person, dates and kinds; with the index off, Honcho's dialectic about a named person, 14–19 s, or its message search: the unit's in the cognition session, this room's anywhere else), `remember` (write one conclusion), `search_memory` (this room) |
+| **derived** | memory | Honcho | conclusions *about people*, and about herself | `about` (retrieve), `ask_memory` (reason — Honcho's dialectic, 14–19 s, budget 1), `remember` (write one conclusion), `search_memory` (this room), `search_memory_workspace` (every room of the unit) |
 
 `search_memory`/`search_memory_workspace` were filed under "deeper" here
-until `design/cognition-loop` step 0 (`search_memory_workspace` and
-`ask_memory` became one verb, `memory_search`, on 2026-10-16, DEC-316): both call `HonchoClient.search`
+until `design/cognition-loop` step 0: both call `HonchoClient.search`
 (`nora/agent/tools.py::search_memory`), so despite reading like a transcript
 tool by name they are memory, not Record, and belong in the row above.
+
+**One memory surface at a time** (DEC-316). The table above is the Honcho
+surface, what `[memory_index] enabled = false` offers (the default, and
+production). With it on, the memory graph's surface replaces it: one search
+verb, `memory_search` (search every room of the unit by question, person,
+dates and kinds; the index, no Honcho behind it), and none of `ask_memory`,
+`search_memory`, `search_memory_workspace` or `who_said`. `about`,
+`remember` and `load_transcript` are on both. `who_said` is deprecated: the
+graph surface does without it, and it goes with the rest of the Honcho
+surface at step 9.
 
 Two more things she carries between turns are NOT memory in this sense and
 have their own sections below: **notes** (the unit's open questions) and
@@ -297,7 +306,7 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 
 - **home room** — the one room of a unit the (retired, DEC-277) proactive
   adaptor stood in (`home_room = true` in `policy.toml`, 39 D2): its roster is what
-  `where_is`, `about`, `memory_search` and `group_members` resolve through, its
+  `where_is`, `about`, `ask_memory` and `group_members` resolve through, its
   `location` flag applies, and the rows she writes fire into it. A unit
   has no conversation of its own, so a room-scoped read needs one room, and
   that room is a disclosure decision the operator makes — exactly once per
@@ -367,7 +376,7 @@ no entry.
     unit, woken by `[culture] person_wake_batch` (100) of their messages across
     the unit's rooms or the stale rule. Handed their newest messages, the
     unit's CITED room cultures and its previous account; memory is a tool
-    (`memory_search`, `search_memory`), never a pre-fetch and never a citation.
+    (`ask_memory`, `search_memory`), never a pre-fetch and never a citation.
     Renders as `<character>` in the rooms of the unit that list the person.
   - **unit session** (`character-unit`) — what the unit is across its rooms,
     woken by `unit_wake_batch` (5) new room revisions; reads only cited room

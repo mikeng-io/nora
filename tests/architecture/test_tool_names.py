@@ -122,10 +122,6 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     # computer and leaves through `computer_export`; a document is published
     # through `document_publish` (ADR 0020).
     "make_artifact",
-    # Operator ruling 2026-10-16 (design/unified-memory/60 §0.7): one verb,
-    # `memory_search`, replaces both. A semantic replacement ruled by the
-    # operator, measured by the before/after `tool_selection` run in its PR.
-    "ask_memory", "search_memory_workspace",
 })
 
 _PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE

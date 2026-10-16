@@ -238,7 +238,7 @@ def test_the_list_is_derived_from_the_registry_and_names_real_tools(tmp_path):
     assert set(rig.registry.tool_names()) >= NEVER | NOT_LOOKUPS | ACTS
     assert granted_names(rig.registry) & NEVER == set()
     # no read leaves the launching room
-    assert {"room_list", "room_read", "memory_search"} & granted_names(
+    assert {"room_list", "room_read", "search_memory_workspace"} & granted_names(
         rig.registry) == set()
 
 

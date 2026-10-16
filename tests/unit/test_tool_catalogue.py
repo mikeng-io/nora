@@ -13,7 +13,7 @@ import tiktoken
 
 from nora.agent.registry import ToolRegistry
 from nora.agent.surface import DREAMER_ONLY_TOOLS, ToolScope
-from nora.agent.tools import HOT_TOOLS, LOADER_TOOL, NATIVE_TOOLS
+from nora.agent.tools import HOT_TOOLS, LOADER_TOOL, NATIVE_TOOLS, on_memory_surface
 
 ENC = tiktoken.get_encoding("cl100k_base")
 
@@ -98,8 +98,7 @@ TAG_PLATFORMS = ("signal", "discord", "whatsapp", "instagram")
 # between 21 and 31, and reading them showed the lines were right and the
 # number was wrong — the extra tokens ARE the discriminator in exactly the
 # pairs that need one (`search_memory` «in this group's history» against
-# `search_memory_workspace` «across EVERY room», since 2026-10-16
-# `memory_search`; `create_event` «a NEW
+# `search_memory_workspace` «across EVERY room»; `create_event` «a NEW
 # gathering» against `update_event` «ALREADY proposed»). Cutting those to fit
 # would have removed the reason the line exists.
 #
@@ -118,11 +117,16 @@ def _lines() -> list[str]:
     return ToolRegistry().tool_catalogue().splitlines()
 
 
-def _tag_catalogue(platform: str) -> list[str]:
+def _tag_catalogue(platform: str, *, graph: bool = False) -> list[str]:
     """The catalogue lines a TAG turn on `platform` is shown: every registered
-    tool its scope admits, never a Dreamer-only one."""
+    tool its scope admits, never a Dreamer-only one, on ONE memory surface
+    (DEC-316: `graph` is `[memory_index] enabled`)."""
     scope = ToolScope(platform=platform, dreamer=False)
-    return [line for line in _lines() if scope.admits(line.split(" — ")[0][2:])]
+    return [
+        line for line in _lines()
+        if scope.admits(name := line.split(" — ")[0][2:])
+        and on_memory_surface(name, graph=graph)
+    ]
 
 
 def test_every_registered_tool_has_a_catalogue_line():
@@ -151,7 +155,11 @@ def test_the_catalogue_stays_an_index_and_not_a_second_copy_of_the_schemas():
     """Gate 2a, over what a tag turn pays: the LARGEST per-platform catalogue.
     Re-pointing this at a larger number instead of fixing the lines is how the
     block becomes the thing it replaced."""
-    sizes = {p: len(ENC.encode("\n".join(_tag_catalogue(p)))) for p in TAG_PLATFORMS}
+    sizes = {
+        f"{p}{' (graph)' if graph else ''}": len(
+            ENC.encode("\n".join(_tag_catalogue(p, graph=graph))))
+        for p in TAG_PLATFORMS for graph in (False, True)
+    }
     platform, total = max(sizes.items(), key=lambda kv: kv[1])
     assert total <= BLOCK_CEILING, (
         f"the {platform} tag catalogue is {total} tokens, ceiling {BLOCK_CEILING} "
@@ -200,8 +208,8 @@ def test_confusable_pairs_are_discriminated_in_the_catalogue_itself():
     assert "named" in by_name["parking_status"]
     assert "nearest" in by_name["find_parking"]
 
-    assert "exact words" in by_name["search_memory"]
-    assert "where people went" in by_name["memory_search"]
+    assert "this group's" in by_name["search_memory"]
+    assert "EVERY room" in by_name["search_memory_workspace"]
 
     assert "NEW" in by_name["event_propose"]
     assert "ALREADY" in by_name["event_revise"]

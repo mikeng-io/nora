@@ -630,8 +630,7 @@ def turn_occasion(*, voice: bool) -> str | None:
 # than by what a call costs; and
 # `group_members` / `saved_places` (1) each return a per-tag CACHED,
 # provably-identical result, so a second call only crowds out `send_reply`.
-# (`ask_memory`, now `memory_search`, was on that list and is not: it was
-# raised to 4 in 2026-09-03 —
+# (`ask_memory` was on that list and is not: it was raised to 4 in 2026-09-03 —
 # a slow dialectic call sized by the turn's wall clock rather than held at 1.)
 # (`skills` was on that list and is not: it was raised to 2 in 2026-09-03, and
 # its repeat call is the one on this table that returns DIFFERENT content —
@@ -1032,18 +1031,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                         source_tier="remembered", read_only=True,
                         side_effect_state="none", idempotency="idempotent", retry="safe",
                         output_contract="three_state", level=2),
-    # `memory_search` (operator ruling 2026-10-16, design/unified-memory/60
-    # §0.7): ONE verb for memory, replacing `ask_memory` (reason about a
-    # person, Honcho's dialectic) and `search_memory_workspace` (Honcho's
-    # unit-wide message search). With `[memory_index] enabled` it is the
-    # retrieval service (25 §4), its `person`, `since`, `until` and `kinds`
-    # applied inside the index's reads; off, it routes to the Honcho verb the
-    # old tool used (with a person, `chat`; without, the unit's `search`).
+    # `memory_search` (operator ruling 2026-10-16, DEC-316): the memory
+    # GRAPH's one search verb, the retrieval service over the memory index
+    # (design/unified-memory/25 §4), its `person`, `since`, `until` and
+    # `kinds` applied inside the index's reads. No Honcho behind it. It is
+    # offered only while `[memory_index] enabled`, and then `ask_memory`,
+    # `search_memory`, `search_memory_workspace` and `who_said` are not
+    # (`GRAPH_MEMORY_TOOLS`, `HONCHO_MEMORY_TOOLS`): one memory surface at a
+    # time, never both.
     #
-    # 4, `ask_memory`'s: a Honcho `chat` is slow (~14-19s), so the budget is
-    # sized by the loop wall clock (`[llm] timeout_seconds` 240s, four calls
-    # ~76s), and four covers the key people of a group turn or a search
-    # refined once or twice, `search_memory_workspace`'s sizing too.
+    # 4, `ask_memory`'s: a search refined once or twice over a group turn's
+    # key people.
     #
     # `level=2` (ADR 0015 §3): L1 plus one SHOULD (write `query` yourself).
     # `kinds` is a Literal; every status's reading is in its result's `note`.
@@ -1051,6 +1049,20 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 source_tier="remembered", read_only=True,
                                 side_effect_state="none", idempotency="idempotent",
                                 retry="safe", output_contract="three_state", level=2),
+    # 4, raised from 2 (operator 2026-09-03): `ask_memory` REASONS (a slow
+    # dialectic call, ~14-19s), so the budget is sized by the loop wall clock —
+    # `[llm] timeout_seconds` is 240s, so four calls (~76s) still fit inside
+    # the turn. The personalization decomposition (design/31) may need deep
+    # reads on several people; four covers the key people of a group turn. It
+    # is the escalation from `about` (retrieve), reached only when a profile
+    # lookup will not answer a pieced-together question.
+    #
+    # `level=2` (ADR 0015 §3): L1 plus one constraint (slow, so only when
+    # `about` would not answer) and the `query` SHOULD. `depth` is a Literal.
+    "ask_memory": NativeTool(4,
+                             source_tier="remembered", read_only=True,
+                             side_effect_state="none", idempotency="idempotent", retry="safe",
+                             output_contract="three_state", level=2),
     # `level=1` (ADR 0015 §3): what + when + what it returns. `withheld`,
     # `partial_view` and the rest are explained in the result's `note`.
     "search_memory": NativeTool(4,
@@ -1058,7 +1070,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 side_effect_state="none", idempotency="idempotent", retry="safe",
                                 output_contract="three_state", level=1),
     # 2 (tool-recall-log spec §4): run once, notice a different `limit` is
-    # needed, run once more — the same shape `memory_search`'s own budget
+    # needed, run once more — the same shape `ask_memory`'s own budget
     # note describes for a recall verb. NOT time_shiftable (a recalled
     # lookup either exists for this conversation or it doesn't; there's no
     # "ask about later" version of "what did I already check"). Not
@@ -1559,6 +1571,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                             source_tier="remembered", cacheable=False, read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
                             output_contract="three_state", level=1),
+    # 4 like its room-scoped sibling `search_memory`: it IS that verb with
+    # the scope widened to the unit (32 §5 closed decision 1), sized by
+    # the same "search, then refine once or twice" reasoning.
+    #
+    # `level=1` (ADR 0015 §3), like its room sibling.
+    "search_memory_workspace": NativeTool(4,
+                                          source_tier="remembered", read_only=True,
+                                          side_effect_state="none",
+                                          idempotency="idempotent", retry="safe",
+                                          output_contract="three_state", level=1),
     # The only three `side_effect_state="confirmed"` entries on this table
     # (ADR 0008 §1): the note tier and `remember` write through a boundary that
     # ACKNOWLEDGES — the store hands back the row (or the conclusion) and the
@@ -1588,7 +1610,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # write is the MIDDLE of the turn and she still owes the room 「記低咗」.
     # `read_only` stays False, so the Dreamer (may look, may not act) can
     # never be granted it. `source_tier=None` like note_create: a write is
-    # not a fact SOURCE — `about`/`memory_search` are the readers of this lane.
+    # not a fact SOURCE — `about`/`ask_memory` are the readers of this lane.
     #
     # `level=2` (ADR 0015 §3): L1 plus one routing constraint (fact, open
     # question or later: remember, note_create or remind). Its one non-English
@@ -2051,8 +2073,17 @@ ALONE_MAX_CHARS = 20
 # cancelled turn cannot let one be garbage-collected before it lands.
 _AUDIT_TASKS: set[asyncio.Future[None]] = set()
 
+#
+# `memory_search` (DEC-316) holds `search_memory`'s resident slot on the
+# graph surface. The two are never built together (`GRAPH_MEMORY_TOOLS`), so
+# a turn's resident set is still six: a HOT name that was not built is not
+# resident (`ToolRegistry.surface` takes the resident set from what was
+# built). Deferring it while its Honcho counterpart was resident would cost
+# the graph surface a load round trip the Honcho one never paid, and confound
+# the routing measurement that compares them.
 HOT_TOOLS: frozenset[str] = frozenset({
     "web_search", "send_reply", "note_read", "web_fetch", "now", "search_memory",
+    "memory_search",
 })
 
 
@@ -2199,6 +2230,10 @@ RECALL_LOOKUPS_MAX_CHARS = 8000
 # budget as much as a relevance one.
 NOTE_SEARCH_LIMIT = 5
 
+# Honcho's dialectic reasoning levels (DialecticOptions.reasoning_level), from
+# the live schema. `ask_memory` lets the model pick; anything off-list falls back
+# to "low", the fast default (§4 design/24). Ordered shallow→deep.
+_REASONING_LEVELS = frozenset({"minimal", "low", "medium", "high", "max"})
 
 
 # ---- one line and one counter per tool call ---------------------------------
@@ -3455,10 +3490,10 @@ def _about_ok_note(*, identity: bool, profile: bool) -> str:
 # `prefill._transcript_block` puts a framing sentence in the block's own
 # opening tag, and `_peer_history_block` carries the same
 # demotion the same way — one sentence per block type (#314). Four tools —
-# `about`, `memory_search`, `search_memory`, `load_transcript` — hand the model
+# `about`, `ask_memory`, `search_memory`, `load_transcript` — hand the model
 # the SAME classes of text through a channel that carried none of it: the last
 # two return verbatim group-authored bodies, which is exactly what
-# `group_transcript` wraps, and `memory_search` returns free-form prose written by
+# `group_transcript` wraps, and `ask_memory` returns free-form prose written by
 # Honcho's dialectic reasoner over that text.
 #
 # A tool result is a `role: "tool"` message, not a prompt block, so the XML
@@ -3479,7 +3514,7 @@ def _memory_result(payload: dict) -> dict:
     """Stamp a memory-bearing tool result with the prefill's own demotion.
 
     Applied to EVERY return that carries memory content in a payload key —
-    `identity`/`profile` (`about`), `answer` and `results` (`memory_search`), `results`
+    `identity`/`profile` (`about`), `answer` (`ask_memory`), `results`
     (`search_memory`), `messages` (`load_transcript`) — and to no other. A
     `nothing_found` or `unavailable` return carries only this module's own
     prose, which is not untrusted and must not be marked as if it were: a
@@ -3501,8 +3536,7 @@ def _memory_hits_result(
     """The shared tail of both memory-search verbs (32 §3.4): roster filter,
     withhold, and status shaping over Honcho's raw hits.
 
-    Factored OUT of `search_memory` when `search_memory_workspace` landed
-    (since 2026-10-16 `memory_search`'s no-person Honcho path),
+    Factored OUT of `search_memory` when `search_memory_workspace` landed,
     because a second copy of this filter is how the room path and the
     unit path drift into two different disclosure decisions. What the
     callers do NOT share stays with them: the room verb keeps
@@ -4699,7 +4733,7 @@ def _file_modified(ms: int | None) -> str:
     )
 
 
-#: `memory_search`'s notes while `[memory_index] enabled` (60 S5). The
+#: `ask_memory`'s notes while `[memory_index] enabled` (60 S5). The
 #: description names the statuses; how to read each is here, paid only when
 #: it fires (ADR 0015 §3).
 _INDEX_OK = (
@@ -4724,7 +4758,7 @@ _INDEX_UNAVAILABLE = (
     "say you don't know."
 )
 
-#: `memory_search`'s own refusals and its Honcho-path note. A bad date or
+#: `memory_search`'s own refusals. A bad date or
 #: kind is `unavailable` (operator ruling 2026-10-16), never a narrowing
 #: silently dropped: the note says how to fix the call.
 _MEMORY_BAD_DATE: Mapping[str, str] = MappingProxyType({
@@ -4742,33 +4776,28 @@ _MEMORY_BAD_KIND: Mapping[str, str] = MappingProxyType({
     "note": "I don't know that kind of memory, so I didn't search. Use messages, "
             "media, notes, events or places, or leave kinds out.",
 })
-_MEMORY_NO_ROSTER: Mapping[str, str] = MappingProxyType({
-    "status": "unavailable",
-    "note": "I can't work out who is here, so I can't look back through what was "
-            "said. Say you can't check, and do not guess.",
-})
-_MEMORY_NO_UNIT: Mapping[str, str] = MappingProxyType({
-    "status": "unavailable",
-    "note": "I can't tell which group this pass is for, so I didn't search. Say "
-            "you couldn't check, and do not say there was nothing.",
-})
-#: The adaptors whose `memory_search`, with the index off and no person, is
-#: Honcho's search over the whole UNIT: the cognition session alone, the one
-#: catalogue that held `search_memory_workspace` (independent review of #32).
-#: Every other turn, a Dreamer adaptor included, searches its own session.
-_UNIT_SEARCH_ADAPTORS: frozenset[str] = frozenset({COGNITION_ADAPTOR})
 _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
     "status": "unavailable",
     "note": "That person is not one of this room's members, so I can't search "
             "for what is theirs here. Say you can't check, and do not say "
             "there was nothing.",
 })
-#: With the index off, Honcho answers, and neither of its verbs can narrow by
-#: a date or a kind: said, not pretended (operator ruling 2026-10-16).
-_MEMORY_NOT_NARROWED = (
-    "Memory could not narrow this by date or kind, so some of it may be from "
-    "another time or of another kind. Do not present it as from the span asked."
-)
+
+#: The two memory surfaces (operator ruling 2026-10-16, DEC-316). Honcho and
+#: the memory graph never sit on one tool surface: `[memory_index] enabled`
+#: selects one, wherever tools are built (`build_tool_specs`, so the tag,
+#: fire, Cognition, every Dreamer adaptor and the sub-agent worker alike).
+#: Off (the default, and the rollback): the Honcho verbs, as before. On:
+#: `memory_search`. `about`, `remember` and `load_transcript` are on both:
+#: the profile read and the memory write (Persona and step 9 replace them,
+#: not search), and the in-room scroll-back. `who_said` is deprecated: the
+#: graph surface does without it (`memory_search` names who said each hit,
+#: `load_transcript` reads around it), and it goes with the rest of the
+#: Honcho surface at step 9.
+HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset({
+    "ask_memory", "search_memory", "search_memory_workspace", "who_said",
+})
+GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search"})
 
 
 def _memory_day(raw: str, *, end: bool) -> datetime | None:
@@ -4939,10 +4968,10 @@ def build_tool_specs(
     # somewhere to go and «I can't open that» is said, not guessed around.
     external_files: ExternalFilesSource | None = None,
     # `[memory_index] enabled` (design/unified-memory/60 S5): the retrieval
-    # service the `memory_search` tool answers from instead of Honcho (named
-    # apart from the tool, which is a closure in the same scope). `None` (the
+    # service `ask_memory` answers from instead of Honcho. `None` (the
     # shipped default, offline, eval) is today's Honcho path, unchanged.
     memory_retrieval: MemorySearch | None = None,
+    all_memory_surfaces: bool = False,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -5950,7 +5979,7 @@ def build_tool_specs(
             if head is not None and head.body.strip()
         ]
         # R-18 fails closed on the WHOLE reply, so an account carrying an
-        # identifier is withheld whole here, as `memory_search` withholds an
+        # identifier is withheld whole here, as `ask_memory` withholds an
         # answer: nothing screened these bodies when they were written.
         accounts = [
             {"room": r.label or platform_name(r.platform), "account": head.body,
@@ -6331,124 +6360,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "partial_view": view.degraded, "note": _INDEX_OK,
         })
 
-    async def _memory_reason_honcho(ref: PersonRef, text: str, view: RoomView) -> dict:
-        """`memory_search` about a person with the index off: what `ask_memory`
-        did, Honcho's dialectic `chat` over Nora's model of that person
-        (OBSERVER = Nora, OBSERVED = the person, design/24 §4), routed by
-        this turn's unit or room (DEC-214). One reasoned answer, not hits:
-        kept rather than Honcho's peer search because it is the production
-        behaviour the rollback must preserve, and the eval baseline is
-        measured on it."""
-        try:
-            # `low`: ask_memory's default depth; the model no longer picks one.
-            answer = await honcho.chat(
-                peer_id=ai_peer, target=ref.honcho_peer_id, query=text[:500],
-                reasoning_level="low", **_memory_route(),
-            )
-        except Exception:
-            log.exception("memory_search reasoning failed for %s", ref.person_id)
-            answer = None
-        if answer is None:
-            # chat returns None for both unreachable and nothing-to-say; neither
-            # is a licence to claim ignorance of the PERSON. Report unavailable.
-            metrics.inc("nora_recall_total", status="unavailable")
-            _record_room(metrics, "memory_search", "unavailable", path="honcho_chat")
-            return {
-                "status": "unavailable", "person": ref.name,
-                "note": "I couldn't work that out just now, either because memory "
-                        "did not answer or it had nothing to work from. Say you "
-                        "can't check right now, not that you don't know them.",
-            }
-        # R-18 fails closed on the WHOLE reply, so a reasoned answer carrying
-        # an identifier would cost the entire message: one indivisible string,
-        # withheld whole (`scan_identifiers`, `about`'s predicate: she may
-        # KNOW what she may not SAY). `withheld`, the status a search uses for
-        # «found, not repeatable» (it was `nothing_known` on `ask_memory`).
-        if scan_identifiers(answer) is not None:
-            metrics.inc("nora_recall_total", status="empty")
-            _record_room(metrics, "memory_search", "withheld", path="honcho_chat")
-            return {
-                "status": "withheld", "person": ref.name, "found_but_unquotable": 1,
-                "note": "I worked something out but can't repeat it here. Answer "
-                        "from what you already know, or say you're not sure.",
-            }
-        metrics.inc("nora_recall_total", status="ok")
-        _record_room(metrics, "memory_search", "ok", path="honcho_chat")
-        return _memory_result({
-            "status": "ok", "person": ref.name, "answer": render_file_links(answer),
-            "partial_view": view.degraded,
-            "note": "This is what memory worked out about them from what you have "
-                    "gathered: a judgement, not their words.",
-        })
-
-    async def _memory_search_honcho(text: str) -> dict:
-        """`memory_search` with no person and the index off, holding BOTH old
-        tools' gates exactly (security review of #32):
-
-        - **The cognition session** (`_UNIT_SEARCH_ADAPTORS`) is what
-          `search_memory_workspace` was. It was the only catalogue that held
-          that verb (#350; the culture and character-person adaptors held
-          `search_memory`, the room session, and keep it here: independent
-          review of #32). Honcho's message search
-          over the UNIT (`scope=<unit>`, DEC-214), with that verb's roster,
-          the whole address book less Nora. A unit that cannot be named is
-          refused here (`unavailable`), never sent unrouted to a default
-          workspace.
-        - **Any other turn**, a Dreamer adaptor included, stays in THIS
-          channel, as `search_memory` does:
-          the room's own Honcho session (`conversation_id`, captured once,
-          DEC-24), filtered to the people this room's live view resolves.
-          A room turn never reaches another room's words through this verb;
-          the unit is the boundary only for the index, whose scope rules
-          (DEC-313) a Honcho hit does not carry.
-
-        The filter, the withhold and the statuses are `search_memory`'s own
-        (`_memory_hits_result`)."""
-        partial_view: bool | None = None
-        if dream_adaptor in _UNIT_SEARCH_ADAPTORS:
-            by_person = getattr(persons, "by_person", None)
-            if by_person is None:
-                # A WIRING gap (identity.toml never threaded into this build),
-                # not an empty address book: «I could not check» (R-27).
-                _record_room(metrics, "memory_search", "unavailable", reason="no_roster")
-                return dict(_MEMORY_NO_ROSTER)
-            unit = _unit()
-            if not unit:
-                _record_room(metrics, "memory_search", "unavailable", reason="no_unit")
-                return dict(_MEMORY_NO_UNIT)
-            roster = {
-                p.honcho_peer_id: p.name
-                for person_id, p in by_person.items() if person_id != ai_peer
-            }
-            route: dict[str, str] = {"unit": unit}
-        else:
-            view = await room.scope()
-            if not view.available:
-                _record_room(metrics, "memory_search", "unavailable", reason="no_roster")
-                return dict(_MEMORY_NO_ROSTER)
-            roster = {p.honcho_peer_id: p.name for p in view.people}
-            partial_view = view.degraded
-            route = {"conversation_id": bound_conversation_id}
-        try:
-            found = await honcho.search(query=text[:500], **route)
-        except Exception:
-            # Belt-and-braces: the adapter catches everything itself and
-            # `MessageHits.reachable` is the real signal.
-            log.exception("memory_search Honcho search failed")
-            found = MessageHits(reachable=False)
-        if not found.reachable:
-            _record_room(metrics, "memory_search", "unavailable", path="honcho_search")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't look back through what was said. Say you "
-                        "couldn't check, and do not say there was nothing.",
-            }
-        return _memory_hits_result(
-            hits=found.hits, roster=roster,
-            record=lambda s, **kw: _record_room(metrics, "memory_search", s, **kw),
-            partial_view=partial_view,
-        )
-
     async def memory_search(
         query: str,
         person: str | None = None,
@@ -6466,9 +6377,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         SHOULD: write `query` yourself, as what you are looking for, not the raw
         tag message.
 
-        Returns `status`: ok (`results`, or an `answer` about a person),
-        partial, nothing_found, withheld, unavailable, not_found or ambiguous,
-        with a `note` on how to report it.
+        Returns `status`: ok (`results`), partial, nothing_found, withheld,
+        unavailable, not_found or ambiguous, with a `note` on how to report it.
 
         Args:
             query: What you are looking for: a topic, a phrase or a question.
@@ -6495,8 +6405,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             _record_room(metrics, "memory_search", "unavailable", reason="bad_kind")
             return dict(_MEMORY_BAD_KIND)
         node_kinds = tuple(n for k in wanted for n in KINDS_BY_CATEGORY[k])
-        # An empty `query` falls back to the tag message (`question`), the
-        # old verbs' behaviour, kept on purpose (independent review of #32):
+        # An empty `query` falls back to the tag message (`question`), as
+        # `ask_memory` does, kept on purpose (independent review of #32):
         # the docstring asks the model to write its own, and a blank one is
         # still a search for what was asked, never an error.
         text = query.strip() or question
@@ -6525,27 +6435,118 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 }
             ref = matches[0]
             text = text or ref.name
-        if memory_retrieval is not None:
-            # `[memory_index] enabled` (60 S5): the index answers, Honcho is
-            # not called, and every filter applies inside its reads.
-            return await _memory_search_index(
-                memory_retrieval, text, ref, view if view is not None else await room.scope(),
-                node_kinds,
-                int(since_at.timestamp() * 1000) if since_at is not None else None,
-                int(until_at.timestamp() * 1000) if until_at is not None else None,
+        if memory_retrieval is None:
+            # Not reachable through `build_tool_specs`, which offers this verb
+            # only with the index wired (`GRAPH_MEMORY_TOOLS`). Said, not
+            # raised, if a caller builds it some other way: there is no
+            # Honcho behind it (DEC-316).
+            _record_room(metrics, "memory_search", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _INDEX_UNAVAILABLE}
+        return await _memory_search_index(
+            memory_retrieval, text, ref, view if view is not None else await room.scope(),
+            node_kinds,
+            int(since_at.timestamp() * 1000) if since_at is not None else None,
+            int(until_at.timestamp() * 1000) if until_at is not None else None,
+        )
+
+    async def ask_memory(
+        person: str,
+        depth: Literal["minimal", "low", "medium", "high", "max"] = "low",
+        query: str | None = None,
+    ) -> dict:
+        """Work out an answer to a specific QUESTION about someone, not a profile
+        dump. Reach for it when a profile lookup is not enough.
+
+        It reasons over everything you have gathered about the person, where
+        `about` returns the stored conclusions: use it for a judgement that has
+        to be pieced together. It is slow (several seconds or more), so call it
+        only when `about` would not answer. It knows only people in THIS
+        conversation.
+
+        SHOULD: write `query` yourself, as the question you need answered, not
+        the raw tag message.
+
+        Returns `status`: ok (`answer`), nothing_known, unavailable, not_found
+        or ambiguous, with a `note` on how to report it.
+
+        Args:
+            person: The name or nickname of the person, as the message said it.
+            depth: How hard to reason: low for a quick read, high or max only
+                when the question needs it. Deeper is slower.
+            query: The question to reason about; defaults to the tag message.
+        """
+        level = depth if depth in _REASONING_LEVELS else "low"
+        view = await room.scope()
+        if not view.available:
+            _record_room(metrics, "ask_memory", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't work out who that is right now. Say you can't "
+                        "check, and do not say you don't know them.",
+            }
+        matches = view.find(person)
+        if not matches:
+            miss = _miss(person, view)
+            _record_room(metrics, "ask_memory", miss["status"], candidates=0)
+            return miss
+        if len(matches) > 1:
+            _record_room(metrics, "ask_memory", "ambiguous", candidates=len(matches))
+            return {
+                "status": "ambiguous", **_asked_about(person),
+                "could_be": [p.name for p in matches],
+                "note": "More than one person here goes by that. Ask which one.",
+            }
+        ref = matches[0]
+        try:
+            # OBSERVER = Nora, OBSERVED = the person (design/24 §4): she reasons
+            # from HER model of them. The QUESTION is the tagging message, hers to
+            # supply (DEC-24), not a value the model invents — unless the model
+            # supplies a `query`, which IS read and therefore legitimate. `level`
+            # is the model's per-question depth/latency choice — Nora decides.
+            answer = await honcho.chat(
+                peer_id=ai_peer,
+                target=ref.honcho_peer_id,
+                query=(query or question or ref.name)[:500],
+                reasoning_level=level,
+                **_memory_route(),
             )
-        # The index off (the shipped default, and its rollback): Honcho, as the
-        # two verbs this replaced did. Neither of its verbs can narrow by a
-        # date or a kind, so a narrowing it ignored is said in the note.
-        narrowed = since_at is not None or until_at is not None or bool(wanted)
-        if ref is not None and view is not None:
-            result = await _memory_reason_honcho(ref, text, view)
-        else:
-            result = await _memory_search_honcho(text)
-        if narrowed and result.get("status") != "unavailable":
-            note = result.get("note")
-            result["note"] = f"{note} {_MEMORY_NOT_NARROWED}" if note else _MEMORY_NOT_NARROWED
-        return result
+        except Exception:
+            log.exception("ask_memory failed for %s", ref.person_id)
+            answer = None
+        if answer is None:
+            # chat returns None for both unreachable and nothing-to-say; neither
+            # is a licence to claim ignorance of the PERSON. Report unavailable.
+            metrics.inc("nora_recall_total", status="unavailable")
+            _record_room(metrics, "ask_memory", "unavailable")
+            return {
+                "status": "unavailable", "person": ref.name,
+                "note": "I couldn't work that out just now, either because memory "
+                        "did not answer or it had nothing to work from. Say you "
+                        "can't check right now, not that you don't know them.",
+            }
+        # R-18 fails closed on the WHOLE reply, so a reasoned answer carrying an
+        # identifier would cost the entire message. Unlike `about`'s list, this is
+        # one indivisible string — if it names an identifier it cannot be part-
+        # kept, so it is withheld whole. `scan_identifiers`, not the reply
+        # predicate (the `about` rationale: what she runs on stays hers because
+        # the Deliverer refuses to SAY it, not because she is made to forget).
+        if scan_identifiers(answer) is not None:
+            # `status="empty"` to match `about`'s all-withheld path (nothing
+            # usable surfaced), not a new label value — the recall metric keeps
+            # its ok/empty/unavailable cardinality (review M5).
+            metrics.inc("nora_recall_total", status="empty")
+            _record_room(metrics, "ask_memory", "ok", withheld=1)
+            return {
+                "status": "nothing_known", "person": ref.name, "withheld": 1,
+                "note": "I worked something out but can't repeat it here. Answer "
+                        "from what you already know, or say you're not sure.",
+            }
+        metrics.inc("nora_recall_total", status="ok")
+        _record_room(metrics, "ask_memory", "ok", depth=level)
+        return _memory_result({
+            "status": "ok", "person": ref.name, "answer": render_file_links(answer),
+            "partial_view": view.degraded,
+        })
 
     async def search_memory(query: str) -> dict:
         """Find where something was actually SAID in this group's history, in the
@@ -6553,7 +6554,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         ago.
 
         It reaches past `load_transcript`, and returns words, not a profile
-        (`about`).
+        (`about`) or a judgement (`ask_memory`).
 
         Returns `status`: ok, nothing_found, withheld or unavailable, with a
         `note`.
@@ -6604,7 +6605,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "couldn't check, and do not say there was nothing.",
             }
         # The roster filter, the withhold and the status shaping are shared
-        # with `memory_search` in `_memory_hits_result` (32 §3.4) —
+        # with `search_memory_workspace` in `_memory_hits_result` (32 §3.4) —
         # one filter, so the two verbs can never drift into two disclosure
         # decisions. What stays HERE is what is the room verb's own: the
         # `nora_room_lookups_total` counter (already alerted on, R-22) and
@@ -13573,12 +13574,91 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             )
         return result
 
+    async def search_memory_workspace(query: str) -> dict:
+        """Find where something was actually SAID, across EVERY room of this
+        workspace. Call this when the words you need could have been said
+        anywhere the same people talk.
+
+        `search_memory` searches one room; this reaches the whole workspace.
+
+        Returns `status`: ok (`results`), nothing_found, withheld or
+        unavailable, with a `note`.
+
+        Args:
+            query: What to look for: a phrase, a topic, a thing that was said.
+        """
+        by_person = getattr(persons, "by_person", None)
+        if by_person is None:
+            # A WIRING gap (identity.toml was never threaded into this build),
+            # not an empty address book: an empty one is a roster that
+            # legitimately filters every hit, a missing one is «I could not
+            # check» — and R-27's rule is that the two never share a status.
+            _record(
+                metrics, "search_memory_workspace", "unavailable",
+                reason="no_roster")
+            return {
+                "status": "unavailable",
+                "note": "I can't work out who is here, so I can't look back "
+                        "through what was said. Say you can't check, and do not "
+                        "guess.",
+            }
+        # The roster is identity.toml's WHOLE address book — not a room's
+        # live view, and not a unit's either: `PersonRef` carries no unit, so
+        # this filter CANNOT be unit-shaped. 32 §5 closed decision 1 («search
+        # 六個人嘅 memory») was written when one deployment meant one group.
+        # Nora's OWN peer is excluded the same way the room path drops her:
+        # her words are not the group's memory of what was said.
+        roster = {
+            ref.honcho_peer_id: ref.name
+            for person_id, ref in by_person.items()
+            if person_id != ai_peer
+        }
+        try:
+            # No `conversation_id`, so the client hits Honcho's WORKSPACE
+            # `/search` — narrowed to THIS unit's named scope (DEC-214, which
+            # answered design/24 §S.4's open question): `unit` is the run's
+            # own key, never a room, and `None` (a unit that cannot be named)
+            # is refused by the client once `[units]` exists rather than
+            # widened to the workspace. The room verb's comment carries the
+            # audit for why IT stays session-scoped — surfacing a roster
+            # member's PRIVATE DM words into a room — and that reason does not
+            # bind here: this verb exists for the Dreamer, whose output is
+            # verdicts, never a quote into any room. **That is now enforced
+            # rather than asserted** (#350): the catalog gate in
+            # `build_tool_specs` only ships this verb under `dream_adaptor`.
+            # It sat in the unconditional list until 2026-09-19, so the
+            # sentence above was false for as long as it had been written.
+            found = await honcho.search(query=query[:500], unit=_unit())
+        except Exception:
+            # Belt-and-braces, exactly as on the room path: the adapter catches
+            # everything itself and `MessageHits.reachable` is the real signal.
+            log.exception("search_memory_workspace failed")
+            found = MessageHits(reachable=False)
+        if not found.reachable:
+            _record(metrics, "search_memory_workspace", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't look back through what was said. Say you "
+                        "couldn't check, and do not say there was nothing.",
+            }
+        # The filter/withhold/status tail is SHARED with `search_memory` —
+        # `_memory_hits_result` — so the two verbs can never drift into two
+        # disclosure decisions. This verb counts on `nora_tool_calls_total`
+        # (it has no room, so the room-lookups series would mislabel it) and
+        # carries no `partial_view`: there is no room view to degrade.
+        return _memory_hits_result(
+            hits=found.hits, roster=roster,
+            record=lambda s, **kw: _record(
+                metrics, "search_memory_workspace", s, **kw),
+            partial_view=None,
+        )
+
     async def remember(content: str) -> dict:
         """Record a settled fact about the person speaking. Call this when
 somebody tells you something about themselves that is now just TRUE.
 
 The trigger word is «記低». It writes to your long-term memory of THAT
-person, which `about` and `memory_search` read back; nothing else can write a
+person, which `about` and `ask_memory` read back; nothing else can write a
 person's settled fact. Check what it is first: a fact about the speaker
 is this tool; one about the group or anyone else your notebook keeps after
 this turn, so say it will be kept; an open question nothing settles is
@@ -15710,8 +15790,8 @@ Args:
                                        finished=now_fn(), result=row, session_id=session_id)
 
     # WHICH of these a turn sees is not decided here. The music verbs'
-    # Discord-only cut and the Dreamer-only gate (#350, then on
-    # `search_memory_workspace`) used to be two filters in this function; they are `ToolScope`'s now
+    # Discord-only cut and `search_memory_workspace`'s Dreamer-only gate (#350)
+    # used to be two filters in this function; they are `ToolScope`'s now
     # (`nora.agent.surface`), beside the Dreamer's grant ceiling and read by
     # the one builder every loop uses, `ToolRegistry.surface()`. This function
     # builds every closure; the scope admits.
@@ -16335,7 +16415,7 @@ Args:
                     "unknown": [], "refused": [], "note": LOAD_TOOLS_UNAVAILABLE_NOTE}
         return load_onto(getattr(tool_context, "agent", None), shelf, names)
 
-    return _apply_link_owners((
+    specs = (
         _spec("now", now),
         _spec("calculate", calculate),
         _spec("transit", transit),
@@ -16358,8 +16438,9 @@ Args:
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
         _spec("about", about),
-        _spec("memory_search", memory_search),
+        _spec("ask_memory", ask_memory),
         _spec("search_memory", search_memory),
+        _spec("memory_search", memory_search),
         _spec("recall_lookups", recall_lookups),
         _spec("media_fetch", media_fetch),
         _spec("file_fetch", file_fetch),
@@ -16396,6 +16477,7 @@ Args:
         _spec("event_rsvp", event_rsvp),
         _spec("event_set_status", event_set_status),
         _spec("suggest_venue", suggest_venue),
+        _spec("search_memory_workspace", search_memory_workspace),
         _spec("note_read", note_read),
         _spec("note_search", note_search),
         _spec("memo_read", memo_read),
@@ -16421,7 +16503,31 @@ Args:
         _spec("subagent_cancel", subagent_cancel),
         _spec("checkpoint_update", checkpoint_update),
         _spec("load_tools", load_tools),
+    )
+    # ONE memory surface (DEC-316): the graph's while the index is wired, else
+    # Honcho's. Here, the one builder every assembly point goes through, so no
+    # occasion can hold both. `all_memory_surfaces` is the introspection
+    # build's alone (`ToolRegistry._introspection_specs`): the catalog and the
+    # R-99 argument table describe every tool the code declares.
+    return _apply_link_owners(tuple(
+        spec for spec in specs
+        if on_memory_surface(
+            spec.name, graph=memory_retrieval is not None, everything=all_memory_surfaces,
+        )
     ), metrics=metrics, unwired=unwired_owners)
+
+
+def on_memory_surface(name: str, *, graph: bool, everything: bool = False) -> bool:
+    """Whether `name` is on the memory surface `graph` selects (DEC-316):
+    a Honcho memory verb only off the graph, the graph's only on it, every
+    other tool always."""
+    if everything:
+        return True
+    if name in HONCHO_MEMORY_TOOLS:
+        return not graph
+    if name in GRAPH_MEMORY_TOOLS:
+        return graph
+    return True
 
 
 def _apply_link_owners(
@@ -16597,10 +16703,9 @@ def build_tools(
     memos: MemoStore | None = None,
     unit_for: Callable[[str, str], str | None] | None = None,
     supplied_unit: str | None = None,
-    # Forwarded, not defaulted away: `memory_search`'s Honcho path reads it
-    # (a Dreamer pass searches with the address book, a room with its own
-    # roster), so a wrapper that dropped it would build a room's tool for a
-    # Dreamer caller.
+    # Forwarded, not defaulted away: `build_tool_specs` gates
+    # `search_memory_workspace` on it (#350), so a wrapper that dropped it
+    # would silently build the tag catalog for a Dreamer caller.
     dream_adaptor: str = "",
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,

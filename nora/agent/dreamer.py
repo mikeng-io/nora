@@ -142,11 +142,16 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "web_fetch": MAX_TOOL_RESULT_CHARS,
     "web_search": MAX_TOOL_RESULT_CHARS,
     "search_memory": MAX_MEMORY_RESULT_CHARS,
-    # The one memory verb (2026-10-16, replacing `ask_memory` and the unit
-    # search `search_memory_workspace`): same tighter number, same reason:
-    # summaries to reason over, not pages to quote.
-    "memory_search": MAX_MEMORY_RESULT_CHARS,
+    # The unit variant (32 §3.4) is the same verb at a wider scope —
+    # same tighter number, same reason: summaries to reason over, not pages
+    # to quote.
+    "search_memory_workspace": MAX_MEMORY_RESULT_CHARS,
     "about": MAX_MEMORY_RESULT_CHARS,
+    "ask_memory": MAX_MEMORY_RESULT_CHARS,
+    # The memory graph's one search verb (DEC-316), offered instead of the
+    # Honcho verbs above while `[memory_index] enabled`: same number, same
+    # reason.
+    "memory_search": MAX_MEMORY_RESULT_CHARS,
 }
 
 #: The same table under a public name, for the Cognition session's guard
@@ -189,10 +194,13 @@ TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
 #: includes `search_memory`, the room-scoped sibling no unit-keyed adaptor
 #: holds.
 #:
-#: `memory_search` (2026-10-16) replaced two of the four, `ask_memory` and
-#: `search_memory_workspace`, so the cluster is three verbs now.
+#: `memory_search` (DEC-316) is the graph surface's memory verb, offered
+#: INSTEAD of `ask_memory` and `search_memory_workspace` while `[memory_index]
+#: enabled`. The ration holds every memory verb of both surfaces, so it binds
+#: whichever one a deployment registers.
 MEMORY_TOOLS: frozenset[str] = frozenset({
-    "about", "memory_search", "lookup_person",
+    "about", "ask_memory", "search_memory_workspace", "lookup_person",
+    "memory_search",
 })
 
 DreamStatus = Literal["ok", "nothing_found", "unavailable"]
@@ -485,7 +493,7 @@ def culture_grant() -> AdaptorGrant:
     `home_room=True` on a SCOPE-keyed adaptor resolves the adaptor's own
     conversation rather than a chosen one (`AdaptorGrant.home_room`,
     `RegistryToolSource.build`). Without it every room-scoped read the
-    adaptor declares — `memory_search`, `about`, `group_members`, `lookup_person`,
+    adaptor declares — `ask_memory`, `about`, `group_members`, `lookup_person`,
     `search_memory` — answers `unavailable` off the empty `Room`, so the grant
     is the difference between a declared tool set and a reachable one
     (`design/dreamer-agent-loop/03-no-agent-loop §7.4`).
@@ -563,7 +571,7 @@ class DreamToolSource(Protocol):
 # set is exactly this.
 #
 # Every ROOM-scoped read tool stays refused here — `load_transcript` reads one
-# room's record, `group_members`/`lookup_person`/`about`/
+# room's record, `group_members`/`lookup_person`/`about`/`ask_memory`/
 # `search_memory` all answer against one room's live roster, and
 # `recall_lookups`/`media_fetch` replay one room's own calls. A unit has no
 # single room to bind them to, and binding one to an arbitrary room of that
@@ -624,19 +632,27 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     "media_search",
     # Admitted with the supplied key path (32 §3.4): the note tier's two
     # read verbs, which resolve their unit from the SUPPLIED key rather than
-    # from a room a unit-keyed adaptor does not have. (`search_memory_workspace`
-    # was here too, admitted for the wrong reason: it resolved no unit. Its
-    # successor `memory_search`, below, reads the supplied unit.)
+    # from a room a unit-keyed adaptor does not have — and the memory search
+    # variant, which resolves NO unit at all.
+    #
+    # That last one is admitted for the WRONG reason and is listed here
+    # anyway. It is deployment-scoped, not unit-scoped — it resolves no unit
+    # and reads across every unit at once — and it passes because this gate
+    # has two axes, read vs act and room-scoped vs unit-safe, with no axis for
+    # scope ABOVE a unit. Being in this set is what lets a DREAMER adaptor
+    # call it, which is intended; what used to follow from the same list was
+    # that every TAG turn carried it too, which was not. That half is closed
+    # at the catalog instead (#350, `ToolScope`'s Dreamer-only gate),
+    # because the fix belongs where the audience is known. The missing axis
+    # here is still missing.
     "note_read", "note_search",
     # `memo_read` (DEC-306) resolves its unit the way the note reads do.
     "memo_read",
-    # `memory_search` (2026-10-16), which took over `search_memory_workspace`'s
-    # unit search: in the cognition session, with no person and the index
-    # off, it reads the SUPPLIED unit, the reason the old verb was here.
-    # Every other adaptor, and any read with `[memory_index] enabled`, needs
-    # a room, and a run with no home room answers `unavailable`
-    # (`media_search`'s shape above), never an empty answer. A person, with
-    # the index off, is Honcho `chat` routed by the supplied unit.
+    "search_memory_workspace",
+    # `memory_search` (DEC-316), the graph surface's memory verb: it reads
+    # the memory index through a room's scope, so a unit-keyed run with no
+    # home room answers `unavailable` (`media_search`'s shape above), never
+    # an empty answer. Offered only while `[memory_index] enabled`.
     "memory_search",
     # `load_tools` (design/tool-catalogue/02) reads neither a room nor a
     # unit: it registers tools from THIS run's own shelf onto THIS run's own
@@ -722,7 +738,7 @@ def tool_subset_faults(
     2. **room-scoped vs unit-safe.** A UNIT-keyed adaptor gets a
        unit name as its `key`, which is not a conversation id. Every
        room-scoped read tool is bound to one — `load_transcript` reads one
-       room's record, `about`/`search_memory`/`group_members`
+       room's record, `about`/`ask_memory`/`search_memory`/`group_members`
        answer against one room's live roster — so handing it a unit does
        not fail loudly, it returns EMPTY. `load_transcript` on an unknown
        conversation returns `{"messages": []}`, which is `unavailable`
@@ -1147,8 +1163,9 @@ class RegistryToolSource:
             dream_adaptor=adaptor,
             # The key-path fix (design/dreamer-agent-loop/32 §3.4): for a
             # UNIT-keyed adaptor `key` IS the unit, so the runtime
-            # SUPPLIES it and the unit-scoped verbs (the note reads, and
-            # `memory_search`'s unit search) read it directly
+            # SUPPLIES it and the unit-scoped verbs (the note reads —
+            # NOT `search_memory_workspace`, which resolves no unit and
+            # reaches Honcho's whole workspace) read it directly
             # rather than deriving one from the synthetic room above — where
             # `unit_for("", key)` can only answer `None`. `None` for a
             # scope-keyed adaptor, whose key is a real conversation id and

@@ -496,8 +496,7 @@ RULE_TESTS = {
     # reaches the row the old 40-row window would have clipped.
     "R-87": "test_r87_the_standing_fold_reads_since_a_row_id_watermark",
     # R-91 (issue #160): one memory ration for the whole Dreamer pass, spent
-    # across `about`/`memory_search`/`lookup_person` (four verbs until
-    # `memory_search` replaced two of them, 2026-10-16)
+    # across `about`/`ask_memory`/`search_memory_workspace`/`lookup_person`
     # together and answered — R-27 `unavailable` — rather than vetoed. The
     # named test runs the REAL Strands loop, because the property is what the
     # MODEL gets back: an error result is a correction, and a model corrects by

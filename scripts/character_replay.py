@@ -52,7 +52,7 @@ TOOLS = [
         "parameters": {"type": "object", "required": ["entity", "why"], "properties": {
             "entity": {"type": "string"}, "why": {"type": "string"}}}}},
 ]
-READS = ("memory_search", "search_memory", "about", "lookup_person", "group_members")
+READS = ("ask_memory", "search_memory", "about", "lookup_person", "group_members")
 
 
 async def replay(client: AsyncOpenAI, model: str, effort: str, system: str, user: str,

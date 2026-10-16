@@ -847,7 +847,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # is the fail-closed side and the correct one; it does not move.
         "who_said",
         "load_transcript", "group_members", "lookup_person", "about",
-        "search_memory", "recall_lookups", "media_fetch",
+        "ask_memory", "search_memory", "recall_lookups", "media_fetch",
         "list_reminders", "event_search", "suggest_venue", "search_gifs",
         # `music_status` (design/discord-music/07-agent-tool.md) reports on
         # ONE Discord conversation's voice session — the exact shape
@@ -908,9 +908,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
     # move these entries' own comments said to make. The knowledge tier's five
     # verbs were here too and went with that tier.
     unit_scoped = {
-        # `memory_search` took `search_memory_workspace`'s place (2026-10-16):
-        # with no person and the index off it reads the supplied unit.
-        "note_read", "note_search", "memory_search",
+        "note_read", "note_search", "search_memory_workspace",
     }
     assert unit_scoped <= UNIT_SAFE_TOOLS, (
         "a unit-scoped read fell out of UNIT_SAFE_TOOLS — 32 §3.4 "

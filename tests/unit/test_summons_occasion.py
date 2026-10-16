@@ -682,7 +682,7 @@ async def test_the_summons_turn_reads_the_public_doctrine_and_the_public_tools(w
 
 _ROOM_TOOLS = {
     "who_said", "group_members", "lookup_person", "about", "load_transcript",
-    "room_list", "room_read", "memory_search", "search_memory",
+    "room_list", "room_read", "ask_memory", "search_memory", "search_memory_workspace",
     "recall_lookups", "note_read", "note_search", "where_is", "where_been",
     "saved_places", "online_now", "record_query",
 }

@@ -336,7 +336,7 @@ RoomProactive = Callable[[str, str], bool]
 #: routes the read through the item's own room and refuses a `room` value not
 #: on the agenda (DEC-231: each item's reads resolve through its room), built
 #: by the caller. That names the room a read is BOUND to, not the only room it
-#: reads: `record_query scope="all_rooms"` and `memory_search` reach
+#: reads: `record_query scope="all_rooms"` and `search_memory_workspace` reach
 #: the unit's other rooms, which the unit-wide read boundary allows.
 ReadToolsFor = Callable[[str, Sequence[Room]], list[Any]]
 #: `(unit, agenda items, the claimed stimuli)` -> what she is shown beside the
@@ -1320,7 +1320,7 @@ class CognitionSessionRunner:
         # each takes a `room` argument routing the read through that room's
         # own build; a `room` value not on the agenda is refused. The unit is the
         # boundary the session may read across (DEC-231: `record_query
-        # scope="all_rooms"` and `memory_search` read the unit's other
+        # scope="all_rooms"` and `search_memory_workspace` read the unit's other
         # rooms), the `room` argument picks the binding (roster, lineage) a read
         # resolves through. The agenda's rooms are never replaced by the unit's
         # home room.

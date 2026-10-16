@@ -77,14 +77,14 @@ def test_every_tool_the_session_would_wire_exists_and_is_read_only():
 def test_the_designs_tools_the_tree_does_not_have_are_named_missing_not_dropped():
     surface = read_surface(read_only=READ_ONLY, enabled_flags=FLAGS_ON)
     assert surface.missing == {"social_items"}
-    assert surface.wired | surface.missing == COGNITION_READ_CATALOGUE
+    assert surface.wired | surface.missing | surface.withheld == COGNITION_READ_CATALOGUE
 
 
 def test_record_query_is_withheld_until_its_flag_is_on():
     off = read_surface(read_only=READ_ONLY, enabled_flags=())
     on = read_surface(read_only=READ_ONLY, enabled_flags=FLAGS_ON)
     assert "record_query" in off.withheld and "record_query" not in off.wired
-    assert "record_query" in on.wired and not on.withheld
+    assert "record_query" in on.wired and "record_query" not in on.withheld
 
 
 def test_an_act_verb_is_never_wired_even_when_the_catalogue_names_it():
