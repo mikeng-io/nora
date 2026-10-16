@@ -142,7 +142,7 @@ by person and shared across that person's units ([10](10-tiers.md) §2 rule
 
 **Partial first.** Daybook and tie ship at step 2 from messages and presence
 alone, and are rebuilt as a new build when each further input arrives
-(reactions at step 1, social and play at step 5, faces at step 6).
+(reactions at step 1, social at step 5 (built: the daybook), play at step 5, faces at step 6).
 
 **As built (step 2a).** Co-location: two members' stays (closed, or in
 progress once past `min_dwell`) within `colocation_radius_m` (150 m)
@@ -154,7 +154,23 @@ away from it, so the co-location is not an outing and names that member in
 (`at_home_of`), not an outing. Daybook: per member per local date, stays
 split at midnight (home minutes from places labelled home), co-location
 minutes and companions, outings, messages and reactions per room;
-`items_posted` is NULL until social items are an input (step 5). Tie: per
+`items_posted` counts the member's social items by the local date of their
+`taken_at` (posts, reels and story frames, back-filled items in their own past
+day; a gone or hidden item and every item of a person with `social = false`
+are left out at the read, [22](22-social-stream.md) §6). A day with none is `0`
+once the member's accounts have been observed (their first answered
+`social_poll` is on or before that date) and NULL before it, for a member with
+no account on any network and for one who opted out: NULL is «not an input»,
+`0` is «looked, none». A row that carries a count cites `social` lineage for
+the member. The count is part of the recompute every run does over the whole
+Record up to the watermark, so a back-filled item recorded later reaches its
+day on the next run, and the daybook rows of a build at a watermark are the
+same however the runs fell; there is no late-arrival window to widen. The one
+exception is deliberate: a hide or a frame gone applies to every day as of the
+next run, past ones included, so an item a person withdrew drops out of the
+counts already built. A member's silence count starts at their first row that
+holds more than social items: posting alone neither breaks a silence nor
+starts one. Tie: per
 pair per ISO week, replies (a quote of the other's message), mentions (a
 structured mention resolving to the other), reactions, each direction, and
 co-location minutes split at the week boundary. Response: per send,

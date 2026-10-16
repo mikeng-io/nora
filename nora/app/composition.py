@@ -2965,9 +2965,7 @@ async def build_dependencies(
         # flag (an empty Record answers `nothing_found`). Its store leaves out
         # every item of a person whose `identity.toml` block sets `social =
         # false`, the same set the poller's store is given.
-        social_items=SqlSocialStreamStore(engine, opted_out=frozenset(
-            p for p in persons.by_person if persons.social_off(p)
-        )),
+        social_items=SqlSocialStreamStore(engine, opted_out=persons.social_off_ids()),
         # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
         memos=memo_store,
         route=route_client, vision=vision_client,
@@ -3530,9 +3528,9 @@ async def build_dependencies(
 
         # ONE store for the poller and every reader, holding who opted out:
         # the read-side exclusion lives in the store's reads (§2).
-        social_store = SqlSocialStreamStore(engine, opted_out=frozenset(
-            p for p in persons.by_person if persons.social_off(p)
-        ), metrics=metrics)
+        social_store = SqlSocialStreamStore(
+            engine, opted_out=persons.social_off_ids(), metrics=metrics,
+        )
         social_poller = SocialPoller(
             source=InstagramSocialSource(
                 base_url=cfg.social.instagram.base_url,

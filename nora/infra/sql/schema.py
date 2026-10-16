@@ -805,7 +805,8 @@ ROLLUP_OUTING = sa.Table(
 
 #: Daybook: one person's local (Hong Kong) day in one unit. Counts of
 #: what the Record and the rollups below it hold, never an event attended (no
-#: upward input). `items_posted` is NULL until social items are an input.
+#: upward input). `items_posted` is NULL where the person's social accounts were not
+#: observed that day (design/cognition-loop/25-rollup.md §3), 0 where observed and none.
 ROLLUP_DAYBOOK = sa.Table(
     "rollup_daybook",
     METADATA,

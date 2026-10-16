@@ -6219,7 +6219,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 # `social = false` (identity.toml): their social items are
                 # out of every read, whenever recorded (22 §2). Only a listed
                 # person's can be in scope at all.
-                social_off=frozenset(p for p in listed or () if persons.social_off(p)),
+                social_off=persons.social_off_ids(listed or ()),
             )
             if found.status == "unavailable":
                 _record_room(metrics, "memory_search", "unavailable", reason="index")
