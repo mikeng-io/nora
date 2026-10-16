@@ -85,11 +85,20 @@ func main() {
 	}
 	slog.Info("comment writes", "enabled", commentPolicy.WritesEnabled,
 		"daily_cap", commentPolicy.DailyCap, "min_interval", commentPolicy.MinInterval.String())
+	docs, docProblems := queryDocsFromEnv(os.Getenv)
+	for _, p := range docProblems {
+		slog.Error("graphql read disabled: invalid configuration", "problem", p)
+	}
+	// Whether each is set, never the value: an operator reading this line
+	// learns which read will answer 501.
+	slog.Info("graphql documents", "story_configured", docs.Story != "",
+		"timeline_configured", docs.Timeline != "")
 	gw, handler := wire(gateway.Options{
 		Store:  store,
 		State:  domain.StateLoggedOut,
 		Detail: "starting",
 		Self:   self,
+		Docs:   docs,
 	}, stream.NewHub(), time.Now(), commentPolicy)
 
 	// instameow's own log output, as JSON on the same stream and with slog's

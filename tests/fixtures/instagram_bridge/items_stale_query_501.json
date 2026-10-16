@@ -1,0 +1,11 @@
+{
+  "route": "GET /accounts/{igid}/items",
+  "path": "/accounts/10000001/items",
+  "status": 501,
+  "body": {
+    "error": {
+      "code": "stale_query",
+      "message": "timeline query: Instagram does not know the configured document; capture INSTAGRAM_TIMELINE_DOC_ID again (Query not found, code=1675002)"
+    }
+  }
+}

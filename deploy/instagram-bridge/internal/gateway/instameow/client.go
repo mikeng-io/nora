@@ -28,10 +28,6 @@ type Client interface {
 	FetchThreadID(ctx context.Context, threadFBID int64) (*instameow.ThreadIGIDs, error)
 	GetThread(context.Context, *slidetypes.GetThreadInfoRequest) (*slidetypes.ThreadInfoResponse, error)
 	GetProfile(ctx context.Context, igid string) (*slidetypes.ProfilePageResponse, error)
-	// FetchReel is the ONLY path to a story anywhere — OpenCLI's `story`
-	// verb posts one rather than reading one, verified against the live
-	// tool. See social.go's story section.
-	FetchReel(ctx context.Context, reelIDs []string, mediaID string) (*responses.ReelInfoResponse, error)
 	// SearchUsers is the OmniPicker's own search
 	// (`IGDOmniPickerSearchResultsListQuery`), named `search_messenger_contact_v2`
 	// on the wire. See search.go for what it returns and does not.

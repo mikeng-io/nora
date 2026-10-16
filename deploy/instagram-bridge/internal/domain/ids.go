@@ -30,7 +30,7 @@ import (
 )
 
 // IGID is the PUBLIC Instagram account id (`User.ID`, `pk`): what GetProfile
-// and FetchReel take. It is NOT a messaging address.
+// and the story document take. It is NOT a messaging address.
 type IGID struct{ n int64 }
 
 // ParseIGID accepts a positive decimal and canonicalizes it, so "0246967358"

@@ -149,6 +149,30 @@ type StoryItem struct {
 	AltText      string
 }
 
+// TimelinePage is one page of an account's posts and reels, newest first
+// (`GET /accounts/{igid}/items`). NextCursor is nil at the end of the
+// timeline, and is otherwise the opaque `after` for the next page.
+type TimelinePage struct {
+	Items      []TimelineItem
+	NextCursor *string
+}
+
+// TimelineItem is one post or reel as the timeline lists it: enough to key
+// it and to decide whether to read it (`GET /posts/{shortcode}` reads it).
+type TimelineItem struct {
+	Code string
+	PK   string
+	// TakenAt is Unix seconds, as Instagram sends it.
+	TakenAt int64
+	// Kind is "reel" for `product_type: clips`, otherwise "post".
+	Kind      string
+	MediaType int
+	// Caption is the author's free text, "" when there is none. It must not
+	// enter a span, a log line or an error (16 §Tracing's never-list).
+	Caption       string
+	CarouselCount int
+}
+
 // Thread is one group thread's membership, never short and never empty.
 type Thread struct {
 	Title   string

@@ -23,6 +23,7 @@ type fakePorts struct {
 	accounts        []string
 	socials         []string
 	stories         []string
+	items           []string
 	searches        []string
 	typed           int
 	lookupErr       error
@@ -87,6 +88,13 @@ func (f *fakePorts) SocialProfile(_ context.Context, igid domain.IGID) domain.So
 func (f *fakePorts) Story(_ context.Context, igid domain.IGID) (domain.Story, error) {
 	f.stories = append(f.stories, igid.String())
 	return domain.Story{IGID: igid.String()}, nil
+}
+
+func (f *fakePorts) Items(
+	_ context.Context, igid domain.IGID, username domain.Username, after string,
+) (domain.TimelinePage, error) {
+	f.items = append(f.items, igid.String()+"/"+username.String()+"/"+after)
+	return domain.TimelinePage{}, nil
 }
 
 func (f *fakePorts) SearchAccounts(_ context.Context, query string) ([]domain.AccountSummary, error) {
@@ -166,6 +174,7 @@ func TestTheSessionGateComesFirstInEveryUseCase(t *testing.T) {
 		_, checks["members"] = svc.Members(t.Context(), room)
 		_, checks["account"] = svc.ReadAccount(t.Context(), mustIGID(t, "10000001"))
 		_, checks["story"] = svc.ReadStory(t.Context(), mustIGID(t, "10000001"))
+		_, checks["items"] = svc.ReadItems(t.Context(), mustIGID(t, "10000001"), domain.Username{}, "")
 		_, checks["search"] = svc.SearchAccounts(t.Context(), "someone")
 		_, checks["lookup_by_username"] = svc.LookupAccountByUsername(t.Context(), mustUsername(t, "someone"))
 		_, checks["post"] = svc.ReadPost(t.Context(), mustShortcode(t, "CmiJBr2LAAB"))
@@ -179,7 +188,7 @@ func TestTheSessionGateComesFirstInEveryUseCase(t *testing.T) {
 				t.Errorf("%s/%s: a refused session is not ErrNeedsHuman", state, name)
 			}
 		}
-		if len(p.resolved)+len(p.accounts)+len(p.stories)+len(p.searches)+len(p.posts)+p.typed != 0 {
+		if len(p.resolved)+len(p.accounts)+len(p.stories)+len(p.items)+len(p.searches)+len(p.posts)+p.typed != 0 {
 			t.Errorf("%s: a port was reached while the session needs a human", state)
 		}
 	}
@@ -501,5 +510,18 @@ func TestReadMentionsSessionGate(t *testing.T) {
 	}
 	if p.mentionsCalls != 0 {
 		t.Error("a checkpointed session reached the port")
+	}
+}
+
+// The use case hands the gateway the igid, the caller's username and cursor
+// unchanged.
+func TestReadItemsForwardsTheIGIDUsernameAndCursor(t *testing.T) {
+	p := &fakePorts{}
+	svc := service(&fakeSession{snap: domain.Session{State: domain.StateAuthenticated, Connected: true, HasClient: true}}, p)
+	if _, err := svc.ReadItems(t.Context(), mustIGID(t, "10000001"), mustUsername(t, "someone"), "cursor-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.items) != 1 || p.items[0] != "10000001/someone/cursor-1" {
+		t.Errorf("timeline reads = %v, want igid/username/cursor", p.items)
 	}
 }

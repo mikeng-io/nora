@@ -1,0 +1,28 @@
+{
+  "route": "GET /accounts/{igid}/items",
+  "path": "/accounts/10000001/items",
+  "status": 200,
+  "body": {
+    "items": [
+      {
+        "code": "SynthReel01",
+        "pk": "2001",
+        "taken_at": 1700000300,
+        "kind": "reel",
+        "media_type": 2,
+        "caption": "synthetic reel caption",
+        "carousel_count": 0
+      },
+      {
+        "code": "SynthPost02",
+        "pk": "2002",
+        "taken_at": 1700000200,
+        "kind": "post",
+        "media_type": 8,
+        "caption": "",
+        "carousel_count": 3
+      }
+    ],
+    "next_cursor": "synthetic-cursor-1"
+  }
+}

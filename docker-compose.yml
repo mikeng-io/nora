@@ -165,6 +165,11 @@ services:
       - INSTAGRAM_COMMENT_WRITES=${INSTAGRAM_COMMENT_WRITES:-off}
       - INSTAGRAM_COMMENT_DAILY_CAP=${INSTAGRAM_COMMENT_DAILY_CAP:-10}
       - INSTAGRAM_COMMENT_MIN_INTERVAL=${INSTAGRAM_COMMENT_MIN_INTERVAL:-90s}
+      # The story and timeline reads' GraphQL doc_ids (design/cognition-loop/
+      # 22-social-stream.md §1a), from the host's .env: they rotate with
+      # Instagram's web builds and are never in the repo. Unset is a 501.
+      - INSTAGRAM_STORY_DOC_ID=${INSTAGRAM_STORY_DOC_ID:-}
+      - INSTAGRAM_TIMELINE_DOC_ID=${INSTAGRAM_TIMELINE_DOC_ID:-}
     command: ["--port", "18082", "--session", "/session"]
     healthcheck:
       # Proves the bridge's HTTP layer serves. It CANNOT prove the Instagram
