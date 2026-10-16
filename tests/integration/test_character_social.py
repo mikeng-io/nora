@@ -102,8 +102,15 @@ async def _perceived(engine, sha: str, description: str) -> None:
         ))
 
 
+#: Ada was once recorded as `ada-old`.
+FORMER = {"ada": ("ada-old",)}
+
+
 def _session(store: SqlSocialStreamStore, metrics: Metrics | None = None):
-    evidence = PersonEvidence(store=InMemoryCharacterEvidence(), keys=KEYS, social=store)
+    evidence = PersonEvidence(
+        store=InMemoryCharacterEvidence(), keys=KEYS, social=store,
+        former_ids=lambda person: FORMER.get(person, ()),
+    )
     return CharacterPersonAdaptor(
         culture=InMemoryCultureStore(), evidence=evidence, keys=KEYS,
         screen=scan_identifiers, render_chars=240, metrics=metrics, clock=lambda: NOW,
@@ -285,3 +292,21 @@ async def test_the_screen_applies_to_a_social_session(social) -> None:
     assert (answer["status"], answer.get("reason")) == ("refused", "identifier")
     with pytest.raises(AccountNotRecordableError):
         await adaptor.accept(key=KEY, items=())
+
+
+async def test_items_recorded_under_a_former_id_are_the_persons_own(social) -> None:
+    """A person renamed in `identity.toml` keeps what was recorded under
+    their retired id: counted, handed and citable in their own session, and
+    nobody else's."""
+    store, _engine = social
+    await _record(store, "9101", person="ada-old")
+    await _record(store, "9102", person="ada-old", origin="backfill")
+    adaptor = _session(store)
+
+    assert await adaptor.evidence.count(key=KEY, after=0) == 1
+    out = await _wake(adaptor)
+    assert sorted(_cites(out)) == ["9101", "9102"]
+    revise, _keep = adaptor.verbs(key=KEY)
+    assert await revise(entity="Ada", body="x",
+                        citations=["social:instagram:9101"]) == {"status": "ok"}
+    assert await adaptor.evidence.count(key=CY_KEY, after=0) == 0

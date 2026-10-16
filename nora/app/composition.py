@@ -3840,6 +3840,7 @@ async def build_dependencies(
                         social=SqlSocialStreamStore(
                             engine, opted_out=persons.social_off_ids(),
                         ),
+                        former_ids=persons.former_ids_for,
                     ),
                     keys=person_keys, metrics=metrics,
                     screen=scan_identifiers,

@@ -374,7 +374,8 @@ projector in its own transaction (§9;
     verb's arguments pass the Dreamer's R-18/R-28 screen like every write
     verb's, and an item id written into the body is refused like a message
     number, each numeric part of a composite story id on its own.
-  - **The block.** `<social_items>`: the person's readable items not yet
+  - **The block.** `<social_items>`: the person's readable items, under
+    their id or any retired one (`Persons.former_ids_for`), not yet
     handed to a session, polled and back-filled, at most 12 a session,
     rendered newest posted first, each with its citation, what it is
     («Instagram post, co-authored»), when it was posted (a moment and an

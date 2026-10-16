@@ -227,10 +227,10 @@ class _PersonSocial(Protocol):
     """`nora.infra.sql.social_stream.SqlSocialStreamStore`'s Character reads:
     gone, hidden and opted-out items are left out there."""
 
-    async def polled_count(self, *, person: str, after_us: int) -> int: ...
+    async def polled_count(self, *, persons: Sequence[str], after_us: int) -> int: ...
 
     async def person_items(
-        self, *, person: str, after_us: int, limit: int,
+        self, *, persons: Sequence[str], after_us: int, limit: int,
     ) -> list[PersonSocialItem]: ...
 
 
@@ -252,10 +252,14 @@ class PersonEvidence:
     def __init__(
         self, *, store: _PersonMessages, keys: Mapping[str, PersonKey],
         social: _PersonSocial | None = None,
+        former_ids: Callable[[str], Sequence[str]] = lambda _person: (),
     ) -> None:
+        """`former_ids` is `Persons.former_ids_for`: an item recorded under a
+        person's retired id is theirs too."""
         self._store = store
         self._keys = keys
         self._social = social
+        self._former_ids = former_ids
         #: `key -> cursor` the read in flight reaches, for `settle`.
         self._pending: dict[str, int] = {}
         self._population = tuple(sorted(keys))
@@ -296,7 +300,12 @@ class PersonEvidence:
         if self._social is None:
             return n
         after_us = await self._store.social_cursor(adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
-        return n + await self._social.polled_count(person=person_id, after_us=after_us)
+        return n + await self._social.polled_count(
+            persons=self._ids(person_id), after_us=after_us)
+
+    def _ids(self, person_id: str) -> tuple[str, ...]:
+        """Every id their social items may be recorded under."""
+        return (person_id, *self._former_ids(person_id))
 
     async def newest(
         self, *, key: str, after: int, limit: int,
@@ -314,7 +323,7 @@ class PersonEvidence:
         if self._social is None:
             return messages, cursor
         items = await self._social.person_items(
-            person=person_id, limit=SOCIAL_ITEMS_MAX,
+            persons=self._ids(person_id), limit=SOCIAL_ITEMS_MAX,
             after_us=await self._store.social_cursor(
                 adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key),
         )

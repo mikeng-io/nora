@@ -41,7 +41,7 @@ Postgres.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -641,23 +641,25 @@ class SqlSocialStreamStore:
     # ponytail: a second concurrent writer could commit an earlier
     # `recorded_at` after a later one was read; a serial column if one appears.
 
-    async def polled_count(self, *, person: str, after_us: int) -> int:
-        """How many readable items of `person` a poll recorded after
+    async def polled_count(self, *, persons: Sequence[str], after_us: int) -> int:
+        """How many readable items of one person (recorded under any of
+        `persons`: their id and every retired one) a poll recorded after
         `after_us` (microseconds since the epoch, `to_us`): their wake
         pressure on Character. A back-filled item never counts: a back-fill
         of 50 items is history, not 50 items of news (§6)."""
         i = SOCIAL_ITEM
         stmt = sa.select(sa.func.count()).select_from(i).where(
-            *self._readable(), i.c.person == person, i.c.origin == "poll",
+            *self._readable(), i.c.person.in_(list(persons)), i.c.origin == "poll",
             i.c.recorded_at > from_us(after_us),
         )
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
 
     async def person_items(
-        self, *, person: str, after_us: int, limit: int,
+        self, *, persons: Sequence[str], after_us: int, limit: int,
     ) -> list[PersonSocialItem]:
-        """The OLDEST `limit` readable items of `person` recorded after
+        """The OLDEST `limit` readable items of one person (recorded under any
+        of `persons`: their id and every retired one) recorded after
         `after_us`, polled and back-filled alike, in the order recorded, each
         with what perception made of its media in `media_ref`'s order (a
         medium nothing has read yet has an empty reading). The read ends
@@ -672,7 +674,7 @@ class SqlSocialStreamStore:
             i.c.id, i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at,
             i.c.origin, i.c.caption, i.c.media_ref, i.c.recorded_at,
         )
-        mine = [*self._readable(), i.c.person == person]
+        mine = [*self._readable(), i.c.person.in_(list(persons))]
         m = MEDIA_OBJECTS
         async with self._engine.connect() as conn:
             rows = list((await conn.execute(
