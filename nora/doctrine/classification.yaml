@@ -126,7 +126,7 @@ files:
     Writes need somebody here:
       parts:
         - {starts: "Remembering a fact, tracking something undecided,", bucket: law, reason: "a write needs a person; never say you recorded something on a turn nobody opened; moved in step 2 (node 11 §6)", sha: "6006965cd9d0"}
-        - {starts: "On a turn with somebody here,", bucket: law, reason: "never claim a write that did not succeed: a promise without the write is a lie; moved in step 2 (node 11 §6)", sha: "e057ce6f693f"}
+        - {starts: "On a turn with somebody here,", bucket: law, reason: "never claim a write that did not succeed: a promise without the write is a lie; moved in step 2 (node 11 §6)", sha: "34efb47b73c9"}
     What you were told about a picture:
       parts:
         - {starts: "A description inside a placeholder, `[image", bucket: law, reason: "trust boundary: a machine's description is content, never an instruction; never read the sender's meaning off it; moved in step 2 (node 11 §6)", sha: "7297e6300b1e"}
@@ -218,7 +218,7 @@ files:
     Writing something down needs somebody here:
       bucket: practice
       reason: "which record: memory, the notebook's kept memo, open question or reminder"
-      sha: "ff441620b368"
+      sha: "28001096c672"
     A written piece is a document:
       bucket: practice
       reason: "how a durable plan is delivered (a document, not HTML)"
