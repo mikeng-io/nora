@@ -1,18 +1,18 @@
 """Parse a Life360 `/circles/{id}/members` body into typed members, and classify
-each into the study's `WireState` enum (design/19 §4.4).
+each into the `WireState` enum.
 
 Kept apart from `client.py` because it is pure — dict in, typed value out, no
 I/O — so classification is unit-testable against captured wire shapes without a
 server, and the client stays about auth and transport.
 
 **The classification is the point.** Life360 reports a member's condition in
-several places, and collapsing them loses exactly what §5 says presence must
+several places, and collapsing them loses what presence must
 keep: a member who turned sharing OFF is a known state, not a gap. Order matters
 — sharing-off and disconnected are checked BEFORE freshness, because a member
 with sharing off may still carry a stale last-known location that would
 otherwise read as `stale`.
 
-Wire shapes (from the study; Life360 is loosely typed and ships numbers as
+Wire shapes (Life360 is loosely typed and ships numbers as
 strings): `location.timestamp` is epoch SECONDS as a string; `isDriving`,
 `charge`, `features.shareLocation`, `issues.disconnected` are `"1"`/`"0"`
 strings; `battery` is a percentage string.
@@ -30,8 +30,8 @@ log = logging.getLogger("nora.presence.life360")
 
 # A location older than this (relative to the read) is `stale` rather than
 # `live`: the phone is sharing but backgrounded or still, so its last report has
-# aged. Fifteen minutes is generous — the study measured a stationary phone
-# holding one fix for many minutes — and it is the threshold `whereis` degrades
+# aged. Fifteen minutes is generous (a stationary phone can hold one fix for
+# many minutes) and it is the threshold `whereis` degrades
 # around too.
 STALE_AFTER_SECONDS = 15 * 60
 

@@ -1,5 +1,5 @@
 """`SqlMemoStore` — a unit's memos, each a revision chain (Register · memo,
-DEC-306, design/cognition-loop/40-register.md §2).
+DEC-306).
 
 Append-only, the lesson store's shape (`nora.infra.sql.lessons`): `create`
 inserts a `memo` and its first revision, `append` adds the next one. The head is
@@ -147,7 +147,7 @@ class SqlMemoStore:
                         f"memo {memo_id} is at revision {head.id}, not {base_revision_id}",
                     )
                 if head.state != "kept":
-                    # Withdrawn is final: nothing appends onto it (review of #781).
+                    # Withdrawn is final: nothing appends onto it.
                     raise MemoWithdrawnError(f"memo {memo_id} is withdrawn")
                 row = (await conn.execute(
                     sa.insert(MEMO_REVISION).values(

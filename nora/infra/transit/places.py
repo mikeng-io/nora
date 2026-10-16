@@ -10,28 +10,23 @@ and never appears in a schema (DEC-24).
 **THE SCOPE BOUNDARY LIVES HERE, and it is places only.** This module resolves
 a name against the two operators' published STOP DATASETS and against nothing
 else. A person's name must never resolve to a place through this seam —
-「Tyler 屋企」 is not a stop, and the day a Life360/Places half is added
-(design/14 §5.2 puts it behind this same seam) it inherits exactly this
-discipline: design/14 §2.2 hard-blocks a person's name or live position in any
-argument that leaves the host, and the in-repo half of that guarantee is that
-nothing in this module consults `identity.toml`, Honcho, the roster, or any
+「Tyler 屋企」 is not a stop, and a Life360/Places half behind this same seam
+would inherit exactly this discipline: a person's name or live position is
+hard-blocked in any argument that leaves the host, and the in-repo half of that
+guarantee is that nothing in this module consults `identity.toml`, Honcho, the roster, or any
 store that knows a human. It reads two public files about bus stops, and that
 is the whole of what it may ever read.
 
-## The two datasets, both keyless, both verified live 2026-08-06
+## The two datasets, both keyless
 
-**KMB** — `GET /v1/transport/kmb/stop`, 6,740 rows (~1.2 MB), updated 05:00
-daily (spec v1.05 §4): `{stop, name_tc, name_en, name_sc, lat, long}`. Two
-divergences worth recording: the spec's own sample shows `lat`/`long` as a
-NUMBER in one row and a STRING in the next (§4's sample, verbatim), and the
-live host sends strings — both parse below. The sample also shows a
-`data_timestamp` per row that the live response omits, the same omission the
-route list has for `co`. Route membership is NOT here: that is the Route-Stop
+**KMB** — `GET /v1/transport/kmb/stop` (~1.2 MB), updated 05:00 daily:
+`{stop, name_tc, name_en, name_sc, lat, long}`. `lat`/`long` may be a NUMBER
+or a STRING; both parse below. Route membership is NOT here: that is the Route-Stop
 API, fetched per call by the client because two ~2 KB responses per question
 beat caching a 5 MB all-routes dump nobody asked about.
 
-**MTR** — `opendata.mtr.com.hk/data/mtr_bus_stops.csv` (the Data Dictionary
-v1.19's own appendix points at it), per-route ordered stops WITH coordinates,
+**MTR** — `opendata.mtr.com.hk/data/mtr_bus_stops.csv` (named in the Data Dictionary's
+appendix), per-route ordered stops WITH coordinates,
 UTF-8 with a BOM like its sibling. Its `STATION_ID` (`K73-D070`) is the same
 string `getSchedule` sends as `busStopId` — that equality is the join key this
 whole resolver stands on, and it is why the MTR half needs no second endpoint.
@@ -45,7 +40,7 @@ file entitles anybody to make (R-27's hinge, applied to places).
 
 Exact-after-normalisation first, in the spirit of `RoomView.find` — the
 wrapper punctuation the model inherits from chat is stripped, English is
-casefolded. But exact-only was measured too brittle against the real KMB data:
+casefolded. But exact-only is too brittle against the real KMB data:
 every KMB name carries a stop code — 天恆邨總站 **(TN970)** — so the flagship
 query 「天恆」 would match nothing KMB runs. Two deliberate widenings, each
 bounded: the trailing `(XX999)` code is set aside for the exact pass, and when
@@ -207,8 +202,8 @@ def parse_mtr_stops(text: str) -> tuple[Stop, ...]:
 
 
 def _coordinates(lat: Any, lng: Any) -> tuple[float, float] | None:
-    """A position from fields the KMB spec's own sample shows as a number in
-    one row and a string in the next. Both are on the wire; both parse."""
+    """A position from fields the KMB feed may send as a number in
+    one row and a string in the next. Both parse."""
     try:
         return float(str(lat).strip()), float(str(lng).strip())
     except (TypeError, ValueError):

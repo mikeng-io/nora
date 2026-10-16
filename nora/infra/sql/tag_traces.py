@@ -1,15 +1,14 @@
-"""`SqlTagTraceStore` — write-once archival retention for `TagTrace`
-(spec §14.6: the re-derivation path this exists for is Task 6).
+"""`SqlTagTraceStore` — write-once archival retention for `TagTrace`.
 
 `__init__(self, engine: AsyncEngine)` and nothing else, matching
-`SqlNoteStore`'s own contract-suite affordance: no config, no
+`SqlNoteStore`'s contract-suite affordance: no config, no
 clock, no metrics. `created_at` arrives on the `TagTrace` itself, not on this
 constructor.
 
 **`transcript` needs its own (de)serialisation, not a bare `row.__dict__`.**
 `TranscriptRow.delivery_status` is a `DeliveryStatus` Enum member, not a JSON
 primitive — writing it verbatim into a JSONB column either fails the encode
-outright or (were it to succeed some other way) hands back a bare string on
+outright or hands back a bare string on
 read where `TagTrace.transcript` promises `TranscriptRow`s with a real Enum.
 `_row_to_json`/`_json_to_row` are the one place that conversion happens, so
 `save` and `recent` cannot drift into disagreeing about the shape.
@@ -32,11 +31,10 @@ from nora.infra.sql.schema import TAG_TRACE
 def _row_to_json(row: TranscriptRow) -> dict[str, Any]:
     d = dict(row.__dict__)
     d["delivery_status"] = row.delivery_status.value
-    # An EDITED row carries a `RowEdit` (design/message-edits/01 §3) — a
-    # dataclass, not a JSON primitive, the same problem `delivery_status`'s
-    # Enum is. Left in, it failed the JSONB encode for every tag whose window
-    # held an edited message, and the save is spawned, so the trace vanished
-    # with only a log line.
+    # An EDITED row carries a `RowEdit` — a dataclass, not a JSON primitive,
+    # like `delivery_status`'s Enum. Left in, it would fail the JSONB encode
+    # for every tag whose window held an edited message, and the save is
+    # spawned, so the trace would vanish with only a log line.
     d["edit"] = dataclasses.asdict(row.edit) if row.edit is not None else None
     return d
 

@@ -1,10 +1,9 @@
 """`SenseVoiceTranscriber` — voice notes to Traditional-Chinese text, via the
-local `stt` service (`deploy/stt/`, spec 2026-08-21).
+local `stt` service (`deploy/stt/`).
 
-The class name is historical: the service's DEFAULT model since 2026-09-15 is
-the JackyHoCL `whisper-large-v3-turbo-cantonese-noise-detection` whisper
-(decision: design/voice-channel/06), with SenseVoice as the config-selectable
-backup — `model` picks which, and defaults to the new primary. The client
+The class name is historical: the service's DEFAULT model is the JackyHoCL
+`whisper-large-v3-turbo-cantonese-noise-detection` whisper, with SenseVoice as
+the config-selectable backup — `model` picks which. The client
 itself is engine-agnostic: it speaks the OpenAI `/v1/audio/transcriptions`
 contract either way.
 
@@ -12,9 +11,8 @@ One POST against Nora's OWN local service (private `nora` network, no host
 port — audio never leaves the box). NEVER load-bearing and NEVER raises into
 the ingest loop, the same posture as the link preview: every failure —
 transport, timeout, non-200, an empty transcript — returns an unavailable
-`SttResult`, and the caller records the voice note with a bare handle exactly
-as it did before speech existed. A voice note that fails to transcribe is
-still a voice note; a message is never dropped over STT.
+`SttResult`, and the caller records the voice note with a bare handle. A voice note that fails to
+transcribe is still a voice note; a message is never dropped over STT.
 
 The endpoint already applies OpenCC s2t (Simplified → Traditional), so the
 text this returns is yue-Hant-HK-ready. `language` is one of the engines'

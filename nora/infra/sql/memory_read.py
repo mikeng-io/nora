@@ -1,9 +1,8 @@
-"""`SqlMemoryIndex`, the memory index's read (design/unified-memory/
-25-memory-graph.md §4, 60-build-step-3.md S5). `nora.infra.sql.memory_index`
+"""`SqlMemoryIndex`, the memory index's read. `nora.infra.sql.memory_index`
 is the one writer; this is the one reader, and it writes nothing.
 
-**Scope is applied inside every statement, on every node it returns** (25 §3,
-§4 step 3): the seed scan, the `about` seeds and each hop's join to
+**Scope is applied inside every statement, on every node it returns**: the
+seed scan, the `about` seeds and each hop's join to
 `memory_node`. A node out of scope is never read into the process, so a path
 is cut at its first out-of-scope node by construction: the walk
 (`nora.agent.memory_search`) can only step onto what a read returned. The
@@ -38,9 +37,9 @@ to everything said by or about that person.
 
 **A dangling edge drops itself**: every hop joins `memory_node` on both the
 edge's kind and id, so an edge into a hidden message or a switched-out
-episode reaches nothing (0105, S4).
+episode reaches nothing (0105).
 
-**Three seeds** (65 V2). `dense` is the search; `exact` pins literal
+**Three seeds.** `dense` is the search; `exact` pins literal
 references ahead of it; `seed`, the lexical seed, is the fallback the walk
 uses only when there is no query vector.
 
@@ -49,8 +48,8 @@ uses only when there is no query vector.
   `idx_memory_node_embedding_256` (the ORDER BY is that index's expression,
   with its constants written as literals so the planner can match it), with
   the scope filter and the model fingerprint INSIDE the same scan; those are
-  then re-scored by cosine on the full 2048 and the best `limit` kept (65 §0,
-  measured in #24). Two settings, local to the statement's transaction:
+  then re-scored by cosine on the full 2048 and the best `limit` kept. Two
+  settings, local to the statement's transaction:
   `hnsw.iterative_scan = relaxed_order` (pgvector 0.8), because HNSW returns
   at most `hnsw.ef_search` rows BEFORE the filter, so a room whose unit holds
   few of the nearest vectors would otherwise get fewer than its 50, or none;
@@ -115,25 +114,21 @@ from nora.infra.sql.schema import (
 
 __all__ = ["DENSE_CANDIDATES", "HNSW_EF_SEARCH", "HNSW_MAX_SCAN_TUPLES", "SqlMemoryIndex"]
 
-#: The first stage's candidates, re-scored on the full 2048 (65 §0: the
-#: bake-off's k, at which no query lost an item against an exact 2048 search).
+#: The first stage's candidates, re-scored on the full 2048: the k at which no
+#: bake-off query lost an item against an exact 2048 search.
 DENSE_CANDIDATES = 50
 #: HNSW's candidate list per scan. It must be at least `DENSE_CANDIDATES`: a
 #: scan returns at most this many rows before the iterative scan resumes it.
-#: The bake-off measured 50 over 460 items; recall at a fixed list falls as
-#: the graph grows, and the live index is about a hundred times larger, so
-#: this is twice the candidates, the margin pgvector's own docs show. The
-#: cost is one HNSW scan of a 100-entry list, about linear in this number;
-#: 65 §3 measures both at the real size after the backfill.
+#: Recall at a fixed list falls as the graph grows, so this is twice the
+#: candidates, the margin pgvector's own docs show. The cost is one HNSW scan
+#: of a 100-entry list, about linear in this number.
 HNSW_EF_SEARCH = 100
 #: How many tuples an iterative scan may visit before it stops, short of its
-#: `DENSE_CANDIDATES` or not. pgvector's default is 20,000; the live index
-#: holds about 46,000 embeddable nodes (a hundred times the bake-off's 460),
-#: so a unit holding few of the nearest vectors could be cut off with
-#: candidates still unvisited. This is above the whole index: a scoped scan
-#: gives up only after it has seen every vector. The cost falls on a scope
-#: holding fewer than `DENSE_CANDIDATES` vectors, which walks the whole graph
-#: every search; 65 §3 times it at the real size after the backfill, and
+#: `DENSE_CANDIDATES` or not. pgvector's default is 20,000, which could cut
+#: off a unit holding few of the nearest vectors with candidates still
+#: unvisited. This is above the whole index: a scoped scan gives up only after
+#: it has seen every vector. The cost falls on a scope holding fewer than
+#: `DENSE_CANDIDATES` vectors, which walks the whole graph every search;
 #: `nora_memory_dense_short_total` counts every search that came back short.
 HNSW_MAX_SCAN_TUPLES = 50_000
 
@@ -260,8 +255,8 @@ def _holds(text: Any, term: ExactTerm) -> sa.ColumnElement[bool]:
     """`exact_holds` in SQL, in a form `idx_memory_node_text_trgm` serves: a
     Latin term as a regular expression (`~`, or `~*` uncased), any other as
     `LIKE` (or `ILIKE`) on a substring. Never `strpos`, which no index
-    serves: one such term in the OR turned the whole read into a scan of the
-    table (review of #31)."""
+    serves: one such term in the OR would turn the whole read into a scan of
+    the table."""
     if is_latin(term.text):
         op = "~" if term.cased else "~*"
         pattern = sa.bindparam(None, exact_pattern(term.text), type_=sa.Text)

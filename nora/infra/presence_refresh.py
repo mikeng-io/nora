@@ -2,7 +2,7 @@
 
 Calls the presence collector's `POST /refresh?person_id=…` to force an on-demand
 Life360 reading before `where_is` reads the store. The COLLECTOR owns Life360 and
-the DB write (operator's chosen boundary 2026-08-08), so this only triggers it —
+the DB write (the operator's chosen boundary), so this only triggers it —
 Nora's process holds no Life360 credential and `where_is` stays a pure reader.
 
 Never load-bearing: any failure returns False and `where_is` reads the last

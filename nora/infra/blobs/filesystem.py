@@ -1,39 +1,19 @@
 """`BlobStore` over an ordinary directory: `<root>/<first2>/<rest>`, keyed by
 the sha256 of the content.
 
-**Why a filesystem and not an object store — and why the port exists anyway.**
+**Why a filesystem behind a port.** No media volume has been observed, so an
+object store would be sized and operated against no data. An object store is
+also a CONTAINER on the INGEST WRITE PATH that can be DOWN: recording a message
+can already fail on the record store and on the disk the bytes land on, and
+another daemon adds a custody failure unrelated to either. Its lifecycle rules
+are not needed: media expiry is the retention sweep (`SqlRecordStore.prune_all`)
+plus one path: read the surviving rows' `media_json`, delete every blob no
+longer named.
 
-The operator asked about RustFS (an S3-compatible object store) for this. The
-decision is a filesystem behind a port, and the argument is not "filesystems
-are simpler". It is that **no media has arrived yet.** signal-cli's store on
-this host holds `avatars/` and `data/` and has no `attachments/` directory at
-all, so an object store would be sized, configured and operated against zero
-observed data — the shape of decision this repo has already been bitten by
-(`peer_card` returned `[]` for the life of the deployment because nobody could
-tell an empty answer from a dead endpoint).
-
-Two concrete costs, on top of that:
-
-* An object store is a CONTAINER, on the INGEST WRITE PATH, that can be DOWN.
-  The failure modes of recording a message are: the record store (SQLite when
-  this was written; the co-located Postgres container since 2026-08-07) and the
-  disk the bytes land on. Adding a network round trip to yet another daemon
-  adds a way for custody to fail that has nothing to do with either.
-* Its headline feature for this problem — lifecycle rules that expire objects —
-  is one Nora does not need. She already runs a retention sweep for messages
-  (`SqlRecordStore.prune_all`, called periodically by the runtime). Media expiry
-  is that same loop plus one path: read the surviving rows' `media_json`,
-  delete every blob no longer named. Buying a daemon for a feature that is a
-  `for` loop over a directory is not a trade.
-
-**The port is what makes this reversible.** `nora.domain.ports.BlobStore` is
-`put`/`get`, which is exactly S3's shape; swapping in RustFS or S3 is one
-constructor in the composition root, changing no stage, no schema and no
-recorded key — because the key is the content hash, not a path this class
-invented. So: when there IS evidence (a volume, a size distribution, a second
-consumer), that swap is small and informed. Until then this is 40 lines with no
-moving parts. **Please do not re-litigate this without the evidence; that is
-what the port is for.**
+**The port keeps the choice reversible.** `nora.domain.ports.BlobStore` is
+`put`/`get`, S3's shape; swapping in S3 or RustFS is one constructor in the
+composition root, changing no stage, no schema and no recorded key, because the
+key is the content hash, not a path this class invented.
 
 Layout is git's, for git's reason: `<first2>/<rest>` keeps any one directory
 from accumulating every object, which matters on ext4 well before it matters
@@ -104,7 +84,7 @@ class FilesystemBlobStore:
         of encrypting a 100 MiB video does not block the event loop either.
 
         Idempotent by construction: the same bytes produce the same key and the
-        same path, so a meme forwarded five times is written once. An existing
+        same path, so repeated bytes are written once. An existing
         blob is left alone rather than rewritten — the content cannot differ,
         and not rewriting means both that a concurrent reader never sees a
         truncated file that was previously complete AND that the stored nonce is

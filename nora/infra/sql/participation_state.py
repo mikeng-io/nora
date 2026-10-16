@@ -1,32 +1,27 @@
 """`SqlParticipationStateStore` — the participation trigger's per-room
 watermarks, in `participation_window_state` instead of in a dict a
-force-recreate empties (`nora.app.participation`, migration 0056).
+force-recreate empties (`nora.app.participation`).
 
-**THE READ IS ONCE AND THE WRITES ARE RARE, so they are separate verbs.**
-`nora/infra/sql/dream_schedule.py` states the rule this follows: a combined
-`upsert_and_read` would write on every read, and a table whose whole purpose is
-to change when a window closes must not be written by the tick that only wants
-to know where the room was. Here the asymmetry is even wider than the dream
-clock's — the trigger holds the live cursors in memory (`note_message` moves
-one of them per message, synchronously, and must not await), so the READ is
-needed exactly once per process, at hydration, and the writes land only on the
-ticks that actually closed a window or actually sent.
+**The read is once and the writes are rare, so they are separate verbs.**
+`nora/infra/sql/dream_schedule.py` states the rule: a combined `upsert_and_read`
+would write on every read, and a table that changes only when a window closes
+must not be written by a tick that only wants to know where the room was. The
+trigger holds the live cursors in memory (`note_message` moves one per message,
+synchronously, and must not await), so the read happens once per process, at
+hydration, and writes land only on ticks that closed a window or sent.
 
-**`read_cursors` READS `messages` TOO, on purpose.** A restored cursor is a
-JOIN of two facts — «where this room was last judged», which is this table's,
-and «where the record has got to since», which is `messages`'. The trigger's
-quiet arm compares them, so a store that answered only half would make
-`ParticipationTrigger` hold a second optional collaborator to complete one
-answer, and the two halves could then be read at different instants. One
-statement, one instant, one answer.
+**`read_cursors` reads `messages` too.** A restored cursor joins two facts:
+where this room was last judged (this table) and where the record has got to
+since (`messages`). The trigger's quiet arm compares them, so one statement
+answers both and the halves are read at the same instant.
 
 The message half is restricted to `is_nora = 0`. Nora's own replies are rows in
-that table and they are NOT participation candidates: the dispatcher never
-notes them, and a cursor that counted them would place the newest message AFTER
-the window end she spoke in — so the room would read as having unjudged traffic
-because she answered it, and every turn would re-arm the next one.
+that table but are not participation candidates: the dispatcher never notes
+them, and a cursor that counted them would place the newest message after the
+window end she spoke in, so the room would read as having unjudged traffic
+because she answered it and every turn would re-arm the next one.
 
-**ABSENCE IS AN ANSWER, never zero.** A room with no row is not in the result
+**Absence is an answer, never zero.** A room with no row is not in the result
 at all; a row whose `last_send_at` is NULL comes back as `None`; a room whose
 messages have been pruned comes back with `last_message_at=None`. See
 `nora.domain.participation`'s module docstring for why each of those must not
@@ -46,8 +41,8 @@ from .schema import MESSAGES, PARTICIPATION_WINDOW_STATE
 
 class SqlParticipationStateStore:
     """`__init__(self, engine)` and nothing else, matching `SqlStandingStore`
-    and `SqlDreamScheduleClock`: no config, no clock, no metrics, so a fixture
-    in another session can build it from a bare `AsyncEngine`."""
+    and `SqlDreamScheduleClock`: no config, clock or metrics, so a fixture can
+    build it from a bare `AsyncEngine`."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -57,13 +52,12 @@ class SqlParticipationStateStore:
         inbound message beside it. One row per room; rooms with no row are
         absent from the result rather than present with zeroes.
 
-        The message half is a LATERAL rather than one query per room: the
-        result is bounded by the allowlist (a handful of rooms), but an N+1 at
-        startup is an N+1 that grows with the allowlist for no reason, and
-        `idx_messages_conv_ts` serves the correlated lookup directly.
+        The message half is a LATERAL rather than one query per room, so the
+        query count does not grow with the allowlist; `idx_messages_conv_ts`
+        serves the correlated lookup.
 
         A LEFT JOIN, not an inner one: a room whose messages have been pruned
-        still has a watermark worth restoring, and losing the row would make
+        still has a watermark worth restoring, and dropping the row would make
         the next window it closes look like its first.
         """
         newest = (
@@ -111,12 +105,9 @@ class SqlParticipationStateStore:
         second window is the ordinary case and a plain INSERT would raise on
         it.
 
-        `last_send_at` is deliberately NOT in the `set_` — a close that ran no
-        turn, or ran one that stayed silent, must leave the cooldown exactly
-        where it was. This is the one column omission in this module that is a
-        decision rather than an oversight, which is why it is written down:
-        `SqlStandingStore.write` states the opposite rule for its own columns,
-        and the difference is that this verb is not handed the send at all.
+        `last_send_at` is deliberately NOT in the `set_`: a close that ran no
+        turn, or ran one that stayed silent, must leave the cooldown where it
+        was. This verb is not handed the send at all.
         """
         stmt = pg_insert(PARTICIPATION_WINDOW_STATE).values(
             platform=platform, conversation_id=conversation_id,
@@ -137,16 +128,14 @@ class SqlParticipationStateStore:
     async def record_send(
         self, *, platform: str, conversation_id: str, at_ms: int
     ) -> None:
-        """Stamp a DELIVERED participation message — the cooldown (§10.3).
+        """Stamp a DELIVERED participation message — the cooldown.
 
         An UPSERT that also supplies `last_window_end_at`, rather than an
-        UPDATE that assumes the row is there. It always is in practice: a send
-        can only happen inside a window that closed, and the close wrote the
-        row in the same iteration with this same `at_ms`. But «always in
-        practice» is what an UPDATE would silently depend on, and a zero-row
-        UPDATE loses the cooldown without raising — the exact failure this
-        module exists to end. The insert branch therefore carries the truthful
-        value, and the conflict branch touches only the send.
+        UPDATE that assumes the row is there. The close normally wrote the row
+        in the same iteration with this same `at_ms`, but a zero-row UPDATE
+        would lose the cooldown without raising. The insert branch therefore
+        carries the truthful value, and the conflict branch touches only the
+        send.
         """
         stmt = pg_insert(PARTICIPATION_WINDOW_STATE).values(
             platform=platform, conversation_id=conversation_id,

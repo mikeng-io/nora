@@ -1,12 +1,11 @@
-"""Fit a held clip or voice note to the video provider's reference limits, with ffmpeg
-(design/video-generation §9, amended 2026-10-10).
+"""Fit a held clip or voice note to the video provider's reference limits, with ffmpeg.
 
-MiniMax H3 takes a reference video or audio only inside fixed ranges (the v2 create reference,
-fetched 2026-10-10): a clip is MP4 or MOV, H.264 or H.265, AAC or MP3 sound, 2 to 15 s, 256 to
+MiniMax H3 takes a reference video or audio only inside fixed ranges: a clip is
+MP4 or MOV, H.264 or H.265, AAC or MP3 sound, 2 to 15 s, 256 to
 5760 px a side, aspect 0.4 to 2.5, 23.976 to 60 fps, at most 50 MB; audio is WAV or MP3, 2 to 15 s,
 at most 15 MB. What people send rarely fits: a voice note is Opus or AAC, a screen recording runs
 at 12 fps, a phone clip is a minute long. A clip outside the ranges is not refused at create: the
-create answers 200 with a task id and the task fails seconds later (measured 2026-10-10, a 12 fps
+create answers 200 with a task id and the task fails seconds later (a 12 fps
 clip: `video fps 12.000, expected [23.976, 60]`; an `audio/mpeg` data URI: `audio format ".mpeg"
 not allowed`). So every reference is re-encoded here, before the create, into one shape that fits:
 
@@ -21,7 +20,7 @@ A clip's sound is kept only when the caller says so (`sound`): `video_create` pa
 note does. A clip or audio shorter than `MIN_SECONDS` (for a clip, its picture's own length, not
 the container's) is never padded: it is refused (`too_short`), since a loop or silence would be
 a reference nobody sent. A clip is cut by frame count as well as by time, so whole frames at a
-rate like 29.97 never run it past its seconds (15.015 s for 15, found in review).
+rate like 29.97 never run it past its seconds (15.015 s for 15).
 
 Both ffprobe and ffmpeg read the held bytes as a local file in a known media container only
 (`_INPUT_GUARD`): a blob that is really a playlist (HLS, concat) would otherwise make ffmpeg
@@ -203,7 +202,7 @@ def _clock_seconds(text: object) -> float:
 
 def _stream_seconds(stream: dict[str, Any], fps: float) -> float:
     """A stream's own length: its `duration`, else Matroska's `DURATION` tag (WebM and MKV put
-    no duration on a stream, found in re-review), else frames over rate; 0 when none."""
+    no duration on a stream), else frames over rate; 0 when none."""
     try:
         own = float(stream.get("duration") or 0.0)
     except (TypeError, ValueError):
@@ -244,7 +243,7 @@ def video_geometry(width: int, height: int) -> tuple[int, int, int, int]:
         scale = VIDEO_MIN_EDGE / min(cw, ch)
     w, h = _even(cw * scale), _even(ch * scale)
     # Rounding each side to even can tip a ratio at the limit just outside it (501x1300 gave
-    # 500x1252, 0.3994, found in review): shorten the LONG side two pixels at a time until it
+    # 500x1252, 0.3994): shorten the LONG side two pixels at a time until it
     # is back in. The long side is never near the short-side floor, so this cannot break it.
     while w / h > high:
         w -= 2
@@ -294,7 +293,7 @@ async def _fit(
                 "-vf", f"crop={cw}:{ch},scale={w}:{h},fps={fps:g},format=yuv420p",
                 # Whole frames only, never past `keep` (`-t` alone rounds up to the next frame),
                 # and never under the 2 s floor, which rounding down would cross at a 2 s share
-                # and 29.97 fps (59 frames, 1.97 s, found in re-review). A clip that passed the
+                # and 29.97 fps (59 frames, 1.97 s). A clip that passed the
                 # floor has those frames to give.
                 "-frames:v", str(max(math.floor(keep * fps), math.ceil(MIN_SECONDS * fps))),
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",

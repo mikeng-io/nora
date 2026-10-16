@@ -1,27 +1,27 @@
 """`RouteClient` — the one public entry point behind the `route` tool.
 
-Paid, external, keyed — the opposite of `transit` on every axis (design/14 §1).
+Paid, external, keyed — the opposite of `transit` on every axis.
 It answers "how do I get from A to B, and how long does it take", and unlike
 `transit` it can answer about a FUTURE arrival: Google Routes accepts an
-`arrivalTime`, which is why `route` is the first `time_shiftable=True` tool
-(§5.1). `rt.data.gov.hk` cannot time-travel; Google can.
+`arrivalTime`, which is why `route` is the first `time_shiftable=True` tool.
+`rt.data.gov.hk` cannot time-travel; Google can.
 
 **Two halves behind one seam.** `route` takes place NAMES, never coordinates
 (DEC-24). `PlaceResolver` (`nora.infra.routes.places`) turns each name into a
-coordinate — and it is the scope boundary design/14 §5.2 demanded: places only,
-never a person. `RouteClient` then asks Google Routes for the journey between
-the two coordinates. The person half of §2.2's hard block does NOT live here —
-it lives at the tool seam (`nora.agent.tools`, R-28), because that is where the
-roster and the identifier scanner are. This module is below the scanner, exactly
-as `nora.infra.transit` is.
+coordinate — and it is the scope boundary: places only, never a person.
+`RouteClient` then asks Google Routes for the journey between the two
+coordinates. The person half of that block does NOT live here — it lives at
+the tool seam (`nora.agent.tools`, R-28), because that is where the roster
+and the identifier scanner are. This module is below the scanner, exactly as
+`nora.infra.transit` is.
 
 **Nothing here raises.** Every failure — a place that would not resolve, a
 Google call that failed, a pair of points with no route between them — lands as
 one of the three states `nora.infra.routes.directions.describe` produces
 (`ok` / `no_route` / `unavailable`), never as an exception into the agent loop.
 
-**The field mask is a bill, and it names only what is rendered** (§the module
-`http` docstring). `ROUTES_FIELD_MASK` requests the duration, the distance and
+**The field mask is a bill, and it names only what is rendered** (see the
+`http` module). `ROUTES_FIELD_MASK` requests the duration, the distance and
 the per-leg transit details the tool renders — and nothing else. It does NOT
 request the polyline (large, unrendered) or per-step `navigationInstruction`
 (free text, unrendered, and a dearer SKU).
@@ -55,15 +55,15 @@ ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 TIMEOUT_SECONDS = 8.0
 
 # The three modes Google supports here that make sense for this group. TRANSIT
-# is the default (design/14 §5: this is a group that takes the bus), and an
+# is the default (this is a group that takes the bus), and an
 # unrecognised value falls back to it rather than erroring — the model names a
 # mode or it does not.
 _MODES = ("TRANSIT", "DRIVE", "WALK")
 DEFAULT_MODE = "TRANSIT"
 
 # The transit SUB-mode a person NAMES (「搭巴士」「by MTR」「坐輕鐵」), mapped to Google
-# Routes `transitPreferences.allowedTravelModes`. Verified against the live docs
-# 2026-08-07 (developers.google.com/maps/documentation/routes/reference/rest/v2/
+# Routes `transitPreferences.allowedTravelModes`. Per the Google docs
+# (developers.google.com/maps/documentation/routes/reference/rest/v2/
 # TransitPreferences): the enum is BUS / SUBWAY / TRAIN / LIGHT_RAIL / RAIL —
 # there is NO TRAM value, and LIGHT_RAIL is documented "light rail or tram", so
 # 電車/叮叮 and 輕鐵 both map there (Google cannot separate them at request time;
@@ -162,9 +162,9 @@ class RouteClient:
         anything is asked of the Routes API, and those coordinates never appear
         in the return value (DEC-24). `mode` is one of TRANSIT / DRIVE / WALK;
         `arrive_by`/`depart_after`, when given, are RFC 3339 instants that only
-        TRANSIT honours (§5.1), and they are mutually exclusive (arrive-by wins).
+        TRANSIT honours, and they are mutually exclusive (arrive-by wins).
 
-        `local_places` (design/23 §4, DEC-60) maps CASEFOLDED household place
+        `local_places` (DEC-60) maps CASEFOLDED household place
         names to pre-resolved `Place`s — the saved-places layer the tool builds
         per room, already subset-checked THERE (the guard needs the room, which
         this process-wide client must not hold). A hit here skips the Google
@@ -175,7 +175,7 @@ class RouteClient:
         exactly as today.
 
         The three TRANSIT sub-preferences are intent a person states, not
-        plumbing (audit 2026-08-07): `by` names a sub-mode (bus/mtr/light_rail/
+        plumbing: `by` names a sub-mode (bus/mtr/light_rail/
         tram/train → `transitPreferences.allowedTravelModes`), `prefer` names a
         routing preference (less_walking/fewer_transfers). Each is a closed enum
         validated in `_compute`; an unknown value is dropped, never sent.
@@ -204,7 +204,7 @@ class RouteClient:
         local_places: Mapping[str, Place] | None = None,
     ) -> dict[str, Any]:
         async def resolve(text: str) -> PlaceResolution:
-            # The household layer first (design/23 §4): a casefolded name match
+            # The household layer first: a casefolded name match
             # short-circuits Google Places — the name stays on the host. Logged
             # as a count-free line (never the name: it is household data).
             if local_places:
@@ -224,7 +224,7 @@ class RouteClient:
             return describe(origin, destination, chosen, None, reachable=False)
         # A place that resolved to nothing, or to several different places, is
         # `no_route` with the ambiguity in the note — never a guessed point
-        # sent to Google (design/14 §5.2).
+        # sent to Google.
         unresolved = _unresolved(origin_res, dest_res)
         if unresolved:
             return {
@@ -262,7 +262,7 @@ class RouteClient:
         raises. This is the reliable answer to «好唔好味»: a 4.2★ from Google is
         structured truth, unlike a scraped page.
 
-        Four statuses mirror the resolver (design/14 §5.2): `ok` (with whatever
+        Four statuses mirror the resolver: `ok` (with whatever
         dining fields Google returned — a place may have none), `ambiguous` (the
         name matches several distinct places; ask which), `not_found`, and
         `unavailable`. The place's COORDINATE is resolved internally and never
@@ -286,20 +286,21 @@ class RouteClient:
         if place.address:
             out["address"] = place.address
         # The typed dining fields (rating/price_level/open_now) — numbers, an
-        # enum and a bool, not free text, so not `untrusted`-wrapped (design/14
-        # §2.1). Empty for a bus stop or a street corner, which is honest.
+        # enum and a bool, not free text, so not `untrusted`-wrapped.
+        # Empty for a bus stop or a street corner, which is honest.
         out.update(place.dining())
         return out
 
     async def locate(self, name: str) -> dict[str, Any]:
         """The coordinate of ONE named place, for a SERVICE and never for the model
-        (design/artifact §40). NEVER raises. Same resolver as `place_info`, so the same
+        NEVER raises. Same resolver as `place_info`, so the same
         four statuses (`ok`, `ambiguous`, `not_found`, `unavailable`), but `ok` carries
         `lat` and `lng` as well as `name`.
 
         DEC-24 keeps a coordinate out of every model-facing schema, and this method is
-        why that still holds: its only caller is `DocumentService`, which writes the pair
-        into a stored `Map` and never into a tool result. A tool must not call it."""
+        why that still holds: it is for a service that writes the pair into a stored
+        `Map`, reached through `screen_and_locate_place`, never into a tool result.
+        A tool must not call it."""
         try:
             res = await self._resolver.resolve(name)
         except Exception:
@@ -354,7 +355,7 @@ class RouteClient:
             "regionCode": self._region_code,
         }
         # `transitPreferences`, `arrivalTime` and `departureTime` are all set
-        # ONLY under TRANSIT (§5.1) — the tool's one conservative rule, rather
+        # ONLY under TRANSIT — the tool's one conservative rule, rather
         # than tracking Google's per-field acceptance (arrivalTime is IGNORED off
         # TRANSIT; departureTime is future-only). Every sub-field is validated at
         # THIS boundary — the enums through a table (unknown → omitted), the

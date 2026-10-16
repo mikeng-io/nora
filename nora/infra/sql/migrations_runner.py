@@ -10,15 +10,12 @@ database over `postgresql+asyncpg://`. `sync_url_for` derives the sync URL from
 whatever URL it is handed, swapping the async driver for psycopg so a single
 `DATABASE_URL` (asyncpg-shaped, what the app uses) is the one source of truth.
 
-**Concurrency guard, added after 2026-09-24.** Deploying migration
-`0062_standing_revision_source` recreated nora, presence and analytics from the
-same image at once; all three run `run_migrations` at their own startup (see
-each composition root), and two hit the shared database's `ALTER TABLE
-standing_revision ADD COLUMN source` at the same time. One won the race, the
-other raised `psycopg.errors.DuplicateColumn`, crashed, and came up clean on
-its one restart — nothing enforced serial access. `run_migrations` and
-`stamp_head` now wrap their Alembic call in a Postgres SESSION-level advisory
-lock (`MIGRATION_LOCK_KEY`, a fixed 64-bit key both hold), taken on a DEDICATED
+**Concurrency guard.** Several containers built from the same image (nora,
+presence, analytics) each run `run_migrations` at their own startup (see each
+composition root), so two can race the same DDL on the shared database and one
+would fail. `run_migrations` and `stamp_head` therefore wrap their Alembic call
+in a Postgres SESSION-level advisory lock (`MIGRATION_LOCK_KEY`, a fixed 64-bit key both hold),
+taken on a DEDICATED
 connection so a caller that already holds a connection or is inside its own
 transaction is never touched. A losing process POLLS for the lock (see
 `MIGRATION_LOCK_POLL_INTERVAL_S` — a plain blocking wait deadlocks against this
@@ -74,8 +71,7 @@ MIGRATION_LOCK_KEY = 0x4E4F52414D494752
 #: with no exception for one that is merely blocked acquiring an advisory
 #: lock. A loser parked inside one long `pg_advisory_lock` call IS such an
 #: in-progress statement, so it and the winner's `CREATE INDEX CONCURRENTLY`
-#: would wait on each other forever — reproduced 2026-09-25 as a genuine hang,
-#: not a false alarm: Postgres's own deadlock detector cannot see it, because
+#: would wait on each other forever. Postgres's own deadlock detector cannot see it, because
 #: the winner's dependency on the loser is a real lock wait but the loser's
 #: dependency on the winner exists only in this Python code, never in
 #: `pg_locks`. Polling with `pg_try_advisory_lock` keeps every attempt a
@@ -141,10 +137,9 @@ def revision_is_known(revision: str) -> bool:
 
     Answers "behind head" vs. "ahead of head" with NO database connection,
     using only the local script directory: this repo keeps ONE linear
-    alembic chain (every migration's own convention — `uv run alembic
-    heads` must print exactly one line, `0027_fact_candidate_provenance`'s
-    own comment), so a revision this checkout recognizes at all is, by
-    construction, an ANCESTOR of (or equal to) `head_revision()` — never a
+    alembic chain (`uv run alembic heads` must print exactly one line), so a
+    revision this checkout recognizes at all is, by construction, an ANCESTOR of (or equal to)
+    `head_revision()` — never a
     sibling branch. A revision this checkout has never heard of is
     therefore either ahead of head (introduced by a branch not yet merged)
     or simply invalid; either way, "known" is what tells the two apart from
@@ -152,8 +147,7 @@ def revision_is_known(revision: str) -> bool:
     that.
 
     `ScriptDirectory.get_revision` raises `CommandError` for an unknown id
-    and returns the `Script` (never `None`) for a known one — verified
-    against a real bogus/real revision id, 2026-09-25.
+    and returns the `Script` (never `None`) for a known one.
     """
     script = ScriptDirectory(str(_MIGRATIONS))
     try:
@@ -268,8 +262,7 @@ def run_migrations(url: str) -> None:
 
 def stamp_head(url: str) -> None:
     """Mark an already-correct database as being at head without running any
-    migration. Used once, on the live 0-row database at cutover (design/20 §5).
-    Serialized the same way as `run_migrations`, against the same lock key —
+    migration. Serialized the same way as `run_migrations`, against the same lock key —
     the two must never run against one database at the same time either."""
     with _migration_lock(url):
         command.stamp(alembic_config(url), "head")

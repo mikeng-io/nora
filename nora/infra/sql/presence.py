@@ -1,20 +1,19 @@
-"""`PresenceStore` over SQLAlchemy Core — the presence record (design/19 §2).
+"""`PresenceStore` over SQLAlchemy Core — the presence record.
 
 A SECOND store in the SAME `nora` database as `SqlRecordStore`, over the same
 kind of `AsyncEngine`. It holds the change-recorder's write, two reads, and the
 retention prune. No semantics live here — classification (`wire_state`),
 disclosure (R-21) and the daemon loop are all above it.
 
-**The write is a change-recorder, not a sampler (design/19 §1).** `record_fix`
+**The write is a change-recorder, not a sampler.** `record_fix`
 inserts a row ONLY when the incoming `ts` strictly exceeds the member's last
 stored `ts`. Polling buys zero freshness — a stationary phone returns the
 identical fix for many minutes — so recording every poll would be pure
 duplication. The `since`-style dedup (read the member's latest `ts`, compare,
 insert-or-skip, in one transaction) is what makes the table a time-series of
-DISTINCT fixes. The probe design/19 §7.2 demands is two reads of an unmoved
-member producing one row; revert the `>` guard and that test goes red.
+DISTINCT fixes: two reads of an unmoved member produce one row.
 
-**Prune is a periodic sweep off the write path (design/19 §9)**, the identical
+**Prune is a periodic sweep off the write path**, the identical
 shape `SqlRecordStore.prune_all` uses and for the identical reason: a retention
 chore must never contend with a collection write. It is time-windowed (older
 than `retention_days`), not count-windowed like messages — presence is bounded
@@ -105,7 +104,7 @@ class PresenceStore:
 
         The read `whereis` makes: one row off the `(circle_id, person_id, ts
         DESC)` index. `None` is «nothing recorded», which `whereis` renders as
-        `unavailable` — never null-island (design/19 §7.6)."""
+        `unavailable` — never null-island."""
         stmt = (
             _select_fix()
             .where(
@@ -125,7 +124,7 @@ class PresenceStore:
         """One member's fixes in `[since_ts, until_ts]`, OLDEST FIRST.
 
         The read derivation makes (stay-points, "before"): a member's fixes over
-        a time window, clustered app-side (design/19 §3, §6). Oldest-first
+        a time window, clustered app-side. Oldest-first
         because a movement history has to be read chronologically, the same
         ordering `RecordStore.unattributed` is careful about.
         """
@@ -144,7 +143,7 @@ class PresenceStore:
         return [_row_to_fix(r) for r in rows]
 
     async def replace_places(self, *, circle_id: str, places: list[SavedPlace]) -> None:
-        """Replace one circle's saved places wholesale (design/23 §3).
+        """Replace one circle's saved places wholesale.
 
         Delete-then-insert in ONE transaction, not an upsert-and-reap: a circle
         holds a handful of rarely-changing rows, so the simplest write that
@@ -161,12 +160,11 @@ class PresenceStore:
                     sa.insert(PRESENCE_PLACES),
                     [
                         {
-                            # The kwarg, not `p.circle_id` (council 2026-08-07
-                            # LOW): the delete above is scoped to `circle_id`, so
-                            # an insert keyed on a row's own differing circle_id
-                            # would write into a circle this call did not clear.
-                            # The only caller pins them equal; this makes the
-                            # isolation true by construction.
+                            # The kwarg, not `p.circle_id`: the delete above is
+                            # scoped to `circle_id`, so an insert keyed on a
+                            # row's own differing circle_id would write into a circle this
+                            # call did not clear. The only caller pins them equal;
+                            # this makes the isolation true by construction.
                             "circle_id": circle_id,
                             "place_id": p.place_id,
                             "name": p.name,
@@ -207,9 +205,8 @@ class PresenceStore:
         """Delete every fix older than the retention window. Returns the count.
 
         Time-windowed, not count-windowed: `now_ms - retention_days` in
-        milliseconds, computed here so the cutoff is never a hard-coded constant
-        (design/19 §9). Called by the collector's periodic sweep, never on the
-        write path.
+        milliseconds, computed here so the cutoff is never a hard-coded constant.
+        Called by the collector's periodic sweep, never on the write path.
         """
         cutoff = now_ms - self._retention_days * _MS_PER_DAY
         stmt = sa.delete(PRESENCE_FIXES).where(PRESENCE_FIXES.c.ts < cutoff)

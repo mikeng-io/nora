@@ -49,14 +49,13 @@ MTR_STOPS_URL = "https://opendata.mtr.com.hk/data/mtr_bus_stops.csv"
 # resolution too diffuse to be one place anyway.
 MAX_STOP_ETA_CALLS = 4
 
-# Eight seconds total per call. Measured 2026-08-06: the KMB route list (350 KB)
-# and both ETA endpoints answered well inside one second each. This is the
+# Eight seconds total per call: the KMB route list (350 KB) and both ETA
+# endpoints answer well inside one second each. This is the
 # ceiling on how much of a turn a bus question may spend before Nora says she
 # could not check, not a latency target.
 TIMEOUT_SECONDS = 8.0
 
-# EVERY route number on both networks, and nothing else. All 791 KMB routes and
-# all 26 MTR routes match; the longest is four characters. This is also the only
+# EVERY route number on both networks, and nothing else. This is also the only
 # thing standing between a model-supplied string and a URL path — `transit` takes
 # one model-invented argument, and `../../` in it must never become a request.
 _ROUTE = re.compile(r"[A-Z0-9]{1,7}")
@@ -197,7 +196,7 @@ class TransitClient:
         self, route: str, service_type: str, stop_ids: tuple[str, ...],
     ) -> Answer:
         """`GET /v1/transport/kmb/eta/{stop_id}/{route}/{service_type}` (spec
-        v1.05 §8, verified live 2026-08-06) per resolved pole, merged into one
+        v1.05 §8) per resolved pole, merged into one
         payload for `read_kmb`: every row is already at the asked-for stop, so
         the origin logic's «lowest seq per direction» picks each bound's own
         pole and nothing else. The ids are DATASET-authored — the one string

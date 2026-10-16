@@ -1,27 +1,20 @@
 """`TavilySearchProvider` — web search AND page extraction via Tavily, behind the
 `web_search`/`web_fetch` tools.
 
-The grounding rebuild of 2026-08-08 (DEC-73, operator): SearXNG + Firecrawl are
-retired and the old `web_fetch` with them. Tavily is an agent-first search API that
-returns ranked results WITH a relevant content snippet per result in a SINGLE
-call, so «search then fetch» collapses into one verb for the search case — which
-is what dissolves the runaway-rounds failure the two-verb shape produced (a
-weather tag spent its whole token budget fetching pages and never answered,
-Langfuse 2026-08-08).
+Tavily is an agent-first search API that returns ranked results WITH a relevant
+content snippet per result in a SINGLE call, so «search then fetch» collapses
+into one verb for the search case (the two-verb shape let a turn spend its whole
+token budget fetching pages and never answer).
 
-`web_fetch` comes back on DEC-116 for the case a snippet doesn't cover: somebody
-pastes a link and wants what's actually on the page. It reuses Tavily rather than
-reopening the retired machinery — `POST /extract` is a SEPARATE Tavily endpoint
-that, like `/search`, fetches from TAVILY'S servers, never Nora's, so the SSRF
-argument below is unchanged by its return.
+`web_fetch` (DEC-116) covers the case a snippet doesn't: somebody pastes a link
+and wants what's actually on the page. `POST /extract` is a SEPARATE Tavily
+endpoint that, like `/search`, fetches from TAVILY'S servers, never Nora's.
 
-**No SSRF surface, so none of the old machinery.** The old `fetch` was an SSRF
-risk because a self-hosted Firecrawl fetched a MODEL-CHOSEN URL against Nora's own
-network; the `is_global`/`getaddrinfo` precheck, the post-redirect re-validation,
-and the per-tag `allowed_urls` fence all existed for that. Tavily fetches from ITS
-servers, never Nora's — for BOTH `/search` and `/extract` — so a model-invented
-`http://127.0.0.1:18080` cannot reach anything of Nora's, whichever verb hands it
-over. The whole apparatus (and `deploy/egress.sh`) stays gone.
+**No SSRF surface.** Tavily fetches from ITS servers, never Nora's, for BOTH
+`/search` and `/extract`, so a model-invented `http://127.0.0.1:18080` cannot
+reach anything of Nora's, whichever verb hands it over. No `is_global`/
+`getaddrinfo` precheck, post-redirect re-validation or per-tag `allowed_urls`
+fence is needed here.
 
 What survives is the discipline every grounding client holds:
 * NEVER raises — a non-200, non-JSON body, or transport error is a tool STATUS
@@ -34,7 +27,7 @@ What survives is the discipline every grounding client holds:
 
 `POST https://api.tavily.com/search`, `Authorization: Bearer tvly-…`. `country` is
 deliberately NOT sent — Hong Kong is not in Tavily's country list and sending it
-422s the whole call (verified live 2026-08-08); the keyless default already
+422s the whole call; the keyless default already
 returns HK results.
 
 `fetch` is `POST https://api.tavily.com/extract`, the same auth, a SEPARATE
@@ -44,7 +37,7 @@ distinct from `/search`'s `{results: [{url, title, content}]}`; a URL Tavily
 could not reach lands in `failed_results`, not `results`, and reads as
 `nothing_found` — it is not a transport failure of the CALL, which is what
 `unavailable` means here. `raw_content` is CLAMPED the same way a search
-snippet is (`extract_max_chars`, the fetch-token lesson, 2026-08-08) — a full
+snippet is (`extract_max_chars`) — a full
 page is far bigger than a snippet, and this is the field most likely to blow it.
 """
 
@@ -151,13 +144,13 @@ class TavilySearchProvider:
             url = str(item.get("url") or "")
             if not url:
                 continue
-            # Relevance floor (2026-08-31, measured): Tavily's own `score`
-            # separates signal from noise — opaque-ID and current-state queries
-            # return 0.02-0.05 junk while real answers sit above 0.15. A
+            # Relevance floor: Tavily's own `score` separates signal from
+            # noise — opaque-ID and current-state queries return 0.02-0.05
+            # junk while real answers sit above 0.15. A
             # below-floor result is dropped, not wrapped: five junk links are
             # worse for the model than an honest «nothing found».
             #
-            # FAIL CLOSED (Codex review 2026-08-31, MAJOR): a missing or
+            # FAIL CLOSED: a missing or
             # malformed score (null, string, bool, NaN) cannot be measured
             # against the floor, so it is dropped too — a response-shape
             # change must not silently admit unmeasured content. `NaN`

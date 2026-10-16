@@ -23,9 +23,7 @@ _W3C = TraceContextTextMapPropagator()
 def propagation_headers() -> dict[str, str]:
     """W3C trace-context headers for the CURRENT span, to put on a call to one
     of Nora's OWN services (instagram-bridge) so that service's spans join this
-    trace instead of starting a new one (design/instagram-adoption/16
-    §Tracing). Before this existed every bridge call was its own unlinked
-    trace.
+    trace instead of starting a new one.
 
     **Only for Nora's own services, never a third party.** A `traceparent`
     sent to an external host hands it an identifier of this infrastructure;

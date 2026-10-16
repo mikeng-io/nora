@@ -1,34 +1,27 @@
 """Everything Nora knew about one room at one real historical moment.
 
-WHAT THIS IS FOR. An eval case built from invented dialogue measures her
-against a room that never existed. A case built from a REAL `(platform,
-conversation_id, timestamp)` measures her against something that happened —
-but only if the state she actually held at that instant can be reconstructed,
-and until `standing_revision` (migration `0059`) landed it could not: three of
-the four inputs were already point-in-time recoverable and the fourth was
-overwritten in place on every fold. One unrecoverable input makes the whole
-reconstruction unrecoverable, so this module could not have existed before it.
+WHAT THIS IS FOR. An eval case built from a REAL `(platform, conversation_id,
+timestamp)` measures her against something that happened, which needs the
+state she held at that instant reconstructed. It is possible because every
+input is point-in-time recoverable, including the standing position
+(`standing_revision`, migration `0059`).
 
 READ-ONLY, AND THAT IS STRUCTURAL RATHER THAN A PROMISE. There is no `INSERT`,
-`UPDATE`, `DELETE` or `begin()` in this file — every read takes
+`UPDATE`, `DELETE` or `begin()` in this file; every read takes
 `engine.connect()`. A reconstruction that wrote would change the thing it is
 reconstructing, and a second run over the same instant would answer differently
 from the first.
 
-WHERE IT LIVES, AND WHY HERE. It composes five reads of five tables through the
-same store classes production runs, over a bare `AsyncEngine`, and imports
-nothing above `nora.infra`. That is what `nora.infra.sql` already is, and every
-other candidate location costs something real: `nora.app` would put a read-only
-query behind the composition root, and the eval-facing layer above the
-application (which obtains the composed subject and is where an eval harness
-would CALL this from) is legitimately above `nora.app` and so may reach down to
-here — the reverse would not be true. A caller that holds a composed subject
-passes its engine; nothing here needs to know that a subject exists.
+WHERE IT LIVES. It composes five reads of five tables through the same store
+classes production runs, over a bare `AsyncEngine`, and imports nothing above
+`nora.infra`. `nora.app` would put a read-only query behind the composition
+root; the eval-facing layer above the application may reach down to here, the
+reverse would not hold. A caller that holds a composed subject passes its
+engine; nothing here needs to know that a subject exists.
 
-SINCE STEP 1b (design/cognition-loop/70-migration.md §2) every in-place
-table keeps `row_history`, and `nora.infra.sql.snapshot_at` restores EVERY
-store as of T — cancelled reminders and a note's loop state included — into
-a sandbox of its own. This module is unchanged and still what the eval
+`nora.infra.sql.snapshot_at` restores EVERY store as of T (cancelled reminders
+and a note's loop state included) into a sandbox of its own, because every
+in-place table keeps `row_history`. This module is still what the eval
 runner's cases seed from (`nora.subject.sandbox.sandbox_from_snapshot`); the
 gaps below are this module's, and `snapshot_at` does not have them for any
 instant after migration `0068` (before it, its backfill says what is known).
@@ -37,92 +30,77 @@ WHAT IT CANNOT FREEZE, stated rather than left to be discovered:
 
 - **Honcho-backed state** — the peer card, the representation, anything the
   dialectic answers. It is live and mutable by design and has no revision
-  chain to read backwards; the operator's decision is that it stays that way.
-  A snapshot that quietly returned TODAY's peer card beside a year-old
-  transcript would be the worst of both, so it returns none at all.
-- **A note's loop state.** `note` has no history table — only `note_revision`
-  does — so anything `UPDATE`d on the row after creation reads CURRENT here
-  unless this module gates it. **SEVEN columns move**, from the three
-  `sa.update(NOTE)` sites in `nora/infra/sql/notes.py`: `head_revision_id`
-  (the compare-and-swap on append), `strikes`, `revisit_at` and
-  `last_wake_revision_id` (the revisit loop), and `retired_at`, `replaced_by`
-  and `retire_reason` (`supersede`). An earlier draft of this paragraph
-  enumerated only the first four and called the rest write-once; it was wrong,
-  and the three it missed are the three that matter most, because a note the
-  snapshot claims was OPEN would have carried the reason and timestamp of a
-  retirement that had not happened yet.
+  chain to read backwards. A snapshot that returned TODAY's peer card beside a
+  year-old transcript would be the worst of both, so it returns none at all.
+- **A note's loop state.** `note` has no history table, only `note_revision`,
+  so anything `UPDATE`d on the row after creation reads CURRENT here unless
+  this module gates it. Seven columns move, from the `sa.update(NOTE)` sites in
+  `nora/infra/sql/notes.py`: `head_revision_id` (the compare-and-swap on
+  append), `strikes`, `revisit_at` and `last_wake_revision_id` (the revisit
+  loop), and `retired_at`, `replaced_by` and `retire_reason` (`supersede`).
 
-  The split is therefore between four that are LEFT current and three that are
-  INSTANT-GATED:
+  Four are LEFT current and three are INSTANT-GATED:
 
     - `head_revision_id`, `strikes`, `revisit_at`, `last_wake_revision_id` read
       TODAY's values and must not be read as as-of. Nothing reconstructs from
-      them: the body is the as-of revision, returned beside the note precisely
-      so nobody has to resolve `head_revision_id` and silently get today's.
-    - `retired_at`, `replaced_by` and `retire_reason` ARE gated — `_notes`
+      them: the body is the as-of revision, returned beside the note so nobody
+      has to resolve `head_revision_id` and silently get today's.
+    - `retired_at`, `replaced_by` and `retire_reason` ARE gated: `_notes`
       blanks all three on a note whose `retired_at` is after `before_ms`, since
       such a note was still open at the instant. All three together, never one
       of them: `Note.__post_init__` refuses a `replaced_by` without a
       `retired_at`, and a `retire_reason` beside `retired_at=None` would read
-      as a note that had been retired for no recorded reason.
+      as a note retired for no recorded reason.
 
-  The columns that decide what the notebook SHOWED — title, description,
-  uncertainty, closing condition, anchor, `created_at` — are genuinely written
-  once at create and never updated, so the current row IS the as-of value for
-  them. (`event_id` and `reminder_id` are declared but nothing in the repo
-  writes them; they are `None` on every row and carry no instant.)
+  The columns that decide what the notebook SHOWED (title, description,
+  uncertainty, closing condition, anchor, `created_at`) are written once at
+  create, so the current row IS the as-of value for them. (`event_id` and
+  `reminder_id` are declared but nothing writes them; they are `None` on every
+  row and carry no instant.)
 
-- **What a photo showed.** `_transcript` returns `messages.body` as stored, and
-  since issue #116 that carries a media HANDLE — `[image a3f2c1]` — where the
-  live turn carried a description of what the photo actually was. A
-  reconstruction therefore shows bare handles in every row that had media,
-  which is strictly less than the model saw at that instant. The join that
-  resolves them (`nora.domain.media_join.MediaJoin`) needs a store, a screen
-  and a metrics sink, all of which sit ABOVE `nora.infra` — reaching it from
-  here would invert the layering this module was placed to respect. So the
-  limitation is real, is named here, and is registered in
-  `tests/architecture/test_media_join_reaches_every_transcript.py` rather than
-  left for a reader to discover from a prompt that reads thinner than it
-  should. Closing it means building the reconstruction's transcript one layer
-  up, where the join already lives.
+- **What a photo showed.** `_transcript` returns `messages.body` as stored,
+  which carries a media HANDLE (`[image a3f2c1]`) where the live turn carried a
+  description of the photo. A reconstruction therefore shows bare handles in
+  every row that had media, strictly less than the model saw at that instant.
+  The join that resolves them (`nora.domain.media_join.MediaJoin`) needs a
+  store, a screen and a metrics sink, all of which sit ABOVE `nora.infra`, so
+  reaching it from here would invert the layering. The limitation is registered
+  in `tests/architecture/test_media_join_reaches_every_transcript.py`. Closing
+  it means building the reconstruction's transcript one layer up, where the
+  join lives.
 - **WHEN a reminder was CANCELLED.** `reminders` has no history table, and
-  exactly three of its columns move after create — verified, not assumed: the
-  four `sa.update(REMINDERS)` sites in `nora/infra/sql/reminders.py`
-  (`claim`, `mark`, `cancel`, `sweep_firing`) touch only `state`, `fired_at`
-  and `outcome`. Everything else — `text`, `due_at`, `created_at`, `kind`,
-  `payload`, the requester, the room, and every recurrence/series column — is
-  written once by `_insert_values` and never updated, so today's row IS the
+  only `state`, `fired_at` and `outcome` move after create (the
+  `sa.update(REMINDERS)` sites in `nora/infra/sql/reminders.py`: `claim`,
+  `mark`, `cancel`, `sweep_firing`). Everything else (`text`, `due_at`,
+  `created_at`, `kind`, `payload`, the requester, the room, every recurrence
+  and series column) is written once by `_insert_values`, so today's row IS the
   as-of value for all of them.
 
-  Two of the three moving columns are recoverable and one is not, and the
-  split is the same shape as a note's retirement:
+  Two of the three moving columns are recoverable and one is not:
 
     - `fired_at` (and the `outcome`/terminal `state` it accompanies) IS
-      instant-gated. Every terminal write stamps it — `mark(fired_at=now)` on
-      the normal path and `sweep_firing` on the swept one, whose own docstring
-      says the stamp is "the only timestamp that exists" for a swept row. So a
-      resolution AFTER the instant is removable: `_reminders` reports the row
-      `PENDING` with both blanked, because that is what it was.
-    - a CANCELLATION is NOT. `cancel()` writes `state` and nothing else, and
-      the schema says so in as many words: `fired_at` is "NULL until the row
-      fires, and NULL forever on one that is cancelled." A row cancelled one
-      minute after the instant and one cancelled a month before are the same
-      row today, and no query can separate them.
+      instant-gated. Every terminal write stamps it: `mark(fired_at=now)` on
+      the normal path and `sweep_firing` on the swept one. So a resolution
+      AFTER the instant is removable: `_reminders` reports the row `PENDING`
+      with both blanked, because that is what it was.
+    - a CANCELLATION is NOT. `cancel()` writes `state` and nothing else:
+      `fired_at` is NULL until the row fires, and NULL forever on one that is
+      cancelled. A row cancelled one minute after the instant and one cancelled
+      a month before are the same row today.
 
-  **So a cancelled row is OMITTED rather than guessed, and the direction is
-  chosen deliberately.** Reporting it `PENDING` would be the dangerous guess:
-  a pending reminder is what FIRES, so a row cancelled long before the instant
-  would put a turn into the reconstruction that the room never had, and the
-  suite would grade that turn as behaviour. Omitting it fails the other way,
-  loudly — a case anchored on that row finds no row and ERRORs, which is a
-  reconstruction refusing to answer rather than answering wrongly. It is the
-  same rule the peer card follows two bullets up.
+  **So a cancelled row is OMITTED rather than guessed.** Reporting it `PENDING`
+  would be the dangerous guess: a pending reminder is what FIRES, so a row
+  cancelled long before the instant would put a turn into the reconstruction
+  that the room never had, and the suite would grade that turn as behaviour.
+  Omitting it fails loudly instead: a case anchored on that row finds no row
+  and ERRORs, a reconstruction refusing to answer rather than answering
+  wrongly. It is the same rule the peer card follows.
 
 - **Anything before its tier's history existed.** `0059_standing_revision`
-  deliberately did not backfill, so a room's standing chain begins at its first
-  fold after that migration and `standing` reads `None` for any instant before
-  it. That is the same `None` a room that had never been folded gives, and the
-  two are not distinguishable from here.
+  does not backfill, so a room's standing chain begins at its first fold after
+  that migration and `standing` reads `None` for any instant before it. That is
+  the same `None` a room that had never been folded gives; the two are not
+  distinguishable from here.
 
 THE TWO KEYS THIS FUNCTION CANNOT DERIVE, and will not guess. A room's culture
 key and its notes' unit both come from `policy.toml`, not from the database:
@@ -181,7 +159,7 @@ __all__ = ["Snapshot", "snapshot"]
 #: (`undefined_column`, `undefined_table`) — driver-agnostic: both asyncpg's
 #: `UndefinedColumnError`/`UndefinedTableError` and psycopg's
 #: `UndefinedColumn`/`UndefinedTable` expose the SAME `.sqlstate` attribute
-#: with these values (verified against a real Postgres, 2026-09-25), so this
+#: with these values so this
 #: needs no import of either driver package — only `exc.orig.sqlstate`,
 #: through whatever DBAPI wrapper SQLAlchemy used to reach it.
 _MISSING_SCHEMA_SQLSTATES = frozenset({"42703", "42P01"})
@@ -261,11 +239,11 @@ class Snapshot:
 
     #: Her own account in this unit as it stood at `before_ms`
     #: (`nora_character_key(unit)`), what `<self>` renders; `None` when it had
-    #: none (design/self-growth/20).
+    #: none.
     nora_account: CultureRevision | None = None
 
     #: Her active lessons in this unit as they stood at `before_ms`, oldest
-    #: first, what `<lessons>` renders (design/self-growth/40, L5): each lesson's
+    #: first, what `<lessons>` renders: each lesson's
     #: revision current at the instant, kept when that revision is active.
     lessons: tuple[str, ...] = ()
 
@@ -302,17 +280,12 @@ async def snapshot(
     most one of this call's connections is checked out of the pool at a time
     rather than five contending for it.
 
-    Sequential is not the same as sharing a connection, and this does not share
-    one: FIVE connections are opened and closed in turn, one per read —
-    `_transcript`, `SqlStandingStore.read_as_of`, `_culture`, `_notes`,
-    `_reminders`. (`_culture` runs once for the room, once for the unit and
-    once per listed person, each on its own connection in turn.) (This file
-    carries five `engine.connect()` sites, not four, because `_transcript`
-    has a bounded and an unbounded branch; exactly one of them runs. The
-    remaining connection is `read_as_of`'s own.) One connection
-    for the whole reconstruction would mean threading it through every helper,
-    and `read_as_of` is a store method that owns its own — a cost with nothing
-    to buy, since a sequence of reads never contends with itself.
+    The reads do not share a connection: each of `_transcript`,
+    `SqlStandingStore.read_as_of`, `_culture` (once for the room, once for the
+    unit, once per listed person), `_notes` and `_reminders` opens and closes
+    its own. One connection for the whole reconstruction would mean threading
+    it through every helper, and `read_as_of` is a store method that owns its
+    own.
 
     **FAIL-CLOSED on a source behind this checkout's migration head.**
     `nora.subject.sandbox.refuse_if_source_diverges_from_head` allows a
@@ -329,14 +302,11 @@ async def snapshot(
             engine, platform=platform, conversation_id=conversation_id,
             before_ms=before_ms, limit=transcript_limit,
         )
-        # Bound to a NAME rather than called inline off the constructor, and
-        # that is not style: `tests/architecture/test_store_methods_have_
-        # production_callers.py` resolves a caller as an attribute access on
-        # a name-bound receiver, because `(await conn.execute(stmt)).all()`
-        # once certified `SqlMusicSessionStore.all` as used.
-        # `SqlStandingStore(engine).read_as_of(...)` is invisible to it, so
-        # writing it that way leaves the method reading as «no production
-        # caller» while it has one.
+        # Bound to a NAME rather than called inline off the constructor:
+        # `tests/architecture/test_store_methods_have_production_callers.py`
+        # resolves a caller as an attribute access on a name-bound receiver,
+        # so `SqlStandingStore(engine).read_as_of(...)` is invisible to it and
+        # would leave the method reading as «no production caller».
         standing_store = SqlStandingStore(engine)
         standing = await standing_store.read_as_of(
             platform=platform, conversation_id=conversation_id, before_ms=before_ms,
@@ -441,7 +411,7 @@ async def _transcript(
     """
     # `SqlRecordStore`'s own select and mapping, so an edit folds here as it
     # does on every live read — bounded AS OF the instant: an edit made after
-    # `before_ms` had not happened yet (design/message-edits/01 §3).
+    # `before_ms` had not happened yet.
     select = transcript_select(edits_before=before_ms)
     where = (
         MESSAGES.c.platform == platform,
@@ -536,13 +506,12 @@ async def _notes(
         `continue` below enforces.
 
     **The first and third overlap completely, and neither can be falsified on
-    its own** — measured, not assumed. `SqlNoteStore.create` writes the note and
+    its own.** `SqlNoteStore.create` writes the note and
     its first revision in ONE transaction with ONE `now_ms`, so a note created
     after the instant has no revision at or before it either: delete
     `created_at <= before_ms` and the revision filter still excludes it, delete
     the revision filter and `created_at` still does. Only removing BOTH turns
-    `test_a_note_created_after_the_instant_is_not_in_the_notebook` red, and the
-    test says so rather than claiming a pin it does not have.
+    `test_a_note_created_after_the_instant_is_not_in_the_notebook` red.
 
     Both are kept anyway, and the reason is which QUESTION each answers.
     `created_at` says «the note did not exist»; the revision filter says «no
@@ -557,14 +526,12 @@ async def _notes(
     the single easiest way to build a snapshot that looks right and shows a
     body written after the moment it claims to reconstruct.
 
-    **AND THE RETIREMENT IS BLANKED, which the visibility predicate alone does
-    not do.** Keeping a since-retired note is only half the reconstruction: the
-    row it is built from is TODAY's, so the note came back carrying the
+    **THE RETIREMENT IS BLANKED, which the visibility predicate alone does
+    not do.** The row is TODAY's, so a kept since-retired note would carry the
     `retired_at`, `replaced_by` and `retire_reason` of a retirement that had not
-    happened at `before_ms` — a note the snapshot itself says was open,
-    reporting the timestamp and the reason it was closed. `_as_of_note` below
-    nulls all three when `retired_at > before_ms`, which is exactly the
-    condition under which this query kept the row.
+    happened at `before_ms`. `_as_of_note` below nulls all three when
+    `retired_at > before_ms`, exactly the condition under which this query
+    kept the row.
 
     All three together and never one of them: `Note.__post_init__` refuses a
     `replaced_by` with no `retired_at`, and a `retire_reason` left beside
@@ -579,8 +546,7 @@ async def _notes(
     by design (`SqlNoteStore.standing` says why) but is a handful of rows per
     unit in practice, and this is an offline reconstruction with no turn
     waiting on it. If a unit's notebook ever grows enough for that to matter,
-    the fix is a `DISTINCT ON (note_id)` over the revisions — stated so the
-    next reader does not have to rediscover which shape it wants.
+    use a `DISTINCT ON (note_id)` over the revisions.
     """
     visible = (
         sa.select(NOTE)

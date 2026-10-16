@@ -1,5 +1,4 @@
-"""`SqlRollupRead`: the Rollup read behind `rollup_read`
-(design/cognition-loop/25-rollup.md §5).
+"""`SqlRollupRead`: the Rollup read behind `rollup_read`.
 
 Reads the CURRENT build only (`rollup_build.status = 'current'`, the one
 pointer every reader resolves): a superseded build is history for eval, never
@@ -55,8 +54,8 @@ class SqlRollupRead:
     async def read(self, q: RollupReadQuery) -> RollupRead:
         if not q.subjects:
             # NEVER «all»: a unit row filter that is skipped when its subject
-            # set is empty turns «nobody» into «everybody in the unit» (#647
-            # M2). The caller names whom it means; an empty set is a bug there.
+            # set is empty turns «nobody» into «everybody in the unit». The
+            # caller names whom it means; an empty set is a bug there.
             raise ValueError("rollup_read needs at least one subject")
         async with self._engine.connect() as conn:
             build = (await conn.execute(

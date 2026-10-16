@@ -1,5 +1,5 @@
 """`SteamPresenceClient` — the `SteamPresenceProvider` port's real
-implementation (design/online-status/). One batched `GetPlayerSummaries`
+implementation. One batched `GetPlayerSummaries`
 call against the Steam Web API answers "who is online / playing what" for
 the whole room: Steam accepts up to 100 comma-separated SteamID64s per
 request, so `online_now`'s one question costs one network round trip, never

@@ -1,5 +1,5 @@
 """Every Google service Nora uses, and the ONE scope each declares
-(operator, 2026-10-10: one OAuth client and one refresh token for all of them).
+(one OAuth client and one refresh token for all of them).
 
 The sign-in script (`scripts/google_auth.py`) asks for the union of these, so
 adding a service is a row here, one re-run of the script, the same client.
@@ -10,7 +10,7 @@ needs nothing but this module.
 
 from __future__ import annotations
 
-#: Shared files (design/external-files §4): read-only Drive. The Sheets reads
+#: Shared files: read-only Drive. The Sheets reads
 #: accept it, and it cannot write, comment or share.
 DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
 
@@ -41,7 +41,7 @@ def is_read_only(scope: str) -> bool:
 
 def undeclared_write_scopes(granted: frozenset[str] | set[str]) -> tuple[str, ...]:
     """Scopes in `granted` that could write and that no consumer declared,
-    sorted. A grant with any is refused whole (re-review of PR 801: read-only
-    must hold in the credential, not only in the code that uses it)."""
+    sorted. A grant with any is refused whole: read-only
+    must hold in the credential, not only in the code that uses it."""
     declared = set(CONSUMER_SCOPES.values())
     return tuple(sorted(s for s in granted if s not in declared and not is_read_only(s)))

@@ -1,6 +1,6 @@
 """OpenAI gpt-image through the Codex (ChatGPT subscription) lane.
 
-DEC-304 / design/proposed/29 §11: the second `ImageGenerator`. It speaks the
+DEC-304: the second `ImageGenerator`. It speaks the
 wire the `codex` CLI speaks: a streamed Responses call to
 `chatgpt.com/backend-api/codex/responses`, where a text model (`gpt-5.5`)
 hosts the `image_generation` tool (`gpt-image-2`). The image arrives as the
@@ -8,16 +8,15 @@ hosts the `image_generation` tool (`gpt-image-2`). The image arrives as the
 `image_generation_call`.
 
 **A 200 is not an image.** The host model can answer in text and the stream
-still ends `response.completed`. `tool_choice` forces the tool (accepted live,
-2026-10-09), and the adapter still counts only a completed
+still ends `response.completed`. `tool_choice` forces the tool, and the adapter still counts only a
+completed
 `image_generation_call` with decodable PNG bytes as `ok`; anything else is
 `unavailable` (`no_image`), never a silent success.
 
-**Size and quality are requests, not guarantees** (measured 2026-10-09, n=1
-each): 1024x1024 came back 1254x1254, and 1536x1024 at `low` came back
-1672x941 at `medium`. The host model sets the tool's parameters itself, so
-the aspect also goes into its instructions. Nothing downstream reads the
-dimensions.
+**Size and quality are requests, not guarantees**: the output can differ in
+dimensions and quality from what was asked. The host model sets the tool's
+parameters itself, so the aspect also goes into its instructions. Nothing
+downstream reads the dimensions.
 
 NEVER raises (R-27). Reference images are custody handles resolved only
 through the injected `reference_resolver`, sent as `input_image` data URIs;
@@ -51,14 +50,13 @@ PROVIDER = "openai_codex"
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
-#: OpenAI documents «up to 16 images» for GPT image models on `images/edits`
-#: (developers.openai.com, images edit reference, read 2026-10-09). The Codex lane
-#: has no published limit of its own; measured 2026-10-09 it took 17 and drew all
-#: 17 (design/proposed/29 §12). The documented number is the contract.
+#: OpenAI documents «up to 16 images» for GPT image models on `images/edits`.
+#: The Codex lane has no published limit of its own; the documented number is the
+#: contract.
 CODEX_MAX_REFERENCE_IMAGES = 16
 
 # gpt-image takes three fixed sizes. ponytail: `ImageSize.tier` is not mapped;
-# the measured output ignored even the size asked for, so a tier knob would
+# the output may ignore even the size asked for, so a tier knob would
 # be decoration. Map it if a provider release starts honouring sizes.
 _SIZE_BY_ASPECT = {
     "1:1": "1024x1024",

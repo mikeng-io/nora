@@ -79,8 +79,8 @@
   {
     "name": "social_fetch still sends an Instagram profile to OpenCLI (cutover undone)",
     "file": "nora/infra/social/bridge_server.py",
-    "old": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        # LinkedIn (design/social-per-network/10, DEC-201)",
-    "new": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        (\"instagram\", \"profile\"): (\"instagram\", \"profile\"),\n        # LinkedIn (design/social-per-network/10, DEC-201)",
+    "old": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        # LinkedIn (DEC-201): every command",
+    "new": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        (\"instagram\", \"profile\"): (\"instagram\", \"profile\"),\n        # LinkedIn (DEC-201): every command",
     "target": "tests/test_acceptance_rules.py::test_r86_social_reads_are_read_only_at_three_layers"
   },
   {

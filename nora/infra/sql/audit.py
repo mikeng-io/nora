@@ -1,21 +1,16 @@
 """`RecordStore` over SQLAlchemy Core. Role: audit record + the tagging path's
 context source. No semantics live here.
 
-`append` is a bare INSERT. It used to run the INSERT and a correlated-subquery
-prune in one transaction on every message — O(rows-per-conversation) per write.
-Under SQLite's WAL that produced SQLITE_BUSY under an N-listener burst, and the
-ingest path's documented failure behaviour is to drop the message. Pruning was
-split into a periodic sweep (`prune_all`) for that reason and stays split.
+`append` is a bare INSERT. Pruning is a periodic sweep (`prune_all`), not part
+of the write: a correlated-subquery prune per message would cost
+O(rows-per-conversation) per write, and the ingest path's documented failure
+behaviour under write contention is to drop the message.
 
-The store is Postgres since the 2026-08-07 migration (design/20). MVCC lets
-writers proceed concurrently, so the SQLite WAL apparatus — the
-`OperationalError` "database is locked" handling and `_note_busy` — is gone;
-there is no single-writer contention left to count. The `nora_store_busy_total`
-metric NAME is RETAINED (frozen at 0) by the append-only metric-name policy
-(`PRESERVED_METRIC_NAMES`), but nothing increments it any more — it counted a
-SQLite condition MVCC cannot produce. The one real driver break the swap forced
-is here in `append`: asyncpg has no `lastrowid`, so the new id comes back via
-`RETURNING`.
+The store is Postgres. MVCC lets writers proceed concurrently, so there is no
+single-writer contention to count. The `nora_store_busy_total` metric NAME is
+retained (frozen at 0) by the append-only metric-name policy
+(`PRESERVED_METRIC_NAMES`); nothing increments it. asyncpg has no `lastrowid`,
+so `append` gets the new id back via `RETURNING`.
 """
 
 from __future__ import annotations
@@ -56,7 +51,7 @@ DEFAULT_MAX_PER_CONVERSATION = 500
 def _latest_edit(*, edits_before: int | None = None) -> Any:
     """The newest `message_edit` of the `messages` row in the enclosing
     query, as a LATERAL subquery — one backwards seek on
-    `idx_message_edit_message_ts` per row read (design/message-edits/01 §3).
+    `idx_message_edit_message_ts` per row read.
     `edits_before` is the as-of bound `nora.infra.sql.snapshot` reads at: an
     edit made after the instant being reconstructed had not happened yet."""
     stmt = sa.select(
@@ -89,8 +84,7 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
     powers — a prompt block, a tool result, `record_query`, and the
     snapshot's as-of read, which copies the historical row image (`hidden_at`
     as it stood at T) into the sandbox and then reads it through this same
-    select, so a snapshot before a forget correctly shows the row unhidden
-    (design/cognition-loop/10-tiers.md §9's own gate)."""
+    select, so a snapshot before a forget correctly shows the row unhidden."""
     latest = _latest_edit(edits_before=edits_before)
     return sa.select(
         MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
@@ -118,8 +112,7 @@ def transcript_row(r: Any) -> TranscriptRow:
     read — they select the same columns, so the mapping exists once.
 
     An edited row carries its LATEST body and keeps its own `raw_json`;
-    what it first said and the latest envelope ride on `edit`
-    (design/message-edits/01 §3)."""
+    what it first said and the latest envelope ride on `edit`."""
     edited = r.edit_ts is not None
     return TranscriptRow(
         id=r.id,
@@ -186,24 +179,19 @@ class SqlRecordStore:
             delivery_status=delivery_status.value,
             raw_json=json.dumps(message.raw),
             # Same INSERT, no extra parameter: the parser already extracted it
-            # onto the message, exactly as DEC-15 did for `person_id` and for
-            # the same reason — see this module's docstring on WAL's single
-            # writer and this path's drop-on-contention behaviour.
+            # onto the message (as for `person_id`, DEC-15).
             quoted_ts=message.quote.quoted_ts if message.quote else None,
-            # Same INSERT again, same argument (DEC-43). Custody is resolved
-            # BEFORE this write — `nora.ingest.stages.media` runs ahead of the
-            # audit stage — precisely so the row that claims a handle and the
-            # blob that backs it are committed together. An UPDATE afterwards
-            # would be a second contender for WAL's single writer AND a window
-            # in which the record says `[image a3f2c1]` while nothing can
-            # produce `a3f2c1`.
+            # Same INSERT (DEC-43). Custody is resolved BEFORE this write —
+            # `nora.ingest.stages.media` runs ahead of the audit stage — so the
+            # row that claims a handle and the blob that backs it are committed
+            # together. An UPDATE afterwards would open a window in which the
+            # record says `[image a3f2c1]` while nothing can produce `a3f2c1`.
             media_json=media_json(message.media_blobs),
-            # Same INSERT, same argument: the file links ingest recognised
-            # (design/external-files/00-design.md §1).
+            # Same INSERT: the file links ingest recognised.
             external_files_json=external_files_json(message.external_files),
-            # Same INSERT, both (design/message-edits/01 §2): the handle an
-            # edit names its target by, and the mentions the gate compares an
-            # edit against. "" is the parsers' «no handle» and stores as NULL.
+            # Same INSERT, both: the handle an edit names its target by, and
+            # the mentions the gate compares an edit against. "" is the parsers'
+            # «no handle» and stores as NULL.
             platform_message_id=message.message_id or None,
             mentions_json=mentions_json(message.mentions),
         ).returning(MESSAGES.c.id)
@@ -213,9 +201,8 @@ class SqlRecordStore:
         # one row came back, which a bare INSERT always produces.
         async with self._engine.begin() as conn:
             row_id = int((await conn.execute(stmt)).scalar_one())
-            # Its node, attachments and edges in the same transaction
-            # (design/unified-memory/60-build-step-3.md S1); a failure queues
-            # the projection and never costs the message.
+            # Its node, attachments and edges in the same transaction; a failure
+            # queues the projection and never costs the message.
             await memory_index.project(conn, "message", row_id, metrics=self._metrics)
         return row_id
 
@@ -301,12 +288,11 @@ class SqlRecordStore:
             .where(*where)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             # OVER-FETCH BY ONE (`nora.domain.bounds`). This window is what
-            # every per-turn derived block was built from, so a silent cut
-            # here made an empty block ambiguous three ways — nothing to say,
-            # its subject fell outside the window, or the window itself was
-            # clipped — and only this makes the third visible. The blocks that
-            # motivated it went on 2026-09-07; the over-fetch is kept because
-            # the ambiguity is a property of the window, not of its readers.
+            # every per-turn derived block is built from, so a silent cut here
+            # makes an empty block ambiguous three ways — nothing to say, its
+            # subject fell outside the window, or the window itself was
+            # clipped — and only this makes the third visible. The ambiguity
+            # is a property of the window, not of its readers.
             .limit(over_fetch(limit))
         )
         async with self._engine.connect() as conn:
@@ -375,8 +361,8 @@ class SqlRecordStore:
     ) -> list[TranscriptRow]:
         """All rows with `id > after_id`, ASCENDING, at most `limit`.
 
-        `since`'s cursor shape WITHOUT the `is_nora` exclusion
-        (design/standing-watermark/20): the standing fold needs Nora's own
+        `since`'s cursor shape WITHOUT the `is_nora` exclusion:
+        the standing fold needs Nora's own
         rows to re-judge her position, and the Dreamer's `since` must keep
         excluding them — so the fold gets its own read rather than a flag on
         the existing one. Same `limit <= 0` short-circuit as `since`/`recent`,
@@ -413,8 +399,7 @@ class SqlRecordStore:
 
         The handle is an index read on `idx_messages_conv_platform_message_id`.
         Signal's timestamp is matched against the message AND its edits, which
-        is a scan of one conversation (0.8 ms over 2,099 rows on norty,
-        2026-09-24) — it runs once per Signal edit, never per message. A
+        is a scan of one conversation — it runs once per Signal edit, never per message. A
         target naming neither answers None without a query. Should two rows
         match — a platform re-delivering a message, a duplicated millisecond —
         the EARLIEST wins, `prefill._by_ts`'s rule:
@@ -426,15 +411,15 @@ class SqlRecordStore:
             # The ORIGINAL's sent-timestamp, OR one of its edits'. A second
             # edit of a Signal message can name the first edit's timestamp
             # rather than the original's — it is the revision the sender's
-            # client was looking at — so matching `messages.ts` alone made
-            # every edit after the first an orphan (live 2026-09-24).
+            # client was looking at — so matching `messages.ts` alone would
+            # orphan every edit after the first.
             edited_at_that_ts = sa.exists().where(
                 MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
                 MESSAGE_EDIT.c.ts == target.sent_ts,
             )
             # The author PREFERRED, not required: signal-cli can name one
             # sender by phone on the message and by ACI on its edit, and an
-            # exact-id filter turned that into an orphan. The caller decides
+            # exact-id filter would orphan the edit. The caller decides
             # authorship (`edit_target._same_author`), which resolves both
             # forms to one person; this lookup only has to find the message.
             match = sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at_that_ts)
@@ -518,7 +503,7 @@ class SqlRecordStore:
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
-            # The node's text is the newest edit's (25 §7).
+            # The node's text is the newest edit's.
             await memory_index.project(conn, "message", message_id, metrics=self._metrics)
 
     async def append_reaction(
@@ -566,8 +551,7 @@ class SqlRecordStore:
             )
             if result.rowcount:
                 # A hidden message is never a hit: its node, its attachments'
-                # nodes and their edges go in the hide's own write (15 «Three
-                # rules»).
+                # nodes and their edges go in the hide's own write.
                 await memory_index.project(
                     conn, "message", message_id, metrics=self._metrics,
                 )
@@ -586,7 +570,7 @@ class SqlRecordStore:
         second write to be had. `Deliverer` records the row before it sends
         (A9), stamping `int(time.time() * 1000)` from the local clock; Signal
         then assigns its OWN sent-timestamp, and that is what a later reply's
-        `dataMessage.quote.id` points at. Measured 8 ms apart on live data:
+        `dataMessage.quote.id` points at. They differ by a few ms:
         close enough to look right, never equal, so a join by `ts` silently
         resolved every sender in the room except Nora herself — and a reply to
         Nora is the most common reply in a group where Nora is tagged. Riding
@@ -640,9 +624,9 @@ class SqlRecordStore:
                 MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.conversation_id,
                 MESSAGES.c.raw_json,
                 # The custody index, so lazy adoption can join what a photo
-                # showed before it feeds the row to Honcho (issue #116). Without
-                # it a back-filled row reaches memory as `[image a3f2c1]` and
-                # nothing else — which is the state the issue was opened to end.
+                # showed before it feeds the row to Honcho. Without it a
+                # back-filled row reaches memory as `[image a3f2c1]` and nothing
+                # else.
                 MESSAGES.c.media_json,
             )
             .where(MESSAGES.c.person_id.is_(None), MESSAGES.c.is_nora == 0)
@@ -717,9 +701,9 @@ class SqlRecordStore:
         )
 
     async def stats(self) -> dict[str, Any]:
-        """`schema_revision` replaces the retired `schema_version`.
+        """Store counters plus `schema_revision`.
 
-        It is `head_revision()` — the code's own migration head, from the
+        `schema_revision` is `head_revision()` — the code's own migration head, from the
         `versions/` directory this process ships with — not
         `current_revision()`, a read of the `alembic_version` row in the
         connected database. That means it can never disagree with the code
@@ -727,15 +711,12 @@ class SqlRecordStore:
         failure mode a schema-shape check exists for: this process pointed
         at a database `run_migrations` has not (yet, or ever) brought to
         that head. Reporting the code's belief rather than the database's
-        actual state was a deliberate choice, not an oversight — the
-        alternative, `current_revision()`, opens a new synchronous
-        connection per call (it is not async-native, unlike everything
-        else `SqlRecordStore` does), and `stats()` is on `/health`'s hot
-        path. `GET /health` today only reads `stats()["messages"]`, not
-        this field, so the distinction has no live consequence yet — but a
-        future caller of `schema_revision` should read it as "what this
-        process expects," not "what this database's `alembic_version`
-        row actually says."
+        actual state is deliberate: `current_revision()` opens a new
+        synchronous connection per call (it is not async-native, unlike
+        everything else `SqlRecordStore` does), and `stats()` is on
+        `/health`'s hot path. `GET /health` only reads `stats()["messages"]`,
+        so a caller of `schema_revision` should read it as "what this process
+        expects," not "what this database's `alembic_version` row says."
         """
         stmt = sa.select(
             sa.func.count(),
@@ -780,7 +761,6 @@ class SqlRecordStore:
         )
         async with self._engine.begin() as conn:
             pruned = list((await conn.execute(stmt)).scalars())
-            # The delete path 25 §7 missed (60 §0.5): a pruned message's node
-            # goes with it.
+            # A pruned message's node goes with it.
             await memory_index.drop(conn, "message", pruned, metrics=self._metrics)
         return len(pruned)

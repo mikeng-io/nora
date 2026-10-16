@@ -1,32 +1,27 @@
 """`SqlReasoningStripStore` — the durable half of the reasoning-strip
-instrument (migration 0057, issue #325, ADR 0013).
+instrument (ADR 0013).
 
 `__init__(self, engine: AsyncEngine)` and nothing else, matching
-`SqlToolCallLogStore`/`SqlParticipationStateStore`: no
-config, no clock, no metrics, so a fixture in another session can build it from
-a bare `AsyncEngine`. `created_at` arrives on the observation.
+`SqlToolCallLogStore`/`SqlParticipationStateStore`: no config, clock or
+metrics, so a fixture can build it from a bare `AsyncEngine`. `created_at`
+arrives on the observation.
 
-**ONE VERB, and it WRITES.** There is no read method here, and the absence is a
-decision rather than an omission. Nothing under `nora/` acts on this signal —
-acting on it would be a behaviour change, and #325 is explicit that a retry
-would convert a deterministic request-shape incompatibility into an apparently
-intermittent one. A read verb with no production caller is what
-`tests/architecture/test_store_methods_have_production_callers.py` exists to
-refuse: a green contract suite measuring that a verb WORKS while nothing
-measures that it is USED. The reader of this table is a person with `psql`, and
-the query is written down in `docs/runbook.md` beside the table.
+**One verb, and it writes.** There is no read method, by design. Nothing under
+`nora/` acts on this signal; acting on it would be a behaviour change. A read
+verb with no production caller is what
+`tests/architecture/test_store_methods_have_production_callers.py` refuses. The
+reader of this table is a person with `psql`; the query is in
+`docs/runbook.md` beside the table.
 
-**`record_observation`, not `record` or `append`.** Both of the short names are
+**`record_observation`, not `record` or `append`.** Both short names are
 already defined on other classes under `nora/` (`ReplyGuard.record`,
 `CallLedger.record`, `SqlToolCallLogStore.append`), which would put this method
-in that same architecture test's `_AMBIGUOUS` set — i.e. out of the checked set
-entirely. `SqlTagDebounceStore.record_allowed` was renamed for exactly this
-reason in 0056; the name is chosen so the control keeps covering it.
+in that architecture test's `_AMBIGUOUS` set, outside the checked set.
 
 **A plain INSERT, no upsert.** An observation is one invocation's own record
-and there is nothing to conflict with; a second row for the same turn would
-mean the watch was flushed twice, and `ReasoningStripWatch.flush` is idempotent
-precisely so that cannot happen silently.
+with nothing to conflict with; a second row for the same turn would mean the
+watch was flushed twice, and `ReasoningStripWatch.flush` is idempotent so that
+cannot happen silently.
 """
 
 from __future__ import annotations

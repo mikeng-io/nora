@@ -1,5 +1,4 @@
-"""`SqlMusicQueueStore` over SQLAlchemy Core (design/discord-music/
-03-state-and-persistence.md). Shaped like `nora.infra.sql.reminders`: the
+"""`SqlMusicQueueStore` over SQLAlchemy Core. Shaped like `nora.infra.sql.reminders`: the
 engine comes through `__init__`, every write is one statement inside
 `async with self._engine.begin()`.
 """
@@ -29,10 +28,9 @@ _PG_UNIQUE_VIOLATION = "23505"
 
 # One or two collisions is the realistic case (a couple of `/music play`
 # calls landing at the same instant), but a genuine thundering herd (many
-# concurrent callers all retrying into each other) needs real headroom --
-# verified live against Postgres: 8 fully concurrent enqueues for one guild
-# needed up to several dozen combined retries to all land distinct
-# positions. The bound exists so a genuinely corrupted table (e.g. a
+# concurrent callers all retrying into each other) needs real headroom:
+# concurrent enqueues for one guild can need several dozen combined retries
+# to all land distinct positions. The bound exists so a genuinely corrupted table (e.g. a
 # manually-inserted row) fails loudly instead of retrying forever, not to
 # cap ordinary contention.
 _MAX_ENQUEUE_ATTEMPTS = 20
@@ -69,9 +67,7 @@ class SqlMusicQueueStore:
         # can read the same MAX and both attempt the same position. That is
         # exactly what `uq_music_queue_guild_position` (migration 0028)
         # exists to catch — retried here as a decidable `IntegrityError`,
-        # never a silently-duplicated position (subagent review,
-        # 2026-08-23, reproduced live against Postgres: 8 concurrent
-        # `enqueue`s for one guild collided on every run before this fix).
+        # never a silently-duplicated position.
         added_at_utc = ensure_utc(added_at, field="added_at")
         last_error: IntegrityError | None = None
         for _attempt in range(_MAX_ENQUEUE_ATTEMPTS):

@@ -1,14 +1,13 @@
 """`SqlAssessReportStore` — the Assess adaptor's one write, and the operator's
-one read (design/cognition-loop/30-cognition.md §6, 15-map.md §6, migration
-`0077_assess_report`).
+one read (migration `0077_assess_report`).
 
 Two methods only: `record` (append one run's report) and `recent` (the
 operator's own read, newest first). Nothing here is on a turn's path — no
-prompt block, no read tool reaches this store (`15-map.md` §6's "reports and
-metrics only"; `tests/unit/test_assess_reports_are_operator_only.py` pins it).
+prompt block, no read tool reaches this store (reports and metrics only;
+`tests/unit/test_assess_reports_are_operator_only.py` pins it).
 
-`__init__(self, engine: AsyncEngine)`, `SqlCultureStore`'s own precedent: no
-config, no clock, no metrics threaded through the constructor.
+`__init__(self, engine: AsyncEngine)`, as `SqlCultureStore`: no config, no
+clock, no metrics threaded through the constructor.
 """
 
 from __future__ import annotations
@@ -73,9 +72,6 @@ class SqlAssessReportStore:
             return [_row_to_report(r) for r in rows]
 
 
-# `asdict` imported for callers that want a plain report -> dict view
-# (the CLI's own printer); kept here rather than re-imported at each call
-# site, `nora.app.assess_run`'s only external dependency on this module
-# besides the store itself.
+# A plain report -> dict view, for the CLI's printer.
 def report_as_dict(report: AssessReport) -> dict[str, Any]:
     return asdict(report)

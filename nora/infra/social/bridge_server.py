@@ -51,25 +51,21 @@ log = logging.getLogger("nora.social.bridge")
 # The ONE mapping a request can resolve to an argv through (DEC-151) —
 # `(platform, what) -> (site, command)`, frozen so nothing at runtime can add
 # a row. Every command it can produce is one OpenCLI 1.8.7 marks `access:
-# "read"` in `opencli list -f json` (verified 2026-08-30).
+# "read"` in `opencli list -f json`.
 #
 # **X only, and no Instagram row at all** (`test_r86_…` asserts it). Every
-# Instagram read goes through the instagram-bridge (design/instagram-adoption/
-# 15, /18), and a verb's OpenCLI row is deleted in the same change that gives
-# it a bridge route. `("instagram", "profile")` and `("instagram", "posts")`
-# left 2026-09-24 (P5; measured 2026-09-22, profile answered 429 all day and
-# `user` returned Instagram's HTML shell, so nothing working was lost).
-# `("instagram", "search")` left 2026-09-24 with P11, when `instagram_search`
-# landed on the bridge's `GET /accounts?query=`.
+# Instagram read goes through the instagram-bridge, and a verb's OpenCLI row is
+# deleted in the same change that gives it a bridge route (`instagram_search`
+# uses the bridge's `GET /accounts?query=`).
 READ_ONLY_ALLOWLIST: MappingProxyType[tuple[str, str], tuple[str, str]] = (
     MappingProxyType({
         ("x", "post"): ("twitter", "thread"),
         ("x", "profile"): ("twitter", "profile"),
         ("x", "posts"): ("twitter", "tweets"),
         ("x", "search"): ("twitter", "search"),
-        # LinkedIn (design/social-per-network/10, DEC-201): every command
-        # below is `access: "read"` in `opencli list -f json` (1.8.7, read on
-        # norty 2026-09-24). `search` is `people-search`, never OpenCLI's
+        # LinkedIn (DEC-201): every command
+        # below is `access: "read"` in `opencli list -f json` (1.8.7).
+        # `search` is `people-search`, never OpenCLI's
         # `linkedin search`, which searches JOBS.
         ("linkedin", "profile"): ("linkedin", "profile-read"),
         ("linkedin", "experience"): ("linkedin", "profile-experience"),
@@ -79,8 +75,8 @@ READ_ONLY_ALLOWLIST: MappingProxyType[tuple[str, str], tuple[str, str]] = (
     })
 )
 
-# OpenCLI's write verbs (1.8.7, `access: "write"` in `opencli list -f json`,
-# verified 2026-08-30) — the set the allowlist must stay disjoint from. The
+# OpenCLI's write verbs (1.8.7, `access: "write"` in `opencli list -f json`)
+# — the set the allowlist must stay disjoint from. The
 # R-86 acceptance test asserts that disjointness so an edit adding a write
 # verb to the mapping above goes red here even without re-reading OpenCLI's
 # catalogue. This list being incomplete would NOT open a hole — the argv's
@@ -94,12 +90,12 @@ OPENCLI_WRITE_VERBS = frozenset({
     "reply-dm", "retweet", "save", "story", "unblock", "unbookmark",
     "unfollow", "unlike", "unretweet", "unsave", "collection-create",
     "collection-delete",
-    # LinkedIn's (1.8.7, read 2026-09-24).
+    # LinkedIn's (1.8.7).
     "connect", "safe-send", "salesnav-message",
 })
 
-# The commands that accept a `--limit <n>` flag (verified against
-# `opencli list -f json`, 1.8.7, 2026-08-30). `twitter thread` takes one too
+# The commands that accept a `--limit <n>` flag (per
+# `opencli list -f json`, 1.8.7). `twitter thread` takes one too
 # but its `limit` bounds THREAD LENGTH, not «how many posts» — the tool's
 # `limit` semantic — so it is deliberately not passed there. When in doubt
 # about a flag name, omit the limit rather than guess one.
@@ -212,10 +208,8 @@ def _linkedin_company(target: str) -> str | None:
 
 #: How each command's target is validated, keyed on `(site, command)`. TOTAL
 #: over `READ_ONLY_ALLOWLIST`'s values by test, and a command it does not
-#: name is refused (`_validate_target`). It replaced a chain whose last branch
-#: accepted any short string for any command it did not name, so a LinkedIn
-#: command would have been validated as free text (design/social-per-network/
-#: 10, «two defects»).
+#: name is refused (`_validate_target`), so no command is ever validated as free
+#: text.
 _VALIDATORS: MappingProxyType[tuple[str, str], Callable[[str], str | None]] = MappingProxyType({
     ("twitter", "thread"): _extract_tweet_id,
     ("twitter", "profile"): _username,
@@ -236,8 +230,7 @@ def _validate_target(site: str, command: str, target: str) -> str | None:
     **A target that starts with `-` is refused for every command.** It sits
     in the argv as a bare word, so OpenCLI would read it as a FLAG: a company
     link `/company/-f/` produced `linkedin company -f -f json`, and a search
-    for `--limit` collided with the bridge's own `--limit` (Sonnet review,
-    2026-09-24). The X search path had the same exposure before LinkedIn."""
+    for `--limit` collides with the bridge's own `--limit`."""
     validator = _VALIDATORS.get((site, command))
     value = None if validator is None else validator(target)
     return None if value is None or value.startswith("-") else value
@@ -366,9 +359,9 @@ class SocialBridge:
             return web.json_response({"status": "unavailable"})
         if not data:
             # Exit 0 with `[]` (or `{}`, `null`) is «the read ran and found
-            # nothing». Measured 2026-09-24: `twitter thread` prints `[]` for
-            # an id that names no post. Passed on as `ok` it reached the model
-            # as an empty post to describe.
+            # nothing». `twitter thread` prints `[]` for an id that names
+            # no post; passed on as `ok` it would reach the model as an empty
+            # post to describe.
             return web.json_response({"status": "nothing_found"})
         payload: dict[str, Any] = {"status": "ok", "data": data}
         url = _source_url(site, command, target_arg)

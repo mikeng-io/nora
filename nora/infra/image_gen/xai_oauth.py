@@ -1,11 +1,11 @@
 """xAI OAuth device flow + refresh, for Nora's OWN X Premium subscription lane.
 
-DEC-137 / design/proposed/29: Nora holds her own xAI OAuth tokens so image
+Nora holds her own xAI OAuth tokens (DEC-137) so image
 generation runs on the subscription entitlement (quota-bounded, not metered
 per-call billing) without borrowing Hermes' auth store or a host credential
 proxy.
 
-Credential split (operator's `.env` rule, review F4; DEC-308):
+Credential split (operator's `.env` rule; DEC-308):
 
 - `.env` (host, immutable, DEC-8) holds ONLY the BOOTSTRAP refresh token
   `nora xai-login` wrote (`XAI_OAUTH_REFRESH_TOKEN`). xAI rotates the refresh
@@ -15,18 +15,15 @@ Credential split (operator's `.env` rule, review F4; DEC-308):
   refreshed, and the sha256 of the `.env` token it grew from. `oauth_lane`
   owns it, the same way it owns the Codex lane's: a state file from an older
   login is ignored, so a new `xai-login` takes over without anyone deleting a
-  file. Until DEC-308 the state file's refresh token won unconditionally, and
-  a dead one masked a fresh login; a file from then has no fingerprint, so
-  its token is tried once and the `.env` login spent only if it is refused.
-- The daemon refreshes it on a schedule (`nora.app.oauth_keepalive`):
-  on 2026-10-09 the first call after 12 idle days found the stored token
-  refused (`invalid_grant`), and nothing had logged it.
+  file. A state file with no fingerprint (written before DEC-308) has its
+  token tried once, and the `.env` login is spent only if it is refused.
+  Otherwise a dead state-file token would mask a fresh login.
+- The daemon refreshes it on a schedule (`nora.app.oauth_keepalive`), so an
+  idle token is not found refused (`invalid_grant`) on the first call.
 
 Endpoint + scope + skew constants mirror Hermes' `hermes_cli/auth.py`
-(`XAI_OAUTH_CLIENT_ID`, `XAI_OAUTH_SCOPE`, `XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS`)
-— verified live: Miles's `hermes auth add xai-oauth` login succeeded on this
-host with this exact scope set, so `grok-cli:access` is a real, accepted
-scope here regardless of what third-party docs say.
+(`XAI_OAUTH_CLIENT_ID`, `XAI_OAUTH_SCOPE`, `XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS`).
+`grok-cli:access` is a scope xAI accepts with this exact set.
 
 NEVER raises into the caller: every failure is an `OAuthState` with
 `ok=False` and a `reason` the adapter can map (fail-closed, R-27).
@@ -354,7 +351,7 @@ class XaiOAuth(RotatingOAuthLane):
             code = str(err.get("code") if isinstance(err, dict) else err or "")
         detail = f"HTTP {status} {code}".strip()
         # Cloudflare challenge: 403 while the token is still valid —
-        # RETRYABLE, not terminal auth (design §4.2).
+        # RETRYABLE, not terminal auth.
         if status == 403:
             return Refusal("cloudflare", detail, code)
         if status in (400, 401):

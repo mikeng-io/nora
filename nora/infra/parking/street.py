@@ -106,7 +106,7 @@ class StreetParkingClient:
         out: list[tuple[float, float, str, str]] = []
         lines = text.splitlines()
         # The TD file opens with a date line, an empty line, THEN the real
-        # header (measured 2026-08-31: row 0 = "2026-08-30", row 1 = empty,
+        # header (row 0 = a date, row 1 = empty,
         # row 2 = ParkingSpaceId,...). DictReader would take the date line as
         # its fieldnames and every data row would read None.
         for _idx, line in enumerate(lines):
@@ -128,7 +128,7 @@ class StreetParkingClient:
         # An empty parse after a real header is a FAILURE (renamed column,
         # coordinates moved), not «no metered bays anywhere» — leave the
         # cache unset so the next call retries and the tool reports
-        # unavailable rather than a confident zero (audit 2026-08-31).
+        # unavailable rather than a confident zero.
         if not out:
             log.warning("street spaces parse yielded zero rows from a real header")
             return None

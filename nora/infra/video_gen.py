@@ -1,5 +1,4 @@
-"""`MiniMaxVideoBackend` — `video_create`'s `ComputeBackend`, against MiniMax CN's video API
-(design/video-generation §3, §5; DEC at merge).
+"""`MiniMaxVideoBackend` — `video_create`'s `ComputeBackend`, against MiniMax CN's video API.
 
 Provider vocabulary lives here and nowhere above it: the model name, `content[]`, `role:
 "reference_image"`, `task.error`, the 480P string. The tool and the poller speak
@@ -23,17 +22,16 @@ DEC-8, the convention `nora.infra.tts` and `[speech.tts]` already use):
 - **poll**, `GET /v2/query/video_generation/{task_id}`: `queued` / `running` are RUNNING,
   `succeeded` with `task.content.url` is SUCCEEDED, `failed` (with `task.error {code,
   message}`) and `cancelled` are FAILED. A refused parameter surfaces HERE, seconds after a
-  create that returned a task id (measured 2026-10-02, the `adaptive` ratio), so `task.error`
-  is logged on EVERY failed task: the one 768P failure of that day was never read because
-  nothing logged it.
+  create that returned a task id (e.g. the `adaptive` ratio), so `task.error`
+  is logged on EVERY failed task.
 - **fetch**, `GET` on the succeeded task's `content.url` (a signed Aliyun OSS link that expires
   about a day later): the clip's bytes, bounded by `MAX_CLIP_BYTES` and `FETCH_SECONDS` and
   sniffed for MP4, ride on the SUCCEEDED `JobResult` that `fetch_result` returns (the poller
   calls it only once it holds the room's slot, so a held room costs no download); the poller
-  keeps them in Nora's own storage and the room receives the clip itself (operator,
-  2026-10-10). A fetch that failed is
-  tried again on later ticks until `KEEP_DEADLINE_SECONDS` after launch; then, or at once for
-  bytes that can never be a clip, the link is delivered instead (`LINK_SUMMARY`).
+  keeps them in Nora's own storage and the room receives the clip itself. A fetch
+  that failed is tried again on later ticks until `KEEP_DEADLINE_SECONDS` after launch;
+  then, or at once for bytes that can never be a clip, the link is delivered instead
+  (`LINK_SUMMARY`).
 
 The backend is STATELESS. `backend_job_id` is `<task_id>@<launch epoch seconds>`: the task id
 is the provider's (queryable for 7 days), and the launch time is what lets `poll` stop a job
@@ -42,16 +40,14 @@ row survives a restart and boot recovery leaves it pending (`recover(durable_kin
 
 NEVER raises (the port's rule): every failure is a `VideoStart` or a FAILED `JobResult`.
 
-Unverified until the first live call (no call was made building this, by the operator's
-instruction: a 15 s clip costs about 11% of a weekly quota shared with production): the exact
-item shape of a reference image in `content[]` and the query response's nesting. `_task` reads
-the task object at the top level or under `task`, so either shape reads the same.
+`_task` reads the task object at the top level or under `task`, so either response nesting
+reads the same.
 
-Measured 2026-10-10 against the live API at 480P and 4 s, one call each: a reference clip as a
-`data:video/mp4` URI rendered (`usage.input_seconds` 2 for a 2 s clip, billed beside the output
-seconds); a reference audio alone, as a `data:audio/mp3` URI, rendered and was not billed
-(`input_seconds` 0, `input_audio_seconds` 3); `data:audio/mpeg` and a 12 fps clip were accepted
-at create and failed at the poll with an empty `usage`.
+Reference behaviour at 480P and 4 s: a reference clip as a `data:video/mp4` URI renders
+(`usage.input_seconds` counts the clip, billed beside the output seconds); a reference audio
+alone, as a `data:audio/mp3` URI, renders and is not billed (`input_seconds` 0,
+`input_audio_seconds` set); `data:audio/mpeg` and a 12 fps clip are accepted at create and fail
+at the poll with an empty `usage`.
 """
 
 from __future__ import annotations
@@ -86,15 +82,15 @@ __all__ = [
     "MiniMaxVideoBackend",
 ]
 
-#: A clip measured 52 to 178 s on 2026-10-02. A job still queued or running this long after its
+#: A clip renders in roughly one to three minutes. A job still queued or running this long after its
 #: launch is failed as a timeout rather than polled forever.
 MAX_WAIT_SECONDS = 1800.0
 
-#: The vendor's own per-image limit (design §5); refused here so nothing is sent that cannot pass.
+#: The vendor's own per-image limit; refused here so nothing is sent that cannot pass.
 #: It holds for a first frame too.
 MAX_REFERENCE_BYTES = 30 * 1024 * 1024
 
-#: The provider's ceiling on a whole create body (v2 create reference, 2026-10-10). Base64 adds a
+#: The provider's ceiling on a whole create body (v2 create reference). Base64 adds a
 #: third to every reference, so a request near it is refused here rather than sent.
 MAX_BODY_BYTES = 64 * 1024 * 1024
 
@@ -115,15 +111,14 @@ _ROLE: dict[ReferenceKind, tuple[str, str]] = {
 
 #: The `ratio` a first-frame (image-to-video) create sends: the frame decides the shape. The API
 #: reference: "the aspect ratio is determined by the input image and `ratio` is always
-#: `adaptive`; passing another valid value does not error but is ignored" (fetched 2026-10-10).
+#: `adaptive`; passing another valid value does not error but is ignored".
 FIRST_FRAME_RATIO = "adaptive"
 
 #: How long after launch a clip whose bytes could not be fetched (the link answered an error or
 #: could not be reached) is fetched again on later ticks before its link is delivered instead.
-#: A clip renders in 52 to 178 s (2026-10-02), so this leaves minutes of retries for a blip,
-#: and a route that stays dead (design §6 measured norty unable to reach mainland Aliyun OSS on
-#: 2026-10-02) costs the room a quarter of an hour, not the clip: the link's `Expires` was
-#: measured about 25.7 h after completion (2026-10-10).
+#: This leaves minutes of retries for a blip, and a route that stays dead (the host may be
+#: unable to reach mainland Aliyun OSS) costs the room a quarter of an hour, not the clip: the
+#: link's `Expires` is about a day after completion.
 KEEP_DEADLINE_SECONDS = 15 * 60.0
 
 #: The most a finished clip may weigh when fetched. A 15 s 480P clip is a few MB; anything this
@@ -191,7 +186,7 @@ class MiniMaxVideoBackend:
         self._transport = transport
         self._clock = clock
         # Seconds of clip, and separately of audio, sent per create, shared by the references
-        # of that kind. A clip's seconds are billed beside the output's (measured 2026-10-10).
+        # of that kind. A clip's seconds are billed beside the output's.
         self._reference_seconds = reference_seconds
         self._fit_runner = fit_runner
 
@@ -284,7 +279,7 @@ class MiniMaxVideoBackend:
             # Image-to-video takes its shape from the frame: the API reference says `ratio` is
             # always `adaptive` there and another value is ignored, and its own image-to-video
             # example sends `adaptive`. The configured ratio stays for text and reference tasks,
-            # where `adaptive` was refused live (2026-10-02).
+            # where `adaptive` is refused.
             params = {**params, "ratio": FIRST_FRAME_RATIO}
         body = {"content": content, **params}
         launched = self._clock()
@@ -408,7 +403,7 @@ class MiniMaxVideoBackend:
             return self._failed("cancelled", "the video service cancelled it")
         error = task.get("error")
         error = error if isinstance(error, dict) else {}
-        # Logged on EVERY failed task (design §7): a refused parameter arrives here, not at create.
+        # Logged on EVERY failed task: a refused parameter arrives here, not at create.
         log.warning("video task %s %s: code=%s message=%s", task_id, status or "failed",
                     error.get("code"), error.get("message"))
         message = str(error.get("message") or "").strip()

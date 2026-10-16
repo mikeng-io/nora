@@ -1,11 +1,6 @@
 """`SqlNoteStore` — the note tier's store, over SQLAlchemy Core and the four
-tables migration `0026_note_tier` lands
-(docs/superpowers/specs/2026-08-21-note-tier-design.md).
-
-Still no writer above it: `nora.agent` has no `note_create`/`note_update`
-tools yet and `nora.dreamer` has no note adaptor, so this class exists today to
-be exercised by `tests/contract/test_note_store_contract.py`, and to be wired
-into both later without changing shape.
+tables migration `0026_note_tier` lands. Its contract is exercised by
+`tests/contract/test_note_store_contract.py`.
 
 **The three behaviours that are load-bearing rather than incidental**, and what
 breaks if any of them is reversed:
@@ -35,12 +30,10 @@ breaks if any of them is reversed:
    note exists. `append_revision` refuses across the boundary for the same
    reason, and reports `observed_head = None` rather than the real head.
 
-**Search joins the head, and that join is the property §5.3 actually wanted.**
-The design says the trigram index is "maintained on the head revision only". It
-cannot be, as a partial index: which revision is the head is a fact about the
+**Search joins the head.** The trigram index cannot be maintained on the head
+revision only, as a partial index: which revision is the head is a fact about the
 `note` row, not a predicate over `note_revision`, so there is nothing for
-`postgresql_where` to test (migration 0026's own docstring records this
-deviation). `idx_note_revision_body_trgm` therefore covers superseded bodies
+`postgresql_where` to test. `idx_note_revision_body_trgm` therefore covers superseded bodies
 too, and `search`'s `note.head_revision_id = note_revision.id` join is what
 keeps them out of the result. A search that surfaced a superseded body would
 return something true-in-the-past as though it were current — the same class of
@@ -53,44 +46,29 @@ different questions. `%` is whole-string similarity against
 `pg_trgm.similarity_threshold`: «did anyone mention a hotel?» against a
 three-sentence body shares a handful of trigrams out of dozens, scores far below
 0.3, and returns nothing — a `nothing_found` for a body that plainly says
-`hotel` (measured: `body % 'venue2999'` matched 0 of 3000 rows that all contain
-the string). Substring containment is the question `note_search` is actually
+`hotel`. Substring containment is the question `note_search` is actually
 asked, so `ilike '%…%'` is the operator, with the caller's query escaped.
 
-**What the index actually does, read off `EXPLAIN (ANALYZE)` on PostgreSQL 18.4,
-3000 notes, 2026-08-21** — rather than assumed, since an index nobody measured is
-a claim, not a plan:
+**What the index does** (per `EXPLAIN (ANALYZE)`):
 
-- The GIN index IS reachable through a **parameterised** `ilike '%' || $1 ||
-  '%'`, not only a literal pattern. SQLAlchemy emits exactly that, so this
-  store's own query is the one that was measured, not a hand-written stand-in.
-- For a query of **three or more characters** it narrows properly: the bitmap
-  index scan returned 1 row of 3000 and touched 1 heap block.
-- For a query of **two characters** — `酒店`, and this is the realistic Cantonese
-  case — pg_trgm cannot extract a complete trigram, so the bitmap index scan
-  returns *every* row (3000) and the recheck discards 2999. The answer is still
-  correct; the index simply does no work. That is a knowable limitation of
-  trigrams, and it is the price of the alternative being *wrong*: a
+- The GIN index is reachable through a **parameterised** `ilike '%' || $1 ||
+  '%'`, not only a literal pattern; SQLAlchemy emits exactly that.
+- For a query of **three or more characters** it narrows properly.
+- For a query of **two characters** — `酒店`, the realistic Cantonese case —
+  pg_trgm cannot extract a complete trigram, so the bitmap index scan returns
+  *every* row and the recheck discards all but the matches. The answer is still
+  correct; the index does no work. The alternative is *wrong*: a
   `to_tsvector('english', …)` does not segment Chinese at all, so the same query
-  returns nothing while reporting success (§5.3).
-- At this tier's real size the planner **chooses a sequential scan anyway** — a
-  few thousand short bodies is 62 pages, cheaper to read than any index. The
-  index earns its keep later, and costs nothing now. So the property this store
-  actually depends on for correctness is `ilike`'s substring semantics, which
-  hold with or without the index; the index is a performance affordance, and
-  nothing here reads a null result as evidence of absence because of it.
+  returns nothing while reporting success.
+- At this tier's size the planner may choose a sequential scan anyway. The
+  property correctness depends on is `ilike`'s substring semantics, which hold
+  with or without the index; the index is a performance affordance, and nothing
+  here reads a null result as evidence of absence because of it.
 
-**Entity resolution and merge are gone from this store (2026-09-08).** From
-issue #100 until then, `create` resolved `anchor_entity_ids`
-against the shared `fact_entity` registry and wrote `note_entity` rows, and
-`merge_groups`/`merge` were the (long-deleted) curator's cross-note read and write over the
-resolved anchor. Once the knowledge tier was deleted (issue #115) nothing
-minted an entity: the registry held eight stale rows and no writer, so
-resolution could link a note to nothing new and merge — which refused any
-group whose resolved entity set was empty — was inert by construction. The
-chain was removed rather than left wired-and-inert. `note.anchor_entity_ids`
-stays as the writer's own free text; `note_entity` and `fact_entity` stay as
-tables with no reader, per the deletion rule that drops schema separately.
+**Entity resolution and merge are not in this store.** `create` does not resolve
+`anchor_entity_ids` against the `fact_entity` registry or write `note_entity`
+rows, and there is no `merge_groups`. `note.anchor_entity_ids` is the writer's
+own free text; `note_entity` and `fact_entity` remain as tables with no reader.
 """
 
 from __future__ import annotations
@@ -172,8 +150,8 @@ async def _revision_lineage(
     evidence_room: str | None = None,
 ) -> tuple[Lineage, int | None]:
     """A revision's lineage and `as_of`, from the messages its body cites
-    (`nora.domain.lineage.note_revision_lineage`, 10 §3: "code, from the
-    citation chain; never the model"). `as_of` is the newest cited message's
+    (`nora.domain.lineage.note_revision_lineage`: derived by code from the
+    citation chain, never by the model). `as_of` is the newest cited message's
     time, or `None` for the caller to date at the write."""
     cited = cited_ids_in(body)
     rooms: dict[int, str] = {}
@@ -308,8 +286,7 @@ def _repoint_stmt(
     merge, not a replace, so anything else the payload carries (`note_title`,
     `intent`) survives the re-point untouched.
 
-    **Both keys move together, and that is the fix for a real defect, not
-    decoration.** Moving `note_id` alone leaves `revision_id` naming a
+    **Both keys move together.** Moving `note_id` alone leaves `revision_id` naming a
     revision of the DUPLICATE — a note that no longer exists in the
     survivor's chain. At fire time `nora.app.proactive_screen.
     ProactiveScreen.refusal` (and `remind`'s own `_open_rows_on`) now reads
@@ -487,11 +464,11 @@ class SqlNoteStore:
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
         """Every note that has not been retired — the read the injected index
-        (§5.1) renders from, and the one note-tier read on the turn's critical
+        renders from, and the one note-tier read on the turn's critical
         path. `retired_at is null` matches `idx_note_standing`'s own predicate,
         so this is an index scan rather than a filter over history.
 
-        **Uncapped on purpose** (§5.1): there is no `limit`. A note silently
+        **Uncapped on purpose**: there is no `limit`. A note silently
         missing from the index is invisible to her, and invisible is
         indistinguishable from absent. The pressure valve is `note_retire`
         retiring closed notes, not a top-N here.
@@ -519,11 +496,10 @@ class SqlNoteStore:
         """The OPEN note a `retired-merged` note was folded into, following
         `replaced_by` — or `None` when the note is open itself, retired for
         any other reason, absent, or the chain does not end on an open note
-        within `MERGE_FORWARD_HOPS` (design 41 §7.5).
+        within `MERGE_FORWARD_HOPS`.
 
         Only `retired-merged` forwards. `retired-closed`/`retired-expired`
-        mean the question is over, and a `replaced_by` on one of those (the
-        2026-09-24 operator triage wrote some) is provenance, not a promise
+        mean the question is over, and a `replaced_by` on one of those is provenance, not a promise
         that the successor carries the same question.
         """
         current = note_id
@@ -552,7 +528,7 @@ class SqlNoteStore:
         """The open note a `retired-merged` note with this title forwards to,
         or `None` — including when two merged notes of that title forward to
         DIFFERENT open notes, because picking one is the guess every resolver
-        in this tier refuses (design 41 §7.5).
+        in this tier refuses.
 
         Matched through `note_handle` in Python rather than in SQL: Postgres
         `lower` is not `note_handle`'s `casefold`, and the resolvers this
@@ -581,8 +557,8 @@ class SqlNoteStore:
     ) -> tuple[Note, NoteRevision] | None:
         """The note and its HEAD revision, or `None`.
 
-        Retired notes are readable — retirement is a status change, not a delete
-        (§7.4), and history that cannot be read back cannot re-derive a lossy
+        Retired notes are readable — retirement is a status change, not a delete,
+        and history that cannot be read back cannot re-derive a lossy
         step that went wrong. `standing` is where the retired ones disappear.
 
         A note in another unit answers `None`, identically to one that does
@@ -612,7 +588,7 @@ class SqlNoteStore:
         model: str | None = None,
         evidence_room: str | None = None,
     ) -> NoteRevision:
-        """§6.3's compare-and-swap. See the module docstring's (2): the
+        """The compare-and-swap append. See the module docstring's (2): the
         comparison IS the `UPDATE`'s `WHERE`, so a `rowcount` of 0 is the
         database refusing, not a reader losing a race it did not know it was in.
 
@@ -687,7 +663,7 @@ class SqlNoteStore:
                 NOTE.c.id == note_id,
                 NOTE.c.unit == unit,
                 NOTE.c.head_revision_id == parent_revision_id,
-                # AN APPEND REQUIRES AN OPEN NOTE (design 41 §7.6, guard 1).
+                # AN APPEND REQUIRES AN OPEN NOTE (guard 1).
                 # `supersede` sets `retired_at` and never touches the head, so
                 # without this a writer that read a note and then lost a race
                 # to a retirement appended successfully into a note nothing
@@ -780,7 +756,7 @@ class SqlNoteStore:
             rows = (await conn.execute(stmt)).all()
         return tuple((_row_to_note(r), r.body) for r in rows)
 
-    # ---- the wake pass (§9.6) ----------------------------------------------
+    # ---- the wake pass ----------------------------------------------
 
     async def revision_chain(
         self, *, unit: str, note_id: str,
@@ -788,9 +764,8 @@ class SqlNoteStore:
         """Every revision of one note, oldest first — the chain
         `tag_path_progressed_since_wake` walks, exposed as a READ so a caller
         outside the store can ask the same question about a revision it
-        recorded earlier (design/dreamer-agent-loop/39 D11: the heartbeat
-        cancels a proactive row when the tag path revised the note after the
-        row was linked to it).
+        recorded earlier (the heartbeat cancels a proactive row when
+        the tag path revised the note after the row was linked to it).
 
         `()` for a note that is absent, in another unit, or not even
         UUID-shaped — the same «not reachable from here» answer `read` gives,
@@ -865,22 +840,19 @@ class SqlNoteStore:
         """Retirement, which is a status change and
         never a delete. Returns rows affected.
 
-        **`expected_head` is guard 3 of design 41 §7.6**, and it is not on the
+        **`expected_head` is guard 3**, and it is not on the
         port. A caller that judged a note on one head passes it, and the
         retirement is then a compare-and-swap like an append: a note whose
         head moved since — a `note_merge` fold that just appended a
         duplicate's question to it, or a tag-path revision — answers 0 and
-        stays open. Without it a re-read-then-retire was
+        stays open. Without it a re-read-then-retire is
         check-then-act across two transactions, and a merge landing between
-        the two retired the survivor with the question it had just absorbed.
-        `None` keeps the old, head-blind behaviour for a caller that judged
+        the two would retire the survivor with the question it had just absorbed.
+        `None` is head-blind for a caller that judged
         nothing about the body.
 
         **A null `replaced_by` is LEGAL here, and that is the whole reason the
-        port is permissive.** The port was written against a sibling that
-        REFUSED a null successor — the knowledge tier's store, deleted
-        2026-09-07, whose `fact` row was either standing or
-        superseded-with-a-successor by CHECK. A note is not: an anchor date
+        port is permissive.** A note need not have a successor: an anchor date
         passed and the dinner happened, and it is replaced by nothing.
         Refusing here would force the caller to mint a placeholder id to
         satisfy a signature — the "invent a value to satisfy a schema" move
@@ -980,10 +952,8 @@ class SqlNoteStore:
         model: str | None = None,
         on_reminder_outcome: Callable[[str], None] | None = None,
     ) -> NoteRevision:
-        """Fold one duplicate into its survivor, in ONE transaction (design 41
-        §7.6 guard 2, §7.7). A fold is two writes that must land together —
-        the (deleted) note store's `record_wake` set the precedent for a tier's own verb on its
-        own store.
+        """Fold one duplicate into its survivor, in ONE transaction (guard 2). A fold is two writes
+        that must land together.
 
         1. The survivor gets `body` as a new head revision (parent
            `survivor_head`), takes `anchor_date` and `revisit_at`, and has its
@@ -992,18 +962,17 @@ class SqlNoteStore:
         2. The duplicate is retired `retired-merged` with `replaced_by` the
            survivor. Compare-and-swap on ITS head and `retired_at IS NULL`.
         3. Either note's open proactive reminder is resolved onto the
-           survivor's single slot — see `_repoint_proactive_rows` below. Issue
-           #158's index keys on the RAW note id a row's `payload` carries, so
+           survivor's single slot — see `_repoint_proactive_rows` below. The
+           index keys on the RAW note id a row's `payload` carries, so
            two notes that each held an open row never collided AT the index:
            the fold is what makes them the same note, and nothing upstream of
            this method re-checks the row once that happens. Without this step
            both rows go on forwarding to the survivor through
            `nora.app.proactive_screen`'s `successor()` chase and both fire —
-           reachable whenever the Cognition session's `note_merge` calls this method. A re-pointed
-           row also
-           gets `revision_id` moved onto THIS fold's own new revision — see
-           `_repoint_stmt`'s docstring for the defect that was, when only
-           `note_id` moved. Both notes' rows are classified first, by the
+           reachable whenever the Cognition session's `note_merge` calls this
+           method. A re-pointed row also gets `revision_id` moved onto THIS
+           fold's own new revision — see `_repoint_stmt`'s docstring for why.
+           Both notes' rows are classified first, by the
            same shared check the fire-time screen uses
            (`proactive_row_forwarded_is_moved` for the duplicate's, the
            ordinary walk for the survivor's): a stale one is cancelled
@@ -1025,8 +994,8 @@ class SqlNoteStore:
         still open, no retired duplicate whose question reached nothing, and
         — because step 3 runs after both and inside the same `begin()` — no
         reminder touched either. The duplicate's row and its whole chain are
-        kept, so clearing `retired_at`/`replaced_by` restores it exactly
-        (§7.7, «what reversible means here»); a cancelled reminder is not
+        kept, so clearing `retired_at`/`replaced_by` restores it exactly;
+        a cancelled reminder is not
         restored by that alone, matching supersede's own retirement (a status
         change, never a delete, but not self-inverting on the row it cancels).
 
@@ -1152,12 +1121,11 @@ class SqlNoteStore:
         duplicate_head: str, revision_id: str, now_ms: int,
         on_reminder_outcome: Callable[[str], None] | None,
     ) -> None:
-        """The merge's reminders half (issue #158 residue), inside the same
+        """The merge's reminders half inside the same
         transaction as `merge_into`'s two swaps above. **Order is
-        load-bearing** (#520 review round 2 — a first version chose a
-        keeper BEFORE checking staleness and could cancel the wrong row, or
-        classify the duplicate's row as live from only half the check a
-        forwarded row actually gets):
+        load-bearing** (choosing a keeper BEFORE checking staleness could
+        cancel the wrong row, or classify the duplicate's row as live from
+        only half the check a forwarded row gets):
 
         (a) The duplicate's row (if any), UNLESS it is `firing`, is
             classified `moved`/`live` by `proactive_row_forwarded_is_moved`
@@ -1179,7 +1147,7 @@ class SqlNoteStore:
             stale one is CANCELLED `cancelled_note_moved` and drops out of
             (c) — otherwise a stale survivor row due first wins the
             tie-break, the live duplicate row is cancelled, and nothing
-            fires (#520 round 3, the parity suite's S6).
+            fires.
         (c) Among what is left standing (the duplicate's row if it was
             `firing` or classified `live`, and the survivor's row if it
             has one), if BOTH exist, exactly one is KEPT — a `firing` row
@@ -1274,7 +1242,7 @@ class SqlNoteStore:
             # The SURVIVOR's own row is stale — the ordinary fire-time walk
             # on a live note would cancel it `moved`. Classify it before the
             # keeper is chosen, or a stale survivor row can win the
-            # tie-break over a live duplicate row (#520 round 3, S6). The
+            # tie-break over a live duplicate row. The
             # walk starts at `revision_id`, the fold's own revision, now the
             # survivor's head; the fold itself is not a tag-path write.
             result = await conn.execute(_cancel_stmt(
@@ -1402,7 +1370,7 @@ class SqlNoteStore:
         if on_reminder_outcome is not None:
             on_reminder_outcome(outcome)
 
-    # ---- the create path (§4, issue #98) -----------------------------------
+    # ---- the create path -----------------------------------
 
     @staticmethod
     def _head_join() -> sa.Select[Any]:

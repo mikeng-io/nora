@@ -1,10 +1,8 @@
 """System time: which table keeps its history how, and the as-of-T read.
 
-design/cognition-loop/10-tiers.md §8: every store Nora writes is append-only
-in system time, so she can be restored as of any T. Step 1b
-(70-migration.md §2) builds that for every table 70 §5 lists as changing in
-place today, except the rows it marks for steps 2 and 2b. This module is the
-one place that says, for every table in the schema, which of four things it
+Every store Nora writes is append-only in system time, so she can be restored
+as of any T. This module is the one place that says, for every table in the
+schema, which of four things it
 is — `tests/infra/test_row_history.py` fails when a table is in none of them
 or when the migrated database's triggers disagree with `HISTORY_TABLES`:
 
@@ -13,17 +11,16 @@ or when the migrated database's triggers disagree with `HISTORY_TABLES`:
   trigger `nora_row_history()` (migration `0068_system_time_history`) appends
   each version to `row_history` in the same transaction and closes the one it
   replaced. A DELETE appends a `delete` version holding the removed row: it
-  is hidden (gone from the head, so from every read) and kept. Chosen over
-  rewriting each table as versioned rows with a head view because that means
-  changing ~60 write statements and every read's WHERE, and a history that
-  misses one write site is silently incomplete; the trigger records every
-  path by construction. The heads that stay tables are the compare-and-swap
-  cache §8 allows ("a cache derivable from the chain, and no as-of read uses
-  it").
+  is hidden (gone from the head, so from every read) and kept. A trigger
+  rather than versioned rows with a head view: the latter means changing
+  every write statement and every read's WHERE, and a history that misses one
+  write site is silently incomplete; the trigger records every path by
+  construction. The heads that stay tables are a compare-and-swap cache
+  derivable from the chain, and no as-of read uses it.
 - **`APPEND_ONLY`** — never changed after insert, so the row IS its own
   history; each names the column holding its system time (`recorded_at`,
   added by `0068`, or a pre-existing insert-time column).
-- **`DEFERRED`** — changes in place but migrates at a later step, named: a
+- **`DEFERRED`** — changes in place but is not yet migrated, named: a
   restore cannot hold them as of T until then, and says so.
 - **`NOT_RESTORED`** — not state a restore needs: operator and trace logs no
   turn reads, deprecated tiers (tables kept, code gone), and the history
@@ -64,16 +61,15 @@ __all__ = [
 CAPTURE_SETTING = "nora.row_history"
 
 #: Tables that change in place, and the columns that identify a row (the
-#: trigger's arguments). 70 §5's inventory minus its rows marked 2 or 2b,
-#: plus `sticker_index` (an in-place cache the inventory missed) and
+#: trigger's arguments). Includes `sticker_index` (an in-place cache) and
 #: `message_edit` (deleted by cascade when a message is pruned).
 HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "messages": ("id",),
     # Written append-only, but `message_edit.message_id` is ON DELETE CASCADE:
     # a prune deletes a message's edits with no store asking, and only a row
-    # trigger (which fires on a cascaded delete) keeps them. Kept over
-    # dropping the cascade, which would make every prune of an edited message
-    # fail on the foreign key instead.
+    # trigger (which fires on a cascaded delete) keeps them. Dropping the
+    # cascade would make every prune of an edited message fail on the foreign
+    # key instead.
     "message_edit": ("id",),
     "note_candidate": ("id",),
     "note": ("id",),
@@ -97,11 +93,11 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "music_session": ("guild_id",),
     "geocode_cache": ("lat_rounded", "lng_rounded"),
     "sticker_index": ("platform", "fetch_token"),
-    # Step 1 (0069): written append-only, but ON DELETE CASCADE from
-    # `messages`, `message_edit`'s case exactly.
+    # Written append-only, but ON DELETE CASCADE from `messages`:
+    # `message_edit`'s case exactly (0069).
     "message_reaction": ("id",),
     "message_delete": ("id",),
-    # Step 2 (0071): the Rollup as versioned builds. A build's rows are
+    # 0071: the Rollup as versioned builds. A build's rows are
     # written by its fold and changed in place by later runs of the same
     # build (a relink, a place's label, an occupancy bin, a unit rollup
     # recomputed and diffed); a superseded build is never touched again. The
@@ -121,17 +117,17 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "rollup_daybook": ("id",),
     "rollup_tie": ("id",),
     "rollup_response": ("id",),
-    # Step 2b (0074_event_revision): the head is still the compare-and-swap
-    # cache 10-tiers.md §8 allows over `event_revision` (APPEND_ONLY, below).
+    # 0074_event_revision: the head is the compare-and-swap cache over
+    # `event_revision` (APPEND_ONLY, below).
     "events": ("id",),
-    # design/sandbox-runtime §15.2 (0082_computer_sessions): a session is
+    # 0082_computer_sessions: a session is
     # continued and expired in place; its versions are what it was at T.
     "computer_sessions": ("id",),
 }
 
 #: Append-only tables a restore copies, and each one's system-time column.
-#: `tool_call_log.created_at` is `now()` at insert and was always system
-#: time; the others gained `recorded_at` in `0068`.
+#: `tool_call_log.created_at` is `now()` at insert and is system time; the
+#: others gained `recorded_at` in `0068`.
 APPEND_ONLY: dict[str, str] = {
     "note_revision": "recorded_at",
     # ADR 0020 (0084_documents): a document's identity and one snapshot per revision,
@@ -159,29 +155,28 @@ APPEND_ONLY: dict[str, str] = {
     "decision_log": "recorded_at",
     "note_merge_decision": "recorded_at",
     "tool_call_log": "created_at",
-    # design/sandbox-runtime §12 (0081_computer_events): the computer audit,
+    # 0081_computer_events: the computer audit,
     # two rows (started, finished) per computer tool call, never changed.
     "computer_events": "created_at",
-    # design/sandbox-runtime §6 (0083_computer_exports): every file that left
+    # 0083_computer_exports: every file that left
     # the computer, one row per export, never changed; a revision is a row.
     "computer_exports": "created_at",
     "revision_blob": "recorded_at",
     "doctrine_revision": "recorded_at",
     "config_revision": "recorded_at",
     "deploy_revision": "recorded_at",
-    # Step 1 (0069, renamed by 0070/DEC-234): the cognition loop's stimuli,
+    # 0069 (DEC-234): the cognition loop's stimuli,
     # its wake log (a unit's watermark is its newest row, never a row
     # rewritten) and source health.
     "stimulus": "recorded_at",
     "cognition_wake": "recorded_at",
     "source_health": "recorded_at",
-    # Step 2b (0074_event_revision): the chain `events` is a
-    # compare-and-swap cache over, and RSVPs, append-only since this step
-    # ("RSVP transition rows", 70 §5) — a repeat RSVP is an INSERT, never an
+    # 0074_event_revision: the chain `events` is a compare-and-swap cache
+    # over, and RSVPs, append-only — a repeat RSVP is an INSERT, never an
     # upsert; the current response is the newest row per (event_id, person_id).
     "event_revision": "recorded_at",
     "event_rsvps": "recorded_at",
-    # Step 3 (0077_assess_report): the Assess adaptor's one store. One row
+    # 0077_assess_report: the Assess adaptor's one store. One row
     # per run, never rewritten — the next run is the next row
     # (`nora.domain.assess.AssessReport`).
     "assess_report": "recorded_at",
@@ -192,7 +187,7 @@ APPEND_ONLY: dict[str, str] = {
     # The pace verbs (`wake_at`/`wake_move`/`wake_cancel`): each transition is
     # its own row, never revised.
     "cognition_self_wake": "recorded_at",
-    # Step 3a-ii, the wake lifecycle: how a tracked wake ended (only `closed`
+    # The wake lifecycle: how a tracked wake ended (only `closed`
     # advances the watermark), what it returned to the next agenda, and the
     # `self` stimuli taken back.
     "cognition_wake_outcome": "recorded_at",
@@ -200,11 +195,9 @@ APPEND_ONLY: dict[str, str] = {
     "stimulus_retraction": "recorded_at",
 }
 
-#: Changes in place today and migrates at a later step (70 §5). Not
-#: restorable as of T before then; `nora snapshot` leaves them empty and
-#: names them. Empty since step 2b (`0074_event_revision`) migrated the last
-#: entries `events`/`event_rsvps` marked "2b"; kept as a named group rather
-#: than removed, because a later step of this migration may add to it again.
+#: Changes in place and not yet migrated. Not restorable as of T; `nora
+#: snapshot` leaves them empty and names them. Currently empty; kept as a
+#: named group so a table can be deferred again.
 DEFERRED: dict[str, str] = {}
 
 #: Not copied into a restore, each with why.
@@ -229,9 +222,8 @@ NOT_RESTORED: dict[str, str] = {
     "presence_corridor_speed": (
         "retired writer (design/27 §4.4 M2): nothing writes or reads it; table kept"
     ),
-    # 0105_memory_index (design/unified-memory/60-build-step-3.md §1): a
-    # projection of the stores above, so a restore leaves it empty and
-    # `memory_index_state` reads `never` until a rebuild (60 §0.5).
+    # 0105_memory_index: a projection of the stores above, so a restore leaves
+    # it empty and `memory_index_state` reads `never` until a rebuild.
     "memory_node": "derived; nora memory rebuild",
     "memory_edge": "derived; nora memory rebuild",
     "memory_projection_queue": "derived; nora memory rebuild",

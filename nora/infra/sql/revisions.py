@@ -1,7 +1,6 @@
 """What instructions, config and code were in force, recorded at load.
 
-design/cognition-loop/70-migration.md §5 ("Authored and configured state"):
-the doctrine and `nora/dreamer/` hot-reload on mtime from the deploy host's
+The doctrine and `nora/dreamer/` hot-reload on mtime from the deploy host's
 own checkout, `config.toml`/`policy.toml`/`identity.toml` live only on that
 host, and the code is whatever image is running. None of that is answerable
 as of T from git alone, so each load writes a row here, and

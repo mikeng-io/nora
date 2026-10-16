@@ -1,9 +1,8 @@
-"""The embedding worker (design/unified-memory/65-build-step-3-vectors.md V1,
-25-memory-graph.md §7 «after any of the above: vectors»).
+"""The embedding worker.
 
 One batch per tick of the nora process's memory drain loop
 (`nora.app.runtime.memory_drain_loop`), only while `[memory_index] embed`.
-The node is the queue (65 §1.1): `embed_pick` finds live, embeddable nodes
+The node is the queue: `embed_pick` finds live, embeddable nodes
 with no vector, each is embedded and stored with the model's fingerprint, and
 lexical search finds a node before its vector exists.
 
@@ -11,7 +10,7 @@ lexical search finds a node before its vector exists.
 configured model file (/props `model_path`), or nothing is stamped with a
 fingerprint it did not make; then every vector of another fingerprint is
 cleared (`clear_embeddings`), so a model change is that one statement and the
-backfill through the ordinary pick (65 §1.1).
+backfill through the ordinary pick.
 
 **What a node is embedded from.** An attachment whose own message records an
 image type (`nora.domain.memory_index.embeds_bytes`: a photo, a sticker, a
@@ -34,11 +33,11 @@ nothing here logs or records a node's text.
 **A text cut to fit** the server's micro-batch (`LlamaEmbedder.
 embed_document`'s `truncated`) is stored like any other, its vector standing
 for the head of the text, and counted on `nora_memory_embed_truncated_total
-{kind}` once its vector is stored: there is no chunking (65 §3), and that
+{kind}` once its vector is stored: there is no chunking, and that
 counter is what says when there should be.
 
-**The image throttle.** An image costs about 3.4 s of norty's CPU, a text
-about 0.4 s (65 §0). At most `images_per_hour` images are embedded in any
+**The image throttle.** An image costs far more CPU than a text.
+At most `images_per_hour` images are embedded in any
 hour; once spent, the pick leaves attachments out until it frees, so texts
 are never queued behind images.
 """

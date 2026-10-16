@@ -1,5 +1,4 @@
-"""A shared file's bytes as text, and text as numbered parts
-(design/external-files/00-design.md §2).
+"""A shared file's bytes as text, and text as numbered parts.
 
 Vendor-neutral: any adapter that downloads a PDF, a Word, Excel or PowerPoint
 file reads it here, and pages what it read with `pages`. Nothing is kept: each
@@ -12,10 +11,10 @@ module too).
 (paragraphs, table rows, cells, slide text), a few element names per format,
 and three dependencies for that would be three supply chains for one read.
 PDF has no such shortcut, so it is `pypdf` (pure Python, no dependencies of
-its own). Images, charts, comments and formatting are dropped (§9).
+its own). Images, charts, comments and formatting are dropped.
 
-**Every count is bounded while it is being read, never after** (security
-review of PR S2, 2026-10-10). The file is somebody else's and may be crafted:
+**Every count is bounded while it is being read, never after.**
+The file is somebody else's and may be crafted:
 
 - *Bytes in.* One `_Budget` of `max_bytes` covers EVERY ZIP member a read
   opens, together: members are read in chunks and the budget is charged with
@@ -31,9 +30,9 @@ review of PR S2, 2026-10-10). The file is somebody else's and may be crafted:
   parser meets it (so the guard and the parser cannot disagree about
   encodings or spellings, as a byte pre-scan could). OOXML never declares
   one; the five predefined entities still read.
-- *Shape* (review of PR 801, 2026-10-11). Each part is walked ONCE, as
+- *Shape.* Each part is walked ONCE, as
   expat's events stream past (no tree, no `iter()` inside `iter()`, which
-  was quadratic in nesting); an element deeper than `_MAX_DEPTH` refuses the
+  is quadratic in nesting); an element deeper than `_MAX_DEPTH` refuses the
   file. A ZIP member compressed with anything but stored or deflate (bzip2,
   LZMA: inflated whole by `zipfile`, past the chunked budget) is refused
   before it is opened. A spreadsheet's tabs share ONE text budget.
@@ -120,8 +119,8 @@ def sheets_text(
     tabs: list[tuple[str, list[object]]], max_chars: int = MAX_TEXT_CHARS,
 ) -> str:
     """Every tab of a spreadsheet, in order, each as its name and a pipe table,
-    one line per row. ONE budget for the whole read (review of PR 801: a
-    budget per tab let N tabs return N times the cap). Empty trailing rows are
+    one line per row. ONE budget for the whole read (a
+    budget per tab would let N tabs return N times the cap). Empty trailing rows are
     dropped; an empty tab says so."""
     budget = _Budget(max_chars)
     out = []
@@ -170,10 +169,9 @@ def pdf_text(data: bytes, max_chars: int = MAX_TEXT_CHARS) -> str:
 
 # --- Office Open XML ---------------------------------------------------------
 #
-# ONE streaming pass per part, no tree (review of PR 801: walking a tree with
-# `iter()` inside `iter()` was quadratic in the nesting, 3.5 KB of nested
-# tables took 16 s). Each reader is a small state machine fed expat's events;
-# text is charged to the char budget as it arrives, and an element nested
+# ONE streaming pass per part, no tree (walking a tree with
+# `iter()` inside `iter()` is quadratic in the nesting). Each reader is a small state machine fed
+# expat's events; text is charged to the char budget as it arrives, and an element nested
 # deeper than `_MAX_DEPTH` refuses the file.
 
 _W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -185,8 +183,8 @@ _REL = "http://schemas.openxmlformats.org/package/2006/relationships}"
 #: Real Office files nest a few dozen deep at most.
 _MAX_DEPTH = 64
 #: The only ZIP methods read. bzip2 and LZMA members are decompressed by
-#: `zipfile` whole on each read, past any chunked budget (review of PR 801: a
-#: 697-byte bzip2 docx peaked at 1.12 GB), and Office never writes them.
+#: `zipfile` whole on each read, past any chunked budget, and Office never writes
+#: them.
 _ZIP_METHODS = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
 
 
@@ -306,7 +304,7 @@ def _office(read: Callable[[_Package], str]) -> Callable[..., str]:
             return read(_Package(data, max_bytes, max_chars))
         except (ExternalFileError, MemoryError):
             # MemoryError is not "not text": it reaches the parse child,
-            # which answers it as too large (re-review of PR 801).
+            # which answers it as too large.
             raise
         except Exception as exc:
             log.info("an Office file could not be read as text: %s", type(exc).__name__)
@@ -411,8 +409,8 @@ class _Book(_Reader):
 class _Sheet(_Reader):
     """One worksheet: each `<c>` becomes a cell at its column, its padding
     charged before it is allocated; each row's line is charged in full when it
-    is made, less what its cells already paid (re-review of PR 801: a row's
-    `| ... |` was never charged, and 1.5M empty rows made 7.5M chars)."""
+    is made, less what its cells already paid (otherwise a row's
+    `| ... |` would go uncharged, and millions of empty rows would add up)."""
 
     def __init__(self, chars: _Budget, shared: list[str]) -> None:
         self.chars = chars

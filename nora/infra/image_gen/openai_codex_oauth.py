@@ -1,12 +1,12 @@
 """OpenAI (ChatGPT subscription) OAuth for the Codex lane: device login + refresh.
 
-DEC-304 / design/proposed/29 §11: the second `ImageGenerator` provider runs on
+DEC-304: the second `ImageGenerator` provider runs on
 Nora's OWN ChatGPT login, the way the `codex` CLI does, never on a shared
 `~/.codex/auth.json`.
 
 **Why the refresh token lives in the state file, not only in `.env`.**
 OpenAI's refresh grant ROTATES the refresh token on every use, and a used one
-is dead, and xAI's does the same (DEC-308), so both lanes keep the chain
+is dead; xAI's does the same (DEC-308), so both lanes keep the chain
 through `oauth_lane.RotatingOAuthLane`:
 
 - `.env` (host, immutable, DEC-8) holds ONLY the bootstrap refresh token the
@@ -26,13 +26,11 @@ through `oauth_lane.RotatingOAuthLane`:
 - The daemon refreshes it on a schedule (`nora.app.oauth_keepalive`),
   through the same locks as a call, so a use never meets an expired login.
 
-Endpoints and the client id are the `codex` CLI's own (read from the 0.161.0
-binary 2026-10-09: `/api/accounts/deviceauth/usercode`, `/deviceauth/token`,
-`/codex/device`, `/deviceauth/callback`, `/oauth/token`, form-encoded
-`grant_type=refresh_token`). Step 1 of the device flow was probed live and
-answered `{device_auth_id, user_code, interval: "5", expires_at}`; a pending
-poll answers 403 `deviceauth_authorization_pending`. The approval, the code
-exchange and the refresh have NOT been run against the live issuer.
+Endpoints and the client id are the `codex` CLI's own (`/api/accounts/deviceauth/usercode`,
+`/deviceauth/token`, `/codex/device`, `/deviceauth/callback`, `/oauth/token`, form-encoded
+`grant_type=refresh_token`). Step 1 of the device flow answers
+`{device_auth_id, user_code, interval: "5", expires_at}`; a pending poll
+answers 403 `deviceauth_authorization_pending`.
 
 NEVER raises into the caller: every failure is a `CodexAuth` with
 `status="unavailable"` and a `reason` (R-27). Only `device_flow_login` raises,
@@ -69,7 +67,7 @@ log = logging.getLogger("nora.image_gen.openai_codex_oauth")
 OPENAI_AUTH_ISSUER = "https://auth.openai.com"
 # The `codex` CLI's public OAuth client (CODEX_APP_SERVER_LOGIN_CLIENT_ID).
 OPENAI_CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-# ChatGPT access tokens live ~10 days (measured 2026-10-09: exp - iat = 240h);
+# ChatGPT access tokens live ~10 days (exp - iat = 240h);
 # refresh an hour early so a call never carries a token that expires mid-flight.
 ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 3600
 # The claim the access token carries the ChatGPT account id under; the

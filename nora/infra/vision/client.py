@@ -2,10 +2,9 @@
 timeout and byte ceiling (DEC-56, the READ half of media custody).
 
 This is the one place a blob's bytes reach a model. It goes through the
-process-wide OmniRoute `AsyncOpenAI` client (audit T2's single client), model
+process-wide OmniRoute `AsyncOpenAI` client, model
 `opencode-go/mimo-v2.5`, the image passed as a base64 `data:` URI in an
-`image_url` content block — the shape the 2026-08-07 probe verified end to end
-(a red PNG → "Red", prompt_tokens 159).
+`image_url` content block.
 
 **It is deliberately NOT an `OpenAIModel`.** A raw create gets none of strands'
 retry/timeout/trace machinery, which means this module owns all three itself:
@@ -56,17 +55,11 @@ log = logging.getLogger("nora.vision")
 # `waves * derived <= loop * VISION_LOOP_SHARE`, which is the wall clock that
 # invocation actually consumes.
 #
-# It used to be divided by the tool's BUDGET, and that was a unit error
-# (design/media-read-lane/07-timeout-derivation.md §2): budgeted calls run
-# CONCURRENTLY and occupy `max(their durations)` of wall clock, never their
-# sum, so dividing a wall-clock ceiling by them shrank the result by a factor
-# corresponding to no elapsed time at all. At the settled settings — loop 360,
-# `vision_timeout_seconds` 120, `media_fetch` budget 4 — it derived
-# `min(120, 360 * 0.6 / 4) = 54 s` and the configured 120 never took effect,
-# against a measured 90-second-window median of ~41.6 s. A third of reads
-# degraded on the ceiling that existed to stop exactly that. `budget` bounds
-# REFUSALS (DEC-10's count), not elapsed time; it has been REMOVED from this
-# derivation and must not come back.
+# The divisor is never the tool's BUDGET: budgeted calls run CONCURRENTLY and
+# occupy `max(their durations)` of wall clock, never their sum, so dividing a
+# wall-clock ceiling by them would shrink the ceiling by a factor corresponding
+# to no elapsed time at all. `budget` bounds REFUSALS (DEC-10's count), not
+# elapsed time, and must not enter this derivation.
 VISION_LOOP_SHARE = 0.6
 
 # How many of ONE invocation's windows are read at once. One today: the fan-out
@@ -74,51 +67,44 @@ VISION_LOOP_SHARE = 0.6
 # that loop's width, written where the derivation can see it. It is the
 # divisor's companion — `waves = ceil(windows / concurrency)` — so raising the
 # fan-out without raising this (or the reverse) would silently void the
-# invariant. `design/media-read-lane/01-chunk-parallelism.md` is where the
-# bounded `asyncio.gather` lands; it must move this number and that loop in the
-# same change, which
+# invariant. Both must move in the same change, which
 # `test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart` enforces.
 VISION_WINDOW_CONCURRENCY = 1
 
 # Authored, fixed, and small — never model-supplied. The description it asks for
-# is untrusted egress (design/14 §2.1), screened by the tool on every serve.
+# is untrusted egress, screened by the tool on every serve.
 _PROMPT = "Describe this image. If it contains text in it, transcribe that text."
 
-# One authored prompt per modality (2026-08-17 spec). AUTHORED and never
+# One authored prompt per modality. AUTHORED and never
 # model-supplied, for the same reason `_PROMPT` above is: what comes back is
-# untrusted egress (design/14 §2.1), screened by the tool on every serve.
+# untrusted egress, screened by the tool on every serve.
 # Selecting one of these by modality derives from a system-controlled fact — the
 # blob's own MIME type — and keeps that property. Conditioning a prompt on what
 # the TAGGER asked would not: that is group-authored text steering a model whose
 # output returns to the room, i.e. an injection channel, and it is out of scope.
 #
-# `image` is `_PROMPT` unchanged, byte for byte, so the shipped path keeps its
-# exact behaviour through this split.
+# `image` is `_PROMPT` unchanged, byte for byte.
 DESCRIBE_PROMPTS = {
     "image": _PROMPT,
-    # SPEECH IS TRANSCRIBED NOW (DEC-197, operator 2026-09-22: «audio 亦都
-    # enable 佢啦 直接啟動佢 override 之前個 decision»). This line used to be
-    # the load-bearing refusal of the table — the GIST, never the words —
-    # because DEC-114 clause (3) judged a verbatim transcript a materially
-    # larger R-18/R-28 egress surface than a caption: the only screen is
-    # `scan_identifiers`, which does NOT catch a bare local number, a spaced
-    # E.164 number, an address, or a number said as words, and people say all
-    # four aloud. That clause is SUPERSEDED, not refuted, and the exposure it
-    # named is still real and still unscreened (design/media-read-lane/02 §5;
-    # the operator parked the screen's coverage, 2026-09-23).
+    # Speech is transcribed (DEC-197). DEC-114 clause (3) once judged a verbatim
+    # transcript a materially larger R-18/R-28 egress surface than a caption:
+    # the only screen is `scan_identifiers`, which does NOT catch a bare local
+    # number, a spaced E.164 number, an address, or a number said as words, and
+    # people say all four aloud. That exposure is still real and still
+    # unscreened.
     #
     # What stands in for it is the sentence below, and it is a REQUEST to the
     # model, not a guarantee: the identity-bearing values the operator named —
     # phone, ID and account numbers — are asked to be left out. Addresses are
-    # not, by the same operator direction («呢啲 group 都係 trusted 嘅 content»).
+    # not: the rooms' content is trusted.
     "audio": (
         "Say what this audio is about — the tone, and who is speaking if that "
         "is clear — and transcribe what is said, in the language it is spoken "
         "in. Leave out any phone number, ID number or account number you hear. "
         "If nothing is audible, say so."
     ),
-    # What HAPPENS, plus on-screen text, plus — since the video path stopped
-    # stripping the audio track (DEC-197) — what is SAID, under the same
+    # What HAPPENS, plus on-screen text, plus what is SAID (the video path keeps
+    # the audio track, DEC-197), under the same
     # identity-number request as `audio` above.
     "video": (
         "Describe what happens in this video, and transcribe any text on screen. "
@@ -129,9 +115,8 @@ DESCRIBE_PROMPTS = {
 
 
 # OpenCode Go's own endpoint refuses a request without this header:
-# `400 {"type":"MissingSessionID", ...}` (probed 2026-09-22 and again
-# 2026-09-24). The value is an opaque per-request routing id — NOT a secret and
-# NOT a conversation id, so nothing about the room leaks into it.
+# `400 {"type":"MissingSessionID", ...}`. The value is an opaque per-request routing
+# id — NOT a secret and NOT a conversation id, so nothing about the room leaks into it.
 OPENCODE_SESSION_HEADER = "x-opencode-session"
 
 
@@ -139,9 +124,8 @@ async def _stamp_opencode_session(request: httpx.Request) -> None:
     """A FRESH session id on every request, unless one is already set.
 
     Fresh-per-request is the only shape that was measured (`ses_<uuid4hex>`, one
-    per call, no penalty observed); whether a stable id would buy routing
-    affinity is unverified, so this does not guess at it. A retry is a new
-    request and gets a new id, which is the measured shape too.
+    per call); whether a stable id would buy routing affinity is unverified,
+    so this does not guess at it. A retry is a new request and gets a new id.
     """
     if OPENCODE_SESSION_HEADER not in request.headers:
         request.headers[OPENCODE_SESSION_HEADER] = f"ses_{uuid.uuid4().hex}"
@@ -152,7 +136,7 @@ def opencode_go_http_client() -> httpx.AsyncClient:
 
     A request hook rather than a `describe()` argument, deliberately: the header
     is a property of the TRANSPORT, and `describe`'s whole design is that the
-    modality picks the transport (design/media-read-lane/03 §3). Built on the
+    modality picks the transport. Built on the
     SDK's own default client so its timeouts and connection limits are the ones
     every other lane has.
     """
@@ -165,9 +149,8 @@ def opencode_go_http_client() -> httpx.AsyncClient:
 # to guess a token for (`unsupported_payload`, before any request).
 #
 # UNVERIFIED against a live route, and that is stated rather than glossed: no
-# model in the OmniRoute catalogue advertises an `audio` capability at all (215
-# of 406 advertise `vision`, none advertise audio or video), so there is nothing
-# to probe this against today. `wav`/`mp3` are the two the OpenAI audio-input
+# model in the OmniRoute catalogue advertises an `audio` capability, so there
+# is nothing to probe this against. `wav`/`mp3` are the two the OpenAI audio-input
 # API documents; the rest are the containers gateways commonly accept and are
 # the FIRST thing to check if enabling audio 400s.
 _AUDIO_FORMATS = {
@@ -218,9 +201,9 @@ def _content_block(
 ) -> dict[str, object]:
     """The one content block this modality's bytes belong in.
 
-    The original split changed WHICH MODEL was asked and left every modality in
-    an `image_url` block, so enabling audio shipped `data:audio/aac;…` as an
-    image. The shape is the other half of routing, and it lives here.
+    The block shape is the other half of routing (the model is chosen by
+    modality too): an audio payload in an `image_url` block would ship
+    `data:audio/aac;…` as an image.
 
     A WILDCARD subtype is refused here, before any request. `image/*` is what a
     platform that declares no mimetype honestly records (Instagram's wire
@@ -260,8 +243,7 @@ def vision_waves(
     cut into windows (`preprocess.VIDEO_CHUNK_SECONDS` = 90 s,
     `VIDEO_MAX_CHUNKS` = 10), `concurrency` of them are read at once, so the
     invocation's elapsed time is `ceil(windows / concurrency)` per-call ceilings
-    — not `windows` of them, and not one, which is the other half of the old
-    formula's error: one `media_fetch` was treated as one model call.
+    — not `windows` of them, and not one, and one `media_fetch` is not one model call.
 
     A single-view read — an image, a voice note, the text synthesis, a clip
     ffmpeg could not cut — is one window and therefore exactly one wave.
@@ -271,7 +253,6 @@ def vision_waves(
     # returns 2**53) and raises `OverflowError` for a huge `windows`. Neither is
     # reachable from video geometry, but the arithmetic should not have a
     # precision cliff at all when the exact form is the same length.
-    # (Independent review round 1, 2026-09-23.)
     return -(-max(1, windows) // max(1, concurrency))
 
 
@@ -291,21 +272,18 @@ def derive_vision_timeout(
     wall clock one invocation consumes is at most `loop * VISION_LOOP_SHARE`,
     strictly less than the loop.
 
-    **The divisor is the SERIAL factor, and it used to be a concurrent one.**
-    Dividing by the tool's budget — the number of `media_fetch` calls a turn may
-    make — divided a wall-clock ceiling by calls that OVERLAP in time, so the
-    quantity the old invariant proved (`budget * derived < loop`) was one
-    nothing ever elapses. The result is now independent of the budget by
-    construction: concurrent invocations occupy `max(their durations)`, and a
-    turn that runs four of them consumes one invocation's wall clock, not four.
-    See `design/media-read-lane/07-timeout-derivation.md`; §6 records the one
-    case that reconverts concurrency into a sum (a tool-concurrency ceiling BELOW
-    the budget makes the calls QUEUE), which is a config relationship to assert
-    across both keys rather than a term to put back here.
+    **The divisor is the SERIAL factor, never the tool's budget.** The budget is
+    the number of `media_fetch` calls a turn may make, and those OVERLAP in
+    time, so the result is independent of it by construction: concurrent
+    invocations occupy `max(their durations)`, and a turn that runs four of
+    them consumes one invocation's wall clock, not four. One case turns
+    concurrency back into a sum: a tool-concurrency ceiling BELOW the budget
+    makes the calls QUEUE, which is a config relationship to assert across both
+    keys rather than a term here.
 
     No `max(0.1, …)` floor: for any positive loop the per-call ceiling is
     positive and below the loop, and a floor could exceed the ceiling for a
-    sub-second loop and void the guarantee (both reviews' low finding).
+    sub-second loop and void the guarantee.
     """
     per_call = loop_timeout_seconds * VISION_LOOP_SHARE / max(1, waves)
     return min(configured, per_call) if configured > 0 else per_call
@@ -373,26 +351,24 @@ class VisionClient:
     def _call_timeout(self, windows: int | None) -> float:
         """This call's ceiling, derived HERE and nowhere else.
 
-        Single-sourced on purpose: `derive_vision_timeout`'s own argument is
-        that the invariant "is one nobody can violate if it is never written
-        down twice", and computing it at the call sites is precisely how
-        `[llm.budgets]` once produced a second reader of the same number.
+        Single-sourced on purpose: the invariant `derive_vision_timeout` proves
+        is one nobody can violate if it is never written down twice.
 
         `windows is None` is every single-view read — an image, a voice note,
         the text pass — and `vision_waves` resolves it to one wave.
 
         **And never more than `VISION_LOOP_SHARE` of what is LEFT of the
-        enclosing turn** (DEC-197 review, 2026-09-24). The derivation bounds
+        enclosing turn** (DEC-197). The derivation bounds
         ONE invocation; reads the model issues in SEPARATE turns of the loop
         run one after another and add up — three one-window reads at 120 s
         each are the whole of a 360 s loop, and the loop dying is silent. And a
-        fire turn runs under `[heartbeat].timeout_seconds` (120 in production),
-        not the `[llm]` loop this client was built from. Taking the share of
-        the REMAINING time bounds every sequence of reads geometrically — each
+        fire turn runs under `[heartbeat].timeout_seconds`, not the `[llm]` loop this client was
+        built from. Taking the share of the REMAINING time bounds every sequence of
+        reads geometrically — each
         leaves at least 40 % of what it found for the model to answer in — and
         it counts whatever else the turn already spent, ffmpeg included,
         without having to name it. Outside a turn (`seconds_left()` is `None`:
-        ingest comprehension) the derivation alone applies, as before.
+        ingest comprehension) the derivation alone applies.
         """
         derived = derive_vision_timeout(
             loop_timeout_seconds=self._loop_timeout,
@@ -411,15 +387,14 @@ class VisionClient:
     ) -> VisionResult:
         """MiMo's sentence about `data`, or an unavailable result. Never raises.
 
-        `prompt` defaults to the transcription prompt `media_fetch` has always
-        used — a call site that omits the argument keeps its exact existing
-        behaviour. `MediaComprehender` is the other caller, passing one of
+        `prompt` defaults to the transcription prompt `media_fetch` uses.
+        `MediaComprehender` is the other caller, passing one of
         `COMPREHEND_QUESTIONS` instead: same connection, same ceiling, a
         different question, selected by the media LABEL.
 
-        `model` is the same shape one level up (2026-08-17 spec): empty keeps
-        the configured model, so every existing call site is unchanged, and a
-        per-modality caller passes the model ITS modality is configured with.
+        `model` is the same shape one level up: empty keeps
+        the configured model, and a per-modality caller passes the model ITS
+        modality is configured with.
         One client, one connection, one ceiling — the modality picks the model
         and the prompt, not a second client. That matters for the timeout proof
         `derive_vision_timeout` makes: three clients would be three independent
@@ -428,13 +403,12 @@ class VisionClient:
         `windows` is how many windows THIS invocation reads in total — the
         serial factor the per-call ceiling divides by. `None` is a single-view
         read (an image, a voice note, a clip ffmpeg could not cut) and derives
-        exactly the ceiling those have always had. Only `read_video_windows`
+        exactly the single-wave ceiling. Only `read_video_windows`
         passes a count, because only `cut_video` produces one, and it can only
         do so per request.
 
         `provider` selects the transport: `"omniroute"` (default; the process-
-        wide gateway client, `_client` — every pre-provider caller keeps its
-        exact behaviour) or a DIRECT lane — `"kimi"`, `"opencode-go"` — out of
+        wide gateway client, `_client`) or a DIRECT lane — `"kimi"`, `"opencode-go"` — out of
         `_direct_clients`, when one was injected. A direct provider with no
         client is a WIRING GAP and answers `unavailable` — never a silent
         fallback to OmniRoute,
@@ -444,9 +418,7 @@ class VisionClient:
         """
         # An unset prompt resolves from the blob's OWN MIME type, so the
         # modality picks its question without any caller having to know the
-        # table. `media_fetch` omitted this argument before the split and still
-        # does; for an image it resolves to the identical string, so that path
-        # is unchanged. `MediaComprehender` passes its own and is untouched.
+        # table. `MediaComprehender` passes its own.
         # ONE parse, shared by the prompt and the payload — `parse_media_type`
         # is the module that owns this (RFC 6838: parameters stripped, case
         # normalised, unregistered top-level types rejected). Two local
@@ -492,10 +464,9 @@ class VisionClient:
     async def complete(self, *, prompt: str, text: str, model: str = "") -> str:
         """One TEXT-only call on this same client, connection and ceiling.
 
-        The audio half of issue #116 and the video synthesis half of #117 both
-        need a cheap pass over text Nora already holds — a voice note's
-        STT transcript, a video's chunk run. Neither is a vision call
-        and neither should build a second client for it: the timeout proof
+        For a cheap pass over text Nora already holds — a voice note's STT
+        transcript, a video's chunk run. That is not a vision call and should
+        not build a second client: the timeout proof
         `derive_vision_timeout` makes is about ONE ceiling, and a separate
         client would be a second one that could outlast the loop.
 
@@ -509,8 +480,7 @@ class VisionClient:
         the instruction it was appended to. **The framing is the caller's, and
         this method forwards `text` exactly as handed:** `MediaComprehender
         .summarize` sends it as a `media_text` block that escapes it, so a
-        closing tag in a member's words cannot end the block (step 4c of
-        `design/context-assembly/04-every-occasion.md`). A message of its own
+        closing tag in a member's words cannot end the block. A message of its own
         keeps it apart from the question; the block is what says it is data.
 
         Raises rather than returning a typed failure, unlike `describe`: the
@@ -560,7 +530,7 @@ class VisionClient:
         # not resolve) — and answering `unavailable` is the honest fail-closed
         # shape (R-27). Falling back to `_client` here would be silent: the
         # request would travel through OmniRoute, which drops `video_url`
-        # content blocks (probe 2026-08-30), and the model would answer about
+        # content blocks, and the model would answer about
         # the text it DID receive. An ERROR reported as a PASS.
         client = self._client
         if provider != "omniroute":

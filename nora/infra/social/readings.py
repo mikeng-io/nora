@@ -1,16 +1,14 @@
-"""What each item of a post or story SHOWS, read through `media_fetch` itself
-(design/instagram-adoption/18 §"Typed views, one renderer, and readings").
+"""What each item of a post or story SHOWS, read through `media_fetch` itself.
 
 **The same path, not a copy.** The caller hands in its own `media_fetch`
 (`TurnLook.fetch`), and each item is read as `media_fetch(url=item.url)`: the
 same url egress screen, the same download ceilings, the same image vision call
 and chunked video read, and the same content caches (the vision cache by
-sha256, the `video_readings` cache, #441) that a manual
+sha256, the `video_readings` cache) that a manual
 `media_fetch(url=...)` goes through. So a second open of the same post costs
 no vision call, and an item she then asks about by its link is a cache hit.
 A STORY frame is the exception the caller makes: its `fetch` reads without
-writing either cache, because a story expires in 24h (18, operator's default
-until decided).
+writing either cache, because a story expires in 24h.
 
 **The caption never reaches a vision prompt.** Vision prompts are authored
 (`nora/infra/vision/comprehend.py`): what a poster or a room wrote must not
@@ -71,8 +69,8 @@ READS_WITH_READINGS: frozenset[tuple[str, str]] = frozenset({
 MAX_READ_ITEMS = 8
 
 #: Of those, at most this many VIDEOS are read per open. A video window is
-#: the expensive read (2.8k to 6.2k completion tokens measured, DEC-197);
-#: images are 2 to 4 s each. Videos past it are listed as not read, saying
+#: the expensive read (thousands of completion tokens, DEC-197); an image is
+#: a single short call. Videos past it are listed as not read, saying
 #: why.
 MAX_READ_VIDEOS = 3
 
@@ -89,15 +87,15 @@ MAX_READ_VIDEO_SECONDS = float(VIDEO_CHUNK_SECONDS)
 
 #: Looks in flight at once, across the whole turn: `media_fetch`'s own
 #: per-turn budget, and the number of media reads the executor already runs
-#: together when the model batches them (design/tool-concurrency/01 §4).
+#: together when the model batches them.
 READ_CONCURRENCY = 4
 
 #: One look: the single-window vision ceiling (120 s) plus the url download
-#: ceiling (25 s) plus 5 s for ffmpeg. A live reel read took 82 s uncached.
+#: ceiling (25 s) plus 5 s for ffmpeg.
 ITEM_TIMEOUT_SECONDS = 150.0
 
-#: Every look together: two waves of that measured 82 s reel. Also held under
-#: the turn's remaining share (module docstring).
+#: Every look together. Also held under the turn's remaining share (module
+#: docstring).
 TOTAL_TIMEOUT_SECONDS = 180.0
 
 V = TypeVar("V", bound=PostView | StoryView)

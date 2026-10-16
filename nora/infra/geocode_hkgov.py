@@ -1,6 +1,5 @@
 """HK-government reverse-geocode — a SWITCHABLE `ReverseGeocoder` option, not a
-replacement for Google (operator 2026-08-08: "adding a new geo adapter for
-switching or option, NOT deleting the google map").
+replacement for Google.
 
 Backend: the LandsD / hkmapservice ArcGIS `GeocodeServer/reverseGeocode`
 operation. Its service URL and access token come from the operator's LANDSD Map
@@ -17,11 +16,10 @@ Standard Esri `reverseGeocode` contract (what this parses):
 
 The exact `langCode` strings the HK locator honours are configurable (`lang_zh`/
 `lang_en`) because the portal's locators vary; the request/parse shape follows
-the documented ArcGIS standard. LIVE end-to-end verification needs the operator's
-key and is DEFERRED — the caching, bilingual join, and fail-soft discipline are
-inherited from `CachingBilingualGeocoder` and covered by the contract suite, so
-what is unverified is only whether this deployment's locator matches the standard
-shape (a config/tuning question for the operator, not a code one).
+the documented ArcGIS standard. The caching, bilingual join, and fail-soft
+discipline are inherited from `CachingBilingualGeocoder` and covered by the
+contract suite; whether a deployment's locator matches the standard shape is a
+config question, not a code one.
 """
 
 from __future__ import annotations

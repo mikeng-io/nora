@@ -1,5 +1,5 @@
 """`SourceHealthLog` over SQLAlchemy Core: the append-only `source_health`
-table (design/cognition-loop/20-observe.md §1).
+table.
 
 `record` never raises: it runs beside a presence poll or an adapter health
 sample, and a health row that cannot be written must never stop the work it

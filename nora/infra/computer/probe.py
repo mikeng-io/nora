@@ -1,4 +1,4 @@
-"""The timed probe of computerd (design/sandbox-runtime §12, DEC-261).
+"""The timed probe of computerd (DEC-261).
 
 `ComputerdRuntime` already tells its observer after every call whether computerd
 answered, but a computer nobody is using says nothing, and a computer that has

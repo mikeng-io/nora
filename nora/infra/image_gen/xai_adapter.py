@@ -1,6 +1,6 @@
 """xAI image generation adapter — the first `ImageGenerator` implementation.
 
-DEC-137 / design/proposed/29: provider-agnostic port, xAI via the X Premium
+Provider-agnostic port (DEC-137), xAI via the X Premium
 OAuth subscription lane (quota-bounded, not metered billing). This module
 knows xAI's wire shape; everything above it (tool, model-facing docstring)
 names no provider.
@@ -10,7 +10,7 @@ discipline in `nora.domain.ports`: every failure is a three-state
 `ImageResult` (R-27), and a wiring gap is `unavailable`, never a raise and
 never `nothing_found`.
 
-Reference-image custody (design §5.1): `ImageReference` carries a marker
+Reference-image custody: `ImageReference` carries a marker
 code, and this adapter resolves it ONLY through the injected
 `reference_resolver` — a per-turn collaborator that can read the caller's
 own conversation store. There is no URL/raw-bytes path in this class:
@@ -44,8 +44,7 @@ XAI_EDITS_URL = f"{XAI_API_BASE}/v1/images/edits"
 
 #: The most source images one `/v1/images/edits` call takes: «Use up to five
 #: source images for a single image edit» (docs.x.ai, developers/model-capabilities/
-#: images/multi-image-editing, read 2026-10-09). Documented, not probed: Nora's xAI
-#: token was dead that day (DEC-307, design/proposed/29 §12).
+#: images/multi-image-editing). Documented, not probed (DEC-307).
 XAI_MAX_REFERENCE_IMAGES = 5
 
 
@@ -61,7 +60,7 @@ def _hex_handle(raw: str) -> str:
 
 def _as_data_uri(body: bytes) -> str:
     """Base64 data URI for the JSON edits payload. xAI expects
-    `image: {"url": "<data URI>"}` (verified live 2026-08-27); a 415
+    `image: {"url": "<data URI>"}`; a 415
     multipart upload is rejected outright."""
     import base64
 
@@ -140,7 +139,7 @@ class XaiImageGenerator:
 
         # Reference images: resolve custody handles ONLY through the injected
         # resolver; a code that resolves to nothing is nothing_found, never a
-        # fetch attempt (design §5.0/5.1).
+        # fetch attempt.
         refs = reference_images or ()
         payload: dict[str, object] | None = None
         url: str
@@ -166,10 +165,9 @@ class XaiImageGenerator:
                     )
                 bodies.append(data)
 
-            # xAI's /v1/images/edits is JSON-only since grok-imagine-2.0 — a
-            # multipart FormData gets HTTP 415 («Expected request with
-            # Content-Type: application/json», verified live 2026-08-27), which
-            # the old code misread as `down`. The source image travels as a
+            # xAI's /v1/images/edits is JSON-only — a multipart FormData gets
+            # HTTP 415 («Expected request with Content-Type: application/json»),
+            # which must not be read as `down`. The source image travels as a
             # base64 data URI: single image in `image`, multiple in `images`
             # with `<IMAGE_n>` placeholders in the prompt (docs.x.ai —
             # model-capabilities/images/editing).
@@ -252,7 +250,7 @@ class XaiImageGenerator:
 
         # 403 is ambiguous on the subscription lane — quota exhaustion and
         # entitlement failures both surface as 403. Classify by body, and
-        # never guess from the status alone (design §7).
+        # never guess from the status alone.
         if resp.status == 403:
             code = (
                 (body.get("error") or {}).get("code")

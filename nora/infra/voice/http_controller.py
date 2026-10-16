@@ -1,8 +1,7 @@
 """`VoiceControllerClient` / `HttpVoiceSession` — nora's HTTP half of the
-audio-controller contract (design/voice-channel/07-audio-owner-controller.md
-§3, all status mappings pinned there and in the controller's own build).
+audio-controller contract.
 
-The audio-controller owns the ONE Discord voice connection; nora keeps every
+The audio-controller owns the Discord voice connections; nora keeps every
 decision and never touches the voice socket. Every verb here is one POST
 against the controller's control plane (`GET` for `/voice/status`), and every
 failure maps onto exactly one of the three exception types below — the R-27
@@ -69,7 +68,7 @@ class VoiceControllerRejected(VoiceControllerError):  # noqa: N818 — pinned co
 
 class VoiceControllerNoConnection(VoiceControllerUnavailable):
     """HTTP 404 `unknown_guild` — the controller holds NO connection for this
-    guild. Since one process serves several (multi-guild, 2026-09-17) this is
+    guild. Since one process serves several guilds this is
     an ordinary answer, not an outage: on a cold boot every guild answers it.
 
     Subclasses `VoiceControllerUnavailable` ON PURPOSE, so every existing
@@ -88,9 +87,8 @@ class VoiceControllerClient:
     audio-controller's base.
 
     With no injected `session`, each call opens its own
-    `aiohttp.ClientSession` (the same per-call pattern
-    `nora/platform/discord/adapter.py` used for the sidecar's old `/play`
-    POST): the call volume is a handful per track, and no session lifecycle
+    `aiohttp.ClientSession` (a per-call session):
+    the call volume is a handful per track, and no session lifecycle
     leaks across reconnects."""
 
     def __init__(
@@ -216,9 +214,9 @@ class VoiceControllerClient:
         channel, playback id, player, speech queue depth, `last_event_seq`,
         `streaming`, `last_error`, `wake`, `pump`) for ONE guild.
 
-        The guild rides the query string because a GET carries no body
-        (multi-guild, 2026-09-17): one controller process serves several, so
-        an unqualified status could only answer for whichever it picked."""
+        The guild rides the query string because a GET carries no body;
+        one controller process serves several, so an unqualified status could
+        only answer for whichever it picked."""
         return await self._request("GET", f"/voice/status?guild_id={guild_id}", None)
 
     async def _control(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -291,16 +289,16 @@ class HttpVoiceSession:
     `nora.platform` in the layers contract, so the conformance is
     structural (the protocol's methods, awaited, same names).
 
-    Every call mints a fresh `request_id` (§3.3 — the controller dedupes
+    Every call mints a fresh `request_id` (the controller dedupes
     retries on it); `playback_id` is recorded from each play's state
     snapshot so the hub can recognise the controller's `track-finished` /
-    `stream-failed` callbacks as current or stale (§3.3, B5).
+    `stream-failed` callbacks as current or stale.
 
     The generation can go STALE under a cached session (a controller
-    restart re-joins under a new one — §12.1). The hub and the manager's
+    restart re-joins under a new one). The hub and the manager's
     player hold THIS SAME object, so adopting the live generation here
     reconciles both at once: a verb that 409s `generation_conflict` reads
-    `/voice/status`, adopts, and retries ONCE (2026-09-16 audit)."""
+    `/voice/status`, adopts, and retries ONCE."""
 
     def __init__(
         self, client: VoiceControllerClient, *, guild_id: str, generation: str,
@@ -317,14 +315,13 @@ class HttpVoiceSession:
     async def read_playback(self) -> PlaybackReading:
         """One `/voice/status` sample, reduced to the liveness fields.
 
-        Every one of these was already served and none was ever read: nora
-        decided "music is playing" from `playback_id is not None`, which is
-        true in five arbiter states and audible in at most one.
+        `playback_id is not None` is true in five arbiter states and audible
+        in at most one, so liveness is read from these fields instead.
 
         NEVER raises. An unreachable or unparseable controller comes back as
         `PlaybackReading.unreachable()`, which the rule turns into UNKNOWN —
         "I could not check" must not reach a caller looking like "not
-        playing", which is the exact shape of the bug this exists for."""
+        playing"."""
         try:
             status = await self._client.status(self._guild_id)
         except VoiceControllerError:
@@ -432,7 +429,7 @@ class HttpVoiceSession:
         reconcile-retry: a generation the controller no longer recognises
         has no music slot to stop — the end state this call asks for
         already holds. That tolerance is what lets a dead-connection
-        teardown (B7, design/voice-channel/07) complete locally instead of
+        teardown complete locally instead of
         dying on a controller that is already gone."""
         try:
             await self._client.stop_music(

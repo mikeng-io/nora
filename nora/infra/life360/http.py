@@ -2,11 +2,10 @@
 
 Unlike `nora.infra.routes.http`, which collapses every failure to `None`, this
 helper must PRESERVE the two distinctions the collector's auth logic and canary
-depend on (design/19 §4):
+depend on:
 
 - the STATUS code, because a `403` is Life360's re-auth / ban signal and must be
-  told apart from every other non-200 (the study named the 403-loop as the ban
-  risk);
+  told apart from every other non-200 (a 403 loop is the ban risk);
 - whether the body was JSON, because an app-update challenge PAGE arrives as a
   200 (or 4xx) carrying HTML, and «the response was not JSON» is exactly the
   canary that catches a required UA/host/client-token having changed under us.
@@ -32,14 +31,11 @@ log = logging.getLogger("nora.presence.life360")
 
 # Life360 sits behind Cloudflare, which fingerprints the HTTP client and serves a
 # bot-challenge (HTML 403) to `aiohttp` — the same recipe (host, credential, UA)
-# that `aiohttp` gets 403'd on returns HTTP 200 through the stdlib `urllib`
-# (verified live 2026-08-07: aiohttp → Cloudflare HTML, urllib → access token).
+# that `aiohttp` gets 403'd on returns HTTP 200 through the stdlib `urllib`.
 # So THIS one transport uses urllib rather than the aiohttp every other outbound
 # helper here uses. It is a blocking call, run in the default executor so the
 # collector's event loop is never stalled — the collector makes a handful of
-# requests a minute, so a threadpool hop per call costs nothing. If Cloudflare
-# ever fingerprints urllib too, the robust next step is a TLS-impersonating
-# client (curl_cffi) — noted, not yet needed.
+# requests a minute, so a threadpool hop per call costs nothing.
 
 # A bounded slice of any body is kept for logging and for the canary's
 # non-JSON detection; a challenge page can be large and none of it is trusted.
@@ -122,7 +118,7 @@ def _blocking_request(
         # Parse the FULL body. `_MAX_BODY` bounds only the copy kept for the log
         # line and the canary's non-JSON detection — a real members response is
         # well over 2 KB, so parsing a truncated slice would shred it and misread
-        # it as the challenge PAGE (Kimi review 2026-08-07, the 61-day shape).
+        # it as the challenge PAGE.
         body = json.loads(raw)
     except ValueError:
         body = None

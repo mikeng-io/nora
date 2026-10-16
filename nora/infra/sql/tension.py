@@ -1,6 +1,5 @@
 """`SqlTensionStore` — tension rows: a lesson the doctrine check refused, and the
-law it pulled against (design/self-growth/40 §4-§5, L3; design/cognition-loop/
-55-self.md §4).
+law it pulled against.
 
 Append-only. **Operator-only:** `nora lessons tensions` reads it; nothing a model
 holds does (no read tool, no block, pinned by

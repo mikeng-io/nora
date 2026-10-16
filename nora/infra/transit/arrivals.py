@@ -6,9 +6,8 @@ as a returned value. `nora.infra.transit.client` does the I/O and hands the
 payloads here.
 
 WHAT THE TWO OPERATORS ACTUALLY SEND, read out of their published specifications
-(KMB API Specifications v1.05, 23 Oct 2024; MTR Bus API Specification v1.13 and
-Data Dictionary v1.19, both 1 Mar 2026) and checked against the live endpoints on
-2026-08-06.
+(KMB API Specifications v1.05; MTR Bus API Specification v1.13 and Data
+Dictionary v1.19) and checked against the live endpoints.
 
 **KMB** (`GET /v1/transport/kmb/route-eta/{route}/{service_type}`) returns one
 row per (stop, direction, arrival): `dir` `"O"`/`"I"`, `seq` the stop's position
@@ -22,8 +21,7 @@ that is an operator-authored SENTENCE.
 **MTR** (`POST .../mtr/bus/getSchedule`) sends no absolute time for a bus at all.
 It sends `departureTimeInSecond` as a *string*, relative to a `routeStatusTime`
 of `"2026/08/06 23:15"` — which is not RFC 3339, and is not even the
-`"yyyy-MM-dd HH:mm"` its own data dictionary claims. Three further traps, all
-measured:
+`"yyyy-MM-dd HH:mm"` its own data dictionary claims. Three further traps:
 
 * **`arrivalTimeInSecond` is `"108000"` at every origin stop.** Thirty hours is
   a sentinel, not an ETA; the dictionary says only "no arrival time text for
@@ -46,8 +44,8 @@ direction — neither ETA response names its stops in a way a person could use
 (KMB gives `seq: 7`, MTR gives `busStopId: "K73-D070"`), so the top of the
 route is the one quantity that is well defined without knowing where anybody
 stands, and the note says so. WITH a place named, `nora.infra.transit.places`
-resolves it to the operator's own stop ids (that module is the scope boundary
-design/14 §5.2 demanded — places only, never people) and the departures are AT
+resolves it to the operator's own stop ids (that module is the scope boundary:
+places only, never people) and the departures are AT
 that stop: KMB via the per-stop ETA endpoint, MTR by joining `busStopId`
 against the stops CSV's `STATION_ID` — where the `arrivalTimeInSecond` that is
 a `108000` sentinel at an origin is REAL at every later stop, and is the
@@ -70,7 +68,7 @@ from .places import PlaceResolution
 # and a developer machine.
 HKT = timezone(timedelta(hours=8), "HKT")
 
-# ---- the ceilings, as constants (design/14 §4) -------------------------------
+# ---- the ceilings, as constants ----------------------------------------------
 #
 # A tool result is re-sent on EVERY subsequent model call in the turn, so its
 # real cost is `tokens x calls remaining` against `total_tokens = 64000`. These
@@ -279,8 +277,8 @@ def read_mtr(
     `busStopId` — the join the resolver stands on), the stop read per
     direction is the NAMED one instead, and `_stop_seconds` picks arrival
     over departure. A resolved stop absent from the envelope contributes no
-    direction — the response only carries stops with something to report,
-    verified live at 23:58 when K73-U010 had gone quiet — and that absence
+    direction — the response only carries stops with something to report —
+    and that absence
     lands as `nothing_found` at the stop, never as an invented time.
     """
     if not isinstance(payload, dict):
@@ -451,10 +449,10 @@ def describe(
     * a known route with nothing running is `nothing_found` and the note says
       the SERVICE is not running.
 
-    The envelope is NOT wrapped `untrusted="true"` (design/14 §2.1): every field
+    The envelope is NOT wrapped `untrusted="true"`: every field
     below is a number, a boolean, an RFC 3339 instant or a destination from a
     published route table — this is closer to `listGroups` than to a web page.
-    `operator_note` is the exception the same paragraph names: it is an
+    `operator_note` is the exception: it is an
     operator-authored sentence, so it is escaped and wrapped even though its
     envelope is typed.
 
@@ -512,8 +510,8 @@ def describe(
                 ],
             }
             # Named per direction ONLY when it is ambiguous. No route number is
-            # published by both operators today (measured: 0 of 791 KMB against
-            # 26 MTR), so paying for this field on every answer would be paying
+            # published by both operators today (none is, as of
+            # the published route tables), so paying for this field on every answer would be paying
             # for a case that has never occurred.
             if len(with_service) > 1:
                 rendered["operator"] = answer.operator

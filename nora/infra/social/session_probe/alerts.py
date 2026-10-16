@@ -1,11 +1,9 @@
 """Where the probe's alerts go.
 
-There is no metric-file pattern in this repo (no node_exporter textfile
-collector anywhere under `deploy/`), and `deploy/alert-bridge` is the one
-established human channel: Alertmanager POSTs a webhook payload to
-`alert-bridge:9110/alert` and it renders a Discord message. The probe REUSES
-it rather than inventing a channel: it builds the same payload shape
-Alertmanager would and posts it to that endpoint.
+`deploy/alert-bridge` is the human channel: Alertmanager POSTs a webhook payload
+to `alert-bridge:9110/alert` and it renders a Discord message. The probe reuses
+it, building the same payload shape Alertmanager would and posting it to that
+endpoint.
 
 The bridge publishes no host port (it is on the compose `nora` network), so
 the post is made from inside its own container with `docker exec` — stdlib
