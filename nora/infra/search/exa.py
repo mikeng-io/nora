@@ -14,17 +14,16 @@ BOTH verbs — `POST /search` crawls its own index and `POST /contents` crawls t
 submitted URL from Exa's infrastructure. DEC-116's narrowing holds verbatim: the
 SSRF property was always about who CONNECTS, not who is TOLD an address.
 
-**What DOES differ from Tavily, measured rather than assumed:**
+**What DOES differ from Tavily:**
 
 *There is no relevance floor here, because Exa returns nothing to floor.* Tavily
-scores every result and `min_score` drops the junk below 0.1 (measured
-2026-08-31). Exa deprecated `score` out of `auto` search and the current
-`/search` result schema has no score field at all — only `highlightScores`, which
+scores every result and `min_score` drops the junk below 0.1. Exa's
+`/search` result schema has no score field — only `highlightScores`, which
 are per-highlight cosine similarities for a feature this adapter does not
 request. A `min_score` knob here would have no call site: a no-op, or, held
 fail-closed the way Tavily holds it, a filter that drops every single result.
-So Exa leans on its own ranking, and choosing it is choosing to give that filter
-up. This is stated in `ExaBackendConfig` too, where an operator will read it.
+So Exa leans on its own ranking. This is stated in `ExaBackendConfig` too,
+where an operator will read it.
 
 *Search returns page TEXT, not a vendor snippet.* Tavily's `/search` hands back a
 `content` snippet it selected; Exa hands back `text` — the page — bounded by the
@@ -203,15 +202,13 @@ class ExaSearchProvider:
         """Read the page no older than `fetch_max_age_hours`, and fall back to
         Exa's saved copy only when that read fails.
 
-        Without `maxAgeHours` Exa answers from its cache, however old. Measured
-        2026-09-25: colehaan.hk's store list came back `source: cached` with
-        six shops while the live page listed eight, and Nora told the group a
-        shop that exists did not. A fetch is somebody asking what a page says
-        NOW, so the cache is allowed only while it is younger than the bound.
+        Without `maxAgeHours` Exa answers from its cache, however old, so a
+        stale page can read as current. A fetch is somebody asking what a page
+        says NOW, so the cache is allowed only while it is younger than the
+        bound.
 
-        A live crawl can fail where the cache would have answered (en.wikipedia
-        errored at `maxAgeHours: 0` the same day), and Exa does not document
-        whether a positive bound falls back. So a failed fresh read retries
+        A live crawl can fail where the cache would have answered, and Exa does
+        not document whether a positive bound falls back. So a failed fresh read retries
         once with `-1` (cache only), and an answer from that retry says it is
         a saved copy, because the model must not read it as the page today.
 
@@ -347,12 +344,10 @@ class ExaSearchProvider:
     def _exa_cut(cls, text: str, max_chars: int) -> bool:
         """Did EXA truncate this, server-side, before we ever saw it?
 
-        Found by live probe 2026-09-06, and it is a defect this adapter creates
-        for itself: pushing `maxCharacters` to Exa means the page can arrive
+        Pushing `maxCharacters` to Exa means the page can arrive
         already cut, and `clamp_chars` then finds nothing to clamp and reports
         `truncated: False` — telling the model it holds the WHOLE page when it
-        holds the first 3000 characters of one. (HKO's front page came back at
-        exactly 3000 of a longer document.) Tavily cannot have this bug: it
+        holds the first 3000 characters of one. Tavily cannot have this bug: it
         returns the full `raw_content` and all the clamping is local.
 
         Reporting `truncated` for what OUR clamp did is measuring the wrong

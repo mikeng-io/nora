@@ -1,10 +1,9 @@
-"""The typed views an Instagram read is built into, and nothing else
-(design/instagram-adoption/18 §"Typed views, one renderer, and readings").
+"""The typed views an Instagram read is built into, and nothing else.
 
 A view is the ONLY thing that crosses from what the bridge said to what the
 model reads. `InstagramSocialClient` builds each one field by field from the
 bridge's JSON, with a value check per field (a handle is shape checked, a url
-must be on a measured Instagram CDN host, a count is a non-negative `int` and
+must be on an Instagram CDN host, a count is a non-negative `int` and
 never a `bool`, free text is a `str` or nothing), and `render.render` is the
 only code that turns one into the dict the model is handed. Nothing from the
 bridge is ever passed through raw, so a body that grows a field grows nothing
@@ -12,8 +11,8 @@ here until somebody writes the field AND its check.
 
 **No field can hold an identifier (R-18).** There is no `id`, `igid`, `fbid`,
 `pk` or shortcode on any view, and `tests/unit/test_instagram_views.py` reads
-every view's fields to keep it that way: the frame id that once carried the
-story owner's igid (`<pk>_<owner igid>`) has nowhere to go.
+every view's fields to keep it that way: a frame id of the form `<pk>_<owner igid>`
+has nowhere to go.
 
 Frozen, because a view is a fact about one read: a reading is added by
 building a new `ItemView` (`dataclasses.replace`), never by editing the one
@@ -67,7 +66,7 @@ class Reading:
     stranger posted, so it is untrusted, and the renderer wraps it.
 
     `coverage` is a video reading's own admission that it did not see all of
-    the clip (issue #117's sentence, «...I have not seen the rest»), split
+    the clip («...I have not seen the rest»), split
     off `text` so the renderer can clamp the description and never the
     admission: a partial read that loses its caveat reads as whole."""
 

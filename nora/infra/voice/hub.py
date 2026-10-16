@@ -1,16 +1,16 @@
 """`VoiceControllerHub` — the per-guild voice-session registry nora's
-command and application layers talk to (design/voice-channel/07 §3.1/§12).
+command and application layers talk to.
 
 One `HttpVoiceSession` per guild, cached on first join. The hub is also
 where two pieces of cross-request state live, because both are scoped to
 "what nora currently believes about the controller", not to any one call:
 
-- **boot reconciliation (§12.1)** — a nora restart loses the generation it
+- **boot reconciliation** — a nora restart loses the generation it
   minted, but the controller's connection survives it. A `/voice/join` that
   comes back 409 means "already connected"; the hub then reads
   `/voice/status` and ADOPTS the live generation when it points at the
   channel nora asked for (and only then — connected elsewhere re-raises).
-- **event bookkeeping (§3.3, B5)** — the expected `playback_id` per guild
+- **event bookkeeping** — the expected `playback_id` per guild
   (read off the cached session) and the exactly-once `event_id` dedupe the
   `/app/v1/voice/event` consumer relies on.
 """
@@ -36,11 +36,11 @@ from nora.infra.voice.http_controller import (
 log = logging.getLogger("nora.infra.voice")
 
 #: Bound on the event-id dedupe window (FIFO), PER GUILD. Controller callbacks
-#: retry from a ≤256-event outbox each (§3.3), so 1024 covers several full
+#: retry from a ≤256-event outbox each, so 1024 covers several full
 #: replays of one controller's outbox.
 #:
 #: Multiplied by the number of guilds, because the deque is process-global
-#: while the topology is now one controller per guild (2026-09-17). Event ids
+#: while the topology is one controller per guild. Event ids
 #: are `randomUUID()` per controller so they cannot collide, and sharing one
 #: deque is right — but sharing one BOUND is not: at four guilds a flat 1024
 #: is exactly one outbox, and at five a guild's ids can be evicted while its
@@ -50,7 +50,7 @@ _EVENT_ID_BOUND_PER_GUILD = 1024
 
 class VoiceControllerHub:
     def __init__(self, clients: Mapping[str, VoiceControllerClient]) -> None:
-        # ONE CLIENT PER GUILD (§12.5, multi-guild 2026-09-17). Discord's
+        # ONE CLIENT PER GUILD. Discord's
         # limit is one voice connection per bot token PER GUILD, so a guild is
         # the unit of ownership — of a CONNECTION, not of a process. One
         # sidecar serves every guild by instantiating its per-guild stack once
@@ -61,19 +61,18 @@ class VoiceControllerHub:
         self._clients = dict(clients)
         self._sessions: dict[str, HttpVoiceSession] = {}
         # WHICH CHANNEL each cached session is connected to. `HttpVoiceSession`
-        # does not carry it, and the cache is keyed by GUILD — which was safe
-        # only while exactly one channel per guild could ever be joined. Once
-        # any channel in a guild became joinable (§12.2, 2026-09-17), a cache
-        # hit stopped implying the same channel, and `join` has to compare.
+        # does not carry it, and the cache is keyed by GUILD, and any channel in
+        # a guild can be joined, so a cache hit does not imply the same
+        # channel and `join` has to compare.
         self._channels: dict[str, str] = {}
         self._seen_event_ids: deque[str] = deque()
         self._seen_event_id_set: set[str] = set()
         self._event_id_bound = _EVENT_ID_BOUND_PER_GUILD * max(len(self._clients), 1)
-        # The highest `event_seq` the consumer has successfully processed
-        # (§3.3), PER GUILD. Read against `/voice/status`'s `last_event_seq`
+        # The highest `event_seq` the consumer has successfully processed,
+        # PER GUILD. Read against `/voice/status`'s `last_event_seq`
         # on adoption: a controller AHEAD of it holds events nora never saw.
         #
-        # Per guild since 2026-09-17, and it has to be: each controller mints
+        # Per guild, and it has to be: each controller mints
         # its own sequence from 1, so a single counter would read the second
         # guild's first event as a jump backwards and the first guild's next
         # as a gap — a warning that exists to mean "events were lost while
@@ -138,7 +137,7 @@ class VoiceControllerHub:
         return session
 
     async def _adopt_existing(self, guild_id: str, channel_id: str) -> dict[str, Any]:
-        """§12.1 boot reconciliation: the join 409'd because the controller
+        """Boot reconciliation: the join 409'd because the controller
         is already connected. Adopt its generation ONLY when the live
         connection is to the very channel requested — anything else is a
         real conflict and climbs back out as one."""
@@ -156,7 +155,7 @@ class VoiceControllerHub:
         )
 
     def _warn_on_event_seq_gap(self, guild_id: str, status: dict[str, Any]) -> None:
-        """§3.3 reconciliation guard: the controller's `last_event_seq`
+        """Reconciliation guard: the controller's `last_event_seq`
         ahead of the last seq nora consumed means events were emitted
         while nora was down (or outbox deliveries were lost) — nora's
         queue/session state may be behind the controller's playback, and
@@ -289,7 +288,7 @@ class VoiceControllerHub:
         return self._last_event_seq.get(guild_id)
 
     def note_event_seq(self, guild_id: str, event_seq: int) -> None:
-        """Record a successfully processed event's `event_seq` (§3.3) —
+        """Record a successfully processed event's `event_seq` —
         the consumption-side bookmark `_warn_on_event_seq_gap` and the
         consumer's own per-event gap warning read. Monotonic: a replayed
         or out-of-order delivery never moves it backwards."""
@@ -298,24 +297,21 @@ class VoiceControllerHub:
             self._last_event_seq[guild_id] = event_seq
 
     async def adopt_boot_voice_sessions(self, voice_guild_ids: Iterable[str]) -> None:
-        """Boot-time §12.1 reconciliation for guilds with NO persisted music
-        session (design/voice-channel/07 §12.1, B-2 2026-09-16 audit).
+        """Boot-time reconciliation for guilds with NO persisted music session.
 
         `resume_persisted_sessions` (music_commands.py) only calls
         `hub.join` for a guild that has a persisted MUSIC row — a
         wake-only/speech-only guild never calls it at all, so the
-        controller's boot-joined connection (its own durable desired-state,
-        §12.1) sits un-adopted in this process: `stream_speech` then
+        controller's boot-joined connection (its own durable desired-state)
+        sits un-adopted in this process: `stream_speech` then
         silently returns `False` for every wake reply until a human
         happens to run `/discord join` or `/music play`.
 
-        **The CONTROLLER says which channel, not config** (§12.2, reversed
-        2026-09-17). Config names guilds now, and a guild does not name a
-        channel — but it never had to: the controller owns `desired_state`
-        and is the only thing that knows where it actually reconnected. Asking
-        it is also strictly more correct than the config read this replaces,
-        which would have re-joined the CONFIGURED channel even when the
-        controller had come back up somewhere else.
+        **The CONTROLLER says which channel, not config.** Config names guilds, not
+        channels: the controller owns `desired_state` and is the only thing that
+        knows where it actually reconnected. A config read would re-join the
+        CONFIGURED channel even when the controller had come back up somewhere
+        else.
 
         A guild whose controller reports anything but `connected` is skipped,
         not joined: boot adoption exists to pick up a connection that already
@@ -345,8 +341,8 @@ class VoiceControllerHub:
                     continue
                 await self.join(guild_id, channel_id)
             except VoiceControllerNoConnection:
-                # The controller holds no connection for this guild, which
-                # since one process serves several (2026-09-17) is the ordinary
+                # The controller holds no connection for this guild, which,
+                # since one process serves several, is the ordinary
                 # COLD-BOOT state, not a fault: there is nothing to adopt.
                 #
                 # INFO for exactly the reason the rest of this file logs
@@ -365,7 +361,7 @@ class VoiceControllerHub:
 
     def consume_event_id(self, event_id: str) -> bool:
         """The COMMIT half of the exactly-once dedupe for controller
-        callbacks (§3.3, B5/B7): called only AFTER an event's transition
+        callbacks: called only AFTER an event's transition
         succeeded — a failure leaves the id unconsumed so the controller's
         retry is processed, never acknowledged as a duplicate. `True` the
         first time an `event_id` is committed, `False` on any replay within

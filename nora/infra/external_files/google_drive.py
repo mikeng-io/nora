@@ -1,5 +1,4 @@
-"""`GoogleDriveSource`: the first `ExternalFilesSource`, Google Drive read-only
-(design/external-files/00-design.md §4, build step S2).
+"""`GoogleDriveSource`: the first `ExternalFilesSource`, Google Drive read-only.
 
 Nora's own account (`nora@67.zone`), through her ONE Google identity
 (`nora.infra.google.auth.GoogleCredentials`, shared by every Google service
@@ -23,14 +22,14 @@ this module and nowhere above it; the port speaks `ExternalFile`/`FilePart`.
 Every body is turned into text by `parse.parse_isolated`: a killable child
 under a deadline, never on the event loop.
 
-`trashed` is the one field beyond the design's list: Drive answers a file in
+`trashed` is requested because Drive answers a file in
 the bin with its metadata, and that is the only "deleted" this account can
 tell apart from "not shared" (both of those are a bare 404, below).
 `supportsAllDrives=true` rides on every Drive call so a shared-drive file
 resolves; the Sheets API has no such parameter. A ref's resource key goes in
 `X-Goog-Drive-Resource-Keys` on every call.
 
-**Never cached (operator, 2026-10-10).** Every `describe`, `read` and
+**Never cached.** Every `describe`, `read` and
 `fetch_bytes` fetches afresh: `read` does its own `files.get` for the kind
 rather than trusting an earlier `describe`. The access token is the shared
 credentials' (in memory until its own expiry, a credential, not anything
@@ -148,8 +147,7 @@ _NO_DOWNLOAD_REASONS = frozenset({"cannotDownloadFile", "cannotExportFile", "can
 _TOO_LARGE_REASONS = frozenset({"exportSizeLimitExceeded"})
 #: An API this project has not enabled. The Sheets API answers it as a 403
 #: `PERMISSION_DENIED` whose detail says `SERVICE_DISABLED`; Drive says
-#: `accessNotConfigured`. Either is the operator's to fix, never "not shared"
-#: (review of PR 801).
+#: `accessNotConfigured`. Either is the operator's to fix, never "not shared".
 _DISABLED_REASONS = frozenset({"SERVICE_DISABLED", "accessNotConfigured"})
 
 
@@ -164,7 +162,7 @@ _FILE_ID_PATH = re.compile(r"(/drive/v3/files/|/v4/spreadsheets/)[^/?\s\"']+")
 class _RedactFileIds(logging.Filter):
     """Replaces the file id in every Drive or Sheets URL `httpx` logs with
     `<file>`: method, host, verb and status stay, the id never reaches the
-    log (design/external-files §5, review of PR 807). On the LOGGER, so every
+    log. On the LOGGER, so every
     handler and pytest's capture see the redacted record."""
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -187,7 +185,7 @@ def _redact_file_ids_in_http_logs() -> None:
 
 
 def kind_of(mime: str) -> FileKind:
-    """The one vocabulary every adapter maps onto (§2)."""
+    """The one vocabulary every adapter maps onto."""
     if mime in _NATIVE:
         return _NATIVE[mime][0]
     if mime in _BLOBS:
@@ -410,7 +408,7 @@ class GoogleDriveSource:
 
     async def _sheet(self, ref: ExternalFileRef) -> str:
         """Every tab, in order, each as its name and a table. A CSV export
-        would return the first tab only (§4)."""
+        would return the first tab only."""
         base = f"{SHEETS_URL}/{quote(ref.file_id, safe='')}"
         try:
             book = self._json(await self._get(
@@ -422,7 +420,7 @@ class GoogleDriveSource:
             # `files.get` (Drive) just answered for this file, so a 403/404
             # here is the Sheets API not honouring what Drive did: a link's
             # resource key reaches Drive only. Read the Drive export instead,
-            # the same workbook as xlsx (review of PR 801).
+            # the same workbook as xlsx.
             log.info("external file %s: the Sheets API refused; reading the export", ref.handle)
             return await self._parse("xlsx", await self._export(ref, _XLSX))
         titles = [

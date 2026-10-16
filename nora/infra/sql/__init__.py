@@ -27,7 +27,7 @@ from nora.infra.sql.migrations_runner import (
 from nora.infra.sql.schema import MESSAGES, METADATA
 
 # `stamp_head` has no in-repo caller: it exists for the operator to run once, by
-# hand, against an already-correct database at cutover (design/20 §5). Kept on
+# hand, against an already-correct database at cutover. Kept on
 # the public surface deliberately rather than dropped, so an operator doing that
 # finds it here instead of reaching into the submodule.
 __all__ = [

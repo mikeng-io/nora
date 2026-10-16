@@ -35,8 +35,8 @@ RESOURCE_URL = "https://resource.data.one.gov.hk/td/carpark/"
 
 TIMEOUT_SECONDS = 5.0
 
-# How many normalised characters a fallback match needs before it may bind
-# (audit 2026-08-31): a 1-char query like 's' would substring-match a dozen
+# How many normalised characters a fallback match needs before it may bind:
+# a 1-char query like 's' would substring-match a dozen
 # parking names and attach the wrong vacancy. A real venue name is at least
 # ~4 ASCII chars («park», «central») or 2 CJK chars («大埔»), which this
 # scale expresses: each CJK char counts double.
@@ -95,7 +95,7 @@ class ParkingClient:
                 timeout=self._timeout, raise_for_status=True,
             ) as session, session.get(vacancy_url) as resp:
                 # utf-8-sig: the vacancy bodies carry a BOM too (same feed
-                # convention as the index CSV) — measured 2026-08-31.
+                # convention as the index CSV).
                 body = await resp.json(encoding="utf-8-sig")
         except Exception:
             log.exception("parking vacancy fetch failed")
@@ -139,7 +139,7 @@ class ParkingClient:
             # key, and `parking_status` spreads this dict under its own
             # `{"status": "ok", **data}` — a feed value written into `status`
             # would overwrite the contract's `ok` and fail the output-contract
-            # validator (Kimi audit 2026-08-31, blocker). The opening status
+            # validator. The opening status
             # rides its own key; the model reads it as a bonus field.
             out["opening_status"] = opening_status
         if address:
@@ -156,7 +156,7 @@ class ParkingClient:
         ) as session, session.get(self._index_url) as resp:
             # utf-8-sig strips the CSV's BOM — otherwise the first header
             # is "\ufeffParking ID" and `row.get("Parking ID")` misses
-            # every row, leaving the index empty (measured 2026-08-31).
+            # every row, leaving the index empty.
             text = await resp.text(encoding="utf-8-sig")
         index: dict[str, tuple[str, str, str, str, str]] = {}
         for row in csv.DictReader(io.StringIO(text)):
@@ -189,18 +189,17 @@ class ParkingClient:
         if strict:
             return None
         # A too-short or empty query must not fall back: 's' would substring-
-        # match a dozen parking names and attach the WRONG vacancy (audit
-        # probe 2026-08-31 — 's' → Stanley Plaza at HEAD). CJK chars count
-        # double, so «大埔» passes while 's' does not.
+        # match a dozen parking names and attach the WRONG vacancy ('s' →
+        # Stanley Plaza). CJK chars count double, so «大埔» passes while 's' does not.
         if _weighted_len(key) < _MIN_MATCH_LEN:
             return None
         # Distinctive-substring fallback: a venue name usually CONTAINS the
         # car park's name («太古廣場» → «Pacific Place»/「太古廣場」) or vice
-        # versa. Two guardrails (audit 2026-08-31): a MINIMUM matched length
+        # versa. Two guardrails: a MINIMUM matched length
         # so a 1-char query ('s') cannot bind Stanley Plaza, and a
         # DETERMINISTIC win — the SHORTEST containing name wins equal-length
-        # scores, because longest-match-with-dict-order picked an arbitrary
-        # sibling ('Central' → Park Central over Central Government Offices).
+        # scores, since dict order would pick an arbitrary sibling ('Central'
+        # → Park Central over Central Government Offices).
         best: tuple[int, int, tuple[str, str, str, str, str]] | None = None
         for k, rec in index.items():
             if not k or len(k) < _MIN_MATCH_LEN:
@@ -237,7 +236,7 @@ def _vacancy_of(body: Any) -> int | None:
                     if sc.get("category") == "HOURLY":
                         v = sc.get("vacancy")
                         # Negative / zero sentinel must not render as an
-                        # impossible count (audit nit 2026-08-31).
+                        # impossible count.
                         if isinstance(v, int) and v >= 0:
                             return v
     except (AttributeError, TypeError):

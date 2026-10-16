@@ -1,6 +1,5 @@
-"""`MobilityStore` over SQLAlchemy Core — the presence Rollup's read/write seam
-(design/cognition-loop/25-rollup.md §2; design/proposed/27-presence-analytics.md
-§2, §4). A SECOND store in the SAME `nora` database as `PresenceStore`.
+"""`MobilityStore` over SQLAlchemy Core — the presence Rollup's read/write seam.
+A SECOND store in the SAME `nora` database as `PresenceStore`.
 
 **Builds.** Every presence Rollup row carries the build that computed it
 (`build_id`, migration 0071). An instance is either BOUND to one build
@@ -201,16 +200,12 @@ class SqlMobilityStore:
         """Read derived places and their stay aggregates for one subject.
 
         Aggregates follow `presence_stays.place_id` — the link the rollup
-        wrote — not a second containment test. The old read re-derived
-        membership as «any stay within `radius_m` of the stored point» over
-        the newest 5,000 stays, which disagreed with the rollup's own links
-        (a stay near two places counted at both; a place whose row had moved
-        counted stays it never linked) and silently truncated history (audit
-        2026-09-27). SELECT-only; the web consumer never re-runs derivation.
+        wrote — not a second containment test, which would count a stay near
+        two places at both and a stay at a place whose row had moved.
+        SELECT-only; the web consumer never re-runs derivation.
         """
-        # The cap keeps the most RECENTLY seen places: before DEC-190 a
-        # subject held at most two rows and the cap was unreachable; places
-        # are unbounded now, and an id-ascending cut would drop the newest.
+        # The cap keeps the most RECENTLY seen places: places are unbounded
+        # per subject (DEC-190), and an id-ascending cut would drop the newest.
         build = await self._read_build()
         places_stmt = (
             sa.select(PRESENCE_DERIVED_PLACES)
@@ -273,12 +268,10 @@ class SqlMobilityStore:
         """Stays inside a trailing window, dwell SPLIT across the local
         hours-of-week each one covers.
 
-        It used to credit a stay's WHOLE dwell to the hour it started in, so a
-        10-hour overnight stay beginning Monday 22:00 put all ten hours on
-        «Monday 22:00» and none on the small hours — the heatmap showed
-        people as absent exactly when they were most reliably somewhere
-        (audit 2026-09-27). `hour_of_week_bins` is the same split Tier 3's
-        occupancy uses, clipped to the window; `stay_count` counts the stays
+        Crediting a stay's WHOLE dwell to the hour it started in would put a
+        10-hour overnight stay beginning Monday 22:00 all on «Monday 22:00»
+        and none on the small hours. `hour_of_week_bins` is the same split
+        Tier 3's occupancy uses, clipped to the window; `stay_count` counts the stays
         that touch a bin."""
         window_ms = min(max(window_ms, 0), _MAX_ANALYTICS_WINDOW_MS)
         if window_ms == 0:
@@ -324,7 +317,7 @@ class SqlMobilityStore:
         """Read bounded stays for ONE subject inside a trailing window, with
         the derived place's `kind`/`label` when the substrate linked one.
 
-        The `day` consumer's read (the presence-analytics P1 spec §3, DEC-155):
+        The `day` consumer's read (DEC-155):
         the same shape as `rhythm_bins` — one SELECT, clamped, `window_ms=0`
         answers empty — plus a LEFT JOIN onto `presence_derived_places` so a
         stay carries the KIND/LABEL of the place the substrate filed it under.
@@ -373,7 +366,7 @@ class SqlMobilityStore:
                 "place_kind": row.place_kind,
                 "place_label": row.place_label,
                 # Whether the label is a household name (Life360 saved) or
-                # only the geocoded street of the spot (design/27 §4.3).
+                # only the geocoded street of the spot.
                 "place_saved": row.place_saved_id is not None,
             }
             for row in rows
@@ -503,8 +496,8 @@ class SqlMobilityStore:
 
     async def place_by_id(self, *, place_id: int) -> DerivedPlace | None:
         """One derived place by id, whoever's and whichever build's it is:
-        `route` resolves a place a presence read named this turn through it
-        (design/27 §4.4 M3), and the CALLER decides, by the place's
+        `route` resolves a place a presence read named this turn through it,
+        and the CALLER decides, by the place's
         `subject_id`, whether this room may be told it. Not build-scoped on
         purpose: ids are unique across builds, and a place named by a read
         just before a switch still resolves to the row it named."""
@@ -517,7 +510,7 @@ class SqlMobilityStore:
 
     async def tagged_places(self) -> list[TaggedPlace]:
         """Every Life360 saved place, EVERY circle — duplicate tags merge
-        across circles (design/27 §3.7), so the read cannot be circle-scoped."""
+        across circles, so the read cannot be circle-scoped."""
         stmt = sa.select(PRESENCE_PLACES).order_by(
             PRESENCE_PLACES.c.circle_id, PRESENCE_PLACES.c.place_id,
         )
@@ -800,11 +793,10 @@ class SqlMobilityStore:
         self, *, subject_id: str, links: dict[int, int | None],
     ) -> None:
         """Set each stay's `place_id` (keyed by `started_ts`) to EXACTLY the
-        given value, overwriting what is there. This replaces the fill-NULL-
-        only `set_place_ids`, whose additivity is what let 88 stays stay
-        linked to rows that had moved 3.8-12.1 km away (issue #339): a link
-        must follow the place picture the reconcile computed, not whichever
-        writer got there first."""
+        given value, overwriting what is there. It is not fill-NULL-only: an
+        additive write would leave stays linked to rows that had moved away, and
+        a link must follow the place picture the reconcile computed, not
+        whichever writer got there first."""
         if not links:
             return
         build = self._bound()

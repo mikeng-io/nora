@@ -56,17 +56,16 @@ class SqlMediaObjectStore:
         )
         stmt = insert.on_conflict_do_update(
             index_elements=[MEDIA_OBJECTS.c.sha256],
-            # STILL first-source-wins for a real row — the `where` is what
-            # keeps that true. It repairs exactly one thing: the SHELL
+            # First-source-wins for a real row — the `where` is what keeps
+            # that true. It repairs exactly one thing: the SHELL
             # `comprehend` inserts when the spawned read beats the inline
             # custody write (`media_type=''`, `size=0`, `created_at_ms=0`,
-            # empty provenance). Under a plain `on_conflict_do_nothing` custody
-            # then had nothing to update and the row stayed a shell forever —
-            # no media type for `media_fetch`'s modality gate, no size, no
-            # birth record, and `search`'s `created_at_ms DESC` ordering putting
-            # it last for all time. The comprehension FIELDS are untouched
-            # here: a read that already landed is never rolled back by the
-            # custody write catching up.
+            # empty provenance). Without it custody would have nothing to
+            # update and the row would stay a shell — no media type for
+            # `media_fetch`'s modality gate, no size, no birth record, and
+            # last in `search`'s `created_at_ms DESC` ordering. The
+            # comprehension FIELDS are untouched here: a read that already
+            # landed is never rolled back by the custody write catching up.
             set_={
                 "media_type": insert.excluded.media_type,
                 "size": insert.excluded.size,
@@ -74,7 +73,7 @@ class SqlMediaObjectStore:
                 # MERGED, not replaced: on the race path the shell already
                 # carries the READ's chunk record, and overwriting it with the
                 # birth record would throw away the "recorded" half of DEC-161
-                # exactly when the read finished first. Birth keys win a
+                # when the read finished first. Birth keys win a
                 # collision; the read's keys survive beside them.
                 "provenance": MEDIA_OBJECTS.c.provenance.op("||")(
                     insert.excluded.provenance
@@ -105,7 +104,7 @@ class SqlMediaObjectStore:
 
         An UPSERT rather than an UPDATE, because the two writers race by
         design: custody writes the index entry inline and the comprehension job
-        is SPAWNED (issue #116), so a fast model on a slow disk can arrive
+        is SPAWNED, so a fast model on a slow disk can arrive
         first. `source` is `'inbound'` on the insert arm for the same reason
         `SqlMediaDescriptionStore.remember` uses it — a comprehension only ever
         runs on bytes that arrived — and on the conflict arm `source` and
@@ -113,7 +112,7 @@ class SqlMediaObjectStore:
         whoever first held the bytes and is never overwritten (DEC-138).
 
         `provenance` MERGES (`jsonb ||`) rather than replacing. What a READ
-        leaves behind — a video's chunk record (issue #117): the clip's length,
+        leaves behind — a video's chunk record: the clip's length,
         how much of it reached a model, whether the chunk ceiling is why the
         rest did not — is a fact about the READING, not about the birth, and a
         generated image's prompt/provider/aspect_ratio has to survive beside
@@ -135,16 +134,15 @@ class SqlMediaObjectStore:
         # reach this: the comprehension job, which fills all three, and the
         # custody stage's inline voice-note write, which fills `content` alone
         # and sends `title=""`/`description=""`/`model=""`. Unconditional SETs
-        # meant a RESENT voice note wiped the title and describe_model the job
-        # had written — self-healing only because `_already_read` re-runs the
-        # text pass, at one extra model call per resend, and NOT self-healing
-        # at all with `comprehension = false` or no text model.
+        # would let a RESENT voice note wipe the title and describe_model the
+        # job had written — healed only by `_already_read` re-running the text
+        # pass at one extra model call per resend, and not at all with
+        # `comprehension = false` or no text model.
         #
-        # The same `coalesce(nullif(...))` shape `SqlMediaDescriptionStore
-        # .remember` already uses, and with the same consequence stated: a
-        # re-read cannot CLEAR a field by answering empty. That is the right
-        # trade — a describer answering nothing is a failure, and the caller
-        # refuses an all-empty result before it ever reaches this method.
+        # The same `coalesce(nullif(...))` shape as `SqlMediaDescriptionStore
+        # .remember`: a re-read cannot CLEAR a field by answering empty. That
+        # is the right trade — a describer answering nothing is a failure, and
+        # the caller refuses an all-empty result before it reaches this method.
         def _keep(
             column: sa.ColumnElement[Any], incoming: sa.ColumnElement[Any],
         ) -> sa.ColumnElement[Any]:
@@ -158,15 +156,13 @@ class SqlMediaObjectStore:
                     MEDIA_OBJECTS.c.description, insert.excluded.description),
                 "content": _keep(MEDIA_OBJECTS.c.content, insert.excluded.content),
                 # Keyed on the MODEL ITSELF, which is the only thing that
-                # actually discriminates the two writers. It was keyed on the
-                # description, and on the SHIPPED config —
-                # `comprehension_text_model = ""` — a video read writes
-                # `description=""` beside a full timecoded `content`, so the
-                # conflict arm never recorded the video model that did the
-                # read: `describe_model` was NULL for every clip, in the one
-                # column an operator reads to find out which describer produced
-                # what. Widening it to "any of the three" then broke the other
-                # direction, because custody's inline voice-note write always
+                # discriminates the two writers. Keying on the description
+                # fails when `comprehension_text_model = ""`: a video read
+                # writes `description=""` beside a full timecoded `content`,
+                # so `describe_model` would stay NULL for every clip, in the
+                # one column an operator reads to find which describer
+                # produced what. Keying on "any of the three" fails the other
+                # way, because custody's inline voice-note write always
                 # carries `content`.
                 #
                 # A writer that names no model is not claiming to have written
@@ -185,7 +181,7 @@ class SqlMediaObjectStore:
             async with self._engine.begin() as conn:
                 await conn.execute(stmt)
                 # A reading landing after its message: every attachment of
-                # these bytes takes it (design/unified-memory/25 §7). A failure
+                # these bytes takes it. A failure
                 # is queued, never the read lost.
                 await memory_index.reproject_media(conn, sha256, metrics=self._metrics)
             return True
@@ -222,17 +218,14 @@ class SqlMediaObjectStore:
         if words:
             # EVERY word must match (AND across words), each against the
             # description column OR provenance::text (which carries
-            # prompt/title for generated objects). This was `sa.or_` across
-            # words until 2026-09-07 — "birthday card miles" returned every
-            # birthday card — and nothing noticed because the port had no
-            # contract suite and each test file's fake invented its own
-            # search; `tests/contract/test_media_object_store_contract.py`
-            # is what turned it red.
+            # prompt/title for generated objects). `sa.or_` across words would
+            # make "birthday card miles" return every birthday card;
+            # `tests/contract/test_media_object_store_contract.py` pins the AND.
             conditions.append(
                 sa.and_(
                     *[
                         sa.or_(
-                            # All three comprehension fields (issue #116), not
+                            # All three comprehension fields, not
                             # description alone: one model pass writes the
                             # title and the legible content too, and an index
                             # that could not find «the whiteboard that said
@@ -243,8 +236,7 @@ class SqlMediaObjectStore:
                             MEDIA_OBJECTS.c.content.ilike(f"%{w}%"),
                             MEDIA_OBJECTS.c.description.ilike(f"%{w}%"),
                             # provenance::text — cast, not `.astext` (which
-                            # raises on SQLAlchemy 2.x JSONB columns; found
-                            # live 2026-08-26 on the first container smoke).
+                            # raises on SQLAlchemy 2.x JSONB columns).
                             sa.cast(
                                 MEDIA_OBJECTS.c.provenance, sa.Text
                             ).ilike(f"%{w}%"),
@@ -368,11 +360,10 @@ def _row_to_object(row: sa.Row[tuple[Any, ...]]) -> MediaObject:
         created_at_ms=row.created_at_ms,
         # The COLUMN, and nothing else. A read here must round-trip what a
         # write put in — a fallback onto `provenance["title"]` would make
-        # `get(save(obj)) != obj` for every generated object, which the
-        # contract suite is what caught. Generated rows written before
-        # migration 0052 carry their title only in provenance; `media_search`
-        # is the one reader that cares and it already falls back to the
-        # description, and `generate_image` fills the column now.
+        # `get(save(obj)) != obj` for every generated object. Generated rows
+        # written before migration 0052 carry their title only in provenance;
+        # `media_search` is the one reader that cares and it falls back to the
+        # description, and `generate_image` fills the column.
         title=row.title,
         content=row.content,
     )

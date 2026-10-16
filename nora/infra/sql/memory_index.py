@@ -1,13 +1,11 @@
-"""The memory index's one writer: `project`, `reproject_media`, `drop`
-(design/unified-memory/60-build-step-3.md §2, 25-memory-graph.md §7).
+"""The memory index's one writer: `project`, `reproject_media`, `drop`.
 
 Each store method that writes an indexed table calls one of these INSIDE its
 own `engine.begin()` block, on the same connection, beside the write it
 projects: Nora has no shared unit of work, so the store's transaction is the
-one place the source row and its node can change together (25 §7, amended
-2026-10-15). `tests/architecture/test_every_indexed_kind_is_projected.py`
-holds every write to an `INDEXED_WRITES` table to that, and holds the
-`memory_*` tables to this module.
+one place the source row and its node can change together.
+`tests/architecture/test_every_indexed_kind_is_projected.py` holds every
+write to an `INDEXED_WRITES` table to that, and holds the `memory_*` tables to this module.
 
 `project(conn, kind, source_id)` re-reads the source row on the caller's
 connection and upserts its node and its column edges, or drops them when the
@@ -15,12 +13,12 @@ row is hidden or gone, so one call serves an insert, an edit, a hide and an
 attribution alike. Every call runs in a SAVEPOINT: a projection that fails
 rolls back only itself, puts the source on `memory_projection_queue` and is
 counted `nora_memory_projection_total{outcome="queued"}`. It never undoes the
-store's own write (60 §2): a message the index missed is a search miss until
+store's own write: a message the index missed is a search miss until
 the next pass; a message lost because its index row failed is a lost message.
 
-S1 projects messages and their attachments; S2 the Notebook (notes, memos,
+It projects messages and their attachments, the Notebook (notes, memos,
 lessons, events, culture and Character accounts) and the entity hubs they
-point at. Nothing reads the index yet (S5), so it is written dark.
+point at. `nora.infra.sql.memory_read` reads the index.
 
 **What a node's text holds** (R-18, R-28): a message's body, and an
 attachment's reading. Never a sender id, a sender name, a raw envelope or a
@@ -34,23 +32,22 @@ are message bodies.
 **What a Notebook node is.** One node per entry, keyed by the entry's own id
 (a culture key for a culture or Character account), holding its CURRENT
 head: re-projected on every revision, so a search never matches a body the
-entry no longer says. Retired and superseded entries keep their node, marked
-(25 §7). An entry's scope is the scope its own store reads it by: a note,
+entry no longer says. Retired and superseded entries keep their node, marked. An
+entry's scope is the scope its own store reads it by: a note,
 memo, lesson or event its unit; a room's culture its room; a person's
 account its unit AND that person, so it is readable only where a room lists
-them (35 §3). A pre-C2b ROOM-keyed person account is never indexed
-(60 §0.8): it was written from one room's messages, and a unit scope would
+them. A pre-C2b ROOM-keyed person account is never indexed:
+it was written from one room's messages, and a unit scope would
 show it in every room of the unit.
 
-**`cites` comes only from a stored citations column** (25 §1): memos,
+**`cites` comes only from a stored citations column**: memos,
 lessons and Character revisions. A message id becomes an edge to its
 message node; a `rollup(outing|stay|trip|...)` key an edge to that episode's
-key, as cited (S3). A key of a kind with no node (a co-location, daybook,
+key, as cited. A key of a kind with no node (a co-location, daybook,
 tie or response) and a `response:<n>` episode are skipped. Notes and events store no
-citations (a note's sit in its body's brackets until step 4; an event's were
-never stored after `citation` was dropped in 0093), so they have none.
+citations (a note's sit in its body's brackets), so they have none.
 
-**What a Rollup episode is** (S3). An outing, a stay or a trip of the
+**What a Rollup episode is.** An outing, a stay or a trip of the
 CURRENT build, keyed by its citation `(subject, interval)`
 (`nora.domain.rollup.episode_key`), never by its row id: a rebuild that
 recomputes the same happening keeps the key, so a memo's `cites` edge reaches
@@ -65,15 +62,15 @@ saved place's name, whose existence is itself secret (R-35), or a geocoder's
 street, which is an address; never a coordinate (R-28); never a person, who
 is an `about` edge. Its scope is the narrowest its rows support: an outing is
 its unit AND every person in it (readable only in a room of the unit that
-lists them all, 35 §3); a stay or trip, which carries no unit and no room, is
+lists them all); a stay or trip, which carries no unit and no room, is
 its person alone. Both copy the row's presence lineage, which a reader must
-pass as `rollup_read.visible_rows` does (R-31, DEC-222, 60 §0.3): the scope
+pass as `rollup_read.visible_rows` does (R-31, DEC-222): the scope
 alone never discloses a place.
 
 A snapshot restore copies none of the four tables (`NOT_RESTORED`): the
-restored index is empty and reads `never` until a rebuild (60 §0.5, S4).
+restored index is empty and reads `never` until a rebuild.
 
-**The vector** (design/unified-memory/65-build-step-3-vectors.md V1). The node
+**The vector.** The node
 is its own embedding queue: an upsert that changes what a node is embedded
 from clears its vector and the worker's bookkeeping with it, and one that
 does not keeps them, so a re-projection of an unchanged row costs no model
@@ -85,15 +82,15 @@ embedded from its reading does. The worker's reads and writes are `embed_pick`,
 `embed_store` and `embed_failed` here, the only module that writes the
 index; `nora.infra.sql.memory_embed` drives them.
 
-**What a delete removes** (S4): a node and the edges its own projection
+**What a delete removes**: a node and the edges its own projection
 writes, never an edge another node's projection owns. The edges into a
 hidden message from the memos that cite it stay, dangling, exactly as a
 rebuild writes them, so a live delete and a rebuild agree; a hop joins
 `memory_node`, so a dangling edge drops itself at the read.
 
-**`rebuild`** (S4) walks every source through `project` and
+**`rebuild`** walks every source through `project` and
 `reproject_episodes`, the functions live writes call, so a rebuild equals
-live projection by construction; `index_status` is what a reader (S5) needs
+live projection by construction; `index_status` is what a reader needs
 to tell `ok` from `partial`.
 """
 
@@ -235,11 +232,11 @@ async def _guarded(
     conn: AsyncConnection, kind: str, source_ids: list[str],
     work: Callable[[], Awaitable[None]], metrics: Any,
 ) -> None:
-    """The savepoint every projection runs in (60 §2). `begin_nested` rolls
+    """The savepoint every projection runs in. `begin_nested` rolls
     back the projection alone; the caller's transaction, and the store write
     in it, carry on. A projection that lands clears any queue row its source
     left behind, in the same savepoint, so the queue holds only what is still
-    unprojected (its length is the index's health, 25 §7)."""
+    unprojected (its length is the index's health)."""
     outcome: ProjectionOutcome = "ok"
     try:
         async with conn.begin_nested():
@@ -309,7 +306,7 @@ def _attachment_id(message_id: str, sha256: str) -> str:
 
 def _reading(title: str, description: str, content: str) -> str:
     """The text an attachment is found by: the three comprehension fields
-    `media_objects` holds (25 §7), in the order a reader would want them."""
+    `media_objects` holds, in the order a reader would want them."""
     return "\n".join(part for part in (title, description, content) if part)
 
 
@@ -340,7 +337,7 @@ async def _project_message(conn: AsyncConnection, source_id: str) -> None:
         return
     room = room_key(row.platform, row.conversation_id)
     text = (row.edit_body if row.edit_id is not None else row.body) or ""
-    # Her own words are authored by Nora (25 §2); a human row by the person
+    # Her own words are authored by Nora; a human row by the person
     # the roster resolved, once it has (`set_person_id` re-projects).
     author: tuple[str, str, str] | None = None
     if row.is_nora:
@@ -449,7 +446,7 @@ async def media_types(
 
 # --- the Notebook ------------------------------------------------------------
 
-#: The Rollup kinds that are episodes with nodes of their own (25 §7).
+#: The Rollup kinds that are episodes with nodes of their own.
 _EPISODES = ("outing", "stay", "trip")
 #: A cited Rollup key as a citations column stores it (`nora.domain.memo`).
 _ROLLUP_CITATION = re.compile(r"rollup\((?P<kind>[a-z]+)\|(?P<key>[^()]+)\)")
@@ -546,7 +543,7 @@ async def _project_note(conn: AsyncConnection, source_id: str) -> None:
     )
     # `anchor_entity_ids` is the writer's free text, «named the way this group
     # names them», never a resolved `person_id`: an `about` edge from it would
-    # name a person hub by a guess. It waits for identity resolution (60 §0.6).
+    # name a person hub by a guess. It waits for identity resolution.
     edges: list[Edge] = []
     room = await _room_of(conn, row.established_in)
     if room is not None:
@@ -668,8 +665,8 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
 
 
 async def _is_a_unit(conn: AsyncConnection, owner: str) -> bool:
-    """Whether the database PROVES `owner` is a unit, without `policy.toml`
-    (60 §0.1): the unit's own account or Nora's in it exists, or a
+    """Whether the database PROVES `owner` is a unit, without `policy.toml`:
+    the unit's own account or Nora's in it exists, or a
     unit-keyed Notebook row names it. The proof is positive because the
     negative one cannot be had: a pre-C2b account's room may have no message
     left (retention) and no culture of its own, and "not seen as a room" then
@@ -691,7 +688,7 @@ async def _project_character(conn: AsyncConnection, source_id: str) -> None:
     form, owner, person = split_culture_key(source_id)
     if form == "character" and not (owner and await _is_a_unit(conn, owner)):
         # Indexed only when its owner is provably a unit: a pre-C2b account
-        # keyed by a ROOM (60 §0.8, `character_key`) is never indexed, and
+        # keyed by a ROOM (`character_key`) is never indexed, and
         # dropped if it ever was.
         await _drop(conn, "character", [source_id])
         return
@@ -719,7 +716,7 @@ async def _project_character(conn: AsyncConnection, source_id: str) -> None:
     elif form == "nora":
         about = ("nora", "nora")
     else:
-        # Readable only where a room lists the person (35 §3).
+        # Readable only where a room lists the person.
         persons = [str(person)]
         about = ("person", str(person))
     await _upsert_node(
@@ -754,7 +751,7 @@ async def project_episodes(
     """`apply` and `commit_fold`: project the episodes of `kind` at `keys`
     (`episode_key`) when `build_id` is the current build, and drop a key the
     build no longer holds (the delete half of a diff, or an open outing that
-    grew a new end). A build still `building` gets no nodes (60 §0.4).
+    grew a new end). A build still `building` gets no nodes.
 
     The build's row is read FOR SHARE: `switch_build` updates it, so a
     projection of the build being switched out lands before the switch drops
@@ -957,7 +954,7 @@ async def _write_episodes(conn: AsyncConnection, build: int, found: list[_Episod
 
 async def _during(conn: AsyncConnection, build: int, e: _Episode) -> list[Edge]:
     """`during` edges from the messages the outing's people wrote in the
-    unit's rooms inside its interval (25 §2). The unit's rooms are the policy's
+    unit's rooms inside its interval. The unit's rooms are the policy's
     (`nora.infra` cannot read it); the build's daybooks name every room of the
     unit each person wrote in on a day, so the rooms are read from those.
 
@@ -1109,7 +1106,7 @@ def _input_changed(text: Any, sha256: Any) -> Any:
 
 def _cleared_when(changed: sa.ColumnElement[bool]) -> dict[str, Any]:
     """SET values that clear the vector and the worker's bookkeeping where
-    `changed` holds and keep them where it does not (65 §1.1): a node whose
+    `changed` holds and keep them where it does not: a node whose
     embedded input changed is unembedded again, and the worker finds it
     through `idx_memory_node_unembedded`."""
     node = MEMORY_NODE.c
@@ -1165,7 +1162,7 @@ async def _hub(
 ) -> None:
     """An entity node, written the first time an edge needs it: a bare
     endpoint with no text, so it names nobody (a person's name is identity's,
-    which a pure projector cannot read, 60 §0.6)."""
+    which a pure projector cannot read)."""
     await _held_hub(conn, kind, source_id, (
         pg_insert(MEMORY_NODE)
         .values(kind=kind, source_id=source_id, origin_room=origin_room, state="live")
@@ -1337,7 +1334,7 @@ class RebuildRefusedError(RuntimeError):
 
 
 class IndexStatus(NamedTuple):
-    """What a reader needs to tell `ok` from `partial` (25 §4, S5)."""
+    """What a reader needs to tell `ok` from `partial`."""
 
     #: `never` (no rebuild has run on this database, or a restore emptied
     #: it), `building` (one is running, or died part-way), `complete`.
@@ -1462,9 +1459,8 @@ async def rebuild(
     engine: AsyncEngine, *, dry_run: bool = False, batch: int = REBUILD_BATCH,
     metrics: Any = None,
 ) -> RebuildReport:
-    """`nora memory rebuild`, and the first deployment's backfill (25 §7,
-    60 S4): every source through the SAME projector a live write calls, so
-    a rebuild equals live projection by construction.
+    """`nora memory rebuild`, and the first deployment's backfill: every source through the SAME
+    projector a live write calls, so a rebuild equals live projection by construction.
 
     1. `building`, under `REBUILD_LOCK_KEY` (refused if another holds it).
     2. Every row of every kind, `batch` per transaction, in key order.
@@ -1605,7 +1601,7 @@ async def _count(engine: AsyncEngine) -> RebuildReport:
     return RebuildReport(projected, dropped, unprojected, dry_run=True)
 
 
-# --- the vectors (design/unified-memory/65-build-step-3-vectors.md V1) -------
+# --- the vectors ----------------------------------------------------------
 
 #: A failed node waits `BASE * 2^(attempts - 1)`, at most `CAP`, before the
 #: worker tries it again: a node the embedder keeps refusing costs one call
@@ -1724,7 +1720,7 @@ async def embed_failed(
     `counts=False` for a failure that says nothing about the input (the
     embedder or the blob store unavailable): the attempt still backs the
     node off, but never to `EMBED_MAX_ATTEMPTS`, so an outage gives up on
-    nothing (review of #31). Only a failure of the input itself (rejected,
+    nothing. Only a failure of the input itself (rejected,
     empty, error) can reach the cap."""
     bumped = MEMORY_NODE.c.embed_attempts + 1
     attempts = bumped if counts else sa.func.greatest(

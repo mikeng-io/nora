@@ -1,6 +1,6 @@
 """`SqlCultureStore` — append an account, move the head, walk the chain back.
 
-`design/culture-tier`. Three methods and no more: `head`, `append`, `chain`.
+Three methods and no more: `head`, `append`, `chain`.
 
 **The write is ONE transaction, and that is the whole reason this class is not
 two calls from the adaptor.** Appending a revision and moving
@@ -143,8 +143,7 @@ class SqlCultureStore:
                         # What `character_revise` checked it rests on
                         # (`0098_culture_citations`).
                         citations=list(citations),
-                        # design/cognition-loop/10-tiers.md §3, migration
-                        # `0073_lineage`: the fold reads this room and is
+                        # Migration `0073_lineage`: the fold reads this room and is
                         # shown the unit's note index, which it does not cite.
                         lineage=lineage.to_json(),
                         as_of=written_at,
@@ -170,7 +169,7 @@ class SqlCultureStore:
                 )
             )
             # Room and unit-keyed accounts only: the projector never indexes a
-            # pre-C2b room-keyed person account (60 §0.8).
+            # pre-C2b room-keyed person account.
             await memory_index.project(conn, "character", key)
         return CultureRevision(
             id=revision_id,

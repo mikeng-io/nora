@@ -1,10 +1,8 @@
-"""`YtDlpSource` — the `TrackSource` port's first implementation
-(design/discord-music/01-playback-and-source.md).
+"""`YtDlpSource` — the `TrackSource` port's yt-dlp implementation.
 
 Resolves a query or URL to one or more direct, streamable media URLs
-WITHOUT downloading (`extract_info(..., download=False)`) — the same
-distinction `01-playback-and-source.md` draws between "resolve" and
-"download". The returned `url`s are handed to `ffmpeg` by the caller;
+WITHOUT downloading (`extract_info(..., download=False)`). The returned `url`s
+are handed to `ffmpeg` by the caller;
 nothing here ever writes a byte to disk.
 
 **Playlist expansion is deliberately narrow, not "any URL yt-dlp would
@@ -25,7 +23,7 @@ up to 50 network round-trips before it can even reply. Instead, a
 playlist target is extracted with `extract_flat=True` — title and video
 ID per entry, no per-track stream lookup — and each entry's real stream
 URL is resolved lazily, on demand, right before it plays
-(`MusicPlayer._advance`, `03-state-and-persistence.md`). This is why
+(`MusicPlayer._advance`). This is why
 `ResolvedTrack.locator` exists: it is always a re-derivable `query_or_url`
 for that specific track, so a later `resolve()` call gets the actual
 stream URL back.
@@ -49,7 +47,7 @@ log = logging.getLogger("nora.music")
 
 # The allowlist is enforced HERE, before the extractor is ever called — a
 # pasted URL is untrusted input, and this must not become "whatever yt-dlp's
-# extractor set happens to accept" (01-playback-and-source.md).
+# extractor set happens to accept".
 _ALLOWED_HOSTS = frozenset(
     {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
 )
@@ -81,14 +79,11 @@ _FLAT_YDL_OPTS: dict[str, Any] = {
     "quiet": True,
     "no_warnings": True,
     "skip_download": True,
-    # Diagnosed 2026-09-02: a shared `YoutubeDL` instance under concurrent
-    # `asyncio.to_thread` load measured 20-31s for one Mix extraction (vs.
-    # single digits idle) -- and `Task.cancel()` on the coroutine awaiting it
-    # does NOT stop the underlying thread (`to_thread` has no forced
-    # interrupt), so a stale prewarm/retry keeps a thread-pool slot pinned
-    # until the request itself gives up. Without a bound, enough of these
-    # pile up over a long session to starve the default executor, silently
-    # stalling every later autoplay attempt with nothing to catch or log.
+    # `Task.cancel()` on the coroutine awaiting an extraction does NOT stop the
+    # underlying thread (`to_thread` has no forced interrupt), so a stale
+    # prewarm/retry keeps a thread-pool slot pinned until the request itself
+    # gives up. Without a bound, enough of these pile up to starve the default
+    # executor and silently stall every later autoplay attempt.
     "socket_timeout": 20,
 }
 
@@ -97,34 +92,19 @@ class _Extractor(Protocol):
     def extract_info(self, url: str, *, download: bool) -> Any: ...
 
 
-# How long one `YoutubeDL` may be reused before it is thrown away and
-# rebuilt.
+# How long one `YoutubeDL` may be reused before it is thrown away and rebuilt.
 #
-# Diagnosed 2026-09-18: every `/music play` in guild 100000000000000201 died
-# instantly with `ffmpeg-exit-1`, ffmpeg's stderr carrying `HTTP error 403
-# Forbidden` from the googlevideo CDN — 4 plays, 4 failures, zero seconds of
-# audio, and autoplay then burned the whole queue because a failed stream
-# advances (`nora/app/voice_events.py`). Everything obvious measured CLEAN at
-# the same moment, from inside the same two containers: the production
-# resolver path returned 206 on 6/6 videos, ffmpeg with the sidecar's EXACT
-# argument list decoded a fresh URL to exit 0, and the resolver's own
-# `http_headers` changed nothing (206 with and without). Same host, same
-# egress IP, same yt-dlp.
+# A `YoutubeDL` owns a private cookiejar holding a negotiated YouTube visitor
+# session (`VISITOR_INFO1_LIVE`, `YSC`, `GPS`), and `videoplayback` locators are
+# bound to the session that resolved them. A long-lived instance's session rots:
+# its locators then draw `HTTP error 403` from the googlevideo CDN, ffmpeg exits
+# 1, and a failed stream advances the queue (`nora/app/voice_events.py`).
+# Rebuilding negotiates a fresh session.
 #
-# The one thing that differed was AGE. `YtDlpSource` was built once at
-# composition and its `YoutubeDL` had been alive 21 hours; a new one in the
-# same container worked every time. A `YoutubeDL` owns a private cookiejar
-# (`shared jar object: False`) holding a negotiated YouTube visitor session —
-# `VISITOR_INFO1_LIVE`, `YSC`, `GPS` — and `videoplayback` locators are bound
-# to the session that resolved them. Rebuilding negotiates a fresh one
-# (measured: distinct `VISITOR_INFO1_LIVE` per instance).
-#
-# The bound is measured, not guessed: `GPS` came back at exactly now + 1800s
-# on both samples, so the shortest session cookie lives 30 minutes. 15 leaves
-# margin inside that and costs at most one extra session negotiation per
-# quarter hour in which music is actually played. It is NOT the player-JS
-# cache — `_code_cache`/`_player_cache` measured empty even after a successful
-# extraction, because the image ships no JS runtime for yt-dlp to use.
+# The shortest session cookie (`GPS`) lives 30 minutes; 15 leaves margin inside
+# that and costs at most one extra session negotiation per quarter hour in which
+# music is played. This is not the player-JS cache: the image ships no JS runtime
+# for yt-dlp to use, so that cache stays empty.
 _EXTRACTOR_TTL_SECONDS = 900.0
 
 
@@ -281,7 +261,7 @@ def _without_playlist_params(url: str) -> str:
 
 
 def _target_for(query_or_url: str) -> str | None:
-    """A real URL must be YouTube (§ allowlist above); anything else is
+    """A real URL must be YouTube (`_ALLOWED_HOSTS`); anything else is
     treated as a search query, the same way a person typing into a search
     box does not need to know yt-dlp's `ytsearch1:` syntax exists."""
     parsed = urlsplit(query_or_url)

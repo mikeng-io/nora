@@ -1,18 +1,18 @@
 """`SqlCharacterEvidence` — what wakes a Character session, and what it is
-handed (design/self-growth/10-character.md §3).
+handed.
 
 Each entity kind counts its own evidence since its key's watermark, and reads
 the newest of it when it wakes. A count is the dream loop's wake signal (`lag`
 for a room, generalised); a read is what the session is handed:
 
-- **a person** (C2b): their human messages across their unit's rooms, by
+- **a person**: their human messages across their unit's rooms, by
   Record id.
-- **Nora** (C3b): `response` episodes of the current Rollup build for the
+- **Nora**: `response` episodes of the current Rollup build for the
   unit that are neither `open` (it can still change) nor `unknown` (an outage,
   not silence, R-27, so nothing to read), by her send's Record id: her send's
   text, the replies that quoted it inside the window, and the episode's counts
   and outcome.
-- **a unit** (C3a): new revisions of its rooms' cultures, by COUNT: a culture
+- **a unit**: new revisions of its rooms' cultures, by COUNT: a culture
   revision's id is a uuid with no order, and the chain is append-only, so the
   number of revisions a unit's rooms hold only grows and is the cursor.
 
@@ -20,10 +20,8 @@ Every read here is a SELECT. Nothing is folded, cached or written.
 
 **Media is not joined.** A person's lines are read by this module's own SQL,
 so a photo they posted reaches their session as its stored body, the bare
-`[image a3f2c1]` handle, not as what it showed (issue #116's join lives above
-`nora.infra`). The session writes what a person is like from what they SAY;
-joining media is the upgrade if an account is seen to miss what someone only
-ever shows.
+`[image a3f2c1]` handle, not as what it showed (the media join lives above
+`nora.infra`). The session writes what a person is like from what they SAY.
 """
 
 from __future__ import annotations
@@ -214,7 +212,7 @@ class SqlCharacterEvidence:
     def _closed(self, unit: str, after: int, *, evidence_only: bool = True) -> list[Any]:
         """Settled episodes of the current build for `unit` past `after`.
         `evidence_only` (Character · Nora) narrows them to `Episode.is_evidence`;
-        off (Lessons, design/self-growth/40 §6), every CLOSED episode is read,
+        off (Lessons), every CLOSED episode is read,
         `unanswered` included, because the Lessons session is handed each send's
         text and judges whether an unanswered one asked something."""
         closed = [
@@ -230,8 +228,8 @@ class SqlCharacterEvidence:
             # EVIDENCE ONLY, `Episode.is_evidence` in SQL (DEC-290 (4)): people
             # answered, or silence was proved against an expected answer.
             # `unanswered` (none expected) is neither, and `open`/`unknown`
-            # are not yet / an outage (R-27). Counting them woke Nora's
-            # session on episodes it could not cite.
+            # are not yet / an outage (R-27). Counting them would wake
+            # Nora's session on episodes it cannot cite.
             sa.or_(
                 ROLLUP_RESPONSE.c.outcome.in_(sorted(EPISODE_EVIDENCE_OUTCOMES)),
                 ROLLUP_RESPONSE.c.replies > 0,

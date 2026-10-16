@@ -3,11 +3,11 @@
 WHY THIS MODULE EXISTS, and why it is not optional. A Hong Kong route number
 does not say who runs it: `68X` is KMB, `K73` is MTR, and both are four
 characters of the same alphabet. Ask the wrong operator and you get `200` with
-an empty body, which is indistinguishable from "no buses right now" —
-`design/14` §5.5 records that being reproduced by hand before the tool existed.
+an empty body, which is indistinguishable from "no buses right now".
 
-**And the empty answer is genuinely ambiguous on the wire.** Measured against
-the live MTR endpoint at 23:15 HKT on 2026-08-06:
+**And the empty answer is genuinely ambiguous on the wire.** The live MTR
+endpoint answers a real route that is not running exactly as it answers a fake
+one (late-night sample):
 
     routeName        busStop   status  caseNumber  routeStatus  routeStatusRemarkTitle
     ZZZ999 (fake)          0      "0"           1          "1"  Arrival time temporarily…
@@ -16,7 +16,7 @@ the live MTR endpoint at 23:15 HKT on 2026-08-06:
 
 Eleven of the twenty-six published MTR routes — K12, K14, K51A, K52A, K52P,
 K53S, K58, K65A, K74, K75S, K76S — returned the ZZZ999 envelope **field for
-field** that evening, because they had stopped running for the night. So the
+field** late at night, because they had stopped running for the night. So the
 tempting shortcut (`caseNumber == 1` means "no such route") would have told the
 group 「K74 呢條線唔存在」 about a bus that runs every twenty minutes at noon.
 `caseNumber`, `routeStatus`, `routeColour` and `routeStatusRemarkTitle` are also
@@ -107,8 +107,8 @@ def parse_kmb_routes(payload: Any) -> dict[str, str]:
 
     **The LOWEST service type, and that is a deliberate narrowing.** 68X is
     published as service types 1, 3 and 4 outbound and 1 inbound; type 1 is the
-    ordinary all-day service both ways (measured: `route-eta/68X/1` returns 155
-    rows across both directions), and 3 and 4 are supplementary peak departures.
+    ordinary all-day service both ways (`route-eta/68X/1` covers both
+    directions), and 3 and 4 are supplementary peak departures.
     Asking for all of them would be three ~48 KB responses to answer 「68X 幾時
     到」 once. If a route ever has no type 1, the lowest it does have is still
     its main service.
@@ -267,7 +267,7 @@ async def get_text(
     place that decides what a failure looks like. A session per call, like
     `nora.infra.honcho.client`: these are three different hosts reached a
     handful of times an hour, and a pooled session would be state to own for
-    no measured gain.
+    no benefit.
     """
     try:
         timeout_config = aiohttp.ClientTimeout(total=timeout_seconds)

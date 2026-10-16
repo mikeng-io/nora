@@ -1,5 +1,4 @@
-"""`SqlMusicSessionStore` over SQLAlchemy Core (design/discord-music/
-06-session-persistence.md). Shaped like `nora.infra.sql.music_queue`: the
+"""`SqlMusicSessionStore` over SQLAlchemy Core. Shaped like `nora.infra.sql.music_queue`: the
 engine comes through `__init__`, every write is one statement inside
 `async with self._engine.begin()`.
 """

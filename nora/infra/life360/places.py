@@ -1,6 +1,6 @@
-"""Parsing Life360's `/circles/{id}/places` body into `SavedPlace`s (design/23 §3).
+"""Parsing Life360's `/circles/{id}/places` body into `SavedPlace`s.
 
-The wire shape, probed live 2026-08-07 (HTTP 200 on the working recipe):
+The wire shape:
 
     {"places": [{"id": …, "ownerId": …, "circleId": …, "name": "Home",
                  "latitude": "22.4…", "longitude": "114.0…", "radius": "80",
@@ -45,7 +45,7 @@ def parse_places(body: object, *, circle_id: str, now_ms: int) -> list[SavedPlac
             log.debug("skipping unparseable place (id=%r present=%s)",
                       bool(place_id), lat is not None and lng is not None)
             continue
-        # Dedup on place_id (council 2026-08-07 LOW): two rows sharing an id
+        # Dedup on place_id: two rows sharing an id
         # would violate the `(circle_id, place_id)` PK in `replace_places`,
         # failing the whole wholesale write and freezing the circle's places at
         # the last good fetch forever. First wins; a repeat is skipped.
@@ -79,10 +79,10 @@ def _address(place: dict[str, object]) -> str | None:
 
 
 def _to_float(value: object) -> float | None:
-    """Parse a stringly-typed wire number, rejecting non-finite values (council
-    2026-08-07 LOW): a wire `radius: "Infinity"` would otherwise store `inf`,
-    and `_within_place`'s `d <= radius_m` then reports EVERY fix on Earth as
-    inside that place. `nan`/`inf`/`-inf` all become None."""
+    """Parse a stringly-typed wire number, rejecting non-finite values: a wire
+    `radius: "Infinity"` would otherwise store `inf`, and `_within_place`'s
+    `d <= radius_m` then reports EVERY fix on Earth as inside that place.
+    `nan`/`inf`/`-inf` all become None."""
     try:
         parsed = float(str(value))
     except (TypeError, ValueError):

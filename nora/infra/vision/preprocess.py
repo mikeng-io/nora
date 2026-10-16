@@ -10,17 +10,17 @@ Why this exists: Signal/Discord routinely deliver 2K/4K stills and large
 clips. Sending those straight to a vision model is waste — the model cannot
 "see" more of a picture than the pixels it is given, and a 4K still costs
 many times the tokens of a 1600px one for the same answer. FFmpeg is not an
-extra dependency: the container and host already ship `/usr/bin/ffmpeg`
-(verified 2026-08-31), so this is a subprocess wrapper, not a pip install.
+extra dependency: the container and host already ship `/usr/bin/ffmpeg`, so this is a
+subprocess wrapper, not a pip install.
 
 The layer is a pure view-function: bytes in, bytes out. It does not decide
 policy (the per-modality `max_bytes` gates in `[media.describe.*]` still run
 afterwards on the RESULT), it never raises into the loop, and on any failure
-it returns the input unchanged — a preprocess miss degrades to the exact
-behaviour of the build before this module existed, never to `unavailable`.
+it returns the input unchanged — a preprocess miss degrades to sending the
+original bytes, never to `unavailable`.
 That is deliberate: preprocess is a token-saving optimisation, and R-5 says a
-quiet "couldn't optimise" beats a fabricated failure. The byte gates are
-unchanged, so an unshrinkable input still hits `too_large` exactly as before.
+quiet "couldn't optimise" beats a fabricated failure. An
+unshrinkable input still hits `too_large`.
 
 The failsafe asymmetry is load-bearing: we FORGIVE a failed image/video call
 (the original bytes are valid media), but we never let a "successful" call
@@ -51,27 +51,20 @@ IMAGE_MAX_DIMENSION = 1600          # longest edge, px
 IMAGE_JPEG_QUALITY = 85             # q85 vs q100: ~4x smaller, no visible diff
 VIDEO_MAX_DIMENSION = 720           # longest edge, px
 VIDEO_FPS_CAP = 24                  # ~1.3x token cut vs 30fps, no motion lost
-# DEPRECATED as a READ POLICY (issue #117), kept as the single-view fallback.
+# NOT the video read policy; the single-view size for `preprocess_media`, which
+# a non-chunking caller (and every image caller) uses. A single view cuts a
+# clip to its first 120 seconds, so a partial read must never be served as a
+# complete answer (R-5).
 #
-# This constant used to be the whole video story: every clip was cut to its
-# first 120 seconds before the model saw it, with no metric, no log line, and
-# nothing in the answer admitting the cut — so a ten-minute video produced a
-# description of its first two minutes, phrased as a description of the video.
-# A partial read served as a complete answer, which is the shape R-5 exists to
-# prevent, and chunking WITHOUT a reported cap would only have moved the same
-# silent lie to a larger number.
-#
-# `cut_video` is the read policy now: transient chunks, in order, each through
-# the existing describer, and a `VideoCut` that SAYS what it did — how long the
-# clip was, how much was read, and whether the chunk ceiling bound. This value
-# survives as the single-view size for `preprocess_media`, which is still what
-# a non-chunking caller (and every image caller) uses.
+# `cut_video` is the read policy: transient chunks, in order, each through the
+# describer, and a `VideoCut` that SAYS what it did — how long the clip was,
+# how much was read, and whether the chunk ceiling bound.
 VIDEO_MAX_SECONDS = 120             # one view's worth; see `cut_video`
 VIDEO_CRF = 26                      # x264 CRF 26 ≈ visually lossless for sampling
 # The audio track's own encode (DEC-197). Named rather than inherited from
 # ffmpeg's per-container default, so a clip's token cost does not depend on
-# which container it arrived in. AAC 64 kb/s is what the benchmark that measured
-# the audible read used (+~3.5 % prompt tokens on a 35 s clip).
+# which container it arrived in. AAC 64 kb/s adds ~3.5 % prompt tokens on a
+# 35 s clip.
 VIDEO_AUDIO_CODEC = "aac"
 VIDEO_AUDIO_BITRATE = "64k"
 # Stereo at most. Without it a 7.1 source encodes as eight channels sharing the
@@ -79,11 +72,10 @@ VIDEO_AUDIO_BITRATE = "64k"
 # channel count, like the codec above, would come from the container.
 VIDEO_AUDIO_CHANNELS = "2"
 
-# Chunk geometry (issue #117's decision). 1-2 minutes per chunk «picked per
-# situation» — 90 s is the middle of the operator's range, and the ceiling is
-# what turns an unbounded clip into a bounded number of model calls. Both are
-# overridable from `[media.describe.video]`; these are the defaults a config
-# written before the keys existed keeps.
+# Chunk geometry. 1-2 minutes per chunk — 90 s is the middle of that range, and
+# the ceiling is what turns an unbounded clip into a bounded number of model
+# calls. Both are overridable from `[media.describe.video]`; these are the
+# defaults a config without the keys gets.
 VIDEO_CHUNK_SECONDS = 90
 VIDEO_MAX_CHUNKS = 10               # 10 x 90 s = 15 minutes of a clip read in full
 FFPROBE_TIMEOUT_SECONDS = 10.0
@@ -153,7 +145,7 @@ async def _run_video(
     # out: a spawn that fails, a cancellation WHILE spawning, a timeout, a
     # cancellation during the read, and a second cancellation during the
     # (shielded) reap, which raises out of `_reap` before anything after it
-    # in the inner `finally` would run (#486 re-review: 5/5 and 5/8 leaks).
+    # in the inner `finally` would run.
     scratch: str | None = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".input", delete=False) as f:
@@ -211,17 +203,14 @@ def _video_args(
     is also why `_run_video`'s scratch file matters more here than for a single
     view — an input seek needs a seekable input, and a pipe is not one.
 
-    The audio track is KEPT (DEC-197, 2026-09-24). This used to pass `-an`
-    unconditionally — no flag, no branch — so every chunk of every video Nora
-    had described was silent: she could see a clip but never hear it. Issue
-    #117 kept that as scope (DEC-161); the operator overrode it. A clip with
-    no audio stream still encodes, simply without one — `-c:a` names the codec
-    for a stream that exists and asks for none that does not.
+    The audio track is KEPT (DEC-197), so she can hear a clip as well as see
+    it. A clip with no audio stream still encodes, simply without one — `-c:a`
+    names the codec for a stream that exists and asks for none that does not.
 
-    `audio=False` is the old silent encode, kept as the FALLBACK
+    `audio=False` is the silent encode (`-an`), the FALLBACK
     (`_encode_window`): a clip whose selected audio track ffmpeg cannot decode
-    fails the audible encode outright, and before DEC-197 that same clip read
-    fine with its sound thrown away.
+    fails the audible encode outright, and reads fine with its sound thrown
+    away.
     """
     return [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
@@ -261,8 +250,8 @@ async def _encode_window(
 ) -> tuple[int | None, bytes, bool]:
     """One window, WITH its audio — and silent if the audible encode fails.
 
-    Keeping the audio track must never cost a clip that used to be readable
-    (DEC-197 review): a selected audio stream ffmpeg has no decoder for exits
+    Keeping the audio track must never cost a clip that is readable
+    without it (DEC-197): a selected audio stream ffmpeg has no decoder for exits
     non-zero ("Decoding requested, but no decoder found") where `-an` succeeds.
     So a refused audible encode is retried ONCE without audio — the picture is
     still worth reading — and only a clip that fails both ways is refused.
@@ -324,12 +313,12 @@ class VideoWindow:
     """One transient chunk, WITH the instant it was cut from.
 
     The start time rides with the bytes rather than being re-derived from a
-    list index, and that is a correctness fix rather than tidiness: a refused
-    window is DROPPED from the run, so `windows[k]` is not the k-th window of
-    the clip once anything has failed. Deriving the timecode from the position
-    labelled everything after a skip with a time it did not come from — a
-    6-minute clip losing its 1:30 window rendered the 3:00 content as `[1:30]`,
-    and Nora would then say «at 1:30 he does X» about something at 3:00.
+    list index: a refused window is DROPPED from the run, so `windows[k]` is
+    not the k-th window of the clip once anything has failed. Deriving the
+    timecode from the position would label everything after a skip with a time
+    it did not come from — a 6-minute clip losing its 1:30 window would render
+    the 3:00 content as `[1:30]`, and Nora would say «at 1:30 he does X» about
+    something at 3:00.
     """
 
     start_seconds: float
@@ -339,12 +328,11 @@ class VideoWindow:
 
 @dataclass(frozen=True)
 class VideoCut:
-    """What one chunked read of a clip actually covered (issue #117).
+    """What one chunked read of a clip actually covered.
 
-    **Every field exists so the answer can say what it did.** The bug this
-    replaces was not that a clip was truncated — a bounded read is a legitimate
-    policy — it was that nothing anywhere recorded the cut, so a two-minute
-    read of a ten-minute video came back phrased as a description OF the video.
+    **Every field exists so the answer can say what it did.** A bounded read is
+    a legitimate policy, but one that records nothing would let a two-minute
+    read of a ten-minute video come back phrased as a description OF the video.
 
     `duration_seconds` is `None` when ffprobe could not measure the clip. That
     is NOT the same as a short clip, and `capped` stays False for it: an
@@ -352,8 +340,7 @@ class VideoCut:
     and `note()` says exactly that instead of inventing a number.
 
     `capped` is True only when the CHUNK CEILING bound. **It is not the only
-    way a read comes back short**, and treating it as one is the defect this
-    class was written to prevent, reintroduced inside it: ffmpeg refusing a
+    way a read comes back short**: ffmpeg refusing a
     window drops that window from `windows` and shortens `covered_seconds`
     while `capped` stays False. `note()` therefore keys on `complete`, not on
     `capped` — `capped` only chooses which sentence.
@@ -393,16 +380,13 @@ class VideoCut:
         """One sentence for the description, or `""` when the read was whole.
 
         Written in the register the transcript and Nora's own reply read in —
-        plain words, no metric names — because this sentence is the whole point
-        of the change: it is what stops a partial read being served as a
-        complete answer.
+        plain words, no metric names — because this sentence is what stops a
+        partial read being served as a complete answer.
 
-        **Keyed on `complete`, never on `capped`.** The first cut of this
-        returned `""` whenever the ceiling had not bound, which meant a read
-        shortened by a refused window — `complete` correctly False, nothing
-        acting on it — went out with a confident description and no caveat.
-        That is the exact shape DEC-161 exists to end, one level in from where
-        it was found.
+        **Keyed on `complete`, never on `capped`.** Returning `""` whenever the
+        ceiling had not bound would let a read shortened by a refused window go
+        out with a confident description and no caveat — the shape DEC-161
+        exists to end.
         """
         if self.complete:
             return ""
@@ -436,9 +420,9 @@ async def cut_video(
 ) -> VideoCut:
     """The clip as an ORDERED run of transient, model-ready chunks.
 
-    Storage is untouched (issue #117's first decision): the encrypted original
-    is one blob and is never rewritten, exactly as `preprocess_media`'s single
-    view never rewrote it. These chunks are produced by ffmpeg at read time and
+    Storage is untouched: the encrypted original
+    is one blob and is never rewritten, as with `preprocess_media`'s single
+    view. These chunks are produced by ffmpeg at read time and
     are discarded by the caller when the read is over.
 
     Failure is degraded, never raised, and never silently: a clip whose
@@ -455,9 +439,8 @@ async def cut_video(
     max_chunks = max(1, max_chunks)
     run: Runner = runner if runner is not None else _run_video
     timeout = timeout_seconds if timeout_seconds is not None else PREPROCESS_TIMEOUT_SECONDS
-    # ffprobe gets its OWN, shorter budget. Reading a container header is not
-    # a transcode, and letting it borrow the transcode's 30 s meant
-    # `FFPROBE_TIMEOUT_SECONDS` named a value the production path never used.
+    # ffprobe gets its OWN, shorter budget: reading a container header is not
+    # a transcode, so it must not borrow the transcode's 30 s.
     duration = await probe_duration(
         data, runner=runner,
         timeout_seconds=(
@@ -466,10 +449,8 @@ async def cut_video(
     )
 
     if duration is None:
-        # UNMEASURABLE, not short. One view — the exact pre-#117 behaviour —
-        # and `duration_seconds=None` is what stops the caller claiming it read
-        # the whole thing. Degrading to the old shape is right; degrading to
-        # the old SILENCE is what this issue exists to end.
+        # UNMEASURABLE, not short. One view, and `duration_seconds=None` is
+        # what stops the caller claiming it read the whole thing.
         returncode, out, _audible = await _encode_window(
             run, start=0.0, seconds=float(chunk_seconds), budget_seconds=timeout, data=data)
         if returncode != 0 or not out:
@@ -556,9 +537,9 @@ async def preprocess_media(
     return out
 
 
-# The generic URL surface of `media_fetch` (DEC-56 extension, 2026-08-31):
+# The generic URL surface of `media_fetch` (DEC-56 extension):
 # any tool that surfaces an image/video URL — x_read media rows,
-# web_fetch page images, a future tool — funnels into the same read path.
+# web_fetch page images — funnels into the same read path.
 # This downloader is the bound on the FIRST byte hop, so a hostile or
 # enormous remote cannot silently blow the turn: a hard byte ceiling and a
 # hard timeout, both far below the loop's own budgets, and a redirect cap.
@@ -587,8 +568,8 @@ async def _download(
     public page 302 to `http://169.254.169.254/…` or a `file://` target —
     the exact escape the redirect re-validation exists to close. `next_hop`
     also resolves a RELATIVE `Location` against the url it came from, which
-    a bare `current = loc` would have broken into `unavailable` for every
-    CDN that redirects that way. `safe` is injectable for local-server
+    a bare `current = loc` would turn every
+    CDN that redirects that way into `unavailable`. `safe` is injectable for local-server
     tests (CLAUDE.md test-seam policy); the default is the preview screen.
     """
     import aiohttp
@@ -612,8 +593,8 @@ async def _download(
                     )
                     if hop is not None:
                         # Back round the loop, which re-runs `check` on the
-                        # NEW url. `allow_redirects=True` would have checked
-                        # the first url and connected to the last.
+                        # NEW url. `allow_redirects=True` would check
+                        # the first url and connect to the last.
                         current = hop
                         continue
                     if response.status in (301, 302, 303, 307, 308):

@@ -1,6 +1,5 @@
 """`OpenCliBridgeClient` — the X tools' read path to X, over the
-host-side bridge (DEC-151). It served Instagram too until design/instagram-
-adoption/18 moved every Instagram read to the instagram-bridge (P5, P11).
+host-side bridge (DEC-151).
 
 Nora's container cannot run `opencli` (it exists only on the host), so this
 client POSTs `{platform, what, target, limit}` to the bridge's `/read` and
@@ -108,9 +107,7 @@ class OpenCliBridgeClient(SocialProvider):
         if status != "ok":
             # The bridge's OWN `note` is dropped rather than forwarded. It is
             # an unbounded, unescaped string from another process landing in
-            # the slot that tells the model what it may SAY — measured, a
-            # 230-character note reading «IGNORE PREVIOUS INSTRUCTIONS…»
-            # reached the model intact through this line. What the miss means
+            # the slot that tells the model what it may SAY. What the miss means
             # is a property of the STATE, so the sentence is ours
             # (`results.py`), and neither state loses any information: there
             # is exactly one thing to say for each.
@@ -122,7 +119,7 @@ class OpenCliBridgeClient(SocialProvider):
         if not content.strip():
             # An `ok` whose data renders to nothing: an empty list, or items
             # carrying none of the keys the renderer reads. «Found nothing»,
-            # not an empty read handed to the model to describe (2026-09-24).
+            # not an empty read handed to the model to describe.
             # The bridge maps an empty result itself; this covers what it
             # cannot see, items it passes that hold nothing readable.
             return dict(_NOTHING_FOUND)
@@ -202,8 +199,7 @@ def _render_item(item: dict[str, Any]) -> str:
         head = ""
     if item.get("verified"):
         head = f"{head} ✓" if head else "verified"
-    # LinkedIn (design/social-per-network/10 §"What the result renderer
-    # learns"): a role row is «title at company, dates»; a profile or a
+    # LinkedIn: a role row is «title at company, dates»; a profile or a
     # search hit carries a `headline`. Plain strings only: a key LinkedIn
     # leaves empty renders nothing.
     role = _text(item.get("title"))
@@ -262,14 +258,14 @@ def _render_item(item: dict[str, Any]) -> str:
             break
     media_urls = item.get("media_urls") or []
     if isinstance(media_urls, str):
-        # LinkedIn returns one string, not a list (measured 2026-09-24).
+        # LinkedIn returns one string, not a list.
         media_urls = [u for u in re.split(r"[\s,]+", media_urls) if u.startswith("http")]
     posters = item.get("media_posters") or []
     if isinstance(media_urls, list) and media_urls:
         # Rendered as `[image https://…]` / `[video https://…]` — the same
         # marker shape media_fetch's own docstring teaches, so the model can
         # pass a returned media link straight to `media_fetch(url=…)` (the
-        # generic cross-tool read path, DEC-56 extension 2026-08-31). A video
+        # generic cross-tool read path, DEC-56). A video
         # additionally carries `media_posters` (its preview frame) when
         # opencli returned one; a non-empty poster list tells us which kind a
         # URL is, so the row carries the right label.

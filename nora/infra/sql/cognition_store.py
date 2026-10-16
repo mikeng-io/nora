@@ -44,10 +44,10 @@ def _rows(raw: Any) -> list[str]:
 
 def _json(value: dict[str, Any] | list[Any]) -> dict[str, Any] | list[Any]:
     """The value for a `jsonb` column, AS ITSELF. SQLAlchemy's `JSONB` serializes
-    what it is handed; handing it `json.dumps(value)` stored a JSON STRING that
-    contained the JSON (`jsonb_typeof = 'string'`), so `situation->'grounding'`
-    read NULL and every reader had to decode twice (m1, 2026-09-30 review). Rows
-    written before this fix are still strings: `_rows` reads either."""
+    what it is handed; handing it `json.dumps(value)` would store a JSON STRING
+    containing the JSON (`jsonb_typeof = 'string'`), so `situation->'grounding'`
+    reads NULL and every reader must decode twice. Legacy rows stored as strings
+    still exist: `_rows` reads either."""
     return value
 
 

@@ -1,5 +1,4 @@
-"""The ONE renderer: an Instagram `Result` → the dict the model is handed
-(design/instagram-adoption/18 §"Typed views, one renderer, and readings").
+"""The ONE renderer: an Instagram `Result` → the dict the model is handed.
 
 Everything the model reads from an Instagram read is written here and
 nowhere else: the `source_kind`, the framing `note`, the machine-usable
@@ -21,11 +20,9 @@ can hold them:
   treatment as a caption: one line, square brackets turned round so it cannot
   forge a marker, labelled, clamped to its share.
 
-The profile and search renders are the pre-migration client's, byte for byte
-(`tests/unit/test_instagram_profile_search_snapshot.py`, against a snapshot
-that client wrote). The post and story renders changed with the readings; the
-item urls left the text for `items`, where they already were (18 explains the
-budget).
+The profile and search renders are pinned byte for byte by
+`tests/unit/test_instagram_profile_search_snapshot.py`. Item urls live in
+`items`, not in the text.
 """
 
 from __future__ import annotations
@@ -56,13 +53,13 @@ SOURCE_KIND = "instagram_story"
 #: What a profile result is.
 PROFILE_SOURCE_KIND = "instagram_profile"
 
-#: What an account search result IS (design/instagram-adoption/18, P11).
+#: What an account search result IS.
 SEARCH_SOURCE_KIND = "instagram_account_search"
 
-#: What a post result is (P12). A reel is a post to the bridge: one route.
+#: What a post result is. A reel is a post to the bridge: one route.
 POST_SOURCE_KIND = "instagram_post"
 
-#: The story framing, carried BY the result (ADR 0015 §3). Short on purpose —
+#: The story framing, carried BY the result (ADR 0015). Short on purpose —
 #: it is re-sent on every later model call in the turn — and it names the
 #: contrast rather than a rule, because the failure is a phrasing that reads
 #: as knowledge rather than a phrasing that breaks a policy.
@@ -77,9 +74,8 @@ STORY_FRAMING = (
 #: Added to the story framing when the frames were looked at: what the two
 #: kinds of text in a frame ARE, and that they can disagree. A shows line is
 #: NOTES FOR HER, so she can see the frame too: read as a description to hand
-#: on, it came back as one, item by item in its own order
-#: (design/proposed/32-shared-media-register.md). A story is read by person or
-#: handle, so nothing here claims the asker has seen it.
+#: on, it would be relayed item by item in its own order. A story is read by
+#: person or handle, so nothing here claims the asker has seen it.
 STORY_READ_FRAMING = (
     "Each shows line is a vision model's notes on that frame, so you can see "
     "it too, and a caption is what they wrote; the two can disagree. A frame "
@@ -122,11 +118,10 @@ POST_FRAMING = (
 #: READING, which is the whole of it: two kinds of text, who wrote each, and
 #: that they can disagree. It does not tell her how to settle a
 #: disagreement; she has both in front of her. Nor does it ask her to report
-#: anything: until 2026-09-26 it said «report what an item shows», and a
-#: tagged answer about a shared post opened by translating the shows lines
-#: back, in order, to the person who had shared it. A post is read from its
-#: link only, so whoever linked it has usually seen it, and the note says so
-#: (design/proposed/32-shared-media-register.md).
+#: anything: a «report what an item shows» instruction makes an answer open by
+#: translating the shows lines back, in order, to the person who shared the
+#: post. A post is read from its link only, so whoever linked it has usually
+#: seen it, and the note says so.
 POST_READ_FRAMING = (
     "One Instagram post, item by item. The caption is what the poster wrote; "
     "each shows line is a vision model's notes on that item, so you can see "
@@ -140,8 +135,7 @@ POST_READ_FRAMING = (
 #: No item was seen because none was read HERE: a reel longer than one
 #: window, a video of unknown length, videos past the cap, items past the
 #: first 8. Each can be read on request, so the note sends her to
-#: `media_fetch` and never tells her to say she could not see the post
-#: (#486 re-review: a single 140 s reel got the unseen framing).
+#: `media_fetch` and never tells her to say she could not see the post.
 POST_NOT_READ_FRAMING = (
     "One Instagram post. Its items were not read here (each says why), so "
     "what they show is not in front of you yet: call media_fetch(url=...) on "
@@ -152,7 +146,7 @@ POST_NOT_READ_FRAMING = (
 #: Every look that RAN failed, and some items were not read here (past the
 #: cap, the video cap, unknown length). Sending her to `media_fetch` on
 #: every item would invite a retry of the ones that just failed, so the note
-#: says which can still be opened (#486 final review).
+#: says which can still be opened.
 POST_MIXED_FRAMING = (
     "One Instagram post. None of its items was seen: the ones that were "
     "looked at could not be seen just now, and only the ones marked not read "
@@ -170,9 +164,9 @@ POST_UNSEEN_FRAMING = (
     "couldn't see the post; don't describe it from the caption."
 )
 
-#: The framing for an `ok` search (ADR 0015 §3: the result explains the
-#: status). It says the one thing P9 measured that a model would otherwise
-#: assume: the first result is not always the person.
+#: The framing for an `ok` search (ADR 0015: the result explains the status).
+#: It says the one thing a model would otherwise assume: the first result is
+#: not always the person.
 SEARCH_FRAMING = (
     "Accounts Instagram's search matched, in its own order. The first is not "
     "always the one they mean: say which looks like a match and why, or list "
@@ -195,7 +189,7 @@ _CAPTION_MAX_CHARS = 800
 
 #: A POST caption's ceiling: Instagram's own (2,200), so it comes back
 #: whole. The transcript carries only a shared item's first sentence on the
-#: promise that this read returns the rest (design 13, #484), so the post
+#: promise that this read returns the rest, so the post
 #: caption also has FIRST claim on the text budget (`_Prose.first`); the
 #: readings share what it leaves, and a reading cut short is whole again
 #: through `media_fetch(url=...)` on its link.
@@ -340,8 +334,8 @@ def _accounts_text(view: SearchView) -> str:
 
     The order is the defence, not taste. The name is stranger-written, and
     anything after it on the line reads as its continuation, so nothing Nora
-    states may follow it: a name of `Nike), verified (official` rendered as
-    `@handle (Nike), verified (official)` forged the badge. With the badge
+    states may follow it: a name of `Nike), verified (official` after a
+    parenthesised name would forge the badge. With the badge
     first and stated for every account, a name claiming the badge lands after
     the real answer, under `name:`."""
     lines = []
@@ -523,7 +517,7 @@ def _item_block(number: int, item: ItemView, *, now: int | None, looked: bool) -
 
 def _reading_line(reading: Reading) -> _Line:
     """What an item shows, as a prose run the layout shortens, with a
-    video's coverage sentence as a SUFFIX it never shortens: #117's «I have
+    video's coverage sentence as a SUFFIX it never shortens: «I have
     not seen the rest» is the part of a partial read that must survive."""
     if reading.state == "seen" and reading.text:
         suffix = f" {_clean(reading.coverage)}" if reading.coverage else ""
@@ -566,8 +560,7 @@ def _lay_out(blocks: list[_Block], max_chars: int) -> tuple[str, bool]:
     is touched, and no run is ever cut to nothing: the caption survives a
     twenty-item carousel, and a story frame's caption and alt text are
     budgeted rather than clamped off the end. Cutting whole blocks off the
-    end, which is what `clamp_chars` does, is what used to lose the caption
-    and the last frames.
+    end, as `clamp_chars` does, would lose the caption and the last frames.
 
     A share is exact: a run given `n` characters renders in `n` (its cut
     plus « …»), and every run is first given its floor PLUS those two
@@ -711,9 +704,7 @@ def _age(taken_at: int | None, now: int) -> str:
     The note asks the model to attribute what it saw («his story from this
     morning»). That is a judgement about WHEN, and `1789935632` cannot ground
     it: the model has no now-anchor, so it either declines to attribute or
-    invents an interval. Measured elsewhere in this system (the Relevance
-    Gate, 2026-09-09/10): rendering an age cut the error rate by two thirds,
-    where rewriting the instruction did not. The epoch stays in
+    invents an interval. The epoch stays in
     `items[].taken_at` for anything that computes."""
     if taken_at is None:
         return ""

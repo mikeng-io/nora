@@ -1,17 +1,13 @@
 """One model pass per medium, three fields out — `MediaInterpreter` over
-`VisionClient` (issue #116), with the chunked video read (issue #117).
+`VisionClient`, with the chunked video read.
 
-**What this replaces.** `StickerInterpreter` asked one question ("what does
-this sticker depict") and got back one sentence, and that sentence was baked
-into `messages.body` — the one string both the Honcho feed and the prefill read
-verbatim. Everything else Nora received got a bare handle and nothing at all.
-The cost is issue #116's own story: ten photos of a meal, the whole group
-replying around them, and the subject of the conversation is the one thing the
+Without a description, media reaches the record as a bare handle, so the
+subject of a conversation around ten photos of a meal is the one thing the
 record does not hold.
 
-**Three fields, one call, and that is an economics argument rather than a
-taste one.** Reading the bytes is what costs — the tokens, the latency, the
-quota. Asking the same call for a title and for the legible content as well is
+**Three fields, one call, for economics.** Reading the bytes is what costs —
+the tokens, the latency, the quota. Asking the same call for a title and for the legible content as
+well is
 near-free, so the pass produces all three and each consumer selects what it
 wants at render time: the transcript takes title + description, Honcho takes
 all three, `media_fetch` serves the rest on demand.
@@ -29,17 +25,16 @@ module or the cache.
 **Parsing is fail-soft, never fail-blank.** The model is asked for a small
 JSON object; when it answers with prose instead, the prose becomes the
 `description` and the other two fields stay empty. A comprehension that
-degrades to what the old path produced is strictly better than one that
-reports `unavailable` because a model wrapped its JSON in a code fence.
+degrades to a prose description is strictly better than one that reports
+`unavailable` because a model wrapped its JSON in a code fence.
 
-**Video is read in chunks** (issue #117). `cut_video` produces transient
+**Video is read in chunks.** `cut_video` produces transient
 1-2-minute windows of the ORIGINAL blob — storage is untouched — each of which
 goes through the existing describer path unchanged. `content` is those chunk
 outputs in order, timecoded; `title`/`description` are synthesized from them by
 one cheap TEXT call, never by a second pass through the video. When the chunk
 ceiling binds, `VideoCut.note()` is appended to the description and the caller
-records it in provenance: the bug being fixed is not that a long clip is
-bounded, it is that the bound was silent.
+records it in provenance: a long clip is bounded, and the bound is never silent.
 """
 
 from __future__ import annotations
@@ -90,8 +85,8 @@ _SHAPE = (
 )
 
 # One authored question per LABEL, falling back to one per top-level media
-# type. The sticker line is `client._STICKER_PROMPT`'s reasoning carried over
-# verbatim in force: ingest holds the sticker and NOT the conversation, so an
+# type. The sticker line: ingest holds the sticker and NOT the
+# conversation, so an
 # intent judgment made here is made blind and would replace the evidence that
 # lets anything downstream disagree with it.
 COMPREHEND_QUESTIONS = {
@@ -104,9 +99,9 @@ COMPREHEND_QUESTIONS = {
         "Describe this image. Transcribe any text visible in it, in full and "
         "in the language it is written in."
     ),
-    # Speech is transcribed on BOTH automatic reads now (DEC-197) — this is the
+    # Speech is transcribed on BOTH automatic reads (DEC-197) — this is the
     # path an Instagram Reel or Story is actually read on, so changing only
-    # `client.DESCRIBE_PROMPTS` would have implemented nothing for it. The
+    # `client.DESCRIBE_PROMPTS` would change nothing for it. The
     # identity-number sentence is the same request, and the same non-guarantee,
     # that `DESCRIBE_PROMPTS` records.
     "video": (
@@ -152,8 +147,8 @@ def parse_comprehension(raw: str) -> tuple[str, str, str]:
     """`(title, description, content)` from a model's answer.
 
     FAIL-SOFT, and deliberately not fail-closed: an answer this cannot read as
-    JSON becomes the description, which is exactly what the pre-#116 path
-    produced from the same call. Reporting `unavailable` for a model that
+    JSON becomes the description, which is a usable reading of the bytes.
+    Reporting `unavailable` for a model that
     wrote a paragraph instead of an object would throw away a real reading of
     real bytes over punctuation — and `unavailable` has a meaning here («I
     could not look»), which this is not.
@@ -246,7 +241,7 @@ class MediaComprehender:
         # `MediaDescription.provenance`, because this object is shared and the
         # comprehension job spawns one task per subject: a message carrying a
         # video and a photo runs two `describe` calls concurrently here, and a
-        # stashed `last_provenance` had the still resetting it mid chunk-loop.
+        # stashed `last_provenance` would let one read reset another mid chunk-loop.
         # See `MediaDescription.provenance` for the whole of it.
 
     @property
@@ -311,7 +306,7 @@ class MediaComprehender:
     async def _comprehend_video(
         self, data: bytes, media_type: str, model: str,
     ) -> MediaDescription:
-        """Issue #117: windows in order, timecoded FROM THE WINDOW, then one
+        """Windows in order, timecoded FROM THE WINDOW, then one
         cheap text pass.
 
         The synthesis is a TEXT call over the window descriptions, not a second
@@ -358,20 +353,17 @@ class MediaComprehender:
             # of all when the description is rich. Every renderer appends it
             # last, after its own clip. See `MediaObject.caveat`.
             provenance["media_caveat"] = note
-        # NO GUARD ON AN EMPTY TITLE HERE, deliberately, and this is the
-        # shipped default's own path. `comprehension_text_model = ""` makes
+        # NO GUARD ON AN EMPTY TITLE HERE, deliberately.
+        # `comprehension_text_model = ""` makes
         # `_synthesize` answer `("", "")` — but the READ still happened: this
         # `content` is a timecoded run of up to ten video-model calls, which is
         # the expensive half and exactly what `[media] comprehension_text_model`
-        # documents as surviving without a text pass. Refusing here discarded
-        # all of it and made the next sighting pay again.
-        #
-        # What made the earlier version of that refusal necessary was a
-        # different bug, now fixed at its own level: `media_detail` renders
-        # `content` when there is no headline, so a titleless row reaches the
-        # prompt with its window run instead of rendering bare forever. The
-        # empty-answer case cannot reach this line at all — a read where no
-        # window was described returns `vision` above.
+        # documents as surviving without a text pass. Refusing here would discard
+        # all of it and make the next sighting pay again. `media_detail`
+        # renders `content` when there is no headline, so a titleless row
+        # reaches the prompt with its window run. The empty-answer case cannot reach
+        # this line at all — a read where no window was described returns
+        # `vision` above.
         return MediaDescription(
             available=True, title=title, text=description, content=content,
             provenance=provenance,
@@ -454,8 +446,7 @@ async def read_video_windows(
 
     Shared by the comprehension pass and by `media_fetch`'s live read, so the
     deliberate look and the automatic one cannot disagree about how much of a
-    clip was seen — `media_fetch` used to take the same silent 120-second view
-    the ingest path had just stopped taking.
+    clip was seen.
 
     Returns the rendered segments AND the windows a model actually described.
     The second is what any claim about coverage has to be computed from: a
@@ -474,18 +465,15 @@ async def read_video_windows(
     # as control flow: the per-call ceiling divides by `ceil(windows /
     # concurrency)`, so a bounded `asyncio.gather` here without raising that
     # constant would hand each window a ceiling derived for a serial read.
-    # `design/media-read-lane/01-chunk-parallelism.md` moves both together.
+    # Moving to parallel windows means changing both together.
     for window in cut.windows:
         result = await ask(window.data, len(cut.windows))
         stamp = _timecode(window.start_seconds)
         # `result is None` FIRST, and it is not defensive padding. `ask` is a
         # caller-supplied callable and `media_fetch`'s returns `None` when the
-        # describer raises — its two other branches check for it and this one
-        # did not, so a raising describer on a cuttable clip dereferenced
-        # `None.available` and the AttributeError propagated out of the tool,
-        # past `nora/agent/ports.py`'s `_validated`, into the agent loop. A
-        # tool never raises into the loop (`test_a_tool_never_raises_...`); the
-        # existing pin used a PNG and never entered this branch.
+        # describer raises; dereferencing `None.available` would propagate an
+        # AttributeError out of the tool into the agent loop, and a tool never
+        # raises into the loop.
         #
         # A window whose describer BLEW UP is exactly a window nothing read, so
         # it takes the same gap marker as one the model merely refused: the
@@ -535,10 +523,9 @@ def comprehension_provenance(
 
     `video_covered_seconds` and `video_complete` are computed from `read` — the
     windows a MODEL described — not from the cut. Ten clean windows with nine
-    model refusals used to record `video_complete: True` and full coverage
-    beside nine gap markers in the content, so an operator reading provenance
-    to decide whether to re-read got a false «whole clip covered». The cut's
-    own numbers are kept beside them (`video_windows_cut`) because the two
+    model refusals must not record `video_complete: True` beside nine gap
+    markers, or an operator reading provenance gets a false «whole clip
+    covered». The cut's own numbers are kept beside them (`video_windows_cut`) because the two
     differing is itself the signal.
     """
     if cut is None:

@@ -1,5 +1,4 @@
-"""`SqlLessonStore` — lessons per unit, each a revision chain
-(design/self-growth/40-lessons.md, L1).
+"""`SqlLessonStore` — lessons per unit, each a revision chain.
 
 Append-only: `create` inserts a `lesson` and its first revision, `append` adds
 the next one. The head is the highest `seq`; nothing is updated or deleted, so

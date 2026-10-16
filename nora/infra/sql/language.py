@@ -1,19 +1,12 @@
 """`SqlDreamCursor` — the Dreamer's consolidation cursor over SQLAlchemy Core.
 
-**What is left here after the language tier was deleted, and why the module
-kept its name.** `language_observation` and `room_lexeme` had exactly one
-consumer, the room-language consolidator, and both went with it. The THIRD
-table this module owns did not: `consolidation_watermark` is the DREAMER's
-cursor — `(consolidator_name, scope_id) -> how far this adaptor has read
+**This module owns one table: `consolidation_watermark`, the DREAMER's
+cursor** — `(consolidator_name, scope_id) -> how far this adaptor has read
 `messages`` — and every scheduled adaptor in `nora.app.runtime.dream_loop`
 reads and advances it, including the note tier's, which has nothing to do with
 language. The class is what `nora.app.runtime._ConsolidationCursor` names
-structurally; the surviving six methods ARE that Protocol.
-
-The module and the class keep their `language` names in this pass for the same
-reason `fact_entity` keeps its table name: the rename is a separate change with
-its own blast radius, and doing it inside a deletion would make the deletion
-unreviewable.
+structurally; its six methods ARE that Protocol. The `language` name is
+inherited and no longer describes the contents.
 
 The six verbs, and what each is for:
 
@@ -108,8 +101,7 @@ class SqlLanguageStore:
         watermarked — the honest reading of "how long since this last ran" for
         a pair that has never run is "arbitrarily long ago", and `_dream_once`
         relies on exactly that: `age >= max_age_seconds` is one of its three
-        fire conditions, deliberately "at lag == 0 on purpose"
-        (`docs/superpowers/plans/2026-08-15-...md`), so a scope's very first
+        fire conditions, deliberately firing at lag == 0, so a scope's very first
         tick must fire even with nothing unread yet.
         """
         stmt = sa.select(CONSOLIDATION_WATERMARK.c.updated_at).where(
@@ -138,11 +130,9 @@ class SqlLanguageStore:
         For `seed_watermarks`' head fallback: an adaptor whose scope the
         inherit-source never covered would otherwise start at 0 and walk the
         room's whole history `batch_limit` rows at a time, a model call per
-        batch. Measured live 2026-09-17, a day after the culture tier shipped:
-        one room held 1,916 messages with 1,616 still unread behind a cursor
-        seeded at 0, which at one fold a day is six days of accounts written
-        from slices of that room's PAST while the head claimed to say what the
-        room is now.
+        batch. A cursor seeded at 0 on a busy room would
+        leave a long unread backlog, so accounts get written from slices of
+        that room's PAST while the head claims to say what the room is now.
 
         `is_nora` is NOT filtered here, unlike `lag`. The value is a CURSOR
         POSITION, not a count of work: the watermark is compared against

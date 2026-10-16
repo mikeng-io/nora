@@ -72,8 +72,8 @@
   {
     "name": "the instagram/search OpenCLI allowlist row is restored",
     "file": "nora/infra/social/bridge_server.py",
-    "old": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        # LinkedIn (design/social-per-network/10, DEC-201)",
-    "new": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        (\"instagram\", \"search\"): (\"instagram\", \"search\"),\n        # LinkedIn (design/social-per-network/10, DEC-201)",
+    "old": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        # LinkedIn (DEC-201): every command",
+    "new": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        (\"instagram\", \"search\"): (\"instagram\", \"search\"),\n        # LinkedIn (DEC-201): every command",
     "target": "tests/test_acceptance_rules.py::test_r86_social_reads_are_read_only_at_three_layers"
   },
   {
@@ -100,8 +100,8 @@
   {
     "name": "the search row leaves the bridge list, back to the OpenCLI default",
     "file": "nora/infra/social/router.py",
-    "old": "    # deleted in the same change, so no Instagram read has two backends.\n    (\"instagram\", \"search\"),\n",
-    "new": "    # deleted in the same change, so no Instagram read has two backends.\n",
+    "old": "    # `instagram_search`: `GET /accounts?query=`. No Instagram read has two\n    # backends.\n    (\"instagram\", \"search\"),\n",
+    "new": "    # `instagram_search`: `GET /accounts?query=`. No Instagram read has two\n    # backends.\n",
     "target": "tests/unit/test_social_router.py::test_x_goes_to_the_default_and_instagram_search_to_the_bridge"
   },
   {

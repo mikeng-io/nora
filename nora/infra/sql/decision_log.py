@@ -1,4 +1,4 @@
-"""`SqlDecisionLogStore` — the shared decision log's Postgres half (issue #199).
+"""`SqlDecisionLogStore` — the shared decision log's Postgres half.
 
 `__init__(self, engine: AsyncEngine)` and nothing else, matching
 `SqlStandingStore`/`SqlTagTraceStore`: no config, no

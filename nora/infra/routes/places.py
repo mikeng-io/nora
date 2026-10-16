@@ -1,14 +1,14 @@
 """The place resolver, Google half — a POI NAME becomes coordinates, and NOTHING ELSE.
 
 `route` takes place NAMES (「Yoho Mall」, 「黃大仙祠」, 「打邊爐」) and must turn
-each into a coordinate before it can ask Google for a route (design/14 §5.2,
-DEC-24: coordinates are Nora's working state and never appear in any schema).
+each into a coordinate before it can ask Google for a route
+(DEC-24: coordinates are Nora's working state and never appear in any schema).
 Open transit data (`nora.infra.transit.places`, DEC-41) covers bus STOPS; it
 does not cover arbitrary points of interest, so this half exists and it is
 Google Places Text Search (New).
 
 **THE SCOPE BOUNDARY LIVES HERE, and it is places only — never a person.**
-This is the in-repo half of design/14 §2.2's hard block: a route query contains
+This is the in-repo half of the hard block: a route query contains
 two locations and they LEAVE THE HOST to Google, so 「陳生屋企」 must never be
 turned into a home address and sent. The mechanical guarantee has two layers,
 and this module is the lower one: it consults **no store that knows a human** —
@@ -18,24 +18,24 @@ structurally incapable of resolving a person to a location because it holds
 nothing that maps a person to one. The UPPER layer — refusing a query that
 NAMES a person before this module is ever reached — is R-28, enforced at the
 tool seam (`nora.agent.tools`), where the person roster and the identifier
-scanner both live. Neither layer is sufficient alone; together they are §2.2.
+scanner both live. Neither layer is sufficient alone; together they hold the block.
 
 **Ambiguity is an answer, not a guess** — the same discipline as transit's
-`near=` (DEC-41 §4). Text Search ranks by relevance, and for a specific name
+`near=` (DEC-41). Text Search ranks by relevance, and for a specific name
 (「Yoho Mall」) the top result is the place. But 「打邊爐」 legitimately means
 hundreds of different hotpot restaurants across the territory, and silently
 picking the first is this feature's version of the wrong confident answer. So
 results are clustered by proximity to the top hit: everything within
 `SAME_PLACE_RADIUS_M` is one place (a mall has several entrances Google returns
-as separate points), and a second result FURTHER than that with a different
-name makes the resolution `ambiguous`, with the distinct names returned as
-candidates for the model to ask about.
+as separate points), and `MIN_AMBIGUOUS_OTHERS` or more results FURTHER than
+that with different names make the resolution `ambiguous`, with the distinct
+names returned as candidates for the model to ask about.
 
 **The dining fields are a cheap bonus, and they are TYPED.** Text Search can
 return `rating`, `priceLevel` and `currentOpeningHours.openNow` in the same
 call for a few extra field-mask entries, and those are numbers, an enum and a
 boolean — closer to `listGroups` than to a web page, so they are NOT wrapped
-`untrusted="true"` (design/14 §2.1). Deliberately NOT requested: `reviews`,
+`untrusted="true"`. Deliberately NOT requested: `reviews`,
 which are STRANGER-WRITTEN free text and would have to be wrapped, and which
 belong to the later composite dining tool rather than to `route` — keeping them
 out of the field mask keeps this both minimal and off the more expensive
@@ -74,7 +74,7 @@ SAME_PLACE_RADIUS_M = 150.0
 
 # How many DISTINCT far places (beyond the top hit's cluster) it takes to call a
 # name ambiguous. Two — i.e. three distinct places in all — because a single far
-# runner-up is, on the live data, almost always the same place under its other
+# runner-up is, in practice almost always the same place under its other
 # name or a landmark's obvious also-ran, not a genuine fork (see `_resolve_from`).
 MIN_AMBIGUOUS_OTHERS = 2
 
@@ -236,16 +236,15 @@ def _resolve_from(query: str, places: tuple[Place, ...]) -> PlaceResolution:
     BY NAME — and only `MIN_AMBIGUOUS_OTHERS` or more of them makes the query
     ambiguous.
 
-    **This threshold was measured against the live API, not guessed** (the same
-    discipline DEC-39 applies to tool names). A pure proximity-cluster rule —
-    ambiguous on the FIRST distinct far result — flagged three named landmarks
-    on 2026-08-07: 「黃大仙祠」 (two real temples, the famous one ranked first),
+    **The threshold is set against the live API.** A pure proximity-cluster
+    rule — ambiguous on the FIRST distinct far result — would flag named
+    landmarks such as 「黃大仙祠」 (two real temples, the famous one ranked first),
     「香港迪士尼樂園」 (the Chinese and English names of the SAME resort, ~200 m
     apart), and 「Yoho Mall」 (its named phases). Each has an obvious top result
     a person means, so returning candidates there is noise, not care. A genuine
     category — 「打邊爐」, hotpot places scattered across districts — returns
     many distinct far results and still resolves to `ambiguous`. Trusting
-    Google's #1 for a named place, and asking only when the field is genuinely
+    Google's top hit for a named place, and asking only when the field is genuinely
     crowded, is what keeps the tool usable on real Hong Kong queries.
     """
     top = places[0]

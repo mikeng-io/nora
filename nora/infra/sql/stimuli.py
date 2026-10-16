@@ -1,7 +1,6 @@
 """`StimulusStore` over SQLAlchemy Core: the `stimulus` table, the
 `cognition_wake` log and a tracked wake's outcome and carries
-(design/cognition-loop/20-observe.md §3; `nora.domain.stimuli`'s state
-machine, DEC-242).
+(`nora.domain.stimuli`'s state machine, DEC-242).
 
 Every table is append-only. A unit's watermark is its newest `cognition_wake`
 row in a mode that did not fail or expire (`nora.domain.stimuli.Watermark`),
@@ -49,7 +48,7 @@ from nora.infra.sql.schema import (
 
 
 def _at(ms: int) -> datetime:
-    """`recorded_at` is timestamptz (1b's system-time shape); the wake
+    """`recorded_at` is timestamptz; the wake
     arithmetic is in epoch milliseconds. Millisecond values round-trip
     exactly through timestamptz's microseconds."""
     return datetime.fromtimestamp(ms / 1000, tz=UTC)
@@ -89,7 +88,7 @@ def _wake(r: Any) -> WakeRow:
 
 
 #: The `cognition_wake.detail` key that holds `NewWake.unclaimed_ids`: the
-#: stimuli inside the wake's range it did not claim (D2, DEC-245). In the
+#: stimuli inside the wake's range it did not claim (DEC-245). In the
 #: existing jsonb, so no migration; `WakeRow.detail` never carries it.
 _UNCLAIMED_KEY = "unclaimed"
 
@@ -103,9 +102,9 @@ def _wake_detail(raw: Any) -> dict[str, object]:
 
 
 def _detail(raw: Any) -> dict[str, object]:
-    """The jsonb object, from either form a row was written in: an object (now)
-    or a jsonb STRING holding the JSON (every row written before the double
-    encoding was fixed; also, on some drivers, the text of the column)."""
+    """The jsonb object, from either form a row was written in: an object
+    or a jsonb STRING holding the JSON (rows written with a double encoding;
+    also, on some drivers, the text of the column)."""
     if raw is None:
         return {}
     while isinstance(raw, str):
@@ -295,8 +294,7 @@ class SqlStimulusStore:
             # The predicate is a LITERAL per kind, never `kind == <value>`:
             # a bound parameter (`kind = $1`) does not imply the index's
             # `kind = 'rollup'`, and Postgres answers «no unique or exclusion
-            # constraint matching the ON CONFLICT specification» (step 2a's
-            # first run on the deployment's data).
+            # constraint matching the ON CONFLICT specification».
             stmt = stmt.on_conflict_do_nothing(
                 index_elements=[STIMULUS.c.unit, STIMULUS.c.ref],
                 index_where=_KIND_PREDICATE[stimulus.kind],
@@ -357,7 +355,7 @@ class SqlStimulusStore:
             waiting = {int(r.stimulus_id) for r in carry_rows if r.waits}
             have = {s.id for s in pending}
             # Two side doors past the range read: what a closed session carried,
-            # and what the watermark's wake left UNCLAIMED (D2), which the range
+            # and what the watermark's wake left UNCLAIMED, which the range
             # would call consumed. Both name stimuli that were pending.
             missing = sorted(({*carry, *mark.unclaimed}) - have)
             if missing:
@@ -527,10 +525,9 @@ class SqlStimulusStore:
             oldest_pending_ms=wake.oldest_pending_ms,
             cut_cooldown=int(wake.cut_cooldown),
             # The mapping AS ITSELF: the JSONB type serializes what it is
-            # handed. `sa.cast(json.dumps(...), JSONB)` stored a jsonb STRING
+            # handed. `sa.cast(json.dumps(...), JSONB)` would store a jsonb STRING
             # holding the JSON (`jsonb_typeof = 'string'`, so `detail->'unclaimed'`
-            # read NULL). Rows written that way stay strings; `_detail` reads
-            # either.
+            # reads NULL); `_detail` reads either form.
             detail=_with_unclaimed(wake),
             at_ms=wake.at_ms, recorded_at=_at(recorded_at_ms), tracked=int(wake.tracked),
         ).returning(COGNITION_WAKE.c.id)
@@ -585,7 +582,7 @@ def _check_outcome_wake(outcome: NewWakeOutcome, wake_unit: str | None) -> None:
     """An outcome names a wake that exists and is THIS unit's, in both
     implementations (`nora.testing.stimuli` calls this too): an outcome keyed
     by a wake nobody wrote, or by another unit's, would be a row no reader
-    ever finds and a `closed` that advances nothing (#627 review, minor 2)."""
+    ever finds and a `closed` that advances nothing."""
     if wake_unit is None:
         raise ValueError(f"no cognition wake {outcome.wake_id} to record an outcome for")
     if wake_unit != outcome.unit:
@@ -597,7 +594,7 @@ def _check_outcome_wake(outcome: NewWakeOutcome, wake_unit: str | None) -> None:
 def check_wake_guard(wake: NewWake, guard: WakeGuard | None) -> None:
     """A TRACKED wake is written under a guard, in both implementations
     (`nora.testing.stimuli` calls this too): an unguarded tracked write is the
-    write-skew the per-unit lock exists to prevent (#627 review, minor 3)."""
+    write-skew the per-unit lock exists to prevent."""
     if wake.tracked and guard is None:
         raise ValueError("a tracked wake must be recorded under a WakeGuard")
 

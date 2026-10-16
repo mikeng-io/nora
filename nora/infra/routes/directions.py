@@ -5,8 +5,7 @@ injected collaborator, one public entry point (`describe`), and every shortfall
 expressed as a returned value. `nora.infra.routes.client` does the I/O and hands
 the payload here.
 
-WHAT THE ROUTES API SENDS, read against the v2 reference and verified live
-2026-08-06 (天水圍站 → Yoho, TRANSIT, 358 s). `computeRoutes` returns
+WHAT THE ROUTES API SENDS (v2 reference). `computeRoutes` returns
 `routes[]`, each with `duration` ("358s" — a string of seconds with a trailing
 `s`), `distanceMeters` (an int), and `legs[]`. A TRANSIT leg's `steps[]` carry a
 `transitDetails` on the riding steps (walking steps carry none), and that object
@@ -19,7 +18,7 @@ departureTime` (RFC 3339 UTC), `headsign` (where the vehicle is signed for) and
 **Every field rendered here is TYPED** — a duration, a distance, an enum vehicle
 type, an RFC 3339 instant, or a name from Google's transit feed (GTFS, the same
 kind of published operator table KMB's `dest_en` comes from). So the envelope is
-NOT wrapped `untrusted="true"` (design/14 §2.1), exactly as the transit
+NOT wrapped `untrusted="true"`, exactly as the transit
 envelope is not. There is deliberately no free-text field to wrap: `route`'s
 field mask does not request `navigationInstruction` (Google-authored step prose)
 or place `reviews` (stranger-written), which are the two free-text surfaces this
@@ -169,7 +168,7 @@ def describe(
 ) -> dict[str, Any]:
     """One bounded, model-facing answer. NEVER raises.
 
-    Three states, distinct notes (design/14 §3): `ok` (a journey Google
+    Three states, distinct notes: `ok` (a journey Google
     returned), `no_route` (Google was reached and returned no way to connect
     the two points), `unavailable` (Google could not be reached, so nothing is
     known either way). `origin`/`destination` are echoed as Nora resolved them —
@@ -226,7 +225,7 @@ def _render_leg(leg: TransitLeg) -> dict[str, Any]:
 def candidates_note(origin: str, destination: str, which: Sequence[tuple[str, str]]) -> str:
     """The note when a place did not resolve to one point. `which` is a list of
     (label, detail) — one per place that missed — so the model can ask rather
-    than guess (design/14 §5.2: ambiguity is an answer)."""
+    than guess (ambiguity is an answer)."""
     parts = "; ".join(f"{label}: {detail}" for label, detail in which)
     return (
         f"I could not pin down a single place for this route ({parts}). Ask which "

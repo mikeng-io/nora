@@ -14,10 +14,9 @@ its token exchange (`_exchange`) and the shape its adapter wants back.
   A state file whose fingerprint does not match `.env` belongs to an older
   login and is ignored: a fresh login takes over without anyone deleting a
   file.
-- A state file written before the fingerprint existed (the xAI lane's, until
-  DEC-308) names no login. It may hold the LIVE chain (the old code rotated
-  the `.env` token into it, so the bootstrap is already spent) or a DEAD one
-  (a new login since). So its token is tried first, and only if the issuer
+- A state file with no fingerprint names no login. It may hold the LIVE chain
+  (the `.env` token was already rotated into it, so the bootstrap is spent) or
+  a DEAD one (a new login since). So its token is tried first, and only if the issuer
   refuses it is the `.env` bootstrap spent; whichever succeeds is written
   back with the fingerprint, and the question never comes up again.
 - A refresh is REFUSED when the state file cannot be written: the rotated
@@ -31,8 +30,7 @@ its token exchange (`_exchange`) and the shape its adapter wants back.
   so the keeper and a live call never both spend one token.
 
 Every refresh failure is logged with the lane and the reason, never the
-token: on 2026-10-09 the xAI lane's refresh token had been dead for up to 12
-days and nothing had said so. NEVER raises into the caller: a failure is a
+token, so a dead refresh token is visible. NEVER raises into the caller: a failure is a
 reason string (R-27).
 """
 

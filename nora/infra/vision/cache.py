@@ -1,6 +1,5 @@
 """A bounded, in-memory LRU of MiMo descriptions keyed by content hash (DEC-56),
-now a READ-THROUGH in front of the durable `MediaDescriptionStore` (sticker
-spec §4.1, Task 10).
+a READ-THROUGH in front of the durable `MediaDescriptionStore`.
 
 The sha256 IS the content, so a description is valid forever for that hash — a
 cache hit is not staleness, it is the same bytes. This holds the RAW description
@@ -9,14 +8,12 @@ store time — so a cache hit, at either tier, can never bypass it).
 
 Two tiers, not one, and neither is redundant with the other. The in-memory LRU
 saves a Postgres round trip on the hot path and keeps a store outage free
-within one process — this used to be the whole cache, and still is when
-`store` is `None` (every composition that has not wired one, same as `route`/
-`search`/`weather` shipping inert). The durable table is what makes a RESTART
-cheap, which the LRU alone never could: before this, every deploy threw away
-every description and the next sighting of every image paid MiMo again. Nora
+within one process; it is the whole cache when `store` is `None`. The durable
+table is what makes a RESTART cheap: the LRU alone loses every description on
+a deploy, and the next sighting of every image would pay MiMo again. Nora
 restarts often; stickers repeat over weeks. `aget`/`aput` check memory first
-and warm it on a durable hit; the synchronous `get`/`put` stay exactly as they
-were for the memory-only tier.
+and warm it on a durable hit; the synchronous `get`/`put` serve the
+memory-only tier.
 
 `aput` writes `platform=""`/`token=""` when called from `media_fetch`: that
 tool describes an image a human pointed at by handle, and there is no
@@ -77,8 +74,7 @@ class VisionCache:
         The in-memory tier is not redundant with the table: it saves a Postgres
         round trip on the hot path, and it is what keeps a store outage from
         costing anything within one process. The table is what makes a RESTART
-        cheap, which the LRU alone never could — this cache used to lose every
-        description on every deploy.
+        cheap: the LRU alone loses every description on a deploy.
         """
         hit = self.get(key)
         if hit is not None or self._store is None:

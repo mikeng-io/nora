@@ -1,5 +1,5 @@
 """Reading stored media back through a vision model (DEC-56, the READ half of
-media custody; issue #116's comprehension pass on top of it). The model call
+media custody, with the comprehension pass on top of it). The model call
 under its own timeout and byte ceiling, the comprehender that turns one call
 into title/description/content, and the content-hash description cache the
 `media_fetch` tool checks before either."""

@@ -1,7 +1,7 @@
 """`Life360Client` — auth, token cache, and one circle read. NEVER raises.
 
-The study (design/19 §1, §4) named both the ingredient that makes Life360's
-private API answer and the failure that gets an account banned:
+Two facts shape the client: what makes Life360's private API answer, and what
+gets an account banned:
 
 - **The missing ingredient is the Life360 app's User-Agent.** Auth is HTTP Basic
   with the app's client credential, `grant_type=password`, and that UA; without
@@ -16,17 +16,17 @@ private API answer and the failure that gets an account banned:
   returns `banned`, an alarm fires, `auth_failures` increments, and NO further
   re-auth is attempted on that read. The actual exponential back-off — the
   WAITING — lives in the collector loop, which already sleeps a cadence between
-  reads and lengthens it with `auth_failures` (design/19 §4.1). Keeping the wait
+  reads and lengthens it with `auth_failures`. Keeping the wait
   there and the "one re-auth per read" here is what bounds the credential-POST
   rate without a clock or a sleep inside this class.
 
 The token is cached IN MEMORY for the life of the process (one long-running
 daemon holds it fine); it is dropped on a 403 and re-fetched on the next read.
 
-**Token mode** (`access_token`, 2026-09-24): Life360 refuses the password grant
-outright for some accounts — `403 "Invalid login and password"` with the right
-password, which pnbruckner/life360 attributes to a verified phone number on the
-account. The workaround is the bearer a life360.com browser login leaves in the
+**Token mode** (`access_token`): Life360 refuses the password grant outright for
+some accounts — `403 "Invalid login and password"` with the right password,
+attributed to a verified phone number on the account. The workaround is the
+bearer a life360.com browser login leaves in the
 `LIFE360_AUTH_TOKEN` cookie. Given one, the client uses it as THE token and never
 POSTs the credential at all: there is no grant to fall back to, so a 401/403 on a
 data call is a REJECTED TOKEN — `banned` with its own `token_rejected` alarm, the
@@ -35,7 +35,7 @@ one, so the loud, distinct signal is the whole recovery path.
 
 Everything degrades to a typed `CircleRead`, never an exception into the loop
 (R-5): transport failure, a non-200, an app-update challenge PAGE (a 200 whose
-body is not JSON — the canary in §4), and a ban are four distinct statuses that
+body is not JSON — the canary), and a ban are four distinct statuses that
 must never collapse into one.
 """
 
@@ -55,10 +55,8 @@ from .places import parse_places
 log = logging.getLogger("nora.presence.life360")
 
 # The Life360 host is `api-cloudfront.life360.com` (behind Cloudflare). These
-# exact paths + UA + the app client credential are the recipe the presence study
-# authenticated with — verified live returning HTTP 200 with an access token
-# (scratchpad probe, 2026-08-07 01:34, re-verified 12:xx). Every part is load-
-# bearing and Life360-specific: token is `/v3/oauth2/token.json` (WITH `.json`),
+# exact paths + UA + the app client credential are the working recipe. Every part
+# is load-bearing and Life360-specific: token is `/v3/oauth2/token.json` (WITH `.json`),
 # circles is `/v3/circles` (NOT v4), and the UA is `.../23.49.0/Android/13`
 # (slashes, capital Android). A wrong client token or UA does not 401 cleanly —
 # Cloudflare serves a bot-challenge HTML 403 instead, which is why getting any of
@@ -67,12 +65,12 @@ TOKEN_URL = "https://api-cloudfront.life360.com/v3/oauth2/token.json"  # noqa: S
 MEMBERS_URL = "https://api-cloudfront.life360.com/v3/circles/{circle_id}/members"
 PLACES_URL = "https://api-cloudfront.life360.com/v3/circles/{circle_id}/places"
 CIRCLES_URL = "https://api-cloudfront.life360.com/v3/circles"
-# The on-demand location request (design/19 §on-demand, DEC-67): POST pings the
+# The on-demand location request (DEC-67): POST pings the
 # member's phone to report a FRESH position — the app's silent refresh button.
 REQUEST_URL = "https://api-cloudfront.life360.com/v3/circles/{circle_id}/members/{member_id}/request"
 
-# The Life360 Android app's User-Agent shape — the study's missing ingredient.
-# A constructor default, overridable, because it is a property of the client
+# The Life360 Android app's User-Agent shape — without it the token endpoint
+# refuses. A constructor default, overridable, because it is a property of the client
 # Nora impersonates, not of this deployment; the real value is operator-set.
 DEFAULT_USER_AGENT = "com.life360.android.safetymapd/KOKO/23.49.0/Android/13"
 
@@ -99,7 +97,7 @@ class ReadStatus(StrEnum):
 class CircleRead:
     """The typed outcome of `read_circle`. `members` is populated only on `ok`
     and may be empty — an empty members list is itself the collector's
-    unexpectedly-empty-circle canary (§4), decided there, not here."""
+    unexpectedly-empty-circle canary, decided there, not here."""
 
     status: ReadStatus
     members: tuple[Member, ...] = field(default_factory=tuple)
@@ -223,9 +221,6 @@ class Life360Client:
             # An explicit rate-limit — the strongest ban-class signal there is.
             # Do NOT re-auth (that POSTs the credential mid-throttle); hand it to
             # the collector's back-off, which the auth_failures increment drives.
-            # The client was 403-only before, so a 429 read through the cadence
-            # unchanged — the exact hammer the back-off exists to prevent (Kimi
-            # audit 2026-08-08).
             return self._banned("rate limited (429)")
 
         return self._classify(result, now_ms=now_ms)
@@ -269,7 +264,7 @@ class Life360Client:
         )
 
     async def read_places(self, *, circle_id: str, now_ms: int) -> PlacesRead:
-        """Read one circle's saved places (design/23 §3). NEVER raises, and holds
+        """Read one circle's saved places. NEVER raises, and holds
         the identical one-re-auth-per-read discipline as `read_circle` — the two
         reads share the token, the credential-POST bound, and the ban-class
         classification, because they share the account whose ban we are bounding."""
@@ -447,15 +442,13 @@ class Life360Client:
         return token
 
     def _places_banned(self, detail: str, *, alarm: str | None = "banned") -> PlacesRead:
-        """The places-read twin of `_banned` — council 2026-08-07 HIGH. The
-        three ban-class places outcomes MUST go through here, not construct
-        `PlacesRead(BANNED)` inline: inline construction skipped the
-        `_auth_failures` increment and the `banned` alarm, so a places-endpoint
-        403 re-POSTed the credential every cycle, silently, with the collector's
-        back-off structurally unable to engage — the exact hammering DEC-55
-        exists to prevent. The collector ALSO backs its places fetch off on
-        non-OK (`_refresh_places`), so this is the visibility half; that is the
-        rate half."""
+        """The places-read twin of `_banned`. The three ban-class places outcomes
+        MUST go through here, not construct `PlacesRead(BANNED)` inline: inline
+        construction would skip the `_auth_failures` increment and the `banned`
+        alarm, so a places-endpoint 403 would re-POST the credential every cycle
+        with the collector's back-off unable to engage (DEC-55). The collector
+        ALSO backs its places fetch off on non-OK (`_refresh_places`); this is the
+        visibility half, that is the rate half."""
         self._auth_failures += 1
         if alarm is not None:
             self._alarm(alarm)

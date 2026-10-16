@@ -1,9 +1,8 @@
 """Parse a file's bytes into text in a child process that can be killed.
 
-Review of PR 801 (2026-10-11): parsing ran on the event loop with no time
-bound, and a 12 KB crafted PDF held it for 17.9 s; nothing else Nora does
-could run meanwhile. Every parse of fetched bytes now happens HERE, never on
-the loop:
+A parse has no time bound of its own (a small crafted PDF can hold a parser
+for many seconds), so every parse of fetched bytes happens HERE, never on the
+event loop:
 
 - one child process per parse (`python -m nora.infra.external_files.parse`),
   fed the bytes on stdin, answering one JSON object on stdout;

@@ -1,15 +1,14 @@
-"""The one client for the memory index's embedder (design/unified-memory/
-65-build-step-3-vectors.md §0, V1): Qwen3-VL-Embedding-2B served by
-llama-server with `--embedding --pooling last` and its projector, the
-`embedder` compose service, run with the bake-off's flags (`-c 2048 -b 2048
--ub 2048 -t 4 -ngl 0 --parallel 1`).
+"""The one client for the memory index's embedder: Qwen3-VL-Embedding-2B
+served by llama-server with `--embedding --pooling last` and its projector,
+the `embedder` compose service, run with `-c 2048 -b 2048 -ub 2048 -t 4
+-ngl 0 --parallel 1`.
 
 Every prompt comes from `nora.domain.embedder_input`, the formatter the
-bake-off adapter uses too, so production embeds exactly what the bake-off
+bake-off adapter shares, so production embeds exactly what the bake-off
 measured. A vector comes back as `DIMENSIONS` floats, L2-normalised, so a
 cosine and an inner product rank the same.
 
-**Two failures, kept apart** (R-27's spirit, an ERROR is never a PASS):
+**Two failures, kept apart** (an ERROR is never a PASS):
 
 - `EmbedderUnavailableError`: the embedder did not answer usefully (refused,
   timed out, not healthy, an answer that is not one vector of the expected
@@ -68,7 +67,7 @@ __all__ = [
     "model_file",
 ]
 
-#: Qwen3-VL-Embedding-2B's width (65 §0: store 2048, index the first 256).
+#: Qwen3-VL-Embedding-2B's width (store 2048, index the first 256).
 DIMENSIONS = 2048
 
 #: The server's micro-batch (`-ub 2048`, the bake-off's): a pooled embedding
@@ -78,7 +77,7 @@ UBATCH = 2048
 TOKEN_BUDGET = UBATCH - 48
 
 #: A text this long or shorter cannot overflow the budget, so it is sent
-#: without a /tokenize call: the worst rate measured on this tokenizer was
+#: without a /tokenize call: the worst measured rate on this tokenizer is
 #: 2.11 tokens a character (3500 rare Hong Kong characters, 7389 tokens;
 #: ordinary Cantonese 1.22, emoji 1.10), and 880 x 2.11 plus the ~40 tokens
 #: of the prompt's own turns is under `TOKEN_BUDGET`.
@@ -95,13 +94,13 @@ MAX_SEND_PIXELS = 256 * 32 * 32
 #: decompression bomb is a few KB that inflates to gigabytes.
 MAX_DECODE_PIXELS = 64_000_000
 
-#: A search's whole query embedding (65 V2), inside a turn: every call it
+#: A search's whole query embedding, inside a turn: every call it
 #: makes (/props, /tokenize, /embedding, /health) shares this one deadline.
-#: A text query takes about 0.4 s on norty's CPU (65 §0), but the server runs
+#: A text query takes about 0.4 s on norty's CPU, but the server runs
 #: one request at a time (`--parallel 1`), so a query can wait behind an
 #: image the worker is embedding (about 3.4 s). Ten seconds covers both
 #: twice; past it the search falls back to the lexical seed, never waits the
-#: worker's 120. Per call, the three calls could take 25 s (review of #31).
+#: worker's 120. A per-call timeout would let the three calls take 25 s.
 QUERY_TIMEOUT_SECONDS = 10.0
 #: How long a query trusts the last /props that named the configured model,
 #: so a search makes one call, not two. A model swap is an operator's
@@ -200,7 +199,7 @@ class LlamaEmbedder:
     by: `embed_query` reads /props first and is unavailable while the server
     serves any other file, the worker's own rule (`nora.infra.sql.
     memory_embed`), so a search never compares a question from one model
-    with vectors from another (65 V2); a match is trusted for
+    with vectors from another; a match is trusted for
     `SERVED_MODEL_TTL_SECONDS`. `timeout_seconds` bounds each call, and
     `query_timeout_seconds` a whole `embed_query`."""
 
@@ -253,7 +252,7 @@ class LlamaEmbedder:
 
     async def embed_document(self, text: str) -> TextVector:
         """`text`'s vector, and whether only its head fitted (`truncated`):
-        the worker counts that, which is the signal for chunking (65 §3)."""
+        the worker counts that, which is the signal for chunking."""
         return await self._embed_text(text, "document")
 
     async def embed_image(self, data: bytes) -> list[float]:

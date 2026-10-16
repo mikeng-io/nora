@@ -11,7 +11,7 @@ between them:
   depending on which vendor the operator picked, which is exactly the property
   the port exists to deny.
 * **The clamp.** A tool result is re-sent on every subsequent model call, so
-  what accumulates must be bounded (the fetch-token lesson, 2026-08-08). The
+  what accumulates must be bounded. The
   bound is configured on `[search]` itself rather than per backend for the same
   reason, and the function that applies it lives once.
 
@@ -32,11 +32,10 @@ __all__ = [
     "image_links", "wrap",
 ]
 
-# Re-exported so an adapter imports its wrapper from the search package. It
-# used to reach into `nora.infra.transit.arrivals` for a PRIVATE helper across
-# two infra packages; wrapping one piece of outside text as a block is
-# `nora.domain.blocks`' subject and it lives there now. `name` is its first
-# positional argument and has no default — see there for why (#314).
+# Re-exported so an adapter imports its wrapper from the search package.
+# Wrapping one piece of outside text as a block is `nora.domain.blocks`'
+# subject. `name` is its first positional argument and has no default — see
+# there for why.
 wrap = wrap_outside_text
 
 

@@ -1,6 +1,5 @@
 """What an event write rests on, resolved against the database in the write's
-own transaction (migration `0086_event_citations`; design/cognition-loop/10-tiers.md
-§3, 40-register.md §4; the review of 2026-09-30 M2/m6).
+own transaction (migration `0086_event_citations`).
 
 `nora.infra.sql.gatherings.SqlGatheringStore.create`/`update` call
 `apply_evidence` with the `EventEvidence` a verb handed them. It does the

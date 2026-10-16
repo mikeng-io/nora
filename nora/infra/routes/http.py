@@ -46,7 +46,7 @@ async def post_json(
     about it to the group), a body that is not JSON, or any transport
     exception. A session per call, like `nora.infra.honcho.client` and the
     transit catalogue: these are a handful of requests an hour to one host, and
-    a pooled session would be state to own for no measured gain.
+    a pooled session would be state to own for no gain.
     """
     if not field_mask:
         # A programming error, not a runtime one: a Google call with no field

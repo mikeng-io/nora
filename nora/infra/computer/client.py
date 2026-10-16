@@ -1,5 +1,5 @@
 """`ComputerdRuntime`: Nora's side of the computerd protocol
-(`deploy/computer/computerd.py`, design/sandbox-runtime §2, §3).
+(`deploy/computer/computerd.py`).
 
 It is a plain HTTP client with a bearer token. It knows nothing about sbx: the
 same client works against computerd in any VM or container, which is what
@@ -113,8 +113,7 @@ class ComputerdRuntime:
             "max_output_chars": self._max_output_chars,
         }
         # The reserved slot goes on the wire only when it names a limit, so
-        # an unconfigured `[computer] limits` sends exactly what it sent
-        # before the slot existed.
+        # an unconfigured `[computer] limits` sends no slot.
         if limits:
             payload["limits"] = dict(limits)
 

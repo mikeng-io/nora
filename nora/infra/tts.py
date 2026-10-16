@@ -1,10 +1,9 @@
 """`MiniMaxTtsSpeaker` — reply text to Cantonese speech, via MiniMax's CN
-TTS endpoint (design/voice-channel/01 §2, decisions in 04 §3b).
+TTS endpoint.
 
 One POST against a CLOUD vendor (`api.minimaxi.com`, CN plan; `api.minimax.chat`
-as the documented fallback host — the two were verified 2026-09-14 to be the
-same backend answering the same key). The deliberate asymmetry with
-`SenseVoiceTranscriber` is recorded in design/voice-channel/00: STT is inbound
+as the documented fallback host, the same backend answering the same key). The
+deliberate asymmetry with `SenseVoiceTranscriber`: STT is inbound
 audio and stays on the box, TTS is outbound text Nora has already decided is
 fit to say aloud in a shared channel.
 
@@ -14,9 +13,8 @@ refused voice, empty audio — returns an unavailable `SpeakResult`, and the
 turn proceeds text-only. A reply that fails to sound is still a reply; a turn
 is never dropped over TTS.
 
-Facts that shaped the defaults (all measured 2026-09-14, design/voice-
-channel/04 §3b): the model is `speech-2.8-turbo` (hd's 1.75x price buys
-nothing measurable at reply lengths); `language_boost = "Chinese,Yue"` is
+Facts that shape the defaults: the model is `speech-2.8-turbo` (hd costs 1.75x and
+buys nothing measurable at reply lengths); `language_boost = "Chinese,Yue"` is
 HARD-SET, never `auto` — `auto` mis-renders Cantonese function words (係→是,
 唔該→嗯該); the voice is a native Cantonese one (`Cantonese_CuteGirl` as
 configured), because the voice is the lever, not the model tier. Cost, for
@@ -25,10 +23,10 @@ the operator: MiniMax bills ~2 characters per CJK input char; turbo is
 of a fen. Not load-bearing — quoted so a surprise on the bill can be checked
 against it.
 
-An optional `formatter` (design/voice-channel/08) rewrites only the text
+An optional `formatter` rewrites only the text
 this request carries, adding MiniMax pause and interjection markup; the
-reply that was recorded is never touched. Absent, the body is byte-identical
-to the one before it existed.
+reply that was recorded is never touched. Absent, the body carries the reply
+as written.
 """
 
 from __future__ import annotations
@@ -46,14 +44,14 @@ log = logging.getLogger("nora.speech")
 __all__ = ["MiniMaxTtsSpeaker"]
 
 _DEFAULT_MODEL = "speech-2.8-turbo"
-# Hard-set, never "auto" — see the module docstring for the measurement.
+# Hard-set, never "auto" — see the module docstring.
 _LANGUAGE_BOOST = "Chinese,Yue"
 _MEDIA_TYPE = "audio/mpeg"
 
 
 class TextFormatter(Protocol):
     """Fits a reply to this voice before synthesis
-    (`nora.agent.speech_format.SpeechFormatter`, design/voice-channel/08).
+    (`nora.agent.speech_format.SpeechFormatter`).
     Never raises; answers the text to speak."""
 
     async def format(self, *, text: str) -> str: ...
@@ -106,8 +104,7 @@ class MiniMaxTtsSpeaker:
         self._text_normalization = text_normalization
         self._pronunciation = pronunciation
         # `None` (the default, and `[speech.tts.format] mode = "off"`) sends
-        # the reply exactly as written: the request body is byte-identical to
-        # the one before the formatter existed.
+        # the reply exactly as written.
         self._formatter = formatter
         self._hosts = (host.rstrip("/"), fallback_host.rstrip("/"))
         self._timeout = httpx.Timeout(timeout_seconds)

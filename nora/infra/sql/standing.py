@@ -1,6 +1,5 @@
 """`SqlStandingStore` — the debrief's per-conversation position, read before
-every fold and revised in place after it
-(`design/dreamer-agent-loop/26-standing.md` §4).
+every fold and revised in place after it.
 
 `__init__(self, engine: AsyncEngine)` and nothing else, matching
 `SqlTagTraceStore`/`SqlNoteStore`'s own contract-suite
@@ -16,17 +15,13 @@ the window to matter. `ON CONFLICT` makes the race unrepresentable rather than
 unlikely.
 
 **`fold_count` is written, never incremented in SQL.** The caller holds the
-prior it just read and computes `prior.fold_count + 1` there. Until
-2026-09-24 this was also how the re-derivation path could RESET it to zero —
-a store that only knows how to increment cannot express that — but that path
-is deleted (design/standing-compact/); `fold_count` is now a plain count
-nothing resets, still computed in the caller rather than in SQL. Arithmetic in
+prior it just read and computes `prior.fold_count + 1` there. It is a plain
+count nothing resets, computed in the caller rather than in SQL. Arithmetic in
 the sink, not in the statement.
 
-**The upsert now carries an APPEND beside it, in the same transaction.** The
-head keeps its shape, its semantics and its statement exactly — nothing about
-`read`/`write` changed for any existing caller — and `standing_revision` records
-what the head was set to each time it moved. Both statements are inside the one
+**The upsert carries an APPEND beside it, in the same transaction.**
+`standing_revision` records what the head was set to each time it moved. Both statements are inside
+the one
 `engine.begin()` block, so «the head moved and nothing recorded it» and «a
 revision exists for a position the head never took» are both states this class
 cannot produce, rather than states it merely does not intend. That matters
@@ -59,19 +54,17 @@ from nora.domain.standing import (
 )
 from nora.infra.sql.schema import MESSAGES, STANDING, STANDING_REVISION
 
-#: A Standing row's sections (`nora.domain.lineage`; `design/cognition-loop/
-#: 12-schemas.md` §5, step 3 row 3b): `Where it stands` (`BODY`), `I hold
-#: open`, `I owe` and `Found, not yet given` (`WORKING_SET`) — the sectioned
-#: schema, live from `0076_standing_sections`. `HOLD_OPEN`/`I_OWE` carry the
-#: SAME lineage as `BODY`/`WORKING_SET`: the fold that writes them reads the
-#: same room, so `own_room_lineage` applies to every section a room-Standing
-#: row has, not just the two that existed before this step.
+#: A Standing row's sections (`nora.domain.lineage`): `Where it stands` (`BODY`),
+#: `I hold open`, `I owe` and `Found, not yet given` (`WORKING_SET`), from
+#: `0076_standing_sections`. `HOLD_OPEN`/`I_OWE` carry the SAME lineage as
+#: `BODY`/`WORKING_SET`: the fold that writes them reads the same room, so
+#: `own_room_lineage` applies to every section a room-Standing row has.
 SECTIONS: tuple[str, ...] = (BODY, HOLD_OPEN, I_OWE, WORKING_SET)
 
 
 def _derived(standing: Standing) -> dict[str, Any]:
-    """The columns every derived row carries (design/cognition-loop/
-    10-tiers.md §3, migration `0073_lineage`), computed by code from the row:
+    """The columns every derived row carries (migration `0073_lineage`), computed by code from the
+    row:
     the fold reads its own room, and is shown a prompt it does not cite
     (`own_room_lineage`); `as_of` is the time of the newest message it read
     (`last_folded_row_id`), else the fold's own instant."""
@@ -115,7 +108,7 @@ def _standing(row: sa.Row[Any]) -> Standing:
             row.lineage, origin=room_key(row.platform, row.conversation_id),
         ),
         exclude_persons=tuple(row.exclude_persons or ()),
-        # THE TWO NEW SECTIONS (`0076_standing_sections`, step 3 row 3b).
+        # `hold_open` / `i_owe` (`0076_standing_sections`).
         hold_open=row.hold_open,
         i_owe=row.i_owe,
     )
@@ -204,24 +197,18 @@ class SqlStandingStore:
         longer the state. The boundary is worth stating because both readings
         look reasonable and only one of them reconstructs anything.
 
-        **`fold_count DESC` is the tie-break, NOT `id DESC`** — measured, and
-        the first draft had it the other way round. `id` is
+        **`fold_count DESC` is the tie-break, NOT `id DESC`.** `id` is
         `gen_random_uuid()`: it carries no relationship to which fold was
-        written first, so two folds of one room sharing a millisecond resolved
-        to whichever uuid happened to sort higher. Over twelve trials that
-        returned the EARLIER of the two positions seven times — deterministic
-        for a fixed set of rows, and uncorrelated with the question being asked.
-        `fold_count` is the fold path's own counter (`prior.fold_count + 1`), so
+        written first, so two folds of one room sharing a millisecond would
+        resolve to whichever uuid sorts higher, uncorrelated with the question
+        being asked. `fold_count` is the fold path's own counter (`prior.fold_count + 1`), so
         ordering on it picks the later fold rather than the luckier uuid.
 
-        **Where `fold_count` is not enough, stated rather than left to be
-        found.** It is not strictly increasing: a rollup fold (`standing_event`, deleted
-        2026-10-03, DEC-277) carried the
-        prior's value forward unchanged, rather than incrementing it. (Before 2026-09-24 a rebuild
-        also reset it to 1
-        — deleted with the ceiling trigger, design/standing-compact/.) So two
-        revisions that share BOTH a millisecond and a `fold_count` are still a
-        tie. `id DESC` stays on as the final key purely to make the ordering
+        **Where `fold_count` is not enough.** It is not guaranteed strictly
+        increasing: a writer may carry the prior's value forward unchanged
+        (DEC-277). So two revisions that share BOTH a millisecond and a
+        `fold_count` are still a tie. `id DESC` stays on as the final key purely to make the
+        ordering
         TOTAL — with two keys the planner would be free to return either row
         of such a tie, and a total order at least answers one way.
         Sub-millisecond ties are not reachable on the fold path in practice
@@ -254,17 +241,12 @@ class SqlStandingStore:
         return _standing(row)
 
     async def write(self, *, standing: Standing, source: str = "fold") -> None:
-        """The fold's write — an unconditional upsert, exactly as before this
-        argument existed. `source` is recorded on the `standing_revision`
-        append ONLY (design/dreamer-agent-loop/26-standing.md, dated section
-        2026-09-25): the head carries no writer-provenance column, because the
+        """The fold's write — an unconditional upsert. `source` is recorded on
+        the `standing_revision` append ONLY: the head carries no writer-provenance column, because
+        the
         property worth recording is who wrote each POSITION the room held,
-        which is what the chain behind the head is for. All three callers —
-        `debrief.py`, `standing_event.py` (deleted 2026-10-03), and the eval sandbox's
-        `standing_fold.py` (which stamps its seeded prior `'fold'` too, since
-        it is reproducing a fold that already happened) — stay on the
-        default; nothing about this method's shape or its transaction
-        changed for any of them.
+        which is what the chain behind the head is for. Fold callers stay on the
+        default `'fold'`.
 
         `'operator'` is written by `write_if_unchanged` below, never by this
         method directly — a manual edit also needs the compare-and-set this
@@ -289,30 +271,25 @@ class SqlStandingStore:
                 "body": stmt.excluded.body,
                 "fold_count": stmt.excluded.fold_count,
                 "updated_at": stmt.excluded.updated_at,
-                # THE TWO NEW SECTIONS (`0076_standing_sections`): written on
+                # `hold_open` / `i_owe` (`0076_standing_sections`): written on
                 # every upsert, the same "never by accident" argument
                 # `working_set` makes below — an omitted key would keep the
                 # row's old value instead of the caller's decision.
                 "hold_open": stmt.excluded.hold_open,
                 "i_owe": stmt.excluded.i_owe,
-                # `consumed_verdict_tag` is NOT written: it was the watermark
-                # of the ungrounded re-derivation trigger, deleted 2026-09-24
-                # with the verdict (design/standing-compact/). The column
-                # stays, as dropped tiers' columns do; nothing reads it.
+                # `consumed_verdict_tag` is NOT written: a vestigial column
+                # nothing reads.
                 #
                 # The row-id watermark: written on every upsert, never
                 # omitted — an omitted key would keep its old value by
                 # accident rather than by decision — so a revise
                 # that carries the prior's watermark forward does so by
                 # decision and a fold that advanced it writes the advance in
-                # the SAME statement as the position it belongs to
-                # (design/standing-watermark/20 — the fold's write is one
-                # statement, never a position and a watermark that can drift
-                # apart).
+                # the SAME statement as the position it belongs to, so a
+                # position and its watermark cannot drift apart.
                 "last_folded_row_id": stmt.excluded.last_folded_row_id,
                 # Written on every upsert, same reasoning as the watermark
-                # above: the caller (the fold, or the rollup carrying the
-                # prior's set forward unchanged) decided the value, and an
+                # above: the caller decided the value, and an
                 # omitted key here would silently keep whatever the row held
                 # instead of the decision the caller made.
                 "working_set": stmt.excluded.working_set,
@@ -356,8 +333,7 @@ class SqlStandingStore:
         self, *, expected: Standing, standing: Standing
     ) -> bool:
         """The operator's write: a manual edit of `body`, refused unless the
-        row is EXACTLY what was read (design/dreamer-agent-loop/26-standing.md,
-        dated section 2026-09-25).
+        row is EXACTLY what was read.
 
         **Why this is a second method rather than a flag on `write`.** The
         fold's write is a blind upsert — it must never refuse on a stale read,
@@ -379,22 +355,12 @@ class SqlStandingStore:
         and `standing.last_folded_row_id` are NOT part of what an operator
         edit changes — only `body` and `updated_at` are — and this method
         RAISES `ValueError` if any of the four differ from `expected` rather
-        than silently accepting them. **An earlier version of this docstring
-        claimed the WHERE clause already made that impossible; it did not.**
-        The WHERE clause matches the row's CURRENT (pre-write) values against
-        `expected`, which pins the row being updated, but it says nothing
-        about what the caller's `standing` argument then WRITES into
-        `fold_count` or `last_folded_row_id` — those come from `.values()`,
-        entirely uncontrolled by the WHERE — so a caller that (by a bug)
-        passed a `standing` with a different `fold_count` would have
-        silently written it, exactly the claim the operator edit exists to
-        rule out. `platform`/`conversation_id` mismatches were worse: the
-        WHERE still finds the right row (keyed on `expected`'s), but the
-        revision insert below takes ITS values from `standing`, so a caller
-        passing the wrong key would have appended a revision under a
-        different room's identity while updating this one's head. Both are
-        now closed by the checks that follow, not by an argument about the
-        SQL.
+        than silently accepting them. The WHERE clause only pins the row
+        being updated against `expected`; the values written come from
+        `standing` via `.values()`, uncontrolled by the WHERE, and the revision
+        insert takes its platform/conversation_id from `standing` too, so a
+        mismatched key would append a revision under a different room's
+        identity. The explicit checks close both.
 
         Always writes `source='operator'` on the revision it appends — that is
         the entire reason this method exists rather than a caller doing its

@@ -1,5 +1,5 @@
 """`MediaDescriptionStore` over SQLAlchemy Core — the two-level media dedup
-cache (sticker spec §4.1), re-rooted onto `media_objects` (DEC-138). Shaped
+cache, rooted on `media_objects` (DEC-138). Shaped
 like `nora.infra.sql.tool_call_log`, plus upserts, because a sticker is seen
 many times.
 
@@ -91,8 +91,8 @@ class SqlMediaDescriptionStore:
         whole point even when there is no identity to index.
 
         `description=""` means "index this identity, describe nothing" — the
-        shape `StickerReader` uses since issue #116 moved the model pass off
-        the ingest path into the spawned comprehension job. It must NOT clobber
+        shape `StickerReader` uses, because the model pass runs in the spawned
+        comprehension job, off the ingest path. It must NOT clobber
         a description already on the row: the empty string is what every
         un-comprehended row already carries (`describe` reads it as a MISS),
         so an unguarded overwrite would silently erase a real comprehension
@@ -156,7 +156,7 @@ class SqlMediaDescriptionStore:
                     )
                     await conn.execute(index_stmt)
                 await conn.execute(desc_stmt)
-                # The description is an attachment's reading (25 §7).
+                # The description is an attachment's reading.
                 await memory_index.reproject_media(
                     conn, blob.sha256, metrics=self._metrics,
                 )

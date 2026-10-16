@@ -1,6 +1,5 @@
 """`GoogleCredentials`: the ONE Google OAuth client and refresh token every
-Google service of Nora's shares (operator, 2026-10-10;
-design/external-files/00-design.md §4).
+Google service of Nora's shares.
 
 It owns the refresh-token grant against `oauth2.googleapis.com/token` and the
 access tokens it returns, held in memory until their own expiry and never
@@ -9,11 +8,11 @@ and calls `access_token(scope=...)` with the scope it declares
 (`nora.infra.google.scopes`); it never sees the client secret or the refresh
 token.
 
-**Read-only holds in the credential, not only in the code** (re-review of
-PR 801). Each consumer's access token is minted for ITS scope set alone: the
-refresh request carries an explicit `scope=` (a subset of the grant), so the
-Drive adapter's token carries `drive.readonly` and nothing else, whatever
-else the one refresh token was granted. Tokens are kept per scope set; two
+**Read-only holds in the credential, not only in the code.** Each consumer's
+access token is minted for ITS scope set alone: the refresh request carries an
+explicit `scope=` (a subset of the grant), so the Drive adapter's token
+carries `drive.readonly` and nothing else, whatever else the one refresh
+token was granted. Tokens are kept per scope set; two
 consumers with the same set share one.
 
 **Fail closed.**
@@ -196,7 +195,7 @@ class GoogleCredentials:
                 httpx.AsyncClient(transport=self._transport, timeout=self._timeout) as client,
                 # `identity`: httpx otherwise advertises gzip, Google then
                 # compresses the answer, and the raw bytes below are not JSON
-                # (2026-10-11: every live refresh failed with UnicodeDecodeError).
+                # (the read fails with UnicodeDecodeError).
                 client.stream("POST", TOKEN_URL, data=form,
                               headers={"Accept-Encoding": "identity"}) as resp,
             ):

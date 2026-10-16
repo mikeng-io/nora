@@ -11,9 +11,7 @@ whole purpose is to change once a day.
 the one this module exists to keep: epoch 0 is a real instant in 1970 that any
 slot arithmetic will happily compute against, and a store that returned it for
 an absent pair would make a brand-new adaptor look like one that last ran
-fifty-six years ago — which is indistinguishable from a correct answer and
-fires exactly once either way, so the bug would survive its own test. `None` is
-the honest reading and the caller decides what a first sighting means.
+decades ago. `None` is the honest reading and the caller decides what a first sighting means.
 """
 
 from __future__ import annotations

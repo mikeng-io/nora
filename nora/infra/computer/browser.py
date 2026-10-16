@@ -1,24 +1,22 @@
-"""A room's browser in Nora's computer, driven over CDP (design/browser-runtime
-00 §5, B2).
+"""A room's browser in Nora's computer, driven over CDP.
 
 computerd serves each room's Chrome as one authenticated websocket
 (`GET /v1/browser?scope=`), each frame a CDP message relayed to Chrome's
-`--remote-debugging-pipe` (deploy/computer/computerd.py, B1). This module is
+`--remote-debugging-pipe` (deploy/computer/computerd.py). This module is
 the client half: `open_browser` connects, attaches to the room's page, and
 yields a `BrowserPage` with the few actions the browse sub-agent is given.
 
 What the model sees of a page is an accessibility snapshot: the interactive
 elements, each with a short ref (`e1`, `e2`, ...), its role, its accessible
 name and its value, the way agent-browser and Playwright's ARIA snapshots
-do (design 00 §5). Actions take a ref, never a selector or a pixel; a
+do. Actions take a ref, never a selector or a pixel; a
 screenshot draws the same refs on the page (Set-of-Marks), so an answer read
 off the picture is still a ref. Refs live for one snapshot: a new snapshot
 renumbers them, and an action on a ref the last snapshot did not give is
 refused.
 
 Everything here returns or raises plainly; the statuses the model is told are
-decided by the caller (`nora.agent.browse`). No credential path exists yet
-(the fill broker is B4).
+decided by the caller (`nora.agent.browse`). No credential path exists.
 """
 
 from __future__ import annotations
@@ -513,7 +511,7 @@ async def open_browser(*, base_url: str, token: str, scope: str,
     Raises `BrowserError` when computerd refuses (another client holds this
     room's browser, every browser slot is busy, the computer is off) or the
     page cannot be attached. A refusal is NOT asked again to learn its reason:
-    any request to that address may start a browser (B1's computerd answers a
+    any request to that address may start a browser (computerd answers a
     refusal with JSON instead of upgrading, and a second plain GET would run
     its start path again)."""
     ws_url = base_url.rstrip("/").replace("http://", "ws://", 1).replace(
@@ -557,7 +555,7 @@ async def _attach(cdp: CdpConnection) -> BrowserPage:
     except (KeyError, TypeError) as exc:
         raise BrowserError(f"the page could not be attached: {type(exc).__name__}") from None
     # Never `Runtime.enable`: pages can detect it, and it is the best-known CDP
-    # automation tell (design 00 §3); evaluation runs in an isolated world
+    # automation tell; evaluation runs in an isolated world
     # (`BrowserPage._context`), which needs only `Page`.
     for domain in ("Page", "DOM", "Accessibility"):
         await cdp.call(f"{domain}.enable", session_id=session_id)

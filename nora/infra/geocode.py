@@ -1,7 +1,7 @@
 """Reverse geocode one coordinate to a place name — or None. NEVER raises.
 
 Life360 attaches a coarse `address1` to most fixes, so this is the FALLBACK for
-the ones it does not (design/19 §5): a fix Nora would otherwise have to report as
+the ones it does not: a fix Nora would otherwise have to report as
 bare «22.31, 114.16», turned into «Yoho Mall» so she can answer «where are they»
 with a place.
 
@@ -13,11 +13,9 @@ collector sends the member's coordinate to Google's (or the HK-gov) geocoding AP
 to turn it into a place name. That egress is the collector's alone and never the
 model's: the resolved NAME is what reaches Nora, the coordinate never does
 (DEC-24/60), and `whereis` stays a pure local-DB read that itself sends nothing.
-(The earlier «design/14 §2.2 on-host geocoding» citation was wrong — the call is
-off-host to Google. DEC-69 is the decision record for this coordinate egress:
-R-28 governs what leaves toward the MODEL/GROUP, and the collector is neither, so
-sending the coordinate host→Google to get a name back is an accepted egress, not
-an R-28 breach — the resolved name is all Nora ever sees.)
+The call is off-host to Google (DEC-69). R-28 governs what leaves toward the
+MODEL/GROUP, and the collector is neither, so sending the coordinate host→Google
+to get a name back is an accepted egress, not an R-28 breach.
 
 Uses the classic Geocoding API, which is a GET with the key in the query string
 (NOT the `X-Goog-Api-Key` header the Routes/Places v1 endpoints use — a different
@@ -45,8 +43,8 @@ GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 # A Plus Code (Open Location Code) appearing INSIDE a formatted address -
 # e.g. 香港新界元朗FQQQ+QQ or FQQQ+QQ, Yuen Long. No word boundary: the
 # backslash-b form fails at the CJK-alphanumeric edge, which is exactly
-# where Google embeds them for coordinates with no street address (live
-# finding 2026-09-06). Such an address is grid machinery, not something a
+# where Google embeds them for coordinates with no street address. Such an
+# address is grid machinery, not something a
 # human reads aloud, so the selector treats it as a miss.
 _PLUS_CODE_IN_ADDRESS = re.compile(r"[A-Z0-9]{4}\+[A-Z0-9]{2,3}", re.IGNORECASE)
 
@@ -75,9 +73,8 @@ class CachingBilingualGeocoder:
         # cached; a miss (None) is NOT stored, so a transient geocode outage does
         # not pin a coordinate to "no address" for the life of the process.
         self._cache: dict[tuple[float, float], str] = {}
-        # The durable half (2026-08-19): survives a restart, where the dict
-        # above does not. Optional — `where_is` wires it, a caller that does
-        # not is unchanged (in-memory-only, exactly as before this existed).
+        # The durable half: survives a restart, where the dict above does not.
+        # Optional — `where_is` wires it; without it the cache is in-memory only.
         self._store = cache_store
 
     async def address_for(self, *, lat: float, lng: float) -> str | None:
@@ -204,8 +201,8 @@ def _first_address(payload: Any) -> str | None:
     Results are not ordered by usefulness (Google's own client docs): for a
     coordinate with no street address Google puts a PLUS CODE in
     `results[0]` — sometimes typed `premise`/`street_address`, not only
-    `plus_code` — and the real `route` answer sits behind it (live case:
-    「香港新界元朗FQQQ+QQ」 beating 香港新界元朗南生圍路, 2026-09-06). A Plus
+    `plus_code` — and the real `route` answer sits behind it (e.g.
+    「香港新界元朗FQQQ+QQ」 ahead of 香港新界元朗南生圍路). A Plus
     Code is grid machinery nobody reads aloud, so any result whose
     formatted_address embeds one is skipped; the request-side
     `result_type` filter alone cannot catch the embedded premise form. ALL

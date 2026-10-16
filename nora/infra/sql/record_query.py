@@ -1,5 +1,4 @@
-"""`SqlRecordQuery` — the Record read behind `record_query`
-(design/cognition-loop/15-map.md §4, migration step 2).
+"""`SqlRecordQuery` — the Record read behind `record_query`.
 
 One method: the messages of some rooms in an interval, optionally one
 person's, optionally matching some text, each with its newest edit folded in
@@ -12,12 +11,11 @@ lineage predicate (`nora.agent.lineage`) chose them for the turn's room. A
 store that filtered afterwards would have read another room's words into the
 process first.
 
-**Lexical search is pg_trgm** (design/dreamer-agent-loop/24-embedding-seam.md
-§2, measured on Cantonese): a message matches when its CURRENT text (its
+**Lexical search is pg_trgm**: a message matches when its CURRENT text (its
 newest edit, else its body) CONTAINS the words (`ilike`, the note tier's
 operator and reason, `nora.infra.sql.notes`), or when pg_trgm's word
 similarity finds them inside it at `WORD_SIMILARITY_MIN` or above. The second
-half is 24 §2's operator: a CJK run is one token to full-text search, and
+half is the word-similarity operator: a CJK run is one token to full-text search, and
 plain `similarity` scored the true in-sentence match 0.18, under its own
 default. Containment ranks first, then word similarity, then the newest; a
 hit that does not contain the words is marked `near`.
@@ -46,7 +44,7 @@ from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGE_REACTION
 __all__ = ["WORD_SIMILARITY_MIN", "SqlRecordQuery"]
 
 #: pg_trgm's word similarity at which a message counts as mentioning the
-#: words. 0.5 is what 24 §2 measured for the real case, a three-character
+#: words. 0.5 fits the real case, a three-character
 #: Cantonese term inside a sentence (`word_similarity('大步行', '我今日去咗大步行')`
 #: = 0.5), where pg_trgm's own default (0.6) misses it; an unrelated Chinese
 #: string scored 0.
@@ -81,8 +79,8 @@ class SqlRecordQuery:
             # WHAT IS SAID NOW, and only by a message still standing. A text
             # match is a claim about the words: matched against an earlier
             # version of an edited message, or against a deleted one, a hit
-            # would prove the words were there even with the body withheld
-            # (review of the first cut). So the current text is the newest
+            # would prove the words were there even with the body withheld.
+            # So the current text is the newest
             # edit's, or the body when there is none, and a deleted message
             # never matches.
             edited = sa.exists().where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
@@ -147,7 +145,7 @@ class SqlRecordQuery:
     ) -> tuple[RecordRefHit, ...]:
         """The messages the `(table, row id)` refs of message stimuli name
         (`messages`, `message_reaction`, `message_delete`), read for the
-        Cognition session's grounding (design/cognition-loop/30-cognition.md §1).
+        Cognition session's grounding.
 
         Not `record_query`: no interval, no search, and NOT behind
         `[record_query] enabled`, which decides whether a MODEL is offered a

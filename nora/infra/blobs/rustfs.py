@@ -1,41 +1,24 @@
 """`BlobStore` over RustFS (an S3-compatible object store), keyed by the
-sha256 of the content — the object-store sibling `filesystem.py`'s own
-docstring named as the reversal path (DEC-136).
+sha256 of the content (DEC-136).
 
-**Why now, when `filesystem.py` argued against this.** That argument held
-"until there IS evidence (a volume, a size distribution, a second consumer)".
-2026-08-23: the deployed store held 75 blobs, 33 MB, accumulated over 16 days,
-sizes from 173 B to 12.8 MB — a real volume and a real size distribution, the
-first of the three conditions actually met. (The second, a second consumer,
-still is not — this remains the only `BlobStore` caller.) RustFS was also, by
-then, already running for Drop's artifact bytes (Drop retired 2026-10-08, ADR
-0023; this store is now RustFS's only consumer), so the "a container on the
-write path that can be down" cost `filesystem.py` named is not a NEW container
-this deployment now depends on.
+**Same port, same encryption as `FilesystemBlobStore`.** `BlobCipher` seals the
+bytes before they leave this process (DEC-47); this module never writes
+plaintext. The ciphertext's home is an S3 `PUT`/`GET`.
 
-**Same port, same encryption, different WHERE.** `BlobCipher` seals the bytes
-before they leave this process either way (DEC-47) — this module never writes
-plaintext, the same as `FilesystemBlobStore`. The only thing that changes is
-that the ciphertext's home is an S3 `PUT`/`GET` instead of a sharded directory.
+**No `<first2>/<rest>` sharding.** That layout exists in `filesystem.py` to keep
+any one directory from accumulating every object; an object store's flat key
+namespace needs none, so the key is the sha256 hex digest itself.
 
-**No `<first2>/<rest>` sharding.** That layout exists in `filesystem.py` to
-keep any one directory from accumulating every object on ext4 — a concern that
-does not apply to an object store's flat key namespace, so the key here is
-just the sha256 hex digest itself.
+**boto3 in `asyncio.to_thread`, not aiobotocore.** The call volume does not
+justify `aiobotocore`'s larger dependency chain, and the blocking-I/O-off-the-
+event-loop shape matches `FilesystemBlobStore`'s worker-thread writes.
 
-**boto3, not aiobotocore, in `asyncio.to_thread`** — the same choice Drop's
-retired RustFS client made: this
-store's call volume does not justify `aiobotocore`'s larger dependency chain,
-and the blocking-I/O-off-the-event-loop shape is identical to
-`FilesystemBlobStore`'s own worker-thread writes.
-
-**`put` always uploads**, even for a key that already exists — unlike
-`FilesystemBlobStore`'s existence check before writing. A duplicate PUT to the
-same content-addressed key is idempotent (same bytes, freshly resealed under a
-new GCM nonce, which is always safe for identical plaintext — nonce reuse is
-only unsafe across DIFFERENT plaintexts under one key). Skipping it would save
-a rare re-upload at the cost of a HEAD-then-PUT race window; not worth it for
-a "meme forwarded five times" rate of traffic.
+**`put` always uploads**, even for a key that already exists (no existence check,
+unlike `FilesystemBlobStore`). A duplicate PUT to the same content-addressed key
+is idempotent: same bytes, resealed under a fresh GCM nonce, which is safe for
+identical plaintext (nonce reuse is only unsafe across different plaintexts
+under one key). A HEAD-then-PUT check would add a race window to save a rare
+re-upload.
 """
 
 from __future__ import annotations

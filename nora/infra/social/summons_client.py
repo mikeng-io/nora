@@ -1,15 +1,13 @@
 """`InstagramSummonsClient` — the public summons' own client on the
-instagram-bridge (design/instagram-adoption/19): the post and comments reads
+instagram-bridge: the post and comments reads
 the summons needs, and the ONE public write, a reply under a summons comment.
 
-It has NO mentions read. The summons poller that used `GET /mentions` was
-removed on 2026-09-26: the notification feed behind it never carried a
-comment mention of her (measured). A summons now arrives as an SSE `summons`
-event (`nora.platform.instagram.summons`).
+It has NO mentions read: the notification feed never carries a comment
+mention of her. A summons arrives as an SSE `summons` event (`nora.platform.instagram.summons`).
 
 **Not a method on `InstagramSocialClient`, on purpose.** That client is the
 model's read side and R-86's test pins it to GET-only; the Threads design
-(design/threads-adoption/10) keeps the read port and the posting port apart,
+keeps the read port and the posting port apart,
 because a posting capability that rides on a read client is one refactor away
 from being reachable by a read tool. This client is held by the summons
 occasion alone and by nothing a model can call.
@@ -55,9 +53,9 @@ T = TypeVar("T")
 #: string from the wire can address a different route.
 _DECIMAL_RE = re.compile(r"[0-9]{1,25}")
 
-#: The hosts an item is served from (`instagram_client._CDN_HOST_SUFFIXES`,
-#: MEASURED): a url is handed to the model and to `media_fetch`, so an item on
-#: any other host is dropped rather than rendered.
+#: The hosts an item is served from (`instagram_client._CDN_HOST_SUFFIXES`): a url
+#: is handed to the model and to `media_fetch`, so an item on any other host is dropped
+#: rather than rendered.
 _CDN_HOST_SUFFIXES: tuple[str, ...] = (".fbcdn.net", ".cdninstagram.com")
 
 _KINDS = frozenset({"image", "video"})
@@ -88,7 +86,7 @@ class InstagramSummonsClient:
     # ---- reads -------------------------------------------------------------
 
     async def post(self, shortcode: str) -> BridgeResult[SummonsPost]:
-        """`GET /posts/{shortcode}` → the post, items on a measured CDN host
+        """`GET /posts/{shortcode}` → the post, items on an allowed CDN host
         only. A post with no usable item is `bad_body`: she does not answer
         about a post she cannot see."""
         if not SHORTCODE_RE.fullmatch(shortcode):

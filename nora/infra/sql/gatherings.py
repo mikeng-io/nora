@@ -3,16 +3,15 @@ the engine comes through `__init__`, every write is one statement (or one
 transaction of a few) inside `async with self._engine.begin()`, every read
 inside `async with self._engine.connect()`.
 
-Since migration `0074_event_revision` (design/cognition-loop/70-migration.md
-§2 row 2b): `events` is a head, a compare-and-swap cache over the append-only
-`event_revision` chain (10-tiers.md §8), mirroring `nora.infra.sql.notes`'
+`events` is a head, a compare-and-swap cache over the append-only
+`event_revision` chain (migration `0074_event_revision`), mirroring `nora.infra.sql.notes`'
 `note`/`note_revision` split — `create` mints both the head and its first
 revision in one transaction, `update` appends a new revision and moves the
-head, optionally refusing a stale `base_revision_id` (`StaleEventRevisionError`,
-10 §3: "a stale one is refused `stale_base`, with the current row"). RSVPs
+head, optionally refusing a stale `base_revision_id` (`StaleEventRevisionError`:
+a stale one is refused `stale_base`, with the current row). RSVPs
 are append-only too (`event_rsvps`): `add_rsvp` INSERTs, never upserts;
 `rsvps_for` projects the newest row per person, so callers see the same
-"one current RSVP per person" shape as before the migration.
+"one current RSVP per person" shape.
 
 `FakeGatheringStore` (`nora/testing/gatherings.py`) is the second
 implementation; `tests/contract/test_gathering_store_contract.py` is the one
@@ -312,9 +311,8 @@ class SqlGatheringStore:
         return _replace(row, head_revision_id=revision.id)
 
     async def add_rsvp(self, rsvp: RSVP) -> None:
-        # Append-only since `0074_event_revision` ("RSVP transition rows",
-        # 70 §5): a repeat RSVP is a new row, never an UPDATE of the old one
-        # — `rsvps_for` is what projects "the current one" back out.
+        # Append-only (`0074_event_revision`): a repeat RSVP is a new row,
+        # never an UPDATE of the old one — `rsvps_for` is what projects "the current one" back out.
         stmt = sa.insert(EVENT_RSVPS).values(
             id=uuid4(),
             event_id=rsvp.event_id,
@@ -371,8 +369,8 @@ class SqlGatheringStore:
         self, *, unit_id: str, place: str | None = None, person: str | None = None,
         start: Any = None, end: Any = None, room_ids: Sequence[str] = (),
     ) -> Sequence[Gathering]:
-        """Unit-wide (15-map.md §4: `event_search(place?, person?,
-        interval?)`), `event_search`'s store side. `place` matches
+        """Unit-wide: `event_search`'s store side (`place?`, `person?`,
+        `interval?`). `place` matches
         `venue_name`/`venue_text` by containment; `person` matches the
         creator or an RSVP; `start`/`end` bound `events.when`.
 

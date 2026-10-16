@@ -26,7 +26,7 @@ instead:
   was handed the uuid.
 - `sweep_firing` matches `state = 'firing'` only. It is boot recovery for rows
   whose process died mid-fire, and it resolves them to FAILED rather than back
-  to PENDING: at-most-once is a decision (§8.2), because nothing links a row to
+  to PENDING: at-most-once is a decision, because nothing links a row to
   the message it may already have delivered, so re-queueing double-sends
   anything that crashed after egress.
 
@@ -190,14 +190,14 @@ class SqlReminderStore:
     async def create(self, reminder: Reminder) -> None:
         """Insert-only, with the primary key's own unique violation translated
         to `DuplicateReminderError` so the in-memory store can be held to the
-        same observable behaviour (it used to overwrite silently).
+        same observable behaviour.
 
         A proactive row on a note is inserted `ON CONFLICT DO NOTHING` against
-        `uq_reminders_proactive_open_note` (issue #158): the statement decides,
+        `uq_reminders_proactive_open_note`: the statement decides,
         so two decisions racing for one note cannot both land, and a row that
         did not land is `DuplicateProactiveNoteError`, never a silent no-op.
         The conflict target names that index alone, so a primary-key collision
-        still raises and still translates as it always did."""
+        still raises and translates as a duplicate id."""
         row = normalise_reminder(reminder)
         note_id = open_proactive_note(row)
         stmt = pg_insert(REMINDERS).values(**_insert_values(row))
@@ -236,9 +236,9 @@ class SqlReminderStore:
         """PENDING rows whose `due_at` has passed, `due_at` then `id` ascending.
 
         `limit` is the tick's batch size and is always positive in production,
-        but the guard is not optional: unguarded, `LIMIT -1` raised
+        but the guard is not optional: unguarded, `LIMIT -1` raises
         `InvalidRowCountInLimitClauseError` here while the fake's `[:-1]`
-        returned everything-except-the-last. `check_limit` is the ONE rule both
+        returns everything-except-the-last. `check_limit` is the ONE rule both
         stores call — a guard on one side only is exactly the drift the contract
         suite exists to catch.
 
@@ -264,7 +264,7 @@ class SqlReminderStore:
     def _decode_due(self, rows: Sequence[Any]) -> list[Reminder]:
         """Rows → `Reminder`s, SKIPPING any single row that cannot be decoded.
 
-        Per-row rather than a comprehension (external review 2026-08-10).
+        Per-row rather than a comprehension.
         `_row_to_reminder` raises on a `recurrence_tz` this host's tzdb cannot
         resolve — the column is free `Text` and no CHECK constraint can validate
         an IANA name — and that raise escapes `due()` into `HeartbeatLoop.tick`
@@ -349,7 +349,7 @@ class SqlReminderStore:
         self, *, requester_person_id: str, since: datetime, limit: int,
     ) -> Sequence[Reminder]:
         """One requester's rows since `since`, every state, oldest first —
-        the decision log (design/dreamer-agent-loop/39 D7). Same per-row
+        the decision log. Same per-row
         decode discipline as `due()`: one undecodable row is skipped and
         named, never a dead read."""
         stmt = (
@@ -369,12 +369,12 @@ class SqlReminderStore:
         """`PENDING -> FIRING`, decided by the statement itself — and, for a
         recurring row, the successor written in the SAME TRANSACTION.
 
-        The third narrowed transition, and the one whose absence was a bug:
-        `mark` was doing the take, and `mark` matches on id alone, so a cancel
-        that landed while an earlier group's turn was in flight was overwritten
-        and the reminder spoken anyway. `rowcount` is the answer — the taker
-        learns whether it won without a read-back, which is what makes this a
-        compare-and-set rather than a check the next statement can invalidate.
+        The third narrowed transition: `mark` matches on id alone, so taking a
+        row with it would overwrite a cancel that landed while an earlier
+        group's turn was in flight, and the reminder would be spoken anyway.
+        `rowcount` is the answer — the taker learns whether it won without a
+        read-back, which is what makes this a compare-and-set rather than a
+        check the next statement can invalidate.
 
         THE SELECT DOES NOT DECIDE ANYTHING (DEC-85). It only supplies the
         series the successor is computed from; the UPDATE's `state = 'pending'`
@@ -457,7 +457,7 @@ class SqlReminderStore:
         when the row was HANDLED, which for a swept row is the only timestamp
         that exists — the process that set it FIRING is gone, and nothing else
         in the table says when. Every other terminal write goes through
-        `_resolve` -> `mark(fired_at=now)`; this one used to be the exception."""
+        `_resolve` -> `mark(fired_at=now)`; this one stamps it itself."""
         stmt = (
             sa.update(REMINDERS)
             .where(REMINDERS.c.state == ReminderState.FIRING.value)

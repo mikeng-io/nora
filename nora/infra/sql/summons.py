@@ -1,5 +1,5 @@
 """`SqlSummonsLedger` — the public summons ledger over SQLAlchemy Core
-(`nora.domain.summons.SummonsLedger`, design/instagram-adoption/19).
+(`nora.domain.summons.SummonsLedger`).
 
 The one property the table exists for is that a summons is claimed ONCE:
 `claim` is `INSERT ... ON CONFLICT (message_id) DO NOTHING RETURNING id`, keyed
@@ -25,7 +25,7 @@ from nora.domain.summons import OPEN_STATES, SUMMONS_MODES, SUMMONS_STATES, Summ
 from nora.infra.sql.schema import INSTAGRAM_SUMMONS
 
 #: What the sweep writes into `bridge_code` for a row a dead process left
-#: `claimed` (now `failed`) or `flushing` (now `ambiguous`): nobody knows
+#: `claimed` (swept to `failed`) or `flushing` (swept to `ambiguous`): nobody knows
 #: whether its comment went out, so it is never retried.
 SWEPT_AT_BOOT = "swept_at_boot"
 

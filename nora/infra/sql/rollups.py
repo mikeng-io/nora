@@ -1,5 +1,5 @@
 """The Rollup's builds and its unit rollups over SQLAlchemy Core
-(design/cognition-loop/25-rollup.md §2-§3, migration 0071).
+(migration 0071).
 
 - **Builds.** `rollup_build` holds one row per build; exactly one is
   `current` and that row is the pointer every reader resolves. `create`

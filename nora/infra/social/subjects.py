@@ -1,5 +1,4 @@
-"""`PersonsSubjectIndex` — the production `SocialSubjectIndex`
-(design/instagram-adoption/17 P3, /15 §"Resolution is not authorization").
+"""`PersonsSubjectIndex` — the production `SocialSubjectIndex`.
 
 Two questions, answered from two files that already exist, and never from
 anything the model supplies:
@@ -7,15 +6,13 @@ anything the model supplies:
 * **Resolution** — which igid is this person? `identity.toml`, through
   `Persons.instagram_igids`, which is KIND-aware: the messaging `fbid` is a
   decimal string too, and handing it to a route that wants an igid names a
-  different account or none with no error anywhere
-  (design/instagram-adoption/02).
+  different account or none with no error anywhere.
 * **Authorization** — may Nora read this person's story? `policy.toml`: the
   person is LISTED in the `persons` of at least one configured room. That is
   Tier 0, «someone in a room Nora is in», and it is the only tier a story read
   has. That is a privacy choice: Nora does not read the stories of people the
   operator has not listed. It is not a claim that the author sees the view:
-  whether the author sees the view is unmeasured (design/instagram-adoption/
-  04, 05 §Reading a story).
+  whether they do is unknown.
 
 **The policy is taken STRUCTURALLY, not imported.** `nora.infra` may not
 import `nora.policy` (`pyproject.toml`: "the room policy is composed in, never
@@ -77,8 +74,7 @@ class PersonsSubjectIndex:
         a `person_id` says which of a friend's accounts was meant, and
         choosing one reads a story its author did not expect Nora to open. A
         link names ONE account, so the link path goes through
-        `person_for_igid` instead and never through here
-        (design/instagram-adoption/15 §Links)."""
+        `person_for_igid` instead and never through here."""
         try:
             return frozenset(self._persons.instagram_igids(person_id))
         except Exception:
@@ -105,12 +101,12 @@ class PersonsSubjectIndex:
 
     async def person_for_igid(self, *, igid: str) -> str | None:
         """The person that igid belongs to, or `None` — the reverse lookup the
-        link path needs (design/instagram-adoption/15 §Links).
+        link path needs.
 
         Backed by `Persons.resolve("instagram", igid)`, and then CHECKED
         against the kind: `resolve` reads the kind-blind index, so an fbid
         string would resolve to its owner too. An id that is not one of that
-        person's igids is `None` — the P2 trap, closed in both directions."""
+        person's igids is `None`, so a messaging id never resolves as an igid."""
         try:
             ref = self._persons.resolve("instagram", igid)
             if ref is None or igid not in self._persons.instagram_igids(ref.person_id):

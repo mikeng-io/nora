@@ -30,16 +30,13 @@ log = logging.getLogger("nora.parking")
 NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby"
 
 # Only what `find_parking` renders: identity, name, address and coordinates.
-# `types` is requested (billed like the rest) because the caller filters for
-# parking types on a hard failure — Google returns a `parking` type on every
-# hit, so a result WITHOUT parking-ish types is a venue that merely has a lot.
 NEARBY_FIELD_MASK = (
     "places.id,places.displayName,places.location,places.formattedAddress"
 )
 
-# A parking search circle: 1500 m — walkable from a restaurant table. Google's
-# own nearby-search examples use 500 m but parking is a coarser object (a
-# multi-storey is one result serving a whole district).
+# A parking search circle: 1500 m — walkable from a restaurant table. Parking
+# is a coarser object than a venue (a multi-storey is one result serving a
+# whole district), so the radius is wider than a typical nearby search.
 SEARCH_RADIUS_M = 1500.0
 
 # How many results to ask Google for. Ten is the cap the tool renders; more is

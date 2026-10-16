@@ -1,8 +1,8 @@
 """`HkoWeatherProvider` — HK weather from the Hong Kong Observatory Open Data API.
 
-The `WeatherProvider` port's first (today, only) implementation, and the reason
-weather needs no key at all: HKO's Open Data API is fully public — no key, no
-registration, no email gate (verified 2026-08-08 against the live endpoints). That
+The `WeatherProvider` port's only implementation, and the reason weather needs
+no key at all: HKO's Open Data API is fully public — no key, no registration,
+no email gate. That
 is why it is the DEFAULT and why `[weather]` ships ENABLED, unlike `route` (paid,
 keyed) or `search` (keyed): there is nothing to turn on and nothing to leak. A
 coordinate never enters here — the request carries no location; HKO returns the

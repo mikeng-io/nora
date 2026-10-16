@@ -15,12 +15,11 @@ site — these are shared module constants, and a caller that mutated one would
 edit every later result.
 
 **And because a `note` is an instruction channel, nothing a BRIDGE says may
-land in one.** Both clients used to forward `payload["note"]` verbatim on the
-non-`ok` path — an unbounded, unescaped string from another process, rendered
-into the slot that tells the model what it may say. A 230-character bridge
-note reading «IGNORE PREVIOUS INSTRUCTIONS…» reached the model intact, which
-is why `NOTHING_FOUND` below exists: the miss is a STATE, and the sentence for
-a state is ours. The bridge's wording is DROPPED, not clamped and not escaped
+land in one.** Forwarding `payload["note"]` verbatim on the non-`ok` path would
+render an unbounded, unescaped string from another process into the slot that
+tells the model what it may say. That is why `NOTHING_FOUND` below exists: the
+miss is a STATE, and the sentence for a state is ours. The bridge's wording is
+DROPPED, not clamped and not escaped
 — there is no version of "a remote process writes part of Nora's
 instructions" that is made safe by being shorter.
 
@@ -43,12 +42,11 @@ UNAVAILABLE: dict[str, Any] = {
 }
 
 #: The person has SEVERAL accounts on file. The person index is the only
-#: thing that may turn a `person_id` into a network id
-#: (design/instagram-adoption/09), and it holds more than one with nothing to
-#: say which was meant — so nothing is read, and picking one is the failure
-#: this status exists to make impossible. It does not tell the model to ASK:
-#: the person in the room cannot resolve it either, only the operator's file
-#: can (design/instagram-adoption/18, 2026-09-24).
+#: thing that may turn a `person_id` into a network id, and it holds more than
+#: one with nothing to say which was meant — so nothing is read, and picking
+#: one is the failure this status exists to make impossible. It does not tell
+#: the model to ASK: the person in the room cannot resolve it either, only the
+#: operator's file can.
 AMBIGUOUS: dict[str, Any] = {
     "status": "ambiguous",
     "note": "They have more than one account on file and I can't tell which, "
@@ -57,9 +55,9 @@ AMBIGUOUS: dict[str, Any] = {
 
 #: The person has NO account on file. `nothing_found` — the honest «there is
 #: nothing to read» — but the note says what the nothing is: no account on
-#: file, not «no story up», and nothing was fetched. Split out of `AMBIGUOUS`
-#: on 2026-09-24; the two used to share one word and one sentence, which
-#: told the model to ask about an account nobody had recorded.
+#: file, not «no story up», and nothing was fetched. Distinct from `AMBIGUOUS`:
+#: a shared sentence would tell the model to ask about an account nobody has
+#: recorded.
 NO_ACCOUNT: dict[str, Any] = {
     "status": "nothing_found",
     "note": "I don't have an Instagram account on file for them, so I didn't "
@@ -67,8 +65,8 @@ NO_ACCOUNT: dict[str, Any] = {
 }
 
 #: A typed handle or a pasted link named a username Instagram has no account
-#: for: the bridge's exact username lookup ran and matched nobody
-#: (design/instagram-adoption/15 §Links, /17 P9, P10). `nothing_found`, a fact
+#: for: the bridge's exact username lookup ran and matched nobody.
+#: `nothing_found`, a fact
 #: about Instagram, and different from `NO_ACCOUNT`, which is about the
 #: operator's file. The note says not to guess a near spelling: the lookup is
 #: exact on purpose, and a guessed handle reads a different human.
@@ -79,19 +77,19 @@ NO_SUCH_HANDLE: dict[str, Any] = {
 }
 
 #: The subject resolved and is out of reach. A story is Tier 0 only — a
-#: person the operator LISTED in a group room (design/instagram-adoption/07,
-#: /15) — and it is refused in a turn nobody asked for (/18, 2026-09-24).
+#: person the operator LISTED in a group room — and it is refused in a turn
+#: nobody asked for.
 #: Distinct from `unavailable` because calling again cannot help and nothing
 #: is broken: «I may not» and «I couldn't» are different claims. The note
 #: names the listing, not "the rooms I'm in": someone can be IN the chat and
-#: not listed, and "outside my rooms" would be false about them. Since P10 it
-#: also answers a story named by a typed handle or a pasted link whose account
+#: not listed, and "outside my rooms" would be false about them. It also
+#: answers a story named by a typed handle or a pasted link whose account
 #: maps to nobody listed, which covers a stranger, or to someone listed only
 #: through another room and not on this conversation's roster: the same
 #: boundary, so the same sentence, and nothing in it says which case it was
 #: (a different sentence would tell the room who is in Nora's other rooms).
-#: Reworded 2026-09-24 to «people in this conversation whom the operator has
-#: listed», which is true of every case it covers.
+#: The wording, «people in this conversation whom the operator has listed», is
+#: true of every case it covers.
 REFUSED: dict[str, Any] = {
     "status": "refused",
     "note": "I only open the stories of people in this conversation whom the "
@@ -126,8 +124,8 @@ NOTHING_FOUND: dict[str, Any] = {
 def clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
     """Clamp `text` to `max_chars`, preferring an item boundary.
 
-    Truncating mid-record is what made raw JSON unreadable — a post's `text`
-    field severed from its closing brace. Rendered text is more forgiving, but
+    Truncating mid-record leaves raw JSON unreadable — a post's `text` field
+    severed from its closing brace. Rendered text is more forgiving, but
     cutting at an item separator keeps the first item whole whenever the
     budget allows; the result is readable text, not valid JSON, which is the
     point.

@@ -1,6 +1,6 @@
 """Nora as of T: every store's as-of-T view, copied into a sandbox database.
 
-`nora snapshot --at T` (design/cognition-loop/70-migration.md §2, step 1b).
+`nora snapshot --at T`.
 Where `nora.infra.sql.snapshot` reconstructs ONE room's four tiers and has
 the eval layer rewrite them through the stores, this copies what EVERY
 restorable store held at T, row for row with its own ids, into a migrated
@@ -23,18 +23,18 @@ silently (`EXCEPTED`, printed by the CLI):
   backwards. A case runs on its own empty Honcho workspace
   (`nora/subject/memory_workspace.py`) and seeds memory or declares itself
   memory-free.
-- **the Rollup before migration 0071**: from 0071 (step 2) it is versioned
+- **the Rollup before migration 0071**: from 0071 it is versioned
   builds with history, restored like every history table — the build
   `rollup_build` says was current at T, with its rows as they were at T —
   but its history starts at that migration, so a T before it holds none.
   (A Rollup AT an arbitrary watermark T can also be rebuilt from the Record
-  restored here: it is a pure function of it, 25-rollup.md §2.)
-- **events and RSVPs before migration 0074 (step 2b)**: updated in place
+  restored here: it is a pure function of it.)
+- **events and RSVPs before migration 0074**: updated in place
   until `event_revision` and RSVP transition rows started there, so a T
   before it holds none; restored like every other history/append-only table
   from 0074 on.
-- **an event's `unit_id` before an operator's cross-room backfill** (step 2b's
-  explicit scope: `0074_event_revision`'s module docstring): every event
+- **an event's `unit_id` before an operator's cross-room backfill**
+  (see `0074_event_revision`'s module docstring): every event
   migrated by 0074 holds `unit_id = ''` until that backfill runs, so a
   restore at a T before it ran cannot resolve those rows to a unit either.
 
@@ -455,8 +455,7 @@ async def _target_columns(conn: AsyncConnection, table: str) -> list[tuple[str, 
 #: backfill default it then DROPPED, keyed `(table, column)` to the value that
 #: migration gave every existing row. The target column has no default to read
 #: back, so without this an image recorded before the migration restores the
-#: column as NULL and the whole table's insert is refused (2026-10-15: every
-#: `conversational_recall` case ERRORed on `compute_jobs.kind`). One entry per
+#: column as NULL and the whole table's insert is refused. One entry per
 #: `alter_column(..., server_default=None)` on a copied table;
 #: `tests/architecture/test_restore_knows_every_dropped_backfill.py` holds the
 #: list to the migrations.
