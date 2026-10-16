@@ -621,6 +621,24 @@ async def test_get_event_for_person_returns_none_when_not_a_participant():
     assert out is None
 
 
+async def test_get_event_for_person_returns_an_event_of_a_room_i_am_in():
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1",
+        requester_person_id="daisy",
+        title="Dinner",
+        platform="signal",
+    )
+    out = await svc.get_event_for_person(
+        event_id=ev.id, person_id="miles", conversation_ids=frozenset({"signal:group-1"}),
+    )
+    assert out is not None and out.id == ev.id
+    other = await svc.get_event_for_person(
+        event_id=ev.id, person_id="miles", conversation_ids=frozenset({"signal:group-2"}),
+    )
+    assert other is None
+
+
 async def test_get_event_for_person_returns_none_for_unknown_event():
     svc = _service()
     out = await svc.get_event_for_person(event_id=uuid.uuid4(), person_id="miles")

@@ -28,9 +28,10 @@ export const fetchRoster = (signal?: AbortSignal) => apiGet("/persons", RosterSc
 export const fetchPerson = (personId: string, signal?: AbortSignal) =>
   apiGet(`/persons/${encodeURIComponent(personId)}`, PersonProfileSchema, { signal });
 
-// nora/web/gatherings.py (served as /app/v1/events): participant-scoped.
+// nora/web/gatherings.py (served as /app/v1/events): viewer-scoped.
 // The proxy forces `personId` from the session, so the list is every event
-// the viewer created or answered, and a detail read of anyone else's is 404.
+// the viewer created or answered plus every event in a room they are in, and
+// a detail read of any other event is 404.
 const VenueSchema = z.object({
   text: z.string().nullable(),
   name: z.string().nullable(),

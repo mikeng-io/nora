@@ -278,7 +278,7 @@ from .fire import (
     relay_occasion,
     reminder_occasion,
 )
-from .gatherings import GatheringService
+from .gatherings import GatheringService, room_event_shown
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
@@ -1021,6 +1021,10 @@ class Dependencies:
     documents: DocumentStore
     document_service: DocumentService
     rooms_of: Callable[[str], frozenset[RoomKey]]
+    # Whether a member of a room may see an event of it they neither made nor
+    # answered on the portal's Plans (`nora.app.gatherings.room_event_shown`,
+    # bound to the process's lineage policy).
+    room_event_shown: Callable[[Any, str, str, str], bool]
     # (platform, conversation_id) -> the room's policy label, for the portal's document
     # rows; "" for a room the policy does not name.
     room_label: Callable[[str, str], str]
@@ -4328,6 +4332,7 @@ async def build_dependencies(
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
+        room_event_shown=functools.partial(room_event_shown, lineage),
         room_label=functools.partial(room_label, allowlist),
         blobs=blobs, artifacts=computer_exports,
         dispatcher=dispatcher, adapter=adapter, registry=registry,

@@ -158,7 +158,8 @@ class App:
             skills_dir=deps.skills_dir, events=deps.events,
             doctrine_store=deps.doctrine_store,
             workspaces_of=deps.workspaces_of,
-            documents=deps.documents, rooms_of=deps.rooms_of, blobs=deps.blobs,
+            documents=deps.documents, rooms_of=deps.rooms_of,
+            room_event_shown=deps.room_event_shown, blobs=deps.blobs,
             room_label=deps.room_label, artifacts=deps.artifacts,
         )
         # One-time codes (`nora.app.otp`): mounted only when `[otp] enabled`,
