@@ -236,7 +236,7 @@ async def test_a_node_of_another_model_reads_as_unembedded_and_is_re_embedded(en
     row = (await _nodes(engine))[("message", str(mid))]
     assert row.embedding_model == MODEL
     async with engine.connect() as conn:
-        assert await memory_index.embed_counts(conn, MODEL) == (1, 0, 0, 0, 0)
+        assert await memory_index.embed_counts(conn, MODEL) == (1, 0, 0, 0, 0, 0)
 
 
 async def test_the_image_throttle_leaves_images_for_later_and_never_holds_up_a_text(
@@ -301,11 +301,11 @@ async def test_clearing_takes_every_vector_or_only_another_models(engine, llama)
     async with engine.begin() as conn:
         assert await memory_index.clear_embeddings(conn, keep_model=MODEL) == 1
     async with engine.connect() as conn:
-        assert await memory_index.embed_counts(conn, MODEL) == (2, 1, 0, 0, 0)
+        assert await memory_index.embed_counts(conn, MODEL) == (2, 1, 0, 0, 0, 0)
     async with engine.begin() as conn:
         assert await memory_index.clear_embeddings(conn) == 2
     async with engine.connect() as conn:
-        assert await memory_index.embed_counts(conn, MODEL) == (0, 3, 0, 0, 0)
+        assert await memory_index.embed_counts(conn, MODEL) == (0, 3, 0, 0, 0, 0)
 
 
 async def test_the_planner_can_use_the_hnsw_index_and_the_pick_index(engine, llama):

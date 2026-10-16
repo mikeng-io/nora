@@ -47,7 +47,8 @@ episode reaches nothing (0105).
 
 **Three seeds.** `dense` is the search; `exact` pins literal
 references ahead of it; `seed`, the lexical seed, is the fallback the walk
-uses only when there is no query vector.
+uses when there is no query vector, and beside `dense` it reads only the
+nodes no vector reaches yet.
 
 - **`dense`, two stages in one statement.** The candidates are the
   `DENSE_CANDIDATES` nearest by the leading 256 dimensions, through
@@ -76,12 +77,15 @@ uses only when there is no query vector.
   text contains the term or pg_trgm's word similarity finds it at the
   threshold; its score is the mean over the terms of 1 for containment, else
   the word similarity, so a node holding every term ranks above one holding
-  one. `idx_memory_node_text_trgm` serves both operators. With `given_up_of`
-  it reads only the embeddable nodes the worker gave up on, which the dense
-  seed cannot reach.
+  one. `idx_memory_node_text_trgm` serves both operators. With
+  `unembedded_of` it reads only the embeddable nodes holding no vector of
+  that model, waiting for one or given up on, which the dense seed cannot
+  reach: a line said a moment ago is found by its words before the worker's
+  next tick embeds it.
 - **`index_state`** counts the vector coverage within the search's scope
   (`_in_scope`), so a node waiting in another unit does not hold this
-  room's answers `partial`.
+  room's answers `partial`; with `fresh_seconds`, how many of the waiting
+  nodes were projected within that window (`IndexState.fresh`).
 """
 
 from __future__ import annotations
@@ -110,7 +114,7 @@ from nora.domain.memory_index import (
     exact_pattern,
     is_latin,
 )
-from nora.infra.sql.memory_index import EMBED_MAX_ATTEMPTS, embed_counts, index_status
+from nora.infra.sql.memory_index import embed_counts, index_status
 from nora.infra.sql.record_query import WORD_SIMILARITY_MIN
 from nora.infra.sql.schema import (
     EMBEDDING_DIMENSIONS,
@@ -300,7 +304,7 @@ class SqlMemoryIndex:
 
     async def seed(
         self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
-        given_up_of: str | None = None,
+        unembedded_of: str | None = None,
     ) -> list[Seed]:
         wanted = [t for t in dict.fromkeys(t.strip() for t in terms) if t]
         if not wanted or limit <= 0:
@@ -314,12 +318,11 @@ class SqlMemoryIndex:
         )
         score = (sa.func.sum(per_term) / len(wanted)).label("score")
         where = [sa.or_(contains, t.c.term.op("<%")(n.c.text)), _in_scope(n, scope)]
-        if given_up_of is not None:
+        if unembedded_of is not None:
             where += [
                 n.c.kind.in_(EMBEDDED_KINDS),
-                n.c.embed_attempts >= EMBED_MAX_ATTEMPTS,
                 sa.or_(n.c.embedding.is_(None),
-                       n.c.embedding_model.is_distinct_from(given_up_of)),
+                       n.c.embedding_model.is_distinct_from(unembedded_of)),
             ]
         stmt = (
             sa.select(*_columns(n), score)
@@ -445,6 +448,7 @@ class SqlMemoryIndex:
 
     async def index_state(
         self, *, model: str | None = None, scope: MemoryScope | None = None,
+        fresh_seconds: float = 0.0,
     ) -> IndexState:
         async with self._engine.connect() as conn:
             s = await index_status(conn)
@@ -453,8 +457,9 @@ class SqlMemoryIndex:
             # ponytail: one count over the scope's nodes per search; a counter
             # row kept by the worker if it ever shows in a turn's latency.
             where = () if scope is None else (_in_scope(MEMORY_NODE, scope),)
-            c = await embed_counts(conn, model, *where)
+            c = await embed_counts(conn, model, *where, fresh_seconds=fresh_seconds)
         return IndexState(
             status=s.status, queue=s.queue, embedded=c.embedded,
             unembedded=c.pending - c.given_up - c.empty, given_up=c.given_up,
+            fresh=c.fresh,
         )

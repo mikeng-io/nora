@@ -2084,6 +2084,20 @@ async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
     assert deps.registry.adapters["signal"]._sender._dm_recipients == frozenset({"+852111"})
 
 
+async def test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick(cfg):
+    """`memory_search` takes the embedding worker's tick from `[memory_index]
+    drain_seconds`: a node waiting under `BACKLOG_TICKS` of them is fresh,
+    not a backlog. Unwired, every wait would read as a backlog."""
+    from nora.agent.memory_search import BACKLOG_TICKS
+
+    deps = await build_dependencies(override_config(
+        cfg, {"memory_index.enabled": True, "memory_index.drain_seconds": 7.5},
+    ))
+    search = deps.engagement._tool_registry._memory_search
+    assert search is not None
+    assert search._fresh_seconds == BACKLOG_TICKS * 7.5
+
+
 @pytest.mark.parametrize("graph", [False, True])
 async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path, graph):
     """DEC-316, through the real composition: `[memory_index] enabled` picks

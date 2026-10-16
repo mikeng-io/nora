@@ -1,0 +1,93 @@
+[
+ {
+  "name": "the lexical seed beside dense reads waiting nodes, not only given-up ones",
+  "file": "nora/infra/sql/memory_read.py",
+  "old": "                n.c.kind.in_(EMBEDDED_KINDS),\n                sa.or_(n.c.embedding.is_(None),",
+  "new": "                n.c.kind.in_(EMBEDDED_KINDS),\n                n.c.embed_attempts >= 8,\n                sa.or_(n.c.embedding.is_(None),",
+  "target": "tests/integration/test_memory_dense_seed.py::test_a_line_just_said_is_found_by_its_words_and_the_answer_is_ok"
+ },
+ {
+  "name": "the same seed, held by the contract",
+  "file": "nora/infra/sql/memory_read.py",
+  "old": "                n.c.kind.in_(EMBEDDED_KINDS),\n                sa.or_(n.c.embedding.is_(None),",
+  "new": "                n.c.kind.in_(EMBEDDED_KINDS),\n                n.c.embed_attempts >= 8,\n                sa.or_(n.c.embedding.is_(None),",
+  "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
+ },
+ {
+  "name": "the same seed, the scope suite's fresh run reaches its positive controls",
+  "file": "nora/infra/sql/memory_read.py",
+  "old": "                n.c.kind.in_(EMBEDDED_KINDS),\n                sa.or_(n.c.embedding.is_(None),",
+  "new": "                n.c.kind.in_(EMBEDDED_KINDS),\n                n.c.embed_attempts >= 8,\n                sa.or_(n.c.embedding.is_(None),",
+  "target": "tests/integration/test_memory_scope.py -k fresh"
+ },
+ {
+  "name": "the walk runs the seed over waiting nodes, not only when some are given up",
+  "file": "nora/agent/memory_search.py",
+  "old": "unembedded=state.unembedded + state.given_up > 0,",
+  "new": "unembedded=state.given_up > 0,",
+  "target": "tests/integration/test_memory_dense_seed.py::test_a_line_just_said_is_found_by_its_words_and_the_answer_is_ok"
+ },
+ {
+  "name": "a fresh wait is not a backlog: partial only past the window",
+  "file": "nora/agent/memory_search.py",
+  "old": "backlog = state.unembedded - state.fresh",
+  "new": "backlog = state.unembedded",
+  "target": "tests/integration/test_memory_dense_seed.py::test_a_line_just_said_is_found_by_its_words_and_the_answer_is_ok"
+ },
+ {
+  "name": "the same rule, on the fake",
+  "file": "nora/agent/memory_search.py",
+  "old": "backlog = state.unembedded - state.fresh",
+  "new": "backlog = state.unembedded",
+  "target": "tests/unit/test_memory_search.py::test_a_fresh_wait_is_read_by_its_words_and_is_not_partial"
+ },
+ {
+  "name": "a backlog still answers partial",
+  "file": "nora/agent/memory_search.py",
+  "old": "backlog = state.unembedded - state.fresh",
+  "new": "backlog = 0",
+  "target": "tests/integration/test_memory_dense_seed.py::test_a_backlog_keeps_it_partial_and_given_up_ones_are_read_by_their_words"
+ },
+ {
+  "name": "a question with no terms cannot read a waiting node: partial",
+  "file": "nora/agent/memory_search.py",
+  "old": "(backlog > 0 or (state.unembedded > 0 and not terms))",
+  "new": "(backlog > 0)",
+  "target": "tests/integration/test_memory_dense_seed.py::test_a_line_just_said_is_found_by_its_words_and_the_answer_is_ok"
+ },
+ {
+  "name": "no tick wired: every wait is a backlog",
+  "file": "nora/agent/memory_search.py",
+  "old": "BACKLOG_TICKS * drain_seconds if drain_seconds else 0.0",
+  "new": "BACKLOG_TICKS * (drain_seconds or 60.0)",
+  "target": "tests/integration/test_memory_dense_seed.py::test_a_line_just_said_is_found_by_its_words_and_the_answer_is_ok"
+ },
+ {
+  "name": "fresh counts only nodes projected within the window",
+  "file": "nora/infra/sql/memory_index.py",
+  "old": "sa.and_(owed, node.projected_at > since)",
+  "new": "sa.and_(owed, sa.true())",
+  "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
+ },
+ {
+  "name": "a given-up node is never fresh",
+  "file": "nora/infra/sql/memory_index.py",
+  "old": "owed = sa.and_(~current, ~given_up, node.embed_error.is_distinct_from(\"empty\"))",
+  "new": "owed = sa.and_(~current, node.embed_error.is_distinct_from(\"empty\"))",
+  "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
+ },
+ {
+  "name": "the fake: no window, nothing fresh",
+  "file": "nora/testing/memory_index.py",
+  "old": "fresh = waiting & self.fresh if fresh_seconds > 0 else set()",
+  "new": "fresh = waiting & self.fresh",
+  "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
+ },
+ {
+  "name": "composition wires the worker tick",
+  "file": "nora/app/composition.py",
+  "old": "                drain_seconds=cfg.memory_index.drain_seconds,\n",
+  "new": "",
+  "target": "tests/test_composition.py::test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick"
+ }
+]

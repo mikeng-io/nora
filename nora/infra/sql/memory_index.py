@@ -121,7 +121,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, NamedTuple
 
 import sqlalchemy as sa
@@ -1973,26 +1973,37 @@ class EmbedCounts(NamedTuple):
     which only a changed input or a clear frees; and how many, not given up,
     last failed as `empty` (an attachment with no reading, whose bytes are
     not an image's or not held): those wait for their input, not the
-    worker."""
+    worker. `fresh`, of those waiting and neither given up nor `empty`, how
+    many were projected within `embed_counts`' `fresh_seconds` (0 unless
+    asked)."""
 
     embedded: int
     pending: int
     failing: int
     given_up: int
     empty: int = 0
+    fresh: int = 0
 
 
 async def embed_counts(
     conn: AsyncConnection, model: str, *where: sa.ColumnElement[bool],
+    fresh_seconds: float = 0.0,
 ) -> EmbedCounts:
     """`EmbedCounts` over every node, or over those `where` also holds (the
-    search passes its scope, `nora.infra.sql.memory_read`)."""
+    search passes its scope, `nora.infra.sql.memory_read`). `fresh_seconds`
+    is measured on the database's clock, the one `projected_at` is written
+    with."""
     node = MEMORY_NODE.c
     # IS NOT DISTINCT FROM, so a NULL model is «not current», never NULL.
     current = sa.and_(
         node.embedding.isnot(None), node.embedding_model.is_not_distinct_from(model),
     )
     given_up = node.embed_attempts >= EMBED_MAX_ATTEMPTS
+    # A NULL `embed_error` is not `empty`: IS DISTINCT FROM, never `!=`.
+    owed = sa.and_(~current, ~given_up, node.embed_error.is_distinct_from("empty"))
+    since = sa.func.clock_timestamp() - sa.bindparam(
+        None, timedelta(seconds=max(0.0, fresh_seconds)), type_=sa.Interval,
+    )
     row = (await conn.execute(
         sa.select(
             sa.func.count().filter(current),
@@ -2000,9 +2011,10 @@ async def embed_counts(
             sa.func.count().filter(sa.and_(~current, node.embed_attempts > 0)),
             sa.func.count().filter(sa.and_(~current, given_up)),
             sa.func.count().filter(sa.and_(~current, ~given_up, node.embed_error == "empty")),
+            sa.func.count().filter(sa.and_(owed, node.projected_at > since)),
         ).where(*_embeddable(), *where)
     )).one()
-    return EmbedCounts(int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]))
+    return EmbedCounts(*(int(v) for v in row))
 
 
 # --- an eval sandbox's vectors ----------------------------------------------

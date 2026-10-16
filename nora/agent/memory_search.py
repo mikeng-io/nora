@@ -29,8 +29,10 @@ path is cut at its first out-of-scope node.
 - **Lexical**, by the question's terms (`terms_of`), when there is no query
   vector: `[memory_index] embed` is off, no node in scope holds a vector of
   the current model yet, or the embedder failed. The answer is then
-  `partial`. Beside a dense seed, it reads only the nodes the worker gave up
-  on, which no vector reaches.
+  `partial`. Beside a dense seed, it reads only the embeddable nodes holding
+  no vector of the current model: those waiting for the worker's next tick
+  (the line that triggered the turn, said a moment ago) and those it gave
+  up on. No vector reaches either, and their words still can.
 - **About**: for a named person this room lists, the in-scope nodes `about`
   them (an exact reference). A person this room does not list
   seeds nothing.
@@ -77,12 +79,18 @@ text carries an identifier is withheld whole (`scan_identifiers`, R-18).
 **Statuses** (R-27): `unavailable` on any error, counted, never an
 empty answer; `partial`, whatever was found, when the index is not
 `complete`, its projection queue is not empty, the seeds were lexical (the
-fallback above), or live embeddable nodes IN THIS SEARCH'S SCOPE still wait
-for a vector of the current model (a node the worker gave up on does
-not count, or one poisoned file would hold every answer `partial` for good,
-and the lexical seed reads it instead; nor does an attachment that failed
-as `empty`, which waits for its reading), so an unfinished index is never
-«you never said that»; `nothing_found` only from a complete index; `ok`.
+fallback above), or the embedding worker has a BACKLOG in this search's
+scope: a live embeddable node that has waited longer than
+`BACKLOG_TICKS` drain periods for a vector of the current model. A node
+projected within that window is normal operation, not a backlog: the next
+tick embeds it, and until then the lexical seed reads it, so it is
+searched. Nor does a node the worker gave up on count (one poisoned file
+would hold every answer `partial` for good; the lexical seed reads it
+too), nor an attachment that failed as `empty`, which waits for its
+reading. A question with no search terms cannot reach a waiting node by
+its words, so one waiting node then answers `partial` too. So an
+unfinished index is never «you never said that»; `nothing_found` only
+from a complete index in which every node in scope was searched; `ok`.
 
 The constants below are starting values, not tuned against a measured
 distribution.
@@ -120,6 +128,7 @@ from nora.domain.prompt import stamp
 from nora.domain.rollup import room_key
 
 __all__ = [
+    "BACKLOG_TICKS",
     "DEFAULT_DEPTH",
     "EXACT_LIMIT",
     "HOPS_BY_DEPTH",
@@ -184,6 +193,18 @@ PERSON_SEED_SCORE = 0.6
 HALF_LIFE_DAYS = 180.0
 #: Characters of one item's text in the packet.
 TEXT_CHARS = 600
+#: How many drain periods (`[memory_index] drain_seconds`, the embedding
+#: worker's tick) a node may wait for its vector before it is a backlog
+#: that answers `partial`. The worker sleeps a period, drains, then embeds
+#: one batch, the newest first (`embed_pick`), so a node written just after
+#: a pick waits out that batch, a sleep and the next drain: under two
+#: periods while the worker keeps up. The third is margin for a slow batch
+#: (images). Past it the worker is behind (a backfill, a cleared model) or
+#: failing the node, and the dense seed is missing what it should hold. By
+#: age, not by a share of the scope: a share means different things in a
+#: room of fifty nodes and a unit of forty thousand, while a wait past
+#: three ticks is the property itself, a worker not keeping up.
+BACKLOG_TICKS = 3
 
 #: How much of the parent's relevance a relation carries. Provenance relations carry
 #: most; co-occurrence least. A relation absent here carries `_DEFAULT_WEIGHT`.
@@ -420,13 +441,14 @@ async def walk(
     index: MemoryIndexRead, scope: MemoryScope, *, terms: Sequence[str],
     person_id: str | None, hops: int, admits: Callable[[IndexedNode], bool],
     exact: Sequence[ExactTerm] = (), vector: Sequence[float] | None = None,
-    model: str | None = None, given_up: bool = False, embedded: int = 0,
+    model: str | None = None, unembedded: bool = False, embedded: int = 0,
     metrics: Any = None, bridge: MemoryScope | None = None,
 ) -> list[Hit]:
     """Seed, then expand hop by hop (module docstring). `exact` are the
     literal references, the first `PINNED_LIMIT` of them pinned; with a
     `vector` (and its `model`) the dense seed runs, plus the lexical one on
-    `terms` over the nodes the worker gave up on when `given_up`; else the
+    `terms` over the nodes holding no vector of `model` when `unembedded`
+    (the scope holds some: waiting for one, or given up on); else the
     lexical one on `terms`. `embedded` is how many vectors the scope holds,
     so a dense scan that came back short is counted on `metrics`. `admits`
     is the per-row presence check an episode must pass (R-31); every other
@@ -465,10 +487,11 @@ async def walk(
             seeds = await index.dense(vector, sc, model=model, limit=SEED_LIMIT)
             if first and len(seeds) < min(SEED_LIMIT, embedded) and metrics is not None:
                 metrics.inc(_DENSE_SHORT)
-            if given_up and terms:
-                # The dense seed cannot reach a node the worker gave up on;
-                # its words still can, so it is not reported as «nothing».)
-                seeds += await index.seed(terms, sc, limit=SEED_LIMIT, given_up_of=model)
+            if unembedded and terms:
+                # The dense seed cannot reach a node with no vector yet (a
+                # line said a moment ago) or one the worker gave up on; its
+                # words still can, so it is not reported as «nothing».
+                seeds += await index.seed(terms, sc, limit=SEED_LIMIT, unembedded_of=model)
         else:
             seeds = await index.seed(terms, sc, limit=SEED_LIMIT) if terms else []
         for s in seeds:
@@ -517,11 +540,15 @@ class MemorySearch:
     """`search` for one read. Takes the index and the metrics registry, and,
     while `[memory_index] embed`, the query embedder and the fingerprint of
     the model its vectors are stored under (`nora.infra.embedder.
-    fingerprint`); without them every search is the lexical fallback."""
+    fingerprint`); without them every search is the lexical fallback.
+    `drain_seconds` is the embedding worker's tick (`[memory_index]
+    drain_seconds`); without it no wait is fresh, and every node waiting
+    for a vector is a backlog (`partial`), the safe side."""
 
     def __init__(
         self, index: MemoryIndexRead, metrics: Any, *,
         embedder: QueryEmbedder | None = None, model: str | None = None,
+        drain_seconds: float | None = None,
     ) -> None:
         if (embedder is None) != (model is None):
             raise ValueError("an embedder and its model fingerprint come together")
@@ -529,6 +556,7 @@ class MemorySearch:
         self._metrics = metrics
         self._embedder = embedder
         self._model = model
+        self._fresh_seconds = BACKLOG_TICKS * drain_seconds if drain_seconds else 0.0
 
     def _count(self, status: SearchStatus) -> MemorySearchResult:
         self._metrics.inc(_METRIC, status=status)
@@ -567,7 +595,9 @@ class MemorySearch:
                 if only.kinds:
                     # The hops cross other kinds (`walk`); the answer does not.
                     bridge = replace(scope, only=replace(only, kinds=()))
-            state = await self._index.index_state(model=self._model, scope=scope)
+            state = await self._index.index_state(
+                model=self._model, scope=scope, fresh_seconds=self._fresh_seconds,
+            )
             names = [n for p in people if p.person_id in scope.listed_here for n in _names(p)]
             vector: list[float] | None = None
             # The lexical seed is the fallback: no embedder, or no node
@@ -579,11 +609,13 @@ class MemorySearch:
                 except Exception as exc:  # noqa: BLE001 — any failure: the fallback
                     log.warning("memory search: no query vector (%s)", type(exc).__name__)
                     lexical = True
+            terms = terms_of(query)
             hits = await walk(
-                self._index, scope, terms=terms_of(query),
+                self._index, scope, terms=terms,
                 person_id=person_id, hops=HOPS_BY_DEPTH.get(depth, 2), admits=admits,
                 exact=exact_terms_of(query, names), vector=vector, model=self._model,
-                given_up=state.given_up > 0, embedded=state.embedded, metrics=self._metrics,
+                unembedded=state.unembedded + state.given_up > 0, embedded=state.embedded,
+                metrics=self._metrics,
                 bridge=bridge,
             )
         except Exception as exc:  # noqa: BLE001 — fail closed: «I couldn't check»
@@ -594,9 +626,12 @@ class MemorySearch:
             (h for h in hits if not wanted or h.node.kind in wanted),
             key=lambda h: (-h.pin, -h.score * _decay(h.node.at_ms, now_ms), h.node.key),
         )[:RESULT_LIMIT]
+        # A fresh node is read by its words; a backlog, or a waiting node a
+        # question with no terms cannot read, is what the dense seed missed.
+        backlog = state.unembedded - state.fresh
         incomplete = (
             state.status != "complete" or state.queue > 0 or lexical
-            or (vector is not None and state.unembedded > 0)
+            or (vector is not None and (backlog > 0 or (state.unembedded > 0 and not terms)))
         )
         status: SearchStatus = (
             "partial" if incomplete else "ok" if ranked else "nothing_found"

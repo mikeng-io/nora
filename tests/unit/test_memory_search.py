@@ -16,6 +16,7 @@ from nora.agent.memory_search import (
     HOP_CEILING,
     RELEVANCE_FLOOR,
     MemorySearch,
+    MemorySearchResult,
     exact_terms_of,
     render_packet,
     scope_for,
@@ -275,6 +276,29 @@ async def test_coverage_holds_it_partial_until_every_embeddable_node_has_a_vecto
     assert (await _search(index)).status == "partial"
     index.given_up.add(waiting.key)  # the worker gave up: not waited for
     assert (await _search(index)).status == "ok"
+
+
+async def test_a_fresh_wait_is_read_by_its_words_and_is_not_partial() -> None:
+    """A node inside the worker's few-tick window is normal operation: the
+    lexical seed reads it beside the dense one, and the answer is `ok`. The
+    same wait without the tick, or past the window, is a backlog."""
+    fresh = _msg("2", "noodle shop")
+    index = FakeMemoryIndex([_msg("1", "ramen"), fresh], embed_model=M, fresh=[fresh.key])
+    del index.vectors[fresh.key]
+
+    async def search(drain_seconds: float | None) -> MemorySearchResult:
+        return await MemorySearch(
+            index, Metrics(), embedder=FakeQueryEmbedder(), model=M,
+            drain_seconds=drain_seconds,
+        ).search(query="noodle shop", person_id=None, target=_target(), depth="low",
+                 now_ms=NOW, social_off=())
+
+    found = await search(60.0)
+    assert (found.status, [h.node.source_id for h in found.hits]) == ("ok", ["2"])
+    assert found.hits[0].path[0].how == "matched"
+    assert (await search(None)).status == "partial"
+    index.fresh.clear()  # still waiting past the window
+    assert (await search(60.0)).status == "partial"
 
 
 async def test_no_vector_yet_uses_lexical_without_calling_the_embedder() -> None:
