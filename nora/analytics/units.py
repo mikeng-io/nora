@@ -47,6 +47,8 @@ from nora.domain.rollup import (
     Daybook,
     Deviation,
     HealthRow,
+    SocialFact,
+    SocialInput,
     StaySpan,
     adapter_up,
     colocations,
@@ -61,6 +63,7 @@ from nora.domain.rollup import (
 )
 from nora.domain.stimuli import NewStimulus
 from nora.infra.sql.rollups import RecordMark, SqlRollupStore, UnitRooms
+from nora.infra.sql.social_stream import SqlSocialStreamStore
 
 log = logging.getLogger("nora.analytics.units")
 
@@ -134,9 +137,12 @@ class UnitRollups:
         self, *, store: SqlRollupStore, config: UnitConfig,
         units: Sequence[UnitRooms], people: Mapping[str, PersonScope],
         stimuli: StimulusStore | None = None, events: EventPlaces | None = None,
+        social: SqlSocialStreamStore | None = None,
         metrics: Any = None, clock: Callable[[], float] = time.time,
     ) -> None:
         self._store = store
+        #: Without it no daybook reads social items: `items_posted` stays None.
+        self._social = social
         self._cfg = config
         self._units = tuple(units)
         self._people = dict(people)
@@ -187,6 +193,7 @@ class UnitRollups:
         stamps.extend(s.ts for s in sends)
         known = [s for s in stamps if s is not None]
         as_of = min(max(known), mark.through_ms) if known else mark.through_ms
+        posted = await self._posted(members, mark)
         found = colocations(
             unit.unit, stays, homes=homes, radius_m=self._cfg.colocation_radius_m,
             min_overlap_ms=int(self._cfg.colocation_min_overlap_seconds * 1000),
@@ -196,7 +203,7 @@ class UnitRollups:
         books = daybooks(
             unit.unit, members, stays=stays, found=found, outings_found=outs,
             messages=messages, reactions=reactions, as_of_ms=as_of,
-            tz_name=self._cfg.tz_name,
+            tz_name=self._cfg.tz_name, social=posted,
         )
         tied = ties(
             unit.unit, members, messages=messages, reactions=reactions, found=found,
@@ -229,6 +236,23 @@ class UnitRollups:
                 stays=stays, books=books, anomalous=anomalous, platforms=platforms,
             )
         return UnitRun(unit=unit.unit, as_of_ms=as_of, changes=changes, stimuli=tuple(raised))
+
+    async def _posted(self, members: Sequence[str], mark: RecordMark) -> SocialInput:
+        """`members`' social items and when their accounts were first observed,
+        under their subject (an item is recorded under any id the person has
+        held)."""
+        if self._social is None:
+            return SocialInput()
+        ids = [p for p, subject in self._subject_of.items() if subject in members]
+        read = await self._social.posted(persons=ids, through_ms=mark.through_ms)
+        observed: dict[str, int] = {}
+        for person, since in read.observed_from.items():
+            subject = self._subject_of[person]
+            observed[subject] = min(since, observed.get(subject, since))
+        return SocialInput(
+            items=tuple(SocialFact(self._subject_of[i.person_id], i.ts) for i in read.items),
+            observed_from=observed,
+        )
 
     # -- stimuli --------------------------------------------------------------
 

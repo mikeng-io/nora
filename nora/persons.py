@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -264,8 +264,22 @@ class Persons:
 
     def social_off(self, person_id: str) -> bool:
         """True when `person_id`'s block sets `social = false`: the social
-        stream polls none of their accounts. An unknown person is not off."""
-        return person_id in self._social_off
+        stream polls none of their accounts. A retired id answers for the
+        person it now resolves to; an unknown person is not off."""
+        return self.subject_id_for(person_id) in self._social_off
+
+    def social_off_ids(self, among: Iterable[str] | None = None) -> frozenset[str]:
+        """Every id an opted-out person's items may be recorded under: each
+        person with `social = false` (of `among`, when given) and every
+        retired id that resolves to them, so an item recorded before a
+        rename is excluded as surely as one recorded after it."""
+        off = self._social_off if among is None else {
+            p for p in among if self.social_off(p)
+        }
+        return frozenset(
+            i for p in off for i in (self.subject_id_for(p), *self.former_ids_for(
+                self.subject_id_for(p)))
+        )
 
     def instagram_igids(self, person_id: str) -> frozenset[str]:
         """Every Instagram `igid` (the public/social id) recorded for
