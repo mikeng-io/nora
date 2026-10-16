@@ -38,12 +38,17 @@ path is cut at its first out-of-scope node.
 A hub never seeds.
 
 **The question's narrowing** (`memory_search`'s `kinds`, `since`, `until`
-and `person`) is a `MemoryFilter` on the scope (`MemoryScope.only`), so the
-index applies it inside every read above and every hop below, where it
-applies the scope: a node outside it is never read, never returned and
-never takes a slot. A named person always narrows: to nodes about them,
-authored or shared by them, or listing them, said where they are listed
-(the `about` seed's rule, `nora.domain.memory_index.narrowed`).
+and `person`) is a `MemoryFilter` on the scope (`MemoryScope.only`), applied
+inside the index's reads where it applies the scope. `since`, `until` and
+`person` narrow every read, seeds and hops alike: a node outside them is
+never read, never returned and never takes a slot. A named person always
+narrows: to nodes about them, authored or shared by them, or listing them,
+said where they are listed (the `about` seed's rule,
+`nora.domain.memory_index.narrowed`). `kinds` narrows the SEEDS and the
+ANSWER, not the hops (independent review of #32): the seeds run once with
+it and once without, the hops cross any kind, and only the asked kinds are
+ranked and returned. An episode has no vector and its text is a kind and an
+interval, so `places` is mostly reached from what was said during one.
 
 **3. Expansion**, hop by hop, both edge directions, from the best
 `FRONTIER_WIDTH` nodes of the last hop. Two rules on top of scope:
@@ -401,7 +406,7 @@ async def walk(
     person_id: str | None, hops: int, admits: Callable[[IndexedNode], bool],
     exact: Sequence[ExactTerm] = (), vector: Sequence[float] | None = None,
     model: str | None = None, given_up: bool = False, embedded: int = 0,
-    metrics: Any = None,
+    metrics: Any = None, bridge: MemoryScope | None = None,
 ) -> list[Hit]:
     """Seed, then expand hop by hop (module docstring). `exact` are the
     literal references, the first `PINNED_LIMIT` of them pinned; with a
@@ -410,7 +415,16 @@ async def walk(
     lexical one on `terms`. `embedded` is how many vectors the scope holds,
     so a dense scan that came back short is counted on `metrics`. `admits`
     is the per-row presence check an episode must pass (R-31); every other
-    rule is the index's scope or this function's."""
+    rule is the index's scope or this function's.
+
+    `bridge` is `scope` without its `kinds` (independent review of #32),
+    given when kinds were asked. The seeds run on `scope` and then on
+    `bridge`, so a node of an asked kind still seeds when a crowd of other
+    kinds would outrank it, and a node of another kind can seed a path to
+    one: a message reaches the outing it was said during, and an episode
+    has no vector of its own. The hops run on `bridge`; the caller keeps
+    only the asked kinds in the answer (`MemorySearch.search`). Dates and a
+    person narrow every read of both, and only the first pass pins."""
     reached: dict[tuple[str, str], Hit] = {}
 
     def keep(node: IndexedNode, score: float, path: tuple[Step, ...]) -> bool:
@@ -421,40 +435,43 @@ async def walk(
         reached[node.key] = Hit(node, score, path)
         return True
 
-    if exact:
-        literal = await index.exact(exact, scope, limit=EXACT_LIMIT, vector=vector, model=model)
-        for i, s in enumerate(literal):
-            pinned = i < PINNED_LIMIT
-            # Past the pinned ones, an exact hit competes on its cosine like
-            # a dense hit; with no vector to compare, on its literal 1.
-            score = s.score if pinned or s.near is None else s.near
-            if keep(s.node, score, (Step(s.node.kind, how="exact"),)) and pinned:
-                reached[s.node.key].pin = PINNED_LIMIT - i
-    if vector is not None and model is not None:
-        seeds = await index.dense(vector, scope, model=model, limit=SEED_LIMIT)
-        if len(seeds) < min(SEED_LIMIT, embedded) and metrics is not None:
-            metrics.inc(_DENSE_SHORT)
-        if given_up and terms:
-            # The dense seed cannot reach a node the worker gave up on; its
-            # words still can (review of #31: otherwise it is «nothing».)
-            seeds += await index.seed(terms, scope, limit=SEED_LIMIT, given_up_of=model)
-    else:
-        seeds = await index.seed(terms, scope, limit=SEED_LIMIT) if terms else []
-    for s in seeds:
-        keep(s.node, s.score, (Step(s.node.kind, how="matched"),))
-    if person_id and person_id in scope.listed_here:
-        for node in await index.about(person_id, scope, limit=SEED_LIMIT):
-            # The listed-room rule holds for an exact-reference seed too: an
-            # entry about P said in a room that does not list P is not
-            # evidence about P (35 §3).
-            if _listed_room_rule(person_id, node, scope):
-                keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),))
+    for sc in (scope,) if bridge is None else (scope, bridge):
+        first = sc is scope
+        if exact:
+            literal = await index.exact(exact, sc, limit=EXACT_LIMIT, vector=vector, model=model)
+            for i, s in enumerate(literal):
+                pinned = first and i < PINNED_LIMIT
+                # Past the pinned ones, an exact hit competes on its cosine
+                # like a dense hit; with no vector to compare, on its literal 1.
+                score = s.score if pinned or s.near is None else s.near
+                if keep(s.node, score, (Step(s.node.kind, how="exact"),)) and pinned:
+                    reached[s.node.key].pin = PINNED_LIMIT - i
+        if vector is not None and model is not None:
+            seeds = await index.dense(vector, sc, model=model, limit=SEED_LIMIT)
+            if first and len(seeds) < min(SEED_LIMIT, embedded) and metrics is not None:
+                metrics.inc(_DENSE_SHORT)
+            if given_up and terms:
+                # The dense seed cannot reach a node the worker gave up on;
+                # its words still can (review of #31: otherwise «nothing».)
+                seeds += await index.seed(terms, sc, limit=SEED_LIMIT, given_up_of=model)
+        else:
+            seeds = await index.seed(terms, sc, limit=SEED_LIMIT) if terms else []
+        for s in seeds:
+            keep(s.node, s.score, (Step(s.node.kind, how="matched"),))
+        if person_id and person_id in scope.listed_here:
+            for node in await index.about(person_id, sc, limit=SEED_LIMIT):
+                # The listed-room rule holds for an exact-reference seed too:
+                # an entry about P said in a room that does not list P is not
+                # evidence about P (35 §3).
+                if _listed_room_rule(person_id, node, scope):
+                    keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),))
+    hop_scope = bridge if bridge is not None else scope
 
     frontier = sorted(reached.values(), key=lambda h: -h.score)[:FRONTIER_WIDTH]
     for _ in range(max(0, min(hops, HOP_CEILING))):
         if not frontier or len(reached) >= NODE_BUDGET:
             break
-        found = await index.neighbours([h.node.key for h in frontier], scope)
+        found = await index.neighbours([h.node.key for h in frontier], hop_scope)
         added: list[Hit] = []
         for nb in sorted(found, key=lambda n: (n.via, n.rel, n.node.key)):
             parent = reached.get(nb.via)
@@ -526,8 +543,12 @@ class MemorySearch:
                 kinds=tuple(dict.fromkeys(kinds)), since_ms=since_ms, until_ms=until_ms,
                 person=person_id or None,
             )
+            bridge: MemoryScope | None = None
             if only != MemoryFilter():
                 scope = replace(scope, only=only)
+                if only.kinds:
+                    # The hops cross other kinds (`walk`); the answer does not.
+                    bridge = replace(scope, only=replace(only, kinds=()))
             state = await self._index.index_state(model=self._model, scope=scope)
             names = [n for p in people if p.person_id in scope.listed_here for n in _names(p)]
             vector: list[float] | None = None
@@ -545,12 +566,14 @@ class MemorySearch:
                 person_id=person_id, hops=HOPS_BY_DEPTH.get(depth, 2), admits=admits,
                 exact=exact_terms_of(query, names), vector=vector, model=self._model,
                 given_up=state.given_up > 0, embedded=state.embedded, metrics=self._metrics,
+                bridge=bridge,
             )
         except Exception as exc:  # noqa: BLE001 — fail closed: «I couldn't check»
             log.warning("memory search failed (%s)", type(exc).__name__)
             return self._count("unavailable")
+        wanted = frozenset(kinds)
         ranked = sorted(
-            hits,
+            (h for h in hits if not wanted or h.node.kind in wanted),
             key=lambda h: (-h.pin, -h.score * _decay(h.node.at_ms, now_ms), h.node.key),
         )[:RESULT_LIMIT]
         incomplete = (

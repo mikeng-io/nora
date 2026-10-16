@@ -24,8 +24,8 @@ import pytest
 from nora.agent.dreamer import AdaptorGrant, HomeRoom, RegistryToolSource
 from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import SEED_LIMIT, MemorySearch
-from nora.agent.room import Room
 from nora.agent.registry import ToolRegistry
+from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.lineage import RoomFacts

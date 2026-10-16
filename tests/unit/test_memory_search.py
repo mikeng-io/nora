@@ -208,6 +208,28 @@ async def _lexical(index: FakeMemoryIndex, query: str = "ramen", metrics: Metric
     )
 
 
+async def test_kinds_narrow_the_answer_not_the_hops_so_an_outing_is_reached() -> None:
+    """Independent review of #32: an episode has no vector and its text is a
+    kind and an interval, so a search for `places` that applied the kinds
+    inside the hops too found almost nothing. The message said during the
+    outing seeds (the bridge pass), the hop reaches the outing, and the
+    answer holds the outing alone. The outing is presence-permitted here
+    (`_B` has `location`, lists Kit, and the row passes its lineage)."""
+    outing = IndexedNode("outing", "o1", "outing", NOW, unit="u1", persons=("kit",),
+                         lineage=[["presence", "kit", None]])
+    index = FakeMemoryIndex(
+        [_msg("1", "ramen at the night market"), outing],
+        [("message", "1", "during", "outing", "o1")],
+        embed_model=M,
+    )
+    found = await MemorySearch(
+        index, Metrics(), embedder=FakeQueryEmbedder(), model=M,
+    ).search(query="ramen night market", person_id=None, target=_target(),
+             depth="low", now_ms=NOW, kinds=("outing", "stay", "trip"))
+    assert found.status == "ok", found
+    assert [h.node.key for h in found.hits] == [("outing", "o1")]
+
+
 @pytest.mark.parametrize(("nodes", "state", "status"), [
     ([_msg("1", "ramen")], IndexState("complete", 0), "ok"),
     ([], IndexState("complete", 0), "nothing_found"),
