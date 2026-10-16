@@ -470,6 +470,11 @@ async def walk(
     def keep(node: IndexedNode, score: float, path: tuple[Step, ...]) -> bool:
         if node.key in reached or score < RELEVANCE_FLOOR:
             return False
+        # Episodes only, not every `PRESENCE_KINDS`: `admits` reads a row's
+        # presence lineage, and a social item's tagged place carries none (an
+        # empty lineage is denied outside its origin room, and it has no
+        # room), so it would never be kept. The index's scope already gates
+        # it by presence.
         if node.kind in EPISODE_KINDS and not admits(node):
             return False
         reached[node.key] = Hit(node, score, path)

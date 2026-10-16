@@ -442,6 +442,8 @@ SOCIAL_NODES: list[tuple[IndexedNode, bool, bool]] = [
                  persons=("kit",)), True, False),
     (IndexedNode("social_media", "instagram:1:" + "a1" * 32, "picnic plans blanket", 10,
                  persons=("kit",), sha256="a1" * 32), True, False),
+    (IndexedNode("social_location", "instagram:1", "Picnic Lawn", 10,
+                 persons=("kit",)), True, False),
     (IndexedNode("social", "instagram:2", "Instagram post\npicnic plans", 9,
                  persons=("sam",)), True, True),
     (IndexedNode("social", "instagram:3", "Instagram reel\npicnic plans", 8,
@@ -469,6 +471,7 @@ async def test_every_read_leaves_out_an_opted_out_persons_social_nodes(load: Loa
         [n for n, _, _ in SOCIAL_NODES] + [IndexedNode("person", "kit")],
         [("social", "instagram:1", "authored_by", "person", "kit"),
          ("social_media", "instagram:1:" + "a1" * 32, "attached_to", "social", "instagram:1"),
+         ("social_location", "instagram:1", "attached_to", "social", "instagram:1"),
          ("character", "c9", "about", "person", "kit")],
         vectors=vectors,
     )
@@ -481,7 +484,9 @@ async def test_every_read_leaves_out_an_opted_out_persons_social_nodes(load: Loa
             _unit((0, 1.0)), scope, model=M, limit=50)} == want
     assert {n.key for n in await index.about("kit", OFF, limit=10)} == {("character", "c9")}
     found = await index.neighbours([("social", "instagram:1")], SCOPE)
-    assert ("social_media", "instagram:1:" + "a1" * 32) in {nb.node.key for nb in found}
+    assert {("social_media", "instagram:1:" + "a1" * 32), ("social_location", "instagram:1")} <= {
+        nb.node.key for nb in found
+    }
     gone = await index.neighbours([("social", "instagram:1")], OFF)
     assert {nb.node.key for nb in gone} == {("person", "kit")}, "a hub stays a neighbour"
 

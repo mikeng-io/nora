@@ -515,3 +515,28 @@ func TestItemsMarksACollaborationPost(t *testing.T) {
 		t.Errorf("items = %+v, want the collab marked and the own post not", body.Items)
 	}
 }
+
+// A tag of the wrong shape is no location, never a refused page: the
+// location rides on the item, and the page is still a true list of items.
+func TestItemsAMalformedLocationIsNoLocationNotARefusedPage(t *testing.T) {
+	const good = `"location": {"pk": "3002", "name": "Placeholder Square", "lat": 0.0, "lng": 0.0}`
+	if !strings.Contains(fakeig.TimelineFirstPageJSON, good) {
+		t.Fatal("the fixture no longer carries the tagged post this test rewrites")
+	}
+	for name, bad := range map[string]string{
+		"a string":            `"location": "x"`,
+		"a name not a string": `"location": {"name": 5}`,
+		"a list":              `"location": []`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeIG{TimelineBody: []byte(strings.Replace(fakeig.TimelineFirstPageJSON, good, bad, 1))}
+			body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
+			if len(body.Items) != 3 {
+				t.Fatalf("got %d items, want the page's 3", len(body.Items))
+			}
+			if loc := body.Items[2].Location; loc == nil || *loc != "" {
+				t.Errorf("location = %v, want \"\" for a malformed tag", loc)
+			}
+		})
+	}
+}
