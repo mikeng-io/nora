@@ -18,8 +18,14 @@ package instameow
 // gateway resolves it through the profile read. A username is renameable and
 // a freed one can be taken, so it could name somebody else: every item must
 // name its owner (the `<pk>_<owner igid>` id, `user.pk`, `owner.pk` or
-// `owner.id`) and every owner named must be the igid asked about, or the page
-// is refused rather than recorded under the wrong person.
+// `owner.id`), and the igid asked about must be that owner or one of the
+// item's co-authors (`coauthor_producers`), or the page is refused rather
+// than recorded under the wrong person.
+//
+// A collaboration post is on the co-author's grid under its owner's id:
+// measured 2026-10-16, 11 of one member's first 12 items were collabs whose
+// owner was another account. Those are the member's posts too, and are kept,
+// marked `Collab`.
 //
 // # What crosses into a span or an error
 //
@@ -126,6 +132,21 @@ type timelineNode struct {
 		PK flexID `json:"pk"`
 		ID flexID `json:"id"`
 	} `json:"owner"`
+	// CoauthorProducers are a collaboration post's co-authors.
+	CoauthorProducers []struct {
+		PK flexID `json:"pk"`
+		ID flexID `json:"id"`
+	} `json:"coauthor_producers"`
+}
+
+// coauthoredBy says whether igid is one of the node's co-authors.
+func (n *timelineNode) coauthoredBy(igid string) bool {
+	for _, c := range n.CoauthorProducers {
+		if c.PK.String() == igid || c.ID.String() == igid {
+			return true
+		}
+	}
+	return false
 }
 
 // ownersOf is every owner igid the node names: the `<pk>_<owner>` suffix of
@@ -215,10 +236,18 @@ func parseTimeline(ctx context.Context, raw []byte, igid domain.IGID) (domain.Ti
 		if len(owners) == 0 {
 			return domain.TimelinePage{}, errOtherOwner
 		}
-		for _, owner := range owners {
-			if owner != igid.String() {
+		// The owner fields must agree with each other: an item whose id
+		// suffix and user.pk name different accounts is refused, whoever the
+		// co-authors are.
+		for _, owner := range owners[1:] {
+			if owner != owners[0] {
 				return domain.TimelinePage{}, errOtherOwner
 			}
+		}
+		owned := owners[0] == igid.String()
+		collab := !owned && n.coauthoredBy(igid.String())
+		if !owned && !collab {
+			return domain.TimelinePage{}, errOtherOwner
 		}
 		pk := n.PK.String()
 		if pk == "" {
@@ -238,6 +267,7 @@ func parseTimeline(ctx context.Context, raw []byte, igid domain.IGID) (domain.Ti
 			Kind:          "post",
 			MediaType:     n.MediaType,
 			CarouselCount: n.CarouselMediaCount,
+			Collab:        collab,
 		}
 		// A reel is `product_type: clips` (§1a); a video posted to the feed
 		// is still a post.

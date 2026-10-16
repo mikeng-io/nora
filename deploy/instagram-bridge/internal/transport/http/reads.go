@@ -339,6 +339,8 @@ type timelineItem struct {
 	// Caption is the author's own words, "" when there are none.
 	Caption       string `json:"caption"`
 	CarouselCount int    `json:"carousel_count"`
+	// Collab is a post another account owns and this one co-authored.
+	Collab bool `json:"collab"`
 }
 
 // itemsBody is the 200 shape, on the list conventions `GET /accounts`
