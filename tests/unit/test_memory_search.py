@@ -549,3 +549,113 @@ def test_the_opt_outs_are_never_defaulted() -> None:
     assert param.default is inspect.Parameter.empty
     assert param.kind is inspect.Parameter.KEYWORD_ONLY
     assert {f.name for f in dataclasses.fields(MemoryScope) if f.kw_only} == {"social_off"}
+
+
+# --- the adaptive cut (design/unified-memory/65 §6) ------------------------------------------
+
+
+def _hit(i: int, score: float, text: str = "ramen", pin: int = 0) -> memory_search.Hit:
+    node = _msg(f"{i:03}", text)
+    return memory_search.Hit(node, score, (memory_search.Step("message", how="matched"),),
+                             pin=pin)
+
+
+def _packet(hits: list[memory_search.Hit]) -> list[dict]:
+    items, _ = render_packet(hits, name_of=str, room_label=lambda k: "B",
+                             now=datetime.fromtimestamp(NOW / 1000, UTC))
+    return items
+
+
+def _cost(item: dict) -> int:
+    import json
+
+    from nora.language.computer_render import estimate_tokens
+    return estimate_tokens(json.dumps(item, ensure_ascii=False))
+
+
+def test_the_packet_stops_at_its_token_budget() -> None:
+    from nora.agent.memory_search import PACKET_TOKENS, RESULT_MAX
+    hits = [_hit(i, 0.7 - i * 0.001, "ramen " * 60) for i in range(RESULT_MAX)]
+    items = _packet(hits)
+    spent = sum(_cost(i) for i in items)
+    assert 3 < len(items) < RESULT_MAX
+    assert spent <= PACKET_TOKENS < spent + _cost(_packet(hits[len(items):])[0])
+
+
+def test_a_steep_drop_in_relevance_ends_the_answer() -> None:
+    from nora.agent.memory_search import SCORE_GAP
+    scores = [0.8, 0.79, 0.78, 0.77, 0.77 - SCORE_GAP - 0.01, 0.5]
+    assert [i["text"] for i in _packet([_hit(i, s) for i, s in enumerate(scores)])] == [
+        "ramen"] * 4
+
+
+def test_the_best_few_show_whatever_the_gap_or_the_budget() -> None:
+    from nora.agent.memory_search import MIN_RESULTS, PACKET_TOKENS
+    # A cliff after every item.
+    scores = [0.9, 0.65, 0.4, 0.15, 0.14]
+    assert len(_packet([_hit(i, s) for i, s in enumerate(scores)])) == MIN_RESULTS
+    # Each item alone over the budget (its places, which no text cut bounds).
+    big = []
+    for i in range(5):
+        h = _hit(i, 0.6)
+        h.places = {f"{i}{j}" + "拉" * 100 for j in range(PACKET_TOKENS // 90)}
+        big.append(h)
+    assert _cost(_packet(big[:1])[0]) > PACKET_TOKENS
+    assert len(_packet(big)) == MIN_RESULTS
+
+
+def test_pinned_hits_are_kept_past_the_budget_and_no_gap_is_read_from_them() -> None:
+    from nora.agent.memory_search import PACKET_TOKENS, PINNED_LIMIT
+    big = "拉" * PACKET_TOKENS
+    pinned = [_hit(i, 1.0, big, pin=PINNED_LIMIT - i) for i in range(PINNED_LIMIT)]
+    assert len(_packet(pinned)) == PINNED_LIMIT
+    # A pin scores 1; the dense hits after it at 0.5 are not a cliff.
+    small = [_hit(i, 1.0, pin=3 - i) for i in range(3)]
+    dense = [_hit(10 + i, 0.5 - i * 0.01) for i in range(4)]
+    assert len(_packet(small + dense)) == 7
+
+
+def test_the_answer_never_passes_its_cap() -> None:
+    from nora.agent.memory_search import RESULT_MAX
+    assert len(_packet([_hit(i, 0.7) for i in range(RESULT_MAX + 5)])) == RESULT_MAX
+
+
+async def test_with_a_query_vector_the_dense_floor_drops_a_far_neighbour() -> None:
+    """Under `DENSE_FLOOR` a dense neighbour is not an answer: with nothing
+    else in scope the index has nothing to say."""
+    from nora.agent.memory_search import DENSE_FLOOR
+    from nora.testing.memory_index import cosine
+    q = "ramen crawl tonight with friends downtown after work"
+    far = _msg("far", "ramen")
+    near = _msg("near", "ramen crawl tonight with friends")
+    assert cosine(bag_of_words(q), bag_of_words(far.text)) < DENSE_FLOOR
+    assert cosine(bag_of_words(q), bag_of_words(near.text)) >= DENSE_FLOOR
+    found = await _search(FakeMemoryIndex([far, near], embed_model=M), q)
+    assert [h.node.source_id for h in found.hits] == ["near"]
+    alone = await _search(FakeMemoryIndex([far], embed_model=M), q)
+    assert (alone.status, alone.hits) == ("nothing_found", ())
+
+
+async def test_a_pinned_literal_survives_the_dense_floor() -> None:
+    """A real hit set is never turned into `nothing_found` by the floor when
+    an exact reference holds: the pin scores 1 whatever its cosine."""
+    named = _msg("named", "Rin")
+    rin = PersonRef("kit", "Rin", "kit")
+    found = await _search(FakeMemoryIndex([named], embed_model=M),
+                          "did Rin ever book that ramen place downtown", people=(rin,))
+    assert found.status == "ok"
+    assert [h.node.source_id for h in found.hits] == ["named"] and found.hits[0].pin > 0
+
+
+async def test_a_line_waiting_for_its_vector_keeps_the_lexical_floor() -> None:
+    """Beside a dense seed, the lexical seed over unvectored nodes scores by
+    words held (one of three: 0.33), which the dense floor would drop."""
+    fresh = _msg("2", "noodle place")
+    index = FakeMemoryIndex([_msg("1", "zzz"), fresh], embed_model=M, fresh=[fresh.key])
+    del index.vectors[fresh.key]
+    found = await MemorySearch(
+        index, Metrics(), embedder=FakeQueryEmbedder(), model=M, drain_seconds=60.0,
+    ).search(query="noodle soup tonight", person_id=None, target=_target(), depth="low",
+             now_ms=NOW, social_off=())
+    assert [(h.node.source_id, round(h.score, 2)) for h in found.hits] == [("2", 0.33)]
+    assert found.status == "ok"
