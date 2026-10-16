@@ -76,12 +76,14 @@ from nora.domain.cognition_ground import (
     Grounding,
     RecordItem,
     RollupLine,
+    SocialLine,
     StayDeviation,
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.external_files import render_file_links
 from nora.domain.prompt import ago, clip, escape, legal, one_line
+from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import render_self
 from nora.language.event_render import render_event_rows
@@ -445,16 +447,38 @@ def _rollup_row(stimulus: Stimulus, line: RollupLine, *, now_ms: int, tz: tzinfo
     return _Row(stimulus.at_ms, stimulus.id, show)
 
 
+def _social_row(stimulus: Stimulus, line: SocialLine, *, now_ms: int, tz: tzinfo) -> _Row:
+    """A social read as `<social at="...">Ada posted a story frame</social>`:
+    whose, what (story frame, post or reel, collab) and when the newest of it
+    was posted. It has no message id, so it is no `<m>`."""
+    sentence = f"{line.name} posted {describe_read(line.item)}"
+
+    def show(limit: int | None) -> str:
+        return render_elements(
+            [line], tag="social", attrs=lambda r, _i: (("at", _when(r.at_ms, now_ms, tz)),),
+            body=lambda _r: one_line(sentence) if limit is None else _words(sentence, limit),
+        )
+
+    return _Row(stimulus.at_ms, stimulus.id, show)
+
+
 def _item_rows(
     item: AgendaItem, rows: Sequence[Stimulus], grounding: Grounding,
     own: Sequence[RecordItem], *, now_ms: int, tz: tzinfo, message_chars: int,
 ) -> tuple[list[_Row], int]:
     """The item's readable rows and how many stimuli of it could not be read:
-    its messages (Record rows), Nora's own sends in its window, and its Rollup
-    rows."""
+    its messages (Record rows), Nora's own sends in its window, its Rollup
+    rows and its social reads."""
     out: list[_Row] = []
     unreadable = 0
     for s in rows:
+        if s.kind == "social":
+            social = grounding.socials.get(s.ref)
+            if social is None:
+                unreadable += 1
+                continue
+            out.append(_social_row(s, social, now_ms=now_ms, tz=tz))
+            continue
         if s.kind == "rollup":
             roll = grounding.rollups.get(s.ref)
             if roll is None:

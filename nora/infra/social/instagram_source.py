@@ -335,11 +335,20 @@ def _frame(row: Any) -> StoryFrame | None:
     )
 
 
+def _seconds(value: Any) -> float | None:
+    """A positive number of seconds, or None for anything else."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
+        return None
+    return float(value)
+
+
 def _media(raw: Any) -> tuple[MediaItem, ...]:
     """A bridge `items` list (a post's, or one listed item's) → its image and
-    video rows whose URL is on a known CDN host; every other row is dropped."""
+    video rows whose URL is on a known CDN host, with a video's length when
+    the bridge sent one; every other row is dropped."""
     return tuple(
-        MediaItem(kind=row["kind"], url=row["url"])
+        MediaItem(kind=row["kind"], url=row["url"],
+                  duration_seconds=_seconds(row.get("duration_seconds")))
         for row in (raw if isinstance(raw, list) else [])
         if isinstance(row, dict) and row.get("kind") in ("image", "video")
         and _is_cdn_url(row.get("url"))

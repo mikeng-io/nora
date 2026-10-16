@@ -2,8 +2,8 @@
   {
     "name": "K2 the spawned read is concurrency-bounded",
     "file": "nora/ingest/comprehension.py",
-    "old": "        async with self._slots:",
-    "new": "        if True:",
+    "old": "            async with self._slots:\n                await self._read(",
+    "new": "            if True:\n                await self._read(",
     "target": "tests/unit/test_media_comprehension.py -k concurrent_reads_are_bounded"
   },
   {
@@ -44,7 +44,7 @@
   {
     "name": "K7b the already-read gate uses the availability axis",
     "file": "nora/ingest/comprehension.py",
-    "old": "        found = await self._store.lookup(sha256s=(blob.sha256,))\n        if not found.available:\n            self._count(platform, label, \"unavailable\", \"store\")\n            return\n        existing = found.objects.get(blob.sha256)",
+    "old": "        found = await self._store.lookup(sha256s=(blob.sha256,))\n        if not found.available:\n            return self._count(platform, label, \"unavailable\", \"store\")\n        existing = found.objects.get(blob.sha256)",
     "new": "        existing = await self._store.get(sha256=blob.sha256)",
     "target": "tests/unit/test_media_comprehension.py -k unreadable_index_does_not_look"
   },

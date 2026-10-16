@@ -785,6 +785,14 @@ mode = "dry_run"
 # Needs [social.instagram] enabled (refused at load otherwise). It reads through
 # the login Nora's Instagram messaging uses: a checkpoint halts it until the
 # bridge reports the session healthy again.
+#
+# With [media] comprehension on, a second pass perceives each new item's media
+# under a per-unit daily cap of MODEL CALLS: one per image, and per video one
+# per [media.describe.video] chunk_seconds window (up to chunk_max) plus one text
+# pass. Polled items go first; back-filled history may use at most half of what
+# they leave. An item that fails three times, or for good, is not read again. A read
+# that recorded new items then raises one `social` stimulus for the person,
+# with [cognition] enabled. The day is [cognition] timezone's.
 enabled = false
 # tick_seconds = 600.0            # how often the poller looks for members due
 # floor_minutes = 30.0            # no member probed more often than this
@@ -793,6 +801,7 @@ enabled = false
 # back_off_start_minutes = 15.0   # first pause after a rejected or rate-limited call
 # back_off_max_hours = 6.0        # the pause doubles up to this, until a clean probe
 # jitter_seconds = 10.0           # random pause of up to this before each call
+# perception_daily_cap = 200      # model calls per unit per day; past it, an item waits a day
 
 [social.linkedin]
 # linkedin_read and linkedin_search (DEC-201): read-only LinkedIn through the same

@@ -27,6 +27,8 @@ never more): the rows it shows are a suffix of the old shown set, and what it sh
 plus what it cut is exactly what the old showed plus cut. Every other case must
 show every fact the old one did. The events of a room past `register_lines` were capped
 silently in the old format; the new one says so (`not_listed`), which only adds a fact.
+A social read's `<social>` row is new too: the old format rendered none, so it is
+left out of the comparison and adds a fact.
 """
 
 from __future__ import annotations
@@ -231,7 +233,8 @@ def new_facts(text: str) -> Facts:
                 facts.items.append(Item(
                     int(a["index"]), a["summary"], a["room"],
                     int(returning[1]) if returning else 0, a.get("window", ""),
-                    [_new_row(el) for el in item_el], int(a.get("earlier_not_shown", 0)),
+                    [_new_row(el) for el in item_el if el.tag != "social"],
+                    int(a.get("earlier_not_shown", 0)),
                     tuple(int(x) for x in a["earlier_range"].split(" to "))  # type: ignore[arg-type]
                     if "earlier_range" in a else None,
                     int(a.get("unreadable", 0)),

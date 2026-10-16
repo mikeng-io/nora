@@ -194,6 +194,20 @@ class RollupLine:
 
 
 @dataclass(frozen=True, slots=True)
+class SocialLine:
+    """A `social` stimulus as the session reads it: whose read it was (their
+    roster NAME, resolved at read time and never serialized), what it recorded
+    (the stimulus `item`, `nora.domain.social_stream.read_item`) and when the
+    newest of it was posted (`at_ms`)."""
+
+    ref: str
+    name: str
+    person_id: str
+    item: str
+    at_ms: int
+
+
+@dataclass(frozen=True, slots=True)
 class NoteLine:
     """An open note's index line: its id (what `note_update` takes), title and
     one-line description, never its body. `review` and `may_duplicate` are
@@ -242,6 +256,9 @@ class Grounding:
     #: A Rollup stimulus's readable fields, by the stimulus `ref`. A rollup
     #: stimulus with no entry here cannot be shown, and is not an agenda item.
     rollups: Mapping[str, RollupLine] = field(default_factory=dict)
+    #: A `social` stimulus's readable fields, by the stimulus `ref`; one whose
+    #: person the roster does not know has no entry and is not shown.
+    socials: Mapping[str, SocialLine] = field(default_factory=dict)
     #: Nora's own sends inside each item's window, by the item's index in the
     #: agenda that was grounded (D1): what the room's messages may be answering.
     own_sends: Mapping[int, tuple[RecordItem, ...]] = field(default_factory=dict)
@@ -277,6 +294,11 @@ class Grounding:
                  "deviations": [d.kind for d in r.deviations]}
                 for r in self.rollups.values()
             ],
+            # By reference, and no name: the read, the person id, what it held.
+            "socials": [
+                {"ref": s.ref, "person_id": s.person_id, "item": s.item, "at_ms": s.at_ms}
+                for s in self.socials.values()
+            ],
             # Her own sends by message id and time; never the words.
             "own_sends": {
                 str(i): [{"message_id": m.message_id, "at_ms": m.at_ms,
@@ -288,5 +310,6 @@ class Grounding:
 
 __all__ = [
     "RECORD_REF_TABLES", "UNNAMED_ROOM", "EventLine", "Grounding", "NoteLine", "RecordItem",
-    "RecordKind", "RollupLine", "RollupRef", "StayDeviation", "parse_rollup_ref", "record_ref",
+    "RecordKind", "RollupLine", "RollupRef", "SocialLine", "StayDeviation", "parse_rollup_ref",
+    "record_ref",
 ]

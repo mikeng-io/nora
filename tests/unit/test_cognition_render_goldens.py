@@ -49,6 +49,7 @@ from nora.domain.cognition_ground import (
     NoteLine,
     RecordItem,
     RollupLine,
+    SocialLine,
 )
 from nora.domain.cognition_session import AgendaItem, Room, build_agenda
 from nora.domain.prompt import ago, escape_attr
@@ -543,14 +544,19 @@ def _() -> str:
 @_case("social-play-time-self-and-unknown-items")
 def _() -> str:
     stims = [
-        _stim(1, A, ago=15, kind="social", item="post", ref="social:1"),
-        _stim(2, A, ago=14, kind="social", item="post", ref="social:2"),
+        _stim(1, A, ago=15, kind="social", item="story_frame,story_frame",
+              ref="social_read:1"),
+        _stim(2, A, ago=14, kind="social", item="collab:post,reel", ref="social_read:2"),
         _stim(3, A, ago=13, kind="play", item="sample", ref="play:3"),
         _stim(4, None, ago=0, kind="time", item="2026-09-30 evening plan", ref="time:4"),
         _stim(5, None, ago=1, kind="self", item="wake-9", ref="self:5"),
         _stim(6, None, ago=2, kind="weird", item="x [y]: <z>", ref="weird:6"),
     ]
-    return _render(stims, Grounding(room_labels=LABELS))
+    return _render(stims, Grounding(room_labels=LABELS, socials={
+        s.ref: SocialLine(ref=s.ref, name=name, person_id=name.lower(), item=s.item,
+                          at_ms=s.at_ms)
+        for s, name in ((stims[0], "Ada"), (stims[1], "Ben"))
+    }))
 
 
 @_case("several-rooms-with-an-unlabelled-one-and-events")
@@ -764,7 +770,7 @@ def _() -> str:
     b1 = _stim(6, B, ago=40, mid=301)
     ln = _roll("arrival", ("Ben",), _at(20), None, place="Ramen Ya")
     st = _roll_stim(7, ln, ago=20)
-    social = _stim(8, A, ago=6, kind="social", item="post", ref="social:8")
+    social = _stim(8, A, ago=6, kind="social", item="post", ref="social_read:8")
     stims = [m1, m2, m3, r, d, b1, st, social]
     return _render(stims, Grounding(
         records={x.ref: x for x in (
@@ -777,6 +783,8 @@ def _() -> str:
             _rec(b1, author="Bo", text="who has the car? [urgent]: <now>"),
         )},
         rollups={ln.ref: ln},
+        socials={social.ref: SocialLine(ref=social.ref, name="Ben", person_id="ben",
+                                        item=social.item, at_ms=social.at_ms)},
         own_sends={0: (_own(104, A, ago=70, text="I think Friday works"),)},
         notes=(NoteLine(id="n-77", title="Dinner Friday", description="who, when and where"),),
         events=(EventLine(id="e-9", room=A, title="Dinner", when_ms=NOW + 2 * DAY, venue="Ramen Ya",
@@ -847,7 +855,9 @@ def test_the_goldens_vary_what_this_step_is_about():
             'returning="left open by 2 earlier sessions"',
         ),
         "social-play-time-self-and-unknown-items": (
-            "new social items", "new play sample", "a time stimulus is due:",
+            "new social items", "Ada posted 2 story frames</social>",
+            "Ben posted a collab post and a reel</social>", "new play sample",
+            "a time stimulus is due:",
             "a self-wake is due:", "1 weird stimuli:",
         ),
         "several-rooms-with-an-unlabelled-one-and-events": (
