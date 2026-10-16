@@ -6138,7 +6138,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 or nickname the message used. Leave it out for everyone.
             since: The first day to include, as YYYY-MM-DD.
             until: The last day to include, as YYYY-MM-DD.
-            kinds: Only these kinds of memory. Leave it out to search them all.
+            kinds: Only these kinds of memory. `media` is pictures and videos
+                sent in a chat; a shared link is a message. Leave it out to
+                search them all.
         """
         # The model writes the dates, so a bad one is an ordinary event, never
         # an exception (R-5) and never silently dropped: `unavailable` with
