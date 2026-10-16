@@ -58,6 +58,7 @@ type storyItem struct {
 	ExpiringAt   int    `json:"expiring_at"`
 	Caption      string `json:"caption"`
 	AltText      string `json:"alt_text"`
+	Location     string `json:"location"`
 }
 
 type storyBody struct {

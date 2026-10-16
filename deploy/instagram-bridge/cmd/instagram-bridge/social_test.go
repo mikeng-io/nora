@@ -376,7 +376,14 @@ func TestStoryFramesKeepBothTheClipAndTheStill(t *testing.T) {
 			"the question with no fetch at all", image.Caption, image.AltText)
 	}
 
+	if image.Location != "Placeholder Harbour" {
+		t.Errorf("frame 1 location = %q, want its location sticker's place name, trimmed", image.Location)
+	}
+
 	video := body.Items[1]
+	if video.Location != "" {
+		t.Errorf("frame 2 location = %q from a frame with no location sticker", video.Location)
+	}
 	if video.Kind != "video" {
 		t.Errorf("frame 2 kind = %q, want video", video.Kind)
 	}
@@ -532,5 +539,31 @@ func TestStoryRefusesABadIGID(t *testing.T) {
 	}
 	if rec := getStory(t, b, ""); rec.Code != http.StatusTemporaryRedirect {
 		t.Errorf("an absent igid answered %d, want the router's 307", rec.Code)
+	}
+}
+
+// A location sticker of the wrong shape is no location, never a refused
+// story: the frames are still read.
+func TestStoryAMalformedLocationStickerIsNoLocationNotARefusedStory(t *testing.T) {
+	const good = `"story_locations": [{"x": 0.5, "y": 0.5, "location": {"pk": "3001", "name": " Placeholder Harbour ", "lat": 0.0, "lng": 0.0}}]`
+	if !strings.Contains(fakeig.MeasuredStoryJSON, good) {
+		t.Fatal("the fixture no longer carries the sticker this test rewrites")
+	}
+	for name, bad := range map[string]string{
+		"an object, not a list":         `"story_locations": {}`,
+		"a sticker's location a string": `"story_locations": [{"location": "x"}]`,
+		"a name not a string":           `"story_locations": [{"location": {"name": 5}}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeIG{StoryBody: []byte(strings.Replace(fakeig.MeasuredStoryJSON, good, bad, 1))}
+			rec := getStory(t, newTestBridge(t, f), "246967358")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
+			}
+			body := decodeStory(t, rec)
+			if len(body.Items) != 2 || body.Items[0].Location != "" {
+				t.Errorf("frames = %+v, want both, the first with no location", body.Items)
+			}
+		})
 	}
 }

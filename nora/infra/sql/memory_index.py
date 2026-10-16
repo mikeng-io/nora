@@ -78,10 +78,16 @@ item's text is what it is (`social_label`: «Instagram story»), its caption
 verbatim (the author's own text, as a message body is) and the reading of
 each medium (`media_objects`, keyed by the bytes, whichever pass wrote it); a
 medium's text is its reading, and an image is embedded from its bytes like
-an attachment. Never the item's `location`, never its `alt_text` (the
-network's generated alt text is phrased with the place and the tagged
-handles), and never its `tagged` or `mentioned` handles, which get no edge
-either: only the author is a person here (`authored_by`, `shared_by`). An item with
+an attachment. The item's `location`, the place it is tagged with, is a
+`social_location` node of its own, keyed like the item and `attached_to` it,
+its text the place as recorded: never in the item's text, because it is a
+person's whereabouts, and a read gates it as it gates a stay
+(`PRESENCE_KINDS`), which it could not do to part of a node. An item with no
+location has no such node. Never its `alt_text` (the network's generated alt
+text is phrased with the place and the tagged handles, so it would carry the
+place past that gate), and never its `tagged` or `mentioned` handles, which
+get no edge either: only the author is a person here (`authored_by`,
+`shared_by`). An item with
 a `social_item_state` row (gone or hidden) has no node, like a hidden
 message. A person's `social = false` is not read here: the projector is pure,
 and the read leaves their items out (`MemoryScope.social_off`), so switching
@@ -522,7 +528,7 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     row = (await conn.execute(
         sa.select(
             i.c.person, i.c.kind, i.c.taken_at, i.c.caption, i.c.media_ref,
-            i.c.collab, stated.label("stated"),
+            i.c.collab, i.c.location, stated.label("stated"),
         ).where(i.c.network == network, i.c.item_id == item_id)
     )).first()
     if row is None or row.stated:
@@ -545,8 +551,8 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
         }
     at_ms = int(row.taken_at.timestamp() * 1000)
     persons = [row.person]
-    # Never `alt_text`, `location`, `tagged` or `mentioned` (the module
-    # docstring).
+    # Never `alt_text`, `location`, `tagged` or `mentioned` in the item's
+    # text; the location is its own node, below (the module docstring).
     await _upsert_node(
         conn, kind="social", source_id=source_id, persons=persons, at_ms=at_ms,
         text=_text(
@@ -556,7 +562,7 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     )
     held = set((await conn.execute(
         sa.select(MEMORY_EDGE.c.src_id).where(
-            MEMORY_EDGE.c.rel == "attached_to",
+            MEMORY_EDGE.c.rel == "attached_to", MEMORY_EDGE.c.src_kind == "social_media",
             MEMORY_EDGE.c.dst_kind == "social", MEMORY_EDGE.c.dst_id == source_id,
         )
     )).scalars())
@@ -565,6 +571,18 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     edges: list[Edge] = [
         ("social", source_id, "authored_by", "person", row.person, "social_item.person"),
     ]
+    location = (row.location or "").strip()
+    if location:
+        await _upsert_node(
+            conn, kind="social_location", source_id=source_id, persons=persons,
+            at_ms=at_ms, text=location,
+        )
+        edges.append((
+            "social_location", source_id, "attached_to", "social", source_id,
+            "social_item.location",
+        ))
+    else:
+        await _delete(conn, "social_location", [source_id])
     for media, sha in wanted.items():
         await _upsert_node(
             conn, kind="social_media", source_id=media, persons=persons, at_ms=at_ms,
@@ -575,7 +593,10 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
             ("social_media", media, "shared_by", "person", row.person, "social_item.person"),
         ]
     ends: list[tuple[str, str]] = []
-    for kind, ids in (("social", [source_id]), ("social_media", list(wanted))):
+    for kind, ids in (
+        ("social", [source_id]), ("social_media", list(wanted)),
+        ("social_location", [source_id]),
+    ):
         if ids:
             ends += await _delete_edges(conn, sa.and_(
                 MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids),
@@ -1198,6 +1219,9 @@ _PRESENCE: dict[str, sa.Table] = {"stay": PRESENCE_STAYS, "trip": PRESENCE_TRIPS
 #: A kind whose media go with it, and their kind: a message's attachments, a
 #: social item's media.
 _CARRIES: dict[str, str] = {"message": "media", "social": "social_media"}
+#: A kind whose node of another kind shares its key and goes with it: a
+#: social item's tagged place.
+_KEYED_WITH: dict[str, str] = {"social": "social_location"}
 
 
 # --- the queue ---------------------------------------------------------------
@@ -1414,6 +1438,8 @@ async def _drop(conn: AsyncConnection, kind: str, ids: list[str]) -> None:
             )
         )).scalars())
         await _delete(conn, _CARRIES[kind], attachments)
+    if kind in _KEYED_WITH:
+        await _delete(conn, _KEYED_WITH[kind], ids)
     await _delete(conn, kind, ids)
 
 
