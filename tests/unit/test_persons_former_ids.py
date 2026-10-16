@@ -88,3 +88,23 @@ def test_former_ids_for_an_unknown_person_is_empty_rather_than_raising(tmp_path)
     p.write_text('[persons.miles_novak]\nname = "Miles"\n')
     persons = load_persons(p)
     assert persons.former_ids_for("someone_gone") == ()
+
+
+def test_an_opted_out_person_is_off_under_every_id_they_were_recorded_under(tmp_path):
+    # Social items carry the person id of the poll that recorded them; one
+    # recorded before a rename carries the retired id and must stay out.
+    p = tmp_path / "identity.toml"
+    p.write_text(
+        '[persons.clara_lawson]\n'
+        'name = "Clara"\n'
+        'social = false\n'
+        'former_person_ids = ["clara_yates"]\n'
+        '[persons.miles_novak]\nname = "Miles"\n'
+    )
+    persons = load_persons(p)
+    assert persons.social_off("clara_yates")
+    assert persons.social_off_ids() == frozenset({"clara_lawson", "clara_yates"})
+    assert persons.social_off_ids(["clara_lawson", "miles_novak"]) == frozenset(
+        {"clara_lawson", "clara_yates"},
+    )
+    assert persons.social_off_ids(["miles_novak"]) == frozenset()

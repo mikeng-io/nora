@@ -376,9 +376,12 @@ projector in its own transaction (§9;
   block for them; until then they do not count. Back-filled items will not
   count toward a wake either: a back-fill of 50 items is not 50 items of wake
   pressure.
-- **Rollup**: the daybook's `items_posted` ([25](25-rollup.md), NULL until
-  step 5) is filled from `social_item.taken_at`; the posting histogram of §4
-  is the same input.
+- **Rollup**: the daybook's `items_posted` ([25](25-rollup.md)) is filled
+  from `social_item.taken_at`, by the local day of `taken_at`: posts, reels,
+  story frames and back-filled items alike, read through
+  `SqlSocialStreamStore.posted`, so a gone or hidden item and every item of a
+  person with `social = false` are left out like any other read. **Built**
+  (S6, §8); the posting histogram of §4 is the same input and is not.
 - **Cognition**: `social_items(person, interval)` ([15](15-map.md) §4).
 
 ## 7. The back-fill of past posts and reels
@@ -471,6 +474,7 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 | S3b | **BUILT 2026-10-16, the deletion half, off by default** (`nora/app/social_expiry.py`, `nora/infra/sql/blob_refs.py`, migration `0109_blob_tombstone`, `[social] story_expiry_enabled`, `story_media_keep_days` and `story_media_keep_max_days`): a `BlobStore` delete on both implementations that keeps bytes put within the last hour and is one step against `put`, the [70](70-migration.md) §9 tombstone as one row per confirmed deletion, and a story frame's bytes deleted at the first bound once perceived and embedded or at the hard limit regardless, never bytes another row names, posts and reels never (§5). Nothing reaches the 30-day bound until 31 days after the poller is enabled. The index projects and embeds social items since 2026-10-16 (§9) and `story_frame_embedded` is the read; until the pass calls it, every frame's bytes go at the hard limit | `nora_social_story_bytes_deleted_total{reason}`, `nora_social_story_unembedded_total`, `blob_tombstone` rows; then, with the hand-off, story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
 | S5 | **BUILT 2026-10-17** (§7): the back-fill pages each member's posts and reels from their first list read, up to 90 days or 50 items, at the lowest budget priority (after probes and due reads, at most `backfill_pages_per_tick` pages a tick and one a member, never past what the hour owes every member's probe and read); progress read off `social_poll` rows (stage `backfill`, `cursor`, migration `0112_social_backfill`); a bad cursor ends that member's back-fill. Paging past the first page not yet read live | items per member against `media_count`; `nora_social_backfill_ended_total{reason}` |
+| S6 | **BUILT 2026-10-17**: the daybook's `items_posted` counts a person's readable items by the local day of `taken_at` (`SqlSocialStreamStore.posted`, `nora.domain.rollup.daybooks`); 0 once the person's accounts have been observed that day, NULL before their first answered `social_poll`, for a person with no account and for one who opted out; a back-filled item reaches its past day on the next run, the rollup recomputing every day from the Record; `CODE_VERSION` bumped so the build in force is rebuilt | `tests/integration/test_rollup_social.py` |
 
 S4 needs a week of S2's rows to learn from.
 
