@@ -200,6 +200,7 @@
       "empty": "Nothing planned. Ask Nora in the group chat to set something up.",
       "details": "Details still open",
       "proposed": "Proposed",
+      "staged": "Not yet proposed",
       "reminders": "{count, plural, one {# reminder} other {# reminders}} waiting across the rooms, next {when}"
     },
     "playing": {
@@ -252,7 +253,11 @@
     "status": {
       "proposed": "Proposed",
       "confirmed": "Confirmed",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "staged": "Not yet proposed",
+      "happened": "Happened",
+      "lapsed": "Lapsed",
+      "evicted": "Removed"
     },
     "back": "Plans",
     "notFoundTitle": "Not one of your plans",

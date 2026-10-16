@@ -200,6 +200,7 @@
       "empty": "未有約。喺群組叫 Nora 幫手搞一個。",
       "details": "細節未定",
       "proposed": "提議中",
+      "staged": "未提出",
       "reminders": "各個房有 {count} 個提醒等緊，下一個{when}"
     },
     "playing": {
@@ -252,7 +253,11 @@
     "status": {
       "proposed": "提議中",
       "confirmed": "已確定",
-      "cancelled": "取消咗"
+      "cancelled": "取消咗",
+      "staged": "未提出",
+      "happened": "搞咗",
+      "lapsed": "冇下文",
+      "evicted": "已移除"
     },
     "back": "約",
     "notFoundTitle": "唔係你嘅約",
