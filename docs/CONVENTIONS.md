@@ -669,6 +669,15 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
   dense with no behaviour to split out" and enforced the cap on it regardless.
 
   If a module feels too big, count what it is responsible for.
+- **Comments describe, git records.** A comment says what the code or key IS
+  and the constraint a reader cannot see from it: units, bounds, the default,
+  what it requires, when to change it. It is never a log: no dates, issue or PR
+  numbers, measurements, review stories or "was X, now Y" — the commit, the
+  issue and the ADR hold those, and a comment copy drifts from them. A decision
+  is cited as a bare pointer (`DEC-123`, `ADR 0023`), never retold. Example
+  TOMLs are gated on these markers
+  (`tests/architecture/test_example_toml_comments_are_reference.py`), never on
+  length.
 - Test-seam policy: production classes take collaborators through `__init__`
   only — no `*_fn` hooks, no `_for_test` params, no module-level mutable
   singletons.

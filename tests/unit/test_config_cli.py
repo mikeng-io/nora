@@ -138,9 +138,9 @@ def test_set_preserves_comments(cfg_path: Path):
     text = cfg_path.read_text(encoding="utf-8")
     # The load-bearing rationale comments must survive the write — a comment
     # kill in a 75KB config would be the silent loss this CLI exists to stop.
-    assert "matching the deployment" in text
+    assert "empty means the table unchanged" in text
     assert "empty = derive from the signal-cli daemon" in text
-    assert "# web_fetch 2 -> 6" in text
+    assert "# name or a value below 1 is a startup failure." in text
 
 
 def test_set_wrong_type_fails_closed(cfg_path: Path, capsys):

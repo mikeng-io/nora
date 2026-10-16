@@ -324,7 +324,7 @@ the decision.
 **A `docs/superpowers/…` path is a historical citation, not a location.** That
 tree — 34 dated specs and 35 plans — was **removed 2026-09-08** along with
 `.superpowers/`; the process it named is gone and is not coming back. The paths
-still appear in design nodes, docstrings and config comments as provenance for
+still appear in design nodes and docstrings as provenance for
 where a decision was first written, and they resolve only in `git log`. Treated
 the same way as a `DEPRECATED` decision row: marked, never rewritten to point
 somewhere it does not point.
