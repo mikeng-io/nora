@@ -28,8 +28,10 @@ a back-filled item may use at most half of what polled items leave
 (`perception_allowance`). An item the cap stops is recorded `capped` and waits
 a day; one whose read failed is recorded `unavailable` and waits a day too,
 until its third failure, which is `failed`; a failure no later day can change
-(`is_terminal`) is `failed` at once. A `failed` item is never read again, and
-counts as attempted, so its read still settles. Usage is summed from
+(`is_terminal`) is `failed` at once, and so is an item whose bytes were
+deleted at the story bound before it was read (`expired`, no model called). A
+`failed` item is never read again, and counts as attempted, so its read still
+settles. Usage is summed from
 `social_perception`, so a restart keeps it.
 
 **One stimulus per read** (§5). A read that recorded new polled items raises
@@ -160,6 +162,11 @@ class SocialPerception:
         used = await self._store.perception_used(since=since)
         for item in items:
             units = self._units.get(item.person, ())
+            if item.expired:
+                # Its bytes went at the story bound before any read landed:
+                # nothing is left to read, and no day changes that.
+                await self._settle(item, units, "failed", 0, now, "expired")
+                continue
             objs = [found.objects.get(sha) for sha in item.media]
             cost = sum(self._calls_at_most(obj) for obj in objs)
             if not units or any(

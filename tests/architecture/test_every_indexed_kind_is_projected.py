@@ -252,6 +252,9 @@ def test_the_scan_sees_the_known_projecting_writers() -> None:
         ("nora/subject/knowledge.py", "_seed_note_with_id"),
         ("nora/infra/sql/mobility.py", "commit_fold"),
         ("nora/infra/sql/rollups.py", "switch_build"),
+        ("nora/infra/sql/social_stream.py", "insert_item"),
+        ("nora/infra/sql/social_stream.py", "record_state"),
+        ("nora/infra/sql/social_stream.py", "record_perception"),
     } <= sites
 
 

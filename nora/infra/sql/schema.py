@@ -4755,3 +4755,33 @@ IDX_SOCIAL_PERCEPTION_ITEM = sa.Index(
     SOCIAL_PERCEPTION.c.item_id, SOCIAL_PERCEPTION.c.at,
 )
 IDX_SOCIAL_PERCEPTION_AT = sa.Index("idx_social_perception_at", SOCIAL_PERCEPTION.c.at)
+
+# What deleting a blob's bytes leaves behind (0109, design/cognition-loop/
+# 70-migration.md §9): the content address, the kind of thing the bytes were
+# and when they went, APPEND-ONLY, one row per deletion. The same bytes can be
+# stored again later (a member posts them anew), so a tombstone says the bytes
+# were gone for the rows recorded before `deleted_at`, never for a row
+# recorded after, which brought them back. `deleted_at` is the database's
+# clock (the one `recorded_at` is on), read before the deletion. A restore to
+# a time before `deleted_at` is incomplete for these bytes: the rows naming
+# them come back, the bytes do not. Only a story frame's bytes are ever deleted (22 §5);
+# `reason` is the bound they went at (`nora.domain.social_stream.bytes_due`).
+BLOB_TOMBSTONE = sa.Table(
+    "blob_tombstone",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("sha256", sa.Text, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="ck_blob_tombstone_sha256"),
+    sa.CheckConstraint("kind IN ('story_frame')", name="ck_blob_tombstone_kind"),
+    sa.CheckConstraint(
+        "reason IN ('embedded', 'hard_limit')", name="ck_blob_tombstone_reason",
+    ),
+)
+IDX_BLOB_TOMBSTONE_SHA = sa.Index(
+    "idx_blob_tombstone_sha", BLOB_TOMBSTONE.c.sha256, BLOB_TOMBSTONE.c.recorded_at,
+)

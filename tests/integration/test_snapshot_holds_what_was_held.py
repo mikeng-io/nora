@@ -378,6 +378,11 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "person": "ken", "units": ["friends"], "origin": "poll", "outcome": "ok",
         "calls": 1, "at": T0,
     },
+    # 0109_blob_tombstone: a story frame's bytes deleted at their bound.
+    "blob_tombstone": lambda n: {
+        "id": _uuid("bt", n), "sha256": f"{n:064x}", "kind": "story_frame", "reason": "hard_limit",
+        "deleted_at": T0,
+    },
     # 0101_self_tension: a lesson refused by the law.
     "self_tension": lambda n: {
         "id": _uuid("st", n), "unit": "friends", "source": "lesson",

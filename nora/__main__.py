@@ -336,6 +336,11 @@ class App:
                 deps.background.spawn(deps.social_perception.run())
         else:
             log.info("social poller disabled ([social.poll] enabled = false)")
+        # A story frame's bytes go at their bound even with the poller off.
+        if deps.story_expiry is not None:
+            deps.background.spawn(deps.story_expiry.run())
+        else:
+            log.info("story media expiry off ([social] story_expiry_enabled = false)")
         # The computer session sweeper: composition builds it only while
         # `[computer] enabled`.
         if deps.computer_sweeper is not None:

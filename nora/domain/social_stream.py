@@ -1,5 +1,6 @@
-"""The social stream's vocabulary: one source interface per network, and the
-decision a probe makes (design/cognition-loop/22-social-stream.md §2, §3).
+"""The social stream's vocabulary: one source interface per network, the
+decision a probe makes (design/cognition-loop/22-social-stream.md §2, §3), and
+when a story frame's bytes may go (§5).
 
 Pure: no I/O. `SocialSource` (`nora.domain.ports`) is the port; the types a
 source answers with, the typed failure a read can end in, and the two functions
@@ -19,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, tzinfo
+from datetime import datetime, timedelta, tzinfo
 from enum import StrEnum
 from typing import Literal, get_args
 
@@ -414,3 +415,30 @@ def perception_context(
     if collab:
         what += ", made together with another account"
     return f"This is {what}, from a member of the group Nora is in."
+
+
+# -- a story frame's bytes (§5) -------------------------------------------------
+
+#: Why a story frame's bytes were deleted: `embedded` at its `expires_at` plus
+#: `[social] story_media_keep_days`, once its perception and its embedding both
+#: exist; `hard_limit` at `expires_at` plus `story_media_keep_max_days`,
+#: whatever exists by then. The tombstone's CHECK holds the same set.
+ByteDeletionReason = Literal["embedded", "hard_limit"]
+BYTE_DELETION_REASONS: tuple[str, ...] = get_args(ByteDeletionReason)
+
+
+def bytes_due(
+    *, expires_at: datetime, now: datetime, perceived: bool, embedded: bool,
+    keep_days: int, max_days: int,
+) -> ByteDeletionReason | None:
+    """Whether a story frame's bytes go now, and why; None while they stay.
+
+    Nothing goes before `expires_at` plus `keep_days`. From then the bytes go
+    once the frame is both perceived and embedded, because the description and
+    the vector are what stay of it; at `expires_at` plus `max_days` they go
+    regardless, and the frame stays unembedded for good."""
+    if now >= expires_at + timedelta(days=max_days):
+        return "embedded" if perceived and embedded else "hard_limit"
+    if now >= expires_at + timedelta(days=keep_days) and perceived and embedded:
+        return "embedded"
+    return None

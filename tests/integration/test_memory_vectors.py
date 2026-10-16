@@ -502,3 +502,50 @@ async def test_a_cut_text_whose_vector_was_not_stored_is_not_counted(
     assert await worker(engine, url, metrics=metrics).run_once() == 1
     assert (await _nodes(engine))[("message", str(long_id))].embedding is None
     assert metrics.get("nora_memory_embed_truncated_total", kind="message") == 0
+
+
+async def test_a_social_item_holding_only_its_label_is_empty_until_a_reading_lands(
+    engine, llama,
+):
+    """No caption, no reading: the text is «Instagram story» alone, and every
+    such item would get the same vector. It is recorded `empty`, not
+    embedded; a reading landing changes its text, and it is embedded then.
+    One with a caption is embedded at once."""
+    from datetime import UTC, datetime, timedelta
+
+    from nora.domain.media import MediaObject
+    from nora.domain.social_stream import MediaItem, SocialItem
+    from nora.infra.sql.social_stream import SqlSocialStreamStore
+
+    _fake, url = llama
+    store = SqlSocialStreamStore(engine)
+    t0 = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)
+    sha = "d4" * 32
+    for item_id, caption in (("bare", None), ("said", "picnic plans")):
+        assert await store.insert_item(SocialItem(
+            network="instagram", item_id=item_id, account="10000001", kind="story_frame",
+            taken_at=t0, expires_at=t0 + timedelta(hours=24), caption=caption,
+            alt_text=None, media=(MediaItem("video", "https://example.invalid/x"),),
+        ), person="member-a", origin="poll", seen_at=t0,
+            media_ref=sha if item_id == "bare" else None)
+
+    clock = Clock()
+    await worker(engine, url, clock=clock).run_once()
+    nodes = await _nodes(engine)
+    bare, said = nodes[("social", "instagram:bare")], nodes[("social", "instagram:said")]
+    assert (bare.embedding, bare.embed_error) == (None, "empty")
+    assert said.embedding is not None and said.embedding_model == MODEL
+
+    objects = SqlMediaObjectStore(engine)
+    await objects.save(obj=MediaObject(
+        sha256=sha, media_type="video/mp4", size=1, source="social", description="",
+        created_at_ms=1,
+    ))
+    await objects.comprehend(
+        sha256=sha, title="a picnic", description="a blanket in a park", content="", model="m",
+    )
+    bare = (await _nodes(engine))[("social", "instagram:bare")]
+    assert (bare.embedding, bare.embed_attempts, bare.embed_error) == (None, 0, None)
+    await worker(engine, url, clock=clock).run_once()
+    bare = (await _nodes(engine))[("social", "instagram:bare")]
+    assert bare.embedding is not None and bare.embedding_model == MODEL

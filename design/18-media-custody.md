@@ -195,6 +195,15 @@ everything the decision needs:
 
 * `FilesystemBlobStore.delete(key)` exists (on the concrete class, not the port
   — the same split as `SqlRecordStore.prune_all`).
+  *Amended:* `delete` is now on the port, for one policy only, a story frame's
+  bytes ([cognition-loop/22](cognition-loop/22-social-stream.md) §5, off by
+  default), which deletes only bytes no row names (`nora.infra.sql.blob_refs`).
+  The port's `delete` keeps bytes put within a window by the store's own
+  clock, and a `put` of bytes already held now refreshes that clock (the
+  filesystem store sets the file's modification time; it still never
+  rewrites the file), so a writer that has stored bytes and not yet written
+  the row naming them never loses them. This section's question, retention
+  for room media, is still open.
 * The sweep is **one path added to the loop that already runs**: collect the
   hashes named by surviving rows' `media_json`, delete every blob under the root
   that is not in that set. No reference counting, because content addressing

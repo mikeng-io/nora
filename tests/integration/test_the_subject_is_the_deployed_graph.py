@@ -32,7 +32,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 68, (
+    assert len(dataclasses.fields(Dependencies)) == 69, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -104,7 +104,10 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "subject (None whenever the poller is). "
         "67 -> 68: `room_event_shown`, whether a room member may see an event of "
         "the room on the portal's Plans (surprises and lineage), a callable "
-        "because `nora.web` never sees a lineage policy."
+        "because `nora.web` never sees a lineage policy. "
+        "68 -> 69: `story_expiry`, a story frame's bytes deleted at their bound, "
+        "started only by `nora/__main__.py`, never by the subject, which must "
+        "not delete the deployment's bytes."
     )
 
 

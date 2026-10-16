@@ -143,11 +143,13 @@ $$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
 ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT assess_report_pkey PRIMARY KEY (id);
+ADD CONSTRAINT blob_tombstone_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_carry_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_self_wake_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_self_wake_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.cognition_session(id);
@@ -281,6 +283,7 @@ ALTER TABLE ONLY public.analytics_watermark
 ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.assess_report
+ALTER TABLE ONLY public.blob_tombstone
 ALTER TABLE ONLY public.cognition_carry
 ALTER TABLE ONLY public.cognition_self_wake
 ALTER TABLE ONLY public.cognition_self_wake
@@ -493,6 +496,9 @@ COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
 CONSTRAINT ck_assess_report_kind CHECK ((kind = 'nightly_dq'::text)),
 CONSTRAINT ck_assess_report_results_shape CHECK ((jsonb_typeof(results) = 'array'::text))
+CONSTRAINT ck_blob_tombstone_kind CHECK ((kind = 'story_frame'::text)),
+CONSTRAINT ck_blob_tombstone_reason CHECK ((reason = ANY (ARRAY['embedded'::text, 'hard_limit'::text]))),
+CONSTRAINT ck_blob_tombstone_sha256 CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))
 CONSTRAINT ck_cognition_carry_state CHECK ((state = ANY (ARRAY['carried'::text, 'released'::text, 'struck'::text])))
 CONSTRAINT ck_cognition_self_wake_outcome CHECK ((outcome = ANY (ARRAY['recorded'::text, 'refused'::text]))),
 CONSTRAINT ck_cognition_self_wake_outcome_shape CHECK (((outcome = 'recorded'::text) OR (refusal_reason IS NOT NULL))),
@@ -562,7 +568,7 @@ CONSTRAINT ck_memory_index_state_one_row CHECK (id),
 CONSTRAINT ck_memory_index_state_status CHECK ((status = ANY (ARRAY['never'::text, 'building'::text, 'complete'::text])))
 CONSTRAINT ck_memory_node_embed_input CHECK (((embed_input IS NULL) OR (embed_input = ANY (ARRAY['text'::text, 'bytes'::text])))),
 CONSTRAINT ck_memory_node_has_a_scope CHECK (((kind = ANY (ARRAY['person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text])) OR (unit IS NOT NULL) OR (origin_room IS NOT NULL) OR (cardinality(persons) > 0))),
-CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text]))),
+CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text, 'social'::text, 'social_media'::text]))),
 CONSTRAINT ck_memory_node_state CHECK ((state = ANY (ARRAY['live'::text, 'retired'::text, 'superseded'::text])))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
@@ -708,6 +714,7 @@ CREATE FUNCTION public.computer_exports_refuse_change() RETURNS trigger
 CREATE FUNCTION public.nora_row_history() RETURNS trigger
 CREATE FUNCTION public.nora_row_history_refuse_truncate() RETURNS trigger
 CREATE INDEX idx_assess_report_kind_run ON public.assess_report USING btree (kind, run_at_ms);
+CREATE INDEX idx_blob_tombstone_sha ON public.blob_tombstone USING btree (sha256, recorded_at);
 CREATE INDEX idx_cognition_carry_unit_stimulus ON public.cognition_carry USING btree (unit, stimulus_id, id);
 CREATE INDEX idx_cognition_self_wake_unit_recorded ON public.cognition_self_wake USING btree (unit, recorded_at);
 CREATE INDEX idx_cognition_self_wake_unit_ref ON public.cognition_self_wake USING btree (unit, wake_ref);
@@ -745,7 +752,7 @@ CREATE INDEX idx_memory_node_embedding_256 ON public.memory_node USING hnsw (((p
 CREATE INDEX idx_memory_node_origin_room ON public.memory_node USING btree (origin_room);
 CREATE INDEX idx_memory_node_sha256 ON public.memory_node USING btree (sha256);
 CREATE INDEX idx_memory_node_text_trgm ON public.memory_node USING gin (text public.gin_trgm_ops);
-CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id DESC) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text])));
+CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id DESC) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'social'::text, 'social_media'::text])));
 CREATE INDEX idx_memory_node_unit ON public.memory_node USING btree (unit);
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
@@ -801,6 +808,7 @@ CREATE TABLE public.alembic_version (
 CREATE TABLE public.analytics_watermark (
 CREATE TABLE public.artifacts (
 CREATE TABLE public.assess_report (
+CREATE TABLE public.blob_tombstone (
 CREATE TABLE public.cognition_carry (
 CREATE TABLE public.cognition_self_wake (
 CREATE TABLE public.cognition_session (
@@ -1423,6 +1431,7 @@ created_by_tag text NOT NULL,
 cues text[] DEFAULT '{}'::text[] CONSTRAINT signal_cues_not_null NOT NULL,
 culture_key text NOT NULL,
 cut_cooldown integer DEFAULT 0 NOT NULL,
+deleted_at timestamp with time zone NOT NULL,
 delivery_status text DEFAULT 'pending'::text NOT NULL,
 deriver_name text NOT NULL,
 describe_model text,
@@ -1609,6 +1618,7 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -1648,6 +1658,7 @@ key text NOT NULL,
 kind text CONSTRAINT signal_kind_not_null NOT NULL,
 kind text DEFAULT 'miss'::text NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
+kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
@@ -1933,6 +1944,7 @@ reason text DEFAULT ''::text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
+reason text NOT NULL,
 reason text,
 reason text,
 reasoning text,
@@ -1955,6 +1967,7 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -2077,6 +2090,7 @@ session_id bigint,
 session_id uuid,
 session_id uuid,
 set_by text NOT NULL,
+sha256 text NOT NULL,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
 sha256 text NOT NULL,

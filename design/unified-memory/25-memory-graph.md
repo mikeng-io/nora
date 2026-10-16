@@ -67,8 +67,8 @@ set, each with its writer:
 |---|---|---|
 | `authored_by` | message, social item, her artifact → person (Nora for her own) | ingestion |
 | `in_room` | message, link, entry → room | ingestion, write verb |
-| `shared_by` | link, media → person | ingestion |
-| `attached_to` | media → message or link; link → message | ingestion; the media lane for a reel read from a link (§6 step 3) |
+| `shared_by` | link, media, a social item's medium → person | ingestion; the social stream's projection |
+| `attached_to` | media → message or link; link → message; a social item's medium → its social item | ingestion; the media lane for a reel read from a link (§6 step 3); the social stream's projection (§7a) |
 | `during` | message, media → episode | Rollup builder |
 | `about` | entry → entity (person, room, unit, Nora, place) | write verb |
 | `cites` | an entry that stores citations (memo, event, lesson, Persona line; a note once built; never Standing) → Record row, Rollup key or episode | write verb |
@@ -289,7 +289,8 @@ The only other new moving part is the embedding worker.
 |---|---|---|---|
 | Record | message | the body, re-projected on edit | yes |
 | Record | media attachment `(message, sha256)` | the reading copied in from `media_objects.{title,description,content}` (keyed by `sha256`, no room, UPSERTed; there is no `media_descriptions` table); scoped by its message | yes: the reading's text, and the image or video itself if a multimodal embedder qualifies ([20](20-embedding-bakeoff.md)) |
-| Record | link, social item | URL, caption, preview text | yes |
+| Record | link | URL, caption, preview text | yes |
+| Record | social item, and each of its media `(item, sha256)` (§7a) | the item: what it is («Instagram story»), caption, and its media's readings; a medium: its reading. Never `alt_text`, `location`, `tagged` or `mentioned` | yes: the item from its text once it holds more than its label; a medium from its bytes if an image, else from its reading |
 | Record | `persona_dispute`, `feedback` item | the speaker's words | lexical only |
 | Record | her own artifacts (a document she wrote, an image she generated) | title, text or generation prompt | yes |
 | Rollup | outing, stay, trip | a rendered line: who, the place label, when | lexical only |
@@ -320,6 +321,78 @@ file content (only the link is kept, external-files/00), and Honcho.
 | rebuild | all, from the stores | all | one command; also the first deployment's backfill ([35](35-persona.md) §4). It reports the count it could not project; until it finishes, a search answers `partial`. The media part runs under a throttle sized from the measured media count ([20](20-embedding-bakeoff.md) «Not decided here») |
 
 A node is never written for its own sake and an edge is never inferred from
-text by a model (§2). If a store's write path has no `project()` call, its rows
+text by a model (§2).
+
+## 7a. The social stream's items (built 2026-10-16)
+
+Operator rulings of 2026-10-16, answering
+[cognition-loop/22](../cognition-loop/22-social-stream.md) §9. The code is
+`nora.infra.sql.memory_index` (`_project_social`, `story_frame_embedded`),
+`nora.infra.sql.memory_read` and `nora.agent.memory_search`; migration
+`0110_memory_social`.
+
+1. **The node mirrors an attachment.** One `social` node per `social_item`,
+   keyed `network:item_id`, and one `social_media` node per medium of it,
+   `(item, sha256)` in `media_ref`'s order, `attached_to` the item (a carousel
+   is several). Two new kinds, not `media` with a social parent: an
+   attachment's room, its type and its drop are all read off its message, and
+   a social item has no message. The item's text is a label for what it is
+   (`social_label`: «Instagram story», «Instagram post, co-authored»), the
+   caption and its media's readings (`media_objects`, keyed by the bytes); a
+   medium's text is its reading. The item is embedded from its text, but
+   only once it holds more than its label: a label alone (no caption, no
+   reading yet) would give every such item the same vector, so the worker
+   records it `empty` (`nothing_to_embed`), lexical search still finds it by
+   its label, and a reading landing changes its text and frees it. A medium
+   is embedded from its bytes when custody recorded an image type, else from
+   its reading (the attachment rule, `embeds_bytes`).
+2. **Scope: the author's, like a stay.** `persons` is the item's person, no
+   unit, no room (`PERSON_SCOPED_KINDS`): readable only in a room that lists
+   them, in any unit. Not the presence rule: a social item carries no
+   lineage. Tagged and mentioned handles get no `persons` entry and no edge;
+   the author is `authored_by` (the item) and `shared_by` (each medium).
+3. **The off switch is applied at READ.** `MemoryScope.social_off` holds the
+   listed persons whose `identity.toml` block sets `social = false`, computed
+   per read by the `memory_search` tool from the identity it holds
+   (`nora.infra` reads no identity). It is required with no default on
+   `MemoryScope`, `scope_for` and `MemorySearch.search`, so a new caller
+   cannot omit it and read everything. `in_scope` and `_in_scope` leave out every
+   social node naming one of them, inside every read, so an item recorded
+   before the switch is out too and switching it back needs no rebuild. The
+   projector stays pure.
+4. **Text: the caption, verbatim; never `alt_text` or `location`.** Nor the
+   tagged or mentioned handles. The caption is indexed like a message body:
+   an @mention in it is the author's own text, and the answer's identifier
+   screen (`scan_identifiers`: a phone number, a UUID, a key) withholds an
+   item whole only for those, as for any other text. Alt text was ruled out
+   the same day (operator): the network's generated alt text is typically
+   phrased with the place and the tagged handles, which would bring back
+   what leaving out `location` keeps out (0 of 32 live rows held one).
+5. **No new `kinds` category, no tool-text change.** Both kinds are in
+   `KINDS_BY_CATEGORY["media"]`. The answer says what an item is and how old
+   it is: its `kind` is the label («Instagram story»), a medium's is
+   «Instagram picture or video», and `age` is from `taken_at`. A medium gets
+   no media handle: `media_fetch` resolves only the chat's own media, so a
+   handle would fail as if nothing were there.
+
+**Known limit.** A collab post is scoped and opt-out-checked by the polled
+author only: `collab` records that another account owns it, not who.
+
+**Deletion and visibility.** An item with any `social_item_state` row (gone
+or hidden) has no nodes, like a hidden message. Every write of `social_item`,
+`social_item_state` and `social_perception` (`SqlSocialStreamStore.
+insert_item`, `record_state`, `record_perception`) projects the item in its
+own transaction, and a reading landing on the bytes (`reproject_media`)
+re-projects every item holding them. `INDEXED_WRITES` lists the three
+tables, so the architecture test holds every writer to it; no other process
+writes them. `nora memory rebuild` walks `social_item` too.
+
+**What `StoryMediaExpiry` reads.** `story_frame_embedded(conn, frames,
+model=...)` answers, of `(network, item_id)` pairs, the frames whose every
+medium node holds a vector of the current fingerprint or is terminal (given
+up, or failed `empty`). A frame with no medium node (never projected, gone or
+hidden, or its projection still queued) is not embedded, so its bytes wait for
+the hard limit. The social stream's own follow-up replaces
+`nora/app/social_expiry.py`'s `# ponytail:` read with it. If a store's write path has no `project()` call, its rows
 are absent from search, which an architecture test catches by listing every
 indexed kind against the write paths that project it.

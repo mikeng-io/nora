@@ -51,7 +51,7 @@ def _note(sid: str, text: str = "", at: int = NOW) -> IndexedNode:
 
 
 async def _walk(index: FakeMemoryIndex, query: str, hops: int = 2, person: str | None = None):
-    scope = scope_for(_target())
+    scope = scope_for(_target(), social_off=())
     assert scope is not None
     return {
         h.node.key: h for h in await walk(
@@ -65,7 +65,7 @@ async def _walk(index: FakeMemoryIndex, query: str, hops: int = 2, person: str |
 
 
 def test_scope_is_the_unit_its_rooms_and_who_is_listed_here() -> None:
-    scope = scope_for(_target())
+    scope = scope_for(_target(), social_off=())
     assert scope is not None
     assert scope.units == ("u1",)
     assert set(scope.rooms) == {"signal:b", "signal:c"}
@@ -79,20 +79,20 @@ def test_a_room_that_cannot_vouch_for_who_is_in_it_is_strict() -> None:
     for live in (LiveRoom(frozenset({"kit"}), unnamed=1),
                  LiveRoom(frozenset(), available=False),
                  LiveRoom(frozenset({"kit"}), degraded=True)):
-        scope = scope_for(_target(live=live))
+        scope = scope_for(_target(live=live), social_off=())
         assert scope is not None and scope.exclude_strict
     star = RoomFacts("signal", frozenset({"s"}), "u1", None)
-    scope = scope_for(_target(star))
+    scope = scope_for(_target(star), social_off=())
     assert scope is not None and scope.exclude_strict and scope.listed_here == frozenset()
 
 
 def test_presence_passes_only_where_the_room_shares_location() -> None:
-    scope = scope_for(_target(_C))
+    scope = scope_for(_target(_C), social_off=())
     assert scope is not None and scope.presence_persons == frozenset()
 
 
 def test_a_room_outside_the_policy_has_no_scope() -> None:
-    assert scope_for(RenderRoom(room=None)) is None
+    assert scope_for(RenderRoom(room=None), social_off=()) is None
 
 
 def test_terms_drop_grammar_and_keep_cjk_runs_whole() -> None:
@@ -175,7 +175,7 @@ async def test_a_named_person_seeds_their_accounts_only_where_listed() -> None:
 async def test_an_episode_must_pass_its_own_lineage() -> None:
     stay = IndexedNode("stay", "s1", "stay", NOW, persons=("kit",),
                        lineage=[["presence", "kit", None]])
-    scope = scope_for(_target())
+    scope = scope_for(_target(), social_off=())
     assert scope is not None
     index = FakeMemoryIndex([stay])
     kept = await walk(index, scope, terms=["stay"], person_id=None, hops=2,
@@ -198,12 +198,13 @@ async def _search(index: FakeMemoryIndex, query: str = "ramen", metrics: Metrics
     return await MemorySearch(
         index, metrics or Metrics(), embedder=embedder or FakeQueryEmbedder(), model=M,
     ).search(query=query, person_id=None, target=target or _target(), depth="low",
-             now_ms=NOW, people=people)
+             now_ms=NOW, people=people, social_off=())
 
 
 async def _lexical(index: FakeMemoryIndex, query: str = "ramen", metrics: Metrics | None = None):
     return await MemorySearch(index, metrics or Metrics()).search(
         query=query, person_id=None, target=_target(), depth="low", now_ms=NOW,
+        social_off=(),
     )
 
 
@@ -223,7 +224,7 @@ async def test_kinds_narrow_the_answer_not_the_hops_so_an_outing_is_reached() ->
     found = await MemorySearch(
         index, Metrics(), embedder=FakeQueryEmbedder(), model=M,
     ).search(query="ramen night market", person_id=None, target=_target(),
-             depth="low", now_ms=NOW, kinds=("outing", "stay", "trip"))
+             depth="low", now_ms=NOW, kinds=("outing", "stay", "trip"), social_off=())
     assert found.status == "ok", found
     assert [h.node.key for h in found.hits] == [("outing", "o1")]
 
@@ -448,7 +449,7 @@ async def test_an_about_seed_said_in_a_room_not_listing_the_person_is_not_kept()
 async def test_a_scope_that_raises_is_unavailable_and_counted(monkeypatch) -> None:
     import nora.agent.memory_search as ms
 
-    def boom(target: RenderRoom) -> None:
+    def boom(target: RenderRoom, **_: object) -> None:
         raise RuntimeError("policy")
 
     monkeypatch.setattr(ms, "scope_for", boom)
@@ -456,3 +457,49 @@ async def test_a_scope_that_raises_is_unavailable_and_counted(monkeypatch) -> No
     found = await _search(FakeMemoryIndex([_msg("1", "ramen")]), metrics=metrics)
     assert found.status == "unavailable"
     assert metrics.get("nora_memory_search_total", status="unavailable") == 1
+
+
+def test_a_social_medium_carries_no_handle_and_says_what_it_is() -> None:
+    """`media_fetch` resolves only this chat's media: a handle for a social
+    item's medium would fail as if nothing were there, so it gets none. An
+    attachment keeps its handle."""
+    from nora.agent.memory_search import Hit, Step
+
+    sha = "e5" * 32
+    hits = [
+        Hit(IndexedNode("social_media", f"instagram:1:{sha}", "a picnic", NOW,
+                        persons=("kit",), sha256=sha), 0.9, (Step("social_media"),)),
+        Hit(IndexedNode("social", "instagram:1", "Instagram story\npicnic plans", NOW,
+                        persons=("kit",)), 0.8, (Step("social"),)),
+        Hit(IndexedNode("media", f"7:{sha}", "a picnic", NOW, origin_room="signal:b",
+                        sha256=sha), 0.7, (Step("media"),)),
+    ]
+    items, _ = render_packet(
+        hits, name_of=str, room_label=str, now=datetime.fromtimestamp(NOW / 1000, UTC),
+    )
+    assert [(i["kind"], i.get("handle"), i["text"]) for i in items] == [
+        ("Instagram picture or video", None, "a picnic"),
+        ("Instagram story", None, "picnic plans"),
+        ("media", sha[:6], "a picnic"),
+    ]
+
+
+def test_the_opt_outs_are_never_defaulted() -> None:
+    """A scope that forgot `social_off` would read every opted-out person's
+    items: every builder must name it."""
+    import dataclasses
+
+    from nora.domain.memory_index import MemoryScope
+
+    with pytest.raises(TypeError, match="social_off"):
+        scope_for(_target())  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="social_off"):
+        MemoryScope(  # type: ignore[call-arg]
+            units=(), rooms=(), listed_here=frozenset(), people_here=frozenset(),
+            exclude_strict=False, presence_persons=frozenset(),
+        )
+    import inspect
+    param = inspect.signature(MemorySearch.search).parameters["social_off"]
+    assert param.default is inspect.Parameter.empty
+    assert param.kind is inspect.Parameter.KEYWORD_ONLY
+    assert {f.name for f in dataclasses.fields(MemoryScope) if f.kw_only} == {"social_off"}

@@ -1,11 +1,12 @@
 """The social stream's Record: `social_item`, `social_poll`, `social_item_state`
-(`0107_social_stream`) and `social_perception` (`0108_social_perception`),
+(`0107_social_stream`), `social_perception` (`0108_social_perception`) and the
+`blob_tombstone` a story frame's deleted bytes leave (`0109_blob_tombstone`),
 design/cognition-loop/22-social-stream.md §5.
 
 Shaped like `nora.infra.sql.otp`: the engine comes through `__init__` and each
-verb is one transaction. All three tables are APPEND-ONLY, so there is no
-UPDATE and no DELETE here: an item is written once, and what changes about it
-is a row in `social_item_state`.
+verb is one transaction. Every table is APPEND-ONLY, so there is no UPDATE and
+no DELETE here: an item is written once, and what changes about it is a row in
+`social_item_state`, or a tombstone once its bytes are gone.
 
 **The dedupe is Postgres's.** `insert_item` is `ON CONFLICT (network, item_id)
 DO NOTHING` and answers whether the row was new, so two pollers recording the
@@ -24,6 +25,13 @@ perception or for a stimulus leaves out an item
 whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `social_item_state` row (gone or hidden). The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
+
+**The memory index follows every write** (design/cognition-loop/22 §9):
+`insert_item`, `record_state` and `record_perception` each project the item
+(`nora.infra.sql.memory_index.project`, kind `social`) inside their own
+transaction, so a new item is searchable, a gone or hidden one stops being,
+and a perception landing re-reads its media's readings. The opt-out is not
+projected: the index's read leaves those items out.
 
 There is ONE implementation and therefore no port and no fake, for the reason
 `nora.infra.sql.otp` gives: every test points this class at a real throwaway
@@ -44,13 +52,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.social_stream import (
     SOCIAL_READ_REF,
+    ByteDeletionReason,
     Counts,
     Origin,
     PerceptionOutcome,
     PollStage,
     SocialItem,
 )
+from nora.infra.sql import memory_index
+from nora.infra.sql.blob_refs import held_elsewhere
+from nora.infra.sql.memory_index import social_source_id
 from nora.infra.sql.schema import (
+    BLOB_TOMBSTONE,
     SOCIAL_ITEM,
     SOCIAL_ITEM_STATE,
     SOCIAL_PERCEPTION,
@@ -85,6 +98,9 @@ class Unperceived:
     media: tuple[str, ...]
     #: Its earlier attempts that ended `unavailable`.
     failures: int = 0
+    #: Every one of its media's bytes was deleted after it was recorded (a
+    #: tombstone written since names it): there is nothing left to read.
+    expired: bool = False
 
 
 @dataclass(frozen=True)
@@ -116,6 +132,25 @@ def _media(ref: str | None) -> tuple[str, ...]:
     return tuple(filter(None, (ref or "").split(",")))
 
 
+def _gone(deleted: Mapping[str, datetime], sha: str, recorded_at: datetime) -> bool:
+    """Whether `sha`'s bytes were deleted after a row recorded at
+    `recorded_at`: a row written after the deletion stored them again."""
+    at = deleted.get(sha)
+    return at is not None and at > recorded_at
+
+
+@dataclass(frozen=True)
+class ExpiringFrame:
+    """A story frame past its first bound whose bytes are still held: its
+    media not yet tombstoned, and whether its perception exists."""
+
+    network: str
+    item_id: str
+    expires_at: datetime
+    media: tuple[str, ...]
+    perceived: bool
+
+
 @dataclass(frozen=True)
 class ProbeTimes:
     """When a person was last probed at all, and last probed with an answer
@@ -127,11 +162,15 @@ class ProbeTimes:
 
 
 class SqlSocialStreamStore:
-    """The stream's four tables, as fourteen verbs."""
+    """The stream's five tables, as seventeen verbs."""
 
-    def __init__(self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
+        metrics: Any = None,
+    ) -> None:
         self._engine = engine
         self._opted_out = opted_out
+        self._metrics = metrics
 
     def _readable(self) -> list[Any]:
         """An item a reader may see: its person has not opted out, and it has
@@ -166,6 +205,11 @@ class SqlSocialStreamStore:
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
+            if result.rowcount:
+                await memory_index.project(
+                    conn, "social", social_source_id(item.network, item.item_id),
+                    metrics=self._metrics,
+                )
         return bool(result.rowcount)
 
     async def record_poll(
@@ -194,6 +238,9 @@ class SqlSocialStreamStore:
             await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
                 network=network, item_id=item_id, state=state, reason=reason,
             ))
+            await memory_index.project(
+                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
+            )
 
     async def read_marker(self, *, network: str, person: str) -> int | None:
         """The probe value that led to this person's last completed story read,
@@ -319,7 +366,8 @@ class SqlSocialStreamStore:
         stmt = (
             sa.select(
                 i.c.network, i.c.item_id, i.c.person, i.c.kind, i.c.collab,
-                i.c.taken_at, i.c.origin, i.c.media_ref, failures.label("failures"),
+                i.c.taken_at, i.c.origin, i.c.media_ref, i.c.recorded_at,
+                failures.label("failures"),
             )
             .where(*self._readable(), i.c.media_ref.is_not(None), i.c.media_ref != "", ~tried)
             .order_by(sa.case((i.c.origin == "poll", 0), else_=1), i.c.taken_at.desc())
@@ -327,11 +375,17 @@ class SqlSocialStreamStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
+            deleted = await self._last_deleted(
+                conn, [sha for r in rows for sha in _media(r.media_ref)],
+            )
         return [
             Unperceived(
                 network=r.network, item_id=r.item_id, person=r.person, kind=r.kind,
                 collab=r.collab, taken_at=r.taken_at, origin=r.origin,
                 media=_media(r.media_ref), failures=int(r.failures),
+                expired=all(
+                    _gone(deleted, sha, r.recorded_at) for sha in _media(r.media_ref)
+                ),
             )
             for r in rows
         ]
@@ -362,6 +416,9 @@ class SqlSocialStreamStore:
                 network=network, item_id=item_id, person=person, units=list(units),
                 origin=origin, outcome=outcome, calls=calls, at=at, reason=reason,
             ))
+            await memory_index.project(
+                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
+            )
 
     async def settled_reads(
         self, *, require_perceived: bool, units: Mapping[str, tuple[str, ...]],
@@ -446,3 +503,86 @@ class SqlSocialStreamStore:
                 announced=frozenset(r.announced or ()),
             )
         return list(reads.values())
+
+    # -- a story frame's bytes (§5) --------------------------------------------
+
+    @staticmethod
+    async def _last_deleted(conn: Any, shas: list[str]) -> dict[str, datetime]:
+        """Per address, when its newest deletion was decided (`deleted_at`)."""
+        if not shas:
+            return {}
+        t = BLOB_TOMBSTONE
+        rows = await conn.execute(
+            sa.select(t.c.sha256, sa.func.max(t.c.deleted_at))
+            .where(t.c.sha256.in_(sorted(set(shas))))
+            .group_by(t.c.sha256),
+        )
+        return dict(rows.tuples().all())
+
+    async def frames_past_bound(self, *, before: datetime) -> list[ExpiringFrame]:
+        """Every story frame that expired at or before `before` and still has
+        bytes held: of every person and in every state, since a frame's bound
+        is on its bytes, not on who may read it. Its media lists only the
+        addresses not deleted since it was recorded; `perceived` is whether
+        an attempt read it (`ok`). Oldest first."""
+        i, p = SOCIAL_ITEM, SOCIAL_PERCEPTION
+        perceived = sa.exists().where(
+            p.c.network == i.c.network, p.c.item_id == i.c.item_id, p.c.outcome == "ok",
+        )
+        stmt = (
+            sa.select(
+                i.c.network, i.c.item_id, i.c.expires_at, i.c.media_ref, i.c.recorded_at,
+                perceived.label("perceived"),
+            )
+            .where(
+                i.c.kind == "story_frame", i.c.expires_at <= before,
+                i.c.media_ref.is_not(None), i.c.media_ref != "",
+            )
+            .order_by(i.c.expires_at, i.c.id)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            deleted = await self._last_deleted(
+                conn, [sha for r in rows for sha in _media(r.media_ref)],
+            )
+        out = []
+        for r in rows:
+            held = tuple(
+                sha for sha in _media(r.media_ref) if not _gone(deleted, sha, r.recorded_at)
+            )
+            if held:
+                out.append(ExpiringFrame(
+                    network=r.network, item_id=r.item_id, expires_at=r.expires_at,
+                    media=held, perceived=bool(r.perceived),
+                ))
+        return out
+
+    async def held_elsewhere(
+        self, *, shas: list[str], letting_go: list[tuple[str, str]],
+    ) -> set[str]:
+        """The addresses among `shas` another row still names
+        (`nora.infra.sql.blob_refs.held_elsewhere`), other than the frames
+        `letting_go`."""
+        async with self._engine.connect() as conn:
+            return await held_elsewhere(conn, shas, letting_go=letting_go)
+
+    async def now(self) -> datetime:
+        """The database's clock, the one every row's `recorded_at` is on: a
+        tombstone's `deleted_at` is read from it before the deletion, so a
+        row written after that instant stored the bytes again."""
+        async with self._engine.connect() as conn:
+            now: datetime = (
+                await conn.execute(sa.select(sa.func.clock_timestamp()))
+            ).scalar_one()
+        return now
+
+    async def record_tombstone(
+        self, *, sha256: str, reason: ByteDeletionReason, deleted_at: datetime,
+    ) -> None:
+        """Append that a story frame's bytes are deleted: gone for every row
+        naming them recorded before `deleted_at` (`now`, read before the
+        deletion), never for one recorded after."""
+        async with self._engine.begin() as conn:
+            await conn.execute(sa.insert(BLOB_TOMBSTONE).values(
+                sha256=sha256, kind="story_frame", reason=reason, deleted_at=deleted_at,
+            ))

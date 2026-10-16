@@ -29,6 +29,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 
 from nora.domain.memory_index import (
+    ATTACHMENT_KINDS,
     EMBEDDED_KINDS,
     HUB_KINDS,
     PERSON_RELATIONS,
@@ -246,4 +247,4 @@ def _embeddable(node: IndexedNode) -> bool:
     """`memory_index._embeddable`'s rule: live, an embedded kind, and a text
     (or an attachment, embedded from its bytes)."""
     return node.state == "live" and node.kind in EMBEDDED_KINDS and (
-        bool(node.text) or node.kind == "media")
+        bool(node.text) or node.kind in ATTACHMENT_KINDS)
