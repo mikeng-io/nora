@@ -42,8 +42,8 @@ class _Admin:
 
 def main() -> int:
     # The SAME image the suite runs on — imported, never re-pinned here. A second
-    # literal is how the oracle and the gate came to be generated on different
-    # major versions than production (2026-08-20).
+    # literal could let the oracle and the gate be generated on different
+    # major versions.
     with PostgresContainer(PG_IMAGE, driver="psycopg") as pg:
         admin = _Admin(
             host=pg.get_container_host_ip(),

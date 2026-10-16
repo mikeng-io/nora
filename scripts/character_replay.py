@@ -1,5 +1,5 @@
 """Replay Character sessions under THIS checkout's objectives, for a before/after
-of an objective change (design/self-growth/60 §4).
+of an objective change.
 
 Each input is one session's user message (what `inputs()` rendered: recorded
 from Langfuse, or rebuilt by the production adaptor against the live database),

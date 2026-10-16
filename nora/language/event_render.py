@@ -1,17 +1,15 @@
 """Renders recorded events into an INDEX: one element per event, never a line.
 
-Built for the Cognition session (step 3b of
-`design/context-assembly/04-every-occasion.md` §5), whose register listed the
-events already recorded for a room as flat lines
-(`- event <id> "<title>", <status>, <when>, at <venue>, revision <rev>`). A title
-is a member's words shaped by a model, and a flat line gave it the same
-forgeries `note_render` closed for notes (#292): a title carrying a newline wrote
-a second index entry, and one carrying `", confirmed, ` wrote a status that was
-never recorded. As an element every FIELD is an attribute, where `escape_attr`
-closes the quote a value cannot write, and the title is the content, collapsed to
-one line so one event stays one row.
+Used by the Cognition session, whose register lists the events already
+recorded for a room. A title is a member's words shaped by a model, and a flat
+line (`- event <id> "<title>", <status>, <when>, at <venue>, revision <rev>`)
+would allow the forgeries `note_render` closes for notes: a title carrying a
+newline would write a second index entry, and one carrying `", confirmed, `
+would write a status that was never recorded. As an element every FIELD is an
+attribute, where `escape_attr` closes the quote a value cannot write, and the
+title is the content, collapsed to one line so one event stays one row.
 
-**What it carries is everything the line did**, no more: the id (what the
+**What it carries**: the id (what the
 session's `event_revise` and `event_set_status` take as `event_id`), the status,
 when it is for (`no time set` when nothing is), the venue as it was said (cut to
 `VENUE_CHARS`), and the head revision (what their `base_revision_id` takes),

@@ -1,16 +1,14 @@
-"""`<presence>` — the ONE renderer for where she is (design/self-awareness/02).
+"""`<presence>` — the ONE renderer for where she is.
 
-Called by the tag and fire paths (`nora.agent.prefill`) and was by the
-proactive pass (`nora.language.proactive`, deleted 2026-10-03), which is why it
-lives here: `nora.language` is the layer both can import. No occasion builds its own copy, because
-two
-sources for «which network am I on» is the drift the context-assembly
-registry exists to prevent.
+Called by the tag and fire paths (`nora.agent.prefill`); it lives in
+`nora.language`, the layer every occasion can import. No occasion builds its
+own copy, because two sources for «which network am I on» is the drift the
+context-assembly registry exists to prevent.
 
 **Situation, never ability.** Every line says where she is or what is around
 her; none says what she can do. Telling a model what it is READING cut the
 Relevance Gate's errors, and telling it what it CAN DO made them measurably
-worse (design/self-awareness/01 §Framing). Abilities are the tool catalogue's.
+worse. Abilities are the tool catalogue's.
 """
 
 from __future__ import annotations
@@ -132,9 +130,8 @@ def render_presence(presence: Presence, *, room_is: str | None = None) -> Contex
     empty, and a turn with no situational model is the bug this replaces.
 
     `room_is` is the operator's own description of the room she is in
-    (`policy.Conversation.description`, issue #161), carried as an attribute
-    by the (deleted) proactive pass where `<home_room>` used to carry it. Absent renders
-    no attribute.
+    (`policy.Conversation.description`), carried as the `this_room_is`
+    attribute. Absent renders no attribute.
     """
     lines = [
         _here_line(presence),

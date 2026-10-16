@@ -1,7 +1,7 @@
 """Turn a mention into a real Discord `<@id>` ping — two vocabularies, two paths.
 
-**`splice_composed_mentions` (added #211)** is the FIRST path now, and the
-preferred one: `nora.agent.outbound.OutboundComposer` already resolved a
+**`splice_composed_mentions`** is the FIRST path, and the preferred one:
+`nora.agent.outbound.OutboundComposer` already resolved a
 `@Tyler Cortez` handle against `identity.toml` and this room's live roster
 before the text ever reached here, and it did so producing exactly what
 Signal's `Mention` always meant — a `(start, length)` range in UTF-16 code
@@ -9,17 +9,16 @@ units plus the id to put there. Discord has no out-of-band range to hand that
 to, so this function does the one thing Signal's own JSON-RPC layer does for
 free: splices the id INTO the text, at the exact span the composer measured.
 
-**`resolve_outbound_mentions` is the SECOND path, and now a fallback rather
-than the only mechanism.** The model only ever writes text —
+**`resolve_outbound_mentions` is the SECOND path, a fallback.** The model only ever writes text —
 `send_reply(text: str)` has no structured mention parameter, and the
 transcript it reads never carries a snowflake
 (`nora.platform.discord.parser._resolve_inbound_mentions` is the inbound half
 of this same problem, and the reason: the model has no id to write even if it
-wanted to). Before #211, this was the ONLY place that could turn `@Miles Novak`
-into something Discord will actually notify on, matched server-side against
-the room's live member list right before the send — and it still is, for any
-`@Name` the composer's `Mention`s did not cover (a handle `identity.toml` maps
-to nobody, or that resolves but nobody in this room answers to). `nora.
+wanted to). It turns `@Miles Novak` into something Discord will actually
+notify on, matched server-side against the room's live member list right
+before the send, for any `@Name` the composer's `Mention`s did not cover (a
+handle `identity.toml` maps to nobody, or that resolves but nobody in this room
+answers to). `nora.
 platform.discord.send.DiscordSender.send` runs it ONLY over the text left
 after `splice_composed_mentions` — a range the composer already covered is
 gone from the string by then (replaced with `<@id>`), so this can never
@@ -34,7 +33,7 @@ mention-resolution-only read — never used for disclosure decisions — so
 
 FAIL-CLOSED, NEVER RAISES, NEVER GUESSES (R-5's shape):
 - an unreachable/forbidden/malformed member read yields `{}` — the caller
-  sends the model's original text unresolved, exactly today's degraded
+  sends the model's original text unresolved, the degraded
   behaviour, never an exception mid-send;
 - two members sharing one display name are BOTH dropped rather than either
   one being picked at random — an ambiguous ping is worse than no ping;

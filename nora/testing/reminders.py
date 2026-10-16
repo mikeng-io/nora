@@ -7,13 +7,12 @@ both, exactly as CLAUDE.md requires of any port with two implementations.
 
 WHERE THIS STORE CANNOT COAST ON BEING A DICT
 ---------------------------------------------
-Three of the port's rules are free in Postgres and have to be spelled out here,
-and each one was a real divergence before it was:
+Four of the port's rules are free in Postgres and have to be spelled out here:
 
 - **UTC.** `timestamptz` normalises whatever offset it is handed; a dict hands
   back the object it was given. Every write goes through `_put`, which calls
   `normalise_reminder`, so every read is normalised by construction.
-- **The `id` tiebreak.** Python's `sorted` is stable, so ties used to come back
+- **The `id` tiebreak.** Python's `sorted` is stable, so ties would come back
   in dict INSERTION order — an order Postgres has no notion of.
 - **Insert-only `create`.** `dict[key] = value` overwrites; a primary key does
   not.
@@ -67,7 +66,7 @@ class FakeReminderStore:
         if reminder.id in self._rows:
             raise DuplicateReminderError(reminder.id)
         # `uq_reminders_proactive_open_note`, spelled out: one open proactive
-        # row per note (issue #158). No `await` between this and `_put`, so
+        # row per note. No `await` between this and `_put`, so
         # two concurrent creates cannot both pass it — the same argument
         # `claim`'s successor makes.
         note_id = open_proactive_note(reminder)

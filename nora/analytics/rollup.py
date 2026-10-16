@@ -1,6 +1,4 @@
-"""The presence Rollup as a fold over the Record
-(design/cognition-loop/25-rollup.md §2; design/proposed/27-presence-analytics.md
-is the substrate it generalises).
+"""The presence Rollup as a fold over the Record.
 
 **A pure function of the Record and a logical watermark.** `run_once` reads
 one person's Record events — their fixes, and the presence collector's
@@ -15,26 +13,20 @@ rows by construction (`tests/unit/test_rollup_determinism.py` is the gate).
 **No wall clock.** The fold's clock is `FoldState.logical_now_ms`: the newest
 time the Record has shown — a fix's `ts`, a successful poll's `at_ms`. A stay
 closes when a later fix, or a recorded poll proving the time passed with no
-fix, shows it ended (25 §2). The wall clock enters exactly once, in the
+fix, shows it ended. The wall clock enters exactly once, in the
 daemon, to choose WHICH watermark to build to (`now - grace_seconds`, so a
 row committed late is still inside it); it never enters what is computed at
 that watermark.
 
-**Why the old incremental path and its batch disagreed (design 27, "within
-3.4% of the batch path").** `run_once` used to be handed the daemon's wall
-clock and decided every tail with it: an open stay closed once `DWELL_CAP_MS`
-of wall time had passed since its last fix, a trip settled once
-`settled_seconds` had, a provisional arrival was held while the wall clock was
-inside `DWELL_CAP_MS`, and a place's label went stale at
-`label_freshness_days` of wall time. The tick-by-tick path evaluated those
-between every pair of fixes; a batch re-derive evaluated them once, at a
-`now` long after every fix, so every tail inside the history was decided by
-the NEXT FIX instead (radius break or chunk gap). A quiet phone at home
-(one fix, then 35 minutes of silence, then a fix at the same place) was two
-stays tick by tick and one in the batch; the same history also labelled its
-places at different `now`s and read place names only from the fixes the
-current cycle happened to see. The fold decides each of these on the Record's
-own clock, at each event, in both paths.
+**Why the clock is logical.** Deciding a tail (an open stay's close, a trip's
+settlement, a provisional arrival's hold, a place label's staleness) on wall
+time makes a tick-by-tick run and a batch re-derive disagree: the first
+evaluates it between every pair of fixes, the second once at a `now` long
+after every fix, so every tail inside the history would be decided by the NEXT
+FIX instead. A quiet phone at home (one fix, then 35 minutes of silence, then
+a fix at the same place) would be two stays tick by tick and one in the batch.
+The fold decides each of these on the Record's own clock, at each event, in
+both paths.
 
 Places, occupancy, rhythm and corridors are recomputed from the fold's
 stays and trips (`_derive`) whenever those change, and a place's label is
@@ -42,7 +34,7 @@ re-checked on the logical clock every run; each is a function of the stays
 and trips, the saved places as of the watermark and the logical clock, so
 it too is the same in both paths. Surrogate ids (a place's, a corridor's)
 are kept stable by overlap within a build and differ between builds; what
-cites them cites `(kind, subject, interval)` (25 §2).
+cites them cites `(kind, subject, interval)`.
 """
 
 from __future__ import annotations
@@ -154,10 +146,9 @@ class RollupConfig:
     #: backlog of any size, one event at a time, so this bounds memory, never
     #: what is computed.
     batch_limit: int
-    #: Kept so a config naming them still loads; the event fold (deleted 2026-10-03, DEC-277) had
-    #: no batch
-    #: to widen and no backlog threshold (design 27 §1.4's batch-stall fix is
-    #: subsumed: an undecided group simply stays in the window).
+    #: Kept so a config naming them still loads; the fold reads no batch to
+    #: widen and has no backlog threshold (an undecided group simply stays in
+    #: the window).
     backfill_batch_limit: int
     backfill_threshold: int
     grace_seconds: float
@@ -176,15 +167,15 @@ class RollupConfig:
     corridor_cluster_batch_limit: int = 500
     min_trip_fixes: int = 2
     max_trip_duration_seconds: float = 10800.0
-    # DEC-190's match radius (design/27 §3.7): a tagged place claims a stay
-    # or a cluster this close. Its OWN constant, never `cluster_eps_m` —
-    # measured match band 7.0-49.3 m against a nearest non-match at 636 m, so
-    # safe anywhere in 100-500 m and unsafe at 50.
+    # DEC-190's match radius: a tagged place claims a stay or a cluster this
+    # close. Its OWN constant, never `cluster_eps_m`: the match band sits far
+    # below the nearest non-match, so anything in 100-500 m is safe and 50 m
+    # is not.
     place_match_radius_m: float = 150.0
     # How far a NON-driving fix may sit from a stay's centre and still be
     # part of it (time only, never position) — `segment_stays`' docstring.
-    # Measured 2026-09-28: one real two-hour stop's resting fixes spread to
-    # 388 m; 400 sits just above. `None` disables it.
+    # Sized to hold a long stop's resting fixes, which wander a few hundred
+    # metres. `None` disables it.
     stay_wander_radius_m: float | None = 400.0
 
 
@@ -215,12 +206,12 @@ class MobilityRollup:
         self._store = store
         self._cfg = config
         self._metrics = metrics
-        # Google-cache-only labelling (2026-08-19 follow-up, design/27 §3.5):
-        # optional — a place with no nearby cached hit stays unlabelled
-        # rather than triggering a proactive Google call. Like the saved
-        # places, the cache is read as the store holds it when the run reads
-        # it: an input that is not an event of the fold (a rebuild as of an
-        # earlier T reads both from a snapshot at T, 70 §2).
+        # Google-cache-only labelling: optional — a place with no nearby
+        # cached hit stays unlabelled rather than triggering a proactive
+        # Google call. Like the saved places, the cache is read as the store
+        # holds it when the run reads it: an input that is not an event of
+        # the fold (a rebuild as of an earlier T reads both from a snapshot
+        # at T).
         self._geocode_cache = geocode_cache
 
     async def _label_for(self, *, lat: float, lng: float) -> str | None:
@@ -341,8 +332,8 @@ class MobilityRollup:
         # in TIME order — never «every id above a mark»: a fix's id is when
         # its row was written, and the fold's window is a stretch of time
         # (a late upload has a higher id than the fixes after it). Trimming
-        # by id kept a closed stay's fixes in the window, and the stay was
-        # written again at every later event.
+        # by id would keep a closed stay's fixes in the window and write the
+        # stay again at every later event.
         position = {f.id: i for i, f in enumerate(ordered)}
         holds = [position[h] for h in (trip_hold_id, stay_hold_id) if h is not None]
         kept = ordered[min(holds):] if holds else []
@@ -379,7 +370,7 @@ class MobilityRollup:
         store: the fold calls it after every event that could change a
         decision (`_step`). `now_ms` is the fold's LOGICAL clock — the
         newest time the Record has shown for this person (a fix's `ts`, a
-        successful poll's `at_ms`) — never the wall clock (25 §2); every
+        successful poll's `at_ms`) — never the wall clock; every
         «elapsed» below is measured against it. `open_stay` is the trailing
         stay in progress once it has dwelled `min_dwell` and the clock has
         not closed it."""
@@ -393,25 +384,17 @@ class MobilityRollup:
             for f in fixes
         ])
         min_dwell_ms = int(self._cfg.stay_min_dwell_seconds * 1000)
-        # `segment_stays` is purely spatial (its own docstring): fixes at
-        # (near-)identical coordinates never break its radius test, no
-        # matter how large the time gap between them — so a subject who
-        # returns to the same place night after night would otherwise
-        # merge every visit into ONE pathologically long "stay" spanning
-        # the away-time between them too. That merged stay's
-        # `ended_ts - started_ts` (its recorded dwell, per `Stay`'s own
-        # invariant) then includes all that dead time, which dilutes
-        # `label_place`'s TIME-WEIGHTED night/work share below any
-        # threshold — a subject who is unambiguously home every night
-        # would never label as `home`. Splitting the batch first,
-        # wherever the gap between two consecutive fixes exceeds
-        # `DWELL_CAP_MS` (the same still-ceiling `dwell_ms` itself caps
-        # against), and segmenting each chunk independently, is what
-        # turns a genuine day-to-day return into the SEPARATE stays
-        # `label_place` and `cluster_places` are both written and tested
-        # against (see `tests/unit/test_mobility.py`'s label/cluster
-        # fixtures, which construct discrete per-day `Stay` objects
-        # directly rather than deriving them from a raw fix stream).
+        # `segment_stays` is purely spatial: fixes at (near-)identical
+        # coordinates never break its radius test however large the time gap,
+        # so a subject who returns to the same place night after night would
+        # merge every visit into ONE long "stay" whose recorded dwell
+        # (`ended_ts - started_ts`) includes the away-time. That dilutes
+        # `label_place`'s TIME-WEIGHTED night/work share below any threshold,
+        # so a subject home every night would never label as `home`.
+        # Splitting the batch wherever the gap between consecutive fixes
+        # exceeds `CHUNK_GAP_MS` and segmenting each chunk independently
+        # yields the SEPARATE per-day stays `label_place` and `cluster_places`
+        # expect.
         # The lowest fix id `extract_trips` refused to finalize this
         # cycle — the watermark stops one short of it below so the
         # undecided group is re-read whole next cycle instead of being
@@ -429,103 +412,63 @@ class MobilityRollup:
                 wander_radius_m=self._cfg.stay_wander_radius_m,
             )
             new_stays.extend(seg.closed)
-            # Tier 5 (design/27 §4): the SAME chunks the stay
-            # segmentation just walked — trips are the complement of
-            # stays over one identical partition of the batch, so
-            # re-chunking here could only produce a different answer,
-            # never a better one.
+            # Trips are the complement of stays over the SAME chunks the stay
+            # segmentation just walked; re-chunking here could only give a
+            # different answer, never a better one.
             chunk_closed = list(seg.closed)
             open_started: int | None = None
             is_final_chunk = i == len(chunks) - 1
-            # THE trip-settlement fix (2026-08-20 design §2.2/§2.3).
+            # Trip settlement. `segment_stays` ALWAYS returns a trailing
+            # `open_stay` for a non-empty window (whatever remains in
+            # `group`, even one fix at 90 km/h). Cutting `extract_trips` at
+            # that open stay unconditionally would flush "everything except
+            # the newest fix" as a finished trip on every tick, and a
+            # continuous drive would come out as one trip per tick.
             #
-            # `segment_stays` ALWAYS returns a trailing `open_stay` for a
-            # non-empty window — read its own final paragraph: whatever
-            # remains in `group` is the open stay, unconditionally, even
-            # when that "group" is one fix taken at 90 km/h. So the
-            # branch below used to fire on EVERY final chunk, handing
-            # `extract_trips` a cut point that, mid-drive, sits at the
-            # newest fix. Every tick therefore flushed "everything except
-            # the newest fix" as a finished trip, and a continuous drive
-            # came out as one trip per tick — the live fragmentation the
-            # design's §0 evidence is made of. Task 2's settlement check
-            # is gated on `open_stay_started_ts is None`, so without this
-            # guard it could never have fired from here at all.
+            # `tail_settled` is `trailing_fix_is_settled` — the SAME
+            # predicate, on the SAME fix (`chunk[-1]` is `extract_trips`' own
+            # `buffer[-1]` for the final chunk), that `extract_trips` uses to
+            # decide whether to finalize. If the two disagreed, the same
+            # fixes would be held back as candidate TRIP fixes here and
+            # written as a STAY below, landing in both tables.
             #
-            # The discriminator is `trailing_fix_is_settled` — the SAME
-            # predicate, on the SAME fix (`chunk[-1]` is `extract_trips`'
-            # own `buffer[-1]` for the final chunk), that `extract_trips`
-            # uses to decide whether to finalize. Sharing it is not
-            # tidiness: if these two ever disagreed, the same fixes would
-            # be held back as candidate TRIP fixes here and written as a
-            # STAY below, landing in both tables.
+            # An unsettled tail has no stay-in-progress to cut at and its
+            # fate is undetermined: `open_stay_started_ts=None`.
+            # `last_open_stay` is likewise left unset, so a group being held
+            # back is not also closable as a stay by the `settled_seconds`
+            # block below.
             #
-            # Unsettled means there is no stay-in-progress to cut at and
-            # the trailing group's fate is genuinely undetermined — which
-            # is precisely the state `open_stay_started_ts=None` means.
-            # `last_open_stay` is deliberately left unset in that case
-            # too, for the same reason: a group being held back must not
-            # also be closable as a stay by the `settled_seconds` block
-            # below (`test_a_gridlocked_drive_writes_one_stay_once`).
-            #
-            # All three readings matter, and `None` is NOT a synonym for
-            # `False` here. `True` (still driving) never settles. `False`
-            # is a real arrival — the parked tail IS a stay-in-progress,
-            # and calling it movement would swallow every stay this
-            # substrate exists to find
-            # (`test_a_parked_tail_with_is_driving_false_is_still_an_
-            # open_stay`). `None` is no reading at all — the real state
-            # of every historical fix and anything Life360 omits the flag
-            # on — and falls back to `settled_seconds`, the same
-            # quiet-boundary clock Tier 1 already uses for a stay's
-            # arrival (design §2, bullet 2). Treating `None` as settled
-            # left the original fragmentation bug fully intact for
-            # exactly the fixes that have no signal to fix it with.
+            # `None` is NOT a synonym for `False` here. `True` (still
+            # driving) is never settled by the clock. `False` is a real
+            # arrival: the parked tail IS a stay-in-progress. `None` is no
+            # reading at all (every historical fix, anything Life360 omits
+            # the flag on) and falls back to `settled_seconds`, the
+            # quiet-boundary clock a stay's arrival uses.
             tail_settled = trailing_fix_is_settled(
                 chunk[-1], now_ms=now_ms,
                 settled_seconds=self._cfg.settled_seconds,
             )
-            # `tail_dwelled` is the SECOND gate. The clock alone is not
-            # enough: at a RESTING cadence (Life360 emits every ~10 min
-            # when still) the trailing fix is never older than
-            # `settled_seconds`, so a subject sitting at home all day
-            # would have their whole day held back as "undecided
-            # movement" — and when it finally flushed, their stationary
-            # fixes came out as 0 km/h, 0 m trips instead of a stay.
-            # Measured on
-            # `test_a_repeating_commute_actually_grows_corridors_over_
-            # days`: 41 such phantom trips, and 7 stays where the fixture
-            # documents zero.
+            # `tail_dwelled` is the SECOND gate; the clock alone is not
+            # enough. At a RESTING cadence (Life360 emits every ~10 min when
+            # still) the trailing fix is never older than `settled_seconds`,
+            # so a subject sitting at home all day would have their whole day
+            # held back as "undecided movement", and when it finally flushed
+            # their stationary fixes would come out as 0 km/h, 0 m trips
+            # instead of a stay.
             #
-            # The discriminator is the trailing group's own DWELL. A
-            # resting tail is one spatially-coherent group whose span
-            # passes `min_dwell_ms` — the same bar `_close` uses to call
-            # something a stay. A driving tail is a fix that just broke
-            # the radius, so its group's span is ~0. So: no signal, but
-            # the tail has already dwelled like a stay -> treat it as the
-            # stay-in-progress it looks like.
-            #
-            # Originally this gate applied ONLY to `is_driving is None`
-            # — "when Life360 actually says `is_driving`, that reading
-            # wins over the spatial proxy" (gridlock is a real drive
-            # whose tail looks spatially like a stay). Production
-            # evidence (issue #80) overturned that: Life360's flag is
-            # NOISY AT REST — people sitting at home produce
-            # `is_driving=True` fixes (66-100 such fixes per person at
-            # their home coordinates, verified 2026-08-29). With the
-            # flag winning over the spatial proxy, a genuine home stay
-            # whose tail fix happens to read `is_driving=True` is never
-            # settled, never closed, and its fixes are watermark-consumed
-            # forever — stays generation halted for 10 days after the
-            # 2026-08-20 trip-settlement fix wired the flag through.
-            # The spatial proxy is now the discriminator for `True` too:
-            # a tail that has already dwelled past `min_dwell_ms` is the
-            # stay-in-progress it looks like, whatever the flag says.
-            # The gridlock false-positive this admits (a real drive
-            # stuck in traffic whose tail dwells past the bar) is the
-            # accepted trade — it writes ONE stay, once, and the
-            # watermark advances past it; the flag-noise false-negative
-            # it fixes loses every stay a subject actually had.
+            # The discriminator is the trailing group's own DWELL. A resting
+            # tail is one spatially-coherent group whose span passes
+            # `min_dwell_ms` — the same bar `_close` uses to call something a
+            # stay. A driving tail is a fix that just broke the radius, so
+            # its group's span is ~0. A tail that has already dwelled past
+            # `min_dwell_ms` is therefore the stay-in-progress it looks like,
+            # whatever the `is_driving` flag says: the flag is NOISY AT REST
+            # (people sitting at home produce `is_driving=True` fixes), and
+            # letting it win would leave a genuine home stay never settled,
+            # never closed, and its fixes watermark-consumed forever.
+            # The gridlock false-positive this admits (a real drive stuck in
+            # traffic whose tail dwells past the bar) is the accepted trade:
+            # it writes ONE stay, once, and the watermark advances past it.
             tail_dwelled = (
                 seg.open_stay is not None
                 and seg.open_stay.ended_ts - seg.open_stay.started_ts
@@ -551,19 +494,17 @@ class MobilityRollup:
                     # own `_close` applies.
                     new_stays.append(seg.open_stay)
                     # ...and it is a CLOSED stay for this chunk's trip
-                    # extraction too. `seg.closed` alone would omit it,
-                    # and `extract_trips` would then read a genuine
-                    # stay's own fixes as movement and write them as a
-                    # ~0 km/h "trip" — the brief's own sketch had this
-                    # bug; the sub-min-dwell case correctly stays out,
-                    # since `segment_stays` discarded that group too.
+                    # extraction too. `seg.closed` alone would omit it, and
+                    # `extract_trips` would read a genuine stay's own fixes as
+                    # movement and write a ~0 km/h "trip"; the sub-min-dwell
+                    # case correctly stays out, since `segment_stays`
+                    # discarded that group too.
                     chunk_closed.append(seg.open_stay)
             # Only the FINAL chunk gets the settlement args. A non-final
-            # chunk's trailing group ended because an OBSERVED gap
-            # followed it, so its fate is already decided and there is
-            # nothing to settle; `now_ms=None` is what reproduces the
-            # original always-flush behaviour for it (extract_trips'
-            # own docstring).
+            # chunk's trailing group ended because an OBSERVED gap followed
+            # it, so its fate is already decided and there is nothing to
+            # settle; `now_ms=None` makes `extract_trips` flush it
+            # unconditionally (its docstring).
             chunk_trips, held_back = extract_trips(
                 chunk, chunk_closed, subject_id=subject_id,
                 person_id=person_ids[-1], circle_id=circle_id,
@@ -578,23 +519,23 @@ class MobilityRollup:
                     if is_final_chunk else None
                 ),
             )
-            # An ARRIVAL RACE (audit 2026-09-27): the trip was cut at the start of a
-            # trailing group that has not yet dwelled `min_dwell_ms` — a PROVISIONAL
-            # stop. The next fix often jitters it apart, the stay then starts a few
-            # fixes later, and the fixes between the already-written trip and the
-            # real stay came out as a second, orphan "trip" of a few hundred metres
-            # at walking pace — one phantom per arrival. While the stop is
-            # unconfirmed (and still inside the resting-cadence clock), hold the trip
-            # that runs into it as well; it is cut for good once the stop confirms,
-            # or rejoins the movement if the stop dissolves.
+            # ARRIVAL RACE: the trip was cut at the start of a trailing group
+            # that has not yet dwelled `min_dwell_ms` — a PROVISIONAL stop.
+            # The next fix often jitters it apart and the stay starts a few
+            # fixes later, so the fixes between the already-written trip and
+            # the real stay would come out as a second, orphan "trip" of a
+            # few hundred metres at walking pace: one phantom per arrival.
+            # While the stop is unconfirmed (and still inside the
+            # resting-cadence clock), hold the trip that runs into it as
+            # well; it is cut for good once the stop confirms, or rejoins the
+            # movement if the stop dissolves.
             #
-            # And when the movement before the provisional stop is still too
+            # When the movement before the provisional stop is still too
             # short to be a trip (the fold evaluates after EVERY fix, so a
             # stop is provisional at the first fix of every arrival), hold
             # those fixes too rather than discarding them as noise: a sparse
             # drive of two fixes 30 minutes apart becomes a trip once its
-            # arrival confirms or the clock runs out, as it did when a batch
-            # saw the whole drive at once (step 2, 2026-09-29).
+            # arrival confirms or the clock runs out.
             provisional_stop = (
                 open_started is not None
                 and seg.open_stay is not None
@@ -626,23 +567,20 @@ class MobilityRollup:
                 # fold keeps its window from there, by position in time.
                 trip_hold_id = held_back[0].id
         # An open stay closes THIS evaluation only once DWELL_CAP_MS has
-        # elapsed since its last fix (spec §3.2/§4) on the fold's LOGICAL
-        # clock — a later fix or a recorded poll proving the time passed
-        # (25 §2) — a decision this evaluation makes, not segment_stays.
+        # elapsed since its last fix, on the fold's LOGICAL clock — a later
+        # fix or a recorded poll proving the time passed. That is a decision
+        # this evaluation makes, not `segment_stays`.
         #
         # If it does NOT close this cycle, its fixes must stay readable:
-        # the watermark advancing past them would mean the next cycle
-        # re-segments only the NEW fixes, the open stay's true arrival
-        # time is lost, and when the subject finally leaves, the radius
-        # break that would close the home group never fires (the home
-        # fixes are no longer in the batch) — the stay is silently
-        # dropped. That is the production mechanism behind issue #80:
-        # stays generation halted for 10 days because every overnight
-        # home session was consumed fix-by-fix and never closed. This is
-        # the stay-side counterpart of the trip hold below: hold the
-        # watermark to the fix immediately before the open stay's first
-        # fix, so the whole group is re-read next cycle until its fate
-        # is decided (radius break closes it, or the clock settles it).
+        # were the watermark to advance past them, the next cycle would
+        # re-segment only the NEW fixes, the open stay's true arrival time
+        # would be lost, and when the subject finally leaves, the radius
+        # break that would close the home group would never fire (the home
+        # fixes are no longer in the batch) — the stay is silently dropped.
+        # This is the stay-side counterpart of the trip hold above: hold the
+        # watermark to the fix immediately before the open stay's first fix,
+        # so the whole group is re-read next cycle until its fate is decided
+        # (radius break closes it, or the clock settles it).
         stay_hold_id: int | None = None
         if last_open_stay is not None:
             elapsed_s = (now_ms - last_open_stay.ended_ts) / 1000
@@ -651,96 +589,62 @@ class MobilityRollup:
                 elapsed_s >= DWELL_CAP_MS / 1000
                 and span_ms >= min_dwell_ms
             ):
-                # The close clock is DWELL_CAP_MS (31.7 min), NOT
-                # `settled_seconds` (15 min), and it is deliberately the
-                # SAME clock the hold branch below uses. `settled_seconds`
-                # here was the 2026-09-17 production defect: measured over
-                # 26,047 inter-fix gaps across 14 live days, the p90 gap is
-                # 30.1 min and the p99 is 30.2 — so 15 min of silence is
-                # what a resting subject looks like BETWEEN two fixes of
-                # one stay, not evidence the stay ended. Two fixes clear
-                # `min_dwell_ms` (10 min), so this gate fired between every
-                # pair, closed the group at 2 fixes, and the next fix
-                # started a fresh one: 3,130 stays in `presence_stays`
-                # where a clean re-derive of the same fixes at the same
-                # parameters gives 1,399, median duration 30.1 min against
-                # 65.2, and 42% of rows pinned in a 29-32.5 min band that
-                # is the cadence rather than behaviour. It also fed Tier 3
-                # a degenerate anomaly baseline — `presence_place_rhythm`
-                # MADs of 500-5,000 ms against a ~1,804,000 ms median, so
-                # |z| >= 3 tripped on a ~4-second deviation.
+                # The close clock is DWELL_CAP_MS (~31.7 min), NOT
+                # `settled_seconds` (15 min), and it is deliberately the SAME
+                # clock the hold branch below uses. At a resting cadence the
+                # gap between two fixes of ONE stay runs up to ~30 min, so 15
+                # min of silence is not evidence the stay ended: closing on
+                # it would cut a stay at 2 fixes (they clear `min_dwell_ms`)
+                # and start a fresh one at the next fix, fragmenting stays
+                # into cadence-sized pieces and feeding Tier 3 a degenerate
+                # anomaly baseline (tiny duration MADs). DWELL_CAP_MS sits
+                # just above the longest ordinary inter-fix gap, so a stay
+                # closes by the clock only on a genuinely unusual gap;
+                # otherwise the group stays open until a radius break closes
+                # it. One clock, read in both branches, partitions the
+                # elapsed axis at one point.
                 #
-                # The hold branch below already carried this reasoning
-                # ("settled_seconds (15 min) is too short for this job")
-                # when issue #82 raised the HOLD ceiling to DWELL_CAP_MS —
-                # but the close gate above it was left on the old clock, so
-                # it fired first and the hold was unreachable for any group
-                # past min-dwell. One clock, read in both places, is the
-                # fix. 31.7 min sits above the p99 gap with ~1.5 min of
-                # headroom, so a stay now closes by the clock only on the
-                # 0.265% of gaps that are genuinely unusual; every ordinary
-                # one keeps the group open until a radius break closes it.
-                #
-                # `settled_seconds` keeps its other job untouched — it is
-                # still the trip-settlement clock `trailing_fix_is_settled`
-                # and `extract_trips` read above.
+                # `settled_seconds` keeps its other job: the trip-settlement
+                # clock `trailing_fix_is_settled` and `extract_trips` read
+                # above.
                 new_stays.append(last_open_stay)
             if elapsed_s >= DWELL_CAP_MS / 1000:
                 # Resolved by the clock (closed above, or dropped as
                 # sub-min-dwell). If `segment_stays` left the group open
                 # because its LAST fix broke the radius, that undecided fix
                 # sits after the group's end and belongs to neither the stay
-                # nor a trip. Consuming it here dropped the first fix of the
-                # next place, so an arrival at resting cadence was recorded
-                # one fix gap late (independent review 2026-09-28: 180 min
-                # instead of 150). Hold the watermark AT it, so the next
-                # cycle starts the next group from it.
+                # nor a trip. Consuming it would drop the first fix of the
+                # next place, recording an arrival at resting cadence one fix
+                # gap late. Hold the watermark AT it, so the next cycle
+                # starts the next group from it.
                 undecided = [f.id for f in fixes if f.ts > last_open_stay.ended_ts]
                 if undecided:
                     stay_hold_id = undecided[0]
             elif elapsed_s < DWELL_CAP_MS / 1000:
-                # Hold ANY open stay that has not yet settled — whether it
-                # is sub-min-dwell (sparse arrival, issue #82) or past
-                # min-dwell but not yet settled (issue #80). The old gate
-                # held only when span >= min_dwell, which is exactly the
-                # sparse-arrival shape that broke production: Life360's
-                # resting cadence is one fix every 10-55 min, so each
-                # tick sees a single new fix, the group's span stays
-                # below min_dwell_ms, and the watermark advanced past
-                # every fix — the group never grew, and a real overnight
+                # Hold ANY open stay that has not yet settled — sub-min-dwell
+                # (sparse arrival) or past min-dwell but not yet settled.
+                # Life360's resting cadence is one fix every 10-55 min, so
+                # each tick sees a single new fix and the group's span stays
+                # below `min_dwell_ms`; advancing the watermark past every
+                # fix would mean the group never grew and a real overnight
                 # home stay was consumed fix-by-fix and never written.
                 #
-                # The hold ceiling is DWELL_CAP_MS, NOT settled_seconds.
-                # It is the same clock the close gate above now reads, so
-                # the two branches partition the elapsed axis at one point
-                # instead of two. DWELL_CAP_MS is the resting-cadence
-                # ceiling: 31.7 min, measured against a live p99 inter-fix
-                # gap of 30.2 min, so a fix arriving later than that is a
+                # The hold ceiling is DWELL_CAP_MS, NOT settled_seconds: the
+                # same clock the close gate above reads. It is the
+                # resting-cadence ceiling: a fix arriving later than that is a
                 # genuine break in observation rather than the ordinary
-                # silence between two fixes of one stay, and holding past
-                # it would only stall the watermark on a group whose fate
-                # is already decided. (This once read "`_chunk_by_gap`
-                # splits the batch wherever the gap exceeds DWELL_CAP_MS";
-                # that stopped being true on 2026-09-05 when CHUNK_GAP_MS
-                # became 12h, and the ceiling's justification is the
-                # cadence measurement above, not the chunk split.)
-                # settled_seconds (15 min) is
-                # too short for this job: at a resting cadence of one
-                # fix every 10-55 min, the clock runs past the group
-                # between fixes, the watermark advances, and the next
-                # fix starts a fresh one-fix group that can never reach
-                # min_dwell — the issue #82 production shape. DWELL_CAP
-                # (31.7 min) covers the longest inter-fix gap that can
-                # still belong to one group, so holding to it keeps the
-                # group readable until either the clock settles it
-                # (span >= min_dwell AND elapsed >= settled_seconds
-                # closes it above) or a radius break closes it.
+                # silence between two fixes of one stay, and holding past it
+                # would only stall the watermark on a group whose fate is
+                # already decided. `settled_seconds` (15 min) is too short:
+                # the clock would run past the group between fixes, the
+                # watermark would advance, and the next fix would start a
+                # fresh one-fix group that can never reach min_dwell.
                 #
-                # The cost is bounded: a subject who passes through and
-                # never returns holds the watermark at most DWELL_CAP_MS
-                # before the branch below advances it and the group is
-                # dropped (span < min_dwell), so a lone drive-by fix
-                # cannot stall the pipeline.
+                # The cost is bounded: a subject who passes through and never
+                # returns holds the watermark at most DWELL_CAP_MS before the
+                # branch below advances it and the group is dropped
+                # (span < min_dwell), so a lone drive-by fix cannot stall the
+                # pipeline.
                 stay_hold_id = next(
                     (
                         f.id for f in fixes
@@ -749,11 +653,10 @@ class MobilityRollup:
                     fixes[0].id,
                 )
             # else: elapsed >= DWELL_CAP_MS/1000 but span < min_dwell_ms —
-            # the group is not a stay (never reached the dwell bar) and
-            # any future fix would start a new chunk anyway; advance the
-            # watermark and let the group go. This is the pre-#82
-            # behaviour for sub-min-dwell groups and it is correct: a
-            # lone drive-by fix must not stall the pipeline.
+            # the group is not a stay (never reached the dwell bar) and any
+            # future fix would start a new chunk anyway; advance the
+            # watermark and let the group go: a lone drive-by fix must not
+            # stall the pipeline.
         open_stay: Stay | None = None
         if (
             last_open_stay is not None
@@ -812,11 +715,9 @@ class MobilityRollup:
     ) -> str | None:
         """The display name for a place, in DEC-190's order: the household's
         own tag name; else a cached Google label; else the Life360 mode
-        address of its stays (issue #10 option 1). Each stay carries its
-        own address now (`presence_stays.address`), so the name is a
-        function of the place's stays, not of the cycle that happened to see
-        their fixes — the old «keep the previous cycle's
-        name» rule is gone with the reason for it."""
+        address of its stays. Each stay carries its own address
+        (`presence_stays.address`), so the name is a function of the place's
+        stays, not of the cycle that happened to see their fixes."""
         if tag_name is not None:
             return tag_name
         label = await self._label_for(lat=lat, lng=lng)
@@ -827,11 +728,11 @@ class MobilityRollup:
     async def _recheck_labels(
         self, *, subject_id: str, all_stays: list[Stay], now_ms: int,
     ) -> None:
-        """The cheap speed (spec §4.2): each stored place relabelled from the
+        """The cheap speed: each stored place relabelled from the
         stays linked to it at the logical clock — exactly the label the full
         plan would compute for the same stays and saved places (a saved
         place keeps its tag's name; the plan runs again if the tags change).
-        Never moves a place (issue #339)."""
+        Never moves a place."""
         for place in await self._store.places_for_subject(subject_id=subject_id):
             linked = sorted(
                 (s for s in all_stays if s.place_id == place.id),
@@ -870,7 +771,7 @@ class MobilityRollup:
         self, *, subject_id: str, circle_id: str, all_stays: list[Stay],
         new_stays: list[Stay], tags: list[TaggedPlace], now_ms: int,
     ) -> list[Stay]:
-        """DEC-190 (design/27 §3.7, ADR 0014, issue #339): recompute the
+        """DEC-190 (ADR 0014): recompute the
         subject's whole place picture with `plan_places`, then make the store
         match it — save each planned place under the id it keeps, relink
         every stay whose link changed (overwriting, so a link can never
@@ -965,7 +866,7 @@ class MobilityRollup:
             # stored — a stored copy would go stale on every relink. The
             # rollup COUNTS the ones this run's stays carry, scored against
             # the links it just wrote, and hands them to the deviation
-            # stimulus (25 §4).
+            # stimulus.
             linked = [
                 dataclasses.replace(s, place_id=links.get(s.started_ts))
                 for s in all_stays
@@ -1000,11 +901,11 @@ class MobilityRollup:
     async def _rebuild_rhythm(
         self, *, subject_id: str, place_id: int, stays: list[Stay],
     ) -> None:
-        """Tier 3 (design/27 §4, issue #6) for ONE place, recomputed wholesale
+        """Tier 3 for ONE place, recomputed wholesale
         from the stays linked to it: occupancy (dwell per local hour-of-week)
         and rhythm (circular mean arrival/departure, duration median/MAD).
         Full recompute rather than accumulation, so it is idempotent and
-        follows a relink — accumulation is what left dwell on a place after
+        follows a relink — accumulation would leave dwell on a place after
         its stays had moved. `updated_ts` is the newest stay's end (the
         Record time the row is as of), never a clock reading."""
         as_of = max((s.ended_ts for s in stays), default=0)
@@ -1041,31 +942,29 @@ class MobilityRollup:
         )
 
     async def _derive_corridors(self, *, subject_id: str) -> None:
-        """Tier 5 (design/27 §4, issue #6), recomputed from the subject's trips
+        """Tier 5, recomputed from the subject's trips
         as a whole instead of accumulated: a corridor is what the trips add
         up to now, not what the order they arrived in happened to link.
 
         1. The POOL is the newest `corridor_cluster_batch_limit` trips with a
            road-name sequence (an address-less trip never joins: its empty
-           sequence is an edit-distance neighbour of every short corridor,
-           design/27's Task 11 review). `cluster_trips` over it, newest
-           first, makes the corridors; `corridor_min_samples` is still what
+           sequence is an edit-distance neighbour of every short corridor).
+           `cluster_trips` over it, newest
+           first, makes the corridors; `corridor_min_samples` is what
            lets one be born.
         2. A corridor's sequence is the most common sequence among its
            clustered trips (the newest on a tie): a function of its members,
-           where the old «first trip's sequence, never updated» depended on
-           which trip happened to create the row.
+           not of which trip happened to create the row.
         3. Every other named trip — noise inside the pool, and every trip
            older than it — joins the corridor whose sequence is nearest, when
-           within `corridor_max_edit_distance` (the old second pass, now over
-           the same corridors every time).
+           within `corridor_max_edit_distance` (a second pass over the same
+           corridors every time).
         4. Each corridor keeps the stored id whose trips it overlaps most
            (greedy, like places); links, rows and counts are then DIFFED
            against the store.
 
         Cost: `cluster_trips` is O(n²) in an edit-distance metric; the pool
-        bound keeps it under ~2 s (the measured table this docstring used to
-        carry: 1.87 s at 500), and it runs only when the trips changed."""
+        bound keeps it bounded, and it runs only when the trips changed."""
         trips = await self._store.trips_for_subject(subject_id=subject_id)
         named = sorted(
             (t for t in trips if t.corridor), key=lambda t: t.started_ts, reverse=True,

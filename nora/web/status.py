@@ -1,4 +1,4 @@
-"""GET /app/v1/status — Nora's public face (design spec §5.1).
+"""GET /app/v1/status — Nora's public face.
 
 A thin, filtered re-projection of what nora/obs/health.py::build_health_app
 already computes, plus a reminders summary. Deliberately NOT the full

@@ -8,8 +8,8 @@ presence visibility is instead gated the same way every other portal page
 already is: `checkSession()`'s identity.toml allowlist, enforced by
 `requireApiSession()` before either handler below is ever reached. Every
 logged-in friend sees every circle member here, matching status/memory's
-existing group-wide model — a deliberate product decision (confirmed with
-the operator), not an oversight. See `Dependencies.presence`'s docstring in
+existing group-wide model — a deliberate product decision, not an
+oversight. See `Dependencies.presence`'s docstring in
 `nora/app/composition.py` for the fuller reasoning.
 
 `presence=None` (either `[presence] enabled = false`, or identity.toml
@@ -26,8 +26,7 @@ from typing import Any
 from nora.agent.whereis import Circle, PresenceReader
 from nora.domain.presence import PresenceFix, haversine_distance_m
 
-# "use 10m within the circle then it stay at the same location" (operator
-# ask): consecutive fixes within this radius of the last EMITTED point
+# Consecutive fixes within this radius of the last EMITTED point
 # collapse into it, so a stationary phone's GPS jitter doesn't zigzag the
 # rendered route. Matches `nora.agent.whereis`'s `_MOVEMENT_FLOOR_M` in
 # spirit (a noise floor under real-world GPS drift) but is a distinct,
@@ -68,11 +67,10 @@ async def build_presence_payload(
 
     Deduped by `person_id` across circles, one ENTRY per person — but the
     fix itself is the most recent across EVERY circle they belong to, not
-    just the first (`_latest_fix_across`). identity.toml can (and does —
-    Miles's own account is in both "Ridgeline" and "TEAM_42") place one real
+    just the first (`_latest_fix_across`). identity.toml can place one real
     person in more than one circle, and the collector may have written
     their most recent fix under either `circle_id` — checking only the
-    first circle silently rendered `current: null` for someone with a real,
+    first circle would render `current: null` for someone with a real,
     recent fix recorded under the other one."""
     if presence is None:
         return []
@@ -118,7 +116,7 @@ def _snap_stay_points(fixes: list[PresenceFix]) -> list[dict[str, Any]]:
     """Oldest-first `fixes` (the store's own ordering) reduced to a polyline
     where a run of fixes within `_STAY_POINT_RADIUS_M` of the last emitted
     point contributes no new vertex — the point "stays at the same
-    location" rather than jittering, exactly the operator's ask."""
+    location" rather than jittering."""
     out: list[dict[str, Any]] = []
     anchor: PresenceFix | None = None
     for fix in fixes:
@@ -137,8 +135,7 @@ async def build_presence_places_payload(
     *, presence: PresenceReader | None, circles: tuple[Circle, ...],
 ) -> list[dict[str, Any]]:
     """Every circle's saved places (Life360's named landmarks — "Home",
-    etc.), deduped by name: a person in more than one circle (Miles's own
-    account, "Ridgeline" and "TEAM_42") can otherwise surface the same
+    etc.), deduped by name: a person in more than one circle can otherwise surface the same
     household place twice. Distinct from `build_presence_payload`'s person
     entries by TYPE, not just by field shape (`nora.domain.presence`'s own
     module docstring: a fix is where a PERSON was seen, a place is
@@ -172,7 +169,7 @@ async def build_presence_history_payload(
     Windowed across EVERY circle `person_id` belongs to, merged and
     re-sorted oldest-first before snapping — same reasoning as
     `_latest_fix_across`: their fixes may live under more than one
-    `circle_id`, and reading only the first circle silently returned an
+    `circle_id`, and reading only the first circle would return an
     empty route for someone with real history recorded elsewhere."""
     matching_circles = _circles_for(circles, person_id)
     if not matching_circles:

@@ -2,12 +2,12 @@
 stays: a rolling-origin backtest per subject, one local day at a time, each
 day predicted only from stays that ended before it began, scored against the
 place the stays actually covered most in each hour, beside the trivial
-«always their usual place» baseline (design/27 §4.1).
+«always their usual place» baseline.
 
-Read-only, writes nothing. Its output is a measurement by ONE party; per
-design/27 §4.1 a figure it prints is evidence only once someone other than
-the forecaster's author has re-run it. It carries one stated leak — place
-identities are today's — see `backtest_forecast`'s docstring.
+Read-only, writes nothing. Its output is a measurement by ONE party: a figure
+it prints is evidence only once someone other than the forecaster's author has
+re-run it. It carries one stated leak — place identities are today's — see
+`backtest_forecast`'s docstring.
 
     uv run python scripts/backtest_presence_forecast.py [--days 28] [--subject grant_carver]
 """
@@ -76,7 +76,7 @@ async def main() -> None:
                 f"{subject:<24}{len(result.days):>6}{result.bins:>7}"
                 f"{result.accuracy:>10.1%}{result.baseline_accuracy:>10.1%}"
             )
-        # M1 (design/27 §4.4): evening arrival home, habit windows ± 15 min
+        # M1: evening arrival home, habit windows ± 15 min
         # against «the median of every earlier evening ± 30 min».
         # `width` is the mean minutes the habit windows covered: a wide habit
         # hits cheaply, and the median's band is always 60.

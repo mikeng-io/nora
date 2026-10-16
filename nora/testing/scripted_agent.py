@@ -8,7 +8,7 @@ is structural, the same way `nora.app.agent_runner.LiveAgentRunner` satisfies it
 `AgentRunner` is a stage-level `Protocol` (`nora/engagement/stages/invoke.py`),
 not one of `nora/domain/ports.py`'s ports, so it is not bound by this project's
 "a port never gains a second implementation without a shared contract suite"
-rule (see the Task 10 report for the reasoning).
+rule.
 
 `group_event` builds the signal-cli-shaped raw event dict every scripted
 scenario feeds into a pipeline's `Dispatcher.on_event`.
@@ -34,8 +34,8 @@ def group_event(*, body: str, sender: str = "+852111", conv: str = "g1",
     `mentions` is the parallel array a Signal @-mention really travels in —
     `{name, number, uuid, start, length}` per mention, with `body` carrying
     U+FFFC at each `start`. Omitted by default because most scenarios have no
-    mention; there is no way to express one WITHOUT it, which is why a scenario
-    could not reproduce DEC-34's live bug before this parameter existed.
+    mention; there is no way to express one WITHOUT it, which is how a scenario
+    reproduces DEC-34's bug.
     """
     data: dict = {"message": body, "groupInfo": {"groupId": conv}, "timestamp": ts}
     if mentions:
@@ -73,7 +73,7 @@ def limit_stop_reason(
     """The `stop_reason` Strands would return for this much spend — or None.
 
     A faithful transcription of `strands.event_loop.event_loop._check_limits`
-    (verified against 1.50.2), INCLUDING its priority order — turns, then
+    (strands 1.50.2), INCLUDING its priority order — turns, then
     total_tokens, then output_tokens — and its `>=` comparisons. The order is
     load-bearing rather than cosmetic: it is what decides which cap gets the
     blame when a turn crosses two at once, and the whole point of R-23 is that
@@ -124,7 +124,7 @@ def _accepted_arguments(tool, kwargs: dict) -> dict:
 
     A scripted turn that called `tool(**kwargs)` directly would instead raise
     `TypeError`, which is not a failure mode production has. That difference
-    matters here specifically: DEC-24 deleted the conversation parameters, and
+    matters here specifically: DEC-24 removed the conversation parameters, and
     the behaviour that has to stay reproducible is a model supplying one ANYWAY
     — counted by `ReplyGuard`, dropped before the body. A fake that exploded on
     it could not express the case at all.
@@ -148,15 +148,13 @@ async def _invoke_tool(tool, **kwargs):
 #
 # The guard is a `strands.hooks.HookProvider`. Production NEVER calls
 # `evaluate`/`record` — it hands the provider to a `HookRegistry` and the SDK
-# dispatches events at three points. This double used to call the two methods
-# by hand instead, and the hand-written version DIVERGED: on a veto it skipped
-# `record` entirely, so a vetoed call cost no budget here and did cost one in
-# production. That is the exact shape CLAUDE.md's "make the fake behave like
-# the real server" rule exists to forbid — a regression test written against
-# the old replay could not fail, whatever the guard did, because the guard's
-# after-tool decision was never consulted.
+# dispatches events at three points. Calling the two methods by hand would
+# diverge: skipping `record` on a veto would cost no budget here and cost one
+# in production, which CLAUDE.md's "make the fake behave like the real server"
+# rule forbids — a regression test written against such a replay could not
+# fail, because the guard's after-tool decision was never consulted.
 #
-# So the replay now goes through `register_hooks` and dispatches the same three
+# So the replay goes through `register_hooks` and dispatches the same three
 # events Strands does, with the same field values (see `tests/
 # test_strands_api_contract.py`, which asserts those fields against the real
 # SDK). What a hook DECIDES is then the guard's business, not this module's.
@@ -200,7 +198,7 @@ class _AfterToolCall:
 
     `exception` is None in both cases — `cancel_tool` produces an error
     `ToolResult`, not a raised exception (`strands.tools.executors._executor`,
-    verified against 1.50.2) — so `cancel_message` is the only field that tells
+    strands 1.50.2) — so `cancel_message` is the only field that tells
     the two apart. Carrying it is the whole point of this class.
     """
 
@@ -236,7 +234,7 @@ TOOL_CHOICE_FIRST_CALL = "required"
 class ScriptedModel:
     """The `OpenAIModel` surface a hook reaches through `event.agent.model`.
 
-    `update_config` is `self.config.update(...)` — the REAL 1.50.2 semantics,
+    `update_config` is `self.config.update(...)` — the REAL strands 1.50.2 semantics,
     a shallow dict update, so `update_config(params={...})` REPLACES the whole
     params dict. That is not a convenience: `ReplyGuard` relaxes `tool_choice`
     by writing `params` back whole, and a double that merged instead would let
@@ -286,24 +284,24 @@ class FakeAgentRunner:
     """Replays a scripted turn sequence against the real tools and the real guards.
 
     Satisfies `nora.engagement.stages.invoke.AgentRunner` — the injected-collaborator
-    seam spec §10's test-seam policy requires (never an `_invoke_fn` hook on a
-    production class, which is what the deleted `Handler` did). Stands in for
+    seam the test-seam policy requires (never an `_invoke_fn` hook on a
+    production class). Stands in for
     `nora.app.agent_runner.LiveAgentRunner`: what a scripted scenario must prove is
     *our* orchestration, not Strands' agent loop (a separate contract test covers
     that).
 
     **The guard is driven through its HOOKS, never by calling `evaluate`/`record`
-    directly** — see the `_HookRegistry` block above for the divergence that
-    cost. `register_hooks` is the SDK's own entry point, so what a vetoed call
+    directly** — see the `_HookRegistry` block above for why. `register_hooks`
+    is the SDK's own entry point, so what a vetoed call
     costs, and what ends a turn, are decided by `ReplyGuard` here exactly as they
     are in production; this module only supplies the events.
 
     **A FRESH `ScriptedModel` PER `invoke`**, mirroring
     `nora.app.agent_runner.LiveAgentRunner`'s per-tag
-    `nora.agent.factory.ModelSource` (step 5a). Without it a scenario could not
+    `nora.agent.factory.ModelSource`. Without it a scenario could not
     tell "`tool_choice` was relaxed for this tag" from "it was relaxed for the
-    previous one and never reset", which is the exact confusion the production
-    change exists to remove.
+    previous one and never reset", which is the exact confusion the per-tag
+    source exists to remove.
 
     `on_call`, if given, is invoked with this call's kwargs before anything else —
     the hook callers use to keep a cumulative call log that survives swapping the
@@ -371,8 +369,7 @@ class FakeAgentRunner:
             raise self.raises
         # `ctx` is optional here, not required: a fidelity test exercising
         # this double below the `invoke.run` seam (e.g.
-        # `tests/test_scripted_agent_fidelity.py`) never had to supply one
-        # before this trace existed, and still shouldn't have to.
+        # `tests/test_scripted_agent_fidelity.py`) supplies none.
         ctx = kwargs.get("ctx")
         trace = TagTrace(
             tag_id=ctx.tag_id if ctx is not None else "",
@@ -430,12 +427,11 @@ class FakeAgentRunner:
                 # A terminal verb has run and the guard ended the turn, so the
                 # SDK never calls the MODEL. It does still synthesise an
                 # assistant message carrying the cancel text and yield
-                # `end_turn` (`strands/event_loop/event_loop.py`) — and this
-                # double returned "" there, which is exactly why a defect that
-                # delivered the guard's own veto string to the group passed 2257
-                # tests (pre-deploy review 2026-08-10). CLAUDE.md's rule, in the
-                # one shape it mattered: make the fake behave like the real
-                # server, INCLUDING its wrong-call shapes.
+                # `end_turn` (`strands/event_loop/event_loop.py`) — so this double
+                # does too, rather than returning "": a fake that returned ""
+                # there would hide a defect that delivers the guard's own veto
+                # string to the group. CLAUDE.md's rule: make the fake behave
+                # like the real server, INCLUDING its wrong-call shapes.
                 return "end_turn", cancel if isinstance(cancel, str) else ""
             # Recorded AFTER the hooks, because that is when the SDK reads the
             # model's config to build the request — a value sampled before them
@@ -465,8 +461,8 @@ class FakeAgentRunner:
                 output_tokens=spent[2], limits=limits,
             )
             if stop is not None:
-                # `final_text` on a budget stop, not "" (#110). The REAL runner
-                # returns words here now: either prose the cut-off completion
+                # `final_text` on a budget stop, not "". The REAL runner
+                # returns words here: either prose the cut-off completion
                 # left behind, or the draft `LiveAgentRunner` makes over the
                 # context already gathered. A fake that always answered ""
                 # could not express the case the pipeline branches on, which

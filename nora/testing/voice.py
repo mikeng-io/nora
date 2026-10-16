@@ -1,24 +1,24 @@
 """`FakeVoiceController` — the in-process stand-in for the audio-controller's
-HTTP control plane (design/voice-channel/07-audio-owner-controller.md §3,
-implemented for real by `deploy/voice-sidecar/src/controller.mjs`).
+HTTP control plane (implemented for real by
+`deploy/voice-sidecar/src/controller.mjs`).
 
 It exists so the contract suite (`tests/contract/test_voice_controller_
 contract.py`) and the wired-pipeline tests (`tests/unit/test_voice_pipeline
 .py`) drive the REAL `VoiceControllerClient`/`VoiceControllerHub`/
 `MusicPlayerManager` over REAL aiohttp HTTP against a controller whose
-WRONG-CALL shapes match the Node implementation — the drift the 2026-09-16
-audit caught was a fake that accepted what the real controller refuses.
+WRONG-CALL shapes match the Node implementation: a fake that accepts what the
+real controller refuses lets the contract suite pass while the real calls fail.
 
 Mirrored from `controller.mjs` (read it before changing this — one of them
 is off-contract the moment they disagree):
 
-- `guild_id` is REQUIRED on EVERY control verb since 2026-09-17, not just
-  `/voice/join`: one process serves several guilds, so the front door reads
-  the guild out of the body to know which controller a request is for. Absent
+- `guild_id` is REQUIRED on EVERY control verb, not just `/voice/join`: one
+  process serves several guilds, so the front door reads the guild out of the
+  body to know which controller a request is for. Absent
   or mismatched is 400 `wrong_guild`; a guild the process holds no connection
   for is 404 `unknown_guild`;
-- ANY channel in the guild (§12.2, reversed 2026-09-17): `/voice/join` no
-  longer checks `channel_id` against a configured one — a missing/empty
+- ANY channel in the guild: `/voice/join` does not check `channel_id`
+  against a configured one — a missing/empty
   `channel_id` is still 400 `invalid_body`, and joining a SECOND channel
   while connected is still 409 `connected_elsewhere`;
 - a body that is not a JSON OBJECT is 400 `invalid_body` (the real
@@ -29,10 +29,10 @@ is off-contract the moment they disagree):
 - every generation-scoped verb 409s `generation_conflict` on a stale
   generation;
 - play REPLACES the music slot (a fresh `playback_id` each time) and
-  accepts the optional `resumable` boolean (§5 position policy);
+  accepts the optional `resumable` boolean (position policy);
 - `/music/stop` stops music but STAYS connected, and is a 200 no-op when
   idle; `/music/pause`/`/music/resume` during speech are 409
-  `pause_during_speech` (§5 rule 4);
+  `pause_during_speech`;
 - `/music/volume` accepts 0-200, else 400 `percent_out_of_range`;
 - `/voice/status` carries the full snapshot the hub reconciles from,
   including `last_event_seq`, `state_write_ok` and
@@ -63,11 +63,11 @@ class FakeVoiceController:
         self, guild_id: str, channel_id: str = "", *, speech_queue_max: int = 4,
     ) -> None:
         self._guild_id = guild_id
-        # The FIRST-BOOT channel, mirroring the real controller's CHANNEL_ID
-        # (§12.2, reversed 2026-09-17): a default for where a restart
-        # reconnects, never a gate on what `/voice/join` will accept. Kept so
-        # a test can construct the fake already-connected the way a rebooted
-        # controller is; defaulted to "" because nothing checks it any more.
+        # The FIRST-BOOT channel, mirroring the real controller's CHANNEL_ID:
+        # a default for where a restart reconnects, never a gate on what
+        # `/voice/join` will accept. Kept so a test can construct the fake
+        # already-connected the way a rebooted controller is; defaulted to ""
+        # because nothing checks it.
         self._channel_id = channel_id
         self._speech_queue_max = speech_queue_max
         self.voice = "idle"
@@ -94,7 +94,7 @@ class FakeVoiceController:
         #: Every accepted stop, in arrival order.
         self.stops: list[dict[str, Any]] = []
         #: When set, `/music/play` waits on it before answering — the
-        #: "controller is hung mid-play" fault the B14 regression drives.
+        #: "controller is hung mid-play" fault.
         self.play_gate: asyncio.Event | None = None
         self._seq = 0
 
@@ -110,7 +110,7 @@ class FakeVoiceController:
         """A controller restart whose desired-state says `connected`: the
         connection is re-joined under a NEW generation and the player state
         is gone (the process died) — the stale-generation scenario the
-        hub/session reconciliation exists for (§12.1)."""
+        hub/session reconciliation exists for."""
         if self.voice == "connected":
             self._seq += 1
             self.generation = f"gen-{self._seq}"
@@ -131,8 +131,8 @@ class FakeVoiceController:
         return {
             "status": status,
             "position_ms": 0,
-            # §5 position policy: phase 1 restarts a preempted track from 0;
-            # a live source gets none.
+            # Position policy: a preempted track restarts from 0; a live
+            # source gets none.
             "position_policy": "approximate_seek" if self.playing else None,
             "current": None,
         }
@@ -185,18 +185,13 @@ class FakeVoiceController:
         return body
 
     def _check_guild(self, body: dict[str, Any]) -> web.Response | None:
-        """`guild_id` is REQUIRED on every control verb since 2026-09-17, not
-        just on `/voice/join`. One controller process serves several guilds, so
-        the front door has to read the guild out of the body to know which
+        """`guild_id` is REQUIRED on every control verb, not just on
+        `/voice/join`. One controller process serves several guilds, so the
+        front door has to read the guild out of the body to know which
         controller a request is even for — there is no "the" guild to fall
-        back to.
-
-        This fake said `is not None and !=` for one commit after the real
-        controller started requiring it. Nothing caught the drift: this fake is
-        what `tests/contract/` drives, so the contract suite passed while every
-        music verb nora sent to the REAL controller was refused. That is the
-        exact failure this file's docstring warns about — "one of them is
-        off-contract the moment they disagree" — and it shipped."""
+        back to. An absent guild must be refused like a mismatched one: this
+        fake is what `tests/contract/` drives, so accepting it would let the
+        contract suite pass while the REAL controller refuses the call."""
         if body.get("guild_id") is None:
             return self._error(400, "wrong_guild", body)
         if body["guild_id"] != self._guild_id:
@@ -233,9 +228,8 @@ class FakeVoiceController:
             if channel == self.channel_id:
                 return self._ok(body)  # idempotent re-join, same channel
             # Discord allows ONE voice connection per bot per guild, so a join
-            # to a second channel is a real conflict, not a move. Unreachable
-            # until 2026-09-17 — the immutable-channel 400 fired first and hid
-            # it — and `lifecycle.mjs:107` has always answered this way.
+            # to a second channel is a real conflict, not a move
+            # (`lifecycle.mjs` answers the same way).
             return self._error(409, "connected_elsewhere", body)
         self._seq += 1
         self.voice = "connected"
@@ -277,7 +271,7 @@ class FakeVoiceController:
         body, rejection = await self._guarded(request)
         if rejection is not None:
             return rejection
-        # No-op when idle; either way the CONNECTION stays (§3.2).
+        # No-op when idle; either way the CONNECTION stays.
         self.playing = False
         self.paused = False
         self.playback_id = None
@@ -342,14 +336,14 @@ class FakeVoiceController:
                 return self._error(503, "speech_queue_full", body)
             self.speech_queue += 1
             return self._ok(body)
-        # Speech hard-cuts music (§5 rule 1): the music slot is remembered
+        # Speech hard-cuts music: the music slot is remembered
         # as suspended; `finish_speech()` is the drain.
         self.speech_active = True
         return self._ok(body)
 
     async def status(self, request: web.Request) -> web.Response:
-        # The guild rides the QUERY STRING on this GET (multi-guild,
-        # 2026-09-17): one controller process serves several, so an
+        # The guild rides the QUERY STRING on this GET: one controller
+        # process serves several guilds, so an
         # unqualified status could only answer for whichever it picked.
         # Mirrored here because a fake that accepts a shape the real
         # controller refuses teaches nora's client a lie.

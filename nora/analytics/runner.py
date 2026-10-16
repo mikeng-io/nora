@@ -1,5 +1,5 @@
 """One run of the whole Rollup to a watermark, and the build lifecycle around
-it (design/cognition-loop/25-rollup.md §2).
+it.
 
 - `run(build_id, through_ms)` folds every person's presence to the watermark
   (`MobilityRollup.run_once`), then computes every unit's rollups over the
@@ -41,7 +41,7 @@ from nora.infra.sql.rollups import SqlRollupStore
 log = logging.getLogger("nora.analytics.runner")
 
 #: The version of what a run computes. Build 1 is `legacy` (the rows the
-#: wall-clock rollup wrote before migration 0071).
+#: wall-clock rollup wrote).
 CODE_VERSION = "rollup-2a.3"
 
 #: RollupConfig fields that pace or bound the work and cannot change a row.
@@ -133,8 +133,8 @@ class RollupRunner:
         if not failed:
             await self._rollups.advance_build(build_id=build_id, through_ms=through_ms)
         try:
-            # Whatever a projection queued since the last run, from any process
-            # (60 §2): this is the one loop that runs on a clock.
+            # Whatever a projection queued since the last run, from any process:
+            # this is the one loop that runs on a clock.
             await self._rollups.drain_index_queue()
         except Exception:
             log.exception("memory index queue drain failed — retried next run")

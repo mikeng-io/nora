@@ -1,5 +1,4 @@
-"""Character sessions for the entities that are not a room
-(design/self-growth/10-character.md §3).
+"""Character sessions for the entities that are not a room.
 
 **One Dreamer session per (unit, entity) key, woken by that entity's own
 evidence.** A room is `nora.language.culture.CultureAdaptor`. This module holds
@@ -14,8 +13,8 @@ store and revision chain:
   previous account, those messages (newest `batch_limit`, each with its Record
   id and room) and the current culture of each of the unit's rooms, read by
   code from the store. Memory is a tool it MAY call (`ask_memory`,
-  `search_memory`), never a pre-fetch: the account must not depend on Honcho
-  (#736). Its citations are the ids of the messages it was handed.
+  `search_memory`), never a pre-fetch: the account must not depend on Honcho.
+  Its citations are the ids of the messages it was handed.
 - **the unit** (C3a), key `unit_culture_key(unit)`: what the unit is across
   its rooms. Its evidence is new revisions of its rooms' cultures. It is
   handed its previous account and each room's current culture with the
@@ -28,23 +27,21 @@ store and revision chain:
   sends paired with the replies that quoted it, its reaction and edit counts
   and its outcome. It cites episodes people responded to (`response:<id>`,
   outcome `responded` or `silent`) or the replies, and the verb enforces the ECHO
-  RULE (10-tiers §2 rule 4): a revision resting only on her own sends is
-  refused. Descriptive only, no read tool; rendered as `<self>`
-  (design/self-growth/20).
+  RULE: a revision resting only on her own sends is
+  refused. Descriptive only, no read tool; rendered as `<self>`.
 
-**Code at the edges, an agent loop in the middle** (§3.1): code counts the
+**Code at the edges, an agent loop in the middle**: code counts the
 evidence, wakes the key, hands over the previous account and what is new, and
 validates every write; the model decides what to look up and what the account
 now says.
 
-**Lineage, chosen and stated** (§3 C2b, design/cognition-loop/10-tiers.md §3).
-An account is prose with no sections (DEC-184), so it has no section to drop.
-`[lineage]` is off and marked do-not-enable (operator, 2026-10-03; AGENTS.md
-«A boundary is drawn by scope»): the unit is the read boundary, and a person's
-account renders only in that unit's rooms that list them. What would have put
-presence into it is left out instead: a person session holds no presence verb
-(`where_been`, `online_now`), because its account renders in rooms whose
-`location` flags differ, and R-31 is never simplified away.
+**Lineage, chosen and stated.** An account is prose with no sections (DEC-184),
+so it has no section to drop. `[lineage]` is off and marked do-not-enable
+(AGENTS.md «A boundary is drawn by scope»): the unit is the read boundary, and
+a person's account renders only in that unit's rooms that list them. What would
+have put presence into it is left out instead: a person session holds no
+presence verb (`where_been`, `online_now`), because its account renders in
+rooms whose `location` flags differ, and R-31 is never simplified away.
 """
 
 from __future__ import annotations
@@ -108,7 +105,7 @@ CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
 #:
 #: - `ask_memory`, `search_memory`: what Nora has concluded about them, and
 #:   what they said before this batch. A hint the account may weigh, never a
-#:   citation (DEC-249) and never a pre-fetch (§3.3, #736).
+#:   citation (DEC-249) and never a pre-fetch.
 #: - `about`, `lookup_person`, `group_members`: who a name or handle in their
 #:   messages IS, against the room's roster.
 #:
@@ -128,8 +125,7 @@ CHARACTER_PERSON_TOOLS: frozenset[str] = frozenset({
 #: gather) and `commit` two (a `head` and an `append`).
 PERSON_STORE_CALLS_PER_TICK = 4
 
-#: What each session carries, in the order the model reads it
-#: (`design/context-assembly/04-every-occasion.md` §6).
+#: What each session carries, in the order the model reads it.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("about_unit", 5, "turn"),
     ("about_person", 10, "turn"),
@@ -213,8 +209,8 @@ class PersonEvidence:
         """Their messages after `after`, counted ONCE over the unit's whole
         history and thereafter only over what is newer than the last count that
         found none. A listed person who never posts has a watermark that never
-        moves, so without this every tick rescanned every message of the unit's
-        rooms for them. The read is `newest`, which does start at the
+        moves, so without this every tick would rescan every message of the
+        unit's rooms for them. The read is `newest`, which does start at the
         watermark, so a message this count's floor skipped (an id that committed
         out of order, below the head read) still reaches the batch the next
         wake reads. In memory: a restart is one more full count."""
@@ -259,10 +255,10 @@ def _room_cultures(
     with its age, and with `cites` the Record ids it rests on (a unit session
     cites through them). `None` when no room has one yet.
 
-    **An account with no citations is skipped.** One is older than the verb
-    (migration `0098_culture_citations`), so it was written by the envelope
-    fold, which also held the presence reads, and what it says was never
-    checked against a Record row. This block reaches accounts that render in
+    **An account with no citations is skipped.** One written before the verb
+    (migration `0098_culture_citations`) came from the envelope fold, which
+    also held the presence reads, and what it says was never checked against
+    a Record row. This block reaches accounts that render in
     every room of the unit, whose `location` flags differ (R-31); a room's own
     account only ever renders in its room. So a pre-verb account is handed to
     nobody here, and a room is read again once its own fold has revised it."""
@@ -569,7 +565,7 @@ class NoraEvidence:
 
 class CharacterNoraAdaptor(EntitySessions):
     """Her own account in one unit, from how its people responded to her
-    (C3b). Writes only; `<self>` renders it (design/self-growth/20)."""
+    (C3b). Writes only; `<self>` renders it."""
 
     name = CHARACTER_NORA_ADAPTOR_NAME
     key_kind = "entity"

@@ -1,4 +1,4 @@
-"""Is the text-only fp32 load the model? (design/unified-memory/20, PR #21)
+"""Is the text-only fp32 load the model?
 
 The bake-off's fp32 WeMM arms (`results/20261015T123946Z-stage2-wemm-fp32-*`)
 load tencent/WeMM-Embedding-2B through `adapters._load_sentence_transformer`

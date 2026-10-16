@@ -4,9 +4,9 @@ because `nora.analytics` is a second process, and the ONE place it reads
 `Config` (this module, plus `nora.analytics.__main__`, which passes `cfg`
 straight through).
 
-`build_rollup` returns `None` when disabled (DEC-115's own inert-by-default
+`build_rollup` returns `None` when disabled (DEC-115's inert-by-default
 posture) — a process an operator started before turning the feature on
-should stop cleanly, exactly `nora.presence.composition`'s own docstring.
+should stop cleanly, as in `nora.presence.composition`.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def _subjects_from_identity(persons: Persons) -> tuple[Subject, ...]:
     its fixes were recorded under and every circle it is polled in — built
     from identity.toml's life360 memberships (`CircleSpec`'s own source).
 
-    `former_ids_for` (Task 5's reverse lookup) folds in every RETIRED
+    `former_ids_for` folds in every RETIRED
     person_id that once resolved to this subject, so a renamed person's
     fixes stored under BOTH their former and current person_id are read as
     one subject. `subject_id_for` alone cannot do this: by `load_persons`'
@@ -181,10 +181,10 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
 
     engine = create_sql_engine(database_url)
     mobility = SqlMobilityStore(engine, metrics=metrics)
-    # Google-cache-only labelling (2026-08-19 follow-up, design/27 §3.5):
-    # this process READS `geocode_cache` only — it never calls a geocoder
-    # itself. REUSES `engine` for the same reason `nora.app.composition`
-    # reuses its own (a second `create_sql_engine` forks the pool).
+    # Google-cache-only labelling: this process READS `geocode_cache` only —
+    # it never calls a geocoder itself. REUSES `engine` for the same reason
+    # `nora.app.composition` reuses its own (a second `create_sql_engine`
+    # forks the pool).
     geocode_cache = SqlGeocodeCacheStore(engine)
     rollup_config = RollupConfig(
         tick_seconds=analytics.tick_seconds, safety_lag=analytics.safety_lag,

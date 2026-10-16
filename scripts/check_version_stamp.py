@@ -19,18 +19,18 @@ WHAT IT ENFORCES, and the ONE thing it deliberately does not:
    checked while the image is still being made rather than trusted afterwards.
 2. **A claimed version must actually have a manifest.** Asking for V3 and
    shipping nothing to read is the same failure from the other side.
-3. **An UNSTAMPED build is allowed**, and this was a real defect for a day
-   (pre-deploy review, 2026-08-11). The gate used to refuse an empty
-   NORA_VERSION, which broke `docker compose build` and the plain
-   `docker build --network=host` in README — both documented, both suddenly
-   failing, with the requirement recorded only in a comment. That is exactly the
-   shape docker-compose.yml's `network: host` note exists to warn about.
+3. **An UNSTAMPED build is allowed.** Refusing an empty NORA_VERSION would
+   break `docker compose build` and the plain `docker build --network=host` in
+   README, both documented, with the requirement recorded only in a comment.
+   That is the shape docker-compose.yml's `network: host` note exists to warn
+   about.
 
-   Refusing it also bought nothing. The property being defended is «the reported
+   Refusing it would also buy nothing. The property being defended is «the reported
    version cannot disagree with the running code», and an image with no stamp
    REPORTS NOTHING: `version` answers `unavailable`. There is no disagreement
    to prevent. Forcing every config-change rebuild to invent a tag is workflow
-   cost with no safety return, and it made the honest state (an untagged build) unreachable.
+   cost with no safety return, and would make the honest state (an untagged
+   build) unreachable.
 """
 
 from __future__ import annotations

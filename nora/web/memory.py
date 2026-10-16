@@ -1,21 +1,16 @@
-"""GET /app/v1/memory — the memory showcase, user-scoped (operator, 2026-08-19,
-reversing 2026-08-17-nora-web-design.md §2's original "no per-person opt-in/
-opt-out" decision).
+"""GET /app/v1/memory — the memory showcase, user-scoped.
 
 Since DEC-214 a person can have one entry per Nora workspace they belong to,
 each labelled `workspace` (see `build_memory_payload`).
 
-Every whitelisted person's full Honcho representation used to be visible to
-every OTHER whitelisted person — a deliberate v1 choice for a small trusted
-friend group. It is reversed here: a caller now sees ONLY their own
-identity_card + episodes, resolved from the session's own person_id (the
-Next.js proxy route already resolves this via checkSession() for the
-allowlist gate; this endpoint requires the same person_id explicitly rather
+A caller sees ONLY their own identity_card + episodes, resolved from the
+session's own person_id (the Next.js proxy route already resolves this via
+checkSession() for the allowlist gate; this endpoint requires the same person_id explicitly rather
 than re-deriving it, so the web layer stays the one place session identity is
 read). A missing or unrecognized person_id returns an empty list — fail-closed
 (R-5's shape), never every other person's data as a fallback.
 
-UI copy built on top of this must never say "Honcho" (spec §5.2); this module
+UI copy built on top of this must never say "Honcho"; this module
 doesn't render copy, so that rule lives in the frontend, not here.
 """
 
@@ -43,8 +38,7 @@ async def build_memory_payload(
 
     Carries BOTH of Honcho's two distinct reads of the person
     (nora/domain/models.py's `TagContext` docstring is the authority on why
-    these never collapse into one list — read live 2026-08-15, they
-    overlapped in zero items):
+    these never collapse into one list):
 
     - `identity` (`MemoryStore.peer_card`) — IDENTITY claims distilled from
       the person's own output ("Name: Miles Novak", "Aliases: …"). Self-scoped:
@@ -64,9 +58,9 @@ async def build_memory_payload(
     is `workspaces_of` — the workspaces holding a room whose `persons` list
     names them (`nora.app.memory_routing.workspaces_of_person`). Only the
     caller's own model is read here, so no other person's memory is routed
-    through anything. `workspaces_of=None` is the pre-hierarchy caller: one
-    unrouted entry, which a deployment with no `[units]` answers from its one
-    workspace exactly as before (and one with `[units]` refuses).
+    through anything. `workspaces_of=None` is the unrouted caller: one
+    entry, which a deployment with no `[units]` answers from its one workspace
+    (and one with `[units]` refuses).
 
     `MemoryStore.peer_card` returns `[]` both when Honcho is down and when
     it genuinely knows nothing (`ports.py`'s own documented ambiguity) — so

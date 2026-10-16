@@ -1,19 +1,14 @@
 """Boot self-test: prove the wake path can still wake, before a user tries.
 
-Why this exists. On 2026-09-18 14:14:58 this service restarted with BYTE-
-IDENTICAL code, config, model file and threshold to the process before it —
-and never fired again. 24 gates armed over three days, 0 wakes. Every outward
-signal said healthy: the container reported `(healthy)`, `/health` answered
-200, gates armed, frames and bytes counted up, and the model scored every
-80 ms chunk. The score was the one number that would have said otherwise and
-it was computed and discarded.
-
-So the gate is no longer allowed to start without demonstrating, once, that a
-known 「喂 Nora」 crosses its own threshold THROUGH THE PRODUCTION PATH: the
+Why this exists. A gate can be armed, `/health` can answer 200, frames and
+bytes can count up and the model can score every 80 ms chunk while the gate
+never fires. The score is the one number that says otherwise, so the gate
+demonstrates, once at boot, that a known 「喂 Nora」 crosses its own threshold
+THROUGH THE PRODUCTION PATH: the
 sidecar's 20 ms 48 kHz stereo frame shape, `stereo_to_mono`, the 3:1
 `downsample_to_16k`, the real ONNX model, and `WakeGate` itself. A stub
-anywhere would defeat the point — the failure being guarded against was
-invisible precisely because every component looked fine on its own.
+anywhere would defeat the point: every component can look fine on its own
+while the path as a whole cannot wake.
 
 Fail-closed, and the three outcomes stay distinct: PASS means an utterance
 came out, FAIL means the audio was scored and did not wake her, ERROR means
@@ -149,6 +144,5 @@ def log_self_test(result: SelfTestResult) -> None:
         log.info(*line)
     else:
         # FAIL and ERROR are both operator-facing: the gate is up and cannot
-        # be trusted to wake, which is the state that went unnoticed for
-        # three days.
+        # be trusted to wake.
         log.error(*line)

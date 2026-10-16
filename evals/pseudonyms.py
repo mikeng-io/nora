@@ -1,9 +1,9 @@
-"""A pseudonymised case, resolved against the real deployment it runs on (#776).
+"""A pseudonymised case, resolved against the real deployment it runs on.
 
-The scrub (`0bd34346d`) rewrote every real identifier in the tree to a
-pseudonym, the eval corpora included: a case's `snapshot.conversation_id`, the
+The scrub rewrote every real identifier in the tree to a pseudonym, the eval
+corpora included: a case's `snapshot.conversation_id`, the
 person it speaks as, the names in its input. The deployment a case runs
-against was not rewritten: the eval source `nora_eval` is a clone of
+against is not rewritten: the eval source `nora_eval` is a clone of
 production, and the subject composes with the deployment's own `policy.toml`
 and `identity.toml`. So a case names a room the policy does not, and
 `nora.subject.obtain._conversation_for` refuses it, as designed.
@@ -16,8 +16,8 @@ MEMORY when it is loaded, before the harness reads any of it, and nothing here
 ever prints a rule.
 
 Fail-closed. With the variable unset or the file absent, nothing is translated
-and a pseudonymised anchor refuses exactly as before, its refusal now naming
-this variable. A malformed map is refused, never half-read.
+and a pseudonymised anchor refuses, its refusal naming this variable. A malformed map is refused,
+never half-read.
 """
 
 from __future__ import annotations

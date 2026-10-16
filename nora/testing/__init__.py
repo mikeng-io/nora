@@ -4,10 +4,9 @@ This is the package `tests/` and `evals/` are meant to share, so there is
 exactly one definition of each fake. `evals/harness.py` and
 `tests/integration/harness.py` both build their pipeline from
 `FakeRecordStore`/`FakeMemoryStore`/`FakeAdapter` plus `ScriptedTurn`/
-`FakeAgentRunner`/`group_event` from here — the rewiring `evals/` needing
-`tests/` used to force. On the `tests/` side it is already used beyond
-`tests/contract/` — `tests/test_health.py` imports `FakeRecordStore` from
-here too.
+`FakeAgentRunner`/`group_event` from here. `tests/` outside
+`tests/contract/` imports from here too (`tests/test_health.py` takes
+`FakeRecordStore`).
 
 Every fake that is a second implementation of one of `nora/domain/ports.py`'s
 ports is bound by a contract suite in `tests/contract/` that it and the
@@ -33,7 +32,7 @@ drives `FakeSocialSubjectIndex` (`SocialSubjectIndex`, bound to
 fake without one is a project rule violation, not a shortcut.
 
 `FakeComputeJobStore` is the same rule applied to `nora.domain.compute`'s own
-port (`ComputeJobStore`, Nora Compute spec §4) rather than one of
+port (`ComputeJobStore`) rather than one of
 `nora/domain/ports.py`'s — bound to
 `nora.infra.sql.compute_jobs.SqlComputeJobStore` by
 `tests/contract/test_compute_job_store_contract.py`.
@@ -49,9 +48,9 @@ to `nora.infra.sql.culture.SqlCultureStore` by
 `tests/contract/test_culture_store_contract.py`. Its chain is parent links,
 never insertion order, and it records every key `head` was asked for.
 
-`InMemorySummonsLedger` is the same rule for the public summons ledger
-(design/instagram-adoption/19), bound to `nora.infra.sql.summons.
-SqlSummonsLedger` by `tests/contract/test_summons_ledger_contract.py`. Its
+`InMemorySummonsLedger` is the same rule for the public summons ledger,
+bound to
+`nora.infra.sql.summons.SqlSummonsLedger` by `tests/contract/test_summons_ledger_contract.py`. Its
 claim is atomic within one event loop, as the SQL one is across processes.
 
 `InMemoryNoteStore` is the same rule for the note tier, bound to
@@ -82,8 +81,8 @@ That exemption is scoped to the methods it names, and does NOT extend to
 `FakeAdapter.react`: `react()` IS on `PlatformAdapter` (unlike `parse`/
 `listen`'s shape), so it is a genuine second implementation and is bound to
 `SignalAdapter.react` by `tests/contract/test_reaction_contract.py`, one suite
-parametrized over both — nor to `FakeAdapter.send`, which grew `mentions`/
-`preview` with the port and is bound to `SignalAdapter.send` by
+parametrized over both — nor to `FakeAdapter.send`, which takes `mentions`/
+`preview` like the port and is bound to `SignalAdapter.send` by
 `tests/contract/test_send_contract.py`.
 `ScriptedTurn`/`FakeAgentRunner` satisfy `nora.engagement.stages.invoke.
 AgentRunner`, a stage-level `Protocol`, not one of `nora/domain/ports.py`'s

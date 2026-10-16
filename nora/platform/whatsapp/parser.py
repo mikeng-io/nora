@@ -1,8 +1,7 @@
-"""whatsapp-bridge SSE event → NormalizedMessage
-(design/whatsapp-adoption/03-transport-contract.md).
+"""whatsapp-bridge SSE event → NormalizedMessage.
 
 The bridge owns the WhatsApp wire; this module owns the normalization into
-Nora's vocabulary, and `design/whatsapp-adoption/03` is the only place the
+Nora's vocabulary; the bridge's transport contract is the only place the
 shapes are defined — a drift here is a contract-test failure, not a judgment
 call. Field names below (`chat_jid`, `sender_phone`, `mentioned`, `quoted`,
 `media`, `timestamp_ms`) are the bridge's, verbatim.
@@ -16,15 +15,13 @@ and turns carrying neither text nor media.
 An EDIT arrives as an ordinary `message` event whose `edit_of` names the
 original stanza, with `text`/`media` describing the NEW content. It becomes
 `NormalizedMessage.edit_of = EditTarget(message_id=<that stanza id>)`, and
-ingest records it beside the message it edits rather than as a row of its own
-(design/message-edits/03 §1). `message_id` stays the edit's own stanza id —
+ingest records it beside the message it edits rather than as a row of its own.
+`message_id` stays the edit's own stanza id —
 the original's is what `edit_of` names.
 
 A `reaction` or a `delete` (REVOKE) event becomes a `Touch` on the message
 its `target_id` names (`_parse_touch`), recorded beside that message and
-never as a message of its own (design/cognition-loop/20-observe.md §1). The
-bridge emits both since 2026-09-28; before, both fell through its empty-turn
-drop.
+never as a message of its own.
 
 Never raises: one malformed event is logged and skipped, mirroring the
 sibling parsers — a bad turn must never kill the stream behind it.

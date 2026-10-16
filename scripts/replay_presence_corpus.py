@@ -1,6 +1,6 @@
 """Replay the LIVE presence corpus through the CURRENT rollup code and print
-proxy accuracy metrics per subject — the instrument behind design/27 §1.4's
-before/after table.
+proxy accuracy metrics per subject, for a before/after comparison of rollup
+code.
 
 Read-only: it reads `presence_fixes` and derives into an in-memory store; it
 writes nothing to the database. Run it on the deploy host (or with a tunnel),
@@ -8,8 +8,7 @@ once on the code you want to compare against and once on the change:
 
     uv run python scripts/replay_presence_corpus.py [--days 15] [--wander 400|none]
 
-Since step 2 (design/cognition-loop/25-rollup.md §2) the rollup is a fold
-over the Record — each person's fixes and the collector's successful polls,
+The rollup is a fold over the Record — each person's fixes and the collector's successful polls,
 one event at a time, on the Record's own clock — so how the replay is cut
 into ticks cannot change what it computes (`tests/unit/test_rollup_
 determinism.py` is the gate): it folds the corpus in one run. Metrics, all

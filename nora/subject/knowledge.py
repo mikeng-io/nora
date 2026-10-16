@@ -1,17 +1,12 @@
 """What Nora KNOWS when a case starts — written into her real stores.
 
-The seam `design/evaluation/01-boundaries.md` §3 calls *stores*, in the
-operator's words: the data store, the state store and the fake store are
-things you configure BEHIND her. A case saying what she knows is stating
-INPUT. It is not substituting a collaborator, and the difference is the whole
-rebuild:
-
-- the old seeding built `FakeRecordStore`, `FakeMemoryStore` and
-  `InMemoryNoteStore` and handed them to a hand-assembled pipeline — so what
-  the suite measured was a graph nothing deploys;
-- this writes the same rows into the SAME Postgres the subject was composed
-  against, through the same store classes production runs, and then gets out
-  of the way.
+The seam this module covers is the *stores*: the data store, the state store
+and the fake store are things you configure BEHIND her. A case saying what she
+knows is stating INPUT. It is not substituting a collaborator: seeding fakes
+(`FakeRecordStore`, `FakeMemoryStore`, `InMemoryNoteStore`) into a
+hand-assembled pipeline would measure a graph nothing deploys. This writes the
+same rows into the SAME Postgres the subject was composed against, through the
+same store classes production runs, and then gets out of the way.
 
 Nothing here is reachable from the eval layer as a store. `know()` takes a
 `Subject` and returns `None`; there is no object to pass anywhere.
@@ -62,11 +57,10 @@ _KNOWN_NAME = "Miles"
 class Message:
     """One prior room message.
 
-    `row_id` and `at_ms` exist because some corpora CITE their own messages:
-    the (deleted, DEC-277) note-candidates cases asserted that a staged candidate's
-    `message_ids` contained a particular row. A case that says "note 101" and a store that
-    assigns ids by insertion order are two different facts, and the second
-    cannot be asserted against.
+    `row_id` and `at_ms` exist because some corpora CITE their own messages by
+    row id. A case that says "message 101" and a store that assigns ids by
+    insertion order are two different facts, and the second cannot be asserted
+    against.
 
     `person` is separate from `name` for the reason `identity.toml` exists:
     the display name is what the platform reports and the person id is who
@@ -90,11 +84,10 @@ class Message:
     #: store assigns ids, and `know()` returns the mapping so a grader can
     #: translate a citation into the row it actually landed on.
     #:
-    #: Forcing it was tried and rejected within the hour. A case that says
-    #: "message 101" against a store that assigned 1 has two bad options —
-    #: raise, which makes the corpus unrunnable, or renumber, which checks the
-    #: citation against whatever happened to land in that slot. Translating is
-    #: the third.
+    #: Forcing it is not an option: a case that says "message 101" against a
+    #: store that assigned 1 would have to either raise, which makes the corpus
+    #: unrunnable, or renumber, which checks the citation against whatever
+    #: happened to land in that slot. Translating is the third.
     label: int | str | None = None
     #: When it was said. `None` spaces the window a minute apart ending one
     #: minute before `now_ms`, which is the default every corpus but this one
@@ -109,20 +102,16 @@ class Message:
     #: what matters is that `media_join.enrich` has something to join and the
     #: renderer does not drop the row as an empty body.
     #:
-    #: Restored by audit: `media: true` existed on five note-candidates rows (deleted corpus),
-    #: was dropped in the move, and the pin was GREEN over it — it compares body
-    #: and id and nothing else. `n3_media_and_stickers_only` is a case named for
-    #: stickers whose stickers had been removed.
+    #: A pin that compares only body and id cannot see this flag, so a case
+    #: named for stickers needs it set to actually carry any.
     media: bool = False
 
     #: HER OWN speech. Not `name="Nora"` — `nora.agent.prefill._speaker` reads
     #: the FLAG, so a row merely named Nora renders as an ordinary member who
     #: happens to be called that. A different input, and the wrong one.
     #:
-    #: Needed by any case about "did she already say this", which could not be
-    #: written at all before: her own speech was unseedable. Credit
-    #: emperor-60, who found it while building the duplicate-reminder case and
-    #: landed the matching flag on `nora.testing.fakes.transcript_rows`.
+    #: Needed by any case about "did she already say this". The matching flag
+    #: is on `nora.testing.fakes.transcript_rows`.
     is_nora: bool = False
 
 
@@ -131,16 +120,14 @@ class NoteSeed:
     """One note in her index, as the note tier's own fields.
 
     `id` is `None` for a hand-authored seed (every existing test fixture) —
-    `know()` then lets `SqlNoteStore.create` assign one, as it always has.
+    `know()` then lets `SqlNoteStore.create` assign one.
     A seed built FROM a real snapshot (`nora.subject.sandbox._note_seed`)
     states its SOURCE id here, and `know()` inserts the row under it
     instead: a reminder seeded alongside keeps the SAME source `note_id` in
-    its payload (`_reminder_seed` copies `payload` verbatim, unchanged), and
+    its payload (`_reminder_seed` copies `payload` verbatim), and
     `evals.backbone`'s title -> id resolution is built from the source
-    snapshot too — so without this, seeding assigned the note a FRESH id
-    while every reminder and every resolution kept the OLD one, and nothing
-    in the sandbox agreed on what a note's id even was (issue #158, found by
-    review before this ever ran live).
+    snapshot too — so a fresh id would disagree with every reminder and every
+    resolution about what a note's id is.
     """
 
     title: str
@@ -183,8 +170,8 @@ class ReminderSeed:
     #: waiting on it, which is part of what a turn reads.
     created_seconds_ago: float = 0.0
     requester_person_id: str = _KNOWN_PERSON
-    #: `kind` names WHAT the row is (DEC-139). `"reminder"` is the whole of
-    #: the pre-DEC-139 table; `"proactive"` is the row a proactive act fires.
+    #: `kind` names WHAT the row is (DEC-139): `"reminder"`, or `"proactive"`,
+    #: the row a proactive act fires.
     kind: str = "reminder"
     payload: Mapping[str, str] | None = None
 
@@ -207,15 +194,14 @@ class Written:
 class RoomSeed:
     """One OTHER room of the same workspace, with what it knows.
 
-    The proactive decide pass (deleted 2026-10-03, DEC-277) judged a WORKSPACE
-    and picked which of its rooms to stand in, so a case about it named more than one room and
-    keys its standing
-    per room. A single-room `Knowledge` cannot state that, and a pass given an
-    empty workspace finds nothing due, writes nothing, and answers
-    `nothing_found` — which grades as a PASS for every case expecting none.
+    A workspace-wide pass picks which of the workspace's rooms to stand in, so
+    a case about it names more than one room and keys its standing per room. A
+    single-room `Knowledge` cannot state that, and a pass given an empty
+    workspace finds nothing due, writes nothing, and answers `nothing_found` —
+    which grades as a PASS for every case expecting none.
 
-    `home` is the workspace's home room (`policy.toml`'s `home_room = true`,
-    design/dreamer-agent-loop/39 D2): the operator's opt-in, and the room a
+    `home` is the workspace's home room (`policy.toml`'s `home_room = true`):
+    the operator's opt-in, and the room a
     workspace-keyed row fires into. Exactly one per workspace; two is a startup
     error rather than a guess.
     """
@@ -227,7 +213,7 @@ class RoomSeed:
     transcript: tuple[Message, ...] = ()
     standing: str | None = None
     #: How long ago the standing was written. It renders as an AGE, and how
-    #: stale a position is was part of what the decide pass judged.
+    #: stale a position is can be part of what a case judges.
     standing_age_hours: float | None = None
 
 
@@ -261,12 +247,6 @@ class Knowledge:
     #: `representation` reads back. So this is not a substitution: it is the
     #: write side of the tier whose read side the turn uses.
     #:
-    #: THIS WAS WRONGLY DECLARED IMPOSSIBLE. Two participation cases were
-    #: refused on the claim that "Honcho DERIVES a conclusion from messages, so
-    #: there is no way to state one without substituting the client" — an
-    #: absence asserted without reading `nora/infra/honcho/client.py:489`, which
-    #: has said the opposite since the tool was built.
-    #:
     #: The key is the peer id, which IS the person id
     #: (`PersonRef.honcho_peer_id`). A key that is no person seeds a conclusion
     #: nothing can read: `representation` looks up `target or peer_id` and an
@@ -281,11 +261,10 @@ class Knowledge:
     #: Seconds between consecutive messages, oldest first, ending one step
     #: before `now_ms`.
     #:
-    #: STATED rather than defaulted-and-forgotten, because the rendered prompt
-    #: shows an AGE per row and the gate is asked whether the room has moved
-    #: past something. The two old drivers used different steps — 60s for
-    #: participation, 180s for the gate — and neither corpus said so, so the
-    #: ages the labels were assigned against lived in the driver.
+    #: STATED rather than defaulted, because the rendered prompt shows an AGE
+    #: per row and the gate is asked whether the room has moved past something.
+    #: Different corpora want different steps (60s, 180s), so the ages the
+    #: labels were assigned against belong to the corpus, not the driver.
     spacing_seconds: int = 60
     notes: tuple[NoteSeed, ...] = field(default_factory=tuple)
 
@@ -297,14 +276,11 @@ class Knowledge:
 
     #: The room's CULTURE ACCOUNT — how this room TALKS, as one revision body.
     #:
-    #: ONE BODY, NOT A CHAIN, and that is the whole shape of the decision. The
-    #: tier's genuine contribution is the ORDER of its revisions (DEC-183,
-    #: `nora/infra/sql/schema.py`'s `CULTURE_REVISION` note): a single account
-    #: is a snapshot of a model that had no memory of its last answer, and
-    #: `parent_revision_id` is what makes the sequence an evolution. Nothing
-    #: READS the chain on a turn, though — `CultureAdaptor.inputs` renders
-    #: `head.body` and nothing else (`nora/language/culture.py:515`) — so a
-    #: case stating a chain would be stating input no entry point can observe.
+    #: ONE BODY, NOT A CHAIN. The tier's genuine contribution is the ORDER of
+    #: its revisions (DEC-183, `nora/infra/sql/schema.py`'s `CULTURE_REVISION`
+    #: note), but nothing READS the chain on a turn — `CultureAdaptor.inputs`
+    #: renders `head.body` and nothing else — so a case stating a chain would
+    #: be stating input no entry point can observe.
     #: A seed is one account, written through `SqlCultureStore.append`, which
     #: is production's own write lane and moves the head in the same
     #: transaction.
@@ -314,10 +290,9 @@ class Knowledge:
     #: mistake `nora.domain.culture.Culture` names in as many words. It is safe
     #: to key it here rather than require it the way `snapshot()` does, because
     #: `build_config` (obtain.py) RESOLVES the policy it writes through the real
-    #: parser and refuses unless `Conversation.primary_id == spec.room[1]` —
-    #: found NOT to hold, live, for a substring check that only proved the
-    #: room's id appeared SOMEWHERE in the file, possibly on a different
-    #: entry's conversation (fourth review pass, 2026-09-21). A key that matched
+    #: parser and refuses unless `Conversation.primary_id == spec.room[1]`; a
+    #: substring check would only prove the room's id appears SOMEWHERE in the
+    #: file, possibly on a different entry's conversation. A key that matched
     #: nothing, or matched the wrong room, would read exactly like a room that
     #: had never been folded, or silently key under a real other room, which is
     #: why this is pinned to a resolved refusal rather than to a convention.
@@ -328,11 +303,11 @@ class Knowledge:
     unit_culture: AccountSeed | None = None
 
     #: Her own account in the subject's unit (`nora_character_key`), what
-    #: `<self>` renders (design/self-growth/20).
+    #: `<self>` renders.
     nora_account: AccountSeed | None = None
 
     #: Her active lessons in the subject's unit, oldest first, what `<lessons>`
-    #: renders under `[lessons] render` (design/self-growth/40, L5). Seeded as
+    #: renders under `[lessons] render`. Seeded as
     #: lessons written at the instant: the block renders no age.
     lessons: tuple[str, ...] = ()
 
@@ -434,7 +409,7 @@ async def deliver(
     inbound path, exactly as a platform adapter's `listen()` loop does.
 
     NOT `arrive()` first: ingest's audit stage appends the row itself
-    (`nora/ingest/stages/audit.py:33`), so writing it here as well would put the
+    (`nora/ingest/stages/audit.py`), so writing it here as well would put the
     message in the transcript TWICE — once as history and once as itself — and
     the turn would read a room that had said everything twice. `arrive()` is
     for the paths that bypass ingest, which is why both exist.
@@ -452,7 +427,7 @@ async def deliver(
     a mention in a parallel array rather than in the body
     (`NormalizedMessage.mentions`), and `MentionPolicy` matches that array
     against the registry's `self_aliases()`. With the deployment's text
-    trigger off (2026-09-01), a mention or a reply is how she is engaged at
+    trigger off, a mention or a reply is how she is engaged at
     all, so a case that expects a reply states one. Refused when the registry
     answers to no id — a mention of nobody engages nothing and would read as
     silence.
@@ -493,7 +468,7 @@ class Spawned:
 
     Wraps `spawn` on THIS subject's own `BackgroundTasks` instance (public
     surface, the method production calls), so nothing is added to `nora.app`
-    (`design/evaluation/01-boundaries.md` §5(2)) and no other subject is touched.
+    and no other subject is touched.
     `close()` puts it back.
     """
 
@@ -530,17 +505,13 @@ async def settle(
     block on one room. So an entry point that drives the deployment's real
     inbound path has to wait for what that path fired.
 
-    **It waits on the TASKS the case spawned, not on a count.** The count
-    (`len(deps.background)` against the count read before the line) was this
-    function until 2026-10-15, and it broke the moment a task the graph was
-    already carrying finished mid-turn: the presence pre-flight, once the
-    full-restore sandbox gave its rooms members (`nora.subject.sandbox_roster`),
-    was still reading them when the line arrived, finished during the turn, and
-    the count fell back to the baseline with the turn still running. Three of
-    eight `conversational_recall` turns were then torn down mid-model-call and
-    graded as silence. Endless loops composition spawns (`ComputeJobPoller`,
-    the heartbeat) are not in `spawned`, so they never hold
-    this open; that was the count's reason for a baseline, kept.
+    **It waits on the TASKS the case spawned, not on a count.** A count of
+    `len(deps.background)` against a baseline breaks when a task the graph was
+    already carrying (such as the presence pre-flight) finishes mid-turn: the
+    count falls back to the baseline with the turn still running, and the turn
+    is torn down mid-model-call and graded as silence. Endless loops
+    composition spawns (`ComputeJobPoller`, the heartbeat) are not in
+    `spawned`, so they never hold this open.
     """
     try:
         deadline = asyncio.get_running_loop().time() + timeout_seconds
@@ -587,7 +558,7 @@ async def heard(
     """What the ROOM HEARD since `after_id`: her own rows, as
     `(body, delivery_status)`.
 
-    The observable is the audit ROW, not the wire. `nora/agent/guards.py:528`
+    The observable is the audit ROW, not the wire. `nora/agent/guards.py`
     appends her reply RECORD-FIRST — before any send, `delivery_status=PENDING`
     — and a send that raises is caught there. So with no platform daemon in
     front of a case the row is exactly what production would have written, and
@@ -639,8 +610,7 @@ async def _seed_note_with_id(
     engine: AsyncEngine, *, note: Note, body: str, established_by: str, written_at: int,
 ) -> None:
     """Insert ONE note and its first revision under `note.id`, exactly as
-    seeded — a SEED-ONLY primitive, independent of `nora.infra.sql.notes`
-    (owned by another session; not to be changed for this).
+    seeded — a SEED-ONLY primitive, independent of `nora.infra.sql.notes`.
 
     `SqlNoteStore.create` is the production write path and always assigns a
     fresh `uuid4`; it takes no id parameter, reasonably, since production
@@ -649,13 +619,12 @@ async def _seed_note_with_id(
     seeded alongside keeps in its payload (`_reminder_seed` copies `payload`
     verbatim). Assigning a different id here would leave the sandbox
     internally inconsistent: the reminder and the note would disagree about
-    what got inserted (issue #158, found by review).
+    what got inserted.
 
     Same two inserts, same columns, as `SqlNoteStore._create_on_conn` (there
     is one schema; this does not invent a second one) — kept as an
     independent statement here rather than a call into that (private)
-    method, so this file's seeding path does not couple to another
-    session's internals.
+    method, so this file's seeding path does not couple to its internals.
 
     `note`'s own `__post_init__` (`nora.domain.notes`) has already run by
     construction — it is a real `Note`, not a bag of fields — so the same
@@ -683,8 +652,7 @@ async def _seed_note_with_id(
             parent_revision_id=None, written_at=written_at,
             established_by=established_by, instruction_sha256=None, model=None,
         ))
-        # The sandbox's index holds what the case seeds, as production's would
-        # (60 §0.9).
+        # The sandbox's index holds what the case seeds, as production's would.
         await memory_index.project(conn, "note", note.id)
 
 
@@ -702,15 +670,14 @@ async def know(
     with: the window is laid down ending one step before it, so the judged line
     is strictly the newest row `recent`'s `(ts, id)` sort sees. Two independent
     reads of the clock a few lines apart is how a judged line ends up sorting
-    above the window it is read against (issue #213).
+    above the window it is read against.
 
     `leave_room_for_arrival=False` ends the window AT `now_ms` instead, for an
     entry point where the window IS the input and nothing arrives after it —
     the gate. It is not cosmetic: the prompt renders an AGE per row, and with
     the step reserved anyway the newest line reads "3m ago" when it had in fact
     just landed. The gate is asked whether the room has moved past something,
-    so the age of its last line is part of the question. Measured against the
-    old driver's prompt, which ended at "just now".
+    so the age of its last line is part of the question.
 
     Ages, not absolute times, are what reach the model
     (`nora.agent.prefill._age`), so the base has to be a REAL recent instant. A
@@ -730,7 +697,7 @@ async def know(
         sender_id, person_id = speakers[msg.name]
         if msg.person != "":
             person_id = msg.person
-        # Production projects names by platform account, not person_id (#540).
+        # Production projects names by platform account, not person_id.
         # Use the loaded roster; never copy source account ids into a fixture.
         ids = (subject.deps.persons.platform_ids(
                    platform, subject.deps.persons.subject_id_for(person_id))
@@ -863,7 +830,7 @@ async def know(
             notes = SqlNoteStore(engine)
             for n, note in enumerate(knowledge.notes):
                 if note.id is not None:
-                    # SOURCE ID PRESERVED (issue #158): `NoteSeed.id`'s own
+                    # SOURCE ID PRESERVED: `NoteSeed.id`'s own
                     # docstring. `SqlNoteStore.create` always assigns a FRESH
                     # uuid4 and has no parameter to override it — reasonably,
                     # it is not a seeding API — so a note seeded FROM a real
@@ -915,10 +882,8 @@ async def know(
             # definition of the tier: `Knowledge.reminders` states what the
             # room was still WAITING on, and a row that had already fired was
             # not something it was waiting on.
-            # NOT `rows`: that name is already the message-id map this
-            # function returns as `Written.rows`, and shadowing it made
-            # `Sandboxed.rows` come back as a store. Caught by
-            # `test_the_returned_map_translates_a_source_row_id_into_the_copy`.
+            # NOT `rows`: that name is the message-id map this function returns
+            # as `Written.rows`, and shadowing it would return a store there.
             reminder_store = SqlReminderStore(engine)
             base = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
             for seed in knowledge.reminders:
@@ -975,8 +940,7 @@ async def know(
                 lesson_store = SqlLessonStore(engine)
                 # STAGGERED by a millisecond each, oldest first: the block is
                 # ordered by `created_at`, and a shared one falls back to a
-                # random UUID, so the order would change draw to draw (review
-                # of #766).
+                # random UUID, so the order would change draw to draw.
                 for i, body in enumerate(knowledge.lessons):
                     await lesson_store.create(
                         unit=subject.unit, body=body, citations=("case-seed",),

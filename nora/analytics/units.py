@@ -1,5 +1,4 @@
-"""The unit rollups and the stimuli they raise
-(design/cognition-loop/25-rollup.md §3-§4, 20-observe.md §3).
+"""The unit rollups and the stimuli they raise.
 
 `UnitRollups.run` computes, for each unit, its co-locations, outings,
 daybooks, ties and responses from the Record at a watermark and the presence
@@ -10,8 +9,7 @@ every unit on every run, so the rows at a watermark are one answer however
 the runs fell (`tests/integration/test_rollup_determinism.py`).
 
 It then raises the Rollup's stimuli into the per-unit `stimulus` table the
-wake evaluator reads (20 §3: «the Rollup raises them from the analytics
-process into nora»):
+wake evaluator reads:
 
 - **co-location start** — a co-location still open on the Record's clock
   that began within `stimulus_horizon_seconds`;
@@ -21,7 +19,7 @@ process into nora»):
 - **deviation** — a newly closed stay the rhythm scores anomalous, or
   `deviation_silence_days` consecutive daybooks silent in every room and
   never at home, raised ONLY when every source it rests on is proved healthy
-  for the span (D3, 20 §3): the collector polled the person's circles
+  for the span: the collector polled the person's circles
   throughout (`polls_healthy`) and, for silence, every platform of the
   unit's rooms was up throughout (`adapter_up`). Missing data from an outage
   is not absence of activity (R-27).
@@ -77,7 +75,7 @@ class UnitConfig:
     colocation_min_overlap_seconds: float = 600.0
     response_window_seconds: float = 3600.0
     #: An unquoted member message this soon after her send, mentioning no one
-    #: else, answers it; later it must name her (`FOLLOW_NAMES`). 25 §3.
+    #: else, answers it; later it must name her (`FOLLOW_NAMES`).
     follow_window_seconds: float = FOLLOW_WINDOW_SECONDS
     follow_names: tuple[str, ...] = FOLLOW_NAMES
     stimulus_horizon_seconds: float = 3600.0

@@ -1,4 +1,4 @@
-"""Run the doctrine check (design/self-growth/40 §7 row L3) over its labelled set
+"""Run the doctrine check over its labelled set
 against a live model, and print a confusion table.
 
     ssh -f -N -L 20128:127.0.0.1:20128 norty

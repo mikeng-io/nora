@@ -7,9 +7,8 @@ reads `[speech.wake]` and the shared `[speech.stt]` endpoint/language/timeout
 once at startup. A missing file or section falls back to the code defaults
 in `service.Config`, so a fresh clone still boots healthy-but-idle.
 
-Deliberately no env override for these keys: two sources gave two answers
-(compose said `sensevoice`, the example file said `noise-detection`). What
-stays in env is deployment identity and bind addresses — see `__main__`.
+Deliberately no env override for these keys: two sources can give two answers.
+What stays in env is deployment identity and bind addresses — see `__main__`.
 
 stdlib only (tomllib, py>=3.11): this container does not import nora.
 """
@@ -30,7 +29,7 @@ def load_sections(path: Path = DEFAULT_PATH) -> tuple[dict[str, Any], dict[str, 
     """Return (`[speech.wake]`, `[speech.stt]`) as plain dicts; empty when absent.
 
     Raises on a malformed file: a broken config.toml must not be silently
-    replaced by defaults (that is how the Sep-15 model shipped unnoticed).
+    replaced by defaults.
     """
     if not path.is_file():
         log.warning("config.toml not found at %s — using built-in defaults", path)

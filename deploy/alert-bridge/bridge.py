@@ -1,11 +1,9 @@
 """Alertmanager webhook -> a Discord channel. Nothing else.
 
-**Why it is its own container rather than an endpoint on Nora.** Nora already
-holds a Discord connection and already runs an aiohttp app, so adding `/alerts`
-there would have been three lines. It would also have made the single most
-important alert this stack can send — "Nora is down" — depend on Nora being up.
-An alerting path that shares a failure domain with the thing it watches is
-decoration.
+**Why it is its own container rather than an endpoint on Nora.** An endpoint on
+Nora would make the most important alert this stack sends — "Nora is down" —
+depend on Nora being up. An alerting path that shares a failure domain with the
+thing it watches is decoration.
 
 **Discord's REST API, not the Gateway and not a webhook.** The Gateway is a
 persistent connection with a reconnect state machine, which is a lot of moving
@@ -128,15 +126,9 @@ def send(message: str) -> bool:
     except (urllib.error.URLError, OSError) as exc:
         log.error("discord unreachable: %s", exc)
         return False
-    # A SUCCESS LINE, and it is not noise. Every other path here logs, so
-    # silence meant both "delivered" and "the webhook never arrived" — which
-    # made the one question worth asking of this container, «did the alert get
-    # out», unanswerable from its own log. Found by the deploy read-back: the
-    # probe alert reached Discord and the log had nothing to say about it.
-    #
-    # It is not the heartbeat mistake one service over: Alertmanager already
-    # groups and throttles, so this is one line per delivered notification —
-    # single digits a day on a bad day, zero on a good one.
+    # Every other path logs, so without a success line silence would mean both
+    # "delivered" and "the webhook never arrived". Alertmanager already groups
+    # and throttles, so this is one line per delivered notification.
     log.info("delivered %d chars to channel %s", len(message), CHANNEL)
     return True
 
@@ -175,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(b"ok")
 
     def log_message(self, *_args: object) -> None:
-        # aiohttp's access log was 53% of Nora's own log file. Not repeating it.
+        # Per-request access logging is suppressed: it would drown the delivery lines.
         return
 
 

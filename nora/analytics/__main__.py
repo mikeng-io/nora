@@ -4,9 +4,9 @@ The Rollup daemon — the same codebase as `python -m nora`, a DIFFERENT
 command and a SEPARATE process. Mirrors `nora.presence.__main__`: load
 config, build the object graph through `nora.analytics.composition.
 build_rollup`, serve a metrics/health endpoint, and every tick run the whole
-Rollup on the current build to the watermark `now - grace_seconds`
-(design/cognition-loop/25-rollup.md §2). On start, and whenever the pointer
-names a build of other code or parameters, it rebuilds first.
+Rollup on the current build to the watermark `now - grace_seconds`. On start,
+and whenever the pointer names a build of other code or parameters, it
+rebuilds first.
 
 `python -m nora.analytics rebuild` builds the Rollup again from the Record
 into a new build, switches the pointer to it, and exits.
@@ -83,7 +83,7 @@ async def _tick(
     nora.analytics rebuild`) may have switched the pointer, and a build of
     other code or parameters is rebuilt, not extended.
 
-    Spec §5's isolation requirement: one subject's failure neither aborts
+    Isolation: one subject's failure neither aborts
     the sweep nor advances THAT subject's fold (its commit never happened),
     so it retries next tick — every other subject still gets processed, and
     the daemon (and its `/metrics` endpoint) stays up."""

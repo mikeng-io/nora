@@ -1,4 +1,4 @@
-"""`SubagentsContextReader`: the `<subagents>` block's one read (design/subagent §7).
+"""`SubagentsContextReader`: the `<subagents>` block's one read.
 
 Nora must know what her sub-agents are doing and did without reading their execution
 history, and not through Standing (a model's fold, which drops open plans). So the block is

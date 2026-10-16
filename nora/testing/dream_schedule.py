@@ -2,9 +2,9 @@
 `nora.infra.sql.dream_schedule.SqlDreamScheduleClock`, bound to it by
 `tests/contract/test_dream_schedule_clock_contract.py`.
 
-**The irony is deliberate and worth stating.** The defect the SQL store exists
-to fix was a clock kept in a process-local dict; this class is that dict again,
-on purpose, for tests that must not need Postgres. It is a legitimate double
+**The irony is deliberate.** The SQL store exists because a clock kept in a
+process-local dict is lost on restart; this class is that dict, on purpose, for
+tests that must not need Postgres. It is a legitimate double
 precisely because it is never wired into `composition.py` — the architecture
 test that keeps `nora.testing` out of the production graph is what makes the
 distinction enforceable rather than a naming convention.

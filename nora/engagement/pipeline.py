@@ -1,6 +1,6 @@
 """`EngagementPipeline` — runs admission → context → doctrine → tools →
 invoke → deliver → feedback for a tag `nora.ingest` already decided to
-engage (spec §4.4). A readable table of contents, not a decision-maker:
+engage. A readable table of contents, not a decision-maker:
 every branch belongs to the stage that owns it (`nora.engagement.stages.*`)
 or, for doctrine/tools, to the collaborator it delegates straight to
 (`DoctrineStore.get`, `nora.agent.registry.ToolRegistry.build`) — neither is
@@ -31,19 +31,18 @@ The outer `except BaseException` (not `Exception`) is what makes R-5's
 silence guarantee unconditional — including on a fault that is not an
 `Exception` at all (e.g. `asyncio.CancelledError`). `finally` always runs
 regardless of what an `except` clause catches, so `key` is released either
-way — narrowing to `except Exception` does not, empirically, leave it stuck.
-What DOES break: the fault is no longer absorbed — it propagates out of
+way — narrowing to `except Exception` would not leave it stuck.
+What WOULD break: the fault is no longer absorbed — it propagates out of
 `run` uncaught (crashing whatever awaits or spawned this tag, an outage far
 wider than one tag) — and `nora_silent_failures_total{reason="handler_error"}`
-is never incremented, an observability gap on top of the crash. See this
-module's test suite for the probe that proves both.
+would never be incremented, an observability gap on top of the crash. This
+module's test suite probes both.
 
 ONE TRACE PER TAG, AND HOW IT CROSSES THE QUEUE
 -----------------------------------------------
-The three spans this module opens used to have no parent, and **a rootless span
-IS a trace** — so one tagged message produced three separate engagement traces
-plus ingest's, and a busy minute rendered as a page of near-empty traces
-(issue #64). `run` now opens a root, `engagement`, exactly as
+A rootless span IS a trace, so the three spans this module opens need a parent
+or one tagged message would produce three separate engagement traces plus
+ingest's. `run` opens a root, `engagement`, exactly as
 `nora.ingest.pipeline.run` does, and `_run_admitted` opens `engagement.turn`
 under it with `engagement.invoke` and `engagement.debrief` under that.
 
@@ -61,7 +60,7 @@ an un-attached queued tag inherits whatever span was current when it was
 spawned. That spawn happens in the PREVIOUS turn's `finally`, inside the
 previous turn's own span: the queued tag would be filed under the tag ahead of
 it in the queue, asserting a causal relation between two people's messages that
-does not exist. Measured 2026-08-28, not assumed. `attached` therefore REPLACES
+does not exist. `attached` therefore REPLACES
 the inherited context rather than adding to it, and a capture that failed
 attaches an empty context — a trace of its own, never someone else's.
 
@@ -128,13 +127,11 @@ log = logging.getLogger("nora.engagement.pipeline")
 # so it passes the leak/egress scans in `Deliverer.deliver` unchanged.
 _EXHAUSTED_FALLBACK = "唔好意思，我一時搞唔掂，遲啲再問我啦 😅"  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
 
-# `nora_engagement_outcomes_total`'s label vocabulary (issue: 56% of live tags
-# were ending `recovered` — DEC-93's own "tell" — with no standing counter
-# that says so; `nora_tagtrace_writes_total{outcome=...}` counts the same
-# values but only when the retention store is wired, which answers "did
-# retention get handed a trace", not "what did the turn end as" — a
-# deployment or eval composition with no store silently loses THIS signal
-# too if it rides on that one). Derived from `TagTrace.VALID_OUTCOMES`
+# `nora_engagement_outcomes_total`'s label vocabulary.
+# `nora_tagtrace_writes_total{outcome=...}` counts the same values but only
+# when the retention store is wired, which answers "did retention get handed a
+# trace", not "what did the turn end as"; this one does not ride on the store.
+# Derived from `TagTrace.VALID_OUTCOMES`
 # itself, never hand-copied, plus the one label this module's `finally`
 # produces that `TagTrace` never does: `"unattributed"` is not a seventh
 # outcome a completed turn can end in — it is `trace is None`, meaning
@@ -168,10 +165,10 @@ def _nothing_answered(handle: Any) -> bool:
     owed (`ReplyGuard.reply_still_owed`, DEC-294).
 
     The three nets below (salvage, the cut-off fallback, DEC-93's recovery)
-    were gated on «nothing delivered». A heads-up sent with `more=true` IS
-    delivered, so before this an answer she then wrote as prose, or a turn cut
-    off mid-work, was dropped while the turn read as `replied` (review of
-    #754, 2026-10-09)."""
+    gate on this rather than on «nothing delivered»: a heads-up sent with
+    `more=true` IS delivered, so gating on delivery alone would drop an answer
+    she then wrote as prose, or a turn cut off mid-work, while the turn read as
+    `replied`."""
     return (not handle.deliverer.delivered
             or bool(getattr(handle.guard, "reply_still_owed", False)))
 
@@ -211,12 +208,10 @@ class EngagementPipeline:
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
-        # SAME platform the tag arrived on. Nora reached a second platform
-        # (design/discord-integration/) while this held one Signal adapter, so
-        # every path below selected it unconditionally — a Discord tag would
-        # have resolved Nora's identity against her Signal aliases (R-12's
-        # self-tag check reading the wrong alias set) and delivered its reply
-        # into a Signal group. Keyed by `NormalizedMessage.platform`, which is
+        # SAME platform the tag arrived on; selecting one adapter
+        # unconditionally would resolve Nora's identity against the wrong
+        # platform's aliases (R-12's self-tag check) and deliver the reply into
+        # the wrong group. Keyed by `NormalizedMessage.platform`, which is
         # the only thing that can answer "where did this come from".
         self._adapters = adapters
         self._audit = audit
@@ -226,8 +221,7 @@ class EngagementPipeline:
         self._context = context_assembler
         self._runner = runner
         self._tool_registry = tool_registry
-        # policy.toml's per-conversation MCP allowlist (spec:
-        # mcp-tool-provider-design §3). The ingest pipeline already checked
+        # policy.toml's per-conversation MCP allowlist. The ingest pipeline already checked
         # this tag's conversation is admitted at all (nora.ingest.stages.scope,
         # DEC-18) using the SAME Policy instance — this is the second read of
         # it, for a narrower question: which MCP servers, not whether to
@@ -236,7 +230,7 @@ class EngagementPipeline:
         self._debounce = debounce
         self._canary = canary
         self._display_name = display_name
-        # The Nora aiPeer id (Honcho v2, design/24): her replies feed under it.
+        # The Nora aiPeer id (Honcho): her replies feed under it.
         self._ai_peer = ai_peer
         self._context_window = context_window
         # The turn's clock, read for the clock line the way the fire path reads
@@ -251,15 +245,12 @@ class EngagementPipeline:
         self._spawn = spawn
         self._reactions = reactions
         self._llm_state = llm_state
-        # The shared decision log (issue #199). The tag path is the one decider
-        # of the three that is never in doubt about whether it should speak —
-        # somebody addressed her — so it READS nothing here and only WRITES.
-        # What it writes is what the other two could not see: 2026-09-10's
-        # incident is a tag turn one second behind a participation answer,
-        # re-deriving it from scratch, and then a proactive pass (deleted 2026-10-03, DEC-277)
-        # raising the
-        # same question in another room 80 minutes later. `None` is the dormant
-        # default; an unwired composition behaves exactly as before.
+        # The shared decision log. The tag path is the one decider that is never
+        # in doubt about whether it should speak — somebody addressed her — so
+        # it READS nothing here and only WRITES, recording what the other
+        # deciders could not otherwise see (a tag turn re-deriving an answer
+        # participation just sent). `None` is the dormant default; an unwired
+        # composition writes nothing.
         self._decisions = decisions
         # Optional, and `None` is a real production-shaped state, not a test
         # affordance: `nora.app.offline` (the integration and eval harnesses)
@@ -267,13 +258,10 @@ class EngagementPipeline:
         # as UNAVAILABLE rather than as an empty room, so a harness — or a
         # wiring mistake — degrades honestly instead of answering "nobody is
         # here" (R-5).
-        # Platform -> roster source. ONE source used to serve every platform,
-        # which meant a Discord room was looked up in signal-cli: the daemon
-        # does not know that conversation id, so the roster came back
-        # `available=False` and every room-scoped tool — `where_is` included —
-        # answered «I could not look». Correct fail-closed behaviour (R-5) on
-        # top of a wiring gap, which is the shape that hides longest, because
-        # nothing errors and the honest refusal looks like the feature working.
+        # Platform -> roster source: each platform's rooms are looked up in its own
+        # directory (a Discord conversation id is unknown to signal-cli, which
+        # would answer `available=False` and make every room-scoped tool
+        # refuse).
         #
         # A MISSING platform here degrades rather than raising, unlike
         # `_adapter_for`: `Room` already documents an absent source as
@@ -283,48 +271,42 @@ class EngagementPipeline:
         # read a roster is merely blind, and blind-but-saying-so is allowed.
         self._rosters: Mapping[str, RosterSource] = rosters or {}
         # The OpenGraph fetcher behind an outbound link-preview card. `None`
-        # whenever `[preview].enabled` is false — the shipped default — and in
-        # every offline composition, which is why it defaults rather than being
-        # required: a missing preview is a message without a card, the exact
-        # state every deployment is in today, and nothing about it is a wrong
-        # claim. (`composer` on `deliver.build` is required for the opposite
+        # whenever `[preview].enabled` is false and in every offline
+        # composition, which is why it defaults rather than being required: a
+        # missing preview is a message without a card, and nothing about it is a
+        # wrong claim. (`composer` on `deliver.build` is required for the opposite
         # reason; the split is argued there.)
         self._preview_source = preview_source
-        # The tool-recall log's write-path store (R-48, tool-recall-log spec
-        # §3). `None` in every offline/eval composition and any deployment
-        # that has not wired it — `deliver.build`'s `ToolCallLog` treats a
-        # `None` store as fully inert, same shape as `roster_source`/
-        # `preview_source` above.
+        # The tool-recall log's write-path store (R-48). `None` in every
+        # offline/eval composition and any deployment that has not wired it —
+        # `deliver.build`'s `ToolCallLog` treats a `None` store as fully inert,
+        # same shape as `roster_source`/`preview_source` above.
         self._tool_call_log_store = tool_call_log_store
-        # Issue #325's durable half (`reasoning_strip_log`, migration 0057).
+        # The durable half of the reasoning-strip watch (`reasoning_strip_log`).
         # Same optional-collaborator shape as `tool_call_log_store` above:
         # `None` leaves `deliver.build`'s `ReasoningStripWatch` counting in
         # Prometheus and writing no row, which is what every offline/eval
         # composition gets.
         self._reasoning_strip_store = reasoning_strip_store
-        # The reasoning-continuity retention store (spec
-        # docs/superpowers/specs/2026-08-20-reflection-reasoning-continuity-design.md
-        # §6/§7.4, Task 6). `None` in every offline/eval composition and any
+        # The reasoning-continuity retention store. `None` in every offline/eval composition and any
         # deployment that has not wired it — the SAME optional-collaborator
         # shape `preview_source`/`tool_call_log_store` already have above:
         # `_run_admitted`'s `finally` treats a `None` store as fully inert
         # (nothing to save into), never a reason to fail the turn. Production
-        # wiring (`composition.py`) is unconditional — retention must exist
-        # and be provably working BEFORE Phase 2's `[debrief]` flag has
-        # anything to gate.
+        # wiring (`composition.py`) is unconditional: retention must exist before
+        # the `[debrief]` flag has anything to gate.
         self._tag_trace_store = tag_trace_store
-        # The debrief stage's collaborators (26-standing), as ONE object
+        # The debrief stage's collaborators, as ONE object
         # rather than four optional parameters — see `debrief.Wiring`. `None`
         # is `[standing] enabled = false`, the shipped default, and in every
         # offline/eval composition: `_debrief` below returns without awaiting
         # anything, so a deployment that has not wired it pays nothing and
-        # holds the slot for no longer than it did before this existed.
+        # holds the slot for no longer than it otherwise would.
         #
-        # Unlike `tag_trace_store` above, this one IS gated on its flag. The
-        # asymmetry is deliberate and is Phase 1's own argument: retention had
-        # to exist unconditionally BEFORE the fold shipped, because a lossy
-        # fold is only recoverable from traces that were already being kept.
-        # The fold is the part an operator turns on.
+        # Unlike `tag_trace_store` above, this one IS gated on its flag: retention
+        # exists unconditionally because a lossy fold is only recoverable from
+        # traces that were already being kept, and the fold is the part an
+        # operator turns on.
         self._debrief_wiring = debrief_wiring
         # R-10's single-in-flight lock and R-30's per-conversation FIFO queue,
         # both keyed by (platform, conversation_id), as one INJECTED
@@ -370,9 +352,8 @@ class EngagementPipeline:
 
         The 👀 is fired HERE, at admission, for BOTH the run-now and the queued
         tag — before either handling or waiting begins (R-17/DEC-17 extended by
-        DEC-49). That is the whole point of moving it off the turn's start: a
-        person whose tag is queued behind two others sees they were SEEN while
-        they wait, so the silence they used to get on a dropped tag stops being
+        DEC-49), not at the turn's start: a person whose tag is queued behind
+        two others sees they were SEEN while they wait, so the wait is not
         ambiguous. `indicate.begin` only spawns, so it adds no latency to
         anything. A REJECTED (self-tag/debounce) or QUEUE_FULL (flood) tag gets
         no 👀: neither is a person waiting for an answer, and a 👀 on a dropped
@@ -382,7 +363,7 @@ class EngagementPipeline:
         message = request.message
         identity = await self._adapter_for(message.platform).resolve_identity()
         key = (message.platform, message.conversation_id)
-        # THE ROOT (issue #64). Everything this tag opens hangs under it, so one
+        # THE ROOT. Everything this tag opens hangs under it, so one
         # tagged message is one Langfuse trace instead of three — see this
         # module's docstring for why the queued half needs a captured context
         # rather than just a wider `with`. It carries the three facts that make
@@ -438,7 +419,7 @@ class EngagementPipeline:
             # RUN_NOW. `identity` is threaded on rather than re-resolved: the
             # room-scoped tools need Nora's own id forms to leave herself out of
             # the group's member list, and `PlatformIdentity.aliases` is the
-            # same flattened set R-12 tests membership in (design/10 §5) — the
+            # same flattened set R-12 tests membership in — the
             # one set that survives a member arriving as a phone number here and
             # an ACI there.
             await self._run_admitted(request, identity, indicator)
@@ -476,8 +457,7 @@ class EngagementPipeline:
         says why the alternative — inheriting whatever the dispatching task had
         current — files this turn under the previous person's tag.
 
-        Defaulted to `None` so the queue can hold a factory built before this
-        parameter existed; `attached(None)` starts a fresh trace, which is the
+        Defaulted to `None`; `attached(None)` starts a fresh trace, which is the
         fail-closed answer rather than a borrowed parent.
         """
         with attached(carrier):
@@ -504,21 +484,19 @@ class EngagementPipeline:
         row injected into every later turn.
 
         `now_ms` is stamped HERE rather than inside the stage, following
-        `DreamSink.propose`'s reason one tier over: the clock belongs to the
+        `DreamSink.propose`'s reason: the clock belongs to the
         caller that knows when the work happened, and a stage that reads its
         own clock cannot be tested for what it writes without freezing time.
 
-        This method exists at all — rather than the call being inlined in the
-        `finally` — because the `finally` is already the most crowded block in
-        this class and the two guards above are exactly the kind of condition
-        that gets quietly widened when it is one more `and` on a line that is
-        already three conditions long.
+        This is a method rather than inlined in the `finally`, the most crowded
+        block in this class, so the two guards above cannot be quietly widened as
+        one more `and` on a line of conditions.
         """
         wiring = self._debrief_wiring
         if wiring is None or trace is None:
             return
-        # The fold is otherwise COMPLETELY untraced: Strands instruments the
-        # agent loop, and the debrief's own model call is not in it. Standing
+        # The fold is otherwise untraced: Strands instruments the agent loop, and
+        # the debrief's own model call is not in it. Standing
         # writes a row injected into every later turn with no record of the
         # prompt that produced it — counters say a fold took 3s, nothing says
         # what it saw or wrote. Inside the guarded region by construction: this
@@ -560,7 +538,7 @@ class EngagementPipeline:
 
         The root opened in `run` is already CLOSED by the time a queued tag gets
         here, and an attribute set on an ended span is silently dropped by the
-        OTel SDK (measured, 2026-08-28 — it logs and records nothing). So the
+        OTel SDK (it logs and records nothing). So the
         outcome, the stop reason and the latency this turn only learns in its
         `finally` need a span that is still open, and this is it. Opening it
         here rather than widening the root also makes the two admission paths
@@ -596,12 +574,11 @@ class EngagementPipeline:
         # count on every exit path, including one that faults inside
         # `context.assemble` before there is a handle at all. Reading it off
         # the `Deliverer` rather than tracking a second local is deliberate:
-        # a local would be one more thing to remember to increment now that
-        # DEC-40 has made the count able to exceed 1.
+        # a local would be one more thing to remember to increment, and the count
+        # can exceed 1 (DEC-40).
         handle: deliver.DeliveryHandle | None = None
         # Bound BEFORE the `try` for the same reason `handle` is: the
-        # `finally` saves whatever `invoke.run` handed back (Task 6, §7.4 —
-        # "debrief runs on every completed turn") on EVERY exit path,
+        # `finally` saves whatever `invoke.run` handed back on EVERY exit path,
         # including the two (`ok=False`) where `_run_admitted` returns before
         # reaching this method's own `completed = True`. `None` here means
         # `invoke.run` never returned at all (a fault before it was ever
@@ -626,9 +603,9 @@ class EngagementPipeline:
         try:
             ctx = await self._context.assemble(request=request)
             culture = ctx.culture
-            # An @-mention is a placeholder plus a parallel array, so until
-            # DEC-34 every name in the transcript — including Nora's own —
-            # reached the model as U+FFFC. Rehydrated HERE rather than at
+            # An @-mention is a placeholder plus a parallel array; left alone,
+            # every name in the transcript — including Nora's own — would reach the
+            # model as U+FFFC (DEC-34). Rehydrated HERE rather than at
             # ingest (the audit stores what arrived) or in the prefill (which
             # may not import `nora.platform`), against `raw_json`, which every
             # historical row already carries. See `nora.engagement.mentions`.
@@ -654,13 +631,13 @@ class EngagementPipeline:
             # worth defaulting safely on (empty allowlist) rather than
             # crashing the tag over.
             #
-            # Computed BEFORE `deliver.build()` and reused for its `budgets=`
-            # (final-review Finding 1): `ToolRegistry.budgets()` only folds an
-            # MCP tool's budget in when its server name is in `allowed_mcp`,
-            # so this pipeline's `ReplyGuard` — and the R-7 unknown-tool veto
-            # message it renders — must be built from the SAME set `.build()`
-            # below uses, or an unauthorized conversation's guard would still
-            # disclose a `pulse_*` name it cannot call.
+            # Computed BEFORE `deliver.build()` and reused for its `budgets=`:
+            # `ToolRegistry.budgets()` only folds an MCP tool's budget in when
+            # its server name is in `allowed_mcp`, so this pipeline's
+            # `ReplyGuard` — and the R-7 unknown-tool veto message it renders —
+            # must be built from the SAME set `.build()` below uses, or an
+            # unauthorized conversation's guard would still disclose a
+            # `pulse_*` name it cannot call.
             convo = self._policy.conversation(msg.platform, msg.conversation_id)
             allowed_mcp = convo.tools if convo is not None else frozenset()
             # DEC-74: the per-conversation location-disclosure trust, sourced the
@@ -700,7 +677,7 @@ class EngagementPipeline:
                     roster_source=self._rosters.get(msg.platform),
                     preview_source=self._preview_source,
                 ),
-                # Phase 2 routing: a precision-first, abstaining classifier over the
+                # Routing: a precision-first, abstaining classifier over the
                 # message. Non-None only on a narrow high-precision surface (mall
                 # opening-hours → place_info) the model misroutes despite the
                 # schema; the guard forces it on the first model call and releases.
@@ -735,7 +712,7 @@ class EngagementPipeline:
                 ),
             )
             surface = self._tool_registry.surface(
-                # design/tool-catalogue phase C: `[llm] defer_tools`.
+                # `[llm] defer_tools`.
                 defer=self._defer_tools,
                 # DEC-256: a spoken turn keeps the tools declared `hot_on`
                 # voice resident, so a music request is not a `load_tools`
@@ -767,17 +744,15 @@ class EngagementPipeline:
                 links=handle.links,
             )
             tagger_name = self._persons.display_name(msg)
-            # STILL NO ROSTER IN THE PROMPT, and now there is a tool instead.
+            # NO ROSTER IN THE PROMPT; there is a tool instead.
             # `identity.toml` is Nora's address book across EVERY room; handing
             # all of it to one room discloses the existence and names of people
-            # who are not in it — asked who was in the group she listed five
-            # people who have never been members, a real leak rather than a
-            # wrong answer. `group_members` answers that question from the
-            # PLATFORM's membership list for this conversation, so the scope is
-            # the room itself rather than the address book, and it costs a tool
-            # call only when somebody actually asks. The tagger's own aliases
-            # still reach the model via `build_tag_message`, scoped by
-            # construction.
+            # who are not in it — a real leak, not just a wrong answer.
+            # `group_members` answers that question from the PLATFORM's
+            # membership list for this conversation, so the scope is the room
+            # itself rather than the address book, and it costs a tool call
+            # only when somebody actually asks. The tagger's own aliases still
+            # reach the model via `build_tag_message`, scoped by construction.
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name, context_window=self._context_window,
                 catalogue=surface.prompt_catalogue,
@@ -787,7 +762,7 @@ class EngagementPipeline:
                 ctx, tagger_name=tagger_name, display_name=self._display_name,
             )
 
-            # `invoke.run` hands back a `TagTrace` (Task 4) with a PROVISIONAL
+            # `invoke.run` hands back a `TagTrace` with a PROVISIONAL
             # `outcome` — `LiveAgentRunner`'s own docstring calls it out as a
             # placeholder on the `ok=True` path. Bound to the method-level
             # `trace` (not a local `_trace`) so the `finally` can save it on
@@ -812,10 +787,8 @@ class EngagementPipeline:
                     # This pipeline IS the tag path; the NAME stays at the
                     # call site rather than becoming a default so an omitted
                     # one cannot compile (the A8 filter is `audience="tag"`).
-                    # It is `nora.domain.audience.TAG` rather than a literal
-                    # since 2026-09-17: `reasoning_strip_log.path` reads the
-                    # same vocabulary, and it shipped documenting four of the
-                    # values and carrying five.
+                    # It is `nora.domain.audience.TAG` rather than a literal, because
+                    # `reasoning_strip_log.path` reads the same vocabulary.
                     audience=audience_names.TAG,
                 )
                 # Inside the `with`, so it lands on the invoke span rather than
@@ -829,23 +802,20 @@ class EngagementPipeline:
                 # edge case — so this is a partial delivery, not a silent turn,
                 # and the `finally` counts it as one.
                 #
-                # DELIBERATELY NO never-silent fallback here (review 2026-08-09
-                # #1, considered and declined): unlike a budget cut-off, this path
+                # DELIBERATELY NO never-silent fallback here: unlike a budget cut-off, this path
                 # carries DEC-42 partial-reply accounting (`truncation_reason`),
                 # and delivering a fallback would forge a "partial reply" the
                 # tests here pin apart. A timeout is ALSO already surfaced as an
                 # infra failure on `nora_silent_failures_total{invocation_timeout}`
                 # — a real alert, not the silent void the budget fallback closes.
-                # Closing this path too is a larger change (DEC-42 reconciliation),
-                # left as a flagged follow-up rather than bolted on here.
+                # Closing this path too would need DEC-42 reconciliation.
                 #
-                # ONE exception, added 2026-09-03 (salvage-partial-reply): a
+                # ONE exception (salvage-partial-reply): a
                 # `max_tokens` cut-off is NOT a generic `llm_error`. Strands
                 # appends the partial message to `agent.messages` before raising
                 # (`nora.agent.factory.invoke` catches it and carries the words
                 # up as `PartialReplyError`), so the model WROTE an answer and
-                # the harness dropped it — silence here is the Raft-password
-                # case measured live 2026-09-02. The words are her own, not the
+                # the harness dropped it. The words are her own, not the
                 # SDK's canned recovery notice (factory.invoke strips that), so
                 # delivering them is not the forgery the fallback above refuses
                 # to commit. `stop_reason == "max_tokens"` is the discriminator:
@@ -854,10 +824,9 @@ class EngagementPipeline:
                 # On successful delivery the turn FLOWS THROUGH to
                 # `check_outcome` rather than returning here — it read
                 # `deliverer.delivered` True, corrected the trace, fed Honcho
-                # and marked the turn completed exactly like a normal delivery
-                # (Kimi audit 2026-09-03 finding 3).
+                # and marked the turn completed exactly like a normal delivery.
                 salvable = (
-                    # Occasion-gated (design/dreamer-agent-loop/35): a
+                    # Occasion-gated: a
                     # participation turn never delivers a draft on ANY branch —
                     # no grounded value is silence there, and a salvaged draft
                     # would speak words she concluded without the tool.
@@ -881,7 +850,7 @@ class EngagementPipeline:
                         # salvage) and corrects the trace, feeds Honcho and
                         # marks the turn completed — the same accounting a
                         # normal delivery gets. An early return here would
-                        # skip exactly those three things (Kimi audit 2026-09-03).
+                        # skip exactly those three things.
                     else:
                         # Delivery refused (R-2/R-4/R-6/R-18) — nothing went
                         # out, stay silent exactly like the generic paths.
@@ -892,7 +861,7 @@ class EngagementPipeline:
                     # Stay silent (R-5) — this path never delivered anything.
                     return
 
-            # NEVER-SILENT FALLBACK (operator 2026-08-09): the loop was cut off by
+            # NEVER-SILENT FALLBACK: the loop was cut off by
             # one of R-8's caps (limit_total_tokens/turns/output) BEFORE she sent a
             # reply — she was mid-work, not declining. A weak model that will not
             # stop flailing on a hard query (a specific carpark, a weather page)
@@ -913,7 +882,7 @@ class EngagementPipeline:
                 and stop_reason in deliver.BUDGET_STOP_REASONS
                 and _nothing_answered(handle)
             )
-            # The local record of WHICH branch below fires (Task 6):
+            # The local record of WHICH branch below fires:
             # `deliverer.delivered` alone cannot tell "her own words,
             # recovered" apart from "the tool called it" or "the canned
             # fallback" — all three leave it True. Bound here, before either
@@ -921,9 +890,9 @@ class EngagementPipeline:
             # too (neither branch runs at all).
             recovered_delivered = False
             if cut_off_before_reply:
-                # #110: PREFER HER OWN WORDS OVER THE CANNED LINE.
+                # PREFER HER OWN WORDS OVER THE CANNED LINE.
                 #
-                # `final_text` on a budget cut-off is now one of two things,
+                # `final_text` on a budget cut-off is one of two things,
                 # and both are hers: prose the cut-off completion happened to
                 # leave behind, or — when it left none — the drafting call
                 # `nora.app.agent_runner` makes over the context she had
@@ -965,15 +934,10 @@ class EngagementPipeline:
 
             # DEC-93: she WROTE a reply and did not put it through the tool.
             #
-            # `tool_choice="required"` is what made the model reach for
-            # `send_reply` instead of answering in prose — measured on
-            # opencode-zen, where `auto` on a fresh question sent plain text 5/6
-            # (`nora.agent.tool_choice`). DEC-84 moved the deployment to
-            # ollamacloud, where `required` is ACCEPTED AND IGNORED: a probe
-            # found `auto` and `required` behaving identically, which was
-            # recorded as "inert, harmless". It is not harmless — it removed the
-            # only thing forcing the terminal verb, and the group went quiet on
-            # 2 of the first 4 live tags, both with a complete, correct,
+            # `tool_choice="required"` is what makes a model reach for `send_reply`
+            # instead of answering in prose (`nora.agent.tool_choice`), but a
+            # provider may ACCEPT AND IGNORE it, leaving nothing forcing the
+            # terminal verb: the group goes quiet with a complete,
             # group-addressed answer sitting in a `text` block.
             #
             # So the words are recovered rather than a canned line sent in their
@@ -1005,8 +969,7 @@ class EngagementPipeline:
                 request.occasion != "participation"
                 and stop_reason == "end_turn"
                 # The text a CANCELLED model call ends with is the guard's veto
-                # string, not the model's words (pre-deploy review 2026-08-10,
-                # reproduced against the real Strands loop). Refusing here is
+                # string, not the model's words. Refusing here is
                 # what keeps DEC-93's own rule true — «nothing reaches the group
                 # unless she WROTE it» — because that string passes R-6 and R-18
                 # trivially and nothing else downstream would stop it.
@@ -1036,7 +999,7 @@ class EngagementPipeline:
                 # pipeline IS the tag path (the A8 filter reads this label).
                 audience="tag",
             )
-            # Task 6: correct `trace`'s placeholder `outcome` now that the
+            # Correct `trace`'s placeholder `outcome` now that the
             # turn's real disposition is known — mirroring `check_outcome`'s
             # OWN delivered/called split (deliver.py:222-238) rather than
             # inventing a second one. `check_outcome` itself only returns a
@@ -1057,7 +1020,7 @@ class EngagementPipeline:
                 else ("vetoed" if handle.deliverer.called else "silent")
             )
             trace = dataclasses.replace(trace, outcome=real_outcome)
-            # The shared decision log (issue #199), written HERE — after
+            # The shared decision log, written HERE — after
             # `real_outcome` is known and BEFORE the `not delivered` return,
             # so a turn that said nothing is logged as loudly as one that
             # replied. A log that only recorded successes would answer «this
@@ -1098,16 +1061,16 @@ class EngagementPipeline:
             if not delivered:
                 return                       # `finally` still resolves the indicator
 
-            # Step 4: the tag path's semantic write — NORA'S replies, under the
-            # Nora aiPeer, into this conversation's session (Honcho v2, design/24
-            # §3). The human's words are already fed by the ambient memory_feed;
-            # this feeds only her side, building her self-model card. `sent_texts`
-            # is every message actually delivered (multi-message safe). Spawned
-            # off the reply path like every Honcho write.
+            # The tag path's semantic write — NORA'S replies, under the Nora
+            # aiPeer, into this conversation's session (Honcho). The human's
+            # words are already fed by the ambient memory_feed; this feeds only
+            # her side, building her self-model card. `sent_texts` is every
+            # message actually delivered (multi-message safe). Spawned off the
+            # reply path like every Honcho write.
             # Gated on a MAPPED tagger, like the old feed: her self-model is
             # built only from conversations with a known person (feeding her
-            # replies to unmapped senders is a deliberate later refinement,
-            # design/24). `ctx.tagger is None` means an unmapped sender.
+            # replies to unmapped senders is deliberately not done).
+            # `ctx.tagger is None` means an unmapped sender.
             sent = handle.deliverer.sent_texts
             if sent and ctx.tagger is not None:
                 self._spawn(feedback.run(
@@ -1126,12 +1089,10 @@ class EngagementPipeline:
                 "nora_silent_failures_total", reason="handler_error",
                 platform=msg.platform, audience="tag",
             )
-            # The shared decision log (issue #199), and THIS branch is the
-            # incident's own failure mode: 2026-09-10's tag turn re-derived an
-            # answer participation had just sent and DIED doing it. Without a
-            # row here the log says nothing happened in that room at 16:44, and
-            # the very turn the log exists to make visible is the one it
-            # misses.
+            # The shared decision log, and THIS branch is the failure the log exists
+            # to make visible: a tag turn that re-derived an answer participation
+            # had just sent and died doing it. Without a row here the log says
+            # nothing happened in that room.
             #
             # Written even though `trace` is deliberately dropped a few lines
             # down, and the two are not in tension. The trace is dropped
@@ -1145,7 +1106,7 @@ class EngagementPipeline:
                     conversation_id=msg.conversation_id,
                     verdict="failed", reason="handler_error",
                 )
-            # Task 6 fix (review finding 1): `trace` may already be bound here
+            # `trace` may already be bound here
             # — a fault inside the never-silent-fallback delivery, the DEC-93
             # recovery delivery, or `check_outcome` itself lands in THIS
             # `except`, having reached `invoke.run`'s return but never the
@@ -1153,8 +1114,8 @@ class EngagementPipeline:
             # the `finally`'s unconditional save would persist that trace with
             # its STILL-PLACEHOLDER `"send_reply"` outcome — a turn that
             # actually crashed and delivered nothing would be retained as if
-            # it succeeded normally, a false positive Phase 2's fold would
-            # read as fact. This branch cannot know for certain what (if
+            # it succeeded normally, a false positive the fold would read as
+            # fact. This branch cannot know for certain what (if
             # anything) reached the group before the crash, and a WRONG label
             # is worse than no label at all — the same argument
             # `check_outcome`'s own docstring makes about a mislabelled
@@ -1174,8 +1135,7 @@ class EngagementPipeline:
                 indicator=indicator, delivered=delivered, spawn=self._spawn,
             )
             # THIS TURN'S OWN LATENCY, read HERE and observed further down —
-            # before the debrief holds the slot, and that split is 26-standing
-            # §5's decision rather than an accident of where the line sits.
+            # before the debrief holds the slot; the split is deliberate.
             # The debrief's cost IS user-visible, but adding it to
             # `nora_tag_latency_seconds` would change what that series
             # measures: an SLO gate that moves because a new stage was added
@@ -1183,13 +1143,12 @@ class EngagementPipeline:
             # has its own series, `nora_debrief_seconds`, and the two answer
             # two different questions.
             total = time.perf_counter() - started
-            # THE DEBRIEF (26-standing §1/§2/§5). Four things about this
+            # THE DEBRIEF. Four things about this
             # placement are load-bearing and none of them is obvious:
-            #
-            # 1. **It is in the `finally`, not at the end of the `try`.** §2:
-            #    it runs on EVERY completed turn, and three of them —
-            #    `not ok` (timeout/llm_error), `not delivered` (an R-5 silence
-            #    or a guard veto), and the outer `except` — leave the `try`
+            # 1. **It is in the `finally`, not at the end of the `try`.** It
+            #    runs on EVERY completed turn, and three of them — `not ok`
+            #    (timeout/llm_error), `not delivered` (an R-5 silence or a
+            #    guard veto), and the outer `except` — leave the `try`
             #    before `completed = True` is ever reached. A debrief hung off
             #    the happy path would review only the turns that already work,
             #    and R-5 silence is the decision most likely to be wrong in a
@@ -1202,16 +1161,13 @@ class EngagementPipeline:
             #    on the person it is reviewing, who already has their reply.
             #    The worst-case hold is asserted at STARTUP by
             #    `Config._the_standing_slot_hold_fits_its_budget`, and this
-            #    comment deliberately does NOT restate the arithmetic. It has
-            #    done so twice and been wrong both times — once omitting the
-            #    store calls entirely, which is how they came to be unbounded,
-            #    and once naming two of them after there were five. The
+            #    comment deliberately does NOT restate the arithmetic. The
             #    validator and `STANDING_STORE_CALLS_PER_FOLD` are the single
             #    place that number lives.
             #
             # 3. **`completed` is already final by the time this runs**, which
             #    is the same requirement as «mark the turn completed BEFORE
-            #    awaiting the debrief» (§5) expressed by placement instead of
+            #    awaiting the debrief» expressed by placement instead of
             #    by ordering two statements. An escape here must not be able to
             #    leave `completed` False, because `deliver.truncation_reason`
             #    reads it and would report a partial reply — and a false
@@ -1262,8 +1218,7 @@ class EngagementPipeline:
                 # timed out or faulted still lets the people queued behind it
                 # be answered.
                 self._slots.release_and_dispatch(key)
-            # Task 6 (spec §7.4 — "debrief runs on every completed turn"):
-            # retain the raw `TagTrace`, unconditionally — deliberately NOT
+            # Retain the raw `TagTrace`, unconditionally — deliberately NOT
             # gated on `if sent and ctx.tagger is not None` the way
             # `feedback.run`'s spawn below is. That gate is `feedback.run`'s
             # own reason (an unmapped sender's self-model); a silent, vetoed
@@ -1284,8 +1239,7 @@ class EngagementPipeline:
             # latency observation (right below).
             if trace is not None and self._tag_trace_store is not None:
                 self._spawn(self._tag_trace_store.save(trace))
-                # 15-roadmap §6.2b's required-before-Phase-2 reading, and it
-                # is counted HERE — beside the spawn, not inside the store —
+                # Counted HERE — beside the spawn, not inside the store —
                 # for the same reason the spawn itself is not awaited: what
                 # this series answers is «did the recording layer get handed a
                 # trace for this turn», whose denominator is
@@ -1304,13 +1258,12 @@ class EngagementPipeline:
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
             # One observation per ADMITTED tag, silent turns included as 0 —
             # see `nora.obs.metric_specs`. The `send_reply` budget caps it, so
-            # while that budget is 1 the series is flat by construction; the
-            # baseline was recorded before DEC-40 made it able to move.
+            # while that budget is 1 the series is flat by construction.
             messages = handle.deliverer.delivered_count if handle is not None else 0
             self._metrics.observe("nora_messages_per_tag", float(messages))
-            # THE TURN'S DISPOSITION, on the turn's own span (issue #64). Every
+            # THE TURN'S DISPOSITION, on the turn's own span. Every
             # one of these already exists as a metric, and a metric cannot
-            # answer «what happened on THIS tag» — the series say 3% of turns
+            # answer «what happened on THIS tag» — the series say what share of turns
             # were silent, the span says this one was, beside the invoke and
             # debrief children that show why. In the `finally` for the same
             # reason every counter here is: it is the one point all five exit
@@ -1323,9 +1276,7 @@ class EngagementPipeline:
             # instead of rendering as an absent attribute, which is
             # indistinguishable from the annotation never having run.
             #
-            # THE STANDING COUNTER (this is the "56% of live tags never
-            # called send_reply" measurement, made continuous instead of a
-            # one-off Langfuse query): incremented HERE, unconditionally, on
+            # THE STANDING COUNTER: incremented HERE, unconditionally, on
             # every exit path this `finally` reaches — unlike
             # `nora_tagtrace_writes_total` a few lines up, this one does not
             # ride on `self._tag_trace_store` being wired, because the
@@ -1335,8 +1286,7 @@ class EngagementPipeline:
             # route is not honouring `tool_choice=required`, not that the
             # safety net is "working".
             outcome_label = _outcome_label(trace)
-            # `audience` joins the label set ahead of the participation
-            # occasion (design/dreamer-agent-loop/35 §6): a participation
+            # `audience` is in the label set because a participation
             # outcome landing here unlabelled would be indistinguishable from
             # a tag's. This pipeline passes the literal — it IS the tag path.
             self._metrics.inc(

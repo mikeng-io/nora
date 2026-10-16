@@ -1,4 +1,4 @@
-"""The retrieval bake-off's harness (design/unified-memory/20, PROTOCOL.md).
+"""The retrieval bake-off's harness (PROTOCOL.md).
 
 comprehend: `load_set` reads the locked set once (the pool, each item's
 frozen reading, the queries and their labels) and refuses a set whose files
@@ -284,8 +284,7 @@ def _accounted(out: Embedded, ids: Sequence[str]) -> Embedded:
 
 
 #: Two different images whose vectors agree this closely were not both seen:
-#: a runtime that drops the image embeds only its wrapper prompt (Ollama 0.35
-#: did exactly that with `images` on /api/embed).
+#: a runtime that drops the image embeds only its wrapper prompt.
 SAME_VECTOR_COSINE = 1 - 1e-6
 
 
@@ -363,8 +362,8 @@ MIN_RERANK_K = 5
 
 @dataclass(frozen=True, slots=True)
 class Rerank:
-    """The two-stage arms one candidate gets (operator's index design,
-    2026-10-16): search the leading `search_dim` for the top `k`, re-rank
+    """The two-stage arms one candidate gets (operator's index design):
+    search the leading `search_dim` for the top `k`, re-rank
     those by full-`full_dim` cosine. `ks` exactly in Python; `hnsw_ks` in the
     throwaway Postgres at `dsn` (`hnsw.rerank`), `hnsw.ef_search` = `ef_search`
     or `k`, whichever is larger."""

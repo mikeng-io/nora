@@ -1,5 +1,5 @@
 """`DiscordVoicePresence` — the `VoicePresenceSource` port's real
-implementation (design/online-status/). Answers "who is in a voice channel
+implementation. Answers "who is in a voice channel
 right now" from the LIVE client's guild cache — the same `member.voice`
 read `DiscordMusicToolBridge` makes before joining, pointed at every guild
 the client can see instead of one conversation's guild, because the
@@ -8,9 +8,8 @@ the client can see instead of one conversation's guild, because the
 Zero new intents: `voice_states` is already in `Intents.default()`
 (`adapter.py`), which is what keeps `member.voice` populated. Voice
 membership answers ONLY the narrow "who is in which voice channel"
-question — since the 2026-09-15 correction it no longer stands in for
-"Discord online"; per-person status + rich presence is
-`discord_presence.py`'s read, behind the `presences` intent.
+question — it does not stand in for "Discord online"; per-person status +
+rich presence is `discord_presence.py`'s read, behind the `presences` intent.
 
 NEVER raises — matches `TrackSource`/`WeatherProvider`'s discipline
 (`nora/domain/ports.py`): no live client, a guild-cache miss, or anything
@@ -67,7 +66,7 @@ class DiscordVoicePresence:
                     continue
                 channel = member.voice.channel
                 # Voice channels only — a stage channel is not "in voice"
-                # for this tool's purposes (design/online-status/02).
+                # for this tool's purposes.
                 if isinstance(channel, discord.VoiceChannel):
                     out[member_id] = VoiceChannelRef(
                         channel_id=str(channel.id),

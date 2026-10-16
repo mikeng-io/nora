@@ -3,7 +3,7 @@
 `tests/contract/test_decision_log_store_contract.py`.
 
 **It refuses what Postgres refuses, and that is not automatic.**
-`InMemoryStandingStore` taught this the hard way: a fake that stores whatever it
+`InMemoryStandingStore` is the precedent: a fake that stores whatever it
 is handed is MORE PERMISSIVE THAN THE REAL STORE, and a contract suite cannot
 see it unless a test reaches the store by going *around* the domain type. So
 this mirrors all three CHECKs and — the one that matters most — the

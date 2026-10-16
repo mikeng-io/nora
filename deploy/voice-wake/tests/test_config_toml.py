@@ -2,8 +2,8 @@
 
 Pins: (1) `[speech.wake]` + `[speech.stt]` values reach `Config`; (2) a missing
 file or section falls back to the code defaults (fresh clone boots); (3) env
-does NOT override a config.toml knob any more — the pre-2026-09-17 drift
-(compose `STT_MODEL=sensevoice` vs example `noise-detection`) must stay fixed;
+does NOT override a config.toml knob (compose `STT_MODEL=sensevoice` must not
+diverge from the example's `noise-detection`);
 (4) a malformed file raises instead of silently defaulting.
 """
 
@@ -30,12 +30,9 @@ def test_toml_values_reach_config(tmp_path: Path) -> None:
     assert (cfg.stt_url, cfg.stt_language, cfg.stt_timeout_s) == ("http://stt-b:8000", "auto", 12.5)
     assert (cfg.silence_tail_ms, cfg.max_utterance_s, cfg.silence_rms) == (900, 6.0, 250.0)
     assert (cfg.vad_enabled, cfg.vad_threshold) == (False, 0.7)
-    # NO deployment identity on Config since 2026-09-17: the guild arrives per
-    # connection in the sidecar's hello, so one gate serves every guild and
-    # there is nothing per-guild left to configure. This line asserted
-    # `conversation_id == "1/2"` until then — a field that stopped existing at
-    # the §12.2 reversal and went unnoticed, because `testpaths = ["tests"]`
-    # keeps this suite out of `make gate`.
+    # NO deployment identity on Config: the guild arrives per connection in the
+    # sidecar's hello, so one gate serves every guild and nothing per-guild is
+    # configured.
     assert not hasattr(cfg, "guild_id")
     assert not hasattr(cfg, "conversation_id")
 
@@ -82,9 +79,9 @@ REPO_EXAMPLE = Path(__file__).resolve().parents[3] / "config.example.toml"
 @pytest.mark.skipif(not REPO_EXAMPLE.is_file(), reason="repo config.example.toml not present")
 def test_code_defaults_equal_the_committed_example_defaults() -> None:
     """A live config.toml without [speech.wake] runs on the CODE defaults; the example
-    file is the operator's record of those defaults. They drifted once (2026-09-17:
-    code said noise-detection, example said sensevoice — the wake path silently took
-    the slow whisper). Every key in the example's [speech.wake] must equal Config()."""
+    file is the operator's record of those defaults; if they diverge the wake path
+    silently takes a different engine. Every key in the example's [speech.wake] must equal
+    Config()."""
     import tomllib
 
     wake = tomllib.loads(REPO_EXAMPLE.read_text(encoding="utf-8"))["speech"]["wake"]

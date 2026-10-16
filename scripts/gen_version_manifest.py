@@ -24,7 +24,7 @@ WHAT IT WRITES.
     {"version": "v6.1.0",                  # what this build IS
      "commit": "<sha>", "built_at": "...",
      "versions": [                         # newest first
-       {"version": "v6.1.0", "released": "2026-10-20", "commit": "<sha>",
+       {"version": "v6.1.0", "released": "YYYY-MM-DD", "commit": "<sha>",
         "notes": "<this version's CHANGELOG.md section>",
         "changes": ["<commit subject>", ...]}]}
 
@@ -79,11 +79,11 @@ MAX_NOTES_CHARS = 2000
 # lines by `tests/test_version_stamp_build.py`.
 IMAGE_DIRS = ("nora", "evals", "scripts")
 
-# release-please's version heading: `## [6.1.0](<compare url>) (2026-10-20)`,
+# release-please's version heading: `## [6.1.0](<compare url>) (YYYY-MM-DD)`,
 # or `## 6.1.0 (…)` for a first release with no previous tag to compare to.
 _HEADING_RE = re.compile(r"^##\s+\[?(\d+\.\d+\.\d+)\]?", re.M)
 # The links release-please appends to every line: a commit's `([abc1234](url))`
-# and an issue's `[#12](url)`. Kept as the bare `#12`; the urls are tokens the
+# and an issue's `[#N](url)`. Kept as the bare `#N`; the urls are tokens the
 # model re-reads on every call and can do nothing with.
 _COMMIT_LINK_RE = re.compile(r"\s*\(\[[0-9a-f]{7,40}\]\([^)]*\)\)")
 _ISSUE_LINK_RE = re.compile(r"\[(#\d+)\]\([^)]*\)")

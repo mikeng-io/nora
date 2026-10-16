@@ -13,7 +13,7 @@ frames without scoring — a deployment without the wake model starts clean,
 like a deployment without a bot token starts the sidecar clean.
 
 openWakeWord's `Model` is stateful (it owns the rolling melspectrogram and
-embedding windows the brief calls the per-user 16-frame window), so each
+embedding windows), so each
 user gets their OWN instance, created lazily on their first frame and
 reaped after `idle_timeout_s` of silence. `model.reset()` after every
 completed utterance keeps one utterance's features out of the next.
@@ -23,8 +23,8 @@ chunks). Wall-clock: the sidecar's source is the Discord client, which sends
 packets only while its mic gate is open, so after a phrase NO chunks arrive
 and the gate cannot count anything. A per-user timer armed on every frame
 while COLLECTING flushes the utterance once `silence_tail_ms` of real time
-passes with no frame (measured 2026-09-17: without it a 0.99 wake sat
-collecting for 10 minutes, and every later 「喂 Nora」 was swallowed).
+passes with no frame; without it a fired gate would sit collecting and swallow
+every later 「喂 Nora」.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ class Config:
     health_port: int = 4601
     model_path: str = "/app/models/喂Nora.onnx"
     threshold: float = 0.5
-    silence_tail_ms: int = 800       # no-speech tail that ends an utterance (1000 in the RMS era)
+    silence_tail_ms: int = 800       # no-speech tail that ends an utterance
     max_utterance_s: float = 10.0
     silence_rms: float = 400.0       # RMS fallback when vad_enabled is false
     vad_enabled: bool = True         # Silero VAD decides "finished speaking"; noise is not speech
@@ -68,10 +68,10 @@ class Config:
     stt_language: str = "yue"
     stt_timeout_s: float = 30.0
     nora_url: str = "http://nora:9100"
-    # NO guild here since 2026-09-17. The guild arrives per CONNECTION, in the
+    # There is no guild here. The guild arrives per CONNECTION, in the
     # sidecar's hello frame, which is what lets one gate serve every guild —
-    # and it means this service has no deployment identity to configure at
-    # all. Where a guild's speech is RECORDED stays policy.toml's business.
+    # this service has no deployment identity to configure. Where a guild's
+    # speech is RECORDED is policy.toml's business.
     #
     # The channel the words were spoken in is still not sent: only the
     # controller knows which one it is connected to, and the field is optional
@@ -121,7 +121,7 @@ class WakeService:
     def __init__(self, config: Config) -> None:
         self._cfg = config
         self._started_at = time.time()
-        # KEYED BY (guild, user), not user (multi-guild 2026-09-17). The wake
+        # KEYED BY (guild, user), not user. The wake
         # model is per-speaker stateful — openWakeWord owns rolling
         # melspectrogram/embedding windows — so two guilds sharing a key would
         # feed one model two interleaved audio streams. The same person in two
@@ -195,10 +195,9 @@ class WakeService:
     def _report_scoring(self, key: tuple[str, str], state: _UserState) -> None:
         """What the model is SEEING, sampled.
 
-        The gate scored every chunk and reported nothing unless it crossed the
-        threshold, so a gate that stopped firing was indistinguishable from a
-        gate hearing nothing: 37 arms and 0 fires over four days with no number
-        anywhere to say which. The peak over a window separates the two cases
+        The gate scores every chunk, and without this a gate that stopped
+        firing is indistinguishable from a gate hearing nothing. The peak over
+        a window separates the two cases
         that need opposite fixes -- a peak near 0 means the audio reaching the
         model is not speech (a pipeline fault), a peak just under the threshold
         means it is speech the model nearly matched (a model or mic fault).
@@ -327,13 +326,12 @@ class WakeService:
             "clients": self._clients,
             # The guilds this gate is CURRENTLY serving, learned from the
             # connections' hellos rather than configured. One gate serves them
-            # all since 2026-09-17, so a single `guild_id` could no longer say
-            # what it was doing.
+            # all, so a single `guild_id` could not say what it is doing.
             "guilds": sorted({g for g, _ in self._users}),
             "uptime_seconds": round(time.time() - self._started_at, 1),
             # Whether a KNOWN wake clip still wakes this process. `status:
-            # "fail"` with everything else green is the exact state that went
-            # unnoticed for three days in Sep 2026.
+            # "fail"` with everything else green is a gate that is up and
+            # cannot wake.
             "selftest": self._selftest.as_json() if self._selftest is not None else None,
             "users": {
                 f"{guild_id}/{user_id}": {

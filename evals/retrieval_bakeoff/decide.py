@@ -1,6 +1,5 @@
-"""The bake-off's decision rule (design/unified-memory/20 «Slices and margins»,
-operator ruling 2026-10-15), stated once so a verdict can be re-derived from
-the result files without trusting whoever ran it.
+"""The bake-off's decision rule, stated once so a verdict can be re-derived from the result
+files without trusting whoever ran it.
 
 `decide(r)` takes `r[arm][slice] -> Score`, the shape `scores_from_results`
 reads out of `results/*.json`, arm names as the harness writes them.
@@ -15,22 +14,19 @@ reads out of `results/*.json`, arm names as the harness writes them.
    the baseline's) AND WINS text_image or names: its miss rate is at most
    half the baseline's, (1 - r) <= 0.5 * (1 - r_base). A baseline with no
    misses cannot be beaten.
-4. **Several passing** (operator ruling 2026-10-16): the fewest TOTAL MISSES
+4. **Several passing**: the fewest TOTAL MISSES
    summed over the journey slices, where a miss is a query whose first
    relevant item is not in the top 5 (`per_query`: a rank over 5, none in
    the top 50, or an errored query); then the lower dimension; then the arm
    name, so the pick is deterministic. A passing arm whose result carries no
    per-query ranks on a journey slice decides ERROR: its misses are unknown,
-   never guessed. It replaced "the best text_image recall@5, then the lower
-   dimension", which picked one more image found over 0.15 of Cantonese
-   recall (WeMM-2B over Qwen3-VL-Embedding-2B, design 20).
+   never guessed.
 5. **Media-only.** Wins text_image but does not hold cantonese: flagged for
    the operator (a second embedder doubles the index), never a REPLACE.
 6. **Otherwise a tie, and a tie keeps bge-m3.**
 
-Why halve-the-misses (operator, 2026-10-15): the plan's absolute +0.10
-recall@5 margin was unreachable once bge-m3 over the readings measured 0.928
-on text_image; a relative bar on what is still missed is reachable at any
+Why halve-the-misses: an absolute recall@5 margin becomes unreachable as the
+baseline nears 1.0; a relative bar on what is still missed is reachable at any
 floor and still demands a large gain.
 
 The bootstrap CIs in a result file are reported beside these numbers and
@@ -59,7 +55,7 @@ HOLD = 0.05
 WIN_MISS_RATIO = 0.5
 #: Float slack, so a score exactly on a margin passes it.
 _EPS = 1e-9
-#: A reranker's p95 added latency ceiling per caller, ms (20 «When a reranker earns its place»).
+#: A reranker's p95 added latency ceiling per caller, ms.
 RERANK_P95_MS = {"prefetch": 300.0, "cognition": 2000.0}
 RERANK_LIFT = 0.05
 
@@ -193,12 +189,12 @@ def scores_from_results(paths: Iterable[Path], *, subset: str | None = None,
 
     `rename` joins one candidate measured through two serving paths into one
     arm, explicitly: `{"wemm-fp32": "wemm"}` reads `dense:wemm-fp32@2048` as
-    `dense:wemm@2048` (WeMM at fp32 on the text slices, Q4 on text_image,
-    whose files keep each precision in their provenance).
+    `dense:wemm@2048` (WeMM at fp32 on the text slices, Q4 on text_image;
+    the files keep each precision in their provenance).
 
     A file whose arms recorded a known variant's format (`_variant_formats`)
-    has them relabelled first, whatever the caller passes: the first Qwen
-    run's arms, written as `qwen3vl`, load as `qwen3vl-defaultinst`.
+    has them relabelled first, whatever the caller passes: arms written as
+    `qwen3vl` with the default-instruction format load as `qwen3vl-defaultinst`.
 
     A candidate arm, after both renames, that appears twice for one slice
     raises ValueError (ERROR): the verdict would otherwise be whichever file

@@ -1,5 +1,4 @@
-"""Sign Nora's own Google account in, once, and print its ONE refresh token
-(design/external-files/00-design.md §4, "Sign-in (operator, once)").
+"""Sign Nora's own Google account in, once, and print its ONE refresh token.
 
     python3 scripts/google_auth.py
 
@@ -9,7 +8,7 @@ Google redirects back it exchanges the code for tokens and prints the REFRESH
 token for norty's `.env` (`GOOGLE_OAUTH_REFRESH_TOKEN`, or whatever
 `[google] refresh_token_env` names).
 
-- **One identity for every Google service** (operator, 2026-10-10): it asks
+- **One identity for every Google service:** it asks
   for the UNION of the scopes every service declares
   (`nora.infra.google.scopes.all_scopes`, `drive.readonly` alone today), with
   `access_type=offline` and `prompt=consent` (a refresh token every time).
@@ -17,7 +16,7 @@ token for norty's `.env` (`GOOGLE_OAUTH_REFRESH_TOKEN`, or whatever
   folded in, so the token holds what Nora's services declare and nothing
   else. Adding a service is a row in that table and one re-run of this script
   with the same client.
-- **A grant that could write, undeclared, is refused** (re-review of PR 801):
+- **A grant that could write, undeclared, is refused:**
   if Google grants a scope that can write and that no service declared
   (`scopes.undeclared_write_scopes`), the refresh token is NOT printed and the
   script exits 1. Nora refuses such a token at runtime too.

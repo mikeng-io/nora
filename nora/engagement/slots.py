@@ -1,20 +1,18 @@
 """R-10's single-in-flight lock and R-30's per-conversation FIFO queue, as ONE
 collaborator.
 
-WHY THIS EXISTS
----------------
-Both lived as private attributes of `EngagementPipeline`, with the lock's
-ownership split across `admission.run` (acquires) and the pipeline's `finally`
-(releases) — a split documented on both halves because getting it wrong
-strands a queued tag forever.
+WHY ONE OBJECT
+--------------
+The lock's ownership is split across `admission.run` (acquires) and the
+pipeline's `finally` (releases); getting that wrong strands a queued tag
+forever.
 
 The heartbeat fire path (`nora.app.heartbeat`) must contend for the SAME slot:
 a reminder must not run while a tag is in flight for that conversation, and a
-tag must not start while a reminder is firing. Reaching into the pipeline's
-privates to do that would leave `_dispatch_next` uncalled on release, which
-strands whatever queued behind the fire turn until the NEXT tag arrives — and
-that tag would then jump the queue. So the pair moves here, behind one object
-both paths hold.
+tag must not start while a reminder is firing. A release that does not start
+the next queued turn strands whatever queued behind the fire turn until the
+NEXT tag arrives, and that tag would then jump the queue. So the pair lives
+behind one object both paths hold.
 
 WHY `enqueue` TAKES A FACTORY
 -----------------------------

@@ -1,6 +1,5 @@
 """The touch path's stage — a reaction to, or a delete/unsend of, a recorded
-message: find it, and record the touch beside it
-(design/cognition-loop/20-observe.md §1, migration step 1).
+message: find it, and record the touch beside it.
 
 Neither is a message (`nora.domain.models.Touch`), so neither becomes a
 `messages` row, a transcript line, a Honcho feed or a turn. Each is a Record
@@ -11,8 +10,7 @@ A delete of a message on record also HIDES it (`RecordStore.hide_message`,
 `messages.hidden_at`): every replay and render reads through `transcript_select`,
 which excludes a hidden row, so the message is no longer shown or fed to memory.
 That is all a delete does. Honcho keeps what it was already fed (it has no
-per-message delete), and nothing derived from the message is marked or revisited:
-2 deletes in 5,984 messages live (2026-10-03) did not earn a cascade
+per-message delete), and nothing derived from the message is marked or revisited
 (AGENTS.md «A guard needs a consequence»). A delete whose target is not on record
 is dropped, as a reaction is. A reaction hides nothing.
 

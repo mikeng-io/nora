@@ -1,6 +1,5 @@
 """Renders one conversation's `Standing` into the `<standing>` block — Nora's
-own position, handed back to her at the top of the next turn
-(`design/dreamer-agent-loop/26-standing.md` §4).
+own position, handed back to her at the top of the next turn.
 
 **This is the one injected block that is HERS**, and every other one is about
 somebody else: `<notes>` is what the room has not settled, and
@@ -13,22 +12,21 @@ once becomes a thing she believes she observed.
 
 **And it still HEDGES ITSELF.** That looks contradictory beside «this is
 hers» and it is the single most important line in this module. Standing is
-folded from `tag_trace.messages`, which holds raw tool results (§4.3), and it
+folded from `tag_trace.messages`, which holds raw tool results, and it
 is the only injected block in the prompt that is **revised in place** rather
 than rebuilt from the store each turn — so an injection that lands in every
 other block lives one turn, and an injection that lands HERE persists until a
-later fold happens to drop it (§4.1, carried risk, stated and not solved). The
-sink screens identifiers and coordinates before the write
-(`nora.agent.dream_screen`); the sentence in the type is the second half of
-that, and neither is sufficient alone. It was `untrusted="true"` until #314 —
-the block with the subtlest reason to hedge, saying it with the one token whose
-definition this audience does not load.
+later fold happens to drop it. The sink screens identifiers and coordinates
+before the write (`nora.agent.dream_screen`); the sentence in the type is the
+second half of that, and neither is sufficient alone. The hedge is that
+sentence, not an `untrusted="true"` attribute, whose definition this audience
+does not load.
 
-**A lossy position, said out loud.** The tier is lossy by design (§8) — 1200
+**A lossy position, said out loud.** The tier is lossy by design — 1200
 characters, refuse-and-consolidate, no history in the row — so the note says
 the position may be out of date and points at the tiers that actually keep
 things. That sentence is what stops `<standing>` becoming the place a wedding
-venue lives (`19-between-tiers.md`): she has to be told that this block forgets,
+venue lives: she has to be told that this block forgets,
 or the cheapest place to put something is the place least able to hold it.
 """
 
@@ -49,18 +47,12 @@ def render_standing(
     is not a conversation she has an empty opinion about, and rendering an empty
     block would say she had considered it and concluded nothing.
 
-    **`written` is the block's age**, and without it the note above was making
-    a recency claim it could not support: it used to say «as of last turn»,
-    which is true in a busy room and false in one that went quiet over a
-    weekend, with nothing in the block letting her tell which she was in.
-    `updated_at` was on the row the whole time.
-
-    This is `prefill._age`'s finding one block over. That helper exists because
-    «every message looked equally recent … which is what made 今晚 and 琴日
-    unanswerable even with a clock in the header», and it was applied to the
-    transcript and to nothing else — including the block rendered directly
-    above it. The Relevance Gate had the same gap and lost two thirds of its
-    error rate closing it (2026-09-10).
+    **`written` is the block's age** (from the row's `updated_at`). Without it
+    the note would claim recency it cannot support: «as of last turn» is true
+    in a busy room and false in one that went quiet over a weekend, with
+    nothing in the block to tell her which she is in. It is the same rendering
+    as `prefill._age`, for the same reason: undated items all read as equally
+    recent.
 
     Escaped, per R-13: the body is model-authored text folded from a transcript
     the group wrote, so a forged closing tag is reachable from the room's own
@@ -69,14 +61,9 @@ def render_standing(
     if standing is None or not standing.body.strip():
         return None
     written = _age(standing.updated_at, now or datetime.now().astimezone())
-    # The sectioned schema's other two sections (design/cognition-loop/
-    # 12-schemas.md §5, migration `0076_standing_sections`, step 3 row 3b):
-    # `I hold open` and `I owe`, appended only when a fold has revised them —
-    # `None` on every row this step migrates (no caller writes them yet,
-    # `nora.infra.sql.standing_revise`'s own module docstring), so this is a
-    # no-op for every row live today and the block is byte-identical to what
-    # it rendered before this step. `body` (`Where it stands`) is unchanged
-    # above it, which is what keeps an existing head's rendered facts intact.
+    # The sectioned schema's other two sections, `I hold open` and `I owe`, are
+    # appended only when a fold has revised them; a row without them renders
+    # byte-identical to the `body` alone (`Where it stands`).
     body = escape(standing.body)
     if standing.hold_open:
         body = f"{body}\n\nI hold open: {escape(standing.hold_open)}"
@@ -91,8 +78,7 @@ def render_standing(
 def render_standing_working_set(
     working_set: tuple[WorkingSetItem, ...], *, now: datetime | None = None,
 ) -> ContextBlock | None:
-    """`<standing_working_set>` — options found and not yet given the room
-    (design/standing-compact/30-working-set.md §2/§4, issue #445).
+    """`<standing_working_set>` — options found and not yet given the room.
 
     **Fail-closed on the TTL, by construction, not by a sweep.** An item
     older than `WORKING_SET_TTL_HOURS` is filtered out HERE, before the block

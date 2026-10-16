@@ -19,15 +19,11 @@ from wakegate.codec import FrameParser, encode_frame, encode_hello
 
 FIXTURE = Path(__file__).parent / "fixtures" / "seam_frames.bin"
 
-#: The fixture is a RECORDING of frames a real sidecar wrote, and it was never
-#: committed — the three tests below have raised FileNotFoundError for as long
-#: as this file has existed. Skipped rather than left red: three permanent
-#: failures train a reader to stop looking at this suite, which is how the
-#: `conversation_id` assertion two files over survived a rename.
+#: The fixture is a RECORDING of frames a real sidecar wrote and is not
+#: committed, so the tests that read it skip when it is absent rather than fail.
 #:
-#: NOT regenerated from `encode_frame`. The recording's whole value is that it
-#: came from the other implementation; synthesizing it would check the codec
-#: against itself and pin nothing.
+#: Never regenerate it from `encode_frame`: its value is that it came from the
+#: other implementation; synthesizing it would check the codec against itself.
 _needs_fixture = pytest.mark.skipif(
     not FIXTURE.is_file(),
     reason="tests/fixtures/seam_frames.bin is not committed — re-record it from "
@@ -85,7 +81,7 @@ def test_encode_frame_round_trips_through_the_parser():
     assert parser.feed(encode_frame("u1", b"\x01\x02")) == [("u1", b"\x01\x02")]
 
 
-# --- the HELLO frame (multi-guild, 2026-09-17) -------------------------------
+# --- the HELLO frame (multi-guild) -------------------------------------------
 # Twin of `deploy/voice-sidecar/test/codec.test.mjs`. One wire format, two
 # implementations: a change to either is a change to both.
 

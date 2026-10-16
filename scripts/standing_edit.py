@@ -1,11 +1,9 @@
 """Operator one-shot: hand-edit one room's Standing position.
 
-design/dreamer-agent-loop/26-standing.md, dated section 2026-09-25. On
-2026-09-24 an operator-approved manual purge edited two `standing` rows
-through `SqlStandingStore.write` — the ordinary fold path — and the history
-now records those edits as folds, indistinguishable from the model's own
-work. This script is the ONE other writer of that table, and it differs from
-the fold in every way the fold must not:
+An operator edit written through `SqlStandingStore.write` (the ordinary fold
+path) would be recorded in the history as a fold, indistinguishable from the
+model's own work. This script is the ONE other writer of that table, and it
+differs from the fold in every way the fold must not:
 
 1. **Compare-and-set, not a blind upsert.** The fold's `write` never refuses —
    it has no "someone else changed it" recovery and was never designed to
@@ -19,10 +17,10 @@ the fold in every way the fold must not:
    read any further into the conversation than the last fold did — those two
    fields ride the read value straight back.
 3. **The revision this write appends carries `source='operator'`**, never
-   `'fold'` — the entire reason `standing_revision` gained that column.
+   `'fold'` — the reason `standing_revision` has that column.
 
-**The reverse race is NOT closed** (26-standing.md §9, "a fold can still
-overwrite an operator edit"). `write_if_unchanged` protects THIS script's
+**The reverse race is NOT closed** (a fold can still overwrite an operator
+edit). `write_if_unchanged` protects THIS script's
 write from a fold that landed before it; it does nothing for a fold that
 lands AFTER — a fold reads the prior, calls the model (seconds), then does
 its own blind upsert with no compare-and-set at all, so an edit landing
@@ -77,7 +75,7 @@ CONFIG_PATH = Path("/app/config.toml")
 #: How long to wait before re-reading the head after a write, looking for a
 #: fold that landed on top of it. A few seconds, not a science: it is a
 #: best-effort widening of the catch window, never a guarantee (see the
-#: module docstring and 26-standing.md §9).
+#: module docstring).
 DEFAULT_RECHECK_DELAY_SECONDS = 5.0
 
 
@@ -142,10 +140,9 @@ def render_diff(*, before_body: str, new_body: str) -> str:
 
 def _build_after(before: Standing, new_body: str, *, now_ms: int) -> Standing:
     """`before` with the new body and time and NOTHING else changed — a
-    `replace`, not a field-by-field rebuild. The rebuild this replaced named
-    every field but `working_set`, so it wrote an empty working set over
-    whatever the room held, which `write_if_unchanged` refuses: every edit of
-    a room with a working set raised instead of landing (#541)."""
+    `replace`, not a field-by-field rebuild: a rebuild that omitted
+    `working_set` would write an empty working set over whatever the room
+    held, which `write_if_unchanged` refuses."""
     try:
         return dataclasses.replace(before, body=new_body, updated_at=now_ms)
     except ValueError as exc:

@@ -2,7 +2,7 @@
 
 It runs in Nora's container, never in the sandbox VM: the VM is untrusted, and a
 second copy of the check inside it would be a second implementation to keep in
-step (design/artifact/00-design.md §23). `computer_export(to="document")` calls
+step. `computer_export(to="document")` calls
 `check_document` and, on a refusal, hands the model the `Finding`s so it can fix
 the file and export again.
 
@@ -125,8 +125,8 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _to_bytes(raw: bytes | str | dict[str, Any]) -> tuple[bytes | None, Finding | None]:
     """Everything is written to JSON bytes first, a dict included, so one path
     judges all input. A dict skipped the size cap, NaN, duplicate and recursion
-    guards of the bytes path, and a dict subclass could lie to `.get` (review,
-    2026-10-01); written out and read back, it is plain JSON. (An object that lies
+    guards of the bytes path, and a dict subclass could lie to `.get`; written out
+    and read back, it is plain JSON. (An object that lies
     while it is written is judged on what it wrote: callers store `Checked.canonical`,
     never the object they passed in.)"""
     if isinstance(raw, bytes):
@@ -161,9 +161,8 @@ _CONTEXT_CHARS = 28
 def _where_it_broke(text: str, exc: json.JSONDecodeError) -> str:
     """The parser's own message plus the characters around the break, marked, so a writer who sent
     a long spec as text can find the one bad character. A bare «Expecting ',' delimiter: line 1
-    column 7248» gave a model nothing to fix in 10,000 characters (2026-10-02): it saved the draft
-    elsewhere and told the room the document was made. The usual cause is a straight double quote
-    inside a string that was not escaped, so the hint names it."""
+    column 7248» gives a model nothing to fix in a long text. The usual cause is a straight double
+    quote inside a string that was not escaped, so the hint names it."""
     start = max(0, exc.pos - _CONTEXT_CHARS)
     before = text[start : exc.pos].replace("\n", "\\n")
     after = text[exc.pos : exc.pos + _CONTEXT_CHARS].replace("\n", "\\n")
@@ -264,7 +263,7 @@ _PATTERNS = {
 def _describe(error: ValidationError) -> str:
     """A rule in document terms. The offending content is named, never repeated at
     length: a finding goes back to a model, and a long echo of a hostile value is a
-    way to hand it instructions (review, 2026-10-01)."""
+    way to hand it instructions."""
     # The stubs type these as `Any | Unset`; a ValidationError raised by iter_errors always
     # carries all three, so they are read as plain values.
     rule = str(error.validator)
@@ -475,8 +474,8 @@ def _normalise(document: Any) -> tuple[Any, Finding | None]:
     """The form that is judged, hashed and stored: NFC on every string and key, an
     integral float written as an int, `-0.0` as `0`. It runs BEFORE validation: run
     after, a value that passed could grow past its limit or turn into a statement the
-    Mermaid allowlist refuses (U+0958 x 40 becomes 80 characters, U+212A becomes `K`;
-    review, 2026-10-01). Without it the same document had several hashes too.
+    Mermaid allowlist refuses (U+0958 x 40 becomes 80 characters, U+212A becomes `K`).
+    Without it the same document would have several hashes.
     Iterative, because it runs on structure the schema has not yet bounded."""
     box: dict[str, Any] = {}
     stack: list[tuple[Any, Any, Any, str]] = [(document, box, "root", "")]
@@ -519,7 +518,7 @@ def _strip_ansi(document: Any) -> Finding | None:
     It runs BEFORE normalisation and the schema, so the text that is validated,
     normalised and hashed is the text that is stored: run after them, stripping left
     an empty string that passed `minLength`, and joined characters that NFC had not
-    seen side by side, so the same document hashed two ways (review, 2026-10-01).
+    seen side by side, so the same document hashed two ways.
     Nothing is assumed about the tree yet: the schema has not run."""
     root = document.get("root") if isinstance(document, dict) else None
     for node, where, _ in _walk(root, "/root"):
@@ -542,7 +541,7 @@ def _strip_ansi(document: Any) -> Finding | None:
 
 # ---------------------------------------------------------------- extraction
 # Each pattern is linear: a class that excludes the delimiter it is scanning for, so
-# no start rescans to the end (the first `_LINK` took 9.5 s on twelve nodes of `[`).
+# no start rescans to the end (a quadratic pattern on a long run of `[` is a denial of service).
 _LINK = re.compile(r"\[([^\[\]]*)\]\([^()]*\)")
 _REFERENCE = re.compile(r"(?m)^[ \t]*\[[^\[\]]*\]:[ \t]*\S+.*$")
 _AUTOLINK = re.compile(r"<[a-zA-Z][a-zA-Z0-9+.-]*:[^<>\s]*>|\b(?:https?|ftp)://\S+")

@@ -1,6 +1,6 @@
 """Entry point: python -m nora.presence
 
-The presence collector daemon (design/19 §4) — the same codebase as `python -m
+The presence collector daemon — the same codebase as `python -m
 nora`, a DIFFERENT command and a SEPARATE process. Thin by the same design as
 `nora.__main__`: load config, build the object graph through
 `nora.presence.composition.build_collector`, serve a metrics/health endpoint,
@@ -42,7 +42,7 @@ def _metrics_app(
 ) -> web.Application:
     """A minimal /metrics + /health app for the collector process — it has no
     adapter or record store to report on, only its own metrics registry (which
-    carries the liveness heartbeat and the canary counters, §4).
+    carries the liveness heartbeat and the canary counters).
 
     Plus `POST /refresh?person_id=…` (DEC-67): Nora's `where_is` calls it to force
     a LIVE on-demand reading for one person — the collector owns Life360 and the
@@ -51,7 +51,7 @@ def _metrics_app(
     503 when collection is disabled. Best-effort: never 500s (a failed refresh
     leaves `where_is` reading the last stored fix).
 
-    ACCEPTED RISK — no rate-limit, no coalescing (operator, 2026-08-08, DEC-69).
+    ACCEPTED RISK — no rate-limit, no coalescing (DEC-69).
     Each call fires an independent Life360 location request, so N simultaneous
     «where_is Miles» tags would fire N pings for one member (and a flapping caller
     could hammer Life360 toward its 429 ban). This is accepted, not overlooked,
@@ -59,9 +59,8 @@ def _metrics_app(
     is reachable solely by Nora (not the internet), and `where_is`'s own budget
     (2/tag) bounds the per-tag rate. The collector's `auth_failures` back-off is
     the real ban guard (a 429 stops the loop); this endpoint adds no throttle on
-    top. If a second internal caller is ever added, revisit — a per-person cooldown
-    + concurrent-request coalescing is the fix, deferred until there's a caller
-    that needs it."""
+    top. A second internal caller would need a per-person cooldown and
+    concurrent-request coalescing."""
     app = web.Application()
 
     async def metrics_endpoint(_: web.Request) -> web.Response:
@@ -71,11 +70,10 @@ def _metrics_app(
         )
 
     async def health(_: web.Request) -> web.Response:
-        # The LOADED-config summary (obs review 2026-08-08): the circles this
-        # collector actually polls + whether identity.toml changed on disk since
-        # it started. `1 circle, 1 member` or `identity.stale=true` is the whole
-        # "only miles gets a fix" root cause, visible in one GET instead of a
-        # 20-minute investigation.
+        # The LOADED-config summary: the circles this collector actually polls
+        # + whether identity.toml changed on disk since it started. `1 circle,
+        # 1 member` or `identity.stale=true` explains a member who gets no fix,
+        # visible in one GET.
         body: dict[str, object] = {"status": "ok"}
         if collector is not None:
             body["circles"] = collector.circle_summary()
@@ -116,7 +114,7 @@ async def _run(config_path: Path) -> None:
         # The collector's own credentials, redacted the way `nora.__main__`
         # redacts the LLM key. The username is included on purpose: it is an
         # email address — an identifier, exactly what this repo keeps out of
-        # log files (audit hygiene, 2026-08-07).
+        # log files.
         secrets=[
             value
             for value in (
@@ -126,8 +124,7 @@ async def _run(config_path: Path) -> None:
                 os.environ.get(cfg.presence.auth_token_env, ""),
                 os.environ.get(cfg.presence.geocode_api_key_env, ""),
                 # The HK-gov token rides the query string (the leakiest position),
-                # so it must be scrubbed too — the safety net was Google-only
-                # (Kimi audit 2026-08-08).
+                # so the scrub safety net must cover it too.
                 os.environ.get(cfg.presence.hkgov_token_env, ""),
             )
             if value

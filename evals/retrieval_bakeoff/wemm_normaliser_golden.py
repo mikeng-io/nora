@@ -1,5 +1,4 @@
-"""Goldens for `adapters.wemm_prompt` from WeMM-Embedding-2B's own tokenizer
-(design/unified-memory/20, PR #21 review round 2).
+"""Goldens for `adapters.wemm_prompt` from WeMM-Embedding-2B's own tokenizer.
 
 llama-server does not normalise, so the adapter must send the string the
 official tokenizer would have produced. For a seeded fuzz corpus (every added

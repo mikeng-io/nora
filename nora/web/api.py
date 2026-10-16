@@ -2,13 +2,12 @@
 GET /app/v1/games/servers* trio, GET /app/v1/presence*, the read-only
 GET /app/v1/events(/{id}) pair, the documents routes and the Artifacts routes
 (`nora.web.artifacts`) onto an existing aiohttp Application — same
-process/container as Nora (design spec §3, §5.3).
+process/container as Nora.
 
 Deliberately a `register_*` function taking an existing `web.Application`,
 not a `build_*_app` returning a new one: these routes join the health app
 nora/obs/health.py::build_health_app already builds and nora/__main__.py
-already serves on :9100 — a second app would mean a second port, which the
-spec's deployment section (§6) explicitly rules out.
+already serves on :9100 — a second app would mean a second port.
 """
 
 from __future__ import annotations
@@ -78,11 +77,9 @@ log = logging.getLogger("nora.web.api")
 # unavailable"; an operator reading nora.log gets the real `str(exc)`.
 _GAMES_UNAVAILABLE_BODY = {"error": "games backend unavailable"}
 
-# Default matches the previous REST proxy's `?hours=24` default
-# (the portal's first per-route proxy; the portal forwards `hours` as given
-# since its 2026-09-27 rebuild, app/src/server/upstream.ts) — kept here so an
-# absent query param behaves identically to before, even though the
-# endpoint itself is unavailable today (nora/web/games.py's module
+# Default `?hours=24`; the portal forwards `hours` as given
+# (app/src/server/upstream.ts), so this applies only when the query param is
+# absent. The endpoint itself is unavailable today (nora/web/games.py's module
 # docstring).
 _DEFAULT_GRAPH_HOURS = 24
 
@@ -109,7 +106,7 @@ def _needs_a_build(
     yet (a fresh database, before the analytics process's first rebuild
     switches one in) the answer is 503 «no build yet» — R-27's
     `unavailable` — never an empty 200, which would say the person has no
-    places, no rhythm and no routes (design/cognition-loop/25-rollup.md §2)."""
+    places, no rhythm and no routes."""
 
     async def wrapped(request: web.Request) -> web.Response:
         try:

@@ -1,5 +1,4 @@
-"""DiscordAdapter — the second `PlatformAdapter` implementation
-(design/discord-integration/).
+"""DiscordAdapter — a `PlatformAdapter` implementation.
 
 Mirrors `nora.platform.signal.adapter.SignalAdapter`'s composition: a thin
 class wiring together a listener/parser/sender, adapted to Discord's
@@ -72,29 +71,26 @@ class DiscordAdapter:
         self._own_id = ""
         # Her Discord handle, cached from the SAME `/users/@me` response
         # `resolve_identity()` fetches once — `own_handle()` reuses it rather
-        # than reading it live per turn (design/self-awareness/02/06). `None`
+        # than reading it live per turn. `None`
         # until the first `resolve_identity()`, and stays `None` if Discord
         # reported no username.
         self._own_handle: str | None = None
-        # design/discord-music/02-control-surface.md — `None` when
-        # `[music] enabled = false` (nora/app/composition.py), which is what
-        # keeps this adapter unchanged for every deployment that hasn't
-        # turned the feature on.
+        # The music control surface — `None` when `[music] enabled = false`
+        # (nora/app/composition.py), which keeps this adapter unchanged for
+        # every deployment that hasn't turned the feature on.
         self._music_manager = music_manager
-        # WHERE this guild's music ANNOUNCEMENTS go (design/discord-music/
-        # 10-notification-routing.md) — `policy.toml`'s `music_channel`,
-        # threaded as a callable so the platform layer keeps knowing nothing
-        # about `nora.policy`. The default answers `None` for every guild,
-        # which is the pre-field behaviour: announce where the session started.
+        # WHERE this guild's music ANNOUNCEMENTS go — `policy.toml`'s
+        # `music_channel`, threaded as a callable so the platform layer knows
+        # nothing about `nora.policy`. The default answers `None` for every
+        # guild: announce where the session started.
         self._resolve_music_channel = resolve_music_channel
-        # The voice path (design/voice-channel/07): the MiniMax speaker and
-        # the audio-controller hub. BOTH None on every deployment that hasn't
-        # wired the voice path — the text-only posture stays byte-identical.
-        # A SPOKEN turn routes through speak → the controller's `/stream`
-        # endpoint instead of REST text (see `send`). `voice_guild_ids` is
-        # not part of that decision: it is the join allow-list, naming the
-        # guilds whose voice channels Nora may be pulled into at all
-        # (design/voice-channel/07 §12.2, reversed 2026-09-17).
+        # The voice path: the MiniMax speaker and the audio-controller hub.
+        # BOTH None on every deployment that hasn't wired the voice path — the
+        # text-only posture stays byte-identical. A SPOKEN turn routes through
+        # speak → the controller's `/stream` endpoint instead of REST text (see
+        # `send`). `voice_guild_ids` is not part of that decision: it is the
+        # join allow-list, naming the guilds whose voice channels Nora may be
+        # pulled into at all.
         self._speaker = speaker
         self._voice_hub = voice_hub
         self._voice_guild_ids = set(voice_guild_ids)
@@ -106,11 +102,10 @@ class DiscordAdapter:
         # branch, so a `listen()` that RETURNS rather than raising becomes a
         # hot loop — re-running `login()` against Discord with no delay, no
         # `nora_adapter_restarts_total`, and no log line, with the Gateway
-        # permanently down. Holding one client for the process lifetime turned
-        # the supervisor's restart into a silent no-op; a per-attempt client is
-        # what makes the restart real.
+        # permanently down. A per-attempt client is what makes the
+        # supervisor's restart real.
         self._listener: DiscordListener | None = None
-        # design/discord-music/07-agent-tool.md — the ONE thing an agent
+        # The ONE thing an agent
         # tool needs that `NormalizedMessage`/`TagContext` never carry: a
         # live client to resolve a guild member's current voice channel.
         # Same per-attempt lifecycle as `_listener` above; `current_client()`
@@ -137,7 +132,7 @@ class DiscordAdapter:
         """Her handle on Discord — `@username#discriminator`, or `@username`
         alone once the account is on unique usernames — read from the SAME
         `/users/@me` response `resolve_identity()` fetches once at startup,
-        never a second call per turn (design/self-awareness/02/06). Ensures
+        never a second call per turn. Ensures
         that call has happened (a no-op once memoized) rather than answering
         `None` merely because nothing has asked yet. Display text for
         `<presence>` only — it never enters `PlatformIdentity`, so it can
@@ -156,17 +151,16 @@ class DiscordAdapter:
 
         # One client, one listener, PER ATTEMPT — see `__init__`.
         intents = discord.Intents.default()
-        intents.message_content = True  # privileged; see design/discord-integration/01
+        intents.message_content = True  # privileged
         intents.guilds = True
         intents.members = True          # privileged; the roster read needs it
-        intents.presences = True        # privileged; presence intent (design/online-status/02)
+        intents.presences = True        # privileged; presence intent
         client = discord.Client(intents=intents)
         self._current_client = client
 
         async def _register_music_commands() -> None:
-            # `design/discord-music/02-control-surface.md`: the CommandTree
-            # is built fresh alongside `client`, every attempt, same
-            # lifecycle. Not independently testable (a real
+            # The CommandTree is built fresh alongside `client`, every
+            # attempt, same lifecycle. Not independently testable (a real
             # `discord.Client`/`CommandTree`) -- `music_commands.py`'s own
             # docstring is explicit about that boundary.
             if self._music_manager is not None:
@@ -177,8 +171,7 @@ class DiscordAdapter:
                     resolve_music_channel=self._resolve_music_channel,
                     client_getter=self.current_client,
                 )
-                # design/discord-music/06-session-persistence.md stage 2 --
-                # safe to run on every on_ready, not just a genuine boot
+                # Safe to run on every on_ready, not just a genuine boot
                 # (resume_persisted_sessions's own guard against clobbering
                 # an already-live player).
                 await resume_persisted_music_sessions(
@@ -187,11 +180,11 @@ class DiscordAdapter:
                     client_getter=self.current_client,
                 )
                 # Idempotent, so every on_ready is safe: the watch asks the
-                # controller whether sound is actually moving, because until
-                # it existed nora only ever learned that music stopped from
+                # controller whether sound is actually moving, because
+                # otherwise nora would only learn that music stopped from
                 # an event a wedged controller does not send.
                 self._music_manager.start_liveness_watch()
-            # B-2 (2026-09-16 audit): a guild with no persisted MUSIC row
+            # A guild with no persisted MUSIC row
             # never calls `hub.join` above, so a wake-reply-only boot would
             # leave the controller's boot-joined connection un-adopted and
             # every speech reply silently dropped until a human ran
@@ -209,7 +202,7 @@ class DiscordAdapter:
         # event as its own task, so a message and its edit could be ingested
         # CONCURRENTLY — and a new message's insert waits on attachment custody
         # and transcription, so an edit made in that window found nothing and
-        # was dropped as an orphan (audit, 2026-09-24). Signal, WhatsApp and
+        # was dropped as an orphan. Signal, WhatsApp and
         # Instagram already ingest one event at a time off a single stream;
         # this gives Discord the same order within a channel, which is the only
         # order an edit depends on, without serialising unrelated channels.
@@ -227,7 +220,7 @@ class DiscordAdapter:
 
         # An edit reaches the SAME `on_message` as a new message: it is a
         # `NormalizedMessage` with `edit_of` set, and ingest routes it
-        # (design/message-edits/02 §4), as it does for every other network.
+        # as it does for every other network.
         async def _on_discord_edit(raw_message: Any) -> None:
             message = parse_discord_edit(raw_message, own_id=self._own_id)
             if message is not None:
@@ -235,7 +228,7 @@ class DiscordAdapter:
                     await on_message(message)
 
         # A reaction or a delete reaches the SAME `on_message` too, as a
-        # `NormalizedMessage` with `touch` set (design/cognition-loop/20 §1),
+        # `NormalizedMessage` with `touch` set,
         # under the channel's lock so it cannot race the message it touches.
         async def _on_discord_touch(kind: str, payload: Any) -> None:
             message = (
@@ -259,9 +252,9 @@ class DiscordAdapter:
             # rotated token (401), a DNS failure, a Discord 5xx — leaves its
             # `aiohttp.ClientSession` open. `supervise_adapter` retries forever
             # and this method builds a fresh client each time, so a sustained
-            # auth or network outage leaked one session and connector per
-            # attempt (~1400/day at the 60s backoff cap), each announcing
-            # itself later as "Unclosed client session" from the GC.
+            # auth or network outage would leak one session and connector per
+            # attempt, each announcing itself later as "Unclosed client
+            # session" from the GC.
             #
             # `close()` on an already-closed client is a no-op, so this is safe
             # on the ordinary path too.
@@ -292,23 +285,17 @@ class DiscordAdapter:
         # speaker or a hub the reply is SILENT (ok=False, text-only fallback
         # is the caller's business).
         #
-        # Routed on the TURN, not on the room (design/voice-channel/07 §12.2,
-        # reversed 2026-09-17). While speech had a room of its own, "this
-        # conversation_id is a voice channel" and "this question was spoken"
-        # were the same fact. Now a guild's speech lands in its text room, so
-        # one room takes both — and the honest rule is the one that was always
-        # meant: answer the way you were asked. A typed question in a room
-        # Nora also listens to by voice still gets a text reply.
+        # Routed on the TURN, not on the room. A guild's speech lands in its
+        # text room, so one room takes both spoken and typed questions, and
+        # the rule is: answer the way you were asked. A typed question in a
+        # room Nora also listens to by voice still gets a text reply.
         if target.voice:
             spoken = await self._send_voice(target=target, text=text)
             if spoken.ok:
                 return spoken
-            # FALL BACK TO TEXT (operator, 2026-09-17). Speech is a surface of
-            # an ordinary room now, so `target.conversation_id` is a postable
-            # text channel — and an answer the room can read beats an answer
-            # nobody gets. Until §12.2 was reversed the voice room had no text
-            # surface at all, so dropping was the only honest outcome; it is
-            # not any more.
+            # FALL BACK TO TEXT. Speech is a surface of an ordinary room, so
+            # `target.conversation_id` is a postable text channel — and an
+            # answer the room can read beats an answer nobody gets.
             #
             # Covers every reason speech failed, not just an unspeakable one:
             # no session, a TTS outage, an unwired guild. Each already logged
@@ -331,11 +318,9 @@ class DiscordAdapter:
             )
             return SendResult(ok=False)
         if not speakable(text):
-            # design/voice-channel/01 §7 — a long opaque string must not be
-            # read aloud. `speakable`'s own docstring said the caller "either
-            # rewords the reply or sends it text-only", and until 2026-09-17
-            # no caller did either: the reply was simply dropped and counted
-            # as a silent failure. `send` above now posts it as text.
+            # A long opaque string must not be read aloud: the caller either
+            # rewords the reply or sends it text-only (`speakable`), and
+            # `send` above posts it as text.
             log.info(
                 "voice-channel send refused: not speakable (target=%s)",
                 target.conversation_id,
@@ -344,8 +329,8 @@ class DiscordAdapter:
         # REFUSE BEFORE PAYING. `policy.toml`'s `voice = true` and
         # `[speech.tts] sidecars` are independent on purpose, so a guild whose
         # speech is RECORDED may legitimately have no controller to play it
-        # through. Without this check that configuration billed MiniMax for a
-        # synthesis on every spoken turn and threw the audio away, because the
+        # through. Without this check that configuration would bill MiniMax for a
+        # synthesis on every spoken turn and throw the audio away, because the
         # guard above only asks whether a speaker and hub exist AT ALL — and
         # they do, for some other guild.
         guild_id, _, _ = target.conversation_id.partition("/")
@@ -359,7 +344,7 @@ class DiscordAdapter:
         if not result.available or not result.audio:
             log.warning("voice-channel send failed: tts unavailable (reason=%s)", result.reason)
             return SendResult(ok=False)
-        # The ONLY speech path (design/voice-channel/07 §3): the
+        # The ONLY speech path: the
         # controller's `/stream` endpoint, generation-scoped via the hub.
         # `False` covers every failure (stale generation, controller down) —
         # the hub already logged which. The no-session case was refused above,
@@ -381,11 +366,10 @@ class DiscordAdapter:
         `to_author`/`to_timestamp` (Signal's scheme) cannot reconstruct —
         `snowflake.timestamp_ms` is not invertible, the low 22 bits are gone.
 
-        This used to be an honest `supported=False` for exactly that reason.
-        It no longer has to be: `NormalizedMessage.message_id` carries the real
-        snowflake from the parser, and the port passes it through as
-        `to_message_id`. Absent one, `DiscordReactor` still answers
-        `supported=False` rather than guessing at a message.
+        `NormalizedMessage.message_id` carries the real snowflake from the
+        parser, and the port passes it through as `to_message_id`. Absent one,
+        `DiscordReactor` answers `supported=False` rather than guessing at a
+        message.
         """
         return await self._reactor.react(
             target=target, emoji=emoji, to_message_id=to_message_id, remove=remove,

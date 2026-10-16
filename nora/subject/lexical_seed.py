@@ -1,5 +1,5 @@
 """The live lexical seed, obtained for the retrieval bake-off
-(`evals/retrieval_bakeoff/`, design/unified-memory/20 stage 1).
+(`evals/retrieval_bakeoff/`).
 
 The bake-off's trigram arm has to BE the seed Nora searches with, not a copy
 of its SQL: `nora.agent.memory_search.terms_of` splits the query and

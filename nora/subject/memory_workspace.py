@@ -1,36 +1,32 @@
 """A Honcho workspace per eval DRAW: created empty, deleted when the draw ends.
 
-Issue #462. Until this module, every subject composed against ONE shared
-`<deployment>-eval` workspace. The sandbox DATABASE was per case; Honcho was
-not. Ingest feeds every arriving line and her reply into Honcho, the deriver
-turns them into conclusions, and the tag path reads those conclusions back as
-the tagger card. So draw 3 of a case read what draws 1 and 2
-had said, ranked by similarity to the very question being asked again, and
-replied «你問咗第三次喇» («third time you've asked»). The judge graded that as a
-fabrication, because the window it grades against holds no earlier ask. Draws
-were correlated, concurrent arms read each other's notes, and a case's reading
-depended on which runs, from any session, had happened before it.
+The sandbox DATABASE is per case; Honcho would not be if subjects shared one
+`<deployment>-eval` workspace. Ingest feeds every arriving line and her reply
+into Honcho, the deriver turns them into conclusions, and the tag path reads
+those conclusions back as the tagger card. With a shared workspace, draw 3 of a
+case would read what draws 1 and 2 had said, ranked by similarity to the very
+question being asked again, and reply «你問咗第三次喇» («third time you've
+asked»); the judge would grade that as a fabrication, because the window it
+grades against holds no earlier ask. Draws would be correlated, concurrent arms
+would read each other's notes, and a case's reading would depend on which runs,
+from any session, had happened before it.
 
-A workspace of the draw's own closes it by construction, the same way the
-sandbox database closed the room: nothing a draw writes can reach another draw,
+A workspace of the draw's own closes this by construction, the same way the
+sandbox database closes the room: nothing a draw writes can reach another draw,
 because there is no other draw in it.
 
-THE BASELINE IS PRESERVED, NOT CHANGED. `design/evaluation/11` §1.3 states that
-"every sandbox's peer card is EMPTY" as a declared tier gap. That was true of
-the design and false of the shared workspace, which had accreted 400+
-conclusions under `miles_novak` alone. A fresh workspace is empty, which is what
-the design always said a case saw. What a case SEEDS (`know()`'s conclusions)
+A fresh workspace has an EMPTY peer card, which is the baseline a case sees.
+What a case SEEDS (`know()`'s conclusions)
 still lands, because it writes through the subject's own client.
 
 THE GUARD. Delete is permanent, and production's workspace is one prefix away
 from every name here. So nothing in this module will create, delete or sweep a
 workspace whose id does not start with `<deployment>-eval-`: not the
-deployment's own (`nora`), not the shared sibling (`nora-eval`), and not the
-hashed per-case workspaces an earlier design left behind (`nora-48b0...`).
+deployment's own (`nora`), not the shared sibling (`nora-eval`), and not any hashed
+per-case workspace (`nora-48b0...`).
 `obtain.build_config` holds the matching guard on the subject side.
 
-THE HONCHO API, READ FROM ITS OWN OPENAPI (3.1.2 on the deploy host,
-2026-09-24), not assumed:
+THE HONCHO API, as its own OpenAPI states it (3.1.2):
 
 - `POST /v3/workspaces` is get-or-create, `{id, metadata}`; the id matches
   `^[a-zA-Z0-9_-]+$`, at most 512 characters.
@@ -78,10 +74,10 @@ STALE_AFTER = timedelta(hours=6)
 #:
 #: A draw can never read what the deriver would derive from it: derivation
 #: lags minutes to tens of minutes behind a feed, and a draw lives for one
-#: turn. So every derivation task a draw enqueued was pure load on the one
-#: Honcho that also derives production's memory, and it queued the draw's
-#: own delete behind it (measured 2026-09-24: deletes accepted at once, carried
-#: out ~40 minutes later, behind a 43-task backlog).
+#: turn. So every derivation task a draw enqueues is pure load on the one
+#: Honcho that also derives production's memory, and it queues the draw's
+#: own delete behind it (a delete is accepted at once but carried out only after
+#: the queued backlog).
 #:
 #: `reasoning.enabled = false` stops the representation tasks, and with them
 #: peer cards and dreams (the schema says both are ignored when reasoning is

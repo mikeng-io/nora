@@ -1,10 +1,10 @@
 """The transport tier, held for a sandbox — what each network's connection is
 doing, which no anchor can reconstruct.
 
-`<presence>` (design/self-awareness/02) renders two things read LIVE on every
-turn: each network's `health()`, and her own handle wherever an adapter can
-report one (Instagram's bridge `/health`). Production reads both off running
-transports. A sandbox has none running, and measured 2026-09-24 it said so:
+`<presence>` renders two things read LIVE on every turn: each network's
+`health()`, and her own handle wherever an adapter can report one (Instagram's
+bridge `/health`). Production reads both off running transports. A sandbox has
+none running, and unheld it says so:
 
 - Signal's and Instagram's adapters are composed but their listeners never
   start, so `health()` reads `connected=False` — «reconnecting right now»;
@@ -13,11 +13,9 @@ transports. A sandbox has none running, and measured 2026-09-24 it said so:
 - Instagram's bridge answers on a docker network the host cannot resolve, so
   the live handle read fails and her Instagram handle is simply missing.
 
-Production, read back off Langfuse the same day, rendered «Every one of them is
-up right now» and «@noraexample on WhatsApp, Instagram, X and Threads». So an
-unheld sandbox sends a prompt the deployment does not send
-(`design/evaluation/01-boundaries.md` §5(4)) — every presence case would be
-measuring a Nora who believes every network she is on is down.
+Production renders «Every one of them is up right now» and her handles. So an
+unheld sandbox sends a prompt the deployment does not send — every presence
+case would be measuring a Nora who believes every network she is on is down.
 
 WHY A HELD VALUE AND NOT A RECONSTRUCTION. Health at the anchor's instant is
 not recorded anywhere: it is the same class of tier as `presence.` (the Life360

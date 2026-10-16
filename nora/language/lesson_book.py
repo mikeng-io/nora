@@ -1,5 +1,5 @@
 """`LessonBook` — the one place a lesson is written, reinforced, retired or rolled
-back (design/self-growth/40-lessons.md, L1).
+back.
 
 It mirrors `nora.language.character_session.EntitySessions`: write verbs a model
 calls, each checked by code AS IT IS MADE and answered with a refusal the model
@@ -299,7 +299,7 @@ class LessonBook:
         """The doctrine check (L3), last and only once every cheap check has
         passed: it is a model call. `None` lets the write go on. A conflict writes
         one tension row for the operator and refuses; an error refuses and writes
-        nothing (an instrument error is not a pass, 50 §6)."""
+        nothing (an instrument error is not a pass)."""
         check, tensions = self._check, self._tensions
         if check is None or tensions is None:
             return None
@@ -327,7 +327,7 @@ class LessonBook:
             if self._metrics is not None:
                 self._metrics.inc("nora_self_tension_total", doctrine_file=rule.file)
         # The file, not the judge's reason: a session told how it was caught
-        # is a session taught to reword around it (review of #764).
+        # is a session taught to reword around it.
         return self._refused(unit, Refusal(
             "loosens_law", f"acting on this would loosen or contradict a rule you keep "
             f"({rule.file}); it is not written. A lesson adds practice only where "

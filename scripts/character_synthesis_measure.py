@@ -1,5 +1,4 @@
-"""Measure whether Character accounts are SYNTHESES or COMPRESSIONS
-(design/self-growth/10; the operator's 2026-10-09 concern).
+"""Measure whether Character accounts are SYNTHESES or COMPRESSIONS.
 
 Each account is read whole by a model with a frozen rubric, `--samples`
 times: `instance_share` is the fraction of its text spent on specific
@@ -8,9 +7,9 @@ rather than general patterns and their reasons, and `patterns` counts the
 distinct patterns it states. A spread over 0.2 across samples is UNSTABLE and
 a failed call is ERROR; neither is averaged in.
 
-A sentence-level episodic/trait label was tried first and read the live room
-accounts as 88% "characterological": every sentence there states a trait, then
-buries it under quotes and instances, which a per-sentence label cannot see.
+The score is per account, not per sentence: an account can state a trait in
+every sentence and then bury it under quotes and instances, which a
+per-sentence label cannot see.
 
 Input is a JSON file of `[{"key": ..., "kind": "room|unit|person|nora", "body": ...}]`
 exported by the operator (private: never committed). Output: per account and per

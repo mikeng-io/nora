@@ -1,4 +1,4 @@
-"""`render_subagents`: the `<subagents>` block (design/subagent/00-design.md §7).
+"""`render_subagents`: the `<subagents>` block.
 
 A deterministic window, never a model's fold, over `SubagentsView`: one line per job of THIS
 room, running first and then finished, each newest first. **An age on every line** (when it
@@ -83,7 +83,7 @@ def render_subagents(view: SubagentsView | None) -> ContextBlock | None:
     rows: list[str] = []
     for line in view.lines:
         rows.append(render_bullets([_line(line, view)], mark=""))
-        # a running job's own doing and next, under its line (design/subagent §4d): already
+        # a running job's own doing and next, under its line: already
         # escaped by the renderer, so it is added after `render_bullets`, never through it
         if line.state == "running" and line.checkpoint is not None:
             nested = render_checkpoint(

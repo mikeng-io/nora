@@ -2,10 +2,10 @@
 """Smoke test for the STT container, called from the host against
 127.0.0.1:8000 (the loopback publish compose gives it).
 
-Verifies the three independent checks funasr.com's production guidance names:
+Verifies three independent checks:
 1. health — the process is serving
 2. model identity — /v1/models lists BOTH engines (sensevoice default,
-   noise-detection backup — design/voice-channel/06, 2026-09-16)
+   noise-detection backup)
 3. a REAL transcription round-trip — an actual audio file comes back as Hant
    text (against the DEFAULT model; pass --model noise-detection to smoke the
    backup)

@@ -1,6 +1,5 @@
 """`FakeDriveServer`: Google's OAuth token endpoint, Drive v3 and Sheets v4 as
-an `httpx.MockTransport` handler, for `GoogleDriveSource`'s tests
-(design/external-files/00-design.md §4).
+an `httpx.MockTransport` handler, for `GoogleDriveSource`'s tests.
 
 It behaves like the real servers on the paths the adapter takes, wrong calls
 included, so a test cannot pass on a request Google would refuse:
@@ -236,7 +235,7 @@ class FakeDriveServer:
         held = self._visible(request, file_id)
         # The Sheets API does not read `X-Goog-Drive-Resource-Keys`: a sheet
         # reachable only with its link's resource key is a 404 here although
-        # Drive answers for it (review of PR 801).
+        # Drive answers for it.
         if held is None or held.mime != GSHEET or held.resource_key is not None:
             return _reply(404, {
                 "error": {"code": 404, "message": "not found", "status": "NOT_FOUND"},
