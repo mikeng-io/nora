@@ -7,7 +7,7 @@
  "design/context-plan/evidence/composer-tev1-step2-2026-10-12/run.py": 1,
  "nora/agent/rollup_read.py": 1,
  "nora/agent/speech_format.py": 1,
- "nora/agent/tools.py": 22,
+ "nora/agent/tools.py": 1,
  "nora/domain/note_body.py": 2,
  "nora/infra/sql/migrations/versions/0001_pg_baseline.py": 1,
  "nora/infra/sql/migrations/versions/0002_presence_fixes.py": 1,
