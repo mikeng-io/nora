@@ -21,7 +21,7 @@ list read carrying its probe's counts. A probe that made a list read due does
 not advance them, so a list read that fails leaves the rise still due.
 
 **What is read is filtered here, once** (§2). Every read of items for
-perception or for a stimulus leaves out an item
+perception, for a stimulus or for `social_read` (`items_of`) leaves out an item
 whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `social_item_state` row (gone or hidden). The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
@@ -57,6 +57,7 @@ from nora.domain.social_stream import (
     Origin,
     PerceptionOutcome,
     PollStage,
+    RecordedItem,
     SocialItem,
     cursor_is_bad,
 )
@@ -65,6 +66,7 @@ from nora.infra.sql.blob_refs import held_elsewhere
 from nora.infra.sql.memory_index import social_source_id
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
+    MEDIA_OBJECTS,
     SOCIAL_ITEM,
     SOCIAL_ITEM_STATE,
     SOCIAL_PERCEPTION,
@@ -179,7 +181,7 @@ class Backfill:
 
 
 class SqlSocialStreamStore:
-    """The stream's five tables, as eighteen verbs."""
+    """The stream's five tables, as twenty verbs."""
 
     def __init__(
         self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
@@ -596,6 +598,51 @@ class SqlSocialStreamStore:
                 announced=frozenset(r.announced or ()),
             )
         return list(reads.values())
+
+    # -- the reader: `social_read` (§6) ----------------------------------------
+
+    async def items_of(
+        self, *, person: str, start: datetime, end: datetime, limit: int,
+    ) -> list[RecordedItem]:
+        """One person's readable items posted in `[start, end)`, newest first,
+        at most `limit`: polled and back-filled alike, each with the readings
+        its media already have (`media_objects` title and description, in the
+        item's media order). Readable is `_readable`'s: not opted out, and no
+        `social_item_state` row (gone or hidden)."""
+        i = SOCIAL_ITEM
+        stmt = (
+            sa.select(
+                i.c.network, i.c.kind, i.c.collab, i.c.taken_at, i.c.expires_at,
+                i.c.caption, i.c.location, i.c.media_ref,
+            )
+            .where(
+                *self._readable(), i.c.person == person,
+                i.c.taken_at >= start, i.c.taken_at < end,
+            )
+            .order_by(i.c.taken_at.desc(), i.c.id.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            shas = sorted({sha for r in rows for sha in _media(r.media_ref)})
+            m = MEDIA_OBJECTS
+            readings = {
+                r.sha256: "\n".join(part for part in (r.title, r.description) if part)
+                for r in await conn.execute(
+                    sa.select(m.c.sha256, m.c.title, m.c.description)
+                    .where(m.c.sha256.in_(shas)),
+                )
+            } if shas else {}
+        return [
+            RecordedItem(
+                network=r.network, kind=r.kind, collab=r.collab, taken_at=r.taken_at,
+                expires_at=r.expires_at, caption=r.caption, location=r.location,
+                perception=tuple(
+                    readings[sha] for sha in _media(r.media_ref) if readings.get(sha)
+                ),
+            )
+            for r in rows
+        ]
 
     # -- a story frame's bytes (§5) --------------------------------------------
 

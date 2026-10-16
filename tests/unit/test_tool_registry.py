@@ -78,6 +78,8 @@ _ROLLUP = object()
 _STANDING = object()
 #: `character_read`'s culture store, never called.
 _CULTURE = object()
+#: `social_read`'s social stream read, never called.
+_SOCIAL_ITEMS = object()
 _MEMOS = object()
 #: The document service, never called: both document tools are offered only when one
 #: is wired (`[documents] enabled`).
@@ -168,6 +170,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
+        social_items=_SOCIAL_ITEMS,
         memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
     ))
@@ -183,7 +186,7 @@ def test_the_registry_exposes_every_declared_tool():
         # under lineage.
         "record_query",
         # the Dreamer-only reads.
-        "rollup_read", "standing_read", "character_read",
+        "rollup_read", "standing_read", "character_read", "social_read",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         "calculate", "transit", "route",
@@ -505,6 +508,9 @@ def test_budgets_match_todays_table():
         # session's read of one room). A Cognition session raises both per agenda
         # item (`nora.app.cognition_wiring`).
         "rollup_read": 4, "standing_read": 1, "character_read": 2,
+        # `social_read` is 3: one person, a narrower window, then another
+        # person.
+        "social_read": 3,
     }
 
 
@@ -555,6 +561,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     )
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
+        social_items=_SOCIAL_ITEMS,
         memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
     ))
@@ -948,7 +955,7 @@ READ_ONLY = frozenset({
     "memo_read",
     # Dreamer-only SELECTs of the Rollup's
     # current build and of a room's Standing head.
-    "rollup_read", "standing_read", "character_read",
+    "rollup_read", "standing_read", "character_read", "social_read",
     # The unit-wide memory variant — a pure read of a store the tag path
     # already trusts, granted to a unit-keyed adaptor through
     # `UNIT_SAFE_TOOLS`.

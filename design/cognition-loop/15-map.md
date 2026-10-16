@@ -98,7 +98,7 @@ backfilled rows render byte-for-byte as before in that room.
 | `event_search(place?, person?, interval?)` | Register · event | events | **new**; `list_events` is per room, filtered by status only |
 | `character_read(entity)` | Character | an account | **new**; instead of an always-on person block |
 | `standing_read(subject)` | Standing | a room's, the unit's or a person's Standing | **new** |
-| `social_items(person, interval)` | Record · social | ingested stories, posts, reels with their perceptions | **new**; the live `instagram_*`, `x_*`, `linkedin_*` reads stay on the tag path and are withheld from cognition ([20](20-observe.md) §2) |
+| `social_items(person, interval)` | Record · social | ingested stories, posts, reels with their perceptions | **built** as `social_read` (below); the live `instagram_*`, `x_*`, `linkedin_*` reads stay on the tag path and are withheld from cognition ([20](20-observe.md) §2) |
 | `about`, `ask_memory`, `search_memory`, `search_memory_workspace` | memory | Honcho | exist |
 
 **`record_query` as built (step 2, DEC-236).** `record_query(start, end?,
@@ -116,6 +116,28 @@ Statuses: ok, nothing_found, ambiguous, unavailable. Offered only with
 `[record_query] enabled` (shipped `false`). Its verb, `query`, is new
 (`tests/architecture/test_tool_names.py` says why). Vectors are not used (80
 §4 leaves them optional).
+
+**`social_items` as built: `social_read(person, interval)`** (2026-10-17),
+named `<domain>_<verb>` because ADR 0015 §1 has a planned name follow the rule
+before it is built. One person's recorded stories, posts and reels
+([22](22-social-stream.md) §5) posted in the interval (`rollup_read`'s ISO 8601
+form), newest first, read through `SqlSocialStreamStore.items_of`. Scope is the
+`social` lineage predicate: the name resolves only among the persons the
+agenda item's room lists, so an author that room does not list (or a `*` room)
+answers like a name nobody uses. An item of a person with `social = false`,
+and one with a `social_item_state` row (gone or hidden), is never read, the
+store's own `_readable` rule. Each item says what it is (`Instagram story`,
+`Instagram post, co-authored`) and when it was posted with its age; its
+caption is marked as the author's published words (the `untrusted` framing
+every memory-bearing result carries); `seen` is its media's title and
+description, or `not read yet`; its `location` only where the `presence`
+predicate passes for the author (the room's `location` flag and the live
+DisclosureGuard). An item carrying an identifier is withheld whole (R-18), a
+location carrying a coordinate is dropped alone (R-28). At most 20 items and
+6000 characters, saying `truncated` when cut. Statuses: ok, nothing_found,
+ambiguous, unavailable. No flag (a SELECT, like `rollup_read`); Cognition-only
+(`DREAMER_LOOP_TOOLS`), never on the tag or fire path. No item is citable yet:
+the result carries no row id, so no write can rest on one ([22](22-social-stream.md) §6).
 
 Every read tool applies lineage for the room its turn or agenda item is bound
 to. Cognition has no room of its own: each agenda item binds one, and that

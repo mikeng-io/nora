@@ -25,6 +25,8 @@ _COGNITION_CATALOGUE = frozenset({
     # DEC-306: the memo verbs, the memo read, and the retire a settled note's
     # memo is followed by.
     "memo_write", "memo_revise", "memo_withdraw", "memo_read", "note_retire",
+    # `social_read` and the account read it is measured against.
+    "social_read", "character_read",
 })
 
 
@@ -35,7 +37,7 @@ def test_the_corpus_is_registered_and_routed():
 
 def test_the_runner_collects_every_case_with_no_error():
     cases = load_corpus(NAME)
-    assert len(cases) == 24
+    assert len(cases) == 27
     for case in cases:
         assert case.metadata["snapshot"], case.name
         assert not case.metadata["parked"], case.name
@@ -43,8 +45,8 @@ def test_the_runner_collects_every_case_with_no_error():
 
 def test_census_reports_every_case_active_and_none_parked():
     result = census(NAME)
-    assert result.total == 24
-    assert result.active == 24
+    assert result.total == 27
+    assert result.active == 27
     assert result.parked == 0
     assert result.unanchored == 0
 
@@ -70,16 +72,19 @@ def test_every_case_names_only_verbs_from_the_cognition_catalogue():
 
 
 def test_each_new_read_is_measured_against_the_sibling_it_is_confusable_with():
-    """`rollup_read` and `standing_read` each have routing cases against their
-    confusable siblings: `rollup_read` against `record_query` and `where_been`,
-    `standing_read` against `note_read`/`note_search`, and the order a
-    revision needs (read before `standing_revise`)."""
+    """`rollup_read`, `standing_read` and `social_read` each have routing
+    cases against their confusable siblings: `rollup_read` against
+    `record_query` and `where_been`, `standing_read` against
+    `note_read`/`note_search`, `social_read` against `record_query`,
+    `rollup_read` and `character_read`, and the order a revision needs (read
+    before `standing_revise`)."""
     by_name = {c.name: c.metadata for c in load_corpus(NAME)}
     against = {
         tool: {n for m in by_name.values() if tool in m["tools"] for n in m.get("not_tools", [])}
-        for tool in ("rollup_read", "standing_read")
+        for tool in ("rollup_read", "standing_read", "social_read")
     }
     assert {"record_query", "where_been"} <= against["rollup_read"]
     assert {"note_read", "note_search"} <= against["standing_read"]
+    assert {"record_query", "rollup_read", "character_read"} <= against["social_read"]
     ordered = by_name["cognition_standing_read_before_standing_revise"]
     assert ordered["before"] == {"standing_read": ["standing_revise"]}

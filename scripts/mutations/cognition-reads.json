@@ -135,7 +135,7 @@
  {
   "name": "surface: a tag turn is offered the Dreamer loop's reads",
   "file": "nora/agent/surface.py",
-  "old": "DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(\n    {\"rollup_read\", \"standing_read\", \"character_read\"})",
+  "old": "DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(\n    {\"rollup_read\", \"standing_read\", \"character_read\", \"social_read\"})",
   "new": "DREAMER_LOOP_TOOLS: frozenset[str] = frozenset()",
   "target": "tests/unit/test_tool_surface.py::test_the_dreamer_loop_reads_are_never_a_tag_turns_tools"
  },

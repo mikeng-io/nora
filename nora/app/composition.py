@@ -2961,6 +2961,13 @@ async def build_dependencies(
         standing_head=standing_store,
         # `character_read`: withheld while `[culture]` is off.
         culture=culture_reader,
+        # `social_read`: the social stream's recorded items, a SELECT, so no
+        # flag (an empty Record answers `nothing_found`). Its store leaves out
+        # every item of a person whose `identity.toml` block sets `social =
+        # false`, the same set the poller's store is given.
+        social_items=SqlSocialStreamStore(engine, opted_out=frozenset(
+            p for p in persons.by_person if persons.social_off(p)
+        )),
         # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
         memos=memo_store,
         route=route_client, vision=vision_client,

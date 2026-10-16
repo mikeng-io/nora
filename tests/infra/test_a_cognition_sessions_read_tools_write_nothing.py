@@ -28,6 +28,7 @@ What each test would catch if its guard were removed is named in
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -47,6 +48,7 @@ from nora.app.cognition_wiring import (
 from nora.app.gatherings import GatheringService
 from nora.domain.cognition_session import Room
 from nora.domain.media_join import MediaJoin
+from nora.domain.social_stream import MediaItem, SocialItem
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
@@ -57,6 +59,7 @@ from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.rollup_read import SqlRollupRead
+from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.obs.metrics import Metrics
@@ -202,6 +205,9 @@ class World:
             # The two Dreamer-only reads: a `rollup_read` that started a build or a
             # `standing_read` that folded would be a write this test must see.
             rollup=SqlRollupRead(engine), standing_head=SqlStandingStore(engine),
+            # `social_read`: a read that perceived or fetched an item would be
+            # a write this test must see.
+            social_items=SqlSocialStreamStore(engine),
             lineage=LineagePolicy.from_policy(self.policy, circles=(circle,), mode="on"),
             notes=self.notes, memos=self.memos,
             # The memory graph's surface (DEC-316): `memory_search` over the
@@ -269,6 +275,8 @@ CALLS: dict[str, list[dict[str, Any]]] = {
         {"kind": "stay", "subject": "everyone", "interval": "2026-09-01/2026-10-30"},
     ],
     "standing_read": [{}],
+    "social_read": [{"person": "Ada", "interval": "2026-09-01/2026-10-30"},
+                    {"person": "Ben", "interval": "2026-09-01"}],
     "where_been": [{"what": "places"}, {"what": "day", "date": "2026-09-30"}],
     "routine_read": [{"date": "2026-10-01", "from_hour": 18, "to_hour": 21}],
     "about": [{"person": "Ada"}],
@@ -307,6 +315,14 @@ async def world(request, engine, tmp_path):
         mode="told", established_by="cognition:u1", model=None, now_ms=NOW_MS,
     )
     w.memo_id = memo.id
+    # One recorded post of Ada's, so `social_read` reaches its SQL with a hit.
+    taken = datetime.fromtimestamp(NOW_MS / 1000 - 86_400, tz=UTC)
+    await SqlSocialStreamStore(engine).insert_item(
+        SocialItem(network="instagram", item_id="1", account="acct-1", kind="post",
+                   taken_at=taken, expires_at=None, caption="dinner was good",
+                   alt_text=None, media=(MediaItem("image", "https://x"),)),
+        person="p1", origin="poll", seen_at=taken,
+    )
     for i, (room, who, sender) in enumerate((
         (A, "p1", ADA), (A, "p2", BEN), (B, "p1", ADA),
     )):
@@ -344,12 +360,13 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     }
     # A tool that answered `unavailable` for a wiring gap was never really run.
     reached = {"note_search", "note_read", "record_query", "event_search",
-               "rollup_read", "standing_read", "memo_read"}
+               "rollup_read", "standing_read", "memo_read", "social_read"}
     for name in reached:
         assert set(results[name]) <= {"ok", "nothing_found"}, (name, results[name])
     assert "nothing_found" in results["note_search"] and "ok" in results["note_search"]
     assert "ok" in results["record_query"] and "ok" in results["note_read"]
     assert results["memo_read"] == ["ok", "nothing_found"]
+    assert results["social_read"] == ["ok", "nothing_found"]
     # the derived-presence reads reached their SQL (a current build exists)
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
     # No counter that feeds a decision moved, and Honcho was only ever read.

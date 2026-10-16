@@ -376,18 +376,19 @@ async def test_a_name_off_the_shelf_is_left_unknown():
 
 # ---- the two Dreamer-only reads (DEC-246) -----------------------------------------
 
-_LOOP_ONLY = ("rollup_read", "standing_read", "character_read")
+_LOOP_ONLY = ("rollup_read", "standing_read", "character_read", "social_read")
 
 
 def test_the_dreamer_loop_reads_are_never_a_tag_turns_tools():
-    """`standing_read` is the session's own position and `character_read` waits
-    on a `tool_selection` run: a reply neither pays their prompt nor can route
-    to them, in a Discord room or a Signal one."""
+    """`standing_read` is the session's own position, `character_read` waits
+    on a `tool_selection` run, and `social_read` is the recorded stream the
+    tag path's live social reads stand in for: a reply neither pays their
+    prompt nor can route to them, in a Discord room or a Signal one."""
     from nora.agent.surface import DREAMER_LOOP_TOOLS, TAG_READABLE_LOOP_TOOLS
 
     assert set(_LOOP_ONLY) == DREAMER_LOOP_TOOLS
     loop_only = DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS
-    assert loop_only == {"standing_read", "character_read"}
+    assert loop_only == {"standing_read", "character_read", "social_read"}
     assert loop_only <= DREAMER_ONLY_TOOLS
     for platform in ("signal", "discord"):        # `None` is the DECLARED table: everything
         tag = ToolScope(platform=platform, dreamer=False)
@@ -414,9 +415,10 @@ def test_rollup_read_is_a_tag_turns_tool_and_no_other_occasions():
 def test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_cannot_do():
     from nora.agent.registry import ToolRegistry
 
-    wired = ToolRegistry(rollup=object(), standing_head=object(), culture=object())
+    wired = ToolRegistry(rollup=object(), standing_head=object(), culture=object(),
+                         social_items=object())
     digest = wired.capability_digest()
-    assert not any(n in digest for n in ("standing_read", "character_read"))
+    assert not any(n in digest for n in ("standing_read", "character_read", "social_read"))
     assert "rollup_read" in digest, "a tag turn can call it, so the gate may count on it"
     assert "where_been" in digest, "positive control: the digest lists the tag path's reads"
 
@@ -425,11 +427,13 @@ def test_each_read_is_withheld_from_every_surface_until_its_read_is_wired():
     from nora.agent.registry import ToolRegistry
 
     assert set(_LOOP_ONLY) <= ToolRegistry()._withheld
-    both = {"rollup": object(), "standing_head": object(), "culture": object()}
+    both = {"rollup": object(), "standing_head": object(), "culture": object(),
+            "social_items": object()}
     for name, withheld in (
-        ("rollup", {"standing_read", "character_read"}),
-        ("standing_head", {"rollup_read", "character_read"}),
-        ("culture", {"rollup_read", "standing_read"}),
+        ("rollup", {"standing_read", "character_read", "social_read"}),
+        ("standing_head", {"rollup_read", "character_read", "social_read"}),
+        ("culture", {"rollup_read", "standing_read", "social_read"}),
+        ("social_items", {"rollup_read", "standing_read", "character_read"}),
     ):
         assert ToolRegistry(**{name: both[name]})._withheld & set(_LOOP_ONLY) == withheld
     assert not ToolRegistry(**both)._withheld & set(_LOOP_ONLY)

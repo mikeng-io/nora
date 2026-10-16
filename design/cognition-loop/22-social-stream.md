@@ -3,7 +3,7 @@ type: design
 title: "The social stream — one source interface, an adaptive per-person poll, and a back-fill of past posts and reels"
 description: "How step 5 ingests members' social items: a network-neutral source interface (Instagram first, Threads later), a two-stage poll whose probe (the profile's newest-story time and post and reel counts) decides whether a costly read runs, a per-person cadence learned from when that person posts and raised by what is happening now, one budget and one halt per login, the custody rule (everything kept, except a story frame's media bytes, which expire once embedded), the social_item and social_poll Record tables, and the back-fill of past posts and reels over the web app's timeline query (found in S0)."
 tags: [nora, observe, social, instagram, threads, stories, posts, reels, polling, backfill, custody]
-timestamp: '2026-10-16'
+timestamp: '2026-10-17'
 edges:
   - {dst: 20-observe, rel: extends, provenance: asserted}
   - {dst: 70-migration, rel: depends_on, provenance: asserted}
@@ -349,7 +349,7 @@ kinds in order (`story_frame,collab:post`), `at_ms` when the newest was
 posted. The stimulus table keeps one `social` row per `(unit, ref)` (`0108`),
 so a restart announces nothing twice. A session's agenda shows it as
 `<social at="...">Ada posted 2 story frames</social>`; what the items show is
-not pushed into the agenda: that is `social_items` (§6), not built.
+not pushed into the agenda: that is `social_read` (§6).
 
 The memory index (design/unified-memory) projects `social_item` like any
 other store, since 2026-10-16: each of this stream's writes calls the
@@ -371,7 +371,14 @@ projector in its own transaction (§9;
 - **Rollup**: the daybook's `items_posted` ([25](25-rollup.md), NULL until
   step 5) is filled from `social_item.taken_at`; the posting histogram of §4
   is the same input.
-- **Cognition**: `social_items(person, interval)` ([15](15-map.md) §4).
+- **Cognition**: `social_items(person, interval)` ([15](15-map.md) §4),
+  **built 2026-10-17 as `social_read`**: a session reads one person's
+  recorded items in an interval, newest first, through the room its agenda
+  item is bound to. §2's rules hold at the read: only a room that lists the
+  author reads their items, an opted-out person's and a gone or hidden item
+  never, and a location only where the room may place the author. No item is
+  citable yet: the result has no id, so the social citation Character needs
+  (above) is still to build.
 
 ## 7. The back-fill of past posts and reels
 
@@ -463,6 +470,7 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 | S3b | **BUILT 2026-10-16, the deletion half, off by default** (`nora/app/social_expiry.py`, `nora/infra/sql/blob_refs.py`, migration `0109_blob_tombstone`, `[social] story_expiry_enabled`, `story_media_keep_days` and `story_media_keep_max_days`): a `BlobStore` delete on both implementations that keeps bytes put within the last hour and is one step against `put`, the [70](70-migration.md) §9 tombstone as one row per confirmed deletion, and a story frame's bytes deleted at the first bound once perceived and embedded or at the hard limit regardless, never bytes another row names, posts and reels never (§5). Nothing reaches the 30-day bound until 31 days after the poller is enabled. The index projects and embeds social items since 2026-10-16 (§9) and `story_frame_embedded` is the read; until the pass calls it, every frame's bytes go at the hard limit | `nora_social_story_bytes_deleted_total{reason}`, `nora_social_story_unembedded_total`, `blob_tombstone` rows; then, with the hand-off, story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
 | S5 | **BUILT 2026-10-17** (§7): the back-fill pages each member's posts and reels from their first list read, up to 90 days or 50 items, at the lowest budget priority (after probes and due reads, at most `backfill_pages_per_tick` pages a tick and one a member, never past what the hour owes every member's probe and read); progress read off `social_poll` rows (stage `backfill`, `cursor`, migration `0112_social_backfill`); a bad cursor ends that member's back-fill. Paging past the first page not yet read live | items per member against `media_count`; `nora_social_backfill_ended_total{reason}` |
+| S6 | **BUILT 2026-10-17**: `social_read`, Cognition's read of this Record (§6; [15](15-map.md) §4 has the shape): `SqlSocialStreamStore.items_of` under the store's `_readable` rule, the `social` lineage predicate for who, the `presence` predicate for a location, bounded at 20 items and 6000 characters | `tool_selection_cognition`'s three `social_read` cases, master and branch |
 
 S4 needs a week of S2's rows to learn from.
 
