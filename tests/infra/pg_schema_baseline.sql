@@ -139,6 +139,9 @@ $$;
 );
 );
 );
+);
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -252,6 +255,9 @@ ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
 ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
 ADD CONSTRAINT row_history_pkey PRIMARY KEY (id);
 ADD CONSTRAINT self_tension_pkey PRIMARY KEY (id);
+ADD CONSTRAINT social_item_pkey PRIMARY KEY (id);
+ADD CONSTRAINT social_item_state_pkey PRIMARY KEY (id);
+ADD CONSTRAINT social_poll_pkey PRIMARY KEY (id);
 ADD CONSTRAINT source_health_pkey PRIMARY KEY (id);
 ADD CONSTRAINT standing_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT standing_revision_pkey PRIMARY KEY (id);
@@ -385,6 +391,9 @@ ALTER TABLE ONLY public.room_lexeme
 ALTER TABLE ONLY public.room_portrait
 ALTER TABLE ONLY public.row_history
 ALTER TABLE ONLY public.self_tension
+ALTER TABLE ONLY public.social_item
+ALTER TABLE ONLY public.social_item_state
+ALTER TABLE ONLY public.social_poll
 ALTER TABLE ONLY public.source_health
 ALTER TABLE ONLY public.standing
 ALTER TABLE ONLY public.standing_revision
@@ -573,6 +582,13 @@ CONSTRAINT ck_self_tension_names_its_writer CHECK ((length(btrim(established_by)
 CONSTRAINT ck_self_tension_quotes_the_law CHECK ((length(btrim(doctrine_text)) > 0)),
 CONSTRAINT ck_self_tension_says_what_it_would CHECK ((length(btrim(would_have_said)) > 0)),
 CONSTRAINT ck_self_tension_source CHECK ((source = 'lesson'::text))
+CONSTRAINT ck_social_item_has_an_id CHECK ((length(btrim(item_id)) > 0)),
+CONSTRAINT ck_social_item_kind CHECK ((kind = ANY (ARRAY['story_frame'::text, 'post'::text, 'reel'::text, 'thread_post'::text]))),
+CONSTRAINT ck_social_item_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
+CONSTRAINT ck_social_item_state_state CHECK ((state = ANY (ARRAY['gone'::text, 'hidden'::text])))
+CONSTRAINT ck_social_item_story_frame_expires CHECK (((kind <> 'story_frame'::text) OR (expires_at IS NOT NULL)))
+CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text]))),
+CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text])))
 CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
@@ -759,6 +775,9 @@ CREATE INDEX idx_rollup_tie_key ON public.rollup_tie USING btree (build_id, unit
 CREATE INDEX idx_row_history_key ON public.row_history USING btree (table_name, row_key, recorded_at);
 CREATE INDEX idx_row_history_table_recorded ON public.row_history USING btree (table_name, recorded_at);
 CREATE INDEX idx_self_tension_unit ON public.self_tension USING btree (unit, written_at);
+CREATE INDEX idx_social_item_person ON public.social_item USING btree (network, person, taken_at);
+CREATE INDEX idx_social_item_state_item ON public.social_item_state USING btree (network, item_id, recorded_at);
+CREATE INDEX idx_social_poll_person ON public.social_poll USING btree (network, person, recorded_at);
 CREATE INDEX idx_source_health_source_at ON public.source_health USING btree (source, at_ms);
 CREATE INDEX idx_standing_revision_room_updated ON public.standing_revision USING btree (platform, conversation_id, updated_at DESC, id DESC);
 CREATE INDEX idx_stimulus_unit_due ON public.stimulus USING btree (unit, due_ms) WHERE (due_ms IS NOT NULL);
@@ -854,6 +873,9 @@ CREATE TABLE public.room_lexeme (
 CREATE TABLE public.room_portrait (
 CREATE TABLE public.row_history (
 CREATE TABLE public.self_tension (
+CREATE TABLE public.social_item (
+CREATE TABLE public.social_item_state (
+CREATE TABLE public.social_poll (
 CREATE TABLE public.source_health (
 CREATE TABLE public.standing (
 CREATE TABLE public.standing_revision (
@@ -959,6 +981,7 @@ CREATE UNIQUE INDEX uq_otp_attempt_ok ON public.otp_attempt USING btree (challen
 CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 CREATE UNIQUE INDEX uq_rollup_build_current ON public.rollup_build USING btree (status) WHERE (status = 'current'::text);
 CREATE UNIQUE INDEX uq_row_history_open ON public.row_history USING btree (table_name, row_key) WHERE (superseded_at IS NULL);
+CREATE UNIQUE INDEX uq_social_item_key ON public.social_item USING btree (network, item_id);
 CREATE UNIQUE INDEX uq_stimulus_retraction_stimulus ON public.stimulus_retraction USING btree (stimulus_id);
 CREATE UNIQUE INDEX uq_stimulus_rollup_ref ON public.stimulus USING btree (unit, ref) WHERE (kind = 'rollup'::text);
 CREATE UNIQUE INDEX uq_stimulus_time_ref ON public.stimulus USING btree (unit, ref) WHERE (kind = 'time'::text);
@@ -1192,6 +1215,7 @@ VALUES (version_id, TG_TABLE_NAME, new_key, lower(TG_OP), new_image, at);
 VALUES (version_id, TG_TABLE_NAME, old_key, 'delete', old_image, at);
 WHERE table_name = TG_TABLE_NAME AND row_key = new_key
 WHERE table_name = TG_TABLE_NAME AND row_key = old_key
+account text NOT NULL,
 accuracy_m double precision,
 act text NOT NULL,
 act text NOT NULL,
@@ -1204,8 +1228,11 @@ address text
 address text
 address text NOT NULL,
 address text,
+advanced_counts boolean DEFAULT false NOT NULL,
+advanced_marker boolean DEFAULT false NOT NULL,
 agenda jsonb NOT NULL,
 aliases text[] DEFAULT '{}'::text[] NOT NULL,
+alt_text text,
 anchor_date integer,
 anchor_date integer,
 anchor_entity_ids text[] DEFAULT '{}'::text[] NOT NULL,
@@ -1275,6 +1302,7 @@ built_at text,
 canonical_form text NOT NULL,
 canonical_form text NOT NULL,
 canonical_name text NOT NULL,
+caption text,
 cause text DEFAULT 'infra'::text NOT NULL,
 challenge_id uuid NOT NULL,
 challenge_id uuid NOT NULL,
@@ -1297,6 +1325,7 @@ closing_condition text,
 code_hash text NOT NULL,
 code_version text NOT NULL,
 col text;
+collab boolean DEFAULT false NOT NULL,
 colocation_ms bigint NOT NULL,
 colocation_ms bigint NOT NULL,
 comment_id text,
@@ -1457,6 +1486,7 @@ expired_at timestamp with time zone,
 expired_reason text,
 expires_at bigint
 expires_at timestamp with time zone NOT NULL,
+expires_at timestamp with time zone,
 external_files_json text,
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
@@ -1562,6 +1592,9 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -1592,12 +1625,15 @@ is_nora integer DEFAULT 0 NOT NULL,
 iso_week text NOT NULL,
 issued_at timestamp with time zone NOT NULL,
 item text CONSTRAINT signal_item_not_null NOT NULL,
+item_id text NOT NULL,
+item_id text NOT NULL,
 item_index integer NOT NULL,
 items_posted integer
 key text NOT NULL,
 kind text CONSTRAINT signal_kind_not_null NOT NULL,
 kind text DEFAULT 'miss'::text NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
+kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
@@ -1639,6 +1675,8 @@ lat double precision NOT NULL,
 lat double precision NOT NULL,
 lat_rounded double precision NOT NULL,
 late_fixes integer DEFAULT 0 NOT NULL,
+latency_ms integer,
+latest_reel_media bigint,
 lesson_id uuid NOT NULL,
 lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -1670,19 +1708,23 @@ lng_rounded double precision NOT NULL,
 loaded_at timestamp with time zone NOT NULL,
 loaded_at timestamp with time zone NOT NULL,
 local_date text NOT NULL,
+location text,
 logical_now_ms bigint NOT NULL,
 manifest_status text NOT NULL,
 mean_arrival_minute double precision,
 mean_departure_minute double precision,
 media text[] DEFAULT '{}'::text[] NOT NULL,
+media_count integer,
 media_id text NOT NULL,
 media_json text,
+media_ref text,
 media_type text DEFAULT ''::text NOT NULL,
 media_type text DEFAULT ''::text NOT NULL,
 media_type text NOT NULL,
 media_type text NOT NULL,
 memo_id uuid NOT NULL,
 mention_at timestamp with time zone,
+mentioned text[] DEFAULT '{}'::text[] NOT NULL,
 mentions_ab integer NOT NULL,
 mentions_ba integer NOT NULL,
 mentions_json text,
@@ -1722,6 +1764,9 @@ model_route text,
 name text NOT NULL,
 named_persons text[] DEFAULT '{}'::text[] NOT NULL,
 narrative text NOT NULL,
+network text NOT NULL,
+network text NOT NULL,
+network text NOT NULL,
 new_image := to_jsonb(NEW);
 new_image jsonb;
 new_key := new_key || jsonb_build_object(col, new_image -> col);
@@ -1759,7 +1804,9 @@ open integer DEFAULT 0 NOT NULL
 open_stay jsonb,
 operation_id uuid NOT NULL,
 operation_id uuid NOT NULL,
+origin text NOT NULL,
 origin_room text,
+outcome text NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
@@ -1788,6 +1835,8 @@ payload jsonb NOT NULL,
 payload jsonb,
 people text[] DEFAULT '{}'::text[] NOT NULL,
 people text[] DEFAULT '{}'::text[] NOT NULL,
+person text NOT NULL,
+person text NOT NULL,
 person_a text NOT NULL,
 person_b text NOT NULL,
 person_id text NOT NULL,
@@ -1864,6 +1913,7 @@ reason text DEFAULT ''::text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
 reason text NOT NULL,
+reason text,
 reasoning text,
 reasoning text,
 reasoning text,
@@ -1884,6 +1934,9 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -1981,6 +2034,7 @@ scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 seen_at timestamp with time zone DEFAULT now() NOT NULL,
+seen_at timestamp with time zone NOT NULL,
 sender_id text NOT NULL,
 sender_id text NOT NULL,
 sender_id text NOT NULL,
@@ -2030,6 +2084,7 @@ spec jsonb NOT NULL,
 speed_kmh double precision
 src_id text NOT NULL,
 src_kind text NOT NULL,
+stage text NOT NULL,
 started_at timestamp with time zone NOT NULL,
 started_at timestamp with time zone NOT NULL,
 started_at timestamp with time zone,
@@ -2040,6 +2095,7 @@ state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
+state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
@@ -2103,7 +2159,9 @@ tag_id text NOT NULL,
 tag_id text NOT NULL,
 tag_id text,
 tag_id text,
+tagged text[] DEFAULT '{}'::text[] NOT NULL,
 tags_sha256 text,
+taken_at timestamp with time zone NOT NULL,
 task text NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,
 text text DEFAULT ''::text NOT NULL,
@@ -2126,6 +2184,7 @@ tool text NOT NULL,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
 tool_result jsonb NOT NULL,
+total_clips_count integer,
 trace_id text NOT NULL,
 trace_id text,
 trace_id text,

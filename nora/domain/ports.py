@@ -197,6 +197,14 @@ from nora.domain.models import (
     WeatherObservation,
 )
 from nora.domain.parking import StreetParking as StreetParking
+from nora.domain.social_stream import Account as Account
+from nora.domain.social_stream import Cap as Cap
+from nora.domain.social_stream import Failed as Failed
+from nora.domain.social_stream import ItemRef as ItemRef
+from nora.domain.social_stream import Page as Page
+from nora.domain.social_stream import Probe as Probe
+from nora.domain.social_stream import SocialItem as SocialItem
+from nora.domain.social_stream import StorySnapshot as StorySnapshot
 from nora.domain.standing import Standing as Standing
 from nora.domain.stimuli import NewStimulus, NewWake, UnitView, WakeGuard, WakeRow
 from nora.domain.utf16 import utf16_len
@@ -2082,6 +2090,38 @@ class InstagramAccountLookup(Protocol):
     """
 
     async def igid_for_username(self, *, username: str) -> UsernameLookup: ...
+
+
+@runtime_checkable
+class SocialSource(Protocol):
+    """One network's social output, read for the social stream: `probe` is the
+    cheap look that decides whether `story` or `list_items` runs, `read_item`
+    opens one listed post or reel. The poller and the Record never name a
+    network; each implements this.
+
+    **Never raises.** A read answers its value or a `Failed` typed by what the
+    caller does next (`nora.domain.social_stream.FailureKind`). A capability a
+    network lacks is absent from `capabilities`, not an error: the caller never
+    asks for it.
+
+    `probe_cost` is the upstream calls one probe spends, so a budget can count
+    it. The production implementation is `nora.infra.social.instagram_source
+    .InstagramSocialSource`, over the instagram-bridge only.
+    """
+
+    network: str
+    capabilities: frozenset[Cap]
+    probe_cost: int
+
+    async def probe(self, *, account: Account) -> Probe | Failed: ...
+
+    async def story(self, *, account: Account) -> StorySnapshot | Failed: ...
+
+    async def list_items(
+        self, *, account: Account, after: str | None,
+    ) -> Page | Failed: ...
+
+    async def read_item(self, *, ref: ItemRef) -> SocialItem | Failed: ...
 
 
 @runtime_checkable
