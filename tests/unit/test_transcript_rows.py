@@ -1,12 +1,11 @@
 """`nora.testing.fakes.transcript_rows` — the builder every corpus and harness
 seeds a window through.
 
-ONE property is pinned here and it is the one that was missing: the builder can
-seed NORA'S OWN speech. `is_nora` was hardcoded `False` until 2026-09-17, so no
-case built on this helper could put her own earlier line in the window — and
-«have I already said this?» is a question a whole class of turns has to answer.
-The proactive duplicate of that day (msgs 5450/5455) is that question answered
-wrong, with her own raise sitting unattributed in the transcript.
+ONE property is pinned here: the builder can seed NORA'S OWN speech. A builder
+that hardcoded `is_nora` to `False` could not put her own earlier line in the
+window, and «have I already said this?» is a question a whole class of turns
+has to answer; a proactive duplicate is that question answered wrong, with her
+own raise sitting unattributed in the transcript.
 
 The flag and not a `sender_name` convention, because `nora.agent.prefill.
 _speaker` reads `is_nora` to attribute a row: a row that merely CARRIES the
@@ -21,7 +20,7 @@ from nora.testing.fakes import transcript_rows
 
 
 def test_the_builder_can_seed_nora_s_own_speech() -> None:
-    """Falsification: hardcode `is_nora=False` in `transcript_rows` again."""
+    """Falsification: hardcode `is_nora=False` in `transcript_rows`."""
     rows = transcript_rows(
         ["聽日拎抽包，同 Chi Ming 傾咗邊度幾點未？"],
         sender_id="", sender_name="", person_id=None, ts_base=1_000_000,
@@ -32,9 +31,9 @@ def test_the_builder_can_seed_nora_s_own_speech() -> None:
 
 
 def test_a_seeded_row_is_somebody_else_s_unless_asked() -> None:
-    """The default is unchanged, and it is asserted rather than assumed: every
-    caller that predates the flag passes no `is_nora`, and a default that had
-    flipped would silently re-attribute every window in the tree."""
+    """The default is `False`, asserted rather than assumed: a caller that
+    passes no `is_nora` must keep its rows unattributed, and a flipped default
+    would silently re-attribute every window in the tree."""
     rows = transcript_rows(
         ["買咗未"], sender_id="+852111", sender_name="Miles", person_id="miles_novak",
         ts_base=1_000_000,

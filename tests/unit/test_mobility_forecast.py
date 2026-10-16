@@ -2,7 +2,7 @@
 
 The operator's target question is time-anchored: «where will Grant be on
 Wednesday night?» — a frequency table over (hour-of-week, place), not a
-next-place chain (design/27 §4.1).
+next-place chain.
 """
 
 from __future__ import annotations
@@ -143,7 +143,7 @@ def test_no_history_is_insufficient_not_a_guess():
 
 
 def test_the_backtest_beats_the_trivial_baseline_on_a_real_pattern():
-    # The committed instrument design/27 §4.1 asked for: rolling origin, one
+    # The committed instrument: rolling origin, one
     # day at a time, history strictly before each test day. On a subject with
     # a genuine weekly structure it must beat «always their usual place».
     stays = _grant(weeks=8)
@@ -183,8 +183,8 @@ def test_an_ordinary_day_is_not_anomalous():
 
 
 def test_cadence_noise_is_never_an_anomaly():
-    # design/27 §1.3: a baseline agreeing to within seconds (MAD ~0) used to
-    # make a two-second deviation |z| >= 3. The MAD floor stops it.
+    # A baseline agreeing to within seconds (MAD ~0) would make a two-second
+    # deviation |z| >= 3; the MAD floor stops it.
     history = [_stay(MONDAY + timedelta(days=d), 9, 18, OFFICE) for d in range(10)]
     wobble = _stay(MONDAY + timedelta(days=10), 9, 18 + 5 / 3600, OFFICE)
     assert _detect(wobble, history) == []
@@ -211,7 +211,7 @@ def test_not_at_home_at_the_hour_he_always_is_is_unusual():
     assert found[0].score > 0.8
 
 
-# --- the movement model (design/27 §4.4) -------------------------------------
+# ---- the movement model -------------------------------------
 
 from nora.domain.mobility_forecast import (  # noqa: E402
     anchor_events,
@@ -347,7 +347,7 @@ def test_the_arrival_backtest_beats_a_median_on_two_habits():
     assert result.baseline_accuracy is not None and result.baseline_accuracy < 0.7
 
 
-# --- independent review of the movement model, 2026-09-28 ------------------
+# ---- movement model edge cases ------------------
 
 
 def _weekly(weeks: int, weekday: int, segments, *, first=MONDAY) -> list[Stay]:
@@ -370,7 +370,7 @@ def _fc(stays, *, week, weekday=2, kind="arrival", place=HOME, from_hour=16,
 
 
 def test_a_window_starting_before_four_keeps_the_rest_of_the_day():
-    """Read against a 04:00 rollover, 0-to-23 lost every event after 04:00."""
+    """Read against a 04:00 rollover, a 0-to-23 window keeps every event after 04:00."""
     fc = _fc(_wednesday_nights(6, set()), week=6, from_hour=0, to_hour=23)
     assert fc.status == "ok"
     assert [(h.earliest, h.days) for h in fc.habits] == [(19 * 60 + 25, 6)]
@@ -410,7 +410,7 @@ def test_without_a_fresh_reading_today_is_unknown_not_pending():
 
 
 def test_not_at_work_and_never_there_today_is_absent_not_left():
-    """Home all day: «already left work» was the old answer."""
+    """Home all day: the answer is `absent`, not «already left work»."""
     fc = _fc(_wednesday_nights(7, set()), week=7, kind="departure", place=OFFICE,
              from_hour=16, to_hour=22, now_h=20, at_place_now=False)
     assert fc.today == "absent"
@@ -426,7 +426,7 @@ def test_left_work_today_is_done_at_the_time_they_left():
 
 def test_out_for_lunch_today_is_stepped_out_not_left():
     """The habit counts a leaving only after two hours away; out since 12:30,
-    asked at 12:45, is not «already left work» (review 2026-09-28)."""
+    asked at 12:45, is not «already left work»."""
     fri = MONDAY + timedelta(days=7 * 6 + 4)
     stays = [*_weekly(6, 4, [(9, 18, OFFICE), (18.75, 31, HOME)]), _stay(fri, 9, 12.5, OFFICE)]
     fc = _fc(stays, week=6, weekday=4, kind="departure", place=OFFICE, from_hour=10,
@@ -474,7 +474,7 @@ def test_home_since_yesterday_does_not_date_this_visit_from_last_night():
 
 
 def test_home_again_after_going_out_does_not_claim_the_first_arrival():
-    """Home 19:00-20:00, out, back by 20:40 (an open stay): «since 19:00» was
+    """Home 19:00-20:00, out, back by 20:40 (an open stay): «since 19:00» would be
     wrong, and the time of the second arrival is not in closed stays."""
     wed = MONDAY + timedelta(days=7 * 7 + 2)
     today = [_stay(wed, 9, 18, OFFICE), _stay(wed, 19, 20, HOME), _stay(wed, 20.1, 20.5, GYM)]
@@ -520,7 +520,7 @@ def test_like_today_counts_the_nights_it_never_happened():
 def test_the_arrival_backtest_cannot_see_the_day_it_scores():
     """Early for four weeks, then late: the first late night must be a miss
     for both sides. Any leak of later weeks into the history turns it into a
-    hit (independent review: both guards could be removed and stay green)."""
+    hit."""
     from nora.domain.mobility_forecast import backtest_arrivals
 
     stays = _wednesday_nights(8, late_weeks={4, 5, 6, 7})

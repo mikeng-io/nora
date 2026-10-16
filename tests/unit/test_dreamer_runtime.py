@@ -3,8 +3,8 @@
 Every test here runs against a SCRIPTED model rather than a live one, and the
 script is what makes each case real: the runtime's whole job is deciding what a
 model's answer means, so a fake that returns the same well-formed envelope to
-every prompt would make this file decorative (CLAUDE.md's rule, and the reason
-each fake below returns the specific WRONG shape its test is named for).
+every prompt would make this file decorative, which is why each fake below returns the
+specific WRONG shape its test is named for.
 
 The mapping under test is R-27's, one layer up from the tool results it was
 written for:
@@ -147,7 +147,7 @@ class _Adaptor:
     uses_watermark = True
     objective = "room-language"
     envelope_key = "observations"
-    #: `DreamAdaptor.store_calls_per_tick` (issue #60). 1 keeps the
+    #: `DreamAdaptor.store_calls_per_tick` 1 keeps the
     #: default bound at one `store_timeout_seconds`, which every fake
     #: below returns inside.
     store_calls_per_tick = 1
@@ -311,9 +311,9 @@ def test_an_adaptor_reaching_past_the_ceiling_refuses_to_start():
 
 
 def test_no_adaptor_may_hold_the_cognition_sessions_two_reads_however_it_derived_them():
-    """The class behind #647 M1: a grant DERIVED from the read-only ceiling
-    (`granted_tools`) swallowed `rollup_read` and `standing_read` silently. Both
-    are inside the ceiling, so only a check on the tools themselves refuses them,
+    """A grant DERIVED from the read-only ceiling (`granted_tools`) would swallow
+    `rollup_read` and `standing_read` silently. Both are
+    inside the ceiling, so only a check on the tools themselves refuses them,
     at startup and at every run, granted a home room or not."""
     ceiling = frozenset({"now", "rollup_read", "standing_read"})
     adaptor = _Adaptor(sink=_Sink(), tools=frozenset({"now", "rollup_read", "standing_read"}))
@@ -411,9 +411,8 @@ async def test_the_run_opens_an_app_root_span_and_annotates_its_outcome(
     monkeypatch, exported_spans,
 ) -> None:
     """A dream pass is one trace UNDER the adaptor's root, not a bare Strands
-    agent span. Before this wrapper existed the pass traced as only
-    `invoke_agent dreamer:<name>` — no `nora.*` attributes, no outcome
-    (measured 2026-09-14: 119 dreamer traces, every one rootless)."""
+    agent span, which would carry only `invoke_agent dreamer:<name>` — no
+    `nora.*` attributes, no outcome."""
     sink = _Sink()
     runtime, _ = _runtime(monkeypatch, raw='{"observations": [{"term": "a"}]}')
 
@@ -434,8 +433,7 @@ async def test_a_blank_input_run_still_annotates_its_status_on_the_root(
 ) -> None:
     """The span records the outcome even when nothing is found — the reason
     the wrapper exists. A blank-input run is a REAL outcome
-    (nothing_found), not a silent gap. (Named for what the assert checks;
-    an early draft asserted `unavailable`, which this path never is.)"""
+    (nothing_found), not a silent gap."""
     sink = _Sink()
     adaptor = _Adaptor(sink=sink)
 
@@ -475,10 +473,8 @@ async def test_a_well_formed_empty_return_is_nothing_found_and_still_commits(
     """The decay path. `commit(key, ())` is a REAL call a sink may act on:
     a sink whose state decays on a clock rather than on new input needs the
     empty call to do it, so treating an empty result as "nothing to do, skip
-    the call" silently fades nothing. The room-language consolidator was the
-    original such sink and is deleted; the contract it earned is what this
-    test still holds, and the note curator's expiry sweep is the shape that
-    would need it next."""
+    the call" silently fades nothing. The note curator's expiry sweep is such a
+    sink."""
     sink = _Sink()
     runtime, metrics = _runtime(monkeypatch, raw='{"observations": []}')
 
@@ -562,8 +558,8 @@ async def test_an_accept_that_RAISES_is_unavailable_and_never_reaches_commit(
     does not also spend the messages it read.
 
     `nora.language.culture.CultureAdaptor` is the shipped user — an account
-    past `BODY_MAX_CHARS` is thrown away, and returning `()` for it gave status
-    `ok` and advanced the cursor, so the account AND the batch were lost with
+    past `BODY_MAX_CHARS` is thrown away, and returning `()` for it would give
+    status `ok` and advance the cursor, losing the account AND the batch with
     nothing durable saying so. This is the runtime half of that pin: the unit
     test says the adaptor raises, this says what the raise buys."""
     sink = _Sink()
@@ -693,8 +689,7 @@ async def test_the_budget_defaults_rather_than_raising_for_an_unknown_adaptor(
 
 
 async def test_the_instruction_corpus_is_read_once_per_run(monkeypatch):
-    """DEC-128, and it is free to get right now and effectively unfixable
-    later: a digest captured at construction keeps naming the corpus as it was
+    """DEC-128: a digest captured at construction keeps naming the corpus as it was
     at process start, and the wrongly-stamped rows are indistinguishable from
     right ones.
 
@@ -727,11 +722,10 @@ async def test_the_adaptors_declared_names_are_what_gets_built(monkeypatch):
 async def test_a_unit_keyed_adaptor_supplies_its_key_as_the_unit(
     monkeypatch,
 ):
-    """The key-path fix (design/dreamer-agent-loop/32 §3.4), pinned at the
-    seam it crosses: a unit-keyed adaptor's key IS the unit, so the
-    runtime SUPPLIES it to the tool source rather than letting the tool layer
-    derive one from a room that does not exist (`08-state.md` §10's trap —
-    «the seam looking like it works while every call fails closed»)."""
+    """A unit-keyed adaptor's key IS the unit, so the runtime SUPPLIES it to
+    the tool source rather than letting the tool layer derive one from a room
+    that does not exist (the seam would look like it works while every call
+    fails closed)."""
     tools = _ToolSource(ceiling=frozenset({"now", "web_search"}))
     sink = _Sink()
     adaptor = _Adaptor(sink=sink, tools=frozenset({"now"}))
@@ -789,18 +783,17 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # gated by the SAME R-31 room/circle seam as `where_is` — the guard is
         # the room, which a unit-keyed Dreamer tick does not have, so
         # room-scoped is the fail-closed side and the correct one. (It is
-        # deliberately NOT in UNIT_SAFE_TOOLS: spec §7.4 records the
-        # grant was NOT made.)
+        # deliberately NOT in UNIT_SAFE_TOOLS.)
         "where_been",
-        # `routine_read` (design/27 §4.3): the same substrate behind the SAME
+        # `routine_read`: the same substrate behind the SAME
         # guard as `where_been`, so the same fail-closed side.
         "routine_read",
-        # `character_read` (self-growth C4) resolves its unit from the BOUND room
+        # `character_read` resolves its unit from the BOUND room
         # (`lineage.render_room`), so a unit-keyed run without a home room has none.
         "character_read",
-        # `online_now` (design/online-status/) answers about the ROOM's own
+        # `online_now` answers about the ROOM's own
         # members — the invoking conversation's roster is its input domain
-        # (03-guards), which a unit-keyed Dreamer tick does not have.
+        # which a unit-keyed Dreamer tick does not have.
         # The PROACTIVE decide turn reaches it through the home-room grant
         # with its per-build input-domain override, never through
         # `UNIT_SAFE_TOOLS` — the same fail-closed side as `where_been`.
@@ -812,18 +805,18 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # Cognition adaptor's home-room grant only, and are Dreamer-only tools
         # (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
         "rollup_read", "standing_read",
-        # `document_read` (design/artifact §26): a document is read only from the
+        # `document_read`: a document is read only from the
         # room it was made in (the same-room rule), which a unit-keyed tick has
         # none of, so room-scoped is the fail-closed side. Not in
         # `UNIT_SAFE_TOOLS`, and an act (`document_publish`) is never granted.
         "document_read",
-        # `file_fetch` (design/external-files §3): a `code` resolves among the
+        # `file_fetch`: a `code` resolves among the
         # BOUND room's own message rows, which a unit-keyed tick has none of,
         # so room-scoped is the fail-closed side.
         "file_fetch",
         # `reverse_geocode` (DEC-156) is a pure coordinate -> address lookup
         # with no room state in its ARGUMENTS, which is exactly why it must be
-        # here rather than beside `weather`. Since 13c530aa it is the ONLY tool
+        # here rather than beside `weather`. It is the ONLY tool
         # that resolves a street address, and R-57 has it fill the turn-scoped
         # disclosed set `route` screens against. The coordinate it is handed
         # comes from a live fix, and everything that gates a live fix —
@@ -833,7 +826,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # no such gate anywhere in the path. Same argument as `where_been`
         # above, and the same fail-closed answer.
         "reverse_geocode",
-        # The two parking verbs (2026-08-31), classified with the live-location
+        # The two parking verbs, classified with the live-location
         # family they belong to (`transit`/`route`/`place_info` sit here too).
         # `find_parking` can even read the asker's PRESENCE when called with no
         # place — a room-shaped input a unit-keyed tick does not have — so
@@ -849,7 +842,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         "load_transcript", "group_members", "lookup_person", "about",
         "ask_memory", "search_memory", "recall_lookups", "media_fetch",
         "list_reminders", "event_search", "suggest_venue", "search_gifs",
-        # `music_status` (design/discord-music/07-agent-tool.md) reports on
+        # `music_status` reports on
         # ONE Discord conversation's voice session — the exact shape
         # `load_transcript`/`where_is` are room-scoped for, not a
         # unit-wide fact like `weather`. It also refuses on
@@ -858,7 +851,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # fail-closed, the same "not yet actually reachable" reasoning
         # `note_read`/`note_search` were.
         "music_status",
-        # The room tools (design/self-awareness/07) resolve «this unit»
+        # The room tools resolve «this unit»
         # through the ROOM's (platform, conversation_id); a unit-keyed tick's
         # synthetic room has neither, so both answer `unavailable`, the
         # fail-closed side. Admitting them would need a supplied-unit path,
@@ -866,47 +859,41 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # words from every room of a unit, which a proactive row could then
         # carry into another room. Nobody has made that disclosure decision.
         "room_list", "room_read",
-        # `record_query` (design/cognition-loop/15-map.md §4) reads through
+        # `record_query` reads through
         # the ROOM's lineage: a unit-keyed tick's synthetic room is in no
         # policy, so every call there is `unavailable`. Cognition's per-item
-        # bound room (30 §1, DEC-223) is what admits it, at step 3.
+        # bound room (DEC-223) is what admits it.
         "record_query",
-        # `instagram_read` (design/instagram-adoption/18) resolves the name it
+        # `instagram_read` resolves the name it
         # is given against the ROOM's live roster (`room.scope().find`, the
         # lookup `about` uses) — the input a unit-keyed tick does not have,
         # so every call there is honestly `unavailable`. Room-scoped is the
-        # fail-closed side, the same one `about` and `online_now` sit on;
-        # design 18 said "unit-safe" before the name resolution moved into
-        # the tool, and a move to UNIT_SAFE_TOOLS is a separate decision.
+        # fail-closed side, the same one `about` and `online_now` sit on; a move
+        # to UNIT_SAFE_TOOLS would be a separate decision.
         "instagram_read",
-        # `linkedin_read` and `linkedin_search` (design/social-per-network,
-        # DEC-201) are refused in every Dreamer pass by the tools themselves
+        # `linkedin_read` and `linkedin_search` (DEC-201) are refused in every
+        # Dreamer pass by the tools themselves
         # (a LinkedIn read is a profile visit, a search spends a monthly
         # limit), so they are not unit-safe. Room-scoped is the fail-closed
         # side.
         "linkedin_read", "linkedin_search",
-        # `computer_read` (design/sandbox-runtime §4) reads the ROOM's own
+        # `computer_read` reads the ROOM's own
         # workspace, keyed on the room's (platform, conversation_id); a
         # unit-keyed tick's synthetic room has no workspace of its own, and
         # nobody has decided a background loop may read one. Fail-closed.
         "computer_read",
-        # `computer_session_list` (design/sandbox-runtime §15.2) reads the
+        # `computer_session_list` reads the
         # ROOM's own sessions and workspace state; same reason, fail-closed.
         "computer_session_list",
-        # `subagent_list` / `subagent_read` (design/subagent §3) read THIS room's jobs, keyed
+        # `subagent_list` / `subagent_read` read THIS room's jobs, keyed
         # on the room's (platform, conversation_id), and are tag-turn tools by `ToolScope`.
         "subagent_list", "subagent_read",
     }
-    # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the
-    # module. Since design/dreamer-agent-loop/32 §3.4 that set includes the
-    # unit-scoped reads this test used to hold HERE, fail-closed:
-    # `note_read`/`note_search` resolved their unit THROUGH THE ROOM and
-    # the Dreamer's synthetic room could never answer that, and
-    # `search_memory_workspace` shipped WITH the fix. They moved when the key
-    # path became SUPPLIED — `DreamerRuntime.run` hands a unit-keyed
-    # adaptor's key to the tool layer AS the unit — which is exactly the
-    # move these entries' own comments said to make. The knowledge tier's five
-    # verbs were here too and went with that tier.
+    # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the module.
+    # It includes the unit-scoped reads (`note_read`/`note_search`,
+    # `search_memory_workspace`), which resolve their unit from the key that
+    # `DreamerRuntime.run` SUPPLIES to the tool layer for a unit-keyed adaptor,
+    # not through the Dreamer's synthetic room.
     unit_scoped = {
         "note_read", "note_search", "search_memory_workspace",
     }
@@ -923,8 +910,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
 
 def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
     """The name-level guard: no act verb is ever built, with a home-room grant or
-    without one (design/dreamer-agent-loop/39 D3; the `acts` allowance that once
-    admitted `remind` was deleted with the proactive adaptor, DEC-277).
+    without one (DEC-277).
     Asserted against the REAL registry rather than a stub, because the
     thing under test is the intersection with a set the registry derives.
     """
@@ -957,7 +943,7 @@ def _names(built: list[Any]) -> set[str]:
 
 class _RecordingRegistry:
     """`ToolRegistry`'s two verbs the tool source calls, with every keyword
-    `surface` was handed kept — the home-room arguments (39 D2) are VALUES on
+    `surface` was handed kept — the home-room arguments are VALUES on
     that call and nothing else observes them."""
 
     def __init__(self) -> None:
@@ -967,19 +953,18 @@ class _RecordingRegistry:
         return frozenset({"where_is", "now"})
 
     def surface(self, **kw: Any) -> Any:
-        # `surface()` is the one builder (design/tool-catalogue phase B); the
-        # source reads `.tools` off what it returns.
+        # `surface()` is the one builder; the source reads `.tools` off what
+        # it returns.
         self.calls.append(kw)
         return SimpleNamespace(tools=[])
 
 
 def test_a_home_room_grant_builds_the_room_the_operator_named():
-    """39 D2's two review findings, pinned: `self_ids` so Nora's own account
-    is skipped rather than counted `unnamed`, and `location_trusted` from
-    the home room's `location` flag — both of which the pre-DEC-162 build
-    left at their defaults, so `where_is` refused in every configuration.
-    Plus the destination: the home room's conversation, never the unit
-    NAME the key carries (39 D3)."""
+    """`self_ids` so Nora's own account is skipped rather than counted
+    `unnamed`, and `location_trusted` from the home room's `location` flag
+    (left at its default, `where_is` would refuse in every configuration).
+    Plus the destination: the home room's conversation, never the unit NAME
+    the key carries."""
     registry = _RecordingRegistry()
     roster = object()
     source = RegistryToolSource(
@@ -1015,7 +1000,7 @@ def test_a_home_room_grant_builds_the_room_the_operator_named():
 def test_a_home_room_grant_with_no_home_room_falls_back_closed():
     """The grant said «stand in the home room» and the unit names none:
     no acts, the synthetic empty room, the key as the conversation — exactly
-    the pre-DEC-162 build — and never a guessed room."""
+    the ungranted build — and never a guessed room."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
         registry=registry, store=None, persons=None, honcho=None,
@@ -1035,13 +1020,11 @@ def test_a_home_room_grant_with_no_home_room_falls_back_closed():
 
 
 def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
-    """**The wiring defect this closes** (design/culture-tier `03-decisions`
-    correction 14, `03-no-agent-loop §7.4`). `build` resolved every home room
-    through `home_rooms[unit or ""]`, and `DreamerRuntime.run` supplies
-    `unit=None` for a scope-keyed adaptor — so a scope-keyed grant looked
-    up `home_rooms[""]`, found nothing, and took the loud CLOSED branch. Every
-    room-scoped verb then answered `unavailable` forever while the grant read
-    as honoured, which is the state that closed PR #237 on a false premise.
+    """**The wiring this pins.** `build` must not resolve a scope-keyed
+    adaptor's home room through `home_rooms[unit or ""]`: `DreamerRuntime.run`
+    supplies `unit=None` for a scope-keyed adaptor, so that lookup finds
+    nothing and takes the loud CLOSED branch. Every room-scoped verb would
+    then answer `unavailable` forever while the grant reads as honoured.
 
     A scope-keyed adaptor's key IS a conversation, so the room is an identity
     rather than a choice: no `home_rooms` lookup, no `policy.toml`
@@ -1070,7 +1053,7 @@ def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
     assert call["conversation_id"] == "g1"
     assert call["location_trusted"] is True
     # STILL `None`: the key is a conversation, not a unit, and the
-    # unit-scoped verbs must keep resolving through the room (32 §3.4).
+    # unit-scoped verbs must keep resolving through the room.
     assert call["supplied_unit"] is None
     room = call["room"]
     assert room.platform == "discord"
@@ -1105,10 +1088,10 @@ def test_a_scope_keyed_grant_for_an_unknown_room_falls_back_closed_and_says_so(
 
 
 def test_two_broken_scopes_are_logged_SEPARATELY_not_collapsed_onto_one():
-    """The dedupe key was `(adaptor, unit or "")`, and every scope-keyed
-    miss carries `unit=None` — so all of them would collapse onto one
-    entry and the first broken room would be reported as though it were the
-    only one."""
+    """The dedupe key must not be `(adaptor, unit or "")`: every scope-keyed
+    miss carries `unit=None`, so all of them would collapse onto one entry and
+    the first broken room would be reported as though it were the only
+    one."""
     source = RegistryToolSource(
         registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
         metrics=Metrics(), scope_rooms={},
@@ -1150,12 +1133,10 @@ def test_the_missing_home_room_is_counted_every_pass_and_logged_once(caplog):
     """A CONFIG state, not an incident: true on every dream until somebody
     edits policy.toml.
 
-    Live it filed the same Sentry issue on every pass, once per unit
-    without a home room (NORA-2 — `wedding` and `friends`). Deduplicating the
-    log alone would have traded a stream of identical errors for no signal at
-    all, so the counter carries the standing reading and the log carries the
-    news: «the proactive adaptor has been inert here for a week» has to stay
-    answerable.
+    Deduplicating the log alone would trade a stream of identical errors for
+    no signal at all, so the counter carries the standing reading and the log
+    carries the news: «this adaptor has been inert here for a week» has to
+    stay answerable.
     """
     metrics = Metrics()
     source = RegistryToolSource(
@@ -1209,24 +1190,23 @@ def test_without_a_grant_the_build_is_byte_for_byte_the_old_one():
 
 
 def test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room():
-    """The same guarantee as the test above, on the OTHER branch — and the one
-    the suite did not cover.
+    """The same guarantee as the test above, on the OTHER branch.
 
     `if not allowance.home_room: home = None` is the ceiling by omission: an
-    adaptor with no `AdaptorGrant` gets the pre-DEC-162 shape whatever the maps
-    hold. An audit mutated that branch to `home = self._scope_rooms.get(key)`
-    — the grant ignored, every scope-keyed adaptor standing in a real room —
-    and the WHOLE suite stayed green. It was equivalent only by accident:
+    adaptor with no `AdaptorGrant` gets the ungranted shape whatever the maps
+    hold. Changing that branch to `home = self._scope_rooms.get(key)` (the
+    grant ignored, every scope-keyed adaptor standing in a real room) must
+    redden a test.
     `test_without_a_grant_the_build_is_byte_for_byte_the_old_one` passes
-    `unit="friends"` and populates `home_rooms`, so it exercises the
-    unit branch only, and the one ungranted scope-keyed adaptor shipped
+    `unit="friends"` and populates `home_rooms`, so it exercises the unit
+    branch only, and the one ungranted scope-keyed adaptor shipped
     (`NoteCandidateAdaptor`) declares `tools = frozenset()`, so `build`
     returns at the `if not wanted` guard before any room is constructed.
 
     It goes live the moment a scope-keyed adaptor declares a tool without a
-    grant — which is exactly the drift `AdaptorGrant` exists to stop, so the
-    pin is on the ROOM's SHAPE rather than on a byte comparison: what must
-    hold is «closed», not «identical to the call I happened to record»."""
+    grant — the drift `AdaptorGrant` exists to stop — so the pin is on the
+    ROOM's SHAPE rather than on a byte comparison: what must hold is
+    «closed», not «identical to the call I happened to record»."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
         registry=registry, store=None, persons=None, honcho=None,
@@ -1286,27 +1266,21 @@ def test_asking_for_nothing_builds_nothing_and_touches_no_collaborator():
 
 
 def test_a_unit_keyed_adaptor_is_refused_a_room_scoped_tool():
-    """The protection three documents claimed and nothing applied — and,
-    since DEC-162, the one adaptor it does not bind.
+    """A unit-keyed adaptor WITHOUT a home-room grant is restricted to
+    `UNIT_SAFE_TOOLS`; one with a grant is exempt.
 
-    `RegistryToolSource`'s docstring, `verify_tool_subsets`' docstring, DEC-133
-    and the release fragment all asserted that a unit-keyed adaptor is
-    restricted to `UNIT_SAFE_TOOLS`. A review probe built
-    `about`/`load_transcript`/`search_memory` for a unit key with no
-    complaint — nothing checked `key_kind` anywhere.
+    `RegistryToolSource`'s docstring, `verify_tool_subsets`' docstring and
+    DEC-133 all state the restriction, so it is enforced on `key_kind`.
 
-    **The failure it would have caused is worse than a missing tool.** A
-    unit name is not a conversation id, so `load_transcript` against one
-    does not raise — it returns `{"messages": []}`. That is «I could not
-    check» reported as «there was nothing», the one substitution R-27 exists to
-    forbid, arriving in the tier whose whole purpose is to keep those two
-    apart.
+    **The failure it prevents is worse than a missing tool.** A unit name is
+    not a conversation id, so `load_transcript` against one does not raise —
+    it returns `{"messages": []}`. That is «I could not check» reported as
+    «there was nothing», the one substitution R-27 exists to forbid, arriving
+    in the tier whose whole purpose is to keep those two apart.
 
-    REWRITTEN ON PURPOSE (design/dreamer-agent-loop/39 D2): the refusal
-    stands for every unit-keyed adaptor WITHOUT a home-room grant, and
-    is lifted for the one with it — the home room is the disclosure
-    decision `UNIT_SAFE_TOOLS`' own comment said nobody had made,
-    made by the operator in `policy.toml`."""
+    The refusal is lifted for an adaptor with a home-room grant: the home room
+    is the disclosure decision `UNIT_SAFE_TOOLS`' own comment says is the
+    operator's to make in `policy.toml`."""
     adaptor = _Adaptor(
         sink=_Sink(), tools=frozenset({"web_search", "load_transcript"}),
     )
@@ -1369,12 +1343,11 @@ async def test_the_per_run_check_refuses_the_same_thing_the_startup_check_does(
 
 
 async def test_a_blank_prompt_skips_the_model_and_still_commits(monkeypatch):
-    """The fire condition, and the reason it is general rather than the fact
-    tier's own.
+    """The fire condition.
 
     An adaptor with `uses_watermark = False` gets no lag, quiet or age
-    condition — the loop dispatches it on EVERY tick. Without this, the fact
-    adjudicator would spend a full `web_search`/`web_fetch` research loop 288
+    condition — the loop dispatches it on EVERY tick. Without this, such an
+    adaptor would spend a full `web_search`/`web_fetch` research loop 288
     times a day per unit on a prompt that says «Claims to settle: (none)».
 
     `commit(key, ())` is still called, so the decay contract survives: a
@@ -1446,20 +1419,17 @@ def test_an_envelope_preceded_by_prose_is_still_read(raw, why):
     the same batch is re-read forever while the counter says the model could
     not be reached. That is R-27 upside down.
 
-    Measured on 2026-08-28: driving the shipped `fact-adjudication` objective
-    through its whole tool loop, the model converged at turn 6 with
-    «Search returning empty results consistently. Cannot find any source…»
-    followed by a well-formed `{"verdicts": [...]}`. Both production runs
-    failed as `no readable envelope`, at 950 and 1009 characters.
+    A model that converges after a long tool loop answers «Search returning
+    empty results consistently. Cannot find any source…» followed by a
+    well-formed `{"verdicts": [...]}`; the envelope must be found anyway.
     """
     assert parse_envelope(raw, key="observations") == ({"term": "a"},), why
 
 
 def test_prose_with_no_envelope_at_all_is_still_none():
-    """The positive control, and the line this change must not cross: a reply
-    that never produces the envelope is still `unavailable`. What was dropped
-    is the requirement that the envelope come FIRST, not the requirement that
-    it exist."""
+    """The positive control, and the line this must not cross: a reply
+    that never produces the envelope is still `unavailable`. The envelope need
+    not come FIRST, but it must exist."""
     assert parse_envelope(
         "I looked and I am not sure. Probably yes?", key="observations",
     ) is None
@@ -1502,9 +1472,6 @@ def test_the_last_envelope_wins_when_the_model_quotes_its_instructions():
     First-wins yields zero items, which is `nothing_found`, which ADVANCES the
     watermark: real verdicts discarded, the batch consumed permanently, every
     counter green.
-
-    The bug this whole change replaces was loud, retryable and lost nothing.
-    Getting the pick rule wrong would have made it worse than what it fixed.
     """
     raw = ('The shape I must return is {"observations": []}.\n\n'
            'Here is my answer:\n{"observations": [{"term": "real"}]}')
@@ -1547,11 +1514,10 @@ def test_a_malformed_envelope_does_not_shadow_a_valid_one_after_it():
     ],
 )
 def test_odd_punctuation_before_the_envelope_does_not_swallow_it(preamble, why):
-    """**The first implementation counted braces by hand and could not
-    resynchronise.** State carried across the whole reply, so one unterminated
-    quote or one unclosed `{` in the prose consumed everything after it — and
-    reinstated the exact bug this change exists to fix, on inputs a research
-    pass produces routinely.
+    """**The envelope scan must resynchronise.** Hand-counted brace state
+    carried across the whole reply would let one unterminated quote or one
+    unclosed `{` in the prose consume everything after it, on inputs a
+    research pass produces routinely.
 
     `json.JSONDecoder.raw_decode` at each `{` is the real parser: strings,
     escapes and nesting are right by construction, and a candidate that fails
@@ -1565,9 +1531,9 @@ def test_odd_punctuation_before_the_envelope_does_not_swallow_it(preamble, why):
 def test_deeply_nested_json_does_not_raise_into_the_caller():
     """`run`'s own docstring says nothing here raises into the caller, and a
     `RecursionError` from the parser lands where `_finish` never runs — so a
-    tick that HAPPENED increments no counter in any bucket. Pre-existing for
-    whole-reply payloads and widened by scanning for objects anywhere in the
-    text, so it is caught here."""
+    tick that HAPPENED increments no counter in any bucket. It applies to
+    whole-reply payloads and to scanning for objects anywhere in the text, so
+    it is caught here."""
     raw = "prefix " + "{\"a\":" * 20_000 + "1" + "}" * 20_000
 
     assert parse_envelope(raw, key="observations") is None
@@ -1581,19 +1547,14 @@ def _named_tool(name: str):
 
 
 def test_the_dreamer_applies_the_configured_tool_budget_over_the_table():
-    """**`[llm.budgets]` reaches the Dreamer, and until 2026-09-07 it did not.**
+    """**`[llm.budgets]` reaches the Dreamer.**
 
     The tag path applies it through
-    `ToolRegistry(budget_overrides=cfg.llm.budgets).budgets()`; `_tool_budgets`
-    read `NATIVE_TOOLS[name].budget` straight off the table. So one number in
-    `config.toml` meant two ceilings depending on which loop asked, with
-    nothing naming the difference — and the Dreamer got the lower one, on the
-    loop that does the research.
-
-    Measured live, first tick after the knowledge tier's schedule landed:
-    `web_fetch = 6` was configured and `DreamGuard` vetoed the Dreamer at «you
-    already called web_fetch 2 time(s)» — the TABLE value — twelve times in one
-    run, which then produced a 0-char envelope.
+    `ToolRegistry(budget_overrides=cfg.llm.budgets).budgets()`;
+    `_tool_budgets` must apply it too rather than read
+    `NATIVE_TOOLS[name].budget` straight off the table, or one number in
+    `config.toml` means two ceilings depending on which loop asked, with the
+    Dreamer getting the lower one on the loop that does the research.
 
     Falsification: drop the `overrides` lookup in `_tool_budgets` and this
     returns the table's 2.
@@ -1634,17 +1595,14 @@ def test_an_adaptors_own_tool_ceiling_wins_over_the_table_and_the_deployment():
     layers and must win both.**
 
     `NativeTool.budget` is a TAG TURN's number — `note_read = 3` is sized for
-    a reply that reads a note or two before answering — and the Dreamer was
-    inheriting it with no way to say otherwise. `[llm.budgets]` is no answer:
-    it is deployment-wide, so raising `note_read` there raises it for every
-    reply Nora writes, which is the blast radius `[dreamer] max_tokens`
-    (issue #291) was added to avoid one ceiling over.
+    a reply that reads a note or two before answering. `[llm.budgets]` is no
+    answer for the Dreamer: it is deployment-wide, so raising `note_read`
+    there raises it for every reply Nora writes, the blast radius `[dreamer]
+    max_tokens` avoids for the completion ceiling.
 
-    Measured on norty 2026-09-17, the 05:00 proactive pass: `friends` holds 5
-    open notes and `ridgeline` 6, against a ceiling of 3. Each scope read three
-    and was refused a FOURTH DISTINCT note, then decided every note anyway —
-    three grounded in a body, the rest in an index line. Status `ok`, no
-    error, watermark advanced.
+    A scope holding more open notes than the ceiling is refused a distinct
+    note past it, then decides every note anyway, some grounded in an index
+    line only: status `ok`, no error, watermark advanced.
 
     Falsification: drop the `adaptor_overrides` lookup in `_tool_budgets` and
     the last assertion returns the deployment's 5, or the table's 3 with the
@@ -1691,10 +1649,9 @@ def test_an_adaptor_tool_ceiling_for_a_tool_it_lacks_grants_nothing():
 
 
 # ---------------------------------------------------------------------------
-# per-fire sampling (design/dreamer-agent-loop/37, issue #118) — N model calls
-# per run, unioned. Measured on `note-candidates`: one shape of entry is
-# recognised in ~30% of samples while no negative sample ever produced one, so
-# the union raises recall on the exact axis where precision cannot be spent.
+# per-fire sampling — N model calls per run, unioned. The union raises recall
+# on an axis where precision cannot be spent: an entry shape one sample
+# recognises while no negative sample ever produces one.
 # ---------------------------------------------------------------------------
 
 
@@ -1889,16 +1846,14 @@ async def test_each_sample_gets_its_own_guard(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# issue #60 — the store phases are bounded, and a timeout is COUNTED
+# the store phases are bounded, and a timeout is COUNTED
 # ---------------------------------------------------------------------------
 #
-# `asyncio.wait_for` appeared exactly once in this module, around
-# `factory.invoke`. `adaptor.inputs` and `adaptor.commit` were bare awaits, and
-# the engine sets no `command_timeout` — so a connection hanging mid-query left
-# `dream_loop` holding `<adaptor>:<key>` in its `running` set FOREVER. The skip
-# was counted, under `reason="in_flight_adaptor"`, which is also what an
-# ordinary long run produces: the tier went quiet and the only symptom was an
-# absence.
+# `adaptor.inputs` and `adaptor.commit` are each awaited under a timeout. The
+# engine sets no `command_timeout`, so a connection hanging mid-query would
+# otherwise leave `dream_loop` holding `<adaptor>:<key>` in its `running` set
+# FOREVER, with the skip counted under `reason="in_flight_adaptor"`, which an
+# ordinary long run also produces.
 #
 # Every test here drives a REAL hang (an `Event` nobody sets) under a tiny
 # bound, so what is asserted is that the runtime RETURNED — the release — and
@@ -1994,11 +1949,10 @@ async def test_a_wedged_commit_is_cut_off_counted_and_the_unit_released(
 
 async def test_the_blank_prompt_commit_is_bounded_too(monkeypatch):
     """The decay path's `commit(key, ())` is a SECOND call site, on the branch
-    that never reaches the model at all. It was the easiest one to forget: the
-    fire condition returns before any of the model machinery is built, so a
-    bound applied only to the normal path would leave the watermark-free
-    adaptors — which take this branch on most ticks — exactly as exposed as
-    before."""
+    that never reaches the model at all. The fire condition returns before any of
+    the model machinery is built, so a bound applied only to the normal path
+    would leave the watermark-free adaptors — which take this branch on most
+    ticks — exactly as exposed as before."""
     class _BlankWedged(_Wedged):
         async def inputs(self, *, key, batch):
             return "   \n  "
@@ -2063,7 +2017,7 @@ def test_the_bound_is_the_adaptors_own_declared_call_count(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# issue #63 — a batch the screen takes ALL of is named, not inferred
+# a batch the screen takes ALL of is named, not inferred
 # ---------------------------------------------------------------------------
 
 
@@ -2073,8 +2027,8 @@ async def test_a_batch_the_screen_rejects_entirely_is_counted(monkeypatch):
     An adaptor whose objective asks the model to echo a row id back has every
     item dropped here — `dream_screen` walks every string in an item and
     `egress._UUID` matches any hyphenated uuid — so the tick spends a model
-    call, `accept` receives `()`, `commit` writes nothing, and the run reports
-    `ok`. Three adaptors shipped that way and every counter stayed healthy.
+    call, `accept` receives `()`, `commit` writes nothing, the run reports
+    `ok`, and every counter stays healthy.
 
     The STATUS stays `ok` on purpose (R-27: a run whose model DID answer may
     not claim «there was nothing»), which is exactly why the condition needs
@@ -2197,7 +2151,7 @@ def test_the_phase_label_vocabulary_is_derived_from_the_type():
 async def test_a_dream_pass_publishes_its_own_deadline_to_its_tools(monkeypatch):
     """A room-scoped pass can replay `media_fetch`, whose describer is built
     from the `[llm]` loop; the pass's OWN `timeout_seconds` is what must bound
-    it (DEC-197 review)."""
+    it (DEC-197)."""
     from nora.domain.turn_deadline import seconds_left
 
     seen: list[float | None] = []
@@ -2223,7 +2177,7 @@ async def test_a_dream_pass_publishes_its_own_deadline_to_its_tools(monkeypatch)
 
 
 # ---------------------------------------------------------------------------
-# design/dreamer-agent-loop/43 §3: the rows a pass loaded reach its grounding
+# the rows a pass loaded reach its grounding
 # ---------------------------------------------------------------------------
 
 
@@ -2285,7 +2239,7 @@ async def test_an_adaptor_with_no_saw_gets_the_unchanged_build(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# an adaptor's own write verbs (design/self-growth/10 §3, `character_revise`)
+# an adaptor's own write verbs (`character_revise`)
 # ---------------------------------------------------------------------------
 
 
@@ -2378,7 +2332,7 @@ class _WritingVerbAdaptor(_VerbAdaptor):
 
 async def test_a_verb_that_writes_when_called_is_handed_the_runs_provenance(monkeypatch):
     """The three fields a `Proposal` carries reach a verb that takes
-    `provenance` (design/self-growth/40, L2): the instruction digest read for
+    `provenance`: the instruction digest read for
     THIS run, the model, and an `established_by` naming the adaptor and key. A
     staging verb (no such argument) is called exactly as before, above."""
     sink = _Sink()
@@ -2392,8 +2346,8 @@ async def test_a_verb_that_writes_when_called_is_handed_the_runs_provenance(monk
 
 async def test_a_run_whose_verbs_wrote_is_ok_not_nothing_found(monkeypatch):
     """A verb that writes when called answers through what `commit` says
-    landed (DEC-299 (4)): measured live, four lessons written read as
-    `nothing_found`, which says «there was nothing»."""
+    landed (DEC-299 (4)): lessons written must not read as `nothing_found`,
+    which says «there was nothing»."""
     sink = _Sink()
 
     class _Landed(_WritingVerbAdaptor):

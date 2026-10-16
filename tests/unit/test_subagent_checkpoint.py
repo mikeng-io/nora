@@ -1,10 +1,10 @@
-"""The job checkpoint (design/subagent §4d): a typed place-keeper the worker writes, and the
+"""The job checkpoint: a typed place-keeper the worker writes, and the
 hard facts code keeps outside it.
 
-Two guards are load-bearing and are proved by reverting them (see the commit that added this
-file): OUTPUTS COME FROM CODE (`SubagentProgress` records a document id only from an `ok`
-`document_publish` result, and the renderer's Outputs section is built from those alone, so a
-checkpoint that names a document nobody published yields no output), and the RE-ANCHORING
+Two guards are load-bearing: OUTPUTS COME FROM CODE (`SubagentProgress` records
+a document id only from an `ok` `document_publish` result, and the renderer's
+Outputs section is built from those alone, so a checkpoint that names a document
+nobody published yields no output), and the RE-ANCHORING
 (`SubagentProgress._anchor`, which puts the latest checkpoint and outputs back into the pinned
 first message once the sliding window has trimmed).
 """
@@ -530,7 +530,7 @@ def test_the_constants_the_doctrine_leans_on_are_the_ones_the_tool_enforces():
         Checkpoint(kept_files=())            # the worker's value has no field for code's files
 
 
-# -- review fixes: the terminal write, the pinned message on the wire, the lead ----------------
+# -- the terminal write, the pinned message on the wire, the lead ----------------
 
 
 async def test_a_checkpoint_written_before_the_row_exists_is_on_the_row_after_delivery(tmp_path):

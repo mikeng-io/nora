@@ -1,6 +1,5 @@
 """`deliver.build`/`deliver.check_outcome` — wraps `Deliverer`+`ReplyGuard`
-and owns the post-invocation "did anything actually go out" check carried
-over from `handler.py:205-212`.
+and owns the post-invocation "did anything actually go out" check.
 """
 
 from __future__ import annotations
@@ -199,9 +198,9 @@ async def test_an_ordinary_stop_reason_still_counts_no_send_call():
 
 
 def test_check_outcome_cannot_be_called_without_a_stop_reason():
-    """`stop_reason` has no default, so a future call site cannot quietly go
-    back to labelling every silent turn `no_send_call` — which is the shape of
-    the bug R-23 fixes, and exactly what a defaulted parameter would allow."""
+    """`stop_reason` has no default, so a call site cannot quietly
+    label every silent turn `no_send_call` — which is the shape of
+    what R-23 forbids, and exactly what a defaulted parameter would allow."""
     import inspect
 
     param = inspect.signature(deliver.check_outcome).parameters["stop_reason"]
@@ -209,9 +208,9 @@ def test_check_outcome_cannot_be_called_without_a_stop_reason():
 
 
 def test_check_outcome_cannot_be_called_without_an_audience():
-    """`audience` has no default either (design/dreamer-agent-loop/35 §6): a
+    """`audience` has no default either: a
     defaulted "tag" would let a participation failure land inside the budget
-    A8 filters to `audience="tag"` — invisible, exactly the bug shape the
+    filtered to `audience="tag"` — invisible, exactly the shape the
     required keyword exists to refuse."""
     import inspect
 
@@ -278,11 +277,11 @@ def test_a_fault_after_the_loop_finished_is_named_apart_again():
     assert deliver.truncation_reason(stop_reason="end_turn", completed=False) == "pipeline_error"
 
 
-# ── M1: a guard-refused turn is not ALSO a no_send_call ─────────────────────
+# ── a guard-refused turn is not ALSO a no_send_call ─────────────────────────
 
 
 async def test_a_guard_refused_turn_is_not_counted_as_no_send_call():
-    """THE PROBE (external review 2026-08-10).
+    """A guard-refused turn is not ALSO a `no_send_call`.
 
     R-4/R-6/R-18 all `return False` before `_attempts += 1`, so a turn whose
     every reply was refused answered False to `attempted` — and `check_outcome`
@@ -291,7 +290,7 @@ async def test_a_guard_refused_turn_is_not_counted_as_no_send_call():
     statement: she DID call the tool, a guard stopped her, and those have
     different fixes.
 
-    It also corrupts an instrument: ADR-0006's OPEN root-cause investigation
+    It would also corrupt an instrument: ADR-0006's root-cause investigation
     reasons from `no_send_call` meaning "the loop ended having never called the
     tool". Revert `called` to `attempted` in `check_outcome` and this reds."""
     metrics = Metrics()
@@ -316,7 +315,7 @@ async def test_a_guard_refused_turn_is_not_counted_as_no_send_call():
 
 
 async def test_a_turn_that_never_called_send_reply_still_counts_no_send_call():
-    """The other half — the bound on the fix. A model that ends its turn without
+    """The other half: the bound on the rule. A model that ends its turn without
     ever calling the tool is the case `no_send_call` exists for, and it must
     still be counted or the correction above would silence the real signal."""
     metrics = Metrics()
@@ -334,11 +333,10 @@ async def test_a_turn_that_never_called_send_reply_still_counts_no_send_call():
 
 
 # ---------------------------------------------------------------------------
-# THE STRICT-SILENCE SPAN (issue #55, Layer 7's second unlit boundary).
-# Before this, "she chose not to speak" and "the send failed" were the same
-# shape in the trace — a turn with no span at `check_outcome` at all. These
-# assert on EXPORTED spans (`exported_spans`, `tests/conftest.py`), the same
-# discipline `test_engagement_pipeline.py`'s #64 tests use.
+# THE STRICT-SILENCE SPAN. "She chose not to speak" and "the send failed" must
+# not look the same in the trace. These assert on EXPORTED spans
+# (`exported_spans`, `tests/conftest.py`), the same discipline
+# `test_engagement_pipeline.py` uses.
 # ---------------------------------------------------------------------------
 
 
@@ -363,7 +361,7 @@ async def test_check_outcome_emits_its_own_span(exported_spans):
 async def test_a_deliberate_silence_and_a_send_failure_are_different_shapes(
     exported_spans,
 ):
-    """The issue's own test case, stated directly: a model that never called
+    """A model that never called
     `send_reply` (she chose not to speak) and a model whose reply the
     PLATFORM rejected (the send failed) must not read the same in the span.
 

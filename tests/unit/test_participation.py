@@ -1,6 +1,6 @@
 """`ParticipationTrigger` — one evaluation per quiescence-closed window.
 
-design/dreamer-agent-loop/35 §3.5/§10: a candidate window OPENS on an opted-in
+A candidate window OPENS on an opted-in
 room's untagged message and CLOSES when the room goes quiet for
 `settle_seconds`; exactly one participation evaluation runs per closed window;
 the slot is try_acquire-and-skip; the cooldown caps SENDS, never evaluations.
@@ -137,7 +137,7 @@ async def test_a_faulting_evaluation_still_closes_the_window() -> None:
 
 
 async def test_a_held_slot_skips_the_window_silently() -> None:
-    """§10.2 try_acquire-and-skip: a tag holding the conversation's slot means
+    """try_acquire-and-skip: a tag holding the conversation's slot means
     the window is marked closed and NEVER evaluated — a tag never waits behind
     an ambient thought, and the stale burst is not answered after it."""
     clock, speak = _Clock(), _Speak()
@@ -158,7 +158,7 @@ async def test_a_held_slot_skips_the_window_silently() -> None:
 
 
 async def test_the_cooldown_holds_the_send_not_the_evaluation() -> None:
-    """§10.3: every closed window is EVALUATED, cooldown or not; only
+    """Every closed window is EVALUATED, cooldown or not; only
     `send_permitted` flips. A "speak" conclusion inside the cooldown reaches
     `FirePath.speak` and is held at the `Deliverer`, logged for shadow review."""
     clock, speak = _Clock(), _Speak(outcome=SENT)
@@ -183,7 +183,7 @@ async def test_the_cooldown_holds_the_send_not_the_evaluation() -> None:
 
 async def test_a_silent_turn_does_not_spend_the_cooldown() -> None:
     """Only a DELIVERED message spends the room's cadence: a held, silent or
-    failed turn left the room exactly as it was (§10.3 caps what it HEARS)."""
+    failed turn left the room exactly as it was (the cooldown caps what it HEARS)."""
     clock, speak = _Clock(), _Speak(outcome=SILENT)
     trigger = _trigger(speak, clock)
     trigger.note_message(_msg())
@@ -247,7 +247,7 @@ async def test_sweep_drops_stale_rooms_and_keeps_live_ones() -> None:
     assert len(trigger) == 0
 
 
-# --- the Relevance Gate in front of the turn (design 36) -------------------
+# --- the Relevance Gate in front of the turn -------------------
 
 
 class _Gate:
@@ -268,8 +268,8 @@ class _Verdict:
         self.verdict = "go" if admits else "no_go"
         # A CHOSEN verdict carries no error kind — the fail-closed half is
         # the gate's own. Kept on the fake for shape-parity with the real
-        # `GateVerdict`, though the trigger itself reads neither field since
-        # DEC-179 (it never wrote a decision-log row from the gate's verdict).
+        # `GateVerdict`, though the trigger itself reads neither field (DEC-179: it never writes a
+        # decision-log row from the gate's verdict).
         self.error_kind = None
 
 
@@ -293,7 +293,7 @@ def _gated(speak, clock, gate, shadow=None) -> ParticipationTrigger:
 
 
 async def test_a_no_go_verdict_runs_no_turn_at_all():
-    """The whole point of design 36: the expensive turn is not paid for on a
+    """The whole point of the gate: the expensive turn is not paid for on a
     window the cheap call already declined."""
     speak, clock, gate = _Speak(), _Clock(), _Gate(admits=False)
     trigger = _gated(speak, clock, gate)
@@ -336,7 +336,7 @@ async def test_the_score_is_absent_from_the_header_when_no_gate_is_wired():
 
 
 async def test_shadow_mode_posts_the_go_and_never_runs_a_turn():
-    """Design 36 decision 6 + §4: shadow means Nora is NEVER involved."""
+    """Shadow means Nora is NEVER involved."""
     speak, clock, gate = _Speak(), _Clock(), _Gate(admits=True, score=0.91)
     shadow = _ShadowPost()
     trigger = _gated(speak, clock, gate, shadow=shadow)
@@ -351,7 +351,7 @@ async def test_shadow_mode_posts_the_go_and_never_runs_a_turn():
 
 
 async def test_shadow_mode_never_posts_a_no_go():
-    """Decision 6: only GO reaches the review channel. The no_go rate stays
+    """Only GO reaches the review channel. The no_go rate stays
     observable on the gate's own counter, not on the channel."""
     speak, clock, gate = _Speak(), _Clock(), _Gate(admits=False)
     shadow = _ShadowPost()
@@ -383,7 +383,7 @@ async def test_shadow_mode_never_spends_the_send_cooldown():
 
 
 async def test_a_window_the_slot_skips_is_never_even_judged():
-    """§10.2's try_acquire-and-skip happens BEFORE the gate call: a tag is
+    """try_acquire-and-skip happens BEFORE the gate call: a tag is
     already answering, so there is nothing to spend a model call on — and
     shadow keeps the same order so the reviewed GO rate matches live."""
     speak, clock, gate = _Speak(), _Clock(), _Gate(admits=True)
@@ -478,14 +478,11 @@ async def test_a_declined_window_does_not_spend_the_send_cooldown():
 async def test_a_hot_room_is_judged_on_volume_not_only_on_quiet():
     """The quiet arm alone leaves a room that never pauses unjudged.
 
-    `close_due_windows` read `now - last_message_at >= settle_seconds`, and
-    that resets on EVERY message — so a conversation whose gaps stay under
-    `settle_seconds` never closes a window at all. Measured on this trigger
-    before the fix: 200 messages six seconds apart, twenty minutes of live
-    conversation, produced ZERO evaluations; the first came only after the
-    room fell silent, by which point the question had scrolled away. The gate
-    was blind exactly when a room is busiest — which is when a question is
-    most likely to be dropped.
+    `close_due_windows` reads `now - last_message_at >= settle_seconds`, and that resets on EVERY
+    message — so a conversation whose gaps stay under `settle_seconds` never closes a window at all:
+    200 messages six seconds apart would produce ZERO evaluations until the room fell silent, by
+    which point the question has scrolled away. The gate would be blind exactly when a room is
+    busiest.
 
     The two arms are OR, whichever comes first, the shape a message queue
     uses. The window watermark is a separate guard and not a third condition:
@@ -542,19 +539,15 @@ async def test_a_quiet_room_still_closes_on_the_timeout_arm():
     assert len(gate.asked) == 1
 
 
-# --- the shared decision log (issue #199) / DEC-179 ------------------------
+# --- the shared decision log (DEC-179) ------------------------
 
 
 def test_the_trigger_records_nothing_to_a_decision_log():
-    """**DEC-179: never the gate.** `RelevanceGate` is «ONE call, transcript +
-    standing, no tools, no doctrine, no loop, JSON out» — a writer with a
-    fail-soft path and a store read is not that shape, and design 36 §6
-    forbids it reading a block of what she has already raised (a pending
-    proactive row carries a `note_title`). This branch once recorded the
-    gate's verdict one layer OUT, in this trigger; DEC-179 (three reviews on
-    `design/ambient-loop`) held that the gate's admission control stays out of
-    the decision-log seam on BOTH sides, so the trigger was cut loose from it
-    entirely rather than kept as a lone exception.
+    """**DEC-179: never the gate.** `RelevanceGate` is «ONE call, transcript + standing, no tools,
+    no doctrine, no loop, JSON out» — a writer with a fail-soft path and a store read is not that
+    shape, and the gate may not read a block of what she has already raised (a pending proactive row
+    carries a `note_title`). DEC-179 holds that the gate's admission control stays out of the
+    decision-log seam on BOTH sides, so the trigger has no decision-log collaborator.
 
     Asserted structurally rather than behaviourally: the test-seam policy
     (AGENTS.md) is that a production class takes every collaborator through
@@ -568,7 +561,7 @@ def test_the_trigger_records_nothing_to_a_decision_log():
     assert not any("decision" in name for name in params)
 
 
-# --- surviving a restart (migration 0056) ----------------------------------
+# --- surviving a restart ----------------------------------
 
 
 class _FakeStore:
@@ -626,10 +619,9 @@ def _stored(speak: _Speak, clock: _Clock, store) -> ParticipationTrigger:
 
 
 async def test_the_send_cooldown_survives_a_restart() -> None:
-    """The defect 0056 closes. `nora` is force-recreated routinely, and before
-    this the cooldown died with the process — so she could speak again at once
-    however recently she had spoken, and §10.3's whole job is to cap what a
-    room HEARS."""
+    """The cooldown survives a restart. `nora` is force-recreated routinely; if the cooldown died
+    with the process she could speak again at once however recently she had spoken, and the
+    cooldown's whole job is to cap what a room HEARS."""
     store, clock = _FakeStore(), _Clock()
     first = _stored(_Speak(outcome=SENT), clock, store)
     first.note_message(_msg())
@@ -789,8 +781,8 @@ async def test_a_write_failure_never_changes_what_the_trigger_decides() -> None:
 
 
 async def test_without_a_store_nothing_survives_a_restart() -> None:
-    """The dormant default, pinned rather than assumed: with `store=None` this
-    class is exactly what shipped before 0056 — every offline and eval wiring
+    """The dormant default, pinned rather than assumed: with `store=None` this class is stateless —
+    every offline and eval wiring
     gets that, and a change to it would be a change to what they measure."""
     clock = _Clock()
     first = _trigger(_Speak(outcome=SENT), clock)
@@ -811,7 +803,7 @@ async def test_the_default_clock_reads_an_absolute_instant() -> None:
     """Not `time.monotonic`. Both clocks are `Callable[[], float]` and every
     comparison in this class is a difference, so nothing else in the suite
     would notice the substitution — but the two cursors are written down as
-    epoch milliseconds (0056), and a monotonic epoch is arbitrary per process,
+    epoch milliseconds, and a monotonic epoch is arbitrary per process,
     so a stored monotonic value is not a time to whatever reads it back.
 
     Asserted against `time.time()` rather than against the function object: the

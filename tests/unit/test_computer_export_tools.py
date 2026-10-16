@@ -1,5 +1,4 @@
-"""`computer_export` and `computer_import` (design/sandbox-runtime §6, §7,
-§12; S3a): files crossing the edge of Nora's computer.
+"""`computer_export` and `computer_import`: files crossing the edge of Nora's computer.
 
 Driven through `build_tool_specs` against the contracted fakes:
 `FakeSandboxRuntime` (bound to computerd), `FakeComputerEventStore` and
@@ -146,8 +145,8 @@ def _two_rows(world: _World, tool: str) -> tuple:
 
 async def test_a_link_export_keeps_the_bytes_and_links_the_portal(persons):
     """FALSIFIER: ADR 0023 decision 2. A link's bytes are in Nora's blob store
-    and its url is the portal's Artifacts page for a 12-hex handle; on Drop it
-    was a public `/drop/` URL with the bytes in Drop's own bucket."""
+    and its url is the portal's Artifacts page for a 12-hex handle, never a public
+    `/drop/` URL with the bytes in an external bucket."""
     world = _World()
     world.put(GROUP, "projects/trip/out/chart.png", CHART)
     out = await _tools(world, persons)["computer_export"](
@@ -252,9 +251,8 @@ async def test_an_unreadable_owner_is_unavailable_not_a_revision(persons):
 
 
 async def test_a_web_page_never_leaves_as_a_link(persons):
-    """FALSIFIER: files, never documents (operator, 2026-10-01). A page is
-    the document path's; `computer_export` refuses it, and never publishes
-    it in the portal."""
+    """FALSIFIER: files, never documents. A page is the document path's;
+    `computer_export` refuses it, and never publishes it in the portal."""
     world = _World()
     world.put(GROUP, "out/report.html", PAGE)
     out = await _tools(world, persons)["computer_export"](path="out/report.html", to="link")
@@ -304,9 +302,8 @@ MP4 = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 64
 ], ids=["mp3", "mp4", "zip", "opaque"])
 async def test_any_kind_of_file_leaves_to_every_destination(persons, tmp_path, path, data,
                                                             media_type):
-    """FALSIFIER: 2026-10-08, an MP3 and an MP4 were refused as chat, link
-    and keep in one live Signal turn by a ten-type allowlist. Any file but a
-    web page leaves now, typed off its bytes."""
+    """FALSIFIER: any file but a web page leaves, typed off its bytes: an MP3
+    and an MP4 go as chat, link and keep."""
     world = _World()
     world.put(GROUP, path, data)
     deliverer, _ = _deliverer(tmp_path, world.records)
@@ -318,8 +315,8 @@ async def test_any_kind_of_file_leaves_to_every_destination(persons, tmp_path, p
 
 
 async def test_a_refused_page_is_called_a_page_in_its_note(persons):
-    """A page is still the one refusal, and its note says so: the old note
-    called every refused file a web page, an MP3 included (2026-10-08)."""
+    """A page is the one refusal, and its note says so rather than calling every
+    refused file a web page, an MP3 included."""
     world = _World()
     world.put(GROUP, "out/report.html", PAGE)
     out = await _tools(world, persons)["computer_export"](path="out/report.html", to="keep")
@@ -351,7 +348,7 @@ async def test_a_refused_page_is_called_a_page_in_its_note(persons):
     (b"\x1aE\xdf\xa3\x01", "x", "video/webm"),
     (b"PK\x03\x04\x14\x00", "x.pdf", "application/zip"),
     (b"\x1f\x8b\x08\x00", "x", "application/gzip"),
-    # Review of #757: a page in latin-1 or UTF-16 is still a page; a UTF-16
+    # A page in latin-1 or UTF-16 is still a page; a UTF-16
     # CSV is not an MP3 (its BOM `FF FE` passes a bare frame-sync test); and
     # "ID3" with no version byte is text.
     ("<html><body>caf\xe9</body></html>".encode("latin-1"), "x.bin", None),
@@ -673,9 +670,9 @@ async def test_a_kept_image_gets_a_code_that_resolves_only_in_its_room(persons):
 
 @pytest.mark.parametrize("form", ["{code}", "[image {code}]", "image {code}", "  {code} "])
 async def test_a_kept_images_code_resolves_in_every_form_the_model_quotes(persons, form):
-    """FALSIFIER (review S2): the code is the LAST token's hex. Taking every
-    hex character, `[image a3f2c1]` became `ea3f2c1` (the label's `e` and
-    `a` joined it) and resolved to nothing."""
+    """FALSIFIER: the code is the LAST token's hex. Taking every hex
+    character, `[image a3f2c1]` would become `ea3f2c1` (the label's `e` and
+    `a` joined to it) and resolve to nothing."""
     world = _World()
     world.put(GROUP, "out/chart.png", CHART)
     code = (await _tools(world, persons)["computer_export"](
@@ -686,9 +683,9 @@ async def test_a_kept_images_code_resolves_in_every_form_the_model_quotes(person
 
 
 async def test_an_unreadable_index_is_unavailable_never_no_such_picture(persons):
-    """FALSIFIER (review S2): `by_prefix` answers an empty tuple when the
-    database is down, which reads as «no such picture». The resolver uses
-    the read that says it could not read."""
+    """FALSIFIER: `by_prefix` answers an empty tuple when the database is
+    down, which reads as «no such picture». The resolver uses the read that
+    says it could not read."""
     world = _World()
     world.media.fail = True
     got = await resolve_room_media(world.media, code="a3f2c1", platform="signal",

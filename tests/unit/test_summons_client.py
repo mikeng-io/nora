@@ -31,8 +31,8 @@ async def world():
 
 
 def test_the_client_has_no_mentions_read():
-    """The notification feed never carried a comment mention of her
-    (measured 2026-09-26): the read is gone, not merely unused."""
+    """The notification feed never carried a comment mention of her: the read is
+    gone, not merely unused."""
     assert not hasattr(InstagramSummonsClient, "mentions")
 
 

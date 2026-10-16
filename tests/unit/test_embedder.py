@@ -1,5 +1,4 @@
-"""The embedder client and the one formatter (design/unified-memory/
-65-build-step-3-vectors.md V1): production formats a query, a document and an
+"""The embedder client and the one formatter: production formats a query, a document and an
 image exactly as the bake-off adapter that was measured; a vector comes back
 2048 wide and unit length; an unavailable server and a refused input are two
 different errors; every image is decoded here, bounded, and sent as a PNG;
@@ -237,7 +236,7 @@ async def test_a_text_that_fits_is_not_truncated(llama, text):
 
 
 async def test_a_query_is_refused_while_the_server_serves_another_model(llama):
-    """65 V2: a question is never embedded by a model other than the one the
+    """A question is never embedded by a model other than the one the
     stored vectors came from; the search falls back on this error."""
     fake, url = llama
     now = [0.0]
@@ -253,7 +252,7 @@ async def test_a_query_is_refused_while_the_server_serves_another_model(llama):
 
 
 async def test_a_query_reads_props_once_a_minute_not_once_a_search(llama):
-    """Review of #31: /props on every search doubled a turn's calls."""
+    """/props is not called on every search, which would double a turn's calls."""
     fake, url = llama
     now = [0.0]
     client = LlamaEmbedder(url, query_model_file=Path(MODEL_PATH).name, clock=lambda: now[0])
@@ -267,8 +266,8 @@ async def test_a_query_reads_props_once_a_minute_not_once_a_search(llama):
 
 
 async def test_one_deadline_covers_every_call_of_a_query(llama):
-    """Review of #31: /props and /embedding each had their own timeout, so a
-    slow server held a turn for the sum. Each call here is under the per-call
+    """/props and /embedding share one deadline: separate timeouts would let a
+    slow server hold a turn for the sum. Each call here is under the per-call
     timeout; together they are past the query's deadline."""
     fake, url = llama
     fake.delay = 0.3
@@ -411,7 +410,7 @@ def test_the_bake_off_module_uses_the_one_formatter():
 
 
 def test_the_embedded_kinds_are_every_kind_but_the_hubs_and_the_episodes():
-    """25 §7: hubs and the Rollup episodes are lexical only; every other kind
+    """Hubs and the Rollup episodes are lexical only; every other kind
     gets a vector, so a new kind is a decision here, not a silent default."""
     from nora.domain.memory_index import EMBEDDED_KINDS, EPISODE_KINDS, HUB_KINDS, NODE_KINDS
 
@@ -429,7 +428,7 @@ def test_an_image_a_sticker_or_a_gif_is_embedded_from_its_bytes(media_type, from
 
 
 def test_the_embedder_service_runs_the_bake_offs_flags_with_a_pinned_marker():
-    """Review 1 and 5: the flags the bake-off measured (memory, and the image
+    """The flags the bake-off measured (memory, and the image
     token cap the server ties to -ub), and a marker that survives a restart."""
     import yaml
 

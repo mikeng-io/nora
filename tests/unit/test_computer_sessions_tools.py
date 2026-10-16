@@ -1,5 +1,5 @@
-"""Computer sessions and leases through the tools (design/sandbox-runtime
-§15.2, §15.4): sessions are derived by code, never by the model.
+"""Computer sessions and leases through the tools: sessions are derived by code,
+never by the model.
 
 Driven through `build_tool_specs`, the wiring the tag path uses, against the
 contracted fakes (`FakeSandboxRuntime`, `FakeComputerEventStore`,
@@ -324,8 +324,8 @@ async def test_the_list_says_running_unknown_when_the_machine_cannot_be_read(per
 
 
 async def test_the_objective_never_starts_with_the_mention_placeholder(persons, kit):
-    """FALSIFIER (live read-back, 2026-10-01): the @-mention that engaged her
-    reaches the message as U+FFFC, and the objective began with it."""
+    """The @-mention that engaged her reaches the message as U+FFFC; the objective
+    must not begin with it."""
     runtime, events, sessions = kit
     tools = _tools(persons, runtime=runtime, events=events, sessions=sessions,
                    question="￼  run tick.py every minute ￼")

@@ -1,7 +1,7 @@
 """`default_policy()`/`build_config()`/`_conversation_for()` — the room a
 subject composes with is RESOLVED from the policy it wrote, never grepped.
 
-Two properties, and the second replaced a third that was wrong:
+Two properties:
 
 - the policy must name the subject's room, on its own platform, as its OWN
   entry (`primary_id == conversation_id`) — or culture/notes/the Dreamer's
@@ -10,8 +10,6 @@ Two properties, and the second replaced a third that was wrong:
 - the room's `unit` is whatever the policy says. It is NOT required to equal
   `memory.workspace_id`: that is Honcho's per-deployment workspace, and the
   deployment's own `policy.toml` fails that equality on every room it has.
-  An earlier version of this package refused exactly the shape production
-  runs.
 """
 
 from __future__ import annotations
@@ -101,7 +99,7 @@ def test_the_honcho_workspace_is_a_fixed_sibling_of_the_deployments(tmp_path, mo
 
 
 def test_a_draw_names_its_own_workspace(tmp_path, monkeypatch) -> None:
-    """Issue #462: an eval draw composes against a workspace of its own."""
+    """An eval draw composes against a workspace of its own."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     cfg = build_config(_spec(
         tmp_path, overrides={"memory.workspace_id": "nora-eval-run-case-1-abc123"},

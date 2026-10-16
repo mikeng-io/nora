@@ -114,9 +114,8 @@ def test_the_render_carries_an_age_on_everything_and_says_which_end_is_newest():
 
 def test_the_turn_states_the_limit_its_reply_is_refused_over():
     """The limit a reply is refused over (`too_long` in `nora.app.summons`)
-    is told to her by the turn, from the constant itself, and by no doctrine
-    (design/context-plan/12 §4): a number in doctrine drifts from the code,
-    as public/conduct.md's 300 against the cap's 320 did."""
+    is told to her by the turn, from the constant itself, and by no doctrine:
+    a number in doctrine drifts from the code."""
     head = render_summons(_context()).split("\n", 1)[0]
     assert f"A reply longer than {PUBLIC_REPLY_MAX_CHARS} characters is not posted at all." in head
     doctrine = Path(__file__).parents[2] / "nora" / "doctrine"
@@ -257,8 +256,7 @@ def test_the_summons_comment_is_the_senders_comment_that_tags_her():
 def test_a_comment_tagging_her_by_anybody_else_is_never_the_summons():
     """The author-igid match is the guard: a stranger's tag under the same
     post, newer than anything the summoner wrote, is not the one she answers
-    under. Falsified by dropping the igid condition from `summons_comment`:
-    the stranger's comment is chosen."""
+    under."""
     comments = (
         _c("1", "@noraexample what bird?", igid="20000009", author="someone", minutes_ago=1),
         _c("2", "just a comment", minutes_ago=2),
@@ -270,8 +268,7 @@ def test_a_comment_tagging_her_by_anybody_else_is_never_the_summons():
 def test_the_comment_whose_text_equals_the_cards_is_preferred_over_the_newest():
     """A card shows its comment's own text. Two comments by the summoner tag
     her; the card is for the OLDER one, so that is the one answered, not the
-    newest. Whitespace is normalised; nothing else is. Falsified by dropping
-    the exact-text preference: the newer comment is chosen."""
+    newest. Whitespace is normalised; nothing else is."""
     comments = (
         _c("1", "@noraexample is this true", minutes_ago=10),
         _c("2", "@noraexample nvm", minutes_ago=1),
@@ -375,9 +372,9 @@ def test_ages(delta, said):
 
 
 def test_an_item_carries_no_code_like_label_and_no_url():
-    """A live dry run (2026-09-26) passed "item 1" to media_fetch as a media
-    code. The post block names items in words and lists no URL: the pre-read
-    has already looked at each one."""
+    """The post block names items in words and lists no URL (the pre-read has
+    already looked at each one), so there is no item index for the model to
+    pass to media_fetch as a media code."""
     block = _post_block(render_summons(_context(post=_post(3))))
     assert "the post's first image:" in block and "the post's third image:" in block
     assert not re.search(r"\bitem \d", block)

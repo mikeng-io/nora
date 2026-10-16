@@ -1,6 +1,5 @@
 """`GoogleDriveSource` against `FakeDriveServer` (an `httpx.MockTransport`, no
-network): every kind, paging, the refusals, the token and the resource key
-(design/external-files/00-design.md §2, §4; build step S2)."""
+network): every kind, paging, the refusals, the token and the resource key."""
 
 from __future__ import annotations
 
@@ -285,7 +284,7 @@ async def test_every_drive_call_supports_all_drives():
 
 
 async def test_nothing_is_cached_two_opens_are_two_fetches():
-    """The operator's rule (§2): every open fetches fresh, metadata too."""
+    """Every open fetches fresh, metadata too."""
     server = _server()
     source = _source(server)
     for _ in range(2):
@@ -352,7 +351,7 @@ def test_a_package_declaring_a_dtd_is_refused():
     assert raised.value.reason == NOT_TEXT
 
 
-# ---- review of PR 801: the Sheets API -----------------------------------------
+# ---- the Sheets API -----------------------------------------
 
 async def test_a_disabled_sheets_api_is_unavailable_and_logged_never_not_shared(caplog):
     """A 403 PERMISSION_DENIED whose detail says SERVICE_DISABLED is the
@@ -386,7 +385,7 @@ async def test_a_sheet_the_sheets_api_refuses_is_read_from_its_export():
 
 
 async def test_a_compressed_body_cut_off_mid_stream_is_not_read_as_the_file():
-    """Review of #805: a gzip body that ends before its stream does must not be
+    """A gzip body that ends before its stream does must not be
     returned as if it were the whole file."""
     import gzip
 

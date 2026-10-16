@@ -1,4 +1,4 @@
-"""The `<subagents>` block (design/subagent/00-design.md §7): this room's sub-agent jobs,
+"""The `<subagents>` block: this room's sub-agent jobs,
 running and finished within a day, read fresh from the job rows on the tag turn.
 
 Pinned: absent with no view, no job in the window and while `[subagent]` is off; a running

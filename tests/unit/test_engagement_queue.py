@@ -1,4 +1,4 @@
-"""`ConversationQueues` — the per-conversation FIFO structure R-30 adds next to
+"""`ConversationQueues` — the per-conversation FIFO structure of R-30, beside
 R-9's debounce and R-10's in-flight lock.
 
 The behaviour that matters for the rule: FIFO order, a bound that refuses the

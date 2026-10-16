@@ -1,6 +1,6 @@
-"""What each unit rollup says (design/cognition-loop/25-rollup.md §3), on
+"""What each unit rollup says, on
 fixtures: co-location, outing (and its `unlabeled` home case), daybook, tie,
-response; the healthy-source proofs deviation rests on (20 §3, D3); silent
+response; the healthy-source proofs deviation rests on; silent
 daybook runs; citation by overlap. All pure: `nora.domain.rollup`."""
 
 from __future__ import annotations
@@ -134,7 +134,7 @@ def test_a_visit_to_a_members_home_is_not_an_outing():
 def test_a_member_with_no_known_home_makes_it_not_an_outing():
     """The `unlabeled` home case: a member with no place labelled home cannot
     be proved away from it, so the co-location is kept (and says whose home
-    is unknown) and is not an outing — never a guess (design 27 §3.4)."""
+    is unknown) and is not an outing — never a guess."""
     homes = {"a": HOMES["a"]}  # b's home is unlabeled
     found = _colo([_stay("a", _t(19, 19), _t(19, 22), PUB),
                    _stay("b", _t(19, 19), _t(19, 22), PUB)], homes=homes)
@@ -289,7 +289,7 @@ def test_a_follow_is_a_response_and_is_counted_apart_from_a_quoted_reply():
     assert _respond([SEND], late, as_of=_t(22, 13))[10].outcome == "unanswered"
 
 
-# -- unquoted follows (25 §3) ------------------------------------------------
+# -- unquoted follows ------------------------------------------------
 
 _S = 1000  # ms per second
 _ROOM = "signal:g1"
@@ -364,7 +364,7 @@ def test_every_message_counts_for_one_send_and_each_is_its_own_evidence():
     assert out == [(1, "a", 10 * _S, "follow"), (1, "b", 20 * _S, "follow")]
 
 
-# -- healthy sources (D3) ---------------------------------------------------
+# -- healthy sources ---------------------------------------------------
 
 
 def _poll(at, outcome="ok", scope="c1"):

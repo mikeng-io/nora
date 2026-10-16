@@ -1,10 +1,10 @@
 """`nora.infra.video_refs`: a held clip or voice note fitted to the video provider's reference
-limits (design/video-generation §9, amended 2026-10-10).
+limits.
 
 The geometry and frame-rate rules are pure and tested as such. The fits run REAL ffmpeg on
 clips ffmpeg generates here, and ffprobe reads back what came out against the provider's
-ranges, since the provider refuses an out-of-range reference only at the poll (a 12 fps clip,
-measured 2026-10-10).
+ranges, since the provider refuses an out-of-range reference only at the poll (for example a
+12 fps clip).
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def test_the_geometry_always_lands_inside_the_providers_ranges(width, height):
 
 
 def test_rounding_to_even_never_tips_the_aspect_out_of_range():
-    """501x1300 came out 500x1252 (0.3994) before the long side was trimmed back (review);
+    """The long side is trimmed back without leaving the aspect out of range (501x1300);
     a sweep over sizes, not one example, since the miss lives on a rounding boundary."""
     for width in range(2, 2400, 13):
         for height in (*range(2, 2400, 17), 1300, 1252, 1253):
@@ -84,7 +84,7 @@ def _probe(tmp_path: Path, data: bytes, name: str) -> dict:
 
 @needs_ffmpeg
 async def test_a_slow_wide_long_clip_comes_out_inside_every_range(tmp_path):
-    """The live failure shape: 12 fps (refused at the poll), plus a 3.2 aspect and 20 s."""
+    """A failing shape: 12 fps (refused at the poll), plus a 3.2 aspect and 20 s."""
     clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=1920x600:rate=12",
                  "-f", "lavfi", "-i", "sine=d=20", "-t", "20", "-c:v", "libx264",
                  "-c:a", "aac", "-shortest")
@@ -179,7 +179,7 @@ async def test_a_runner_that_cannot_spawn_is_unreadable_not_a_crash():
 @needs_ffmpeg
 async def test_a_clip_is_silent_unless_its_sound_may_leave(tmp_path):
     """A clip of someone talking lends their voice as a voice note does, so its sound goes only
-    when audio references are on (review: it went with the audio gate off)."""
+    when audio references are on (not when the audio gate is off)."""
     clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30",
                  "-f", "lavfi", "-i", "sine=d=4", "-t", "4", "-c:v", "libx264", "-c:a", "aac")
     silent = await fit_video(clip, seconds=6.0)
@@ -194,7 +194,7 @@ async def test_a_clip_is_silent_unless_its_sound_may_leave(tmp_path):
 
 @needs_ffmpeg
 async def test_whole_frames_never_run_a_clip_past_its_seconds(tmp_path):
-    """`-t 15` at 29.97 fps gave 450 frames, 15.015 s, over the provider's 15 s (review)."""
+    """`-t 15` at 29.97 fps would give 450 frames, 15.015 s, over the provider's 15 s."""
     clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30000/1001",
                  "-t", "20", "-c:v", "libx264")
     fitted = await fit_video(clip, seconds=15.0)
@@ -205,8 +205,8 @@ async def test_whole_frames_never_run_a_clip_past_its_seconds(tmp_path):
 
 @needs_ffmpeg
 async def test_a_short_picture_under_longer_sound_is_too_short(tmp_path):
-    """The container's length is its longest stream: 1.5 s of picture under 3 s of sound read
-    as 3 s and passed the floor (review)."""
+    """The container's length is its longest stream: 1.5 s of picture under 3 s of sound reads
+    as 3 s and passes the floor."""
     clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:d=1.5",
                  "-f", "lavfi", "-i", "sine=d=3", "-c:v", "libx264", "-c:a", "aac")
     assert (await fit_video(clip, seconds=6.0, sound=True)).reason == "too_short"
@@ -235,8 +235,8 @@ async def test_a_playlist_posing_as_a_clip_is_never_followed():
 
 @needs_ffmpeg
 async def test_a_two_second_share_at_29_97_fps_stays_at_the_floor(tmp_path):
-    """Three clips under the default 6 s each get 2 s; rounding the frame count down gave 59
-    frames, 1.97 s, under the provider's floor (re-review)."""
+    """Three clips under the default 6 s each get 2 s; rounding the frame count down would give 59
+    frames, 1.97 s, under the provider's floor."""
     clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30000/1001",
                  "-t", "8", "-c:v", "libx264")
     fitted = await fit_video(clip, seconds=2.0)
@@ -247,7 +247,7 @@ async def test_a_two_second_share_at_29_97_fps_stays_at_the_floor(tmp_path):
 
 @needs_ffmpeg
 async def test_a_short_webm_picture_under_longer_sound_is_too_short(tmp_path):
-    """WebM puts no duration on a stream, so the floor fell back to the container's (re-review)."""
+    """WebM puts no duration on a stream, so the floor falls back to the container's."""
     clip = _make(tmp_path, "in.webm", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:d=1.5",
                  "-f", "lavfi", "-i", "sine=d=3", "-c:v", "libvpx-vp9", "-deadline", "realtime",
                  "-c:a", "libopus")

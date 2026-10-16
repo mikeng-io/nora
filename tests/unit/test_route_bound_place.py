@@ -1,5 +1,5 @@
-"""`route` takes back a place a presence read NAMED this turn (design/27 §4.4
-M3, amended 2026-09-28): «a home of theirs» becomes routable with no handle in
+"""`route` takes back a place a presence read NAMED this turn: «a home of
+theirs» becomes routable with no handle in
 any result, resolved server side behind the SAME R-31 guard as the read that
 named it, and its coordinate never reaches the model, the reply or a link."""
 
@@ -163,12 +163,12 @@ async def test_two_peoples_unnamed_homes_get_words_that_route_to_each(persons):
         assert (local.lat, local.lng) == expected
 
 
-# ---- independent review 2026-09-28, second round ----------------------------
+# ---- name resolution edge cases ----------------------------
 
 
 async def test_a_place_is_bound_only_for_an_answer_she_is_shown(persons):
     """An arrival read with too little history answers nothing_found: the
-    place it looked at must not become routable (review 2026-09-28)."""
+    place it looked at must not become routable."""
     routes = _Routes()
     mobility = _Mobility()
     mobility.stays = []
@@ -219,7 +219,7 @@ async def test_a_place_where_been_named_is_routable_by_that_name(persons):
 
 async def test_a_saved_place_wins_over_a_bound_name_of_the_same_words(persons):
     """Someone's derived place is labelled «Home»; the household's own saved
-    «Home» is what route resolves (review 2026-09-28)."""
+    «Home» is what route resolves."""
     from nora.domain.presence import SavedPlace
 
     class _Presence:

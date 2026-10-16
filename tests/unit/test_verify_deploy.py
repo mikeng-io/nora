@@ -27,7 +27,7 @@ def _row(**state):
 
 @pytest.mark.parametrize(("state", "code"), [
     ({}, 0),
-    # 2026-09-30: read as ok while nora refused to start in a loop.
+    # A restart loop reads as not ok, even between restarts.
     ({"health": "starting", "restarts": 2}, 1),
     ({"health": "healthy", "restarts": 1}, 1),
     ({"health": "unhealthy"}, 1),

@@ -1,4 +1,4 @@
-"""`<presence>` — where she is, generated every turn (design/self-awareness/02).
+"""`<presence>` — where she is, generated every turn.
 
 Each test names ONE network or ONE state rather than looping over the name
 table: a test parametrized over the constant it pins cannot fail.
@@ -38,7 +38,7 @@ def _turn_text(ctx: TagContext) -> str:
     return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
 
 
-# ---- step 1: display names --------------------------------------------------
+# ---- display names --------------------------------------------------
 
 
 def test_whatsapp_is_named_as_the_room_calls_it_not_by_its_wire_key():
@@ -170,9 +170,9 @@ async def test_no_room_id_reaches_the_block():
     reader copying it would put a room id in every turn.
 
     Built as a `Policy` directly rather than through `load_policy`: an
-    allowed room with no label is now a STARTUP error there (#200 part 2), so
-    a `policy.toml` can no longer carry the case this test proves is still
-    handled — the render-time floor stays defense in depth regardless."""
+    allowed room with no label is a STARTUP error there, so a `policy.toml`
+    cannot carry the case this test proves is handled — the render-time floor
+    stays defense in depth regardless."""
     convs = (
         Conversation(
             platform="signal", ids=frozenset({"SIGNAL-FRIENDS-ID"}), persons=None,
@@ -313,8 +313,8 @@ async def test_a_live_read_with_nothing_declared_and_no_answer_is_omitted(policy
 
 
 async def test_the_live_discord_handle_beats_the_declared_one(policy):
-    """The same precedence Instagram's live read uses (design/self-awareness/
-    02/06), wired through composition's `_presence_reader` — not just the
+    """The same precedence Instagram's live read uses, wired through
+    composition's `_presence_reader` — not just the
     reader taking whatever callable it is handed, but the ACTUAL DiscordAdapter
     registered under "discord"."""
     async def me(request):
@@ -353,8 +353,8 @@ async def test_the_reader_never_raises_through_a_hanging_bridge(policy):
 
 
 def test_the_block_is_situation_never_capability():
-    """01 §Framing: telling a model what it CAN DO made the gate measurably
-    worse. No line of `<presence>` may say what she can do."""
+    """Telling a model what it CAN DO is not telling it what it is READING. No
+    line of `<presence>` may say what she can do."""
     body = render_presence(Presence(
         platform="signal", label="Friends", here_state="up",
         unit_rooms=(PresenceRoom("discord", "Zone 42", "unknown"),),
@@ -392,7 +392,7 @@ def test_presence_reaches_the_turn_through_assemble_not_a_bare_string():
 
 
 def test_a_context_with_no_reader_still_says_which_network():
-    """The 2026-08-14 bug, pinned on the fallback: no reader, still a
+    """The fallback: no reader, still a
     situational model — and no claim about rooms or health nobody read."""
     text = _turn_text(_ctx(platform="discord"))
     block = text.split("<presence ")[1].split("</presence>")[0]
@@ -429,9 +429,9 @@ async def test_the_instagram_username_is_read_but_never_becomes_an_identifier():
 
 def test_a_tag_turn_pays_for_no_field_it_never_carries():
     """`this_room_is` is set only on the proactive pass. Declared as a type
-    ANNOTATION it rendered into `fields=` on every tag and fire turn (24
-    tokens each, measured 2026-09-23); its meaning lives in the description
-    instead, phrased to be true whether or not the attribute is there."""
+    ANNOTATION it would render into `fields=` on every tag and fire turn,
+    costing tokens each time; its meaning lives in the description instead,
+    phrased to be true whether or not the attribute is there."""
     rendered = render_presence(Presence(platform="signal", label="Friends")).render()
     opening = rendered.split(">", 1)[0]
 

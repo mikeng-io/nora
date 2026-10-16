@@ -130,10 +130,9 @@ async def test_the_canonical_self_resolves_in_a_room_that_never_held_it(persons,
 
 async def test_only_a_photo_sent_here_asks_the_reply_to_say_so(persons, world):
     """The reply says a picture was made from photos when somebody's photo
-    went to the provider: that is what the rule is for. It was one line of the
-    description, read on every call and unable to tell the two cases apart;
-    it is now in the result, and only when a photo from THIS conversation
-    resolved. Her own canonical picture is nobody's photo."""
+    went to the provider: that is what the rule is for. The statement is in the
+    result, and only when a photo from THIS conversation resolved. Her own
+    canonical picture is nobody's photo."""
     own = await _call(persons, world)(prompt="you, in the rain", reference_images=[SELF_SHA])
     assert own["status"] == "ok"
     assert "photos sent here" not in own["note"]
@@ -288,7 +287,7 @@ async def test_an_unknown_size_or_aspect_falls_back_to_the_documented_default(pe
     """The parameters are `Literal`s and Strands validates a model's call, but
     `ImageSize` is a plain dataclass: a caller that bypasses the schema must
     not carry an unknown value to the provider. It gets the default the
-    docstring names (medium, 1:1), as it did before the types existed."""
+    docstring names (medium, 1:1)."""
     tool = _call(persons, world)
     await tool(prompt="you", reference_images=[SELF_SHA], size="huge", aspect="4:3")
     await tool(prompt="you", reference_images=[SELF_SHA], size="small", aspect="bogus")

@@ -1,4 +1,4 @@
-"""`Dispatcher`'s room-verdict branch (design/dreamer-agent-loop/36 §1).
+"""`Dispatcher`'s room-verdict branch .
 
 An untagged message in an opted-in room arrives with
 `EngageDecision(engage=False, relevance_gate=True)`. It is NOT a tag admission:
@@ -93,7 +93,7 @@ async def test_a_relevance_gate_verdict_without_a_trigger_is_a_no_op() -> None:
 
 
 async def test_an_ordinary_ambient_message_is_never_noted() -> None:
-    """The revised R-1 clause 2, from the dispatcher's side: only the
+    """R-1 clause 2, from the dispatcher's side: only the
     room VERDICT reaches the trigger — the rest of the room's traffic
     is recorded by ingest and goes no further."""
     trigger = _Trigger()

@@ -1,14 +1,13 @@
-"""`record_query` hands the Cognition session the number a note cites
-(DEC-250; #663 review, major 2).
+"""`record_query` hands the Cognition session the number a note cites (DEC-250).
 
 The session's fetched-rows watcher reads each message row's `n` and `sender`;
-the tool printed neither `n`, so a note citing a message it had read was refused
-`unknown_id` while the unit test fed a fabricated `n`. These tests run the REAL
-tool, built through the real `RegistryToolSource` for the cognition adaptor and
-through `build_tools` for a tag turn, against an in-memory Record read: the
-cognition build prints `n`, the tag turn never does (R-18).
+a tool that printed neither would get a note citing a message it had read
+refused `unknown_id`. These tests run the REAL tool, built through the real
+`RegistryToolSource` for the cognition adaptor and through `build_tools` for a
+tag turn, against an in-memory Record read: the cognition build prints `n`, the
+tag turn never does (R-18).
 
-What each would catch if the fix were reverted is named in
+What each test catches when reverted is named in
 `scripts/mutations/cognition-c.json`.
 """
 
@@ -129,8 +128,8 @@ async def test_the_cognition_sessions_record_query_rows_carry_their_number(polic
 
 
 async def test_what_the_real_record_query_returns_is_what_the_watcher_keeps(policy, persons):
-    """The end of the chain the old unit test faked: the REAL tool's output,
-    through the watcher, is a citable id with its sender."""
+    """The end of the chain: the REAL tool's output, through the watcher, is a
+    citable id with its sender."""
     fetched = Fetched()
     room_key = f"signal:{ROOM}"
     [watched] = watch_reads([_cognition_tool(policy, persons)], fetched, [room_key])

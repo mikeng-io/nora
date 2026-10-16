@@ -3,22 +3,20 @@ must agree with what `ProactiveScreen.refusal` would decide about the SAME
 row, left un-re-pointed, at its own real fire time. `merge_into` is not
 allowed a second opinion — it is answering the SAME question early, using a
 DIFFERENT read path (chains it happens to have open in its own transaction
-rather than `notes.read`/`successor`/`revision_chain`), and #520's review
-round 2 found that those two paths had drifted: the merge-time check read
-only the survivor's chain, where the fire-time path reads the duplicate's
-own chain FIRST, then the survivor's.
+rather than `notes.read`/`successor`/`revision_chain`), so the two paths can
+drift: a merge-time check that read only the survivor's chain, where the
+fire-time path reads the duplicate's own chain FIRST, then the survivor's.
 
 This module is `tests/unit/test_note_merge_repoints_reminders_fake.py`'s
 sibling, not a replacement: that file pins each of `merge_into`'s branches
 in isolation (does it cancel, does it re-point, does it skip a firing
 collision). This file pins the CROSS-CHECK: whatever `merge_into` decided,
 running the fire-time screen on the un-re-pointed row (the world as it
-would look if the fold never touched reminders at all, exactly as PR #517
-shipped) must reach the identical verdict. Seven scenarios, adapted from the
-review's own probe script (S1-S5), the two that exposed real defects (S1,
-S2) and three that already matched (S3-S5, kept so the parity check itself
-is proven to distinguish agreement from disagreement — a check that always
-passes proves nothing).
+would look if the fold never touched reminders at all) must reach the
+identical verdict. Six scenarios (S1-S6): S1, S2 and S6 exposed real defects;
+S3-S5 match on both paths and are kept so the parity check itself is proven
+to distinguish agreement from disagreement — a check that always passes
+proves nothing.
 """
 
 from __future__ import annotations
@@ -95,14 +93,14 @@ async def _fold(notes: InMemoryNoteStore, survivor_id: str, duplicate_id: str, n
     )
 
 
-# --- the five scenarios, returning the rows' ids keyed by name -------------
+# --- the scenarios, returning the rows' ids keyed by name --------------------
 
 
 async def _s1_tag_on_duplicate_after_link(notes, reminders):
     """A tag edit on the DUPLICATE itself, after its row was linked, then
-    the fold. Round 2's finding 1: the merge-time check read only the
-    survivor's chain and missed this entirely — the row fired instead of
-    cancelling `cancelled_note_moved`."""
+    the fold. The merge-time check must read the duplicate's own chain: a
+    check reading only the survivor's chain misses this, and the row fires
+    instead of cancelling `cancelled_note_moved`."""
     s = await _mk(notes, "S", MS0 - 10_000)
     d = await _mk(notes, "D", MS0 - 10_000)
     r = _row_on(d, created_ms=MS0, due_h=1)
@@ -114,10 +112,10 @@ async def _s1_tag_on_duplicate_after_link(notes, reminders):
 
 async def _s2_collision_survivor_tag_between_links(notes, reminders):
     """A collision where the SURVIVOR was tag-edited between the duplicate's
-    row being linked and the survivor's own row being linked. Round 2's
-    finding 2: the loser was cancelled before the keeper's own staleness was
-    checked, so the duplicate's (stale) row won the tie-break and BOTH ended
-    up cancelled — including the survivor's row, which should fire."""
+    row being linked and the survivor's own row being linked. The keeper's own
+    staleness must be checked before the loser is cancelled: otherwise the
+    duplicate's (stale) row wins the tie-break and BOTH end up cancelled —
+    including the survivor's row, which should fire."""
     s = await _mk(notes, "S", MS0 - 10_000)
     d = await _mk(notes, "D", MS0 - 10_000)
     rd = _row_on(d, created_ms=MS0, due_h=1)
@@ -130,10 +128,9 @@ async def _s2_collision_survivor_tag_between_links(notes, reminders):
 
 
 async def _s3_tag_on_survivor_after_fold(notes, reminders):
-    """Solo duplicate row, fold, THEN a tag write on the survivor. Already
-    correct before round 2 (the eager moved-check's original purpose) —
-    kept so the parity check is proven to pass on a real case, not just to
-    always fail loud."""
+    """Solo duplicate row, fold, THEN a tag write on the survivor. Correct
+    under the eager moved-check's original purpose — kept so the parity check
+    is proven to pass on a real case, not just to always fail loud."""
     s = await _mk(notes, "S", MS0 - 10_000)
     d = await _mk(notes, "D", MS0 - 10_000)
     r = _row_on(d, created_ms=MS0, due_h=1)
@@ -171,10 +168,10 @@ async def _s6_collision_survivor_row_stale_duplicate_live(notes, reminders):
     """A collision where the SURVIVOR's own row went stale (a tag edit on
     the survivor after it was linked) while the duplicate's row, linked
     after that edit, is live — and the survivor's row is due first, so it
-    wins the tie-break. Round 3's finding: the keeper was chosen before the
-    SURVIVOR's row was classified, so the stale survivor row was kept, the
-    live duplicate row cancelled, and at fire the kept row was cancelled
-    «moved» — nothing fired. The baseline fires the duplicate's row."""
+    wins the tie-break. The keeper must be chosen after the SURVIVOR's row is
+    classified: otherwise the stale survivor row is kept, the live duplicate
+    row cancelled, and at fire the kept row is cancelled «moved» — nothing
+    fires. The baseline fires the duplicate's row."""
     s = await _mk(notes, "S", MS0 - 10_000)
     d = await _mk(notes, "D", MS0 - 10_000)
     rs = _row_on(s, created_ms=MS0, due_h=1)
@@ -190,9 +187,9 @@ async def _s6_collision_survivor_row_stale_duplicate_live(notes, reminders):
 async def _s7_duplicate_moved_then_survivor_retired(notes, reminders):
     """A tag edit on the duplicate after its row was linked, the fold, and
     then the SURVIVOR retired. The row's own note moved, so it reads
-    `cancelled_note_moved` whatever later became of the survivor (#520
-    round-3 review: with the duplicate step only inside `_follow_survivor`,
-    a retired survivor turned the label into `cancelled_note_retired`)."""
+    `cancelled_note_moved` whatever later became of the survivor (the
+    duplicate step must not live only inside `_follow_survivor`, or a retired
+    survivor turns the label into `cancelled_note_retired`)."""
     s = await _mk(notes, "S", MS0 - 10_000)
     d = await _mk(notes, "D", MS0 - 10_000)
     r = _row_on(d, created_ms=MS0, due_h=1)
@@ -220,7 +217,7 @@ SCENARIOS = {
 #: What each scenario MUST resolve to, stated by hand. Parity alone cannot
 #: catch a defect in `proactive_row_forwarded_is_moved` itself — the fire-
 #: time screen and `merge_into` both call it, so a wrong function agrees with
-#: itself (the S1 mutant survived parity-only). The baseline is pinned here.
+#: itself. The baseline is pinned here.
 EXPECTED = {
     "S1 tag on duplicate after link": {"d_row": "cancelled/cancelled_note_moved"},
     "S2 collision, survivor tag between links": {
@@ -261,13 +258,12 @@ async def _run(scenario, *, wired: bool) -> dict[str, str]:
 @pytest.mark.parametrize("name", sorted(SCENARIOS))
 async def test_merge_time_outcome_matches_the_fire_time_baseline(name: str) -> None:
     """THE INVARIANT (module docstring). `baseline` runs the fold with
-    `reminders=None` — `merge_into` never touches a reminder, exactly PR
-    #517's own shape — then asks the fire-time screen about the row as it
-    naturally forwards. `pr` runs the SAME fold wired, so `merge_into`
-    resolves it eagerly. They must agree, row for row.
+    `reminders=None` — `merge_into` never touches a reminder — then asks the
+    fire-time screen about the row as it naturally forwards. `pr` runs the SAME
+    fold wired, so `merge_into` resolves it eagerly. They must agree, row for
+    row.
 
-    Falsification: this is what caught #520 review round 2's two HIGH
-    findings — revert either fix (`nora/domain/notes.py`'s
+    Falsification: revert either fix (`nora/domain/notes.py`'s
     `proactive_row_forwarded_is_moved` missing its first step, or
     `_repoint_proactive_rows` choosing a keeper before checking staleness)
     and S1 or S2 goes red here."""

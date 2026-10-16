@@ -1,10 +1,9 @@
 """R-100: a link to one of OUR documents is minted by a tool, never authored by the model.
 
-On 2026-10-01 and 02 she wrote two document links that matched no document, after a publish that
-never returned `ok`, and told the room the document was made. Only `document_publish`,
-`document_read` and `document_set_status` return a URL, so the reply is where the rule lives
-(`nora.agent.links.LinkCarry`): a document link no tool handed her this turn is removed, and the
-link of a document published this turn is added. Three levels: the carrier, the delivery path she
+Only `document_publish`, `document_read` and `document_set_status` return a URL,
+so the reply is where the rule lives (`nora.agent.links.LinkCarry`): a document
+link no tool handed her this turn is removed, and the link of a document
+published this turn is added. Three levels: the carrier, the delivery path she
 speaks through, and the tools that mint.
 """
 
@@ -80,7 +79,7 @@ def test_nothing_published_means_no_link_to_add() -> None:
 
 def test_a_made_up_link_beside_cantonese_is_removed_too() -> None:
     """Python's `\\w` and `\\b` count a Chinese character as a word character, so a pattern built on
-    them let a link with no space beside Cantonese through (review of #698)."""
+    them would let a link with no space beside Cantonese through."""
     for text in (
         f"份文件喺{MADE_UP}呢度",
         "份文件喺nora.example/documents/8e2f4b1a9c00 ok",
@@ -145,7 +144,7 @@ def _handle(adapter: _FakeAdapter, metrics: Metrics):
 
 
 async def test_a_reply_with_a_made_up_link_is_sent_without_it_and_counted() -> None:
-    """The 2026-10-02 incident: her final text, after a publish that failed. The room hears the
+    """Her final text, after a publish that failed. The room hears the
     rest of what she said, never the invented link, and it is counted."""
     adapter, metrics = _FakeAdapter(), Metrics()
     handle = _handle(adapter, metrics)
@@ -232,7 +231,7 @@ async def test_a_successful_publish_arms_the_carrier_and_mints_the_link() -> Non
 
 
 async def test_a_publish_that_is_refused_mints_nothing_and_the_made_up_link_goes() -> None:
-    """The incident end to end: the publish is refused, she claims it anyway."""
+    """End to end: the publish is refused, she claims it anyway."""
     carrier = LinkCarry()
     tools = await _tools_with(carrier)
     out = await tools["document_publish"](spec='{"version": 1,}')  # not valid JSON
@@ -262,8 +261,8 @@ async def test_with_no_public_url_nothing_is_armed_and_no_link_is_touched() -> N
 
 
 async def test_the_link_goes_with_one_message_not_every_message_of_the_turn() -> None:
-    """Review of #701: it was appended to all three messages of a turn, the canned fallback
-    included. A message that carried it settles it; the next one does not."""
+    """The note is not appended to every message of a turn, the canned fallback
+    included: a message that carried it settles it; the next one does not."""
     adapter = _FakeAdapter()
     handle = _handle(adapter, Metrics())
     handle.links.claim_documents(PUBLIC)
@@ -287,8 +286,8 @@ async def test_a_link_that_was_due_but_not_sent_stays_due_for_the_next_message()
 
 
 async def test_the_recorded_copy_of_a_gif_caption_never_keeps_a_made_up_link() -> None:
-    """Review of #701: `record_text` was built from the caption before the removal, so the audit
-    row (what next turn's transcript and the notes read) kept the link the room never saw."""
+    """`record_text` is built from the caption after the removal, so the audit
+    row (what next turn's transcript and the notes read) never keeps a link the room never saw."""
     from nora.testing import FakeRecordStore
 
     store, adapter = FakeRecordStore(), _FakeAdapter()
@@ -355,7 +354,7 @@ def test_a_note_that_was_due_but_not_sent_stays_due_for_the_next_message() -> No
 
 
 async def test_reading_the_catalog_and_never_publishing_is_a_turn_that_saved_nothing() -> None:
-    """The 2026-10-02 turn (trace 3ba6b39c): the catalog was read, the spec went to her own
+    """The catalog was read, the spec went to her own
     computer, and the reply said it was made. With no public origin there is no link to strip,
     so the note is what the room is given."""
     carrier = LinkCarry()
@@ -384,7 +383,7 @@ async def test_the_note_reaches_the_room_once_through_the_delivery_path() -> Non
 
 
 def test_a_progress_message_after_a_catalog_read_alone_is_not_marked_but_the_last_one_is() -> None:
-    """Review of #708: «on it» sent between the catalog read and a good publish was told
+    """«on it» sent between the catalog read and a good publish is not told
     «No document was saved». A catalog read alone marks only a message the turn ends on."""
     carrier = LinkCarry()
     carrier.document_called()

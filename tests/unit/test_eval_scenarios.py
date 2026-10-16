@@ -136,7 +136,7 @@ def test_a_parked_case_is_counted_and_never_active(tmp_path, monkeypatch):
 
 
 def test_an_unanchored_case_is_active_so_that_it_errors_rather_than_skips(tmp_path, monkeypatch):
-    """§7.1: a case quietly skipped for lack of an anchor is the same false
+    """A case quietly skipped for lack of an anchor is the same false
     reading as one assembled without a tier. It stays in the active set —
     `_drive` refuses it by name — and is counted."""
     name = _corpus(tmp_path, monkeypatch, _UNANCHORED)
@@ -211,8 +211,8 @@ def test_a_parked_case_that_is_also_anchored_is_refused(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("reason", ["P-B", "P-C", ""])
 def test_only_p_a_is_a_parking_reason(tmp_path, monkeypatch, reason):
-    """P-B — a seam this rebuild owes — was proposed as a parking reason and
-    rejected: such a case is unfinished, not parked, and stays unanchored."""
+    """A case waiting on a missing seam is unfinished, not parked: that is not a
+    parking reason, and it stays unanchored."""
     name = _corpus(tmp_path, monkeypatch, _PARKED.replace("P-A", reason))
     with pytest.raises(ValueError, match="P-B"):
         load_all(name)
@@ -279,7 +279,7 @@ def test_experiment_for_threads_a_judge_only_for_judged_corpora(tmp_path, monkey
 def test_experiment_for_sample_draws_each_case_n_times(tmp_path, monkeypatch):
     """`--sample N`: a cheap smoke run at 1 must stay possible, and asking
     for more must multiply the case COUNT, not just re-read the same one
-    (`09-the-backbone-measured.md` §3.1 — one draw is not a reading)."""
+    (one draw is not a reading)."""
     _corpus(tmp_path, monkeypatch, _ANCHORED + _UNANCHORED, "near_miss")
     experiment, _task = experiment_for("near_miss", source_url="x", sample=3)
     assert len(experiment.cases) == 2 * 3
@@ -433,9 +433,8 @@ def test_a_counterfactual_varying_an_unlisted_tier_is_refused(tmp_path, monkeypa
     """The set is CLOSED on purpose — a general override is what this state
     exists INSTEAD of, so widening it has to be a decision in this file."""
     body = _COUNTERFACTUAL.replace("varies: culture", "varies: transcript")
-    # `prior` joined 2026-09-24 (issue #445): the standing fold's
-    # position-before-the-turn, declared absent for a pre-chain turn, and
-    # valid in the standing corpus only (`evals.scenarios._TIER_CORPORA`).
+    # `prior` is the standing fold's position-before-the-turn, declared absent
+    # for a pre-chain turn, and valid in the standing corpus only (`evals.scenarios._TIER_CORPORA`).
     with pytest.raises(
         ValueError, match="only \\['culture', 'lessons', 'prior', 'transport'\\] may be varied",
     ):
@@ -485,7 +484,7 @@ _TRANSPORT_VARIED = _COUNTERFACTUAL.replace(
 
 
 def test_a_transport_counterfactual_states_its_varied_networks(tmp_path, monkeypatch):
-    """design/self-awareness/05's degraded-Discord case: health at an instant
+    """The degraded-Discord case: health at an instant
     is recorded nowhere, so «Discord is down» is a varied state — loaded,
     active, and counted apart."""
     name = _corpus(tmp_path, monkeypatch, _TRANSPORT_VARIED, "participation")
@@ -513,7 +512,7 @@ def test_a_varied_transport_names_a_real_state(tmp_path, monkeypatch):
         load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
 
 
-# --- the lessons tier (design/self-growth/40 §8): attached at the moment that taught it
+# --- the lessons tier: attached at the moment that taught it
 
 
 _LESSONS_VARIED = _COUNTERFACTUAL.replace(
@@ -616,7 +615,7 @@ def test_an_unknown_memory_surface_is_refused(tmp_path, monkeypatch):
 @pytest.mark.parametrize(("config", "flag", "graph", "says"), [
     ("[memory_index]\nenabled = false\n", False, False, "honcho"),
     ("[memory_index]\nenabled = false\n", True, True, "--memory-index"),
-    # The live config turned the index on: a run without the flag measures
+    # The live config has the index on: a run without the flag measures
     # the graph surface, and says why, instead of filtering for honcho.
     ("[memory_index]\nenabled = true\n", False, True, "deployment's config"),
     ("", False, False, "honcho"),

@@ -1,4 +1,4 @@
-"""THE LOUD FAILURE for issue #325's instrument.
+"""THE LOUD FAILURE for the reasoning-strip instrument.
 
 `nora.agent.reasoning_strip.reasoning_blocks` is a FIRST-PARTY predicate over
 the message list: it counts the `reasoningContent` blocks a pending request
@@ -10,7 +10,7 @@ somebody else's code and one `uv lock` away from changing.
 So this file is the joint. It formats a synthetic multi-turn exchange through
 the REAL model object and asserts BOTH halves at once:
 
-  1. the SDK still drops the reasoning (the defect #325 measured), and
+  1. the SDK still drops the reasoning (the defect the instrument counts), and
   2. `reasoning_blocks` agrees with it, block for block.
 
 **Deliberately NOT a check on the warning string.** The SDK logs
@@ -24,7 +24,7 @@ If a future SDK starts carrying reasoning through the Chat Completions
 transport, this file goes RED — and that is the intended outcome, not a nuisance:
 `reasoning_strip_log` would from that moment be recording a drop that no longer
 happens, and a table quietly over-counting is exactly as useless as one quietly
-under-counting. The remedy when it reddens is to re-read #325 and ADR 0011's
+under-counting. The remedy when it reddens is to re-read ADR 0011's
 "the reading that would reopen this decision", not to loosen the assertion.
 """
 
@@ -82,7 +82,7 @@ def test_the_transport_still_drops_the_reasoning_and_the_detector_agrees():
 
     The count and the drop are asserted TOGETHER on purpose. Either half alone
     is self-attestation: a detector that agrees with itself measures nothing,
-    and a drop nobody counts is the state issue #325 found production in.
+    and a drop nobody counts is an unmeasured defect.
     """
     assert reasoning_blocks(MULTI_TURN) == 1, (
         "the detector no longer sees the reasoning block the loop puts in "

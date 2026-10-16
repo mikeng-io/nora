@@ -1,6 +1,6 @@
-"""The eval subject's config keeps an array an array (2026-10-11: the
-generator quoted `sources = ["google_drive"]` into the string
-"['google_drive']" and every eval run refused at the drift check)."""
+"""The eval subject's config keeps an array an array (a generator that quoted `sources =
+["google_drive"]` into the string "['google_drive']" would make every eval run refuse at the drift
+check)."""
 
 from __future__ import annotations
 

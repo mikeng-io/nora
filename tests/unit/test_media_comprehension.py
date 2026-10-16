@@ -1,4 +1,4 @@
-"""The spawned comprehension job (issue #116) — one model pass per medium into
+"""The spawned comprehension job — one model pass per medium into
 title/description/content, off the ingest path.
 
 Every test here asserts on what the job WROTE and on what it COUNTED, not on a
@@ -100,7 +100,7 @@ def _schedule(job, subject, *, person=None, platform: str = "signal") -> None:
 
 
 async def test_one_pass_writes_all_three_fields_and_the_model_that_wrote_them():
-    """The heart of issue #116. Reading the bytes is the expensive part; the
+    """Reading the bytes is the expensive part; the
     title and the legible content come back from the SAME call, and all three
     land on the row so each consumer can select what it wants at render."""
     store = FakeMediaObjectStore()
@@ -219,7 +219,7 @@ async def test_an_already_read_sha256_is_not_read_again():
 
 
 async def test_an_indexed_but_unread_row_is_still_read():
-    """The positive control for the test above, and the bug it guards. Custody
+    """The positive control for the test above. Custody
     writes a row with all three fields EMPTY for every byte it holds, so a job
     that treated «a row exists» as «already read» would never read a single
     photo — and every row in the index would stay an index entry forever."""
@@ -256,7 +256,7 @@ async def test_two_sightings_in_flight_collapse_to_one_read():
 
 
 async def test_a_voice_note_summarizes_its_transcript_and_never_listens_again():
-    """Issue #116's audio decision. The words are already in hand — the STT
+    """The audio lane. The words are already in hand — the STT
     service transcribed them inline at ingest — so the title and description come from
     a cheap TEXT pass, and `content` is the transcript itself, stored whole."""
     store = FakeMediaObjectStore()
@@ -271,10 +271,10 @@ async def test_a_voice_note_summarizes_its_transcript_and_never_listens_again():
 
     assert interpreter.calls == [], "no second listen"
     assert interpreter.summarized == ["喂你今日得唔得閒啊"]
-    # The TEXT model, not the audio describer. A voice note's headline is
-    # written entirely by `comprehension_text_model`, and deriving the column
-    # from the media type recorded `""` for the one modality with a single
-    # named author.
+    # The TEXT model, not the audio describer: a voice note's headline is
+    # written entirely by `comprehension_text_model`, so the column is derived
+    # from that model, not from the media type (which would record `""` for
+    # the one modality with a single named author).
     assert store.comprehended == [
         (SHA, "a voice note", "asking about tonight", "喂你今日得唔得閒啊",
          "fake-text"),
@@ -319,10 +319,10 @@ async def test_a_voice_note_with_no_transcript_claims_nothing():
 
 
 async def test_all_three_fields_reach_honcho_under_the_senders_peer():
-    """Issue #116's story, at the seam it is about: the marker already rode
-    into memory in `messages.body`, and what it pointed at was empty — so every
-    reply around a photo was preserved and unreadable. The handle is carried
-    with it so a later recall can join the two."""
+    """The marker rides into memory in `messages.body`, and what it points at
+    must not be empty, or every reply around a photo is preserved and
+    unreadable. The handle is carried with it so a later recall can join the
+    two."""
     memory = FakeMemoryStore()
     interpreter = FakeMediaInterpreter(
         "a bowl of wonton noodles", title="a plate of noodles", content="生記粥麵")
@@ -340,7 +340,7 @@ async def test_all_three_fields_reach_honcho_under_the_senders_peer():
 
 
 async def test_an_unmapped_sender_is_never_fed():
-    """D6, unchanged: a message from somebody `identity.toml` does not name is
+    """A message from somebody `identity.toml` does not name is
     never fed to the semantic store, and a photo does not change that. The
     comprehension is still WRITTEN — the index is not identity-scoped."""
     memory = FakeMemoryStore()
@@ -409,11 +409,9 @@ async def test_a_collaborator_that_raises_costs_the_read_and_nothing_else():
 
 
 async def test_an_identifier_in_a_comprehension_never_reaches_memory():
-    """**Honcho HAD a screen and this branch nearly took it away.** Before
-    issue #116 the same text rode in `message.body`, which the custody stage ran
-    through `scan_identifiers` before `memory_feed` forwarded it; moving the
-    screen to render time is the stricter position for the TRANSCRIPT and no
-    position at all for memory, which does not render.
+    """Memory is screened too. The text rides to Honcho screened by
+    `scan_identifiers`; a render-time screen is the stricter position for the
+    TRANSCRIPT and no position at all for memory, which does not render.
 
     A comprehension written unscreened into a peer is worse than one written
     into a transcript, because nothing re-screens a peer card at render — a
@@ -476,8 +474,8 @@ async def test_a_screened_comprehension_is_still_stored():
 async def test_the_row_records_the_describer_this_modality_actually_used():
     """`describe_model` is the provenance of the text on the row. Recording the
     IMAGE model against a clip that the video describer read is a lie in the
-    one column an operator reads to find out which describer produced what —
-    and `model_for` existed on the adapter for exactly this with no caller."""
+    one column an operator reads to find out which describer produced what;
+    `model_for` on the adapter is what supplies it."""
 
     class _PerModality(FakeMediaInterpreter):
         async def describe(self, *, data, media_type, label=""):
@@ -520,28 +518,17 @@ async def test_a_videos_chunk_record_travels_with_its_result():
 async def test_the_read_is_its_own_trace_and_reaches_the_collector(
     exported_spans,
 ):
-    """DETACHING AND DROPPING ARE TWO DECISIONS, and this test used to conflate
-    them exactly as the code did.
+    """DETACHING AND DROPPING ARE TWO DECISIONS.
 
-    `asyncio.create_task` COPIES the caller's contextvars (measured 2026-08-28,
-    `nora/obs/tracing.py`), so a span opened inside a spawned job is a CHILD of
-    whatever was current when `schedule` was called — here `ingest.media`. That
-    held the ingest trace open for as long as a chunked video read takes.
-    `attached(None)` detaches first, and that half was always right.
+    `asyncio.create_task` COPIES the caller's contextvars
+    (`nora/obs/tracing.py`), so a span opened inside a spawned job is a CHILD of
+    whatever was current when `schedule` was called — here `ingest.media`, which
+    would hold the ingest trace open for as long as a chunked video read takes.
+    `attached(None)` detaches first.
 
-    The half that was wrong: the span also declared `plumbing`, so the sampler
-    dropped it, and **the previous version of this test asserted the drop as
-    its pass condition** (`assert "comprehend" not in names`). It therefore
-    passed for two weeks while the media read was the one modality with no
-    trace at all — 1041 live traces held zero `comprehend` roots (read back
-    from Langfuse, 2026-09-09) while `nora_media_comprehension_total` counted
-    the reads happening. Every branch under this span is a model call, so R-76
-    keeps it.
-
-    **What a PASS looks like, stated before reading the result** (AGENTS.md:
-    never read an instrument without first checking it can measure the thing).
-    The fixture is built with production's own sampler, and `comprehend` now
-    declares `generation` via `generation(root=True)`. So:
+    The span declares `generation` via `generation(root=True)`, not `plumbing`,
+    so the sampler keeps it. Every branch under this span is a model call, so
+    R-76 keeps it. The fixture is built with production's own sampler, and:
 
       * it is EXPORTED — a root declaring `generation` is kept; and
       * its TRACE ID DIFFERS from `ingest.media`'s — which is what detachment
@@ -549,8 +536,7 @@ async def test_the_read_is_its_own_trace_and_reaches_the_collector(
 
     Both assertions are needed and neither implies the other: re-attaching to
     the ingest span would still export it (as a child, one trace), and going
-    back to `plumbing` would still detach it (as a dropped root). The old test
-    could only see the second failure.
+    back to `plumbing` would still detach it (as a dropped root).
     """
     job, spawn = _job()
 
@@ -576,21 +562,18 @@ async def test_the_read_is_its_own_trace_and_reaches_the_collector(
         "held open for as long as a video read takes"
     )
     assert spans["comprehend"].parent is None, "the comprehension span is not a root"
-    # The R-76 root declaration — no `langfuse.observation.type` spelling on
-    # this span anymore: `generation()` (which set both) is retired, and this
-    # span is not itself a model-invoke span (there is no child one for the
-    # vision call either, a known gap — see `nora.agent.telemetry`'s own
-    # module docstring), only the root a model call CAN happen under.
+    # The R-76 root declaration: `generation` is declared via
+    # `generation(root=True)`. This span is not itself a model-invoke span
+    # (there is no child one for the vision call either; see
+    # `nora.agent.telemetry`'s module docstring), only the root a model call
+    # CAN happen under.
     assert spans["comprehend"].attributes[TRACE_KIND] == "generation"
 
 
 async def test_the_caveat_reaches_memory_with_the_reading():
     """What a read did NOT see is not a rendering detail. A recalled
     description of half a clip is as wrong in a peer card as in a transcript —
-    and worse, because nothing re-screens or re-qualifies a card at render.
-
-    Round three added this line and nothing tested it: a reviewer deleted it
-    and the whole suite stayed green."""
+    and worse, because nothing re-screens or re-qualifies a card at render."""
 
     class _Capped(FakeMediaInterpreter):
         async def describe(self, *, data, media_type, label=""):
@@ -623,9 +606,8 @@ async def test_a_whole_read_carries_no_caveat_into_memory():
 
 async def test_a_write_that_did_not_land_is_not_counted_ok():
     """`SqlMediaObjectStore.comprehend` answers False on any database failure
-    and the job ignored it, incrementing `ok` regardless — the «a tick that
-    wrote nothing reporting ok» shape CONVENTIONS.md names. Under load the
-    metric said the pipeline was healthy while the index stayed empty.
+    and the job must not count `ok` on it — the «a tick that wrote nothing
+    reporting ok» shape CONVENTIONS.md names.
 
     The FEED goes with it: Honcho would otherwise hold a description of bytes
     `media_objects` has no row for, and a redelivery would feed the same words
@@ -659,10 +641,11 @@ async def test_a_write_that_did_not_land_is_not_counted_ok():
 
 
 async def test_a_forwarded_voice_note_does_not_re_feed_the_same_words():
-    """**The shipped default's own path.** With `comprehension_text_model = ""`
+    """The shipped default's own path. With `comprehension_text_model = ""`
     the text pass answers `no_text_describer` every time, and `_already_read`
     keys on title/description for a content label — so a forwarded voice note
-    re-ran the pass and fed the SAME words to memory on every sighting.
+    must not re-run the pass and feed the SAME words to memory on every
+    sighting.
 
     The words are already stored and already remembered; a second sighting has
     nothing to add."""
@@ -705,10 +688,11 @@ async def test_a_voice_note_whose_words_changed_is_still_written():
 
 
 async def test_an_unreadable_index_does_not_look_like_an_unread_blob():
-    """The already-read gate used `get`, which answers `None` for a missing row
-    and for an unreachable database alike — so a transient outage read as «not
-    yet comprehended» and the job re-ran the describer. On a video that is a
-    fresh ten-window read, paid for by an index that was merely briefly down."""
+    """The already-read gate must tell a missing row from an unreachable
+    database: `get` answers `None` for both, so a transient outage would read
+    as «not yet comprehended» and the job would re-run the describer. On a
+    video that is a fresh ten-window read, paid for by an index that was merely
+    briefly down."""
     metrics = Metrics()
     interpreter = FakeMediaInterpreter()
     job, spawn = _job(
@@ -725,15 +709,13 @@ async def test_an_unreadable_index_does_not_look_like_an_unread_blob():
 
 
 async def test_concurrent_reads_are_bounded():
-    """**`_inflight` dedupes identical BYTES, not volume.** `spawn` is a bare
-    `create_task`, so fifty photos in a minute was fifty concurrent describer
-    calls, each holding a decrypted blob plus its base64 copy against an 8 MiB
-    still ceiling and a 100 MiB video one — and three long clips is thirty jobs
-    each running up to eleven minutes of sequential model calls.
+    """`_inflight` dedupes identical BYTES, not volume. `spawn` is a bare
+    `create_task`, so fifty photos in a minute would be fifty concurrent
+    describer calls, each holding a decrypted blob plus its base64 copy against
+    an 8 MiB still ceiling and a 100 MiB video one.
 
-    This module's own docstring argues that re-reading the bytes avoids a burst
-    memory spike. It moves the spike off the listener's loop; it does not bound
-    it. This is the bound.
+    Re-reading the bytes in the job moves the memory spike off the listener's
+    loop; it does not bound it. This is the bound.
 
     Measured on the PEAK, not on the total: what matters is how many are inside
     the describer at once, which is what holds the memory."""

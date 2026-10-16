@@ -1,6 +1,5 @@
 """`nora.platform.instagram.self_id.derive_identity` — Nora's own id, from the
-bridge's `GET /health` (design/instagram-adoption/03 §"`/health` carries
-identity").
+bridge's `GET /health`.
 
 The bridge is a stand-in that answers the shapes the real one answers,
 including its WRONG-call shapes: a checkpointed session still returns 200 with
@@ -109,7 +108,7 @@ async def test_a_non_200_is_refused(bridge):
 async def test_an_authenticated_bridge_with_no_self_fbid_is_refused(bridge):
     """A resumed boot that never ran `LoadIndex` and has no cached `self.json`
     yet. Without an fbid there is nothing to compare a mention against, and a
-    guess is the exact failure 02 opens by naming."""
+    guess would be wrong."""
     box, base_url = bridge
     box["body"] = {**box["body"], "self": {"fbid": "", "igid": NORA_IGID}}
 

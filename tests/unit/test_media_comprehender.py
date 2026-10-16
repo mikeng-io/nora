@@ -1,4 +1,4 @@
-"""`MediaComprehender`'s VIDEO path — the chunked read (issue #117).
+"""`MediaComprehender`'s VIDEO path — the chunked read.
 
 The still-image and audio halves of this adapter are pinned by the contract
 suite (`tests/contract/test_media_interpreter_contract.py`) and by
@@ -6,13 +6,10 @@ suite (`tests/contract/test_media_interpreter_contract.py`) and by
 reach: how a clip's window outputs are composed into `content`, what the answer
 SAYS about the parts it did not see, and where the timecodes come from.
 
-`VIDEO_MAX_SECONDS = 120` used to truncate every clip before the model saw it,
-with no metric, no log line, and nothing in the description admitting the cut.
-A ten-minute video produced a description of its first two minutes, phrased as
-a description of the video: a partial read served as a complete answer. So
-every test here asserts on what the read SAYS as well as on what it did — and
-on all THREE ways a read comes back short, because the first cut of this only
-noticed one of them (the chunk ceiling) and served the other two silently.
+A partial read must never be served as a complete answer, such as a description of a clip's first
+minutes phrased as a description of the video. So every test here asserts on what the read SAYS as
+well as on what it did — and on all THREE ways a read comes back short (the chunk ceiling, windows
+the cut dropped, windows the model refused).
 
 The ffmpeg seam is `cut`, injected through `__init__` (CLAUDE.md's test-seam
 policy) — `preprocess.cut_video` owns its own runner seam one level down, and
@@ -98,7 +95,7 @@ def _comprehender(client, *, cut, max_chunks: int = 10) -> MediaComprehender:
 
 
 async def test_a_videos_content_is_its_chunk_outputs_in_order_timecoded():
-    """Issue #117's shape: the clip is cut into transient windows at READ time
+    """The clip is cut into transient windows at READ time
     (storage is untouched — one blob, the original), each window goes to the
     EXISTING describer path unchanged, and `content` is what came back, in
     order, with a timecode so a reader can say WHEN something happened."""
@@ -118,7 +115,7 @@ async def test_a_dropped_window_does_not_shift_its_neighbours_timecodes():
     """**The timecode comes from the WINDOW, never from its position in the
     list.** `cut_video` drops a window ffmpeg refused rather than leaving a
     hole, so `windows[k]` is not the k-th window of the clip once anything has
-    failed — a 6-minute clip losing its 1:30 window rendered the 3:00 content
+    failed — a 6-minute clip losing its 1:30 window would render the 3:00 content
     as `[1:30]`, and Nora would then say «at 1:30 he does X» about something at
     3:00. Every number below is a real instant in the source."""
     client = _ChunkingVision()
@@ -147,7 +144,7 @@ async def test_a_videos_title_and_description_are_a_text_pass_over_the_chunks():
 
     assert got.title == "a race"
     assert got.text.startswith("cars going round a track")
-    # In its own `media_text` block (step 4c of design/context-assembly/04): the
+    # In its own `media_text` block: the
     # chunk run is a model's notes on somebody's video, framed as data.
     assert client.completions == [
         wrap_outside_text("media_text", _SUMMARIZE_SOURCE, got.content),
@@ -195,20 +192,17 @@ async def test_a_capped_video_says_so_in_the_description_and_in_provenance():
     assert got.provenance["video_capped"] is True
     assert got.provenance["video_complete"] is False
     assert got.provenance["video_duration_seconds"] == 1200.0
-    # NOT inside the description. It used to be appended there, where the
-    # transcript's `comprehension_render_chars` bound clipped it off — worst of
-    # all when the description was rich, which is the case a confident-sounding
-    # partial read does the most damage in. Kept apart, every renderer appends
+    # NOT inside the description: appended there, the transcript's `comprehension_render_chars`
+    # bound would clip it off — worst of all when the description is rich, which is the case a
+    # confident-sounding partial read does the most damage in. Kept apart, every renderer appends
     # it last and after its own clip.
     assert "have not seen" not in got.text
 
 
 async def test_a_read_shortened_by_a_refused_window_says_so_too():
-    """**The ceiling is not the only way a read comes back short**, and the
-    first cut of this only noticed the ceiling: `note()` returned `""` whenever
-    `capped` was False, so a clip whose middle would not open was served with a
-    confident description and no caveat. `complete` was correctly False and
-    nothing acted on it. DEC-161 is «never truncate silently», not «never
+    """**The ceiling is not the only way a read comes back short**: a clip whose middle would not
+    open carries a caveat even though `capped` is False (`complete` is False). DEC-161 is «never
+    truncate silently», not «never
     truncate»."""
     client = _ChunkingVision()
 
@@ -332,12 +326,9 @@ async def test_a_video_with_no_text_model_keeps_its_window_run():
     to ten video-model calls, and `[media] comprehension_text_model` documents
     exactly that as what survives without a text pass.
 
-    The earlier version of this refused, discarding all ten calls and making
-    the next sighting pay again. What made that refusal look necessary was a
-    different bug at a different level — a titleless row rendered BARE in the
-    transcript while `comprehended` stopped the job retrying it — and that is
-    fixed where it lives: `media_detail` falls back to `content` when there is
-    no headline (`tests/unit/test_engagement_context.py`)."""
+    Refusing would discard all ten calls and make the next sighting pay again; a titleless row is
+    safe because `media_detail` falls back to `content` when there is no headline
+    (`tests/unit/test_engagement_context.py`)."""
     client = _ChunkingVision()
     comprehender = MediaComprehender(
         client=client, describe_models={"video": "k3"},
@@ -355,8 +346,8 @@ async def test_a_video_with_no_text_model_keeps_its_window_run():
 
 async def test_a_capped_video_with_no_text_model_keeps_both_run_and_caveat():
     """The two halves that survive a missing text model, together: the window
-    run as `content`, and what the read did not see as its own caveat — which
-    is now a separate value precisely so it cannot be lost to an empty
+    run as `content`, and what the read did not see as its own caveat — which is a separate value
+    precisely so it cannot be lost to an empty
     description or to a clip."""
     client = _ChunkingVision()
     comprehender = MediaComprehender(
@@ -375,14 +366,11 @@ async def test_a_capped_video_with_no_text_model_keeps_both_run_and_caveat():
 
 
 async def test_two_concurrent_reads_do_not_share_provenance():
-    """`last_provenance` used to be stashed on the adapter and read after an
-    await. The comprehension job spawns ONE TASK PER SUBJECT, so a message
-    carrying a video and a photo runs two `describe` calls concurrently on one
-    shared instance — the still's reset landed mid chunk-loop and the video's
-    chunk record, the RECORDED half of DEC-161, was lost or attached to the
-    wrong row. Single-flight is per-sha256, not per-instance, so it never
-    established the safety the old comment claimed. A value that travels with
-    its result cannot race."""
+    """Provenance travels with the result, not on the adapter. The comprehension job spawns ONE TASK
+    PER SUBJECT, so a message carrying a video and a photo runs two `describe` calls concurrently on
+    one shared instance; state kept on the instance would let the still's reset land mid chunk-loop
+    and lose or misattach the video's chunk record, the RECORDED half of DEC-161. Single-flight is
+    per-sha256, not per-instance. A value that travels with its result cannot race."""
     import asyncio
 
     client = _ChunkingVision()
@@ -410,7 +398,7 @@ async def test_the_automatic_comprehension_question_asks_for_speech():
     the transport it travelled: the configured `opencode-go` lane.
 
     The identity-number request rides with it (the operator's line: phone, ID
-    and account numbers — design/media-read-lane/02 §5). It is a request to a
+    and account numbers ). It is a request to a
     model, not a screen; the DEC row records the exposure that remains."""
     client = _ChunkingVision()
     comprehender = MediaComprehender(

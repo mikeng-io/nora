@@ -1,6 +1,6 @@
-"""`nora.app.runtime` — the four lifetime concerns `Handler` and `App` used to own
-directly (Phase 3, Task 7): the strong-reference background task set, the prune
-sweep, the `Debounce` TTL sweep, and per-adapter restart-with-backoff supervision.
+"""`nora.app.runtime` — the lifetime concerns of the app: the strong-reference
+background task set, the prune sweep, the `Debounce` TTL sweep, and per-adapter
+restart-with-backoff supervision.
 
 Every test here proves *behaviour*, not shape: a coroutine existing is not enough,
 each loop must actually run and actually do the thing it claims to.
@@ -40,11 +40,8 @@ from nora.testing import InMemoryDreamScheduleClock
 from tests.objectives import shipped_objectives
 
 # The `objective` collaborator, wired the way production wires it: the REAL
-# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. The
-# bodies it serves are byte-identical to the constants these tests were written
-# against (`tests/unit/test_dreamer_instructions.py` proves it), so nothing
-# below changed meaning — and a broken objective file now fails here rather
-# than on the next Dreamer tick.
+# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. A
+# broken objective file fails here rather than on the next Dreamer tick.
 OBJECTIVES = shipped_objectives()
 
 # ---------------------------------------------------------------------------
@@ -53,10 +50,9 @@ OBJECTIVES = shipped_objectives()
 
 
 async def test_spawned_task_survives_gc_because_of_the_strong_reference():
-    """The task-tracking test the brief's mandatory probe targets: drop every
-    external reference to the spawned task, force a collection, and prove the
-    coroutine still runs to completion because `BackgroundTasks` itself holds
-    the strong reference asyncio does not."""
+    """Drop every external reference to the spawned task, force a collection,
+    and prove the coroutine still runs to completion because `BackgroundTasks`
+    itself holds the strong reference asyncio does not."""
     bg = BackgroundTasks()
     ran = False
 
@@ -143,10 +139,10 @@ async def test_prune_loop_survives_a_failing_sweep_and_keeps_looping():
     metrics = Metrics()
 
     task = asyncio.create_task(prune_loop(store, metrics, interval_seconds=0.01))
-    # The exact twin of the debounce test above, converted for the same reason:
-    # `sleep(0.08)` over `interval_seconds=0.01` is a wall-clock assumption, and
-    # this name promises "keeps looping" while the old assertion was satisfied
-    # by a loop that ran twice and died.
+    # Waits on the condition, never a fixed window: `sleep(0.08)` over
+    # `interval_seconds=0.01` is a wall-clock assumption, and this name
+    # promises "keeps looping", which a loop that ran twice and died would
+    # satisfy.
     try:
         await asyncio.wait_for(store.kept_looping.wait(), timeout=5.0)
     except TimeoutError:  # pragma: no cover - only on a real regression
@@ -210,18 +206,15 @@ async def test_debounce_sweep_loop_survives_a_failing_sweep():
     task = asyncio.create_task(
         debounce_sweep_loop(d, metrics, interval_seconds=0.01, ttl_seconds=5.0)
     )
-    # Wait for the CONDITION, never for a wall-clock window. The previous form
-    # slept 0.05s and asserted two sweeps had landed at 0.01s intervals — true
-    # on an idle loop, false on a loaded one, which is why it went red in full
-    # runs and green alone (#170). Blocking the loop in 25ms slices reproduces
-    # it every time. The timeout is a deadlock guard, not a measurement: the
-    # claim is that the loop recovers, and how fast was never the point.
+    # Wait for the CONDITION, never for a wall-clock window: a fixed sleep
+    # with sweeps at 0.01s intervals is true on an idle loop and false on a
+    # loaded one. Blocking the loop in 25ms slices reproduces the loaded case
+    # every time. The timeout is a deadlock guard, not a measurement: the
+    # claim is that the loop recovers, and how fast is not the point.
     #
     # It waits for the THIRD sweep, not the second. "Survives" and "keeps
     # sweeping" is what the name promises, and a loop that resumes once and
-    # then returns forever satisfied the old assertion — verified: injecting
-    # `return` after two rounds left both the old and the first new form green
-    # in 0.07s against a permanently dead loop.
+    # then returns forever would satisfy a two-sweep assertion.
     try:
         await asyncio.wait_for(kept_sweeping.wait(), timeout=5.0)
     except TimeoutError:  # pragma: no cover - only on a real regression
@@ -231,7 +224,7 @@ async def test_debounce_sweep_loop_survives_a_failing_sweep():
         )
     finally:
         # In `finally` so a timeout does not leak the task and orphan the real
-        # exception into stderr, which is what the first version of this did.
+        # exception into stderr.
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
@@ -247,7 +240,7 @@ async def test_debounce_sweep_loop_survives_a_failing_sweep():
 
 async def test_memory_drain_loop_keeps_draining_after_a_failing_drain():
     """It drains on its interval, and a drain that raises is counted and
-    never ends the loop (60-build-step-3 S4)."""
+    never ends the loop."""
     kept_draining = asyncio.Event()
 
     class _Store:
@@ -274,7 +267,7 @@ async def test_memory_drain_loop_keeps_draining_after_a_failing_drain():
 
 
 async def test_memory_drain_loop_embeds_after_each_drain_and_survives_a_failure():
-    """`[memory_index] embed` (65 V1): one embedding batch after every drain,
+    """`[memory_index] embed`: one embedding batch after every drain,
     a failing batch counted under its own stage, and a failing drain never
     skipping the batch."""
     order: list[str] = []
@@ -404,13 +397,12 @@ class _FakeRecord:
         """`id > after_id`, ascending, at most `limit` — the real one's
         contract, HONOURED rather than ignored.
 
-        This returned the whole batch whatever `after_id` was, so the
-        consolidation cursor was invisible here: setting
-        `nora/app/runtime.py`'s `after_id=watermark` to `after_id=0` — every
-        dream tick re-reading the conversation from the beginning and
-        re-feeding what it already consolidated — left the entire suite green
-        (6142 passed, verified 2026-09-09). That line is the only `.since(`
-        call site in `nora/`, so nothing else could have caught it.
+        Ignoring `after_id` would make the consolidation cursor invisible
+        here: setting `nora/app/runtime.py`'s `after_id=watermark` to
+        `after_id=0` — every dream tick re-reading the conversation from the
+        beginning and re-feeding what it already consolidated — would leave
+        the suite green. That line is the only `.since(` call site in `nora/`,
+        so nothing else could catch it.
         """
         rows = [r for r in self._batches.get(conversation_id, []) if r.id > after_id]
         return sorted(rows, key=lambda r: r.id)[:limit]
@@ -465,7 +457,7 @@ class _FakeLanguage:
         # treat its configured lag as consumed — otherwise a test whose fake
         # batch never grows would keep firing forever at the tick cadence,
         # muddying an assertion that means to observe exactly one cycle. The
-        # empty-batch age-refresh case (Task 11 fix) calls `advance_watermark`
+        # empty-batch age-refresh case calls `advance_watermark`
         # with `last_message_id` UNCHANGED (often 0), so it alone must not
         # trip this — `watermarks.get(...) > 0` already only fires on a REAL
         # forward move, never on the refresh-in-place case.
@@ -480,7 +472,7 @@ class _FakeLanguage:
         # Mirrors the real store: `updated_at` (hence age) resets to "now"
         # the moment `advance_watermark` runs for this scope, REGARDLESS of
         # whether `last_message_id` actually moved — the empty-batch refresh
-        # (Task 11 fix) relies on exactly this to stop the 24h firing from
+        # relies on exactly this to stop the 24h firing from
         # relatching every tick.
         if scope_id in self._age_reset_scopes:
             return 0.0
@@ -497,7 +489,7 @@ class _FakeLanguage:
 
 
 # ---------------------------------------------------------------------------
-# dream_loop backoff (non-negotiable 4)
+# dream_loop backoff
 # ---------------------------------------------------------------------------
 
 
@@ -536,13 +528,12 @@ def test_backoff_elapsed_grows_exponentially_and_caps():
 
 
 async def test_the_dream_loop_says_it_started(caplog):
-    """The Dreamer was the ONE background loop with no positive liveness signal.
+    """The Dreamer announces that it is running.
 
-    Every sibling announces itself (`heartbeat started: tick every 60.0s`,
-    `nora/app/heartbeat.py`), and `__main__` logs only the DISABLED branch — so
-    with `dreamer.enabled = true` the logs said nothing at all, and «is it
-    running?» could only be answered from a MISSING line. That is an absence
-    argument about the slowest loop in the system.
+    Every sibling loop does (`heartbeat started: tick every 60.0s`,
+    `nora/app/heartbeat.py`), and `__main__` logs only the DISABLED branch —
+    without a line from the loop, «is it running?» could only be answered from
+    a MISSING line, an absence argument about the slowest loop in the system.
 
     It logs from inside the loop, not from the spawn site, so it reports that
     the loop is TICKING rather than that a branch was taken. The scope count is
@@ -570,7 +561,7 @@ async def test_the_dream_loop_says_it_started(caplog):
     assert len(started) == 1, "announced once at start, not on every tick"
 
 
-# --- the per-tick instruction-versions line (substrate spec 4.4) -----------
+# --- the per-tick instruction-versions line -----------------------------
 
 
 class _FakeInstructions:
@@ -589,7 +580,7 @@ class _FakeInstructions:
 
 
 async def test_a_tick_logs_the_instruction_revision_it_is_running(caplog):
-    """Spec 4.4: a Dreamer tick names its instruction versions the way a tag
+    """A Dreamer tick names its instruction versions the way a tag
     start logs `doctrine_versions={...}`, so a trace ties to a revision without
     anyone opening the database. Without it the only way to ask "which
     objective wrote these rows" is a SQL query against a hash."""
@@ -638,7 +629,7 @@ async def test_a_broken_instruction_corpus_cannot_take_the_clock_down(caplog):
 
 async def test_no_instruction_source_logs_no_line_and_changes_nothing(caplog):
     """`instructions` is optional so every existing caller and test keeps
-    working unchanged; absent, the loop is byte-for-byte what it was."""
+    working unchanged; absent, the loop behaves as without the line."""
     task = asyncio.create_task(dream_loop(
         _FakeRecord({"g1": []}), _FakeLanguage(lag=0), Metrics(),
         scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
@@ -653,9 +644,9 @@ async def test_no_instruction_source_logs_no_line_and_changes_nothing(caplog):
 
 
 # ===========================================================================
-# per-adaptor scheduling (substrate plan Task 2.8, gate D3)
+# per-adaptor scheduling
 #
-# The loop that carries live traffic gains a second, additive schedule. Every
+# The loop that carries live traffic has a second, additive schedule. Every
 # test below asserts one of the four properties that fail QUIETLY if they are
 # wrong: the isolation boundary, the backoff key that must move with it, the
 # watermark that must not advance past a batch nobody read, and the key
@@ -729,7 +720,7 @@ class _StubAdaptor:
         self.objective = "note-curation"
         self.envelope_key = "observations"
         self.tools: frozenset[str] = frozenset()
-        # `DreamAdaptor.store_calls_per_tick` (issue #60): required, so a
+        # `DreamAdaptor.store_calls_per_tick`: required, so a
         # stub that omitted it would not satisfy the protocol.
         self.store_calls_per_tick = 1
 
@@ -783,8 +774,7 @@ async def _tick_until(loop_coro, done, *, deadline: float = 5.0):
     """Run the loop until `done()` holds or `deadline` seconds pass.
 
     For a property that needs a SECOND tick: a fixed window (`_tick`) can hold
-    fewer than two under a loaded full-suite run, and failed the gate once
-    (2026-10-09, `test_a_schedule_hold_is_counted`, 15178 passed beside it)."""
+    fewer than two under a loaded full-suite run."""
     task = asyncio.create_task(loop_coro)
     try:
         for _ in range(int(deadline / 0.005)):   # a bounded poll, not an Event:
@@ -831,12 +821,11 @@ async def test_each_dream_unit_is_its_own_root_and_its_pass_is_the_session(
 ):
     """One unit, one trace, named for its adaptor, the tick as its session.
 
-    Issue #55 grouped a tick under one `dream.pass` root, and that root named
-    nothing: read back 2026-10-09, the Langfuse trace list showed identical
-    `dream.pass` rows holding up to 356 interleaved observations of two
-    adaptors, so culture was findable only by opening each. Each unit is now
-    its own `dream:<adaptor>` root carrying adaptor, key, outcome and the
-    pass id `TraceIdentityProcessor` turns into the session.
+    A tick grouped under one `dream.pass` root would name nothing: the Langfuse
+    trace list would show identical `dream.pass` rows holding many interleaved
+    observations of two adaptors, so culture would be findable only by opening
+    each. Each unit is its own `dream:<adaptor>` root carrying adaptor, key,
+    outcome and the pass id `TraceIdentityProcessor` turns into the session.
 
     PROBE: dispatch `_run_adaptor` instead of `_run_unit` and the runner's
     spans have no `dream_loop` root above them and no pass id.
@@ -985,8 +974,7 @@ async def test_a_watermarkless_adaptor_gets_an_empty_batch_and_no_cursor_read():
     assert [c for c in language.advance_calls if c[0] == "facts"] == []
 
 
-# ---- AdaptorSchedule, universal (32 §3.1 for the watermark-bearing,
-# 33 §5 N1a for the watermark-free)
+# ---- AdaptorSchedule, universal (watermark-bearing and watermark-free)
 
 
 async def test_a_scheduled_watermark_free_adaptor_fires_once_then_holds_for_the_interval():
@@ -1035,44 +1023,29 @@ async def test_a_scheduled_watermark_free_adaptor_fires_again_after_the_interval
     """The other half of the clock: the interval elapses and the adaptor
     fires again.
 
-    The previous form slept a fixed 0.12s and asserted `2 <= len(calls) < 12`
-    — the only TWO-SIDED count assertion in the suite (#180). The lower bound
-    needed ~0.09s inside that window (3x margin); the upper bound had ZERO
-    margin: `_slot` buckets on REAL wall-clock time (`_now_ms`, not
-    `monotonic()` — see its own docstring), so under load a nominally-0.12s
-    `asyncio.sleep` can run for far longer than 0.12s, the slot can advance
-    more than twelve times over that stretched real interval, and the bound
-    fails from the OTHER direction too.
+    Waits on the CONDITION — the second fire — guarded by a generous timeout
+    rather than measured by a fixed sleep. A count bound over a fixed window
+    cannot hold: `_slot` buckets on REAL wall-clock time (`_now_ms`, not
+    `monotonic()` — see its own docstring), so under load a nominally short
+    `asyncio.sleep` can run far longer than asked and the slot can advance far
+    more often than a fixed upper bound allows. Cancelling the instant the
+    second fire lands makes the upper bound structural: nothing more can
+    accumulate once the task is dead.
 
-    Converted to wait on the CONDITION — the second fire — guarded by a
-    generous timeout rather than measured by one. Cancelling the instant the
-    second fire lands makes the old upper bound structural instead of a magic
-    constant: nothing more can accumulate once the task is dead.
-
-    What the count bound was ALSO standing in for — that this is a genuine
-    interval re-fire and not the adaptor running on every tick — is
-    deliberately NOT re-proven here by a second wall-clock measurement. The
-    first attempt at this fix tried exactly that: assert
-    `nora_dream_skipped_total{reason="schedule"} > 0` (the schedule's own
-    "a tick was held" counter, incremented at
-    `nora/app/runtime.py::_dream_adaptor_once`) between the two fires. MEASURED
-    rather than assumed correct: 8 solo reruns, 3 failures — because whether
-    ANY tick lands inside the ~20ms window between the first fire and the
-    slot boundary depends on where in its 30ms slot the first fire happens to
-    land, which is exactly the kind of real-clock phase alignment this issue
-    exists to stop testing against. Re-deriving "holds between fires" from
-    wall-clock phase would have reintroduced #180's own failure mode inside
-    its own fix.
-
-    That property is proven WITHOUT a clock instead, by two sibling tests:
+    That this is a genuine interval re-fire and not the adaptor running on
+    every tick is deliberately NOT re-proven here by a second wall-clock
+    measurement: whether any tick lands between the first fire and the slot
+    boundary depends on where in its slot the first fire happens to land, which
+    is real-clock phase alignment. That property is proven WITHOUT a clock by
+    sibling tests:
     `test_a_scheduled_watermark_free_adaptor_fires_once_then_holds_for_the_interval`
     (a schedule holds an adaptor open-ended, not just once) and
     `test_a_watermark_free_adaptor_without_a_schedule_still_runs_every_tick`
     (the contrasting, unscheduled "every tick" case the schedule exists to
     prevent) — plus `test_two_adaptors_sharing_an_interval_can_hold_different_
     phases`, which exercises `_slot` as a pure function with fixed
-    millisecond inputs, no clock at all. This test's own job shrinks to the
-    one claim its name makes: fires again.
+    millisecond inputs, no clock at all. This test's own job is the one claim
+    its name makes: fires again.
     """
     language = _KeyedLanguage()
     metrics = Metrics()
@@ -1107,7 +1080,7 @@ async def test_a_scheduled_watermark_free_adaptor_fires_again_after_the_interval
 
 async def test_a_watermark_free_adaptor_without_a_schedule_still_runs_every_tick():
     """The invariant the schedule path must not disturb: NO entry in the
-    mapping is every-tick, exactly as before schedules existed."""
+    mapping is every-tick, exactly as without schedules."""
     language = _KeyedLanguage()
     runner = _RecordingRunner()
 
@@ -1123,7 +1096,7 @@ async def test_a_watermark_free_adaptor_without_a_schedule_still_runs_every_tick
 
 
 async def test_a_scheduled_watermark_bearing_adaptor_still_needs_backlog_and_age():
-    """32 §3.1, pinned against the reorder: the schedule moving BEFORE the
+    """Pinned against reordering: the schedule moving BEFORE the
     watermark early return must not shift the watermark-bearing shape —
     `lag > 0 and age >= min_interval_seconds`, both halves required."""
     runner = _RecordingRunner()
@@ -1161,7 +1134,7 @@ async def test_a_scheduled_watermark_bearing_adaptor_still_needs_backlog_and_age
 
 
 async def test_an_evidence_wake_fires_at_the_batch_or_when_stale_and_never_on_silence():
-    """DEC-288 (design/self-growth/10-character.md §3.2): with `wake_batch`
+    """DEC-288: with `wake_batch`
     set, a key fires on `lag >= wake_batch` whatever the watermark's age, or on
     any backlog once the watermark is `min_interval_seconds` old; one message
     short of the batch on a young watermark does not fire, and a key with
@@ -1193,7 +1166,7 @@ def test_an_evidence_wake_refuses_a_batch_below_one():
 
 
 async def test_a_scheduled_watermark_free_adaptor_tracks_last_fired_per_key():
-    """The clock is keyed `(adaptor.name, key)` (33 §5 N1a) — one unit's
+    """The clock is keyed `(adaptor.name, key)` — one unit's
     curator firing must never hold back or advance another's. Both scopes fire
     on the first tick (nothing has fired yet for either key), and neither
     refires inside the interval."""
@@ -1217,12 +1190,12 @@ async def test_a_scheduled_watermark_free_adaptor_tracks_last_fired_per_key():
 
 
 async def test_a_scheduled_adaptor_does_not_refire_after_a_restart():
-    """**The defect this clock exists for.** The schedule used to live in a
-    `time.monotonic()` dict inside `dream_loop`'s frame, so a restart began
-    with an empty clock and the next tick always fired. `nora` is
-    force-recreated several times on an ordinary day, which made a daily
+    """**The defect this clock exists for.** A schedule kept in a
+    `time.monotonic()` dict inside `dream_loop`'s frame would begin every
+    restart with an empty clock, so the next tick would always fire. `nora` is
+    force-recreated several times on an ordinary day, which would make a daily
     adaptor a per-deploy one — and `nora_dream_run_total` cannot tell the two
-    apart, so nothing would have caught it.
+    apart.
 
     Two SEPARATE `dream_loop` calls are the restart: each builds its own
     frame, and only the clock crosses between them.
@@ -1252,13 +1225,13 @@ async def test_an_unavailable_run_does_not_burn_the_slot():
     """**R-27 applied to the schedule itself: an ERROR is never a PASS.**
 
     `DreamerRuntime.run` absorbs a 429 that outlived the retry policy, a
-    timeout, or a killed loop and returns `unavailable` NORMALLY. An earlier
-    version of this branch stamped the clock BEFORE the run, so any of those
-    burned the whole day with no retry — and the backoff could not compensate,
-    because a schedule hold returns `None`, `None` is not `unavailable`, and
-    `dream_loop` clears `failures` on it. It also wrote `last_fired_at` for a
-    run that did nothing, into the one table an operator reads to ask whether
-    the clock is alive.
+    timeout, or a killed loop and returns `unavailable` NORMALLY. Stamping the
+    clock BEFORE the run would let any of those burn the whole day with no
+    retry — and the backoff could not compensate, because a schedule hold
+    returns `None`, `None` is not `unavailable`, and `dream_loop` clears
+    `failures` on it. It would also write `last_fired_at` for a run that did
+    nothing, into the one table an operator reads to ask whether the clock is
+    alive.
 
     So the slot stays open on `unavailable` and the next tick retries inside
     the same day.
@@ -1316,10 +1289,10 @@ async def test_a_successful_run_does_claim_the_slot():
 
 
 async def test_a_schedule_hold_is_counted():
-    """A hold must be visible. The defect this mechanism fixes survived eleven
-    days because `nora_dream_run_total` counts runs and not their reason — a
-    schedule that never fires and a tier with nothing to do are the same
-    series. `nora_dream_skipped_total{reason="schedule"}` is the difference."""
+    """A hold must be visible. `nora_dream_run_total` counts runs and not their
+    reason — a schedule that never fires and a tier with nothing to do are the
+    same series. `nora_dream_skipped_total{reason="schedule"}` is the
+    difference."""
     metrics = Metrics()
     runner = _RecordingRunner()
 
@@ -1350,7 +1323,7 @@ async def test_two_adaptors_sharing_an_interval_can_hold_different_phases():
     sched_b = AdaptorSchedule(
         min_interval_seconds=86400, batch_limit=10, phase_offset_seconds=7 * 3600)
 
-    # 2026-09-06 06:30 UTC — past A's 06:00 boundary, before B's 07:00 one.
+    # 06:30 UTC — past A's 06:00 boundary, before B's 07:00 one.
     at = 1_788_675_000_000
     assert _slot(at, sched_a) != _slot(at - 3600_000, sched_a)
     assert _slot(at, sched_b) == _slot(at - 3600_000, sched_b)
@@ -1381,7 +1354,7 @@ async def test_a_never_fired_pair_is_not_read_as_epoch_zero():
 async def test_a_watermark_free_adaptor_with_no_clock_still_runs_every_tick():
     """The by-omission default, unchanged. A deployment that supplies
     schedules but no clock must not silently stop running its adaptors —
-    the pre-schedule behaviour is the safe direction to fall back to."""
+    the unscheduled behaviour is the safe direction to fall back to."""
     runner = _RecordingRunner()
 
     await _tick(dream_loop(
@@ -1399,7 +1372,7 @@ async def test_a_watermark_free_adaptor_with_no_clock_still_runs_every_tick():
 
 
 async def test_the_watermark_is_held_when_the_run_reports_unavailable():
-    """`ExtractionUnparseableError`'s guarantee, now a value instead of an
+    """`ExtractionUnparseableError`'s guarantee, carried as a value instead of an
     exception. Advancing here consumes those messages permanently with nothing
     left to retry, and `nora_dream_evidence_lost_total` is structurally blind
     to it — it measures PRUNING."""
@@ -1424,10 +1397,10 @@ def test_a_unit_with_no_failures_reads_its_whole_batch():
 
 
 def test_each_consecutive_failure_halves_the_batch():
-    """Issue #291: `unavailable` holds the watermark, so without this the
-    retry re-reads the IDENTICAL range and a range-caused failure repeats
-    forever. Measured: 80 messages emitted 2,124 completion tokens against a
-    2,000 ceiling — 6% over, and 40 of them fit on the first retry."""
+    """`unavailable` holds the watermark, so without shrinking the retry
+    re-reads the IDENTICAL range and a range-caused failure repeats forever: a
+    batch whose output overruns the completion ceiling by a few percent fits
+    once the batch shrinks."""
     assert _shrunk_batch_limit(80, 1) == 40
     assert _shrunk_batch_limit(80, 2) == 20
     assert _shrunk_batch_limit(80, 3) == 10
@@ -1447,8 +1420,7 @@ def test_the_shrink_stops_at_a_floor_rather_than_reaching_one_message():
 
 async def test_a_retry_reads_fewer_rows_than_the_attempt_that_failed():
     """The wiring, asserted on what the RUNNER was handed rather than on the
-    helper — a pure function nothing calls is a phantom, and this is the call
-    that was missing for 24 hours."""
+    helper — a pure function nothing calls is a phantom."""
     metrics = Metrics()
     runner = _RecordingRunner()
     rows = [_row(i) for i in range(1, 81)]
@@ -1534,9 +1506,8 @@ async def test_an_empty_batch_still_refreshes_the_age_clock_in_place():
 
 
 async def test_two_adaptors_hold_separate_cursors_for_one_scope():
-    """The reason `consolidator_name` had to stop being the hardcoded
-    `"language"`. Two adaptors sharing one row means the second never sees a
-    message the first consumed."""
+    """`consolidator_name` is not the hardcoded `"language"`: two adaptors sharing one row
+    means the second never sees a message the first consumed."""
     language = _KeyedLanguage(lag=99)
     runner = _RecordingRunner()
 
@@ -1552,7 +1523,7 @@ async def test_two_adaptors_hold_separate_cursors_for_one_scope():
     assert language.watermarks[("exchanges", "g1")] == 5
 
 
-# ---- gate D3: the isolation boundary, and the backoff key that moved with it
+# ---- the isolation boundary, and the backoff key that moved with it
 
 
 async def test_a_failing_adaptor_does_not_stop_its_sibling_running():
@@ -1570,7 +1541,7 @@ async def test_a_failing_adaptor_does_not_stop_its_sibling_running():
 
 
 async def test_a_failing_adaptor_does_not_back_off_its_sibling():
-    """The bug per-adaptor isolation exists to prevent, reintroduced one layer
+    """The failure per-adaptor isolation exists to prevent, one layer
     down: isolate the try/except per adaptor but leave the backoff keyed per
     SCOPE, and one failing adaptor silences every other adaptor in that scope.
 
@@ -1626,16 +1597,15 @@ async def test_an_adaptor_still_in_flight_is_skipped_not_re_entered():
     assert metrics.get("nora_dream_skipped_total", reason="in_flight") == 0
 
 
-# ---- the unit wall clock (issue #191): #60 bounded the adaptor's own
-# inputs/commit; the cursor reads AROUND them were still bare awaits, and any
-# one of them hanging reproduced #60 exactly — this unit never ticks again.
+# ---- the unit wall clock: the adaptor's own inputs/commit are bounded; the
+# cursor reads AROUND them must be too, or any one of them hanging leaves this
+# unit never ticking again.
 
 
 class _HangingRecord:
     """`_SinceReadable`'s own hang. `record.since` is one of the cursor reads
-    `#60` left bare around the adaptor's own bounded `inputs`/`commit` (issue
-    #191) — before `[dreamer] max_unit_hold_seconds` existed, nothing bounded
-    this call at all.
+    around the adaptor's own bounded `inputs`/`commit`; `[dreamer]
+    max_unit_hold_seconds` bounds it.
 
     `blocked` is set the MOMENT `since` is entered, so a test can tell "it
     hung" from "it was never called" — the exit-code-5-shaped failure one
@@ -1659,15 +1629,14 @@ class _HangingRecord:
 
 
 async def test_a_hung_cursor_read_is_released_by_the_unit_wall_clock():
-    """**Issue #191, end to end.** `record.since` hangs forever — the same
-    shape a wedged connection to the audit store would produce, and one of
-    the exact calls the issue names as still bare `await`s around the
-    adaptor's own bounded `inputs`/`commit`.
+    """**End to end.** `record.since` hangs forever — the same shape a wedged
+    connection to the audit store would produce, and one of the cursor reads
+    around the adaptor's own bounded `inputs`/`commit`.
 
-    Before `[dreamer] max_unit_hold_seconds`, this reproduced #60 exactly:
-    `_run_adaptor` never returns, `finally: running.discard(unit)` never
-    runs, and `g1`'s `note-candidates` unit never ticks again — indistinguishable,
-    on `nora_dream_skipped_total{reason="in_flight_adaptor"}` alone, from an
+    Without `[dreamer] max_unit_hold_seconds`, `_run_adaptor` never returns,
+    `finally: running.discard(unit)` never runs, and `g1`'s `note-candidates`
+    unit never ticks again — indistinguishable, on
+    `nora_dream_skipped_total{reason="in_flight_adaptor"}` alone, from an
     ordinary long run.
 
     THREE properties proven at once, because a fix that only has one of them
@@ -1722,9 +1691,8 @@ class _RaisingRecord:
     `command_timeout`, a raw socket timeout, exactly the class
     `_bounded_store_call`'s own docstring names — is NOT `[dreamer]
     max_unit_hold_seconds` firing, and must not be treated as though it
-    were (issue #191 independent review, HIGH). It is an ORDINARY failure
-    and must feed the exponential backoff the same way any other exception
-    does.
+    were. It is an ORDINARY failure and must feed the exponential backoff the
+    same way any other exception does.
     """
 
     def __init__(self) -> None:
@@ -1738,15 +1706,13 @@ class _RaisingRecord:
 
 
 async def test_a_collaborators_own_timeout_error_is_an_ordinary_failure(caplog):
-    """**The regression the independent review caught.** A prior shape split
-    the timeout handling into `except TimeoutError: ... if not
+    """**An ordinary failure must still back off.** A shape that split the
+    timeout handling into `except TimeoutError: ... if not
     unit_deadline.expired(): raise` followed by a sibling `except
-    Exception:`. Python does not chain except clauses on one try: the
-    `raise` propagated PAST the sibling entirely, out of `_run_adaptor`
-    itself — no `log.exception`, no `nora_errors_total`, no
-    `_count_failure`, and the exponential backoff never engaged. Measured
-    live on the review's own probe: 14 calls in 0.3s with 0 errors counted,
-    against 1 call / 1 error / backoff on the pre-#191 tree.
+    Exception:` would break: Python does not chain except clauses on one try,
+    so the `raise` propagates PAST the sibling entirely, out of
+    `_run_adaptor` itself — no `log.exception`, no `nora_errors_total`, no
+    `_count_failure`, and the exponential backoff never engages.
 
     PROOF: exactly ONE call despite many ticks (backoff DID engage), the
     ordinary-failure series moved, and the wedge series — which this was
@@ -1785,14 +1751,14 @@ async def test_a_collaborators_own_timeout_error_is_an_ordinary_failure(caplog):
 
 
 # ---------------------------------------------------------------------------
-# STORE-READ SPANS (issue #55, the last open quarter: the Dreamer's cursor
-# reads — `record.since`, every `language.*` watermark read, `media_join.
-# enrich` — had no instrumentation at all). `traced_read`
-# (`nora.obs.tracing`) is the SAME wrapper `nora.engagement.context` uses for
-# `build_prefill`'s reads; asserted here on EXPORTED spans (`exported_spans`,
-# `tests/conftest.py`) for the reason `tests/unit/test_engagement_context.py`'s
-# own #55 tests give: a test that only checked `traced_read` was CALLED would
-# stay green if a call site lost its wrapper.
+# STORE-READ SPANS (the Dreamer's cursor reads — `record.since`, every
+# `language.*` watermark read, `media_join.enrich` — are instrumented).
+# `traced_read` (`nora.obs.tracing`) is the SAME wrapper
+# `nora.engagement.context` uses for `build_prefill`'s reads; asserted here on
+# EXPORTED spans (`exported_spans`, `tests/conftest.py`) as
+# `tests/unit/test_engagement_context.py`'s own tests do: a test that only
+# checked `traced_read` was CALLED would stay green if a call site lost its
+# wrapper.
 # ---------------------------------------------------------------------------
 
 
@@ -1832,12 +1798,11 @@ async def test_dream_adaptor_once_emits_a_span_per_cursor_read(exported_spans):
 async def test_a_scheduled_watermark_free_adaptors_clock_read_is_also_traced(
     exported_spans,
 ):
-    """Review finding on #526: `clock.last_fired` sits in the
-    `uses_watermark=False` branch, OUTSIDE the `language`/`record` reads
-    above — a scheduled adaptor (the note curator) has no watermark at all,
-    so this read IS its whole cursor, and it was the one left dark.
-    `record_fire` two lines below it is a WRITE and stays unwrapped, same as
-    `advance_watermark` in the watermark branch.
+    """`clock.last_fired` sits in the `uses_watermark=False` branch, OUTSIDE
+    the `language`/`record` reads above — a scheduled adaptor (the note
+    curator) has no watermark at all, so this read IS its whole cursor and must
+    be traced. `record_fire` two lines below it is a WRITE and stays
+    unwrapped, same as `advance_watermark` in the watermark branch.
 
     PROBE: replace the `traced_read(...)` call around `clock.last_fired` with
     a bare `await` and `store.dream_schedule.last_fired` drops out of the
@@ -1869,7 +1834,7 @@ async def test_a_scheduled_watermark_free_adaptors_clock_read_is_also_traced(
 
 
 async def test_a_failing_cursor_read_ends_its_span_with_error_status(exported_spans):
-    """The same visibility issue #55 asks for on the tag path: a cursor read
+    """The same visibility as on the tag path: a cursor read
     that raises must not read, in the trace, the same as one that answered
     fast.
 
@@ -1897,7 +1862,7 @@ class _RecordThatSwallowsCancellationAndRaises:
     """`record.since` hangs until `[dreamer] max_unit_hold_seconds` cancels
     it, then raises `RuntimeError` from a `finally` instead of letting
     `CancelledError` propagate — cleanup that fails AFTER the wall clock
-    genuinely fired (independent review, LOW #3).
+    genuinely fired.
 
     `unit_deadline.expired()` is True here (the clock DID fire, and
     `asyncio.timeout` records that regardless of what the body goes on to
@@ -1923,20 +1888,20 @@ class _RecordThatSwallowsCancellationAndRaises:
             await asyncio.Event().wait()   # never set; only cancellation ends this
         finally:
             # Cleanup that itself fails, AFTER the CancelledError our own
-            # wall clock delivered — the exact shape LOW #3 named. This
-            # REPLACES the propagating exception: what `_run_adaptor` sees
-            # is this RuntimeError, not the CancelledError underneath it.
+            # wall clock delivered. This REPLACES the propagating
+            # exception: what `_run_adaptor` sees is this RuntimeError,
+            # not the CancelledError underneath it.
             raise RuntimeError("cleanup failed after the wall clock cancelled it")
 
 
 async def test_an_expired_deadline_whose_exception_is_not_a_timeout_is_ordinary(
     caplog,
 ):
-    """**The untested half of the guard** (independent review, LOW #3):
+    """**The other half of the guard:**
     `isinstance(exc, TimeoutError) and unit_deadline.expired()` reddens on a
     mutant that drops the `isinstance` half (`if unit_deadline.expired():`)
     ONLY if some test exercises an expired deadline whose exception is NOT a
-    `TimeoutError`. Neither existing test does. This is that case.
+    `TimeoutError`. This is that case.
 
     PROOF: an ordinary failure — logged, counted, backed off — even though
     the wall clock genuinely fired. The clock firing is not, by itself,
@@ -2034,8 +1999,8 @@ async def test_seeding_never_overwrites_a_cursor_that_already_exists():
 
 
 async def test_a_scope_the_SOURCE_NEVER_COVERED_stays_at_zero_by_default():
-    """The historical behaviour, kept as the default and pinned so the new
-    fallback cannot widen silently. An append-idempotent extractor may
+    """The default behaviour, pinned so the head fallback cannot widen
+    silently. An append-idempotent extractor may
     legitimately want the whole backlog."""
     language = _KeyedLanguage()
     language.heads["g1"] = 5000
@@ -2049,11 +2014,10 @@ async def test_a_scope_the_SOURCE_NEVER_COVERED_stays_at_zero_by_default():
 
 
 async def test_seed_at_head_starts_a_scope_the_source_never_covered_AT_THE_HEAD():
-    """The defect this closes, measured live 2026-09-17: two Discord scopes had
-    no row under the deleted `language` cursor, so both seeded at 0, and one
-    held 1,916 messages with 1,616 unread. For an adaptor whose output is a
-    single evolving HEAD that is worse than slow — every catch-up run installs
-    an account derived from the room's PAST as the answer to what it is NOW."""
+    """A scope with no row under a cursor seeds at 0 and would hold a large
+    unread backlog. For an adaptor whose output is a single evolving HEAD that
+    is worse than slow — every catch-up run installs an account derived from
+    the room's PAST as the answer to what it is NOW."""
     language = _KeyedLanguage()
     language.heads["g1"] = 5000
 
@@ -2144,24 +2108,20 @@ async def test_seeding_leaves_a_scope_the_source_has_never_read():
 
 
 async def test_an_unavailable_outcome_backs_off_even_though_nothing_raised():
-    """The defect a review probe caught, and the reason it hid.
+    """The shape of the failure, and the reason it hides.
 
     `DreamerRuntime.run` catches everything the model call can throw — a 429
     after the retry policy is spent, a reset connection, its own wall clock —
     and returns `unavailable` NORMALLY. So `_run_adaptor`'s `except` never sees
-    a provider outage, and the success path was running `failures.pop(unit)`,
-    which did not merely fail to back off: it CLEARED backoff accrued from an
-    unrelated failure.
+    a provider outage, and a success path running `failures.pop(unit)` would
+    not merely fail to back off: it would CLEAR backoff accrued from an
+    unrelated failure, and an always-unavailable runtime would be hit at full
+    tick cadence forever — exactly what `dream_loop`'s own docstring says the
+    backoff exists to prevent.
 
-    Measured before the fix: 29 model attempts in ~25 ticks against an
-    always-unavailable runtime, versus 1 against one that raises. At the
-    shipped 300s tick that is a 429 answered at full cadence forever — exactly
-    what `dream_loop`'s own docstring says the backoff exists to prevent.
-
-    **The two tests above could not catch it** because their runner RAISES, and
-    the real runtime cannot. That is the shape worth remembering: a double that
-    fails in a way the real collaborator never does tests a path production
-    does not take."""
+    **A runner that RAISES cannot catch it**, and the real runtime cannot
+    raise. That is the shape worth remembering: a double that fails in a way
+    the real collaborator never does tests a path production does not take."""
     language = _KeyedLanguage(age=1e9)
     runner = _RecordingRunner(unavailable_for="facts")
 
@@ -2202,12 +2162,11 @@ async def test_a_nothing_found_run_is_a_success_and_does_not_back_off():
 async def test_the_dream_batch_starts_above_the_consolidation_watermark():
     """**The cursor, asserted rather than assumed.**
 
-    `_dream_once` reads `after_id=watermark`, and nothing checked it: the fake
-    store returned its whole batch whatever `after_id` was, so changing that
-    line to `after_id=0` — every tick re-reading the conversation from the
-    start and re-feeding rows already consolidated — left all 6142 tests green
-    (2026-09-09). It is the only `.since(` call site in `nora/`, so no other
-    test could have caught it.
+    `_dream_once` reads `after_id=watermark`. A fake store that returned its
+    whole batch whatever `after_id` was would leave a change of that line to
+    `after_id=0` — every tick re-reading the conversation from the start and
+    re-feeding rows already consolidated — green. It is the only `.since(`
+    call site in `nora/`, so no other test could catch it.
 
     Five rows, watermark at 3: the Dreamer must be handed the two above it.
     """
@@ -2250,7 +2209,7 @@ async def test_the_dream_batch_starts_above_the_consolidation_watermark():
 
 
 # ---------------------------------------------------------------------------
-# a key that is not a room: its own evidence (design/self-growth/10 §3.2, C2b)
+# a key that is not a room: its own evidence
 # ---------------------------------------------------------------------------
 
 
@@ -2281,7 +2240,7 @@ class _EntityAdaptor(_StubAdaptor):
 
 
 async def test_an_entity_key_wakes_on_its_own_evidence_at_the_batch_or_stale_never_on_none():
-    """The C1 rule on a key that is not a room: the key's OWN count (not a
+    """The wake rule on a key that is not a room: the key's OWN count (not a
     room's `lag`) fires it at `wake_batch`, or at any count once the watermark
     is stale; one short on a young watermark does not, and nothing new never
     does. The population is the adaptor's own `keys()`."""
@@ -2422,9 +2381,9 @@ def _person_adaptor_with(store):
 
 
 async def test_a_person_backlog_it_cannot_settle_is_given_up_on_the_third_try():
-    """Reviewer probe: 400 messages, the newest 300 read, each failure used to
-    halve the limit, so the batch's FIRST item changed every retry and the run
-    never reached three. The held watermark does not change, so it is the same
+    """400 messages, the newest 300 read: a limit that halves on each failure
+    would change the batch's FIRST item every retry, and the run would never
+    reach three. The held watermark does not change, so it is the same
     batch, at the same size, three times."""
     from nora.testing import InMemoryCharacterEvidence
 

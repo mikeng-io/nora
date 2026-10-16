@@ -1,4 +1,4 @@
-"""`parse_note_body` — design/dreamer-agent-loop/42-note-format.md §4.5.
+"""`parse_note_body`.
 
 One test per refusal rule, each on a body that breaks that rule and nothing
 else, so a refusal that fires for the wrong reason fails too: every test
@@ -7,7 +7,7 @@ positive control beside it (the same body, repaired), so a validator that
 refused everything would fail the controls. The rules are falsified one by
 one in `scripts/mutations/note-body.json`.
 
-Every name, id and fact here is invented (§4.7's reviewer example).
+Every name, id and fact here is invented.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ SHOWN = Shown(
     nora_names=frozenset({"Nora"}),
 )
 
-#: §4.7's conformant body, verbatim.
+#: A conformant body.
 CONFORMANT = """\
 ## Decided
 - Dinner for Ada's birthday is on 2026-10-03 Sat (Ada) [4812]
@@ -251,7 +251,7 @@ def test_cited_ids_are_read_off_any_head_even_one_that_does_not_parse():
     assert cited_ids_in("a legacy body with no citations [#4] [x]") == frozenset()
 
 
-# --- a Rollup key is a citation (30 §3 check 1, m4) --------------------------
+# --- a Rollup key is a citation ----------------------------------------------
 
 KEY = rollup_key("stay", "p_ada", "2026-10-01T09:00:00+08:00", "2026-10-01T11:00:00+08:00")
 WITH_KEYS = Shown(
@@ -279,8 +279,8 @@ def test_a_rollup_row_the_write_did_not_read_is_refused():
 
 
 def test_a_group_mixing_ids_and_rollup_keys_yields_both_and_a_key_s_commas_are_not_ids():
-    """The edge and the lineage of a note are read from these two (#663): the
-    messages of a mixed group were missed by the ids-only pattern, and a key
+    """The edge and the lineage of a note are read from these two: the
+    messages of a mixed group must not be missed by an ids-only pattern, and a key
     carries commas (`colocation|u|p_ada,p_ben|...`) that must not be split."""
     coloc = rollup_key("colocation", "u|p_ada,p_ben", "2026-10-01T09:00:00+08:00",
                        "2026-10-01T11:00:00+08:00")
@@ -314,7 +314,7 @@ def test_every_rule_is_asserted_by_a_test_here():
 
 
 def test_in_schema_form_reads_form_not_evidence():
-    """Design 42 §8.6's `form`: a stored body is in the sections when it
+    """`form`: a stored body is in the sections when it
     parses with every cited id carried and every owner a roster name. A
     legacy prose body is not; nor is one that breaks a FORM rule."""
     from nora.domain.note_body import in_schema_form
@@ -328,7 +328,7 @@ def test_in_schema_form_reads_form_not_evidence():
 
 
 def test_dropped_citations_reads_every_head_line_against_the_new_body():
-    """§7's carry-forward check: a line may be rewritten, moved or merged,
+    """The carry-forward check: a line may be rewritten, moved or merged,
     as long as some new line cites ALL of its ids; a legacy head with no
     citations makes it vacuous."""
     from nora.domain.note_body import dropped_citations
@@ -342,7 +342,7 @@ def test_dropped_citations_reads_every_head_line_against_the_new_body():
 
 
 def test_resolve_positions_maps_each_position_to_the_row_it_showed():
-    """G4: `[#n]` is position n of her transcript; a bare id survives only
+    """`[#n]` is position n of her transcript; a bare id survives only
     when the note already cites it."""
     from nora.domain.note_body import NoteBodyError, resolve_positions
 
@@ -359,7 +359,7 @@ def test_resolve_positions_maps_each_position_to_the_row_it_showed():
             raise AssertionError(bad)
 
 
-# ---- the memo body (DEC-306, 12-schemas §3): the same line grammar ----------
+# ---- the memo body (DEC-306): the same line grammar --------------------------
 
 
 def _memo_refused(text: str) -> str:

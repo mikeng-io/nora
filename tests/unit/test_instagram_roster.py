@@ -1,7 +1,7 @@
-"""`InstagramRoster` — the group membership three live failures were waiting on.
+"""`InstagramRoster` — group membership for Instagram rooms.
 
 The shared behaviour lives in `tests/contract/test_roster_source_contract.py`,
-which this implementation now passes alongside Signal's, Discord's and the
+which this implementation passes alongside Signal's, Discord's and the
 fake. What is here is what only Instagram has: the two id spaces, and the
 bridge's own refusal shapes.
 
@@ -11,7 +11,7 @@ unreachable source and a room with nobody in it would otherwise be
 indistinguishable, and every room-scoped tool would answer «there is nobody
 here» when the truth is «I could not look». On Instagram that second sentence
 is routine — an ordinary captcha checkpoints the session — so the distinction
-is not a corner case here, it is the weekly one.
+is not a corner case here.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from nora.platform.instagram.roster import InstagramRoster
 
 ROOM = "1183780976338188"
 
-# The measured three-person room, as the bridge serves it: TWO rows, because
+# A three-person room, as the bridge serves it: TWO rows, because
 # `Users[]` excludes the viewer and Nora is not a member of her own room. The
 # fbids are 15 and 17 digits, the second sharing Nora's own `1784…` prefix —
 # which is exactly why no length or prefix rule may ever be used to tell an
@@ -223,8 +223,8 @@ async def test_a_conversation_id_that_is_not_a_string_never_raises():
     caller is a tool inside a live turn and an exception there is a broken
     turn rather than a degraded answer.
 
-    `.strip()` sat outside the try, so a non-str conversation_id left through
-    an AttributeError. Both call sites wrap it today — that is their belt, not
+    A non-str conversation_id must not leave through an AttributeError from
+    `.strip()`. Both call sites wrap it today — that is their belt, not
     this module's braces, and a third caller would not inherit it.
 
     PROBE: drop the isinstance guard and this raises instead of degrading.

@@ -1,11 +1,9 @@
-"""Information parity of step 3b of `design/context-assembly/04-every-occasion.md`
-§5: the Cognition prompt changed FORMAT, and nothing it said was lost.
+"""Information parity of the Cognition prompt: the FORMAT changed, and nothing it said was lost.
 
-The oracle is the step 3a capture of the OLD format
-(`tests/fixtures/cognition_render_pre3b_baseline.json`, taken from `master` before
-the module moved and never regenerated). The cases are the ones that capture was
-made from (`test_cognition_render_goldens.CASES`), rendered now through the NEW
-renderer. Each side is read into FACTS, by what it is (the old by pattern over its
+The oracle is the capture of the OLD format
+(`tests/fixtures/cognition_render_pre3b_baseline.json`, never regenerated). The cases are the
+ones that capture was made from (`test_cognition_render_goldens.CASES`), rendered now through
+the NEW renderer. Each side is read into FACTS, by what it is (the old by pattern over its
 lines, the new by parsing it as XML, which is itself a property: every case renders
 well-formed), and the facts are compared:
 
@@ -25,9 +23,8 @@ well-formed), and the facts are compared:
 render may show fewer of the newest rows than the old did (never different ones,
 never more): the rows it shows are a suffix of the old shown set, and what it shows
 plus what it cut is exactly what the old showed plus cut. Every other case must
-show every fact the old one did. A pre-existing silent cap (the events of a room
-past `register_lines` carried no marker) is now said (`not_listed`), which only
-adds a fact.
+show every fact the old one did. The events of a room past `register_lines` were capped
+silently in the old format; the new one says so (`not_listed`), which only adds a fact.
 """
 
 from __future__ import annotations
@@ -342,7 +339,7 @@ def test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old(name: str):
         assert new.notes_not_listed == old.notes_not_listed
     assert new.events == old.events
     if name == "register-note-and-event-line-caps":
-        # the events cap was silent in the old format; it says so now
+        # the events cap was silent in the old format; the new one says so
         assert new.events_not_listed == 4
     elif name != "register-cut-at-its-character-budget":
         assert new.events_not_listed == 0

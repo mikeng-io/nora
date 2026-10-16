@@ -103,7 +103,7 @@ async def test_a_value_a_reply_cannot_carry_comes_with_a_note_saying_so():
 
 
 async def test_a_value_only_an_earlier_revision_held_still_comes_with_the_note():
-    """Review of #781: `superseded` carries earlier Kept lines into the
+    """`superseded` carries earlier Kept lines into the
     result, so the egress note reads them as well as the head."""
     memos = InMemoryMemoStore()
     memo = await _seed(memos, body="## Kept\n- the router key is sk-abcdefghijklmnopqrstuvwx [101]")

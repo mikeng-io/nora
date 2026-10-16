@@ -1,8 +1,7 @@
 """`evals/corpora_assess.py` — the Assess adaptor's labelled corpora load and
-the runner collects them (design/cognition-loop/30-cognition.md §6,
-40-register.md §5, DEC-240). Loading and shape only: running these cases
-against a live model is `nora-eval`'s separate, later job (this branch's own
-instruction; see `evals/corpora_assess.py`'s module docstring)."""
+the runner collects them (DEC-240). Loading and shape only: running these cases
+against a live model is `nora-eval`'s job (see `evals/corpora_assess.py`'s
+module docstring)."""
 
 from __future__ import annotations
 
@@ -52,7 +51,7 @@ def test_no_case_input_row_is_missing_a_speaker_or_text(name):
 
 @pytest.mark.parametrize("name", _CORPORA)
 def test_no_placeholder_speaker_reads_as_a_real_persons_name(name):
-    """This branch's own constraint: never a real member name. Placeholder
+    """Never a real member name. Placeholder
     speakers are `P<n>`, the Rollup stand-in `rollup`, or `Nora` for her own
     send (the memo corpus: a memo may cite it, DEC-306), nothing else."""
     for case in load_assess_corpus(name):
@@ -64,9 +63,8 @@ def test_no_placeholder_speaker_reads_as_a_real_persons_name(name):
 
 
 def test_the_dinner_case_is_present_and_truncated_at_confirm():
-    """40-register.md §5's dinner case: proposed -> revised (B) -> revised
-    (C) -> confirmed, truncated here (no `happened`, no stories, no memo —
-    those need steps 5 and 7)."""
+    """The dinner case: proposed -> revised (B) -> revised (C) -> confirmed,
+    truncated here (no `happened`, no stories, no memo)."""
     cases = {c.name: c for c in load_assess_corpus("assess_event") if c.series == "dinner"}
     assert set(cases) == {
         "dinner_case_1_propose", "dinner_case_2_revise_b",
@@ -129,7 +127,7 @@ def test_a_negative_case_must_expect_outcome_none(tmp_path, monkeypatch):
 
 
 def test_the_memo_corpus_routes_every_settled_looking_negative_somewhere():
-    """DEC-306's routing rule (40-register §1): a speaker's own fact is
+    """DEC-306's routing rule: a speaker's own fact is
     `remember`'s, an open one a note's, a dated one an event's, never a memo;
     and the corpus carries revisions, withdrawals and her own send cited."""
     cases = load_assess_corpus("assess_memo")

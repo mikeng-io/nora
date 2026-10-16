@@ -1,5 +1,5 @@
 """`evals/corpora/tool_selection_cognition.yaml` — the Cognition catalogue's
-S2 corpus (migration steps 3a-ii and 3a-iii). COLLECTION only: this test loads
+S2 corpus. COLLECTION only: this test loads
 and censuses the corpus (`evals.scenarios.load_corpus`/`census`) the way
 `python -m evals` does before any run — it makes no model call and drives no
 case. Running it for real goes through `evals.rebuilt.entry._cognition_probe`
@@ -13,14 +13,14 @@ from evals.scenarios import CORPUS_ENTRY, ROUTED_CORPORA, census, load_corpus
 
 NAME = "tool_selection_cognition"
 
-#: Every verb `30-cognition.md` §2's write/pace/act table names, plus the
+#: Every Cognition write/pace/act verb, plus the
 #: two confusable reads this corpus's last case checks — the vocabulary a
 #: `metadata.tools`/`not_tools` entry may name.
 _COGNITION_CATALOGUE = frozenset({
     "note_create", "note_update", "event_propose", "event_revise",
     "event_set_status", "standing_revise", "wake_at", "wake_move", "wake_cancel",
     "remind", "remind_move", "remind_cancel", "close", "record_query", "rollup_read",
-    # PR B's two reads and the siblings they are measured against.
+    # The rollup and standing reads and the siblings they are measured against.
     "standing_read", "where_been", "note_read", "note_search",
     # DEC-306: the memo verbs, the memo read, and the retire a settled note's
     # memo is followed by.
@@ -50,7 +50,7 @@ def test_census_reports_every_case_active_and_none_parked():
 
 
 def test_no_real_name_or_quoted_message_appears_in_any_case_input():
-    """The migration's own safety rule ("never name room members or quote
+    """The safety rule ("never name room members or quote
     messages"), checked against this corpus's own content: `input` is
     always an agenda item's FACT sentence, never a transcript line — none
     of the names this repo's own fixtures use for a real member (Miles,
@@ -70,10 +70,10 @@ def test_every_case_names_only_verbs_from_the_cognition_catalogue():
 
 
 def test_each_new_read_is_measured_against_the_sibling_it_is_confusable_with():
-    """PR B's two tools enter the catalogue with routing cases (nora-tool §2.3, §7):
-    `rollup_read` against `record_query` and `where_been` (the 90-day cap it
-    supersedes for the Dreamer), `standing_read` against `note_read`/`note_search`,
-    and the order a revision needs (read before `standing_revise`)."""
+    """`rollup_read` and `standing_read` each have routing cases against their
+    confusable siblings: `rollup_read` against `record_query` and `where_been`,
+    `standing_read` against `note_read`/`note_search`, and the order a
+    revision needs (read before `standing_revise`)."""
     by_name = {c.name: c.metadata for c in load_corpus(NAME)}
     against = {
         tool: {n for m in by_name.values() if tool in m["tools"] for n in m.get("not_tools", [])}

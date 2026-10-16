@@ -1,5 +1,4 @@
-"""`instagram_read` by HANDLE and by LINK, end to end below the model
-(design/instagram-adoption/15 §Links, /17 P10, P12, /18 §`instagram_read`).
+"""`instagram_read` by HANDLE and by LINK, end to end below the model.
 
 The tool parses a pasted link with the one link parser
 (`nora.domain.instagram_links`), the REAL router resolves a username through
@@ -320,7 +319,7 @@ async def test_a_handle_nobody_holds_is_nothing_found_saying_so(world):
 
 
 async def test_a_profile_is_read_for_anyone_including_a_stranger(world):
-    """A profile has no reach check (15): a pasted link to a stranger's
+    """A profile has no reach check: a pasted link to a stranger's
     profile is read."""
     fake, read = world()
     out = await read(link="https://www.instagram.com/some.stranger/")
@@ -356,7 +355,7 @@ async def test_a_listed_persons_story_by_handle_or_link_is_read(world, arg):
 async def test_a_story_of_someone_in_none_of_her_rooms_is_refused_and_never_requested(
     world, arg,
 ):
-    """THE negative (17 P10): the account maps to nobody, so it is in none of
+    """THE negative: the account maps to nobody, so it is in none of
     her rooms. `refused`, and the bridge's own log holds the lookup and NO
     story request. Positive control: the same stranger's profile IS read, so
     the missing story call is the reach check and not a lookup failure."""
@@ -383,7 +382,7 @@ async def test_a_story_link_to_someone_in_the_chat_but_listed_nowhere_is_refused
 
 
 async def test_a_story_link_to_one_of_two_accounts_reads_that_account(world):
-    """The multi-account case (15 §Links, 17 P10): Robin has two accounts. A
+    """The multi-account case: Robin has two accounts. A
     story link names ONE, and that one is read. The same friend by name
     stays `ambiguous` and nothing is sent: nothing in «Robin» says which."""
     fake, read = world()
@@ -404,7 +403,7 @@ async def test_a_story_link_to_one_of_two_accounts_reads_that_account(world):
         _no_ids(out)
 
 
-# ---- one post or reel, by link (P12) -------------------------------------------
+# ---- one post or reel, by link -------------------------------------------------
 
 
 async def test_a_carousel_of_three_returns_three_items_in_order(world):
@@ -469,7 +468,7 @@ async def test_the_post_routes_failures_map_to_their_states(world, code, status)
 
 @pytest.mark.parametrize("what", ["profile", "story"])
 async def test_a_post_link_with_what_is_not_guessed_at(world, what):
-    """18: a link whose kind contradicts `what` answers `unavailable`, and
+    """A link whose kind contradicts `what` answers `unavailable`, and
     nothing is sent. The same link alone is read."""
     fake, read = world()
     out = await read(link=_REEL, what=what)
@@ -507,8 +506,8 @@ _UNASKED = [{"fire_turn": True}, {"dream_adaptor": "proactive"}]
 async def test_a_background_turn_is_refused_a_story_post_or_reel_before_any_call(
     world, turn, arg,
 ):
-    """Nora reads a story, and a shared post or reel, only when a person asks
-    (18, 13 §2026-09-24). A fire turn or a Dreamer pass is `refused` before
+    """Nora reads a story, and a shared post or reel, only when a person asks.
+    A fire turn or a Dreamer pass is `refused` before
     anything is looked up or sent. Positive control: the SAME turn reads a
     profile by link, which stays allowed everywhere."""
     fake, read = world(**turn)
@@ -523,7 +522,7 @@ async def test_a_background_turn_is_refused_a_story_post_or_reel_before_any_call
 # ---- what the tool refuses before anything ---------------------------------------
 
 
-#: #435's hostile table (tests/unit/test_instagram_parser.py), as links
+#: The hostile table (tests/unit/test_instagram_parser.py), as links
 #: pasted into the tool, plus the suffix-host shapes. Not one may reach the
 #: bridge.
 _HOSTILE = [
@@ -620,11 +619,11 @@ async def test_exactly_one_input_is_required(world, arg):
     assert fake.calls == []
 
 
-# ---- `url` is `link` (design 13, 2026-09-24) -----------------------------------
+# ---- `url` is `link` ------------------------------------------------------------
 #
-# Every `instagram_read` call the replays made from the deferred catalogue,
-# before the schema was loaded, passed `url=`. With no such parameter,
-# Strands dropped it and each call failed «exactly one».
+# A model calling from the deferred catalogue, before the schema is loaded,
+# passes `url=`. Without such a parameter Strands drops it and the call fails
+# «exactly one».
 
 
 @pytest.mark.parametrize(
@@ -647,8 +646,8 @@ async def test_url_is_read_exactly_as_link_would_be(world, url, calls):
 async def test_url_survives_strands_argument_validation(world):
     """Through the adapter the agent loop runs, not the bare closure: Strands
     validates the model's input through a model built from the signature,
-    which drops any key it does not declare. This is the path the live
-    `url=` calls took, and the bridge is asked for the post."""
+    which drops any key it does not declare. This is the path a live
+    `url=` call takes, and the bridge is asked for the post."""
     from nora.agent.ports import adapt
 
     fake, spec = world(as_spec=True)
@@ -735,7 +734,7 @@ async def test_a_handle_shaped_like_a_key_is_refused_by_the_egress_screen(world)
 
 
 async def test_the_exact_match_is_read_whatever_order_the_bridge_listed_it_in(world):
-    """17 P9 measured an exact match that was not the first result. The
+    """An exact match need not be the first result. The
     bridge filters, and the client does not trust that: a body listing a
     near match FIRST still reads the exact one."""
     fake, read = world()
@@ -763,7 +762,7 @@ async def test_a_lookup_with_no_exact_match_is_unavailable_and_reads_nothing(wor
 
 
 async def test_every_request_is_a_get_on_an_account_or_post_resource(world):
-    """Read-only at the client layer (18 §"Read-only, at three layers")."""
+    """Read-only at the client layer."""
     fake, read = world()
     for arg in (
         {"handle": "example_friend", "what": "profile"},
@@ -789,11 +788,11 @@ class _NoPersons:
 
 
 def test_the_schema_takes_one_of_person_handle_or_link_and_an_optional_read():
-    """18 as built: `what` is an enum of the two reads a name or a handle can
+    """`what` is an enum of the two reads a name or a handle can
     ask for, and nothing is required, because exactly one of three inputs is
-    given and a link needs no `what`. No `limit` or `cursor` until P13.
-    `url` is `link` under the name a model reaches for first (design 13,
-    2026-09-24), declared because Strands drops an undeclared argument."""
+    given and a link needs no `what`. No `limit` or `cursor`.
+    `url` is `link` under the name a model reaches for first,
+    declared because Strands drops an undeclared argument."""
     from nora.agent.ports import adapt
 
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
@@ -811,7 +810,7 @@ def test_the_schema_takes_one_of_person_handle_or_link_and_an_optional_read():
     assert schema["properties"]["what"]["enum"] == ["profile", "story"]
 
 
-# ---- a story by handle or link is scoped to THIS room (2026-09-24) -----------
+# ---- a story by handle or link is scoped to THIS room -------------------------
 
 
 @pytest.mark.parametrize(

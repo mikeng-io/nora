@@ -1,5 +1,5 @@
 """`room_list` and `room_read` — which rooms this group has, and what is said
-in them (design/self-awareness/03, /07).
+in them.
 
 The rules under test, and why each is a test rather than a comment:
 
@@ -221,16 +221,15 @@ async def test_room_list_says_no_other_groups_when_there_are_none(tmp_path, pers
     assert "other groups" not in result["note"]
 
 
-# ---- the activity comparison, stated (design/self-awareness/07) -------------
+# ---- the activity comparison, stated -------------
 
 
 async def test_room_list_puts_the_busiest_room_first_and_names_it_in_the_note(
     policy, persons, store,
 ):
-    """Measured 2026-09-24: asked which group was busiest, she called
-    room_list and then read every room with room_read to count messages the
-    counts already held. The comparison is now stated, so there is nothing
-    left to re-derive."""
+    """The comparison of room activity is stated in the result, so asked which
+    group is busiest she need not read every room with room_read to count
+    messages the counts already hold."""
     result = await _call(_tools(policy, persons, store)["room_list"])
 
     assert [r["room"] for r in result["rooms"]] == ["Friends WA", "Friends", "Zone 42"]
@@ -352,9 +351,9 @@ async def test_room_list_carries_no_member_name_and_no_id(policy, persons, store
 
 async def test_an_unlabelled_room_is_named_by_its_network_never_its_id(persons, store):
     """Built as a `Policy` directly rather than through `load_policy`: an
-    allowed room with no label is now a STARTUP error there (#200 part 2), so
-    a `policy.toml` can no longer carry the case this test proves is still
-    handled — the render-time floor stays defense in depth regardless."""
+    allowed room with no label is a STARTUP error there, so a `policy.toml`
+    cannot carry the case this test proves is handled — the render-time floor
+    is defense in depth."""
     convs = (
         Conversation(
             platform="signal", ids=frozenset({"SIGNAL-FRIENDS-ID"}), persons=None,
@@ -480,7 +479,7 @@ async def test_room_read_reads_the_named_room_not_this_one(policy, persons, stor
 async def test_room_read_says_when_each_message_was_sent_in_words(
     policy, persons, store,
 ):
-    """design/self-awareness/08 §1: «what did they say yesterday» needs a
+    """«what did they say yesterday» needs a
     calendar day on every row. The raw epoch `ts` was unreadable as a time and
     is a handle R-18 keeps off the wire, so it must not come back at all."""
     result = await _call(_tools(policy, persons, store)["room_read"], room="Friends WA")
@@ -492,7 +491,7 @@ async def test_room_read_says_when_each_message_was_sent_in_words(
 
 
 async def test_room_read_before_reads_the_room_up_to_that_time(policy, persons, store):
-    """design/self-awareness/08 §2: «what did they say on WhatsApp yesterday»
+    """«what did they say on WhatsApp yesterday»
     reads that room up to the time asked, not its newest rows."""
     result = await _call(_tools(policy, persons, store)["room_read"],
                          room="Friends WA", before="2026-09-24 08:00")
@@ -610,8 +609,7 @@ def test_the_room_tools_are_declared_read_only_three_state_and_not_hot(name):
 
 
 #: ADR 0015 §3's ceilings for the level each tool is written to. The `level`
-#: field is not on `NativeTool` yet (it lands with the first rewrite batch),
-#: so the intended level is pinned here until it can be declared there.
+#: field is not on `NativeTool`, so the intended level is pinned here.
 _INTENDED = {"room_list": (1, 80), "room_read": (2, 160)}
 
 

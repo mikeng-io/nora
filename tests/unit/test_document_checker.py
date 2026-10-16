@@ -3,7 +3,7 @@ why, and that it never raises and never reads a failure of its own as a pass.
 
 The corpus is the one generated from the TypeScript catalog (`nora/documents/corpus.json`),
 the same documents that Zod and ajv are tested on, so the three judges are compared on
-identical inputs. Design: design/artifact/00-design.md §22, §23.
+identical inputs.
 """
 
 from __future__ import annotations
@@ -436,15 +436,14 @@ def test_a_url_a_media_code_and_a_tone_are_not_in_the_search_text() -> None:
     assert "warning" not in result.text.split()
 
 
-# ================================================== review of PR 648 (2026-10-01)
-# Each test below failed against the first version of the checker.
+# ================================================== cost bounds and error messages
 def _json_doc(*children: Any, title: str = "T") -> str:
     return json.dumps(_page(*children, title=title), ensure_ascii=False)
 
 
 def test_hostile_markdown_does_not_cost_seconds() -> None:
-    # `_LINK` rescanned to the end from every `[`: twelve nodes of 20,000 of them,
-    # under the size cap, took 9.5 s of CPU before being refused.
+    # `_LINK` must not rescan to the end from every `[`: twelve nodes of 20,000 of
+    # them, under the size cap, are refused without seconds of CPU.
     started = time.monotonic()
     nodes = [{"type": "Markdown", "props": {"text": "[" * 20000}}] * 12
     assert _rules(check_document(_page(*nodes))) == {"text"}
@@ -654,12 +653,12 @@ def test_a_wheel_ships_the_files_the_checker_reads() -> None:
         assert any(fnmatch.fnmatch(f"documents/{name}", g) for g in globs), name
 
 
-# ============================================ second review of PR 648 (2026-10-01)
+# ============================================ normalising cannot break a limit
 def test_what_is_stored_is_what_was_judged_so_normalising_cannot_break_a_limit() -> None:
-    # NFC ran AFTER validation, so a value that passed could grow past its limit
-    # (U+0958 is one character that NFC writes as two) or become a forbidden
+    # NFC runs BEFORE validation: otherwise a value that passed could grow past its
+    # limit (U+0958 is one character that NFC writes as two) or become a forbidden
     # statement (U+212A is `K`, U+037E is `;`), and the checker's own canonical
-    # output then failed its own schema.
+    # output would fail its own schema.
     grows = check_document(_page({"type": "Badge", "props": {"text": "क़" * 40}}))
     assert grows.status == "refused"
     assert any(f.rule == "maxLength" for f in grows.findings)
@@ -792,11 +791,12 @@ def test_the_isolation_contract_names_every_package_beside_documents() -> None:
     assert names <= forbidden, sorted(names - forbidden)
 
 
-# ============================== third review of PR 648: stripping belongs before judging
+# ============================== stripping belongs before judging
 def test_colour_codes_are_stripped_before_the_text_is_judged() -> None:
-    # `_strip_ansi` ran after the schema and normalisation, so a Code block that was
-    # only a colour code passed `minLength` as "" and then failed its own re-check, and
-    # stripping joined characters NFC had not seen together, giving two hashes.
+    # `_strip_ansi` runs before the schema and normalisation: after them, a Code block
+    # that was only a colour code would pass `minLength` as "" and then fail its own
+    # re-check, and stripping would join characters NFC had not seen together, giving
+    # two hashes.
     only_colour = check_document(_page({"type": "Code", "props": {"text": "\x1b[31m"}}))
     assert only_colour.status == "refused"
     assert "minLength" in _rules(only_colour)
@@ -815,7 +815,7 @@ def test_colour_codes_are_stripped_before_the_text_is_judged() -> None:
 
 
 def test_a_stored_document_always_passes_its_own_check_with_the_same_hash() -> None:
-    # The invariant both regressions broke: what is stored is what was judged.
+    # The invariant: what is stored is what was judged.
     samples = [
         _page({"type": "Code", "props": {"language": "text", "text": "\x1b[1mbold\x1b[0m é"}}),
         _page({"type": "Badge", "props": {"text": "क़" * 20}}, title="Café"),
@@ -831,13 +831,13 @@ def test_a_stored_document_always_passes_its_own_check_with_the_same_hash() -> N
 
 
 def test_idempotence_holds_for_adversarial_strings() -> None:
-    # The class of bug both regressions belonged to: a step that changes a string after
+    # The class of bug guarded: a step that changes a string after
     # it was judged. A seeded fuzz over characters that normalise, compose, grow or
     # strip (combining marks, jamo, singletons, ESC sequences, CJK, bidi, NUL), through
     # every string-carrying component: whenever the verdict is `ok`, the stored form
     # must pass its own check with the same hash, and nothing may raise. Each kind has
     # its own generator and seed, so adding a kind cannot shuffle the others and
-    # silently stop them finding what they found (measured: one shared stream did).
+    # silently stop them finding what they found.
     import random
 
     alphabet = [
@@ -945,9 +945,9 @@ def test_idempotence_holds_for_adversarial_strings() -> None:
 
 
 def test_a_json_break_in_long_text_says_where_so_the_writer_can_fix_it() -> None:
-    """2026-10-02: a 10,000-character spec sent as text broke at character 7,247 and the finding
-    said only «Expecting ',' delimiter: line 1 column 7248». The model had nothing to fix, saved the
-    draft elsewhere, and told the room the document was made."""
+    """A JSON break deep in a long text names the place, not only «Expecting ',' delimiter:
+    line 1 column N»: with nothing to locate, the model has nothing to fix and may save
+    the draft elsewhere and report the document as made."""
     good = (
         '{"version": 1, "root": {"type": "Page", "props": {"title": "T"}, "children": '
         '[{"type": "Markdown", "props": {"text": "%s"}}]}}'

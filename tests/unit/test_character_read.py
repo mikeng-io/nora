@@ -1,5 +1,5 @@
-"""`character_read` (design/self-growth/10-character.md §6 C4): the current
-account of a room or a person of the caller's unit, in the R-27 three states.
+"""`character_read`: the current account of a room or a person of the caller's
+unit, in the R-27 three states.
 
 The boundary is the unit, drawn by scope: a room or a person of another unit is
 never a candidate, so it answers exactly like a name nobody uses and the store
@@ -128,9 +128,9 @@ async def test_a_rooms_account_comes_back_with_its_time_and_revision(tmp_path):
 
 
 async def test_a_persons_account_is_read_once_from_their_units_key(tmp_path):
-    """One account per (unit, person) since C2b (design/self-growth/10 §3): Ada
-    is listed in two rooms of u1 and her account is read once, from the unit
-    key; the pre-C2b per-room keys and the other unit's are never read."""
+    """One account per (unit, person): Ada is listed in two rooms of u1 and her
+    account is read once, from the unit key; per-room keys and the other unit's
+    are never read."""
     store = InMemoryCultureStore()
     await _seed(store, character_key("u1", "p1"), "Ada organises.")
     await _seed(store, character_key("ROOM-A", "p1"), "OLD PER-ROOM")

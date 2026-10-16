@@ -1,12 +1,10 @@
 """`MediaJoin` — `[image a3f2c1]` becomes `[image a3f2c1: …]`, for every
-transcript a model is about to read (issue #116).
+transcript a model is about to read.
 
-Tested HERE rather than through one consumer, because the whole point of the
-class is that there is one implementation of the decision and EIGHT callers of
-it. An earlier cut had this logic as a private method on the tag assembler and
-its tests written through `assemble`, which is exactly why the other seven
-transcript builders could ship rendering bare handles without a single test
-noticing: the behaviour was pinned to one caller's shape.
+Tested HERE rather than through one consumer, because the class is one
+implementation of the decision with EIGHT callers. A test written through one
+caller's shape (such as `assemble`) would leave the other transcript builders
+able to render bare handles without a single test noticing.
 
 `tests/architecture/test_media_join_reaches_every_transcript.py` is the other
 half — that every builder actually calls it, with the builder set derived from
@@ -82,8 +80,7 @@ async def test_a_comprehended_image_renders_its_title_and_description():
 
 
 async def test_an_uncomprehended_image_renders_the_bare_handle():
-    """R-51's render half. Nothing has read those bytes yet — which is exactly
-    the state every medium was in before this existed — so the placeholder
+    """R-51's render half. Nothing has read those bytes yet, so the placeholder
     claims nothing. Never `[image a3f2c1: ]`.
 
     Positive control: the SAME row with a comprehension on it renders the
@@ -95,7 +92,7 @@ async def test_an_uncomprehended_image_renders_the_bare_handle():
 
 
 async def test_a_voice_note_renders_its_whole_transcript_and_is_never_clipped():
-    """Issue #116 decision 4, and the explicit exception in the render bound.
+    """The explicit exception in the render bound.
     A voice note is conversation CONTENT — collapsing it to title+description
     would mean Nora stops hearing what people actually said and starts reading
     a summary of it. The clip that binds every other medium does not apply."""
@@ -123,10 +120,9 @@ async def test_every_other_mediums_detail_is_bounded():
 
 async def test_the_coverage_caveat_survives_the_bound():
     """**The caveat is appended AFTER the clip, and that is the whole reason it
-    is a separate field.** Glued onto the description it was clipped off
+    is a separate field.** Glued onto the description it would be clipped off
     exactly when the description was rich — a confident-sounding partial read
-    of a twenty-minute clip with its «I have not seen the rest» cut mid-word,
-    on the one surface issue #117 exists for."""
+    of a twenty-minute clip with its «I have not seen the rest» cut mid-word."""
     join = _join([_obj(
         title="a race", description="y" * 500,
         provenance={"media_caveat": "(I only watched the first 4 of them.)"},
@@ -143,7 +139,7 @@ async def test_content_is_the_fallback_when_a_read_produced_no_headline():
     """A video read with no `comprehension_text_model` (the shipped default)
     has a full timecoded window run and no synthesized title. Without this
     fallback the row is `comprehended` — so the job never retries it — and
-    reaches the prompt as nothing at all: the read happened, cost ten
+    reaches the prompt as nothing at all: the read happened, cost
     video-model calls, and was invisible."""
     got = await _join([_obj(
         media_type="video/mp4", content="0:00 — a car pulls away")]).enrich(
@@ -174,13 +170,10 @@ async def test_a_store_outage_leaves_the_rows_exactly_as_stored():
     """Fail-soft: a thinner prompt beats no reply. The handles are what the row
     actually says, so degrading to them claims nothing untrue.
 
-    It is a DISTINCT branch from an uncomprehended row now, which it was not
-    before: `fail=True` used to make `get` answer `None` — the ordinary-miss
-    path — so this test and
-    `test_an_uncomprehended_image_renders_the_bare_handle` exercised the same
-    code and only one of them knew it. `lookup`'s availability axis is what
-    separates them, and the counter below is what proves this one took the
-    other branch."""
+    It is a DISTINCT branch from an uncomprehended row: `lookup`'s availability
+    axis separates an unreachable index from an ordinary miss (`get` answers
+    `None` for both), and the counter below is what proves this one took the
+    unavailable branch."""
     metrics = Metrics()
     join = MediaJoin(
         store=FakeMediaObjectStore(fail=True), screen=_screen, metrics=metrics,
@@ -244,10 +237,10 @@ async def test_a_bracket_in_the_senders_own_text_is_not_a_placeholder():
 
 
 async def test_it_joins_an_unattributed_row_too():
-    """Lazy adoption's row type. These rows are FED TO HONCHO, and on master a
-    photo's description and a voice note's words rode in `body` — so a
-    back-filled row reached memory with them. `UnattributedRow` gained
-    `media_json` for exactly this."""
+    """Lazy adoption's row type. These rows are FED TO HONCHO, so
+    `UnattributedRow` carries `media_json`: a back-filled row reaches memory
+    with a photo's description and a voice note's words, which are not in
+    `body`."""
     row = UnattributedRow(
         id=1, platform="signal", sender_id="+852111", ts=1,
         body="睇下 [image a3f2c1]", conversation_id="g1",
@@ -262,10 +255,9 @@ async def test_it_joins_an_unattributed_row_too():
 
 async def test_the_cost_is_measured_only_when_the_join_actually_ran():
     """«Instruments measure the RESULT; something must measure the COST.»
-    `design/19` §10 names this join as what would reopen the decision — one
-    sequential `get` per distinct blob, now on eight paths — and a reopening
-    condition nothing can read is a hope. A window with no media must not
-    dilute it with zeros."""
+    The join costs a `get` per distinct blob on eight paths, and a cost
+    nothing can read is a hope. A window with no media must not dilute it with
+    zeros."""
     metrics = Metrics()
     join = _join([_obj(title="a cat")], metrics=metrics)
 
@@ -286,8 +278,7 @@ async def test_the_cost_is_measured_only_when_the_join_actually_ran():
     # adoption's 1000-row backfill and a tag window in one series, where the
     # batch paths (the exact ones where N is not 1) saturate `+Inf` and the tag
     # path is the only thing anybody can read. Asserted on the LATENCY series
-    # as well as the count, because they are two observations and only one of
-    # them was checked.
+# as well as the count, because they are two separate observations.
     await join.enrich([_row("[image a3f2c1]")], path="adoption")
     rendered = metrics.render()
     assert 'nora_media_join_seconds_count{path="adoption"} 1.0' in rendered
@@ -295,11 +286,11 @@ async def test_the_cost_is_measured_only_when_the_join_actually_ran():
     assert 'nora_media_blobs_joined_count{path="adoption"} 1.0' in rendered
 
 
-# ---- what round three's mutation sweep found unguarded ---------------------
+# ---- guards for behaviours a mutation sweep can break ---------------------
 
 
 async def test_a_forged_label_cannot_switch_off_the_render_bound():
-    """**A sender-controllable render bound.** The `handle -> label` map was
+    """**A sender-controllable render bound.** The `handle -> label` map is
     built from `placeholders_in(row.body)` — sender-supplied text — and
     `voice note` is the one label whose detail renders UNCLIPPED. So a member
     sends a photo of a document (OCR fills `content` with the page), then types
@@ -345,11 +336,12 @@ async def test_a_real_voice_note_label_is_still_honoured():
 
 
 async def test_an_unreadable_index_is_unavailable_and_never_nothing_found():
-    """**The failure had no counter and, on the deployment, no log** — container
-    logs are not on the docker log driver, so a permanently failing join meant
-    every prompt on eight paths quietly losing its media with nothing to read.
+    """**A failing join is counted**, because on the deployment it has no log:
+    container logs are not on the docker log driver, so a permanently failing
+    join would mean every prompt on eight paths quietly losing its media with
+    nothing to read.
 
-    It could not be counted before, either: `MediaObjectStore.get` answers
+    It cannot be counted from `get`: `MediaObjectStore.get` answers
     `None` for a missing row and for an unreachable database alike, which its
     contract suite pins. `lookup` is the port method with the availability axis
     that makes R-27's three states expressible here at all."""
@@ -386,10 +378,9 @@ async def test_an_unread_window_is_nothing_found_and_not_an_outage():
 
 
 async def test_one_lookup_serves_a_whole_window():
-    """A BOUND to go with the measurement. It was one sequential `get` per
-    distinct blob with no timeout — fine for a three-blob tag window, an
-    unbounded number of round trips at process start for adoption's 1000-row
-    backfill scan and for the Dreamer's batch."""
+    """A BOUND to go with the measurement. An unbatched `get` per distinct blob
+    is fine for a three-blob tag window but an unbounded number of round trips
+    for adoption's 1000-row backfill scan and for the Dreamer's batch."""
 
     class _Counting(FakeMediaObjectStore):
         calls = 0
@@ -410,15 +401,14 @@ async def test_one_lookup_serves_a_whole_window():
 
 
 async def test_every_blob_in_a_backfill_is_joined_in_bounded_batches():
-    """**The 200-blob cap was data loss on the one caller that is a backfill.**
+    """**A cap on distinct blobs is data loss on the one caller that is a backfill.**
 
-    It kept the LAST 200 distinct blobs; `RecordStore.unattributed` returns
-    rows OLDEST FIRST, adoption feeds each to Honcho and then calls
-    `set_person_id` — which is exactly what removes the row from every future
-    scan. So an operator adding a person after months of chat had the oldest
-    blobs in the scan go into memory as bare handles and be marked adopted,
-    with no second pass ever. For voice notes and stickers that is a regression
-    against master, where the words rode in `messages.body`.
+    A cap that kept the LAST N distinct blobs would drop the oldest:
+    `RecordStore.unattributed` returns rows OLDEST FIRST, adoption feeds each to
+    Honcho and then calls `set_person_id` — which is exactly what removes the
+    row from every future scan. So an operator adding a person after months of
+    chat would have the oldest blobs in the scan go into memory as bare handles
+    and be marked adopted, with no second pass ever.
 
     Batching bounds the same thing without losing anything: each QUERY asks
     about at most `query_blobs`, and the number of queries is bounded by the
@@ -449,9 +439,9 @@ async def test_every_blob_in_a_backfill_is_joined_in_bounded_batches():
 
 
 async def test_the_oldest_blob_is_joined_too():
-    """The direction the truncation got wrong, pinned on its own. `[:n]` and
-    `[-n:]` both «bound» the work and they lose opposite ends; with the cap
-    gone neither is a choice anybody has to make right."""
+    """The direction of a truncation, pinned on its own. `[:n]` and
+    `[-n:]` both «bound» the work and they lose opposite ends; with batching
+    neither is a choice anybody has to make right."""
     old_sha, new_sha = "aa0001" + "0" * 58, "bb0002" + "0" * 58
     join = MediaJoin(
         store=FakeMediaObjectStore([
@@ -470,8 +460,8 @@ async def test_the_oldest_blob_is_joined_too():
 
 
 async def test_the_blob_count_is_the_true_count():
-    """It was observed AFTER the truncation rebound the set, so the histogram
-    could never exceed the cap — and 201 blobs was indistinguishable from
+    """The histogram observes the set BEFORE it is bounded: observed after, it
+    could never exceed the cap, and 201 blobs would be indistinguishable from
     5000, which is the number needed to size the very bound its own help text
     says it exists to size."""
     metrics = Metrics()
@@ -525,12 +515,11 @@ async def test_a_batch_that_cannot_be_read_refuses_the_whole_window():
 
 
 async def test_a_hanging_store_costs_the_join_and_not_the_turn():
-    """`enrich` catches exceptions; it cannot catch a HANG. Six of the eight
-    paths awaited the query bare — `nora/infra/sql/engine.py` sets no
-    `command_timeout` — so a Postgres that was slow but alive held every tag
-    reply until the agent loop's own budget killed the whole turn as
-    `invocation_timeout`, where it should degrade to bare handles in
-    milliseconds."""
+    """`enrich` catches exceptions; it cannot catch a HANG.
+    `nora/infra/sql/engine.py` sets no `command_timeout`, so a Postgres that is
+    slow but alive would hold every tag reply until the agent loop's own budget
+    killed the whole turn as `invocation_timeout`, where it should degrade to
+    bare handles in milliseconds."""
     import asyncio
 
     class _Hangs(FakeMediaObjectStore):
@@ -552,10 +541,10 @@ async def test_a_hanging_store_costs_the_join_and_not_the_turn():
 
 
 async def test_a_store_that_raises_is_counted_not_only_logged():
-    """The outer `except`'s own counter. R-27's `unavailable` covered the
+    """The outer `except`'s own counter. R-27's `unavailable` covers the
     `not available` branch only, so a store that broke the port's never-raise
-    promise was as silent as before the counter existed — and container logs
-    are not on the docker log driver."""
+    promise would be silent — and container logs are not on the docker log
+    driver."""
 
     class _Explodes(FakeMediaObjectStore):
         async def lookup(self, *, sha256s):
@@ -624,7 +613,7 @@ async def test_an_unknown_path_label_is_refused_at_runtime():
     """CLAUDE.md's label-vocabulary rule, both halves. `JoinPath` is a
     `Literal` and the help text is derived from `get_args` of it — but five of
     the eight call sites are in packages `make gate`'s mypy does not cover, so
-    a static-only guard would be a claim (issue #61).
+    a static-only guard would be a claim.
 
     A typo'd label would otherwise render as its own series forever and look
     like a path nobody had heard of."""

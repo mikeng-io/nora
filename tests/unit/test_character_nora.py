@@ -1,9 +1,8 @@
 """`CharacterNoraAdaptor` — her own account in one unit, from how its people
-responded to her (design/self-growth/10-character.md §4, C3b).
+responded to her .
 
-The property this piece exists for is the ECHO RULE (design/cognition-loop/
-10-tiers.md §2 rule 4): her own words alone never ground a change to her
-Character. A revision citing only her sends is refused by the verb.
+The property this piece exists for is the ECHO RULE: her own words alone never
+ground a change to her Character. A revision citing only her sends is refused by the verb.
 """
 
 from __future__ import annotations
@@ -156,7 +155,7 @@ FOUR = tuple(_evidence_episode(n) for n in (200, 210, 220, 230))
 
 
 async def test_a_revision_must_cite_three_evidence_episodes_when_it_was_shown_that_many():
-    """DEC-290 (4): the wedding account rested on four citations of mostly
+    """DEC-290 (4): an account may not rest on citations that are mostly
     non-evidence. A floor of three DIFFERENT evidence episodes, stated in the
     refusal; a repeated one counts once."""
     adaptor = _adaptor()

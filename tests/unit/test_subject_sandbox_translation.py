@@ -9,9 +9,7 @@ returns, and is only visible as a number.
 **The property every timing test below asserts is the same one**: NOTHING
 MOVES. The sandbox shows the room as it was at the instant because the
 subject's clock is frozen there (`SubjectSpec.now = before_ms`), so every row
-keeps its real `ts` and the standing's age is how stale it was THEN. An
-earlier design shifted every timestamp onto the wall clock instead, which was
-only necessary while the clock was not a port.
+keeps its real `ts` and the standing's age is how stale it was THEN.
 **A real sender id not travelling is pinned in
 `tests/integration/test_a_real_snapshot_seeds_an_isolated_subject.py`, against
 the `messages.sender_id` column, and deliberately not here.** `Message` has no
@@ -352,19 +350,19 @@ def test_a_snapshot_with_no_reminders_seeds_none() -> None:
     assert as_knowledge(_shot()).reminders == ()
 
 
-# --- issue #158: which notes NORA already has a reminder pending on ---------
+# --- which notes NORA already has a reminder pending on ---------
 
 
-# --- issue #158: at most one open proactive reminder per note --------------
+# --- at most one open proactive reminder per note --------------
 
 
 def test_collapse_keeps_the_earliest_of_two_duplicate_proactive_notes() -> None:
-    """0064's own rule (pending before firing, then earliest `due_at`, then
-    `created_at`, then `id`): production history holds instants with TWO open
-    proactive rows on the same note — the double-booking #517 (migration
-    0064) fixed going forward. Seeding both would hit the sandbox's own copy
-    of `uq_reminders_proactive_open_note`; this collapses to the one 0064's
-    own migration would have kept."""
+    """Migration 0064's own rule (pending before firing, then earliest `due_at`,
+    then `created_at`, then `id`): production history holds instants with TWO
+    open proactive rows on the same note, the double-booking 0064 fixed going
+    forward. Seeding both would hit the sandbox's own copy of
+    `uq_reminders_proactive_open_note`; this collapses to the one 0064's own
+    migration would have kept."""
     earlier = _reminder(
         id=UUID("22222222-0000-4000-8000-000000000001"),
         kind="proactive", payload={"note_id": "note-1", "note_title": "Dinner plan"},
@@ -402,9 +400,9 @@ def test_collapse_leaves_non_proactive_reminders_untouched() -> None:
 
 
 def test_collapse_leaves_a_note_less_proactive_reminder_untouched() -> None:
-    """A proactive row with no note link (`remind` allows omitting `note`,
-    `nora/agent/tools.py` ~:8898, ~:8959) never hits the constraint — it is
-    not what `uq_reminders_proactive_open_note` is keyed on."""
+    """A proactive row with no note link (`remind` allows omitting `note`) never
+    hits the constraint — it is not what `uq_reminders_proactive_open_note` is
+    keyed on."""
     unlinked = _reminder(kind="proactive", payload={"intent": "check in"})
     another_unlinked = _reminder(
         id=UUID("44444444-0000-4000-8000-000000000002"),

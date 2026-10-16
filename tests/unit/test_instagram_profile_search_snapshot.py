@@ -1,15 +1,13 @@
 """A profile read and an account search answer BYTE FOR BYTE what they
-answered before the typed views and the one renderer existed
-(design/instagram-adoption/18 §"Typed views, one renderer, and readings").
+answered before the typed views and the one renderer existed.
 
 The snapshot (`tests/fixtures/instagram_render_snapshots.json`) was WRITTEN BY
-THE PRE-MIGRATION CLIENT, on the commit before `nora/infra/social/views.py`
-existed, from the cases below: every body starts from a shared contract
+THE PRE-MIGRATION CLIENT, before `nora/infra/social/views.py` existed, from the
+cases below: every body starts from a shared contract
 fixture the Go handlers generate (`tests/fixtures/instagram_bridge/`), and a
-case that edits one says which field it is exercising. The migration moved
-where a profile and a search are built and rendered; it was not allowed to
-move a single byte of what the model reads, so the comparison is on the
-serialized JSON (key order included), never on a parsed equality.
+case that edits one says which field it is exercising. Where a profile and a
+search are built and rendered may move; a single byte of what the model reads may
+not, so the comparison is on the serialized JSON (key order included), never on a parsed equality.
 
 Every name, handle and id here is synthetic.
 """

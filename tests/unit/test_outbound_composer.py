@@ -76,7 +76,7 @@ def _draft(text: str) -> Styled:
     """What `Deliverer.deliver` hands the composer: the reply, already rendered.
 
     Through the real `render_markdown` rather than a bare `Styled(text)`, and
-    that is not ceremony. `compose` no longer takes a string — the whole safety
+    that is not ceremony. `compose` does not take a string — the whole safety
     argument is that the pre-conversion draft is not in its scope — so a helper
     that fabricated a `Styled` would be a second producer of the one type this
     design says has exactly one. Most strings below carry no Markdown and come
@@ -292,7 +292,7 @@ async def test_a_person_with_no_id_form_on_this_platform_is_unresolved():
     assert metrics.get("nora_outbound_mentions_total", outcome="unresolved") == 1
 
 
-# --------------------------------------------------------- discord platform (#211)
+# --------------------------------------------------------- discord platform
 
 TYLER_SNOWFLAKE = "100000000000000002"
 DISCORD_CONVERSATION = "100000000000000203/100000000000000204"
@@ -342,15 +342,12 @@ def _instagram_composer(*, roster=None, persons=None, metrics=None) -> OutboundC
 
 
 async def test_an_instagram_fbid_is_accepted_as_the_preferred_recipient_form():
-    """The same defect #211 fixed for Discord, reached again by the fourth
-    platform. An Instagram messaging fbid is a bare digit string, so it
-    matched neither the UUID nor the E.164 pattern and `_preferred_recipient`
-    returned None for every Instagram mention — Nora wrote "@Name" as plain
-    text, no ping, `status: sent`, nothing logged.
-
-    Found by audit rather than by anybody noticing, because the failure is
-    silent on the wire: `nora/platform/instagram/send.py` builds the mention
-    payload correctly and was simply never given one.
+    """An Instagram messaging fbid is a bare digit string, so it matches neither
+    the UUID nor the E.164 pattern and `_preferred_recipient` needs its own
+    branch for it; without one, every Instagram mention returns None — Nora
+    writes "@Name" as plain text, no ping, `status: sent`, nothing logged.
+    The failure is silent on the wire: `nora/platform/instagram/send.py` builds
+    the mention payload correctly and is simply never given one.
 
     PROBE: revert `_preferred_recipient`'s instagram branch and this goes red —
     `out.mentions` comes back empty.
@@ -366,12 +363,11 @@ async def test_an_instagram_fbid_is_accepted_as_the_preferred_recipient_form():
 
 
 async def test_the_REAL_instagram_roster_is_what_lets_a_mention_resolve(aiohttp_server):
-    """The half `_preferred_recipient`'s Instagram branch was inert without.
+    """The half `_preferred_recipient`'s Instagram branch is inert without.
 
-    Every other Instagram mention test here drives a `FakeRosterSource`,
-    because until now there was no Instagram roster at all — the branch was
-    landed and could confirm nobody's membership, so on the live account Nora
-    still wrote «@Name» as plain text with no ping. This runs the composer over
+    Every other Instagram mention test here drives a `FakeRosterSource`; without
+    an Instagram roster nobody's membership is confirmed and Nora writes
+    «@Name» as plain text with no ping. This runs the composer over
     the REAL `InstagramRoster` against a stand-in for the bridge's own
     `GET /threads/{thread_fbid}/members`, which is the only arrangement that measures that.
 
@@ -404,8 +400,8 @@ async def test_the_REAL_instagram_roster_is_what_lets_a_mention_resolve(aiohttp_
 
 async def test_an_instagram_mention_carries_the_operator_recorded_handle():
     """The fbid alone is not enough for Instagram to RENDER a mention — see
-    `nora.platform.instagram.send`'s module docstring for the live evidence
-    (2026-09-22): a correctly-resolved fbid still sent as plain text, because
+    `nora.platform.instagram.send`'s module docstring for the evidence:
+    a correctly-resolved fbid still sends as plain text, because
     Instagram's own API requires the message TEXT at the mention's span to
     read `"@" + the account's own username`, never the display name Nora
     wrote. `Persons.instagram_handle` is where that username comes from
@@ -470,11 +466,10 @@ async def test_a_discord_mention_never_carries_a_handle_even_with_matching_metad
 
 
 async def test_a_discord_snowflake_is_accepted_as_the_preferred_recipient_form():
-    """#211's mechanism: `_preferred_recipient` used to accept only a UUID or
-    an E.164 number, so a Discord snowflake was refused even though the
-    person WAS mapped in `identity.toml` and the roster DID confirm them —
-    every such mention counted `unresolved` and the composer never emitted a
-    `Mention` on Discord at all.
+    """`_preferred_recipient` accepts a Discord snowflake as well as a UUID or an
+    E.164 number: otherwise a person who IS mapped in `identity.toml` and
+    confirmed by the roster is refused, every such mention counts `unresolved`
+    and the composer never emits a `Mention` on Discord at all.
 
     PROBE: revert `_preferred_recipient`'s discord branch and this goes red —
     `out.mentions` comes back empty and the outcome counts `unresolved`
@@ -758,7 +753,7 @@ async def test_no_preview_source_means_no_card_and_no_failure():
 
 # ------------------------------------------------- styles beside mentions (DEC-82)
 #
-# The section this feature exists for. A mention range and a style range are
+# A mention range and a style range are
 # produced by DIFFERENT code, at different times, over one string — the styles
 # by `render_markdown` before the guards run, the mentions by `compose` after —
 # and Signal renders a mismatch rather than rejecting it. Everything below is

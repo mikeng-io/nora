@@ -1,5 +1,4 @@
-"""`CharacterUnitAdaptor` and `<unit_culture>` — what a unit is across its rooms
-(design/self-growth/10-character.md §3, C3a)."""
+"""`CharacterUnitAdaptor` and `<unit_culture>` — what a unit is across its rooms."""
 
 from __future__ import annotations
 
@@ -51,9 +50,9 @@ async def test_the_unit_session_is_handed_each_rooms_culture_with_what_it_cites(
 
 
 async def test_a_room_culture_with_no_citations_is_not_handed_to_the_unit():
-    """A room account older than the verb was written by the envelope fold,
-    which held the presence reads; the unit's account renders in every room, so
-    it is skipped (the cited room still is)."""
+    """A room account written by the envelope fold held the presence reads; the
+    unit's account renders in every room, so it is skipped (the cited room
+    still is)."""
     store = InMemoryCultureStore()
     await store.append(key="room-a", body="they plan by attrition", written_at=T0,
                        established_by="x", citations=("41",))
@@ -83,8 +82,8 @@ async def test_it_cites_only_what_its_rooms_cultures_cite_and_writes_under_the_u
 
 
 async def test_no_citable_room_culture_or_no_new_revision_calls_no_model():
-    """A room culture written before the verb cites nothing, so a unit account
-    could rest on nothing: no model call. No new revision: none either."""
+    """A room culture written without the verb cites nothing, so a unit account
+    could rest on nothing: no model call and no new revision."""
     store = InMemoryCultureStore()
     await store.append(key="room-a", body="old, uncited", written_at=T0, established_by="x")
     assert await _adaptor(store).inputs(key=KEY, batch=("room-a",)) == ""

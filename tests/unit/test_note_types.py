@@ -1,7 +1,6 @@
 """The note tier's domain invariants, expressed as a SHAPE rather than as prose.
 
-`docs/superpowers/specs/2026-08-21-note-tier-design.md` §2.3 makes four fields
-load-bearing, and three of them are only load-bearing if the wrong thing is
+Four fields are load-bearing, and three of them only if the wrong thing is
 *unrepresentable*:
 
 - **a note with no closing condition is not a note** — it is either a fact
@@ -10,15 +9,15 @@ load-bearing, and three of them are only load-bearing if the wrong thing is
   refusal, not a docstring;
 - **a note with no anchor is not a note** — "we should hang out sometime" has no
   referent anything could later be looked up by. The anchor is what merge
-  eligibility (§7.1) and mechanical retirement (§7.4) are computed from, so a
+  eligibility and mechanical retirement are computed from, so a
   note without one breaks both;
 - **the injected entry is capped at construction, never truncated at render** —
-  §5.1. Truncating in the renderer is silent loss; a constructor that refuses is
+  Truncating in the renderer is silent loss; a constructor that refuses is
   not.
 
 The supersession rule is deliberately WEAKER than the fact tier's, and that
 difference is the whole reason `DreamSink.supersede` takes
-`replaced_by: str | None` (spec §15.5, DEC-130). `fact` asserts a biconditional
+`replaced_by: str | None` (DEC-130). `fact` asserts a biconditional
 — `(superseded_by is null) = (superseded_at is null)` — because a contradicted
 fact is always replaced by the corrected one. A note is not: **retirement has no
 successor.** A dinner that happened is replaced by nothing. So this tier asserts
@@ -66,14 +65,14 @@ def _note(**over) -> Note:
 
 
 # ---------------------------------------------------------------------------
-# the closing condition — the discriminator (§2.3)
+# the closing condition — the discriminator
 # ---------------------------------------------------------------------------
 
 
 def test_a_note_needs_a_closing_condition():
     """Without one there is no decidable answer to «has this resolved?», so
     retirement, promotion-readiness and a revisit's success criterion all lose
-    their input at once (§2.3, §7.4)."""
+    their input at once."""
     with pytest.raises(ValueError, match="closing condition"):
         _note(closing_condition="")
 
@@ -86,7 +85,7 @@ def test_a_closing_condition_of_whitespace_is_refused():
 
 
 # ---------------------------------------------------------------------------
-# the anchor — what merge and retirement are computed from (§7.1, §7.4)
+# the anchor — what merge and retirement are computed from
 # ---------------------------------------------------------------------------
 
 
@@ -103,7 +102,7 @@ def test_a_date_alone_is_a_valid_anchor():
 
 
 def test_entities_alone_are_a_valid_anchor():
-    """«what are we playing next» has no date. §7.4 gives it the strike-based
+    """«what are we playing next» has no date. It takes the strike-based
     ageing path instead of expiry, but it is a perfectly good note."""
     note = _note(anchor_date=None, anchor_entity_ids=("e-zone42",))
     assert note.anchor_entity_ids == ("e-zone42",)
@@ -119,12 +118,10 @@ def test_the_written_entities_are_readable_but_are_not_a_key():
     """`note.anchor_entity_ids` is what the model handed `note_create`,
     verbatim and unresolved, and a key built from it is wrong in both
     directions: three spellings of one wedding are three keys, and two
-    unrelated notes that both say 「wedding」 are one. The curator's merge
-    key (removed 2026-09-08) never read it and nothing reads it as a key now.
+    unrelated notes that both say 「wedding」 are one. Nothing reads it as a key.
 
-    Asserted as an ABSENCE with a positive control, because the defect this
-    replaces was a property that read the wrong field — and a property that no
-    longer exists cannot be called by accident."""
+    Asserted as an ABSENCE with a positive control, because a property that does
+    not exist cannot be called by accident."""
     note = _note(anchor_date=20261114, anchor_entity_ids=("wedding",))
 
     assert not hasattr(note, "anchor_key")
@@ -135,7 +132,7 @@ def test_the_written_entities_are_readable_but_are_not_a_key():
 
 
 # ---------------------------------------------------------------------------
-# the injected entry — capped at construction, never truncated at render (§5.1)
+# the injected entry — capped at construction, never truncated at render
 # ---------------------------------------------------------------------------
 
 
@@ -155,14 +152,14 @@ def test_a_title_at_the_cap_is_accepted():
 
 def test_an_empty_title_is_refused():
     """The index line is the only thing standing between a note and being
-    invisible (§5.1). An untitled entry is an entry nobody can reach for."""
+    invisible. An untitled entry is an entry nobody can reach for."""
     with pytest.raises(ValueError, match="title"):
         _note(title="  ")
 
 
 def test_an_empty_description_is_refused():
     """`description` is the when-to-reach-for-this line, the skills-loader shape
-    (design/12 §1). Without it the index says a note exists and nothing about
+    Without it the index says a note exists and nothing about
     when it matters."""
     with pytest.raises(ValueError, match="description"):
         _note(description="")
@@ -185,7 +182,7 @@ def test_a_note_may_retire_with_no_successor():
     `replaced_by` is nullable at the port.** A dinner that happened is replaced
     by nothing. Collapsing this into `fact`'s biconditional would force this
     tier to invent a placeholder id — the invent-a-value-to-satisfy-a-schema
-    move §7.3 forbids."""
+    move."""
     note = _note(retired_at=NOW + 1, replaced_by=None)
     assert not note.is_standing
 
@@ -204,7 +201,7 @@ def test_a_successor_without_a_retirement_is_refused():
 
 
 # ---------------------------------------------------------------------------
-# revisions — append-only, and the head is what CAS compares (§6.1, §6.3)
+# revisions — append-only, and the head is what CAS compares
 # ---------------------------------------------------------------------------
 
 
@@ -217,7 +214,7 @@ def test_the_first_revision_has_no_parent():
 
 
 def test_a_later_revision_names_the_head_it_was_written_against():
-    """§6.3's CAS: the parent IS the head the writer read. A revision that
+    """The CAS: the parent IS the head the writer read. A revision that
     cannot name what it was written against cannot be refused when the head
     moved under it."""
     rev = NoteRevision(
@@ -236,7 +233,7 @@ def test_a_revision_needs_a_body():
 
 
 def test_a_revision_names_who_wrote_it():
-    """`established_by` is what §9.6's strike reset reads — strikes reset only
+    """`established_by` is what the strike reset reads — strikes reset only
     on a TAG-PATH revision, so a revision that cannot say who wrote it makes the
     loop breaker self-referential and therefore decorative."""
     with pytest.raises(ValueError, match="established_by"):
@@ -257,7 +254,7 @@ def test_a_revision_is_frozen():
         rev.body = "y"  # type: ignore[misc]
 
 
-# --- the body cap (27 §5.2), and why there are TWO numbers ------------------
+# --- the body cap, and why there are TWO numbers ----------------------------
 
 
 def test_a_body_over_the_operating_cap_is_refused():
@@ -285,18 +282,17 @@ def test_a_body_exactly_at_the_cap_is_accepted():
 
 
 def test_the_tag_path_prefix_has_no_second_copy_in_its_producer():
-    """**The strike reset's correctness rests on two strings matching**, and
-    they were two strings: `TAG_PATH_PREFIX` is defined here and
-    `nora/agent/tools.py` — the SOLE producer — wrote the literal `f"tag:{...}"`
-    twice without importing it.
+    """**The strike reset's correctness rests on two strings matching**:
+    `TAG_PATH_PREFIX` is defined here and `nora/agent/tools.py` — the SOLE
+    producer — must import it rather than write the literal `f"tag:{...}"`.
 
-    Nothing would have failed on a rename. `is_tag_path_revision` would answer
+    Otherwise nothing fails on a rename. `is_tag_path_revision` would answer
     False for every revision a person wrote, every note would look
-    background-authored, and §9.6's breaker would march every actively-worked
+    background-authored, and the strike breaker would march every actively-worked
     note to its strike ceiling — silently, because a strike has no log line.
 
     A source check rather than a type check, because `nora/agent` is outside
-    `make gate`'s mypy scope (#61): the import is only load-bearing if nothing
+    `make gate`'s mypy scope: the import is only load-bearing if nothing
     re-types the literal beside it.
     """
     source = pathlib.Path("nora/agent/tools.py").read_text()

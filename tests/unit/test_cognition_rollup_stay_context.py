@@ -1,12 +1,11 @@
 """A movement anomaly's line says where the stay was and what is usual for the
 person at that place, when the presence store holds them (DEC-279).
 
-Measured live 2026-10-03: the session was handed «NAME: a stay the rhythm scored
-anomalous, from 15:24 to 16:26» and nothing else, no place and no usual pattern,
-so there was nothing to judge, and every one closed `no_change`. The stay, its
-place and the person's own past are in the presence store already; the line now
-reads them at grounding time (`stay_context_reader`), recomputing the deviations
-the way the rollup scored them. Stays and places here are invented.
+Without the stay's place and the person's usual pattern the session has nothing
+to judge. The stay, its place and the person's own past are in the presence
+store; the line reads them at grounding time (`stay_context_reader`),
+recomputing the deviations the way the rollup scored them. Stays and places here
+are invented.
 """
 
 from __future__ import annotations
@@ -168,7 +167,7 @@ async def test_a_presence_read_that_fails_leaves_the_line_as_it_was():
     assert unwired.startswith("Ben: a stay the rhythm scored anomalous, from ")
 
 
-# ---- a place is named only where `where_been` would name it (R-35, review of #720) ----
+# ---- a place is named only where `where_been` would name it (R-35) ----
 
 PLAIN = "Ben: a stay the rhythm scored anomalous, from "
 

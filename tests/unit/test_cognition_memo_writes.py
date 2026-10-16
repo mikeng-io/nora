@@ -1,5 +1,5 @@
-"""The Cognition session's memo verbs (DEC-306, design/cognition-loop/40-register.md
-§2): `memo_write`, `memo_revise`, `memo_withdraw`. Each holds the body to the memo
+"""The Cognition session's memo verbs (DEC-306):
+`memo_write`, `memo_revise`, `memo_withdraw`. Each holds the body to the memo
 schema with the note body's line grammar, screens everything but the `## Kept`
 lines (D5, DEC-230), commits through the memo store stamped `cognition:<unit>`, and
 answers a refusal to the model. Over in-memory stores with a scripted agent
@@ -110,7 +110,7 @@ async def test_a_memo_with_nothing_kept_or_citing_an_unshown_message_is_refused(
 
 
 async def test_a_memo_may_cite_noras_own_send_and_a_note_still_may_not():
-    """Operator 2026-10-09: «記低» what she found keeps it; a note stays the group's."""
+    """«記低» keeps what she found, as she found it; a note stays the group's."""
     body = "## Kept\n- the code is on the router [101, 103]\n"
     stores, memo = await _one("memo_write", runner_kwargs=WITH_OWN, title="code", body=body)
     assert memo["status"] == "ok"
@@ -198,7 +198,7 @@ async def test_without_a_memo_store_every_memo_verb_is_unavailable():
 
 
 async def test_a_title_carrying_the_kept_value_is_refused_and_a_title_naming_the_thing_is_not():
-    """Review of #781: `<memos>` shows titles on every turn, so a title names
+    """`<memos>` shows titles on every turn, so a title names
     the thing and never the value a Kept line keeps."""
     body = "## Kept\n- the wifi password is hunter2pass [101]\n- the door code is 4721# [102]\n"
     for title in ("wifi: hunter2pass", "door code 4721#"):

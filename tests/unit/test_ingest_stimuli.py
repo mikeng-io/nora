@@ -1,11 +1,10 @@
-"""The ingest stimulus stage and the touch path, through `IngestPipeline`
-(design/cognition-loop/20-observe.md §1, §3; migration step 1).
+"""The ingest stimulus stage and the touch path, through `IngestPipeline`.
 
 What each test pins:
 
 - one stimulus per recorded person-authored item — a message, a changed edit,
   a reaction, a delete — naming the Record row it was raised by;
-- **Nora's own items raise none** (20 §3, the echo rule): an item from one of
+- **Nora's own items raise none** (the echo rule): an item from one of
   her ids, or an unattributed delete of her message;
 - a person's reply to her message inside `reply_quiet_seconds` is recorded
   and marked `waits`, and outside it is not;
@@ -102,7 +101,7 @@ async def test_a_stimulus_with_no_cue_is_counted_as_none():
 
 
 async def test_nora_s_own_item_raises_no_stimulus():
-    """20 §3: «An item whose author is Nora raises no stimulus.» Her sends
+    """The echo rule: «An item whose author is Nora raises no stimulus.» Her sends
     never reach ingest (R-12 in every parser), so the stage checks it itself;
     the positive control is the person's message beside it."""
     pipeline, audit, store, _ = _setup()

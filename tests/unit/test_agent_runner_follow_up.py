@@ -1,8 +1,8 @@
 """`LiveAgentRunner.invoke`'s `follow_up`, against the REAL Strands loop.
 
 The summons occasion's tests (`tests/unit/test_summons_occasion.py`) run on
-`FakeAgentRunner`, which models the follow-up. What only the real SDK can
-answer is below: that the continuation is the SAME conversation (the model's
+`FakeAgentRunner`, which models the follow-up. These tests cover what only the
+real SDK can answer: that the continuation is the SAME conversation (the model's
 second pass sees its own first-pass prose, then the follow-up as the next
 user turn), that the guard's per-tool budgets carry into it rather than being
 re-granted, and that it runs under what the first pass LEFT of the loop caps,

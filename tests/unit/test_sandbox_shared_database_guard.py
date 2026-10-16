@@ -1,12 +1,11 @@
 """`nora.subject.sandbox`'s shared-eval-database guard — OFFLINE, no Postgres.
 
-Measured 2026-09-25: a run from a branch whose alembic head was AHEAD of the
-shared `nora_eval_blank` template upgraded it to that head (`_blank_template`
-calling `run_migrations` unconditionally). Every OTHER session's run then
-failed at seeding, from an older head, with `Can't locate revision
-'0065_…'` — fixed by hand with a downgrade at the time.
+A run from a branch whose alembic head is AHEAD of the shared
+`nora_eval_blank` template must not upgrade it (`_blank_template` calling
+`run_migrations` unconditionally would): every OTHER session's run would then
+fail at seeding, from an older head, with `Can't locate revision '…'`.
 
-These tests pin the structural fix with a FAKE async engine (`_FakeEngine`
+These tests pin the guard with a FAKE async engine (`_FakeEngine`
 below) standing in for Postgres, and a mocked `run_migrations`/
 `current_revision`/`head_revision` standing in for Alembic: no Docker, no
 real database, and no real migration is ever run. What is asserted is the
@@ -174,10 +173,8 @@ async def test_blank_template_never_migrates_the_shared_name_when_diverged(
     monkeypatch, current, local_head,
 ):
     """THE HAZARD, pinned in both directions. A branch whose head differs
-    from the shared template's — ahead (the 2026-09-25 incident's own
-    shape, '0065_standing_working_set' is #541's real migration id) or
-    behind — must build and migrate a PRIVATE copy, and `run_migrations`
-    must never be called with the shared blank's URL."""
+    from the shared template's — ahead or behind — must build and migrate a PRIVATE copy,
+    and `run_migrations` must never be called with the shared blank's URL."""
     factory, calls = _fake_create_async_engine_factory(existing={"nora_eval_blank"})
     monkeypatch.setattr(sandbox, "create_async_engine", factory)
     migrated: list[str] = []
@@ -336,12 +333,11 @@ def test_refuse_if_source_diverges_from_head_passes_when_equal(monkeypatch):
 
 
 def test_refuse_if_source_diverges_from_head_allows_a_source_behind_head(monkeypatch):
-    """MEASURED 2026-09-25: source at `0063_note_merge_decision`, head at
-    `0064_proactive_open_note` (an index-only migration) refused every
-    ordinary master run under the old, direction-blind rule. A source
-    behind head — a revision THIS checkout's own chain recognizes, i.e. an
-    ANCESTOR of head — must be allowed to run; `snapshot()` is the
-    fail-closed net for the rare migration that actually matters."""
+    """Source at `0063_note_merge_decision`, head at `0064_proactive_open_note`
+    (an index-only migration) must not refuse an ordinary master run: the rule is
+    direction-aware. A source behind head — a revision THIS checkout's own chain
+    recognizes, i.e. an ANCESTOR of head — must be allowed to run; `snapshot()`
+    is the fail-closed net for the rare migration that actually matters."""
     monkeypatch.setattr(sandbox, "current_revision", lambda url: "0063_note_merge_decision")
     monkeypatch.setattr(sandbox, "head_revision", lambda: "0064_proactive_open_note")
     monkeypatch.setattr(
@@ -353,7 +349,7 @@ def test_refuse_if_source_diverges_from_head_allows_a_source_behind_head(monkeyp
 
 def test_refuse_if_source_diverges_from_head_refuses_when_source_is_ahead_of_head(monkeypatch):
     """The source names a revision this checkout has never heard of —
-    `0065_standing_working_set` (#541, not yet merged here) — the ONE
+    `0065_standing_working_set` — the ONE
     direction that is unsafe: a read could hit a column only that migration
     added."""
     monkeypatch.setattr(sandbox, "current_revision", lambda url: "0065_standing_working_set")
@@ -402,7 +398,7 @@ def test_revision_is_known_is_false_for_an_unknown_revision():
 
 # --------------------------------------------------------------------------
 # `sweep_stale_private_blank_templates` — the safe-leak-cleanup selection
-# logic (issue: SIGTERM/kill can skip `close_private_blank_templates`'s own
+# logic (SIGTERM/kill can skip `close_private_blank_templates`'s own
 # `finally`, and `_run_`-suffixed private copies from a killed run must not
 # accumulate forever).
 # --------------------------------------------------------------------------

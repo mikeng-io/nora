@@ -1,9 +1,9 @@
-"""An edited message, rendered (design/message-edits/02 §1).
+"""An edited message, rendered.
 
 Two things have to be true of what the model reads: the element SAYS it was
 edited, with a time and the first text, and each text's @-mentions are looked
 up in the envelope that text came from — the latest body in the edit's, the
-first text in the original's (01 §3). A row that was never edited must render
+first text in the original's. A row that was never edited must render
 exactly as it did before.
 """
 
@@ -117,7 +117,7 @@ def test_each_text_is_rehydrated_against_the_envelope_it_came_from():
 
 def test_an_edit_says_which_message_came_last_before_it():
     """Minute-grained ages cannot order a reply and the edit that followed it
-    (both «just now» — measured live 2026-09-24). `edited_after` is the `n` of
+    (both «just now»). `edited_after` is the `n` of
     the last message sent before the edit, so «she answered the old version»
     is readable off the element."""
     rows = [

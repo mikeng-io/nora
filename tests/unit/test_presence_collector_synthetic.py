@@ -1,9 +1,8 @@
 """`PresenceCollector` against fakes for Life360 and the store (DEC-55, DEC-60,
-DEC-67, DEC-69; design/19 §4, design/23 §3).
+DEC-67, DEC-69).
 
-The original collector tests held real people's locations and were deleted in
-the 2026-10 PII scrub. These replace them with invented data: person keys
-`p_alpha` / `p_beta`, circle `c_one`, coordinates around (22.3000, 114.1700).
+The data is invented: person keys `p_alpha` / `p_beta`, circle `c_one`,
+coordinates around (22.3000, 114.1700).
 
 The fakes only speak the surface the collector uses. The Life360 fake is
 scripted: each `read_circle` / `read_places` call pops the next scripted

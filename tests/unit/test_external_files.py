@@ -1,6 +1,6 @@
 """`nora.domain.external_files`: recognising a shared file link, rendering it as
 a link handle, the stored form, and resolving a code
-(design/external-files/00-design.md §1, build step S1)."""
+."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ DRIVE = f"https://drive.google.com/open?id={ID}"
     f"https://docs.google.com/document/d/{ID}%2Fedit",
     f"https://docs.google.com/uc?id={ID}",
     f"https://drive.usercontent.google.com/download?id={ID}&export=download",
-    # A file link INSIDE another URL (re-review of PR 795): the whole wrapper
+    # A file link INSIDE another URL the whole wrapper
     # becomes the handle.
     f"https://example.com/?next={DOC}",
     f"https://example.com/{DOC}",
@@ -83,7 +83,7 @@ DRIVE = f"https://drive.google.com/open?id={ID}"
     f"[x](https://www.google.com/url?q={DOC})",
 ])
 def test_the_link_never_leaks_however_it_is_written(text):
-    """Review of PR 795: each of these reached a model as the raw URL. The
+    """Each of these must not reach a model as the raw URL. The
     file id must not survive the render, and the ref must be recorded."""
     rendered = render_file_links(text)
     assert ID not in rendered and "google.com" not in rendered.lower(), rendered
@@ -134,7 +134,7 @@ def test_the_resource_key_is_kept():
 
 
 @pytest.mark.parametrize("url", [
-    # A folder is not a file (§1): it stays an ordinary link.
+    # A folder is not a file: it stays an ordinary link.
     f"https://drive.google.com/drive/folders/{ID}",
     f"https://drive.google.com/drive/u/0/folders/{ID}?usp=sharing",
     # Lookalike hosts: exact match only.
@@ -302,7 +302,7 @@ async def test_an_unreadable_record_is_unavailable_not_nothing_found():
     ("https://drive.google.com/file/d/491db6?id=98b65b", None),  # two codes: no guess
     ("https://drive.google.com/file/d/491db6/98b65b", "491db6"),  # only the id slot
     ("https://drive.google.com/file/d/49x1db", None),
-    # Review of PR 809: a six-hex value outside the id slot is the link's.
+    # A six-hex value outside the id slot is the link's.
     ("https://docs.google.com:443/spreadsheets/d/1SynthDocLink000000000000/edit?gid=123456", None),
     ("https://drive.google.com/drive/folders/1SynthDocLink000000000000?sort=123456", None),
     ("https://docs.google.com/forms/d/e/1SynthDocLink000000000000/viewform?entry.1=decade", None),

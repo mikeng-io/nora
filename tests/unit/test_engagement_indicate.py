@@ -219,11 +219,11 @@ async def test_the_platforms_own_message_handle_reaches_the_reaction():
     the platform's own handle on the message, `begin` carries it onto the
     `Indicator`, and `_react` passes it as `to_message_id`.
 
-    Every link in that chain was previously unmeasured: the recorders all
-    ACCEPTED `to_message_id` and dropped it, so blanking it anywhere left the
-    whole suite green while shipping a bot that answers `supported=False` on
-    every reaction forever. This asserts the value that actually arrives at the
-    adapter, which is the only place the chain can be observed end to end.
+    Recorders that merely ACCEPT `to_message_id` and drop it would leave the
+    suite green when it is blanked anywhere, while the bot answers
+    `supported=False` on every reaction forever. This asserts the value that
+    actually arrives at the adapter, which is the only place the chain can be
+    observed end to end.
     """
     adapter = _Recorder()
     message = NormalizedMessage(
@@ -243,10 +243,10 @@ async def test_the_platforms_own_message_handle_reaches_the_reaction():
 
 
 async def test_a_platform_with_no_message_handle_still_reacts():
-    """Signal's counterpart, and the reason `to_message_id` was ADDED beside
+    """Signal's counterpart, and the reason `to_message_id` sits beside
     `(to_author, to_timestamp)` rather than replacing them: Signal names a
-    message by who sent it and when, has no per-message handle, and must go on
-    reacting exactly as before."""
+    message by who sent it and when, has no per-message handle, and reacts by
+    author and timestamp."""
     adapter = _Recorder()
 
     await _run(adapter, delivered=True)

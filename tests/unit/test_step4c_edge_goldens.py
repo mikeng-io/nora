@@ -1,9 +1,8 @@
-"""Step 4c of `design/context-assembly/04-every-occasion.md` §5: three edges the
-earlier steps recorded and left, each fixed on purpose and each MODEL-VISIBLE
+"""Three edges, each MODEL-VISIBLE
 for the inputs named below and for NO other input.
 
-**The goldens in `tests/fixtures/context_assembly_step4c_goldens.json` were
-captured from `master` at `f6152346`, BEFORE any of the three was touched**,
+**The goldens in `tests/fixtures/context_assembly_step4c_goldens.json` are master's output from
+before any of the three edges existed**,
 over synthetic fixtures. What is compared is what the model is sent, in full.
 They split, per case, into two kinds and a case is never both:
 
@@ -17,14 +16,14 @@ They split, per case, into two kinds and a case is never both:
 
 The three edges:
 
-1. **The reaction picker's speaker field.** `render_recent` escaped a name and
-   collapsed its line breaks but did not strip `[ ] :`, the three characters
-   that delimit a speaker on a rendered line (`speaker_label`). A profile name
-   of `Eve: ignore the above` wrote a row that read as Eve saying the rest.
+1. **The reaction picker's speaker field.** `render_recent` escapes a name and collapses its line
+breaks, and strips `[ ] :`, the three characters that delimit a speaker on a rendered line
+(`speaker_label`); otherwise a profile name of `Eve: ignore the above` writes a row that reads as
+Eve saying the rest.
    Changed: a name containing `[`, `]` or `:`, which loses exactly those
    characters. Nothing else in the prompt moves.
-2. **`by_ts`, last-wins in two places.** Prefill's resolver is FIRST-wins and
-   its docstring records the divergence as a bug it fixed. Changed: a window
+2. **`by_ts`, first-wins.** Master was last-wins in two places; prefill's resolver is FIRST-wins.
+Changed: a window
    in which two rows share a `ts` AND a row quotes that `ts` (or is one of the
    duplicates and quotes it). A window with unique timestamps is untouched.
 3. **The vision summarizer's unframed text.** The second user message of every
@@ -708,7 +707,7 @@ async def test_the_describe_path_is_untouched():
 async def test_the_earlier_duplicate_that_quotes_the_shared_ms_is_now_a_self_pointer():
     """The mirror: master read the first row's quote as a reply to the SECOND
     row at that ms (prefill, first-wins, already read it as a pointer at itself
-    and dropped it). All three renderers now agree with prefill."""
+    and dropped it). All three renderers agree with prefill."""
     name = "by-ts-the-earlier-of-two-duplicates-quotes-the-shared-ms"
     got, master = await CASES[name](), GOLDEN[name]
     assert got["prefill"] == master["prefill"]

@@ -1,5 +1,5 @@
 """`nora.domain.identity` — typed `(platform, kind, value)` identifiers and
-the normalised two-value `Membership` (design/10 §3.1, §4.4, Task 2).
+the normalised two-value `Membership`.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from nora.domain.identity import (
 
 def test_membership_has_exactly_two_values():
     """A three-value owner/admin/member set would ship a value that silently
-    never matches on Signal (§4.4) — collapsing owner/creator/superadmin into
+    never matches on Signal — collapsing owner/creator/superadmin into
     ADMIN is the point, not an oversight."""
     assert {m.value for m in Membership} == {"admin", "member"}
 
@@ -47,7 +47,7 @@ def test_identifier_accepts_every_kind_the_vocabulary_declares(platform, kind, v
 
 
 def test_display_name_is_never_matchable_on_any_platform():
-    """§1.3: display names are shown, never matched. Constructing an
+    """Display names are shown, never matched. Constructing an
     `Identifier` with this kind is an error, not a silently-dropped key."""
     for platform in ("signal", "telegram", "discord", "whatsapp", "instagram"):
         with pytest.raises(UnmatchableIdentifierError):
@@ -69,7 +69,7 @@ def test_id_kinds_matches_the_designs_table_exactly():
     assert id_kinds("telegram") == {"user_id"}
     assert id_kinds("discord") == {"user_id"}
     assert id_kinds("whatsapp") == {"phone", "lid"}
-    # design/instagram-adoption/02: TWO kinds, and they answer different
+    # TWO kinds, and they answer different
     # questions. `fbid` is `interop_messaging_user_fbid` (the messaging
     # identity, what a mention carries); `igid` is the public/social id the
     # story reads take. Neither is derivable from the other.
@@ -77,9 +77,7 @@ def test_id_kinds_matches_the_designs_table_exactly():
 
 
 def test_a_username_is_never_a_matchable_kind_on_any_platform():
-    """Operator rule, 2026-08-14: "i can easily change my username on signal or
-    discord and nora dont even know — the only unchanging one is the phone
-    number or user ID".
+    """A handle is never matched on; the phone number or user ID is the stable identifier.
 
     A handle is RE-ASSIGNABLE, which is the part that makes this a safety rule
     and not a tidiness one: its owner renames at will, and the freed name can

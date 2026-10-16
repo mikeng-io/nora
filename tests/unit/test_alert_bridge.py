@@ -1,10 +1,7 @@
 """`deploy/alert-bridge/bridge.py` — the last hop, and the one that decides
 whether any of the monitoring stack is real.
 
-`deploy/watchdog.sh` has existed since August with an alert channel of
-`echo >&2` plus a non-zero exit; even scheduled, it would have produced a failed
-systemd unit, which is exactly what nobody noticed for sixteen days. So this
-file's subject is not "does it format nicely" but "does a failure anywhere on
+This file's subject is not "does it format nicely" but "does a failure anywhere on
 this path stay visible instead of turning into silence".
 
 Imported by PATH rather than as a package: the bridge is a deployment artifact
@@ -132,11 +129,8 @@ def test_a_clean_post_is_a_delivery_and_says_so(bridge, monkeypatch, caplog):
     `send` that always returns False; this is the one that proves it can
     succeed.
 
-    It also asserts the success LINE. Until the deploy read-back, only failures
-    logged — so an empty log meant both "delivered" and "the webhook never
-    arrived", and the one question worth asking of this container could not be
-    answered from its own output. The probe alert reached Discord and the log
-    said nothing about it.
+    It also asserts the success LINE: if only failures logged, an empty log would mean both
+    "delivered" and "the webhook never arrived".
     """
     _wired(bridge, monkeypatch)
     with caplog.at_level("INFO"):
@@ -179,14 +173,12 @@ def test_a_refusal_from_discord_is_logged_with_discord_s_own_reason(
     """Discord answers 403 for a bot without permission in that channel, 404
     for a wrong id, 429 when rate-limited — and the BODY carries which.
 
-    **Asserted on the log, not on the return value**, and that correction is
-    the point of this test. `HTTPError` is a subclass of `URLError`, so
+    **Asserted on the log, not on the return value.** `HTTPError` is a subclass of `URLError`, so
     deleting the dedicated branch entirely still returns `False` through the
     next handler: a `is False` assertion here passes either way and guards
     nothing. What the branch buys is the reason, and without it every one of
     403/404/429 looks identical to an operator — "discord unreachable" for a
-    bot that simply lacks permission in the channel. Probed by removing the
-    branch: the return-value version stayed green, this one goes red.
+    bot that simply lacks permission in the channel.
     """
     import io
 

@@ -68,8 +68,8 @@ async def test_rhythm_bins_uses_the_substrate_local_hour_of_week(monkeypatch):
 
 
 async def test_rhythm_bins_splits_an_overnight_stay_across_the_hours_it_covers(monkeypatch):
-    # Audit 2026-09-27: the whole 9-hour stay used to land on its START hour
-    # (Monday 22:00), leaving the small hours looking empty.
+    # The whole 9-hour stay spreads over the hours it spans, not onto its START
+    # hour (Monday 22:00), which would leave the small hours looking empty.
     start = _ts(2026, 8, 17, 22)  # Monday 22:00 HKT
     end = start + 9 * 3_600_000   # Tuesday 07:00
     engine = _Engine([_Result([SimpleNamespace(started_ts=start, ended_ts=end)])])

@@ -1,8 +1,7 @@
 """`nora.agent.punctuation`: no em dash reaches the model.
 
-The measurement behind it is in the module docstring: she copies the dashes
-she is shown (49% of replies with them in her input, 3% with none), so these
-pin that the REQUEST is clean, not that a rule asks her to be.
+The reason is in the module docstring: she copies the dashes she is shown,
+so these pin that the REQUEST is clean, not that a rule asks her to be.
 """
 
 from __future__ import annotations

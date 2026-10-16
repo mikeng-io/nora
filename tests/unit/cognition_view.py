@@ -1,9 +1,8 @@
 """A rendered Cognition prompt, read the way the model reads it: as blocks.
 
-Step 3b of `design/context-assembly/04-every-occasion.md` made the prompt well-formed
-XML-shaped text (every value escaped, every row an element), so the tests that
-used to substring-match a hand-written line read it by parsing instead, which is
-also a check that nothing a message or a name says broke the markup. Test support
+The prompt is well-formed XML-shaped text (every value escaped, every row an
+element), so tests read it by parsing instead of substring-matching, which also
+checks that nothing a message or a name says breaks the markup. Test support
 only: it holds no assertion of its own.
 """
 

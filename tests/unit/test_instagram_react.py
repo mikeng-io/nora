@@ -1,7 +1,6 @@
 """`nora.platform.instagram.react.InstagramReactor` against the bridge's
 `PUT /threads/{thread_fbid}/messages/{message_id}/reaction`
-(design/instagram-adoption/16 §Resources, 17 §P14, and the route as
-`deploy/instagram-bridge/internal/transport/http/messages.go` implements it).
+(as `deploy/instagram-bridge/internal/transport/http/messages.go` implements it).
 
 The stand-in bridge RECORDS THE PATH AND THE BODY and reproduces the route's
 own wrong-call shape: `handleReaction` 400s an empty emoji *even on a removal*,
@@ -69,7 +68,7 @@ async def bridge():
 async def test_a_reaction_posts_the_short_room_id_and_the_message_id(bridge):
     """SHORT, and it is load-bearing here in a way it is not for a text send:
     a reaction addressed with the LONG thread id is accepted with a 200 and is
-    simply absent from the thread afterwards (measured 2026-09-22)."""
+    simply absent from the thread afterwards."""
     box, reactor = bridge
 
     result = await reactor.react(target=GROUP, emoji="❤️", to_message_id=MID)
@@ -92,9 +91,9 @@ async def test_a_REMOVAL_still_carries_the_emoji(bridge):
 
 
 async def test_an_UNCONFIRMED_reaction_is_still_a_success():
-    """`{"confirmed": false}`: accepted, and the mutation's own post-state was
-    silent, which production showed on every reaction while it landed. The
-    status is 200, so it is a success; only the status is read."""
+    """`{"confirmed": false}`: accepted, though the mutation's own post-state
+    was silent, as it is on a reaction that lands. The status is 200, so it is a
+    success; only the status is read."""
 
     async def unconfirmed(request: web.Request) -> web.Response:
         fx = _fixture("reaction_unconfirmed.json")

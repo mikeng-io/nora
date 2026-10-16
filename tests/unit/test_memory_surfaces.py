@@ -1,9 +1,9 @@
-"""One memory surface per deployment (operator ruling 2026-10-16, DEC-316).
+"""One memory surface per deployment (DEC-316).
 
 Honcho and the memory graph never sit on one tool surface. `[memory_index]
 enabled` (the registry holding a `MemorySearch`) selects the graph's,
 `memory_search`; off (the shipped default, and the rollback) it is the
-Honcho surface exactly as before: `ask_memory`, `search_memory`,
+Honcho surface: `ask_memory`, `search_memory`,
 `search_memory_workspace`, `who_said`. `about`, `remember` and
 `load_transcript` are on both.
 
@@ -51,8 +51,7 @@ MEMORY_VERBS = HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS | {
 #: column is the Honcho column with every Honcho memory verb taken out and
 #: `memory_search` put in where that place had a Honcho search verb. The
 #: worker holds no `memory_search`: it reads the unit's other rooms, and the
-#: worker's reach is its one room (design/subagent §4c, `NOT_LOOKUPS`), as
-#: `search_memory_workspace` was kept from it.
+#: worker's reach is its one room (`NOT_LOOKUPS`).
 EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     "tag": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
@@ -191,7 +190,7 @@ def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
 
 
 def test_cognition_takes_the_memory_surface_from_the_registry() -> None:
-    """One source (DEC-316 review): Cognition's `wired` set is what the
+    """One source (DEC-316): Cognition's `wired` set is what the
     registry it builds through withholds, never a flag re-derived from
     config beside it. `read_surface` cannot be called without it."""
     read_only = frozenset(HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS | {"about"})

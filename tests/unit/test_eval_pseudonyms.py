@@ -1,4 +1,4 @@
-"""A pseudonymised case resolves against the deployment through a private map (#776).
+"""A pseudonymised case resolves against the deployment through a private map.
 
 Every value here is SYNTHETIC: the real map lives on the deploy host only and
 never enters the tree. The pseudonyms play the scrub's part (`grp-pseudo`,

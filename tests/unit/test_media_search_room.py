@@ -1,12 +1,11 @@
 """`media_search(scope="room")`: photos PEOPLE SENT, in the calling room only
-(DEC-138, amended 2026-10-01).
+(DEC-138).
 
-The room authority is the message row (design/artifact §25), never the media
+The room authority is the message row, never the media
 index's provenance, which names only the first room a byte string was seen in.
 So a photo is found in a room when a message of THAT room carries its sha256,
 whichever room the index row was born in, and is never found in a room whose
-messages do not carry it. Each test below is paired with the line it guards in
-the PR that added it, reverted and watched red.
+messages do not carry it.
 """
 
 from __future__ import annotations
@@ -142,8 +141,8 @@ async def test_an_unreadable_media_index_is_unavailable_never_no_photos(persons,
 
 
 async def test_the_library_scope_reports_an_unreadable_index_as_unavailable(persons, world):
-    """`search` swallowed a database error as `()`, so a down index read as an
-    empty library."""
+    """A database error from `search` is not swallowed as `()`: a down index must
+    not read as an empty library."""
     world["media"].fail = True
     out = await _tool(persons, world)(query="cat")
     assert out["status"] == "unavailable"
@@ -306,7 +305,7 @@ async def test_media_beyond_90_days_is_not_found(persons, world):
     assert (await _fetch(persons, world)(code="121212"))["status"] != "nothing_found"
 
 
-# ---- review of #661: the identifier screen covers the whole reading ---------
+# ---- the identifier screen covers the whole reading ---------
 
 PHONE = "+85290000101"
 
@@ -320,7 +319,7 @@ def _read_with(world, sha, **fields):
 
 
 async def test_a_title_holding_an_identifier_is_withheld_with_the_rest(persons, world):
-    """B1: the title went out unscreened beside `withheld: True`."""
+    """The title is screened for identifiers too, not only shown beside `withheld: True`."""
     _read_with(world, DINNER, title=f"business card {PHONE}", description="a card on a table")
     await _send(world, ROOM_B, DINNER)
     out = await _room(persons, world)
@@ -331,7 +330,8 @@ async def test_a_title_holding_an_identifier_is_withheld_with_the_rest(persons, 
 
 
 async def test_a_withheld_reading_cannot_be_probed_one_query_at_a_time(persons, world):
-    """S5: matching on hidden text let a model confirm its digits."""
+    """Matching on hidden text would let a model confirm its digits, so a withheld
+    reading cannot be probed."""
     _read_with(world, DINNER, title="a card", content=f"call {PHONE} now")
     _read_with(world, PARK, title="a park", description="a dinner in a park")
     await _send(world, ROOM_B, DINNER)
@@ -344,13 +344,13 @@ async def test_a_withheld_reading_cannot_be_probed_one_query_at_a_time(persons, 
     assert [r["handle"] for r in ok["results"]] == [PARK[:6]]
 
 
-# ---- review of #661: the row cap is a signal, not a silent drop -------------
+# ---- the row cap is a signal, not a silent drop -------------
 
 
 async def test_a_code_behind_the_row_cap_is_unavailable_never_nothing_found(
     persons, world, monkeypatch,
 ):
-    """S3: a photo older than the cap's reach read as `nothing_found`."""
+    """A photo older than the row cap's reach is `unavailable`, not `nothing_found`."""
     monkeypatch.setattr("nora.domain.media.ROOM_MEDIA_ROWS", 3)
     await _send(world, ROOM_B, PNG_SHA, days_ago=60, media_type="image/png")
     for i in range(5):

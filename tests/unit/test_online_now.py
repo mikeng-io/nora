@@ -1,11 +1,10 @@
-"""`online_now` (design/online-status/, the #248 live-state cross-check) —
-the live digital-activity tool and its fail-closed matrix.
+"""`online_now` — the live digital-activity tool and its fail-closed matrix.
 
 The shape mirrors `tests/test_where_been.py`: the tool is driven through
 `build_tool_specs` — the same wiring the tag path uses — against the three
 contracted fakes (`nora.testing.FakeSteamPresenceProvider` /
 `FakeVoicePresenceSource` / `FakeDiscordPresenceSource`), with the room
-resolved through `FakeRosterSource`. The pinned behaviours are the design's honesty rules:
+resolved through `FakeRosterSource`. The pinned behaviours are the honesty rules:
 away/snooze are never flattened, `profile_hidden` is never "not playing",
 an unwired or failed read is `unavailable` never `nothing_found`, a
 degraded room is `unavailable` never a one-person answer, and a names
@@ -204,7 +203,7 @@ async def test_names_matching_nobody_in_scope_is_nothing_found(persons):
     tool = _online_now(persons, online_source=steam, metrics=metrics)
     out = await tool("online", names=["Sam"])
     assert out["status"] == "nothing_found"
-    # ...and it is COUNTED as the tool's own nothing_found (04's metrics row).
+    # ...and it is COUNTED as the tool's own nothing_found.
     assert _labelled(metrics, "nora_tool_calls_total", "status", "nothing_found")
 
 
@@ -212,7 +211,7 @@ async def test_names_matching_nobody_in_scope_is_nothing_found(persons):
 
 
 async def test_away_and_snooze_are_reported_as_such(persons):
-    """personastate honesty (03): away is `away`, never flattened to online
+    """personastate honesty: away is `away`, never flattened to online
     — and never to offline either."""
     steam = FakeSteamPresenceProvider(players={
         "111": SteamPlayerState(steam_id="111", personastate=4, profile_public=True),
@@ -229,7 +228,7 @@ async def test_away_and_snooze_are_reported_as_such(persons):
 async def test_profile_hidden_is_never_not_playing(persons):
     """A private profile withholds `gameextrainfo`: the entry says
     `profile_hidden` and asserts NOTHING about play state — hidden is not
-    "not playing", and it is not "offline" either (02's fail-closed row)."""
+    "not playing", and it is not "offline" either."""
     steam = FakeSteamPresenceProvider(players={
         "111": MILES_ONLINE, "222": BLAKE_HIDDEN,
     })
@@ -244,7 +243,7 @@ async def test_profile_hidden_is_never_not_playing(persons):
 
 
 async def test_playing_reports_the_title_and_the_absent_one_honestly(persons):
-    """The #248 arm: in-game carries the title (and id); a PUBLIC profile
+    """The in-game arm: in-game carries the title (and id); a PUBLIC profile
     with no game is `playing: False` — an assertion Steam's answer ground."""
     steam = FakeSteamPresenceProvider(players={
         "111": MILES_ONLINE, "222": BLAKE_AWAY,
@@ -264,7 +263,7 @@ async def test_playing_reports_the_title_and_the_absent_one_honestly(persons):
 
 
 async def test_no_pulse_block_is_nothing_found_for_that_person(persons):
-    """A person with no `pulse` block has no steam_id (02): alone they are
+    """A person with no `pulse` block has no steam_id: alone they are
     the arm's `nothing_found`; beside a readable person they are an honest
     `unknown`, never "offline"."""
     steam = FakeSteamPresenceProvider(players={"111": MILES_ONLINE})
@@ -327,9 +326,9 @@ async def test_voice_arm_unwired_and_failed_are_unavailable(persons):
 
 
 async def test_online_arm_merges_steam_and_discord_presence(persons):
-    """The correction: the merged arm reads per-person Discord PRESENCE —
-    status + rich presence — with voice membership riding along as one
-    more fact, never the definition of "online"."""
+    """The merged arm reads per-person Discord PRESENCE — status + rich
+    presence — with voice membership riding along as one more fact, never the
+    definition of "online"."""
     steam = FakeSteamPresenceProvider(players={
         "111": MILES_ONLINE, "222": BLAKE_AWAY,
     })
@@ -362,9 +361,8 @@ async def test_online_arm_merges_steam_and_discord_presence(persons):
 
 
 async def test_online_arm_forum_typing_member_is_online(persons):
-    """The exact case the operator called out: a member typing in a forum
-    thread is ONLINE on Discord and in no voice channel — v1 read
-    `member.voice` and reported 「冇人上線」. The corrected arm answers
+    """A member typing in a forum thread is ONLINE on Discord and in no voice
+    channel; reading `member.voice` would report 「冇人上線」. The arm answers
     from presence: `discord_status` online, no rich presence, `in_voice`
     False as an extra fact."""
     presence = FakeDiscordPresenceSource(states={

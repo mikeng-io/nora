@@ -1,4 +1,4 @@
-"""The CDP client for a room's browser (`nora.infra.computer.browser`, B2).
+"""The CDP client for a room's browser (`nora.infra.computer.browser`).
 
 A fake CDP connection answers the calls `BrowserPage` makes and records them, so
 each test reads what the client asked Chrome to do. The refusal path runs

@@ -1,7 +1,7 @@
 """The composition root builds Nora's ONE Google identity from `[google]`
 when a Google service is on and every value it names is in the environment
 (DEC-8), and hands it to the shared-file source; otherwise None, which the
-open tool answers `unavailable` (design/external-files/00-design.md §4)."""
+open tool answers `unavailable`."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def test_a_value_missing_builds_nothing_and_says_which(
 
 def test_a_stale_per_service_table_is_refused(example_config):
     """It fails naming the section that replaced it, not with a generic
-    "extra inputs" error (re-review of PR 801)."""
+    "extra inputs" error."""
     with pytest.raises(ValueError, match=r"\[google\]") as raised:
         ExternalFilesConfig.model_validate({"enabled": True, "google_drive": {}})
     assert "[external_files.google_drive]" in str(raised.value)

@@ -1,6 +1,5 @@
 """The typed views an Instagram read is built into, and the ONE renderer that
-turns them into what the model reads (design/instagram-adoption/18 §"Typed
-views, one renderer, and readings").
+turns them into what the model reads.
 
 Every view here is built by the client's own builders from a shared contract
 fixture the Go handlers generate (`tests/fixtures/instagram_bridge/`), so a
@@ -323,10 +322,9 @@ def test_the_caption_always_survives_a_large_carousel(n):
 
 
 def test_a_post_caption_comes_back_whole_beside_eight_long_readings():
-    """#484's promise holds with readings present: the transcript carries a
-    shared item's first sentence because this read returns the whole
-    caption. The caption has first claim; the readings share what is left
-    and are still all there."""
+    """With readings present, the transcript carries a shared item's first sentence
+    because this read returns the whole caption. The caption has first claim; the
+    readings share what is left and are still all there."""
     caption = "Every dish is built around one ingredient from the morning market. " * 30
     assert len(caption) > 2000
     out = render(Result("ok", view=_carousel(8, reading="word " * 1000, caption=caption)),
@@ -353,8 +351,8 @@ def test_a_tiny_budget_shortens_every_run_and_drops_none():
 
 
 def test_a_video_s_coverage_sentence_survives_the_clamp():
-    """#117: a partial reel read that loses «I have not seen the rest» reads
-    as whole. The description is shortened; the sentence is kept whole."""
+    """A partial reel read that loses «I have not seen the rest» reads as whole.
+    The description is shortened; the sentence is kept whole."""
     coverage = "(This clip runs about 4 minutes and I only watched the first 2 of them.)"
     base = post_view(_body("posts_carousel_ok.json"))
     items = tuple(
@@ -485,13 +483,13 @@ def test_the_client_writes_no_model_facing_dict_of_its_own():
     )
 
 
-# ---- #486 re-review ------------------------------------------------------------
+# ---- reel windows and the read note --------------------------------------------
 
 
 def test_a_single_long_reel_is_not_read_here_and_is_never_called_unseen():
     """A 140 s reel is past one reading window, so it is not read HERE; its
     line says `media_fetch` reads it, and the note must send her there, never
-    tell her to say she could not see it (the first round's regression)."""
+    tell her to say she could not see it."""
     base = post_view(_body("posts_carousel_ok.json"))
     reel = dataclasses.replace(
         base.items[1], duration_seconds=140.0, reading=Reading("too_long"),
@@ -580,7 +578,7 @@ def test_the_last_resort_keeps_the_caption_block():
     assert not all(f"\n{k}. " in "\n" + body for k in range(1, 21))
 
 
-# ---- #486 final review ---------------------------------------------------------
+# ---- mixed outcomes ------------------------------------------------------------
 
 
 def test_ten_failed_images_with_two_past_the_cap_get_the_mixed_note():
@@ -613,13 +611,11 @@ def test_a_story_with_failed_and_not_read_frames_gets_the_mixed_note():
 
 
 def test_the_read_notes_frame_a_shows_line_as_her_notes_and_never_ask_for_a_report():
-    """design/proposed/32-shared-media-register.md: POST_READ_FRAMING said
-    «report what an item shows», and a tagged answer about a shared post
-    opened by translating the shows lines back, in order, to whoever shared
-    it. Both read notes now say a shows line is notes for her, so she can see
-    it too. Only the post note claims the sharer has seen it: a post is read
-    from its link only, while a story is read by person or handle, and the
-    asker may not have seen that."""
+    """A note saying «report what an item shows» makes a tagged answer open by
+    translating the shows lines back, in order, to whoever shared it. Both read
+    notes say a shows line is notes for her, so she can see it too. Only the post note claims the
+    sharer has seen it: a post is read from its link only, while a story is read by
+    person or handle, and the asker may not have seen that."""
     for note in (POST_READ_FRAMING, STORY_READ_FRAMING):
         assert "report" not in note.lower()
         assert "notes on that" in note and "so you can see it too" in note

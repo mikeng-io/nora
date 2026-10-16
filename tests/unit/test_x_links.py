@@ -1,5 +1,5 @@
 """`nora.domain.x_links`: which X links name a post or an account, and that
-nothing else is read as one (design/social-per-network/10 §`x_read`)."""
+nothing else is read as one."""
 
 from __future__ import annotations
 

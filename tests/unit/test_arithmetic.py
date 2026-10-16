@@ -1,15 +1,14 @@
 """`nora.agent.arithmetic.evaluate` — the safe evaluator behind the `calculate` tool.
 
-Every number in this file was MEASURED on this machine (2026-08-06) before it
-was asserted, because each one is a case where the obvious implementation is
-confidently wrong rather than obviously broken:
+Each asserted number is a case where the obvious implementation is confidently
+wrong rather than obviously broken:
 
   Decimal("2.005").quantize(Decimal("0.01"))  ->  2.00   # ROUND_HALF_EVEN
   Decimal(1485) / 7 -> 212.1428...; 212.14 * 7 -> 1484.98 (two cents short)
-  Decimal(2) ** Decimal(9999999999) -> Overflow in 54 us  # but 2**9999999999
-  as ints was still running after 10 s (`timeout 10` returned 124)
+  Decimal(2) ** Decimal(9999999999) -> Overflow at once, but 2**9999999999
+  over ints runs effectively forever
 
-The tests below are written so that reverting the code under test turns them
+The tests are written so that reverting the code under test turns them
 red: the banker's-rounding probe asserts the answer you get ONLY by choosing
 ROUND_HALF_UP, and the remainder probe asserts a field that does not exist if
 the shortfall is dropped.
@@ -51,8 +50,8 @@ def test_every_operator_the_docstring_promises_actually_works():
 def test_a_decimal_literal_is_not_read_through_a_float():
     """`ast` hands back `Constant(value=0.1)` — a FLOAT, already rounded at
     parse time. `Decimal(0.1)` is 0.1000000000000000055511151231257827…, so
-    0.1 + 0.2 would not be 0.3. Measured: reading the literal's SOURCE TEXT is
-    the only form that is exact.
+    0.1 + 0.2 would not be 0.3. Reading the literal's SOURCE TEXT is the only
+    exact form.
 
     The second case is the one `Decimal(str(value))` also gets wrong — the
     float is already 1.0 by the time `ast` hands it over, so `str()` of it is
@@ -69,7 +68,7 @@ def test_a_decimal_literal_is_not_read_through_a_float():
 # ---- PROBE 1: banker's rounding is the wrong default, and it is the default --
 
 def test_money_rounds_half_up_and_not_the_way_python_does_by_default():
-    """MEASURED: `Decimal("2.005").quantize(Decimal("0.01"))` is **2.00**.
+    """`Decimal("2.005").quantize(Decimal("0.01"))` is **2.00**.
 
     Python's default context rounds ROUND_HALF_EVEN, which you get by NOT
     choosing. 2.005 -> 2.00 and 0.125 -> 0.12 are both defensible to a
@@ -92,7 +91,7 @@ def test_an_exact_answer_is_not_dressed_up_with_a_rounded_one():
 # ---- PROBE 2: the remainder must be visible ---------------------------------
 
 def test_a_split_that_loses_money_says_where_the_money_went():
-    """MEASURED: 1485/7 = 212.1428…; 212.14 x 7 = 1484.98, two cents short.
+    """1485/7 = 212.1428…; 212.14 x 7 = 1484.98, two cents short.
 
     Reporting only the per-person figure leaves the group 0.02 short with
     nobody able to say why. `split` is what makes «who eats the extra 2 cents»
@@ -154,9 +153,8 @@ def test_a_split_never_shows_a_second_money_figure_beside_the_settlement():
 # ---- PROBE 3: Pow is a denial of service ------------------------------------
 
 def test_a_huge_exponent_is_refused_rather_than_computed():
-    """MEASURED both halves. `2**9999999999` over ints was still running when
-    `timeout 10` killed it (exit 124). Over `Decimal` it raises `Overflow` in
-    54 microseconds — but only because the ambient context's Emax is 999999
+    """`2**9999999999` over ints runs unbounded. Over `Decimal` it raises
+    `Overflow` at once — but only because the ambient context's Emax is 999999
     and the Overflow trap is on, neither of which this module sets, and
     «Overflow» is not a sentence a model can act on. The bound is checked
     here, explicitly, and the refusal says what to do instead.
@@ -247,10 +245,10 @@ def test_dividing_by_zero_is_a_refusal_with_a_reason():
 
 def test_an_over_long_expression_is_refused_before_it_is_parsed():
     """`ast.parse` is documented to be able to crash the interpreter on
-    sufficiently nested input. MEASURED on 3.13: depth 200 parses in 0.5 ms and
-    depth 1000 is a `SyntaxError` — but that is CPython's parser limit, not
-    ours, and it is not a promise. The length cap is the bound this module
-    owns, and it also bounds recursion depth in the evaluator below it."""
+    sufficiently nested input. CPython's own parser limit (a `SyntaxError` at
+    depth 1000) is not ours and is not a promise. The length cap is the bound
+    this module owns, and it also bounds recursion depth in the evaluator
+    below it."""
     source = "(" * 5000 + "1" + ")" * 5000
     out = evaluate(source)
     assert out["status"] == "refused"

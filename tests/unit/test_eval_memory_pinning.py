@@ -1,13 +1,12 @@
 """An eval subject can reach no Honcho workspace outside the eval namespace,
 whatever the policy and identity it is composed with bind (DEC-214).
 
-Before the hierarchy, rewriting `memory.workspace_id` was the whole
-guarantee. With `[units]` a unit routes to the Honcho workspace its Nora
-workspace is BOUND to, and the eval suite composes against the deployment's
-own files by default — whose binding names production's live workspace. This
-builds a subject's config from files shaped like that and asks the
-production router where it can reach. Placeholder ids; the workspace names
-are the operator's own mapping.
+With `[units]` a unit routes to the Honcho workspace its Nora workspace is
+BOUND to, and the eval suite composes against the deployment's own files by
+default, whose binding names production's live workspace; rewriting
+`memory.workspace_id` alone is not the guarantee. This builds a subject's
+config from files shaped like that and asks the production router where it can
+reach. Placeholder ids; the workspace names are the operator's own mapping.
 """
 
 from __future__ import annotations

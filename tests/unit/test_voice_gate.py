@@ -1,11 +1,10 @@
 """`voice_join_decision` (nora/platform/discord/voice_gate.py) — the join
-admission matrix (design/voice-channel/07 §12.2/§12.3). Shared by `/music
-play`, `/discord join`, and the agent tool bridge, so the whole matrix is
-pinned here exactly once.
+admission matrix. Shared by `/music play`, `/discord join`, and the agent tool
+bridge, so the whole matrix is pinned here exactly once.
 
-The matrix is GUILD-scoped since 2026-09-17 (§12.2 reversed): any voice
-channel in an allowed guild admits, because a server's voice channels are not
-a fixed list anyone can keep in config.
+The matrix is GUILD-scoped: any voice channel in an allowed guild admits,
+because a server's voice channels are not a fixed list anyone can keep in
+config.
 """
 
 from __future__ import annotations
@@ -31,10 +30,8 @@ ALLOWED = frozenset({GUILD})
         (True, None, ALLOWED, "not_in_voice"),
         # A member in the guild's configured channel.
         (True, CHANNEL, ALLOWED, "ok"),
-        # THE REVERSAL: a member in ANY OTHER channel of the same guild is
-        # admitted too. Before 2026-09-17 this answered
-        # `not_in_allowed_channel`, and that is exactly the refusal that made
-        # a 10-voice-channel server unusable.
+        # A member in ANY OTHER channel of the same guild is admitted too: a
+        # per-channel refusal would make a many-channel server unusable.
         (True, "999", ALLOWED, "ok"),
         (True, "a-brand-new-channel", ALLOWED, "ok"),
         # An EMPTY allow-list fails closed even for a member in a channel.

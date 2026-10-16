@@ -1,11 +1,9 @@
-"""A cancelled media read leaves no process and no scratch file behind
-(design/instagram-adoption/18 §"Typed views, one renderer, and readings",
-#486 review).
+"""A cancelled media read leaves no process and no scratch file behind.
 
-`_run` and `_run_video` are the two ffmpeg runners. Both handled a TIMEOUT
-and neither handled a CANCELLATION: `asyncio.wait_for` abandons
-`communicate()` and re-raises, so the child kept running, and `_run_video`
-also skipped removing its scratch copy of the clip (up to 64 MiB). A read is
+`_run` and `_run_video` are the two ffmpeg runners. Both must handle a TIMEOUT
+and a CANCELLATION: `asyncio.wait_for` abandons `communicate()` and re-raises,
+so the child would keep running, and `_run_video` would also leave its scratch
+copy of the clip (up to 64 MiB). A read is
 cancelled whenever the turn's own `wait_for` fires, and `instagram_read`
 cancels its per-item looks on the same path, so this is the ordinary way a
 slow read ends.
@@ -96,7 +94,7 @@ async def test_a_timed_out_video_run_still_cleans_up(spawned):
     assert not _exists(args[-1])
 
 
-# ---- #486 re-review: the two remaining leak paths, and the shield ------------
+# ---- the remaining leak paths, and the shield --------------------------------
 
 
 async def test_a_cancel_while_ffmpeg_is_being_spawned_still_removes_the_scratch_file(
@@ -150,8 +148,8 @@ async def test_a_second_cancel_during_the_reap_removes_the_file_and_the_reap_goe
     monkeypatch,
 ):
     """First cancel: ffmpeg is killed and reaped under a shield. A second
-    cancel arriving during that reap used to raise out of it before the
-    unlink (5 of 8 probes). Now the file goes anyway, and the shielded wait
+    cancel arriving during that reap must not raise out of it before the
+    unlink: the file goes anyway, and the shielded wait
     is NOT cancelled, so the killed child is still reaped."""
     proc = _StuckProcess()
     spawned_with: list[tuple] = []

@@ -1,20 +1,20 @@
-"""Phase 1's exit gate (plan doc's own words): "a turn's reasoning is
+"""Exit gate for tag-trace reasoning capture: "a turn's reasoning is
 demonstrably captured and stored, with a red-on-revert test that deletes the
 reasoning blocks and fails."
 
-This module exercises Tasks 1-6 TOGETHER, end to end: a scripted turn whose
-`agent.messages` carries a `reasoningContent` block goes through the real
-extraction (`nora.agent.tag_trace_extract.extract_tag_trace`, Tasks 2/3),
-the real sanitization it calls (`nora.agent.tag_trace_sanitize`, Task 2), and
+This module exercises extraction, sanitization and retention TOGETHER, end to end: a scripted turn
+whose `agent.messages` carries a `reasoningContent` block goes through the real
+extraction (`nora.agent.tag_trace_extract.extract_tag_trace`),
+the real sanitization it calls (`nora.agent.tag_trace_sanitize`), and
 the real pipeline retention (`nora.engagement.pipeline`'s unconditional
-`self._tag_trace_store.save(trace)`, Task 6) — then reads the saved
+`self._tag_trace_store.save(trace)`) — then reads the saved
 `TagTrace` back and asserts the block is still there.
 
 Reuses `tests/unit/test_engagement_pipeline.py`'s own pipeline-construction
 harness (`_build_pipeline`, `_request`, `_drain`) rather than a second copy:
 that module already assembles the exact collaborator set
 (`EngagementPipeline`'s ~20 constructor arguments, the `_FakeTagTraceStore`
-double Task 6's own tests read `pipeline._tag_trace_store.saved` through) —
+double the pipeline's own tests read `pipeline._tag_trace_store.saved` through) —
 duplicating it here is exactly the "interpreting twice is how two copies
 drift" trap CLAUDE.md's spine calls out.
 """
@@ -60,8 +60,7 @@ class _ReasoningCapturingRunner(FakeAgentRunner):
             {"role": "assistant", "content": [
                 # THE LINE THIS GATE PROTECTS. Comment it out (or replace it
                 # with just the `toolUse` block below) to confirm this test
-                # goes RED — that is the red-on-revert drill task-7-brief.md
-                # calls for, not a normal TDD step.
+                # goes RED (the red-on-revert drill).
                 {"reasoningContent": {"reasoningText": {"text": REASONING_TEXT}}},
                 {"toolUse": {
                     "toolUseId": "t1", "name": "send_reply",
@@ -83,12 +82,12 @@ class _ReasoningCapturingRunner(FakeAgentRunner):
 async def test_reasoning_content_survives_into_a_retained_tag_trace():
     """Drive a scripted turn whose assistant message includes a
     `reasoningContent` block through the real extraction+retention path
-    (Tasks 3-6), then read the trace back and assert the block is present.
+, then read the trace back and assert the block is present.
 
-    Red-on-revert drill (the deliverable — see task-7-brief.md): comment out
+    Red-on-revert drill: comment out
     the `reasoningContent` block in `_ReasoningCapturingRunner.invoke` above,
     run `uv run pytest -k reasoning_content_survives -v`, confirm RED,
-    restore, confirm GREEN. Both runs are recorded in task-7-report.md.
+    restore, confirm GREEN.
     """
     runner = _ReasoningCapturingRunner([
         ScriptedTurn(tool_calls=[("send_reply", {"text": "今晚七點半得"})],
@@ -101,7 +100,7 @@ async def test_reasoning_content_survives_into_a_retained_tag_trace():
 
     got = pipeline._tag_trace_store.saved
     assert len(got) == 1
-    assert got[0].outcome == "send_reply"  # Task 6's own outcome correction still ran
+    assert got[0].outcome == "send_reply"  # the outcome correction still ran
     assert any(
         "reasoningContent" in block
         for msg in got[0].messages

@@ -237,7 +237,7 @@ async def test_an_unrouted_call_is_refused_without_a_request(recorder):
 
 async def test_without_units_an_unknown_room_keeps_the_old_single_workspace(recorder):
     """The back-compat half: not strict, so a harness's synthetic room goes
-    to the default workspace UNSCOPED, exactly as before the hierarchy."""
+    to the default workspace UNSCOPED."""
     client = _client(recorder.url, strict=False)
     await client.representation(peer_id="nora", search_query="q", conversation_id="synthetic")
     rep = recorder.body("/v3/workspaces/nora/peers/nora/representation")
@@ -287,9 +287,9 @@ async def test_an_absent_workspace_is_created_marked_and_an_empty_one_is_marked(
 
 
 async def test_the_default_workspace_is_nora_s_without_a_marker(honcho):
-    """`memory.workspace_id` holds every deployment's history, created before
-    the marker, with probe sessions no naming rule would call Nora's. It is
-    accepted as it is, and never re-marked."""
+    """`memory.workspace_id` holds every deployment's history, with probe
+    sessions no naming rule would call Nora's. It is accepted as it is, and
+    never re-marked."""
     honcho.seed("nora", created_at="2026-01-01T00:00:00Z")
     honcho.sessions["nora"]["probe-session-1"] = {
         "id": "probe-session-1", "is_active": True, "workspace_id": "nora",
@@ -329,7 +329,7 @@ async def test_a_workspace_read_is_unscoped_in_that_workspace(recorder):
 
 
 async def test_startup_joins_every_known_room_that_has_a_session(honcho):
-    """A room that is quiet after the cutover still joins its unit's scope —
+    """A room that is quiet still joins its unit's scope —
     at startup, not on its next message. A room with no session in the
     workspace yet is skipped, not created."""
     client = _client(honcho.url)
@@ -432,10 +432,10 @@ async def _room_with_history(honcho: FakeHoncho, cid: str) -> None:
 
 
 async def test_a_second_startup_adds_nothing_and_backfills_nothing(honcho):
-    """Measured live 2026-09-28: every restart re-added every known room, and
-    honcho v3.1.2 enqueues a `scope_backfill` (and so an omni dream per
+    """Honcho v3.1.2 enqueues a `scope_backfill` (and so an omni dream per
     touched collection) for every named session with messages, members
-    included. After the first start, a restart must add no session."""
+    included, so a restart that re-added every known room would pay it each
+    time. After the first start, a restart must add no session."""
     await _room_with_history(honcho, "g-friends")
     honcho.scope_backfills.clear()
     honcho.requests.clear()
@@ -500,8 +500,8 @@ async def test_an_unreadable_member_list_skips_the_join_instead_of_adding_blind(
 
 
 async def test_a_scope_missing_at_the_first_message_is_created_then_joined(honcho):
-    """A Honcho that was down at startup left the scope uncreated, and the
-    session create no longer names scopes: the join creates it first."""
+    """A Honcho that was down at startup leaves the scope uncreated, and the
+    session create names no scopes: the join creates it first."""
     client = _client(honcho.url)
     await client.ensure_workspace()
     del honcho.scopes[("nora", "friends")]

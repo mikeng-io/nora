@@ -28,9 +28,8 @@ def test_character_block_renders_each_person_with_an_age():
 
 
 async def test_the_character_read_is_keyed_by_the_rooms_unit_for_its_listed_persons():
-    """C2b (design/self-growth/10 §3): one account per (unit, person), so the
-    read keys the rendering room's UNIT, and asks only for the persons that
-    room lists (design/cognition-loop/50 §5): an account of someone the room
+    """One account per (unit, person): the read keys the rendering room's UNIT and
+    asks only for the persons that room lists. An account of someone the room
     does not list is never read into it, and a per-room key is never read."""
     from nora.domain.culture import character_key
     from nora.domain.models import PersonRef

@@ -1,12 +1,7 @@
-"""The Cognition session's agenda skills as production wires them (step 4 PR-1,
-`cognition-register-skill`).
+"""The Cognition session's agenda skills as production wires them.
 
-Until this step every session ran with `AgendaSkills(by_kind={})`: no skill was
-injected for any kind, and the 54 shadow sessions on the deploy host all carry
-`skill_versions = {}`. The session had the verbs of the note and event writers it
-replaces and none of their judgement (design/cognition-loop/30-cognition.md §4:
-«the replaced adaptors' objectives become Cognition's skills»). Now
-`AGENDA_SKILLS` maps `message`, `rollup` and `self` to ONE skill,
+The session has the verbs of the note and event writers it replaces, so their
+judgement is carried by a skill: `AGENDA_SKILLS` maps `message`, `rollup` and `self` to ONE skill,
 `cognition-register`, read through the Dreamer's instruction store.
 
 What is pinned, each against the REAL shipped tree (`tests.objectives`):
@@ -25,7 +20,7 @@ What is pinned, each against the REAL shipped tree (`tests.objectives`):
 * no name the skill or the prelude uses is invented: a backticked name is a close
   reason, a fixed note token, a verb, a verb's parameter or a read tool, all derived
   from the session's own tool table, and an UNbackticked snake_case name is held to
-  the same set (the review's `event_delete` survivor);
+  the same set;
 * the skill is resolved once per session, so the digest a row records is over the
   text the model read even when the corpus hot-reloads while the session is set
   up, and a skill edited on the bind mount is live at the next session (the
@@ -80,7 +75,7 @@ from tests.unit.test_wake_evaluator import _floor_setup
 
 NOW = 1_800_000_000_000
 MAPPED = ("message", "rollup", "self", "time")
-#: The bound the skill is written to (the PR-1 spec): a few thousand characters of
+#: The bound the skill is written to: a few thousand characters of
 #: cached prefix, against a session's tens of thousands of input tokens.
 MAX_SKILL_CHARS = 7_000
 
@@ -320,8 +315,7 @@ def unreal_names(text: str, real: set[str]) -> set[str]:
 
 async def test_every_name_the_prelude_and_the_skill_use_is_one_the_session_has():
     """No tool or token the catalogue does not have: a name the model cannot call
-    teaches it to call it. Backticked or not (the review's survivor was an
-    unbackticked `event_delete`)."""
+    teaches it to call it. Backticked or not."""
     real, prelude, skill = await real_names()
     assert unreal_names(prelude + skill, real) == set()
     named = set(re.findall(r"`([^`\n]+)`", prelude + skill))
@@ -369,8 +363,8 @@ RULED_OUT_WITH_AN_OPEN_LINE = (
 
 
 def test_a_body_with_nothing_under_decided_and_open_is_refused_by_the_validator():
-    """The review's finding: the skill said a plan called off goes to Ruled out, which
-    leaves Decided and Open both empty, and the validator refuses exactly that."""
+    """A plan called off goes to Ruled out, which leaves Decided and Open both empty,
+    and the validator refuses exactly that."""
     with pytest.raises(NoteBodyError) as refused:
         parse_note_body(ONLY_RULED_OUT, shown=OFF_SHOWN)
     assert refused.value.rule == "missing_section"
@@ -383,7 +377,7 @@ def test_the_skill_teaches_the_call_off_the_way_the_validator_takes_it():
     assert "called off" in text and "Ruled out with the call-off as the reason" in text
     assert "nothing under Decided and nothing under Open is refused" in text
     assert "leave the note as it is" in text
-    # it no longer lists the call-off among the revisions that move a line into Ruled out
+    # it does not list the call-off among the revisions that move a line into Ruled out
     assert "the plan called off." not in text
 
 
@@ -457,11 +451,10 @@ def requests_stated_as_refusals(text: str) -> list[str]:
 
 
 def test_what_the_validator_does_not_check_is_a_request_and_never_a_refusal():
-    """The review: «every line keeps its ids», «a rollup fact never puts words in a
-    line», a day word in a line, and the Owed rule are not refused by the validator, so
-    no sentence of the skill may say they are. Structural: any sentence with a refusal
-    word that is about an unenforced rule fails (the review's survivor X23 reworded the
-    Owed rule as a refusal and a few fixed phrases did not see it)."""
+    """«every line keeps its ids», «a rollup fact never puts words in a line», a day
+    word in a line, and the Owed rule are not refused by the validator, so no sentence
+    of the skill may say they are. Structural: any sentence with a refusal word that is
+    about an unenforced rule fails, however the rule is reworded."""
     text = _skill().instructions
     assert requests_stated_as_refusals(text) == []
     # the one enforced rule IS stated as a refusal, so the scan sees refusals at all
@@ -516,11 +509,9 @@ async def test_the_prelude_calls_her_notebook_her_own_record_as_the_block_types_
 
 
 async def test_the_prelude_keeps_a_surprise_and_a_confidence_out_of_the_notebook():
-    """design/cognition-loop/40-register.md §6 has a surprise written, with
-    `exclude_persons`, but the session's verbs carry no `exclude_persons` (and
-    nothing derives one from a surprise cue), so a surprise she wrote could be read
-    by the person it is for. Until a verb carries the exclusion the prelude keeps
-    it out: this DIFFERS from §6 on purpose."""
+    """The session's verbs carry no `exclude_persons` (and nothing derives one from a
+    surprise cue), so a surprise she wrote could be read by the person it is for.
+    Until a verb carries the exclusion the prelude keeps it out."""
     real, prelude, _skill_text = await real_names()
     text = " ".join(prelude.split())
     assert "a surprise or a confidence, is not written into the notebook" in text
@@ -576,8 +567,8 @@ class _ReloadingGrounder(EmptyGrounder):
 
 
 async def test_a_reload_during_grounding_leaves_the_digest_over_the_text_the_model_read():
-    """`skill_versions` used to be read before the grounding await and the text after
-    it, so a hot reload between them recorded a hash of text the model never saw."""
+    """`skill_versions` and the text are read together, not either side of the grounding
+    await: a hot reload between them would record a hash of text the model never saw."""
     import hashlib
 
     moving = _MovingSkills()
@@ -618,8 +609,8 @@ def _editable_tree(tmp_path: Path) -> Path:
 
 
 def test_a_skill_edited_on_the_bind_mount_is_live_at_the_next_session(tmp_path):
-    """The production `resolve` is the instruction store's, not a cached copy: the
-    review's survivor R10 memoised it and every test stayed green."""
+    """The production `resolve` is the instruction store's, not a cached copy, so a
+    memoised `resolve` would fail here."""
     import os
     import time
 

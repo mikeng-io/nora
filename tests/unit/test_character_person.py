@@ -1,5 +1,5 @@
 """`CharacterPersonAdaptor` — one person's account per (unit, person), woken by
-their own messages (design/self-growth/10-character.md §3, C2b).
+their own messages.
 
 Written around what a person session can get wrong without anything saying
 so: write someone else's lines into an account, depend on a memory answer
@@ -140,8 +140,8 @@ async def test_an_unsettled_session_holds_and_a_kept_one_spends_the_batch():
 
 
 def test_memory_is_a_tool_the_session_may_call_never_a_prefetch():
-    """§3.3: memory is a read the session MAY make, so a later merge or sunset
-    of Honcho (#736) changes no Character code. The adaptor holds no memory
+    """Memory is a read the session MAY make, so a later merge or sunset
+    of Honcho changes no Character code. The adaptor holds no memory
     store at all, and its tools carry the two memory reads."""
     import inspect
 
@@ -161,9 +161,9 @@ def test_a_person_session_holds_no_presence_read_and_no_act_verb():
 
 
 def test_a_person_session_holds_no_web_tool():
-    """The design asked a person session for memory and a roster check, not for
-    the open web: `web_search` and `web_fetch` were carried without a reason,
-    each a call that costs and reaches outside the room (DEC-290)."""
+    """A person session carries memory and a roster check, not the open web:
+    `web_search` and `web_fetch` each cost a call and reach outside the room
+    (DEC-290)."""
     assert CHARACTER_PERSON_TOOLS.isdisjoint({"web_search", "web_fetch"})
     assert {
         "ask_memory", "search_memory", "about", "lookup_person", "group_members",
@@ -199,10 +199,9 @@ async def test_a_byte_identical_account_is_not_appended():
 
 
 async def test_a_room_culture_with_no_citations_is_not_handed_to_the_person():
-    """An account older than the verb was written by the envelope fold, which
-    held the presence reads, and it renders only in its own room; the person's
-    account renders in every room of the unit that lists them, so it is not
-    handed one. A cited room culture still is."""
+    """An account written by the envelope fold, which held the presence
+    reads, renders only in its own room; the person's account renders in every
+    room of the unit that lists them, so it is not handed one. A cited room culture still is."""
     store = InMemoryCultureStore()
     await store.append(key="room-a", body="plans by attrition", written_at=T0,
                        established_by="dream:culture:x", citations=("41",))

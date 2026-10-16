@@ -1,6 +1,5 @@
-"""The REAL evaluator composed with the REAL session runner (migration step
-3a-ii, review of #627): a would-wake produces a session row through the one
-typed hook, the brakes count sessions that are really in flight, and a session
+"""The REAL evaluator composed with the REAL session runner: a would-wake produces a session
+row through the one typed hook, the brakes count sessions that are really in flight, and a session
 that fails does not move the watermark.
 
 Only the model is scripted (`ScriptedAgent`): every store is an in-memory
@@ -245,7 +244,7 @@ def _rig(
 
 
 # ---------------------------------------------------------------------------
-# MAJOR 1: the evaluator and the runner share ONE typed hook
+# the evaluator and the runner share ONE typed hook
 # ---------------------------------------------------------------------------
 
 async def test_a_would_wake_through_the_real_evaluator_produces_a_session_row():
@@ -309,7 +308,7 @@ async def test_a_failure_before_the_model_is_recorded_failed_and_the_model_never
 
 
 # ---------------------------------------------------------------------------
-# MAJOR 3: the watermark does not advance on a session that did not close
+# the watermark does not advance on a session that did not close
 # ---------------------------------------------------------------------------
 
 async def test_a_failed_sessions_stimuli_are_not_lost():
@@ -606,8 +605,8 @@ async def test_more_than_two_units_in_flight_is_refused_on_real_sessions():
     assert len(written) == 2
     assert rig.metrics.get("nora_cognition_wake_deferred_total", brake="concurrency") == 1
 
-    # 120 s later the old shadow arithmetic (60 s per would-wake) would call
-    # both sessions over and admit the third. They are still running.
+    # 120 s later, counting 60 s per would-wake would call both sessions over and
+    # admit the third. They are still running.
     rig.clock.advance(120)
     assert await rig.tick() == []
     assert len(rig.stimuli.wakes) == 2
@@ -622,7 +621,7 @@ async def test_more_than_two_units_in_flight_is_refused_on_real_sessions():
 
 
 # ---------------------------------------------------------------------------
-# 30-cognition §2: strikes and deferred items
+# strikes and deferred items
 # ---------------------------------------------------------------------------
 
 async def test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike():
@@ -1243,8 +1242,7 @@ async def test_a_wake_for_a_unit_with_no_home_room_is_recorded_failed_not_consum
 
 
 async def test_a_second_cancel_cannot_interrupt_the_cancelled_outcome_write():
-    """Minor 5 (the guard; wiring `cancel_in_flight` at shutdown is the wiring
-    PR's): `shutdown` and the evaluator's `cancel_in_flight` both cancel one
+    """`shutdown` and the evaluator's `cancel_in_flight` both cancel one
     task. The second cancel lands while the first is writing `cancelled`; the
     write still lands."""
     agent = ScriptedAgent(script=[blocked])

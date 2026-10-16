@@ -1,5 +1,4 @@
-"""`nora.app.assess_run` — the flag refusal and the render (design/
-cognition-loop/30-cognition.md §6, DEC-240). No database: `run_nightly`
+"""`nora.app.assess_run` — the flag refusal and the render (DEC-240). No database: `run_nightly`
 refuses before it opens a connection when `[assess] mode` is `"off"`, and the
 metrics test below fakes the engine and patches `run_deterministic_checks`
 rather than touching Postgres — the isolation itself (a raising check does
@@ -80,7 +79,7 @@ class _FakeEngine:
 
 
 async def test_run_nightly_counts_fail_and_error_on_separate_metrics(monkeypatch):
-    """PR #623 review: `nora_dq_failures_total` and `nora_dq_errors_total`
+    """`nora_dq_failures_total` and `nora_dq_errors_total`
     must be two distinct series — a check that raised is not the same fact
     as a check that ran clean and found a violation."""
     results = (

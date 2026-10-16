@@ -1,15 +1,13 @@
 """`evals.backbone`'s graders — pure, no network/DB, cheap to pin.
 
-`AbsenceGrader`: regression for the gap found while re-running
-`design/evaluation/GOAL-2-backbone.md`'s Step 0 falsification against
-`relevance_gate`: it read only `NORA_SAID`, which the `gate` entry point
-never populates (it answers `admitted`, not `said`), so it graded every gate
-case as silence regardless of the actual verdict. `NORA_ADMITTED` fixes it.
+`AbsenceGrader`: reads `NORA_ADMITTED` as well as `NORA_SAID`, because the
+`gate` entry point never populates `NORA_SAID` (it answers `admitted`, not
+`said`); `NORA_SAID` alone would grade every gate case as silence regardless
+of the actual verdict.
 
-`ContextGrader`: S4 (`10-the-scenario-map.md` §3) — deterministic, on
-`NORA_BLOCKS_EMPTY`.
+`ContextGrader`: deterministic, on `NORA_BLOCKS_EMPTY`.
 
-`render_transcript_at`/`SubstringGrader`: S5 — deterministic, calling the
+`render_transcript_at`/`SubstringGrader`: deterministic, calling the
 REAL `nora.domain.blocks.render_messages`/`nora.domain.prompt.age` directly
 (pure functions, no `Subject`/database/network).
 """
@@ -100,8 +98,8 @@ def _data(
 
 
 def test_a_gate_no_go_case_that_was_admitted_fails():
-    """THE BUG: before `NORA_ADMITTED`, this scored PASS — `said` is always
-    `0` for a gate case, so any `no_go`-expecting case looked silent no
+    """Without `NORA_ADMITTED` this would score PASS — `said` is always
+    `0` for a gate case, so any `no_go`-expecting case would look silent no
     matter what the gate actually decided."""
     out = grader.evaluate(_data(expect="no_go", admitted=True))[0]
     assert out.label == FAIL
@@ -123,9 +121,8 @@ def test_a_gate_go_case_that_was_refused_fails():
 
 
 def test_a_participation_style_case_is_unaffected_by_the_gate_signal():
-    """`admitted=None` (never ran a gate) must fall back to `said`, exactly
-    as before this fix — `participation`/`tag`/`dreamer` cases carry no
-    `NORA_ADMITTED` signal at all."""
+    """`admitted=None` (never ran a gate) must fall back to `said` —
+    `participation`/`tag`/`dreamer` cases carry no `NORA_ADMITTED` signal at all."""
     assert grader.evaluate(_data(expect="silence", admitted=None, said=0))[0].label == PASS
     assert grader.evaluate(_data(expect="silence", admitted=None, said=1))[0].label == FAIL
     assert grader.evaluate(_data(expect="speak", admitted=None, said=1))[0].label == PASS
@@ -138,13 +135,12 @@ def test_an_error_is_never_a_pass_regardless_of_the_admitted_signal():
 
 
 def test_a_gate_case_under_either_passes_on_either_verdict():
-    """M1 (audit): the `either` branch was fixed for `silence`/`speak` in
-    `747348bd` but not for itself — a gate case with `expect: either` and
-    `admitted=False` (a correct, successful refusal) fell through to "not
-    spoke" and scored ERROR, "nothing ran and nothing was said", when the
-    gate had in fact run and decided. Both verdicts are real answers for a
-    gate; only the absence of `NORA_ERROR` distinguishes a real refusal from
-    nothing having happened, and that is checked first."""
+    """A gate case with `expect: either` and `admitted=False` (a correct,
+    successful refusal) must not fall through to "not spoke" and score ERROR,
+    "nothing ran and nothing was said": the gate ran and decided. Both
+    verdicts are real answers for a gate; only the absence of `NORA_ERROR`
+    distinguishes a real refusal from nothing having happened, and that is
+    checked first."""
     assert grader.evaluate(_data(expect="either", admitted=True))[0].label == PASS
     assert grader.evaluate(_data(expect="either", admitted=False))[0].label == PASS
 
@@ -190,12 +186,11 @@ def test_a_context_error_is_never_a_pass():
 
 
 def test_no_prefill_span_captured_is_an_error_not_a_pass():
-    """H1, found by BOTH independent reviews: `None` (no `agent.prefill` span
-    seen at all — the entry point never calls `build_prefill`, or the
-    capture itself failed) and `""` (a span WAS seen and nothing was empty)
-    collapsed to the same value before this fix, so a `gate`/`dreamer` case
-    mistakenly given `must_render`, or any capture failure, scored a clean
-    PASS with a positively-worded reason."""
+    """`None` (no `agent.prefill` span seen at all — the entry point never calls
+    `build_prefill`, or the capture itself failed) and `""` (a span WAS seen
+    and nothing was empty) stay distinct: collapsing them would let a
+    `gate`/`dreamer` case mistakenly given `must_render`, or any capture
+    failure, score a clean PASS with a positively-worded reason."""
     out = context_grader.evaluate(
         _context_data(must_render=("standing",), blocks_empty=None),
     )[0]
@@ -217,11 +212,9 @@ def _time_case(*, minutes_ago: int, expect_age: str) -> Case:
 def _rendered(case: Case) -> EvaluationData:
     """Drive the REAL `render_transcript_at`, then wrap its actual returned
     dict — output-only on success, `environment_state` on a caught error —
-    into a real `EvaluationData` (review, 2026-09-19: the earlier hand-rolled
-    stub here had no `actual_environment_state` attribute at all, so an
-    SDK/grader change checking for one would not have reddened this file —
-    it silently AttributeErrored the moment `SubstringGrader` gained an
-    error check, which is exactly the kind of gap L14 named)."""
+    into a real `EvaluationData`. A hand-rolled stub would lack
+    `actual_environment_state`, so an SDK/grader change checking for it would
+    not redden this file."""
     result = render_transcript_at(case)
     return EvaluationData(
         input=case.input,
@@ -258,8 +251,8 @@ def test_a_case_with_no_expected_output_is_ungradable():
 
 
 def test_render_transcript_at_never_raises_on_a_malformed_case():
-    """H2 (review): this task raised on a malformed case before — missing
-    `now`, an unparseable timestamp, a row missing a key — and
+    """A malformed case — missing `now`, an unparseable timestamp, a row
+    missing a key — must not raise:
     `Experiment._worker` (module docstring) turns a raising task into
     `test_pass=False, score=0` for every evaluator WITHOUT writing a row to
     `detailed_results`, so the case vanishes from `read()`'s count rather
@@ -299,8 +292,8 @@ def test_a_second_pass_that_wrote_nothing_new_passes():
 
 
 def test_a_second_pass_that_wrote_something_new_fails():
-    """THE BUG S6 exists to catch: #236/#338, nothing bounds a duplicate
-    standing note or reminder."""
+    """What S6 exists to catch: nothing bounds a duplicate standing note or
+    reminder."""
     out = idempotence_grader.evaluate(
         _idempotence_data(written_2=1, changed_2=0, staged_1=3, staged_2=3),
     )[0]
@@ -321,7 +314,7 @@ def test_an_idempotence_error_is_never_a_pass():
 
 
 def test_traced_nora_task_adds_a_trajectory_onto_nora_tasks_own_shape():
-    """S2's whole build: `eval_task(TracedHandler())(nora_task(spec))` must
+    """`eval_task(TracedHandler())(nora_task(spec))` must
     add `trajectory` without disturbing `nora_task`'s own `output`/
     `environment_state` keys. An UNANCHORED case exercises the full
     before/after wrap without needing a live database — `_drive()` raises
@@ -344,12 +337,11 @@ def test_traced_nora_task_adds_a_trajectory_onto_nora_tasks_own_shape():
     )
 
 
-# --- `_drive()`'s own mechanisms — found by review, 2026-09-19, to have
-# ZERO test coverage: gutting `_prefill_capture()` or disabling
-# `Spec.repeat`'s loop entirely left every test above green, because they
-# all exercise the GRADERS on hand-built `EvaluationData`, never `_drive()`
-# itself. These use fake ports/obtain/sandbox to exercise the real `_drive()`
-# without a live database.
+# --- `_drive()`'s own mechanisms. The tests above exercise the GRADERS on
+# hand-built `EvaluationData`, never `_drive()` itself. These use fake
+# ports/obtain/sandbox to exercise the real `_drive()` without a live
+# database, so gutting `_prefill_capture()` or disabling `Spec.repeat`'s loop
+# reddens a test.
 #
 # ONE PATH: every case here states `snapshot:`, because that is the only
 # way a case can say what she knows. The fakes stand in for the three seams
@@ -426,9 +418,8 @@ def one_path(monkeypatch):
 
 
 async def test_drive_calls_port_drive_repeat_times(monkeypatch, one_path):
-    """The bug the audit found by disabling `if spec.repeat > 1:` entirely:
-    every existing test stayed green. This drives `_drive()` for real, with
-    a fake port counting its own calls."""
+    """Disabling `if spec.repeat > 1:` entirely must redden a test. This drives
+    `_drive()` for real, with a fake port counting its own calls."""
     calls: list[int] = []
 
     async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
@@ -457,8 +448,8 @@ async def test_drive_refuses_repeat_for_an_entry_point_that_delivers_input(monke
 
 
 async def test_drive_captures_a_real_prefill_span_emitted_during_the_drive(monkeypatch, one_path):
-    """The audit's other zero-coverage finding: swapping `_prefill_capture()`
-    for a fresh, unattached exporter also left every test green. This drives
+    """Swapping `_prefill_capture()` for a fresh, unattached exporter must
+    redden a test. This drives
     `_drive()` for real and has the fake port open a genuine
     `nora.obs.tracing.span("agent.prefill", ...)` the way `build_prefill`
     does, checking `_drive()` actually reads it back."""
@@ -479,8 +470,8 @@ async def test_drive_captures_a_real_prefill_span_emitted_during_the_drive(monke
 
 
 async def test_idempotence_grader_reads_the_repeat_runs_own_error(monkeypatch, one_path):
-    """H3 (review): the repeat run's OWN error was never carried, so a repeat
-    that failed closed (written=0) could score PASS as 'added nothing'."""
+    """The repeat run's OWN error is carried, so a repeat that failed closed
+    (written=0) cannot score PASS as 'added nothing'."""
     calls = {"n": 0}
 
     async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
@@ -502,7 +493,7 @@ async def test_idempotence_grader_reads_the_repeat_runs_own_error(monkeypatch, o
 
 
 async def test_a_case_with_no_anchor_is_unanchored_and_an_error(monkeypatch, one_path):
-    """`11-the-sandbox-rebuild.md` §7.1: a case with no `snapshot:` and not
+    """A case with no `snapshot:` and not
     parked is UNANCHORED — it must ERROR, never be skipped and never be run
     in an empty room."""
     async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
@@ -540,7 +531,7 @@ async def test_a_parked_case_must_not_reach_the_task(monkeypatch, one_path):
 
 
 async def test_a_snapshot_stating_more_than_the_room_and_instant_is_refused(monkeypatch, one_path):
-    """R7: a case that states its own `transcript_limit`, `culture_key` or
+    """A case that states its own `transcript_limit`, `culture_key` or
     `unit` is choosing an assembly production never chooses. Refused by
     name, listing what a case MAY state."""
     async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
@@ -558,7 +549,7 @@ async def test_a_snapshot_stating_more_than_the_room_and_instant_is_refused(monk
 
 async def test_drive_composes_the_real_room_at_its_own_instant(monkeypatch, one_path):
     """The SubjectSpec handed to `obtain()` names the REAL room the snapshot
-    names (no hashed sandbox room — isolation is by database now) and
+    names (no hashed sandbox room — isolation is by database) and
     freezes the clock AT `before_ms`, because the seeded rows keep their
     real timestamps and every age the model sees is measured against that
     clock. The roster and room set are the ones `Spec` states."""
@@ -684,8 +675,7 @@ async def test_drive_seeds_the_sandbox_from_the_source_at_the_instant(monkeypatc
 def test_as_nora_case_carries_the_case_through_and_renders_the_trigger():
     """`evals/rebuilt/entry.py`'s `dreamer` reads `case.category`; `tag` reads
     `person`/`mention`; the note checks read `metadata`. `{trigger}` renders
-    against the SUBJECT'S configured trigger — a corpus can no longer state
-    one."""
+    against the SUBJECT'S configured trigger — a corpus cannot state one."""
     case = Case(
         name="x", input="{trigger} hi / {trigger_split}",
         metadata={"snapshot": _SHOT, "category": "proactive", "person": "tyler_cortez",
@@ -783,7 +773,7 @@ def test_a_row_outside_the_batch_is_a_failure_not_a_pass():
     ]
 
 
-#: A body in design 42's schema, over `_schema_out`'s shown set (invented).
+#: A body in the note-body schema, over `_schema_out`'s shown set (invented).
 _SCHEMA_BODY = (
     "## Decided\n- dinner on 2026-10-03 Sat (Ada) [7]\n"
     "## Open\n- which restaurant [7]\n"
@@ -810,7 +800,7 @@ def test_body_schema_reads_each_written_body_as_ok_or_the_rule_it_broke():
     )
     rules = [r for r, _b in backbone._parsed_bodies(out, require_open=True)]
     assert rules == ["ok", "not_a_line"]
-    # Not a verdict unless the case opts in: prose bodies are today's output.
+    # Not a verdict unless the case opts in.
     assert backbone._check_the_body({"body_mentions": ["dinner"]}, out, {}) == []
     assert backbone._check_the_body({"body_schema": True}, out, {}) == [
         "body_schema: not_a_line"
@@ -862,8 +852,8 @@ def test_updates_named_accepts_any_one_of_a_listed_group():
 
 
 def test_updates_named_separates_a_wrong_note_from_no_update():
-    """Design 42 §10.1: #513 could only report in prose that every update
-    failure revised a DIFFERENT, similarly titled note."""
+    """Reports structurally, not only in prose, that an update failure revised a
+    DIFFERENT, similarly titled note."""
     named = "Dinner 19 Sept"
     assert backbone._updates_named(named, [named]) == []
     assert backbone._updates_named(named, ["Dinner 19 Sep"]) == [
@@ -910,12 +900,11 @@ async def test_drive_carries_the_written_body_lengths(monkeypatch, one_path):
     )
 
 
-# `sampled()`/`sample_read()`: `09-the-backbone-measured.md` §3.1 measured two
-# model-dependent cases SWAP verdicts across two runs at `sample: 1` — the SDK
-# has no repeat parameter (`08-the-sdk-surface.md` §4.4), and `Case`/caching
-# key on `case_name`, so these tests drive a REAL `Experiment` (matching the
-# probe that found `report.cases`/`report.detailed_results` are flattened per
-# (case x evaluator) pair, not per case) rather than asserting the shape.
+# `sampled()`/`sample_read()`: a model-dependent case can SWAP verdicts across
+# runs at `sample: 1` — the SDK has no repeat parameter, and `Case`/caching
+# key on `case_name`, so these tests drive a REAL `Experiment` rather than
+# asserting the shape (`report.cases`/`report.detailed_results` are flattened
+# per (case x evaluator) pair, not per case).
 
 
 _labelled_seq = iter(range(1_000_000))
@@ -982,7 +971,7 @@ def test_sample_read_all_draws_agreeing_reads_the_shared_verdict():
 def test_sample_read_disagreement_reads_unstable_not_a_majority_vote():
     """The point of `sample_read()`: two draws splitting PASS/FAIL must never
     collapse into whichever one happened to win — that would hide exactly the
-    instability `09-the-backbone-measured.md` §3.1 measured."""
+    instability the draws exist to expose."""
     base = Case(name="speak-1", input="x")
     draws = sampled(base, 2)
     labels = {draws[0].name: PASS, draws[1].name: FAIL}
@@ -1039,7 +1028,7 @@ class _FakeJudge:
 
 
 async def test_drive_never_judges_blind_when_no_window_was_captured(monkeypatch, one_path):
-    """#459 review (MEDIUM): a judge given `source=None` still grades —
+    """A judge given `source=None` still grades —
     `Judge.grade`'s own docstring, "meaningful with or without source data",
     DEC-75 — which is correct for a case with no source BY DESIGN and
     indistinguishable, to the judge, from a source that should have existed
@@ -1077,7 +1066,7 @@ async def test_drive_never_judges_blind_when_no_window_was_captured(monkeypatch,
 async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
     monkeypatch, one_path,
 ):
-    """#459. `sandbox_from_snapshot` seeds (and its `Sandboxed.transcript`
+    """`sandbox_from_snapshot` seeds (and its `Sandboxed.transcript`
     reads back) every row up to the instant; her turn renders only the newest
     `context_window` of them, plus the quote chase. A room with an older row
     BEYOND that window must not reach the judge — `_drive()` must bind the
@@ -1085,10 +1074,10 @@ async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
     (`_shown_transcript`), never to the unbounded seed `one_path`/this test's
     own `fake_sandbox` reports.
 
-    Falsified by reverting `evals.backbone._drive`'s
-    `source=_judge_source(shown_transcript, ...)` back to
-    `source=_judge_source(seeded.transcript, ...)` (the pre-#459 line): this
-    test then finds the older row in `judge.calls[0]["source"]` and fails."""
+    `evals.backbone._drive` must pass
+    `source=_judge_source(shown_transcript, ...)`, not
+    `source=_judge_source(seeded.transcript, ...)`: the latter puts the older
+    row in `judge.calls[0]["source"]` and fails this test."""
     from nora.obs.tracing import annotate, span
 
     older = "an older row, from BEFORE the window her turn rendered"
@@ -1102,7 +1091,7 @@ async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
     async def fake_sandbox(_subject: object, **kwargs: Any) -> Sandboxed:
         # The whole seeded room: the older row PLUS the one the turn renders —
         # exactly `sandbox_from_snapshot`'s real shape, every row up to the
-        # instant (design/evaluation/11-the-sandbox-rebuild.md §1.8's residual).
+        # instant.
         return Sandboxed(
             now_ms=int(kwargs["before_ms"]), rows={},
             transcript=(
@@ -1163,8 +1152,8 @@ async def test_drive_never_judges_silence(monkeypatch, one_path):
 
 
 # `MeetsGrader` — the corpus port. Delegates to the SAME
-# `evals.rebuilt.domain.Outcome.meets()` the old harness graded 150 cases
-# with, rather than reimplementing its eleven-vocabulary logic. Covers the
+# `evals.rebuilt.domain.Outcome.meets()` rather than reimplementing its
+# vocabulary logic. Covers the
 # vocabulary `AbsenceGrader` was never built to read: `create`/`update`/
 # `remind`/`either`/a judge's verdict/the corpus's own structural checks.
 
@@ -1196,7 +1185,7 @@ def _meets_data(
 
 
 def test_meets_grader_reads_remind_off_written_not_said():
-    """S1/S6's proactive vocabulary: `remind`/`none` are graded on
+    """The proactive vocabulary: `remind`/`none` are graded on
     `written` (a reminder ROW), never on `said` — the dreamer entry point
     does not speak into a room at all, so `AbsenceGrader`'s `said`/
     `admitted` signals would misgrade every one of these."""
@@ -1245,8 +1234,7 @@ def test_meets_grader_either_needs_something_to_have_happened():
 def test_meets_grader_either_passes_a_turn_that_decided_on_silence():
     """A proactive act turn that ran and declined the floor (`admitted=True`,
     nothing said) is one of `either`'s two answers, not a turn that never
-    happened. It was ungradable (proactive_act a10, 2026-10-12). Revert the
-    `admitted is True` clause and this goes RED."""
+    happened."""
     out = meets_grader.evaluate(_meets_data(expect="either", admitted=True))[0]
     assert out.label == PASS
     out = meets_grader.evaluate(_meets_data(expect="either", admitted=False))[0]
@@ -1269,7 +1257,7 @@ def test_meets_grader_an_error_is_error_regardless_of_expect():
 
 
 def test_date_split_passes_either_correct_answer_and_fails_the_misdating():
-    """The wedding-room defect (design/standing-compact/40 §7): a batch
+    """The wedding-room case: a batch
     holding a booking on one day and a plan on another. A create dated the
     plan's day passes, and so does an update of the note already dated it;
     nothing on that day fails; and a note dated the OTHER day carrying the
@@ -1312,8 +1300,7 @@ def _cited(expect: str, said: tuple[str, ...]) -> tuple[str, ...]:
 
 def test_a_text_must_cite_does_not_fail_a_silence_the_case_allows():
     """`either` grades the message if there was one: a silence is a legal
-    answer and has no words to check. It failed every correct silence on
-    proactive_act a10. Revert the `said or ...` guard and this goes RED."""
+    answer and has no words to check."""
     assert _cited("either", ()) == ()
     assert _cited("silence", ()) == ()
 

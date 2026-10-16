@@ -1,7 +1,6 @@
 """Encryption at rest + EXIF stripping for media custody (DEC-47).
 
-The operator's decisions, 2026-08-07, made testable. Every probe here is the
-observable form of one of them:
+Every probe here is the observable form of one of these rules:
 
 * **EXIF is stripped from images BEFORE hashing.** A photo's EXIF carries GPS
   and a device id — worse PII than the picture — and content addressing would
@@ -16,9 +15,8 @@ observable form of one of them:
   that is stated, not hidden: a non-image round-trips byte-for-byte.
 
 Fixtures are REAL images built by Pillow here, because a fake `b"\\xff\\xd8..."`
-is not something `Image.open` can read and the strip would no-op on it — which
-is exactly the decorative-test trap CLAUDE.md warns about. No real attachment
-has ever arrived on this deployment, so these are fixtures throughout.
+is not something `Image.open` can read and the strip would no-op on it. These
+are fixtures throughout.
 """
 
 from __future__ import annotations
@@ -71,19 +69,15 @@ async def test_the_bytes_on_disk_are_ciphertext_not_the_plaintext(store, tmp_pat
     """Nothing on disk identifies the file as a picture, and no run of the
     plaintext survives. AES-GCM output is indistinguishable from random.
 
-    `JPEG_MAGIC not in on_disk` was the assertion here until 2026-08-11, and it
-    was UNSOUND: the magic is two bytes, so it turns up somewhere in ~745 bytes
-    of random output about 1.14% of the time analytically — measured at 20
-    failures in 2000 runs (1.00%). A 1-in-100 spurious red is worse than no test
-    at all, because the four-gate discipline is load-bearing here and a flaky
-    gate teaches an operator to re-run and move on, which is how a real red gets
-    waved through.
+    Asserting `JPEG_MAGIC not in on_disk` would be UNSOUND: the magic is two
+    bytes, so it turns up somewhere in ~745 bytes of random output about 1.14% of
+    the time. A spurious red at that rate teaches an operator to re-run and move
+    on, which is how a real red gets waved through.
 
-    It was also testing the wrong thing. Two coincidental bytes in the middle of
-    ciphertext do not make a picture readable; what would is a viewer sniffing
-    the HEADER, or a recognisable run of plaintext surviving. Both are asserted
-    below, and both are deterministic — the header check exactly, and the
-    16-byte run at 2^-128."""
+    Two coincidental bytes in the middle of ciphertext do not make a picture
+    readable; what would is a viewer sniffing the HEADER, or a recognisable run of
+    plaintext surviving. Both are asserted below, and both are deterministic — the
+    header check exactly, and the 16-byte run at 2^-128."""
     plaintext = _jpeg_with_gps(lat=22)
     key = await store.put(data=plaintext)
     on_disk = (tmp_path / "media" / key[:2] / key[2:]).read_bytes()

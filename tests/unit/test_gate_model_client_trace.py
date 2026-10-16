@@ -1,33 +1,24 @@
 """What the model call puts on the span it runs under.
 
 The gate is a GENERATION in Langfuse, and a generation with no token counts
-reports as costing nothing. Read back live on 2026-09-08, the two real
-verdicts in the deployment showed `usage: {input: 0, output: 0, total: 0}` —
-and the debrief and the standing fold had done the same since they shipped.
-That is the number the cost of running this path has to be judged against.
+reports as costing nothing, which is the number the cost of running this path
+would be judged against.
 
-**This file used to test `_annotate_usage`/`_annotate_usage_triple`
-directly** (both hand-rolled helpers in `nora.obs.tracing`'s retired
-`generation()`/`annotate_generation()` dialect). Both are gone: the debrief/
-standing-fold path runs through a real Strands `Agent` now
+The debrief/standing-fold path runs through a real Strands `Agent`
 (`nora.agent.structured.ask_text`), which annotates its own usage
 automatically; the gate's raw call annotates through
 `nora.agent.telemetry.start_raw_model_span`/`end_raw_model_span`, thin
-wrappers around Strands' own `Tracer`. This file now tests the GATE's
-wiring into that pair — `_annotate_usage_triple`'s debrief-side tests moved
-with the function; there is nothing left to test standalone on that seam
-here (`tests/unit/test_debrief.py`'s own trace-attribute tests cover the
+wrappers around Strands' own `Tracer`. This file tests the GATE's wiring into
+that pair (`tests/unit/test_debrief.py`'s trace-attribute tests cover the
 debrief side of the delegation).
 
-**One real, disclosed behavior change**, not fixed here:
-`Tracer.end_model_invoke_span` writes `gen_ai.usage.*` unconditionally from
-the `Usage` dict it is given — there is no "provider reported nothing, so
-record nothing" branch to ask it for, unlike the retired
-`annotate_generation`. `nora.agent.telemetry.end_raw_model_span` writes zero
-in that case, which asserts something weaker than "the provider said
-nothing" — see `test_a_provider_that_reports_no_usage_now_records_zero`
-below, which asserts the NEW, weaker guarantee rather than silently
-inverting or deleting the old test.
+**One disclosed behaviour**, not fixed here: `Tracer.end_model_invoke_span`
+writes `gen_ai.usage.*` unconditionally from the `Usage` dict it is given —
+there is no "provider reported nothing, so record nothing" branch.
+`nora.agent.telemetry.end_raw_model_span` writes zero in that case, which
+asserts something weaker than "the provider said nothing" — see
+`test_a_provider_that_reports_no_usage_now_records_zero` below, which asserts
+that weaker guarantee.
 """
 
 from __future__ import annotations
@@ -53,10 +44,9 @@ class _FakeCompletions:
     """A stand-in for `client.chat.completions`, shaped like the real one —
     including the `usage` object, because that is the field under test.
 
-    It RECORDS the request rather than only answering it: the gate came off
-    the Agent SDK on 2026-09-11 (#186) precisely because the request shape is
+    It RECORDS the request rather than only answering it: the request shape is
     the thing that decides the verdict, so a fake that answered every call the
-    same way and kept nothing would have made this test decorative.
+    same way and kept nothing would make this test decorative.
     """
 
     def __init__(self, *, usage: _Usage | None = _DEFAULT_USAGE) -> None:
@@ -232,29 +222,24 @@ async def test_a_broken_tracer_never_costs_a_verdict_already_obtained():
 
 
 async def test_the_gate_asks_for_json_with_the_instruction_in_the_system_role():
-    """The request shape, which is what #186 was actually about.
+    """The request shape.
 
-    The ROLE SPLIT predates both transports on this client and survives both:
-    with the instruction and the untrusted transcript concatenated into one
-    user string, a member typing `[assistant]:` would sit in exactly the role
-    the operator's rules occupy. (`4448c737` introduced that split for the
-    DEBRIEF, which did concatenate; the gate already had it.) The
-    `json_object` RESPONSE FORMAT and the absence of any tool machinery are
-    what came back on 2026-09-11: measured over 40 labelled cases with one
-    instruction on both arms, the SDK's structured output — which converts the
-    schema into a tool specification — held 1/6 safety cases against this
-    shape's 6/6, at 2.4x the prompt tokens.
+    The ROLE SPLIT: with the instruction and the untrusted transcript
+    concatenated into one user string, a member typing `[assistant]:` would sit
+    in exactly the role the operator's rules occupy. The `json_object` RESPONSE
+    FORMAT and the absence of any tool machinery are required because the SDK's
+    structured output — which converts the schema into a tool specification —
+    holds fewer safety cases than this shape, at a higher prompt-token cost.
 
     `model`, `max_tokens` and `temperature` are asserted here too. The gate's
     ceiling is small on purpose — a gate with room to write paragraphs has room
     to start drafting the reply it must never draft — and its model is its OWN
-    combo, never the tag lane's; both are arguments in the client's docstring
-    that nothing was checking.
+    combo, never the tag lane's.
 
     `tool_choice` must NOT appear. A raw completion sends no tools, so there
-    is nothing for one to select; the SDK path declared it only because
-    Strands sends `tool_choice: None` when nothing sets it and a thinking-mode
-    provider then refuses the call outright.
+    is nothing for one to select; sending `tool_choice: None` (as Strands does
+    when nothing sets it) makes a thinking-mode provider refuse the call
+    outright.
     """
     client = _FakeClient()
     gate_client = _gate_client(client)

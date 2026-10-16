@@ -1,8 +1,8 @@
-"""The pure half of an event's evidence (fix PR D, migration `0086_event_citations`;
-design/cognition-loop/10-tiers.md §3, 40-register.md §3-§4): the lineage computed
-from citations, the citation checker, per-field reasoning, the set of statuses a
-session may still move. No database: `tests/infra/test_event_citations.py`
-is the same behaviours against real Postgres.
+"""The pure half of an event's evidence (migration `0086_event_citations`): the
+lineage computed from citations, the citation checker, per-field reasoning, the
+set of statuses a session may still move. No database:
+`tests/infra/test_event_citations.py` is the same behaviours against real
+Postgres.
 
 What each test catches if its fix is reverted is named in
 `scripts/mutations/cognition-d.json`.
@@ -123,11 +123,11 @@ def test_a_field_with_nothing_behind_it_is_unresolved_not_empty():
     assert lineage.section("what") == (unresolved("signal:ga"),)
 
 
-# -- a lineage an event can now be rendered by (m6) --------------------------
+# -- a lineage an event can be rendered by --------------------------
 
 def test_an_event_with_a_computed_lineage_renders_where_its_evidence_may_and_not_elsewhere():
-    """The defect: no writer set an event's lineage, so under `[lineage] mode =
-    on` every event had an empty one, which renders only in its origin room. A
+    """Without a writer that sets an event's lineage, under `[lineage] mode =
+    on` every event has an empty one, which renders only in its origin room. A
     computed lineage is the real predicate's input: it passes in the room the
     evidence was said in and fails in an unrelated one."""
     from nora.agent.lineage import LineagePolicy, visible_sections
@@ -151,7 +151,7 @@ def test_an_event_with_a_computed_lineage_renders_where_its_evidence_may_and_not
     there = policy.render_room(platform="signal", conversation_id="gb")
     assert visible_sections(lineage, ("what",), here, origin="signal:ga") == {"what": True}
     assert visible_sections(lineage, ("what",), there, origin="signal:ga") == {"what": False}
-    # Unwritten, as every event was: nothing distinguishes it from any other,
+    # Unwritten: nothing distinguishes it from any other,
     # and the room that holds it is the only one that may show it.
     assert visible_sections(Lineage(), ("what",), there, origin="signal:ga") == {"what": False}
 
@@ -220,7 +220,7 @@ async def test_a_session_is_shown_and_may_move_every_event_before_happened():
     assert {e.title for e in await read("ga")} == {"staged", "proposed", "confirmed"}
 
 
-# -- how an abduced field is voiced (40 §4, 10 §2 rule 4) -------------------
+# -- how an abduced field is voiced -------------------------------
 
 def test_an_abduced_field_is_voiced_as_a_question_and_no_assent_upgrades_it():
     event = _event(venue_text="place two", field_meta=(

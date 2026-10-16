@@ -124,7 +124,7 @@ def test_the_charset_is_the_callers_to_choose(tmp_path):
 
 def test_the_caller_chooses_the_exception_class(tmp_path):
     """`nora.doctrine.loader._scan` catches `DoctrineError` to decide
-    skip-vs-abort in lenient mode; re-wrapping here would have changed which
+    skip-vs-abort in lenient mode; re-wrapping here would change which
     errors that `except` sees. Passing the class down is what keeps the
     extraction behaviour-preserving."""
     class Mine(Exception):

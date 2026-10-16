@@ -1,5 +1,5 @@
 """`seed_documents`: a case about a document she already made has to make it, the
-production source holding none (design/artifact §29). Refused on a subject with
+production source holding none. Refused on a subject with
 `[documents]` off, so the case cannot read as a model failure."""
 
 from __future__ import annotations

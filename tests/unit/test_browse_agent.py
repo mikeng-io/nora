@@ -1,10 +1,7 @@
-"""The browse sub-agent's own parts (design/browser-runtime 00 §5, B2), without a
-model: the page tools it is given, its step budget, how its two finishing
-tools set the outcome, and how the runner turns failures into outcomes. And the
-CDP client is tests/unit/test_browser_client.py.
-
-The live path (Flash driving Chrome in the VM) was read back on norty when this
-landed; see the PR."""
+"""The browse sub-agent's own parts, without a model: the page tools it is given,
+its step budget, how its two finishing tools set the outcome, and how the runner
+turns failures into outcomes. The CDP client is covered by
+tests/unit/test_browser_client.py."""
 
 from __future__ import annotations
 

@@ -1,11 +1,10 @@
-"""A restart must not hold a unit, strike a stimulus or lose one (the Cognition
-cut-over's PR-7; DEC-244 «an outage never strikes»).
+"""A restart must not hold a unit, strike a stimulus or lose one (DEC-244 «an outage never
+strikes»).
 
-Nora starts 2 to 24 times a day. A session a restart killed leaves its wake OPEN
-(tracked, no outcome row). Nothing in the next process owns it, so before
-`WakeEvaluator.reclaim_orphans` the unit stayed single-flight for the rest of
-`session_timeout_seconds` (3,900 s), and then the wake EXPIRED, which every reader
-counts as a FAILED session: the backoff doubled and the unit's failure streak grew.
+Nora restarts routinely. A session a restart killed leaves its wake OPEN (tracked, no outcome row).
+Nothing in the next process owns it, so without `WakeEvaluator.reclaim_orphans` the unit stays
+single-flight for the rest of `session_timeout_seconds` (3,900 s), and then the wake EXPIRES, which
+every reader counts as a FAILED session: the backoff doubles and the unit's failure streak grows.
 Each test here has the control that fails without the reclaim.
 
 An orphan is made the way a kill makes one: a hook that returns at once without

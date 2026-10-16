@@ -1,5 +1,4 @@
-"""`nora.platform.instagram.parser.parse_event` against the wire shapes
-design/instagram-adoption/03-transport-contract.md pins.
+"""`nora.platform.instagram.parser.parse_event` against the wire shapes of the transport contract.
 
 The event bodies here are the contract's own, field for field — including the
 five inbound media shapes and the `kind` discriminator — so a drift between
@@ -18,7 +17,7 @@ NORA_FBID = "18247361241432477"
 
 
 def _event(**over) -> dict:
-    """One inbound `kind: "message"` event, exactly the shape `03` shows."""
+    """One inbound `kind: "message"` event, exactly the wire shape."""
     base = {
         "kind": "message",
         "room_id": ROOM,
@@ -52,7 +51,7 @@ def test_a_plain_group_message_normalizes():
 
 
 def test_the_sender_id_is_the_FBID_never_the_igid_or_the_username():
-    """02's opening failure, asserted directly: the igid is the id a reader
+    """Asserted directly: the igid is the id a reader
     reaches for and it matches nothing a mention carries."""
     msg = parse_event(_event())
 
@@ -84,10 +83,8 @@ def test_the_platform_message_id_is_carried_because_react_addresses_by_it():
 
 def test_a_non_message_kind_is_dropped():
     """`kind`, not WhatsApp's `type`. The parser stays total on its own even
-    though the listener swallows two of these. `edit` is not in the list: it
-    is an edit now (design/message-edits/03 §1), pinned below; nor are
-    `reaction` and `unsend`, which are touches now
-    (design/cognition-loop/20 §1), pinned at the end of this file."""
+    though the listener swallows two of these. `edit`, `reaction` and `unsend` are not in the list:
+    they parse as an edit and touches, pinned below and at the end of this file."""
     for kind in ("heartbeat", "dropped", "typing"):
         assert parse_event(_event(kind=kind)) is None
 
@@ -164,8 +161,8 @@ def test_a_mention_of_nora_lands_as_her_fbid():
 
 
 def test_a_mention_of_SOMEBODY_ELSE_is_carried_and_is_not_nora():
-    """Measured in 02: two messages seconds apart in one room, one tagging
-    Nora and one tagging another member, discriminated by the fbid alone."""
+    """Two messages seconds apart in one room, one tagging Nora and one tagging another member, are
+    discriminated by the fbid alone."""
     msg = parse_event(_event(
         text="@example_handle GH",
         mentions=[{"fbid": SENDER_FBID, "offset": 0, "length": 15, "range_type": "PROFILE"}],
@@ -296,10 +293,9 @@ def test_view_once_media_says_something_arrived_and_claims_nothing_about_it():
 
 
 def test_media_carries_the_cdn_url_as_its_fetch_token():
-    """The live defect this replaced: recording no token made every image Miles
-    sent a bare `[image]` with no handle, and Nora answered — correctly — that
-    the image had no code she could read. The bridge has no media-fetch route,
-    which is true and is not the same as there being nothing to fetch:
+    """A token is recorded for every image: without one the image would be a bare `[image]` with no
+    handle and no code she could read. The bridge has no media-fetch route, which is not the same as
+    there being nothing to fetch:
     `media.url` is directly fetchable and `InstagramMediaSource` resolves it.
     `attachment_fbid` is Instagram's own id for the stored attachment."""
     msg = parse_event(_event(media={
@@ -362,23 +358,19 @@ def test_the_bridges_is_group_field_is_HONOURED_when_present():
 
 # --- shared reels and posts (the bridge's `shared` object) --------------------
 #
-# The failure these cover is the invisible one. `MessageContentXMA` had no case
-# in the bridge's content switch, so a shared reel produced no text and no
-# media, and `parse_event` dropped the turn for having neither. Nora did not
-# fail to READ the reel — she never learned one had been posted, and nothing
-# anywhere recorded that anything had happened.
+# The failure these cover is the invisible one: a shared reel (`MessageContentXMA`) with no handling
+# produces no text and no media, and `parse_event` would drop the turn for having neither. Nora
+# would not fail to READ the reel — she would never learn one had been posted.
 #
-# The rendered line is the FREE depth of design/instagram-adoption/13: the
-# kind, the author and the link are already in the delta, so a room where
-# people share reels all day costs nothing extra to follow. The caption is
-# rendered when a delta carries one; measured 2026-09-24, live shares did not.
-# Only a direct question about one post reaches for the thumbnail or the video.
+# The rendered line is the FREE depth: the kind, the author and the link are already in the delta,
+# so a room where people share reels all day costs nothing extra to follow. The caption is rendered
+# when a delta carries one. Only a direct question about one post reaches for the thumbnail or the
+# video.
 
 
 def test_a_shared_reel_is_no_longer_dropped():
-    """The whole point. Before `shared`, this event had no text and no media
-    and left through the "neither text nor media" line as if nothing had been
-    said."""
+    """The whole point. Without `shared`, this event has no text and no media and would leave
+    through the "neither text nor media" line as if nothing had been said."""
     msg = parse_event(_event(
         text="",
         shared={
@@ -456,10 +448,10 @@ def test_a_message_with_no_shared_object_is_unchanged():
         assert msg.body == "hello", f"shared={shared!r} changed an ordinary body"
 
 
-# --- the kind and the link, read off `target_url` (measured 2026-09-24) --------
+# --- the kind and the link, read off `target_url` --------
 #
-# A live shared reel and a live shared story each carried only `author`,
-# `target_url` and `typename`, and `typename` was the SAME string for both. The
+# A shared reel and a shared story each carry only `author`, `target_url` and `typename`, and
+# `typename` is the SAME string for both. The
 # url's PATH is the only field that tells a reel from a story, and its QUERY
 # carries tracking flags plus, on a story, `reel_owner_id`: the owner's igid.
 # Every value below is synthetic.
@@ -475,7 +467,7 @@ STORY_URL = (
     f"?reel_id=5151515151&reel_owner_id={OWNER_IGID}&utm_source=ig_story_item_share"
 )
 POST_URL = "https://www.instagram.com/p/SynthPost_2/?igsh=c3ludGhldGlj"
-# The one typename the live capture saw on BOTH kinds.
+# A typename that appears on BOTH kinds.
 TYPENAME = "SlideMessagePortraitXMA"
 # A story link whose user segment is not the author: the kind renders, the
 # link does not, so it is the realistic shape of a share with no link.
@@ -487,9 +479,8 @@ def _shared(url: object, **extra) -> dict:
 
 
 def test_each_kind_is_labelled_from_the_url_path():
-    """The live shape: no caption, one typename for every kind. A story used
-    to render as «shared post», which told the room something untrue about
-    what had been shared."""
+    """The live shape: no caption, one typename for every kind. A story must not render as «shared
+    post», which would tell the room something untrue about what had been shared."""
     cases = {
         REEL_URL: "[shared reel by @some.account https://www.instagram.com/reel/SynthReel01/]",
         STORY_URL: (
@@ -552,9 +543,8 @@ def test_a_url_that_fails_validation_leaves_no_link_at_all():
         "javascript://www.instagram.com/reel/SynthReel01/": reel,
         "https://www.instagram.com/stories/some.account/notdigits": story,
         "https://www.instagram.com/stories/bad/user/name/1": post,
-        # A story-ring path and a highlight (P10 taught the shared link
-        # module both for `instagram_read`; the transcript's labels for them
-        # are unchanged, and neither renders a link).
+        # A story-ring path and a highlight (the shared link module knows both for `instagram_read`;
+        # neither renders a link).
         "https://www.instagram.com/stories/some.account/": post,
         "https://www.instagram.com/stories/highlights/17800000000000001/": story,
         "https://www.instagram.com/explore/": post,
@@ -563,8 +553,7 @@ def test_a_url_that_fails_validation_leaves_no_link_at_all():
         "not a url at all": post,
         "": post,
         12345: post,
-        # Hostile shapes a reviewer checked by hand, pinned so they stay
-        # checked. A suffix that only LOOKS like the host:
+        # Hostile shapes, pinned. A suffix that only LOOKS like the host:
         "https://www.instagram.com.evil.x/reel/SynthReel01/": reel,
         # Real Instagram hosts that are not the two this renders, and a
         # trailing-dot FQDN spelling of an allowed one: exact match only.
@@ -739,14 +728,13 @@ def test_a_shared_items_thumbnail_is_marked_on_demand():
     assert msg.media[0].fetch_token == f"attachment:{url}"
 
 
-# --- a share with a link carries no picture (2026-09-24, after #454) ------------
+# --- a share with a link carries no picture ------------
 #
-# Live, twice: `[shared reel by @x <link>] [cover image <handle>]`, asked what
-# was in the reel, she called `media_fetch` on the handle, got a real reading
-# of one frame with a note saying it was only the cover, and answered from the
-# frame. A handle in the line is a call that SUCCEEDS, and success ends the
-# turn. So a share whose link validated carries no handle, no `MediaRef`, and
-# nothing for custody; only the link is left to open.
+# With `[shared reel by @x <link>] [cover image <handle>]` in the line, asked what was in the reel,
+# she would call `media_fetch` on the handle, get a real reading of one frame, and answer from it.
+# A handle in the line is a call that SUCCEEDS, and success ends the turn. So a share whose link
+# validated carries no handle, no `MediaRef`, and nothing for custody; only the link is left to
+# open.
 
 
 def test_a_linked_share_renders_no_handle_for_a_reel_or_a_post():
@@ -797,7 +785,7 @@ def test_a_linked_story_share_keeps_its_cover():
 def test_a_share_with_no_valid_link_keeps_its_cover():
     """The fallback: no link in the line (none sent, one that failed
     validation, a story naming somebody other than the author), so the cover
-    is all there is and #454's placeholder, on-demand flag and role stand."""
+    is all there is and the placeholder, on-demand flag and role stand."""
     thumb = {"kind": "image", "url": "https://cdn.example/thumb.jpg"}
     cases = {
         None: "[shared post by @some.account] [cover image]",
@@ -815,18 +803,16 @@ def test_a_share_with_no_valid_link_keeps_its_cover():
 
 
 def test_a_photo_somebody_sends_directly_is_not_on_demand():
-    """The positive control: a direct photo is read at ingest, as before."""
+    """The positive control: a direct photo is read at ingest."""
     msg = parse_event(_event(text="", media={"kind": "image", "url": "https://cdn.example/p.jpg"}))
     assert msg.media[0].on_demand is False
 
 
-# --- a LINKED share's caption is its opening in the line (design 13, 2026-09-24)
+# --- a LINKED share's caption is its opening in the line
 #
-# A shared post whose line carried its whole ~1,000 character caption was
-# asked «what do u see» and answered from the line, «no pictures, only text»,
-# with no tool called. Replayed 12 times per variant: 0 of 12 first calls
-# reached for the post as recorded, 9 of 12 with the caption cut to its first
-# sentence and `…`. The full caption is `instagram_read`'s to return, which
+# A shared post whose line carries its whole ~1,000 character caption lets the model answer from the
+# line with no tool called; with the caption cut to its first sentence and `…` it reaches for the
+# post. The full caption is `instagram_read`'s to return, which
 # is why only a share WITH a link is cut. Every caption below is synthetic.
 
 POST_LINK = "https://www.instagram.com/p/SynthPost_2/"
@@ -857,8 +843,8 @@ def _caption_of(caption: str) -> str:
 
 
 def test_a_long_shared_caption_becomes_its_first_sentence_and_an_ellipsis():
-    """The live shape, before and after: a linked post, and the line now
-    carries one sentence where it carried a thousand characters."""
+    """The live shape: a linked post, and the line carries one sentence rather than a thousand
+    characters."""
     assert len(LONG_CAPTION) > 900
     msg = parse_event(_event(text="what do u see", shared=_shared(POST_URL, caption=LONG_CAPTION)))
 
@@ -1008,7 +994,7 @@ def test_a_first_sentence_longer_than_the_cap_is_capped_too():
 
 
 def test_the_excerpt_keeps_the_bracket_defang():
-    """#435: a stranger's square brackets turn round BEFORE the cut, so the
+    """A stranger's square brackets turn round BEFORE the cut, so the
     excerpt cannot forge a placeholder, and neither can the whole caption a
     share with no link keeps."""
     caption = (
@@ -1039,7 +1025,7 @@ def test_an_unlinked_share_keeps_the_whole_caption():
     assert "…" not in msg.body
 
 
-# --- reactions and unsends (design/cognition-loop/20-observe.md §1) ---------
+# --- reactions and unsends ---------
 
 
 def test_a_reaction_is_a_touch_on_the_message_it_names():

@@ -1,5 +1,4 @@
-"""`YtDlpSource` — the `TrackSource` port's first implementation
-(design/discord-music/01-playback-and-source.md).
+"""`YtDlpSource` — the `TrackSource` port's first implementation.
 
 The fake extractor below reproduces yt-dlp's own decision shapes rather than
 answering every call the same way (CLAUDE.md's fake-realism rule): a bare
@@ -12,7 +11,7 @@ omits `url` the same way yt-dlp's own info dict can.
 
 Two extractors are exercised separately (`extractor` vs `flat_extractor`,
 matching `YtDlpSource.__init__`) because a playlist LISTING and a single
-resolve are genuinely different yt-dlp calls now (`extract_flat=True` vs
+resolve are genuinely different yt-dlp calls (`extract_flat=True` vs
 not) — a fake that let one instance answer both would hide a regression
 back to eagerly resolving every playlist entry's stream URL.
 """
@@ -309,15 +308,15 @@ async def test_related_with_no_mix_available_is_empty() -> None:
     assert tracks == ()
 
 
-# --- extractor rotation (the 2026-09-18 403) -------------------------------
+# --- extractor rotation ----------------------------------------------------
 #
 # A `YoutubeDL` owns a private cookiejar holding a negotiated YouTube visitor
 # session, and `videoplayback` locators are bound to the session that resolved
-# them. `YtDlpSource` is built ONCE at composition, so before rotation its
-# extractor aged with the process: at 21 hours old every locator it produced
-# was answered `403 Forbidden` by the CDN and each failed stream advanced the
-# queue, draining a guild to silence in about a minute. These pin the repair —
-# the delegate is reused while it is fresh and thrown away once it is not.
+# them. `YtDlpSource` is built ONCE at composition, so without rotation its
+# extractor ages with the process: past some age every locator it produces is
+# answered `403 Forbidden` by the CDN and each failed stream advances the
+# queue, draining a guild to silence. These pin the rotation — the delegate is
+# reused while it is fresh and thrown away once it is not.
 
 
 class _CountingBuild:
@@ -384,15 +383,14 @@ def test_concurrent_resolves_do_not_each_build_a_replacement() -> None:
 def test_the_default_extractors_rotate() -> None:
     """Pins the WIRING, not just the class: rotation that `_default_extractor`
     does not actually use repairs nothing, and the tests above would stay
-    green through that regression."""
+    green without it."""
     assert isinstance(_default_extractor(), _RotatingExtractor)
     assert isinstance(_default_flat_extractor(), _RotatingExtractor)
 
 
 def test_the_ttl_stays_inside_the_shortest_youtube_session_cookie() -> None:
-    """Measured 2026-09-18 against live YouTube, twice: `GPS` came back at
-    exactly now + 1800s. A TTL at or past that boundary lets the session the
-    locators are bound to expire under a reused extractor, which is the
+    """YouTube's `GPS` session expires at now + 1800s. A TTL at or past that boundary
+    lets the session the locators are bound to expire under a reused extractor, which is the
     failure this module rotates to avoid — so the bound is an independent
     number, not this constant restated."""
     assert _EXTRACTOR_TTL_SECONDS < 1_800.0

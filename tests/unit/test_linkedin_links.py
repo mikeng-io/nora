@@ -1,6 +1,5 @@
 """`nora.domain.linkedin_links`: which LinkedIn links name a person, a company
-or a post, and that nothing else is read as one
-(design/social-per-network/10 §`linkedin_read`)."""
+or a post, and that nothing else is read as one."""
 
 from __future__ import annotations
 

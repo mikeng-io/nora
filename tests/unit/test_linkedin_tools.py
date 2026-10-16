@@ -1,4 +1,4 @@
-"""`linkedin_read` and `linkedin_search` (design/social-per-network, DEC-201).
+"""`linkedin_read` and `linkedin_search` (DEC-201).
 
 Layer one of the read-only boundary for LinkedIn: which inputs each tool
 accepts, the asked-turn rule (neither runs in a fire turn or a Dreamer pass),
@@ -115,10 +115,9 @@ async def test_the_input_decides_the_read(social, kwargs, sent):
         # `what` must fit the link.
         {"link": "https://www.linkedin.com/in/williamhgates/", "what": "company"},
         {"link": "https://www.linkedin.com/company/nvidia/", "what": "posts"},
-        # Pages that name nothing. A link to another network is no longer
-        # here: it is a registry redirect (`nothing_found`), not a bad input
-        # (design/social-per-network/30-link-owner-registry.md, "Migration"
-        # step 3) — see test_another_network_s_link_names_the_tool_that_reads_it.
+        # Pages that name nothing. A link to another network is a registry
+        # redirect (`nothing_found`), not a bad input — see
+        # test_another_network_s_link_names_the_tool_that_reads_it.
         {"link": "https://www.linkedin.com/jobs/view/1/"},
         {"link": "https://evil.example/in/williamhgates/"},
         # One post cannot be read from its link.
@@ -188,7 +187,7 @@ async def test_a_turn_nobody_asked_for_is_refused_before_anything_is_sent(
 ):
     """A LinkedIn read is a profile visit LinkedIn can show its owner, and a
     search spends a monthly limit: neither runs in a fire turn or a Dreamer
-    pass (design/social-per-network/00)."""
+    pass."""
     out = await _tools(social, **turn)[tool](**kwargs)
     assert out["status"] == "refused"
     assert "asks" in out["note"]
@@ -296,7 +295,7 @@ def test_the_description_meets_adr_0015(name):
     assert not re.search("[^\x00-ɏ]", whole)
 
 
-# ---- `url` is `link` (design 30 decision 2, triggered 2026-09-25) ----------
+# ---- `url` is `link` ----------
 
 
 @pytest.mark.parametrize(

@@ -1,9 +1,9 @@
 """`feedback.run` — the tag path's semantic write: NORA's replies under the Nora
-aiPeer, into the conversation's session (Honcho v2, design/24 §3).
+aiPeer, into the conversation's session (Honcho v2).
 
-The old version fed the tagger's OWN message (a duplicate of the ambient
-memory_feed, DEC-36). v2 feeds only Nora's side; the human side is fed by
-`nora.ingest.stages.memory_feed`, so these tests assert what changed: her sent
+It feeds only Nora's side (the tagger's own message would duplicate the ambient memory_feed,
+DEC-36); the human side is fed by
+`nora.ingest.stages.memory_feed`, so these tests assert that her sent
 messages go under the aiPeer, EACH of them (multi-message safe), into the right
 conversation, and DEC-36 still holds — a human's peer never receives her words.
 """
@@ -32,7 +32,7 @@ class _FakeMemory:
 
 
 async def test_noras_replies_are_fed_under_the_nora_peer_into_the_conversation():
-    """THE v2 probe: her reply lands under the `nora` aiPeer (building her
+    """THE probe: her reply lands under the `nora` aiPeer (building her
     self-model) in the conversation's session — never under a human's peer
     (DEC-36 holds at the message level)."""
     memory = _FakeMemory()
@@ -46,7 +46,7 @@ async def test_noras_replies_are_fed_under_the_nora_peer_into_the_conversation()
 
 
 async def test_every_message_of_a_multi_message_reply_is_fed_not_just_the_last():
-    """The bug that killed `last_text` (design/16 §4): a multi-message reply must
+    """A multi-message reply must
     feed EACH message. `sent_texts` is a list; reverting it to last-only reds
     this."""
     memory = _FakeMemory()
@@ -69,10 +69,8 @@ async def test_no_replies_means_no_feed():
 
 
 async def test_each_failed_feed_is_counted():
-    """The last Honcho write that left no trace once — `ensure_session` POSTed to
-    a list endpoint, so `feed` returned False with no HTTP call and memory
-    received nothing for the deployment's whole life. Counting keeps a silent
-    regression on the same dashboard the ambient path uses."""
+    """A failed Honcho write must leave a trace: counting keeps a silent regression (a `feed` that
+    returns False with no HTTP call) on the same dashboard the ambient path uses."""
     memory = _FakeMemory(fail=True)
     metrics = Metrics()
     await feedback.run(

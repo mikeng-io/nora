@@ -69,7 +69,7 @@ async def test_the_same_id_on_another_platform_is_a_different_room(policy):
 
 
 async def test_a_direct_message_from_somebody_not_in_identity_toml_is_never_recorded(policy):
-    """Operator rule 2026-10-05: Nora never receives a message from a person
+    """Operator rule: Nora never receives a message from a person
     who is not in identity.toml. Refused before the audit write, whatever
     policy.toml lists, and counted."""
     metrics = Metrics()

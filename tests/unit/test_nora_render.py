@@ -1,13 +1,12 @@
-"""`nora-render` (deploy/computer/render/nora_render.py, design/sandbox-runtime
-§5, S3a): the image renderers, loaded from the file the image copies.
+"""`nora-render` (deploy/computer/render/nora_render.py): the image renderers,
+loaded from the file the image copies.
 
-`mermaid` needs mermaid-cli and its Chromium, which only the image has; it was
-exercised by building the image and running it with `--network=none` (the PR
-says how). What is pinned here is what the gate can hold without them: a chart
-is drawn from its data and refuses data that does not fit, nothing renders a
-page (`markdown` and `report` are gone: documents are the document path's),
-there is no map renderer (maps are the document path's), and a chart's PNG
-fails closed (exit 3, nothing written) without librsvg.
+`mermaid` needs mermaid-cli and its Chromium, which only the image has, so it
+is not exercised here. What is pinned is what the gate can hold without them: a
+chart is drawn from its data and refuses data that does not fit, nothing
+renders a page (documents are the document path's), there is no map renderer
+(maps are the document path's), and a chart's PNG fails closed (exit 3, nothing
+written) without librsvg.
 """
 
 from __future__ import annotations

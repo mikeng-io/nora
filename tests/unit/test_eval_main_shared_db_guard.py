@@ -6,13 +6,12 @@ guard functions themselves; `tests/integration/
 test_shared_eval_database_survives_a_branch_ahead_run.py` covers a real
 Postgres).
 
-THE HAZARD (2026-09-25): a run from a branch ahead of the shared
-`nora_eval_blank` upgraded it, and every other session's run then failed
-seeding from an older head. The fix has three parts, and each has its own
-test here: refuse before any case if the READ-ONLY source itself diverges
-from this branch's head; capture both shared databases' versions before
-anything runs; and re-check them — loudly, never swallowed into a return
-code — after everything does, success or not.
+THE HAZARD: a run from a branch ahead of the shared `nora_eval_blank` upgrades
+it, and every other session's run then fails seeding from an older head. The
+guard has three parts, and each has its own test here: refuse before any case
+if the READ-ONLY source itself diverges from this branch's head; capture both
+shared databases' versions before anything runs; and re-check them — loudly,
+never swallowed into a return code — after everything does, success or not.
 """
 
 from __future__ import annotations
@@ -228,8 +227,8 @@ def test_the_guard_still_runs_when_a_case_raises(monkeypatch):
 
 
 def test_a_case_raising_and_a_shared_mutation_both_surface(monkeypatch, capsys):
-    """LOW-severity follow-up: a case that raises AND a mutation the guard
-    catches must BOTH be visible — the mutation as the exception that
+    """A case that raises AND a mutation the guard catches must BOTH be visible —
+    the mutation as the exception that
     propagates (it fires last, inside the `finally`), the case's own error
     CHAINED onto it (`__context__`, Python's own implicit chaining for an
     exception raised while another is already propagating — no `raise ...

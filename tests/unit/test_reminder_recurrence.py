@@ -387,14 +387,13 @@ def test_remaining_occurrences_counts_what_follows_this_row():
     ) == 0
 
 
-# ── #109: sub-day recurrence ────────────────────────────────────────────────
+# ── sub-day recurrence ────────────────────────────────────────────────
 
 
 def test_the_f1_series_is_one_call_and_eleven_more_firings():
-    """THE case (#109). 2026-09-06, Discord: a lap update every 10 minutes
-    during the Monza race. It was not representable — `Recurrence` had no
-    sub-day unit — so she wrote one `daily` row with `until` two hours out,
-    which produces exactly ONE firing and then ends.
+    """The motivating case: a lap update every 10 minutes during a race, which needs a sub-day unit.
+    With only calendar units, one `daily` row with `until` two hours out produces exactly ONE firing
+    and then ends.
 
     One call, one series, every occurrence where it was asked for.
     """
@@ -514,9 +513,8 @@ def test_a_long_outage_resumes_a_sub_day_series_instead_of_ending_it():
 
     `plan_successor` walks forward from the floor for at most
     `_MAX_CATCHUP_WALK` (8) steps. A test that is only a few periods late never
-    leaves the walk, so it exercises the walk and not the floor — replacing the
-    whole duration branch with `return 0` left the previous catch-up test green
-    (#109 review).
+    leaves the walk, so it exercises the walk and not the floor: replacing the whole duration branch
+    with `return 0` would leave it green.
 
     Past ~8 periods the walk exhausts, `plan_successor` falls to its `else` and
     returns None, and the series STOPS with nothing said anywhere. For a
@@ -546,9 +544,9 @@ def test_a_long_outage_resumes_a_sub_day_series_instead_of_ending_it():
 def test_a_long_outage_on_an_interval_calendar_series_does_not_overshoot():
     """The `// rule.interval` in `_floor_index`'s calendar branches.
 
-    Dropping it from all four left every test green (#109 review). An
-    every-3-days series ten days behind then floored at index 10 instead of 3
-    and silently consumed six occurrences the requester had asked for —
+    Dropping it from all four would leave other tests green. An every-3-days series ten days behind
+    would then floor at index 10 instead of 3 and silently consume six occurrences the requester
+    asked for —
     `rule.count` spends them either way, so the series would end six firings
     early with nothing raised.
     """
@@ -569,12 +567,10 @@ def test_a_long_outage_on_an_interval_calendar_series_does_not_overshoot():
 
 
 def test_an_until_bound_ends_a_sub_day_series_at_the_right_occurrence():
-    """`plan_successor` and `until` on a SUB-DAY rule — the literal F1 shape,
-    and the two halves were never tested together.
+    """`plan_successor` and `until` on a SUB-DAY rule , the two halves tested together.
 
-    One test set `until` and then only called `occurrence_at`; the other called
-    `plan_successor` with no `until` at all (#109 review). "The series ends
-    early because of `until`" is exactly what went wrong in the incident.
+    Testing `until` only through `occurrence_at`, or `plan_successor` with no `until`, would miss a
+    series that ends early because of `until`.
     """
     hk = ZoneInfo(HK)
     anchor = datetime(2026, 9, 6, 21, 10, tzinfo=hk).astimezone(UTC)
@@ -601,8 +597,7 @@ def test_an_until_bound_ends_a_sub_day_series_at_the_right_occurrence():
 def test_an_interval_below_one_is_refused_by_the_type():
     """`interval=0` makes `occurrence_at` return the same instant forever, and
     the structural floor cannot catch it on a CALENDAR rule — those have no
-    `period_seconds` for it to compare. Deleting this check left every test
-    green (#109 review), so the type carries it."""
+    `period_seconds` for it to compare, so the type carries it."""
     for bad in (0, -1):
         with pytest.raises(ValueError, match="interval"):
             RecurrenceRule(every=Recurrence.DAILY, tz=HK, count=5, interval=bad)
@@ -612,8 +607,7 @@ def test_an_interval_past_the_ceiling_is_refused_rather_than_overflowing():
     """`MAX_INTERVAL`. `occurrence_at` steps from the anchor, so a large enough
     multiplier walks off the representable calendar — `yearly x 10000` raises
     `ValueError: year 12026 is out of range` and `minutely x 10**12` overflows
-    `timedelta`. Unreachable before #109; `interval` is a number the MODEL
-    writes."""
+    `timedelta`. `interval` is a number the MODEL writes."""
     with pytest.raises(ValueError, match="interval"):
         RecurrenceRule(
             every=Recurrence.YEARLY, tz=HK, count=2, interval=MAX_INTERVAL + 1,
@@ -621,11 +615,9 @@ def test_an_interval_past_the_ceiling_is_refused_rather_than_overflowing():
 
 
 def test_every_per_unit_table_covers_every_recurrence():
-    """Three hand-maintained per-unit tables now exist, each subscripted BARE
-    somewhere, and one of them already fell out of sync in production:
-    `CADENCE_UNITS` (then `_EVERY` in `nora/app/fire.py`) was left at five
-    entries when #109 added two units, so every sub-day reminder raised KeyError
-    in its own fire header after claiming the row.
+    """Three hand-maintained per-unit tables exist, each subscripted BARE somewhere: a table missing
+    a unit (such as `CADENCE_UNITS`) would make every sub-day reminder raise KeyError in its own
+    fire header after claiming the row.
 
     A table missing a member is a runtime crash on a background path nobody is
     watching, which is the worst place to find one. This is the gate that makes

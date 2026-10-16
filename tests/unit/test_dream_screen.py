@@ -15,10 +15,9 @@ These tests hold four properties that are each easy to lose:
 * the drop is **counted**, with the adaptor label, because a drop nobody counts
   is indistinguishable from a model that never produced one.
 
-The per-adaptor cases below are the keystone's «a named test per adaptor», with
-the fact adaptor non-optional per the reflection spec's §14.10. Each carries the
-item shape its own tier actually returns, so a tier whose envelope grows a new
-text field gets a test that already walks it.
+Each per-adaptor case carries the item shape its own tier actually returns,
+so a tier whose envelope grows a new text field gets a test that already walks
+it.
 """
 
 from __future__ import annotations
@@ -31,16 +30,9 @@ from nora.agent.security import looks_like_coordinate
 from nora.obs.metrics import Metrics
 
 # A benign item per adaptor. Rides along in every rejection batch: if a drop
-# ever became per-batch, these are what would disappear with it.
-#
-# **Re-pointed 2026-09-07 at the adaptors that exist.** These fixtures were
-# `room_language`/`room_exchange`/`room_portrait`/`facts` — all four deleted
-# with the language and knowledge tiers — so every payload here was a shape no
-# adaptor could produce, and the suite exercised the screen against nothing
-# real while reading as full coverage. `screen` itself is generic (it walks the
-# item; `adaptor` is only a metric label), so the BEHAVIOUR never lapsed; what
-# lapsed was any evidence that it holds for a payload the Dreamer can actually
-# emit. The shapes below are read off the live `accept` parsers:
+# ever became per-batch, these are what would disappear with it. `screen`
+# itself is generic (it walks the item; `adaptor` is only a metric label); the
+# shapes below are read off the live `accept` parsers:
 # `note_candidates._parse_candidate`, `note_curator`'s verdict parse.
 BENIGN = {
     "note-candidates": {
@@ -85,8 +77,7 @@ CARRIES_A_COORDINATE = {
 }
 
 #: The Dreamer adaptors whose envelope carries FREE TEXT, and therefore the
-#: ones a leak can ride out on — which, since the note tier's
-#: entity-resolution pass went (2026-09-08), is every shipped adaptor.
+#: ones a leak can ride out on — which is every shipped adaptor.
 ADAPTORS = ("note-candidates", "note-curation")
 
 
@@ -140,13 +131,10 @@ def test_a_benign_batch_is_kept_whole_and_counts_nothing():
     ],
 )
 def test_a_model_word_is_still_kept_by_the_screen(item):
-    """The screen keeps model-name words. The old pinning premise — that
-    `scan_reply` refused these words and a screen built on it would delete
-    them — is GONE: the model-name veto was disabled by operator decision
-    (2026-08-31, see `egress.py`), so the reply predicate passes them now
-    too. What remains load-bearing is the screen's own floor: it uses
-    `scan_identifiers` and keeps every word that carries no identifier, which
-    is exactly what this asserts.
+    """The screen keeps model-name words: it uses `scan_identifiers` and keeps
+    every word that carries no identifier. The reply predicate passes them too
+    (the model-name veto is disabled, see `egress.py`), so this asserts the
+    screen's own floor.
     """
     text = " ".join(str(v) for v in item.values())
     assert scan_identifiers(text) is None, "premise: it carries no identifier"
@@ -262,11 +250,9 @@ def test_a_rejection_never_carries_the_offending_text():
     assert rejected[0].path == "description"
 
 
-# --- design/standing-compact/10 §5: what the sink screen refuses beyond the
-# reply floor (security review, 2026-09-24) ----------------------------------
+# --- what the sink screen refuses beyond the reply floor -----------------------
 #
-# Measured against the real `screen()` before the change: each of these four
-# PASSED. They map onto the two existing reason labels, so the metric's
+# These four map onto the two existing reason labels, so the metric's
 # vocabulary does not move. `scan_identifiers` (the reply's R-18 floor) and
 # `looks_like_coordinate` pass every one of them, which the premise assertion
 # pins — a test whose drop the old predicates already made proves nothing

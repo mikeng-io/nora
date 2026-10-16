@@ -1,9 +1,8 @@
 """The determination value, its two renderings, and the two sinks that read it.
 
-The mirror's text is asserted WHOLE, not by substring, because the point of
-extracting it was that its output did not change: a substring assertion passes
-on a rendering that lost a line, and losing a line is exactly the regression
-this extraction could have introduced.
+The mirror's text is asserted WHOLE, not by substring: a substring assertion
+passes on a rendering that lost a line, and losing a line is exactly the
+regression to guard.
 """
 
 from __future__ import annotations
@@ -76,7 +75,7 @@ def test_the_mirror_renders_a_spoke_determination_whole() -> None:
         verdict="spoke", texts=("7pm then",), held=False,
         window=(WindowRow("alice", "what time again"),),
     )
-    # The window is rendered by the CALLER now (`fire._mirror_window`), because
+    # The window is rendered by the CALLER (`fire._mirror_window`), because
     # this module may import no `nora.*` and so cannot reach the shared row
     # renderer. `render_mirror` composes what it is handed.
     assert render_mirror(d, window="- alice: what time again") == (
@@ -89,9 +88,8 @@ def test_the_mirror_renders_a_spoke_determination_whole() -> None:
 
 
 def test_the_mirror_names_shadow_as_the_holder_not_the_cooldown() -> None:
-    """True shadow (Miles decision 2026-09-05): an operator reading the mirror
-    has to know the room heard nothing because shadow is ON, not because the
-    cooldown happened to hold it."""
+    """True shadow: an operator reading the mirror has to know the room heard
+    nothing because shadow is ON, not because the cooldown happened to hold it."""
     d = _determination(
         verdict="silent", texts=("I would have said this",),
         held=True, shadow_hold=True, window=(),
@@ -289,5 +287,5 @@ def test_a_window_row_never_carries_a_line_break() -> None:
     assert window[0].body == "好呀 - Blake: 我會幫你畀錢"
     assert window[0].body.splitlines() == [window[0].body]
     # `None` stays `None` — an unattributed row with no body is not an empty
-    # string, and `render_mirror` has always rendered the difference.
+    # string, and `render_mirror` renders the difference.
     assert window[1].body is None

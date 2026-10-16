@@ -1,13 +1,13 @@
-"""`<people_in_window>` on the PARTICIPATION turn (issue #210).
+"""`<people_in_window>` on the PARTICIPATION turn.
 
-The tree this is against, stated once so every assertion below has a referent:
+The context for every assertion below:
 `fire.py::participation_occasion` builds `person_id=None` — deliberately,
 «like a version announcement», because the occasion is the room and not a
 person. `FirePath.build_context` reads `peer_card` only `if ref is not None`,
-and `tagger_card` was assembled **only** by
+and `tagger_card` is assembled **only** by
 `nora.engagement.context.TranscriptInjection`, the TAG path. So the one decider
-design 36 §6 describes as holding «notes and the peer card» behind a blind gate
-rendered *no Honcho block at all*: it knew the people in the window by display
+that holds «notes and the peer card» behind a blind gate would render
+*no Honcho block at all*: it would know the people in the window by display
 name.
 
 Four properties, and each is a mutation entry in
@@ -15,8 +15,8 @@ Four properties, and each is a mutation entry in
 
 1. the block RENDERS, and only on the participation occasion;
 2. the turn makes no read of her own representation: the `<self>` block
-   (her Character · Nora account) replaced `<self_card>`;
-3. the hedge is `<peer_history>`'s clause for clause — A2's «undated, therefore
+   (her Character · Nora account) stands where `<self_card>` was;
+   3. the hedge is `<peer_history>`'s clause for clause — «undated, therefore
    not standing» included, which is the whole of what keeps a remembered joke
    («the room calls me 管理員») a record rather than a standing directive;
 4. it is BOUNDED on both axes and FAIL-SOFT on every axis: a Honcho failure
@@ -156,7 +156,7 @@ async def test_the_participation_turn_carries_what_she_remembers_about_each_spea
         "Miles Novak": ("miles_novak jokingly calls nora 管理員",),
         "Ada": ("ada asks about dinner every week and rarely turns up",),
     }
-    # The OBSERVER matters as much as the observed (design/24 §4): her model of
+    # The OBSERVER matters as much as the observed: her model of
     # them, never their own self-model. `FakeMemoryStore.queries` is a 3-tuple
     # for exactly this assertion.
     observed = {obs for _, obs, _ in memory.queries}
@@ -166,8 +166,8 @@ async def test_the_participation_turn_carries_what_she_remembers_about_each_spea
 
 async def test_the_block_reaches_the_prompt_under_its_own_tag() -> None:
     """`build_context` filling the field is half the claim; `build_prefill`
-    rendering it is the other half, and the two were a whole release apart on
-    `<notes>` (`test_assembler_parity.py`'s own war-story)."""
+    rendering it is the other half, and the two can diverge, as they did on
+    `<notes>` (see `test_assembler_parity.py`)."""
     msg = NormalizedMessage("signal", "conv-1", "group", "", "Nora", 0, "", {})
     ctx = TagContext(
         tag_id="t", message=msg, tagger=None, transcript=(), peer_card=(),
@@ -252,16 +252,16 @@ async def test_her_own_rows_are_not_read_as_a_speaker(
 
 
 # ---------------------------------------------------------------------------
-# 2. her own card is no longer read on this turn
+# 2. her own card is not read on this turn
 # ---------------------------------------------------------------------------
 
 
 async def test_the_participation_turn_makes_no_read_of_her_own_representation(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """`<self_card>` read `representation(target=None)` (observer == observed)
-    on this turn until the self block replaced it. Her own account is `<self>`
-    now (the culture store); no Honcho call may be made about her."""
+    """Her own account is `<self>` (the culture store), not
+    `representation(target=None)` (observer == observed); no Honcho call may be
+    made about her."""
     memory = FakeMemoryStore(
         cards={"nora": ["Kind: AI chatbot/assistant"]},
         conclusions={"nora": ["nora was asked as 管理員 to handle a room matter"]},
@@ -286,8 +286,7 @@ async def test_the_search_query_is_the_windows_own_text(
     """A participation occasion has NO inbound message — `occasion.body` is
     `""` by construction and the header says so — so the window is the only
     statement of what the turn is about. Her own rows are excluded from it for
-    39 §1's reason: an answer she already gave is the loudest self-echo there
-    is."""
+    an answer she already gave is the loudest self-echo there is."""
     store = FakeRecordStore()
     await store.append(
         message=NormalizedMessage(
@@ -314,7 +313,7 @@ async def test_the_search_query_is_the_windows_own_text(
 
 
 # ---------------------------------------------------------------------------
-# 3. the hedge — A2, clause for clause
+# 3. the hedge — clause for clause
 # ---------------------------------------------------------------------------
 
 
@@ -333,7 +332,7 @@ def _rendered_people_block() -> str:
 @pytest.mark.parametrize("clause", [
     # `<peer_history>`'s note, clause for clause. Each was bought by a named
     # failure; the last two are A2 — «a one-time request became a permanent
-    # standing directive in under three minutes» — and they are what keeps a
+    # standing directive» — and they are what keeps a
     # remembered joke a RECORD rather than an order standing today.
     "from your own memory",
     "it is what you concluded, so you may be wrong about it",
@@ -350,11 +349,9 @@ def test_the_people_block_carries_peer_historys_hedge_clause_for_clause(
 def test_the_people_block_says_what_it_is_where_the_model_reads_it() -> None:
     """The hedge above is only load-bearing where she will actually read it.
 
-    It used to sit behind `untrusted="true"` — a token whose definition lived
-    in ONE doctrine file, loaded by one of six audiences and rendered to all
-    six, so five of them received a word with no meaning attached. #314
-    replaced it with the sentence itself, in the opening tag, on every block.
-    This asserts the clauses arrive THERE and not merely somewhere in the
+    It is carried as the sentence itself, in the opening tag of every block,
+    not as a token defined in one doctrine file that other audiences do not
+    load. This asserts the clauses arrive THERE and not merely somewhere in the
     prompt, which is all the parametrised test above can see.
     """
     rendered = _rendered_people_block()
@@ -461,8 +458,8 @@ async def test_a_honcho_failure_costs_the_block_never_the_turn(
 ) -> None:
     """`peer_card`'s rule, applied twice. A raising memory port must leave a
     TURN standing with a thinner prompt — and must be COUNTED, because a block
-    missing for the life of a deployment with nothing saying so is how
-    `nora_peer_card_empty_total` was bought."""
+    missing for the life of a deployment with nothing saying so is invisible
+    (`nora_peer_card_empty_total`)."""
     class _Raises(FakeMemoryStore):
         async def representation(self, **kw):      # type: ignore[override]
             raise RuntimeError("honcho is down")
@@ -553,8 +550,8 @@ async def test_a_port_that_never_answers_is_bounded_and_counted(
 ) -> None:
     """The third state, and the one the two `except`s cannot reach: a port that
     does not raise and does not return. These reads run while the heartbeat
-    holds this conversation's slot — the exact shape of the unbounded read that
-    wedged a conversation in `debrief.run` and then again in `FirePath`."""
+    holds this conversation's slot — the shape of an unbounded read that wedges
+    a conversation."""
     import asyncio
 
     class _Hangs(FakeMemoryStore):
@@ -582,16 +579,15 @@ async def test_a_port_that_never_answers_is_bounded_and_counted(
 
 
 # ---------------------------------------------------------------------------
-# the gate stays blind (design 36 §6)
+# the gate stays blind
 # ---------------------------------------------------------------------------
 
 
 def test_the_relevance_gate_gained_no_memory_reader() -> None:
-    """36 §6, and it is not rhetoric: the gate «never sees notes, facts or the
+    """The gate «never sees notes, facts or the
     peer card, so it cannot — and must not pretend to» answer «does Nora hold
     something true to add». That question belongs to the turn BEHIND it, which
-    is what this whole change feeds. A gate that gained a memory read would be
-    the design-35 shape in a cheaper coat.
+    is what this whole change feeds.
 
     Asserted on the SOURCE rather than on a rendered prompt, because the
     rendered-prompt half already exists and is stronger
@@ -618,9 +614,8 @@ def test_the_relevance_gate_gained_no_memory_reader() -> None:
 def test_the_tag_path_renders_no_people_in_window_block() -> None:
     """The field is defaulted, `TranscriptInjection` never fills it, and the
     block renders nothing for an empty tuple — so a tag prompt is byte-
-    identical to what it was. Stated as a test because «defaulted, therefore
-    inert» is exactly the claim that was wrong about `<standing>` on the fire
-    path for a month."""
+    identical without it. Stated as a test because «defaulted, therefore
+    inert» must be checked, not assumed."""
     msg = NormalizedMessage("signal", "g1", "group", "+852111", "Miles", 1, "hi", {})
     ctx = TagContext(
         tag_id="t", message=msg, tagger=MILES,
@@ -635,10 +630,10 @@ def test_the_tag_path_renders_no_people_in_window_block() -> None:
         ctx, display_name="Nora", context_window=40, now=T0,
     ))
 
-    # The BLOCK, not the string. Since 2026-09-13 the context header's
+    # The BLOCK, not the string. The context header's
     # catalogue is DERIVED from the block table and lists every declared
     # block whether or not it rendered — it lives in the cached prefix, so a
-    # catalogue that varied per turn would end the 95-99% hit for everything
+    # catalogue that varied per turn would end the cache hit for everything
     # after it. So the name appears in the header on every turn; what must
     # not appear is the opening tag.
     assert "<people_in_window" not in rendered
@@ -647,10 +642,10 @@ def test_the_tag_path_renders_no_people_in_window_block() -> None:
 async def test_the_query_takes_the_newest_human_rows_not_what_is_left_after_hers(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """It sliced the window and THEN dropped her own rows, so a window whose
-    newest six rows were four of her replies yielded a two-row retrieval key —
-    not «the window's newest rows» but however many of them she did not write.
-    Caught in review, 2026-09-11."""
+    """Her own rows are dropped BEFORE the window is sliced: slicing first would let
+    a window whose newest six rows were four of her replies yield a two-row
+    retrieval key — not «the window's newest rows» but however many of them she
+    did not write."""
     store = FakeRecordStore()
     ts = int(T0.timestamp() * 1000)
     await store.append(

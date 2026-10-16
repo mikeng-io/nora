@@ -61,13 +61,9 @@ def _omniroute_key(monkeypatch):
     """Loading a config is fail-closed on the LLM key — the same refusal that
     protects production (`nora/config.py`: "refusing to start").
 
-    This file once loaded the deployment's `config.toml` through
-    `load_eval_config` without setting a placeholder, so it passed only on a
-    machine that happened to export the real key and was RED in any fresh
-    worktree — a test asserting the developer's shell, not the code. It now
-    takes the `example_config` fixture (R-B, issue #113), which sets the
-    placeholder itself; this autouse fixture covers the tests that build the
-    pipeline without it.
+    Tests take the `example_config` fixture (R-B), which sets the placeholder itself, so they do not
+    depend on the developer's shell exporting the real key; this autouse fixture covers the tests
+    that build the pipeline without it.
 
     Nothing here reaches a provider — the model is scripted — so a placeholder
     is the honest value.

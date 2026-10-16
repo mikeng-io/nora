@@ -1,8 +1,7 @@
-"""Whose `<character>` account a turn renders (DEC-278/DEC-290, narrowed).
+"""Whose `<character>` account a turn renders (DEC-278/DEC-290).
 
-The block carried every listed person's account on every model call of every
-turn (7 accounts, 9,065 characters on 2026-10-07). It now carries the people
-in the turn, and each account and the whole block are capped.
+The block carries the accounts of the people in the turn, not every listed
+person, and each account and the whole block are capped.
 """
 
 from __future__ import annotations
@@ -165,7 +164,7 @@ def test_an_escape_heavy_block_is_still_bounded_as_rendered():
 
 
 def test_the_whole_live_friends_roster_is_not_cut():
-    sizes = (1739, 1241, 994, 1116, 1088, 1717, 1170)  # the live heads, 2026-10-07
+    sizes = (1739, 1241, 994, 1116, 1088, 1717, 1170)  # sizes of real account heads
     accounts = [(f"P{i}", _rev("d" * n)) for i, n in enumerate(sizes)]
     out = render_character(accounts, now=NOW).render()  # type: ignore[union-attr]
     assert "more characters" not in out and len(out) <= CHARACTER_BLOCK_MAX_CHARS

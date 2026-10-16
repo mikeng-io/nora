@@ -3,12 +3,9 @@ and assemble the right `IngestResult`? Per-stage failure behaviour is
 `test_ingest_stages.py`'s job; this file is about sequencing.
 
 `IngestPipeline.run` takes an already-normalized `message`, not a raw event —
-parsing (the former stage 1, "row 1" of spec §4.3's failure table) moved onto
-the adapter (`SignalAdapter.listen`, Trap B in
-docs/superpowers/plans/2026-08-05-nora-phase4-platforms.md). The drop-case
-coverage that test used to give — a DM, a sync message, a self-send, an empty
-body all coming back `None` — now lives in `tests/test_signal_adapter.py`,
-against the adapter that actually does that parsing.
+parsing happens in the adapter (`SignalAdapter.listen`). The drop cases (a DM,
+a sync message, a self-send, an empty body all coming back `None`) are covered
+in `tests/test_signal_adapter.py`.
 """
 
 from __future__ import annotations
@@ -85,7 +82,7 @@ def _pipeline(*, memory, persons, policy, spawn, audit=None, allowlist=None,
 async def test_when_the_audit_write_fails_the_pipeline_stops_before_identity_and_gate(
     monkeypatch,
 ):
-    """Row 2: a failed audit write drops the message before identity,
+    """A failed audit write drops the message before identity,
     memory-feed or the gate ever run."""
     msg = _msg()
     store = FakeRecordStore()
@@ -156,7 +153,7 @@ async def test_a_mapped_trigger_message_engages_and_feeds_memory_off_path():
     assert memory.calls == [("ensure_peer", "miles"), ("feed", "miles")]
 
 
-# ── the two policy gates (design/10 §4.3) ───────────────────────────────────
+# ── the two policy gates ───────────────────────────────────
 
 
 async def test_a_denied_conversation_is_never_recorded():
@@ -255,10 +252,9 @@ async def test_custody_runs_before_the_audit_write_so_one_row_carries_both():
 
 
 async def test_with_custody_unwired_the_row_is_recorded_and_the_loss_is_counted():
-    """The state on the day this shipped: the composition root wires no blob
-    store yet. The message must still be audited, with the placeholder and no
-    handle, and `nora_media_custody_total{status="not_configured"}` is the only
-    place that loss is visible."""
+    """No blob store wired: the message must still be audited, with the
+    placeholder and no handle, and `nora_media_custody_total{status="not_configured"}`
+    is the only place that loss is visible."""
     store = FakeRecordStore()
     metrics = Metrics()
     msg = dataclasses.replace(
@@ -288,7 +284,7 @@ async def test_a_voice_note_is_transcribed_at_custody_and_the_row_keeps_the_hand
     bare-handle path even when a transcriber is wired (the gate is the
     `voiceNote` flag, NOT the audio/* MIME type).
 
-    **The words no longer ride the BODY** (issue #116). `messages.body` is read
+    **The words do not ride the BODY.** `messages.body` is read
     verbatim by `memory_feed` and by the prefill, so one string could not serve
     both; the transcript lands in `media_objects.content` and is joined back
     into the transcript block at render time, in full. What this test pins is
@@ -392,8 +388,8 @@ async def test_a_voice_note_transcribes_even_when_the_blob_store_cannot_be_read_
     """The custody stage must never call `blobs.get` to transcribe a voice
     note it JUST wrote — it reuses the plaintext `_take` already holds. A
     store whose `get` raises (corrupted blob, rotated key) must not stop the
-    message from ever transcribing or being recorded (regression for the
-    `blobs.get` round trip that could raise uncaught and drop the message)."""
+    message from ever transcribing or being recorded (a `blobs.get` round trip
+    could raise uncaught and drop the message)."""
     store = FakeRecordStore()
     blobs = _RaisingGetBlobStore()
     metrics = Metrics()
@@ -423,7 +419,7 @@ async def test_a_voice_note_transcribes_even_when_the_blob_store_cannot_be_read_
 
 
 # ---------------------------------------------------------------------------
-# WHAT AN INGEST REPORTS, AND WHERE (issue #64, then R-76).
+# WHAT AN INGEST REPORTS, AND WHERE (R-76).
 #
 # TWO INSTRUMENTS, and which one carries what is the decision under test.
 #
@@ -431,8 +427,7 @@ async def test_a_voice_note_transcribes_even_when_the_blob_store_cannot_be_read_
 # so its trace is PLUMBING and never reaches Langfuse (`nora.obs.tracing`'s
 # sampler drops the root, and `ParentBased` takes the five children with it).
 # Langfuse is for traces with a generation in them; ingest is the
-# highest-volume entry point in the system and was 97 of the operator's last
-# 100 traces. What the trace used to say now lives on
+# highest-volume entry point in the system. What the trace would say lives on
 # `nora_ingest_outcomes_total`, which is a Prometheus question asked in
 # Prometheus.
 #
@@ -444,8 +439,7 @@ async def test_a_voice_note_transcribes_even_when_the_blob_store_cannot_be_read_
 #
 # These drive the REAL pipeline and read what it ACTUALLY EXPORTED and ACTUALLY
 # COUNTED. Nothing here asserts that a helper was called: a test of that shape
-# would have stayed green for the whole of the original defect, because
-# `_outcome` WAS being called — twice, on two of the exits, and never on the
+# would stay green while `_outcome` is called on some exits and never on the
 # one that runs a thousand times a day.
 # ---------------------------------------------------------------------------
 
@@ -461,7 +455,7 @@ def unfiltered_spans(monkeypatch):
 
     Patches `get_tracer` and shuts its provider down on the way out, for the
     reason `tests/conftest.py` spells out: `set_tracer_provider` is one-shot per
-    process, and a leaked provider has broken unrelated timing tests before.
+    process, and a leaked provider can break unrelated timing tests.
     """
     from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -505,7 +499,7 @@ def _root(exporter):
 
     Identified by `parent is None` rather than by name, so a change that
     re-parented the root would redden here instead of quietly moving the
-    outcome onto a child — which is the shape of the original defect.
+    outcome onto a child.
     """
     roots = [s for s in exporter.get_finished_spans() if s.parent is None]
     assert len(roots) == 1, \
@@ -592,7 +586,7 @@ async def _drive_sender_not_allowed(metrics=None):
 async def _drive_edit(metrics, *, edit_body: str, original_is_nora: bool = False,
                       sender_id: str = "+852111", recorded: bool = True,
                       stale: bool = False):
-    """An EDIT of a Signal message sent at ts=1 (design/message-edits/02 §4).
+    """An EDIT of a Signal message sent at ts=1.
     `recorded=False` leaves the original off the record — an orphan.
     `stale=True` records a LATER edit first, so this one (ts=5) is older."""
     store = FakeRecordStore()
@@ -619,9 +613,8 @@ async def _drive_edit(metrics, *, edit_body: str, original_is_nora: bool = False
 
 async def _drive_touch(metrics, *, kind: str, recorded: bool = True,
                        sender_id: str = "+852111"):
-    """A REACTION or a DELETE of the Signal message sent at ts=1
-    (design/cognition-loop/20-observe.md §1). `recorded=False` leaves the
-    target off the record — an orphan."""
+    """A REACTION or a DELETE of the Signal message sent at ts=1.
+    `recorded=False` leaves the target off the record — an orphan."""
     from nora.domain.models import Touch
 
     store = FakeRecordStore()
@@ -675,10 +668,8 @@ async def test_an_ingest_reaches_the_collector_with_nothing(exported_spans):
     a feed, no model call anywhere — so none of its spans are exported.
 
     Langfuse is an LLM-observability tool, and ingest is the highest-volume
-    entry point in the system. Measured on the live collector, 2026-08-28: 97
-    of the last 100 exported traces were ingest, and even the three that were
-    not refusals carried no generation. A collector that is 97% plumbing cannot
-    be read for the turns that matter.
+    entry point in the system; a collector full of plumbing cannot be read for
+    the turns that matter.
 
     TWO POSITIVE CONTROLS, because `== []` is also true of a harness that never
     ran and of an exporter that was never live:
@@ -796,10 +787,9 @@ async def test_the_root_declares_itself_plumbing_at_span_start(unfiltered_spans)
 
 
 async def test_every_exit_is_counted_with_its_outcome(monkeypatch):
-    """THE REPLACEMENT INSTRUMENT. The trace said what an ingest did; the
-    counter does now, and every exit must reach it — the ambient majority
-    included, which is the exit that had nothing before issue #64 and would be
-    the easiest to lose again.
+    """THE REPORTING INSTRUMENT. The counter says what an ingest did, and every
+    exit must reach it — the ambient majority included, which is the exit most
+    easily lost.
 
     PROBE: delete any one `_outcome(...)` call in `_run` and this reddens on
     that outcome.
@@ -846,8 +836,7 @@ async def test_every_declared_outcome_is_reachable(monkeypatch):
 async def test_the_outcome_counter_says_which_platform_and_which_kind_of_room():
     """The two dimensions that make the series readable. A stuck platform is
     invisible in a total, and a group Nora watches and a DM are different
-    questions — these are the trace attributes worth keeping, and a label is
-    where they belong now.
+    questions — these are the trace attributes worth keeping, as labels.
 
     PROBE: drop either label from the `metrics.inc` in `_outcome`. Both degrade
     to `""` rather than raising (`Metrics._full_labels`), so this is the only
@@ -864,7 +853,7 @@ async def test_the_outcome_counter_says_which_platform_and_which_kind_of_room():
 
 
 async def test_the_outcome_counter_carries_no_identifier():
-    """R-73's floor, applied to the instrument that replaced the trace. The
+    """R-73's floor, applied to the outcome counter. The
     counter's labels are three closed vocabularies — never the conversation_id
     the span carried, which would be an unbounded label as well as an egress.
 
@@ -958,10 +947,9 @@ async def test_a_broken_tracer_never_stops_an_ingest(monkeypatch):
 
 
 async def test_a_broken_counter_never_stops_an_ingest(monkeypatch):
-    """The SAME constraint on the instrument that is now load-bearing for
-    reporting. The counter took the trace's job, and it must not take the
-    trace's exemption with it: a metrics recorder that raises is still an
-    observation, and an observation must never change control flow.
+    """The SAME constraint on the counter that carries reporting: a metrics
+    recorder that raises is still an observation, and an observation must never
+    change control flow.
 
     PROBE: delete the `try/except` around `metrics.inc` in `_outcome` and this
     reddens with the ingest itself failing.
@@ -1021,7 +1009,7 @@ async def test_an_ingest_that_crashes_still_ends_on_its_own_root(unfiltered_span
         "a crash is not one of the five outcomes and must not be counted as one"
 
 
-# --- shared file links (design/external-files/00-design.md §1, S1) ----------
+# --- shared file links ----------
 
 _DRIVE_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345"
 _DOC_URL = f"https://docs.google.com/document/d/{_DRIVE_ID}/edit?usp=sharing"
@@ -1030,7 +1018,7 @@ _DOC_URL = f"https://docs.google.com/document/d/{_DRIVE_ID}/edit?usp=sharing"
 @pytest.fixture
 def _no_network(monkeypatch):
     """Any socket opened while this is active fails the test: recording a
-    link must make no network call (§1)."""
+    link must make no network call."""
     import socket
 
     def refuse(*_a, **_k):

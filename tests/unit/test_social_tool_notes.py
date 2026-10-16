@@ -1,12 +1,12 @@
 """No em or en dash in any `note` the three social tools can return (ADR 0015
-§3, porgy-12's audit, 2026-09-24).
+§3).
 
 A `note` is text the model reads at the moment it is choosing how to phrase
 its answer, so every dash in one is a demonstration of the style her doctrine
 asks her not to use. ADR 0015 already bans dashes from descriptions
 (`test_the_description_meets_adr_0015`); this extends the ban to the result
 text of `x_read`, `x_search`, `instagram_read` and `instagram_search`, including
-the notes P10 and P12 added (a handle, a link, a post).
+the notes for a handle, a link and a post.
 
 Two halves, because a note reaches the model from two kinds of place:
 
@@ -123,7 +123,7 @@ def _shared_payloads() -> dict[str, object]:
         # model to `instagram_read`, so it is a social note in all but tool.
         "tools._INSTAGRAM_PAGE_LINK": {"note": tools_module._INSTAGRAM_PAGE_LINK},
         "tools._INSTAGRAM_MOBILE_PAGE_LINK": {"note": tools_module._INSTAGRAM_MOBILE_PAGE_LINK},
-        # `web_fetch`'s answer to the same links (design 13, 2026-09-24).
+        # `web_fetch`'s answer to the same links.
         "tools._WEB_FETCH_INSTAGRAM_PAGE": {"note": tools_module._WEB_FETCH_INSTAGRAM_PAGE},
         "tools._WEB_FETCH_INSTAGRAM_MOBILE_PAGE": {
             "note": tools_module._WEB_FETCH_INSTAGRAM_MOBILE_PAGE,
@@ -163,7 +163,7 @@ async def test_the_notes_actually_returned_on_the_refusal_paths_carry_no_dash():
         await calls["linkedin_search"](query="+85212345678"),
         await calls["linkedin_search"](query="someone"),
         await calls["instagram_read"](what="posts", person="Quinn"),
-        # P10 and P12: the paths a handle or a link takes before any backend.
+        # The paths a handle or a link takes before any backend.
         await calls["instagram_read"](),
         await calls["instagram_read"](person="Quinn", handle="example_friend"),
         await calls["instagram_read"](handle="example_friend"),
@@ -175,7 +175,7 @@ async def test_the_notes_actually_returned_on_the_refusal_paths_carry_no_dash():
             link="https://www.instagram.com/p/SynthPost01/", what="profile",
         ),
         await calls["instagram_read"](link="https://www.instagram.com/p/SynthPost01/"),
-        # The `url` alias (design 13, 2026-09-24): two different links.
+        # The `url` alias: two different links.
         await calls["instagram_read"](
             link="https://www.instagram.com/p/SynthPost01/",
             url="https://www.instagram.com/p/SynthPost02/",
@@ -190,7 +190,7 @@ async def test_the_notes_actually_returned_on_the_refusal_paths_carry_no_dash():
 
 
 async def test_a_refusal_in_a_turn_nobody_asked_for_carries_no_dash():
-    """The asked-turn refusal for a story, a post and a reel (18, P12)."""
+    """The asked-turn refusal for a story, a post and a reel."""
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
     specs = ToolRegistry().specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",

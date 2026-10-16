@@ -1,20 +1,17 @@
-"""The seam the live defect fell through: parser → fetcher → custody.
+"""The seam between parser, fetcher and custody.
 
-Every piece of this had its own green suite while production recorded a bare
-`[image]`. The parser's tests asserted an EMPTY `fetch_token` (that was the
-decision they were written to pin), the custody stage's tests ran against a
-fake source keyed by `platform_id`, and there was no Instagram `MediaSource`
-for either of them to notice was missing. So this file asserts the one thing
-neither end could: an Instagram image event, taken through the real parser,
+The parser's tests, and the custody stage's tests (which run against a fake
+source keyed by `platform_id`), each pass on their own end; neither can see
+whether the two connect. So this file asserts the one thing neither end can: an
+Instagram image event, taken through the real parser,
 the real fetcher and the real custody stage, ends up as a label AND a handle
 in the body — R-90, on the platform that did not have it.
 
 The CDN is a loopback server here; the allowlist is pointed at its host, since
 a real `scontent.*.fbcdn.net` socket cannot be opened from a test. What that
 leaves unproven is stated rather than papered over: that the live CDN answers
-these urls unauthenticated is a MEASUREMENT taken outside this suite (200 with
-no cookies, no user-agent, no referer), not something any test here can
-re-derive.
+these urls unauthenticated is a measurement taken outside this suite (200 with no
+cookies, no user-agent, no referer), not something any test here can re-derive.
 """
 
 from __future__ import annotations
@@ -63,9 +60,8 @@ async def _cdn(aiohttp_server, *, body: bytes = PHOTO):
 
 
 async def test_an_instagram_image_ends_up_with_a_label_AND_a_handle(aiohttp_server):
-    """The defect, end to end. Before the fetch token and the fetcher existed,
-    this body was `睇下 [image]` — a claim that something arrived with nothing
-    Nora could resolve, which is exactly what she told the room."""
+    """End to end: the body is not a bare `睇下 [image]`, a claim that something
+    arrived with nothing Nora could resolve."""
     server = await _cdn(aiohttp_server)
     url = server.make_url("/v/t51.2885-15/photo.jpg")
     message = parse_event(_event({

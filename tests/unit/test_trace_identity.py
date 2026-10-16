@@ -1,12 +1,10 @@
 """A trace says WHICH CONVERSATION it belongs to, and WHAT KIND of work each
 span is, in the vocabulary Langfuse and OTel GenAI read.
 
-Read back from Langfuse on norty 2026-10-01: `/api/public/sessions` held 0
-items and 100 of 100 recent traces had a null `sessionId`, although every
-engagement root already carried `nora.conversation_id`; and 55-70% of an
-engagement trace's observations were untyped `SPAN`s (`store.*` reads, stage
-spans, one `execute_event_loop_cycle` per model call), so the 4-16 that are
-model calls could not be separated from the rest without reading names.
+Without a `sessionId`, Langfuse's `/api/public/sessions` is empty although every
+engagement root carries `nora.conversation_id`; and untyped `SPAN`s
+(`store.*` reads, stage spans, one `execute_event_loop_cycle` per model call)
+would bury the few that are model calls unless they are separated by name.
 """
 
 from __future__ import annotations
@@ -65,8 +63,8 @@ def test_an_attribute_set_after_the_span_started_is_not_seen(rig):
     """Strands opens a span, then sets `trace_attributes` on it — past
     `on_start`. So the bare `conversation_id` of `trace_attributes` stamps
     nothing on a Strands span; it gets its session from its parent. Pinned so
-    nobody re-adds that key believing it works (read from the installed
-    strands/telemetry/tracer.py, review of #680)."""
+    nobody re-adds that key believing it works (see the installed
+    strands/telemetry/tracer.py)."""
     tracer, exporter = rig
     with tracer.start_as_current_span("invoke_agent nora") as sp:
         sp.set_attribute("conversation_id", "g1/c2")
@@ -144,7 +142,7 @@ def test_a_span_is_typed_by_what_it_is(rig, name, kind):
 )
 def test_a_span_that_is_not_in_the_table_is_left_to_langfuse(rig, name):
     """Model calls, agents and tools are typed by Langfuse from the GenAI
-    attributes (AGENT, GENERATION, TOOL read back the same day); typing them
+    attributes (AGENT, GENERATION, TOOL); typing them
     here would put a second opinion over the SDK's."""
     tracer, exporter = rig
     with tracer.start_as_current_span(name):
@@ -175,7 +173,7 @@ def test_a_broken_attribute_read_never_costs_the_span(rig, monkeypatch):
 
 
 def test_the_provider_that_setup_registers_carries_the_processor(monkeypatch):
-    """The 14-hour lesson of `test_setup_agent_tracing_registers_the_provider_
+    """As in `test_setup_agent_tracing_registers_the_provider_
     globally`: a class that exists and is tested alone proves nothing about the
     provider the deployment runs. Read the EFFECT through the provider setup
     hands to `set_tracer_provider`."""
