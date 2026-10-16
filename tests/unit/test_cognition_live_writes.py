@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from nora.app.cognition_session import now_utc
 from nora.domain.cognition_ground import Grounding, NoteLine
 from nora.domain.cognition_session import AgendaItem, Room, build_agenda
 from nora.domain.gatherings import GatheringStatus
@@ -268,6 +269,55 @@ async def test_a_remind_citing_a_note_by_its_bare_shown_id_links_it_and_dies_wit
     (row,) = stores.reminders._rows.values()
     assert row.payload["note_id"] == note.id
     assert row.state is ReminderState.CANCELLED and row.outcome == "cancelled_note_retired"
+
+
+async def test_a_bracketed_note_id_links_too():
+    stores = Stores()
+    stores.notes = InMemoryNoteStore(reminders=stores.reminders)
+    note = await _seed_note(stores, "dinner")
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["remind"](
+            intent="ask", text="ask how many are coming",
+            subject_rows=["101", f" [{note.id}]"], at=iso(NOW + 3_600_000),
+        ))
+
+    await session(behave, stores=stores)
+    assert answers[0]["status"] == "ok"
+    (row,) = stores.reminders._rows.values()
+    assert row.payload["note_id"] == note.id
+
+
+async def test_a_move_that_loses_the_race_to_the_heartbeat_is_refused_and_writes_nothing():
+    """The heartbeat claims the row between the move's read and its cancel. The
+    row is firing, so a moved copy would say the thing twice; and on a linked
+    row it would also collide with the note's one open slot."""
+    stores = Stores()
+    stores.notes = InMemoryNoteStore(reminders=stores.reminders)
+    note = await _seed_note(stores, "dinner")
+    answers: list[Any] = []
+    cancel = stores.reminders.cancel
+
+    async def claimed_first(reminder_id: Any, *, conversation_id: str) -> bool:
+        await stores.reminders.claim(reminder_id, now=now_utc(NOW))
+        return await cancel(reminder_id, conversation_id=conversation_id)
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["remind"](
+            intent="ask", text="ask how many are coming",
+            subject_rows=[note.id], at=iso(NOW + 3_600_000),
+        ))
+        stores.reminders.cancel = claimed_first  # type: ignore[method-assign]
+        answers.append(await by["remind_move"](
+            reminder_id=answers[0]["reminder_id"], at=iso(NOW + 7_200_000), why="later",
+        ))
+
+    await session(behave, stores=stores)
+    assert answers[0]["status"] == "ok"
+    assert answers[1] == {**answers[1], "status": "refused", "reason": "already_due"}
+    (row,) = stores.reminders._rows.values()
+    assert row.state is ReminderState.FIRING
 
 
 def _note(note_id: str, title: str) -> Note:
