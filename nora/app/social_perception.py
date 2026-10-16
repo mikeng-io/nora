@@ -52,7 +52,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
-from datetime import UTC, datetime, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 
 from nora.domain.cues import cues_of
 from nora.domain.media import MediaBlob, MediaObject
@@ -78,6 +78,12 @@ log = logging.getLogger("nora.app.social_perception")
 #: The labels a social item's media is read under; anything else is a file
 #: nothing here reads.
 _READ_TOPS = ("image", "video")
+
+
+#: How long after a read completes its stimulus may still be raised. A read
+#: waits for its items' perception, at most a day under the cap; past this a
+#: unit the person joins later is not woken for reads that predate it.
+_ANNOUNCE_WITHIN = timedelta(days=2)
 
 
 class SocialPerception:
@@ -196,7 +202,7 @@ class SocialPerception:
     ) -> int:
         """The model calls the reads made: none for a read that ended before
         any model was called; for a video read that landed, the windows it
-        cut plus its text pass, off the row it wrote; otherwise the most the
+        cut, off the row it wrote, plus its text pass; otherwise the most the
         read could have made."""
         spent = 0
         landed = await self._media_objects.lookup(sha256s=shas)
@@ -206,7 +212,7 @@ class SocialPerception:
             row = landed.objects.get(sha) if landed.available else None
             windows = (row.provenance or {}).get("video_windows_cut") if row is not None else None
             if read.status == "ok" and isinstance(windows, int):
-                spent += windows + (1 if row is not None and row.title else 0)
+                spent += windows + 1
             else:
                 spent += self._calls_at_most(obj)
         return spent
@@ -262,6 +268,7 @@ class SocialPerception:
             return
         reads = await self._store.settled_reads(
             require_perceived=self._comprehension is not None, units=self._units,
+            since=self._clock() - _ANNOUNCE_WITHIN,
         )
         for read in reads:
             units = tuple(u for u in self._units.get(read.person, ()) if u not in read.announced)

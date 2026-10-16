@@ -365,6 +365,7 @@ class SqlSocialStreamStore:
 
     async def settled_reads(
         self, *, require_perceived: bool, units: Mapping[str, tuple[str, ...]],
+        since: datetime,
     ) -> list[SettledRead]:
         """Every COMPLETED read that recorded readable polled items and has
         not yet raised its `social` stimulus in every unit `units` lists for
@@ -374,8 +375,10 @@ class SqlSocialStreamStore:
         mid-read never announces part of it. With `require_perceived`, only a
         read each of whose readable items with media has an attempt on record
         (perceived, failed or capped): its stimulus waits for them.
-        Back-filled items belong to no stimulus; a person in no unit's room
-        has nothing to raise."""
+        Only a read completed after `since` is found: a unit a person joins
+        later is owed their next reads, not a wake for each one they had
+        before. Back-filled items belong to no stimulus; a person in no unit's
+        room has nothing to raise."""
         wanted = {p: u for p, u in units.items() if u}
         if not wanted:
             return []
@@ -399,7 +402,9 @@ class SqlSocialStreamStore:
             .where(st.c.kind == "social", st.c.ref == ref, st.c.unit == sa.any_(expected))
             .scalar_subquery()
         ) < sa.func.cardinality(expected)
-        completed = sa.exists().where(poll.c.id == i.c.read_id, poll.c.outcome == "read_ok")
+        completed = sa.exists().where(
+            poll.c.id == i.c.read_id, poll.c.outcome == "read_ok", poll.c.recorded_at > since,
+        )
         where = [
             *self._readable(), i.c.origin == "poll", i.c.read_id.is_not(None),
             i.c.person.in_(sorted(wanted)), completed, still_due,

@@ -428,6 +428,20 @@ async def test_a_unit_whose_stimulus_is_missing_still_gets_it(world) -> None:
     assert sorted(r.unit for r in await world.stimuli()) == ["family", "friends"]
 
 
+async def test_a_read_older_than_the_window_wakes_no_unit_added_since(world) -> None:
+    """A unit a person joins later is owed their next reads, not a wake for
+    each read they had before."""
+    read = await world.seed("p1")
+    await SqlStimulusStore(world.engine).append(
+        stimulus=NewStimulus(unit="friends", kind="social", item="post",
+                             ref=f"social_read:{read}", at_ms=0, person_id="ada"),
+        recorded_at_ms=0,
+    )
+    world.clock.now += timedelta(days=3)
+    await world.perception().tick()
+    assert [r.unit for r in await world.stimuli()] == ["friends"]
+
+
 # ---- what the cap counts --------------------------------------------------------
 
 
