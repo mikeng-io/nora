@@ -1365,7 +1365,7 @@ CONSOLIDATION_WATERMARK = sa.Table(
     METADATA,
     sa.Column("consolidator_name", sa.Text, primary_key=True),
     sa.Column("scope_id", sa.Text, primary_key=True),
-    # BIGINT (0113): a person session's social cursor is a microsecond count.
+    # BIGINT (0114): a person session's social cursor is a microsecond count.
     sa.Column("last_message_id", sa.BigInteger, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.text("now()")),

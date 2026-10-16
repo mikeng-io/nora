@@ -8,11 +8,11 @@ microseconds since the epoch, about 1.8e15, past INTEGER's 2,147,483,647.
 microsecond is what keeps a read from splitting items recorded together
 (design/cognition-loop/22 §6). Every value an INTEGER held is unchanged.
 
-Follows `0112_social_backfill`. `uv run alembic heads` must print exactly ONE
+Follows `0113_memory_social_location`. `uv run alembic heads` must print exactly ONE
 line.
 
-Revision ID: 0113_watermark_bigint
-Revises: 0112_social_backfill
+Revision ID: 0114_watermark_bigint
+Revises: 0113_memory_social_location
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0113_watermark_bigint"
-down_revision = "0112_social_backfill"
+revision = "0114_watermark_bigint"
+down_revision = "0113_memory_social_location"
 branch_labels = None
 depends_on = None
 
