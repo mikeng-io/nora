@@ -213,18 +213,23 @@ class SocialPoller:
         """Rebuild what a previous process knew: each member's last probe,
         the hour's spent calls (`social_poll`), and the login's halt, lock
         and back-off (its `source_health` transitions, replayed)."""
-        for person, times in (await self._store.last_probes(network=self._network)).items():
-            self._attempted[person] = times.attempted
-            if times.answered is not None:
-                self._answered[person] = times.answered
-        for at, stage in await self._store.calls_since(network=self._network, since=now - _HOUR):
-            self._spent.append((at, self._source.probe_cost if stage == "probe" else 1))
+        # Every read comes before any state is set, and an unreadable one
+        # raises: the tick stops, `_seeded` stays False and the next tick
+        # reads all three again. Starting fresh instead would forget a live
+        # halt, lock or back-off for the life of the process.
+        probes = await self._store.last_probes(network=self._network)
+        calls = await self._store.calls_since(network=self._network, since=now - _HOUR)
         # ponytail: replays every transition the login ever had; they are a
         # handful a day, so a bound is not worth a second query.
         rows = await self._health.transitions(source=self._health_source, since_ms=0)
         if rows is None:
-            log.warning("social poller: login transitions unreadable, starting fresh")
-            return
+            raise RuntimeError("social poller: login transitions unreadable")
+        for person, times in probes.items():
+            self._attempted[person] = times.attempted
+            if times.answered is not None:
+                self._answered[person] = times.answered
+        for at, stage in calls:
+            self._spent.append((at, self._source.probe_cost if stage == "probe" else 1))
         halted = False
         for row in rows:
             if row.scope:

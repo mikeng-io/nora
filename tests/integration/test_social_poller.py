@@ -644,6 +644,22 @@ async def test_a_restart_mid_back_off_waits_it_out_and_keeps_doubling(world) -> 
     assert details == ["upstream_rejected 900s", "upstream_rejected 1800s"]
 
 
+async def test_a_restart_that_cannot_read_the_login_history_probes_nothing(world) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = Failed(FailureKind.BACK_OFF, "upstream_rejected")
+    await world.poller().tick()
+
+    restarted = world.poller()
+    world.health.fail = True
+    world.clock.at(minutes=10)
+    with pytest.raises(RuntimeError):
+        await restarted.tick()
+    world.health.fail = False
+    world.clock.at(minutes=12)
+    await restarted.tick()
+    assert world.probes() == [ADA], "the back-off is read on the next tick, not forgotten"
+
+
 async def test_a_restart_after_a_halt_resumes_on_the_ladder(world) -> None:
     quiet(world, BEA)
     world.source.probes[ADA] = Failed(FailureKind.HALT, "needs_human")
