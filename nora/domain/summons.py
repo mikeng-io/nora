@@ -1,4 +1,4 @@
-"""The public Instagram summons (design/instagram-adoption/19): the typed model
+"""The public Instagram summons: the typed model
 of one summons, the ledger port that makes it answered at most once, and the
 ONE rendering of what she reads.
 
@@ -90,11 +90,9 @@ INTAKE_OUTCOMES: tuple[str, ...] = get_args(IntakeOutcome)
 MAX_COMMENT_CHARS = 2200
 
 #: The longest reply she POSTS, far under Instagram's limit: a comment is a
-#: sentence or two (public/voice.md). The first live reply (2026-09-26) was
-#: 533 characters of five sentences; the operator chose a hard cap, refused
-#: whole rather than cut, since a cut fact-check can say the opposite of the
-#: whole one. The summons head states this number to her (`SummonsHead`);
-#: no doctrine names it (design/context-plan/12 §4).
+#: sentence or two (public/voice.md). It is a hard cap, refused whole rather
+#: than cut, since a cut fact-check can say the opposite of the whole one. The
+#: summons head states this number to her (`SummonsHead`); no doctrine names it.
 PUBLIC_REPLY_MAX_CHARS = 320
 
 #: How many of a post's items she is shown, and every one of them is READ
@@ -135,7 +133,7 @@ class SummonsCard:
     (or caption) tagged her, and Instagram told her so as a DM card from the
     commenter. Parsed ONCE, by `nora.platform.instagram.summons`.
 
-    The card does NOT carry the comment's id (measured 2026-09-26): the
+    The card does NOT carry the comment's id: the
     occasion finds it by reading the post's comments and matching
     `sender_igid` and her word-bounded `@handle` (`summons_comment`).
     `resolved` is False when the bridge could not name the post (its thread
@@ -432,7 +430,7 @@ def build_context(
     comments: tuple[Comment, ...],
 ) -> SummonsContext | None:
     """Comprehend once. `None` when the summons comment is not among the
-    comments read (design 19 rule 6: no reply to what she cannot read).
+    comments read (no reply to what she cannot read).
     `comment_id` is the comment `summons_comment` found; `summoned_at` is the
     card's own time; `summoner` the card sender's username."""
     found = nearest_thread(comments, comment_id)
@@ -506,9 +504,9 @@ def _who(name: str | None) -> str:
 
 #: What an item line says when there is no reading to show, by state. FACTS
 #: ONLY: no instruction to her and no pointer to a tool. What she does with
-#: an unread item is `public/conduct.md`'s to say, not this render's (a
-#: room's wording here once told her to "say you couldn't see it", which on
-#: a public surface is the doctrine's call, not a data line's).
+#: an unread item is `public/conduct.md`'s to say, not this render's (an
+#: instruction such as "say you couldn't see it" on a public surface is the
+#: doctrine's call, not a data line's).
 _NOT_SEEN: dict[str, str] = {
     "withheld": "not shown: what it shows contains what looks like a phone number or ID",
     "unreadable": "could not be read",
@@ -528,7 +526,7 @@ def _clip(text: str, limit: int) -> str:
 def _reading_line(reading: ItemReading | None) -> str:
     """What an item shows, or why that is not known. A video's coverage
     sentence is a suffix the clamp never cuts: a partial read that loses its
-    caveat reads as whole (#117)."""
+    caveat reads as whole."""
     if reading is None:
         return "not read"
     if reading.state == "seen" and reading.text:
@@ -537,15 +535,12 @@ def _reading_line(reading: ItemReading | None) -> str:
     return _NOT_SEEN.get(reading.state, _NOT_SEEN["unreadable"])
 
 
-#: What the summons prompt carries after its head, declared as data
-#: (`design/context-assembly/01-the-registry.md`) instead of left as three
-#: `wrap_outside_text` calls and the hand join that placed them.
+#: What the summons prompt carries after its head, declared as data.
 #:
 #: `render_summons` hands its blocks to `assemble()`, so `order` IS the order
-#: the model reads (the numbers are the order the hand join wrote them, step 4a
-#: of `design/context-assembly/04-every-occasion.md`; the goldens in
-#: `tests/unit/test_summons_assembly_goldens.py` pin the whole prompt byte for
-#: byte). Every row is the ONE type `social_post`, so a row says WHICH of the
+#: the model reads (the goldens in `tests/unit/test_summons_assembly_goldens.py`
+#: pin the whole prompt byte for byte). Every row is the ONE type
+#: `social_post`, so a row says WHICH of the
 #: three it is by its `source`, the fourth field, and not by its name: a table
 #: keyed on the name alone could hold one row, and the order of the three would
 #: be the order they were listed in, a comment and not data. `key="turn"`
@@ -554,7 +549,7 @@ def _reading_line(reading: ItemReading | None) -> str:
 #: The head is NOT in the table. It is the occasion's own sentences (what she is
 #: being asked, the clock, who tagged her, and when), authored text with no
 #: opening tag, and a `ContextBlock` cannot render without one; carrying it as a
-#: block would add bytes the model reads, which this step may not do. It stays
+#: block would add bytes the model reads. It stays
 #: the first line of the prompt (`_head`).
 _BLOCKS: tuple[tuple[str, int, BlockKey, str], ...] = (
     ("social_post", 10, "turn", "the instagram post"),
@@ -568,8 +563,7 @@ _ROW: dict[str, tuple[int, BlockKey]] = {
     source: (order, key) for _name, order, key, source in _BLOCKS
 }
 
-#: What the hand join put between the head and the blocks, and `assemble` now
-#: puts between the blocks.
+#: What `assemble` puts between the head and the blocks, and between the blocks.
 _SEP = "\n"
 
 
@@ -577,8 +571,8 @@ def _social_post(source: str, text: str) -> ContextBlock:
     """One stranger-written piece, as the block `wrap_outside_text` builds (the
     same name, the same `source` attribute, the same `escape`: R-13), at its
     row in `_BLOCKS` and kept when its body is empty. A question or a line of
-    control characters escapes to nothing, a hand join rendered that as an empty
-    pair, and `assemble` would drop it."""
+    control characters escapes to nothing, which renders as an empty pair that
+    `assemble` would otherwise drop."""
     order, key = _ROW[source]
     return ContextBlock(
         name="social_post", attrs=(("source", source),), body=escape(text),
@@ -608,9 +602,9 @@ def render_summons(ctx: SummonsContext) -> str:
         f"{age(_epoch(ctx.post_taken_at), now)}",
         f"caption: {_one_line(ctx.caption) or '(none)'}",
     ]
-    # No "item N" label and no URL: a live dry run passed "item 1" to
-    # media_fetch as if it were a media code (2026-09-26), and the pre-read
-    # has already looked at each one, so a link invites a second, wrong look.
+    # No "item N" label and no URL: "item 1" could be passed to media_fetch as
+    # if it were a media code, and the pre-read has already looked at each
+    # one, so a link invites a second, wrong look.
     for i, item in enumerate(ctx.items, 1):
         dur = (f", {item.duration_seconds:g} seconds" if item.duration_seconds is not None else "")
         post_lines.append(f"the post's {_ordinal(i)} {item.kind}{dur}:")

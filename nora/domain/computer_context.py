@@ -1,4 +1,4 @@
-"""What the `<computer>` block is built from (design/sandbox-runtime §15.3).
+"""What the `<computer>` block is built from.
 
 **Not a model's fold.** A deterministic window over two sources, read fresh
 at the start of every tag and fire turn: the live machine (the `state`

@@ -81,17 +81,14 @@ PROACTIVE_KIND = "proactive"
 #: said now. A note may have at most ONE proactive row in them.
 OPEN_STATES: frozenset[str] = frozenset({"pending", "firing"})
 
-#: Stamped on the row a note-merge fold (`merge_into`, now the Cognition session's `note_merge`)
-#: cancels when it resolves two notes'
-#: open proactive rows into one (`SqlNoteStore.merge_into`, issue #158
-#: residue: `uq_reminders_proactive_open_note` keys on the RAW note id a row
-#: carries, so a merge that left both rows alone produced two rows that both
-#: FORWARD to the same survivor through `successor()` — the index never sees
-#: that collision, because neither row's own note id ever collided). The
-#: same string migration `0064_proactive_open_note` already uses for its
-#: boot-time cleanup of the identical condition — one vocabulary for the
-#: same reason a row went, whether it is found at boot or made live by a
-#: fold.
+#: Stamped on the row a note-merge fold (`SqlNoteStore.merge_into`, driven by
+#: the Cognition session's `note_merge`) cancels when it resolves two notes'
+#: open proactive rows into one. `uq_reminders_proactive_open_note` keys on the
+#: RAW note id a row carries, so a merge that left both rows alone would leave
+#: two rows that both FORWARD to the same survivor through `successor()`, a
+#: collision the index never sees. The same string migration
+#: `0064_proactive_open_note` uses for its boot-time cleanup of the identical
+#: condition: one vocabulary for the same reason a row went.
 CANCELLED_DUPLICATE_NOTE = "cancelled_duplicate_note"
 
 #: Stamped when `SqlNoteStore.merge_into`'s reminders step finds that the
@@ -108,17 +105,15 @@ CANCELLED_NOTE_MOVED = "cancelled_note_moved"
 def open_proactive_note(row: Reminder) -> str | None:
     """The note a row holds open, or `None` when it holds none.
 
-    ONE PROACTIVE ROW PER NOTE, OPEN AT A TIME (issue #158). Two passes of the
-    proactive adaptor booked the same note twice in production: 23:01 and
-    01:01 for the same 10:00, and 07:02 and 18:04 for the same 17:00. The
-    only per-note check anywhere was the wake clock (`_may_wake_today` in
-    `nora/language/proactive.py`), which charges a STRIKE once per Hong Kong
-    day and never looked at the row being written. So this is the rule, and
-    both stores hold it at insert time: a second open row on the same note is
+    ONE PROACTIVE ROW PER NOTE, OPEN AT A TIME. The wake clock
+    (`_may_wake_today` in `nora/language/proactive.py`) charges a STRIKE once
+    per Hong Kong day and never looks at the row being written, so two passes
+    could book the same note twice. Both stores therefore hold this rule at
+    insert time: a second open row on the same note is
     `DuplicateProactiveNoteError`. A row that has fired, failed or been
     cancelled holds nothing open, so a re-raise after silence (the strikes
-    brake, design/dreamer-agent-loop/39 D6) and a new occasion after the first
-    one went off are both still writable.
+    brake) and a new occasion after the first one went off are both still
+    writable.
     """
     if row.kind != PROACTIVE_KIND or row.state.value not in OPEN_STATES:
         return None
@@ -157,12 +152,11 @@ class ReminderState(StrEnum):
 
 
 class Recurrence(StrEnum):
-    """How often a series comes round. `NONE` is the whole of v1's behaviour and
-    stays the default everywhere, so a one-shot reminder is byte-identical to
-    what shipped before DEC-85.
+    """How often a series comes round. `NONE` is a one-shot reminder and
+    stays the default everywhere (DEC-85).
 
     Deliberately NOT an RRULE (RFC 5545) and deliberately no dependency. These
-    five values cover every ask the feature was built from — an annual birthday,
+    values cover the asks the feature serves — an annual birthday,
     a daily countdown into a date, a single offset from one — while an RRULE
     brings BYSETPOS/BYDAY/EXDATE, none of which any surface here can produce and
     all of which would have to round-trip through the schema, the tool arguments
@@ -171,7 +165,7 @@ class Recurrence(StrEnum):
     """
 
     NONE = "none"
-    # SUB-DAY (#109, 2026-09-07). These two are DURATIONS, not calendar steps —
+    # SUB-DAY. These two are DURATIONS, not calendar steps —
     # see `occurrence_at`, where they take a different branch on purpose.
     MINUTELY = "minutely"
     HOURLY = "hourly"
@@ -193,24 +187,22 @@ UNIT_SECONDS: dict[Recurrence, int] = {
 }
 
 # Derived, never hand-listed beside the table above: two collections that must
-# agree is one that can drift, and this one was declared and read by nothing
-# for its first day of life (#109 review). One definition, one source.
+# agree can drift. One definition, one source.
 DURATION_UNITS: frozenset[Recurrence] = frozenset(UNIT_SECONDS)
 
 # THE STRUCTURAL FLOOR. `[heartbeat] tick_seconds` is how often she wakes, so a
 # series faster than the tick cannot be delivered at all — rows would simply
 # pile up and fire late in bursts. This is a property of the machine, not a
 # policy, and it refuses regardless of what config says. The OPERATING floor is
-# higher and lives in config (`[reminders] min_interval_seconds`, 300s by the
-# operator's decision 2026-09-07); this is the wall underneath it.
+# higher and lives in config (`[reminders] min_interval_seconds`, 300s by default); this is the wall
+# underneath it.
 MIN_PERIOD_SECONDS = 60
 
 # THE CEILING on `interval`, and it is about arithmetic rather than taste.
 # `occurrence_at` steps from the anchor, so a large enough multiplier walks off
 # the end of what Python can represent: `yearly x 10000` raises
 # `ValueError: year 12026 is out of range` and `minutely x 10**12` raises
-# `OverflowError` out of `timedelta`. Before #109 neither was reachable —
-# `yearly x 1` at count 60 tops out in 2085 — and `interval` is what makes them
+# `OverflowError` out of `timedelta`. `interval` is what makes them
 # reachable, from a number the MODEL writes.
 #
 # 1000 is far past any real ask (a thousand years, a thousand weeks, a thousand
@@ -241,10 +233,8 @@ class RecurrenceRule:
     tz: str
     count: int
     until: datetime | None = None
-    # EVERY N UNITS (#109). 1 is every unit, which is what every rule written
-    # before 2026-09-07 meant, so the default keeps those byte-identical. It is
-    # what makes "every 10 minutes" expressible at all — MINUTELY alone can only
-    # say "every minute", and the F1 case that prompted this issue needed ten.
+    # EVERY N UNITS. 1 is every unit. It is what makes "every 10 minutes"
+    # expressible at all — MINUTELY alone can only say "every minute".
     #
     # It multiplies the CALENDAR units too: `every=WEEKLY, interval=2` is a
     # fortnight. That falls out of the same arithmetic and costs nothing to
@@ -352,13 +342,10 @@ class ReminderCaps:
 
     max_pending_per_requester: int = 20
     min_lead_seconds: int = 120
-    # 365, matching the shipped `config.toml` (2026-08-10). It was 30 while
-    # config said 365, and the drift was invisible until the horizon moved:
-    # `nora.app.offline` builds `ToolRegistry()` with no caps, so the EVAL
-    # harness silently measured a 30-day horizon against a 365-day production
-    # and would have reported the change as not landed. A default that
-    # disagrees with the shipped config is an instrument that cannot measure
-    # the thing (CLAUDE.md's rule).
+    # 365, matching the shipped `config.toml`. `nora.app.offline` builds
+    # `ToolRegistry()` with no caps, so the EVAL harness runs on this default;
+    # a default that disagrees with the shipped config is an instrument that
+    # cannot measure the thing.
     max_horizon_days: int = 365
     # A SERIES counts as ONE against `max_pending_per_requester`, because the
     # chain only ever has one `pending` row (see the module header). That is
@@ -374,9 +361,8 @@ class ReminderCaps:
     # rather than in the tool: `nora.agent` may not import `nora.config`, and
     # this is the only domain value the tool layer already receives.
     timezone: str = "Asia/Hong_Kong"
-    # THE OPERATING FLOOR on how often a series may repeat (#109, operator
-    # 2026-09-07: "if it is by the minute, the minimum recurring item is every
-    # five minutes"). Distinct from `MIN_PERIOD_SECONDS`, which is the
+    # THE OPERATING FLOOR on how often a series may repeat. Distinct from
+    # `MIN_PERIOD_SECONDS`, which is the
     # STRUCTURAL wall at the heartbeat tick and refuses regardless of config;
     # this is the number people actually hit and the one an operator moves.
     #
@@ -400,17 +386,14 @@ class Reminder:
     state: ReminderState
     fired_at: datetime | None
     outcome: str | None
-    # `None` IS a one-shot, and the default keeps every pre-DEC-85 construction
-    # site — production, tests and both stores — meaning exactly what it meant
-    # before. A recurring row's recurrence fields are all-or-nothing by
+    # `None` IS a one-shot (DEC-85). A recurring row's recurrence fields are all-or-nothing by
     # construction here and by `ck_reminders_recurrence` in the schema; there is
     # no half-set state either side can represent.
     series: Series | None = None
-    # The event-model abstraction (DEC-139): `kind` names WHAT the row is —
-    # the default `"reminder"` is the whole of the pre-DEC-139 table — and
-    # `payload` is the kind's denormalized shape, opaque to Reminder itself
-    # ("Reminder never knows what fires"). Defaulted so every existing row
-    # and every existing call site is byte-identical to today.
+    # The event-model abstraction (DEC-139): `kind` names WHAT the row is
+    # (the default `"reminder"` is an ordinary reminder) and `payload` is the
+    # kind's denormalized shape, opaque to Reminder itself ("Reminder never
+    # knows what fires").
     kind: str = "reminder"
     payload: Mapping[str, str] | None = None
 
@@ -428,7 +411,7 @@ def ensure_utc(value: datetime, *, field: str) -> datetime:
 def normalise_reminder(reminder: Reminder) -> Reminder:
     """`ensure_utc` over EVERY one of a reminder's datetimes.
 
-    Five now, not three: `Series.anchor_at` and `RecurrenceRule.until` cross the
+    Five datetimes: `Series.anchor_at` and `RecurrenceRule.until` cross the
     port exactly like `due_at` does, and a naive one there is worse rather than
     milder — the anchor is what every future occurrence is computed FROM, so a
     zone guessed once is a zone wrong for the whole series.
@@ -501,7 +484,7 @@ def occurrence_at(*, anchor: datetime, rule: RecurrenceRule, index: int) -> date
     * a time that exists twice (the autumn-back overlap) resolves to the FIRST
       of the two, so it fires once, earlier, never twice.
     """
-    # THE SUB-DAY FORK (#109). A duration rule is NOT a calendar step and must
+    # THE SUB-DAY FORK. A duration rule is NOT a calendar step and must
     # not take the wall-clock branch below. "Every 10 minutes" means 600
     # elapsed seconds — always, including across a DST transition. Routed
     # through the wall clock instead it would inherit the two resolutions the
@@ -646,10 +629,10 @@ def remaining_occurrences(series: Series | None) -> int:
 
 def check_limit(limit: int) -> int:
     """`due(limit=...)`'s rule, in one place. A batch size below 1 is a caller
-    bug, and the two stores used to answer it two different ways — Postgres
-    raised `InvalidRowCountInLimitClauseError` on `LIMIT -1`, Python's `[:-1]`
-    returned everything-except-the-last. Plausible-looking wrong data is the
-    worse of the two, so both now refuse."""
+    bug, and unchecked the two stores would answer it differently — Postgres
+    raises `InvalidRowCountInLimitClauseError` on `LIMIT -1`, Python's `[:-1]`
+    returns everything-except-the-last. Plausible-looking wrong data is the
+    worse of the two, so both refuse."""
     if limit < 1:
         raise ValueError(f"limit must be >= 1; got {limit}")
     return limit
@@ -662,7 +645,7 @@ class ReminderStore(Protocol):
         never overwrites, because an overwrite loses a reminder while reporting
         success. A proactive row on a note that already has an open one
         (`open_proactive_note`) raises `DuplicateProactiveNoteError` and writes
-        nothing (issue #158). Naive datetimes raise `NaiveDatetimeError`; aware
+        nothing. Naive datetimes raise `NaiveDatetimeError`; aware
         ones are stored normalised to UTC."""
         ...
 
@@ -713,22 +696,21 @@ class ReminderStore(Protocol):
         """One requester's PENDING rows, ordered like `due()`: the rows
         `count_pending` counts. `remind` reads Nora's own (the `ai_peer`'s)
         to find the one a new proactive decision about the same note would
-        double (issue #158); `max_pending_per_requester` bounds it."""
+        double; `max_pending_per_requester` bounds it."""
         ...
 
     async def history(
         self, *, requester_person_id: str, since: datetime, limit: int,
     ) -> Sequence[Reminder]:
         """One requester's rows CREATED at or after `since`, in EVERY state,
-        oldest first (`created_at`, then `id`) — the decision log
-        (design/dreamer-agent-loop/39 D7).
+        oldest first (`created_at`, then `id`) — the decision log.
 
-        The one read the port lacked: `pending_for` and `all_pending` see
-        PENDING rows only, and the proactive adaptor's self-observation is
+        `pending_for` and `all_pending` see PENDING rows only, and the
+        proactive adaptor's self-observation is
         about what it decided and how it went — `state`, `outcome`,
         `fired_at` — which only a read that keeps the finished rows can
         answer. Keyed by requester because a proactive row's owner is the
-        reserved `ai_peer` id (39 D5), so «Nora's own decisions» is one
+        reserved `ai_peer` id, so «Nora's own decisions» is one
         predicate; the caller joins rows to a unit through policy's
         room map, since `Reminder` has no unit column and adding one is
         a schema decision this read does not make.
@@ -771,13 +753,11 @@ class ReminderStore(Protocol):
         awaits a turn per group before it reaches the later rows. A cancel
         landing in that window must win.
 
-        With `mark` doing the take it did not. `UPDATE ... WHERE id = :id`
-        matches any row that still exists, nothing ever deletes reminders, so
-        the caller's "False means already resolved" branch was unreachable and
-        a cancelled row went CANCELLED -> FIRING -> DONE and was spoken. The
-        state predicate belongs in the statement, like `cancel`'s and
-        `sweep_firing`'s, where it is one atomic decision instead of a
-        read-then-write both stores would race.
+        `mark`'s `UPDATE ... WHERE id = :id` matches any row that still
+        exists, so using it to take a row would let a cancelled row go
+        CANCELLED -> FIRING -> DONE and be spoken. The state predicate belongs
+        in the statement, like `cancel`'s and `sweep_firing`'s, where it is one
+        atomic decision instead of a read-then-write both stores would race.
         """
         ...
 
@@ -800,7 +780,7 @@ class ReminderStore(Protocol):
         do it: a series is a chain whose next link is only ever forged by
         `claim`, so cancelling its one pending occurrence is cancelling the
         whole of what is left. Occurrences already fired stay as they are — a
-        cancel has never been able to un-send anything (§8.3).
+        cancel cannot un-send anything.
         """
         ...
 
@@ -811,9 +791,8 @@ class ReminderStore(Protocol):
         `now` is STAMPED ONTO `fired_at`, for the same reason `mark` stamps it
         on every other terminal write: `fired_at` records when the reminder was
         HANDLED, not when it spoke. A swept row is exactly the one an operator
-        asks that of — "when did the crash eat this?" — and the sweep used to
-        leave it NULL, so the one row whose history is unreconstructable from
-        anything else was also the one row with no timestamp. `outcome` is
+        asks that of — "when did the crash eat this?" — and it is the one row
+        whose history is unreconstructable from anything else. `outcome` is
         already written (`failed_error`); the stamp is the other half of the
         same fact.
 

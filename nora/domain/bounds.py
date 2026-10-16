@@ -13,8 +13,8 @@ R-27 exists to forbid, and a bound is a quiet way to commit it.
 
 The distribution of this repo's HONEST bounds is what says this is one defect
 and not seventeen. Every bound counted correctly here is one where the cap was
-applied in the CALLER, while the total was still in scope: the (deleted
-2026-10-03, DEC-277) `NoteCuratorAdaptor` asked `SqlNoteStore.due_for_revisit`
+applied in the CALLER, while the total was still in scope: the (since removed, DEC-277)
+`NoteCuratorAdaptor` asked `SqlNoteStore.due_for_revisit`
 for `over_fetch(max_revisits_per_tick)` rows and counted
 `nora_note_curator_deferred_total` when more came back than it judged —
 `SqlNoteStore` itself takes no metrics collaborator (its own constructor's
@@ -153,8 +153,7 @@ def cut(
 
     The site name is checked TWICE, and it needs both. `site: BoundSite` is
     what makes a typo fail `make gate` at the two wired sites, which live in
-    `nora/infra` and are inside mypy's scope — an earlier draft typed it `str`
-    and a reviewer showed a typo'd label type-checked clean. But that scope
+    `nora/infra` and are inside mypy's scope. But that scope
     does NOT cover `nora/language` or `nora/agent`, where most of the remaining
     bounded reads live, so a static-only guard would be a claim there: hence
     the runtime check below, which is the repo's rule for exactly this gap.
@@ -162,11 +161,6 @@ def cut(
     The runtime half LOGS and still records rather than raising. A mistyped
     label must not take down a read path, and the wrong-label series then shows
     up in the same place the right one would have.
-
-    PROBE (2026-08-29): changing `site="audit.recent"` to `"audit.recnt"` in
-    `nora/infra/sql/audit.py` now fails `make gate` — «Argument "site" to "cut"
-    has incompatible type Literal['audit.recnt']». Under the earlier `site:
-    str` it type-checked clean.
     """
     if limit <= 0:
         # BEFORE everything else. `0 > -1` is true, so an unguarded negative

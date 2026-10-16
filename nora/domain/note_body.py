@@ -1,5 +1,4 @@
-"""The note body's schema, and the one function that holds a body to it
-(design/dreamer-agent-loop/42-note-format.md §4).
+"""The note body's schema, and the one function that holds a body to it.
 
 A body is seven fixed English headings in a fixed order, one markdown list
 item per line under them, and a line grammar per heading. Every line a model
@@ -7,22 +6,20 @@ writes ends in the ids of the messages it rests on; every name in it is a name
 the input showed; every date is absolute. The content stays in the room's own
 language: only the headings and the fixed tokens (`->`, `:`, `(as of …)`,
 `(folded …)`, `no reason given`, `no date given`, `when`, the weekday
-abbreviation) are keys, and code parses keys (§5).
+abbreviation) are keys, and code parses keys.
 
 **Writers that call `parse_note_body`**: the tag path's `note_create`/`note_update`
-(S4b) and the Cognition session's `note_create`/`note_update`/`note_merge`
-(`nora.app.cognition_session`). Its first callers, the note-candidates pass's
-`accept()` and the `note-merge` fold (design 42 S2/S4a/S6), were deleted
-2026-10-03 (DEC-277).
-It is called by each WRITER and never by `NoteRevision.__post_init__`: rows
-written before the schema must still read back (§9).
+and the Cognition session's `note_create`/`note_update`/`note_merge`
+(`nora.app.cognition_session`). It is called by each WRITER and never by
+`NoteRevision.__post_init__`: a stored body that predates the schema must still
+read back.
 
-**Refused, never repaired**, beyond whitespace (G1, decided 2026-09-25): a
+**Refused, never repaired**, beyond whitespace: a
 repair that changes more than whitespace is code writing content the model
 did not, and a silent repair makes the refusal rate unreadable. The repairs,
 all of them: trailing whitespace, `\\r\\n`, blank lines (all dropped: the
-normalised body has none, as §4.7's conformant body has none), `*`/`+`
-bullets to `-`, heading case. One repair writes content, decided 2026-10-09:
+normalised body has none, as a conformant body has none), `*`/`+`
+bullets to `-`, heading case. One repair writes content:
 an attributed line's `(<names>)` is completed from the rendered sender when
 only one person can have said it (left out with a single cited sender, or a
 first name exactly one cited sender extends), because who wrote a message is
@@ -31,16 +28,16 @@ code's fact, not the model's.
 What it does not check, stated rather than discovered:
 
 - that a cited message SUPPORTS its line. It checks that the message was
-  shown, who wrote it and that it is not Nora's (§4.4: necessary, not
+  shown, who wrote it and that it is not Nora's (necessary, not
   sufficient);
-- the carry-forward rule (§7, `dropped_citation`), which needs the head being
-  revised and belongs to the update arm (S4a);
+- the carry-forward rule (`dropped_citation`), which needs the head being
+  revised and belongs to the update arm;
 - `BODY_MAX_CHARS`, which the existing constructors in `nora.domain.notes`
   already refuse;
-- relative time words («tomorrow», 聽日), which are counted, not refused, in
-  v1 (G6), and counted where the metric lives (S2), not here;
+- relative time words («tomorrow», 聽日), which are counted, not refused, and
+  counted where the metric lives, not here;
 - positions (`[#4]`): the tag path maps each to a row id BEFORE the body is
-  stored (§4.3, G4), so a position reaching this function is uncited;
+  stored, so a position reaching this function is uncited;
 - whether a code-written section (`## From memory`, `## Folded`) was written
   by code. The writer knows who it is; this function does not.
 
@@ -54,24 +51,24 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-#: The headings, in their only order (§4.1). Spelled exactly; a heading's
+#: The headings, in their only order. Spelled exactly; a heading's
 #: case is the one thing about it that is repaired.
 SECTIONS: tuple[str, ...] = (
     "Decided", "Open", "Owed", "Proposed", "Ruled out", "From memory", "Folded",
 )
 
-#: The two sections code writes and a model never does (§4.1): no citations,
+#: The two sections code writes and a model never does: no citations,
 #: their own line grammar.
 CODE_WRITTEN: frozenset[str] = frozenset({"From memory", "Folded"})
 
-#: The two sections every body carries, even empty (§4.1).
+#: The two sections every body carries, even empty.
 REQUIRED: tuple[str, ...] = ("Decided", "Open")
 
 #: The sections whose lines end in `(<names>)`: who said it, which must be the
-#: author of a message the line cites (§4.3).
+#: author of a message the line cites.
 ATTRIBUTED: frozenset[str] = frozenset({"Decided", "Proposed", "Ruled out"})
 
-#: Every rule a refusal names (§4.5). One value per `NoteBodyError.rule`, so a
+#: Every rule a refusal names. One value per `NoteBodyError.rule`, so a
 #: counter labelled by it (`nora_cognition_refused_total{verb, rule}`) has a
 #: closed vocabulary.
 RULES: frozenset[str] = frozenset({
@@ -96,8 +93,8 @@ _BULLET = re.compile(r"^[-*+] (.*)$")
 _CITED = re.compile(r"^(?P<rest>.*?)\s*\[(?P<ids>[^\[\]]*)\]$")
 _IDS = re.compile(r"^\s*[0-9]+(\s*,\s*[0-9]+)*\s*$")
 #: A Rollup key cited inside a line's trailing brackets: `rollup(<kind>|<subject>|
-#: <from>/<to>)`, the `(kind, subject, interval)` `rollup_read` shows a row by
-#: (10 §2 rule 2, 30 §3 check 1). A group holds message ids, keys, or both.
+#: <from>/<to>)`, the `(kind, subject, interval)` `rollup_read` shows a row by.
+#: A group holds message ids, keys, or both.
 _ROLLUP_KEY = re.compile(r"rollup\(([^()\[\]]*)\)")
 _IDS_OR_KEYS = re.compile(r"^\s*(?:[0-9]+|K)(?:\s*,\s*(?:[0-9]+|K))*\s*$")
 _NAMED = re.compile(r"^(?P<content>.+) \((?P<names>[^()]*)\)$")
@@ -123,7 +120,7 @@ _TIME = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
 class NoteBodyError(ValueError):
     """A body that breaks the schema. `rule` is one of `RULES`; the message is
     a sentence naming the rule and the line, which is what a model reads when
-    the tag path hands the refusal back (§4.5)."""
+    the tag path hands the refusal back."""
 
     def __init__(self, rule: str, message: str) -> None:
         if rule not in RULES:
@@ -134,11 +131,11 @@ class NoteBodyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ShownMessage:
-    """One row the writing pass RENDERED for the model (§4.5, «rendered»).
+    """One row the writing pass RENDERED for the model.
 
     `sender` is the `from` exactly as rendered: the name a `(<names>)` slot
     must match. `person_id` is what code attaches for it; the model never
-    writes one (§4.3).
+    writes one.
     """
 
     id: int
@@ -148,7 +145,7 @@ class ShownMessage:
 
 
 #: The names Nora goes by in a note body, ONE value for the tag path and the
-#: Cognition session (#663 review). It is the literal `_speaker` prints for her
+#: Cognition session. It is the literal `_speaker` prints for her
 #: own rows (`nora.agent.tools`: `"Nora"`, not `[doctrine].display_name`), so it
 #: is the name a row's sender carries on both paths; a deployment that renames
 #: her changes that one literal, in one place.
@@ -157,7 +154,7 @@ NORA_NAMES: frozenset[str] = frozenset({"Nora"})
 
 @dataclass(frozen=True, slots=True)
 class Shown:
-    """What a write may cite and name (§4.5).
+    """What a write may cite and name.
 
     - `rendered`: the rows this write put in front of the model. Author,
       owner and Nora checks run on these.
@@ -166,9 +163,9 @@ class Shown:
       must not turn into a refusal.
     - `roster`: the room's roster, roster name -> person_id. An `## Owed`
       owner must be one of its names.
-    - `nora_names`: the names Nora goes by, never an `## Owed` owner (§4.3).
+    - `nora_names`: the names Nora goes by, never an `## Owed` owner.
     - `rollup_keys`: the Rollup rows this write read, each as `rollup_key(...)`;
-      a line may cite only these inside `rollup(...)` (30 §3 check 1, «shown
+      a line may cite only these inside `rollup(...)` («shown
       or fetched»).
     """
 
@@ -219,18 +216,18 @@ class NoteBody:
         return frozenset(p for s in self.sections for ln in s.lines for p in ln.person_ids)
 
 
-#: `[<ids>]` anywhere in a text, read without the parser (§7): every bracket
+#: `[<ids>]` anywhere in a text, read without the parser: every bracket
 #: group, which `cited_ids_in` then holds to ids-or-Rollup-keys.
 _BRACKET_GROUP = re.compile(r"\[([^\[\]]*)\]")
 
 
 def cited_ids_in(text: str) -> frozenset[int]:
     """Every id a text cites as `[<ids>]`, read with a pattern and NOT with
-    `parse_note_body`, so it works on a head that does not parse (§7, §9): a
+    `parse_note_body`, so it works on a head that does not parse: a
     legacy body carries none, a partly structured one carries some.
 
-    What a revision may carry forward (`Shown.carried`) and what §7's
-    carry-forward check will compare. A body with no citations answers the
+    What a revision may carry forward (`Shown.carried`) and what the
+    carry-forward check compares. A body with no citations answers the
     empty set, never an error.
     """
     ids: set[int] = set()
@@ -248,7 +245,7 @@ def rollup_keys_in(text: str) -> frozenset[str]:
     inside a bracket group (`[12, rollup(...)]`), read with a pattern and NOT
     with `parse_note_body`, for `cited_ids_in`'s reason: it works on a head that
     does not parse. What the `citation` edge and the lineage of a note that rests
-    on a Rollup row are computed from (the review of PR #669, #663)."""
+    on a Rollup row are computed from."""
     return frozenset(
         key.strip() for group in _BRACKET_GROUP.findall(text)
         for key in _ROLLUP_KEY.findall(group) if key.strip()
@@ -273,11 +270,10 @@ class _AnyName(dict[str, str]):
 
 
 def in_schema_form(text: str) -> bool:
-    """Whether a STORED body is in the notebook's sections (design 42 §8.6's
-    `form`): it parses under §4 when every id it cites counts as carried and
-    every owner as a roster name. A legacy prose body is not; a schema body is,
-    whoever wrote it. Never a refusal: this is what a reader is told it is
-    looking at, and the validator runs on write, never on read (§9)."""
+    """Whether a STORED body is in the notebook's sections (its `form`): it parses under the schema
+    when every id it cites counts as carried and every owner as a roster name. A legacy prose body
+    is not; a schema body is, whoever wrote it. Never a refusal: this is what a reader is told it is
+    looking at, and the validator runs on write, never on read."""
     shown = Shown(carried=cited_ids_in(text), roster=_AnyName())
     try:
         parse_note_body(text, shown=shown)
@@ -287,14 +283,14 @@ def in_schema_form(text: str) -> bool:
 
 
 def dropped_citations(head: str, body: str) -> tuple[frozenset[int], ...]:
-    """§7's carry-forward check: the citation sets of the HEAD's lines that
+    """The carry-forward check: the citation sets of the HEAD's lines that
     no line of the new `body` cites in full, in the head's order. Empty means
     every line's evidence survives the restatement.
 
     A restatement may rewrite a line, move it between sections or merge two
     lines into one citing both; it may not make a line's evidence vanish.
     Both sides are read LINE BY LINE WITH A PATTERN, never the parser, so the
-    check binds to any `[<ids>]` a head carries, parsed or not (§9): a legacy
+    check binds to any `[<ids>]` a head carries, parsed or not: a legacy
     head with no citations makes it vacuous, and that one revision is held to
     form only.
     """
@@ -308,7 +304,7 @@ def dropped_citations(head: str, body: str) -> tuple[frozenset[int], ...]:
 
 
 #: A citation group as the tag path writes it: positions (`#4`), bare ids,
-#: or both, comma-separated, in square brackets (§4.3, G4).
+#: or both, comma-separated, in square brackets.
 _POSITIONAL = re.compile(r"\[(\s*#?[0-9]+(?:\s*,\s*#?[0-9]+)*\s*)\]")
 
 
@@ -316,7 +312,7 @@ def resolve_positions(
     text: str, *, rows: Sequence[int], carried: frozenset[int],
 ) -> str:
     """The tag path's body with every `[#n]` position mapped to the row id
-    her transcript showed at that position (design 42 §4.3, G4), so a stored
+    her transcript showed at that position, so a stored
     body holds only ids.
 
     `rows` is the transcript's row ids in the order the prefill numbered
@@ -467,8 +463,8 @@ _ROLLUP_CITATION = re.compile(r"^rollup\(([^()\[\]]+)\)$")
 def check_citations(
     cited: Sequence[str], shown: Shown, *, what: str,
 ) -> tuple[tuple[int, ...], tuple[str, ...]]:
-    """The citations of a write that has no body to carry them (an event verb,
-    30 §3 check 1): `cited` are message ids as digits and Rollup rows as
+    """The citations of a write that has no body to carry them (an event verb):
+    `cited` are message ids as digits and Rollup rows as
     `rollup(kind|subject|from/to)`, exactly the two forms a note's brackets
     take, held to the same `Shown` the same way: an id the write was shown or
     fetched (or already carried), not one of Nora's own, a Rollup row it read.
@@ -522,7 +518,7 @@ def _check_date(date: str, weekday: str | None, item: str) -> None:
 
 
 def _check_stamp(stamp: str, item: str) -> None:
-    """The date in `(as of <date>)` / `(folded <date>)`: a date as §4.3
+    """The date in `(as of <date>)` / `(folded <date>)`: a date as the schema
     writes every date, optionally with its weekday."""
     date, _, weekday = stamp.partition(" ")
     _check_date(date, weekday or None, item)
@@ -570,7 +566,7 @@ def cited_line(
     heading: str, item: str, shown: Shown, *, may_cite_nora: bool = False,
 ) -> NoteLine:
     """One `<claim> [<ids>]` line under `heading`, held to the grammar every
-    Register line shares (12-schemas §2): absolute dates, ending in the ids and
+    Register line shares: absolute dates, ending in the ids and
     Rollup keys it rests on, each one this write was shown or carries. A line
     may cite one of Nora's own messages only where `may_cite_nora` says so (a
     memo, which may keep what she found or said; never a note). The memo
@@ -641,8 +637,7 @@ def _line(
     # Who said it, when only one person can have: a line that leaves `(<names>)`
     # out while every rendered message it cites is ONE sender's, or writes a
     # first name exactly one cited sender extends, is completed from the
-    # rendered `from` (6 of 14 live `note_create` calls, 2026-10-02..09, were
-    # refused for exactly this and rewritten on the next round). Several cited
+    # rendered `from`. Several cited
     # senders stay a refusal that lists them: who said a line is the model's
     # judgement, not every author it cites. A sender a `(<names>)` slot cannot
     # hold (a comma or a parenthesis) is never filled in.
@@ -703,11 +698,11 @@ def _line(
 
 
 def parse_note_body(text: str, *, shown: Shown, require_open: bool = False) -> NoteBody:
-    """The body, held to §4, or `NoteBodyError` naming the rule it broke.
+    """The body, held to the schema, or `NoteBodyError` naming the rule it broke.
 
     `require_open` is a create's (and a merge's): the objective's own rule for a
     new entry is `committed` AND a non-empty `open`, so `## Open` holds at
-    least one line there (§4.1). Elsewhere an empty `## Open` means «nothing
+    least one line there. Elsewhere an empty `## Open` means «nothing
     left open as of this revision».
     """
     split = split_sections(text)

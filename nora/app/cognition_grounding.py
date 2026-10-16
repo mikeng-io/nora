@@ -1,6 +1,5 @@
 """Building what a Cognition session is shown beside its agenda: the Record rows
-that raised each stimulus and the Register index lines (design/cognition-loop/
-30-cognition.md §1; #637 review, major 2). The pure half is
+that raised each stimulus and the Register index lines. The pure half is
 `nora.domain.cognition_ground` (the types) / `nora.language.cognition_render`
 (the renderer); this is the reads that fill it, each a narrow seam and none a
 tier write.
@@ -23,13 +22,11 @@ not the tool is on, and a session with the tool off still sees who said what.
   (`transcript_select`), so a hidden message is not «shown as withheld», it is
   absent, and that includes her OWN unsent send. The `deleted` mark and the
   withheld words (the rule `record_query` keeps) are what is left for a delete
-  whose hide did not land. DEC-245 (3) said an unsent send of hers was shown as
-  deleted; amended by DEC-276, whose cascade was removed 2026-10-03.
-- *Standing is pulled, never pushed* (30 §1: "Standing bodies are pulled ...
-  never pushed"). No Standing text, head or revision is rendered here:
-  a pushed head could carry words the lineage predicates would withhold. The
-  session reads Standing through `standing_read`, which applies them itself (#637
-  second review, blocker).
+  whose hide did not land (DEC-245, DEC-276).
+- *Standing is pulled, never pushed.* No Standing text, head or revision is
+  rendered here: a pushed head could carry words the lineage predicates would
+  withhold. The session reads Standing through `standing_read`, which applies
+  them itself.
 - *Every pushed index line honours lineage.* A note or an
   event is shown only when lineage permits it for EVERY room on the agenda
   (`nora.agent.lineage`, the tag path's own predicates). `[lineage] mode` reads
@@ -518,7 +515,7 @@ def build_grounder(
                 "cognition grounding lineage shadow (unit=%s): would withhold %d note(s) "
                 "and %d event(s); shown", unit, withheld["notes"], withheld["events"],
             )
-        # Her own account of herself in this unit (design/self-growth/20). Unlike
+        # Her own account of herself in this unit. Unlike
         # the reads above it is background, never the ground for a claim, so a
         # failed read costs the `self` block and not the session.
         # Bounded and counted like the tag and fire reads (`read_culture`,

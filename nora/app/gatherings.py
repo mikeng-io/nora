@@ -1,10 +1,9 @@
-"""`GatheringService` — the ONE use-case layer for Gathering business rules (spec
-§1: reminders only ever had one adapter, so its rules live inline in a
-tool closure; Gathering has two adapters from day one, so its rules live
-here, and both the agent tool and the web read routes call these same
-functions rather than each re-implementing what makes an event valid).
+"""`GatheringService` — the ONE use-case layer for Gathering business rules.
 
-Reuses three things that already ship rather than rebuilding them:
+Gathering has two adapters (the agent tools and the web read routes); both call
+these functions rather than each re-implementing what makes an event valid.
+
+Reuses three existing pieces:
 - the reminders domain, for an event's linked one-shot notification;
 - the SAME `route_source` (`RouteClient`/`PlaceResolver`) the `place_info`
   tool already uses, for venue resolution — behind the same R-28 screen;
@@ -56,21 +55,19 @@ from nora.domain.reminders import (
 )
 from nora.domain.rollup import room_key
 
-#: 40-register.md §3's lifecycle, minus the two the tag path's
-#: `event_set_status` tool never offers: `staged`/`proposed` are
-#: `event_propose`'s own outcomes, and `evicted` is reserved to "its own
-#: misreads only" (30-cognition.md §3 check 12) — the tag path never wrote
-#: this event's first revision on Cognition's behalf, so it is never the one
-#: correcting a misread.
+#: The statuses the tag path's `event_set_status` tool may set: the lifecycle
+#: minus `staged`/`proposed` (`event_propose`'s own outcomes) and `evicted`
+#: (reserved to Cognition correcting its own misreads; the tag path never wrote
+#: an event's first revision on Cognition's behalf).
 TAG_SETTABLE_STATUSES: frozenset[GatheringStatus] = frozenset({
     GatheringStatus.CONFIRMED, GatheringStatus.CANCELLED,
     GatheringStatus.HAPPENED, GatheringStatus.LAPSED,
 })
 
-# The fixed-shape dialectic query, spec §5 step 2 — engineered to return a
-# short, directly-usable venue name (or a clear "none") rather than free
-# prose that would need a separate NL-extraction step. Comparable across
-# people and stable across repeat calls because the wording never varies.
+# The fixed-shape dialectic query: returns a short, directly-usable venue name
+# (or a clear "none") rather than free prose needing a separate extraction
+# step. Comparable across people and stable across calls because the wording
+# never varies.
 _VENUE_PREFERENCE_QUERY = (
     "In one short phrase, name ONE restaurant or venue this person has "
     "mentioned positively — food preferences and dietary constraints may "
@@ -101,7 +98,7 @@ def _tag_evidence(
     knowledge, not something the model names: the tag path's event verbs take no
     `cited_ids`). Each field the write states gets one `citation` edge per
     message, so the withdrawal cascade reaches the event when that message is
-    withdrawn (10 §2 rule 7; the review of PR #669). Its lineage is
+    withdrawn. Its lineage is
     `message:<the room the message was said in>` per field, plus
     `message:<this room>` for the turn itself (`note_revision_lineage`'s
     `evidence_room` rule), so an event a tag turn wrote is not
@@ -152,12 +149,10 @@ class GatheringService:
         self._honcho = honcho
         self._ai_peer = ai_peer
         self._now = now
-        # B3(a): unit -> its room ids, from `policy.toml` (the composition
-        # root's `_unit_rooms(allowlist)` mapping — units are not in the DB,
-        # so the pre-migration backfill could not fill `unit_id` on an
-        # existing event). `None` (every test, and any composition that
-        # predates this fix) keeps `search_events` exactly as it was: an
-        # exact `unit_id` match, no legacy row ever surfaced.
+        # unit -> its room ids, from `policy.toml` (the composition root's
+        # `_unit_rooms(allowlist)` mapping; units are not in the DB, so a
+        # legacy event may carry no `unit_id`). `None` keeps `search_events`
+        # to an exact `unit_id` match, surfacing no legacy row.
         self._unit_room_ids = unit_room_ids
 
     async def create_event(
@@ -170,26 +165,23 @@ class GatheringService:
         field_meta: tuple[FieldMeta, ...] = (),
     ) -> Gathering:
         """`status`, `reasoning`, `confidence` and `field_meta` are what a
-        Cognition session states with its write (40 §4: how each field was
-        reached, an abduced one rendered as a question); the tag path leaves
+        Cognition session states with its write (how each field was
+        reached; an abduced one is rendered as a question); the tag path leaves
         them at their defaults.
 
-        Spec §3.1: the CALLER (the `create_event` tool) is expected to
+        The CALLER (the `create_event` tool) is expected to
         have already checked `list_events(status=PROPOSED)` and decided a
         new event is genuinely wanted — this method does not silently
         merge or refuse on its behalf. It DOES still raise
         `AmbiguousOpenGatheringsError` if two-or-more open events already
         exist, as a last-resort backstop, not the primary mechanism.
 
-        Fix I1: only a PROPOSED event that is STILL OPEN — `when is None`
-        (no time settled yet) or `when >= now` (still ahead) — counts
-        toward that backstop. Without this, two dinners that already
-        happened and were never explicitly cancelled would refuse every
-        future `create_event` call for this conversation FOREVER — the
-        "which one do you mean?" refusal makes no sense for an event that
-        is long past, and there is no `confirm_event` transition to move
-        a past event out of PROPOSED (a deliberate scope decision, not a
-        gap this fix reopens)."""
+        Only a PROPOSED event that is STILL OPEN — `when is None` (no time
+        settled yet) or `when >= now` (still ahead) — counts toward that
+        backstop. Otherwise two past, never-cancelled dinners would refuse every
+        future `create_event` for the conversation: "which one do you mean?"
+        makes no sense for a long-past event, and there is no `confirm_event`
+        transition to move a past event out of PROPOSED."""
         open_events = await self.list_events(
             conversation_id=conversation_id, status=GatheringStatus.PROPOSED,
         )
@@ -225,8 +217,8 @@ class GatheringService:
                 event, venue_text, now=now, person_names=person_names,
             )
         # `create` mints the first revision and returns the row WITH its
-        # `head_revision_id` populated (10-tiers.md §3's compare-and-swap
-        # value) — the local `event` built above never had one.
+        # `head_revision_id` populated (the compare-and-swap value) — the
+        # local `event` built above never has one.
         return await self._store.create(event, evidence=_tag_evidence(
             {"what", "status"}
             | ({"start"} if when is not None else set())
@@ -244,7 +236,7 @@ class GatheringService:
     ) -> Gathering:
         current = await self._require_in_conversation(event_id, conversation_id)
         if current.status in TERMINAL_STATUSES:
-            # 40-register.md §3: only a status BEFORE `happened` may be
+            # Only a status BEFORE `happened` may be
             # revised: `cancelled`, `happened`, `lapsed` and `evicted` are
             # never revised.
             raise GatheringCancelledError(event_id, current.status)
@@ -256,12 +248,11 @@ class GatheringService:
                 updated, venue_text, now=self._now(), person_names=person_names,
             )
         updated = _stated(updated, reasoning, confidence, field_meta)
-        # 10-tiers.md §3: "a stale [base_revision_id] is refused `stale_base`,
-        # with the current row" — `base_revision_id` (when the caller passes
-        # one; internal callers that predate the event verbs do not) is
-        # checked against the row THIS CALL read, not re-read after
-        # `_resolve_venue`, matching every other refusal
-        # here being decided on the state `_require_in_conversation` read.
+        # A stale `base_revision_id` is refused `stale_base` with the current
+        # row. It is optional (internal callers omit it) and is checked against
+        # the row THIS CALL read, not re-read after `_resolve_venue`, like
+        # every other refusal decided on the state `_require_in_conversation`
+        # read.
         return await self._store.update(
             updated, base_revision_id=base_revision_id,
             evidence=_tag_evidence(
@@ -278,10 +269,9 @@ class GatheringService:
         reasoning: str | None = None, confidence: str | None = None,
         field_meta: tuple[FieldMeta, ...] = (),
     ) -> Gathering:
-        """The general lifecycle move `event_set_status` backs (40-register.md
-        §3): `cancel_event` is `set_event_status(status=CANCELLED)` restated,
-        kept as its own method below for the one caller (`suggest_venue`'s
-        sibling read paths, `nora.web.gatherings`) that predates this."""
+        """The general lifecycle move `event_set_status` backs:
+        `cancel_event` is `set_event_status(status=CANCELLED)` restated, kept
+        as its own method for the callers (`nora.web.gatherings`) that use it."""
         current = await self._require_in_conversation(event_id, conversation_id)
         if current.status is GatheringStatus.CANCELLED and status is not GatheringStatus.CANCELLED:
             # The same refusal `update_event` gives a cancelled event: no
@@ -301,7 +291,7 @@ class GatheringService:
     ) -> RSVP:
         current = await self._require_in_conversation(event_id, conversation_id)
         if current.status in TERMINAL_STATUSES:
-            # 40-register.md §3, the same set `update_event` refuses on:
+            # The same set `update_event` refuses on:
             # recording an RSVP against an event that is over, called off,
             # lapsed, or evicted is not useful and reads as though it is
             # still on.
@@ -331,15 +321,11 @@ class GatheringService:
         person: str | None = None, start: datetime | None = None,
         end: datetime | None = None,
     ) -> Sequence[Gathering]:
-        """`event_search`'s store side (15-map.md §4: "events... **new**;
-        `list_events` is per room, filtered by status only"). Unit-wide when
-        `unit_id` names one; falls back to this room's own events
-        (`list_events`'s old scope) when it does not — a room with no unit
-        resolved is not left unable to search its own events at all, and a
-        bare `event_search()` call with none of `place`/`person`/`start`/`end`
-        given reads exactly as `list_events()` did (this step's explicit
-        choice: the design leaves the exact routing between "this room" and
-        "the unit" unstated beyond "unit-wide, filtered")."""
+        """`event_search`'s store side: unit-wide when
+        `unit_id` names one (`list_events` is per room, filtered by status
+        only); otherwise this room's own events, so a room with no unit
+        resolved can still search its own events. A bare `event_search()` with
+        none of `place`/`person`/`start`/`end` reads exactly as `list_events()`."""
         if not unit_id:
             return await self.list_events(conversation_id=conversation_id)
         room_ids: Sequence[str] = ()
@@ -347,7 +333,7 @@ class GatheringService:
             try:
                 room_ids = self._unit_room_ids(unit_id)
             except Exception:
-                # B3(a): a resolver failure must not turn a unit-wide search
+                # A resolver failure must not turn a unit-wide search
                 # into a crash — it falls back to the exact `unit_id` match,
                 # the same result as an unwired resolver (`None` above).
                 log.exception("unit_room_ids resolution failed for unit %s", unit_id)
@@ -403,7 +389,7 @@ class GatheringService:
         if self._honcho is None:
             return VenueSuggestions(status="unavailable")
 
-        # spec §5 step 2: one fixed-shape query per mapped person.
+        # One fixed-shape query per mapped person.
         mentions: dict[str, int] = {}
         for person_id in roster_person_ids:
             answer = await self._honcho.chat(
@@ -454,7 +440,7 @@ class GatheringService:
         """`_require`, plus the scope check `ReminderStore.cancel`
         (`nora.domain.reminders`) already documents the reasoning for: "a
         uuid carries no scope of its own — the STORE enforces the scope."
-        Fix I5: `update_event`/`cancel_event`/`rsvp`/`suggest_venue` all
+        `update_event`/`cancel_event`/`rsvp`/`suggest_venue` all
         accept a bare event id from the model with no prior proof it belongs
         to the room asking — an id from ANOTHER conversation refuses exactly
         like an unknown one (`GatheringNotFoundError`), never a distinct "wrong
@@ -501,10 +487,9 @@ class GatheringService:
     ) -> dict[str, Any] | None:
         """The FULL R-28 screen-call-screen sandwich, via the SAME
         `nora.agent.security.screen_and_resolve_place` `place_info`'s own
-        tool closure calls (Fix I4) — previously this only ran the
-        outbound identifier/coordinate half, with no person-name check, no
-        `try/except` around the call, and no return-path screen on
-        Google's own `name`/`address` before they were persisted.
+        tool closure calls, including the person-name check, the
+        `try/except` around the call, and the return-path screen on Google's
+        own `name`/`address` before they are persisted.
 
         `person_names` is optional because `GatheringService` is built once at
         process start and has no per-tag address book of its own — callers

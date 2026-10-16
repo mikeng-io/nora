@@ -5,17 +5,14 @@ WHAT THIS MODULE IS RESPONSIBLE FOR
 The TURN. `nora.app.heartbeat` owns *when* a reminder fires, *whether* policy
 still allows it and *what the row then says*; this owns everything between the
 two — the synthetic `TagContext`, the prompt, the model call, the delivery, and
-the §8.1 outcome string it answers with.
+the outcome string it answers with.
 
 THERE ARE SEVERAL OCCASIONS, AND THE TURN IS THE SAME TURN
 ----------------------------------------------------------
-A reminder coming due was the first (DEC-70). A version announcement was the
-second (DEC-97): on the boot after an upgrade, the operator's release note was
-put to her to relay in her own voice; DEC-314 retired it. Gatherings (DEC-139), compute
-results (Nora Compute spec §2) and relays (DEC-105) followed; participation
-(design/dreamer-agent-loop/35) is the latest — the FIRST occasion that triggers
-on a real room going quiet rather than on a stored row, and the first where
-silence is a HEALTHY outcome rather than a failure (`SILENT` below).
+The occasions are reminders (DEC-70), gatherings (DEC-139), compute results,
+relays (DEC-105), proactive acts and participation. Participation is the one
+that triggers on a real room going quiet rather than on a stored row, and the
+one where silence is a HEALTHY outcome rather than a failure (`SILENT` below).
 Everything between "something made this turn happen" and "the group heard it"
 is identical — the doctrine
 audience, the guards, the audit-first write, the Honcho feed, the Langfuse
@@ -30,7 +27,7 @@ happening. `speak(occasion)` is the turn; `run(rows)` is the heartbeat's
 reminder-shaped adapter onto it (see both docstrings).
 
 It reuses the tag pipeline's stages where they fit and refuses them where they
-do not, and the refusals are the design (design spec §5's table):
+do not, and the refusals are the design:
 
 * **no `admission.run`** — R-9's debounce would reject a fire turn within five
   seconds of a tag AND consume the tag's window; R-30 sheds the NEWEST arrival,
@@ -56,8 +53,7 @@ R-6 and R-18 all still apply), and `feedback.run` (a fire turn is still
 something she said; omitting it makes her memory of her own speech incomplete).
 
 Doctrine is read at `applies_to="heartbeat"` — `"participation"` for that
-occasion — which is why that audience had to
-exist before this module did: at `"tag"` it would carry the silence rules that
+occasion — because at `"tag"` it would carry the silence rules that
 are false here, and an audience that resolved to nothing would deliver with no
 persona, no constraints, and a `LeakGuard` corpus carrying nothing but the
 authored sections.
@@ -178,11 +174,11 @@ log = logging.getLogger("nora.app.fire")
 # The `audience` label every `nora_silent_failures_total` this path raises
 # carries — including the five inside `Deliverer`, which is why `deliver.build`
 # takes it. A8 (`docs/runbook.md`) filters on `audience="tag"`, so a fire-turn
-# failure recorded without this would be charged to a <1% budget whose
+# failure recorded without this would be charged to a budget whose
 # denominator counts only tags.
 AUDIENCE = audience_names.HEARTBEAT
 
-# §8.1's four outcomes. The heartbeat derives the ROW's terminal state from the
+# The four outcomes. The heartbeat derives the ROW's terminal state from the
 # string (`_state_for`: only `sent` is DONE), so these are not log text —
 # spelling one differently records a delivery that never happened.
 SENT = "sent"
@@ -190,7 +186,7 @@ FAILED_POLICY = "failed_policy"
 FAILED_TIMEOUT = "failed_timeout"
 
 # The three `nora_errors_total{stage=...}` labels the participation turn's
-# memory reads raise (issue #210). NAMED CONSTANTS, not literals at the call
+# memory reads raise. NAMED CONSTANTS, not literals at the call
 # site, for the reason `nora/obs/metric_specs.py` states about label
 # vocabularies: an operator filtering on a stage is filtering on a string, and
 # a stage spelled two ways is two series neither of which is the truth. They
@@ -217,8 +213,7 @@ _QUERY_ROWS = 6
 _QUERY_CHARS = 1000
 FAILED_ERROR = "failed_error"
 
-# The participation occasion's two additions to the outcome vocabulary
-# (design/dreamer-agent-loop/35 §6).
+# The participation occasion's two additions to the outcome vocabulary.
 #
 # `PARTICIPATION_AUDIENCE` labels every series a participation turn moves
 # (silent failures, llm latency, stop reasons) so its failures are never
@@ -228,20 +223,19 @@ FAILED_ERROR = "failed_error"
 #
 # `SILENT` is the outcome the other four kinds cannot produce: the turn ran,
 # the model concluded "nothing here is worth saying", and that is SUCCESS —
-# the §6 healthy default, counted on `nora_participation_silence_total`, never
+# the healthy default, counted on `nora_participation_silence_total`, never
 # on `nora_silent_failures_total`. A reminder that says nothing is broken; a
 # participation turn that says nothing is working.
 PARTICIPATION_AUDIENCE = audience_names.PARTICIPATION
 SILENT = "silent"
 
-# The proactive occasion's audience (design/dreamer-agent-loop/39 D4/D12,
-# DEC-162): a `kind="proactive"` reminder row — written by Nora's own decide
-# turn, owed to nobody — coming due. Its doctrine is read at this audience
-# (`ProactiveHeader`'s may-speak rule reaches it; the heartbeat's obliged-to-speak
-# reading does not), its failures are labelled apart from the heartbeat's
-# and participation's, and a turn that ends without speaking answers
-# `SILENT`, the same healthy default participation has and the heartbeat
-# cannot.
+# The proactive occasion's audience (DEC-162): a `kind="proactive"` reminder
+# row — written by Nora's own Cognition session, owed to nobody — coming due.
+# Its doctrine is read at this audience (`ProactiveHeader`'s may-speak rule
+# reaches it; the heartbeat's obliged-to-speak reading does not), its failures
+# are labelled apart from the heartbeat's and participation's, and a turn that
+# ends without speaking answers `SILENT`, the same healthy default
+# participation has and the heartbeat cannot.
 PROACTIVE_AUDIENCE = audience_names.PROACTIVE
 
 # WHICH OCCASIONS READ THE SHARED DECISION LOG, AND WITH WHICH WRITERS — one
@@ -260,7 +254,7 @@ _DECISION_WRITERS_BY_KIND: dict[str, tuple[DecisionWriter, ...]] = {
     "proactive": PROACTIVE_ACT_DECISION_WRITERS,
 }
 
-# The §10.6 shadow mirror's audience label: the mirror IS a send (it goes
+# The shadow mirror's audience label: the mirror IS a send (it goes
 # through `deliver.build` and every guard that carries), but it is operator
 # review traffic, never room speech — its failures must not pollute the tag,
 # heartbeat or participation budgets, and a mirrored "spoke" must never read
@@ -268,7 +262,7 @@ _DECISION_WRITERS_BY_KIND: dict[str, tuple[DecisionWriter, ...]] = {
 # on the live path below; the mirror has its own Deliverer and never touches
 # it).
 SHADOW_AUDIENCE = audience_names.SHADOW
-# The Relevance Gate's review surface (design/dreamer-agent-loop/36 §4). A
+# The Relevance Gate's review surface. A
 # SECOND shadow audience and not a reuse of the one above, because the two
 # mirror different things and an operator reading a dashboard must be able to
 # tell them apart: `participation-shadow` carries what she WOULD HAVE SAID
@@ -281,7 +275,7 @@ def reminder_occasion(rows: Sequence[Reminder]) -> Event:
     """One conversation's due reminders, as the occasion they are.
 
     The heartbeat's rows are already grouped by `(platform, conversation_id,
-    requester)` (§5.2), so `rows[0]` names all four for the whole batch.
+    requester)`, so `rows[0]` names all four for the whole batch.
 
     `body` is the requester's OWN sentence(s), joined, and that is the premise of
     the whole feature: a reminder is a deferred request, put to her at the due
@@ -303,17 +297,15 @@ def reminder_occasion(rows: Sequence[Reminder]) -> Event:
 
 def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     """A `kind="proactive"` row — Nora's own earlier decision — coming due
-    (design/dreamer-agent-loop/39 D4, DEC-162): the ACT turn of the OODA
-    loop whose DECIDE turn ran in the Dreamer and wrote this row.
+    (DEC-162): the ACT turn of the OODA loop whose DECIDE step wrote this row.
 
     `person_id=None`, participation's shape: the row's owner is the reserved
-    `ai_peer` id (39 D5), which is nobody in `identity.toml` by construction,
+    `ai_peer` id, which is nobody in `identity.toml` by construction,
     so this turn runs on nobody's authority and `build_context` accepts every
-    consequence of a `None` tagger. `speak` skips §12's refusal for it
+    consequence of a `None` tagger. `speak` skips the unmapped-person refusal for it
     exactly as it does for a participation turn.
 
-    `body` is the INTENT the Cognition session's `remind` wrote (the decide turn before
-    2026-10-03) — «raise the dinner plan now
+    `body` is the INTENT the Cognition session's `remind` wrote — «raise the dinner plan now
     that people know where they are coming from» — put to her the way a
     reminder puts the requester's own sentence: as what was asked, in the
     asker's words, and the asker is her earlier self. The header carries
@@ -324,13 +316,13 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     which is the point of splitting decide from act — research at 08:00 is
     what to raise, research at 14:00 is where everybody is.
 
-    The heartbeat has already screened the row (`ProactiveScreen`, 39 D5/
-    D11) — the flag, and whether the note moved on the tag path since the
-    row was linked — so a row reaching this factory is one still worth a
-    turn. She may still decline: `SILENT` is reachable for this kind (D12).
+    The heartbeat has already screened the row (`ProactiveScreen`): the flag,
+    and whether the note moved on the tag path since the row was linked. So a
+    row reaching this factory is one still worth a
+    turn. She may still decline: `SILENT` is reachable for this kind.
     """
     row = rows[0]
-    # The brief's intent. Rows before 2026-10-03 hold free text here, so only exactly tell/ask
+    # The brief's intent. Older rows hold free text here, so only exactly tell/ask
     # counts; a batch that asks anything is an ask, since one answer is then expected.
     intents = {
         r.payload.get("intent") for r in rows if isinstance(r.payload, Mapping)
@@ -351,12 +343,11 @@ def compute_occasion(
     job: ComputeJob, result: JobResult, readback: DocumentReadBack | None = None,
     *, checkpoint: str = "", kept_files: tuple[str, ...] = (), kept: MediaBlob | None = None,
 ) -> Event:
-    """A finished compute job, as the occasion it is (Nora Compute spec §2)
-    — reusing `FirePath.speak`, the pattern DEC-97 established for a
-    thing built on this turn beside reminders.
+    """A finished compute job, as the occasion it is, delivered through
+    `FirePath.speak` (DEC-97).
 
     `body` is the job's own task description PLUS its result summary —
-    the backend's own account of what it built (Nora Compute spec §11: this text
+    the backend's own account of what it built (this text
     passes R-18 like any other reply; the artifact bytes themselves do not).
     Nora composes the actual group-facing message from this in her own
     voice; this function only assembles what she is TOLD, not what she says.
@@ -367,7 +358,7 @@ def compute_occasion(
     The read-back URLs ride on the `Event` so the fire turn can seed its link carrier.
 
     `checkpoint` is where a job that stopped had got to, already rendered to plain markdown by
-    the one checkpoint renderer (design/subagent §4d); `kept_files` are the files code saw the
+    the one checkpoint renderer; `kept_files` are the files code saw the
     worker keep. Neither is the worker's report, and neither is read from it.
 
     A result that carries its artifact's bytes (`result.media`, a video clip) is delivered as an
@@ -411,21 +402,20 @@ def compute_occasion(
 def relay_occasion(
     *, destination: Any, requester: PersonRef, text: str, from_platform: str,
 ) -> Event:
-    """A message somebody asked to be passed into another room — the FOURTH
-    `Event` (DEC-105), following DEC-99's ruling exactly: a new way for Nora
-    to speak is an occasion on this path, never a fourth send mechanism.
+    """A message somebody asked to be passed into another room (DEC-105),
+    following DEC-99's ruling: a new way for Nora to speak is an occasion on
+    this path, never a further send mechanism.
 
     That ruling is what keeps R-1b's three links intact. A relay that called
     `adapter.send` itself would bypass R-2's latch, R-4, R-6's leak scan,
     R-18's egress scan AND A9's audit-first write in one step — and the last of
     those is the one that bites quietly: the relayed message would appear in
     the destination room with no row recording it, leaving a hole in that
-    room's transcript that Nora cannot see. Exactly the defect the Discord
-    parser had.
+    room's transcript that Nora cannot see.
 
     `person_id` is the REQUESTER's, so the destination's fire turn runs under
     the authority of somebody `policy.is_allowed` has already cleared for that
-    room — and so §12's re-check at fire time applies to them, as it does to a
+    room — and so the policy re-check at fire time applies to them, as it does to a
     reminder's owner.
     """
     return Event(
@@ -441,7 +431,7 @@ def relay_occasion(
 
 
 def lost_job_occasion(job: ComputeJob) -> Event:
-    """A job whose delivery was lost across a restart — the FIFTH `Event`.
+    """A job whose delivery was lost across a restart.
 
     Boot recovery cannot know whether the container finished: its handle lives
     in an in-process backend's in-memory registry and did not survive
@@ -452,8 +442,8 @@ def lost_job_occasion(job: ComputeJob) -> Event:
     What is true, and all that is true, is that she lost track of it. That is
     R-27's `unavailable` — «I couldn't check», not «there is nothing» — and
     saying it is what closes a promise that was otherwise left open forever:
-    the requester was told «I'm working on it» and, before this, heard nothing
-    ever again (operator, live, 2026-08-14).
+    the requester was told «I'm working on it» and would otherwise hear
+    nothing ever again.
     """
     return Event(
         platform=job.platform,
@@ -470,11 +460,10 @@ def participation_occasion(
     *, platform: str, conversation_id: str, conversation_type: str = "group",
     relevance_score: float | None = None,
 ) -> Event:
-    """A room that has gone quiet, as the occasion it is
-    (design/dreamer-agent-loop/35).
+    """A room that has gone quiet, as the occasion it is.
 
-    The FIRST occasion with no stored row and nobody's request behind it —
-    `person_id=None`, like the retired version announcement, because the quiescence
+    The occasion with no stored row and nobody's request behind it —
+    `person_id=None`, because the quiescence
     trigger that fires it (`nora.app.participation.ParticipationTrigger`) owes
     the turn to no one person. Every consequence of a `None` tagger that
     `build_context` documents is accepted here as it is there.
@@ -482,7 +471,7 @@ def participation_occasion(
     `body` is EMPTY on purpose, and the header says so: nothing was put to
     her. The whole basis for the determination is the injected context — the
     transcript window, standing, notes and facts that `build_context` and
-    `build_prefill` assemble — which is §3.6's fast-by-construction rule: if
+    `build_prefill` assemble — the fast-by-construction rule: if
     the value of speaking is not visible in what is already in front of her,
     it is not worth saying.
 
@@ -514,8 +503,8 @@ def _mirror_window(d: Determination) -> str:
 
     That module is gated on importing no `nora.*` at all
     (`test_the_module_imports_nothing_from_nora`), so it cannot reach the shared
-    renderer — and a private copy of the line format there is exactly the shape
-    #220 exists to end. Its ONE consumer is this file, which can import
+    renderer, and a private copy of the line format there is what must not
+    exist. Its ONE consumer is this file, which can import
     `nora.domain.blocks` freely, so the render moves to the caller and the
     constraint holds without a second implementation. (The COLLAPSE stays in
     that module, in `window_from`, because `WindowRow.body` promises one line to
@@ -524,15 +513,15 @@ def _mirror_window(d: Determination) -> str:
 
     **`markup=False`: this is a Discord message, not a prompt.** An operator
     reads these verdicts in a review channel, so `a < b && c` has to arrive as
-    `a < b && c` and a link has to stay clickable. Escaping it wrote `&amp;` in
-    front of a person and broke every URL on the line, for one commit, because
-    the renderer it moved to is a PROMPT renderer by default.
+    `a < b && c` and a link has to stay clickable. The renderer is a PROMPT
+    renderer by default, whose escaping would write `&amp;` in front of a
+    person and break every URL on the line.
 
     **`WINDOW_BODY_CHARS` is applied to text `window_from` has already
     collapsed**, so the bound counts characters the reviewer will see. It is
-    applied BEFORE the renderer, and with `markup=False` that is now the same
-    count either way — under `markup=True` a clip at 120 could still have grown
-    to 600 when escaping expanded 120 `&` into `&amp;`.
+    applied BEFORE the renderer; with `markup=False` that is the same count
+    either way (under `markup=True` escaping could expand a clip of 120 `&`
+    into 600 characters).
     """
     if not d.window:
         return ""
@@ -583,9 +572,8 @@ class FirePath:
         culture: CultureReader | None = None,
         lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
-        # The participation turn's memory reads (issue #210). All four default
-        # to the inert shape — `0` renders no block, so a construction site
-        # that has not been updated behaves exactly as it did before.
+        # The participation turn's memory reads. All default to the inert
+        # shape: `0` renders no block.
         people_in_window_conclusions: int = 0,
         people_in_window_speakers: int = 0,
         memory_read_timeout_seconds: float = DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
@@ -600,33 +588,19 @@ class FirePath:
         decisions: DecisionLogRecorder | None = None,
         presence: PresenceReader | None = None,
         lineage: LineagePolicy | None = None,
-        # `<computer>` (design/sandbox-runtime §15.3): the SAME reader the tag
+        # `<computer>`: the SAME reader the tag
         # path's assembler holds. `None` while `[computer]` is off.
         computer: ComputerContextReader | None = None,
-        # `<documents>` (design/artifact §29): the SAME reader the tag path's assembler
+        # `<documents>`: the SAME reader the tag path's assembler
         # holds. `None` while `[documents]` is off.
         documents: DocumentsContextReader | None = None,
         # `<memos>` (DEC-306): the SAME store the tag path's assembler reads,
         # keyed on the unit like `notes`. `None` renders no block.
         memos: MemoStore | None = None,
     ) -> None:
-        # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
-        #
-        # It was cited here as "D5" until 2026-08-27, which is the exact
-        # mistake CLAUDE.md keeps a war-story for: the number came off the
-        # PLAN's local `Decisions needed from the operator` table (D1-D6),
-        # and the roadmap relabelled those S1-S6 when it CLOSED them. The
-        # global D5 is `design/09-decision-index.md:36` (identity is config,
-        # never hardcoded) and, in this very bundle,
-        # `00-overview.md:134` (Phase A gains tools). Anyone following the
-        # old citation landed on a Dreamer extraction decision about tool
-        # grants. `S1` two paragraphs down was right; its sibling was not.
-        #
-        # `build_prefill` is
-        # shared and parameterised only by `header=`, so SUPPRESSING the block
-        # here is the special case that would need justifying — and it was
-        # suppressed silently until 2026-08-27, simply because `build_context`
-        # below never passed `standing=` and the field defaults to `None`.
+        # `<standing>` renders on the fire path too. `build_prefill` is shared
+        # and parameterised only by `header=`, so SUPPRESSING the block here
+        # would be the special case needing justification.
         #
         # It matters most on exactly this path: a fire turn speaks into a room
         # UNPROMPTED, so «where had this conversation got to» is the context she
@@ -634,14 +608,12 @@ class FirePath:
         # infer it from. `None` when `[standing] enabled = false`, the shipped
         # default, which renders no block at all.
         #
-        # This path READS the position and never writes one. That asymmetry is
-        # not a choice: S1 (fire turns debrief too) is blocked on the fire path
-        # retaining a `TagTrace` at all — `speak` discards the one
-        # `AgentRunner.invoke` hands back, a Phase 1 deferral flagged in that
-        # method — and there is nothing to fold without it.
+        # This path READS the position and never writes one: `speak` discards
+        # the `TagTrace` that `AgentRunner.invoke` hands back, so there is
+        # nothing to fold.
         self._standing = standing
-        # THE CULTURE HEAD (design/culture-tier), read on EVERY fire occasion
-        # since DEC-207 — see `_read_culture`.
+        # THE CULTURE HEAD, read on EVERY fire occasion (DEC-207) — see
+        # `_read_culture`.
         #
         # Read-only by TYPE — a `CultureReader` has `head` and nothing else — so
         # no fire-path turn can write a culture row. That matters more here than
@@ -660,10 +632,9 @@ class FirePath:
         # turn (`heartbeat.py` try_acquire -> release_and_dispatch), and
         # `create_sql_engine` sets no `command_timeout`, so an unbounded read
         # here wedges the conversation exactly as the unbounded read in
-        # `debrief.run` did. That defect was fixed and then RE-CREATED here in
-        # the same change; this is the second half of the same fix.
+        # `debrief.run` did.
         self._standing_store_timeout_seconds = standing_store_timeout_seconds
-        # Issue #210 — the participation turn reads memory. Every one of these
+        # The participation turn reads memory. Every one of these
         # is 0/inert by default and gated on `occasion.kind == "participation"`
         # inside `_read_memory`, so no other fire occasion's prompt changes.
         self._people_in_window_conclusions = people_in_window_conclusions
@@ -673,39 +644,30 @@ class FirePath:
         # a single-row Postgres read may take must not silently retune how long
         # an HTTP call to Honcho may take. See `MemoryConfig.read_timeout_seconds`.
         self._memory_read_timeout_seconds = memory_read_timeout_seconds
-        # The note tier on the fire path (design/dreamer-agent-loop/35,
-        # Phase 2) — S5's exact precedent, one tier later. A participation
-        # determination grounds on «transcript + standing/notes», which was a
-        # lie as shipped: Phase 1's own header told the model "whatever
-        # standing and notes came with it" while `build_context` left the
-        # field at its dataclass default, so no `<notes>` block ever rendered
-        # on ANY fire occasion. Wired for every occasion kind, not gated to
-        # participation: one `build_context` shape, no per-occasion special
-        # case, and the tier is default-disabled so no shipped prompt changes
-        # until an operator enables it.
+        # The note tier on the fire path. A participation determination
+        # grounds on «transcript + standing/notes», so `build_context` passes
+        # the notes reader for every occasion kind: one `build_context` shape,
+        # no per-occasion special case, and the tier is default-disabled.
         #
         # `policy` is here for exactly one read: the tier is keyed on
         # `Conversation.unit` (DEC-105), so scoping it needs the same
         # `Policy` instance the assembler holds — a fire path with its own
         # idea of a room's unit would render another social unit's notes
-        # into this one. `None` keeps the tier inert, the pre-wiring shape
-        # every test construction site has.
+        # into this one. `None` keeps the tier inert.
         self._notes = notes
         self._memos = memos
         self._policy = policy
-        # Lineage (design/cognition-loop/10-tiers.md §3): the SAME value the
+        # Lineage: the SAME value the
         # tag path's assembler holds (`nora.app.assembler.lineage_policy`), so
         # a fire turn's derived blocks are filtered for its room exactly as a
         # tag reply's are. `None` is `[lineage] mode = "off"`.
         self._lineage = lineage
         self._persons = persons
         self._records = records
-        # The shared quote-window resolver (DEC-195, design/11 §2.5's
-        # amendment). `None` (every construction site predating it, and any
-        # harness that has not opted in) keeps `build_context`'s plain
-        # `context_window` fetch — the exact pre-2026-09-22 behaviour.
+        # The shared quote-window resolver (DEC-195). `None` keeps
+        # `build_context`'s plain `context_window` fetch.
         self._quote_window = quote_window
-        # The shared media join (issue #116). A fire turn renders the SAME
+        # The shared media join. A fire turn renders the SAME
         # transcript block through the SAME prefill as a tag, so leaving it out
         # here would reintroduce the two-consumer split on exactly the path
         # nobody is watching when it fires — the argument the
@@ -716,15 +678,12 @@ class FirePath:
         self._metrics = metrics
         self._runner = runner
         # Platform -> adapter, for the reason `EngagementPipeline` holds the
-        # same map: `design/discord-integration/02` makes fire-path eligibility
-        # explicitly NOT platform-specific, so a reminder set in a Discord
-        # channel fires into that channel. A single adapter here would have
-        # spoken every occasion into Signal regardless of where it was owed.
+        # same map: fire-path eligibility is NOT platform-specific, so a
+        # reminder set in a Discord channel fires into that channel.
         self._adapters = adapters
         # Kind -> factory, the dispatch point for reminder-derived Events
-        # (DEC-139). Defaults to the pre-DEC-139 hardcoded call so every
-        # construction site that predates the registry behaves identically;
-        # the composition root wires the real registry.
+        # (DEC-139). Defaults to reminders only; the composition root wires the
+        # real registry.
         self._event_registry = dict(
             event_registry if event_registry is not None else {"reminder": reminder_occasion}
         )
@@ -743,13 +702,10 @@ class FirePath:
         # Optional for the reason it is optional on the pipeline: `Room` reports
         # an absent source as UNAVAILABLE rather than as an empty room, so a
         # harness degrades honestly instead of answering "nobody is here" (R-5).
-        # Platform -> roster source. ONE source used to serve every platform,
-        # which meant a Discord room was looked up in signal-cli: the daemon
-        # does not know that conversation id, so the roster came back
-        # `available=False` and every room-scoped tool — `where_is` included —
-        # answered «I could not look». Correct fail-closed behaviour (R-5) on
-        # top of a wiring gap, which is the shape that hides longest, because
-        # nothing errors and the honest refusal looks like the feature working.
+        # Platform -> roster source: each room is looked up in its own
+        # platform's source, since a source does not know another platform's
+        # conversation ids (it would come back `available=False` and every
+        # room-scoped tool would answer «I could not look»).
         #
         # A MISSING platform here degrades rather than raising, unlike
         # `_adapter_for`: `Room` already documents an absent source as
@@ -768,12 +724,12 @@ class FirePath:
         # this path exactly as inert as it already is for a deployment that
         # has not wired one.
         self._tool_call_log_store = tool_call_log_store
-        # Issue #325's durable half. Optional and inert when `None`, exactly
+        # The durable reasoning-strip record. Optional and inert when `None`, exactly
         # like `tool_call_log_store` above — the participation occasion is one
         # of the two paths the watch labels, and this is where its rows come
         # from.
         self._reasoning_strip_store = reasoning_strip_store
-        # The participation occasion's runner (design/dreamer-agent-loop/35):
+        # The participation occasion's runner:
         # the SAME AgentRunner shape composed with `tool_choice="auto"` —
         # the determination may end in silence, which `required` (the tag
         # runner's pin) makes inexpressible. `None` whenever
@@ -781,7 +737,7 @@ class FirePath:
         # kind, and a participation turn arriving with no runner composed is
         # a wiring fault, not a turn to run on the tag runner.
         self._participation_runner = participation_runner
-        # The proactive occasion's runner (design/dreamer-agent-loop/39 D12):
+        # The proactive occasion's runner:
         # the SAME `tool_choice="auto"` shape participation needs, for the
         # same reason — the act turn may end in silence, and the tag runner's
         # `required` pin makes that inexpressible. The composition root hands
@@ -789,7 +745,7 @@ class FirePath:
         # are wired; `None` whenever no proactive adaptor is composed, and a
         # proactive row arriving then is a wiring fault `_invoke` raises on.
         self._proactive_runner = proactive_runner
-        # The §10.6 shadow mirror. `shadow_channel` None means shadow mode is
+        # The shadow mirror. `shadow_channel` None means shadow mode is
         # OFF (the shipped default — `[participation] shadow = false`), and
         # `_mirror` returns without doing anything; set, every participation
         # determination — speak AND silence — is mirrored to that channel on
@@ -799,29 +755,27 @@ class FirePath:
         # always cleared the room opt-in first.
         self._shadow_channel = shadow_channel
         self._shadow_platform = shadow_platform
-        # The gate's own review channel (design 36 §4), separate config from
+        # The gate's own review channel, separate config from
         # the participation mirror above: one deployment may want gate
         # verdicts without turn drafts, and while shadow is on there ARE no
         # turn drafts to mirror.
         self._gate_shadow_channel = gate_shadow_channel
         self._gate_shadow_platform = gate_shadow_platform
-        # The shared decision log (issue #199), written from `_determined` —
-        # the ONE method all four determination exits already converge on, so
-        # the writer cannot come apart from the record it writes. `None` is the
-        # dormant default: a deployment that has not wired it fires exactly as
-        # before.
+        # The shared decision log, written from `_determined` — the ONE method
+        # all four determination exits converge on, so the writer cannot come
+        # apart from the record it writes. `None` is the dormant default.
         self._decisions = decisions
-        # `<presence>` (design/self-awareness/02) — the SAME reader the tag
+        # `<presence>` — the SAME reader the tag
         # path's assembler holds, so a participation turn, a reminder and a
         # proactive act turn know where they are the way a tag does. Read per
         # turn; `None` renders the network alone.
         self._presence = presence
 
     async def build_context(self, occasion: Event) -> TagContext:
-        """§6.4's table, assembled HERE rather than by `ContextAssembler`.
+        """The fire turn's context, assembled HERE rather than by `ContextAssembler`.
 
         **This is the trap the whole section exists for.** The synthetic message
-        carries a blank `sender_id` on purpose — that is what makes §5.5's "no
+        carries a blank `sender_id` on purpose — that is what makes "no
         reactions" hold by construction. But `TranscriptInjection.assemble`
         resolves the tagger as `persons.resolve(platform, msg.sender_id)`, and a
         blank id resolves to `None`. Every one of these then follows, silently,
@@ -832,7 +786,7 @@ class FirePath:
         * `Room(tagger=None).scope()` returns UNAVAILABLE, so every room-scoped
           tool goes dark
         * `search_memory` refuses outright
-        * §12's `tagger is None -> refuse` gate fires on EVERY fire turn, for a
+        * the `tagger is None -> refuse` gate fires on EVERY fire turn, for a
           reason that has nothing to do with trust
 
         So the tagger comes from the OCCASION's `person_id` — for a reminder,
@@ -843,7 +797,7 @@ class FirePath:
         `tagger is None` DELIBERATELY, and every consequence above is accepted
         rather than escaped: nobody asked, so there is no peer card to read and
         no person whose room membership scopes a lookup. What makes that safe is
-        that `speak` skips §12's refusal only for such an occasion, and that the
+        that `speak` skips that refusal only for such an occasion, and that the
         tools which go dark are exactly the ones such an occasion has no use
         for.
 
@@ -868,7 +822,7 @@ class FirePath:
 
         transcript: tuple[TranscriptRow, ...] = ()
         if self._quote_window is not None:
-            # DEC-195 (design/11 §2.5's amendment). A fire occasion carries no
+            # DEC-195. A fire occasion carries no
             # single triggering message — `participation_occasion`'s
             # `body=""`, `person_id=None`: she owes the turn to no one row —
             # so there is no ONE quote to check the way the tag path has.
@@ -876,8 +830,8 @@ class FirePath:
             # INSIDE it quotes a parent that window does not itself resolve,
             # grows to reach it — the same condition `_parent_of`
             # (`nora.agent.prefill`) would otherwise fail on when this
-            # transcript is rendered. Its own failure handling matches what
-            # this method did before it existed (`stage="fire_context"`).
+            # transcript is rendered. Its failure handling is the
+            # `stage="fire_context"` one below.
             transcript = await self._quote_window.recent_for_window(
                 conversation_id=occasion.conversation_id,
                 context_window=self._context_window,
@@ -913,13 +867,12 @@ class FirePath:
                     conversation_id=occasion.conversation_id,
                 ))
             except Exception:
-                # Guarded where `TranscriptInjection`'s equivalent is not, and
-                # the asymmetry is §8.2: at-most-once means a raise here writes
-                # `failed_error` and the reminder is GONE. The tag path's
-                # equivalent costs somebody a re-tag. The shipped
+                # Guarded where `TranscriptInjection`'s equivalent is not:
+                # delivery is at-most-once, so a raise here writes
+                # `failed_error` and the reminder is GONE, while the tag
+                # path's equivalent costs somebody a re-tag.
                 # `HonchoClient.peer_card` returns `[]` on failure, so nothing
-                # reaches this today — it is here because the cost of the day
-                # something does is a reminder nobody can get back.
+                # normally reaches this.
                 # Its OWN stage, not `fire_context`: an operator asking which
                 # half of the context went blind must not have to guess.
                 log.exception("fire peer_card read failed; continuing without it")
@@ -927,26 +880,24 @@ class FirePath:
                     "nora_errors_total", stage="fire_peer_card", platform=occasion.platform,
                 )
 
-        # The unit-keyed tier resolves the unit ONCE per turn, and
-        # the read is skipped entirely when it is not wired (the dormant
-        # default must not count a gap it does not have).
-        # Resolved ONCE per turn and now read by two tiers, so the `notes`
-        # guard is no longer the whole condition: the decision log is
-        # unit-scoped too (issue #199), and a turn that skipped the
-        # lookup because the note tier was off would render no decisions block
-        # for a reason unrelated to decisions.
+        # The unit is resolved ONCE per turn and read by several tiers (notes,
+        # memos, the decision log), so the `notes` guard is not the whole
+        # condition: a turn that skipped the lookup because the note tier was
+        # off would render no decisions block for a reason unrelated to
+        # decisions. Skipped entirely when none is wired (the dormant default
+        # must not count a gap it does not have).
         unit: str | None = None
         if self._notes is not None or self._decisions is not None or self._memos is not None:
             unit = self._unit_for(occasion)
 
-        # Issue #210 — read AFTER the transcript, because both reads are
+        # Read AFTER the transcript, because both reads are
         # curated to the window's own text and keyed on the people in it.
         people = await self._read_memory(occasion, transcript)
 
-        # CONCURRENT, for `TranscriptInjection.assemble`'s reason: these five
-        # are independent reads, and awaited one after another their latencies
-        # stacked on the front of every fire turn — `<presence>` (a health
-        # read per network and a live Instagram handle read) was the fifth.
+        # CONCURRENT, for `TranscriptInjection.assemble`'s reason: these are
+        # independent reads, and awaited one after another their latencies
+        # stack on the front of every fire turn (`<presence>` alone is a
+        # health read per network and a live Instagram handle read).
         # Each helper keeps its own fail-soft handling and none raises, which
         # is what makes one `gather` safe: an exception would otherwise cancel
         # its siblings and take the turn down with it.
@@ -1051,35 +1002,27 @@ class FirePath:
     async def _read_memory(
         self, occasion: Event, transcript: Sequence[TranscriptRow],
     ) -> tuple[tuple[str, tuple[str, ...]], ...]:
-        """`<people_in_window>`, for the PARTICIPATION turn
-        only (issue #210).
+        """`<people_in_window>`, for the PARTICIPATION turn only.
 
-        **What this fixes, stated as the tree had it.** The participation
-        occasion is built `person_id=None` (`participation_occasion`), so `ref`
-        is `None`, so `peer_card` is `()`; and `tagger_card` is
-        assembled only by `nora.engagement.context.TranscriptInjection` — the
-        TAG path — which this method's own class is not. The result was that the
-        one decider design 36 §6 describes as holding «notes and the peer card»
-        behind a blind gate rendered NO memory block at all: it knew the people
-        in the window by display name.
+        The participation occasion is built `person_id=None`
+        (`participation_occasion`), so `ref` is `None`, so `peer_card` is `()`;
+        and `tagger_card` is assembled only by
+        `nora.engagement.context.TranscriptInjection` — the TAG path. Without
+        this read the turn would know the people in the window by display name
+        alone.
 
         **Participation only, and the restriction is the decision** — the
-        narrow half of `_read_decisions`' argument, and it stays narrow here
-        after that method widened to the proactive act turn (2026-09-17),
-        because the two reads answer different questions at different prices.
-        A reminder or a gathering firing was decided when its row was written,
-        so neither reads either. The proactive act turn now reads the decision
-        log, because «the loop already took this floor 31 minutes ago» is a
-        fact about the ROOM that the decide pass's index (deleted 2026-10-03, DEC-277) could not
-        carry — but
-        it still does not read memory, because «what do I know about these
-        people» is research the decide pass (now the Cognition session) already did, at Honcho
-        round trips
-        rather than one SQL read, and design 39's whole split is research at
-        decide time and the room at act time. This is the turn deciding
-        whether to speak into a room nobody addressed her in AND holding no
-        earlier pass of its own, which is what makes the memory read change
-        the answer here and nowhere else.
+        narrow half of `_read_decisions`' argument. A reminder or a gathering
+        firing was decided when its row was written, so neither reads either.
+        The proactive act turn reads the decision log, because «the loop
+        already took this floor 31 minutes ago» is a fact about the ROOM, but
+        it does not read memory: «what do I know about these people» is
+        research the Cognition session already did, at Honcho round trips
+        rather than one SQL read, and the split is research at decide time and
+        the room at act time. Participation is the turn deciding whether to
+        speak into a room nobody addressed her in AND holding no earlier pass
+        of its own, which is what makes the memory read change the answer here
+        and nowhere else.
 
         **Fail-soft in two separate places, which is two states and not
         one.** The read catches and counts on its OWN stage — an operator
@@ -1150,10 +1093,10 @@ class FirePath:
         of each speaker, curated to this window.
 
         **CONCURRENT, and the reason is arithmetic** — `TranscriptInjection`'s
-        gather note, one path over. One `representation` measured ~200ms live,
-        so four sequential reads would put ~800ms on the front of a turn that
+        gather note, one path over. One `representation` is a round trip, so
+        sequential reads would stack N of them on the front of a turn that
         already holds the conversation's slot; gathered, the batch costs one
-        round trip and the bound in `_read_memory` covers the lot.
+        and the bound in `_read_memory` covers the lot.
 
         `return_exceptions=True` rather than a bare gather: one speaker's read
         raising must cost THAT speaker's row, not the block and not its three
@@ -1203,36 +1146,30 @@ class FirePath:
         self, occasion: Event, unit: str | None,
     ) -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
         """What her AMBIENT LOOP already did across this UNIT, for the two
-        occasions that decide whether to take a floor nobody offered them
-        (issue #199; the proactive act turn added 2026-09-17). `(room label,
-        rows)` groups.
+        occasions that decide whether to take a floor nobody offered them.
+        `(room label, rows)` groups.
 
-        **Unit-scoped, and «this room» would have missed the incident it
-        exists for.** A `kind="proactive"` row fires into the unit's home
-        room and nowhere else (39 D2/D3); on 2026-09-10 that was a Discord
-        room while the thread was on Signal. A participation turn in the
-        Signal room reading «this room, last 24 hours» sees nothing and speaks
-        anyway. The room a decision was made in is rendered as its policy
+        **Unit-scoped, because «this room» would miss the case it exists
+        for.** A `kind="proactive"` row fires into the unit's home room and
+        nowhere else, which can be a Discord room while the thread is on
+        Signal. A participation turn in the Signal room reading «this room,
+        last 24 hours» sees nothing and speaks anyway. The room a decision was made in is rendered
+        as its policy
         LABEL instead, which is what a reader actually needs from it.
 
-        **Two occasions, and the restriction is still the decision.** Both are
+        **Two occasions, and the restriction is the decision.** Both are
         turns deciding whether to speak into a room nobody addressed her in, so
         «she raised this two hours ago in another room» is the fact that changes
         the answer. A reminder or a gathering firing was decided when its row
         was written and is not weighing the floor at all; handing it this block
         would cost a read and change nothing.
 
-        **The proactive act turn was excluded here until 2026-09-17, and the
-        exclusion is what shipped that day's duplicate** (msgs 5450/5455). The
-        docstring's own argument for it — «a proactive act turn already holds
-        the decide pass's own index» — is true and answers the wrong question.
-        The decide pass's index is what she MEANT TO RAISE. It says nothing
-        about what the loop has since DONE, and on that day two rows about two
-        notes came due 30 minutes apart: the first turn raised both (it reads
-        `<notes>`, which lists both), the second raised the second one again.
-        Its window carried the first message — as an unlabelled line of her own
-        speech, with nothing marking it as a raise she had just made. This
-        block is what marks it.
+        **The proactive act turn reads it too.** The decide pass's index says
+        what she MEANT TO RAISE and nothing about what the loop has since DONE:
+        two rows about two notes can come due apart, and the second turn would
+        raise again what the first already raised (its window carries the first
+        message only as an unlabelled line of her own speech). This block is
+        what marks it.
 
         **Each occasion gets its own writer set** (`decision_log`'s constants,
         which carry the reasoning): participation excludes its own verdicts,
@@ -1260,10 +1197,9 @@ class FirePath:
             return ()
         rows = await self._decisions.read_unit(
             platform=occasion.platform, unit=unit,
-            # In the QUERY, never a filter over what came back. The bound is 20
-            # rows, so a post-filter could let one busy writer's rows evict
-            # every other decider's — silently, in exactly the busy room where
-            # issue #199 happened.
+            # In the QUERY, never a filter over what came back. The bound is a
+            # row count, so a post-filter could let one busy writer's rows evict
+            # every other decider's, silently, in exactly the busy room.
             #
             # The SAME constant `build_prefill` hands the renderer, so the
             # block's note names exactly the deciders the query asked for.
@@ -1297,7 +1233,7 @@ class FirePath:
         room — is a WIRING GAP, not an empty tier: guessing a unit would
         render another unit's notes into this room. Counted, because a
         block missing for the life of a deployment with nothing saying so is
-        how `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
+        the `nora_peer_card_empty_total` lesson.
         """
         try:
             convo = (
@@ -1308,10 +1244,9 @@ class FirePath:
         except Exception:
             # Fail-soft like the two sibling reads (`_read_notes`,
             # `_read_standing`): a Policy read that raises must
-            # not turn a deliverable reminder into a silent no-send (Claude
-            # Sonnet audit 2026-09-05 MINOR). Counted, because a block missing
-            # for the life of a deployment with nothing saying so is how
-            # `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
+            # not turn a deliverable reminder into a silent no-send. Counted,
+            # because a block missing for the life of a deployment with
+            # nothing saying so is the `nora_peer_card_empty_total` lesson.
             log.exception(
                 "policy conversation read failed for %s/%s — the note "
                 "tier cannot be scoped to a unit; continuing without it",
@@ -1375,14 +1310,12 @@ class FirePath:
             return ()
 
     async def _read_culture(self, occasion: Event) -> CultureRevision | None:
-        """This room's current account, or `None` (design/culture-tier).
+        """This room's current account, or `None`.
 
-        **Every fire occasion, since DEC-207** (2026-09-25). This was
-        participation-only while `01-the-adaptor §6` named one consumer; the
-        operator widened the tier to every runtime, so a reminder, a gathering
-        and a proactive act turn all read the account of the room they are
-        about to speak into. A proactive act turn is keyed on a unit for
-        its DECISION, but by the time it reaches this path it has chosen one
+        **Every fire occasion reads it** (DEC-207): a reminder, a gathering and
+        a proactive act turn all read the account of the room they are about
+        to speak into. A proactive act turn is keyed on a unit for its
+        DECISION, but by the time it reaches this path it has chosen one
         room, and `occasion.conversation_id` is that room.
 
         **Resolved through the policy to a `primary_id`**, not read with the
@@ -1390,9 +1323,9 @@ class FirePath:
         that is the key it wrote under; reading with the arriving thread's id
         matches zero rows on any conversation carrying more than one, and
         renders as «this room has no account yet» — a REAL state, so nothing
-        anywhere would report the miss. Today every live conversation holds
-        exactly one id, which is why this has to be written down: the two keys
-        are equal by accident of data (issue #229), not by construction.
+        anywhere would report the miss. Every live conversation holds exactly
+        one id, so the two keys are equal by accident of data, not by
+        construction.
 
         Bounded, fail-soft and counted under `stage="fire_culture"` by
         `read_culture`, the one read every occasion shares.
@@ -1411,7 +1344,7 @@ class FirePath:
         return found
 
     async def _read_unit_culture(self, occasion: Event) -> CultureRevision | None:
-        """What this room's UNIT is like (design/self-growth/10, C3a), keyed
+        """What this room's UNIT is like, keyed
         `unit_culture_key(unit)`: `_read_culture`'s bounds. `None` when the
         tier is off or the unit has no account."""
         if self._culture is None or self._policy is None:
@@ -1427,7 +1360,7 @@ class FirePath:
         )
 
     async def _read_self_account(self, occasion: Event) -> CultureRevision | None:
-        """Her own account in this room's UNIT (design/self-growth/20), keyed
+        """Her own account in this room's UNIT, keyed
         `nora_character_key(unit)`: `_read_unit_culture`'s bounds. `None` when
         the tier is off, the unit has no account or the room may not show it
         (`Policy.shows_self_in`), so no `<self>` block renders."""
@@ -1447,7 +1380,7 @@ class FirePath:
         )
 
     async def _read_lessons(self, occasion: Event) -> tuple[str, ...]:
-        """Her active lessons in this room's UNIT (design/self-growth/40, L5):
+        """Her active lessons in this room's UNIT:
         `_read_self_account`'s gates and bounds. `()` while `[lessons] render`
         is off, with no unit, or where `<self>` may not show (R-31)."""
         if self._lessons is None or self._policy is None:
@@ -1470,7 +1403,7 @@ class FirePath:
         """The accounts of the listed persons who are IN this fire (the
         window's speakers and the occasion's own person:
         `fire_character_people`), keyed by this room's UNIT (one per
-        (unit, person) since C2b, design/self-growth/10 §3):
+        (unit, person)):
         `_read_culture`'s bounds, one head per person. `()` when the tier is
         off."""
         if self._culture is None or self._policy is None:
@@ -1491,7 +1424,7 @@ class FirePath:
         )
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
-        """This conversation's position, or `None` (S5).
+        """This conversation's position, or `None`.
 
         Fail-SOFT and COUNTED, the same three states
         `TranscriptInjection._standing` distinguishes: no store is the dormant
@@ -1522,10 +1455,10 @@ class FirePath:
         return found
 
     async def run(self, rows: Sequence[Reminder]) -> str:
-        """The heartbeat's `fire` collaborator: due rows in, §8.1 outcome out.
+        """The heartbeat's `fire` collaborator: due rows in, outcome out.
 
         Dispatch by KIND, through the reminder-derived registry
-        (DEC-139, design/event-abstraction/04): `rows[0].kind` selects the
+        (DEC-139): `rows[0].kind` selects the
         factory that renders the batch's Event (`"reminder"` →
         `reminder_occasion`, `"proactive"` → `proactive_occasion`); an
         UNREGISTERED kind raises inside this call,
@@ -1534,13 +1467,11 @@ class FirePath:
         never rendered as a malformed sentence, never left FIRING for boot
         `recover()`.
 
-        The registry defaults to `{"reminder": reminder_occasion}` so a
-        FirePath built without one (every pre-DEC-139 construction site)
-        behaves byte-identically to the hardcoded call it replaces; the
+        The registry defaults to `{"reminder": reminder_occasion}`; the
         composition root wires the real registry.
 
-        It stays a separate method rather than becoming a lambda in the
-        composition root for two reasons. It keeps `HeartbeatLoop._fire` a
+        It is a separate method rather than a lambda in the composition root
+        for two reasons. It keeps `HeartbeatLoop._fire` a
         BOUND METHOD of the real fire path — which is what
         `tests/test_composition.py::test_the_heartbeat_is_wired_to_the_real_fire_path`
         asserts, and a lambda would satisfy that test while wrapping anything
@@ -1560,7 +1491,7 @@ class FirePath:
         self, occasion: Event, *, send_permitted: bool = True,
         gate_verdict: str | None = None, gate_score: float | None = None,
     ) -> str:
-        """One turn, and the §8.1 outcome its caller records.
+        """One turn, and the outcome its caller records.
 
         `gate_verdict`/`gate_score` are the Relevance Gate's upstream
         judgement, threaded from the trigger into the PARTICIPATION occasion's
@@ -1568,9 +1499,9 @@ class FirePath:
         `go` → turn answered `sent`/`SILENT`. Only the trigger passes them
         (every other occasion leaves both `None`).
 
-        **It does not call `invoke.run` or `deliver.check_outcome`** (§6.2).
-        Not for metric isolation — that was tried twice and undercounted twice,
-        which is why `audience` exists — but because it needs its own timeout
+        **It does not call `invoke.run` or `deliver.check_outcome`.**
+        Not for metric isolation (that is what `audience` is for) but because
+        it needs its own timeout
         (`[heartbeat] timeout_seconds`) and its own outcome mapping: both of
         those functions answer `bool`, and a `bool` cannot distinguish
         `failed_timeout` from `failed_error`, which is precisely the
@@ -1581,13 +1512,13 @@ class FirePath:
 
         Only `sent` is DONE, and `sent` means the `Deliverer` actually
         delivered. Anything else is a turn the group never heard — a reminder
-        that did not arrive, or a version nobody was told about. The
+        that did not arrive. The
         participation occasion (kind="participation") is the exception that
         proves the reading: for it "the group never heard" is the HEALTHY
         default, so its quiet turn answers `SILENT`, not a failure string.
 
         `send_permitted` is the participation occasion's SEND cooldown
-        (design/dreamer-agent-loop/35 §10.3), threaded into `deliver.build`;
+        threaded into `deliver.build`;
         every other occasion leaves it True. The trigger decides and this
         method enforces — the two are separate so that a trigger bug cannot
         both mistime the evaluation and skip the hold.
@@ -1597,8 +1528,7 @@ class FirePath:
         # into — carries the tag id without naming it (nora.obs.logging's
         # contextvar bridge), so a fire turn is greppable exactly like a tag.
         bind_tag_id(ctx.tag_id)
-        # TRUE SHADOW (design/dreamer-agent-loop/35 §10.6, Miles decision
-        # 2026-09-05): while the mirror is wired, a participation turn NEVER
+        # TRUE SHADOW: while the mirror is wired, a participation turn NEVER
         # live-sends — `send_permitted` is forced False so the Deliverer holds
         # the message at the last inch and `_turn` mirrors the draft instead.
         # The operator reviews determinations on the shadow channel; the room
@@ -1607,22 +1537,12 @@ class FirePath:
         if occasion.kind == "participation" and self._shadow_channel is not None:
             send_permitted = False
         try:
-            # THE ROOT SPAN, for EVERY occasion (#111). It existed for
-            # `participation` alone (design/dreamer-agent-loop/35 §9, Miles
-            # 2026-09-05: "include langfuse and jaeger — otherwise how can I
-            # analyse with observability"), and every other kind — reminder,
-            # gathering, compute, relay, lost_job, version — took the bare
-            # `_turn` path and produced a trace with NO ROOT: sibling spans, no
-            # name, none of the `nora.*` attributes. That is not one trace with
-            # gaps, it is N traces, and the instrument catalogue's first rule is
-            # one root per entry point.
-            #
-            # WHAT IT COST, measured: trace 1f0df2ee (2026-09-06 13:10Z) is the
-            # F1 reminder firing. It ran 119.5s against `[heartbeat]
-            # timeout_seconds = 120` and resolved `failed_timeout` — the room
-            # got nothing. That outcome is in Postgres and NOWHERE in the trace,
-            # because there was no span to annotate it onto. The only reason it
-            # was diagnosable at all was a manual database read.
+            # THE ROOT SPAN, for EVERY occasion: without it a kind's `_turn`
+            # path would produce a trace with NO ROOT (sibling spans, no name,
+            # none of the `nora.*` attributes), which is N traces rather than
+            # one with gaps, and the instrument catalogue's first rule is one
+            # root per entry point. An outcome such as `failed_timeout` is in
+            # Postgres, so the trace needs a span to annotate it onto.
             #
             # An unprompted path is where this matters MOST: nobody is waiting
             # on it, so a silent failure has no human to notice it.
@@ -1630,7 +1550,7 @@ class FirePath:
             # `generation` kind on every occasion, not just participation: each
             # of them contains a real model call, which is what the Langfuse
             # sampler selects on. `nora.outcome` is annotated on the way out so
-            # the §8.1 string an occasion answers with — `sent`,
+            # the string an occasion answers with — `sent`,
             # `failed_timeout`, `failed_policy`, `failed_error`, `SILENT` — is
             # readable in the trace rather than only in the row.
             with span(
@@ -1696,10 +1616,8 @@ class FirePath:
         """One turn's stages, its last-resort guard, and DEC-42's observable.
 
         The `except` is the fire path's counterpart to
-        `EngagementPipeline._run_admitted`'s outer guard — §6.2 enumerated nine
-        sites that must carry `audience`, all of them on the tag path, and this
-        is the tenth.
-        Without it every stage between `resolve_identity` and
+        `EngagementPipeline._run_admitted`'s outer guard, and it carries
+        `audience` for the same reason. Without it every stage between `resolve_identity` and
         `build_tag_message` could fault straight past `nora_silent_failures_total`
         into the heartbeat's `failed_error` — the same string an ordinary model
         error writes, so a total wiring fault and a bad model call were one
@@ -1728,12 +1646,12 @@ class FirePath:
         handle = None
         stop_reason: str | None = None
         completed = False
-        # The participation occasion carries its OWN audience (design/
-        # dreamer-agent-loop/35 §6): its doctrine is the may-speak rule set,
-        # its failures are never charged to the heartbeat's budget, and its
-        # quiet turn is a success (`SILENT`), never a `failed_*`.
+        # The participation occasion carries its OWN audience: its doctrine is
+        # the may-speak rule set, its failures are never charged to the
+        # heartbeat's budget, and its quiet turn is a success (`SILENT`), never
+        # a `failed_*`.
         participation = occasion.kind == "participation"
-        # The proactive occasion (39 D12) shares participation's two
+        # The proactive occasion shares participation's two
         # properties — its own audience, and silence as a healthy outcome —
         # and none of its others: no shadow mirror, no cooldown, and the
         # heartbeat (not a trigger) is what brought it here.
@@ -1746,8 +1664,8 @@ class FirePath:
         try:
             tagger = ctx.tagger
             if tagger is None and occasion.person_id is not None:
-                # §12: only a mapped person may hold a reminder, re-checked here
-                # for the same reason policy is (§5.1) — identity.toml is read
+                # Only a mapped person may hold a reminder, re-checked here
+                # for the same reason policy is — identity.toml is read
                 # once at startup and this row may be thirty days old.
                 # `failed_policy`, not `failed_error`: nothing went wrong, the
                 # grant went away.
@@ -1808,14 +1726,14 @@ class FirePath:
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
                 reasoning_strip_store=self._reasoning_strip_store,
-                # The participation SEND cooldown (§10.3). True on every other
+                # The participation SEND cooldown. True on every other
                 # occasion — the heartbeat has no cooldown, and this keyword's
                 # whole reason for travelling through `deliver.build` rather
                 # than sitting in the trigger alone is that the trigger decides
                 # and the `Deliverer` enforces, at the last inch.
                 send_permitted=send_permitted,
-                # R-97, armed on the participation occasion ALONE (issue
-                # #216). `None` everywhere else is the rule off, and each
+                # R-97, armed on the participation occasion ALONE. `None` everywhere else is the
+                # rule off, and each
                 # `None` is a decision rather than an omission: a reminder, a
                 # relay and a finished compute job
                 # all exist BECAUSE something is owed to somebody, so a turn
@@ -1823,15 +1741,14 @@ class FirePath:
                 # — `lost_job_occasion` is the extreme case, a whole occasion
                 # whose only content is «I couldn't check». Proactive is the
                 # one near-miss: it shares participation's right to silence
-                # (39 D12) and nobody asked there either, but its false-speak
-                # rate has never been measured, and arming a rule on an
-                # occasion no instrument is watching is how a change ships
-                # with nothing able to report what it did.
+                # and nobody asked there either, but its false-speak
+                # rate is unmeasured, and arming a rule on an occasion no
+                # instrument is watching ships a change with nothing able to
+                # report what it did.
                 #
                 # The set comes from the REGISTRY, so the tools R-97 watches
-                # are derived from the same table that declares them. A
-                # literal here would be the pre-DEC-10 hardcoded `BUDGETS`
-                # mistake in a third place.
+                # are derived from the same table that declares them; a
+                # literal here would be a second copy of it.
                 lookups=(
                     self._registry.lookup_tools() if participation else None
                 ),
@@ -1859,15 +1776,14 @@ class FirePath:
             )
             # DEC-74, sourced as the tag path sources it
             # (`EngagementPipeline`): the room's own `location` flag. Left at
-            # the surface's `False` default, `where_is` held every fire turn to
-            # the strict gate (the subset AND the unnamed-account refusals
-            # DEC-79 waives), so a proactive turn in a `location = true` room
-            # was refused where a tag in the same room answered (Friends,
-            # 2026-09-27). The flag also relaxes `route`, `saved_places` and
-            # parking, as on a tag. No policy, an unlisted room, or a
-            # shadow-held participation turn stays strict: a held turn's text
-            # is posted to the review channel, another room than the one the
-            # check reads.
+            # the surface's `False` default, `where_is` would hold every fire
+            # turn to the strict gate (the subset AND the unnamed-account
+            # refusals DEC-79 waives), refusing a proactive turn in a
+            # `location = true` room where a tag in the same room answers. The
+            # flag also relaxes `route`, `saved_places` and parking, as on a
+            # tag. No policy, an unlisted room, or a shadow-held participation
+            # turn stays strict: a held turn's text is posted to the review
+            # channel, another room than the one the check reads.
             fire_convo = (
                 self._policy.conversation(occasion.platform, occasion.conversation_id)
                 if self._policy is not None
@@ -1875,12 +1791,12 @@ class FirePath:
                 else None
             )
             surface = self._registry.surface(
-                # design/tool-catalogue phase C: `[llm] defer_tools`.
+                # `[llm] defer_tools`.
                 defer=self._defer_tools,
                 # DEC-256, the same derivation as the tag path. A fire turn's
                 # message is never spoken (`_synthetic_message` leaves `voice`
-                # False, operator 2026-09-17), so this is a text turn today;
-                # derived rather than hardcoded so the two paths cannot drift.
+                # False), so this is a text turn; derived rather than
+                # hardcoded so the two paths cannot drift.
                 occasion=turn_occasion(voice=ctx.message.voice),
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
@@ -1893,8 +1809,8 @@ class FirePath:
                 # here exactly as it does on a tag — and an occasion nobody asked
                 # for is precisely where an unchecked attribution would be worst.
                 transcript=ctx.transcript,
-                # The one thing that tells a tool this turn was not a tag. Task
-                # 6's `remind` refuses on it: a reminder that can set a reminder
+                # The one thing that tells a tool this turn was not a tag.
+                # `remind` refuses on it: a reminder that can set a reminder
                 # is an unbounded loop, and the conversation it would fire into
                 # is this one.
                 fire_turn=True,
@@ -1950,7 +1866,7 @@ class FirePath:
             # decided HERE rather than at the end of it. The tag path can leave
             # it to the last line because a failed invocation returns early
             # there; a fire turn that timed out AFTER delivering still answers
-            # `sent` (§8.1: the outcome is `sent` iff the group heard something),
+            # `sent` (the outcome is `sent` iff the group heard something),
             # so it runs on to the end of this block, and a `completed = True`
             # down there would tell `truncation_reason` the invocation finished
             # when it was abandoned mid-reply — the one case this counter exists
@@ -1978,7 +1894,7 @@ class FirePath:
                             ctx.tag_id, final_text,
                         )
                     # SILENT, not FAILED_ERROR: a participation turn that
-                    # delivered nothing is the HEALTHY default (§6), whether
+                    # delivered nothing is the HEALTHY default, whether
                     # the model declined the floor or the send cooldown held
                     # its message — `_invoke` has already filed the turn under
                     # `nora_participation_silence_total`, or as an ordinary
@@ -1993,11 +1909,11 @@ class FirePath:
                     )
                     return SILENT
                 if proactive:
-                    # SILENT, for participation's reason (39 D12): she was
+                    # SILENT, for participation's reason: she was
                     # offered her own earlier intention and declined it —
                     # the note moved, somebody already said it, it would not
                     # help. The heartbeat maps this to DONE with
-                    # outcome="silent", so the decision log (39 D7) reads a
+                    # outcome="silent", so the decision log reads a
                     # restraint as a restraint and not as a failure.
                     # `_invoke` has already counted it on
                     # `nora_proactive_silence_total`, or as a silent failure
@@ -2009,9 +1925,9 @@ class FirePath:
                         )
                     # Proactive has no send cooldown and no mirror, so `held`
                     # is False and `_determined` reaches the log alone — which
-                    # is the whole reason this call exists: before it, the act
-                    # turn's restraint (39 D12) left a counter and a row with
-                    # `outcome="silent"` and nothing that said what it declined.
+                    # is the whole reason this call exists: otherwise the act
+                    # turn's restraint would leave only a counter and a row with
+                    # `outcome="silent"`, nothing saying what it declined.
                     await self._determined(
                         occasion, ctx, doctrine, verdict="silent",
                         texts=(final_text,) if final_text.strip() else (),
@@ -2022,7 +1938,7 @@ class FirePath:
 
             # A delivered reply implies a successful invocation — the touch
             # `deliver.check_outcome` performs, reimplemented rather than
-            # inherited (§6.2). Without it a process whose only recent speech was
+            # inherited. Without it a process whose only recent speech was
             # a reminder reports a stale LLM on `GET /health`.
             if self._llm_state is not None:
                 self._llm_state.last_success_at = time.time()
@@ -2103,7 +2019,7 @@ class FirePath:
         audience: str = AUDIENCE,
     ) -> tuple[str | None, str | None, str]:
         """The model call, with the heartbeat's own timeout and its own
-        accounting. Returns `(failure, stop_reason, final_text)`: the §8.1
+        accounting. Returns `(failure, stop_reason, final_text)`: the
         failure name — or None if the loop finished — how the loop ENDED, and
         the prose the model wrote (DEC-93).
 
@@ -2118,7 +2034,7 @@ class FirePath:
         `"limit_turns"` — a distinction `_turn`'s `finally` cannot recover
         afterwards.
 
-        `final_text` travels for the §10.6 shadow mirror: on a participation
+        `final_text` travels for the shadow mirror: on a participation
         turn it is the DECLINE draft — what she would have said and why she
         stayed silent — which the mirror posts for review. The DEC-93 recovery
         branch below never fires on that occasion, so there it is only ever a
@@ -2150,7 +2066,7 @@ class FirePath:
                 )
             runner = self._participation_runner
         if proactive:
-            # Same shape, same reason, its own parameter (39 D12): a
+            # Same shape, same reason, its own parameter: a
             # proactive act turn must be able to end in silence, and the tag
             # runner's `required` pin would demand a send.
             if self._proactive_runner is None:
@@ -2161,12 +2077,8 @@ class FirePath:
                 )
             runner = self._proactive_runner
         try:
-            # `AgentRunner.invoke` also hands back a `TagTrace` (Task 4), but
-            # this path builds no debrief record of its own — §7.4/Task 6
-            # wire the tag path's trace into `SqlTagTraceStore`, and this
-            # module still has none of that plumbing. Discarded rather than
-            # threaded further for now; a fire turn is a real invocation too
-            # and picking it up is a flagged follow-up, not a silent gap.
+            # `AgentRunner.invoke` also hands back a `TagTrace`, which this path
+            # discards: it builds no debrief record of its own.
             # `[heartbeat].timeout_seconds`, published to the turn's tools:
             # the vision describer was built from the `[llm]` loop and would
             # otherwise spend a heartbeat's whole budget on one read.
@@ -2199,10 +2111,9 @@ class FirePath:
             # `audience` on both, and it is not symmetry for its own sake: this
             # turn was bounded by `[heartbeat] timeout_seconds`, not the tag
             # tier's, so an unlabelled sample blends two populations with two
-            # different ceilings and describes neither (§13). Same for the stop
-            # reason — the `limit_.*` alarm
-            # (`2026-08-08-turn-budget-finding.md:224`) has to say which path
-            # ran out of budget, because the caps differ.
+            # different ceilings and describes neither. Same for the stop
+            # reason — the `limit_.*` alarm has to say which path ran out of
+            # budget, because the caps differ.
             self._metrics.observe(
                 "nora_llm_latency_seconds", time.perf_counter() - started,
                 audience=audience,
@@ -2214,12 +2125,10 @@ class FirePath:
         # cleanup path. `flush` is idempotent, swallows its own exceptions and
         # no-ops when the loop never went multi-turn.
         #
-        # BOUNDED INSIDE `flush`, and the rule is `_standing_store_timeout_
-        # seconds` in this class's own `__init__` — the heartbeat holds this
+        # BOUNDED INSIDE `flush`, by the rule `_standing_store_timeout_
+        # seconds` states in this class's `__init__`: the heartbeat holds this
         # conversation's slot around the whole fire turn, and an unbounded
-        # store await here wedges it exactly as the unbounded read in
-        # `debrief.run` did. That was the second instance; this line was the
-        # third, shipped unbounded and caught in review (#325).
+        # store await here would wedge it.
         if reasoning_watch is not None:
             await reasoning_watch.flush()
         if stop_reason is not None:
@@ -2237,7 +2146,7 @@ class FirePath:
         if (
             not participation
             # NEVER on the proactive occasion either, for the same reason:
-            # prose under `tool_choice="auto"` IS the decline (39 D12).
+            # prose under `tool_choice="auto"` IS the decline.
             and not proactive
             and failure is None
             and stop_reason == "end_turn"
@@ -2256,15 +2165,15 @@ class FirePath:
                 "(tag=%s, %d chars)", ctx.tag_id, len(final_text),
             )
 
-        # `called`, not `attempted` — the same correction as the tag path's
-        # `check_outcome` (external review 2026-08-10). A fire turn whose reply
+        # `called`, not `attempted` — as in the tag path's
+        # `check_outcome`. A fire turn whose reply
         # was guard-refused DID call the tool, and reporting it as
         # `no_send_call` double-counts one failure under two names. A
         # participation turn whose send was held by the cooldown is the same
         # shape: `called` is True, and the hold was policy, not malfunction.
         if failure is None and not deliverer.delivered and not deliverer.called:
             if participation and stop_reason not in deliver.BUDGET_STOP_REASONS:
-                # THE HEALTHY DEFAULT (design/dreamer-agent-loop/35 §6): the
+                # THE HEALTHY DEFAULT: the
                 # model was offered the floor and declined it. Its own series,
                 # gated on a completed invocation and a non-budget stop — a
                 # turn R-8's caps cut off before it could decide is an ordinary
@@ -2275,9 +2184,9 @@ class FirePath:
                     "nora_participation_silence_total", platform=platform,
                 )
             elif proactive and stop_reason not in deliver.BUDGET_STOP_REASONS:
-                # The same healthy default for the proactive act turn (39
-                # D12): she read the room again and declined her own earlier
-                # intention. Its own series, same budget-cut exclusion.
+                # The same healthy default for the proactive act turn: she read
+                # the room again and declined her own earlier intention. Its
+                # own series, same budget-cut exclusion.
                 self._metrics.inc(
                     "nora_proactive_silence_total", platform=platform,
                 )
@@ -2285,9 +2194,8 @@ class FirePath:
                 # The loop finished and she never called `send_reply`, or one of
                 # R-8's caps cut it off. Labelled the way `check_outcome` labels it
                 # (R-23) — `no_send_call` and `limit_total_tokens` are different
-                # failures and used to be the same metric. Every OTHER way of not
-                # delivering implies `attempted` and has already counted itself
-                # inside `Deliverer`.
+                # failures. Every OTHER way of not delivering implies
+                # `attempted` and has already counted itself inside `Deliverer`.
                 reason = (
                     stop_reason if stop_reason in deliver.BUDGET_STOP_REASONS else "no_send_call"
                 )
@@ -2308,12 +2216,11 @@ class FirePath:
 
         Two sinks, and the difference between them is the point. The log takes
         every determination, participation's and proactive's alike, needs no
-        channel and costs no send; the §10.6 shadow mirror takes participation's
+        channel and costs no send; the shadow mirror takes participation's
         only, and only where the operator wired a channel to review them in.
-        Before this method the mirror was the ONLY sink, so a proactive
-        decision — the adaptor's act turn declining its own earlier intention
-        (39 D12) — was readable nowhere but as a counter and a database row,
-        and a participation decision in a room with no mirror was readable
+        Without the log, a proactive decision (the act turn declining its own
+        earlier intention) would be readable nowhere but as a counter and a
+        database row, and a participation decision in a room with no mirror
         nowhere at all.
 
         Called at four sites in `_turn`: participation and proactive, silent
@@ -2342,16 +2249,15 @@ class FirePath:
             await self._mirror(occasion, ctx, doctrine, d)
 
     async def _log_decision(self, occasion: Event, d: Determination) -> None:
-        """The determination as a DECISION-LOG row — a THIRD sink, and the only
-        one another decider can read (issue #199).
+        """The determination as a DECISION-LOG row — the sink another decider
+        can read.
 
         The log and the mirror are both write-only as far as a prompt is
         concerned: one goes to a file, one goes to a channel an operator reads.
         Neither is reachable from the gate deciding whether to admit the next
-        window in this room, or from a proactive decider (the decide pass, deleted 2026-10-03)
-        deciding what to raise
-        in it tomorrow. That is the whole gap — three decision paths, one room,
-        and 2026-09-10's duplicate answered twice and raised a third time.
+        window in this room, or from a proactive decider deciding what to raise
+        in it later. That is the gap this sink closes: three decision paths,
+        one room, shared state.
 
         **`disposition`, never her words.** `Determination.texts` is her reply
         or the draft she declined to send; it stays in the DEBUG half of the
@@ -2367,8 +2273,7 @@ class FirePath:
         would dilute the block with rows no decider can act on.
 
         `record` never raises and never blocks past its own timeout, so this
-        cannot change the turn's outcome, which is the property `_mirror` one
-        method down also holds and for the same stated reason.
+        cannot change the turn's outcome, the property `_mirror` also holds.
         """
         if self._decisions is None:
             return
@@ -2389,7 +2294,7 @@ class FirePath:
         self, occasion: Event, ctx: TagContext, doctrine: Any,
         d: Determination,
     ) -> None:
-        """The §10.6 shadow mirror: post one participation determination —
+        """The shadow mirror: post one participation determination —
         speak AND silence — to the shadow channel, for operator review before
         the flip.
 
@@ -2450,26 +2355,19 @@ class FirePath:
             )
             # `d.shadow_hold` is true here by construction: this method returns
             # early without a channel, and `_determined` conjoins the channel
-            # with the participation occasion. That is the true-shadow reading
-            # (Miles decision 2026-09-05) — a held text is held by the shadow
+            # with the participation occasion. That is the true-shadow reading:
+            # a held text is held by the shadow
             # gate, never by the cooldown, because the mirror exists to review
             # cooldown-held messages and so is never cooldown-gated.
             mirrored = await handle.deliverer.deliver(
                 render_mirror(d, window=_mirror_window(d)), source="shadow",
             )
             if not mirrored:
-                # Pre-existing hole, same shape as the gate mirror's below and
-                # fixed in the same commit: a guard REFUSAL returns False
-                # rather than raising, so this stage counted zero errors while
-                # dropping determinations the operator was waiting to review.
-                #
-                # And the same correction: False also covers a send that
-                # reached the wire and failed, so the line names
-                # `last_outcome` rather than asserting a guard. This mirror
-                # carries the SAME `shadow_channel` the gate does, so the 405
-                # that emptied the review channel was latent here too — it
-                # simply never fired, because a gate in shadow mode means no
-                # participation turn runs to be mirrored.
+                # A guard REFUSAL returns False rather than raising, so without
+                # this check the stage would count zero errors while dropping
+                # determinations the operator was waiting to review. False
+                # also covers a send that reached the wire and failed, so the
+                # line names `last_outcome` rather than asserting a guard.
                 log.error(
                     "participation shadow mirror not delivered: %s (tag=%s)",
                     handle.deliverer.last_outcome or "unknown", ctx.tag_id,
@@ -2488,17 +2386,15 @@ class FirePath:
     async def post_gate_verdict(
         self, *, platform: str, conversation_id: str, score: float | None,
     ) -> None:
-        """Post ONE Relevance Gate GO verdict to the review channel
-        (design/dreamer-agent-loop/36 §4). No turn ran and none will — in
+        """Post ONE Relevance Gate GO verdict to the review channel. No turn ran and none will — in
         shadow mode Nora is never involved, whatever the score.
 
         **Why this lives in fire.py and is not its own module.** R-1b pins
         `deliver.build`'s callers to two MODULES (`pipeline.py`, `fire.py`);
         a gate module calling it would be a third and the rule goes red.
-        DEC-188 already settled that a second call site INSIDE this module is
-        fine — "two caller modules" never implied "two send call sites" — so
-        the gate's review post is a sibling of `_mirror`, here, by the same
-        argument.
+        DEC-188 settled that a second call site INSIDE this module is
+        fine ("two caller modules" does not imply "two send call sites"), so
+        the gate's review post is a sibling of `_mirror`, here.
 
         **And it is a sibling rather than a parameter on `_mirror`.** That
         one's signature takes `ctx`, `doctrine` and the TURN'S OUTCOME
@@ -2507,7 +2403,7 @@ class FirePath:
         one of those arguments would be a placeholder — and a function whose
         arguments are mostly placeholders has two jobs.
 
-        `no_go` NEVER reaches here (decision 6): only GO is delivered. The
+        `no_go` NEVER reaches here: only GO is delivered. The
         no_go rate stays observable on
         `nora_relevance_gate_total{verdict="no_go"}`, which is what keeps an
         undelivered verdict from being an unmeasured one.
@@ -2560,20 +2456,14 @@ class FirePath:
                 # refusal; it does not raise, so the `except` below never sees
                 # one. Unchecked, a review post refused by the egress screen —
                 # say, because the quoted message contains a phone number —
-                # vanished while `nora_relevance_gate_total{verdict="go"}` had
-                # already counted it. The operator then tunes the flip on a
-                # GO stream with invisible holes in it, which is the one
-                # reading shadow mode exists to provide.
+                # would vanish while `nora_relevance_gate_total{verdict="go"}`
+                # had already counted it, leaving invisible holes in the GO
+                # stream the operator tunes on.
                 #
                 # It also returns False for a send that reached the wire and
-                # FAILED there, which this line used to report as a guard
-                # refusal — and did, for every GO from 2026-09-09, while the
-                # real fault was a `shadow_channel` missing its guild half and
-                # Discord answering 405 (NORA-3/NORA-4). `last_outcome` is what
-                # separates the two; the counters already did (a refusal moves
-                # `nora_silent_failures_total`, a wire failure moves
-                # `nora_replies_total{status="failed"}`), so what was wrong here
-                # was the sentence an operator reads first, not the measurement.
+                # FAILED there; `last_outcome` separates the two. The counters
+                # do too (a refusal moves `nora_silent_failures_total`, a wire
+                # failure moves `nora_replies_total{status="failed"}`).
                 log.error(
                     "relevance gate shadow post not delivered: %s (%s/%s) — "
                     "the review channel is missing this GO",
@@ -2633,7 +2523,7 @@ class FirePath:
                 # or a reaction has no words for a reviewer to read.
                 if not one_line(row.body or ""):
                     continue
-                # ONE ROW, ONE LINE, through the shared renderer (#220). This
+                # ONE ROW, ONE LINE, through the shared renderer. This
                 # builds ONE line of the review post
                 # (`{room} — {last} — go — {score}` below), so a newline in the
                 # message OR in a profile name would break the column an
@@ -2641,11 +2531,9 @@ class FirePath:
                 # both by construction rather than by two calls here.
                 #
                 # `person_name or sender_name or "unknown"` is the canonical
-                # order (DEC-80). This line read `sender_name or sender_id`,
-                # which threw away the projection AND put a raw ACI or E.164
-                # into a delivered message: R-18 then refused the whole post at
-                # the Deliverer, so unmapped senders' GO verdicts silently
-                # never reached the review channel.
+                # order (DEC-80). A raw `sender_id` (ACI or E.164) must never
+                # reach a delivered message: R-18 would refuse the whole post
+                # at the Deliverer.
                 #
                 # `markup=False` for `_mirror_window`'s reason: this string is
                 # posted to the operator's review channel, where an escaped
@@ -2692,8 +2580,7 @@ class FirePath:
             # `platform`, because the series DECLARES `(stage, platform)` and an
             # omitted label records `platform=""` (`Metrics._full_labels`) — a
             # sample invisible to `nora_errors_total{platform="signal"}`, which
-            # is the filter an operator reaches for first. `fire_context` above
-            # already gets this right; this site did not.
+            # is the filter an operator reaches for first.
             self._metrics.inc(
                 "nora_errors_total", stage="fire_feedback", platform=platform,
             )
@@ -2701,7 +2588,7 @@ class FirePath:
 
 def _window_query(transcript: Sequence[TranscriptRow]) -> str:
     """The `search_query` for the participation turn's memory reads: the text
-    of the window's newest rows, oldest-first, bounded (issue #210).
+    of the window's newest rows, oldest-first, bounded.
 
     Bodies only — no names, no ages, no `Nora:` labels. This string is a
     RETRIEVAL KEY handed to Honcho, not a prompt: a speaker's display name in
@@ -2712,13 +2599,11 @@ def _window_query(transcript: Sequence[TranscriptRow]) -> str:
 
     Her OWN rows are excluded for the same reason `_window_speakers` excludes
     them: the question is what the ROOM is talking about, and an answer she
-    already gave is the loudest self-echo there is (39 §1's argument for
-    dropping `load_transcript` from the decide turn (deleted 2026-10-03, DEC-277), one path over).
+    already gave is the loudest self-echo there is.
     """
-    # FILTER, then slice. It sliced first until a reviewer read it on
-    # 2026-09-11: a window whose newest six rows are four of her own replies
-    # then yielded a two-row retrieval key, which is not «the window's newest
-    # rows» — it is however many of them she did not write.
+    # FILTER, then slice: slicing first would let a window whose newest six
+    # rows are four of her own replies yield a two-row retrieval key, which is
+    # not «the window's newest rows».
     bodies = [
         render_file_links(row.body).strip() for row in transcript
         if not row.is_nora and row.body and row.body.strip()
@@ -2729,7 +2614,7 @@ def _window_query(transcript: Sequence[TranscriptRow]) -> str:
 def _synthetic_message(
     occasion: Event, ref: PersonRef | None,
 ) -> NormalizedMessage:
-    """§6.4's second table. Built in memory only — nothing writes it.
+    """The synthetic message of a fire turn. Built in memory only — nothing writes it.
 
     `body` is `Event.body`: for a reminder the requester's OWN sentence(s),
     which is the premise of the whole feature (a deferred request, put to her at
@@ -2738,25 +2623,20 @@ def _synthetic_message(
     than what somebody actually wrote breaks that premise.
 
     `sender_id` and `timestamp` are blank/0: falsy, which is what makes
-    `indicate.begin` return None and §5.5's "no reactions" hold without a flag
+    `indicate.begin` return None and "no reactions" hold without a flag
     anywhere. `timestamp` is `0` and not `None` because the field is `int`.
 
     `sender_name` falls back to `Event.speaker` when no `PersonRef` resolved,
     so a turn nobody asked for still names the author of the words it carries.
 
-    **`voice` is left at its `False` default, DELIBERATELY** (operator,
-    2026-09-17). Every occasion that reaches here — a reminder, a proactive
-    row, a participation turn, the destination half of
-    `send_to` — goes out as TEXT, even when the request that created it was
-    SPOKEN. A reminder asked for aloud at 14:00 arrives as a message in the
-    room at 20:00.
+    **`voice` is left at its `False` default, DELIBERATELY.** Every occasion
+    that reaches here — a reminder, a proactive row, a participation turn, the
+    destination half of `send_to` — goes out as TEXT, even when the request
+    that created it was SPOKEN: a reminder asked for aloud at 14:00 arrives as
+    a message in the room at 20:00.
 
-    That is a decision, not an oversight, and it needs saying because it
-    changed shape under §12.2's reversal. While speech had a room of its own,
-    the occasion carried that room's id and `adapter.send` routed on the ROOM,
-    so everything into it was spoken. The routing key is the TURN now, so this
-    default is what decides the surface — and the operator's answer was that a
-    deferred reply can always be a text message. Speaking unprompted into a
+    The routing key is the TURN, so this default is what decides the surface;
+    a deferred reply can always be a text message. Speaking unprompted into a
     voice channel is a much larger claim than answering a question that was
     just asked in one.
     """

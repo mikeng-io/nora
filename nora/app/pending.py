@@ -1,4 +1,4 @@
-"""Unmapped senders, correlated into ACCOUNTS (design/10 §6, Task 6).
+"""Unmapped senders, correlated into ACCOUNTS.
 
 THE UNIT IS AN ACCOUNT, NOT AN ID. Under Signal's sealed sender the same
 registration reaches Nora as a phone number on one message and as an ACI uuid
@@ -6,8 +6,8 @@ on another — `nora.platform.signal.parser` takes `source or sourceNumber or
 sourceUuid`, so `messages.sender_id` holds whichever one happened to be
 present. Listing those two rows as two pending entries would invite the
 operator to paste them into two `[[persons.x.signal]]` blocks, and that is
-exactly the copy-paste duplicate `nora.persons.load_persons` now refuses to
-start on (design/10 §7.4) — the tool built to fix the identity file would be
+exactly the copy-paste duplicate `nora.persons.load_persons` refuses to
+start on — the tool built to fix the identity file would be
 the thing that broke it.
 
 So ids are merged, by union-find, over three kinds of evidence:
@@ -16,8 +16,8 @@ So ids are merged, by union-find, over three kinds of evidence:
      (`source`, `sourceNumber`, `sourceUuid`) named the same sender by
      construction.
   2. **A group roster.** `listGroups`' `members[]` pairs `number` with `uuid`
-     for every member. On the live daemon this is the strongest link available:
-     only 3 of 83 contacts carry both forms, while every group member does.
+     for every member. This is the strongest link available: few contacts
+     carry both forms, while every group member does.
   3. **A contact.** `listContacts` pairs `number`/`uuid`/`username` and is the
      only source of the display name the operator actually recognises.
 
@@ -28,7 +28,7 @@ not check.
 
 Everything here is a pure function over rows and daemon reads. Nothing writes:
 the operator adopts by hand-editing identity.toml and restarting, at which
-point `nora.app.adoption` backfills the history (D6, DEC-16).
+point `nora.app.adoption` backfills the history (DEC-16).
 """
 
 from __future__ import annotations
@@ -176,7 +176,7 @@ def correlate(
         entry.last_ts = max(entry.last_ts, row.ts)
 
     # A contact or roster record may carry an id form that never arrived on a
-    # message. Pasting it in now is the whole point: it is the id Nora has not
+    # message. Pasting it in is the whole point: it is the id Nora has not
     # seen YET, and it costs the operator a second adoption round when it does.
     by_root: dict[str, set[str]] = {}
     for linked in [c.ids for c in contacts] + [m for g in groups for m in g.members]:
@@ -187,7 +187,7 @@ def correlate(
     for (platform, root), entry in seen.items():
         account_ids: set[str] = entry.ids | by_root.get(root, set())
         if any(persons.resolve(platform, value) for value in account_ids):
-            continue                      # mapped since — `nora.app.adoption`'s job now
+            continue                      # mapped since — `nora.app.adoption`'s job
         accounts.append(PendingAccount(
             platform=platform,
             ids=tuple(sorted(account_ids)),
@@ -205,7 +205,7 @@ def _name_for(ids: set[str], contacts: list[SignalContact]) -> str:
     """The daemon's name for this account, or `UNKNOWN_NAME`.
 
     Never falls back to the envelope's `sourceName`. That is a profile name the
-    SENDER chose and can change at will (design/10 §1.3); printing it here, in
+    SENDER chose and can change at will; printing it here, in
     the column the operator reads as "who this is", would dress an unverified
     string as an identification. It is reported separately and labelled.
     """
@@ -216,7 +216,7 @@ def _name_for(ids: set[str], contacts: list[SignalContact]) -> str:
 
 
 def id_kind(platform: str, value: str) -> str | None:
-    """Classify one observed id into `platform`'s vocabulary (design/10 §3.1).
+    """Classify one observed id into `platform`'s vocabulary.
 
     Signal only. Every other platform returns None — the parser produces
     nothing but Signal rows today, and guessing a Telegram `user_id` from a
@@ -229,8 +229,8 @@ def id_kind(platform: str, value: str) -> str | None:
         return "phone"
     if _UUID_RE.match(value):
         return "uuid"
-    # NOT `username`: it is no longer a matchable kind (operator, 2026-08-14 —
-    # a handle its owner can rename must never resolve a person), so a stanza
+    # NOT `username`: it is not a matchable kind (a handle its owner can rename
+    # must never resolve a person), so a stanza
     # naming one would be refused at startup. `None` means "print it for
     # hand-mapping", which is what the caller already does for every platform
     # it cannot infer a kind for.

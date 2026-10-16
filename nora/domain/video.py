@@ -1,4 +1,4 @@
-"""A video job's typed request (design/video-generation, DEC at merge).
+"""A video job's typed request.
 
 A clip takes one to three minutes to render, so `video_create` starts a job and returns; the
 finished clip reaches the room later through the deferred-job outbox (`compute_jobs`,
@@ -38,7 +38,7 @@ CLIP_KEEP_OUTCOMES: tuple[str, ...] = (
 
 
 #: What a reference is: a photo keeps a subject or a place, a clip its motion or camera, a voice
-#: note or other audio its voice or sound (design/video-generation §9, amended 2026-10-10).
+#: note or other audio its voice or sound.
 ReferenceKind = Literal["image", "video", "audio"]
 
 
@@ -69,8 +69,7 @@ class VideoRequest:
     Two modes, never both in one request (the provider refuses a mix): `references` (photos,
     clips and voice notes, in the order given) keep a subject, a motion or a voice in a scene
     the prompt writes; `first_frame` is a photo that becomes the clip's opening frame, and the
-    prompt writes only what moves after it (image-to-video, design/video-generation §9,
-    amended 2026-10-10)."""
+    prompt writes only what moves after it (image-to-video)."""
 
     prompt: str
     references: tuple[VideoReference, ...] = ()
@@ -117,7 +116,7 @@ class VideoStart:
 
 
 #: The one `failure_reason` that is known to have cost nothing: the provider's own `failed`
-#: task (measured 2026-10-02, a failed task carries an empty `usage`).
+#: task, which carries an empty `usage`.
 FREE_FAILURE = "failed"
 
 

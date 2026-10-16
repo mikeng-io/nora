@@ -1,18 +1,16 @@
-"""`SummonsConsumer` — the public summons' one worker
-(design/instagram-adoption/19, the 2026-09-26 intake): it takes summons cards
+"""`SummonsConsumer` — the public summons' one worker: it takes summons cards
 from `SummonsInbox`, ONE AT A TIME, and hands each to `SummonsOccasion`.
 
-**Why events, not a poll.** The summons poller this replaced read the
-notification feed (`GET /mentions` over `/api/v1/news/inbox/`), and that feed
-never carried a comment mention of her: measured, not assumed. A mention
+**Events, not a poll.** The notification feed (`GET /mentions` over
+`/api/v1/news/inbox/`) never carries a comment mention of her. A mention
 reaches her as a DM card instead, and the bridge emits a `summons` event on
-its SSE stream for it. There is no clock to keep any more, and no feed to
-spend requests on: a card arrives, one card is worked, the next waits.
+its SSE stream for it. The consumer keeps no clock and spends no requests on a
+feed: a card arrives, one card is worked, the next waits.
 
-**One at a time.** The same Instagram session carries her group chats
-(design 19 §"Account safety"), so what this loop spends is requests on that
-session. A card that goes on to read its post and comments, and perhaps
-write, is worked to its end before the next is taken.
+**One at a time.** The same Instagram session carries her group chats, so what
+this loop spends is requests on that session. A card that goes on to read its
+post and comments, and perhaps write, is worked to its end before the next is
+taken.
 
 **A LIVE row left `staged`** (the bridge said `too_soon`, or answered a 503
 before claiming) is retried before any new card is taken, by its flush alone
@@ -20,11 +18,11 @@ before claiming) is retried before any new card is taken, by its flush alone
 still staged, so a `too_soon` is waited out rather than hammered.
 
 **It backs off on `needs_human` and 503.** A checkpointed session is not
-retried at once (design 19 rule 4: retrying a challenge is how a captcha
-becomes a ban): after such an answer the loop pauses, doubling from
-`2 * RETRY_SECONDS` up to 30 minutes, while cards wait in the inbox. The
-backoff clears on the first run that reaches the bridge and is answered
-otherwise; a card filed without a bridge call leaves it as it was.
+retried at once (retrying a challenge is how a captcha becomes a ban): after
+such an answer the loop pauses, doubling from `2 * RETRY_SECONDS` up to 30
+minutes, while cards wait in the inbox. The backoff clears on the first run that
+reaches the bridge and is answered otherwise; a card filed without a bridge call
+leaves it as it was.
 
 **Recovery, at boot and at the top of every step**: a row left `claimed` for
 longer than `CLAIM_TIMEOUT` becomes `failed`, and one left `flushing` (its

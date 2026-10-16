@@ -1,55 +1,49 @@
-"""`nora memory carry-conclusions --workspace <workspace>` — bring the facts
-Nora was TOLD before unit scopes existed into every unit scope of a
-workspace (DEC-214). One-time; dry run unless `--apply`.
+"""`nora memory carry-conclusions --workspace <workspace>` — copy the facts
+Nora was TOLD without a unit scope into every unit scope of a workspace
+(DEC-214). Dry run unless `--apply`.
 
-WHAT IS STRANDED WITHOUT IT. Since DEC-214 every memory read for a room or
-unit passes that unit's named scope, which reads the `(scope.<unit>, person)`
-collection. The facts written before that — `remember` in a turn and the
-deleted note curator's person-claim discharge — went through `conclude` with Nora as
-observer and NO session, so they are in `(nora, person)` only. A scope's own
-backfill copies what was derived from its member SESSIONS; a conclusion with
-no session belongs to no session and is copied into no scope. So every one
-of them fell out of every unit's recall at once.
+WHY. Every memory read for a room or unit passes that unit's named scope,
+which reads the `(scope.<unit>, person)` collection. A conclusion written
+through `conclude` with Nora as observer and NO session (a `remember` in a turn,
+a person-claim discharge) lives in `(nora, person)` only. A scope's own
+backfill copies what was derived from its member SESSIONS; a session-less
+conclusion belongs to no session and is copied into no scope, so it is
+invisible to every unit's recall.
 
 WHAT IT COPIES. In the workspace's Honcho workspace: each conclusion with
-observer `ai_peer`, no session, level `explicit` — exactly the shape those
-two writers produce (Honcho stamps every manual conclusion `explicit`, and
-everything its deriver writes from a message carries that message's
-session) — CREATED BEFORE `--before`, the cutover. Each is written into
-EVERY unit scope of the workspace, observer `scope.<unit>`, observed and
-content unchanged. Deductive/inductive rows with no session are dreams,
-reasoned across sessions; a scope's own dreams rebuild its versions, so they
-are not copied.
+observer `ai_peer`, no session, level `explicit` (Honcho stamps every manual
+conclusion `explicit`, and everything its deriver writes from a message
+carries that message's session), CREATED BEFORE `--before`, the cutover. Each
+is written into EVERY unit scope of the workspace, observer `scope.<unit>`,
+observed and content unchanged. Deductive/inductive rows with no session are
+dreams, reasoned across sessions; a scope's own dreams rebuild its versions,
+so they are not copied.
 
-`--before` IS REQUIRED because the shape is not unique to the past. Since
-DEC-214 `conclude` still writes a session-less `(nora, person)` row beside
-the unit's own `(scope.<unit>, person)` one, so a fact told in unit A AFTER
-the cutover looks exactly like a pre-cutover one; copied, it would reach
-every other unit of the workspace, which is the leak scopes exist to stop.
-Anything already held by ANY scope of the Honcho workspace is skipped too —
-that is where a post-cutover `remember` already landed.
+`--before` IS REQUIRED because the shape is not unique to the past:
+`conclude` still writes a session-less `(nora, person)` row beside the unit's
+own `(scope.<unit>, person)` one, so a fact told in unit A after the cutover
+looks exactly like an earlier one; copied, it would reach every other unit of
+the workspace, which is the leak scopes exist to stop. Anything already held
+by ANY scope of the Honcho workspace is skipped too.
 
-ONLY WHERE THE PERSON BELONGS, AND ONLY UNAMBIGUOUSLY. A pre-split row has no
+ONLY WHERE THE PERSON BELONGS, AND ONLY UNAMBIGUOUSLY. Such a row has no
 provenance: nothing says in which room, or which workspace's room, it was
-told. So a row is copied only when the person it is about belongs to
-EXACTLY ONE Nora workspace (a listed room's `persons` names them) and it is
-the one given. A row about someone in several workspaces, in another one, or
-in none (Nora herself included), is never copied automatically: the dry run
-lists those rows by conclusion id — never content — for the operator to
-decide. A fact about someone who belongs only to a workspace that has LEFT
-this Honcho workspace stays where it is: this command writes inside one
-Honcho workspace and never across two.
+told. So a row is copied only when the person it is about belongs to EXACTLY
+ONE Nora workspace (a listed room's `persons` names them) and it is the one
+given. A row about someone in several workspaces, in another one, or in none
+(Nora herself included), is never copied automatically: the dry run lists
+those rows by conclusion id, never content, for the operator to decide. This
+command writes inside one Honcho workspace and never across two.
 
-THE EXPOSURE IS THE ONE THAT EXISTED. Before DEC-214 these rows were read by
-every unit of the one workspace — recall was workspace-wide. Copying each
-into every unit scope of ITS workspace restores exactly that, and nothing
-wider: a workspace's rows are never written into another workspace's scopes
-(each Nora workspace is its own Honcho workspace, and the command takes one),
-and a person's row only into the workspace they belong to.
+EXPOSURE. Copying each row into every unit scope of ITS workspace equals the
+workspace-wide recall that existed before scopes, and nothing wider: a
+workspace's rows are never written into another workspace's scopes (each Nora
+workspace is its own Honcho workspace), and a person's row only into the
+workspace they belong to.
 
 IDEMPOTENT. A row whose `(observed, content)` any scope already holds is
 skipped, and each row goes into all the scopes in one request, so a second
-run — or one after a failure — adds nothing twice and leaves no scope short.
+run, or one after a failure, adds nothing twice and leaves no scope short.
 It deletes nothing.
 """
 
@@ -123,7 +117,7 @@ async def carry_conclusions(
             f"could not read Nora's conclusions in {whole.workspace!r} — nothing was "
             "written; is Honcho up, and is that workspace Nora's?"
         )
-    # WHAT ANY SCOPE ALREADY HOLDS, across the whole Honcho workspace — read
+    # What any scope already holds, across the whole Honcho workspace; read
     # before anything is written, so a failure here writes nothing.
     scopes = await memory.list_scopes(workspace=workspace)
     if scopes is None:
@@ -172,11 +166,10 @@ async def carry_conclusions(
         workspace=workspace, honcho_workspace=whole.workspace, applied=apply,
         scopes=scope_names, carried=len(sources), held=held, ambiguous=ambiguous,
     )
-    # ONE ROW INTO EVERY SCOPE TOGETHER (`carry_to_scopes` never splits a row
-    # across two requests), so a run that fails part-way leaves each row in
-    # all of the workspace's scopes or in none — which is what lets the
-    # «already in any scope» skip above make a re-run finish the job rather
-    # than strand the scopes the first run did not reach.
+    # One row goes into every scope together (`carry_to_scopes` never splits a
+    # row across requests), so a run that fails part-way leaves each row in all
+    # of the workspace's scopes or in none; the «already in any scope» skip
+    # above then lets a re-run finish the job.
     if apply and sources and not await memory.carry_to_scopes(units=units, rows=sources):
         report.failed = True
     return report

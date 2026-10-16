@@ -1,4 +1,4 @@
-"""Nora's computer as a metric (design/sandbox-runtime §12, DEC-261).
+"""Nora's computer as a metric (DEC-261).
 
 `ComputerMetrics` is the observer `ComputerdRuntime` and the timed probe tell
 about computerd (`nora.domain.computer.ComputerCallObserver`), and it is the one
@@ -17,10 +17,9 @@ down, and `ComputerDown` (`nora_computer_up == 0`) cannot fire on an absence.
 **`prime()` creates the series at zero.** A labelled Prometheus series does not
 exist until its first increment, and `increase()` over a series whose first
 sample is already 1 reads 0, so the first `unavailable` after a restart would be
-invisible to the rule written to catch it (nora restarts two or three times a
-day). Every `(op, status)` is created at 0 at start, and so is every
-`(tool, stage)` of `nora_computer_audit_failures_total`, which was never seen
-live for the same reason: it is a should-be-zero counter, and "never emitted"
+invisible to the rule written to catch it. Every `(op, status)` is created at 0
+at start, and so is every `(tool, stage)` of
+`nora_computer_audit_failures_total`, a should-be-zero counter: "never emitted"
 could not be told from "never failed".
 """
 
@@ -42,7 +41,7 @@ COMPUTER_TARGET = "computerd"
 #: tools' own names plus the sweeper's (`computer_session`). The tools' set is
 #: `nora.agent.tools.COMPUTER_TOOLS`, passed in by composition rather than
 #: imported here (`nora.app` may import `nora.agent`, but a literal copy would
-#: go stale the day a tool is added).
+#: go stale when a tool is added).
 SWEEPER_AUDIT_TOOL = "computer_session"
 
 

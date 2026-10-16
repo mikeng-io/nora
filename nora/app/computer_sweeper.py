@@ -1,4 +1,4 @@
-"""The computer session sweeper (design/sandbox-runtime §15.2, decision 5).
+"""The computer session sweeper.
 
 One pass (`ComputerSessionSweeper.sweep_once`) over every open session; the
 loop around it is `nora.app.runtime.computer_sweep_loop`, `prune_loop`'s
@@ -27,11 +27,10 @@ in flight holds the lease and the sweeper defers; a call that lands between
 the read and the write moves `last_activity_at` and the set fails. Each one
 writes ONE `computer_events` row, actor `sweeper`.
 
-**It never destroys anything** (operator, 2026-09-30: never destroy work).
-An expiry is a database state change and one audit row, nothing else: no
-tmux session is killed (a shell with a child running reads as idle to a
-naive check, so killing is never safe), no file is deleted (the runtime it
-holds offers neither), no session row is deleted (expiry is a status), no
+**It never destroys anything.** An expiry is a database state change and one
+audit row, nothing else: no tmux session is killed (a shell with a child
+running reads as idle to a naive check, so killing is never safe), no file is
+deleted (the runtime it holds offers neither), no session row is deleted (expiry is a status), no
 audit row is changed (the table refuses it). It runs no command at all.
 """
 

@@ -1,5 +1,5 @@
-"""Nora's computer: the result types of `SandboxRuntime` (design/sandbox-runtime
-§3) and the one rule that turns a room into a workspace.
+"""Nora's computer: the result types of `SandboxRuntime` and the
+one rule that turns a room into a workspace.
 
 Every result carries a `status` in R-27's vocabulary plus `denied`:
 
@@ -114,7 +114,7 @@ class ListResult:
 @dataclass(frozen=True)
 class BytesResult:
     """`sha256` is computed by the CALLER's side on the bytes it received,
-    never taken from the VM's claim (design/sandbox-runtime §6)."""
+    never taken from the VM's claim."""
 
     status: SandboxStatus
     data: bytes = b""
@@ -124,8 +124,8 @@ class BytesResult:
 
 @dataclass(frozen=True)
 class BrowseOutcome:
-    """What one delegated browser task came back with (design/browser-runtime
-    00 §5, B2). `status` is the R-27 shape the tool reports: `ok` (done, with
+    """What one delegated browser task came back with.
+    `status` is the R-27 shape the tool reports: `ok` (done, with
     an `answer`), `nothing_found` (the pages were read and the thing asked
     for is not there), `unavailable` (the browser could not be used, the
     budget ran out, or a person must take over: `reason` says which, and
@@ -144,7 +144,7 @@ class BrowseOutcome:
 class OpResult:
     """`sha256` is what the file holds after the write; `previous_sha256`
     what it held just before (None: there was no regular file there). The
-    pair is the audit's before and after (design/sandbox-runtime §12)."""
+    pair is the audit's before and after."""
 
     status: SandboxStatus
     size: int | None = None
@@ -189,8 +189,8 @@ class ScopeProcess:
 
 @dataclass(frozen=True)
 class StateResult:
-    """What the computer holds for one scope, read fresh (design/sandbox-runtime
-    §15.1): the newest files, newest first, and the tmux sessions.
+    """What the computer holds for one scope, read fresh:
+    the newest files, newest first, and the tmux sessions.
 
     `tmux` is None when the sessions could not be listed (`tmux_reason` says
     why). A reader must take None as UNKNOWN, never as «nothing is running»:
@@ -234,8 +234,7 @@ class ComputerToolSettings:
 
     `limits` is the reserved per-command resource slot as `(name, value)`
     pairs, only the ones the operator set; empty (the shipped default) means
-    nothing is sent. computerd ignores it today (operator 2026-09-30: the
-    computer is semi-trusted).
+    nothing is sent. computerd ignores it today (the computer is semi-trusted).
     """
 
     run_timeout_seconds: int = 120

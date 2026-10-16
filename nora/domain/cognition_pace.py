@@ -1,32 +1,27 @@
-"""The pace verbs, pure (design/cognition-loop/20-observe.md §3's
-self-wakes; migration step 3a-ii). `wake_at`/`wake_move`/`wake_cancel` write
-a `self` signal, not a tier — 30-cognition.md §2: "a `self` signal due at
-`at` ([20] §3); nothing leaves for a room" — so this module checks the
-guards 20 §3 states and nothing more: no schema, no mode, no lineage
-(30-cognition.md §3: "the pace verbs ... carry no schema, mode or lineage:
-they write a signal, not a tier").
+"""The pace verbs, pure. `wake_at`/`wake_move`/`wake_cancel` write a `self`
+signal (a due time for the unit's own next look; nothing leaves for a room),
+not a tier, so this module checks the guards below and nothing more: no
+schema, no mode, no lineage.
 
-**Guards, in code** (20 §3):
+**Guards, in code:**
 
-- at most `max_self_wakes` LIVE pending per unit (starting at 5): live means
-  not fired, not cancelled and not superseded (`fold_self_wakes`);
+- at most `max_self_wakes` LIVE pending per unit (default 5): live means not
+  fired, not cancelled and not superseded (`fold_self_wakes`);
 - at most `max_self_wakes_per_day` `wake_at` calls per unit in a rolling 24 h
-  (starting at 12, DEC-242: a session that re-arms itself every pass is a
-  wedge the pending cap alone does not bound, because a fired wake frees its
-  slot);
+  (default 12, DEC-242: a session that re-arms itself every pass is a wedge
+  the pending cap alone does not bound, because a fired wake frees its slot);
 - one per subject: a new self-wake sharing any subject row with a pending
-  one SUPERSEDES it (never refused — this is a normal `created` transition
-  that carries `supersedes`);
+  one SUPERSEDES it (never refused; a normal `created` transition that
+  carries `supersedes`);
 - a horizon no shorter than the unit's cooldown and no longer than 7 days;
 - `wake_move`/`wake_cancel` name a wake_ref this adaptor itself created and
-  that is still pending (30-cognition.md §3 rule 12, "own misreads only",
-  generalised to the pace verbs the same rule already names for `remind_
-  move`/`remind_cancel`).
+  that is still pending (own misreads only, the rule `remind_move`/
+  `remind_cancel` already follow).
 
 This module makes no store call: every fact it needs (how many self-wakes
 are pending, which existing one shares a subject, whether a wake_ref is
 known and still pending) is a caller-supplied argument, the same "prior is a
-parameter" shape `nora.domain.standing_revise` already uses.
+parameter" shape `nora.domain.standing_revise` uses.
 """
 
 from __future__ import annotations
@@ -34,16 +29,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-#: 20 §3: "starting at 5".
+#: Default cap on live pending self-wakes per unit.
 DEFAULT_MAX_SELF_WAKES = 5
-#: 20 §3: "no longer than 7 days".
+#: Default longest horizon a self-wake may be set or moved to.
 DEFAULT_MAX_HORIZON_SECONDS = 7 * 24 * 3600.0
 
-#: DEC-242: starting value, recorded in `[cognition] max_self_wakes_per_day`.
+#: DEC-242: default for `[cognition] max_self_wakes_per_day`.
 DEFAULT_MAX_SELF_WAKES_PER_DAY = 12
 
 #: `wake_fire` is CODE's verb, never a model's: the session that picked a due
-#: self-wake up onto its agenda records that the wake fired (20 §3's
+#: self-wake up onto its agenda records that the wake fired (counted as
 #: `nora_self_wake_total{outcome="fired"}`), which frees its pending slot.
 PACE_VERBS: tuple[str, ...] = ("wake_at", "wake_move", "wake_cancel", "wake_fire")
 PACE_TRANSITIONS: tuple[str, ...] = ("created", "moved", "cancelled", "fired")
@@ -162,7 +157,7 @@ def check_wake_at(
     Returns `(refusal, supersedes)`: `refusal` set means refused; else
     `supersedes` names the pending wake_ref this call displaces (None when
     it creates a fresh one). `subject_rows` empty is refused outright — a
-    self-wake with nothing to look at again is not what 20 §3 describes."""
+    self-wake with nothing to look at again is refused."""
     if not subject_rows:
         return PaceRefusal("no_subject", "wake_at needs at least one subject row"), None
     if created_today >= max_self_wakes_per_day:
@@ -210,7 +205,7 @@ def check_wake_move(
 ) -> PaceRefusal | None:
     """`wake_move(wake_id, at, why)`. Refused when `wake_ref` names no
     pending self-wake, or one this SESSION's own adaptor did not create
-    (rule 12's "own misreads only", generalised) — `created_by_session_id`
+    (own misreads only): `created_by_session_id`
     is the row's own recorded creator; `None` on either side means "not
     tracked" and is never treated as a match by construction (only an
     explicit equal session id passes)."""

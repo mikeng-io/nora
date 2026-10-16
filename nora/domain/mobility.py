@@ -1,15 +1,13 @@
-"""Pure mobility derivation — stay segmentation, place clustering, labelling
-(docs/superpowers/specs/2026-08-18-presence-analytics-substrate-design.md).
+"""Pure mobility derivation — stay segmentation, place clustering, labelling.
 
 Standard library only, like `nora.domain.presence` — this module adds no
 numpy/scipy even though `pyproject.toml`'s "domain is framework-free"
 contract does not currently forbid them (nothing here needs them; DBSCAN at
-this scale, ~3,600 centroids/subject at 720-day retention, is a few dozen
-lines of haversine).
+this scale is a few dozen lines of haversine).
 
-`dwell_ms` is the ONE place `next_ts - ts` is computed and capped (spec
-§3.3) — every derived figure in this module and its callers goes through it,
-so no consumer can get the 5.6x count-weighting bias wrong independently.
+`dwell_ms` is the ONE place `next_ts - ts` is computed and capped — every
+derived figure in this module and its callers goes through it, so no consumer
+can get the count-weighting bias wrong independently.
 """
 
 from __future__ import annotations
@@ -56,36 +54,30 @@ __all__ = [
     "trailing_fix_is_settled",
 ]
 
-# The observed 1800 s still-ceiling plus slack (spec §3.3, design/27 §1.1).
+# The observed 1800 s still-ceiling plus slack.
 #
-# The ceiling is LIFE360's own resting report cadence, NOT Nora's poll interval.
-# This comment used to cite `config.toml`'s `cadence_still_seconds` as the
-# source; that value is 60 in the deployment and 300 by default and has never
-# been 1800, so the citation was wrong and load-bearingly so — since PR #335
-# this constant is also the OPEN-STAY CLOSE GATE (`MobilityRollup.run_once`),
-# and anyone "correcting" it to track `cadence_still_seconds` would set it near
-# 60 s and recreate the fragmentation design/27 §1.3 records: 3,132 stays at a
-# 30 min median where a clean re-derive gives 1,399 at 65 min.
+# The ceiling is LIFE360's own resting report cadence, NOT Nora's poll interval
+# (`config.toml`'s `cadence_still_seconds` is 60 in the deployment and 300 by
+# default). This constant is also the OPEN-STAY CLOSE GATE
+# (`MobilityRollup.run_once`): tracking `cadence_still_seconds` would set it
+# near 60 s and fragment stays (many short stays instead of one clean one).
 #
 # The number is bounded by measurement, not by config: inter-fix gaps between
-# two fixes of ONE stay run p90 1,805 s / p99 1,828 s over 41 live days, so
-# 1,900 s sits ~1.2 min above the p99 and closes a stay on the clock for 0.61%
-# of within-stay gaps. Re-measure that distribution before moving it.
+# two fixes of ONE stay run p90 1,805 s / p99 1,828 s, so 1,900 s sits ~1.2 min
+# above the p99 and closes a stay on the clock for under 1% of within-stay
+# gaps. Re-measure that distribution before moving it.
 DWELL_CAP_MS = 1_900_000
 
-# The batch-split threshold for `_chunk_by_gap` (rollup Speed 1) — how long a
-# gap between two consecutive fixes must be before they are treated as
-# SEPARATE visits rather than one continuous presence. Deliberately a
-# CROSS-DAY span, NOT the same 31.7-min `DWELL_CAP_MS` dwell ceiling:
-# Life360's resting cadence is one fix every 10-55 minutes, so a subject
-# who stays home all day (WFH) produces fixes 30+ minutes apart that a
-# 31.7-min split would carve into dozens of sub-min-dwell fragments — the
-# production shape that left miles_novak with 195 home stays instead of one
-# 14.7h stay (2026-09-05 live-data finding). A 12h gap separates genuine
-# day-to-day returns (the original reason the split exists) while keeping
-# an all-day home presence in ONE chunk. `dwell_ms`'s own cap stays
-# `DWELL_CAP_MS` — that is a still-ceiling for how long a single fix's
-# position may be credited, a different job from batch partitioning.
+# The batch-split threshold for `_chunk_by_gap` — how long a gap between two
+# consecutive fixes must be before they are treated as SEPARATE visits rather
+# than one continuous presence. Deliberately a CROSS-DAY span, NOT the
+# `DWELL_CAP_MS` dwell ceiling: Life360's resting cadence is one fix every
+# 10-55 minutes, so a subject who stays home all day produces fixes 30+
+# minutes apart that a 31.7-min split would carve into dozens of sub-min-dwell
+# fragments instead of one long stay. A 12h gap separates genuine day-to-day
+# returns while keeping an all-day home presence in ONE chunk. `dwell_ms`'s own
+# cap stays `DWELL_CAP_MS` — that is a still-ceiling for how long a single
+# fix's position may be credited, a different job from batch partitioning.
 CHUNK_GAP_MS = 12 * 3_600_000
 
 _MINUTES_PER_DAY = 1440.0
@@ -94,13 +86,13 @@ _MINUTES_PER_DAY = 1440.0
 def circular_mean_minute(minutes: list[float]) -> float:
     """The circular mean of local time-of-day values (each 0..1439.999),
     as minutes-since-midnight — Tier 3's typical-arrival/departure stat
-    (design/27 §4, issue #6). An ARITHMETIC mean of 23:50 and 00:10 gives
+    An ARITHMETIC mean of 23:50 and 00:10 gives
     12:00, which is nonsense for a clock value; treating each minute as an
     angle on a 24h circle and averaging the unit vectors gives ~00:00,
     correctly.
 
     Callers must pass a non-empty list — every call site accumulates from
-    at least one closed stay by construction (Task 10), so this is not a
+    at least one closed stay by construction, so this is not a
     boundary this pure function needs to guard."""
     angles = [m / _MINUTES_PER_DAY * 2 * math.pi for m in minutes]
     sin_sum = sum(math.sin(a) for a in angles)
@@ -122,16 +114,15 @@ def robust_z_score(
     min_mad: float = 0.0,
 ) -> float | None:
     """How anomalous `value` is against `history`'s median/MAD — Tier 3's
-    anomaly signal (design/27 §4, issue #6: "still at work at 23:00, p99
-    for her"). Robust (median/MAD, not mean/stddev) because a single prior
-    anomaly must not drag the baseline toward itself the way a mean would.
+    anomaly signal ("still at work at 23:00, p99 for her"). Robust (median/MAD, not mean/stddev)
+    because a single prior anomaly must not drag the baseline toward itself the way a mean would.
 
     `None` — never `0.0` — below `min_samples` or when every historical
     value is identical (MAD == 0): fail-closed, matching `label_place`'s
     own posture that missing evidence is a missing claim, not a defaulted
     one.
 
-    `min_mad` floors the MAD (design/27 §1.3): a baseline whose values
+    `min_mad` floors the MAD: a baseline whose values
     happen to agree to within seconds is not evidence that a deviation of
     seconds is abnormal. Without a floor, `presence_place_rhythm` MADs of
     500-5,000 ms against ~30-minute medians tripped |z| >= 3 on a two-second
@@ -170,14 +161,14 @@ def dwell_ms(ts: int, next_ts: int | None, cap_ms: int = DWELL_CAP_MS) -> int:
 
 
 def derive_speed_kmh(a: RawFix, b: RawFix) -> float | None:
-    """Speed between two consecutive fixes, km/h — Tier 5's ground truth
-    (design/27 §4, issue #6). Life360's own `speed_kmh` (on the stored
+    """Speed between two consecutive fixes, km/h — Tier 5's ground truth.
+    Life360's own `speed_kmh` (on the stored
     fix, never read here) is only 14.7% filled and must never stand in
     for this.
 
     `None` when `b.ts <= a.ts` — a non-positive elapsed time has no
-    speed, and out-of-order/duplicate-timestamp fixes are a measured,
-    rare property of the live corpus (design/27 §1: 1 in 20,156 fixes)."""
+    speed, and out-of-order/duplicate-timestamp fixes are a rare
+    property of the live corpus."""
     dt_ms = b.ts - a.ts
     if dt_ms <= 0:
         return None
@@ -188,8 +179,8 @@ def derive_speed_kmh(a: RawFix, b: RawFix) -> float | None:
 
 def edit_distance(a: tuple[str, ...], b: tuple[str, ...]) -> int:
     """Classic Levenshtein distance over two corridor address sequences —
-    Tier 5's trip-similarity metric (design/27 §4, issue #6: "cluster
-    trips by address-sequence edit distance"). Hand-rolled, O(len(a) *
+    Tier 5's trip-similarity metric (trips cluster by
+    address-sequence edit distance). Hand-rolled, O(len(a) *
     len(b)) — corridor sequences are short (a handful of road names per
     trip), matching `cluster_places`'s own "trivial at this scale, no
     scipy" precedent."""
@@ -221,10 +212,9 @@ def best_corridor_match(
 
     This lives in the domain, not in either store, because BOTH
     `MobilityStore` implementations have to answer `existing_corridor`
-    identically and they previously did not: each carried its own copy of
-    this loop, `SqlMobilityStore` resolving a tie on whatever order
-    Postgres happened to return its heap in and `FakeMobilityStore` on dict
-    insertion order (final whole-branch review, Important #3). Two
+    identically: a per-store copy of this loop would resolve a tie on
+    whatever order Postgres returns its heap in (`SqlMobilityStore`) or on dict
+    insertion order (`FakeMobilityStore`). Two
     corridors equidistant from a new trip's sequence is routine, not
     exotic, at `corridor_max_edit_distance=2` over short sequences, and
     resolving it differently on different days splits one real route's
@@ -248,7 +238,7 @@ def best_corridor_match(
 @dataclass(frozen=True)
 class RawFix:
     """One accuracy/wire_state-filtered fix, ts-ascending as segmentation
-    requires — filtering and ordering are `MobilityStore`'s job (Task 6);
+    requires — filtering and ordering are `MobilityStore`'s job;
     this type is deliberately minimal so domain tests do not need a full
     `PresenceFix`/`WireState` roundtrip."""
 
@@ -256,14 +246,12 @@ class RawFix:
     ts: int
     lat: float
     lng: float
-    # Tier 5 (design/27 §4, issue #6): Life360's own address label,
-    # 100% filled (design/27 §1) — the corridor-identity input. `None`
-    # only when the store's own filter admits a row Life360 sent with no
-    # address (rare; `extract_trips`, Task 4, drops it from the corridor
-    # sequence rather than guessing).
+    # Tier 5: Life360's own address label — the corridor-identity input.
+    # `None` only when the store's own filter admits a row Life360 sent with no
+    # address (rare; `extract_trips` drops it from the corridor sequence
+    # rather than guessing).
     address: str | None = None
-    # Trip settlement (design/27 §4, 2026-08-20 trip-settlement design):
-    # Life360's own per-fix device signal, 100% filled — the PRIMARY
+    # Trip settlement: Life360's own per-fix device signal — the PRIMARY
     # input for deciding whether a trailing movement group is still
     # ongoing. `None` only when the store's own filter admits a row
     # with no reading; `extract_trips` falls back to a time-based check
@@ -280,7 +268,7 @@ class Stay:
     `radius_m` of a running centroid for at least `min_dwell_ms`.
 
     `lat`/`lng` are the dwell-weighted centroid, not a simple mean — a fix
-    that held for 20 minutes counts 20x a fix that held for 1 (spec §3.3).
+    that held for 20 minutes counts 20x a fix that held for 1 (`dwell_ms`).
     `ended_ts - started_ts` IS the stay's total dwell to within the last
     fix's own (zero, no-lookahead) contribution — the two are equal because
     dwell only ever gets CAPPED across a gap that would itself have broken
@@ -296,12 +284,11 @@ class Stay:
     lng: float
     radius_m: float
     fix_count: int
-    # Issue #10 option 1 (derived-place address labels): the MODE of this
-    # stay's fixes' `address` — Life360's own free place string, already
-    # 100% filled (design/27 §1) — chosen once at segmentation time via
-    # `mode_address` below (most frequent non-None, first occurrence on a
+    # Derived-place address label: the MODE of this
+    # stay's fixes' `address` — Life360's own free place string — chosen once at segmentation time
+    # via `mode_address` below (most frequent non-None, first occurrence on a
     # tie, `None` when every fix lacked an address). This is the in-memory
-    # input for the rollup's place-label FALLBACK (issue #10): the Google
+    # input for the rollup's place-label FALLBACK: the Google
     # geocode cache stays canonical whenever it has a hit, and this field
     # only fills the gap when it does not. Deliberately NOT persisted —
     # `presence_stays` has no address column, so a stay re-read from the
@@ -309,25 +296,25 @@ class Stay:
     # addresses from its own segmentation output instead of trusting the
     # roundtrip.
     address: str | None = None
-    # Tier 3 (design/27 §4, issue #6): set once this stay's centroid is
+    # Tier 3: set once this stay's centroid is
     # found inside an existing home/work `presence_derived_places` row —
     # `MobilityRollup._reconcile_places` (DEC-190) is the only writer. `None`
     # means either "not yet checked" or "outside every labelled place" —
     # the two are indistinguishable here on purpose, since a stay that is
-    # outside every place today may fall inside one created LATER (Task 10's
-    # backfill step handles that case going forward, not this field).
+    # outside every place today may fall inside one created LATER (a backfill
+    # step handles that case, not this field).
     place_id: int | None = None
 
 
 @dataclass(frozen=True)
 class Trip:
-    """One movement span between stays (design/27 §4, issue #6) — the
+    """One movement span between stays — the
     complement of `Stay`: fixes NOT absorbed into any stay-forming group.
     `distance_m`/`avg_speed_kmh` are derived from the trip's OWN fixes
     (`derive_speed_kmh` pairwise, summed), never from Life360's
     `speed_kmh`. `corridor` is the deduplicated address sequence — the
-    corridor-CLUSTERING input (Task 6); `corridor_id` is set once
-    clustered (Task 8), `None` until then, the same nullable-then-filled
+    corridor-CLUSTERING input; `corridor_id` is set once
+    clustered, `None` until then, the same nullable-then-filled
     shape `Stay.place_id` uses."""
 
     subject_id: str
@@ -375,18 +362,16 @@ def trailing_fix_is_settled(
     last: RawFix, *, now_ms: int, settled_seconds: float
 ) -> bool:
     """Does `last` — the newest fix of a trailing, still-undecided group —
-    say that group has stopped moving? (The 2026-08-20 trip-settlement
-    design's `_is_settled`, §2.2.)
+    say that group has stopped moving?
 
     `is_driving is True` is Life360 saying movement is ongoing, so no
     amount of elapsed wall-clock settles it. `False` is Life360 saying it
     stopped, which settles immediately. `None` is **no reading at all** —
-    a nullable column, and the real state of every historical fix and
-    anything Life360 omits the flag on — and the only honest fallback
-    there is the same quiet-boundary clock Tier 1 already uses for a
+    a nullable column, and the real state of any fix Life360 omits the flag on — and the only
+    honest fallback there is the same quiet-boundary clock Tier 1 already uses for a
     stay's arrival. A `None` fix must never be treated as settled just
-    because it isn't `True`: that is the original fragmentation bug with
-    the signal simply absent.
+    because it isn't `True`: that is the fragmentation bug with the signal
+    simply absent.
 
     Covers **gate 1 only** — the `is_driving`/`settled_seconds` check — of
     the two gates `run_once` combines to decide whether a trailing group
@@ -421,11 +406,10 @@ def extract_trips(
     max_trip_duration_seconds: float | None = None,
 ) -> tuple[list[Trip], list[RawFix]]:
     """The movement fixes NOT covered by any CLOSED stay, grouped into
-    trips — Tier 5's segmentation counterpart to `segment_stays` (design/27
-    §4, issue #6).
+    trips — Tier 5's segmentation counterpart to `segment_stays`.
 
     `fixes` and `closed_stays` come from the SAME batch `segment_stays`
-    already processed this cycle (`nora.analytics.rollup`'s Speed 1) —
+    already processed this cycle (`nora.analytics.rollup`) —
     `closed_stays` marks the ranges to EXCLUDE, not re-derive.
     `open_stay_started_ts`, when not `None`, excludes every fix from that
     point onward too: a real stay boundary was found, so the trip
@@ -437,17 +421,14 @@ def extract_trips(
     When `open_stay_started_ts` is `None` — no stay boundary was found
     at all this cycle, meaning the trailing group's fate is genuinely
     undetermined — the trailing group is held back rather than finalized
-    unless `now_ms` says otherwise (2026-08-20 trip-settlement design,
-    §2.2/§2.3): settled when its last fix's `is_driving` is `False`, or
+    unless `now_ms` says otherwise: settled when its last fix's `is_driving` is `False`, or
     (when `is_driving is None`) once `settled_seconds` has elapsed since
     that fix, or unconditionally once `max_trip_duration_seconds` is
     exceeded (the stuck-signal safety valve). Returns `(trips,
     held_back)` — `held_back` carries the undecided tail's own fixes so
     the caller can hold the watermark back rather than losing them.
     `now_ms=None` (the default, what a non-final chunk passes) skips the
-    settlement check entirely and reproduces the ORIGINAL always-flush
-    behavior byte-for-byte — this is what keeps non-final chunks and
-    every existing caller unaffected."""
+    settlement check entirely and always flushes the trailing group."""
     if not fixes:
         return [], []
     in_stay_ranges = [(s.started_ts, s.ended_ts) for s in closed_stays]
@@ -485,13 +466,10 @@ def extract_trips(
                     # Fail CLOSED, not open: `settled_seconds or 0.0` would
                     # make an unsupplied `settled_seconds` settle an
                     # `is_driving=None` tail INSTANTLY (elapsed since
-                    # basically anything is `>= 0`), silently reintroducing
-                    # the original fragmentation bug for exactly the fixes
-                    # this fallback exists to protect. `inf` means "never
-                    # sufficient" instead. No current caller actually omits
-                    # `settled_seconds` while supplying `now_ms` (both real
-                    # call sites always pass both together), so this is
-                    # belt-and-braces, not a behavior change.
+                    # basically anything is `>= 0`), fragmenting trips for
+                    # exactly the fixes this fallback exists to protect.
+                    # `inf` means "never sufficient" instead. Callers pass
+                    # both together, so this is belt-and-braces.
                     settled_seconds=(
                         settled_seconds if settled_seconds is not None
                         else float("inf")
@@ -518,48 +496,35 @@ def _trip_neighbors(i: int, trips: list[Trip], max_edit_distance: int) -> list[i
 def cluster_trips(
     trips: list[Trip], *, max_edit_distance: int, min_samples: int
 ) -> list[list[Trip]]:
-    """DBSCAN over trip corridor sequences, edit-distance metric
-    (design/27 §4, issue #6). Same algorithm shape as `cluster_places`
+    """DBSCAN over trip corridor sequences, edit-distance metric.
+
+    Same algorithm shape as `cluster_places`
     (noise points below `min_samples` are DROPPED, never a singleton
-    cluster), deliberately NOT sharing code with it — a separate,
-    parallel implementation (task 6's own brief): `cluster_places` is
-    independently verified against 70,000 randomized point sets, and
-    refactoring it into a generic metric-parameterized version under this
-    plan's time budget risks that verification for the ~20 lines it would
-    save (CLAUDE.md's own "three similar lines is better than a premature
-    abstraction").
+    cluster), deliberately NOT sharing code with it: a parallel
+    implementation costs ~20 lines, and a generic metric-parameterized
+    version would put `cluster_places`'s verification at risk.
 
     **Callers MUST hold out trips with an empty `corridor` before calling
     this.** An address-less trip (every fix in its group had no `address`)
     is NOT harmlessly self-segregating: `edit_distance((), x) == len(x)`,
     so an empty sequence is within a typical `max_edit_distance` of ANY
     short real corridor and this function will legitimately put it in the
-    same cluster as three real, named trips. What happens next depends on
-    input order and is wrong both ways round — judging the cluster by its
-    first trip discards a whole real cluster when that trip is the empty
-    one, and contaminates a real corridor's sample count and speed
-    percentiles when it is not (it was reproduced in both directions by a
-    test deleted in the 2026-10 PII scrub with its real traces; this
-    docstring previously claimed the opposite and was simply false).
+    same cluster as three real, named trips.
+    What happens next depends on input order and is wrong both ways round —
+    judging the cluster by its first trip discards a whole real cluster when
+    that trip is the empty one, and contaminates a real corridor's sample
+    count and speed percentiles when it is not.
 
-    Tier 5's own caller enforces the hold-out at the QUERY:
-    `MobilityStore.unclustered_named_trips_for_subject` — the pool
-    `MobilityRollup._record_corridors` clusters — filters
-    `jsonb_array_length(sequence) > 0`, so an address-less trip never
-    reaches here at all and ends its life with `corridor_id` NULL, the
-    honest record of "no address, so no route". A future caller sourcing
-    trips any other way owes itself the same filter.
+    The one caller, `MobilityRollup._derive_corridors`, enforces the hold-out
+    (it clusters only trips with a non-empty `corridor`), so an address-less
+    trip ends with `corridor_id` NULL, the honest record of "no address, so no
+    route". Any other caller owes the same filter.
 
-    Checked by hand against the same three usual hand-rolled-DBSCAN
-    failure modes `cluster_places`'s own docstring names (a border point
-    left unlabeled instead of folded into its core point's cluster; the
-    expansion loop failing to re-visit and relabel a point marked noise
-    before its reaching core point was discovered; non-contiguous or
-    merged cluster ids across 3+ clusters) —
-    `test_cluster_trips_three_clusters_with_border_points_and_noise`
-    reproduces all three in one fixture and was hand-verified against a
-    deliberately-reintroduced version of the noise-relabelling bug before
-    being committed."""
+    The usual hand-rolled-DBSCAN failure modes `cluster_places`'s own
+    docstring names (a border point left unlabeled instead of folded into its
+    core point's cluster; the expansion loop failing to re-visit and relabel a
+    point marked noise before its reaching core point was discovered;
+    non-contiguous or merged cluster ids across 3+ clusters) apply here too."""
     n = len(trips)
     labels: list[int | None] = [None] * n  # None = unvisited; -1 = noise
     cluster_id = 0
@@ -598,7 +563,7 @@ class SegmentationResult:
     input broke their radius test, so nothing can extend them further.
     `open_stay` is the trailing group, if any: it is NOT yet known whether
     the subject is still there, so it is never itself returned as a `Stay`
-    committed to storage. The ROLLUP (Task 7) decides whether an open group
+    committed to storage. The ROLLUP decides whether an open group
     is closeable this cycle — only once `settled_seconds` has elapsed since
     its last fix — which is a wall-clock decision this pure function does
     not make."""
@@ -654,8 +619,7 @@ def mode_address(values: Iterable[str | None]) -> str | None:
     the answer deterministic in both and independent of hash or heap
     order. `None` is excluded before counting, not counted as a candidate:
     an address-less fix is ABSENCE of a reading, never a value that could
-    win or force a tie (issue #10 option 1: the fallback fills labels, it
-    must not dilute them).
+    win or force a tie (the fallback fills labels, it must not dilute them).
 
     One implementation on purpose: this same rule names a `Stay` (from its
     fixes) and a derived place (from its stays' `Stay.address` values) —
@@ -713,7 +677,7 @@ def _close(
         started_ts=group[0].ts, ended_ts=ended_ts,
         lat=lat, lng=lng, radius_m=_max_radius_m(group, lat, lng),
         fix_count=len(group) + len(wander),
-        # Issue #10 option 1: the group's mode Life360 address rides on the
+        # The group's mode Life360 address rides on the
         # stay. The fixes that produced it are behind the stay-side
         # watermark once this stay commits, so segmentation is the only
         # moment the rollup can ever see their addresses.
@@ -726,8 +690,7 @@ def collapse_duplicate_fixes(fixes: list[RawFix]) -> list[RawFix]:
 
     A person in two Life360 circles is recorded once per circle: the same
     reading, same timestamp, same position, two `presence_fixes` rows (the
-    store's key is `(circle, member, ts)`). Measured 2026-09-28 on one
-    subject's 27 Sep: 1,290 rows, 821 distinct readings. The copies carry no
+    store's key is `(circle, member, ts)`). The copies carry no
     information, and they defeat `segment_stays`' spike rule outright — a
     GPS spike is always followed by its own copy, so «the next fix is back
     inside the radius» is never true and every spike ended the stay. They
@@ -848,26 +811,26 @@ def segment_stays(
     fixes: list[RawFix], *, subject_id: str, person_id: str, circle_id: str,
     radius_m: float, min_dwell_ms: int, wander_radius_m: float | None = None,
 ) -> SegmentationResult:
-    """Stay-point detection (spec §3.2): roll consecutive fixes into a
+    """Stay-point detection: roll consecutive fixes into a
     running group while every fix seen so far stays within `radius_m` of the
     group's dwell-weighted centroid; the fix that would break that bound
     starts a new group instead. A group closes into a `Stay` only once its
-    span reaches `min_dwell_ms` (spec §3.2's inherited 120m/600s defaults —
-    see spec §7.1: neither is measured, both are config knobs).
+    span reaches `min_dwell_ms` (the 120m/600s defaults are inherited, not
+    measured; both are config knobs).
 
     `fixes` must already be ts-ascending and pre-filtered (accuracy_m <=
-    100, wire_state == 'live' — the store's job, Task 6); this function does
+    100, wire_state == 'live' — the store's job); this function does
     not re-filter, per "interpret once."
 
-    `wander_radius_m` (audit 2026-09-28, measured on live fixes): a fix
+    `wander_radius_m`: a fix
     outside `radius_m` but within `wander_radius_m` of the group's centroid,
     and not reporting `is_driving=True`, is WANDERING — it extends the stay
     in time but never moves its position or radius. Resting fixes at one real
-    stop spread up to 388 m from its centre (Life360 reports `accuracy_m=50`
-    for all of them, so the accuracy gate filters none): with only the 120 m
-    test, a two-hour stop at a restaurant district never became a stay, and
-    its minutes were written as a string of 10-30 m "trips". `None` keeps
-    the plain radius test.
+    stop can spread far from its centre while Life360 reports the same
+    `accuracy_m` for all of them, so the accuracy gate filters none: with
+    only the `radius_m` test, a long stop in a dense area never becomes a
+    stay and its minutes are written as a string of short "trips". `None`
+    keeps the plain radius test.
     """
     if not fixes:
         return SegmentationResult(closed=(), open_stay=None)
@@ -901,29 +864,25 @@ def segment_stays(
             wander.append(candidate)
             i += 1
             continue
-        # A SINGLE-FIX SPIKE does not end a stay (audit 2026-09-27). At the
-        # measured 50 m median / 100 m admitted accuracy, one scattered fix
-        # lands outside a 120 m radius routinely — `revalidate_stay_params`
-        # found `max_radius_seen` pinned to the candidate radius at every
-        # radius tried, i.e. scatter fills the bound. Before this, one such
-        # fix closed the stay, the spike became a one-fix group dropped by
-        # `min_dwell_ms`, and the next fix opened a SECOND stay at the same
-        # place: one evening at home became two stays with a hole between
-        # them, and every duration/arrival statistic above it read the hole.
+        # A SINGLE-FIX SPIKE does not end a stay. At typical admitted
+        # accuracy (50 m median, 100 m cap), one scattered fix lands outside
+        # the radius routinely: scatter fills the bound. Closing on it would
+        # drop the spike as a one-fix group and open a SECOND stay at the same
+        # place, leaving a hole inside one real stay that every
+        # duration/arrival statistic above it would read.
         # A spike is a candidate outside the radius whose NEXT fix is back
         # inside it; it is skipped (not merged into the centroid) and the
         # group continues. Two consecutive outside fixes are a departure, and
         # so is a return that comes after more than `DWELL_CAP_MS` of
         # silence: the bridge only spans a gap the resting cadence itself
-        # could produce (§1.1's p99 within-stay gap is 30.5 min), never an
+        # could produce (the p99 within-stay gap is ~30.5 min), never an
         # unobserved absence of hours.
         if i + 1 < len(fixes):
             after = fixes[i + 1]
             bridge = dwell_ms(group.members[-1].ts, after.ts)
-            # Each gap bounded on its own (independent review 2026-09-28):
-            # bounding the two together by one DWELL_CAP_MS made the rule
-            # dead at any resting cadence slower than ~16 min, i.e. at rest,
-            # exactly where spikes are.
+            # Each gap is bounded on its own: bounding the two together by one
+            # DWELL_CAP_MS would make the rule dead at any resting cadence
+            # slower than ~16 min, i.e. at rest, exactly where spikes are.
             if (
                 candidate.ts - fixes[i - 1].ts <= DWELL_CAP_MS
                 and after.ts - candidate.ts <= DWELL_CAP_MS
@@ -987,24 +946,21 @@ def _neighbors(i: int, stays: list[Stay], eps_m: float) -> list[int]:
 def cluster_places(
     stays: list[Stay], *, eps_m: float, min_samples: int
 ) -> list[list[Stay]]:
-    """DBSCAN over stay centroids, haversine metric (spec §3.4). Hand-rolled
-    rather than scikit-learn: at 720-day retention a subject has ~3,600
-    stays, so the O(n^2) neighbor search below is trivial, and pulling in
-    scipy for one function would be the opposite of YAGNI. Noise points
+    """DBSCAN over stay centroids, haversine metric. Hand-rolled
+    rather than scikit-learn: at this scale the O(n^2) neighbor search below
+    is trivial, and pulling in scipy for one function would be the opposite
+    of YAGNI. Noise points
     (fewer than `min_samples` neighbors, and not reachable from a core
     point) are DROPPED, never returned as singleton clusters — DBSCAN's own
     definition, and the reason a subject with too few stays anywhere yields
-    no places at all rather than a low-confidence one (spec §3.4, §3.5).
+    no places at all rather than a low-confidence one.
 
-    Verified against two independently-written DBSCAN references (a
-    canonical BFS worklist and a union-find over core points with border
-    attachment) across 70,000 randomized point sets before being
-    transcribed here — the three usual hand-rolled-DBSCAN failure modes
+    Avoids the three usual hand-rolled-DBSCAN failure modes
     (a border point left unlabeled instead of folded into its core
     point's cluster; the expansion loop failing to re-visit and relabel a
     point that was marked noise before its reaching core point was itself
-    discovered; non-contiguous or merged cluster ids across 3+ clusters)
-    did not reproduce. `labels[j] == -1` catches exactly that
+    discovered; non-contiguous or merged cluster ids across 3+ clusters).
+    `labels[j] == -1` catches exactly that
     noise-to-border reclassification: a point provisionally marked noise
     by the outer loop (fewer than `min_samples` neighbors of its own) gets
     folded into whichever cluster later reaches it as a border point,
@@ -1051,23 +1007,20 @@ _DAY_MS = 86_400_000
 # `is_home`'s floor on `night_dwell / total_dwell`. NOT 0.5 — see the long
 # comment on `is_home` in `label_place` below for why 0.5 is mathematically
 # unreachable for any realistic overnight-plus-some-daytime home pattern and
-# how 0.3 was chosen (safety margin above the real/synthetic aaron_larsen
-# ambiguous cases, both ~0.22-0.24, ~0.235 at the high end).
+# how 0.3 was chosen (a safety margin above the ambiguous ~0.22-0.24 shares).
 _HOME_NIGHT_SHARE_MIN = 0.3
 
-# `is_home`'s ABSOLUTE distinct-night gate (2026-09-05 total-solution fix).
-# The share floor above is mathematically unreachable for WFH / stay-at-home
-# subjects: they are home all day, so `total_dwell` grows with every hour of
+# `is_home`'s ABSOLUTE distinct-night gate. The share floor above is mathematically unreachable for
+# WFH / stay-at-home subjects: they are home all day, so `total_dwell` grows with every hour of
 # daytime presence while the night window (1:00-5:00) is capped at 4h/day —
 # night_share tops out at ~0.167 for a pure stay-at-home, far below 0.3.
-# Real corpus (2026-09-05): miles_novak 29 nights / delia_lindberg 24 / aaron_larsen 18 /
-# grant_carver 19 all fail the share gate but are genuine homes; delia_lindberg's
-# Thailand trip cluster has only 4 nights and must NOT label. 8 sits between
-# the false-positive floor (4) and the weakest genuine home (18).
+# Genuine homes of such subjects show 18-29 distinct nights yet fail the share
+# gate, while a one-off trip cluster has only ~4 nights and must NOT label. 8
+# sits between the false-positive floor (4) and the weakest genuine home (18).
 _HOME_MIN_NIGHTS_ABS = 8
 
-# `is_work`'s floor on absolute work-window dwell (spec gap: a share alone
-# has no notion of scale). One workday's worth of dwell — comfortably above
+# `is_work`'s floor on absolute work-window dwell (a share alone has no
+# notion of scale). One workday's worth of dwell — comfortably above
 # the ~2-3h a handful of incidental weekday-daytime visits accumulate, and
 # comfortably below any real workplace's multi-week total.
 _MIN_WORK_DWELL_MS = 8 * 3_600_000
@@ -1075,10 +1028,10 @@ _MIN_WORK_DWELL_MS = 8 * 3_600_000
 
 @dataclass(frozen=True)
 class LabelResult:
-    """`kind` is `'home'` / `'work'` / `'unlabeled'` — never a guess (spec
-    §3.5, Acceptance Criterion 9). `most_recent_support_ts` is the latest
+    """`kind` is `'home'` / `'work'` / `'unlabeled'` — never a guess.
+    `most_recent_support_ts` is the latest
     local night-or-weekday timestamp that contributed to a non-unlabeled
-    kind; `None` for `unlabeled`. It exists so the ROLLUP (Task 7) can
+    kind; `None` for `unlabeled`. It exists so the ROLLUP can
     re-check freshness cheaply against EXISTING stored places without
     recomputing shares from scratch every cycle — this function itself
     always recomputes from the full stay list it is given."""
@@ -1136,7 +1089,7 @@ def _windowed_dwell(
 def hour_of_week(ts: int, tz_name: str) -> int:
     """Which local hour-of-week bucket ONE moment falls in (0..167, Monday
     00:00 = 0) — the single-timestamp sibling of `hour_of_week_bins`, and
-    Tier 5's speed-percentile grouping key (design/27 §4, issue #6).
+    Tier 5's speed-percentile grouping key.
 
     A trip is bucketed by its `started_ts` alone, deliberately: unlike a
     stay, whose whole point is the dwell it spreads across buckets, a
@@ -1154,7 +1107,7 @@ def hour_of_week(ts: int, tz_name: str) -> int:
 
 def hour_of_week_bins(started_ts: int, ended_ts: int, tz_name: str) -> dict[int, int]:
     """A stay's dwell, split into local hour-of-week buckets (0..167,
-    Monday 00:00 = 0) — Tier 3's occupancy input (design/27 §4, issue #6).
+    Monday 00:00 = 0) — Tier 3's occupancy input.
 
     Walks one LOCAL clock-hour at a time, like `_windowed_dwell`'s day-walk
     — `ended_ts - started_ts` already equals the stay's own dwell by
@@ -1181,92 +1134,61 @@ def label_place(
     stays: list[Stay], *, now_ms: int, tz_name: str, min_nights: int,
     min_weekdays: int, label_freshness_days: int,
 ) -> LabelResult:
-    """Fail-closed, recency-gated labelling (spec §3.5). Both shares are
+    """Fail-closed, recency-gated labelling. Both shares are
     TIME-WEIGHTED overlap with a fixed local-clock window, never a count of
     stays — a cluster's `home`/`work` status is about how long someone
     dwelled there at which hours, not how many separate visits it took.
 
     A label additionally requires its most recent supporting night/weekday
     to fall within `label_freshness_days` of `now_ms` — without this, the
-    rule is a pure function of all-time totals and `max_age_seconds`
-    (rollup, Task 7) would have nothing to recompute at zero lag (spec §4.2,
-    the bug an internal audit caught before implementation).
+    rule is a pure function of all-time totals and the rollup's
+    `max_age_seconds` would have nothing to recompute at zero lag.
 
-    Independently verified by hand-trace before transcription (Task 4
-    brief): the day-walk in `_windowed_dwell` correctly attributes an
-    overnight stay's night-window overlap to the LATER calendar day (a
-    23:00->07:00 stay's 01:00-05:00 overlap lands on the second day, not
-    the first); the weekday gate in `_windowed_dwell` SKIPS a weekend day's
-    window computation entirely rather than computing and discarding it.
+    The day-walk in `_windowed_dwell` attributes an overnight stay's
+    night-window overlap to the LATER calendar day (a 23:00->07:00 stay's
+    01:00-05:00 overlap lands on the second day, not the first); the weekday
+    gate SKIPS a weekend day's window computation entirely rather than
+    computing and discarding it.
 
-    **Why `is_home`'s floor is `_HOME_NIGHT_SHARE_MIN` (0.3), not 0.5
-    (task 13b fix)**: `night_share`'s numerator is capped at 4h (the night
-    window's own width) no matter how long someone actually stays, while
-    its denominator (`total_dwell`) grows with every hour of ANY dwell at
-    the cluster — so `night_share` for someone truly home overnight falls
-    as their honest daytime/evening presence there grows, not as their
-    "home-ness" falls. A 0.5 floor requires an overnight stay to be 8h
-    (4 / 0.5) or SHORTER — unreachable for the common case of someone home
-    22:00-08:00 (10h, `night_share = 0.4`) or longer, which is most people,
-    most nights. `_HOME_NIGHT_SHARE_MIN = 0.3` makes clean overnight
-    patterns up to `4 / 0.3 ≈ 13.3h` reachable while staying comfortably
-    above the two "genuinely ambiguous" reference points this module is
-    measured against: `aaron_larsen`'s real cell (`night_share ≈ 0.215`,
-    `design/27` §2/§3) and the equivalent synthetic fixture immediately
-    below (`night_share ≈ 0.235`) — both carry substantial dwell in the
-    working-window too, which is exactly the case fail-closed labelling
-    exists to catch, and both stay excluded with room to spare
-    (0.3 - 0.235 = 0.065 margin, not a razor's edge).
+    **Why `is_home`'s floor is `_HOME_NIGHT_SHARE_MIN` (0.3), not 0.5**:
+    `night_share`'s numerator is capped at 4h (the night window's own width)
+    no matter how long someone actually stays, while its denominator
+    (`total_dwell`) grows with every hour of ANY dwell at the cluster — so
+    `night_share` for someone truly home overnight falls as their honest
+    daytime/evening presence there grows, not as their "home-ness" falls. A
+    0.5 floor requires an overnight stay to be 8h (4 / 0.5) or SHORTER —
+    unreachable for the common case of someone home 22:00-08:00 (10h,
+    `night_share = 0.4`) or longer. 0.3 makes clean overnight patterns up to
+    `4 / 0.3 ≈ 13.3h` reachable while staying above the genuinely ambiguous
+    cells (`night_share ≈ 0.22-0.235`), which carry substantial dwell in the
+    working window too — exactly the case fail-closed labelling exists to
+    catch.
 
-    A denominator change (scoping `total_dwell` to an extended
-    "plausible home span", e.g. 20:00-10:00, rather than all 24h) was
-    investigated and rejected: across every window width tried (4h through
-    24h), `aaron_larsen`'s share stayed HIGHER than a genuine full-time
-    WFH subject's `delia_lindberg`-shaped share at every width — `delia_lindberg`'s
-    huge daytime dwell (WFH: home during the 09-18 working window too, not
-    just overnight) dilutes her `night_share` under ANY window that is
-    wide enough to also catch her daytime presence, while a narrower
-    window that would exclude that daytime dilution makes `aaron_larsen`'s
-    share worse (closer to 1.0), not better, because his stay is largely
-    confined to that narrower span too. No window width separates the two;
-    keeping `aaron_larsen` reliably excluded is the harder, non-negotiable
-    constraint (fail-closed labelling being wrong the other way — a real
-    home mislabelled `unlabeled` — is a far smaller cost than a genuinely
-    ambiguous cell mislabelled `home`), so the denominator is left as
-    `total_dwell` (all hours) and only the threshold moved. This is why
-    `delia_lindberg`'s real-corpus assertion in
-    `tests/unit/test_mobility_real_corpus.py` stays `xfail` — see that
-    file's `reason=` and task 13b's report for the full numeric trace.
-    Everything ruled out above is share/ratio-shaped; ONE untried
-    alternative is a genuinely different signal: an absolute distinct
-    NIGHT-DAY COUNT gate (`len(night_days)`) rather than a share of dwell
-    — `delia_lindberg`=11 nights vs. `aaron_larsen`=5 (real) / 3 (synthetic), a real
-    gap a share-based test never sees, since the day-count RATIO variant
-    (already tried) fails for the same reason the share does (synthetic
-    `aaron_larsen` attends 100% of its own observed nights, same as
-    `delia_lindberg`). Not wired in here — it would need to be conditioned on
-    the ambiguous zone specifically, or it breaks the existing 3-night
-    `min_nights` home test — left as future work, not attempted.
+    Scoping the denominator to a "plausible home span" (e.g. 20:00-10:00)
+    does not help: no window width separates an ambiguous cell from a
+    full-time WFH subject. The WFH subject's daytime dwell dilutes
+    `night_share` under any window wide enough to catch it, while a narrower
+    window pushes the ambiguous cell's share closer to 1.0. Keeping the
+    ambiguous cell excluded is the non-negotiable constraint (a real home
+    mislabelled `unlabeled` is a far smaller cost than an ambiguous cell
+    mislabelled `home`), so the denominator is `total_dwell` (all hours).
+    The WFH case is carried by the absolute distinct-night gate
+    (`_HOME_MIN_NIGHTS_ABS`) instead.
 
-    **Why `is_work` gained `_MIN_WORK_DWELL_MS` (task 13b fix)**: a share
-    (`work_share >= 0.5`) alone has no notion of scale — a location visited
-    for 7 brief stays totalling ~3h across 5 weekday afternoons can clear
-    `work_share >= 0.5` and `len(work_days) >= min_weekdays` exactly the
-    same way a real 55h/week office does. `_MIN_WORK_DWELL_MS` (8h, one
-    workday) is an absolute floor under `work_dwell` that rejects the
-    former (real corpus: `avery_walsh`'s spurious cluster tops out at
-    2.5h; `clara_lawson`'s spurious second cluster at 2.0h) while leaving
-    every genuine workplace (`grant_carver` 56.9h, `clara_lawson`'s real
-    cluster 53.6h) untouched.
+    **Why `is_work` has `_MIN_WORK_DWELL_MS`**: a share (`work_share >= 0.5`)
+    alone has no notion of scale — a location visited for 7 brief stays
+    totalling ~3h across 5 weekday afternoons can clear `work_share >= 0.5`
+    and `len(work_days) >= min_weekdays` exactly the way a real 55h/week
+    office does. `_MIN_WORK_DWELL_MS` (8h, one workday) is an absolute floor
+    under `work_dwell` that rejects the former.
 
-    The explicit `is_home and is_work` check is REACHABLE since the
-    2026-09-05 total-solution fix: `is_home`'s absolute night-days arm
-    (`len(night_days) >= _HOME_MIN_NIGHTS_ABS`) no longer shares the
-    `night_share` variable with `is_work`'s `night_share < 0.1` term, so a
-    cluster with 8+ distinct nights of small dwell AND a large weekday
-    work-window dwell can satisfy both. That genuinely ambiguous signal
-    (sleeps there most nights, works there most weekdays) fail-closes to
-    `unlabeled` — never pick one arbitrarily."""
+    The explicit `is_home and is_work` check is REACHABLE: `is_home`'s
+    absolute night-days arm (`len(night_days) >= _HOME_MIN_NIGHTS_ABS`) does
+    not share the `night_share` variable with `is_work`'s `night_share < 0.1`
+    term, so a cluster with 8+ distinct nights of small dwell AND a large
+    weekday work-window dwell can satisfy both. That genuinely ambiguous
+    signal (sleeps there most nights, works there most weekdays) fail-closes
+    to `unlabeled` — never pick one arbitrarily."""
     if not stays:
         return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
 
@@ -1291,7 +1213,7 @@ def label_place(
     is_home = (
         night_share >= _HOME_NIGHT_SHARE_MIN and len(night_days) >= min_nights
     ) or (
-        # Total-solution arm (2026-09-05): WFH / stay-at-home subjects can
+        # Absolute arm: WFH / stay-at-home subjects can
         # never clear the share floor (see `_HOME_MIN_NIGHTS_ABS`), so a
         # high distinct-night count is accepted as home evidence on its own.
         len(night_days) >= _HOME_MIN_NIGHTS_ABS
@@ -1304,7 +1226,7 @@ def label_place(
     )
     if is_home and is_work:
         # A cluster cannot be both — carrying substantial dwell in BOTH
-        # windows (aaron_larsen's real case) is exactly the ambiguous signal
+        # windows is exactly the ambiguous signal
         # fail-closed labelling exists to catch. Never pick one arbitrarily.
         return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
     if is_home:
@@ -1325,7 +1247,7 @@ def label_place(
         raise RuntimeError("label_place: is_home/is_work true but no supporting day found")
     freshness_ms = label_freshness_days * _DAY_MS
     if now_ms - support > freshness_ms:
-        # The stale-label failure §4 exists to close: evidence exists but is
+        # The stale-label failure to avoid: evidence exists but is
         # too old relative to a `now_ms` that keeps moving with no new fixes.
         return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
 
@@ -1337,12 +1259,11 @@ def label_place(
 
 
 # ---------------------------------------------------------------------------
-# Place identity — DEC-190 (design/27 §3.7, ADR 0014, issue #339).
+# Place identity — DEC-190 (ADR 0014).
 # ---------------------------------------------------------------------------
 
-# Two Life360 saved places closer than this describe one place (design/27
-# §3.7: a measured duplicate pair sits 50.3 m apart, in two different circles,
-# and splits one residence's history near-evenly). The merge is deliberately
+# Two Life360 saved places closer than this describe one place (duplicates
+# in two different circles split one residence's history near-evenly). The merge is deliberately
 # NOT scoped per circle.
 TAG_MERGE_RADIUS_M = 100.0
 
@@ -1351,7 +1272,7 @@ TAG_MERGE_RADIUS_M = 100.0
 class TaggedPlace:
     """One Life360 saved place (`presence_places`) — a HUMAN-named, stable-id
     registry entry. Trusted for identity and name, never for geometry: a pin
-    in the measured corpus sits 636 m from the cluster it names."""
+    can sit hundreds of metres from the cluster it names."""
 
     circle_id: str
     place_id: str
@@ -1466,7 +1387,7 @@ def plan_places(
     min_nights: int, min_weekdays: int, label_freshness_days: int,
 ) -> list[PlannedPlace]:
     """The whole place picture for ONE subject, recomputed from its stays —
-    DEC-190's four rules in order (design/27 §3.7):
+    DEC-190's four rules in order:
 
     1. a stay within `max(tag radius, match_radius_m)` of a tagged place
        resolves to it;
@@ -1481,10 +1402,9 @@ def plan_places(
     planned place keeps the id of the stored row its stays are currently
     linked to (dwell-weighted, greedy, one row per place), with a matching
     `saved_place_id` outranking overlap and proximity within
-    `match_radius_m` as the last resort. Coordinates cannot be the key: the
-    single-slot writer this replaces moved rows onto other clusters, so a
-    stored row's position is exactly what cannot be trusted (issue #339's
-    88 mislinked stays). Overlap hands the id to the cluster that owns the
+    `match_radius_m` as the last resort. Coordinates cannot be the key: a
+    stored row's position is exactly what cannot be trusted, since rows can
+    drift onto other clusters. Overlap hands the id to the cluster that owns the
     links and gives the displaced cluster a fresh row — which is the repair.
 
     Stays in no planned place are noise (DBSCAN's own definition) and the

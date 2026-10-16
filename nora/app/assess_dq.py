@@ -1,31 +1,25 @@
 """The Assess adaptor's nightly, deterministic data-quality checks
-(design/cognition-loop/30-cognition.md §6's bullet list, in order,
-`nora.domain.assess.DQ_CHECKS`). One function per check, each a plain read
-over an `AsyncConnection` — no model, "the deterministic data-quality checks
-stay code" (30 §6) — returning a `DqCheckResult`.
+(`nora.domain.assess.DQ_CHECKS`, in that order). One function per check, each
+a plain read over an `AsyncConnection` with no model, returning a
+`DqCheckResult`.
 
-**Two checks are `not_applicable` today, honestly.** `sections_past_age_
-horizon` and `induced_line_no_aggregate` read Character and Lessons rows
-(`last_supported_at`, `reasoning = 'induced'`), and neither tier exists until
-step 8 (`70-migration.md` row 8). A check that queried a table absent from
-this deployment and reported "0 failing" would be indistinguishable from a
-check that ran and found nothing wrong; CMS's fail-closed rule (`AGENTS.md`)
-says those are different facts, so this module says so instead of guessing.
+`sections_past_age_horizon` and `induced_line_no_aggregate` always return
+`not_applicable`: they need per-section `last_supported_at` and
+`reasoning = 'induced'` rows that no table here carries. A check that queried
+an absent table and reported "0 failing" would be indistinguishable from one
+that ran and found nothing wrong; fail-closed (`AGENTS.md`) keeps those
+different facts.
 
-**`rollup_rebuild_divergence` takes both builds from its caller.** Producing
-the second build (`nora.analytics.runner.RollupRunner.rebuild(switch=False)`)
-is a real rebuild's cost (`25-rollup.md` §2's own caveat), so this module
-only DIFFS two already-computed builds; `nora.app.assess_run` decides whether
-and how often to pay for a fresh one.
+`rollup_rebuild_divergence` takes both builds from its caller. Producing the
+second build (`nora.analytics.runner.RollupRunner.rebuild(switch=False)`) costs
+a real rebuild, so this module only diffs two already-computed builds;
+`nora.app.assess_run` decides whether and how often to pay for a fresh one.
 
-**One check raising never drops the night's report.** `run_deterministic_
-checks` runs each check through `_isolated`, which catches whatever that one
-check raises and reports it as `status="error"` (the exception's type and
-message in `detail`) instead of letting it propagate — a raising check must
-not take the checks that already passed, or the checks still to run, down
-with it. `error` is its own `DqStatus`, distinct from `fail`: a check that
-never reached a verdict is not the same fact as a check that reached one and
-found a violation.
+One check raising never drops the report. `run_deterministic_checks` runs each
+check through `_isolated`, which catches whatever that check raises and
+reports it as `status="error"` (exception type and message in `detail`).
+`error` is its own `DqStatus`, distinct from `fail`: a check that never
+reached a verdict is not a check that found a violation.
 """
 
 from __future__ import annotations
@@ -61,10 +55,9 @@ def _sample(keys: Sequence[str]) -> tuple[str, ...]:
 
 
 async def cross_room_duplicate_events(conn: AsyncConnection) -> DqCheckResult:
-    """Two events of the same unit, in different rooms, with overlapping
-    intervals and the same resolved venue — one happening the design says
-    "candidates are listed for the operator, never merged by guess" (70 §5).
-    This is that list, reported nightly rather than only at write time."""
+    """Pairs of events of the same unit, in different rooms, with overlapping
+    intervals and the same resolved venue: likely one happening. Candidates
+    are listed for the operator, never merged."""
     e1 = EVENTS.alias("e1")
     e2 = EVENTS.alias("e2")
     live = ("proposed", "confirmed", "happened")
@@ -100,12 +93,10 @@ async def rollup_rebuild_divergence(
     since_ms: int, through_ms: int,
 ) -> DqCheckResult:
     """Diffs `presence_stays` between two already-built Rollup builds over
-    one window — the incremental build the deploy is running on, and a
-    from-scratch batch rebuild `nora.app.assess_run` produced for the same
-    watermark. Design 27's own measured 3.4% (25-rollup.md §2 «As built»)
-    is the number this bounds going forward; equal rows is the design's own
-    claim ("the incremental path and a batch rebuild are the same function
-    and must agree exactly")."""
+    one window: the incremental build in service and a from-scratch batch
+    rebuild produced for the same watermark. The incremental path and a batch
+    rebuild are the same function and must agree exactly; any differing row
+    is a failure."""
     if build_a is None or build_b is None:
         return DqCheckResult(
             check="rollup_rebuild_divergence", status="not_applicable",
@@ -140,8 +131,7 @@ def _epoch_ms(col: sa.ColumnElement[Any]) -> sa.ColumnElement[Any]:
 
 async def happened_place_mismatch(conn: AsyncConnection) -> DqCheckResult:
     """A `happened` event whose place differs from the Rollup outing that
-    covers its interval and people (40-register.md §5's own worked case:
-    "the `Happened` section cites the outing")."""
+    covers its interval and people."""
     events_ms = (
         sa.select(
             EVENTS.c.id, EVENTS.c.unit_id, EVENTS.c.venue_place_id, EVENTS.c.people,
@@ -183,10 +173,9 @@ async def happened_place_mismatch(conn: AsyncConnection) -> DqCheckResult:
 
 
 async def sections_past_age_horizon(conn: AsyncConnection) -> DqCheckResult:
-    """NOT_APPLICABLE until step 8: `last_supported_at`/`support_count` are
-    per-section columns on Character and Standing sections (10-tiers.md §3),
-    and neither the sectioned Character account nor per-section Standing
-    ages exist on this deployment yet (`70-migration.md` row 8)."""
+    """Always `not_applicable`: `last_supported_at`/`support_count` are
+    per-section columns on Character and Standing sections, and no per-section
+    age exists on this deployment."""
     return DqCheckResult(
         check="sections_past_age_horizon", status="not_applicable",
         detail="Character (step 8) has not shipped; no per-section age column exists yet",
@@ -194,8 +183,8 @@ async def sections_past_age_horizon(conn: AsyncConnection) -> DqCheckResult:
 
 
 async def induced_line_no_aggregate(conn: AsyncConnection) -> DqCheckResult:
-    """NOT_APPLICABLE until step 8: `induced` is a Character/Lessons-only
-    reasoning mode (10-tiers.md §4); neither tier writes a row yet."""
+    """Always `not_applicable`: `induced` is a Character/Lessons-only reasoning
+    mode and no row carries it."""
     return DqCheckResult(
         check="induced_line_no_aggregate", status="not_applicable",
         detail="Character/Lessons (step 8) have not shipped; reasoning='induced' has no writer",
@@ -203,11 +192,9 @@ async def induced_line_no_aggregate(conn: AsyncConnection) -> DqCheckResult:
 
 
 async def empty_lineage_rows(conn: AsyncConnection) -> DqCheckResult:
-    """A live event head with `lineage = {}` — every row until the Cognition
-    adaptor's write verbs state one (70-migration.md row 2, "no writer states
-    either yet"), so this check is EXPECTED to fail on every deployment before
-    step 3's writers land; it is reported so that expectation is measured,
-    not assumed, and so the day it stops being total is visible."""
+    """A live event head with `lineage = {}`: a row no Cognition write verb has
+    stated a lineage for. Expected to fail while writers leave it empty; the
+    count makes the day it stops being total visible."""
     rows = await conn.execute(
         sa.select(EVENTS.c.id).where(EVENTS.c.lineage == sa.text("'{}'::jsonb"))
     )
@@ -223,12 +210,10 @@ async def empty_lineage_rows(conn: AsyncConnection) -> DqCheckResult:
 
 async def _isolated(check: str, awaitable: Awaitable[DqCheckResult]) -> DqCheckResult:
     """Run one check's coroutine to a result, never letting it raise past
-    here. A check that raises (a query error, a connection drop, a
-    programming bug) reports `status="error"` with the exception's type and
-    message in `detail` — it must never take the rest of the night's checks,
-    or a report that already recorded other checks' verdicts, down with it
-    (AGENTS.md's Measure spine: an ERROR is never a PASS, and it must not
-    erase the PASSes that already happened)."""
+    here. A check that raises (query error, connection drop, bug) reports
+    `status="error"` with the exception's type and message in `detail`; it
+    must not take the other checks, or verdicts already recorded, down with
+    it. An ERROR is never a PASS."""
     try:
         return await awaitable
     except Exception as exc:  # noqa: BLE001 - isolate any check's failure, by design
@@ -243,9 +228,8 @@ async def run_deterministic_checks(
     rollup_builds: tuple[int, int] | None = None,
     rollup_window_ms: tuple[int, int] = (0, 0),
 ) -> tuple[DqCheckResult, ...]:
-    """Every check `nora.domain.assess.DQ_CHECKS` names, in that order — each
-    run in isolation (`_isolated`), so one check raising never drops the
-    report or the checks after it."""
+    """Every check `nora.domain.assess.DQ_CHECKS` names, in that order, each
+    run through `_isolated`."""
     build_a, build_b = rollup_builds if rollup_builds else (None, None)
     since_ms, through_ms = rollup_window_ms
     return (

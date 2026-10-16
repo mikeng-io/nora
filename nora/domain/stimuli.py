@@ -1,4 +1,4 @@
-"""Stimuli and the wake policy (design/cognition-loop/20-observe.md §3).
+"""Stimuli and the wake policy.
 
 A **stimulus** is what ingestion, the Rollup or the clock raises to wake
 cognition: `(unit, kind, ref, cues, at)`, one durable row per unit in the
@@ -12,7 +12,7 @@ consumes.
 
 **The watermark is the wake log.** Each unit's durable watermark is the
 `(through_stimulus_id, at_ms)` of its newest wake row in that mode, not a row
-updated in place (10 §8: loop state is transition rows, the current value is
+updated in place (loop state is transition rows, the current value is
 the newest). A stimulus is PENDING when it is due by the read's cutoff and not
 consumed, and consumed means `id <= through_stimulus_id AND pending_since <=
 at_ms` of that newest wake. Both bounds only ever grow — `decide` never sets
@@ -20,15 +20,15 @@ at_ms` of that newest wake. Both bounds only ever grow — `decide` never sets
 which moves forward with the clock — so «consumed by some earlier wake» and
 «consumed by the newest» are the same test, which is what lets one row carry
 the watermark. The second bound is what keeps a `self` or `time`
-stimulus due at 19:40 pending across a wake at 15:00 (20 §3: «pending only from
-its due time»).
+stimulus due at 19:40 pending across a wake at 15:00 (pending only from
+its due time).
 
 **Single-flight and cooldown are derived from durable rows.** With NO session
 hook (only a test builds such an evaluator) no session runs, so a wake is
 treated as a session that lasts `session_seconds` (a stated assumption): the
 unit is in flight until `at + session_seconds`, then cools down for
 `cooldown_seconds`. With a hook (production, `UnitView.tracked`) the assumption
-is gone, and a wake's fate is ONE durable fact (DEC-242, second review of #627).
+is gone, and a wake's fate is ONE durable fact (DEC-242).
 
 **The wake state machine (tracked wakes).** A wake written with a hook wired
 carries `tracked = true` on its own row; its outcome is at most one
@@ -52,9 +52,9 @@ single-flight), and `record_wake` re-checks that under a per-unit lock
 a `closed` outcome is refused (written `timeout`, no carries) for a wake a
 later wake already superseded, so an expired session that finishes late
 cannot close over stimuli another session took. An UNTRACKED wake (no hook)
-has no outcome and is a watermark as in step 1. A restart recomputes all of
+has no outcome and is a plain watermark. A restart recomputes all of
 it from the rows; nothing lives only in memory. `UnitView.carry` holds the
-stimuli a CLOSED wake returned to the next agenda with a strike (30 §2).
+stimuli a CLOSED wake returned to the next agenda with a strike.
 """
 
 from __future__ import annotations
@@ -66,18 +66,17 @@ from typing import Literal, Protocol, get_args
 
 from .cues import is_rearming, is_strong
 
-#: 20 §3's stimulus kinds. Only `message` has a producer at step 1 (ingest), and
-#: `time` (the daily floors, raised by the evaluator); `rollup` arrives with
-#: step 2, `self` with step 3's pace verbs, `social`/`play` with step 5. The
-#: evaluator handles all of them generically.
+#: The stimulus kinds. The evaluator handles all of them generically; each is
+#: raised by its own producer (ingest for `message`, the evaluator for `time`,
+#: the Rollup for `rollup`).
 StimulusKind = Literal["message", "social", "play", "rollup", "time", "self"]
 STIMULUS_KINDS: tuple[str, ...] = get_args(StimulusKind)
 
-#: What a `message` stimulus's item was (20 §3: «`message` (including an edit,
-#: reaction or delete)»); other kinds name their own producer's item.
+#: What a `message` stimulus's item was (including an edit,
+#: reaction or delete); other kinds name their own producer's item.
 MessageItem = Literal["message", "edit", "reaction", "delete"]
 
-#: 20 §3's wake table, in the table's order — the order `decide` tries them
+#: The wake reasons, in the table's order — the order `decide` tries them
 #: in and the label vocabulary of `nora_cognition_wake_total{reason}`. No
 #: `rollup` since DEC-279: a Rollup stimulus never starts a wake, it rides the
 #: next one (`RIDES_ALONG`). `cognition_wake.reason`'s CHECK still admits
@@ -87,14 +86,11 @@ WakeReason = Literal[
 ]
 WAKE_REASONS: tuple[str, ...] = get_args(WakeReason)
 
-#: Kinds that never start a wake and are claimed by EVERY wake (DEC-279,
-#: 2026-10-03): a Rollup stimulus (a co-location, an arrival, a deviation) is
+#: Kinds that never start a wake and are claimed by EVERY wake (DEC-279):
+#: a Rollup stimulus (a co-location, an arrival, a deviation) is
 #: context for a session another reason started, never a reason of its own.
-#: Measured live: six of one unit's nine sessions in a day were woken by a lone
-#: `deviation_anomaly`, each closed `no_change` at about 13k input tokens, and a
-#: person in two units woke two concurrent sessions for one anomaly. The
-#: bound on how long one waits is the daily `time` floors (07:00 and 00:00 by
-#: default): a `time` wake claims these too, so a unit nobody talks in still
+#: The bound on how long one waits is the daily `time` floors (07:00 and 00:00
+#: by default): a `time` wake claims these too, so a unit nobody talks in still
 #: sees them within a day. With `[cognition] time_floors = []` and a silent
 #: unit nothing bounds it; that is the operator's configuration to choose.
 RIDES_ALONG: frozenset[str] = frozenset({"rollup"})
@@ -103,8 +99,8 @@ RIDES_ALONG: frozenset[str] = frozenset({"rollup"})
 WakeBrake = Literal["single_flight", "cooldown", "backoff", "concurrency"]
 WAKE_BRAKES: tuple[str, ...] = get_args(WakeBrake)
 
-#: How a wake row was produced. One value since the cut-over (0091 relabelled
-#: the shadow week's rows), kept because the watermark is read per mode.
+#: How a wake row was produced. Kept as a column because the watermark is
+#: read per mode.
 WakeMode = Literal["live"]
 WAKE_MODES: tuple[str, ...] = get_args(WakeMode)
 
@@ -127,8 +123,8 @@ class NewStimulus:
     conversation_id: str | None = None
     person_id: str | None = None
     cues: tuple[str, ...] = ()
-    #: 20 §3: «a person's reply to her message within `reply_quiet_seconds`
-    #: does not by itself wake Cognition: it waits for the next wake». Recorded
+    #: A person's reply to her message within `reply_quiet_seconds`
+    #: does not by itself wake Cognition: it waits for the next wake. Recorded
     #: and consumed like any other stimulus; it never trips a trigger.
     waits: bool = False
     due_ms: int | None = None
@@ -181,7 +177,7 @@ class WakeRow:
     tracked: bool = False
     #: Stimuli inside `[.., through_stimulus_id]` this wake did NOT claim, so
     #: they stay pending (`Watermark.unclaimed`). Empty for a wake that claims
-    #: everything pending, which is every wake before D2.
+    #: everything pending.
     unclaimed_ids: tuple[int, ...] = ()
 
 
@@ -215,8 +211,8 @@ class WakeGuard:
     last_outcome: str | None
 
 
-#: Why a wake FAILED (`cognition_wake_outcome.cause`, DEC-244's classification,
-#: #637 second review, re-cut by the third). `infra`: the world failed
+#: Why a wake FAILED (`cognition_wake_outcome.cause`, DEC-244's
+#: classification). `infra`: the world failed
 #: (provider, network, database, a kill, a timeout, a shutdown, a reply cut at
 #: max_tokens, an overflow message nobody proved the agenda caused, or anything
 #: unclassified): the unit BACKS OFF and its stimuli are NEVER struck, because a
@@ -228,8 +224,8 @@ class WakeGuard:
 FAILURE_CAUSES: tuple[str, ...] = ("infra", "agenda")
 DEFAULT_FAILURE_CAUSE = "infra"
 #: The cause a wake that did NOT fail records: a `closed` session, or one a
-#: shutdown `cancelled` (m2, DEC-245). Recording `infra` there read «the world
-#: failed» on a session that succeeded.
+#: shutdown `cancelled` (DEC-245). Recording `infra` there would read «the
+#: world failed» on a session that succeeded.
 NO_CAUSE = "none"
 OUTCOME_CAUSES: tuple[str, ...] = (*FAILURE_CAUSES, NO_CAUSE)
 
@@ -419,7 +415,7 @@ WAKE_OUTCOMES: tuple[str, ...] = ("closed", "failed", "timeout", "cancelled")
 def inert_kinds_for(*, tracked: bool, floors_ready: bool) -> frozenset[str]:
     """Stimulus kinds that stay pending but neither wake the unit nor are claimed
     by any wake: `time`, while sessions are tracked and no skill ships for the
-    `time` agenda kind (M8, DEC-245). Every reader of «what could wake this unit»
+    `time` agenda kind (DEC-245). Every reader of «what could wake this unit»
     (`decide`, the age gauge, the health command) takes the set from here."""
     return frozenset({"time"}) if tracked and not floors_ready else frozenset()
 
@@ -429,7 +425,7 @@ class Watermark:
     """`(through_stimulus_id, through_ms)`: every stimulus with `id <=
     through_stimulus_id` and pending since no later than `through_ms` is
     consumed, EXCEPT the ids in `unclaimed`: a wake that claims only the
-    stimuli of its own kind (D2, DEC-245) leaves the rest pending, and a
+    stimuli of its own kind (DEC-245) leaves the rest pending, and a
     range cannot say that, so the wake lists them. `ZERO` is a unit that has
     never woken."""
 
@@ -453,12 +449,12 @@ class Watermark:
 
 @dataclass(frozen=True)
 class WakePolicy:
-    """20 §3's numbers. Every value is a starting guess.
+    """The wake policy's numbers. Every value is a starting guess.
 
-    `session_seconds` is not in 20 §3: it is how long a wake with no session
+    `session_seconds` is how long a wake with no session
     hook (a test's evaluator) is treated as running."""
 
-    quiet_seconds: float = 1800.0  # operator 2026-09-29, was 600 ([cognition])
+    quiet_seconds: float = 1800.0  # ([cognition])
     cue_quiet_seconds: float = 120.0
     batch_max: int = 80
     max_age_seconds: float = 3600.0
@@ -469,16 +465,15 @@ class WakePolicy:
     #: EXPIRED, read as failed: it stops holding its unit and its stimuli
     #: return. A session's own wall clock ends a margin before it.
     session_timeout_seconds: float = 900.0
-    #: A unit whose sessions FAIL is not woken again at the cooldown, forever
-    #: (#637 review, major 1: 283 failed sessions a day measured, one every
-    #: `cooldown_seconds`). After `n` consecutive failed or timed-out wakes the
+    #: A unit whose sessions FAIL is not woken again at the cooldown, forever.
+    #: After `n` consecutive failed or timed-out wakes the
     #: next one waits `cooldown_seconds * 2 ** (n - 1)`, capped at this; a
-    #: `closed` wake resets it (`failure_streak`). 20 §3: «per-unit backoff
-    #: after a failed session».
+    #: `closed` wake resets it (`failure_streak`): per-unit backoff
+    #: after a failed session.
     backoff_max_seconds: float = 21600.0
     #: After this many consecutive failures the stimuli the failing wakes
     #: claimed are struck (retracted, reason `failed`): an always-failing agenda
-    #: stops instead of retrying the same input for ever (30 §2's `max_strikes`
+    #: stops instead of retrying the same input for ever (`max_strikes`
     #: is the item-level twin for a session that ran).
     max_consecutive_failures: int = 5
 
@@ -517,9 +512,9 @@ def wake_state(
         return LastSession(
             state="closed" if outcome == "closed" else "failed",
             started_at_ms=recorded_at_ms, ended_at_ms=outcome_at_ms, outcome=outcome,
-            # Normalised on READ: an outcome row written before 0085 carries
+            # Normalised on READ: an older outcome row carries
             # `infra` for a closed or cancelled wake, and the append-only table
-            # is never rewritten to say otherwise (10 §8).
+            # is never rewritten to say otherwise.
             cause=stored_cause(outcome, cause or DEFAULT_FAILURE_CAUSE),
         )
     if not tracked or stale_before_ms is None:
@@ -564,7 +559,7 @@ class UnitView:
     #: one only an infrastructure-failed wake claimed.
     failed_mark: Watermark | None = None
     #: Stimulus kinds that stay pending but neither wake the unit nor are
-    #: claimed by any wake (M8, DEC-245): a `time` stimulus, while no skill
+    #: claimed by any wake (DEC-245): a `time` stimulus, while no skill
     #: ships for the `time` agenda kind, is a floor the session would be handed
     #: and could do nothing with. Pending ones (raised before the gate, or by an
     #: earlier deploy) are listed as unclaimed by every wake, so they are never
@@ -749,7 +744,7 @@ def _strong_pending(view: UnitView, stimuli: list[Stimulus]) -> bool:
 
 
 def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | None:
-    """The FIRST of 20 §3's triggers that holds, in the table's order.
+    """The FIRST of the triggers that holds, in the table's order.
 
     Only stimuli that may wake count (`waits` False): a reply to Nora inside
     `reply_quiet_seconds` rides the next wake and never starts one. Quiet is
@@ -791,7 +786,7 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     """Whether `view`'s unit wakes at `now_ms`, and why, before the
     cross-unit concurrency bound (the evaluator applies that one).
 
-    The brakes, in code (20 §3): single-flight per unit; a cooldown after
+    The brakes, in code: single-flight per unit; a cooldown after
     each session that ONE strong cue may cut — «once» read as: a wake that
     cut a cooldown leaves a cooldown nothing can cut, so two strong cues in a
     row cannot chain past it. After a `strong_cue` wake a bare date or time
@@ -833,7 +828,7 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
         eligible_count=len(eligible),
         oldest_pending_ms=min(s.pending_since_ms for s in eligible),
         claimed_ids=frozenset(taken),
-        # What the range covers and the wake did NOT take (D2): listed, so the
+        # What the range covers and the wake did NOT take: listed, so the
         # watermark leaves them pending. Above `through` they are pending
         # anyway.
         unclaimed_ids=tuple(sorted(
@@ -841,14 +836,13 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
             # Carried forward from the watermark's own list, WHETHER OR NOT this
             # read shows them: a truncated read (`limit`) cuts the newest, and a
             # stimulus the view did not show cannot be claimed here, so dropping
-            # it from the list would consume it unseen under this wake's range
-            # (found by the tracked-wake property test, seed 9 at limit 3).
+            # it from the list would consume it unseen under this wake's range.
             | {u for u in view.watermark.unclaimed if u not in taken and u <= through}
         )),
     )
 
 
-#: The wake reasons that are about ONE kind of stimulus (20 §3, D2/DEC-245):
+#: The wake reasons that are about ONE kind of stimulus (DEC-245):
 #: a `time` or `self` wake claims only stimuli of that kind, and the kinds that
 #: ride along (DEC-279).
 _OWN_KIND_REASONS: frozenset[str] = frozenset({"time", "self"})
@@ -856,7 +850,7 @@ _OWN_KIND_REASONS: frozenset[str] = frozenset({"time", "self"})
 
 def can_wake(stimulus: Stimulus, view: UnitView) -> bool:
     """Whether `stimulus` may start a wake: not a reply that `waits`, not of an
-    inert kind (M8) and not of a kind that only rides along (DEC-279). Every
+    inert kind and not of a kind that only rides along (DEC-279). Every
     reader of «what could wake this unit» (`decide`, the age gauge) asks this."""
     return (
         not stimulus.waits
@@ -866,7 +860,7 @@ def can_wake(stimulus: Stimulus, view: UnitView) -> bool:
 
 
 def claim(view: UnitView, reason: WakeReason) -> list[Stimulus]:
-    """The pending stimuli a wake for `reason` takes (D2, DEC-245; DEC-279).
+    """The pending stimuli a wake for `reason` takes (DEC-245, DEC-279).
 
     `settled`, `strong_cue`, `batch` and `max_age` are about the pile or the
     room, so they take every pending stimulus. `time` and `self` are about one

@@ -1,4 +1,4 @@
-"""`DocumentsView`: what the `<documents>` block renders (design/artifact/00-design.md §29).
+"""`DocumentsView`: what the `<documents>` block renders.
 
 A plain value the reader builds and the renderer only formats, the shape
 `nora.domain.computer_context` gives `<computer>`. It carries `now` so every age is

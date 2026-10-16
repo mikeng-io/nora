@@ -1,11 +1,11 @@
-"""Platform-neutral presence contracts (design/19). Standard library only —
+"""Platform-neutral presence contracts. Standard library only —
 the same framework-free rule as the rest of `nora.domain`.
 
 Two types, and the split matters:
 
-- `WireState` is how ONE read of a Life360 member classified — the study's typed
-  enum (§4.4). It is recorded on every stored fix and emitted per member per
-  cycle, so «this member turned sharing off» is a KNOWN STATE, not a gap (§7.3).
+- `WireState` is how ONE read of a Life360 member classified — a typed enum.
+  It is recorded on every stored fix and emitted per member per
+  cycle, so «this member turned sharing off» is a KNOWN STATE, not a gap.
   `unavailable` is the read-level failure — the daemon could not read the member
   at all — and it must never be summed with `sharing_off`/`no_fix`, which are
   the member's own reported condition. Collapsing «I could not look» into «they
@@ -13,12 +13,12 @@ Two types, and the split matters:
   ambiguity the collector's canary exists to keep visible.
 
 - `PresenceFix` is one stored row — a DISTINCT location fix, written only when
-  the member's `location.timestamp` advanced (§1, the change-recorder). `ts` is
-  epoch MILLISECONDS (Life360's own unit and the reason the column is BIGINT,
-  design/20 §2), and `recorded_at` is when Nora wrote the row — the two are kept
+  the member's `location.timestamp` advanced. `ts` is
+  epoch MILLISECONDS (Life360's own unit and the reason the column is BIGINT),
+  and `recorded_at` is when Nora wrote the row — the two are kept
   apart because a stationary phone holds one fix for many minutes, so `ts` is the
   age of the position and `recorded_at` is the age of the observation. `whereis`
-  carries the `ts` age to the model (§7.6), never `recorded_at`.
+  carries the `ts` age to the model, never `recorded_at`.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def haversine_distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> 
 
 
 class WireState(StrEnum):
-    """How one member read classified (design/19 §4.4, the Life360 study's enum).
+    """How one member read classified (the Life360 wire-state enum).
 
     `StrEnum` so the stored `wire_state` column round-trips through
     `WireState(row.wire_state)` and so a metric label is the bare word
@@ -67,14 +67,13 @@ class WireState(StrEnum):
 
 @dataclass(frozen=True)
 class SavedPlace:
-    """One circle's named landmark («Home»), as stored and as read (design/23).
+    """One circle's named landmark («Home»), as stored and as read.
 
     A STATIC household name for a position — deliberately a different type from
     `PresenceFix`: a fix is where a PERSON was seen (surveillance-shaped,
-    R-31-guarded); a place is somewhere the household chose to name. The line
-    between them is design/23 §2's whole argument, so they never share a type.
-    `radius_m` is Life360's geofence radius, kept because derivation (§6) will
-    want «inside a place» eventually; nothing reads it yet.
+    R-31-guarded); a place is somewhere the household chose to name, so they
+    never share a type. `radius_m` is Life360's geofence radius; nothing reads
+    it yet.
     """
 
     circle_id: str

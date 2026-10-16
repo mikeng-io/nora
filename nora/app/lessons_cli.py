@@ -1,5 +1,4 @@
-"""`nora lessons` — the operator's view of, and rollback for, Lessons
-(design/self-growth/40-lessons.md §4: "reachable by the operator, a CLI first").
+"""`nora lessons` — the operator's view of, and rollback for, Lessons.
 
 `list` and `show` only read, through the read-only engine every report here uses.
 `retire` and `rollback` WRITE (one `lesson_revision` row each, through
@@ -8,7 +7,7 @@
 
 - `retire` appends a retirement by the operator. A lesson the operator retired
   is not learned again from outcomes no newer than the retirement
-  (`LessonRevision.relearn_after`); the newest Record id now is read here.
+  (`LessonRevision.relearn_after`); the newest Record id is read here.
 - `rollback --to N` appends revision N again as the newest revision, so it is
   how a retirement is undone as well as how a reworded lesson is put back.
 """

@@ -1,5 +1,5 @@
 """The four measures that grade the ambient path against something other than
-its own opinion (design/culture-tier/02-measurement §2).
+its own opinion.
 
 **Why this module exists.** Today the verdict IS the measurement: the
 participation path counts what a model said about an instruction someone wrote,
@@ -7,7 +7,7 @@ and `proactive_decide` does the same. A model agreeing with its own instruction
 is not evidence about the room. Worse, a `no_go` is unfalsifiable by
 construction — she stays silent, nothing happens, and silence is also what
 success looks like — so a refusal is indistinguishable from health in every log
-the system keeps. That is how 1% admission went unremarked for days.
+the system keeps.
 
 **None of these four defines when she should intervene, and none needs a
 model.** They are arithmetic over rows the rooms produce anyway. Two are
@@ -28,9 +28,7 @@ The one exception in the schema is `note.anchor_date`, which is a `YYYYMMDD`
 CALENDAR DAY and not epoch anything — it is converted at the boundary by
 `anchor_bounds_ms`, and doing that conversion is not optional: comparing a
 raw `20260914` against a `now` of `1_789_...` silently classifies EVERY
-anchored note as expired, which on live data produced a tidy-looking
-"5 of 10 notes expired unremarked" that was pure unit error. Measured, then
-caught, 2026-09-16.
+anchored note as expired.
 
 **Everything here is pure.** Inputs are rows; there is no store, no clock and no
 I/O. `nora.app.participation_measures` gathers; this decides. The split is not
@@ -136,8 +134,8 @@ class Refusal:
       interval ending at *t*, never exactly one, so counts derived from it are
       lower bounds and times are accurate only to that interval. It is also
       lossy in a way no summation repairs: Prometheus labels lazily, the
-      process restarted 19 times in the 7 days to 2026-09-16, and a refusal
-      that is never scraped before a restart leaves no trace at all.
+      process restarts, and a refusal that is never scraped before a restart
+      leaves no trace at all.
     - `"row"` — a durable per-verdict row. Does not exist: DEC-179 excluded the
       gate from `decision_log` deliberately. This module does not reopen that;
       it names the shape so that when one lands, nothing here changes.
@@ -295,7 +293,7 @@ def holding_refusals(
     **The note arm only.** The intended definition included «or the room's
     `standing` records an unmet commitment», and that arm DOES NOT COMPUTE:
     `standing` is `body TEXT` plus a length CHECK, with no field, flag or
-    structure for a commitment (issue #222). Computing it needs a regex over
+    structure for a commitment. Computing it needs a regex over
     free Cantonese or a model, and a model re-imports the exact proxy failure
     these four exist to escape.
 
@@ -307,8 +305,8 @@ def holding_refusals(
     **Held FOR R means born in R.** A note is unit-scoped and
     `established_in` is a routing key rather than a filter, so in principle
     every room in the unit shares it. The narrower reading is used because
-    #248 is what the wider one looks like in production: a note answered in a
-    room it was not born in, on a different platform. Where she would raise it
+    the wider one counts a note answered in a room it was not born in, on a
+    different platform. Where she would raise it
     is where she can be said to be holding it.
     """
     open_forever = 1 << 62  # a note with no `retired_at` is open, not expired

@@ -1,5 +1,4 @@
-"""External files: a shared file link becomes a handle (design/external-files/
-00-design.md §1, §4; build step S1).
+"""External files: a shared file link becomes a handle.
 
 A link somebody posts to a file Nora could open (a Google Doc, Sheet, Slides
 deck or Drive file) is RECOGNISED, never fetched: this module turns the URL
@@ -13,17 +12,17 @@ the record.
 each recognised URL with a LINK handle, `[Google Doc link c41d09]`: words
 naming what the URL says it points to, then six hex characters of
 `sha256("<provider>:<file_id>")`. It says «link», never «file», because Nora
-holds no file, only the link (operator, 2026-10-10). The words come from the
-URL alone (`/document/` is a Doc), from one table per provider
-(`_GOOGLE_LABELS`), so a second provider brings its own. So the provider's file id (a key-shaped
-string R-18 keeps out of replies) never reaches a prompt and the link cannot be
-echoed. The same file posted twice is the same code. Unlike an attachment's
-placeholder, which is appended after the text, the handle stands where the
-link was. The render works from the TEXT, not from the stored refs, so a row
+holds no file, only the link. The words come from the URL alone (`/document/` is a
+Doc), from one table per provider (`_GOOGLE_LABELS`), so a second provider
+brings its own. So the provider's file id (a key-shaped string R-18 keeps out
+of replies) never reaches a prompt and the link cannot be echoed. The same
+file posted twice is the same code. Unlike an attachment's placeholder, which
+is appended after the text, the handle stands where the link was. The render
+works from the TEXT, not from the stored refs, so a row
 written before refs were stored renders the same way (migration
 `0104_external_files` backfills those rows' refs too, so the code resolves).
 
-**Never cached (operator, 2026-10-10).** A linked file is live and changes
+**Never cached.** A linked file is live and changes
 over time, unlike an attachment, so nothing fetched through a link is kept:
 not content, text, bytes or metadata. Ingest keeps the parsed ref only, every
 open fetches fresh, and the code hashes `provider:file_id`, never content.
@@ -35,7 +34,7 @@ bottom layer every transcript goes through, so whatever it calls must sit at
 that layer; `nora.infra` cannot be imported from here. `instagram_links` and
 `linkedin_links` are the precedent: a pure URL parser shared by every reader
 of the URL, in the domain, standard library only. The provider ADAPTERS
-(describe, read, fetch_bytes, S2) stay in `nora/infra/external_files/` and
+(describe, read, fetch_bytes) stay in `nora/infra/external_files/` and
 call `recognise` from here; nothing above them names a vendor except the
 `provider` string a ref carries.
 
@@ -44,7 +43,7 @@ call `recognise` from here; nothing above them names a vendor except the
 other than http(s) refuse the link. A file id is Google's own alphabet
 (letters, digits, `-`, `_`) and at least `_MIN_ID_CHARS` long, which also
 refuses a published-to-web `/d/e/<id>/pub` link (its id is not a Drive id).
-A folder link is not a file and is not recognised (§1): it stays an ordinary
+A folder link is not a file and is not recognised: it stays an ordinary
 link.
 """
 
@@ -94,14 +93,14 @@ class ExternalFileRef:
         return self.digest[:HANDLE_CHARS]
 
 
-#: The one vocabulary every adapter maps its files onto (§2), so a model never
+#: The one vocabulary every adapter maps its files onto, so a model never
 #: sees a vendor's MIME types.
 FileKind = Literal["document", "spreadsheet", "presentation", "pdf", "other"]
 
 
 @dataclass(frozen=True)
 class ExternalFile:
-    """What the first open learns and ingest never knew (§2): the file's
+    """What the first open learns and ingest never knew: the file's
     name, kind, owner and last-modified time (epoch ms, None when the
     provider gave none)."""
 
@@ -124,7 +123,7 @@ class FilePart:
 
 @dataclass(frozen=True)
 class FileBytes:
-    """A file's bytes, fetched afresh for a copy to her computer (§5), and
+    """A file's bytes, fetched afresh for a copy to her computer, and
     `media_type`, the IANA type of THOSE bytes: a native document,
     spreadsheet or presentation is exported to its office format (docx, xlsx,
     pptx), so its type is the export's, never the provider's own."""
@@ -135,7 +134,7 @@ class FileBytes:
 
 class ExternalFileError(Exception):
     """The one exception an `ExternalFilesSource` raises. `status` is the
-    house vocabulary the open tool (S3) answers with: `refused` (not shared
+    house vocabulary the open tool answers with: `refused` (not shared
     with her, or too large to read as text), `nothing_found` (deleted, or no
     such file) or `unavailable` (the provider could not be asked: no
     account, a revoked token, a transport failure). Never `ok`. `kind` is the
@@ -320,8 +319,7 @@ def quoted_handle_code(text: str) -> str | None:
     or without its brackets (`[Google Doc link c41d09]`, `Google Doc link
     c41d09`), or `None`. A handle is never a URL, so a fetcher that gets one
     points at `file_fetch` instead of asking for "the actual URL" the model
-    was never shown (tool_selection `route_file_fetch_shared_doc`,
-    2026-10-11: one draw in five took that path and gave up)."""
+    was never shown."""
     m = _QUOTED_HANDLE_RE.fullmatch(text.strip())
     if m:
         return m.group(1).lower()
@@ -333,12 +331,11 @@ _CODE_SEGMENT = re.compile(r"[0-9a-fA-F]{" + str(HANDLE_CHARS) + r"}")
 
 def _code_in_made_up_link(text: str) -> str | None:
     """The code in a provider link the MODEL built around a handle's code
-    (`https://drive.google.com/file/d/491db6`), or `None`. Seen live
-    2026-10-11: shown `[Google Drive link 491db6]`, she read the code as the
-    file id, built the URL and sent it to `web_fetch`, twice; a Sheet's code
-    went to `file_fetch(link=...)` the same way. A real file id is at least
-    `_MIN_ID_CHARS` long, so a link `recognise` accepts is never read here,
-    and exactly one six-hex segment is required."""
+    (`https://drive.google.com/file/d/491db6`), or `None`. Shown
+    `[Google Drive link 491db6]`, a model may read the code as the file id,
+    build the URL and send it to `web_fetch` or `file_fetch(link=...)`. A real file id is at
+    least `_MIN_ID_CHARS` long, so a link `recognise` accepts is never read
+    here, and exactly one six-hex segment is required."""
     try:
         parts = urlsplit(text if "://" in text else f"https://{text}")
         host = (parts.hostname or "").lower()
@@ -353,7 +350,7 @@ def _code_in_made_up_link(text: str) -> str | None:
         return None
     # Only where a file id goes: after `d` or `folders` in the path, or the
     # `id` parameter. Any other six-hex value (`gid=123456`, a word like
-    # `decade`) belongs to the link, not to a handle (review of PR 809).
+    # `decade`) belongs to the link, not to a handle.
     segments = [unquote(x) for x in parts.path.split("/") if x]
     slots = [b for a, b in itertools.pairwise(segments) if a in ("d", "folders")]
     slots += [v for k, v in parse_qsl(parts.query) if k == "id"]

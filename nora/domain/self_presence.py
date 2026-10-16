@@ -1,4 +1,4 @@
-"""Where Nora is right now, as data (design/self-awareness/02).
+"""Where Nora is right now, as data.
 
 Named `self_presence` rather than `presence` because `nora.presence` is the
 Life360 location service — where the PEOPLE are. This module is where SHE is:
@@ -24,16 +24,14 @@ if TYPE_CHECKING:
 #: How each network is named to her. A display name, not the wire key:
 #: `signal` is a value on the wire, `Signal` is what the room calls it.
 #:
-#: Moved here from `nora.agent.prefill` (design/self-awareness/06) because a
-#: pass in `nora.language` (the proactive pass, deleted 2026-10-03) rendered the
-#: same block and may not import `nora.agent`. `x` and `threads` have no adapter; they are here
-#: for the
-#: handle line, which names every network she has a public handle on.
+#: Lives here, not in `nora.agent.prefill`, because passes in `nora.language`
+#: render the same block and may not import `nora.agent`. `x` and `threads`
+#: have no adapter; they are here for the handle line, which names every
+#: network she has a public handle on.
 #:
 #: A network with no entry falls back to its key rather than being hidden:
 #: «I am somewhere I have no name for» is a better situational model than
-#: silence, which is what produced the bug this table exists for (a Discord
-#: tag answered as if on Signal, operator, 2026-08-14).
+#: silence, which would let a Discord tag be answered as if on Signal.
 PLATFORM_NAMES: dict[str, str] = {
     "signal": "Signal",
     "discord": "Discord",
@@ -98,7 +96,7 @@ class Presence:
     «I did not look», and it renders nothing rather than a claim.
 
     `other_groups` says only whether she is in any room OUTSIDE this group.
-    Which ones is never carried here at all (D1 = B), so no renderer can leak
+    Which ones is never carried here at all, so no renderer can leak
     what the model never received.
 
     `handles` is `((network, handle), ...)`: display text for the names people
@@ -119,8 +117,8 @@ class Presence:
     def minimal(cls, platform: str, *, direct: bool = False) -> Presence:
         """The network alone, for a context nobody read a presence for.
 
-        What `_where_line` used to say and nothing more: no room label, no
-        other rooms, no health. A harness with no reader still tells her
+        The network and nothing more: no room label, no other rooms, no
+        health. A harness with no reader still tells her
         which network she is on, and claims nothing it did not read.
         """
         return cls(platform=platform, direct=direct)
@@ -128,8 +126,7 @@ class Presence:
 
 @dataclass(frozen=True)
 class KnownRoom:
-    """One room of the unit a turn is in, as the room tools read it
-    (design/self-awareness/07).
+    """One room of the unit a turn is in, as the room tools read it.
 
     `conversation_id` is here so a tool can read that room's stored messages.
     It is an identifier and is NEVER put in a tool result (R-18): the tool
@@ -155,7 +152,7 @@ class UnitRooms:
     `rooms` is `None` when the turn's room is not in policy (or is a direct
     chat): there is no unit to list, which is a different state from a unit
     with one room. `other_groups` says only THAT she is in rooms outside this
-    unit (D1 = B); which ones is never carried, so no tool can leak them.
+    unit; which ones is never carried, so no tool can leak them.
     """
 
     rooms: tuple[KnownRoom, ...] | None

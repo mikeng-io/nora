@@ -1,39 +1,28 @@
-"""`nora events backfill-units [--apply]` (B3(b), design/cognition-loop/70-
-migration.md §8, DEC-237).
+"""`nora events backfill-units [--apply]`: set `unit_id` on legacy events.
 
-WHY IT EXISTS. Migration `0074_event_revision` backfilled every
-pre-existing `events` row to `unit_id=""` — units live in `policy.toml`,
-not the database, so the migration had no way to fill the column for an
-event that predates it. `GatheringStore.search` (B3(a)) already widens a
-unit-wide `event_search` to also match a legacy `unit_id=""` row whose
-`conversation_id` is one of the unit's own rooms, but that is a READ-side
-patch: the row itself still carries no unit, so it is invisible to
-anything that filters on `unit_id` directly (a future report, an export, a
-`WHERE` clause someone writes by hand). This command WRITES the column,
-once, so the read-side patch stops being load-bearing.
+Units live in `policy.toml`, not the database, so events written before the
+`unit_id` column existed carry `unit_id=""`. `GatheringStore.search` widens a
+unit-wide `event_search` to match such a row when its `conversation_id` is one
+of the unit's rooms, but that is a read-side patch: the row still carries no
+unit, so anything filtering on `unit_id` directly misses it. This command
+writes the column so the patch is not load-bearing (DEC-237).
 
-WHAT IT DOES. For every room `policy.toml` names (`Policy.conversations`),
-list that room's events (`GatheringStore.list_for_conversation`, every
-status) and set `unit_id` on any row that still carries the pre-migration
-`unit_id=""` to that room's `conv.unit` (`"nora"` when `policy.toml` names
-no `unit =` for it — the ordinary default, DEC-214). A room `policy.toml`
-does not name AT ALL has no unit that could be resolved for it, so its
-events — pre-migration or not — are never read at all: SKIPPED BY
-CONSTRUCTION, not by a check this command could get wrong.
+For every room `policy.toml` names (`Policy.conversations`), list that room's
+events (`GatheringStore.list_for_conversation`, every status) and set
+`unit_id` on any row still carrying `""` to that room's `conv.unit` (`"nora"`
+when `policy.toml` names no `unit =`, DEC-214). A room `policy.toml` does not
+name has no resolvable unit, so its events are never read: skipped by
+construction.
 
-Dry run by default: it reads everything and reports what `--apply` would
-change, writing nothing. `--apply` writes through `GatheringStore.update`
-— the SAME method `update_event`/`set_event_status` write through — so the
-write is a normal revision (a new `event_revision` row, the head moved)
-and `row_history`'s trigger (migration `0068_system_time_history`,
-`nora.infra.sql.history`) captures it exactly like any other write to
-`events`: this command adds no new write path, and nothing about it is
-invisible to the audit trail the rest of the table already has.
+Dry run by default: reports what `--apply` would change, writing nothing.
+`--apply` writes through `GatheringStore.update`, the same method
+`update_event`/`set_event_status` use, so the write is a normal revision (a new
+`event_revision` row, the head moved) and the `row_history` trigger
+(`nora.infra.sql.history`) captures it. No new write path.
 
-REFUSED: nothing. A room with an empty roster of events, or none at all in
-`policy.toml`, is an empty report, not an error — `policy.toml` with no
-`[units]` at all just means every room maps to no unit, so nothing is
-touched and the report says so."""
+A room with no events, or none named in `policy.toml`, is an empty report, not
+an error.
+"""
 
 from __future__ import annotations
 
@@ -51,9 +40,9 @@ log = logging.getLogger("nora.app.events_backfill")
 
 class BackfillStore(Protocol):
     """What this command needs of `GatheringStore`
-    (`nora.domain.gatherings`) — the two methods `nora.app.gatherings.
-    GatheringService` itself calls, seen structurally so this module does
-    not need to import the concrete store."""
+    (`nora.domain.gatherings`): the two methods `nora.app.gatherings.
+    GatheringService` calls, seen structurally so this module does not import
+    the concrete store."""
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
@@ -97,8 +86,7 @@ async def backfill_unit_ids(
     *, policy: Policy, store: BackfillStore, apply: bool = False,
 ) -> EventsBackfillReport:
     """See the module docstring. Only rooms `policy.conversations` names are
-    ever read — a room policy.toml does not name at all is never a source
-    of a "skipped" count, it is simply never visited."""
+    read; an unnamed room is never visited, so it never counts as skipped."""
     report = EventsBackfillReport(applied=apply)
     for convo in policy.conversations:
         if not convo.unit or not convo.primary_id:
@@ -129,12 +117,8 @@ async def backfill_unit_ids(
 
 
 def render(report: EventsBackfillReport) -> list[str]:
-    """`updated` is only counted on `--apply` (`backfill_unit_ids` never
-    attempts a write on a dry run, so it never has an outcome to count); on a
-    dry run the number this prints is `legacy` — the count of what WOULD be
-    set, which is what a dry run exists to report. Confusing the two used to
-    make every dry run print "would set 0" regardless of how many legacy
-    events there were."""
+    """`updated` is only counted on `--apply` (a dry run attempts no write); on a
+    dry run the printed number is `legacy`, the count of what WOULD be set."""
     verb = "set" if report.applied else "would set"
     lines = [
         f"events backfill-units ({'APPLIED' if report.applied else 'dry run: nothing written'})",

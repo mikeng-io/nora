@@ -1,8 +1,7 @@
-"""One message of the Record as `record_query` returns it
-(design/cognition-loop/15-map.md §4, migration step 2).
+"""One message of the Record as `record_query` returns it.
 
 A Record read, not a derived one: what was said, in which room, with the
-edits, reactions and deletes recorded against it (step 1, DEC-233). The
+edits, reactions and deletes recorded against it (DEC-233). The
 lineage of every hit is `message:<its room>`; which rooms a turn may read is
 decided before the query by `nora.agent.lineage`, never after it.
 

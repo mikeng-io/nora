@@ -1,4 +1,4 @@
-"""The tool-recall log port (tool-recall-log spec §2, §7). One row per
+"""The tool-recall log port. One row per
 successful call to a `cacheable=True` tool (`nora.agent.tools.NativeTool`),
 scoped to one conversation — read back only by `recall_lookups`, itself
 scoped to the same conversation. Never cross-conversation, ever.
@@ -35,9 +35,9 @@ class ToolCallLogEntry:
 
     `tag_id` is the transcript anchor this call happened under — given a
     row, you can find which turn produced it, bounded by however long that
-    turn's own row survives `messages`'s own pruning (spec §6).
+    turn's own row survives `messages`'s own pruning.
     `tool_input`/`tool_result` are the tool's own arguments and return
-    value; `recall_lookups` (Task 7) hands them back to the model exactly
+    value; `recall_lookups` hands them back to the model exactly
     as stored, never re-summarised.
     """
 
@@ -60,7 +60,7 @@ class ToolCallLogStore(Protocol):
     async def append(self, entry: ToolCallLogEntry) -> None:
         """Insert-only. Never called for a vetoed call or a call whose own
         `status` was not `"ok"` (R-48) — that discipline lives in the
-        WRITER (`nora.agent.guards.ToolCallLog`, Task 5), not here; this
+        WRITER (`nora.agent.guards.ToolCallLog`), not here; this
         port stores exactly what it's given."""
         ...
 
@@ -69,7 +69,7 @@ class ToolCallLogStore(Protocol):
     ) -> list[ToolCallLogEntry]:
         """The last `limit` entries for `conversation_id` with `created_at
         >= since`, newest first. `since` is the caller's job to compute
-        (`recall_lookups`, Task 7, passes `now() - 7 days`) — this port
+        (`recall_lookups` passes `now() - 7 days`) — this port
         takes an absolute timestamp, never a relative window, so a fake
         clock in a test needs no special-casing here."""
         ...

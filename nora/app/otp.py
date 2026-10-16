@@ -6,12 +6,12 @@ a challenge id; `verify` takes that id and the code back and answers who it was
 for. Nothing here knows about sessions or cookies; the caller decides what a
 verified person may do.
 
-**Only somebody in `identity.toml`** (operator rule 2026-10-05). The identifier
+**Only somebody in `identity.toml`.** The identifier
 a caller sends is resolved against the file, and the address is built from the
 file (`Persons.direct_target`); there is no way to name a phone number that is
 not in it, and the senders refuse one anyway (`Persons.direct_addresses`).
 
-**Through `deliver.build`, as the fourth caller R-1b names.** The message is a
+**Through `deliver.build`, the fourth caller R-1b names.** The message is a
 fixed template and no model writes it, but sending it through the `Deliverer`
 keeps every guard on the wire (R-6, R-18) and the audit-first write. The audit
 row records the message with the code blanked (`record_text`), so the code is
@@ -93,7 +93,7 @@ class OtpService:
         """The person whose `platform` id this is (a phone number, or a Signal
         ACI), as typed or with phone punctuation removed. A person_id does NOT
         resolve: it is a first name anybody could guess, and the portal hands
-        this endpoint to the internet (review of the portal sign-in, 2026-10-05)."""
+        this endpoint to the internet."""
         ident = identifier.strip()
         for candidate in (ident, _PHONE_PUNCTUATION.sub("", ident)):
             if person := self._persons.resolve(platform, candidate):

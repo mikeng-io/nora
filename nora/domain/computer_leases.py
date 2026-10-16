@@ -1,5 +1,4 @@
-"""Leases on Nora's computer: who may change a room's work right now
-(design/sandbox-runtime §15.4).
+"""Leases on Nora's computer: who may change a room's work right now.
 
 **Lock the thing being changed, not the room.** A lease is keyed on the
 computer session a call belongs to (`session_key`), and on the scope for a
@@ -17,15 +16,13 @@ and the compute poller already follow for the conversation slot.
 **In-process locks are enough, and that is a property of the deployment,
 not of this code:** one Nora process serves every room, so every caller of
 a key shares this one object. A second Nora process would need a lease in
-Postgres (a row with a holder, a TTL and a heartbeat, design §15.4) instead.
+Postgres (a row with a holder, a TTL and a heartbeat) instead.
 A lease here lives exactly as long as the call it guards and is released in
 a `finally`, so there is nothing to expire: a crash releases it with the
 process.
 
-**Not built (noted for later):** a live turn pre-empting a background
-holder mid-call. It waits its bound like any other live caller; cancelling
-the holder at its next step boundary arrives with the browser sub-agent
-(S4), where steps exist.
+**No pre-emption:** a live turn does not pre-empt a background holder
+mid-call. It waits its bound like any other live caller.
 """
 
 from __future__ import annotations
@@ -50,8 +47,8 @@ def scope_key(scope: str) -> str:
 
 
 def lease_key(scope: str, session_id: UUID | None) -> str:
-    """THE key a call on a room's workspace locks (design/sandbox-runtime
-    §15.4): its session's when the room has one open, else the scope's. One
+    """THE key a call on a room's workspace locks:
+    its session's when the room has one open, else the scope's. One
     function for every caller (the computer tools), so
     a reader and a writer of the same room can never lock different keys."""
     return session_key(session_id) if session_id is not None else scope_key(scope)

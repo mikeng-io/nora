@@ -8,8 +8,7 @@ how much one call may take, because calls the model makes in SEPARATE turns of
 the loop add up. The vision describer's per-call ceiling
 (`nora.infra.vision.client.derive_vision_timeout`) bounds one invocation; three
 `media_fetch` reads issued one after another at 120 s each are 360 s, the whole
-of a 360 s loop, and Langfuse shows 6 of the 11 multi-read turns since
-2026-08-07 issued them one after another (DEC-197 review, 2026-09-24).
+of a 360 s loop (DEC-197).
 
 A `ContextVar`, set around the `wait_for` that bounds the turn: `wait_for`
 wraps the coroutine in a task, a task copies the context it is created in, and

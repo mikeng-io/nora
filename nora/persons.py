@@ -1,8 +1,8 @@
-"""identity.toml → reverse index (spec C.6, D.2; design/10 §3, §7.3).
+"""identity.toml → reverse index (spec C.6, D.2).
 
-Startup-only; no hot reload in v2 (Q4).
+Startup-only; no hot reload.
 
-Two independent axes, which design/10 §3 originally conflated:
+Two independent axes:
 
   * many ACCOUNTS per platform — a dual-SIM personal/work pair, a second
     Discord. One `[[persons.<id>.<platform>]]` block each. This is the
@@ -90,32 +90,29 @@ class Persons:
     by_person: dict[str, PersonRef]
     index: dict[tuple[str, str], str] = field(repr=False)   # (platform, id_value) → person_id
     # Every person's Life360 membership(s), the source the presence collector
-    # derives its circles from (design/19 §3) — so config.toml carries no ids.
+    # derives its circles from — so config.toml carries no ids.
     life360: tuple[Life360Membership, ...] = ()
     # former_person_id -> current person_id, built from every
-    # `former_person_ids` entry across identity.toml (design/27 §1.2). A
-    # person_id absent from this dict resolves to itself. Defaulted (not a
-    # bare required field) so every existing direct `Persons(...)` fixture in
-    # the test suite that predates this task keeps constructing without it.
+    # `former_person_ids` entry across identity.toml. A person_id absent from
+    # this dict resolves to itself. Defaulted so a direct `Persons(...)`
+    # construction may omit it.
     _subject_aliases: dict[str, str] = field(default_factory=dict)
     # fbid -> the Instagram `username` metadata recorded beside it, ONE
-    # account's pairing at a time (design/instagram-adoption/02; `username`
-    # has been an accepted, never-matchable `instagram` metadata key since
-    # that design landed — `nora.domain.identity.metadata_keys("instagram")`
-    # — this is the first reader of it). Keyed on the fbid, not the
+    # account's pairing at a time (`username` is an accepted, never-matchable
+    # `instagram` metadata key: `nora.domain.identity.metadata_keys("instagram")`).
+    # Keyed on the fbid, not the
     # person_id, because a person may hold more than one Instagram account
     # with different handles (a `label`-disambiguated personal/business
     # pair); `nora.agent.outbound._mentions` already knows exactly which
     # fbid THIS room's own roster resolved to, so `instagram_handle` reads
     # off that SAME account rather than guessing among a person's several.
     _instagram_handles: dict[str, str] = field(default_factory=dict)
-    # person_id -> every `igid` their Instagram blocks declare, KIND-aware
-    # (design/instagram-adoption/17 P2). `index` cannot answer this: it is
+    # person_id -> every `igid` their Instagram blocks declare, KIND-aware.
+    # `index` cannot answer this: it is
     # `(platform, value) -> person_id` and drops the id kind, so
     # `platform_ids("instagram", p)` returns the fbid and the igid mixed —
     # both decimal strings, and handing an fbid to a route that wants an
-    # igid names a different account or none, with no error anywhere
-    # (design/instagram-adoption/02).
+    # igid names a different account or none, with no error anywhere.
     _instagram_igids: dict[str, frozenset[str]] = field(default_factory=dict)
     # An Instagram `username` (casefolded, no leading `@`) -> every person_id
     # whose `[[persons.<id>.instagram]]` block records it, whether or not the
@@ -206,7 +203,7 @@ class Persons:
         The senders hold this and refuse any other direct address
         (`nora.platform.signal.send`, `nora.platform.whatsapp.send`), so a
         direct message to somebody outside `identity.toml` cannot leave,
-        whichever path asked for it (operator rule 2026-10-05)."""
+        whichever path asked for it."""
         return frozenset(
             address for (plat, value) in self.index
             if plat == platform and (address := _direct_address(platform, value))
@@ -291,13 +288,10 @@ class Persons:
         (`nora.engagement.context` for a tag, `nora.app.fire` for a reminder)
         call it, so the projection cannot drift between the two paths.
 
-        The prefill used to label transcript speakers by their SELF-SET platform
-        profile name while `tag_message from=`, `group_members` and
-        `lookup_person` all used the canonical one — two name spaces for the same
-        people in one prompt. Live consequence (Langfuse `05a48150…`,
-        2026-08-10): asked where 「Grant」 was, Nora answered 「呢個 group 冇人叫
-        呢個名」 — the roster said `Grant Carver`, the transcript said
-        `陳志明 Chi Ming` — then told a DIFFERENT member that he was Grant.
+        Transcript speakers are labelled with the canonical name, the same one
+        `tag_message from=`, `group_members` and `lookup_person` use, never the
+        SELF-SET platform profile name: two name spaces for the same people in
+        one prompt make Nora mistake who a name refers to.
 
         Keyed on `(platform, sender_id)`, never on the display name: that is the
         `PersonRef.aliases` rule exactly — operator-authored names are for
@@ -316,8 +310,8 @@ class Persons:
     def room_members(self, listed: frozenset[str] | None) -> tuple[PersonRef, ...]:
         """The persons a room LISTS (`policy.toml` `persons`) that this file
         maps, by name, for `<room_members>`. Never the whole file: a roster
-        fed the address book listed people who had never been in the room
-        (design/12 §3). `None` (a `persons = "*"` room) is empty, because
+        fed the address book would list people who were never in the room.
+        `None` (a `persons = "*"` room) is empty, because
         who is actually there would need a live roster read."""
         if listed is None:
             return ()
@@ -325,7 +319,7 @@ class Persons:
             (self.by_person[pid] for pid in listed if pid in self.by_person),
             # The id breaks a tie between two people of one name: a frozenset
             # walks in hash order, which changes per process, and the block is
-            # a cached, snapshot-compared prefix (review 2026-09-28).
+            # a cached, snapshot-compared prefix.
             key=lambda ref: (ref.name, ref.person_id),
         ))
 
@@ -369,7 +363,7 @@ def load_persons(path: Path) -> Persons:
             first_name=entry.first_name or "", last_name=entry.last_name or "",
             aliases=tuple(entry.aliases),
         )
-        # Every kind of every account (design/10 §3.2) flattens into one
+        # Every kind of every account flattens into one
         # index, which is what makes all of a person's accounts land on a
         # single `honcho_peer_id` (A2).
         for platform in PLATFORM_FIELDS:
@@ -383,7 +377,7 @@ def load_persons(path: Path) -> Persons:
             for account_no, account in enumerate(getattr(entry, platform) or ()):
                 if platform == "life360" and "member_id" in account:
                     # Retain the membership so presence can derive its circles
-                    # from identity (design/19 §3). circle_id is optional at
+                    # from identity. circle_id is optional at
                     # parse; composition refuses to start on a tracked one that
                     # lacks it.
                     circle = account.get("circle_id")
@@ -398,7 +392,7 @@ def load_persons(path: Path) -> Persons:
                     and "username" in account
                 ):
                     # Paired within THIS block, deliberately — `username` is
-                    # metadata (never matched on, §3.1), but it names a handle
+                    # metadata (never matched on), but it names a handle
                     # for ONE account, and a person may hold several with
                     # different ones. Reading it off the same `account` dict
                     # the `fbid` came from is what keeps the pairing correct
@@ -431,8 +425,8 @@ def load_persons(path: Path) -> Persons:
                     # only id Nora sees. Tolerated WITHIN one block, where the
                     # same literal under two kinds is harmless.
                     #
-                    # life360's `member_id` is the one legitimate exception
-                    # (design/19 §3): it names an ACCOUNT, not a circle, so
+                    # life360's `member_id` is the one legitimate exception:
+                    # it names an ACCOUNT, not a circle, so
                     # ONE account genuinely repeats it across several
                     # `[[...life360]]` blocks — one per circle it belongs to.
                     # The dedup key for JUST this platform/kind also carries

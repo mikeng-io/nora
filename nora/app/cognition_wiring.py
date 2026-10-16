@@ -9,15 +9,14 @@ function, so importing this module costs nothing). `true` builds exactly one
 `CognitionSessionRunner` whose hook the wake evaluator is handed, and
 `require_session_hook` refuses to boot if that did not happen.
 
-**What she reads** (30-cognition.md §2, 15-map.md §4): the tools of the
-design's read catalogue that EXIST and are read-only, less what a flag
-withholds. `COGNITION_READ_CATALOGUE` is spelled out here rather than derived
-from `read_only_tools()`, because the design names the catalogue and a session
-that quietly gained every read tool the registry ever adds is a change nobody
-decided; `read_surface` says which of the named tools are wired and which are
-missing (a tool the design names and the tree does not have yet is a fact the
-boot log states, never a silent gap). The live social reads (`instagram_*`,
-`x_*`, `linkedin_*`) are not in it (20 §2: they stay on the tag path).
+**What she reads**: the tools of the read catalogue that EXIST and are
+read-only, less what a flag withholds. `COGNITION_READ_CATALOGUE` is spelled out
+here rather than derived from `read_only_tools()`, because a session that
+quietly gained every read tool the registry ever adds is a change nobody decided;
+`read_surface` says which of the named tools are wired and which are missing (a
+named tool the tree does not have is a fact the boot log states, never a silent
+gap). The live social reads (`instagram_*`, `x_*`, `linkedin_*`) are not in it:
+they stay on the tag path.
 
 **Who they read through.** The read tools are built by the SAME
 `RegistryToolSource` every other Dreamer adaptor reads through, under
@@ -55,11 +54,11 @@ log = logging.getLogger("nora.app.cognition_wiring")
 COGNITION_ADAPTOR_NAME = COGNITION_ADAPTOR
 COGNITION_OBJECTIVE = "cognition"
 
-#: The read tools 30 §2 and 15 §4 name for a session. Some do not exist in the
+#: The read tools named for a session. Some do not exist in the
 #: tree yet (`read_surface` reports which); the rest are read-only rows of the
 #: tool table.
 COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
-    # the warehouse queries (15 §4)
+    # the warehouse queries
     "record_query", "rollup_read", "event_search", "memo_read", "character_read",
     "standing_read", "social_items",
     # the tiers' reads that already exist
@@ -243,7 +242,7 @@ class PreludeMissingError(RuntimeError):
 
 @dataclass(frozen=True)
 class AgendaSkills:
-    """Skills injected per agenda kind (30 §4): after the doctrine, in a fixed
+    """Skills injected per agenda kind: after the doctrine, in a fixed
     order, so the prefix stays cached and only the skills vary. `by_kind` maps
     an agenda kind to a skill name; `resolve` reads a skill by name (`Skill.
     instructions`, `.sha256`) and is NOT memoised, so an edit on the bind mount
@@ -283,7 +282,7 @@ class AgendaSkills:
 #: objective's resolved versions to name it.
 COGNITION_PRELUDE = "cognition-prelude"
 
-#: The Register skill: the note, event and reminder judgement (30 §4), in
+#: The Register skill: the note, event and reminder judgement, in
 #: `nora/dreamer/skills/`.
 REGISTER_SKILL = "cognition-register"
 
@@ -292,7 +291,7 @@ REGISTER_SKILL = "cognition-register"
 #: stays cached whichever kinds its agenda holds
 #: (`tests/unit/test_cognition_agenda_skills.py`). `time` is mapped: the daily
 #: floors wake a session that reviews the notebook (`note_retire`, `note_merge`)
-#: and decides what to raise. `social` and `play` have no producer yet.
+#: and decides what to raise. `social` and `play` have no producer.
 AGENDA_SKILLS: Mapping[str, str] = MappingProxyType({
     "message": REGISTER_SKILL, "rollup": REGISTER_SKILL, "self": REGISTER_SKILL,
     "time": REGISTER_SKILL,
@@ -329,9 +328,9 @@ SESSION_SHUTDOWN_GRACE_SECONDS = 30.0
 class CognitionShutdown:
     """Stops the sessions at shutdown, once. The evaluator's background tasks
     ARE the sessions' tasks, so `cancel_in_flight` and the runner's `shutdown`
-    both cancel the same tasks: each is called (the design's open choice (a))
-    and the second call of the whole thing is a no-op, so a process that
-    reaches shutdown twice does not cancel twice.
+    both cancel the same tasks: each is called and the second call of the whole
+    thing is a no-op, so a process that reaches shutdown twice does not cancel
+    twice.
 
     The wake loop is already stopped by the time this runs (`App.run` cancels
     every background task before `App.shutdown`), so no NEW wake starts while
@@ -383,7 +382,7 @@ def require_session_hook(
 def _by_home_room(
     homes: Mapping[str, Any],
 ) -> dict[str, Room]:
-    """Unit -> its home room, from `Policy.home_rooms()` (39 D2)."""
+    """Unit -> its home room, from `Policy.home_rooms()`."""
     return {unit: Room(conv.platform, conv.primary_id) for unit, conv in homes.items()}
 
 
@@ -402,9 +401,7 @@ def open_events_reader(
 ) -> Callable[[str], Awaitable[Sequence[Gathering]]]:
     """A room's events a session may still move, and is shown: every status
     before `happened` (`OPEN_STATUSES`: staged, proposed, confirmed), so a
-    confirmed event can reach `happened` or `cancelled` (M4 of the 2026-09-30
-    review: it read PROPOSED only, and a confirmed event stayed confirmed for
-    ever)."""
+    confirmed event can reach `happened` or `cancelled`."""
     async def read(conversation_id: str) -> Sequence[Gathering]:
         return [
             e for e in await store.list_for_conversation(conversation_id=conversation_id)

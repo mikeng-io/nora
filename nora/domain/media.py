@@ -12,22 +12,19 @@ produced at two different moments:
   copied into her custody, and its `sha256` is computed from those bytes. A row
   carrying a `MediaBlob` is a row whose claim can be checked; a row carrying
   only a `MediaRef` is a row pointing at somebody else's filesystem, which is
-  the A9 violation this module exists to end.
+  the A9 violation this module exists to prevent.
 
-**The taxonomy is driven off the media type, not off prefix matching.**
-`_attachment_placeholder` used to test `contentType.startswith("image/")` and
-send everything else to `[attachment: <filename>]`. Two things were wrong with
-that, and only the second one looks like a bug:
+**The taxonomy is driven off the media type, not off prefix matching.** A
+prefix test (`startswith("image/")`) with an `[attachment: <filename>]`
+fallback fails two ways:
 
-1. A voice note — the second most common thing sent in this group — arrived as
-   `[attachment: 1754521883.aac]`. Nora could not tell that a human had SPOKEN.
-   Neither could she distinguish a video from a spreadsheet.
-2. The fallback rendered a **sender-supplied filename** into the body she
+1. A voice note would be indistinguishable from any other file, so Nora could
+   not tell that a human had SPOKEN, nor a video from a spreadsheet.
+2. The fallback would render a **sender-supplied filename** into the body she
    reasons over. A filename is unbounded text: it can hold a phone number, an
-   ACI, or an instruction. `constraints.md` already says attachment names are
-   content and never instructions — but that is a request to a model, and the
-   string should not have been there in the first place. Nothing here renders a
-   filename any more; it is recorded beside the hash and never shown.
+   ACI, or an instruction, and telling the model to treat it as content is a
+   request, not a guarantee. Nothing here renders a filename; it is recorded
+   beside the hash and never shown.
 
 RFC 6838 is the standard that already answers "what kind of thing is this":
 `type/subtype`, a closed set of top-level types, optional `+suffix`, optional
@@ -40,9 +37,8 @@ the platform declared no type at all.
 and somebody speaking are the same top-level type and different events, and
 calling a song a voice note would put words in a member's mouth. See
 `nora.platform.signal.parser` for the deployed signal-cli's own gap here — its
-JSON-RPC `voiceNote` field is not yet emitted (confirmed 2026-08-23; the fix
-landed upstream but is unreleased) — and the filename heuristic that stands
-in for it. Either way, absence degrades to `[audio]`, never to a wrong claim.
+JSON-RPC `voiceNote` field may not be emitted — and the filename heuristic
+that stands in for it. Either way, absence degrades to `[audio]`, never to a wrong claim.
 
 Standard library only, like every other module under `nora/domain` — this is
 imported by the platform parser, by the ingest stage, and by the infra blob
@@ -128,17 +124,14 @@ _DOCUMENT_SUBTYPES = frozenset({
 #
 # `cover image` is the one label that names a ROLE rather than a kind of
 # bytes: the still picture a shared reel, post or story arrives with
-# (`MediaRef.on_demand`). It exists because the bare `[image be4be6]` beside
-# a `[shared reel …]` line read as THE REEL to a model, which then answered
-# "what is in this reel" off one frame and never opened the link it was
-# looking at (2026-09-24). The transcript has to say what the model is
-# reading; a tool description telling it what it can do was already there
-# and was not enough. Since later that day it renders only for a story share
-# and a share whose line has NO link: live, a `[cover image …]` beside a
-# post's or reel's link was still read instead of the link, so a linked post
-# or reel carries no picture at all. A story keeps it, because its link reads
-# the author's current story, not the frame that was shared
-# (`nora.platform.instagram.parser.parse_event`).
+# (`MediaRef.on_demand`). A bare `[image be4be6]` beside a `[shared reel …]`
+# line would read as THE REEL to a model, which would answer off one frame
+# instead of opening the link; the transcript has to say what the model is
+# reading. It renders only for a story share and a share whose line has NO
+# link: a `[cover image …]` beside a post's or reel's link gets read instead
+# of the link, so a linked post or reel carries no picture at all. A story
+# keeps it, because its link reads the author's current story, not the frame
+# that was shared (`nora.platform.instagram.parser.parse_event`).
 LABELS = frozenset({
     "image", "cover image", "video", "audio", "voice note", "document", "file",
     "sticker",
@@ -185,8 +178,8 @@ class MediaRef:
     # the handle. Set by an adapter for an attachment that is a PREVIEW of
     # something posted elsewhere rather than something a member sent: an
     # Instagram reel, post or story shared into a room arrives with its
-    # thumbnail. The operator's rule (2026-09-24) is that Nora reads shared
-    # content only when tagged, never on every share. A property of the ref,
+    # thumbnail. Nora reads shared content only when tagged, never on every
+    # share. A property of the ref,
     # never of the bytes: the same bytes later sent as a direct photo are
     # read then, because the comprehension job keys on whether the ROW has
     # been read, not on whether the bytes were ever seen.
@@ -199,9 +192,8 @@ class MediaBlob:
 
     `sha256` is the object key: content-addressed, so the same meme forwarded
     five times is one blob, a rename cannot move it, and a stored blob can be
-    verified against the row that claims it. The operator's original sketch
-    hashed filename-plus-metadata; hashing the CONTENT is the refinement he
-    accepted, and it is what buys all three of those properties.
+    verified against the row that claims it. Hashing the CONTENT, not
+    filename-plus-metadata, is what buys all three of those properties.
 
     `filename` rides ALONGSIDE the key and never produces it. It is recorded
     because it is sometimes the only human-meaningful thing about a document —
@@ -229,7 +221,7 @@ class MediaBlob:
 
 @dataclass(frozen=True)
 class MediaObject:
-    """One row of Nora's unified media index (DEC-138, migration 0032).
+    """One row of Nora's unified media index (DEC-138).
 
     `sha256` is the content address of the bytes in the SAME `blob_store`
     (rustfs) every acquisition path uses — inbound photos, generated images
@@ -237,7 +229,7 @@ class MediaObject:
     (an attribute, not a table).
 
     **`title` / `description` / `content` are the three comprehension fields
-    (issue #116, migration 0052), and they are ONE model pass, not three.**
+    and they are ONE model pass, not three.**
     Reading an image or a video is the expensive part; extra output fields on
     the same call are near-free, so the pass produces all three at once:
 
@@ -249,7 +241,7 @@ class MediaObject:
                     truncated; `media_fetch` is what serves it on demand.
 
     Each is a pure function of the bytes, which is what makes the sha256 a
-    valid forever-key for all three (`VisionCache`'s argument, now applying
+    valid forever-key for all three (`VisionCache`'s argument, applying
     to the whole triple). ALL THREE EMPTY is an INDEX ENTRY — the row says
     Nora holds these bytes and claims nothing about them, which is exactly
     the state every inbound object is in between custody and comprehension.
@@ -274,9 +266,9 @@ class MediaObject:
     provenance: dict[str, object] | None = None
     describe_model: str | None = None
     created_at_ms: int = 0
-    # Defaulted, so every existing construction site — the ingest index write,
-    # `generate_image`, four contract fixtures — stays valid and produces the
-    # honest "not comprehended yet" row.
+    # Defaulted, so a construction site that has read nothing (the ingest
+    # index write, `generate_image`) yields the honest "not comprehended yet"
+    # row.
     title: str = ""
     content: str = ""
 
@@ -288,14 +280,11 @@ class MediaObject:
     def caveat(self) -> str:
         """The sentence this READ has to carry about what it did NOT see.
 
-        Stored in provenance rather than glued onto `description`, and that is
-        a correctness fix rather than tidiness. Appended to the description it
-        was indistinguishable from it at render time, so the transcript's
-        `comprehension_render_chars` bound clipped it off — and it clipped it
-        precisely when the description was RICH, which is the case where a
-        confident-sounding partial read does the most damage. «This clip runs
-        about 20 minutes and I only watched the first 4» became «(This clip
-        runs a».
+        Stored in provenance rather than glued onto `description`: appended to
+        the description it would be indistinguishable from it at render time,
+        so the transcript's `comprehension_render_chars` bound would clip it
+        off, precisely when the description is RICH and a confident-sounding
+        partial read does the most damage.
 
         Kept apart, every renderer appends it LAST and after its own clip, so
         no bound can eat it: the transcript join, `media_fetch`'s stored
@@ -316,7 +305,7 @@ class MediaObject:
         return bool(self.title or self.description or self.content)
 
     # Generated-media provenance accessors (NULL-equivalent when the object
-    # is not generated): the generated-image library shape DEC-137 built.
+    # is not generated): the generated-image library shape (DEC-137).
     @property
     def prompt(self) -> str:
         return str((self.provenance or {}).get("prompt", ""))
@@ -406,8 +395,8 @@ def sniff_media_type(data: bytes) -> str:
 
     Stickers are the reason this exists: a platform declares a type when it
     has one — Discord's sticker format maps straight to `image/png` /
-    `image/apng` / `image/gif` — and Signal never does at all (spec §1:
-    `dataMessage.sticker` carries only `packId`/`stickerId`, no `contentType`).
+    `image/apng` / `image/gif` — and Signal never does at all (`dataMessage.sticker` carries only
+    `packId`/`stickerId`, no `contentType`).
     `resolve_media_type` can only resolve what was DECLARED or guessable from
     a FILENAME, and a Signal sticker has neither, so the type has to come from
     the bytes actually fetched, or the description never reaches the vision
@@ -415,19 +404,18 @@ def sniff_media_type(data: bytes) -> str:
     outside image/video/audio before any model call, and an unresolved sticker
     resolves to `""`.
 
-    Instagram is the second caller and widened it: that wire carries no
+    Instagram is the second caller: that wire carries no
     mimetype at all, so `ground_media_type` reads the subtype off the bytes
-    for a type declared `image/*` — which needs the one signature the sticker
-    set never had a use for, JPEG, since no sticker is one and most photos
-    are.
+    for a type declared `image/*` — which needs the JPEG signature, since no sticker
+    is one and most photos are.
 
     Deliberately a sniff of a closed, small set of magic numbers, not a
     general-purpose format detector: `RIFF`...`WEBP` (animated or static
     WebP), the PNG signature, the GIF89a/GIF87a `GIF8` prefix — all three
-    observed on real Signal stickers (spec §1's evidence table) — plus the
-    JPEG SOI marker and the ISO base media `ftyp` box. The first three are
-    measured; the last two are format definitions rather than observations on
-    this deployment, which is why `ground_media_type` discards a sniff that
+    seen on real Signal stickers — plus the JPEG SOI marker and the ISO base
+    media `ftyp` box. The first three are observed; the last two are format
+    definitions rather than observations on this deployment, which is why
+    `ground_media_type` discards a sniff that
     contradicts the declared top-level type instead of trusting it. An
     unrecognised signature is never guessed at — the caller falls back to
     whatever was already resolved from the declared type.
@@ -488,7 +476,7 @@ def ground_media_type(*, declared: str, data: bytes) -> str:
 
 
 #: `MediaObject.source` of a picture Nora kept from her computer
-#: (`computer_export(to="keep")`, S3a): made by her, like `generated`, and
+#: (`computer_export(to="keep")`): made by her, like `generated`, and
 #: born in one room, which its provenance names.
 COMPUTER_MEDIA_SOURCE = "computer"
 
@@ -540,10 +528,10 @@ async def resolve_room_media(
 #: How far back a room's media can be resolved or searched, and how many
 #: media-bearing message rows one read takes. ONE pair of numbers for
 #: `media_fetch`, `computer_import`, `media_search`'s room scope and the
-#: documents' Image resolver, so the windows cannot drift apart. 1000 rows:
-#: the busiest real room holds about 410 in 90 days (norty, 2026-10-01), so
-#: this is 2.4 times that, and a row is a few hundred bytes. It is a cap, not a
-#: reservation; a read that hits it says so (`RoomSightings.truncated`).
+#: documents' Image resolver, so the windows cannot drift apart. 1000 rows
+#: leaves wide headroom over a busy room's 90 days, and a row is a few hundred
+#: bytes. It is a cap, not a reservation; a read that hits it says so
+#: (`RoomSightings.truncated`).
 ROOM_MEDIA_DAYS = 90
 ROOM_MEDIA_ROWS = 1000
 _MS_PER_DAY = 86_400_000
@@ -557,7 +545,7 @@ class Sighting:
     sent as a photo too make it somebody's picture). `cover_body` is the body
     of the newest row that held it as a cover, for the link that row carries.
     The message row, not the media index, is the authority for which room sent
-    it (design/artifact §25). Carries no sender, by design."""
+    it. Carries no sender, by design."""
 
     sha256: str
     media_type: str
@@ -666,8 +654,8 @@ def label_from_media_type(media_type: str) -> str:
 
     It exists for the render join, which must not take a label from a body:
     `body` is sender-supplied and `voice note` is the one label whose detail
-    renders UNCLIPPED, so a typed `[voice note a3f2c1]` was a way for any member
-    to switch off the only bound on per-attachment prompt spend.
+    renders UNCLIPPED, so a typed `[voice note a3f2c1]` would let any member
+    switch off the only bound on per-attachment prompt spend.
     """
     top, subtype = parse_media_type(media_type)
     if not top:
@@ -726,8 +714,7 @@ def label_for(ref: MediaRef) -> str:
     label = _BY_TOP_LEVEL.get(top, "file")
     # A shared item's still picture says so, because it is not the item: see
     # `LABELS`. Only for an image, since that is the one shape a preview has
-    # ever arrived as; anything else keeps its plain label rather than gaining
-    # a word nobody has measured.
+    # ever arrived as; anything else keeps its plain label.
     if ref.on_demand and label == "image":
         return "cover image"
     return label
@@ -754,17 +741,12 @@ _FORBIDDEN = str.maketrans({
 def sanitize_description(raw: str, *, max_chars: int = 0) -> str:
     """A model's sentence, made safe to render inside a placeholder.
 
-    This module used to be safe BY CONSTRUCTION: `render_placeholder` could
-    only emit a member of a closed label set plus hex, so no sender-supplied
-    string could reach the body through it. A free-text description ends that
-    property, and this function is what replaces it — explicit screening rather
-    than a guarantee.
+    A label and handle are safe BY CONSTRUCTION (a closed label set plus
+    hex); a free-text description is not, and this function is the explicit
+    screening that replaces that guarantee.
 
-    **`max_chars` defaults to 0 = UNBOUNDED, and that is the change issue #116
-    made.** The 200-character clip existed because the description was baked
-    into `messages.body`, a durable string two consumers read verbatim, so
-    every character of it was paid for on every prefill forever. It is not
-    baked in any more: the comprehension lives in `media_objects` and each
+    **`max_chars` defaults to 0 = UNBOUNDED.** The description is not baked
+    into `messages.body`: the comprehension lives in `media_objects` and each
     consumer selects the fields it wants at render time, so the bound belongs
     on what the TRANSCRIPT renders (title + description), not on what is
     STORED. Truncating the stored text would throw away exactly the half
@@ -781,10 +763,9 @@ def sanitize_description(raw: str, *, max_chars: int = 0) -> str:
 
 
 # The label whose comprehension is the WORDS IN THE ROOM rather than a
-# description OF something (issue #116 decision 4). A voice note is
-# conversation content: `nora/ingest/stages/media.py` has said so since the
-# STT lane landed, and collapsing it to «title - description» would mean Nora
-# stops hearing what people actually said and starts reading a summary of it.
+# description OF something. A voice note is conversation content
+# (`nora/ingest/stages/media.py`), and collapsing it to «title - description»
+# would have Nora read a summary of what people said instead of hearing it.
 # So this one label renders its `content` — the full transcript — and the
 # title/description it also carries exist for Honcho and for search.
 #
@@ -856,7 +837,7 @@ def placeholders_in(body: str) -> tuple[tuple[str, str], ...]:
 def enrich_placeholders(body: str, details: Mapping[str, str]) -> str:
     """`body` with each `[image a3f2c1]` re-rendered as `[image a3f2c1: …]`.
 
-    The RENDER-time half of issue #116: `messages.body` carries the handle and
+    The RENDER-time half: `messages.body` carries the handle and
     nothing else, and the comprehension is joined on in the assembler for the
     one prompt that is about to be built. A handle with no entry in `details`
     (nothing has read those bytes yet, or the join failed) is left exactly as
@@ -891,12 +872,12 @@ def render_placeholder(label: str, handle: str = "", description: str = "") -> s
     would claim Nora read bytes she does not hold, which is the same lie the
     handle's own asymmetry already refuses to tell.
 
-    **The third argument is a RENDER-time value only** (issue #116). It reaches
+    **The third argument is a RENDER-time value only.** It reaches
     this function from `enrich_placeholders`, called by the context assembler
     for one prompt; it never reaches `body_with_handles`, and so it never lands
-    in `messages.body`. That is the whole of decision 2: one string cannot
-    serve both «Honcho detailed» and «transcript short», so the durable string
-    carries the handle and each consumer selects what it wants at render.
+    in `messages.body`. One string cannot serve both «Honcho detailed» and
+    «transcript short», so the durable string carries the handle and each
+    consumer selects what it wants at render.
     """
     if not handle:
         return f"[{label}]"
@@ -938,19 +919,18 @@ def media_json(blobs: tuple[MediaBlob, ...]) -> str | None:
     production. `tests/contract/test_audit_store_contract.py` pins the result;
     this function is why the two cannot disagree in the first place.
 
-    NULL rather than `"[]"` for the empty case, which is every row in this
-    database today: `[]` would make "holds nothing" and "had nothing" identical
-    in SQL, and a column that reads `[]` on every row is one nobody can filter.
+    NULL rather than `"[]"` for the empty case: `[]` would make "holds nothing"
+    and "had nothing" identical in SQL, and a column that reads `[]` on every
+    row is one nobody can filter.
 
     Flat shape on purpose. This text is the durable half of the record and
     `MediaBlob` is what a retrieval tool reconstructs from it; a nested key
     would make that reconstruction guess.
 
-    **`role` is the one key written only when it is set** (2026-09-24). Every
-    row written before it existed carries none, so a reader has to treat an
-    absent `role` as an ordinary attachment whatever this function writes; an
-    always-written `"role": ""` would add nothing to that and change the text
-    of every row from now on. Absence has one meaning, so nothing guesses.
+    **`role` is the one key written only when it is set.** A reader treats an
+    absent `role` as an ordinary attachment, so an always-written `"role": ""`
+    would add nothing and change the text of every row. Absence has one
+    meaning, so nothing guesses.
     """
     if not blobs:
         return None
@@ -995,12 +975,10 @@ def body_with_handles(
 ) -> str:
     """Re-render `body`'s attachment placeholders with the handles now held.
 
-    **Handles only.** The `descriptions` argument this used to take is what
-    issue #116 removed: a sticker description baked in here rode into
+    **Handles only.** A description baked in here would ride into
     `messages.body`, which `memory_feed` and the prefill both read VERBATIM, so
-    "Honcho detailed, transcript short" was not tunable — it was structurally
-    impossible while one string served both. The comprehension now lives in
-    `media_objects` and is joined at render time.
+    "Honcho detailed, transcript short" would be impossible. The comprehension
+    lives in `media_objects` and is joined at render time.
 
     Returns `body` UNCHANGED if its tail is not the placeholder run this
     message's labels predict. That precondition is checked rather than assumed
@@ -1023,11 +1001,10 @@ class VideoReadingKey:
     """Everything a question-less video reading is a function of.
 
     An image description is a pure function of its bytes, which is why the
-    vision cache keys on the sha256 alone. A chunked VIDEO reading is not
-    (issue #117): which windows were cut depends on `chunk_seconds` and
+    vision cache keys on the sha256 alone. A chunked VIDEO reading is not:
+    which windows were cut depends on `chunk_seconds` and
     `chunk_max`, and the coverage sentence that says what was missed depends on
-    them too. Caching on the sha256 alone put #117's bug back through the cache,
-    so video was excluded from it entirely. Every input goes in the key instead:
+    them too. Every input therefore goes in the key:
 
     * `sha256` — the bytes.
     * `provider`, `model` — the lane and describer that read it. BOTH: the
@@ -1051,10 +1028,9 @@ class VideoReadingKey:
 
 
 #: Who asked for a `media_fetch` read: the MODEL, calling the tool itself,
-#: `instagram_read`, reading each item of a post or story on its own
-#: (design/instagram-adoption/18 §"Typed views, one renderer, and readings"),
+#: `instagram_read`, reading each item of a post or story on its own,
 #: or the public `summons`, reading the tagged post's items before its turn
-#: (`nora.app.summons`, design/instagram-adoption/19).
+#: (`nora.app.summons`).
 #: The `caller` label on `nora_media_fetch_total`, so automatic readings never
 #: read as Nora looking; derived here once, read by the code that increments
 #: and by the help text.

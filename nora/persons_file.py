@@ -1,10 +1,8 @@
 """`identity.toml`'s on-disk shape — the pydantic layer, and nothing else.
 
-Split out of `nora.persons` purely for size: that module was at 297 of the
-300-line hard cap (`tests/architecture/test_module_size.py`), so the next edit
-would have broken the build. The seam is a real one either way — validating
-the FILE FORMAT is a separate job from building and serving the reverse index,
-and only `load_persons` needs both.
+Split out of `nora.persons` for size. The seam is a real one either way:
+validating the FILE FORMAT is a separate job from building and serving the
+reverse index, and only `load_persons` needs both.
 
 Nothing here is public. `nora.persons` is still the only import site.
 """
@@ -33,7 +31,7 @@ from .domain.identity import (
 _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # The platform sub-table names `_PersonEntry` accepts, in the order the reverse
-# index is built — every platform design/10 §3.1 declares a kind vocabulary for.
+# index is built — every platform with a declared kind vocabulary.
 PLATFORM_FIELDS: tuple[str, ...] = (
     "signal", "telegram", "discord", "whatsapp", "instagram", "life360", "pulse",
 )
@@ -80,7 +78,7 @@ def _check_account(platform: str, account: dict[str, str | int]) -> None:
 class _PersonEntry(BaseModel):
     """One `[persons.<id>]` table. Each platform sub-table's keys are
     validated against that platform's fixed id-kind vocabulary
-    (`nora.domain.identity.id_kinds`, design/10 §3.1) — a typo, or
+    (`nora.domain.identity.id_kinds`) — a typo, or
     `display_name`, is a startup error, not a silently-ignored key.
     """
 
@@ -94,10 +92,9 @@ class _PersonEntry(BaseModel):
     # index: making a hand-written nickname resolve a sender would hand
     # identity to anyone who can set a profile name.
     aliases: list[str] = Field(default_factory=list)
-    # Prior `person_id`s this SAME person was known under, most recently
-    # design/27 §1.2's finding: `clara_yates` -> `clara_lawson` split one
-    # continuous presence-fixes track into two identities because the
-    # rename changed the TOML section header itself. Declared here, never
+    # Prior `person_id`s this SAME person was known under. A rename changes
+    # the TOML section header itself, which would split one continuous
+    # presence-fixes track into two identities. Declared here, never
     # inferred — an operator states a merge happened; the analytics rollup
     # (nora.analytics) never guesses one from timing/proximity alone.
     former_person_ids: list[str] = Field(default_factory=list)
@@ -120,12 +117,12 @@ class _PersonEntry(BaseModel):
     # both resolve to this person. `username` is accepted as metadata and is
     # NEVER matchable, for the reason every platform here refuses a handle: it
     # renames, and an identity that renames is an identity that silently stops
-    # resolving (design/instagram-adoption/02).
+    # resolving.
     instagram: list[dict[str, str | int]] | None = None
     # A location account, not a chat one, but the same array-of-accounts shape:
     # one block per Life360 account with a `member_id = "…"` (the circle-member
-    # UUID). It resolves to this person the same way their Signal number does
-    # (design/19 §3), which is what lets the presence collector name a live
+    # UUID). It resolves to this person the same way their Signal number does,
+    # which is what lets the presence collector name a live
     # circle member as one of Nora's people.
     life360: list[dict[str, str | int]] | None = None
     # A game-presence account, same shape as life360: one block per account,
@@ -134,8 +131,8 @@ class _PersonEntry(BaseModel):
     # Games Hub can resolve a Pulse player back to this person.
     pulse: list[dict[str, str | int]] | None = None
     # Accepted here ONLY so the retired `[persons.<id>.platforms]` shorthand
-    # gets a specific, readable error naming its replacement (design/10 §7.3
-    # — a hard break, deliberately: identity.toml is gitignored and
+    # gets a specific, readable error naming its replacement (a hard break,
+    # deliberately: identity.toml is gitignored and
     # single-operator, so there is no installed base to support two shapes
     # for) instead of pydantic's generic "extra fields not permitted".
     platforms: dict[str, str | int] | None = None
@@ -161,8 +158,8 @@ class _PersonEntry(BaseModel):
         """Hard break on the pre-multi-account `[persons.<id>.signal]` form.
 
         pydantic's own "Input should be a valid list" names neither the new
-        shape nor why it changed. `_reject_old_shorthand` set the precedent
-        (§7.3) that this file's breaks get a bespoke error; same reasoning —
+        shape nor why it changed. Like `_reject_old_shorthand`, this file's
+        breaks get a bespoke error; same reasoning —
         identity.toml is gitignored and single-operator, so supporting two
         shapes forever buys nothing.
         """
@@ -184,11 +181,10 @@ class _PersonEntry(BaseModel):
 
     @model_validator(mode="after")
     def _check_accounts(self) -> _PersonEntry:
-        """Validate every account on every platform (design/10 §3.1).
+        """Validate every account on every platform.
 
-        One validator walking `PLATFORM_FIELDS` replaces the four
-        near-identical `field_validator`s this class used to carry, so a fifth
-        platform costs one field instead of three edits.
+        One validator walks `PLATFORM_FIELDS`, so a new platform costs one
+        field.
         """
         for platform in PLATFORM_FIELDS:
             accounts = getattr(self, platform) or ()
@@ -219,7 +215,7 @@ class _PersonEntry(BaseModel):
 
 class _WorkspaceBinding(BaseModel):
     """One `[workspaces.<nora workspace>]` table: the HONCHO workspace that
-    Nora workspace is bound to (operator 2026-09-28, DEC-214).
+    Nora workspace is bound to (DEC-214).
 
     Here and not in `policy.toml` because it is an external id, not a trust
     answer: `policy.toml` says which workspace a unit belongs to, this file

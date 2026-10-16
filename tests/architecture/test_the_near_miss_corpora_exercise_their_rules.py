@@ -47,7 +47,7 @@ _RULES = [
         "word-boundary (B.2 rule 3)",
         "        if _WORD.match(before) or _WORD.match(after):\n"
         "            continue                       "
-        "# B.2 rule 3: word-character boundary required\n",
+        "# a word character on either side is not a tag\n",
         "",
     ),
     (

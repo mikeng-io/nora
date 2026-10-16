@@ -1,11 +1,10 @@
 """The Rollup's own types: the presence fold's events and resume state, the
 unit rollups (co-location, outing, daybook, tie, response), their lineage,
-citation by overlap, and the healthy-source proof a deviation needs
-(design/cognition-loop/25-rollup.md, 10-tiers.md §2-§3).
+citation by overlap, and the healthy-source proof a deviation needs.
 
 Pure: no store, no clock. Every function here is a function of its arguments,
 which is what lets the analytics process's incremental run and a rebuild at
-the same watermark compute the same rows (25 §2).
+the same watermark compute the same rows.
 
 **The presence fold** (`nora.analytics.rollup.MobilityRollup`) consumes the
 Record as ONE ordered stream of events per person: that person's fixes and
@@ -14,7 +13,7 @@ order. A fix is evidence of where the person was and of the time; a poll that
 succeeded is evidence of the time only. The fold's clock (`logical_now_ms`)
 is the newest time that evidence shows, never the wall clock, so a stay
 closes when the Record shows it ended (a later fix, or a poll proving time
-passed with no fix), not because a clock passed (25 §2). `FoldState` is where
+passed with no fix), not because a clock passed. `FoldState` is where
 the fold stands after the last event it consumed, stored per build and
 person, so the next run continues from exactly there.
 """
@@ -34,7 +33,7 @@ from zoneinfo import ZoneInfo
 from nora.domain.mobility import RawFix, Stay, TaggedPlace
 from nora.domain.presence import haversine_distance_m
 
-#: Hong Kong: the unit's local day and ISO week (25 §3, «local HK date»).
+#: Hong Kong: the unit's local day and ISO week («local HK date»).
 LOCAL_TZ = "Asia/Hong_Kong"
 
 
@@ -118,7 +117,7 @@ class NoRollupBuildError(RuntimeError):
 @dataclass(frozen=True)
 class StoredCorridor:
     """One `presence_corridors` row of a build: a named route, what its trips
-    add up to (design/27 §4)."""
+    add up to."""
 
     id: int
     subject_id: str
@@ -161,7 +160,7 @@ def tags_sha256(tags: Iterable[TaggedPlace]) -> str:
     return hashlib.sha256(json.dumps(ordered).encode()).hexdigest()
 
 
-# --- lineage (10-tiers.md §3) -------------------------------------------
+# --- lineage ------------------------------------------------------------
 
 LineageKind = Literal["presence", "message", "face", "social", "play", "perception"]
 
@@ -177,7 +176,7 @@ class LineageEntry(NamedTuple):
 
 
 def presence_lineage(*persons: str) -> tuple[LineageEntry, ...]:
-    """Placing a person is presence (10 §3), whatever row does it."""
+    """Placing a person is presence, whatever row does it."""
     return tuple(LineageEntry("presence", p, None) for p in sorted(set(persons)))
 
 
@@ -243,7 +242,7 @@ def utc_ms(value: datetime) -> int:
     return int(value.astimezone(UTC).timestamp() * 1000)
 
 
-# --- citation by overlap (25 §2, 10 §2 rule 6) -----------------------------
+# --- citation by overlap ----------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -264,7 +263,7 @@ class Citation:
 @dataclass(frozen=True)
 class Resolution:
     """A citation resolved against one build: the rows overlapping its
-    interval, or `unsupported` when none do (10 §2 rule 7)."""
+    interval, or `unsupported` when none do."""
 
     citation: Citation
     row_ids: tuple[int, ...]
@@ -308,7 +307,7 @@ def episode_key(subject: str, start_ms: int, end_ms: int) -> str:
     return f"{subject}|{iso(start_ms)}/{iso(end_ms)}"
 
 
-# --- the unit rollups (25 §3) ---------------------------------------------
+# --- the unit rollups -------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -362,9 +361,9 @@ class Colocation:
 
     @property
     def is_outing(self) -> bool:
-        """25 §3: two or more members away from EVERY member's home. A member
-        with no home place yet cannot be proved away from it, so the answer
-        is no, never a guess (design 27 §3.4's fail-closed labelling)."""
+        """Two or more members away from EVERY member's home. A member with no
+        home place yet cannot be proved away from it, so the answer is no,
+        never a guess (fail-closed labelling)."""
         return (
             len(self.persons) >= 2 and not self.at_home_of and not self.homes_unknown
         )
@@ -396,7 +395,7 @@ def colocations(
     unit: str, stays: Sequence[StaySpan], *, homes: Mapping[str, Sequence[Home]],
     radius_m: float, min_overlap_ms: int, as_of_ms: int,
 ) -> list[Colocation]:
-    """Co-locations of `unit`'s members (25 §3): two stays of DIFFERENT
+    """Co-locations of `unit`'s members: two stays of DIFFERENT
     persons whose centres are within `radius_m` and whose intervals overlap
     by at least `min_overlap_ms` are together for that overlap; stays joined
     that way, transitively, are one episode. Its persons are every person in
@@ -474,15 +473,14 @@ def colocations(
             stay_count=len(spans),
             open=any(s.open and s.ended_ts >= end for s in spans),
             # The row's OWN newest evidence, never the unit's clock: a clock
-            # stamp would rewrite every row on every run (measured on the
-            # deployment's data: every unit rollup row, every tick).
+            # stamp would rewrite every unit rollup row on every run.
             as_of_ms=max(s.ended_ts for s in spans),
         ))
     return out
 
 
 def outings(found: Sequence[Colocation]) -> list[Outing]:
-    """The co-locations that are outings (25 §3; `Colocation.is_outing`)."""
+    """The co-locations that are outings (`Colocation.is_outing`)."""
     return [
         Outing(
             unit=c.unit, persons=c.persons, valid_from_ms=c.valid_from_ms,
@@ -547,7 +545,7 @@ class Daybook:
 
     @property
     def silent(self) -> bool:
-        """Nothing posted in any room and never at home: the day 25 §4's
+        """Nothing posted in any room and never at home: the day a silence
         deviation counts."""
         return self.messages == 0 and self.reactions == 0 and self.home_ms == 0
 
@@ -561,7 +559,7 @@ def daybooks(
     """One row per member per local date on which the Record or the rollups
     below hold anything for them, up to the date `as_of_ms` falls on (a day
     still running is a row too; it is recomputed as the day fills). No upward
-    input: a daybook counts outings, never events attended (25 §2)."""
+    input: a daybook counts outings, never events attended."""
     member_set = set(members)
     per: dict[tuple[str, str], dict[str, Any]] = {}
 
@@ -677,8 +675,8 @@ def ties(
     as_of_ms: int, tz_name: str = LOCAL_TZ,
 ) -> list[Tie]:
     """One row per pair of members per ISO week in which they interacted:
-    replies, mentions and reactions each way, and minutes co-located (25 §3,
-    partial: co-tags and play arrive with their inputs)."""
+    replies, mentions and reactions each way, and minutes co-located
+    (co-tags and play are not counted)."""
     member_set = set(members)
     acc: dict[tuple[str, str, str], dict[str, Any]] = {}
 
@@ -735,7 +733,7 @@ def ties(
     return out
 
 
-# --- response (25 §3) ------------------------------------------------------
+# --- response ---------------------------------------------------------------
 
 ResponseOutcome = Literal["open", "responded", "silent", "unanswered", "unknown"]
 
@@ -762,7 +760,7 @@ class SendFact:
 class ResponseEvidence:
     """One person's response to a send: a reply quoting it, a reaction on
     it, an edit of a reply to it, or `follow`: a message that quoted nothing
-    and is read as answering it (`unquoted_follows`, 25 §3)."""
+    and is read as answering it (`unquoted_follows`)."""
 
     send_id: int
     person_id: str
@@ -770,9 +768,7 @@ class ResponseEvidence:
     kind: Literal["reply", "reaction", "edit", "follow"]
 
 
-#: How long after her send an unquoted message answers it without naming her
-#: (25 §3). Measured 2026-10-07 on 14 days of the friends unit, 60 labelled
-#: follow-ups (one labeller): 33 answered her, 3 did not, 11 were ambiguous.
+#: How long after her send an unquoted message answers it without naming her.
 FOLLOW_WINDOW_SECONDS = 120.0
 
 #: The words that name her in a message body, matched whole-word and
@@ -803,7 +799,7 @@ def unquoted_follows(
     follow_window_ms: int,
 ) -> list[ResponseEvidence]:
     """The `follow` evidence: member messages that answered one of her sends
-    without quoting it (25 §3).
+    without quoting it.
 
     A message answers her when it names her, or when it comes within
     `follow_window_ms` of her latest send in its room and mentions someone
@@ -870,7 +866,7 @@ def responses(
     window_ms: int, as_of_ms: int,
     platform_up: Mapping[int, bool],
 ) -> list[Response]:
-    """How people responded to each send, within `window_ms` of it (25 §3).
+    """How people responded to each send, within `window_ms` of it.
 
     - `open` while the window runs past `as_of_ms`, the newest Record time
       (the window closes when the Record shows the time passed, never the
@@ -919,7 +915,7 @@ def responses(
     return out
 
 
-# --- healthy sources (20 §3, D3) -------------------------------------------
+# --- healthy sources -------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -979,7 +975,7 @@ def adapter_up(
 
 @dataclass(frozen=True)
 class Deviation:
-    """A person's pattern broke (25 §4): `anomaly` (a stay scored against the
+    """A person's pattern broke: `anomaly` (a stay scored against the
     rhythm) or `silence` (N consecutive silent daybook days). A stimulus, not
     a rule."""
 

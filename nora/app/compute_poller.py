@@ -1,8 +1,7 @@
-"""`ComputeJobPoller` — delivers a finished compute job (Nora Compute spec
-§4) through `FirePath.speak`, the pattern DEC-97 established for an occasion
-that is not a reminder, rather than `HeartbeatLoop`'s: there is no `due_at` to compare against,
-every `PENDING` row is a candidate every tick, and "is it done" is answered
-by `ComputeBackend.poll`, not a clock.
+"""`ComputeJobPoller` — delivers a finished compute job through `FirePath.speak`
+(DEC-97), rather than `HeartbeatLoop`'s path: there is no `due_at` to compare
+against, every `PENDING` row is a candidate every tick, and "is it done" is
+answered by `ComputeBackend.poll`, not a clock.
 """
 
 from __future__ import annotations
@@ -42,13 +41,11 @@ log = logging.getLogger("nora.app.compute_poller")
 BATCH_LIMIT = 50
 
 # `nora_compute_jobs_delivered_total{outcome}`'s one value that is not one of
-# `speak()`'s own §8.1 outcomes — this module's own decision, as the retired
-# version announcer's `DEFERRED` was its own. A tag holds the conversation,
-# so nothing was said and NOTHING WAS CLAIMED: the row stays `PENDING` and the
-# next tick tries again. That makes it the one outcome here that is not
-# terminal, and the reason it needs a counter at all — without one, a slot
-# that never frees looks identical on every dashboard to a job that was never
-# finished.
+# `speak()`'s own outcomes: this module's own decision. A tag holds the
+# conversation, so nothing was said and NOTHING WAS CLAIMED: the row stays
+# `PENDING` and the next tick tries again. It is the one outcome here that is
+# not terminal, hence the counter: without one, a slot that never frees looks
+# identical on every dashboard to a job that was never finished.
 DEFERRED = "deferred"
 
 
@@ -270,40 +267,29 @@ async def recover(
     *, store: ComputeJobStore, metrics: Metrics, now: datetime,
     durable_kinds: frozenset[str] = frozenset(),
 ) -> list[ComputeJob]:
-    """Boot recovery. BOTH non-terminal states resolve to `FAILED`, and the
-    second half is where this stops mirroring `nora.app.heartbeat.recover`.
+    """Boot recovery. BOTH non-terminal states resolve to `FAILED`; the
+    `PENDING` half has no counterpart in `nora.app.heartbeat.recover`.
 
     `FIRING` is the crash-mid-delivery case the heartbeat has too.
 
-    `PENDING` has no heartbeat counterpart, and leaving it un-swept was a real
-    defect rather than a theoretical one. A pending compute job is a HANDLE
-    (`backend_job_id`) into `ComputeBackend`'s registry, and
-    an in-process backend keeps that registry in memory (the one that
-    shipped did) — so ANY restart, not
-    just a crash, orphans every surviving `PENDING` row. The next tick polls a
-    handle nothing recognises, gets `FAILED("unknown job_id")` back, claims the
-    row and delivers it: Nora tells the group, in her own voice, that their job
-    failed. Nobody knows that. The container may have finished and registered
-    its artifact perfectly well.
+    `PENDING`: a pending compute job is a HANDLE (`backend_job_id`) into
+    `ComputeBackend`'s registry, and an in-process backend keeps that registry
+    in memory, so ANY restart, not just a crash, orphans every surviving
+    `PENDING` row. Left alone, the next tick would poll a handle nothing
+    recognises, get `FAILED("unknown job_id")` back, claim the row and tell the
+    group their job failed, which nobody knows: the container may have
+    finished and registered its artifact perfectly well.
 
-    Sweeping at boot replaces that with the one thing that IS known — the
-    delivery was lost across a restart. The orphaned container is not
-    addressed here and cannot be: this process has no handle to it either.
-    That is a known cost of the in-memory registry, not something this
-    function hides.
+    Sweeping at boot records the one thing that IS known: the delivery was
+    lost across a restart. The orphaned container is not addressed here and
+    cannot be: this process has no handle to it either.
 
-    **The rows are RETURNED so somebody can still be told** (operator, live,
-    2026-08-14). Making them terminal here is right, and NOT claiming the job
-    failed is right — the container may have finished perfectly well and
-    nobody knows. But "never spoken at all" was a third thing, and it was
-    wrong: the person who asked was told «I'm working on it» and then heard
-    nothing, ever. A promise made and never closed is R-5's own failure shape,
-    and it was on the honest side of the ledger only because the DATABASE was
-    honest; the human was not told anything.
-
-    What is spoken is therefore an `unavailable`, never a `failed`: «I lost
-    track of it, ask me again» — which is the one statement that is true. See
-    `nora.app.fire.lost_job_occasion`.
+    **The rows are RETURNED so somebody can still be told.** The database
+    must not claim the job failed (nobody knows), but the person who asked was
+    told «I'm working on it» and must not then hear nothing: a promise made and
+    never closed is R-5's own failure shape. What is spoken is an
+    `unavailable`, never a `failed`: «I lost track of it, ask me again», the
+    one statement that is true. See `nora.app.fire.lost_job_occasion`.
 
     `durable_kinds` are the exception to the `PENDING` half: a kind whose handle is NOT in
     memory (a video job's is the provider's task id, queryable for days) loses nothing across

@@ -9,8 +9,8 @@ The bias throughout is toward PASTE-READY output. The operator's question is
 never "what is the state of the world", it is "what do I type next" — so a
 denied group prints the `[[conversations]]` block that would allow it, and a
 pending account prints the `[[persons.<id>.<platform>]]` block that would map
-it. Both are emitted in the current schema (design/10 §3, §4.2) and both are
-suggestions the operator hand-edits into a file Nora never writes (D6).
+it. Both are emitted in the current schema and both are suggestions the operator
+hand-edits into a file Nora never writes.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def stanza(account: PendingAccount, *, person_id: str) -> list[str]:
     """The paste-ready `identity.toml` block for one account, as lines.
 
     ONE `[[persons.<id>.<platform>]]` array-of-tables block, which is the
-    current schema (design/10 §3) — and exactly one, so no `label` is needed:
+    current schema — and exactly one, so no `label` is needed:
     that key is only required once a person holds two or more accounts on one
     platform. `_PASTE_HINT` carries the warning for the case where this account
     belongs to somebody already in the file, which is when the label becomes
@@ -175,7 +175,7 @@ def render_reminders(
         lines.append(f"         who  = {row.requester_person_id}")
         lines.append(f"         where= {row.platform}:{row.conversation_id}")
         lines.append(f"         text = {row.text}")
-        # DEC-85. A recurring series shows as ONE pending row — the next
+        # (DEC-85) A recurring series shows as ONE pending row — the next
         # occurrence — so without this line an operator counting rows would
         # read a fourteen-day countdown as a single reminder, and «1 pending»
         # would be true and misleading at once. `occurrence` is 0-based in the
@@ -202,10 +202,10 @@ def render_reminders(
     if truncated:
         lines.append("Listing was truncated — re-run with a larger --limit.")
     if not reminders:
-        # Still true row-by-row after DEC-85, and that is the precise wording:
-        # a RECURRING reminder is a chain of rows, each of which resolves once
-        # and is never re-run — the next occurrence is a NEW row, minted when
-        # this one is claimed. Nothing here re-runs anything.
+        # True row-by-row (DEC-85): a RECURRING reminder is a chain of rows,
+        # each of which resolves once and is never re-run — the next
+        # occurrence is a NEW row, minted when this one is claimed. Nothing
+        # here re-runs anything.
         lines.append("Nothing is waiting. Reminders resolve once and are never re-run.")
     return lines
 
@@ -218,8 +218,8 @@ def _local(when: datetime) -> str:
 def render_presence_members(circles: list[DiscoveredCircle]) -> list[str]:
     """Every Life360 circle and member (id + name) this account can see, in a
     paste-ready shape: a `[[persons.<id>.life360]]` block per member carrying BOTH
-    `member_id` and `circle_id`, for identity.toml. All the ids live there (design
-    /19 §3); config.toml needs none — just `[presence] enabled = true`."""
+    `member_id` and `circle_id`, for identity.toml. All the ids live there;
+    config.toml needs none — just `[presence] enabled = true`."""
     lines: list[str] = ["Life360 circles for this account:", ""]
     for circle in circles:
         lines.append(f"Circle: {circle.name or '(no name)'}  (circle_id {circle.circle_id})")
@@ -264,12 +264,10 @@ def render_pending(
 ) -> list[str]:
     """Unmapped accounts, newest first, each with its paste-ready stanza.
 
-    EVERY prose line is a TOML comment, which is not decoration. The first
-    draft interleaved plain-text headings with the stanzas, and the result was
-    output where no contiguous selection is valid TOML: the operator has to
-    pick out the stanza lines by eye, from a report whose entire purpose is to
-    save him from transcribing ids by eye. As comments, the whole report from
-    the first `[persons.` onward parses — which is exactly what
+    EVERY prose line is a TOML comment, which is not decoration. Plain-text
+    headings interleaved with the stanzas would leave no contiguous selection
+    that is valid TOML, forcing the operator to pick out stanza lines by eye.
+    As comments, the whole report from the first `[persons.` onward parses — which is exactly what
     `tests/test_cli_control_plane.py` asserts by feeding a slice of it to
     `load_persons`.
     """
@@ -299,10 +297,10 @@ def render_pending(
             f"message(s), {_when(account.first_ts)} → {_when(account.last_ts)}"
         )
         if not account.known:
-            # Two different facts, and conflating them was the first version's
-            # bug: "the daemon does not know this account" is a lookup that
-            # RAN and came back empty, while "the daemon was unreachable" is a
-            # lookup that never happened. Printing the former for the latter
+            # Two different facts, not to be conflated: "the daemon does not
+            # know this account" is a lookup that RAN and came back empty,
+            # while "the daemon was unreachable" is a lookup that never
+            # happened. Printing the former for the latter
             # asserts something unverified — the exact shape of dishonesty
             # this command exists to remove.
             lines.append(
@@ -344,7 +342,7 @@ def render_measures(
     refusal_source: str,
 ) -> list[str]:
     """`nora measure participation` — the four measures, each above its own
-    ceiling (design/culture-tier/02-measurement §2).
+    ceiling.
 
     **The ceiling is printed under every measure, not once at the bottom**, and
     that is the whole formatting decision here. These four differ in what they
@@ -371,7 +369,7 @@ def render_measures(
         rate = getattr(m, "rate", None)
         # "n/a" and not "0.0%": nothing considered means the measure did not
         # run, and printing a zero there is the absent-series-read-as-zero
-        # error this bundle exists to not repeat.
+        # error.
         shown = "n/a (nothing considered)" if rate is None else f"{rate:.1%}"
         lines.append(f"{name}: {len(hits)} / {considered} = {shown}")
         for o in hits[:10]:

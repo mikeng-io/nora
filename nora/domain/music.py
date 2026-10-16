@@ -1,6 +1,4 @@
-"""The Discord music bot's persisted state (design/discord-music/
-03-state-and-persistence.md, 06-session-persistence.md). Two stores, two
-different shapes:
+"""The Discord music bot's persisted state. Two stores, two different shapes:
 
 - `MusicQueueStore` — an append/pop LOG, one row per upcoming track.
 - `MusicSessionStore` — a snapshot, one row per GUILD, holding what
@@ -24,7 +22,7 @@ __all__ = [
 ]
 
 # `QueuedTrack.added_by_person_id` sentinel for a track `MusicPlayer._advance`
-# enqueued itself (design/discord-music/08-autoplay.md) rather than a real
+# enqueued itself rather than a real
 # person asking for it -- reuses the existing free-text field instead of a
 # schema change, and lets `MusicPlayerManager._notify_now_playing` tell the
 # two cases apart without threading a separate flag through `QueuedTrack`.
@@ -59,10 +57,9 @@ class MusicQueueStore(Protocol):
         by the store as one past the current max for that guild (0 for an
         empty queue) — but NOT racily: two `/music play` calls landing for
         the same guild at once must never both take the same position, and
-        a same-statement subquery is not sufficient to guarantee that
-        (verified live against Postgres, subagent review 2026-08-23: it
-        collides on every run under READ COMMITTED once two transactions
-        genuinely overlap). Whatever mechanism an implementation uses
+        a same-statement subquery is not sufficient to guarantee that (it
+        collides under READ COMMITTED once two transactions genuinely
+        overlap). Whatever mechanism an implementation uses
         (`SqlMusicQueueStore`: a UNIQUE constraint plus a bounded retry) is
         this method's problem to solve, not its caller's."""
         ...
@@ -114,8 +111,7 @@ class MusicSession:
     where it started" and is the FALLBACK destination for announcements,
     not necessarily where they go: a guild one of whose `policy.toml` rooms
     names a `music_channel` routes there instead, resolved per-post rather
-    than persisted (design/discord-music/10-notification-routing.md).
-    Everything else is overwritten on every transition. `now_playing_*` are
+    than persisted. Everything else is overwritten on every transition. `now_playing_*` are
     all `None` together exactly when nothing is currently playing (queue
     empty, waiting on the idle timer) -- the row still exists (the voice
     connection is still live), it's just idle."""
@@ -130,9 +126,9 @@ class MusicSession:
     volume: float
     updated_at: datetime
     # The most recent track that ACTUALLY started -- the autoplay re-seed
-    # seed for boot-time resume (design/discord-music/08-autoplay.md,
-    # R-67). All three None together means "never played a track in this
-    # session" -- no seed to re-seed from, and none must be fabricated.
+    # seed for boot-time resume (R-67). All three None together means "never
+    # played a track in this session" -- no seed to re-seed from, and none
+    # must be fabricated.
     last_played_source: str | None = None
     last_played_locator: str | None = None
     last_played_title: str | None = None
@@ -159,8 +155,6 @@ class MusicSessionStore(Protocol):
     async def aclose(self) -> None: ...
 
 
-# Re-exported, not re-implemented: `nora.domain.gatherings` already established
-# the precedent (imports the same function rather than restating the naive-
-# datetime guard a second time) — a naive `added_at` names no instant for
-# exactly the reason it names no instant for a reminder, and two copies of
-# that check are two copies to keep in sync when it changes.
+# Re-exported, not re-implemented (as `nora.domain.gatherings` does): a naive
+# `added_at` names no instant for the same reason it names none for a
+# reminder, and two copies of that check would have to be kept in sync.

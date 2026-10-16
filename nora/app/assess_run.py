@@ -1,36 +1,30 @@
-"""`nora assess run-nightly` (design/cognition-loop/30-cognition.md §6,
-70-migration.md §2 row 3, DEC-240).
+"""`nora assess run-nightly` (DEC-240).
 
-WHAT IT DOES. Runs every deterministic check `nora.app.assess_dq` names
-(`nora.domain.assess.DQ_CHECKS`, in order), against a read-only connection —
-no check here writes a tier, matching `15-map.md` §6's "Assess … reports and
-metrics only". Each check runs in isolation (`nora.app.assess_dq._isolated`):
-one check raising is recorded as `status="error"` and never takes the rest of
-the run, or the report, down with it. `--record` (default) writes one
-`assess_report` row (`nora.infra.sql.assess.SqlAssessReportStore.record`,
-the FULL report, including any errored checks) and increments
-`nora_dq_failures_total{check}` once per FAILING check and
-`nora_dq_errors_total{check}` once per ERRORED check (never per row: the
-metric answers "is this check red tonight", the report's `failing` count
-answers "how red" — and fail and error are counted on two distinct series,
-never one, because a check that never reached a verdict is not the same fact
-as a check that reached one and found a violation). `--no-record` prints
-without writing, the same dry-run shape `nora.app.events_backfill` uses for a
-command that touches state.
+Runs every deterministic check `nora.app.assess_dq` names
+(`nora.domain.assess.DQ_CHECKS`, in order) against a read-only connection. No
+check writes a tier: Assess reports and records metrics only. Each check runs
+in isolation (`nora.app.assess_dq._isolated`): one check raising is recorded as
+`status="error"` and never takes the rest of the run, or the report, down.
 
-REFUSED: the whole run, when `[assess] mode` is `"off"` — the flag this
-module's docstring promises (`nora.config.AssessConfig`). Not scoped
-per-check: a partial run under a flag meant to gate the whole adaptor would
-be the same silent widening `20-observe.md`'s brakes warn against.
+`--record` (default) writes one `assess_report` row
+(`nora.infra.sql.assess.SqlAssessReportStore.record`, the full report,
+including errored checks) and increments `nora_dq_failures_total{check}` once
+per failing check and `nora_dq_errors_total{check}` once per errored check.
+The counters are per check, never per row: the metric answers "is this check
+red", the report's `failing` count answers "how red". Fail and error are
+separate series because a check that never reached a verdict is not a check
+that found a violation. `--no-record` prints without writing, the same dry-run
+shape `nora.app.events_backfill` uses.
 
-THE ROLLUP REBUILD DIFF IS OPT-IN (`--rollup-diff`), off by default. Building
-a second, unswitched Rollup build (`nora.analytics.runner.RollupRunner.
-rebuild(switch=False)`) is real work — `25-rollup.md` §2's own caveat is that
-its cost on the deployment's real history must be measured before it runs on
-every tick, and a nightly cron is exactly the kind of "off the deploy path"
-the design names as the fallback. Without it, `rollup_rebuild_divergence`
-reports `not_applicable` for the run, which is the honest state, not a
-failure."""
+Refused: the whole run, when `[assess] mode` is `"off"` (`nora.config.
+AssessConfig`). The flag is not scoped per check; a partial run under a flag
+that gates the whole adaptor would silently widen it.
+
+The rollup rebuild diff is opt-in (`--rollup-diff`) and off by default. It
+builds a second, unswitched Rollup build (`nora.analytics.runner.RollupRunner.
+rebuild(switch=False)`), which costs real work on the deployment's history.
+Without it, `rollup_rebuild_divergence` reports `not_applicable` for the run,
+which is an honest state, not a failure."""
 
 from __future__ import annotations
 

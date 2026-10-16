@@ -1,19 +1,16 @@
 """Keep every OAuth login Nora generates media with alive, on a schedule (DEC-308).
 
-Operator, 2026-10-09: «Both xAI and Codex must refresh their tokens
-proactively, NOT lazily — I should not have to log in again every time», and
-every OAuth-authenticated provider for image or video generation is refreshed
-on a schedule so a use never meets an expired login. The incident behind it:
-the xAI lane's last refresh was 2026-09-27; the first call twelve days later
-found the stored refresh token refused (`invalid_grant`), and nothing had
-logged it.
+Every OAuth-authenticated provider for image or video generation is refreshed
+proactively on a schedule, not lazily, so a use never meets an expired login
+(a refresh token left idle can be refused, `invalid_grant`, with nothing
+logged).
 
 ONE component, any number of lanes. A lane registers with `register` and
 satisfies `KeptLane`: its name, how early it refreshes before its access
 token expires, the current link (when it was refreshed, when it expires), and
 a `refresh` coroutine that takes the SAME locks a live call does (so the
-keeper and a call never both spend a rotating token). Today the registrants
-are the two image lanes, `xai` and `openai_codex`; an OAuth video provider
+keeper and a call never both spend a rotating token). The registrants
+are the image lanes `xai` and `openai_codex`; an OAuth video provider
 registers the same way. MiniMax CN (video) authenticates with an API key and
 has nothing to keep alive.
 
@@ -31,8 +28,8 @@ Per lane, a loop that:
   silently.
 
 Metrics are timestamps, not rare counters (Prometheus loses a rare counter
-across the 2-3 restarts a day this process sees): the alert reads the
-last-success timestamp, which the boot publishes from the state file.
+across restarts): the alert reads the last-success timestamp, which the boot
+publishes from the state file.
 """
 
 from __future__ import annotations

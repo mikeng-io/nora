@@ -1,12 +1,12 @@
 """The fire-time screen for a `kind="proactive"` reminder row
-(design/dreamer-agent-loop/39 D5 and D11, DEC-162).
+(DEC-162).
 
 WHAT IT ANSWERS
 ---------------
 Whether a due proactive row may reach a fire turn at all, and — when it may
 not — what the row should say about why. Two questions, both asked at FIRE
 time and neither at create time, for `nora.app.heartbeat`'s own reason: the
-row was written hours ago (by the Cognition session's `remind`, formerly the decide turn) reading
+row was written hours earlier (by the Cognition session's `remind`) reading
 the world as it was then.
 
 1. **The room's grant.** `is_allowed` is (room, person), and a proactive
@@ -23,7 +23,7 @@ the world as it was then.
    thing at 11:00, so Nora does not raise it at 14:00. Refused:
    `CANCELLED` / `cancelled_note_retired` or `cancelled_note_moved`. A
    note retired `retired-merged` is not gone: its question was folded into
-   another open note (design 41 §7.5), so the row FOLLOWS that survivor —
+   another open note, so the row FOLLOWS that survivor —
    it fires unless the survivor was revised on the tag path after the row
    was written, or the chain ends on no open note. Not
    «any head move»: the debrief's note sink appends revisions with a run-id
@@ -157,11 +157,10 @@ class ProactiveScreen:
         if current[0].retired_at is not None and not merged:
             return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED
         duplicate_chain = {r.id: (r.parent_revision_id, r.established_by) for r in chain}
-        # The row's OWN note first, open or merged — the order this screen
-        # had before #520, so a row whose own note moved reads
-        # `cancelled_note_moved` whatever later happened to its survivor
-        # (#520 round-3 review: running this only inside `_follow_survivor`
-        # let a retired or unreadable survivor change the label). For a
+        # The row's OWN note first, open or merged, so a row whose own note
+        # moved reads `cancelled_note_moved` whatever later happened to its
+        # survivor (running this only inside `_follow_survivor` would let a
+        # retired or unreadable survivor change the label). For a
         # merged note, `proactive_row_forwarded_is_moved` repeats this step
         # and finds nothing; the shared function stays the one definition.
         if tag_path_progressed_since_wake(
@@ -183,17 +182,16 @@ class ProactiveScreen:
         linked_at: str | None,
     ) -> tuple[ReminderState, str] | None:
         """A row on a `retired-merged` note is screened against the open note
-        its question was folded into (design 41 §7.5): re-pointed in effect,
+        its question was folded into: re-pointed in effect,
         not cancelled. `proactive_row_forwarded_is_moved` is the two-step
         check — the DUPLICATE's own chain (an ancestry walk from
         `duplicate_head`/`duplicate_chain`, the caller's own read, back to
         `linked_at`) first, THEN the survivor's (a scan by time, since
         nothing links this row to any revision of the survivor — it was
         never about the survivor). `SqlNoteStore.merge_into`'s re-point
-        (issue #158 residue) calls the SAME function, which is the whole
-        reason it is a shared domain function rather than inlined here
-        twice — a first version of that re-point inlined only the second
-        step and a stale reminder fired (#520 review round 2)."""
+        calls the SAME function, which is why it is a shared domain
+        function rather than inlined twice: inlining only the second step
+        lets a stale reminder fire."""
         if self._notes is None:     # pragma: no cover — checked by the caller
             return ReminderState.FAILED, FAILED_ERROR
         try:

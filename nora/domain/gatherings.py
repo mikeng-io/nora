@@ -1,12 +1,10 @@
 """Gathering/RSVP domain types and the `GatheringStore` port.
 
-Mirrors `nora.domain.reminders`'s split (types + port in one module, no
-separate `ports.py` entry — a domain module's own port lives with its
-types, matching `ReminderStore`'s own precedent). A `Gathering` owns no
-reminder (DEC-303): whether, when and what to remind about an event is a
-person's request or Nora's own `remind`, which cites the event like any other
-row. `reminder_id` is the column the retired event-owned reminder wrote
-(DEC-139); migration 0102 cleared it and nothing writes it now.
+Mirrors `nora.domain.reminders`'s split: types and port in one module, no
+separate `ports.py` entry. A `Gathering` owns no reminder (DEC-303): whether,
+when and what to remind about an event is a person's request or Nora's own
+`remind`, which cites the event like any other row. `reminder_id` is always
+cleared and nothing writes it.
 
 Venue fields are resolved ONCE, at write time, through the same
 `route_source`/`PlaceResolver` `nora.agent.tools`'s `place_info` tool
@@ -32,23 +30,19 @@ from uuid import UUID
 from nora.domain.lineage import CONFIDENCES, Lineage, LineageEntry, message, unresolved
 from nora.domain.reminders import ensure_utc
 
-#: design/cognition-loop/40-register.md §4: an event field's reasoning is one
-#: of these three ("told", "deduced", "abduced" — never `computed`, `induced`
-#: or `said`; `nora.domain.lineage.REASONING_MODES` is the full six other
-#: tiers allow). `None` means "not stated", the same convention `0073_lineage`
-#: set for note/standing/culture: no write verb states a mode until one
-#: actually reasons about a field (design 30 §3 check 5 is what enforces
-#: membership; step 2b only carries the column and the check, step 3 is the
-#: first writer to set one on purpose).
+#: An event field's reasoning is one of these three (never `computed`,
+#: `induced` or `said`; `nora.domain.lineage.REASONING_MODES` is the full six
+#: other tiers allow). `None` means "not stated", the same convention note,
+#: standing and culture use: a write states a mode only when it actually
+#: reasons about a field. Membership is enforced by `validate_event_field_mode`.
 EVENT_FIELD_MODES: frozenset[str] = frozenset({"told", "deduced", "abduced"})
 
-#: 10-tiers.md §3's confidence vocabulary; identical to every other tier's,
-#: reused rather than restated (`nora.domain.lineage.CONFIDENCES`).
+#: The confidence vocabulary, identical to every other tier's and reused
+#: rather than restated (`nora.domain.lineage.CONFIDENCES`).
 EVENT_FIELD_CONFIDENCES: frozenset[str] = frozenset(CONFIDENCES)
 
 #: The parts of an event a citation, a lineage section and a stated
-#: reasoning each attach to (12-schemas.md §3: "what, start, end, place,
-#: people, status"). One vocabulary for all three: `Gathering.lineage` is keyed
+#: reasoning each attach to. One vocabulary for all three: `Gathering.lineage` is keyed
 #: by it, `citation.part` holds it, `FieldMeta.field` names it.
 EVENT_PARTS: tuple[str, ...] = ("what", "start", "end", "place", "people", "status")
 
@@ -57,10 +51,7 @@ EVENT_PARTS: tuple[str, ...] = ("what", "start", "end", "place", "people", "stat
 CITED_MESSAGE = "message"
 CITED_ROLLUP = "rollup"
 
-#: design/cognition-loop/40-register.md §3: an event's lifecycle.
-#: `PROPOSED`/`CONFIRMED`/`CANCELLED` predate this step (DEC-117); `STAGED`,
-#: `HAPPENED`, `LAPSED` and `EVICTED` are 70-migration.md §2 row 2b's
-#: addition. No further statuses "for now" (operator 2026-09-28).
+#: An event's lifecycle (DEC-117). The closed set: no further statuses.
 class GatheringStatus(StrEnum):
     STAGED = "staged"
     PROPOSED = "proposed"
@@ -77,12 +68,11 @@ class RSVPResponse(StrEnum):
     MAYBE = "maybe"
 
 
-#: 40-register.md §3's lifecycle line: "Any status before `happened` may be
-#: revised... No further statuses for happened/cancelled/lapsed/evicted."
-#: Derived from `GatheringStatus` itself (every member except the three that
-#: sit BEFORE `happened`) rather than hand-listed a second time, so a new
-#: status added to the enum lands in exactly one bucket by construction
-#: instead of silently falling into neither set.
+#: Any status before `happened` may be revised; `happened`, `cancelled`,
+#: `lapsed` and `evicted` are terminal. Derived from `GatheringStatus` itself
+#: (every member except the three that sit BEFORE `happened`) rather than
+#: hand-listed a second time, so a new status added to the enum lands in
+#: exactly one bucket by construction instead of silently falling into neither.
 _PRE_HAPPENED_STATUSES: frozenset[GatheringStatus] = frozenset({
     GatheringStatus.STAGED, GatheringStatus.PROPOSED, GatheringStatus.CONFIRMED,
 })
@@ -105,8 +95,7 @@ class DuplicateGatheringError(Exception):
 
 class InvalidEventFieldModeError(Exception):
     """Raised when a field's reasoning or confidence is not one the tier
-    allows (design/cognition-loop/30-cognition.md §3 check 5: "the mode is
-    one the tier allows"). `field` names which of `field_meta`'s keys failed;
+    allows. `field` names which of `field_meta`'s keys failed;
     `value` is what was rejected."""
 
     def __init__(self, field_name: str, value: str) -> None:
@@ -118,8 +107,8 @@ class InvalidEventFieldModeError(Exception):
 class StaleEventRevisionError(Exception):
     """Raised on an `event_revise`/`event_set_status`-shaped write whose
     `base_revision_id` is not the event's current `head_revision_id`
-    (10-tiers.md §3: "a stale one is refused `stale_base`, with the current
-    row"). Carries the row so the caller can show it without a second read."""
+    (a stale one is refused `stale_base`, with the current row). Carries the
+    row so the caller can show it without a second read."""
 
     def __init__(self, event_id: UUID, current: Gathering) -> None:
         super().__init__(f"event {event_id}: base_revision_id is stale")
@@ -141,9 +130,8 @@ def validate_event_field_confidence(confidence: str | None) -> None:
 
 @dataclass(frozen=True, slots=True)
 class FieldMeta:
-    """One field's own stated reasoning, confidence and `as_of` (10 §3: "per
-    field on an event"; 40 §4: "every field of every revision carries its
-    reasoning, its citations, a confidence and `as_of`"). Both checked against
+    """One field's own stated reasoning, confidence and `as_of`, per field
+    of an event. Both checked against
     the event tier's vocabularies, so a field cannot carry a mode the tier does
     not allow. `None` is "not stated"."""
 
@@ -161,7 +149,7 @@ class FieldMeta:
 
 def field_mode(event: Gathering, part: str) -> str | None:
     """How `part` of `event` was reached (`told`, `deduced`, `abduced`), or
-    `None` when the field states none (a row from before `0086`, or a part no
+    `None` when the field states none (a row with no stated mode, or a part no
     write stated). The field's own mode wins; the row-level `reasoning` is only
     what a write that states one for the whole row carried, so it is the
     fallback and never overrides a field that says otherwise."""
@@ -172,7 +160,7 @@ def field_mode(event: Gathering, part: str) -> str | None:
 
 
 def render_field(event: Gathering, part: str, value: str) -> str:
-    """One field of an event as it may be said (40 §4, 10 §2 rule 4): a value
+    """One field of an event as it may be said: a value
     that rests only on abduction goes out as a QUESTION, never as a stated fact,
     whatever its confidence, and a person's «yeah» to her own guess never
     upgrades it (the stored mode stays `abduced` until a write restates the
@@ -204,7 +192,7 @@ def field_meta_to_json(meta: Sequence[FieldMeta]) -> dict[str, dict[str, object]
 
 
 def field_meta_from_json(raw: object) -> tuple[FieldMeta, ...]:
-    """Tolerant of a column that predates `0086` or a bad entry: anything that
+    """Tolerant of an absent column or a bad entry: anything that
     is not a known field with allowed values reads as not stated (`None`
     states nothing), never as an exception that takes a read down."""
     if not isinstance(raw, Mapping):
@@ -246,8 +234,8 @@ class EventCitation:
 @dataclass(frozen=True, slots=True)
 class EventEvidence:
     """What a write rests on, handed to `GatheringStore.create`/`update` so
-    the store can leave the edges and compute the lineage (10 §3: "code, from
-    the citation chain; never the model").
+    the store can leave the edges and compute the lineage (computed by code
+    from the citation chain, never by the model).
 
     `parts` are the fields this write states; their lineage is recomputed from
     `citations` and `room`, every other field keeps what it held. `room` is the
@@ -271,8 +259,8 @@ def event_lineage(
     held: Lineage, evidence: EventEvidence, *, message_rooms: Mapping[int, str],
     rollup_lineages: Mapping[str, Lineage | None], origin: str | None,
 ) -> Lineage:
-    """The lineage of an event after a write that rests on `evidence` (10 §3:
-    the set of `(kind, subject, origin room)` its citations reach, per FIELD).
+    """The lineage of an event after a write that rests on `evidence`: the
+    set of `(kind, subject, origin room)` its citations reach, per FIELD.
 
     Each of `evidence.parts` is REPLACED by what its own citations reach (the
     value a write states rests on the evidence it cites, not on what the value
@@ -324,36 +312,28 @@ class Gathering:
     status: GatheringStatus
     reminder_id: UUID | None
     created_at: datetime
-    #: 70-migration.md §5 "Events.": unit-wide, origin room kept in
-    #: `conversation_id`. Empty string until a caller resolves one (the tool
-    #: layer's `_unit()`), matching `note`'s own "no unit means unavailable"
-    #: convention rather than raising here.
+    #: Unit-wide; the origin room is kept in `conversation_id`. Empty string
+    #: until a caller resolves one (the tool layer's `_unit()`), matching
+    #: `note`'s own "no unit means unavailable" convention rather than raising.
     unit_id: str = ""
-    #: The dated thing's end, alongside `when` as its start (12-schemas.md
-    #: §3's `event` columns: "what, start, end, place, people, status").
+    #: The dated thing's end, alongside `when` as its start.
     end: datetime | None = None
     #: Who is coming — deduced or abduced from co-location/RSVPs, or told.
-    #: Distinct from `RSVP`: an RSVP is a person's OWN stated response: this
-    #: is the event's field, cognition's to revise on evidence nobody stated
-    #: (40-register.md §3).
+    #: Distinct from `RSVP`: an RSVP is a person's OWN stated response; this
+    #: is the event's field, cognition's to revise on evidence nobody stated.
     people: tuple[str, ...] = ()
-    #: 10-tiers.md §3's per-derived-row columns. Row-level for now, the same
-    #: simplification `0073_lineage` made for Standing and culture despite
-    #: their sections ("until step 3/4's writers cite per section... render
-    #: only in their own room" — DEC-236): `reasoning`/`confidence`/`as_of`
-    #: stay NULL until a write verb states one for the row as a whole.
-    #: `lineage` reuses `nora.domain.lineage.Lineage`, sectioned by FIELD name
-    #: (`what`, `start`, `end`, `place`, `people`, `status`) — the one part
-    #: of 10 §3 events get from day one, because `Lineage` already
-    #: generalises to an arbitrary section name and per-field disclosure is
-    #: what the design states outright ("per field on an event").
+    #: Row-level derived-row columns, the same simplification Standing and
+    #: culture make (DEC-236): `reasoning`/`confidence`/`as_of` stay NULL until
+    #: a write verb states one for the row as a whole. `lineage` reuses
+    #: `nora.domain.lineage.Lineage`, sectioned by FIELD name (`EVENT_PARTS`),
+    #: so disclosure is per field.
     reasoning: str | None = None
     confidence: str | None = None
     lineage: Lineage = field(default_factory=Lineage)
     as_of: int | None = None
     exclude_persons: tuple[str, ...] = ()
-    #: The current `EventRevision.id` (10-tiers.md §3's compare-and-swap
-    #: cache); `None` only before the first revision is written.
+    #: The current `EventRevision.id` (the compare-and-swap cache); `None` only
+    #: before the first revision is written.
     head_revision_id: UUID | None = None
     #: Each field's own stated reasoning, confidence and `as_of`, in
     #: `EVENT_PARTS` order (migration `0086_event_citations`). The row-level
@@ -368,10 +348,10 @@ class Gathering:
 
 @dataclass(frozen=True, slots=True)
 class EventRevision:
-    """One entry of an event's revision chain (`event_revision`,
-    70-migration.md §5). Carries the FULL snapshot the way `note_revision`
-    and `culture_revision` do — the head (`Gathering`) is a compare-and-swap
-    cache over this chain (10-tiers.md §8), never the record of truth."""
+    """One entry of an event's revision chain (`event_revision`).
+    Carries the FULL snapshot the way `note_revision` and `culture_revision`
+    do; the head (`Gathering`) is a compare-and-swap cache over this chain,
+    never the record of truth."""
 
     id: UUID
     event_id: UUID
@@ -392,12 +372,10 @@ class EventRevision:
     confidence: str | None
     lineage: Lineage
     as_of: int | None
-    #: The `Plan`/`Open`/`Happened` Markdown body (12-schemas.md §3). `None`
-    #: until a write verb actually composes one (step 3); this step carries
-    #: the column, never requires it.
+    #: The `Plan`/`Open`/`Happened` Markdown body. `None` until a write verb
+    #: composes one; never required.
     body: str | None
-    #: "tag" for the tag path, else the adaptor name that wrote it
-    #: (30-cognition.md §3 check 10: "session id... stamped").
+    #: "tag" for the tag path, else the adaptor name that wrote it.
     written_by: str
     written_at: datetime
     field_meta: tuple[FieldMeta, ...] = ()
@@ -431,10 +409,9 @@ class VenueCandidate:
 class VenueSuggestions:
     """`status` is the R-27 three-state shape: `ok` / `nothing_found` /
     `unavailable` — an ERROR is never a PASS. `route_hints` is the reserved
-    seam from spec §5.1: always `None` in this version; a later revision
-    fills it via `saved_places()` + `route()` per attendee under the R-28
-    guard those tools already enforce — the type does not change when it
-    does."""
+    seam: always `None` today; it may later be filled via `saved_places()` +
+    `route()` per attendee under the R-28 guard those tools already enforce,
+    without changing the type."""
 
     status: str
     candidates: tuple[VenueCandidate, ...] = ()
@@ -458,15 +435,10 @@ class GatheringNotFoundError(Exception):
 class GatheringCancelledError(Exception):
     """Raised by `GatheringService` (`nora.app.gatherings`) when `update_event`/
     `rsvp` is asked to act on an event whose `status` is already in
-    `TERMINAL_STATUSES` (`happened`, `cancelled`, `lapsed`, `evicted` —
-    40-register.md §3: "Any status before `happened` may be revised... No
-    further statuses" after it). Originally named for the one terminal
-    status it covered (`CANCELLED`, Fix I2: a new `when` would otherwise
-    re-arm the event's reminder for a gathering that was called off) — kept
-    under this name rather than renamed when the check widened to the whole
-    terminal set, so every existing catch site (`nora.agent.tools`, both
-    layers' tests) keeps working; `status` says which terminal status it
-    actually was. Lives here for the same layering reason as
+    `TERMINAL_STATUSES` (`happened`, `cancelled`, `lapsed`, `evicted`; only a
+    status before `happened` may be revised). `status` says which terminal
+    status it was; the name is kept for existing catch sites
+    (`nora.agent.tools`). Lives here for the same layering reason as
     `GatheringNotFoundError`: the exception TYPE must be reachable from
     `nora.agent`, which sits below `nora.app` and may not import it."""
 
@@ -478,8 +450,8 @@ class GatheringCancelledError(Exception):
 
 
 class AmbiguousOpenGatheringsError(Exception):
-    """More than one proposed event exists for a conversation — spec
-    §3.1's fail-closed-on-ambiguity case. The caller (the `create_event`
+    """More than one proposed event exists for a conversation: the
+    fail-closed-on-ambiguity case. The caller (the `create_event`
     tool) is expected to catch this and ask which event is meant, never
     guess. Same layering reason as `GatheringNotFoundError` above for why this
     lives in `nora.domain` rather than alongside `GatheringService`."""
@@ -495,8 +467,7 @@ class AmbiguousOpenGatheringsError(Exception):
 def still_open_gatherings(
     events: Sequence[Gathering], *, now: datetime,
 ) -> list[Gathering]:
-    """`GatheringService.create_event`'s I1 filter, extracted (review
-    follow-up on #625's step 3a-i): a PROPOSED event still counts toward the
+    """`GatheringService.create_event`'s filter: a PROPOSED event still counts toward the
     ambiguity backstop only while it is STILL OPEN — `when is None` (no time
     settled yet) or `when >= now`. A dinner that already happened and was
     never explicitly cancelled must not refuse every future `create_event`
@@ -546,11 +517,11 @@ class GatheringStore(Protocol):
         start: datetime | None = None, end: datetime | None = None,
         room_ids: Sequence[str] = (),
     ) -> Sequence[Gathering]:
-        """Unit-wide (`unit_id == unit_id`), PLUS (B3, 70-migration.md §8) any
-        row with the migration's backfilled `unit_id=""` whose
-        `conversation_id` is in `room_ids` — the unit's own rooms, resolved
+        """Unit-wide (`unit_id == unit_id`), PLUS any
+        row with the backfilled `unit_id=""` whose
+        `conversation_id` is in `room_ids`: the unit's own rooms, resolved
         by the CALLER from `policy.toml` (units are not in the DB, so the
-        migration could not fill this column for events that predate it).
+        column could not be filled for events that predate it).
         `room_ids=()` is the honest default: no legacy row is ever matched
         by accident when a caller has not resolved the unit's rooms. Never a
         cross-unit leak: a legacy row in another unit's room is never in

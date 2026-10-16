@@ -1,14 +1,12 @@
-"""Files leaving Nora's computer (design/sandbox-runtime §6, §7): the record
+"""Files leaving Nora's computer: the record
 of every `computer_export`, and the one rule that types what leaves.
 
-**Any file, never a web page** (operator, 2026-10-01; widened 2026-10-08).
+**Any file, never a web page.**
 What leaves is a file of any kind: a picture, a chart, a PDF, data, audio,
 video, an archive. The one exception is a page people open as a document,
 which is the document path's (ADR 0020: a JSON spec the portal renders), so
 HTML never leaves here at all, and an SVG, which can carry script, may be
-attached or kept but never published as a link. The
-allowlist of ten types this replaced refused an MP3 and an MP4 three ways
-each in one live turn (2026-10-08), with a note calling them web pages.
+attached or kept but never published as a link.
 
 **The VM only produces files; Nora publishes.** `computer_export` fetches the
 bytes out of the VM, and everything that decides what they ARE happens on
@@ -18,8 +16,8 @@ sent, not a file extension.
 
 **The record** (`ComputerExport`, table `computer_exports`, migration
 `0083_computer_exports`): one row per export that reached its destination,
-`link`, `chat` or `keep`, insert-only. It is the manifest §7 names ("room,
-path, sha256, artifact_id, url, turn"), and it is what makes a revision
+`link`, `chat` or `keep`, insert-only. It is the manifest (room,
+path, sha256, artifact_id, url, turn), and it is what makes a revision
 safe: `computer_export(..., artifact_id=X)` revises the artifact X only
 when X's FIRST row belongs to the same room (`for_artifact`). An artifact
 this table has never seen (one made before the computer existed, or one

@@ -9,7 +9,7 @@
   {
     "name": "decide: the messages a narrow wake leaves are listed as unclaimed, so the watermark never passes them",
     "file": "nora/domain/stimuli.py",
-    "old": "        unclaimed_ids=tuple(sorted(\n            {s.id for s in view.pending if s.id not in taken and s.id <= through}\n            # Carried forward from the watermark's own list, WHETHER OR NOT this\n            # read shows them: a truncated read (`limit`) cuts the newest, and a\n            # stimulus the view did not show cannot be claimed here, so dropping\n            # it from the list would consume it unseen under this wake's range\n            # (found by the tracked-wake property test, seed 9 at limit 3).\n            | {u for u in view.watermark.unclaimed if u not in taken and u <= through}\n        )),",
+    "old": "        unclaimed_ids=tuple(sorted(\n            {s.id for s in view.pending if s.id not in taken and s.id <= through}\n            # Carried forward from the watermark's own list, WHETHER OR NOT this\n            # read shows them: a truncated read (`limit`) cuts the newest, and a\n            # stimulus the view did not show cannot be claimed here, so dropping\n            # it from the list would consume it unseen under this wake's range.\n            | {u for u in view.watermark.unclaimed if u not in taken and u <= through}\n        )),",
     "new": "        unclaimed_ids=(),",
     "target": "tests/contract/test_stimulus_store_contract.py -k random_run"
   },

@@ -1,5 +1,4 @@
-"""One LinkedIn link parser, for `linkedin_read`
-(design/social-per-network/10 §`linkedin_read`).
+"""One LinkedIn link parser, for `linkedin_read`.
 
 The rules follow `nora.domain.instagram_links` and `nora.domain.x_links`:
 

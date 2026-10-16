@@ -1,5 +1,5 @@
 """A lesson: practice induced from the outcomes of many of her acts, kept per
-unit as a revision chain (design/self-growth/40-lessons.md, step L1).
+unit as a revision chain.
 
 The types and the pure checks. Nothing here touches a store, a model or a
 clock: `check_lesson` is handed everything it judges, so every refusal is
@@ -56,24 +56,19 @@ __all__ = [
     "is_correction",
 ]
 
-#: **Sizing, stated as what it is.** The design starts a unit at about 800
-#: tokens ([40](design/self-growth/40-lessons.md) §4), and
-#: `50-readback-and-sizing.md` measures no lesson, so there is nothing to size
-#: from: no lesson has ever been written. 800 tokens is about 700 characters of
+#: **Sizing.** A starting unit is about 800 tokens, roughly 700 characters of
 #: the dense Cantonese this deployment writes (`OUTPUT_TOKENS_PER_CHAR`, 1.15),
-#: which is two lessons. These are about three times that, on purpose: a cap is
-#: a refusal threshold, never a reservation (`BODY_MAX_CHARS`' history, a 55%
-#: refusal rate on a cap that sat inside the emission range), and a cap that
-#: refuses the second lesson would teach her nothing. The lessons block is
-#: prefill on every turn, so L5's before/after measure is what tightens it.
-#: Re-size on the first month of lessons that exist, never on one sample.
+#: which is two lessons. These caps are about three times that, on purpose: a
+#: cap is a refusal threshold, never a reservation, and a cap inside the
+#: emission range makes a coin toss of every write. The lessons block is
+#: prefill on every turn, so its cost bounds how far the caps can grow.
+#: Re-size on measured lessons, never on one sample.
 LESSON_BODY_MAX_CHARS = 400
 
 #: The least a lesson says, in NORMALISED characters (letters and digits, see
 #: `ECHO_GRAM`). Below one echo run the echo test compares a fragment, so a
 #: few characters or bare punctuation would pass it trivially. 12 is two runs
-#: and a clause: the spec's own example, "stop offering five options; say
-#: less", is 29, and a Cantonese practice of a short clause is 12 or more.
+#: and a clause; a short Cantonese practice is 12 or more.
 LESSON_BODY_MIN_CHARS = 12
 
 
@@ -82,9 +77,9 @@ class LessonConflictError(Exception):
     operator retired it, or another writer revised it): the write was judged
     against a head that is no longer the head, so it is not made."""
 
-#: Different episodes a Lessons session's write must cite (`Citable.min_episodes`,
-#: L2): a lesson is a pattern across many outcomes, and one episode is one data
-#: point (design/self-growth/40 §1). Three is Character · Nora's floor
+#: Different episodes a Lessons session's write must cite (`Citable.min_episodes`):
+#: a lesson is a pattern across many outcomes, and one episode is one data
+#: point. Three is Character · Nora's floor
 #: (`NORA_MIN_EVIDENCE_EPISODES`) for the same reason; unlike hers it is not
 #: lowered to what a stale wake showed, because a lesson changes what she DOES.
 LESSON_MIN_EPISODES = 3
@@ -92,7 +87,7 @@ LESSON_MIN_EPISODES = 3
 #: `nora_lessons_session_total`'s `outcome`: `written` and `retired` count
 #: verb calls that landed, `kept` a session closed with `lessons_no_change`,
 #: `unsettled` a session that did none of those (the batch is held),
-#: `abandoned` the third unsettled run of one batch (it advances, DEC-280), and
+#: `abandoned` the third unsettled run of one batch (it advances; DEC-280), and
 #: `decayed` a lesson retired by code at its horizon.
 LESSONS_OUTCOMES = frozenset({
     "written", "retired", "kept", "unsettled", "abandoned", "decayed",
@@ -113,12 +108,12 @@ LESSON_UNIT_MAX_CHARS = 2_400
 #: word is not. A lesson shorter than one run is compared whole.
 #:
 #: This is a restatement test, not a contradiction test: a lesson that CONTRADICTS
-#: law shares no runs with it and is the doctrine check's job (L3).
+#: law shares no runs with it and is the doctrine check's job.
 ECHO_GRAM = 5
 ECHO_COVERAGE = 0.8
 
 #: Why one `lesson_write` or `lesson_retire` call was refused, as the `reason`
-#: the model reads. The first five are `check_revision`'s, unchanged:
+#: the model reads. The first five are `check_revision`'s:
 #: `empty`, `uncited`, `unresolved_citation`, `echo` (every citation her own
 #: send), `thin_evidence` (unused here: `min_episodes` is 0), and
 #: `too_long` (this module's own, per lesson).
@@ -240,8 +235,7 @@ def check_lesson(
     if refused is not None:
         # `check_revision`'s details are written for Character · Nora, who may
         # cite only episodes someone responded to. A Lessons session may cite
-        # every episode it was shown (`unanswered` too, design/self-growth/40
-        # §6), so its refusal says that instead.
+        # every episode it was shown (`unanswered` too), so its refusal says that instead.
         detail = _CITATION_DETAILS.get(refused.reason)
         return refused if detail is None else Refusal(refused.reason, detail.format(
             n=citable.min_episodes))
@@ -278,7 +272,7 @@ def check_lesson(
 #: letter here, so «nora你» still names her.
 NAMES_HER = r"(^|[^a-z])nora([^a-z]|$)"
 
-#: A message that tells her how to act (Lessons L4, design/self-growth/40 §3):
+#: A message that tells her how to act (Lessons):
 #: a prohibition, a "too much", a "next time", a "you always". Read only on a
 #: message that ADDRESSES her (`SqlCharacterEvidence.addressed_since`), and
 #: leaning towards recall: a false positive costs one Lessons session that

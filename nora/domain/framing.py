@@ -5,11 +5,9 @@ Around the blocks Nora's own code also says things in plain sentences: why a
 fire turn is happening and what is asked of her, who tagged her under an
 Instagram post, what time it is, how the turn opens and ends. They are not
 blocks, because a `ContextBlock` cannot render without an opening tag and giving
-these one would change what the model reads (step 4b of
-`design/context-assembly/04-every-occasion.md` §5 makes them typed, not XML).
-Until 4b they were f-strings in `nora/app/fire.py`, the retired version announcer,
-`nora/domain/summons.py` and `nora/agent/prefill.py`, each escaping (or not) its
-own values its own way, and nothing stopped a ninth from being written inline.
+these one would change what the model reads; they are typed, not XML. One place
+stops each call site escaping its own values its own way, and stops another
+being written inline.
 
 **One builder per piece of text, one function for every value that enters it.**
 A builder is a frozen dataclass whose fields are the inputs, typed, and whose
@@ -32,10 +30,8 @@ policy off the line and the architecture test pins every non-default one
 There is no fifth way. Nothing reaches the model unescaped except what a
 block escapes for itself or what code, not a person, computed.
 
-**Byte-identical by construction.** Every sentence below is the text the call
-sites carried, moved and not reworded; `tests/unit/test_headers_goldens.py` holds
-the bytes (captured from master before this module existed). Changing a word is
-a model-visible change and belongs in a step that says so and runs its eval.
+**Byte-exact.** `tests/unit/test_headers_goldens.py` holds the rendered bytes.
+Changing a word is a model-visible change and needs the eval suite.
 
 `FIRE_HEADERS` is the table: every kind of fire `Event` has exactly one header
 builder in it, and `FRAMING` lists every builder this module declares.
@@ -93,15 +89,13 @@ class Header(Protocol):
 
 #: How a recurrence reads in the fire header. English prose, like the rest of the
 #: header: the header is the SITUATION she is told about, and `doctrine` decides
-#: what language she answers in — the two have never been the same choice.
+#: what language she answers in.
 #:
-#: EVERY member of `Recurrence` except NONE, and it must stay that way:
-#: `RepeatClause` subscripts this bare. When #109 added the two sub-day units and
-#: this table was not extended, a `minutely` reminder raised KeyError inside the
-#: fire header — AFTER `claim` had minted the successor and BEFORE the model was
-#: called. Every occurrence claimed a row, said nothing, and armed the next one:
-#: the exact «promise of eleven updates, zero delivered» failure #109 exists to
-#: fix, reproduced by the fix. `tests/unit/test_fire_path.py` covers the shape.
+#: EVERY member of `Recurrence` except NONE must be here: `RepeatClause`
+#: subscripts this bare, and a missing unit would raise KeyError inside the fire
+#: header after `claim` minted the successor and before the model is called, so
+#: the occurrence would be claimed, nothing said, and the next one armed.
+#: `tests/unit/test_fire_path.py` covers the shape.
 CADENCE_UNITS: Mapping[Recurrence, str] = {
     Recurrence.MINUTELY: "minute",
     Recurrence.HOURLY: "hour",
@@ -138,11 +132,9 @@ class RepeatClause:
             return ""
         left = remaining_occurrences(series)
         more = "last one" if left == 0 else f"{_figure(left)} more after this"
-        # The INTERVAL, not just the unit (#109). Reading only `rule.every`
-        # renders a fortnightly arrangement as «every week» and a ten-minute one
-        # as «every minute» — wrong by the whole multiplier, in the one paragraph
-        # whose stated job is stopping her from misdescribing a standing
-        # arrangement.
+        # The INTERVAL, not just the unit: `rule.every` alone would render a
+        # fortnightly arrangement as «every week» and a ten-minute one as
+        # «every minute», wrong by the whole multiplier.
         step = series.rule.interval
         unit = CADENCE_UNITS[series.rule.every]
         cadence = unit if step == 1 else f"{_figure(step)} {unit}s"
@@ -171,7 +163,7 @@ class ReminderHeader:
     Every clause of the tag header is false here: nobody called her, and that is
     not why this turn is happening. `ContextHeader` is parameterised rather than
     branched so the block catalogue, the notation and — the part that actually
-    matters — R-13/R-13b escaping stay shared (§6.3).
+    matters — R-13/R-13b escaping stay shared.
 
     The name is escaped because everything else a prompt carries is, and
     `identity.toml` is operator-authored text like any other.
@@ -192,13 +184,10 @@ class ReminderHeader:
         )
 
     def _repeats(self) -> str:
-        # Stated only when it is true, so an ordinary one-shot turn's prompt is
-        # byte-identical to what it was before DEC-85. It has to be stated at
-        # all because without it she has no way to know this is the third of
-        # fourteen — and the failure is specific, not vague: she announces a
-        # standing arrangement as if it were new («記住喇, 我會日日提你»), every
-        # single day, which is exactly how a helpful daily reminder becomes a
-        # thing people mute.
+        # Stated only when it is true, so a one-shot turn's prompt carries no
+        # repeat text (DEC-85). Without it she cannot know this is the third of
+        # fourteen and announces a standing arrangement as if it were new
+        # («記住喇, 我會日日提你») every day.
         if any(row.series is not None for row in self.rows):
             return (
                 "\nSome of these repeat, as marked. A repeat is not a new "
@@ -227,41 +216,30 @@ class ReminderHeader:
 
 @dataclass(frozen=True)
 class ProactiveHeader:
-    """The situation paragraph for a proactive act turn (design/dreamer-agent-
-    loop/39 D4, DEC-162).
+    """The situation paragraph for a proactive act turn (DEC-162).
 
     Same opening shape as every fire header — nobody called her, and that is not
     why this turn is happening — with the reason clause that is true here and
     nowhere else: SHE decided, earlier, that this was worth raising at about this
-    time. The right to decline is stated here, and only here since `silence.md`
-    dissolved (design/context-plan/12 §2, 2026-10-13): what a turn is belongs
-    with the turn. Its base rate («most turns like this one end that way») came
-    from that file.
+    time. The right to decline is stated here, and only here: what a turn is
+    belongs with the turn. The base rate («most turns like this one end that
+    way») is stated here too.
 
     Times are stamped the way `ReminderHeader` stamps them — the reader's own
     zone, never UTC. The note title is escaped like every other value a prompt
     carries (R-13); it was model-chosen and code-resolved.
 
-    **The closing clause is about the whole apparatus, not just the reminder**
-    (issue #226). It carried exactly one instance of this rule — «never as «I
-    set myself a reminder»» — written for the row and nothing else, while the
-    turn's prompt also carries the note's title, the `<notes>` index, and the
-    intent her own earlier pass wrote. A turn that fired on all of that then
-    explained the mechanism to the room («the note was still open and the
-    deadline was near») and read a curator-written summary (the note curator, deleted 2026-10-03)
-    back at the person it
-    was written about. One named forbidden sentence generalises to none; the
-    clause now names the note beside the reminder, rules out the note's own
-    words, and says what the whole of it is FOR — the reason she is here, never
-    the content of what she says.
+    **The closing clause is about the whole apparatus, not just the reminder.**
+    The turn's prompt also carries the note's title, the `<notes>` index, and the
+    intent her own earlier pass wrote, so the clause names the note beside the
+    reminder, rules out the note's own words, and says what the whole of it is
+    FOR: the reason she is here, never the content of what she says. One named
+    forbidden sentence generalises to none.
 
-    It deliberately does NOT go on to say where what she says comes from instead,
+    It deliberately does NOT say where what she says comes from instead,
     because the paragraph above already does («Read what is in front of you NOW —
-    the transcript, the standing, the notes … and decide again»), and a version
-    that repeated it here read 2/15 and 3/15 on the act suite's `a01` where the
-    same baseline prompt read 5 to 12 of 15 across four windows. The band is far
-    too wide to call that a regression; it is narrow enough to say a duplicated
-    sentence has nothing to buy with the risk.
+    the transcript, the standing, the notes … and decide again»); repeating it
+    adds risk and buys nothing.
 
     `nora.language.note_render.NOTES_BLOCK_NOTE` carries the same identity on the
     tier's own block, which is the half that reaches an ordinary tag turn.
@@ -309,9 +287,9 @@ class ProactiveHeader:
 
 @dataclass(frozen=True)
 class ComputeHeader:
-    """The situation paragraph for a finished compute job (Nora Compute spec §2).
-    It names no job: what the job was and how it ended is the body's
-    (`ComputeBody`), put to her as the request."""
+    """The situation paragraph for a finished compute job. It names no job: what the
+    job was and how it ended is the body's (`ComputeBody`), put to her as the
+    request."""
 
     tagger: PersonRef | None
 
@@ -371,8 +349,7 @@ class LostJobHeader:
 
 
 def _gate_note(relevance_score: float | None) -> str:
-    """The Relevance Gate's score, as a sentence she may ignore
-    (design/dreamer-agent-loop/36 decision 5).
+    """The Relevance Gate's score, as a sentence she may ignore.
 
     Rendered as what it IS — a cheap upstream guess made without her notes,
     facts or memory — and not as an instruction, because the moment it reads as
@@ -380,10 +357,9 @@ def _gate_note(relevance_score: float | None) -> str:
     room is ASKING; only this turn can decide whether she HOLDS anything, and the
     sentence has to leave that decision where it is.
 
-    `None` renders nothing at all rather than "no score": an absent score is the
-    shape every turn had before the gate existed, and a header that announces the
-    absence would make the gate's own plumbing part of what she reads about the
-    room.
+    `None` renders nothing at all rather than "no score": a header that
+    announced the absence would make the gate's own plumbing part of what she
+    reads about the room.
     """
     if relevance_score is None:
         return ""
@@ -398,20 +374,16 @@ def _gate_note(relevance_score: float | None) -> str:
 
 @dataclass(frozen=True)
 class ParticipationHeader:
-    """The situation paragraph for a participation turn (design/dreamer-agent-
-    loop/35).
+    """The situation paragraph for a participation turn.
 
     Same opening shape as the other fire headers — nobody called her, and that is
     not why this turn is happening — but the reason clause differs: no one asked
     for anything, earlier or otherwise. The room went quiet and the floor was
-    offered. The right to decline it is stated HERE, and only here since
-    `silence.md` dissolved (design/context-plan/12 §2, 2026-10-13): what a turn
+    offered. The right to decline it is stated HERE, and only here: what a turn
     is belongs with the turn, and the header is the sentence she reads first.
-    It does NOT carry that file's base rate («most turns like this one end that
-    way»), unlike `ProactiveHeader`: it never sat in this header, its effect
-    here is unmeasured, and the Relevance Gate has already screened the window
-    before this turn exists. (A drop in windows that should speak, 2026-10-13,
-    was first blamed on it; the cause was a line moved into conduct.md.)
+    Unlike `ProactiveHeader` it does NOT carry the base rate («most turns like
+    this one end that way»): its effect here is unmeasured, and the Relevance
+    Gate has already screened the window before this turn exists.
     """
 
     relevance_score: float | None = None
@@ -531,16 +503,14 @@ class LostJobBody:
 
 # ---- the tag prefill: header message, clock, closing line --------------------
 
-#: The opening paragraph of `<context_header>` for a TAG — the situation, in the
+#: The opening paragraph of `<context_header>` for a TAG: the situation, in the
 #: model's own terms. Every clause of it is FALSE on a heartbeat fire turn (nobody
 #: called her, and that is not why the turn is happening), so it is a named
 #: default rather than a literal inside `ContextHeader`: the fire path passes its
-#: own (`FIRE_HEADERS`), and everything around it — the blocks and every escaping
-#: rule in `nora.agent.prefill` — is shared rather than copied. Duplicating
-#: `build_prefill` for the fire path is the thing this parameter exists to
-#: prevent: R-13/R-13b escaping is pinned to THAT function by two named
-#: acceptance tests, and a hand-rolled second prefill rendering the same
-#: transcript would sit outside both.
+#: own (`FIRE_HEADERS`), and the blocks and every escaping rule in
+#: `nora.agent.prefill` are shared rather than copied. R-13/R-13b escaping is
+#: pinned to `build_prefill` by two named acceptance tests, and a second prefill
+#: rendering the same transcript would sit outside both.
 TAG_HEADER = (
     "You are in a group chat you have been reading all along. You do not "
     "speak unless somebody calls you, and somebody just did — that is why "
@@ -551,11 +521,11 @@ TAG_HEADER = (
 #: and reply, so the turn that follows begins in her own voice.
 CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
-#: The body of `<spoken_turn>` (design/context-plan/11 §4 layer E): rendered only
+#: The body of `<spoken_turn>`: rendered only
 #: when the message she is answering was spoken in a voice channel. The SITUATION,
 #: not a rule list: what she is reading and where the reply goes. What follows
 #: from it (no link read aloud, no list, no GIF, short) is hers to infer; telling
-#: a model what it is reading has measured better here than telling it what to do.
+#: a model what it is reading works better than telling it what to do.
 SPOKEN_TURN = (
     "This message was spoken aloud in the voice channel and reached you as a "
     "transcript. Your reply will be said aloud there by a voice: heard once, "
@@ -623,14 +593,12 @@ class SummonsHead:
     changes no byte for any value that can reach it: a summoner handle is
     `[A-Za-z0-9._]{1,30}` (`nora.domain.instagram_links.is_handle`, both
     construction sites filter), and `escape` is the identity on every one of
-    those characters. Before step 4b it was interpolated bare, outside every
-    block, on the premise that nothing a stranger wrote is in the head but a
-    username; escaping it means a future path that sets the summoner without that
-    filter cannot inject into the first line.
+    those characters. Escaping it means a path that sets the summoner without
+    that filter cannot inject into the first line.
 
     `max_chars` is the reply's hard limit (`PUBLIC_REPLY_MAX_CHARS`), stated as
     a fact about this turn: a reply over it is refused whole as `too_long`, and
-    the doctrine names no number (design/context-plan/12 §4).
+    the doctrine names no number.
     """
 
     now: datetime

@@ -1,27 +1,24 @@
-"""Protocol seams every later phase plugs into (spec §4.2). Declarations only —
-no implementation moves here; the concrete classes that satisfy these shapes
-keep living where they live until the phase that migrates them.
+"""Protocol seams the phases plug into. Declarations only: the concrete classes
+that satisfy these shapes live elsewhere.
 
 Standard library only, same rule as the rest of `nora/domain`: if a port needs
 aiohttp, strands, sqlalchemy, pydantic or prometheus_client to express itself,
 the port is wrong. `nora.domain.models`, `nora.domain.identity` and
-`nora.domain.utf16` are the only allowed sibling imports — the last one because
-`Styled` below cannot check its own invariant without the arithmetic that
-defines it, and a copy of that arithmetic here would be the exact drift
-`nora.domain.utf16`'s docstring exists to prevent.
+`nora.domain.utf16` are the only allowed sibling imports; `Styled` needs the
+UTF-16 arithmetic to check its own invariant, and a copy here would drift from
+`nora.domain.utf16`.
 
-Each shape below encodes a decision that cost something to reach. Simplifying
-it back to the "obvious" version silently reintroduces the bug it was built to
-avoid:
+Each shape below encodes a decision; simplifying it back to the "obvious"
+version reintroduces the bug it avoids:
 
 - `PlatformIdentity.aliases` exists because signal-cli emits `source` OR
   `sourceNumber` and sometimes a UUID, and Telegram has both a numeric id and
   a username. R-12 (ignore Nora's own messages) must test *membership* in
-  `aliases`, not equality against a single id, or self-recognition silently
-  breaks the moment a second platform is wired in. The type now lives in
+  `aliases`, not equality against a single id, or self-recognition breaks as
+  soon as a second platform is wired in. The type lives in
   `nora.domain.identity` (re-exported below) and carries typed `identifiers`
-  alongside the flat `aliases` — see its own docstring, and R-17 for why a
-  degraded derivation of it must be counted rather than merely logged.
+  alongside the flat `aliases`; see R-17 for why a degraded derivation must be
+  counted rather than merely logged.
 
 - `SendResult` replaces a bare `bool` because Telegram answers rate limiting
   with a 429 and a `retry_after` value, and `Deliverer`'s latch counts
@@ -30,146 +27,128 @@ avoid:
   back off and retry.
 
 - `EngageDecision` carries `rationale` and `threshold` (not just `confidence`)
-  because design/02 requires the classifier's reason to reach the prefill,
-  and a bare confidence is uninterpretable in a trace without the threshold
-  it was compared against — 0.82 means nothing on its own.
+  because the classifier's reason must reach the prefill, and a bare confidence
+  is uninterpretable in a trace without the threshold it was compared against.
 
-- `PlatformAdapter` deliberately has **no `parse()`**. Adding one would force
-  every adapter to pretend its transport is dict-shaped, which Discord's
-  gateway events and Telegram's update batches are not. Parsers stay
-  per-adapter, tested directly against their own transport shape.
+- `PlatformAdapter` deliberately has **no `parse()`**. It would force every
+  adapter to pretend its transport is dict-shaped, which Discord's gateway
+  events and Telegram's update batches are not. Parsers stay per-adapter,
+  tested directly against their own transport shape.
 
 - `react()` lives on THIS port, not a separate capability protocol: reacting
-  is a platform capability like sending, and the alternative has the
-  engagement layer `isinstance`-testing a narrower protocol, putting platform
-  knowledge back in the layer whose whole job is not to have any.
-  `ReactionResult` carries `supported` as well as `ok`, so "this platform has
-  no reactions" (never an exception) stays distinguishable from "the reaction
-  failed" — only one of those is worth an alert. There is deliberately no
-  shared `UNSUPPORTED_REACTION` constant: DEC-13's gate forbids binding a
-  locally-defined class's instance at module level, and it checks the *shape*,
-  not mutability, so a frozen dataclass is no exception.
+  is a platform capability like sending, and a narrower protocol would have the
+  engagement layer `isinstance`-test it, putting platform knowledge back in the
+  layer whose job is to have none. `ReactionResult` carries `supported` as well
+  as `ok`, so "this platform has no reactions" (never an exception) stays
+  distinguishable from "the reaction failed" — only one is worth an alert.
+  There is deliberately no shared `UNSUPPORTED_REACTION` constant: DEC-13's
+  gate forbids binding a locally-defined class's instance at module level, and
+  it checks the *shape*, not mutability, so a frozen dataclass is no exception.
   `nora.engagement.stages.indicate` also tolerates an adapter with no `react`
   attribute at all — a decoration may never crash a tag. Parameters are
   `to_author`/`to_timestamp` because `target` here already means the
   `ConversationTarget`; Signal's `targetAuthor`/`targetTimestamp` are
   translated in `nora.platform.signal.react` with every other wire name.
 
-- `RecordStore.recent` returns `TranscriptRow`, not the `dict[str, Any]` row
-  blobs the old `nora/store/db.py` returned, and `delivery_status` is
-  `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlRecordStore`
-  implements this. Static conformance is checked by mypy (`nora.infra` is
-  inside the strict override); the behavioural half is
-  `tests/contract/test_audit_store_contract.py`, one suite parametrized over
-  `SqlRecordStore` and `nora.testing.FakeRecordStore` so the fake cannot drift
-  from production unnoticed.
+- `RecordStore.recent` returns `TranscriptRow`, not a `dict[str, Any]` row
+  blob, and `delivery_status` is `DeliveryStatus`, not a bare string.
+  `nora.infra.sql.audit.SqlRecordStore` implements this. Static conformance is
+  checked by mypy (`nora.infra` is inside the strict override); the behavioural
+  half is `tests/contract/test_audit_store_contract.py`, one suite parametrized
+  over `SqlRecordStore` and `nora.testing.FakeRecordStore` so the fake cannot
+  drift from production.
 
-- `RecordStore` still deliberately has **no `prune`**, even though a caller now
-  exists. `SqlRecordStore.prune_all` is a retention sweep owned by the runtime,
-  not something any stage programs against through the port. Putting it on the
-  port would oblige every future implementation — including fakes — to
-  implement a retention policy they do not have.
+- `RecordStore` deliberately has **no `prune`**. `SqlRecordStore.prune_all` is
+  a retention sweep owned by the runtime, not something any stage programs
+  against through the port. Putting it on the port would oblige every
+  implementation, including fakes, to implement a retention policy they do not
+  have.
 
-- `RecordStore` DOES carry `unattributed`/`set_person_id`, which looks like the
-  same "retention chore" shape `prune` was refused for above, and is not. The
-  distinction is who programs against it: `prune_all` is a policy the store
-  decides for itself and no caller reasons about, whereas lazy adoption
-  (`nora.app.adoption`) is a caller with a question only the store can answer —
-  "which audited messages are still attributed to nobody?" — followed by a
-  decision that same caller makes. A `MemoryStore`-backed or Postgres-backed
-  `RecordStore` would have to answer that question too, so it belongs on the
-  port. `set_person_id` mirrors `set_delivery_outcome` exactly: one row, by id,
+- `RecordStore` DOES carry `unattributed`/`set_person_id`, which is not the
+  same shape as `prune`. `prune_all` is a policy the store decides for itself
+  and no caller reasons about, whereas lazy adoption (`nora.app.adoption`) is a
+  caller with a question only the store can answer — "which audited messages
+  are still attributed to nobody?" — followed by a decision that same caller
+  makes. Any `RecordStore` would have to answer that question, so it belongs on
+  the port. `set_person_id` mirrors `set_delivery_outcome`: one row, by id,
   unknown id is a silent no-op.
 
-- `set_delivery_outcome` is the old `set_delivery_status` plus an optional
-  `ts`, and NOT a second write — `nora.infra.sql.audit` documents why the
-  platform's timestamp must land on this already-existing update. `ts=None`
-  leaves the row's timestamp alone.
+- `set_delivery_outcome` takes an optional `ts` and is NOT a second write —
+  `nora.infra.sql.audit` documents why the platform's timestamp must land on
+  this already-existing update. `ts=None` leaves the row's timestamp alone.
 
 - `RecordStore.append` has **no `max_per_conversation` parameter**. Retention
   window size is a policy decided at the store's construction, not a value
   every caller re-specifies per call — `Protocol` methods don't inherit
-  defaults, so a per-call default is already duplicated wherever it is
-  threaded today (`nora/infra/sql/audit.py:35`, `SqlRecordStore.__init__`'s
-  `max_per_conversation` parameter).
+  defaults, so a per-call default would be duplicated wherever it is threaded
+  (`SqlRecordStore.__init__`'s `max_per_conversation` parameter).
 
-- **A tier's WRITE half and its READ half are separate Protocols**, and the
-  rule outlived the pair that established it (`RoomConsolidator` /
-  `RoomLanguageReader`, deleted with the language tier). The two halves are
-  consumed from different places under different obligations: a write runs
-  from the Dreamer's background cycle and may take its time, while a read
-  reached from `TranscriptInjection` sits on the turn's critical path and —
-  like every read a live turn depends on — must never raise (an unavailable
+- **A tier's WRITE half and its READ half are separate Protocols.** The two
+  halves are consumed from different places under different obligations: a
+  write runs from the Dreamer's background cycle and may take its time, while a
+  read reached from `TranscriptInjection` sits on the turn's critical path and
+  — like every read a live turn depends on — must never raise (an unavailable
   store degrades to an EMPTY value, never an exception the turn has to catch).
-  Folding both onto one Protocol would force every future write-side
-  implementation to also be a valid read-side one, which is not true in
-  general.
+  Folding both onto one Protocol would force every write-side implementation to
+  also be a valid read-side one, which is not true in general.
 
 - `MemoryStore.ensure_*` is declared **idempotent under concurrency**.
-  `HonchoClient.ensure_peer`/`ensure_session` are check-then-act over
-  per-peer state, and person-centric identity means the same peer id can be
-  hit from two platforms at the same moment. The lock that makes this true
-  landed here, in this phase — a per-peer `asyncio.Lock`
-  (`HonchoClient._peer_lock` in `nora/infra/honcho/client.py`), not in a
-  later one; the invariant is
-  declared here so a static conformance check (mypy on `nora.infra`) has
-  something to hold the implementation to.
+  `HonchoClient.ensure_peer`/`ensure_session` are check-then-act over per-peer
+  state, and person-centric identity means the same peer id can be hit from two
+  platforms at the same moment. A per-peer `asyncio.Lock`
+  (`HonchoClient._peer_lock` in `nora/infra/honcho/client.py`) provides it; the
+  invariant is declared here so a static conformance check (mypy on
+  `nora.infra`) has something to hold the implementation to.
 
 - `MemoryStore.representation()` returns `Recollection`, NOT `list[str]` like
-  its older sibling `peer_card`. The two differ in exactly the bit that
-  matters: `peer_card` answers `[]` both when Honcho is down and when it knows
-  nothing, which is how a dead endpoint returned `[]` on every call for the
-  life of the deployment unnoticed. `representation`'s own transport makes
-  that worse — an unknown peer answers 200 with an empty string, not 404 — so
-  the reachability bit cannot be recovered by the caller and is carried
-  instead. `peer_card` is left alone: changing its return type is a separate
-  migration, and `Recollection` is what new call sites are held to.
+  its sibling `peer_card`. The two differ in exactly the bit that matters:
+  `peer_card` answers `[]` both when Honcho is down and when it knows nothing,
+  so a dead endpoint is indistinguishable from an empty card.
+  `representation`'s own transport makes that worse — an unknown peer answers
+  200 with an empty string, not 404 — so the reachability bit cannot be
+  recovered by the caller and is carried instead. `Recollection` is what new
+  call sites are held to.
 
 - `MemoryStore.health()` returns `MemoryHealth`, mirroring
-  `PlatformAdapter.health() -> AdapterHealth`, instead of the bare
-  `dict[str, Any]` it used to share with nothing else on this port.
+  `PlatformAdapter.health() -> AdapterHealth`, rather than a bare
+  `dict[str, Any]`.
 
-- `MemoryStore.feed()` stays `bool`, deliberately, even though `SendResult`
-  exists precisely because "a bool loses retryability on a network call to a
-  flaky service." Honcho is explicitly never load-bearing (see this module's
-  own docstring in `nora/infra/honcho/client.py`): a failed feed is fire-and-forget,
-  logged and counted, never retried. Giving it a retryable/retry_after shape
-  would imply a retry policy that deliberately does not exist. This
-  asymmetry with `SendResult` is intentional, not an oversight — recorded
-  here so it isn't cargo-culted into a `FeedResult` later.
+- `MemoryStore.feed()` is `bool`, deliberately, even though `SendResult` exists
+  because "a bool loses retryability on a network call to a flaky service."
+  Honcho is never load-bearing (see `nora/infra/honcho/client.py`): a failed
+  feed is fire-and-forget, logged and counted, never retried. A
+  retryable/retry_after shape would imply a retry policy that does not exist.
+  The asymmetry with `SendResult` is intentional; do not add a `FeedResult`.
 
-- `BlobStore` is `put`/`get` and NOTHING ELSE — in particular no `delete`, for
-  the same reason `RecordStore` has no `prune`. Deleting media is a retention
-  policy the operator has not made yet (DEC-43), and putting it on the port
-  would oblige every implementation, including fakes, to implement a policy
-  they do not have. `FilesystemBlobStore.delete` exists on the CONCRETE class,
-  exactly as `SqlRecordStore.prune_all` does, so the mechanism is there the day
-  the decision is.
+- `BlobStore` is `put`/`get` and NOTHING ELSE — no `delete`, for the same
+  reason `RecordStore` has no `prune`. Deleting media is a retention policy the
+  operator has not made (DEC-43), and putting it on the port would oblige every
+  implementation, including fakes, to implement a policy they do not have.
+  `FilesystemBlobStore.delete` exists on the CONCRETE class, as
+  `SqlRecordStore.prune_all` does.
 
   `put` returns the KEY and takes no key argument. A content-addressed store
   where the caller chooses the key is not content-addressed — it is a
-  filesystem with extra steps, and the verifiability that justified hashing the
+  filesystem with extra steps, and the verifiability that justifies hashing the
   bytes rather than the metadata would be gone.
 
-- `ComputeBackend` is the Nora Compute spec's own port (§2): `launch` starts a
-  job and returns immediately, `poll` reports its progress. Deliberately NEVER
-  raises — see the Protocol's own docstring for why a launch failure is a
-  `poll` result, not an exception, matching this file's existing fail-closed
-  convention for ports a live turn depends on.
+- `ComputeBackend`: `launch` starts a job and returns immediately, `poll`
+  reports its progress. Deliberately NEVER raises — see the Protocol's own
+  docstring for why a launch failure is a `poll` result, not an exception,
+  matching the fail-closed convention for ports a live turn depends on.
 
 - `MediaSource` is separate from `PlatformAdapter` for the same reason
   `RosterSource` is: fetching attachment bytes is not part of the
   send/receive/react lifecycle every adapter must implement, and putting it
-  there would oblige every future adapter and every fake to implement a fetch
-  it may have no endpoint for. Like `RosterSource` it is bound to one platform
+  there would oblige every adapter and every fake to implement a fetch it may
+  have no endpoint for. Like `RosterSource` it is bound to one platform
   (`platform: str`, no `platform=` parameter) and **must never raise** —
   `MediaBytes.available` carries the difference between "could not fetch" and
   "fetched nothing", which a bare `bytes | None` would collapse.
 
-- `EngagePolicy.should_engage` is `async` even though today's trigger-text
-  policy is synchronous, because the classifier that replaces it is I/O, and
-  a later sync-to-async change would break the whole ingest pipeline at every
-  call site.
+- `EngagePolicy.should_engage` is `async` even though the trigger-text policy
+  is synchronous, because a classifier policy is I/O, and a later sync-to-async
+  change would break the ingest pipeline at every call site.
 
 Convention pinned by `tests/test_ports.py`: every port method is keyword-only
 after `self`. A positional parameter added to a port later is a breaking
@@ -222,13 +201,11 @@ from nora.domain.standing import Standing as Standing
 from nora.domain.stimuli import NewStimulus, NewWake, UnitView, WakeGuard, WakeRow
 from nora.domain.utf16 import utf16_len
 
-# `PlatformIdentity` is re-exported, not declared here — it moved next to
-# `Identifier` in `nora.domain.identity` when it grew a typed `identifiers`
-# field (design/10 §5), which also bought this module back some of its 300-line
-# cap. The `X as X` above is not a typo: it is PEP 484's explicit re-export
-# marker, which mypy's `no_implicit_reexport` requires before another module may
-# import the name through here. `__all__` would satisfy mypy too, but would also
-# narrow `from nora.domain.ports import *` to that one name.
+# `PlatformIdentity` is re-exported, not declared here: it lives next to
+# `Identifier` in `nora.domain.identity`. The `X as X` above is not a typo: it
+# is PEP 484's explicit re-export marker, which mypy's `no_implicit_reexport`
+# requires before another module may import the name through here. `__all__`
+# would satisfy mypy too, but would also narrow `from nora.domain.ports import *` to that one name.
 
 
 @dataclass(frozen=True)
@@ -252,9 +229,9 @@ class OutboundQuote:
 
     OUTBOUND, and deliberately not `nora.domain.models.Quote`, which is the
     inbound shape: that one carries the QUOTING sender's unverified copy of
-    what the parent said and exists so R-20 can refuse to render it. This one
-    is built from a row Nora herself audited, so there is nothing here that a
-    message could have forged.
+    what the parent said so R-20 can refuse to render it. This one is built
+    from a row Nora herself audited, so a message cannot have forged anything
+    here.
 
     Every field is a platform's own handle to that row, because the two
     platforms address a message differently and neither can be derived from
@@ -309,62 +286,47 @@ class Mention:
     """One outbound @-mention: a RANGE over the message text, plus who it names.
 
     **A mention is not text, in either direction.** `nora.engagement.mentions`
-    is the INBOUND half of this type (DEC-34) and its docstring is the reason
-    this one exists: Signal carries the identity in a parallel array and puts
-    only a range in the body, so a mention Nora *sends* has to be expressed the
-    same way — never by writing an id into the message.
+    is the INBOUND half of this type (DEC-34): Signal carries the identity in a
+    parallel array and puts only a range in the body, so a mention Nora *sends*
+    is expressed the same way — never by writing an id into the message.
 
     `start`/`length` are **UTF-16 code units**, not Python characters and not
     Unicode code points. signal-cli says so in two places (`signal-cli(1)`'s
     `--mention`: "The units of start and length should be UTF-16 code units,
     NOT Unicode code points", and the same sentence again on `--text-style`),
-    and it matters in this group specifically: a CJK character is one UTF-16
-    unit and a Python character, but an emoji outside the BMP is TWO UTF-16
-    units and ONE Python character. Computing these offsets with `len()` is
-    correct right up until somebody puts 🇭🇰 in front of a mention, at which
-    point every mention after it silently points at the wrong span — Signal
-    does not reject it, it renders somebody else's name over the wrong words.
-    `nora.domain.utf16.utf16_len` is the one place that arithmetic lives — it
-    moved out of `nora.agent.outbound` when `TextStyle` below became a second
-    producer of ranges (DEC-82); see that module for why.
+    and it matters here: a CJK character is one UTF-16 unit and a Python
+    character, but an emoji outside the BMP is TWO UTF-16 units and ONE Python
+    character. Computing these offsets with `len()` is correct until an emoji
+    such as 🇭🇰 precedes a mention, after which every mention silently points at
+    the wrong span — Signal does not reject it, it renders somebody else's name
+    over the wrong words. `nora.domain.utf16.utf16_len` is the one place that
+    arithmetic lives (DEC-82).
 
     `recipient` is an id form signal-cli's RECIPIENT grammar accepts — a bare
     ACI UUID, a `PNI:`-prefixed UUID, a `u:`-prefixed username, or an E.164
-    number. Verified out of the shipped 0.14.7 jar, not guessed:
-    `SendCommand.parseMentions` matches `(\\d+):(\\d+):(.+)` and hands group 3
-    to `CommandUtil.getSingleRecipientIdentifier`, which is
-    `RecipientIdentifier.Single.fromString` — UUID, then `PNI:`, then `u:`,
-    then a phone number. That is the SAME grammar `targetAuthor` accepts, which
-    `nora.platform.signal.react`'s module docstring already documents.
+    number (`SendCommand.parseMentions` matches `(\\d+):(\\d+):(.+)` and hands
+    group 3 to `RecipientIdentifier.Single.fromString`). That is the SAME
+    grammar `targetAuthor` accepts, which `nora.platform.signal.react`'s module
+    docstring documents.
 
-    **This value never reaches the message body**, and that separation is the
-    whole R-18 story of the feature: `Deliverer.deliver` runs `scan_reply` on
-    the TEXT, and an ACI in the text would (correctly) make her mute — so a
-    design that substituted the id into the string would have shipped a mute
-    Nora, while one that leaked it would have shipped R-18's exact exposure.
-    Carrying it in a parallel field is what makes both impossible.
+    **This value never reaches the message body.** `Deliverer.deliver` runs
+    `scan_reply` on the TEXT, and an ACI in the text would (correctly) make her
+    mute (R-18). Carrying the id in a parallel field avoids both a mute Nora and
+    R-18's exposure.
 
-    `handle` is a FOURTH, OPTIONAL fact, and it exists for exactly one
-    platform today (Instagram) for a reason none of Signal, Discord or
-    WhatsApp shares: those three render the chip off `recipient` alone — the
-    text at `start:length` may be anything, including the display name Nora
-    actually wrote — but Instagram's own mention API renders a chip only when
-    that span reads, LITERALLY, `"@" + the account's own username` (confirmed
-    against upstream mautrix-meta, `igconv/from-matrix.go` +
-    `textfmt/from-matrix.go`: it constructs the request text as `"@" +
-    mention.Name` and sizes `Length` off that same string, never off the
-    sender's drafted name for them). Nora writes a mention the way a person
-    writes one — by the name she knows them by — so on Instagram the drafted
-    span and the wire span are two different strings, and `handle` is the
-    second one: `nora.platform.instagram.send` splices it in, over the SAME
-    span `start`/`length` still name, immediately before the request leaves,
-    which is deliberately downstream of `nora.agent.outbound.OutboundComposer`
-    (`compose` owns the final TEXT this module's docstring is about; it does
-    not own every platform's final WIRE BYTES, and Instagram's alone need a
-    second string here). `None` — every other platform, and Instagram until
-    an operator records a `username` for this account (design/instagram-
-    adoption/02) — means exactly what it always meant: the span stays
-    whatever Nora wrote.
+    `handle` is a FOURTH, OPTIONAL fact used only by Instagram. Signal, Discord
+    and WhatsApp render the chip off `recipient` alone — the text at
+    `start:length` may be anything, including the display name Nora wrote — but
+    Instagram's mention API renders a chip only when that span reads,
+    LITERALLY, `"@" + the account's own username`. Nora writes a mention by the
+    name she knows the person by, so on Instagram the drafted span and the wire
+    span are two different strings, and `handle` is the second one:
+    `nora.platform.instagram.send` splices it in, over the SAME span
+    `start`/`length` still name, immediately before the request leaves — downstream
+    of `nora.agent.outbound.OutboundComposer`, which owns the final TEXT but
+    not every platform's final WIRE BYTES. `None` (every other platform, and
+    Instagram until an operator records a `username` for the account) means the
+    span stays whatever Nora wrote.
     """
 
     start: int
@@ -376,22 +338,18 @@ class Mention:
 class Style(StrEnum):
     """A Signal text style, spelled exactly as signal-cli's parser accepts it.
 
-    **Exactly two members, and the shortfall is deliberate.** signal-cli 0.14.7
-    also knows `NONE`, `SPOILER`, `STRIKETHROUGH` and `MONOSPACE`
-    (`org.asamk.signal.manager.api.TextStyle$Style`), and none of them has a
-    producer here: `nora.agent.markdown` converts the two emphasis forms the
-    model actually emits and nothing else. Declaring the other four would buy a
-    member no code path can reach, which R-17's argument about counters that
-    can never increment applies to just as well — an unreachable enum member is
-    indistinguishable from a deleted one, and it invites a caller to invent a
-    syntax for it.
+    **Exactly two members, deliberately.** signal-cli also knows `NONE`,
+    `SPOILER`, `STRIKETHROUGH` and `MONOSPACE`, and none of them has a producer
+    here: `nora.agent.markdown` converts the two emphasis forms the model emits
+    and nothing else. An unreachable enum member is indistinguishable from a
+    deleted one (R-17's argument about counters that can never increment), and
+    it invites a caller to invent a syntax for it.
 
-    The VALUES are the wire form, and they are case-sensitive. `TextStyle.Style
-    .from(String)` is a chain of `String.equals` against the uppercase names —
-    verified twice: on the bytecode, and against the live daemon, which answers
-    a lowercase `bold` with `{"error": {"message": "Invalid style: bold"}}` and
-    sends nothing at all. `StrEnum` so the member IS its wire string and there
-    is no second table mapping one to the other.
+    The VALUES are the wire form, and they are case-sensitive: signal-cli
+    compares against the uppercase names and answers a lowercase `bold` with
+    `{"error": {"message": "Invalid style: bold"}}`, sending nothing at all.
+    `StrEnum` so the member IS its wire string and there is no second table
+    mapping one to the other.
     """
 
     BOLD = "BOLD"
@@ -411,16 +369,15 @@ class TextStyle:
     One thing is SHARPER here than for a mention. A mention is added to text
     the model wrote; a style is what is LEFT after `nora.agent.markdown`
     deleted the asterisks that expressed it — so the range indexes a string
-    that did not exist when the model produced it. That is why the text and its
-    styles travel as one `Styled` value below rather than as two arguments.
+    the model never produced. That is why the text and its styles travel as one
+    `Styled` value below rather than as two arguments.
 
     **A malformed range costs the MESSAGE, not the styling.**
     `SendCommand.parseTextStyles` compiles `(\\d+):(\\d+):(.+)` and throws
-    `UserErrorException` on anything else, which fails the whole send — checked
-    against the live daemon on 2026-08-10: `-1:3:BOLD` came back «Invalid
-    textStyle syntax (-1:3:BOLD) expected 'start:length:STYLE'» with nothing
-    delivered. So `nora.platform.signal.send` drops a range it cannot express
-    rather than posting it, exactly as it does for a mention.
+    `UserErrorException` on anything else, which fails the whole send (`-1:3:BOLD`
+    is answered «Invalid textStyle syntax» and nothing is delivered). So
+    `nora.platform.signal.send` drops a range it cannot express rather than
+    posting it, exactly as it does for a mention.
     """
 
     start: int
@@ -433,15 +390,14 @@ class Styled:
     """A message's FINAL text together with the ranges that index it.
 
     **The point of this type is that the two cannot be separated.** DEC-82
-    converts `**bold**` into a style range, which means one operation both
-    deletes characters and produces offsets into the string that is left. Hand
-    those back as two values and every later line is an opportunity to pair the
-    new offsets with the old text; there is no error when that happens, only a
-    group seeing bold over the wrong words. So the producer returns ONE frozen
-    value, `nora.agent.outbound.Outbound` stores that value rather than copying
-    its halves, and `Outbound.text`/`Outbound.styles` are properties off it —
-    an `Outbound` whose styles index a different string than its text is not a
-    bug to be found in review, it is unconstructible.
+    converts `**bold**` into a style range, so one operation both deletes
+    characters and produces offsets into the string that is left. Returned as
+    two values, the new offsets can be paired with the old text with no error,
+    only a group seeing bold over the wrong words. So the producer returns ONE
+    frozen value, `nora.agent.outbound.Outbound` stores that value rather than
+    copying its halves, and `Outbound.text`/`Outbound.styles` are properties off
+    it — an `Outbound` whose styles index a different string than its text is
+    unconstructible.
 
     `nora.agent.markdown.render_markdown` is the only producer in `nora/`, and
     `tests/architecture/test_outbound_offsets_are_computed_last.py` is what
@@ -476,27 +432,20 @@ class LinkPreview:
     Signal link previews are **sender-generated**: the sending client fetches
     the target's OpenGraph tags and attaches title/description/image to the
     message. The recipients' clients render what they are given and fetch
-    nothing, which is the privacy property the design exists for — and the
-    reason this is Nora's fetch to make, with Nora's SSRF exposure to manage
-    (`nora.infra.preview`).
+    nothing (the privacy property), so the fetch is Nora's, with Nora's SSRF
+    exposure to manage (`nora.infra.preview`).
 
     `title` is MANDATORY on the wire (`signal-cli(1)`: "Specify the title for
     the link preview (mandatory)"), so a page with no usable title yields no
     preview at all rather than a half one — `OpenGraphPreviewSource` returns
     `None` in that case and the message goes out plain.
 
-    `image_data_uri` is an RFC 2397 `data:` URI, NOT a path, and that is a
-    deployment fact rather than a preference: `--preview-image` takes a file
-    signal-cli must be able to READ, and signal-cli runs in a different
-    container from Nora with no shared volume (`docker-compose.yml` — Nora
-    mounts `./data`, signal-cli mounts `./state/signal-cli`, and neither sees
-    the other). A path would therefore have been silently unreadable in
-    production while passing every local test. Verified out of the 0.14.7 jar:
-    `ManagerImpl` hands `Message.Preview.image()` to
-    `AttachmentHelper.uploadAttachment(String)`, whose `getAttachmentStream`
-    skips the file-path validation entirely when the string starts with
-    `data:` and goes to `Utils.createStreamDetails` — the same RFC 2397 path
-    `--attachment` documents.
+    `image_data_uri` is an RFC 2397 `data:` URI, NOT a path: `--preview-image`
+    takes a file signal-cli must be able to READ, and signal-cli runs in a
+    different container from Nora with no shared volume (`docker-compose.yml`),
+    so a path would be unreadable in production while passing every local test.
+    signal-cli skips its file-path validation when the string starts with
+    `data:`, the same RFC 2397 path `--attachment` accepts.
     """
 
     url: str
@@ -509,15 +458,14 @@ class LinkPreview:
 class AdapterHealth:
     """What one platform's transport can say about itself right now.
 
-    `degraded` and `detail` are ADDITIVE (design/instagram-adoption/01
-    §Degradation, M0) and default to the pre-existing behaviour, so an adapter
-    that never sets them reads exactly as it did before.
+    `degraded` and `detail` are optional and default to "not degraded", so an
+    adapter that never sets them reads as healthy-or-disconnected only.
 
     **`degraded` is a THIRD state, not a spelling of `connected=False`.** A
     disconnected adapter is one whose socket is down and which the bridge is
     expected to heal on its own; a degraded one is present, registered, and
-    structurally unable to act until a HUMAN intervenes — an Instagram session
-    that got checkpointed. Collapsing them would mean either flapping the
+    structurally unable to act until a HUMAN intervenes — for example a
+    checkpointed Instagram session. Collapsing them would mean either flapping the
     container healthcheck on an ordinary captcha, or — the failure that
     actually matters — reporting a platform as merely quiet when Nora is
     silently absent from every room on it.
@@ -535,9 +483,8 @@ class AdapterHealth:
 
 @dataclass(frozen=True)
 class MemoryHealth:
-    """Mirrors `AdapterHealth` — typed, not a bare dict. `MemoryStore.health()`
-    used to be the one health check left dict-shaped while `PlatformAdapter.health()`
-    was already typed; see module docstring's `MemoryStore` note."""
+    """Mirrors `AdapterHealth` — typed, not a bare dict. See module docstring's
+    `MemoryStore` note."""
 
     reachable: bool
 
@@ -547,8 +494,7 @@ class EngageDecision:
     """See module docstring for why `rationale` and `threshold` ride along
     with `confidence` instead of a bare bool or a bare number.
 
-    `relevance_gate` is the Relevance Gate's verdict
-    (design/dreamer-agent-loop/36), deliberately NOT a third value of
+    `relevance_gate` is the Relevance Gate's verdict, deliberately NOT a third value of
     `engage`: `engage=True` means "a tag admitted, route to the engagement
     pipeline" and nothing else may mean that. A `relevance_gate=True` decision
     always has `engage=False`; it marks an untagged message in an opted-in
@@ -570,10 +516,10 @@ class EngagementRequest:
     decision: EngageDecision
     tag_id: str
     # Which occasion the turn is answering. "tag" for everything the
-    # engagement pipeline handles today; the recovery branches below gate on
-    # it so that a "relevance_gate" request (design/dreamer-agent-loop/36) —
-    # should one ever be admitted here — can never have a draft delivered
-    # FOR it: no grounded value is silence there, not a recovered message.
+    # engagement pipeline handles; the recovery branches below gate on it so
+    # that a "relevance_gate" request, should one ever be admitted here, can
+    # never have a draft delivered FOR it: no grounded value is silence there,
+    # not a recovered message.
     occasion: str = "tag"
 
 
@@ -586,8 +532,7 @@ class Roster:
     a wedged signal-cli must not take a tag down — so without this flag an
     unreachable daemon and an empty room produce the same value, and every
     room-scoped tool would answer "there is nobody here" when the truth is
-    "I could not look". That ambiguity is exactly what hid the dead
-    `peer_card` endpoint for the life of the deployment.
+    "I could not look".
 
     `members` is one frozenset of id forms PER member, mirroring
     `nora.platform.signal.directory.SignalGroup.members`: which ids belong to
@@ -603,7 +548,7 @@ class Roster:
 @dataclass(frozen=True)
 class RoomActivity:
     """How busy one conversation is, read from the stored messages
-    (`RecordStore.room_activity`, design/self-awareness/07).
+    (`RecordStore.room_activity`).
 
     `count` is people's messages at or after a cutoff; `last_ts` is when a
     person last spoke there at all, in ms epoch, or `None` when nobody ever
@@ -614,11 +559,10 @@ class RoomActivity:
 
     count: int
     last_ts: int | None = None
-    # Distinct PEOPLE who spoke at or after the same cutoff as `count`
-    # (design/self-awareness/07). A resolved `person_id` is the person; the
-    # raw sender id stands in only for a row nobody resolved. Asked which
-    # group has the most people talking, a message count lets one person
-    # account for twenty lines, and she read every room to count heads.
+    # Distinct PEOPLE who spoke at or after the same cutoff as `count`. A
+    # resolved `person_id` is the person; the raw sender id stands in only for a
+    # row nobody resolved. A message count lets one person account for twenty
+    # lines, so "which group has the most people talking" needs heads.
     speakers: int = 0
 
 
@@ -626,15 +570,13 @@ class RoomActivity:
 class Recollection:
     """What durable memory returned about ONE person, for ONE question.
 
-    Same two-axis shape as `Roster`, for the same reason and with a sharper
-    precedent: `MemoryStore.peer_card` returns `[]` both when Honcho is down
-    and when it knows nothing, and that is precisely why a broken endpoint
-    could return `[]` on every call for the whole life of the deployment
-    without anybody noticing. Honcho's `representation` endpoint makes it
-    worse, not better — an unknown peer answers **200 with an empty string**
-    rather than 404, so "no such peer" and "nothing known" are already
-    indistinguishable at the HTTP layer. `reachable` is the one bit that
-    cannot be recovered afterwards, so it is carried rather than inferred.
+    Same two-axis shape as `Roster`, for the same reason: `MemoryStore.peer_card`
+    returns `[]` both when Honcho is down and when it knows nothing, so a broken
+    endpoint is indistinguishable from an empty card. Honcho's `representation`
+    endpoint makes it worse — an unknown peer answers **200 with an empty
+    string** rather than 404, so "no such peer" and "nothing known" are already
+    indistinguishable at the HTTP layer. `reachable` is the one bit that cannot
+    be recovered afterwards, so it is carried rather than inferred.
     """
 
     reachable: bool
@@ -645,19 +587,13 @@ class Recollection:
 class MessageHits:
     """What a raw-message search returned, and WHETHER IT RAN.
 
-    `Recollection`'s argument, one endpoint over: `MemoryStore.search` returned
-    a bare list and answered `[]` for a transport failure, a >=400, a malformed
-    body AND a genuine miss. `search_memory` then reported all four as
-    `nothing_found` — «I couldn't find anything like that in what's been said
-    here» — which is an ERROR reading as a PASS, the one thing R-27 exists to
-    forbid, and it was counted `ok`.
-
-    That was invisible for the same reason the dead `peer_card` endpoint was:
-    "nothing matched" is a true-sounding sentence for a search nobody ran. An
-    `except` clause in the CALLER could not fix it either — the adapter catches
-    everything itself, so the caller's handler was unreachable code that read as
-    a fix (external review, 2026-08-11). The bit has to be carried out of the
-    place that knows it.
+    `Recollection`'s argument, one endpoint over: a bare list answering `[]` for
+    a transport failure, a >=400, a malformed body AND a genuine miss would let
+    `search_memory` report all four as `nothing_found` — an ERROR reading as a
+    PASS, which R-27 forbids. "Nothing matched" is a true-sounding sentence for
+    a search nobody ran. An `except` clause in the CALLER cannot fix it — the
+    adapter catches everything itself — so the bit is carried out of the place
+    that knows it.
     """
 
     reachable: bool
@@ -688,13 +624,9 @@ class RosterSource(Protocol):
 class PlatformAdapter(Protocol):
     """No `parse()` — see module docstring.
 
-    `platform: str`, not `name: str` — the platforms phase's fifth and final
-    conformance gap (found while closing the other four; see
-    `tests/contract/test_port_conformance.py`). Every other type on this port
-    already says `platform` (`PlatformIdentity.platform`, `AdapterHealth.
-    platform`), and so does the `platform=` metrics label everywhere else in
-    the codebase — `name` was the outlier here, not `SignalAdapter`, so the
-    port is what changed.
+    The attribute is `platform: str`, not `name: str`, matching
+    `PlatformIdentity.platform`, `AdapterHealth.platform` and the `platform=`
+    metrics label (see `tests/contract/test_port_conformance.py`).
     """
 
     platform: str
@@ -789,9 +721,8 @@ class RecordStore(Protocol):
     ) -> list[TranscriptRow]:
         """`media_rows` for shared file links: the rows of ONE conversation
         whose `external_files_json` is set, sent by somebody other than her,
-        with `ts >= since_ts`, NEWEST first, at most `limit`
-        (design/external-files/00-design.md §1). Raises when the database
-        cannot be read; a non-positive `limit` answers `[]` without a query.
+        with `ts >= since_ts`, NEWEST first, at most `limit`. Raises when the
+        database cannot be read; a non-positive `limit` answers `[]` without a query.
         Hidden rows are excluded. The one caller is
         `nora.domain.external_files.resolve_file_code`."""
         ...
@@ -803,9 +734,9 @@ class RecordStore(Protocol):
         `ts < before_ts`, returned oldest-first, with the same over-fetch, edit
         fold and `limit <= 0` rule as `recent`.
 
-        One caller family: the transcript tools' `before`
-        (design/self-awareness/08 §2), which reads «yesterday» in a room that
-        has said more than a window's worth since. Same `idx_messages_conv_ts`
+        One caller family: the transcript tools' `before`, which reads
+        «yesterday» in a room that has said more than a window's worth since.
+        Same `idx_messages_conv_ts`
         seek as `recent`, with one more predicate.
         """
         ...
@@ -817,10 +748,9 @@ class RecordStore(Protocol):
         it (pruned, pre-migration, or a foreign conversation).
 
         Exists for one caller: a reply whose `quoted_ts` falls outside the
-        prefill's default window (design/11 §2.5's out-of-window case). Rather
-        than a bounded lookup that hands back attribution only, the caller
-        re-reads `recent` sized to `depth_to(...) + margin`, so the resolved
-        parent's actual TEXT is in the window, not just its author. See
+        prefill's default window. The caller re-reads `recent` sized to
+        `depth_to(...) + margin`, so the resolved parent's actual TEXT is in the
+        window, not just its author. See
         `nora.engagement.context.TranscriptInjection._recent`.
 
         Same tie-break as `recent` (`ts DESC, id DESC`) — a duplicated
@@ -847,12 +777,11 @@ class RecordStore(Protocol):
     ) -> list[TranscriptRow]:
         """All rows with `id > after_id`, ASCENDING, at most `limit`.
 
-        Unlike `since`, this does NOT exclude Nora's own rows
-        (design/standing-watermark/20). The standing fold needs her replies to
-        re-judge her position ("I committed to...", "I answered..."); a read
-        that strips her half of the conversation shows the fold a room where
-        she never spoke. `since` stays unchanged — the Dreamer's derivation
-        reads must keep excluding her — and this is the fold's read only.
+        Unlike `since`, this does NOT exclude Nora's own rows. The standing fold
+        needs her replies to re-judge her position ("I committed to...", "I
+        answered..."); a read that strips her half of the conversation shows the
+        fold a room where she never spoke. The Dreamer's derivation reads keep
+        using `since`; this is the fold's read only.
         """
         ...
 
@@ -864,7 +793,7 @@ class RecordStore(Protocol):
         self, *, conversation_id: str, target: EditTarget, sender_id: str,
     ) -> EditedMessage | None:
         """The recorded message an edit targets, or None if it was never
-        recorded (design/message-edits/01 §2).
+        recorded.
 
         `target.message_id` matches `messages.platform_message_id` in this
         conversation; `target.sent_ts` (Signal) matches `ts` from `sender_id`,
@@ -880,13 +809,13 @@ class RecordStore(Protocol):
         transcript keeps the message at its original `ts`; so a `ts` no
         message carries but one of its edits does resolves to that message's
         own `ts`. Any other `ts` comes back unchanged — an exact message match
-        always wins (design/message-edits/01 §3)."""
+        always wins."""
         ...
 
     async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
         """Record one edit of the `messages` row `message_id`. Append-only:
         the row it edits is never updated (A9); the transcript reads fold the
-        newest edit onto it instead (design/message-edits/01 §3)."""
+        newest edit onto it instead."""
         ...
 
     async def append_reaction(
@@ -895,9 +824,8 @@ class RecordStore(Protocol):
         """Record one reaction (or its removal) on the `messages` row
         `message_id`, from `message.touch`; returns the new row's id.
         Append-only: a removal is its own row, never an update or a delete of
-        the reaction it takes back (design/cognition-loop/10-tiers.md §8). The
-        reaction is Record, never a transcript line: no transcript read joins
-        it (20-observe.md §1)."""
+        the reaction it takes back. The reaction is Record, never a transcript
+        line: no transcript read joins it."""
         ...
 
     async def append_delete(
@@ -935,10 +863,9 @@ class RecordStore(Protocol):
 
 @runtime_checkable
 class StimulusStore(Protocol):
-    """The per-unit `stimulus` table and the wake log
-    (design/cognition-loop/20-observe.md §3; `nora.domain.stimuli`).
+    """The per-unit `stimulus` table and the wake log (`nora.domain.stimuli`).
 
-    Append-only in both tables (10-tiers.md §8): a stimulus is never updated
+    Append-only in both tables: a stimulus is never updated
     or deleted, and a unit's watermark is its newest wake row, never a row
     rewritten. Implementations: `nora.infra.sql.stimuli.SqlStimulusStore` and
     `nora.testing.stimuli.InMemoryStimulusStore`, bound by
@@ -966,7 +893,7 @@ class StimulusStore(Protocol):
         closed them), and the `recorded_at` of its newest person-authored item
         (a `message` stimulus, `waits` included). A `self` stimulus that was
         retracted (`retract`) is never pending. A wake that claimed only the
-        stimuli of its own kind (D2) names the rest it left inside its range
+        stimuli of its own kind names the rest it left inside its range
         (`WakeRow.unclaimed_ids`): those are pending too.
 
         `stale_before_ms` (a REAL clock, unlike `now_ms`, which is the settle
@@ -1041,9 +968,9 @@ class StimulusStore(Protocol):
 
 @dataclass(frozen=True)
 class NewCarry:
-    """A stimulus's standing after a CLOSED wake (30-cognition.md §2:
-    «returns to the next agenda with a strike; at `max_strikes` code closes
-    it `struck`»). `waits`: it rides the next wake and never starts one.
+    """A stimulus's standing after a CLOSED wake: it returns to the next agenda
+    with a strike, and at `max_strikes` code closes it `struck`. `waits`: it rides
+    the next wake and never starts one.
     Written only with its wake's `closed` outcome (`record_outcome`)."""
 
     unit: str
@@ -1086,9 +1013,9 @@ class RecordedOutcome:
 
 @dataclass(frozen=True)
 class NewCognitionSession:
-    """A session's provenance, as recorded before any write verb is called
-    (design/cognition-loop/30-cognition.md §1: "a session is replayable").
-    `situation`/`agenda` are the JSON shapes `nora.domain.cognition_session`'s
+    """A session's provenance, as recorded before any write verb is called, so
+    a session is replayable. `situation`/`agenda` are the JSON shapes
+    `nora.domain.cognition_session`'s
     `Situation.as_dict`/`AgendaItem.as_dict` build; this port does not parse
     them back."""
 
@@ -1122,9 +1049,9 @@ class NewCognitionSessionClose:
 @runtime_checkable
 class CognitionStore(Protocol):
     """A Cognition session's own bookkeeping: `cognition_session`,
-    `cognition_session_close` and `cognition_self_wake`, each append-only
-    (10-tiers.md §8). The session's writes to the tiers go to the tiers'
-    own stores (notes, events, Standing, reminders), never here.
+    `cognition_session_close` and `cognition_self_wake`, each append-only. The
+    session's writes to the tiers go to the tiers' own stores (notes, events,
+    Standing, reminders), never here.
     Implementations: `nora.infra.sql.cognition_store.SqlCognitionStore`,
     `nora.testing.cognition_store.InMemoryCognitionStore`, bound by
     `tests/contract/test_cognition_store_contract.py`."""
@@ -1145,7 +1072,7 @@ class CognitionStore(Protocol):
         self, *, pace: NewCognitionPace, recorded_at_ms: int,
     ) -> int:
         """Append one pace-verb transition (`wake_at`/`wake_move`/
-        `wake_cancel`, step 3a-ii) and return its id."""
+        `wake_cancel`) and return its id."""
         ...
 
     async def pending_self_wakes(
@@ -1167,13 +1094,12 @@ class CognitionStore(Protocol):
 
 @dataclass(frozen=True)
 class NewCognitionPace:
-    """One pace-verb call (`wake_at`/`wake_move`/`wake_cancel`,
-    design/cognition-loop/20-observe.md §3's self-wakes), as recorded.
+    """One pace-verb call (`wake_at`/`wake_move`/`wake_cancel`, the self-wakes), as recorded.
     `wake_ref` is the stable id a `wake_at` call mints and every later
     `wake_move`/`wake_cancel` on the same self-wake names; `None` only on a
     `wake_at` call that was itself refused before a ref existed. `stimulus_id`
     is the `self` stimulus row this pace call appended to the unit's
-    `stimulus` table (20 §3: "it writes a `self` signal due at `at`"), `None`
+    `stimulus` table (a `self` signal due at `at`), `None`
     on `wake_move`/`wake_cancel` (no new stimulus) or a refusal."""
 
     session_id: int | None
@@ -1198,10 +1124,10 @@ SourceHealthEvent = Literal["poll", "transition"]
 
 @runtime_checkable
 class SourceHealthLog(Protocol):
-    """Source health as Record (design/cognition-loop/20-observe.md §1: «every
-    collector poll and every platform adapter's up and down transitions are
-    recorded, so "every source healthy for the interval" is a query, not an
-    assumption»). Append-only. Never raises: health is recorded beside the
+    """Source health as Record: every collector poll and every platform
+    adapter's up and down transitions are recorded, so "every source healthy
+    for the interval" is a query, not an assumption. Append-only. Never raises:
+    health is recorded beside the
     work it describes and must never stop it."""
 
     async def record(
@@ -1220,9 +1146,7 @@ class MemoryStore(Protocol):
     (`conversation_id`) or the unit (`unit`) whose memory it reads or writes.
     Either resolves to the same thing — the unit — and the unit to its Nora
     workspace's HONCHO workspace and its own named scope inside it. A caller
-    never names a Honcho workspace itself: a `workspace_id` parameter used to
-    be here, and a unit name passed through it addressed a Honcho workspace
-    that did not exist (the since-deleted `NoteCurator._discharge`, 2026-09-19). On the peer
+    never names a Honcho workspace itself. On the peer
     verbs (`ensure_peer`, `conclude`, `peer_card`, `representation`, `chat`)
     the key ROUTES only; it never narrows a read to one session. `peer_card`
     and `representation` also take `workspace` — a NORA workspace name — for
@@ -1239,11 +1163,11 @@ class MemoryStore(Protocol):
         unit: str | None = None,
     ) -> None: ...
 
-    # `conversation_id` (Honcho v2, design/24): the message is fed under
-    # `peer_id` into that CONVERSATION's session — a multi-peer session, so a
-    # human's words and Nora's reply share one session while each stays under its
-    # own speaker's peer (DEC-36 at the message level). `metadata` is optional
-    # structure for the deriver (ts, reply_to, …), not the message text.
+    # The message is fed under `peer_id` into that `conversation_id`'s
+    # session: a multi-peer session, so a human's words and Nora's reply share
+    # one session while each stays under its own speaker's peer (DEC-36 at the
+    # message level). `metadata` is optional structure for the deriver (ts,
+    # reply_to, …), not the message text.
     async def feed(
         self,
         *,
@@ -1273,7 +1197,7 @@ class MemoryStore(Protocol):
         unit: str | None = None, workspace: str | None = None,
     ) -> list[str]: ...
 
-    # `peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4). With
+    # `peer_id` is the OBSERVER, `target` the OBSERVED. With
     # `target` set the recall is `(observer=peer_id, observed=target)` — Nora's
     # model of a person, not the person's self-model. Unit-wide (no session
     # scope): knowledge blends across every room of the unit Nora shares with
@@ -1307,8 +1231,8 @@ class MemoryStore(Protocol):
 
     # Semantic search over the raw MESSAGES (not conclusions) — the verb behind
     # `search_memory`. Carries `reachable` beside the hits (see `MessageHits`):
-    # a bare list made a Honcho outage indistinguishable from a genuine miss,
-    # and `search_memory` reported the outage as «nothing was said», counted ok.
+    # a bare list would make a Honcho outage indistinguishable from a genuine
+    # miss, and `search_memory` would report it as «nothing was said».
     # The caller still filters to the room roster and screens identifiers.
     async def search(
         self, *, query: str, conversation_id: str | None = None, limit: int = 8,
@@ -1346,19 +1270,15 @@ class BlobStore(Protocol):
 class MediaLookup:
     """Many objects by content address, with an AVAILABILITY axis.
 
-    Two axes, like `MediaBytes`, `Roster` and `Recollection`, and for the
-    identical reason: «the index could not be read» must stay distinguishable
-    from «those bytes are not in it». `get` collapses them — it answers `None`
-    for a missing row and for an unreachable database alike, which its own
-    contract suite pins — so a caller built on `get` cannot report R-27's three
-    states however carefully it is written. The render join was that caller:
-    its failure had no counter at all and, on the deployment, no log an
-    operator can reach.
+    Two axes, like `MediaBytes`, `Roster` and `Recollection`, for the same
+    reason: «the index could not be read» must stay distinguishable from «those
+    bytes are not in it». `get` collapses them — it answers `None` for a
+    missing row and for an unreachable database alike, which its own contract
+    suite pins — so a caller built on `get` cannot report R-27's three states.
 
-    ONE call for a whole window, not one per blob. That is the other half:
-    seven paths join now, two of them over batches (a 1000-row adoption scan, a
-    Dreamer batch), and a sequential `get` per distinct blob is an unbounded
-    number of round trips with no timeout on a process-start path.
+    ONE call for a whole window, not one per blob: several paths join over
+    batches (an adoption scan, a Dreamer batch), and a sequential `get` per
+    distinct blob is an unbounded number of round trips with no timeout.
 
     `objects` holds only the rows that EXIST; a sha with no row is simply
     absent, which is `nothing_found` for that blob and not a failure of the
@@ -1372,7 +1292,7 @@ class MediaLookup:
 
 @runtime_checkable
 class MediaObjectStore(Protocol):
-    """The unified media index (DEC-138, migration 0032): metadata for every
+    """The unified media index (DEC-138): metadata for every
     byte Nora holds — inbound photos, generated images, fetched attachments —
     keyed by the same content address the `BlobStore` uses. `source` is an
     attribute; generated objects carry prompt/title/description in
@@ -1383,13 +1303,13 @@ class MediaObjectStore(Protocol):
     overwrites one. `comprehend` is the other verb and it is deliberately
     separate rather than a flag on `save` — custody writes the row inline
     (the handle is a promise the bytes are retrievable), and the model pass
-    lands on it LATER, from a spawned job (issue #116). One verb doing both
+    lands on it LATER, from a spawned job. One verb doing both
     would make the ordering invisible and let a late index write erase a
     comprehension that beat it. It is an UPSERT, so a comprehension can land
     on a row nothing indexed yet, and it never touches `source` — the birth
     record stays the first source's. Its `provenance` argument MERGES into
     whatever is there rather than replacing it: what a READ leaves behind (a
-    video's chunk record, issue #117 — how long the clip was, how much reached
+    video's chunk record — how long the clip was, how much reached
     a model, whether the ceiling bound) is a fact about the reading, not about
     the birth, and the two have to coexist on one row."""
 
@@ -1434,11 +1354,11 @@ class MediaObjectStore(Protocol):
 
 @runtime_checkable
 class Transcriber(Protocol):
-    """Local speech-to-text for voice notes (spec 2026-08-21 §4).
+    """Local speech-to-text for voice notes.
 
     Bound to `[speech.stt]`: `enabled = false` (or an unset endpoint) leaves
     the ingest stage with no transcriber, and a voice note is recorded with a
-    bare handle — exactly as before this capability existed. `language` is
+    bare handle. `language` is
     one of the endpoint's own short LID codes (`yue`, not a BCP-47 tag like
     `yue-HK`) the endpoint may use; it never overrides a detected language,
     because the group mixes Cantonese and English.
@@ -1473,7 +1393,7 @@ class SttResult:
 
 @runtime_checkable
 class Speaker(Protocol):
-    """Text to speech audio (voice-channel TTS, design/voice-channel/01 §1).
+    """Text to speech audio (voice-channel TTS).
 
     Bound to `[speech.tts]`: `enabled = false` (or an unset provider) leaves
     the composition root with no speaker, and nothing about Nora's behaviour
@@ -1494,7 +1414,7 @@ class Speaker(Protocol):
 
 @dataclass(frozen=True)
 class SpeakResult:
-    """Outcome of one synthesis call (design/voice-channel/01 §1). `available`
+    """Outcome of one synthesis call. `available`
     is the single truth a caller reads. `reason` names why not (`error`,
     `timeout`, `empty`, `unsupported`) and `empty` stays distinct from
     `error` — the same distinction `SttResult` makes, for the same reason: a
@@ -1526,8 +1446,7 @@ _UUID_RUN = re.compile(
 
 
 def speakable(text: str) -> bool:
-    """The fail-closed content gate for TTS (design/voice-channel/01 §7):
-    is this text fit to be READ ALOUD?
+    """The fail-closed content gate for TTS: is this text fit to be READ ALOUD?
 
     Anything that reads as a long opaque string must not be spoken — URLs,
     hostnames, `@handles`, hashes, UUIDs, keys. If it was pasted as a machine
@@ -1568,7 +1487,7 @@ class VideoReadingStore(Protocol):
 
 @runtime_checkable
 class MediaDescriptionStore(Protocol):
-    """The durable half of media dedup (sticker spec §4.1). Never raises.
+    """The durable half of media dedup. Never raises.
 
     Two levels, because they answer different questions at different moments:
 
@@ -1610,7 +1529,7 @@ class MediaDescription:
     nothing", or a wedged model and a blank image become the same value and the
     counter that says interpretation is failing sits at zero.
 
-    **THREE FIELDS, ONE PASS (issue #116).** `text` is the description and
+    **THREE FIELDS, ONE PASS.** `text` is the description and
     keeps its name and its meaning; `title` and `content` come back from the
     SAME model call, because reading the bytes is the expensive part and extra
     output fields on that call are near-free. See `nora.domain.media
@@ -1629,30 +1548,24 @@ class MediaDescription:
     # existing construction site) stays valid and simply comprehends less.
     title: str = ""
     content: str = ""
-    # What the READ itself left worth recording — for a chunked video (issue
-    # #117): how long the clip was, how much of it actually reached a model,
-    # and whether the ceiling is why the rest did not. The caller merges it
-    # into `media_objects.provenance` beside the birth record.
+    # What the READ itself left worth recording, e.g. for a chunked video: how
+    # long the clip was, how much of it actually reached a model, and whether
+    # the ceiling is why the rest did not. The caller merges it into
+    # `media_objects.provenance` beside the birth record.
     #
-    # **RETURNED, not stashed on the adapter.** The first cut kept it as
-    # `MediaComprehender.last_provenance` on the grounds that a video-only
-    # field in the domain would be a shape only one adapter can fill. That was
-    # wrong twice over: it is not video-only in principle (it is «what this
-    # read did»), and the comprehension job spawns ONE TASK PER SUBJECT, so a
-    # message carrying a video and a photo runs two `describe` calls
-    # concurrently on one adapter — the still's reset raced the video's
-    # chunk loop and the chunk record, the RECORDED half of DEC-161, was lost
-    # or landed on the wrong row. Single-flight is per-sha256, not
-    # per-instance, so it never established the safety the comment claimed.
-    # A value that travels with its result cannot race.
+    # **RETURNED, not stashed on the adapter.** The comprehension job spawns
+    # ONE TASK PER SUBJECT, so a message carrying a video and a photo runs two
+    # `describe` calls concurrently on one adapter; state kept on the adapter
+    # would race (single-flight is per-sha256, not per-instance), and the chunk
+    # record, the RECORDED half of DEC-161, could be lost or land on the wrong
+    # row. A value that travels with its result cannot race.
     provenance: dict[str, object] | None = None
     # WHICH MODEL wrote this text. Returned rather than asked of the adapter
     # afterwards, for `provenance`'s reason and one more: the answer is not a
     # function of the MODALITY. A voice note's title and description come from
     # the TEXT model (`comprehension_text_model`), not from the audio
-    # describer — so a caller deriving it from the media type recorded `""`
-    # for the one modality whose text is written entirely by a single named
-    # model. Empty means the implementation does not track it and the caller
+    # describer, so a caller deriving it from the media type would be wrong.
+    # Empty means the implementation does not track it and the caller
     # records nothing, which is honest; it never means "the image model".
     model: str = ""
 
@@ -1661,19 +1574,10 @@ class MediaDescription:
 class MediaInterpreter(Protocol):
     """Bytes to a comprehension — title, description, content. Never raises.
 
-    **It used to say STICKERS ONLY, and issue #116 is what changed that
-    sentence.** The old position was that a sticker is published pack art,
-    identical for everyone who has the pack, while a photo is a photograph of
-    somebody's life — so only the first was read automatically. What that cost
-    is the issue's own story: ten photos of a meal, the whole group replying
-    around them, and the subject of the conversation is the one thing the
-    record does not hold. Every reply is preserved and unreadable without it.
-
-    What did NOT change is where the result may go. The comprehension lands in
-    `media_objects` and in Honcho; the transcript renders only title and
-    description; `scan_identifiers` runs on every render and on every serve,
-    never once at store time. The read is automatic now — the egress screen
-    around it is the same one, applied later rather than earlier.
+    Stickers and photos are both read automatically. Where the result may go is
+    bounded: the comprehension lands in `media_objects` and in Honcho; the
+    transcript renders only title and description; `scan_identifiers` runs on
+    every render and on every serve, never once at store time.
 
     `label` is the media LABEL (`nora.domain.media.LABELS`) and it selects the
     authored prompt: a sticker is asked what it depicts, a photo what it shows.
@@ -1686,8 +1590,8 @@ class MediaInterpreter(Protocol):
     purpose: a voice note's `content` is already in hand — `nora/infra/speech
     .py` transcribed it at ingest via the local STT service — so asking a
     vision model to listen again would spend a second, larger call to learn
-    what Nora already knows. The title and description come from a cheap text pass over that
-    transcript instead. Same port, same never-raises promise, same three-field
+    what Nora already knows. The title and description come from a cheap text
+    pass over that transcript instead. Same port, same never-raises promise, same three-field
     result; `content` is what the CALLER already holds and this verb does not
     return it.
     """
@@ -1724,7 +1628,7 @@ class JobResult:
     # Why a FAILED job failed, as a short name (a limit stop, a timeout); `error` is the text.
     failure_reason: str | None = None
     # The worker's trace, when it has one: written to the row so a finished job links to
-    # every model and tool call it made (design/subagent §4b).
+    # every model and tool call it made.
     trace_id: str | None = None
     # The worker's checkpoint as `nora.domain.checkpoint.row_payload` shapes it (its lists, and
     # the files code saw it keep), so a delivery can say where a job that stopped had got to.
@@ -1739,12 +1643,12 @@ class JobResult:
 
 @dataclass(frozen=True)
 class LaunchRequest:
-    """Everything `ComputeBackend.launch` is given (design/subagent §4, §6).
+    """Everything `ComputeBackend.launch` is given.
 
     The room facts are written by code from the launching turn, never chosen by a
     model; a backend builds its worker from them. `payload` is the kind's own typed
     request (a frozen dataclass each backend defines and narrows); `task`/`context`
-    are the caller's distilled brief and Nora's already-typed tool results, as before.
+    are the caller's distilled brief and Nora's already-typed tool results.
     """
 
     task: str
@@ -1760,19 +1664,16 @@ class LaunchRequest:
 
 @runtime_checkable
 class ComputeBackend(Protocol):
-    """A compute job's execution environment (Nora Compute spec §2) —
-    No adapter ships: the one that did (per-job Docker containers) was retired in S3b. `launch`
-    returns immediately with a `job_id`; the job itself runs out-of-band.
-    `task` is the caller's OWN distilled brief, never a raw conversation
-    transcript (spec §4's "interpret once" boundary). `context` is Nora's
-    own already-typed tool results (place/route facts) she chooses to hand
-    along, unmodified — never auto-collected, never required (context-channel
-    spec §4). Structured facts belong here, not folded into `task`'s prose:
-    a second, lossy prose-compression step is exactly the failure the
-    context-channel spec exists to remove.
+    """A compute job's execution environment. `launch` returns immediately with
+    a `job_id`; the job itself runs out-of-band. `task` is the caller's OWN
+    distilled brief, never a raw conversation transcript (the "interpret once"
+    boundary). `context` is Nora's own already-typed tool results (place/route
+    facts) she chooses to hand along, unmodified — never auto-collected, never
+    required. Structured facts belong here, not folded into `task`'s prose: a
+    second, lossy prose-compression step is the failure this channel avoids.
 
     `request.artifact_id`, when set, means "this job revises an existing artifact"
-    (spec §9) rather than creating a new one.
+    rather than creating a new one.
 
     NEVER raises. A backend that cannot even start a job (Docker unreachable,
     the image missing) reports that as a `poll` result with
@@ -1793,10 +1694,9 @@ class ComputeBackend(Protocol):
 
 @runtime_checkable
 class BrowserRunner(Protocol):
-    """A whole browser task done for Nora by a sub-agent in this room's browser
-    (design/browser-runtime 00 §5, B2): one call in, one `BrowseOutcome` out,
-    however many page actions happen in between. `scope` is
-    `computer_scope(...)`, chosen by Nora's code. It never raises: every
+    """A whole browser task done for Nora by a sub-agent in this room's browser:
+    one call in, one `BrowseOutcome` out, however many page actions happen in
+    between. `scope` is `computer_scope(...)`, chosen by Nora's code. It never raises: every
     failure is an outcome with status `unavailable` and a reason."""
 
     async def browse(self, *, scope: str, objective: str,
@@ -1805,7 +1705,7 @@ class BrowserRunner(Protocol):
 
 @runtime_checkable
 class SandboxRuntime(Protocol):
-    """Nora's computer (design/sandbox-runtime §3): a persistent, less-trusted
+    """Nora's computer: a persistent, less-trusted
     machine the computer-use tools execute on. `ComputerdRuntime`
     (`nora.infra.computer.client`) talks to `computerd` in an sbx microVM;
     `FakeSandboxRuntime` is its in-memory twin, and both pass
@@ -1826,8 +1726,7 @@ class SandboxRuntime(Protocol):
     ) -> RunResult:
         """`limits` is the RESERVED per-command resource slot (`[computer]
         limits`): sent only when it names at least one limit, and ignored by
-        computerd today (operator 2026-09-30: the computer is semi-trusted,
-        so no limits are applied)."""
+        computerd (the computer is semi-trusted, so no limits are applied)."""
         ...
 
     async def read(
@@ -1846,7 +1745,7 @@ class SandboxRuntime(Protocol):
 
     async def state(self, *, scope: str) -> StateResult:
         """What the computer holds for `scope` now: its newest files and its
-        tmux sessions (design/sandbox-runtime §15.1). Read fresh on every
+        tmux sessions. Read fresh on every
         call; a caller may keep it for seconds (`ComputerContextReader`).
         Takes no lock. There is deliberately no method that ends a tmux
         session or deletes a file: nothing on Nora's side destroys work."""
@@ -1856,7 +1755,7 @@ class SandboxRuntime(Protocol):
 @runtime_checkable
 class ReverseGeocoder(Protocol):
     """coordinate → a human place name, or None. The presence collector's
-    optional address source (design/19 §5). NEVER raises — a failure is a missing
+    optional address source. NEVER raises — a failure is a missing
     address, so the fix stores the coordinate/Life360 label instead. Has more than
     one implementation (Google today, HK-gov/OSM as switchable options), so it is
     a port with a shared contract suite both pass (tests/contract/, CLAUDE.md)."""
@@ -1866,8 +1765,7 @@ class ReverseGeocoder(Protocol):
 
 @runtime_checkable
 class GeocodeCacheStore(Protocol):
-    """The durable half of `CachingBilingualGeocoder`'s cache (2026-08-19,
-    the presence-analytics label follow-up). NEVER raises — a store failure
+    """The durable half of `CachingBilingualGeocoder`'s cache. NEVER raises — a store failure
     costs a re-geocode next time, never the caller's answer.
 
     `Whereis.locate` is the only writer: a row is created only when a real
@@ -1875,8 +1773,7 @@ class GeocodeCacheStore(Protocol):
     no Life360 address). `nora.analytics` reads this table READ-ONLY to label
     a derived place — it never calls `ReverseGeocoder` itself — so a place
     nobody has ever asked about stays unlabeled rather than triggering a
-    proactive Google call, which is the exact cost pattern (~12k unread calls,
-    Aug 13 2026) this design exists not to repeat.
+    proactive Google call.
 
     Keyed on the SAME rounding `CachingBilingualGeocoder` uses for its
     in-memory tier, so a persisted hit and an in-process hit agree on
@@ -1906,7 +1803,7 @@ class WeatherProvider(Protocol):
     26 stations) may ignore it and let the model pick the nearest — the DEC-24
     division — while a point provider uses it to locate.
 
-    SCREENING OBLIGATION (Kimi audit 2026-08-08): `HkoWeatherProvider` never
+    SCREENING OBLIGATION: `HkoWeatherProvider` never
     TRANSMITS `place` (HKO reports the whole territory), so the `weather` tool does
     not screen it. Any future provider that DOES send `place` upstream (a geocoding
     weather API) MUST identifier/coordinate-screen it at the tool layer first — the
@@ -1978,24 +1875,20 @@ class SearchProvider(Protocol):
     """`query -> {status, results}` web search, and `url -> {status, content}`
     page extraction, behind the `web_search`/`web_fetch` tools (DEC-73, DEC-116).
     NEVER raises — a transport/auth failure is `{"status": "unavailable"}`, never
-    an exception into the loop (R-5). A PORT (operator: "same as web_search —
-    adaptor") so another backend plugs in with no tool change — and since
-    DEC-157 that claim is SPENT rather than anticipated: `TavilySearchProvider`
-    and `ExaSearchProvider` both implement it, selected by `[search] provider`,
-    and the branch lives at the composition root alone. `search` returns ranked
-    results, `fetch` returns one page's content; both `untrusted`-wrapped and
-    clamped, and the second implementation means the shared contract suite both
-    pass (`tests/contract/test_search_provider_contract.py`) — including the
-    `unavailable` note, which is model-facing instruction and must not differ
-    with the operator's billing preference. **Still no SSRF surface** (DEC-73
-    (2)'s argument, unchanged by `fetch`'s return AND by the second backend):
-    the provider is handed a URL over its own authenticated API and fetches it
-    from ITS servers, never Nora's — Nora's own network never makes a
-    connection chosen by model output, so the old `is_global`/`allowed_urls`
-    apparatus stays gone. That is a property of every adapter behind this port,
-    not of one vendor, and an adapter that fetched over Nora's OWN network
-    would not satisfy it. Contrast `LinkPreviewSource` (DEC-87), which IS handed a URL and
-    fetches it over Nora's own network, and so re-grew that guard."""
+    an exception into the loop (R-5). A PORT so another backend plugs in with no
+    tool change: `TavilySearchProvider` and `ExaSearchProvider` both implement
+    it (DEC-157), selected by `[search] provider`, and the branch lives at the
+    composition root alone. `search` returns ranked results, `fetch` returns one
+    page's content; both `untrusted`-wrapped and clamped, and both backends pass
+    the shared contract suite (`tests/contract/test_search_provider_contract.py`)
+    — including the `unavailable` note, which is model-facing instruction and
+    must not differ with the operator's billing preference. **No SSRF surface**
+    (DEC-73): the provider is handed a URL over its own authenticated API and
+    fetches it from ITS servers, never Nora's — Nora's own network never makes a
+    connection chosen by model output. That is a property of every adapter
+    behind this port, and an adapter that fetched over Nora's OWN network would
+    not satisfy it. Contrast `LinkPreviewSource` (DEC-87), which IS handed a URL
+    and fetches it over Nora's own network, and so carries that guard."""
 
     async def search(self, *, query: str) -> dict[str, Any]: ...
 
@@ -2005,7 +1898,7 @@ class SearchProvider(Protocol):
 @dataclass(frozen=True)
 class SteamPlayerState:
     """One Steam account's live player summary, as the `online_now` tool
-    reads it (design/online-status/). `personastate` is Steam's own integer
+    reads it. `personastate` is Steam's own integer
     (0 offline, 1 online, 2 busy, 3 away, 4 snooze, 5 looking-to-trade,
     6 looking-to-play) — carried RAW, never flattened to a bool, because
     "away" and "snooze" are answers the model must be able to give.
@@ -2024,7 +1917,7 @@ class SteamPlayerState:
 @runtime_checkable
 class SteamPresenceProvider(Protocol):
     """Live Steam player summaries behind the `online_now` tool
-    (design/online-status/). NEVER raises — `None` is the WHOLE READ being
+    NEVER raises — `None` is the WHOLE READ being
     unavailable (transport failure, auth failure, a body that is not
     Steam's envelope), and the tool reports `unavailable` (R-5), never a
     confident "everyone is offline". A request the server answered fine
@@ -2034,7 +1927,7 @@ class SteamPresenceProvider(Protocol):
     One call takes the whole batch (`steam_ids` is a frozenset; Steam's
     GetPlayerSummaries accepts up to 100 comma-separated ids per request)
     because the tool's one question must cost one network round trip, not
-    one per person. A PORT (operator: same shape as `WeatherProvider`) so
+    one per person. A PORT (same shape as `WeatherProvider`) so
     a second implementation — including a test double — means a shared
     contract suite both pass (tests/contract/)."""
 
@@ -2047,18 +1940,16 @@ class SteamPresenceProvider(Protocol):
 class SocialProvider(Protocol):
     """`{platform, what, target, limit} -> {status, ...}` social reads, behind
     the `x_read`, `x_search` (DEC-201), `instagram_read` and `instagram_search`
-    (design/instagram-adoption/18) tools. NEVER raises — a transport failure of
+    tools. NEVER raises — a transport failure of
     the bridge call is `{"status": "unavailable"}`, never an exception into
     the loop (R-5), and the R-27 three states apply end to end: an error is
     never a `nothing_found`.
 
-    THREE implementations since social v1 (design/instagram-adoption/08):
-    `OpenCliBridgeClient` (the default backend), `InstagramSocialClient` (the
-    exception backend, one row), and `SocialRouter` — which is itself a
-    `SocialProvider` and is what the registry is actually handed, so nothing
-    above this port knows there are two backends. The contract suite the
-    sentence above has been asking for since there was one implementation is
-    `tests/contract/test_social_provider_contract.py`, and all three pass it.
+    THREE implementations: `OpenCliBridgeClient` (the default backend),
+    `InstagramSocialClient` (the exception backend, one row), and `SocialRouter`
+    — which is itself a `SocialProvider` and is what the registry is handed, so
+    nothing above this port knows there are two backends. All three pass the
+    contract suite `tests/contract/test_social_provider_contract.py`.
 
     Two DECLARED status extensions ride beside the core three on this port,
     both of them produced by `SocialRouter` on a PERSON-keyed Instagram read
@@ -2068,12 +1959,12 @@ class SocialProvider(Protocol):
 
       * `ambiguous` — the subject did not resolve. `target` is a `person_id`
         for a subject-keyed read, and no person-index entry means Nora does
-        NOT get to guess a handle from a name (design/instagram-adoption/09).
-        This is the SECOND sense the declaration carries — «no entry at all»
-        beside «several candidates» — and the two share a word because they
-        share a sentence: I don't know which one you mean, so I didn't look.
+        NOT get to guess a handle from a name. The declaration carries two
+        senses — «no entry at all» beside «several candidates» — which share a
+        word because they share a sentence: I don't know which one you mean, so
+        I didn't look.
       * `refused` — the subject resolved and is out of reach. v1 is Tier 0
-        only: someone in a room Nora is in (`07-social-boundary-and-scope`).
+        only: someone in a room Nora is in.
 
     Neither is a failure of the call, which is why neither may collapse into
     `unavailable` — «I may not look him up» and «I couldn't look» are
@@ -2085,15 +1976,14 @@ class SocialProvider(Protocol):
     process that performs the read — never the process running the model — so
     a write verb (`twitter post/like/follow/delete`, …) is unreachable even
     under prompt injection, and the tool's `NativeTool` entry declares
-    `read_only=True`. "Host-side" was HOW that was achieved when there was one
-    backend, not the point of it: the instagram-bridge is in-container and
-    holds an equivalent allowlist of its own (design/instagram-adoption/08).
+    `read_only=True`. The instagram-bridge is in-container and holds an
+    equivalent allowlist of its own.
 
     Retrieved text is stranger-written: the implementation `untrusted`-wraps
     it (R-13) with the source URL as provenance and CLAMPS it, because a tool
     result is re-sent on every subsequent model call. `target` is an EGRESS
     surface, screened for identifiers/coordinates at the tool layer
-    (`nora.agent.tools`, unchanged) BEFORE it reaches here."""
+    (`nora.agent.tools`) BEFORE it reaches here."""
 
     async def read(
         self, *, platform: str, what: str, target: str, limit: int,
@@ -2102,8 +1992,7 @@ class SocialProvider(Protocol):
 
 @runtime_checkable
 class SocialSubjectIndex(Protocol):
-    """`person_id -> the network id Nora may read, and whether she may`
-    (design/instagram-adoption/07 §tiers, /10 §identity).
+    """`person_id -> the network id Nora may read, and whether she may`.
 
     This is the seam that keeps a SUBJECT-keyed social read from becoming an
     address-keyed one. A story read names a person Nora already knows; the
@@ -2122,21 +2011,19 @@ class SocialSubjectIndex(Protocol):
 
     Separate methods rather than one fused answer, because the failures are
     different claims the model must not conflate. `igids_for` returns EVERY
-    igid on file for the person, and its caller tells three states apart
-    (design/instagram-adoption/18, 2026-09-24): none on file is
+    igid on file for the person, and its caller tells three states apart:
+    none on file is
     `nothing_found` («no account on file, so I didn't look»), several is
     `ambiguous` («I can't tell which, so I didn't look»), and `None` — the
     index could not be read — is `unavailable`. An out-of-tier person is
-    `refused` («I'm not going to look»). The earlier `igid_for -> str | None`
-    folded all three unresolved cases into one `None`, and the router had to
-    call every one of them `ambiguous`.
+    `refused` («I'm not going to look»).
 
     **No method raises**, and all fail CLOSED: an index that cannot be read
     answers `None` / `False`, which costs a read that should have happened
     and never grants one that should not have.
 
-    `person_for_igid` is the REVERSE lookup, and it exists for links
-    (design/instagram-adoption/15 §Links): a link names ONE account, so its
+    `person_for_igid` is the REVERSE lookup, and it exists for links: a link names
+    ONE account, so its
     reach check runs `igid -> person -> is_tier_zero` on the igid the link
     named. Re-deriving through `igids_for` would turn a friend with two
     accounts into `ambiguous` although the link said which one. An igid that
@@ -2157,8 +2044,7 @@ class SocialSubjectIndex(Protocol):
 
 @dataclass(frozen=True)
 class UsernameLookup:
-    """The answer to «which igid holds this Instagram username?»
-    (design/instagram-adoption/15 §Links, /17 P9, P10).
+    """The answer to «which igid holds this Instagram username?».
 
     Three states, kept apart because each is a different sentence:
 
@@ -2176,19 +2062,19 @@ class UsernameLookup:
 @runtime_checkable
 class InstagramAccountLookup(Protocol):
     """`username -> igid`, over the instagram-bridge's exact lookup
-    (`GET /accounts?username=`, design/instagram-adoption/15 §Links).
+    (`GET /accounts?username=`).
 
     The RESOLUTION half of a typed handle or a pasted link. It is not the
     person index: `identity.toml`'s `username` is display metadata, read and
     never matched, because handles rename, and a link usually names someone
-    who is not in the file at all (15). Only `SocialRouter` calls it, and the
+    who is not in the file at all. Only `SocialRouter` calls it, and the
     igid it answers is handed to a backend or to
     `SocialSubjectIndex.person_for_igid`, never to the model (R-18).
 
     **Never raises**, and fails closed: anything it cannot answer is
     `unavailable`. **Never re-picks**: an answer is `found` only for an
     account whose username IS the one asked for, whatever order the bridge
-    listed accounts in (17 P9 measured an exact match that was not first).
+    listed accounts in (an exact match need not be first).
 
     The production implementation is
     `nora.infra.social.InstagramSocialClient`; `nora.testing
@@ -2211,8 +2097,8 @@ class LinkPreviewSource(Protocol):
     consumer is `nora.agent.outbound.OutboundComposer`, whose entire policy for
     every failure is the same — send the message without a card. A `reachable`
     bit here would exist solely to be discarded at its one call site, which is
-    an invented contract (`nora.domain.ports`' `MemoryStore.feed` makes the
-    same argument for staying a bare `bool`).
+    an invented contract (`MemoryStore.feed` makes the same argument for
+    staying a bare `bool`).
 
     The **R-5 obligation is on the implementation, not the caller**: a preview
     is decoration on a message that must go out anyway, so a dead host, a slow
@@ -2233,16 +2119,16 @@ class LinkPreviewSource(Protocol):
 
 @runtime_checkable
 class ExternalFilesSource(Protocol):
-    """One file provider, read-only (design/external-files/00-design.md §4).
+    """One file provider, read-only.
 
     `recognise` is PURE: no network, never raises, and it is what ingest
     records handles with, so recording needs no account. The other three are
-    called only when somebody asks her to open a file (§2) and raise only
+    called only when somebody asks her to open a file and raise only
     `nora.domain.external_files.ExternalFileError`, whose `status` is the
     tool's answer. Nothing here writes, comments or shares: the source file
     is never changed.
 
-    `part` counts from 1. `fetch_bytes` is for the copy to her computer (§5):
+    `part` counts from 1. `fetch_bytes` is for the copy to her computer:
     the bytes and their media type, a native file exported to its office
     format. Only bytes leave the adapter; the credential never does. `accept`
     (media-type prefixes such as `image/`) refuses, as `refused`
@@ -2266,7 +2152,7 @@ class ExternalFilesSource(Protocol):
 
 @runtime_checkable
 class EngagePolicy(Protocol):
-    """Async now, ahead of need — see module docstring."""
+    """Async by design — see module docstring."""
 
     async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision: ...
 
@@ -2321,48 +2207,38 @@ class Proposal:
     # prompt (it is a uuid, and `dream_screen` drops any envelope item carrying
     # one). `None` for an adaptor with no candidate tier behind it.
     #
-    # It exists so a sink can join back to the candidate by IDENTITY rather
-    # than by re-deriving it from the payload's words. The fact tier had the
-    # latter and it was wrong twice over: the model rewording a claim by one
-    # character — which the adjudicator's own code documents as expected and
-    # logs — made the join miss and report a WIRING GAP, and a triple match
-    # against the whole table could donate a settled candidate's provenance to
-    # an unrelated later fact.
+    # It lets a sink join back to the candidate by IDENTITY rather than by
+    # re-deriving it from the payload's words: a model rewording a claim by one
+    # character would make a words-based join miss and report a WIRING GAP, and
+    # a triple match against the whole table could donate a settled candidate's
+    # provenance to an unrelated later fact.
     candidate_id: str | None = None
 
 
 #: The per-CALL-SITE allowance `DreamerRuntime` multiplies by an adaptor's own
-#: `store_calls_per_tick` to bound `inputs` and `commit` (issue #60), and the
-#: default for `[dreamer] store_timeout_seconds`.
+#: `store_calls_per_tick` to bound `inputs` and `commit`, and the default for
+#: `[dreamer] store_timeout_seconds`.
 #:
-#: **It lives HERE, in one place, because it had two homes for an afternoon**
-#: — a literal in `nora.config` and another in `nora.agent.dreamer`'s
-#: `__init__` default — and two copies of a number is how the standing tier's
-#: own hold came to be understated by 2x. `nora.agent` may not import
-#: `nora.config`, and both already import `nora.domain`, so this is the one
-#: module both sides can read. `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` in
-#: `nora.domain.standing` is the same arrangement for the same reason.
+#: **It lives HERE, in one place**, because two copies of a number drift.
+#: `nora.agent` may not import `nora.config`, and both already import
+#: `nora.domain`, so this is the one module both sides can read.
+#: `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` in `nora.domain.standing` is the
+#: same arrangement for the same reason.
 #:
-#: **15s was sized against the (deleted, DEC-277) CURATOR's degraded worst
-#: case, not against one healthy call.** The number multiplies SITES, and a site inside a per-note
-#: loop runs once per note: `NoteCuratorAdaptor.inputs` rendered up to
-#: `max_expired_per_tick` + `max_revisits_per_tick` notes (20 + 10 on the
-#: shipped config) and each one costs a `record.recent` plus a
-#: `MediaJoin.enrich` that carries its OWN 3s bound (`[media]
-#: join_timeout_seconds`). A degraded-but-not-hung media store therefore
-#: spends 30 x 3 = 90s inside one legitimate `inputs`, and at 5s x 10 sites
-#: the bound would have fired at 50s — turning a slow tick into a counted
-#: store timeout and, for a daily-slotted adaptor, a lost day. 15 x 10 = 150s
-#: clears that with room and still sits under `[dreamer] tick_seconds = 300`.
+#: **15s is sized against a degraded worst case, not one healthy call.** The
+#: number multiplies SITES, and a site inside a per-note loop runs once per
+#: note, each costing a `record.recent` plus a `MediaJoin.enrich` that carries
+#: its OWN 3s bound (`[media] join_timeout_seconds`). A degraded-but-not-hung
+#: media store can spend 30 notes x 3s = 90s inside one legitimate `inputs`;
+#: at 5s x 10 sites the bound would fire at 50s, turning a slow tick into a
+#: counted store timeout and, for a daily-slotted adaptor, a lost day. 15 x 10
+#: = 150s clears that and still sits under `[dreamer] tick_seconds = 300`.
 #: Raise it only against a reading of that kind, never to quiet an alarm.
 DEFAULT_DREAM_STORE_TIMEOUT_SECONDS = 15.0
 
 
-#: The ceiling every `DreamAdaptor.store_calls_per_tick` may declare (issue
-#: #191). Today's one is 5 (`CultureAdaptor`); the four it was sized against were 5, 10
-#: (`NoteCuratorAdaptor`), 12 (`NoteCandidateAdaptor`) and 17
-#: (`ProactiveAdaptor`), the last three deleted 2026-10-03 (DEC-277) — this is
-#: headroom over the widest of those, not a measurement of any one of them.
+#: The ceiling every `DreamAdaptor.store_calls_per_tick` may declare. It is
+#: headroom over the widest adaptor, not a measurement of any one of them.
 #:
 #: **It exists so `[dreamer] max_unit_hold_seconds`'s startup gate
 #: (`nora.config`) can PROVE its number against `2 x
@@ -2382,15 +2258,13 @@ DREAM_MAX_STORE_CALLS_PER_TICK = 20
 
 
 #: The wall-clock bound on the participation turn's Honcho reads
-#: (`FirePath._read_memory`, issue #210), and the default for
+#: (`FirePath._read_memory`), and the default for
 #: `[memory] read_timeout_seconds`.
 #:
-#: It lives HERE for `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS`' reason above, which
-#: is the same arrangement `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` has in
+#: It lives HERE for `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS`' reason above, the
+#: same arrangement `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` has in
 #: `nora.domain.standing`: `nora.app` may not import `nora.config`'s default
-#: past the config object, both sides already import `nora.domain`, and two
-#: copies of a timeout is how the standing tier's hold came to be understated
-#: by 2x.
+#: past the config object, and both sides already import `nora.domain`.
 #:
 #: **5s over the WHOLE concurrent batch, not per read.** `HonchoClient` already
 #: bounds a single `representation` at 3s, so this is a belt over the PORT — a
@@ -2407,15 +2281,10 @@ class DreamAdaptor(Protocol):
 
     The Dreamer runtime owns the loop, the tool ceiling, the budget and its own
     doctrine, and knows nothing about notes. Everything that IS tier-specific
-    arrives through this port. **It is the generalisation of a port that was
-    append-shaped**: `RoomConsolidator`'s `consolidate(scope_id, batch) -> int`
-    (deleted 2026-09-07 with the language tier) said "extract, append,
-    rescore, and nothing else", which is why an adaptor that INVALIDATES as
-    well as appends did not fit it, why a unit-keyed adaptor did not fit
-    its scope key, and why a watermark-free one had to be a separate parameter
-    on `dream_loop` rather than another consolidator. This port has room for
-    all three, which is what makes a new tier a new adaptor rather than a new
-    parameter.
+    arrives through this port. It is not append-shaped: an adaptor may
+    INVALIDATE as well as append, may be keyed by unit rather than scope, and
+    may have no watermark. That room is what makes a new tier a new adaptor
+    rather than a new parameter.
 
     **The runtime never names a tier's value type.** It hands the model's
     already-envelope-validated items to `accept`, which returns whatever that
@@ -2424,32 +2293,27 @@ class DreamAdaptor(Protocol):
     tier's value type — `NoteCreationProposal`, or whatever comes next — ever
     appears in an import in `nora/agent/`.
 
-    **Two deviations from the plan's sketch, both found by building it** —
-    recorded here because each looks like an arbitrary difference until the
-    reason is stated:
+    Two shapes that look arbitrary until the reason is stated:
 
     1. **`accept` returns payloads, not `Proposal`s.** A `Proposal` carries
        `instruction_sha256`, `model` and `established_by`, none of which an
        adaptor can know: the runtime read the instructions, built the model
-       provider and named the run. An adaptor returning `Proposal`s would have
-       to be handed all three to fill in, which is provenance travelling one
-       layer further than it needs to and one more place it can be filled in
-       wrongly.
-    2. **`commit` drives the sink; the runtime does not call it directly.** The
-       runtime cannot: a tier's write is often TWO verbs in order — `propose`
-       the new row, then `supersede` the old one naming the new id as
-       `replaced_by` — and knowing that sequence means knowing the tier's own
-       value type.
-       So the sink is the adaptor's own collaborator (constructor-injected,
-       never a port attribute the runtime reads and never uses) and `commit` is
-       where a tier sequences its own writes.
+       provider and named the run. Returning `Proposal`s would make provenance
+       travel one layer further than it needs to and give one more place to
+       fill it in wrongly.
+    2. **`commit` drives the sink; the runtime does not call it directly.** A
+       tier's write is often TWO verbs in order — `propose` the new row, then
+       `supersede` the old one naming the new id as `replaced_by` — and
+       knowing that sequence means knowing the tier's own value type. So the
+       sink is the adaptor's own collaborator (constructor-injected, never a
+       port attribute the runtime reads) and `commit` is where a tier
+       sequences its own writes.
 
-       This does not weaken the keystone §3.2 asymmetry, which is about the
-       MODEL not writing: there is still no write tool, the model still only
-       returns a structured value, and code still disposes. `commit` is code.
+       This does not weaken the invariant that the MODEL does not write: there
+       is no write tool, the model only returns a structured value, and code
+       disposes. `commit` is code.
 
-    **Screening happens before `accept`, not after it** (keystone §7, and this
-    is the other deviation from the plan, which screened parsed proposals).
+    **Screening happens before `accept`, not after it.**
     The runtime screens the model's raw envelope ITEMS — every string value in
     every item — against R-18/R-28 before any tier type exists. Screening a
     parsed `object` would need the adaptor to expose its own text for
@@ -2570,7 +2434,7 @@ class DreamAdaptor(Protocol):
         was nothing usable» — and it lets the watermark advance.
 
         **One narrow exception, and it is a raise rather than a fourth return
-        value** (2026-09-17, `nora.language.culture`). An adaptor MAY raise
+        value** (`nora.language.culture`). An adaptor MAY raise
         when the model's result was READ and is being DISCARDED, and losing
         the batch with it would lose the only copy: `DreamerRuntime.run`
         reports any exception here as `unavailable`, which is the one status
@@ -2591,12 +2455,12 @@ class DreamAdaptor(Protocol):
 
         **`commit(key, ())` is a legal and meaningful call**, not a call to
         skip: it is R-27's `nothing_found` — «I looked and there was nothing» —
-        and it is where time-driven decay lives. Verified against the (since-deleted)
-        curator: `NoteCuratorAdaptor.commit` with zero proposals still recorded
-        a WAKE for every note the run selected, advancing `revisit_at` and
-        charging a strike to a note nobody answered. None of the adaptor's
-        other fields has a slot for that. The runtime NOT calling `commit` is
-        the different, third state: `unavailable`, «I could not check».
+        and it is where time-driven decay lives. An adaptor may need
+        it to record a WAKE for every item the run selected, advancing a
+        revisit time and charging a strike to an item nobody answered; none of
+        the adaptor's other fields has a slot for that. The runtime NOT calling
+        `commit` is the different, third state: `unavailable`, «I could not
+        check».
 
         Collapsing those two — treating an empty sequence as "nothing to do,
         skip the call" — silently drops decay and turns a wiring gap into a
@@ -2614,8 +2478,7 @@ class DreamAdaptor(Protocol):
 @dataclass(frozen=True)
 class ResolvedTrack:
     """What `TrackSource.resolve` hands back — enough to start playback and
-    enough to persist as a `music_queue` row (design/discord-music/
-    01-playback-and-source.md, 03-state-and-persistence.md). `stream_url`
+    enough to persist as a `music_queue` row. `stream_url`
     points at the underlying host's own CDN, not anything Nora serves —
     short-lived by that host's own policy, never persisted past the row's
     `url` column, which stores `locator` — a resolve INPUT to re-derive from,
@@ -2651,7 +2514,7 @@ class TrackSource(Protocol):
     resolves to at most one track. Which URL shapes are treated as a
     playlist to expand, versus a single video to resolve, is entirely the
     implementation's call (`YtDlpSource`'s is narrow — an explicit
-    `/playlist?list=...` link only, capped; see `01-playback-and-source.md`).
+    `/playlist?list=...` link only, capped).
 
     `YtDlpSource` is the only implementation today, YouTube-only — an
     allowlist enforced BY the implementation, not left to whatever
@@ -2685,11 +2548,10 @@ class TrackSource(Protocol):
         stream this source resolved turned out to be unplayable, before the
         retry re-resolves it.
 
-        **A locator is only as good as the session that signed it.**
-        Measured 2026-09-18: a `YoutubeDL` kept for the life of the process
-        handed out CDN addresses that were answered `403 Forbidden` — every
-        one, for 21 hours — because `videoplayback` addresses are bound to
-        the visitor session that produced them. Re-resolving through that
+        **A locator is only as good as the session that signed it.** A
+        `YoutubeDL` kept for the life of the process can hand out CDN addresses
+        answered `403 Forbidden`, because `videoplayback` addresses are bound
+        to the visitor session that produced them. Re-resolving through that
         same session reproduces the failure exactly. Without this hook a
         bounded retry is decoration: it spends a network round-trip asking
         the broken thing for another broken answer.
@@ -2703,8 +2565,7 @@ class TrackSource(Protocol):
 
 @dataclass(frozen=True)
 class MusicToolOutcome:
-    """What a Nora agent music tool hands back (design/discord-music/
-    07-agent-tool.md) — this file's R-27 three-state discipline: `ok` /
+    """What a Nora agent music tool hands back — this file's R-27 three-state discipline: `ok` /
     `nothing_found` / `unavailable`, never conflated. `title`/`url` are only
     meaningful on `ok`; `queued` distinguishes "started playing" from
     "added to the queue behind something already playing" (same
@@ -2721,7 +2582,7 @@ class MusicToolOutcome:
 @runtime_checkable
 class MusicToolBridge(Protocol):
     """What a Nora agent tool needs to control Discord music
-    (design/discord-music/07-agent-tool.md), without `nora.agent` ever
+    without `nora.agent` ever
     importing `discord.py` directly — `nora.agent` and `nora.platform` are
     PEERS in this repo's layered-architecture contract, neither may import
     the other, so this port is the seam. NEVER raises, matching
@@ -2737,8 +2598,7 @@ class MusicToolBridge(Protocol):
 
     `sender_ids` is a SET, not one id, for the reason `nora.persons.
     Persons.platform_ids`'s own docstring gives: identity.toml may map one
-    person to more than one account on a platform (found live 2026-08-24 —
-    a real person with two Discord accounts), and choosing which one to
+    person to more than one account on a platform, and choosing which one to
     trust is not the caller's decision to make blind. `nora.agent.outbound`
     resolves the same ambiguity by intersecting every candidate id against
     the platform's own live roster; this port's equivalent is trying each
@@ -2764,9 +2624,8 @@ class MusicToolBridge(Protocol):
 
 @dataclass(frozen=True)
 class VoiceChannelRef:
-    """A live voice-channel membership, as the `online_now` tool reports it
-    (design/online-status/). `channel_id` is the platform's own snowflake —
-    design-sanctioned for the reply (the 02 table) — and `channel_name` is
+    """A live voice-channel membership, as the `online_now` tool reports it.
+    `channel_id` is the platform's own snowflake and `channel_name` is
     what the model actually says; either may be all the platform exposes."""
 
     channel_id: str
@@ -2776,7 +2635,7 @@ class VoiceChannelRef:
 @runtime_checkable
 class VoicePresenceSource(Protocol):
     """Who is in a Discord voice channel RIGHT NOW, behind the `online_now`
-    tool (design/online-status/) — a READ-ONLY seam so `nora.agent` never
+    tool — a READ-ONLY seam so `nora.agent` never
     imports `discord.py` (same layered-architecture argument
     `MusicToolBridge`'s docstring gives). NEVER raises — `None` is "no live
     client / the read failed", and the tool reports `unavailable` (R-5),
@@ -2787,9 +2646,9 @@ class VoicePresenceSource(Protocol):
     Live-guilds only, zero new intents: the implementation scans the
     connected client's guilds and reads `member.voice` — `voice_states` is
     already in `Intents.default()`. Voice membership answers ONLY the
-    narrow "who is in which voice channel" question: since the 2026-09-15
-    correction it no longer stands in for "Discord online" — that is
-    `DiscordPresenceSource`'s read, behind the `presences` intent. A second
+    narrow "who is in which voice channel" question; it does not stand in for
+    "Discord online" — that is `DiscordPresenceSource`'s read, behind the
+    `presences` intent. A second
     implementation — including a test double — means a shared contract
     suite both pass (tests/contract/)."""
 
@@ -2801,8 +2660,8 @@ class VoicePresenceSource(Protocol):
 @dataclass(frozen=True)
 class DiscordPresenceState:
     """One member's per-person Discord presence, as the `online_now` tool
-    reports it (design/online-status/02's CORRECTION): Discord's own status
-    word plus rich presence. `status` is whatever `member.status` gives
+    reports it: Discord's own status word plus rich presence. `status` is
+    whatever `member.status` gives
     (`online` / `idle` / `dnd` / `offline` — an invisible member presents
     to the bot as `offline`, so `offline` stays honest: checked-and-offline,
     never a guess). The rich fields are present-optional, never
@@ -2817,9 +2676,8 @@ class DiscordPresenceState:
 @runtime_checkable
 class DiscordPresenceSource(Protocol):
     """Per-person Discord presence — status + rich presence — behind
-    `online_now`'s `online` arm (design/online-status/, the 2026-09-15
-    correction: presence, NOT voice-channel membership, is what "Discord
-    online" means). A READ-ONLY seam so `nora.agent` never imports
+    `online_now`'s `online` arm (presence, NOT voice-channel membership, is
+    what "Discord online" means). A READ-ONLY seam so `nora.agent` never imports
     `discord.py` (same layered-architecture argument `VoicePresenceSource`'s
     docstring gives). NEVER raises — `None` is "no live client / the read
     failed", and the tool reports `unavailable` (R-5), never "everyone is
@@ -2846,10 +2704,9 @@ class ImageReference:
     takes — which resolves, inside THIS conversation only, to a blob Nora
     already holds (R-21/DEC-24 custody). An external URL or raw bytes are
     refused by the port's implementations: Nora never fetches an image
-    *because* the user asked to edit it; the user must have already sent it
-    (design/proposed/29-image-generation §5.1).
+    *because* the user asked to edit it; the user must have already sent it.
 
-    **One exemption (DEC-193, `design/self-reference/`).** The media row whose
+    **One exemption (DEC-193).** The media row whose
     `provenance.role` is exactly `"self"` — her canonical picture, written only
     by the operator's `scripts/ingest_self_asset.py` — resolves in ANY
     conversation, matched on its FULL sha256 and only when the conversation's
@@ -2892,7 +2749,7 @@ class ImageResult:
     meaningful on `ok`. `reason` distinguishes the failure classes the model
     must answer differently — quota-exhausted vs auth-expired vs
     provider-down — mirroring `MusicToolOutcome.note`; the adapter never
-    guesses "quota" or "auth" from a 403 status alone (design/proposed/29-image-generation §7).
+    guesses "quota" or "auth" from a 403 status alone.
     """
 
     status: Literal["ok", "nothing_found", "unavailable"]
@@ -2911,19 +2768,19 @@ class ImageGenerator(Protocol):
     reference images, size, quality) is deliberately NOT any vendor's —
     the first implementation is xAI's subscription lane, later providers
     plug in behind the same seam and the model-facing tool does not change
-    (design/proposed/29, DEC-137). NEVER raises — matching `TrackSource`
+    (DEC-137). NEVER raises — matching `TrackSource`
     / `WeatherProvider`'s discipline in this file: every failure is a
     three-state `ImageResult`, and a wiring gap is `unavailable`, never a
     raise and never `nothing_found`.
 
     Reference images are custody handles only (`ImageReference.marker_code`
     resolved inside the caller's own conversation) — the adapter refuses an
-    external URL (design/proposed/29-image-generation §5.1).
+    external URL.
 
     `max_reference_images` is how many references this provider takes in one
     call: its vendor's limit, or a lower operator override from its config
     section. The tool states it and refuses a call above it; the provider is
-    the only thing that knows it (DEC-307, design/proposed/29 §12).
+    the only thing that knows it (DEC-307).
     """
 
     @property
@@ -2944,7 +2801,7 @@ class ImageGenerator(Protocol):
 
 @runtime_checkable
 class CultureReader(Protocol):
-    """The ONE verb a PROMPT is allowed on the culture store (design/culture-tier).
+    """The ONE verb a PROMPT is allowed on the culture store.
 
     A Protocol rather than `SqlCultureStore` itself: the concrete store also
     exposes `append` and `chain`, and naming only what is called makes «no turn
@@ -2953,12 +2810,9 @@ class CultureReader(Protocol):
     whole claim is that the account is written by a background fold reading a
     whole batch, never by a turn reacting to one window.
 
-    **It lives here because every runtime reads it** (DEC-207, 2026-09-25). It
-    used to live in `nora.app.fire`, beside its one consumer, on the argument
-    that a port declared for everyone reads as an invitation for the second.
-    The operator issued that invitation: the tag path, every fire occasion,
-    proactive, both note passes and the standing debrief now read the room's
-    account, so the one-consumer location stopped being true of the code.
+    **It lives here because every runtime reads it** (DEC-207): the tag path,
+    every fire occasion, proactive, both note passes and the standing debrief
+    read the room's account.
 
     **`key` is a `primary_id`, NOT a `conversation_id`** (DEC-181). A Dreamer
     adaptor is handed `scopes()`, so that is what it wrote under, and every
@@ -2982,33 +2836,28 @@ class CultureReader(Protocol):
 
 @runtime_checkable
 class StandingStore(Protocol):
-    """Where the debrief's per-conversation position is read and revised
-    (`design/dreamer-agent-loop/26-standing.md`).
+    """Where the debrief's per-conversation position is read and revised.
 
     **Two verbs, and the READ is the non-negotiable one.** `write` without a
-    preceding `read` reproduces the language tier's exact failure — two
-    contradictory positions coexisting, neither able to correct the other
-    (`12-self-correction.md` §3, and the live evidence: across 963 processed
-    messages the Dreamer's whole output was two rows, both wrong, both glossing
-    the same thing, because nothing in its write path could see what was
-    already written). That is why `read` is on this port at all rather than the
+    preceding `read` yields two contradictory positions coexisting, neither
+    able to correct the other, because nothing in the write path could see what
+    was already written. That is why `read` is on this port at all rather than the
     fold being handed a blob: the fold's second argument comes from HERE, on
     every fold, and `nora_debrief_prior_total` is what makes «it read nothing»
     visible rather than assumed.
 
     **No delete, and unlike `DreamSink` no supersede either.** The row is
-    REVISED, in place — that is the tier's shape (26 §4), not an economy. What
+    REVISED, in place — that is the tier's shape, not an economy. What
     a lossy revision is rebuilt from is `tag_trace` (`TagTraceStore.recent`),
     retained for exactly this reason, so history lives one tier down rather
     than in a column here.
 
     **Never raises for an absent row.** `read` answers `None`, which is a
     first-class state and not an error: a conversation Nora has not folded yet
-    has no position, and the fold is told so explicitly (26 §4.2 — `prior` is
-    "always present, even when empty"). Implementations still raise on a
-    genuine store failure; the CALLER decides what an unreachable store means,
-    and for the debrief that is `unavailable`, never a fold against a guessed
-    empty prior.
+    has no position, and the fold is told so explicitly (`prior` is "always
+    present, even when empty"). Implementations still raise on a genuine store
+    failure; the CALLER decides what an unreachable store means, and for the
+    debrief that is `unavailable`, never a fold against a guessed empty prior.
     """
 
     async def read(
@@ -3032,7 +2881,7 @@ class StandingStore(Protocol):
 @runtime_checkable
 class DecisionLogStore(Protocol):
     """Where every ambient decision is written, and where the NEXT decider
-    reads what the others already did (issue #199).
+    reads what the others already did.
 
     **Append-only, and the absent verbs are the point.** There is no `update`,
     no `delete` and no upsert: a decision happened, and a log whose rows can be
@@ -3044,14 +2893,13 @@ class DecisionLogStore(Protocol):
 
     **Two reads, and `recent_for_unit` is the PRIMARY one.** A
     `kind="proactive"` row fires into the unit's home room and nowhere
-    else (39 D2/D3); the thread it is about runs wherever the group is
-    talking, which in the measured incident was a different room on a different
-    platform. So a reader scoped to one room sees nothing and the duplicate it
+    else; the thread it is about runs wherever the group is talking, which can
+    be a different room on a different platform. So a reader scoped to one room
+    sees nothing and the duplicate it
     exists to prevent goes through anyway. `recent` — one room — is the narrow
     read, kept for a caller that genuinely means one room. They are two reads
     and not one filter because they need two indexes: collapsing them would
-    make the unit case an unindexed scan, and AGENTS.md's rule is that
-    something must measure the COST, not just the answer.
+    make the unit case an unindexed scan.
 
     **Both reads are bounded by the store, twice** — `since_ms` and `limit` —
     rather than by the caller slicing what came back. A block that rides into a
@@ -3070,9 +2918,8 @@ class DecisionLogStore(Protocol):
 
         **A row is written at turn COMPLETION** — after the message went out,
         or after the decision to stay silent was taken — never when the turn
-        starts. That is what closes issue #199's ordering: the send at 16:43:57
-        is durable before the tag turn at 16:44:04 reads anything, so the
-        second turn can see the first one's answer. The gate's verdict is the
+        starts. That is what orders the log: a send is durable before a later tag turn
+        reads anything, so the second turn can see the first one's answer. The gate's verdict is the
         one row with no turn behind it and is written when the verdict is
         reached, which is its completion.
 
@@ -3099,8 +2946,7 @@ class DecisionLogStore(Protocol):
         Oldest-first to match `RecordStore.recent`, which the same prompt
         renders beside it — one document, one direction of time. Ties on `ts`
         break on `id` so two implementations answer the same rows in the same
-        order; two decisions in one millisecond are reachable, and issue #199's
-        own incident is a tag turn one second behind a participation answer.
+        order; two decisions in one millisecond are reachable.
         """
         ...
 

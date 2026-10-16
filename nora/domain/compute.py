@@ -1,4 +1,4 @@
-"""The compute-job outbox port (Nora Compute spec §2/§4). A compute job is
+"""The compute-job outbox port. A compute job is
 NOT a deferred request repeated on a schedule (unlike `nora.domain.reminders`
 — no `Series`, no recurrence): one job, one delivery, ever.
 
@@ -40,14 +40,12 @@ class ComputeJobState(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ComputeJob:
-    """One deferred job awaiting delivery (Nora Compute spec §4). Nothing writes
-    one today: the artifact tool, its only producer, was retired in S3b
-    (design/sandbox-runtime decision 4), and the row is kept as the generic
-    deferred-delivery outbox any worker uses (`kind` says which).
+    """One deferred job awaiting delivery: the generic deferred-delivery outbox
+    any worker uses (`kind` says which).
 
     `backend_job_id` is `ComputeBackend.launch`'s own return value — the
     handle `ComputeJobPoller` polls with. `artifact_id`, when set, means this
-    job is revising an existing artifact (spec §9), matching
+    job is revising an existing artifact, matching
     `ComputeBackend.launch`'s own parameter of the same name and purpose.
     `requester_person_id`/`platform`/`conversation_id`/`conversation_type`
     are exactly what `compute_occasion` (nora/app/fire.py) needs to build an
@@ -56,10 +54,10 @@ class ComputeJob:
     turn needs one Room, one policy decision, one Deliverer binding).
 
     `kind` names the backend that owns the row, `tag_id` the turn that launched
-    it and `failure_reason` why a failed row failed (design/subagent §6).
+    it and `failure_reason` why a failed row failed.
 
     `task_sha256`/`context_sha256` are the SHA-256 of `task`/`context` as
-    the producer actually sent them (context-channel spec §5) — computed
+    the producer actually sent them — computed
     once, by the producer itself, never by a backend. A caller can verify
     the unit file on disk still matches what was launched.
     """
@@ -80,9 +78,9 @@ class ComputeJob:
     error: str | None
     task_sha256: str
     context_sha256: str
-    # Which backend owns the row (design/subagent §6): the poller resolves
-    # `ComputeBackend` by it. Required, no default: a producer names its kind.
-    # Rows from before the column are `legacy` and terminal.
+    # Which backend owns the row: the poller resolves `ComputeBackend` by it.
+    # Required, no default: a producer names its kind. `legacy` rows are
+    # terminal.
     kind: str
     # The launching turn's tag id, for the trace link.
     tag_id: str | None = None
@@ -97,7 +95,7 @@ class ComputeJob:
     # The worker's Langfuse trace id, written by the backend when known.
     trace_id: str | None = None
     # The sub-agent's checkpoint as last written (`nora.domain.checkpoint.row_payload`) and
-    # when; `None` for a row from before checkpoints or a job that wrote none.
+    # when; `None` for a job that wrote none.
     checkpoint: Mapping[str, Any] | None = None
     checkpoint_at: datetime | None = None
 
@@ -142,11 +140,9 @@ def normalise_compute_job(job: ComputeJob) -> ComputeJob:
 class ComputeJobStore(Protocol):
     async def create(self, job: ComputeJob) -> None:
         """Insert-only: the row's fields are written exactly as given, `state`
-        included. A producer
-        always passes `PENDING`, but that is the CALLER's discipline — neither
-        implementation enforces it, and the contract suite itself creates a
-        terminal row directly. Stated as a habit rather than an invariant so
-        nothing downstream reasons as though it were checked here."""
+        included. A producer always passes `PENDING`, but that is the CALLER's
+        discipline and is not enforced here, so nothing downstream may reason
+        as though it were checked."""
         ...
 
     async def get(self, job_id: UUID) -> ComputeJob | None: ...
@@ -216,25 +212,24 @@ class ComputeJobStore(Protocol):
     async def sweep_pending(
         self, *, now: datetime, keep_kinds: frozenset[str] = frozenset(),
     ) -> list[ComputeJob]:
-        """Boot recovery for the OTHER half, and it has no `ReminderStore`
+        """Boot recovery for `PENDING` rows; it has no `ReminderStore`
         counterpart because the two ports differ in what a `PENDING` row means.
 
         A pending reminder is a due TIME — durable, and a restart loses
         nothing. A pending compute job is a HANDLE into `ComputeBackend`'s
-        in-process registry (`backend_job_id`), and the adapter that
-        shipped kept that registry in memory only. So ANY restart — a crash, a deploy, a
-        config change — leaves every surviving `PENDING` row pointing at a job
-        this process has never heard of, and `poll` answers `FAILED("unknown
-        job_id")` for it. Delivered, that becomes Nora telling the group in her
-        own voice that their job failed, which is not something anybody knows.
+        in-process registry (`backend_job_id`), which is memory only. So a
+        restart leaves every surviving `PENDING` row pointing at a job this
+        process has never heard of, and `poll` answers `FAILED("unknown
+        job_id")` for it, which would reach the group as Nora saying their job
+        failed.
 
-        `keep_kinds` names the kinds whose handle is NOT in memory and survives a restart (a
-        video job's handle is the provider's task id): their pending rows are left pending and
-        the poller asks about them again.
+        `keep_kinds` names the kinds whose handle is NOT in memory and survives
+        a restart (a video job's handle is the provider's task id): their
+        pending rows are left pending and the poller asks about them again.
 
-        Sweeping them at boot resolves each to `FAILED` with an honest reason
-        instead, and it is the same at-most-once rule `sweep_firing` holds:
-        never re-delivered, never re-polled. Returns how many.
+        The rest resolve to `FAILED` with an honest reason, under the same
+        at-most-once rule as `sweep_firing`: never re-delivered, never
+        re-polled. Returns the rows it swept.
 
         What it does NOT do: reach the container. A sandbox that survived the
         restart runs to completion and may well register its artifact with

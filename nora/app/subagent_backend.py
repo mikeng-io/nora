@@ -1,18 +1,16 @@
-"""`SubagentBackend` — the in-process `ComputeBackend` for the sub-agent worker
-(design/subagent §4, §6; the shape the retired per-job container backend had, minus the
-container).
+"""`SubagentBackend`, the in-process `ComputeBackend` for the sub-agent worker.
 
 `launch` starts an asyncio task that runs `SubagentRunner` and returns an id at once; the task
 is the worker. `poll` answers from the job's in-memory state; `cancel` cancels the task and the
 job ends `cancelled`. The registry is in memory, so a restart loses a running job and
-`compute_poller.recover` fails its row at boot and the room is told (design §6: resuming would
-mean saving the worker's conversation, a later step).
+`compute_poller.recover` fails its row at boot and the room is told. A job is not resumed: that
+would mean saving the worker's conversation.
 
 `launch` NEVER raises (the port's rule): a brief that is not a `SubagentBrief`, or a requester
 who is not on file, is a job that is already `FAILED`, reported by `poll`.
 
-Progress (rounds, last tool, the trace id) is held per running job in memory, for the model-
-facing read tool of step 3; reading Langfuse at runtime is not a dependency Nora takes.
+Progress (rounds, last tool, the trace id) is held per running job in memory, for the
+model-facing read tool; reading Langfuse at runtime is not a dependency Nora takes.
 """
 
 from __future__ import annotations
@@ -62,7 +60,7 @@ class SubagentStatus:
     rounds: int
     last_tool: str | None
     trace_id: str | None
-    # The worker's last checkpoint and what code recorded (design/subagent §4d), from memory:
+    # The worker's last checkpoint and what code recorded, from memory:
     # fresher than the row, which a failed or not-yet-possible write can lag.
     checkpoint: Checkpoint | None = None
     document_ids: tuple[str, ...] = ()

@@ -1,4 +1,4 @@
-"""Failure taxonomy (spec DEC-4).
+"""Failure taxonomy (DEC-4).
 
 R-5's rule is "never speak on failure", and it is absolute for failures that mean
 Nora is broken. DEC-4 carves out exactly one exception: a tool the user explicitly
@@ -39,7 +39,7 @@ class PartialReplyError(NoraError):
     """The model was cut off at `max_tokens` AFTER writing real prose.
 
     Strands raises `MaxTokensReachedException` once the partial message is
-    already appended to `agent.messages` (event_loop.py:640) — the words are
+    already appended to `agent.messages` — the words are
     recoverable, they just never left the loop. This error carries them so the
     pipeline can deliver them instead of staying silent (R-5's silence is for
     failures where Nora is broken; here she wrote an answer and the harness

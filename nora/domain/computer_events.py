@@ -1,4 +1,4 @@
-"""The computer audit log port (design/sandbox-runtime §12). Two rows per
+"""The computer audit log port. Two rows per
 call to a computer tool (`computer_run`, `computer_read`, `computer_write`,
 `computer_edit`), on EVERY path, `unavailable` and `cancelled` included:
 what ran, in which room, under which turn, and how it answered.
@@ -9,8 +9,8 @@ record; the `finished` row is written after, even when the turn is cancelled
 mid-call. A `started` row with no `finished` row is the mark of a crash or a
 restart mid-call (`ComputerEventStore.orphaned_starts`).
 
-It is the operator's one required control over the computer (2026-09-30:
-semi-trusted, no resource limits applied). Any claim about what ran on the
+It is the operator's one required control over the computer (semi-trusted,
+no resource limits applied). Any claim about what ran on the
 computer re-derives from these rows, never from the model's account of it.
 
 Written by Nora's tools, never by `computerd`: the VM is the less-trusted
@@ -40,16 +40,15 @@ from uuid import UUID
 #: Who made a call (`ComputerEvent.actor`). `tag` is a turn somebody tagged
 #: her into, `fire` a fire turn (a reminder, participation, a proactive act),
 #: `dreamer:<adaptor>` a Dreamer pass. `sweeper` is the session sweeper
-#: (design/sandbox-runtime §15.2, migration `0082`), which writes only the
-#: rows of the sessions it expires. `subagent` is a background worker a tag turn
-#: launched (design/subagent §4, migration `0095`): it runs under its own lease key
-#: and is never a live actor. `cognition` and `operator` are reserved: no path
-#: reaches the computer tools as either today.
+#: (migration `0082`), which writes only the rows of the sessions it expires.
+#: `subagent` is a background worker a tag turn launched (migration `0095`): it
+#: runs under its own lease key and is never a live actor. `cognition` and
+#: `operator` are reserved: no path reaches the computer tools as either.
 ACTORS: frozenset[str] = frozenset({
     "tag", "fire", "cognition", "operator", "sweeper", "subagent",
 })
 
-#: The actors who wait for a turn's answer: a live turn (design §15.4). Every
+#: The actors who wait for a turn's answer: a live turn. Every
 #: other actor is background and never queues behind one.
 LIVE_ACTORS: frozenset[str] = frozenset({"tag", "fire"})
 
@@ -60,7 +59,7 @@ DREAMER_ACTOR_PREFIX = "dreamer:"
 
 #: How the call reached the computer (`ComputerEvent.path`). `direct` is a
 #: tool call from Nora's own loop; `subagent` is a call made by a background
-#: worker acting on her behalf (design/subagent §4).
+#: worker acting on her behalf.
 CALL_PATHS: frozenset[str] = frozenset({"direct", "subagent"})
 
 
@@ -140,7 +139,7 @@ class ComputerEvent:
     result: Mapping[str, Any] = field(default_factory=dict)
     output_ref: Mapping[str, Any] = field(default_factory=dict)
     #: The computer session the call belongs to (`nora.domain.computer_sessions`,
-    #: migration `0082`); None on rows written before sessions existed, on a
+    #: migration `0082`); None on legacy rows with no session, on a
     #: call whose session could not be opened, and on a call the computer
     #: was off for.
     session_id: UUID | None = None

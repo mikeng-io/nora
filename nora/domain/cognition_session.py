@@ -1,36 +1,32 @@
 """The Cognition adaptor's session and agenda, built by CODE, before any
-model call (design/cognition-loop/30-cognition.md §1, migration step 3a).
+model call.
 
 **Interpret once (AGENTS.md's CMS discipline).** A unit's pending stimuli
-(`nora.domain.stimuli.Stimulus`, already read by the wake evaluator, 70
-§2 step 1) are turned into a fixed `Situation` and `Agenda` exactly once,
-here, by pure functions. Everything downstream — the write verbs a session
+(`nora.domain.stimuli.Stimulus`, already read by the wake evaluator) are
+turned into a fixed `Situation` and `Agenda` exactly once, here, by pure
+functions. Everything downstream — the write verbs a session
 calls, the assess pass that reads the session row back — computes on that
 fixed model and never re-reads the raw stimulus rows itself; the session
 row (`nora.infra.sql.cognition_session`) serializes it with provenance so a
 later reader does not have to trust the session that built it.
 
-**One item per thing that needs attention** (30 §1): an item states what
+**One item per thing that needs attention**: an item states what
 happened, never what to conclude from it, and never a menu of possible
 actions — `build_agenda` below only ever writes a fact ("room R has N new
 messages", "a rollup row changed for <ref>"), computed from the stimuli, and
 raises no judgement. Code orders items by a deterministic **surprise**
-score (30 §1, 80-prior-art §4: a strong cue, a rollup/self/time kind, and
-volume, in that order of weight — every weight here is a STARTING guess,
-like every other number in this migration, to be sized from live
-sessions) and hands at most `max_items` (starting at 12); the rest
-wait for the next session, unconsumed (`build_agenda` returns them
-separately so the caller's watermark advance can exclude what it never
-saw — see `Agenda.deferred`).
+score (a strong cue, a rollup/self/time kind, and volume, in that order of
+weight; every weight here is a starting guess) and hands at most
+`max_items` (default 12); the rest wait for the next session, unconsumed
+(`build_agenda` returns them separately so the caller's watermark advance can
+exclude what it never saw — see `Agenda.deferred`).
 
 **Every item binds one room.** A `message` stimulus is bound to the room
 it came from (R-21); every other kind (`social`, `play`, `rollup`, `time`,
 `self`) has no room of its own and is bound to the unit's HOME room, except
 the daily look ahead (`UPCOMING_ITEM`, a `time` stimulus that names the room
-its event is in, and is bound to it)
-(design 39 D2, generalised — `30-cognition.md` §1's "for an item with none
-... the unit's home room"). `home_room` is a required argument for exactly
-this reason: this module does not resolve it (that is `policy.toml`'s unit
+its event is in, and is bound to it). `home_room` is a required argument
+for exactly this reason: this module does not resolve it (that is `policy.toml`'s unit
 configuration, a concern of the caller wiring the session, not of this pure
 builder).
 
@@ -56,7 +52,7 @@ from nora.domain.stimuli import Stimulus
 COGNITION_ADAPTOR = "cognition"
 
 #: The kinds bound to the room they came from; every other kind binds the
-#: unit's home room (30-cognition.md §1).
+#: unit's home room.
 _ROOM_BOUND_KINDS: frozenset[str] = frozenset({"message"})
 #: The daily look ahead (DEC-303): a `time` stimulus the wake evaluator raises
 #: with each floor for a room holding an event that is coming up. Unlike the
@@ -64,15 +60,15 @@ _ROOM_BOUND_KINDS: frozenset[str] = frozenset({"message"})
 #: where the event is.
 UPCOMING_ITEM = "upcoming"
 
-#: An item closes with a write that cites it, or with one of these reasons
-#: (30-cognition.md §2 "Closing"); `struck` is code's own close at
+#: An item closes with a write that cites it, or with one of these reasons;
+#: `struck` is code's own close at
 #: `max_strikes`, never a session's argument.
 CLOSE_REASONS: tuple[str, ...] = ("written", "no_change", "waiting", "covered", "struck")
 
-#: 30-cognition.md §1: "starting at 12".
+#: The default `max_items`.
 DEFAULT_MAX_ITEMS = 12
 
-#: 30-cognition.md §2: "starting at 3".
+#: The default `max_strikes`.
 DEFAULT_MAX_STRIKES = 3
 
 
@@ -88,7 +84,7 @@ class Room:
 class AgendaItem:
     """One thing that needs attention, computed from one or more stimuli of
     the same kind bound to the same room. `summary` states what happened,
-    never what to conclude — 30-cognition.md §1's rule, enforced here by
+    never what to conclude, enforced here by
     construction: `_summary` below never reads a stimulus's cues into a
     conclusion, only into a count.
 
@@ -123,24 +119,23 @@ class AgendaItem:
 class Agenda:
     """The ordered items one session gets, and what it does not: `deferred`
     holds the stimulus ids of items surprise-ranked past `max_items`, which
-    the caller must NOT fold into its watermark advance (30-cognition.md §1:
-    "the rest wait for the next session")."""
+    the caller must NOT fold into its watermark advance (the rest wait for the
+    next session)."""
 
     items: tuple[AgendaItem, ...]
     deferred_stimulus_ids: tuple[int, ...] = ()
 
     @property
     def is_empty(self) -> bool:
-        """30-cognition.md §1: "An agenda with no items is no session: zero
-        model calls" — the caller's own gate; this property is what it reads."""
+        """An agenda with no items is no session (zero model calls): the caller's
+        own gate; this property is what it reads."""
         return len(self.items) == 0
 
 
 @dataclass(frozen=True, slots=True)
 class Situation:
-    """What code hands the session before any model call (30-cognition.md
-    §1): the unit, its clock, how long since its last session, and the
-    agenda. Deliberately holds no Register/Character/Standing BODIES — those
+    """What code hands the session before any model call: the unit, its clock, how long since its
+    last session, and the agenda. Deliberately holds no Register/Character/Standing BODIES — those
     are index lines and capped pushed blocks the caller assembles
     separately; this module only ever sees stimuli."""
 
@@ -174,7 +169,7 @@ def _group_key(stimulus: Stimulus, *, home_room: Room) -> tuple[str, Room, str]:
     (e.g. the rollup subject, the `self`-wake's id, the day's floor label),
     the same free-text key `nora.app.wake` already groups would-wakes'
     `detail.items` by. `message`/`social`/`play` share ONE item per room
-    regardless of `item`, because 30 §1's example is "room R has 23 new
+    regardless of `item`, because the agenda states "room R has 23 new
     messages", not one item per message."""
     if stimulus.kind in ("message", "social", "play"):
         return (stimulus.kind, _room_of(stimulus, home_room=home_room), "")
@@ -182,7 +177,7 @@ def _group_key(stimulus: Stimulus, *, home_room: Room) -> tuple[str, Room, str]:
 
 
 def _summary(kind: str, room: Room, item: str, count: int) -> str:
-    """A fact, never a conclusion (30-cognition.md §1). No branch here reads
+    """A fact, never a conclusion. No branch here reads
     a cue's CONTENT, only counts — reading a cue's meaning into prose is the
     model's job, not code's."""
     if kind == "message":
@@ -214,9 +209,7 @@ def _summary(kind: str, room: Room, item: str, count: int) -> str:
 
 
 def _surprise(kind: str, cues: tuple[str, ...], count: int) -> float:
-    """A deterministic, STARTING score (80-prior-art §4); every weight is a
-    guess this migration ships, to be sized from live sessions, like every
-    other number in `20-observe.md` §3's wake table. Higher wins."""
+    """A deterministic score; every weight is a starting guess. Higher wins."""
     score = 0.0
     if cues:
         score += 10.0
@@ -236,7 +229,7 @@ def build_agenda(
     the group's oldest stimulus id, so the ordering is a pure function of its
     input — no dict-iteration-order dependency), and cap at `max_items`.
     `strikes` maps a stimulus id a CLOSED session returned to this agenda onto
-    its strike (`UnitView.carry`, 30 §2). A strike belongs to an ITEM: the
+    its strike (`UnitView.carry`). A strike belongs to an ITEM: the
     strike is part of the grouping key, so a returning item stays its own item
     with its own count and a fresh stimulus of the same room never joins it
     (it would inherit a strike it never earned, and be struck with it). The
@@ -261,8 +254,7 @@ def build_agenda(
             stimulus_ids=ids, cues=cues, surprise=surprise, strike=strike,
         ))
 
-    # Order by (surprise desc, oldest stimulus id asc): deterministic, and
-    # matches 30 §1's "code orders items by computed surprise".
+    # Order by (surprise desc, oldest stimulus id asc): deterministic.
     items.sort(key=lambda item: (-item.surprise, item.stimulus_ids[0]))
 
     kept = tuple(items[:max_items])
@@ -278,8 +270,7 @@ def build_situation(
     strikes: Mapping[int, int] | None = None,
 ) -> Situation:
     """The one entry point: `pending` in, `Situation` out, no store, no
-    model. `nora.app.cognition_session` (the async half, deferred past 3a-i
-    per `70-migration.md`'s split) is the only intended caller in
+    model. `nora.app.cognition_session` (the async half) is the only intended caller in
     production; every other caller in this tree is a test."""
     agenda = build_agenda(
         pending, home_room=home_room, max_items=max_items, strikes=strikes,
@@ -291,7 +282,7 @@ def build_situation(
 
 @dataclass(frozen=True, slots=True)
 class CloseOutcome:
-    """One agenda item's close (30-cognition.md §2). `reason='written'` is
+    """One agenda item's close. `reason='written'` is
     code's own classification when the session's write cited the item — this
     module does not decide that; the caller (which sees the write verbs
     actually called) does and passes the reason in."""
@@ -310,9 +301,9 @@ def close_or_strike(
     item: AgendaItem, *, item_index: int, reason: str,
     max_strikes: int = DEFAULT_MAX_STRIKES,
 ) -> CloseOutcome:
-    """30-cognition.md §2: "An item left open when the session ends, or
-    closed `waiting`, returns to the next agenda with a strike; at
-    `max_strikes` code closes it `struck`." `reason='written'`/`'no_change'`/
+    """An item left open when the session ends, or closed `waiting`, returns
+    to the next agenda with a strike; at `max_strikes` code closes it
+    `struck`. `reason='written'`/`'no_change'`/
     `'covered'` never strike (they close outright); `'waiting'` (or no close
     at all, which the caller passes as `'waiting'`) strikes, and code
     escalates to `'struck'` once `item.strike + 1 >= max_strikes`.

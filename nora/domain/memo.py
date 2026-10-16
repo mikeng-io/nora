@@ -1,5 +1,4 @@
-"""A memo: something the unit SETTLED and keeps (Register · memo,
-design/cognition-loop/40-register.md §2, 12-schemas.md §3, DEC-306).
+"""A memo: something the unit SETTLED and keeps (Register · memo, DEC-306).
 
 The three Register kinds differ by whether the thing is settled: a note is not
 (it closes on its closing condition), a memo is (it never closes; it is
@@ -15,15 +14,15 @@ withdrawal) appends a `memo_revision`; the head is the highest `seq`. A
 withdrawn memo is a revision whose `state` is `withdrawn`, so nothing about
 what it said is lost.
 
-**The body** is 12-schemas §3's memo schema, held by `parse_memo_body` with the
+**The body** is the memo schema, held by `parse_memo_body` with the
 note body's line grammar (`nora.domain.note_body`): `## Kept` (required, one
 settled claim per line), `## Conditions` (optional: when it holds, the
 exceptions), every line ending in the ids it rests on, and `## Superseded`,
 which code renders from the chain and a model never writes. Unlike a note, a
 memo line MAY cite one of Nora's own messages: what she found or said can be
-kept when the room asks her to keep it (operator, 2026-10-09).
+kept when the room asks her to keep it.
 
-**What a `Kept` line may hold** (D5, DEC-230, DEC-306): anything said,
+**What a `Kept` line may hold** (DEC-230, DEC-306): anything said,
 verbatim, a password, a phone number or a booking reference included: it was
 said in the group and is already shared with it. So the Cognition session's
 identifier screen reads a memo's title and `## Conditions` and never its `##
@@ -173,7 +172,7 @@ class MemoStore(Protocol):
 
 
 def parse_memo_body(text: str, *, shown: Shown) -> NoteBody:
-    """The body, held to 12-schemas §3, or `NoteBodyError` naming the rule it
+    """The body, held to the memo schema, or `NoteBodyError` naming the rule it
     broke: an unknown, misordered or model-written `## Superseded` heading
     (`code_written`), a missing or empty `## Kept`, a line that is not one `- `
     item ending in the ids it rests on, an id this write was not shown. A line
@@ -204,7 +203,7 @@ def parse_memo_body(text: str, *, shown: Shown) -> NoteBody:
 
 def screened_parts(title: str, body: NoteBody) -> dict[str, object]:
     """What a memo write's identifier screen reads: the title and the `##
-    Conditions` lines, and NEVER a `## Kept` line (D5, DEC-230: a Kept line
+    Conditions` lines, and NEVER a `## Kept` line (DEC-230: a Kept line
     holds what the room said, a password included). The ONE place the
     exemption is drawn, so it cannot widen by a second spelling."""
     conditions = body.section("Conditions")
@@ -227,7 +226,7 @@ def title_carries_value(title: str, body: NoteBody) -> str | None:
     reference, a number), compared case-folded against the Kept lines with
     their citation brackets removed. Ordinary words shared by both («wifi»,
     «deposit») are never refused; a value of letters only is not caught, and
-    the docstring and the skill say the rule instead (DEC-306 review)."""
+    the docstring and the skill say the rule instead (DEC-306)."""
     kept = body.section("Kept")
     if kept is None:
         return None

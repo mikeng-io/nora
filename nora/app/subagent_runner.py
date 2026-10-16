@@ -1,13 +1,13 @@
-"""`SubagentRunner` — runs ONE sub-agent job to a report (design/subagent §4, §5).
+"""`SubagentRunner` — runs ONE sub-agent job to a report.
 
 Built on `nora.app.cognition_agent_runner.LiveCognitionAgentRunner`'s shape: one `DreamGuard`
 per run (a ledger is spent state), `factory.create_subagent` (the only constructor allowed
 to build the agent), `factory.invoke` under `factory.build_limits`, `turn_deadline` and
-`asyncio.wait_for`. The differences are the ones the design names:
+`asyncio.wait_for`. It differs in three ways:
 
 - **its tools are its own** (`nora.agent.subagent_tools`): a closed list built from the job's
   recorded room facts, with the requester as tagger and no deliverer;
-- **its guard has no call ceiling of any kind** (DEC-247, amended): `per_tool_ceilings=False`,
+- **its guard has no call ceiling of any kind** (DEC-247): `per_tool_ceilings=False`,
   every tool budget 0 and no memory or pass-wide budget, so what the guard keeps is R-7 (a tool
   it does not hold), R-99 (an argument a tool does not declare) and the result size cap. The
   worker is bounded by the loop's turns and tokens and by a wall clock, and by nothing per tool;
@@ -20,7 +20,7 @@ that reason, never as a normal finish: Strands RETURNS from a limit stop without
 caller that reads only "it returned" takes a loop that ran out of rounds for one that finished.
 
 The limits live in code and in `[dreamer.budgets.subagent]` and are never written into the
-prompt (stating a cap in words made a model decline work instead of spending less).
+prompt (a cap stated in words makes a model decline work instead of spending less).
 
 **Cancellation propagates.** `asyncio.CancelledError` is not an outcome of this class; the
 backend owns it and records the job `cancelled`.
@@ -236,8 +236,8 @@ class SubagentRunner:
         return out.get("status") == "ok" and out.get("exit_code") == 0
 
     def _guard(self, tool_names: list[str]) -> DreamGuard:
-        """One `DreamGuard` for a job, with NO call ceiling of any kind (DEC-247, amended for
-        the sub-agent): not per tool, not over the memory cluster, not over every verb. The
+        """One `DreamGuard` for a job, with NO call ceiling of any kind (DEC-247): not per tool,
+        not over the memory cluster, not over every verb. The
         names are the membership set (R-7's unknown-tool veto and R-99 still run); `skills` is
         the activation tool the agent factory wires, so it is a member too."""
         names = [*tool_names, SKILLS_TOOL]

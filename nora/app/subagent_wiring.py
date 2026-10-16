@@ -1,4 +1,4 @@
-"""Building the sub-agent worker for the composition root (design/subagent §4, §5).
+"""Building the sub-agent worker for the composition root.
 
 `[subagent] enabled = false` (the shipped default) builds NOTHING here: `build_subagent_backend`
 is not called, no kind is registered with the poller, and this module's Strands-using imports

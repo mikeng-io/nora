@@ -1,17 +1,13 @@
 """`Standing` — Nora's own position in one conversation: one row per
-`(platform, conversation_id)`, revised in place by the debrief stage
-(`design/dreamer-agent-loop/26-standing.md`).
+`(platform, conversation_id)`, revised in place by the debrief stage.
 
 **It is a POSITION, not a record**, and that is the whole distinction against
 its sibling tiers. A fact is a claim with a warrant; a note is a question with
 a closing condition; a lexeme is a meaning. Standing is *what Nora currently
 thinks about this conversation*, rewritten every turn and **lossy by design**
-(26 §8) — which is exactly why nothing that has to survive may live here.
+— which is exactly why nothing that has to survive may live here.
 
-**Two caps, doing two different jobs** (26 §4.0, operator decision
-2026-08-24). An earlier draft of that node argued a storage cap is an invariant
-and therefore must never be a knob; the operator overrode it, and the
-reconciliation kept both halves:
+**Two caps, doing two different jobs:**
 
 - `STANDING_BODY_CEILING_CHARS` — the **absolute ceiling**, asserted in
   `__post_init__` here and again as `standing_body_fits_the_ceiling_check` in
@@ -34,12 +30,12 @@ design, so a cap that never binds would mean it had stopped being lossy.
 
 Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
-**`working_set` (design/standing-compact/30-working-set.md, issue #445).** A
+**`working_set`.** A
 second, small structured field beside `body`: things the fold found this turn
 and has not yet given the room — a restaurant a search returned but the reply
 only sent two of, not yet a position because nobody has been told. Its own
 budget, own render, own TTL; `body`'s own cap, rank order and consolidation
-are unchanged (§7 — this field does not touch them). See `WorkingSetItem`.
+are not touched by this field. See `WorkingSetItem`.
 """
 
 from __future__ import annotations
@@ -58,23 +54,19 @@ STANDING_BODY_CEILING_CHARS = 4000
 #: The default operating cap — `[standing] max_chars`. The sink refuses a fold
 #: above this and tells the model to consolidate; it never truncates, because
 #: silently dropping the oldest position is how a rolling summary quietly
-#: becomes a recent summary (26 §4.0).
+#: becomes a recent summary.
 DEFAULT_STANDING_MAX_CHARS = 1200
 
-#: The default bound on the debrief's TWO store calls — the read of the prior
-#: position and the write of the next. It lives here, beside the caps, rather
-#: than being written `5.0` in `StandingConfig` and again in `FirePath`: the
-#: branch's own argument is that a number asserted in two places without a
-#: cross-check drifts, and this file already holds the other two (review
-#: finding, 2026-08-27).
+#: The default bound on the debrief's store calls, each bounded by it. It
+#: lives here, beside the caps, so `StandingConfig` and `FirePath` share one
+#: number: a number asserted in two places without a cross-check drifts.
 DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 
 #: How many bounded store awaits ONE fold makes, and therefore how many
 #: `store_timeout_seconds` the slot hold has to budget for: the prior
 #: position, the watermark batch read (`record_store.since_including_nora` —
-#: the fold reads the stretch since the last fold's watermark,
-#: standing-watermark 20), the media join, the revised position, and the note
-#: proposals.
+#: the fold reads the stretch since the last fold's watermark), the media
+#: join, and the revised position.
 #:
 #: **It lives HERE and not in the stage**, even though the stage is what makes
 #: the calls. `Config._the_standing_slot_hold_fits_its_budget` needs it, and a
@@ -88,20 +80,6 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
 #: `asyncio.wait_for` calls in the stage and asserts they match, so adding a
 #: fifth fails a test instead of silently widening the hold.
-#:
-#: 6 -> 7 on 2026-09-08: the media join (issue #116). The fold renders these
-#: rows for a model, so it reads `media_objects` for whatever the
-#: comprehension pass made of each attachment — a real store call on a
-#: slot-held path, bounded by the same `store_timeout_seconds` as its six
-#: siblings. The gate caught it the moment the call was written, which is what
-#: it is for; the number was understated by 2x once before because nobody
-#: updated it by hand.
-#:
-#: 7 -> 5 on 2026-09-24: the turn verdict's save and the re-derivation
-#: trigger's verdict read went with the verdict (design/standing-compact/).
-#:
-#: 5 -> 4 the same day: the debrief stopped creating notes, and
-#: `notes_sink.propose` went with them.
 STANDING_STORE_CALLS_PER_FOLD = 4
 
 #: The ABSOLUTE ceiling on how many items `Standing.working_set` may hold —
@@ -125,7 +103,7 @@ WORKING_SET_CEILING_ITEMS = 20
 #: serialiser.
 WORKING_SET_CEILING_BYTES = 2400
 
-#: Render-time TTL (design §2): a working-set item older than this renders
+#: Render-time TTL: a working-set item older than this renders
 #: ABSENT, never stale — no new deterministic sweep, the render function
 #: filters on `now - found_at` before it builds the block. The same order as
 #: DEC-203's two-day past-anchor lapse.
@@ -149,13 +127,12 @@ DEFAULT_WORKING_SET_MAX_CHARS = 600
 @dataclass(frozen=True, slots=True)
 class WorkingSetItem:
     """One thing the fold found this turn and has not yet given the room —
-    `Standing.working_set`'s element (design/standing-compact/30-working-set.md
-    §1, issue #445).
+    `Standing.working_set`'s element.
 
     Not prose: a working-set item is a short, independently droppable string,
     not a clause competing inside the 1200-character paragraph for the same
     rank `body`'s own consolidation order already gives "concluded or
-    committed" over "found" (§1).
+    committed" over "found".
 
     `found_at` is epoch ms, the SAME clock `Standing.updated_at` uses — **the
     write path stamps it from its own instant; the model is never asked for
@@ -245,18 +222,16 @@ def working_set_from_json(raw: object) -> tuple[WorkingSetItem, ...]:
 class Standing:
     """One conversation's position, as last folded.
 
-    Keyed `(platform, conversation_id)` and not on `conversation_id` alone
-    (S4): every lock, queue and slot in this repo already keys that way and the
+    Keyed `(platform, conversation_id)` and not on `conversation_id` alone:
+    every lock, queue and slot in this repo already keys that way and the
     `messages` table carries the platform column, so a different key here is a
     join nobody can make.
 
-    `fold_count` is how many folds have been written onto this row. It fed
-    the fold-count re-derivation ceiling until 2026-09-24
-    (design/standing-compact/10 §1); it is a plain count now and nothing
+    `fold_count` is how many folds have been written onto this row; nothing
     resets it.
 
     **No per-turn field lives here.** A per-turn fact on a row revised every
-    turn is a fact with a lifetime of one turn (26 §3).
+    turn is a fact with a lifetime of one turn.
     """
 
     platform: str
@@ -264,37 +239,31 @@ class Standing:
     body: str
     fold_count: int
     updated_at: int
-    # The ROW-ID watermark (design/standing-watermark/20): the `messages.id`
+    # The ROW-ID watermark: the `messages.id`
     # the last fold read up to. `None` means the conversation has never folded
     # — the cold-start case, which reads from the beginning (after_id=0). A
     # sentinel that could compare equal to a real row id is a watermark
     # satisfiable by accident, so the only "never folded" spelling is `None`.
     last_folded_row_id: int | None = None
     # Things the fold found this turn and has not yet given the room — its
-    # own budget, own render, own TTL (module docstring, §1 above). `()` is
-    # the correct reading of every row written before this field existed: no
-    # backfill, the same argument migration 0059 made for `standing_revision`
-    # not backfilling history that never existed. LAST, because a defaulted
-    # field cannot precede the ones above it.
+    # own budget, own render, own TTL (module docstring). `()` is the
+    # correct reading of a row written before this field existed: no backfill.
+    # LAST, because a defaulted field cannot precede the ones above it.
     working_set: tuple[WorkingSetItem, ...] = ()
-    # WHERE IT MAY BE SHOWN (design/cognition-loop/10-tiers.md §3, migration
-    # `0073_lineage`): the `(kind, subject, origin room)` set its citations
-    # reach, and the people it is never shown to. Written by the store from
+    # WHERE IT MAY BE SHOWN (migration `0073_lineage`): the
+    # `(kind, subject, origin room)` set its citations reach, and the people it
+    # is never shown to. Written by the store from
     # the row's own citations, never by a model; read at render by
     # `nora.agent.lineage`. `compare=False`: equality stays about content, and
     # a row built by hand (no lineage, every section unknown) is on the
     # fail-closed side.
     lineage: Lineage = field(default=Lineage(), compare=False)
     exclude_persons: tuple[str, ...] = field(default=(), compare=False)
-    # THE SECTIONED SCHEMA (design/cognition-loop/12-schemas.md §5,
-    # 50-character-and-standing.md §2; migration `0076_standing_sections`,
-    # step 3 row 3b). Room Standing has four sections there: `Where it
-    # stands` (required, `body` above, unchanged), `I hold open`, `I owe`
-    # and `Found, not yet given` (`working_set` above, unchanged). These two
-    # are new and both OPTIONAL — `None` is "nothing revised this section
-    # yet", the correct reading of every row `standing_revise` migrates:
-    # additive columns, so an existing head keeps every fact it held and
-    # gains two sections with nothing in them, never a rewrite. Written and
+    # THE SECTIONED SCHEMA (migration `0076_standing_sections`). Room
+    # Standing has four sections: `Where it stands` (required, `body` above),
+    # `I hold open`, `I owe` and `Found, not yet given` (`working_set`
+    # above). These two are OPTIONAL — `None` is "nothing revised this
+    # section yet". Written and
     # read only through `standing_revise`
     # (`nora.infra.sql.standing_revise`), which enforces the schema (a
     # section given blank rather than omitted is refused) before either
@@ -351,8 +320,7 @@ class Standing:
 @dataclass(frozen=True, slots=True)
 class StandingHead:
     """A room's Standing head with the id of the `standing_revision` row that
-    IS that head (`standing_read`, design/cognition-loop/50 §2; step 3, M6's
-    preparation). `revision_id` is `None` when the chain holds no revision
+    IS that head (`standing_read`). `revision_id` is `None` when the chain holds no revision
     that matches the head: the chain predates migration 0059 for that room, or
     it was written outside `SqlStandingStore.write`. `None` is «no token», never
     a guess at the newest row: an id that named another position would let a

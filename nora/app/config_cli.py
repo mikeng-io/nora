@@ -2,10 +2,10 @@
 
 The read-only CLI (`nora groups`, `nora persons pending`, ...) answers
 "what is the state"; this module answers "change a setting" without a
-hand-edit of a 75KB TOML that is schema-validated (`extra = "forbid"` in
+hand-edit of a large TOML that is schema-validated (`extra = "forbid"` in
 `nora.config.Config`) and easy to corrupt.
 
-Deploy convention §4.5 (infra/deploy-convention.md):
+Deploy convention (infra/deploy-convention.md):
 
 > Every app provides a CLI subcommand for config mutation. The subcommand
 > validates the change against the schema, writes atomically (temp file +
@@ -20,8 +20,8 @@ Three properties are load-bearing, each enforced by something:
   an edit never strips the prose that keeps the next operator honest.
   (This is why the write side is NOT `tomli_w` — it would drop every
   comment in the file.)
-* **The write is atomic.** Same pattern as `cli._rewrite_env` (M8, Kimi
-  audit): tmp + `os.replace`. A crash mid-write can never leave a
+* **The write is atomic.** Same pattern as `cli._rewrite_env`:
+  tmp + `os.replace`. A crash mid-write can never leave a
   half-written config behind; the old file survives until the rename.
 * **The change is validated twice.** Before the write (the value must be a
   TOML literal) and after the write (the file must `config.load()` — the
@@ -165,10 +165,10 @@ def _read_doc(path: Path) -> tuple[str, tomlkit.container.Container]:
 
 def _atomic_write(path: Path, text: str) -> None:
     """tmp + os.replace, preserving the original mode — same pattern as
-    `cli._rewrite_env` (M8). A crash between write and rename leaves the
+    `cli._rewrite_env`. A crash between write and rename leaves the
     old file intact.
 
-    Security (Codex audit 2026-09-08): the temp is created by `mkstemp`
+    Security: the temp is created by `mkstemp`
     — O_EXCL + random name in the same directory — so a predictable
     `.tmp` sibling cannot be pre-seeded as a symlink, and the mode is
     applied before content is written so a 0600 config is never visible
@@ -228,7 +228,7 @@ def _validate_candidate(path: Path, doc: tomlkit.container.Container) -> None:
 
 # Field names that reference `.env` variables by name — secrets live in
 # .env, never in the config file, and the CLI must not let the operator
-# paste a secret value into them or echo one back (Codex audit 2026-09-08).
+# paste a secret value into them or echo one back.
 _SECRET_ENV_SUFFIXES = ("_env",)
 
 

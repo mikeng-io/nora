@@ -1,6 +1,6 @@
 """Record what this process loaded, so "in force at T" is answerable.
 
-design/cognition-loop/70-migration.md §5, step 1b. At start the process
+At start the process
 records its deploy (the baked manifest: version, commit, build time), the
 three config files as it read them, and the doctrine and Dreamer corpus it
 loaded; after that `watch` records every hot reload of either corpus. The
@@ -150,8 +150,8 @@ class RevisionRecorder:
 
     async def measure_history(self) -> None:
         """`nora_row_history_rows` / `_bytes` per table: the instrument
-        DEC-232's reversal condition reads (history growth on the hot
-        tables). One grouped scan of `row_history`, hourly."""
+        for history growth on the hot tables (DEC-232). One grouped scan of
+        `row_history`, hourly."""
         try:
             sizes = await self._store.history_sizes()
         except Exception:  # noqa: BLE001 — never load-bearing: counted, logged, the process runs on
