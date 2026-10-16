@@ -1055,3 +1055,57 @@ async def test_the_memos_shown_are_the_sessions_units_and_never_another_units():
     g = await ground("u", sit.agenda.items, [s])
     assert [m.title for m in g.memos] == ["wifi password"]
     assert g.as_dict()["memos"] == [g.memos[0].id]
+
+
+async def test_her_pending_reminder_is_shown_on_the_note_it_is_linked_to():
+    """A session that reads the room settling a thing can only cancel the ask it
+    queued if it sees that ask: the note's index row names her pending row and
+    when it comes due. A row linked to no note, to another note, or in a room
+    off this agenda (whose id `remind_cancel` would refuse) is not on it."""
+    import uuid
+
+    from nora.domain.reminders import Reminder, ReminderState
+
+    note = Note(
+        id="n-dinner", unit="u", title="dinner", description="headcount open",
+        uncertainty="u", closing_condition="c", established_in=A.conversation_id,
+        created_at=NOW, head_revision_id="h1", anchor_entity_ids=("Ada",),
+    )
+    due = dt.datetime(2026, 10, 16, 11, 0, tzinfo=dt.UTC)
+
+    def row(note_id: str | None) -> Reminder:
+        return Reminder(
+            id=uuid.uuid4(), requester_person_id="nora", platform=A.platform,
+            conversation_id=A.conversation_id, conversation_type="group",
+            text="ask the headcount", created_at=due - dt.timedelta(hours=40), due_at=due,
+            state=ReminderState.PENDING, fired_at=None, outcome=None, kind="proactive",
+            payload={"note_id": note_id} if note_id else {"subject_rows": "101"},
+        )
+
+    linked, unlinked, elsewhere = row("n-dinner"), row(None), row("n-other")
+    off_agenda = dataclasses.replace(row("n-dinner"), conversation_id=B.conversation_id,
+                                     platform=B.platform)
+
+    async def notes(unit: str) -> Sequence[Note]:
+        return (note,)
+
+    async def no_events(unit: str, cid: str) -> Sequence[Gathering]:
+        return ()
+
+    async def pending() -> Sequence[Reminder]:
+        return (linked, unlinked, elsewhere, off_agenda)
+
+    s = _stim(1, A, ago=10, mid=1)
+    grounder = build_grounder(
+        records=_Records([_hit(1, A)]), persons=_PERSONS, media_join=None, note_index=notes,
+        events_in=no_events, lineage=_lineage(), tz=HK, pending_reminds=pending,
+        unit_rooms=lambda unit: {(A.platform, A.conversation_id)},
+    )
+    sit = build_situation(unit="u", pending=[s], home_room=HOME, now_ms=NOW, last_session_ms=None)
+    g = await grounder("u", sit.agenda.items, [s])
+    (line,) = g.notes
+    assert line.reminds == f"{linked.id} due 2026-10-16 19:00"
+    prompt = _prompt([s], g)
+    assert f'reminds="{linked.id} due 2026-10-16 19:00"' in prompt
+    assert str(unlinked.id) not in prompt and str(elsewhere.id) not in prompt
+    assert str(off_agenda.id) not in prompt  # its room is not on this agenda

@@ -222,6 +222,10 @@ class NoteLine:
     description: str
     review: str | None = None
     may_duplicate: str | None = None
+    #: Her own pending reminders linked to this note, `<id> due <when>` each:
+    #: what `remind_move` and `remind_cancel` take. Without it a session that
+    #: reads the room settling the thing cannot see the ask it already queued.
+    reminds: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

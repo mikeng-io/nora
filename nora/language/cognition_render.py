@@ -598,6 +598,7 @@ def _register(
         rows = listed([
             render_note_rows([n], ids=True, extra=lambda n: (
                 ("review", n.review), ("may_duplicate", n.may_duplicate),
+                ("reminds", n.reminds),
             ))
             for n in notes[: budget.register_lines]
         ])

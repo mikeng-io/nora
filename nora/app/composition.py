@@ -4199,6 +4199,7 @@ async def build_dependencies(
                 records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
                 note_index=_note_index, events_in=_room_events,
                 memo_index=lambda unit: memo_store.kept(unit=unit),
+                pending_reminds=lambda: reminders.pending_of(cfg.memory.ai_peer),
                 lineage=lineage,
                 unit_rooms=lambda unit: cognition_unit_rooms.get(unit, set()),
                 ai_display_name=cfg.doctrine.display_name,

@@ -86,7 +86,7 @@ def _everything() -> str:
         own_sends={0: (_rec(50, "message", mid=50, text="noted", own=True, author="Nora"),)},
         notes=(
             NoteLine(id="n-0", title="Note 0", description="d", review="anchor_passed",
-                     may_duplicate="n-1"),
+                     may_duplicate="n-1", reminds="r-1 due 2026-10-16 19:00"),
             *(NoteLine(id=f"n-{i}", title=f"Note {i}", description="d") for i in (1, 2)),
         ),
         events=(
@@ -143,7 +143,9 @@ def test_the_fixture_makes_every_element_carry_every_attribute_it_can():
         "earlier_range", "unreadable", "n", "at", "from", "edited", "reaction",
         "withdrawn", "deleted", "own", "cues",
     }
-    assert seen["note_index"] == {"n", "title", "not_listed", "review", "may_duplicate"}
+    assert seen["note_index"] == {
+        "n", "title", "not_listed", "review", "may_duplicate", "reminds",
+    }
     assert seen["events"] == {
         "room", "not_listed", "id", "status", "when", "venue", "revision",
     }
