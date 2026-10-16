@@ -443,3 +443,23 @@ async def test_only_gets_are_issued_across_every_read(bridge) -> None:
     await source.read_item(ref=_REF)
     assert {method for method, _, _ in fake.calls} == {"GET"}
     assert len(fake.calls) == 4
+
+
+async def test_a_place_the_bridge_could_not_read_is_unknown_not_no_tag(bridge) -> None:
+    """`location_known: false`, or a bridge too old to send it, is an unknown
+    place: never read as "the author removed the tag"."""
+    fake, source = bridge
+    fx = copy.deepcopy(fixture("items_ok.json"))
+    fx["body"]["items"][1]["location_known"] = False
+    fx["body"]["items"][1]["location"] = ""
+    del fx["body"]["items"][0]["location_known"]
+    fake.answers["items"] = fx
+    got = await source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(got, Page)
+    assert [(i.location, i.location_known) for i in got.items] == [(None, False), (None, False)]
+    fake.answers["items"] = fixture("items_ok.json")
+    got = await source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(got, Page)
+    assert [(i.location, i.location_known) for i in got.items] == [
+        (None, True), ("Placeholder Square", True),
+    ]

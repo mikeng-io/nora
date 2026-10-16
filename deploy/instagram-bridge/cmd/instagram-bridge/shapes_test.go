@@ -50,15 +50,16 @@ type profileBody struct {
 }
 
 type storyItem struct {
-	ID           string `json:"id"`
-	Kind         string `json:"kind"`
-	URL          string `json:"url"`
-	ThumbnailURL string `json:"thumbnail_url"`
-	TakenAt      int    `json:"taken_at"`
-	ExpiringAt   int    `json:"expiring_at"`
-	Caption      string `json:"caption"`
-	AltText      string `json:"alt_text"`
-	Location     string `json:"location"`
+	ID            string `json:"id"`
+	Kind          string `json:"kind"`
+	URL           string `json:"url"`
+	ThumbnailURL  string `json:"thumbnail_url"`
+	TakenAt       int    `json:"taken_at"`
+	ExpiringAt    int    `json:"expiring_at"`
+	Caption       string `json:"caption"`
+	AltText       string `json:"alt_text"`
+	Location      string `json:"location"`
+	LocationKnown *bool  `json:"location_known"`
 }
 
 type storyBody struct {

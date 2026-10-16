@@ -1568,6 +1568,12 @@ class SocialPollConfig(BaseModel):
     member, after the tick's probes and due reads, and only while what is left
     of the hour's budget still covers a probe and a read of every member. 0
     pages turns it off.
+
+    The re-walk (§5) pages once through each member's recorded items after
+    their back-fill is done, so each item's tagged place is compared with
+    what the network lists now. It reads at most `relist_pages_per_tick`
+    pages a tick, one per member, after the back-fill and on its budget rule.
+    0 turns it off.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1584,6 +1590,7 @@ class SocialPollConfig(BaseModel):
     backfill_max_days: float = Field(default=90.0, gt=0)
     backfill_max_items: int = Field(default=50, ge=0)
     backfill_pages_per_tick: int = Field(default=2, ge=0)
+    relist_pages_per_tick: int = Field(default=2, ge=0)
 
     @model_validator(mode="after")
     def _bounds_are_ordered(self) -> SocialPollConfig:

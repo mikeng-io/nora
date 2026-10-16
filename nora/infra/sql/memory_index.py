@@ -80,7 +80,9 @@ each medium (`media_objects`, keyed by the bytes, whichever pass wrote it); a
 medium's text is its reading, and an image is embedded from its bytes like
 an attachment. The item's `location`, the place it is tagged with, is a
 `social_location` node of its own, keyed like the item and `attached_to` it,
-its text the place as recorded: never in the item's text, because it is a
+its text the item's CURRENT place (`current_place`: the latest `place` state
+row's, else the place it was recorded with), so a changed tag re-projects the
+node's text and a removed one drops the node: never in the item's text, because it is a
 person's whereabouts, and a read gates it as it gates a stay
 (`PRESENCE_KINDS`), which it could not do to part of a node. An item with no
 location has no such node. Never its `alt_text` (the network's generated alt
@@ -88,8 +90,8 @@ text is phrased with the place and the tagged handles, so it would carry the
 place past that gate), and never its `tagged` or `mentioned` handles, which
 get no edge either: only the author is a person here (`authored_by`,
 `shared_by`). An item with
-a `social_item_state` row (gone or hidden) has no node, like a hidden
-message. A person's `social = false` is not read here: the projector is pure,
+a `gone` or `hidden` state row has no node, like a hidden message; a `place`
+row hides nothing. A person's `social = false` is not read here: the projector is pure,
 and the read leaves their items out (`MemoryScope.social_off`), so switching
 it back needs no rebuild.
 
@@ -147,6 +149,7 @@ from nora.domain.memory_index import (
     social_label,
 )
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
+from nora.domain.social_stream import HIDING_STATES, PLACE_STATE
 from nora.infra.sql.schema import (
     CULTURE,
     CULTURE_REVISION,
@@ -521,14 +524,39 @@ def _social_media_ids(item: str, shas: Iterable[str]) -> dict[str, str]:
     return {_attachment_id(item, sha): sha for sha in dict.fromkeys(shas)}
 
 
+def _hidden(i: Any) -> Any:
+    """Whether the `social_item` row `i` has a `gone` or `hidden` state row."""
+    st = SOCIAL_ITEM_STATE
+    return sa.exists().where(
+        st.c.network == i.c.network, st.c.item_id == i.c.item_id,
+        st.c.state.in_(HIDING_STATES),
+    )
+
+
+def current_place(i: Any) -> Any:
+    """The `social_item` row `i`'s current tagged place, in SQL: the latest
+    `place` state row's (NULL when that change removed the tag), else the
+    place it was recorded with."""
+    st = SOCIAL_ITEM_STATE
+    placed = sa.and_(
+        st.c.network == i.c.network, st.c.item_id == i.c.item_id,
+        st.c.state == PLACE_STATE,
+    )
+    latest = (
+        sa.select(st.c.place).where(placed)
+        .order_by(st.c.recorded_at.desc(), st.c.id.desc()).limit(1)
+        .scalar_subquery()
+    )
+    return sa.case((sa.exists().where(placed), latest), else_=i.c.location)
+
+
 async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     network, _, item_id = source_id.partition(":")
-    i, st = SOCIAL_ITEM, SOCIAL_ITEM_STATE
-    stated = sa.exists().where(st.c.network == i.c.network, st.c.item_id == i.c.item_id)
+    i = SOCIAL_ITEM
     row = (await conn.execute(
         sa.select(
             i.c.person, i.c.kind, i.c.taken_at, i.c.caption, i.c.media_ref,
-            i.c.collab, i.c.location, stated.label("stated"),
+            i.c.collab, current_place(i).label("location"), _hidden(i).label("stated"),
         ).where(i.c.network == network, i.c.item_id == item_id)
     )).first()
     if row is None or row.stated:
@@ -1632,13 +1660,7 @@ def _source_of(kind: str) -> Any:
     if kind == "character":
         return sa.exists().where(CULTURE.c.key == node)
     if kind == "social":
-        st = SOCIAL_ITEM_STATE
-        return sa.exists().where(
-            _social_key() == node,
-            ~sa.exists().where(
-                st.c.network == SOCIAL_ITEM.c.network, st.c.item_id == SOCIAL_ITEM.c.item_id,
-            ),
-        )
+        return sa.exists().where(_social_key() == node, ~_hidden(SOCIAL_ITEM))
     table = {"note": NOTE, "memo": MEMO, "lesson": LESSON, "event": EVENTS}[kind]
     return sa.exists().where(table.c.id == sa.cast(node, pg.UUID(as_uuid=False)))
 
