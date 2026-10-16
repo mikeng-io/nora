@@ -631,11 +631,12 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     # `memo_read` (DEC-306) resolves its unit the way the note reads do.
     "memo_read",
     # `memory_search` (2026-10-16), which took over `search_memory_workspace`'s
-    # unit search: with no person and the index off it reads the SUPPLIED
-    # unit, the reason the old verb was here. With a person, or with
-    # `[memory_index] enabled`, it needs a room, and a run with no home room
-    # answers `unavailable` (`media_search`'s shape above), never an empty
-    # answer.
+    # unit search: in the cognition session, with no person and the index
+    # off, it reads the SUPPLIED unit, the reason the old verb was here.
+    # Every other adaptor, and any read with `[memory_index] enabled`, needs
+    # a room, and a run with no home room answers `unavailable`
+    # (`media_search`'s shape above), never an empty answer. A person, with
+    # the index off, is Honcho `chat` routed by the supplied unit.
     "memory_search",
     # `load_tools` (design/tool-catalogue/02) reads neither a room nor a
     # unit: it registers tools from THIS run's own shelf onto THIS run's own

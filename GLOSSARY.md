@@ -60,7 +60,7 @@ holds two windows onto the same layer, the **Record**, not memory:
 |---|---|---|---|---|
 | **hot** | Record | PostgreSQL | last 40 messages, verbatim | *(injected, no tool)* |
 | **deeper** | Record | **same PostgreSQL** | everything older, verbatim | `load_transcript`, `who_said` |
-| **derived** | memory | Honcho | conclusions *about people*, and about herself | `about` (retrieve), `memory_search` (search every room of the unit by question, person, dates and kinds; with the index off, Honcho's dialectic about a named person, 14–19 s, or its message search: this room's in a turn, the unit's in a Dreamer pass), `remember` (write one conclusion), `search_memory` (this room) |
+| **derived** | memory | Honcho | conclusions *about people*, and about herself | `about` (retrieve), `memory_search` (search every room of the unit by question, person, dates and kinds; with the index off, Honcho's dialectic about a named person, 14–19 s, or its message search: the unit's in the cognition session, this room's anywhere else), `remember` (write one conclusion), `search_memory` (this room) |
 
 `search_memory`/`search_memory_workspace` were filed under "deeper" here
 until `design/cognition-loop` step 0 (`search_memory_workspace` and

@@ -22,9 +22,10 @@ in Python, which the contract suite holds to the same answers):
 **The question's narrowing rides on the same filter** (`MemoryScope.only`,
 `memory_search`'s `kinds`, `since`, `until` and `person`; `_narrowed`, and
 `nora.domain.memory_index.narrowed` in Python): ANDed onto it, so it is
-inside the HNSW scan, the exact and lexical seeds, the `about` seeds and
-every hop, never a cut of a top k. A node outside it is not read, so it
-takes no slot and bridges nothing. A person narrows to nodes with an
+inside whichever read is handed it, never a cut of a top k. A node outside
+it is not read, so it takes no slot and bridges nothing. The caller decides
+which reads carry `kinds`: `nora.agent.memory_search` hands it to the seeds
+only, and runs the hops on the same scope without it. A person narrows to nodes with an
 `about`, `authored_by` or `shared_by` edge to them (an `EXISTS` on the
 edge's primary key) or listing them in `persons`, said in a room that lists
 them or in no room.

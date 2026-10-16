@@ -6495,6 +6495,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             _record_room(metrics, "memory_search", "unavailable", reason="bad_kind")
             return dict(_MEMORY_BAD_KIND)
         node_kinds = tuple(n for k in wanted for n in KINDS_BY_CATEGORY[k])
+        # An empty `query` falls back to the tag message (`question`), the
+        # old verbs' behaviour, kept on purpose (independent review of #32):
+        # the docstring asks the model to write its own, and a blank one is
+        # still a search for what was asked, never an error.
         text = query.strip() or question
         view: RoomView | None = None
         ref: PersonRef | None = None
