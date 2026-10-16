@@ -11,12 +11,16 @@ The policy: unit `u1` holds room B (Kit, Sam, Rin; location on), B2 (Kit,
 Rin; location off) and C (Sam, Rin); unit `u2` holds D (Kit, Sam). Every read
 is from B unless a test says otherwise, with its whole roster present.
 
-Every test runs twice: with DENSE seeds, every embeddable node given
+Every test runs three times: with DENSE seeds, every embeddable node given
 the toy `bag_of_words` vector of its text under the search's model and the
 question embedded the same way, so «near» means shared words and an
-out-of-scope node can be as near as an in-scope one; and with LEXICAL seeds,
-the fallback, whose every answer is `partial`. The scope rules are the same
-in both, because both seeds run the same filter inside their own scan.
+out-of-scope node can be as near as an in-scope one; with LEXICAL seeds,
+the fallback, whose every answer is `partial`; and FRESH, dense seeds with
+no node the test wrote embedded yet (only an unrelated anchor holds a
+vector), as when every line was said a moment ago: each is reached by the
+lexical seed over the nodes no vector reaches, inside the same scope,
+and the answer is `ok`. The scope rules are the same in all three, because
+every seed runs the same filter inside its own scan.
 """
 
 from __future__ import annotations
@@ -139,7 +143,7 @@ async def _edge(engine: Any, src: tuple[str, str], rel: str, dst: tuple[str, str
         ))
 
 
-@pytest.fixture(params=["dense", "lexical"])
+@pytest.fixture(params=["dense", "lexical", "fresh"])
 def seeds(request: Any) -> str:
     return str(request.param)
 
@@ -147,7 +151,7 @@ def seeds(request: Any) -> str:
 def _settled(seeds: str) -> str:
     """What a complete index answers with hits: `ok`, or, on the lexical
     fallback, `partial`."""
-    return "ok" if seeds == "dense" else "partial"
+    return "partial" if seeds == "lexical" else "ok"
 
 
 async def _embed_all(engine: Any) -> None:
@@ -166,15 +170,29 @@ async def _embed_all(engine: Any) -> None:
             ))
 
 
+async def _anchor(engine: Any) -> None:
+    """The one vector in the FRESH run: a unit note sharing no word with any
+    question here, so its cosine is 0, under the floor, and it is never a
+    hit. It makes the search dense; every node a test wrote waits."""
+    async with engine.begin() as conn:
+        await conn.execute(pg_insert(MEMORY_NODE).values(
+            kind="note", source_id="anchor", text="zzyzx", at_ms=NOW - 7_200_000,
+            unit="u1", embedding=bag_of_words("zzyzx"), embedding_model=MODEL,
+        ).on_conflict_do_nothing())
+
+
 async def _search(
     engine: Any, query: str, *, seeds: str, room: RoomFacts = _B,
     person: str | None = None, metrics: Metrics | None = None, embed: bool = True,
 ) -> MemorySearchResult:
-    if seeds == "dense":
-        if embed:
+    if seeds in ("dense", "fresh"):
+        if seeds == "fresh":
+            if embed:
+                await _anchor(engine)
+        elif embed:
             await _embed_all(engine)
         search = MemorySearch(SqlMemoryIndex(engine), metrics or Metrics(),
-                              embedder=FakeQueryEmbedder(), model=MODEL)
+                              embedder=FakeQueryEmbedder(), model=MODEL, drain_seconds=60.0)
     else:
         search = MemorySearch(SqlMemoryIndex(engine), metrics or Metrics())
     return await search.search(
@@ -348,7 +366,7 @@ async def test_k_partial_while_the_index_is_incomplete_or_queued(
     # Only a complete index with a query vector says «nothing»; the lexical
     # fallback never does.
     empty = await _search(engine, seeds=seeds, query="nothing like this")
-    assert empty.status == ("nothing_found" if seeds == "dense" else "partial")
+    assert empty.status == ("partial" if seeds == "lexical" else "nothing_found")
     async with engine.begin() as conn:
         await conn.execute(sa.update(MEMORY_INDEX_STATE).values(status="building"))
     assert (await _search(engine, seeds=seeds, query="ramen")).status == "partial"

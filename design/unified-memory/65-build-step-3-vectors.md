@@ -134,8 +134,8 @@ What V2 decided where the plan above left room (DEC-315; the code is
    all ten slots and even a dense hit at cosine 1.0 never showed; half the
    answer now always goes by score. Then dense, the question embedded once
    with the query instruction. The trigram seed runs when there is no query
-   vector, and beside the dense seed over the nodes the worker gave up on
-   (§4.5). This replaces 25 §4 step 2's «fused by reciprocal rank»: there is
+   vector, and beside the dense seed over the nodes holding no vector of
+   the current model, waiting for one or given up on (§4.5). This replaces 25 §4 step 2's «fused by reciprocal rank»: there is
    nothing to fuse while lexical is the fallback, and V3 measures whether
    that loses a case.
 2. **Exact is narrow.** It covers a URL (with a scheme or `www.`), a handle
@@ -199,26 +199,80 @@ What V2 decided where the plan above left room (DEC-315; the code is
      serving another GGUF file than the configured one (checked per query
      against /props, the worker's rule), or when no node holds a current
      vector yet;
-   - live embeddable nodes **in the search's scope** still wait for a
-     vector of the current model. This includes nodes holding another
-     model's vector and failing nodes in backoff. A node waiting in another
-     unit does not count (review of #31: one pending node anywhere made
-     every search `partial`);
+   - the embedding worker has a **backlog in the search's scope**: a live
+     embeddable node has owed a vector of the current model for longer
+     than `BACKLOG_TICKS` (3) drain periods (`[memory_index]
+     drain_seconds`, 60 s, so 180 s). This includes nodes holding another model's
+     vector and failing nodes in backoff once they are that old. A node
+     waiting in another unit does not count (review of #31: one pending
+     node anywhere made every search `partial`);
    - the index is incomplete, as before.
 
-   A node the worker **gave up on** (8 attempts) does not count, or one
-   poisoned file would hold every answer `partial` for good. No dense seed
-   reaches it, so while the scope holds one, the trigram seed also runs
-   over the given-up nodes: a confident `nothing_found` for words that are
-   there was the review's finding. Nor does an attachment that failed as
+   **A fresh wait is not a backlog** (2026-10-17, found building the eval
+   harness, #54). A node is projected the moment its row is written; its
+   vector comes at the worker's next tick, one batch after each drain, the
+   newest first. Counting every such node made almost every search in a
+   live room `partial` (in a tag turn, the message that triggered it is
+   one), and the dense seed could not reach the line just said at all, so
+   it was found only if an exact term happened to pin it. Now the trigram
+   seed runs beside the dense one over **every** embeddable node in scope
+   holding no current vector, waiting or given up, with the scope and the
+   question's narrowing inside the scan as for every seed, and a wait
+   inside the window does not make the answer `partial`. The window is
+   measured from `memory_node.owed_since` (migration 0111) on the
+   database's clock: written with the row and reset only where the
+   projector clears the vector because its input changed
+   (`_cleared_when`). Not from `projected_at`, which every re-projection
+   resets whether the input changed or not, so a failing node re-projected
+   regularly would look fresh forever and a rebuild would make a whole
+   backlog fresh (review of #69). A model clear keeps `owed_since`, so a
+   cleared index is a backlog at once, which it is. Only a node holding a
+   text is fresh: an attachment with no reading, embeddable from its
+   bytes, is reached by no seed until its vector lands, so it counts as a
+   backlog from the start (review of #69: as `fresh` it turned master's
+   `partial` into `nothing_found`). Why three periods: the
+   worker sleeps a period, drains, then embeds a batch, so a node written
+   just after a pick waits out that batch, a sleep and the next drain,
+   under two periods while it keeps up; the third is margin for a slow
+   batch of images. Past it the worker is behind (a backfill, a cleared
+   model) or failing the node. By age, not by a share of the scope: a
+   share means different things in a room of fifty nodes and a unit of
+   forty thousand, while a wait past three ticks is the property itself.
+   **The trade, accepted:** for up to three periods a fresh line is
+   reachable only by the words it shares with the question, so a reworded
+   question about it can answer `nothing_found`. Acceptable because a line
+   said within the last ~3 minutes is in the turn's own visible
+   transcript, which she reads before any search; the alternative held
+   almost every live answer `partial`. Ceiling: a burst of fresh nodes (an
+   import) reads `ok` for up to three periods, reachable only by its words
+   meanwhile. The eval sandbox, where no worker runs, carries the
+   deployment's wait (`adopt_worker_state`): a node whose input the source
+   still owes a vector for takes the source's `owed_since`, any other the
+   earlier of its own and its instant, so a sandbox is never kinder than
+   production. A question with no search terms cannot read a waiting or
+   given-up node by its words, so one such node then answers `partial`.
+   With `kinds`, whether the seed over unvectored nodes runs is counted
+   on the scope without the kinds, which the bridge pass reads.
+   Cost: that seed filters a bitmap scan over the scope, about 10 ms in
+   steady state and about 720 ms with a full backlog, the same as the
+   lexical fallback.
+   `memory_search` without the tick (`drain_seconds` unwired) treats
+   every wait as a backlog, the safe side; composition wires it.
+
+   A node the worker **gave up on** (8 attempts) does not count either, or
+   one poisoned file would hold every answer `partial` for good. No dense
+   seed reaches it, so the same trigram seed reads it: a confident
+   `nothing_found` for words that are there was the review's finding. Nor
+   does an attachment that failed as
    `empty` (no reading, and no image bytes to embed), which waits for its
    reading, not for the worker. Only a failure of the input itself
    (`rejected`, `empty`, `error`) counts toward the 8: an unavailable
    embedder or blob store backs the node off but never past 7 attempts, so
    an outage gives up on nothing. `rebuild --embeddings-only --dry-run` and
-   the embed counter report given-up nodes. A failing node can hold answers
-   `partial` for about a day, until it is given up. Coverage is one count
-   per search over the scope's nodes.
+   the embed counter report given-up nodes. A failing node older than the
+   window can hold answers `partial` for about a day, until it is given up.
+   Coverage, the fresh count included, is one count per search over the
+   scope's nodes.
 
    The query embedding has one 10 s deadline for every call it makes
    (/props, /embedding, and /health on a 5xx), not 10 s per call, which

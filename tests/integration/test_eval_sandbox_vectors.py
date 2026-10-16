@@ -11,6 +11,7 @@ Every text and file here is synthetic.
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
 
@@ -266,3 +267,33 @@ def test_the_floor_is_relative_to_the_source():
     assert COVERAGE_FLOOR == 0.95
     # Nothing owed is no gap.
     refuse_low_coverage(Coverage(embedded=0, owed=0, given_up=0, empty=3), source)
+
+
+async def test_a_sandbox_carries_the_sources_wait_so_it_is_never_kinder(source, sandbox):
+    """`rebuild` writes every sandbox node now, so a node the deployment has
+    owed a vector for an hour would read as fresh (`EmbedCounts.fresh`) in
+    the sandbox and answer `ok` where production answers `partial`. The
+    adoption carries the source's `owed_since` for an identical input, and
+    bounds any other unadopted node by its own instant."""
+    now_ms = int(time.time() * 1000)
+    await _write(source[1], [("the waiting line", ())], {})
+    await _write(sandbox[1], [("the waiting line", ())], {})
+    async with source[1].begin() as conn:
+        await conn.execute(sa.update(MEMORY_NODE).where(MEMORY_NODE.c.text == "the waiting line")
+                           .values(owed_since=sa.func.clock_timestamp()
+                                   - sa.text("interval '1 hour'")))
+    async with sandbox[1].begin() as conn:
+        # As written at the instant: said now, so its own bound keeps it fresh.
+        await conn.execute(sa.update(MEMORY_NODE).where(MEMORY_NODE.c.text == "the waiting line")
+                           .values(at_ms=now_ms))
+
+    async def fresh(text: str) -> int:
+        async with sandbox[1].connect() as conn:
+            return (await memory_index.embed_counts(
+                conn, MODEL, MEMORY_NODE.c.text == text, fresh_seconds=180)).fresh
+
+    assert await fresh("the waiting line") == 1  # positive control: fresh before
+    assert await fresh("see you at seven") == 1
+    await _adopt(source[1], sandbox[1])
+    assert await fresh("the waiting line") == 0   # the source's wait
+    assert await fresh("see you at seven") == 0   # no match: its own instant
