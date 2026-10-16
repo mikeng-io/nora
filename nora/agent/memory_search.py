@@ -20,8 +20,8 @@ path is cut at its first out-of-scope node.
   lists (as written). The first `PINNED_LIMIT` are PINNED: they rank ahead
   of every other hit in the answer, however near a dense hit is (a literal
   name must not lose to a near-duplicate); the
-  rest rank by their cosine, so the other half of the answer always goes by
-  score. Ordinary words are never exact.
+  rest rank by their cosine, so most of the answer always goes by score.
+  Ordinary words are never exact.
 - **Dense**: the question embedded ONCE with the model's query instruction,
   and the nearest in-scope nodes of the configured model's vectors, scored by
   their cosine (`SqlMemoryIndex.dense`). A scan that comes back with fewer
@@ -66,15 +66,23 @@ interval, so `places` is mostly reached from what was said during one.
   evidence about Kit.
 
 Each step multiplies the parent's relevance by the relation's weight
-(`REL_WEIGHT`). A node below `RELEVANCE_FLOOR` is not kept, and the walk
+(`REL_WEIGHT`). A node below the floor is not kept (`DENSE_FLOOR` for a
+seed scored by its cosine, `RELEVANCE_FLOOR` for a lexical seed and every
+hop), and the walk
 stops early when a hop keeps nothing (adaptive depth), at `NODE_BUDGET`
 nodes, or at the hop count `depth` asks for, never past `HOP_CEILING`.
 
 **4. Rank** the pinned exact hits first, then the rest, each by relevance
 times age decay (`HALF_LIFE_DAYS`). **5. Return** the
-best `RESULT_LIMIT` items, each with its kind, age, a handle where the kind
+best items, cut adaptively as they are rendered (`render_packet`): the
+pinned ones always, then in rank order until a token budget
+(`PACKET_TOKENS`) is spent or the relevance drops by more than `SCORE_GAP`,
+at least `MIN_RESULTS` and never past `RESULT_MAX`. Each item carries its
+kind, age, a handle where the kind
 has one a person or a tool can use, its text, and its path; an item whose
 text carries an identifier is withheld whole (`scan_identifiers`, R-18).
+The cut never empties a list that has an item the screen passes, so the
+status stays the search's.
 
 **Statuses** (R-27): `unavailable` on any error, counted, never an
 empty answer; `partial`, whatever was found, when the index is not
@@ -95,12 +103,15 @@ its words, so one such node then answers `partial` too. So an
 unfinished index is never «you never said that»; `nothing_found` only
 from a complete index in which every node in scope was searched; `ok`.
 
-The constants below are starting values, not tuned against a measured
-distribution.
+The floors, the cut and the `about` seed's score are set from the cosine
+spread measured on the backfilled index
+(`design/unified-memory/65-build-step-3-vectors.md` §6); the walk's other
+constants are starting values.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -124,19 +135,26 @@ from nora.domain.memory_index import (
     MemoryScope,
     QueryEmbedder,
     SearchStatus,
+    Seed,
     exact_holds,
 )
 from nora.domain.models import PersonRef
 from nora.domain.prompt import stamp
 from nora.domain.rollup import room_key
+from nora.language.computer_render import estimate_tokens
 
 __all__ = [
     "BACKLOG_TICKS",
     "DEFAULT_DEPTH",
+    "DENSE_FLOOR",
     "EXACT_LIMIT",
     "HOPS_BY_DEPTH",
     "HOP_CEILING",
+    "MIN_RESULTS",
+    "PACKET_TOKENS",
     "PINNED_LIMIT",
+    "RESULT_MAX",
+    "SCORE_GAP",
     "MemorySearch",
     "MemorySearchResult",
     "exact_terms_of",
@@ -158,20 +176,33 @@ HOPS_BY_DEPTH: Mapping[str, int] = {
 #: The hard ceiling on hops.
 HOP_CEILING = 4
 DEFAULT_DEPTH = "low"
-#: A node whose relevance falls below this is not kept; a hop that keeps
-#: none ends the walk. Starting value: a lexical seed scores at least
-#: `WORD_SIMILARITY_MIN` (0.5), so this admits about four weak hops from the
-#: weakest seed and stops the walk well before noise dominates.
-#: The same floor serves dense seeds, whose relevance is their full-width
-#: cosine, on the same [0, 1] scale as a lexical score (a negative cosine is
-#: below it): a seed under 0.1 points nearly orthogonally to the question
-#: and is dropped, and a middling one (0.3) still takes the default two hops
-#: through a `cites` or an `about`. What the floor does NOT do is make a
-#: dense search answer `nothing_found` when nothing relevant exists: the
-#: nearest vectors are returned with their low cosines. Raising it needs
-#: the cosine distribution of real hits and misses; a floor above a true hit's cosine would turn
-#: «found» into «you never said that», the worse error.
+#: The walk's floor: of every hop, of a search with no query vector, and of
+#: the lexical seed beside a dense one. A node whose relevance falls below it
+#: is not kept, and a hop that keeps none ends the walk. A lexical seed
+#: scores the mean over the question's terms of 1 (contained) or its word
+#: similarity, so one term of three found scores about 0.33; this admits it
+#: and about four weak hops from it, and stops the walk well before noise
+#: dominates. A hop's relevance is its seed's times the relations' weights,
+#: so a message at a median true hit's cosine (0.65, 65 §6) reaches the
+#: outing it was said during (`during`, 0.5) at about 0.32: the cosine floor
+#: below, applied to hops, would cut off every episode, which has no vector
+#: and is reached only by a hop or an `about` seed.
 RELEVANCE_FLOOR = 0.1
+#: The floor of a seed scored by its cosine to the question: a dense seed
+#: and an exact hit past the pinned ones (and the `about` seed, which scores
+#: above it). Measured on the backfilled index (design/unified-memory/65 §6):
+#: this model's cosines cluster high, the top 50's non-hits at 0.35 at the
+#: 10th percentile and up to 0.78; a known item ranked in the top 20 of its
+#: own query never scored under 0.387 (127 of 143 queries), and a query
+#: about nothing held scored its best at 0.33 to 0.55 (median 0.46). So the
+#: floor sits under every reachable true hit (a floor above one turns
+#: «found» into «you never said that», the worse error) and still trims the
+#: tail: three of twenty such queries seeded nothing above it, none of the
+#: 143 with a hit did. Not inside a date window (`since`, `until`): a
+#: question asked by time shares few words with its answer (the recall
+#: cases' evidence scored 0.07 to 0.36), and the window did the narrowing,
+#: so the walk's floor holds there, as before this floor existed.
+DENSE_FLOOR = 0.38
 #: Nodes kept per search, seeds included.
 NODE_BUDGET = 60
 #: Nodes expanded per hop: the best of the last hop's.
@@ -180,18 +211,46 @@ SEED_LIMIT = 20
 #: Exact seeds per search. Fewer than `SEED_LIMIT` so a question
 #: naming a much-discussed person still has dense seeds to expand from.
 EXACT_LIMIT = 10
-RESULT_LIMIT = 10
 #: Exact hits pinned ahead of every other hit: the first of them, the most
-#: terms held and then the nearest to the question. Half the answer, so a
-#: literal name still never loses to a near-duplicate while the other half
-#: always goes by score: were every exact hit pinned, ten literal matches
-#: would fill every slot and even a dense hit at cosine 1.0 would never show.
-#: An exact hit past these ranks
-#: by its cosine to the question, as a dense hit does.
-PINNED_LIMIT = RESULT_LIMIT // 2
-#: An exact-reference seed (a node `about` the named person) has no lexical
-#: score of its own; it ranks as a middling lexical hit.
-PERSON_SEED_SCORE = 0.6
+#: terms held and then the nearest to the question. A rendered item is about
+#: 60 tokens (median of 2,131 measured, 90th percentile 100, 65 §6), so five
+#: take about a sixth of `PACKET_TOKENS` and the rest of the answer, about
+#: fifteen items, goes by score: were every exact hit pinned, ten literal
+#: matches would crowd out even a dense hit at cosine 1.0. An exact hit past
+#: these ranks by its cosine to the question, as a dense hit does.
+PINNED_LIMIT = 5
+#: The answer, cut adaptively as it is rendered (`render_packet`): the hits in
+#: rank order until the next would take the packet past `PACKET_TOKENS`, or
+#: its relevance drops more than `SCORE_GAP` below the hit before it, never
+#: past `RESULT_MAX`; the pinned hits always, and at least `MIN_RESULTS`
+#: whatever the budget or the gap. Run on the production index for 143
+#: known-item queries (65 §6), this showed the known item for 107, the old
+#: cut of ten for 98 (every one of which this showed too), at a median 20
+#: items and 1,930 tokens a packet against 1,020. Replaying the budget over
+#: the same lists: 1,000 tokens found 97, 1,500 found 111, 2,000 found 112,
+#: 2,500 found 115 for a quarter more text every call.
+PACKET_TOKENS = 2_000
+#: A drop in relevance from one unpinned hit to the next past which the rest
+#: is another topic. Between neighbouring non-hits in a top 20 the drop was
+#: under 0.017 nine times in ten (2,733 pairs, 65 §6), so 0.2 stops only
+#: after a standout: replayed over the 163 measured queries it shortened 4
+#: and cost none its hit. On relevance, not on the age-decayed rank, whose
+#: drops mix age with meaning: 0.15 on that rank cost seven hits.
+SCORE_GAP = 0.2
+#: However tight the budget or steep the drop, a search that found anything
+#: shows its best few: the first this many items the identifier screen
+#: passes (a withheld hit is not one of them).
+MIN_RESULTS = 3
+#: A safety cap, not the cut: at the measured 52 tokens of a short item
+#: (10th percentile) the budget would admit 38, which no question needs.
+RESULT_MAX = 30
+#: A seed `about` the named person (a stay, trip, outing or character) has no
+#: score of its own. On this model's scale a known item scored 0.65 at the
+#: median and 0.46 at the 10th percentile, and the best non-hit 0.60 (65 §6),
+#: so the 0.6 this held ranked twenty such seeds level with the best dense
+#: hits and above about four in ten true ones. 0.45 ranks them after nine in
+#: ten true hits, above `DENSE_FLOOR`, so they still show when room is left.
+PERSON_SEED_SCORE = 0.45
 #: Age decay: an item this many days old ranks at half its relevance.
 HALF_LIFE_DAYS = 180.0
 #: Characters of one item's text in the packet.
@@ -466,9 +525,19 @@ async def walk(
     only the asked kinds in the answer (`MemorySearch.search`). Dates and a
     person narrow every read of both, and only the first pass pins."""
     reached: dict[tuple[str, str], Hit] = {}
+    # A seed scored by its cosine has the cosine's floor; a lexical seed and
+    # every hop keep the walk's (an episode has no vector: a hop reaches it).
+    # Not inside a date window (the `DENSE_FLOOR` comment).
+    only = scope.only
+    windowed = only is not None and (only.since_ms is not None or only.until_ms is not None)
+    dense = vector is not None and model is not None
+    seed_floor = DENSE_FLOOR if dense and not windowed else RELEVANCE_FLOOR
 
-    def keep(node: IndexedNode, score: float, path: tuple[Step, ...]) -> bool:
-        if node.key in reached or score < RELEVANCE_FLOOR:
+    def keep(
+        node: IndexedNode, score: float, path: tuple[Step, ...],
+        least: float = RELEVANCE_FLOOR,
+    ) -> bool:
+        if node.key in reached or score < least:
             return False
         # Episodes only, not every `PRESENCE_KINDS`: `admits` reads a row's
         # presence lineage, and a social item's tagged place carries none (an
@@ -489,8 +558,10 @@ async def walk(
                 # Past the pinned ones, an exact hit competes on its cosine
                 # like a dense hit; with no vector to compare, on its literal 1.
                 score = s.score if pinned or s.near is None else s.near
-                if keep(s.node, score, (Step(s.node.kind, how="exact"),)) and pinned:
+                exact_seed = (Step(s.node.kind, how="exact"),)
+                if keep(s.node, score, exact_seed, seed_floor) and pinned:
                     reached[s.node.key].pin = PINNED_LIMIT - i
+        lexical: list[Seed] = []
         if vector is not None and model is not None:
             seeds = await index.dense(vector, sc, model=model, limit=SEED_LIMIT)
             if first and len(seeds) < min(SEED_LIMIT, embedded) and metrics is not None:
@@ -498,11 +569,14 @@ async def walk(
             if unembedded and terms:
                 # The dense seed cannot reach a node with no vector yet (a
                 # line said a moment ago) or one the worker gave up on; its
-                # words still can, so it is not reported as «nothing».
-                seeds += await index.seed(terms, sc, limit=SEED_LIMIT, unembedded_of=model)
+                # words still can, so it is not reported as «nothing». Its
+                # score is lexical, so the lexical floor holds for it.
+                lexical = await index.seed(terms, sc, limit=SEED_LIMIT, unembedded_of=model)
         else:
             seeds = await index.seed(terms, sc, limit=SEED_LIMIT) if terms else []
         for s in seeds:
+            keep(s.node, s.score, (Step(s.node.kind, how="matched"),), seed_floor)
+        for s in lexical:
             keep(s.node, s.score, (Step(s.node.kind, how="matched"),))
         if person_id and person_id in scope.listed_here:
             for node in await index.about(person_id, sc, limit=SEED_LIMIT):
@@ -510,7 +584,7 @@ async def walk(
                 # an entry about P said in a room that does not list P is not
                 # evidence about P.
                 if _listed_room_rule(person_id, node, scope):
-                    keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),))
+                    keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),), seed_floor)
     hop_scope = bridge if bridge is not None else scope
 
     frontier = sorted(reached.values(), key=lambda h: -h.score)[:FRONTIER_WIDTH]
@@ -638,7 +712,7 @@ class MemorySearch:
         ranked = sorted(
             (h for h in hits if not wanted or h.node.kind in wanted),
             key=lambda h: (-h.pin, -h.score * _decay(h.node.at_ms, now_ms), h.node.key),
-        )[:RESULT_LIMIT]
+        )[:RESULT_MAX]
         # A fresh node is read by its words; a backlog, or an unvectored node
         # (waiting or given up) a question with no terms cannot read, is what
         # the dense seed missed.
@@ -705,16 +779,32 @@ def render_packet(
 ) -> tuple[list[dict[str, Any]], int]:
     """The evidence packet and how many items were withheld
     for carrying an identifier. Names, room labels and handles only: never a
-    person id, a room key or a row id."""
+    person id, a room key or a row id.
+
+    `hits` in rank order; the answer is cut here, where an item's size is
+    known (the module docstring's step 5): a pinned hit is always kept, then
+    each hit while the packet stays within `PACKET_TOKENS` and its relevance
+    is within `SCORE_GAP` of the unpinned hit before it, the first
+    `MIN_RESULTS` items whatever either says, and never more than
+    `RESULT_MAX`. A withheld hit costs nothing and is not counted."""
     items: list[dict[str, Any]] = []
     withheld = 0
+    spent = 0
+    last: float | None = None  # the previous unpinned hit's relevance
     for h in hits:
+        if len(items) >= RESULT_MAX:
+            break
         # Screened WHOLE, before the cut: an identifier straddling
         # `TEXT_CHARS` would otherwise leave as a fragment the screen cannot
-        # recognise (R-18).
+        # recognise (R-18). A withheld hit takes no part in the cut.
         if h.node.text and scan_identifiers(h.node.text) is not None:
             withheld += 1
             continue
+        steep = not h.pin and last is not None and last - h.score > SCORE_GAP
+        if not h.pin and len(items) >= MIN_RESULTS and steep:
+            break
+        if not h.pin:
+            last = h.score
         kind, body = _shown(h.node)
         text = render_file_links(body[:TEXT_CHARS]) if body else ""
         places = sorted(p for p in h.places if scan_identifiers(p) is None)
@@ -733,5 +823,9 @@ def render_packet(
         if places:
             item["places"] = places
         item["path"] = _path(h.path)
+        cost = estimate_tokens(json.dumps(item, ensure_ascii=False))
+        if not h.pin and len(items) >= MIN_RESULTS and spent + cost > PACKET_TOKENS:
+            break
+        spent += cost
         items.append(item)
     return items, withheld
