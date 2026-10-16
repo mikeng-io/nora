@@ -1,4 +1,4 @@
-"""A document's revision history in the portal (ADR 0020, design/artifact §34).
+"""A document's revision history in the portal (ADR 0020).
 
 Every revision is a full snapshot in `document_revision`, so the history needs no new
 table: three routes read and copy what is already there, for ONE viewer.
@@ -18,7 +18,7 @@ document's history is readable (it still opens by its link), and its restore is 
 like any revision of an archived document (`not_active`). Both reads carry `roomLabel` by
 the detail payload's rule: only for a viewer in that room.
 
-LIMITATION (operator ruling 2026-10-01, DEC-268): editing something out of a document does
+LIMITATION (DEC-268): editing something out of a document does
 not remove it from its history. Every earlier revision stays readable to whoever may read
 the document; deleting it, or forgetting its creator, hides all of it. No redaction.
 

@@ -24,7 +24,7 @@ from wakegate.audio import OWW_CHUNK
 from wakegate.gate import WakeGate
 
 MODEL = Path(__file__).parents[1] / "models" / "喂Nora.onnx"
-# the training corpus lives OUTSIDE the repo (43 GB); see voice-lab/README.md
+# the training corpus lives OUTSIDE the repo (large); see voice-lab/README.md
 LAB_DATA = Path(os.environ.get("VOICE_LAB_DATA", "/home/norty/workspace/voice-lab-data"))
 LAB_POSITIVE = LAB_DATA / "oww-data/output/喂Nora/positive_train"
 LAB_NEGATIVE = LAB_DATA / "oww-data/output/喂Nora/negative_train"
@@ -41,7 +41,7 @@ def model():
     rolling feature window that `reset()` does NOT clear, so a model that
     just scored a positive keeps scoring it for the next ~1.5 s of audio —
     a module-scoped instance bleeds the positive clip INTO the negative
-    test (measured: 0.985 on background speech). Production avoids this by
+    test (0.985 on background speech). Production avoids this by
     scoring every chunk through the gate (see WakeGate.feed's docstring);
     a test that wants a clean window builds a clean model."""
     from openwakeword.model import Model

@@ -1,4 +1,4 @@
-"""Qwen3-VL-Embedding-2B as a Q4_K_M GGUF through llama-server (design/unified-memory/20).
+"""Qwen3-VL-Embedding-2B as a Q4_K_M GGUF through llama-server.
 
 A subclass of `adapters.LlamaServerEmbedder` (the server's command line,
 its media marker, one pooled row per call), in the input format the model's
@@ -9,7 +9,7 @@ instruction, documents and images the default (QwenLM/Qwen3-VL-Embedding's
 retrieval usage). The text is NFC-normalised first: that is the normaliser
 of the official tokenizer.json, and llama-server applies none.
 
-llama-server appends `<|endoftext|>` itself (this GGUF, b42b7e6d3), so the
+llama-server appends `<|endoftext|>` itself (this GGUF), so the
 prompt stops at `assistant\\n`; one written into the prompt as well would be
 pooled from a doubled end token. Nothing about the sequence is assumed, and
 anything else is an `unsupported` ERROR before a vector is asked for:
@@ -56,13 +56,13 @@ __all__ = [
 
 QWEN3VL_REPO = "Qwen/Qwen3-VL-Embedding-2B"
 QWEN3VL_REVISION = "9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda"
-#: tokenizer.json at that revision (tokenizers 0.22.2, read 2026-10-16).
+#: tokenizer.json at that revision (tokenizers 0.22.2).
 QWEN3VL_TOKENIZER_SHA256 = "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a"
 #: The instructions, from the one formatter production uses too
 #: (`nora.domain.embedder_input`), so the bake-off measures what ships.
 QWEN3VL_INSTRUCTION = DOCUMENT_INSTRUCTION
 QWEN3VL_QUERY_INSTRUCTION = QUERY_INSTRUCTION
-#: The GGUF measured, as downloaded and hashed on the deploy host 2026-10-15.
+#: The GGUF measured, as downloaded and hashed on the deploy host.
 QWEN3VL_Q4_GGUF = {
     "repo": "mradermacher/Qwen3-VL-Embedding-2B-GGUF",
     "revision": "ac21c8784ed86e50391e32ed945f21e42140b1f6",

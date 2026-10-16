@@ -25,7 +25,7 @@ async def run(
 ) -> int | None:
     """Return the recorded row's id, or None when the message was dropped and
     ingest should stop. The id is what the stimulus stage names the Record
-    item by (`messages:<id>`, design/cognition-loop/20-observe.md §3).
+    item by (`messages:<id>`).
 
     `person` is already resolved (identity runs first) so it lands in this one
     INSERT rather than a follow-up UPDATE — WAL allows a single writer and this

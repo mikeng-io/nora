@@ -1,5 +1,5 @@
 """The sticker dedup ladder — CUSTODY, and the identity that makes a repeat
-sighting free (sticker spec §4).
+sighting free.
 
 Separated from `nora.ingest.stages.media` because the responsibilities really
 are two: that module makes the body's media claims TRUE (fetch, strip, hash,
@@ -7,19 +7,14 @@ store, render), and this one decides whether any of that work is needed at all.
 Folding the ladder into `_take` would put four cache branches inside the
 function whose job is custody.
 
-**THE MODEL RUNG IS GONE (issue #116), and what is left is the half that was
-always about custody.** This module used to end in a vision call whose sentence
-was baked straight into `messages.body`. That is now one job for every medium —
-the spawned comprehension in `nora/ingest/comprehension.py` — because one string
-serving both the Honcho feed and the prefill made "Honcho detailed, transcript
-short" structurally impossible, and because a sticker described one way while a
-photo was described another is two mechanisms for one thing. What stays here is
-what the comprehension job cannot do: turn a repeat sighting into zero platform
-RPC, before any bytes move, on a path the ingest listener awaits.
+**There is no model rung: this module is only custody.** Describing a sticker
+is the spawned comprehension job's, one job for every medium
+(`nora/ingest/comprehension.py`). What lives here is what that job cannot do:
+turn a repeat sighting into zero platform RPC, before any bytes move, on a path
+the ingest listener awaits.
 
-**Order still matters.** Measured on real data: 17 sticker sightings across 10
-distinct stickers, so 41% are already repeats before any platform RPC, and that
-share only grows as a group's sticker vocabulary saturates.
+**Order matters.** Repeats are common and grow as a group's sticker vocabulary
+saturates, so the cheapest check runs first.
 
 * **Level 1, identity** (`resolve`) — known at parse time. A hit means ZERO
   platform RPC: the blob Nora already holds IS the answer.
@@ -69,14 +64,11 @@ class StickerOutcome:
     `level` is a metric label, not a branch: `identity` / `content` / `none` —
     which rung of the ladder actually answered. It is what makes "the cache is
     working" an observation instead of a belief, and it is a SEPARATE
-    vocabulary from `nora_media_fetch_total`'s boolean `cached` label; the two
-    were once spelled the same way and that was the wrong call (whole-branch
-    review, 2026-08-15) — enumerated here so a caller cannot confuse the two.
+    vocabulary from `nora_media_fetch_total`'s boolean `cached` label —
+    enumerated here so a caller cannot confuse the two.
 
-    It carries no `description` any more (issue #116): the comprehension is
-    the spawned job's, keyed on this blob's sha256, and a description handed
-    back here would have to be baked into the body to be of any use — which is
-    exactly the path that change removed.
+    It carries no `description`: the comprehension is the spawned job's, keyed
+    on this blob's sha256.
     """
 
     blob: MediaBlob | None
@@ -127,10 +119,10 @@ class StickerReader:
             # cancelled winner has to stay cancelled, not degrade to an
             # "error" outcome it never actually reached. But a cancellation
             # DOES skip `future.set_result` on this line, and the outer
-            # `finally` runs regardless — which is exactly how a cancelled
-            # winner used to leave every waiter blocked on this future
-            # forever ("LOSER HUNG"). The outer `finally`'s job is the safety
-            # net for that one case; this inner block is the ordinary one.
+            # `finally` runs regardless — otherwise a cancelled winner would
+            # leave every waiter blocked on this future forever. The outer
+            # `finally` is the safety net for that one case; this inner block
+            # is the ordinary one.
             try:
                 outcome = await self._read(platform=platform, ref=ref, source=source)
             except Exception:
@@ -166,20 +158,20 @@ class StickerReader:
             if not fetched.available:
                 return StickerOutcome(blob=None, reason=fetched.reason or "unavailable")
             # The type as DECLARED (or filename-guessed) — but Signal declares
-            # none for a sticker at all (spec §1: no `contentType` on
+            # none for a sticker at all (no `contentType` on
             # `dataMessage.sticker`), so `sniff_media_type` reads the real
             # container off the fetched bytes and wins when it recognises one.
             # Resolved BEFORE hashing: it is what lands in the `MediaBlob`
-            # and the interpreter call — an unresolved `""` here is what
-            # made the interpreter's `_INTERPRETABLE` gate refuse every real
-            # Signal sticker (whole-branch review C1). Never invented when
+            # and the interpreter call — an unresolved `""` here would make the
+            # interpreter's `_INTERPRETABLE` gate refuse every real Signal
+            # sticker. Never invented when
             # neither source resolves one: the declared/guessed fallback
             # stays `""`.
             declared = resolve_media_type(declared=ref.media_type, filename=ref.filename)
             media_type = sniff_media_type(fetched.data) or declared
-            # STICKERS SKIP THE STRIP — deliberately, NOT "not yet wired up",
-            # and do not "restore consistency" with `stages.media._take`'s
-            # strip later without re-reading both reasons below.
+            # STICKERS SKIP THE STRIP — deliberately; do not "restore consistency"
+            # with `stages.media._take`'s strip without re-reading both reasons
+            # below.
             #
             # 1. DEC-47 exists to remove GPS/device-id PII from photographs a
             #    PERSON took. Sticker pack art is published, platform-
@@ -189,15 +181,12 @@ class StickerReader:
             # 2. Re-encoding makes the content hash depend on the PILLOW
             #    VERSION, not just the bytes — and `strip_exif` does not pass
             #    `save_all`, so an animated image is silently flattened to
-            #    its first frame before it is ever hashed (measured: a
-            #    3-frame WebP sticker, 328B -> 84B, one frame). Both failure
+            #    its first frame before it is ever hashed. Both failure
             #    modes land on `media_descriptions`/`sticker_index`, which
             #    are DURABLE caches keyed on this exact hash: a Pillow
             #    upgrade would silently change every sticker's sha256 and
-            #    orphan every existing row, and flattening would mean the
-            #    2026-08-07 probe's headline result — MiMo reads an animated
-            #    WebP correctly, not just its first frame — is unreachable in
-            #    the shipped path even though the probe itself never lied.
+            #    orphan every existing row, and flattening would hide an
+            #    animated sticker's later frames from the model.
             #    Hashing the platform's own bytes is stable by construction.
             data = fetched.data
             try:
@@ -221,7 +210,7 @@ class StickerReader:
         # keeps whatever description is already on the row rather than
         # clobbering it, so a sticker seen again after the comprehension job
         # has read it does not erase what that job wrote. The description
-        # itself is the job's business now — `nora/ingest/comprehension.py` —
+        # itself is the job's business — `nora/ingest/comprehension.py` —
         # and it is keyed on this same sha256.
         if level == "content":
             await self._descriptions.remember(
@@ -232,8 +221,8 @@ class StickerReader:
             # An identity hit. Nothing was fetched, so PROVE custody before
             # returning the blob: `[sticker a3f2c1]` promises `a3f2c1` can be
             # produced, and an identity row outliving its bytes (a rotated key,
-            # a pruned volume) would make that promise a lie (whole-branch
-            # review I2). One `get` on a hit is the price of the claim.
+            # a pruned volume) would make that promise a lie.
+            # One `get` on a hit is the price of the claim.
             try:
                 held = await self._blobs.get(key=blob.sha256)
             except Exception:

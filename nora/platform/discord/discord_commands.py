@@ -1,5 +1,4 @@
-"""`/discord join|exit` — the voice-connection control surface
-(design/voice-channel/07 §2/§12.3).
+"""`/discord join|exit` — the voice-connection control surface.
 
 The audio-controller owns the ONE Discord voice connection; these two
 commands are how a human drives its lifecycle explicitly (everything else —
@@ -127,8 +126,8 @@ class DiscordCommands(app_commands.Group):
                 await self._manager.leave_voice(guild_id)
             left = await self._hub.exit(guild_id) if self._hub is not None else False
         except VoiceControllerError:
-            # B-3 (2026-09-16 audit): a controller outage mid-exit used to
-            # leave this deferred interaction unresolved.
+            # A controller outage mid-exit must still resolve the deferred
+            # interaction.
             log.exception("discord exit failed for guild %s", guild_id)
             await interaction.followup.send(m.controller_unavailable_line(), ephemeral=True)
             return

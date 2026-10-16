@@ -1,5 +1,5 @@
-"""`render_checkpoint`: the job checkpoint as compact markdown, ONE renderer for every reader
-(design/subagent §4d). The `<subagents>` block (running jobs), `subagent_read`, the worker's own
+"""`render_checkpoint`: the job checkpoint as compact markdown, ONE renderer for every reader.
+The `<subagents>` block (running jobs), `subagent_read`, the worker's own
 re-anchoring after its history is trimmed, and the delivery to the room all call it, so the
 four sections cannot be written four ways.
 
@@ -53,7 +53,7 @@ def render_checkpoint(
     mode: Mode,
 ) -> str:
     """The checkpoint and outputs as markdown, or `""` when there is nothing to say (a job
-    from before checkpoints, or one that has written none and made nothing)."""
+    with no checkpoint that has made nothing)."""
     esc: Callable[[str], str] = (lambda s: s) if mode == "delivery" else (
         lambda s: escape(one_line(s))
     )

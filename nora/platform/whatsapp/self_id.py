@@ -1,5 +1,4 @@
-"""Nora's own WhatsApp identity, via the bridge's `GET /self`
-(design/whatsapp-adoption/03-transport-contract.md).
+"""Nora's own WhatsApp identity, via the bridge's `GET /self`.
 
 One call, hard-fail — Discord's shape (`nora.platform.discord.self_id`),
 not Signal's. Signal's multi-call best-effort derivation with a metrics

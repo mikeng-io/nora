@@ -3,45 +3,31 @@ already answers.
 
 **Why RPC and not the filesystem.** signal-cli writes attachments into its own
 store (`$XDG_DATA_HOME/signal-cli/attachments/`, bind-mounted at
-`./state/signal-cli`), and the obvious implementation reads that directory.
-That would have meant a new read-only bind mount into Nora's container beside
-the account store she is explicitly kept out of ("she has no business reading
-Signal identity keys" — `docker-compose.yml`), and a trap under it: the
-`attachments/` directory does not exist yet, so Docker would create the mount
-point ROOT-owned, and signal-cli runs as uid 1000 — it would then be unable to
-write attachments at all. Adding a mount to fix media custody by breaking media
-delivery is the kind of outcome R-5 is about.
+`./state/signal-cli`). Reading that directory would need a read-only bind mount
+into Nora's container beside the account store she is explicitly kept out of
+("she has no business reading Signal identity keys" — `docker-compose.yml`), and
+a trap under it: Docker creates a missing mount point ROOT-owned, and signal-cli
+runs as uid 1000, so it could no longer write attachments at all.
 
-`getAttachment` removes the whole question: it is the same daemon, the same
+`getAttachment` avoids the question: it is the same daemon, the same
 `POST /api/v1/rpc`, the same loopback port Nora already uses for `send`,
 `listGroups` and `listContacts`. No mount, no ownership, no second view of
 somebody else's filesystem.
 
-**Verified against the live daemon, 2026-08-06, signal-cli 0.14.7** — with the
-negative control, because a probe without one proves nothing (CLAUDE.md's
-"fake that answers every request the same way"):
+`id` alone is accepted, so no `recipient`/`groupId` is sent. A miss answers
+`{"code":-1,"message":"Could not find attachment with ID: …"}`, distinct from an
+unknown method (`{"code":-32601,"message":"Method not implemented"}`).
 
-    method: "noSuchMethodXyz"  -> {"code":-32601,"message":"Method not implemented"}
-    method: "getAttachment"    -> {"code":-1,
-                                   "message":"Could not find attachment with ID: …"}
+The shape of a SUCCESSFUL `getAttachment` result is not pinned. `_decode`
+accepts the two shapes signal-cli plausibly returns — a bare base64 string, or
+an object carrying it under `data` — and anything else becomes
+`available=False, reason="bad_payload"` with the result's KEYS (never its
+values) in the log line, so a new shape says exactly what to change in one line.
+Accepting one shape and silently dropping the other would be a decorative
+implementation.
 
-Two different errors. The method genuinely exists and genuinely looked, rather
-than a daemon that answers everything alike. `id` alone is accepted — the call
-reached the lookup — so no `recipient`/`groupId` is sent.
-
-**What is NOT verified, and cannot be here:** the shape of a SUCCESSFUL
-`getAttachment` result. No attachment has ever arrived on this deployment, so
-there is no id to fetch. `_decode` therefore accepts the two shapes signal-cli
-plausibly returns — a bare base64 string, or an object carrying it under
-`data` — and anything else becomes `available=False, reason="bad_payload"`
-with the result's KEYS (never its values) in the log line, so the first real
-attachment either works or says exactly what to change in one line. Guessing
-one shape and silently dropping the other is how a decorative implementation
-ships green.
-
-`getSticker`'s success shape, by contrast, **is** verified — probed against the
-live daemon 2026-08-15: `{"result":{"data":"<base64>"}}`, the object-with-`data`
-branch `_decode` already has. No new decoder branch was needed for it.
+`getSticker`'s success shape is `{"result":{"data":"<base64>"}}`, the
+object-with-`data` branch `_decode` already has.
 
 Never raises: `nora.domain.ports.MediaSource`'s contract, for `RosterSource`'s
 reason. The caller is the ingest path, and an exception there costs the whole
@@ -79,7 +65,7 @@ _STICKER_PREFIX = "sticker:"
 def _sticker_params(token: str) -> dict[str, object] | None:
     """`getSticker`'s params out of this adapter's own token, or None.
 
-    Shape verified against the live daemon 2026-08-15: `packId` is a string,
+    `packId` is a string,
     `stickerId` an int, and passing either under another name returns a
     NullPointerException rather than a result — so the names are load-bearing
     and are written once, here.
@@ -127,8 +113,8 @@ class SignalMediaSource:
         elif not ref.platform_id:
             # An attachment signal-cli described without an id. There is
             # nothing to ask for; saying so is not a failure of the daemon and
-            # must not be counted as one. (Stickers no longer land here — they
-            # carry a token and take the branch above.)
+            # must not be counted as one. (Stickers carry a token and take the branch
+            # above.)
             return MediaBytes(available=False, reason="no_id")
         else:
             method, params_out = "getAttachment", {"id": ref.platform_id}
@@ -167,7 +153,7 @@ class SignalMediaSource:
         if not isinstance(body, dict):
             return MediaBytes(available=False, reason="bad_payload")
         if body.get("error"):
-            # The verified shape: `{"code": -1, "message": "Could not find
+            # The miss shape: `{"code": -1, "message": "Could not find
             # attachment/sticker with ID: …"}`. The handle is signal-cli's own,
             # not a person's identifier, but the message is echoed at debug
             # rather than warning because a miss is already counted and the

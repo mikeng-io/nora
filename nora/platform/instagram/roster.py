@@ -2,7 +2,7 @@
 `GET /threads/{thread_fbid}/members`.
 
 A 200 is `{room_id, title, is_group, members: [{fbid, igid, username,
-full_name}]}` with no `ok` field (P14, 2026-09-24): the status says the read
+full_name}]}` with no `ok` field: the status says the read
 succeeded. Only `members[].fbid` is read. Any other status is the bridge's
 error envelope and reads as `available=False`; 409 gets its own log line. The
 bodies are pinned by `tests/fixtures/instagram_bridge/members_*`, which the
@@ -17,10 +17,10 @@ raise.** The caller is a room-scoped tool running inside a live turn, so an
 unreachable bridge has to become `Roster(available=False)` — «I could not
 look» — and never an empty room, which reads as «there is nobody here» (R-5).
 
-Three live failures were waiting on this module, and all three were the same
-missing fact: `group_members` answered `unavailable`, `where_is` could not
-establish the room and refused, and every outbound @-mention resolved to nobody
-so Nora wrote «@Name» as plain text with no ping and nothing logged.
+Without a roster, three things fail the same way: `group_members` answers
+`unavailable`, `where_is` cannot establish the room and refuses, and every
+outbound @-mention resolves to nobody so Nora writes «@Name» as plain text with
+no ping and nothing logged.
 
 ## Only the fbid goes into `Roster.members`, and that is not an oversight
 
@@ -33,12 +33,9 @@ different ones. Exactly one of them belongs in `Roster.members`:
   intersects `identity.toml`'s ids with the ones the ROSTER just reported and
   hands the result to `_preferred_recipient`, whose Instagram branch accepts a
   bare digit string — which is what BOTH id kinds are. It accepts any bare
-  digit string BY DESIGN: `design/instagram-adoption/02` forbids validating an
-  Instagram id by shape, because the two measured fbids are themselves 15 and
-  17 digits and no length or prefix rule separates real members from each
-  other. (An earlier version of this comment cited a "shared `1784` prefix" as
-  evidence; that measurement is about two fbids, not about fbid-vs-igid, and
-  every measured igid is 11 digits. The decision is unchanged.)
+  digit string BY DESIGN: an Instagram id is never validated by shape, because
+  fbids vary in length (15 and 17 digits measured) and no length or prefix rule
+  separates real members from each other.
   So an igid sitting in the same frozenset
   is not inert: it is a coin toss on addressing a mention with a number no
   mention can carry, which is the silent no-ping failure this module exists to
@@ -55,8 +52,8 @@ operator reading a log line. It simply is not a membership token.
 
 ## Nora is not in her own roster, by the wire
 
-`Users[]` excludes the viewer — measured on the live three-person room, which
-reads back two — and the bridge filters self as well, so this module gets a
+`Users[]` excludes the viewer, and the bridge filters self as well, so this
+module gets a
 list Nora is already absent from. `nora.agent.room.Room` would have excluded
 her anyway via `self_ids`; both are correct and neither is redundant, because
 one of them is a library's behaviour and the other is Nora's rule.
@@ -64,17 +61,16 @@ one of them is a library's behaviour and the other is Nora's rule.
 ## An unmapped member is `unnamed`, and `where_is` refusing over it is CORRECT
 
 `RoomView` counts member accounts that resolve to no person as `unnamed`, and
-`Whereis` fails closed on `unnamed > 0` in a room that is not location-trusted
-(design/19 §5): an account nobody can name cannot be checked against the
+`Whereis` fails closed on `unnamed > 0` in a room that is not location-trusted:
+an account nobody can name cannot be checked against the
 location circle, so disclosing a fix in that room would be disclosing to a
 stranger. A member missing from `identity.toml` therefore makes location refuse
 — that is the guard working, and the remedy is to map the account, never to
 loosen this module.
 
-**But read the room's `location` flag before relying on that.** DEC-79 made
-the flag waive the `unnamed > 0` refusal outright, and it is ON in the
-Instagram room this ships into (operator, 2026-09-22, answering "why does one
-unidentified person disable it entirely"). There, an unnamed account does not
+**But read the room's `location` flag before relying on that.** DEC-79: the
+flag waives the `unnamed > 0` refusal outright, and it is ON in the Instagram
+room. There, an unnamed account does not
 refuse: the answer is disclosed and the waiver is counted on
 `nora_presence_disclosure_waived_total`. So in THAT room this roster's
 completeness is not what stops a disclosure — only a roster that cannot be
@@ -144,7 +140,7 @@ class InstagramRoster:
         room_id = conversation_id.strip() if isinstance(conversation_id, str) else ""
         if not room_id:
             # A wiring fault, not an empty room, and it must not reach the
-            # network. Since the route became `/threads/{id}/members` an empty
+            # network. An empty
             # id would build `/threads//members`, which the bridge's router
             # CLEANS and redirects — so aiohttp would follow it and read a 404
             # for a different path. That is a confusing failure to debug and an

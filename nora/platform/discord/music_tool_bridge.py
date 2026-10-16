@@ -1,11 +1,10 @@
 """`DiscordMusicToolBridge` — the `MusicToolBridge` port's real
-implementation (design/discord-music/07-agent-tool.md). The ONE thing a
+implementation. The ONE thing a
 Nora agent music tool needs that `NormalizedMessage`/`TagContext` never
 carry: a live Discord client, to resolve a guild member's CURRENT voice
 channel and actually join it. Reuses `MusicPlayerManager` and
 `_connect_factory` verbatim — the exact same state machine and voice-join
-logic the slash commands already use, never a second mutation path
-(`02-control-surface.md`'s own "if added later" plan for this).
+logic the slash commands already use, never a second mutation path.
 
 NEVER raises out of a public method — matches `TrackSource`/
 `WeatherProvider`'s discipline (`nora/domain/ports.py`); every failure mode
@@ -36,7 +35,7 @@ log = logging.getLogger("nora.music")
 
 # Model-facing outcome notes pull their wording from the canonical message
 # table, so the `note` the LLM reads and the line a channel post renders can
-# never drift apart (design/discord-music/09-message-conventions.md D2).
+# never drift apart.
 _UNAVAILABLE_DISCONNECTED = MusicToolOutcome(
     status="unavailable", note=m.disconnected_note(),
 )
@@ -87,10 +86,9 @@ class DiscordMusicToolBridge:
         person to more than one Discord account (`MusicToolBridge`'s own
         docstring), and only the platform itself — who is ACTUALLY sitting
         in a voice channel right now — can say which one is real for this
-        request. Found live 2026-08-24: picking an arbitrary one of a
-        person's two mapped accounts had them sitting in a channel on one
-        account while this looked up the other, and got told to join a
-        channel they were already in."""
+        request: picking an arbitrary account could look up one while they sit
+        in a channel on the other, and tell them to join a channel they are
+        already in."""
         client = self._adapter.current_client()
         if client is None:
             return None
@@ -116,8 +114,7 @@ class DiscordMusicToolBridge:
         """The announcement destination for a session started by `play_music`:
         the guild's `music_channel` if one of its rooms names one, else the
         room she was tagged in — resolved per-post by `music_notify.make_notify`, the ONE
-        place any surface decides this (design/discord-music/10-notification-
-        routing.md). `current_client` is passed as the getter, not called:
+        place any surface decides this. `current_client` is passed as the getter, not called:
         this closure outlives a gateway reconnect."""
         guild_id, _, channel_id = conversation_id.partition("/")
         return make_notify(
@@ -138,8 +135,7 @@ class DiscordMusicToolBridge:
         connect = None
         voice_channel_id = None
         if channel is not None:
-            # The same auto-join gate `/music play` applies (design/
-            # voice-channel/07 §12.2): a FRESH session may only join the
+            # The same auto-join gate `/music play` applies: a FRESH session may only join the
             # requester's channel when it is on the allow-list. An existing
             # session is reused without a join, so the refusal binds only
             # when one would be needed.

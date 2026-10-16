@@ -1,5 +1,5 @@
 """The edit path's write — one `message_edit` row beside the message it edits,
-unless the text did not change (design/message-edits/02 §4).
+unless the text did not change.
 
 **Unchanged is decided on the text, after custody, and that is what makes it
 total.** Discord fires `MESSAGE_UPDATE` when a link preview resolves or a

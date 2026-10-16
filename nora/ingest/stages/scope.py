@@ -22,12 +22,11 @@ Discovery does not depend on auditing denied rooms: `nora groups` reads
 signal-cli's `listGroups` directly, so a new group's id is still printable
 without Nora having stored a word of it.
 
-A DIRECT MESSAGE is in scope only from somebody in `identity.toml` (operator
-rule 2026-10-05: Nora never receives a message from a person who is not in the
-file). A 1:1 chat's only member besides her is its sender, so "is this room
-allowed" and "is this person known" are the same question there, and it is
-asked before the audit write for the room's reason: an unknown sender's words
-are not kept at all.
+A DIRECT MESSAGE is in scope only from somebody in `identity.toml` (Nora never
+receives a message from a person who is not in the file). A 1:1 chat's only
+member besides her is its sender, so "is this room allowed" and "is this person
+known" are the same question there, and it is asked before the audit write for
+the room's reason: an unknown sender's words are not kept at all.
 
 A denial is COUNTED. A silently-denied Nora is indistinguishable from a
 working one under R-5, and "she stopped answering in that group" needs to be

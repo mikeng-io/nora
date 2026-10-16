@@ -1,4 +1,4 @@
-"""The sub-agent worker's prompt: its brief as the model reads it (design/subagent §4a).
+"""The sub-agent worker's prompt: its brief as the model reads it.
 
 The worker starts blank, so this prompt is everything it knows about the request, and it is
 three context blocks, each saying what it is and who wrote it (AGENTS.md: a model's input has

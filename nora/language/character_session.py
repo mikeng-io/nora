@@ -1,6 +1,5 @@
 """What every Character session shares: its two write verbs, what they staged,
-and whether the session settled its entity (design/self-growth/10-character.md
-§3).
+and whether the session settled its entity.
 
 A Character session is one Dreamer run for one `(unit, entity)` key, whatever
 the entity is: a room (`nora.language.culture.CultureAdaptor`), a person, the
@@ -41,7 +40,7 @@ __all__ = ["AccountNotRecordableError", "EntitySessions"]
 #: What one session's entity resolves to: `None` is the session's own entity
 #: (a room, a person, the unit, Nora). A string would name a person written
 #: beside it; no session does, and a `CultureProposal` carries no person to
-#: stage one (removed with the per-room person accounts, C2b).
+#: stage one.
 Entity = str | None
 
 

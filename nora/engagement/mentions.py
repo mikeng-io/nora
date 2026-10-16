@@ -1,17 +1,16 @@
 """Rehydrate Signal's @-mention placeholders into names, per tag (DEC-34).
 
 **A Signal mention is not text.** The body carries U+FFFC where the name
-appears and the identity lives in a parallel `mentions` array —
-`nora.platform.signal.parser._mentioned_ids` has documented that precisely
-since the first trigger fix, and read the array ONLY to decide whether Nora had
-been tagged. The names were then discarded and the transcript rendered the raw
-body, so every @-mention reached the model as a void. Real stored rows:
+appears and the identity lives in a parallel `mentions` array.
+`nora.platform.signal.parser._mentioned_ids` reads that array only to decide
+whether Nora was tagged; a transcript rendered from the raw body would show
+every @-mention as a void. Stored rows look like:
 
     id 28 | '￼ 邊個係阿豹妹？'
     id 24 | '￼'                      <- a message that was ONLY a mention
 
-Including mentions of HERSELF: 「@nora 你好」 arrived as 「￼ 你好」, so the one
-message shape that is unambiguously addressed to Nora was the one she could
+That includes mentions of HERSELF: 「@nora 你好」 arrives as 「￼ 你好」, so the
+one message shape unambiguously addressed to Nora would be the one she could
 not see was addressed to her.
 
 WHERE THIS RUNS. On `TagContext`, once, between `context.assemble` and the
@@ -26,11 +25,10 @@ prefill — not inside `nora.agent.prefill`, and not at ingest.
   and `nora.agent` may not import `nora.platform` (they are independent
   siblings in the layers contract). `nora.engagement` sits above both.
 
-WHY `Persons` AND NOT `Room`. `Room` is the scope for a LOOKUP — design/12 §3's
-leak was Nora answering "who is in this group" from her whole address book, and
-`RoomView` exists so that question is answered from the platform's own
-membership list. A mention is not a lookup: the account was named INSIDE this
-conversation, by a member of it, in a message Nora received. Resolving it
+WHY `Persons` AND NOT `Room`. `Room` is the scope for a LOOKUP: answering "who is in
+this group" from her whole address book would leak, so `RoomView` answers it
+from the platform's own membership list. A mention is not a lookup: the account
+was named INSIDE this conversation, by a member of it, in a message Nora received. Resolving it
 discloses nothing the room did not already assert, so intersecting with a
 roster would buy no scope and would cost a daemon round trip at the front of
 every model call — the one thing `Room`'s laziness is built to avoid.
@@ -107,8 +105,8 @@ class MentionRenderer:
         )
 
     def _row(self, row: TranscriptRow, platform: str) -> TranscriptRow:
-        """An EDITED row carries two texts from two envelopes
-        (design/message-edits/01 §3): its body is the latest edit's, whose
+        """An EDITED row carries two texts from two envelopes:
+        its body is the latest edit's, whose
         spans index into `edit.raw_json`, and `edit.was` is the first text,
         whose spans index into the row's own `raw_json`. Each is looked up in
         the envelope it came from — the rule `mention_spans` exists to keep."""

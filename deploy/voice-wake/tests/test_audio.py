@@ -1,7 +1,7 @@
 """PCM conditioning: the shapes and the int16 contract the wake model needs.
 
 The one that earns its keep: openWakeWord silently scores ZERO on float
-input (voice-lab/scripts/gate_int16.py measured it), so every test here
+input, so every test here
 asserts dtype alongside values — a resampler returning float64 with perfect
 values is still a broken gate.
 """

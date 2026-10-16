@@ -1,9 +1,9 @@
-"""signal-cli SSE envelope → NormalizedMessage (spec C.3, design/01).
+"""signal-cli SSE envelope → NormalizedMessage.
 
-Group messages only in v2; DMs and syncMessages are dropped. Attachments become
-a placeholder plus a `MediaRef` — this module still downloads nothing, but it
-no longer throws away what an attachment WAS. The bytes are fetched one stage
-later (`nora.ingest.stages.media`), from the ref this produces.
+Group messages only; DMs and syncMessages are dropped. Attachments become a
+placeholder plus a `MediaRef` recording what the attachment IS; this module
+downloads nothing. The bytes are fetched one stage later
+(`nora.ingest.stages.media`), from the ref this produces.
 """
 
 from __future__ import annotations
@@ -32,19 +32,18 @@ PLACEHOLDER = MENTION_PLACEHOLDER
 
 
 # signal-cli 0.14.7's JSON-RPC `JsonAttachment` does NOT carry a voice-note
-# flag at all — confirmed 2026-08-23 by decompiling the shipped jar: the
-# internal `MessageEnvelope.Data.Attachment` has `isVoiceNote` (it IS what
+# flag at all: the internal `MessageEnvelope.Data.Attachment` has `isVoiceNote` (it IS what
 # produces "Flags: voice note" in signal-cli's own text log for a real
 # voice note), but the record actually serialized to Nora over JSON-RPC is
 # only `contentType;filename;id;size;width;height;caption;uploadTimestamp` —
 # the flag is detected internally and then dropped before it ever reaches us.
-# Upstream fixed this on 2026-08-10 (AsamK/signal-cli#2100), but it has not
-# shipped in a tagged release yet, so `att.get("voiceNote")` below is read for
-# forward compatibility but will not fire on the deployed version.
+# Upstream has fixed this but not in a tagged release, so
+# `att.get("voiceNote")` below is read for forward compatibility and will not
+# fire on that version.
 #
 # Until a release carries that field, fall back to the filename Signal's own
 # app generates for an in-recorder voice note — e.g.
-# `signal-2026-08-23-19-01-25-369.m4a`, a real example from this deployment.
+# `signal-YYYY-MM-DD-HH-MM-SS-mmm.m4a`.
 # A shared audio FILE keeps its original filename, so this is a strong, not
 # proof-certain, signal. Remove this fallback once `voiceNote` is confirmed
 # present in the deployed signal-cli's JSON-RPC output.
@@ -81,7 +80,7 @@ def _media_ref(att: dict) -> MediaRef:
 
     `voiceNote` is read for forward compatibility but is not yet emitted by
     the deployed signal-cli version — see `_is_voice_note`'s comment above for
-    the confirmed root cause, the filename fallback it uses instead, and why
+    the root cause, the filename fallback it uses instead, and why
     that fallback also requires an audio media type (R-58). Either
     way, the failure mode stays harmless: an `audio/*` attachment this
     heuristic misses renders `[audio]` instead of `[voice note]`, which is
@@ -143,7 +142,7 @@ class MentionSpan:
     story of this type: `_mentioned_ids` answers "was Nora tagged", where a
     superset costs nothing, whereas this one feeds a RENDERED line — and on
     every real stored row `name` is the sender's E.164 phone number, not a
-    display name at all (verified against `data/messages.db`, ids 3-28). A
+    display name at all. A
     renderer that reached for the first non-empty field would put a phone
     number in the prompt, which is exactly what R-18 exists to prevent.
     """
@@ -158,16 +157,14 @@ def _data_message(env: dict) -> dict | None:
 
     An EDITED message is not a `dataMessage` — signal-cli nests it as
     `editMessage.dataMessage` alongside a `targetSentTimestamp`
-    (JsonEditMessage). Reading only the top-level key made every edit silently
-    invisible: not ingested, not audited, indistinguishable from a typing
-    notification. Someone correcting a typo would watch Nora act on the text
-    they had just replaced.
+    (JsonEditMessage). Reading only the top-level key would make every edit
+    silently invisible: not ingested, not audited, indistinguishable from a
+    typing notification.
 
     The edit is NOT a message of its own. `parse_event` marks it with
     `edit_of` (`_edit_target`), and ingest records it beside the message it
     edits, which the transcript read then shows with the latest text at its
-    original position (design/message-edits/01). Before that, it was written
-    as a new row — both versions in context, unmarked, and a fresh tag.
+    original position.
 
     Extracted from `parse_event` so `mention_spans` unwraps the SAME two
     framings: a mention has to be looked up in the dataMessage the body came
@@ -250,7 +247,7 @@ def _quoted(data: dict) -> Quote | None:
     """The message this one replies to, if any — as a pointer.
 
     Signal carries a reply as `dataMessage.quote` and NOT in the body. Dropping
-    it left Nora reading replies as non-sequiturs: Grant says "where for
+    it would leave Nora reading replies as non-sequiturs: Grant says "where for
     dinner", Miles replies "your place", and without the quote she has no way to
     know whose place, or that the two messages are connected at all.
 
@@ -270,7 +267,7 @@ def _quoted(data: dict) -> Quote | None:
     except (KeyError, TypeError, ValueError):
         return None
     # The ID is what identity is decided on — same split as the sender itself,
-    # because a display name is spoofable (design/10 §1.3).
+    # because a display name is spoofable.
     author_id = q.get("author") or q.get("authorUuid") or q.get("authorNumber") or ""
     text = (q.get("text") or "").strip()
     return Quote(author_id=str(author_id), text=text, quoted_ts=quoted_ts)
@@ -285,7 +282,7 @@ def _sticker_ref(data: dict) -> MediaRef | None:
     encoding; `SignalMediaSource` is the only code that reads it back.
 
     No `media_type`: the envelope declares none, and the bytes are WebP or PNG
-    depending on the pack (spec §1). `label_for` returns "sticker" off the flag
+    depending on the pack. `label_for` returns "sticker" off the flag
     rather than off a type nobody sent.
     """
     sticker = data.get("sticker")
@@ -304,23 +301,22 @@ def _sticker_ref(data: dict) -> MediaRef | None:
 def _body_parts(data: dict, refs: tuple[MediaRef, ...]) -> list[str]:
     """The renderable pieces of one dataMessage, in reading order.
 
-    The attachment placeholders come LAST and in `refs` order, and that is now
-    load-bearing rather than incidental: `nora.domain.media.body_with_handles`
+    The attachment placeholders come LAST and in `refs` order, and that is
+    load-bearing: `nora.domain.media.body_with_handles`
     rewrites exactly that trailing run once custody has the bytes, and it
     checks the tail it expects before touching anything. Reordering these parts
     without telling that function costs a handle, not a message.
 
-    A sticker is an ordinary ref now, so it renders through the same
+    A sticker is an ordinary ref, so it renders through the same
     `render_placeholder` line as an image and lands in the SAME trailing run
-    `body_with_handles` rewrites. It used to be appended only when nothing else
-    had rendered, which silently dropped a sticker sent with a caption — see
-    `_sticker_ref` and spec §3.2.
+    `body_with_handles` rewrites, including a sticker sent with a caption (see
+    `_sticker_ref`).
 
     A REACTION is not a body part, and that is a different judgement rather
     than an oversight: a reaction is metadata attached to somebody else's
     message, not a message. Rendering a bare `👍` as its own transcript line
     would add a turn that never happened, detached from what it was reacting
-    to. Since design/cognition-loop step 1 it is still RECORDED, as a `Touch`
+    to. It is still RECORDED, as a `Touch`
     beside the message it reacts to (`_touch`), never through this function.
     """
     parts = []
@@ -334,7 +330,7 @@ def _body_parts(data: dict, refs: tuple[MediaRef, ...]) -> list[str]:
 def _touch(data: dict) -> Touch | None:
     """A reaction (`dataMessage.reaction`) or a remote delete
     (`dataMessage.remoteDelete`) as a `Touch`, or None when the message is
-    neither (design/cognition-loop/20-observe.md §1).
+    neither.
 
     signal-cli's `JsonReaction` names its target by `targetSentTimestamp` and
     its author (`targetAuthor`, or the number/ACI forms); `isRemove` marks a
@@ -342,7 +338,7 @@ def _touch(data: dict) -> Touch | None:
     message's sent-timestamp, and Signal lets only its author delete it, so
     the envelope's sender IS the target's author. A target with no usable
     timestamp names nothing and is dropped (None, and `parse_event` then
-    answers None as before)."""
+    answers None)."""
     reaction = data.get("reaction")
     if isinstance(reaction, dict):
         ts = reaction.get("targetSentTimestamp")
@@ -381,9 +377,9 @@ def extract_envelope(event: dict) -> dict | None:
     The SSE stream carries `receive` in the SSE ``event:`` field — which the
     listener strips along with the framing — and puts the envelope at the top
     level with **no** ``method`` key at all. Nora runs on the HTTP transport,
-    so the old ``method != "receive"`` guard dropped every real message before
-    it was ever looked at: signal-cli received, Nora ingested nothing, and
-    under R-5 that is indistinguishable from a quiet group.
+    so a ``method != "receive"`` guard would drop every real message before it
+    was looked at: signal-cli received, Nora ingested nothing, and under R-5
+    that is indistinguishable from a quiet group.
 
     Both framings are live — the socket transports really do send the
     JSON-RPC form — so this accepts either rather than trading one hardcoded
@@ -426,9 +422,8 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
 
         # `sourceUuid` matters: a hidden Signal phone number means `source`
         # and `sourceNumber` are both empty, and the ACI (`sourceUuid`) is the
-        # only id Nora ever sees for that sender — never falling back to it
-        # meant such a sender could never resolve to a person at all
-        # (design/10 §1.1, §1.2).
+        # only id Nora ever sees for that sender — without the fallback such a
+        # sender could never resolve to a person at all.
         source = env.get("source") or env.get("sourceNumber") or env.get("sourceUuid") or ""
         if own_account and source == own_account:
             return None                       # R-12: Nora never ingests her own sends

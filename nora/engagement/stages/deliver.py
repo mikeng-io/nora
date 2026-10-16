@@ -1,5 +1,5 @@
 """Stage: deliver — wraps `Deliverer` + `ReplyGuard` from `nora.agent.guards`
-(spec C.7, R-2/R-4). They stay in `nora.agent`: both are `strands.HookProvider`s,
+(R-2/R-4). They stay in `nora.agent`: both are `strands.HookProvider`s,
 and moving them into `nora.engagement` would drag `strands` across the
 boundary `tests/test_boundaries.py::test_strands_import_boundary` enforces —
 `nora.engagement.pipeline`'s own docstring repeats this for the same reason.
@@ -10,8 +10,8 @@ a hook the agent needs; the deliverer is what `send_reply` calls into) and
 `check_outcome()` runs AFTER it (there is nothing to check until the model
 has had its turn).
 
-`check_outcome` owns the post-invocation "did anything actually go out" check
-carried over from `handler.py:205-212`: a model that never calls `send_reply`
+`check_outcome` owns the post-invocation "did anything actually go out" check:
+a model that never calls `send_reply`
 is counted as `nora_silent_failures_total{reason="no_send_call"}` — unless the
 agent loop was cut off by one of R-8's caps, in which case the label names
 that cap instead (R-23, see the function's own docstring); a delivered reply
@@ -55,7 +55,7 @@ class DeliveryHandle:
     guard: ReplyGuard
     links: LinkCarry
     tool_call_log: ToolCallLog
-    # Issue #325. Built HERE for `tool_call_log`'s reason — this is the one
+    # Built HERE for `tool_call_log`'s reason — this is the one
     # seam both production senders pass through
     # (`tests/architecture/test_only_two_paths_can_send.py` proves there are
     # exactly two), so building it here is what makes BOTH paths carry it
@@ -106,14 +106,12 @@ def build(
     pass through (`tests/architecture/test_only_two_paths_can_send.py` proves
     there are exactly two), so requiring the keyword is what stops the feature
     from shipping INERT — wired everywhere, decided nowhere, silently sending
-    plain text while a decision index entry claims otherwise. That is DEC-42's
-    lesson restated: multi-message was structurally dead for a release because
-    a number nobody had edited was doing the refusing. Passing `None` is a
+    plain text while a decision index entry claims otherwise (DEC-42). Passing `None` is a
     decision (the offline and eval compositions genuinely have no roster and no
     preview fetcher); omitting the argument is a `TypeError`.
 
     `send_permitted` defaults True and only the participation occasion ever
-    passes False (its SEND cooldown — design/dreamer-agent-loop/35 §10.3). It is
+    passes False (its SEND cooldown). It is
     deliberately NOT required like `audience`/`composer`: a default here has no
     wrong claim available to it (True is the behaviour every pre-participation
     caller already has), whereas those two would get a missing value WRONG while
@@ -122,14 +120,13 @@ def build(
     `lookups` arms R-97 and names the tools it watches
     (`ToolRegistry.lookup_tools()`); `None`, the default, is the rule OFF. It
     takes the same shape as `send_permitted` and for the same reason: `None` is
-    the behaviour every caller before issue #216 already had, and the ONE caller
+    the behaviour of every caller but one, and the ONE caller
     that arms it is the participation occasion — where nobody asked, so a reply
     reporting that a lookup found nothing is noise rather than an answer owed.
     The tag path leaves it off deliberately: there she was called, and «I looked
     and there is nothing» is exactly what she owes the person who asked.
 
-    `param_names` arms R-99 (design/social-per-network/30-link-owner-registry.md):
-    each tool's own accepted argument names, from `ToolRegistry.tool_param_
+    `param_names` arms R-99: each tool's own accepted argument names, from `ToolRegistry.tool_param_
     names()`. `None`, the default, is the rule OFF — the shape `lookups` takes
     above, for the same reason: a caller with no `ToolRegistry` in scope (a
     bench test) gets a guard that cannot check this axis, not one that rejects
@@ -158,7 +155,7 @@ def build(
         # DEC-83: who to tell the moment a reply lands, so the ✅ does not wait
         # for the agent loop's last (discarded) model call. Optional and
         # defaulting to None — the fire path passes nothing, and a turn with no
-        # observer delivers exactly as it always did.
+        # observer delivers without notifying anyone.
         on_delivered=on_delivered,
         composer=composer,
         links=links,
@@ -252,37 +249,35 @@ def check_outcome(
     failure, send failure), which all imply `attempted`.
 
     **`stop_reason` is what decides WHICH reason that is, and it is a required
-    argument on purpose** (R-23). It used to be unconditionally
-    `no_send_call`, and there are two very different turns behind that label:
+    argument on purpose** (R-23). There are two very different turns behind
+    the `no_send_call` label:
     a model that had every chance and chose not to speak, and a loop that
     Strands terminated on one of R-8's caps — which it does by returning
     normally, with no exception, no log and no warning anywhere in the SDK.
-    Both produced `nora_silent_failures_total{reason="no_send_call"}` and a
-    ⚠️, byte for byte, so the most likely cause of a silent turn looked
+    Both would produce `nora_silent_failures_total{reason="no_send_call"}` and a
+    ⚠️, byte for byte, so the most likely cause of a silent turn would look
     exactly like the most benign one. DEC-25 already established the
     principle on the retry path: a `reason` label naming the wrong cause is
     worse than a missing one, because it aims the next investigation at the
-    wrong thing. No default value, so a new call site cannot quietly go back
-    to always saying `no_send_call`.
+    wrong thing. No default value, so a new call site cannot quietly always
+    say `no_send_call`.
 
-    **`audience` is a required keyword, no default** — the same shape
-    `Deliverer`'s and `invoke.run`'s took before it (design spec §6.2). The
+    **`audience` is a required keyword, no default**, like `Deliverer`'s and
+    `invoke.run`'s. The
     heartbeat's fire path still does its own outcome accounting (its own
     timeout, its own §8.1 outcome mapping), but the participation occasion
-    (design/dreamer-agent-loop/35) threads "participation" through here, and a
+    threads "participation" through here, and a
     defaulted "tag" would land its failures inside the very budget A8 filters
     to `audience="tag"` (`docs/runbook.md`).
     """
-    # THE STRICT-SILENCE BOUNDARY (issue #55, Layer 7's other unlit half).
-    # Before this span existed, "she chose not to speak" (R-4/R-5: an empty
+    # THE STRICT-SILENCE BOUNDARY. "She chose not to speak" (R-4/R-5: an empty
     # reply, the participation cooldown holding it, or a model that never
     # called `send_reply` at all) and "the send failed" (bytes that passed
-    # every guard and the platform rejected) were the SAME shape in the trace
-    # — no span, so no way to tell a deliberate silence from an infra fault
-    # without going back to the logs. `deliverer.last_outcome`
-    # (`nora.agent.guards.Deliverer`) already carries the distinction — it is
-    # the one field `Deliverer.deliver` writes on every exit — so this reuses
-    # it rather than re-deriving a second reading of the same turn: `""`
+    # every guard and the platform rejected) must be distinguishable in the
+    # trace. `deliverer.last_outcome` (`nora.agent.guards.Deliverer`) carries
+    # the distinction — it is the one field `Deliverer.deliver` writes on every
+    # exit — so this reuses it rather than re-deriving a second reading of the
+    # same turn: `""`
     # (never called) / `empty_reply` / `cooldown_held` read as HER choice;
     # `cap_spent` / `doctrine_leak` / `egress_block` / `audit_write_failed`
     # read as THIS PROCESS refusing to try; `send_failed` reads as the
@@ -293,9 +288,9 @@ def check_outcome(
     ):
         delivered = deliverer.delivered
         if not delivered:
-            # `called`, not `attempted` (external review 2026-08-10). `attempted`
+            # `called`, not `attempted`. `attempted`
             # asks whether a message reached the platform, so a turn whose every
-            # reply was refused by R-4/R-6/R-18 answered False and got
+            # reply was refused by R-4/R-6/R-18 answers False and would get
             # `no_send_call` ON TOP of the block already counted for it — two
             # silent-failure increments for one turn, the second of them false. She
             # did call the tool; a guard stopped her, and that is a different

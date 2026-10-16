@@ -2,10 +2,8 @@
 `nora.infra.sql.culture.SqlCultureStore`, bound to it by
 `tests/contract/test_culture_store_contract.py` so the two cannot drift.
 
-It became necessary the day `CultureReader` moved into `nora.domain.ports`
-(DEC-207): a port never gains a second implementation, including a test fake,
-without a suite both pass, and five inline stand-ins had grown in `tests/`
-while the reader lived beside its one consumer.
+`CultureReader` lives in `nora.domain.ports` (DEC-207): a port never gains a
+second implementation, including a test fake, without a suite both pass.
 
 **The chain is parent links, not insertion order** — `SqlCultureStore.chain`'s
 own rule (DEC-183) — so `append` records the head it replaced as the new

@@ -1,16 +1,15 @@
 """`register_voice` — POST /app/v1/voice/utterance, the voice channel's text
-entry point (design/voice-channel/, stage 3).
+entry point.
 
 The `voice-wake` service (`deploy/voice-wake/`) hears 「喂 Nora」 in a
 Discord voice channel, transcribes the utterance locally, and POSTs the
 TRANSCRIPT here. This route builds the `NormalizedMessage` the Discord
 adapter's parser would have built for a typed message in that guild's own
 text room and hands it to the SAME entry point the adapter's `listen()` loop
-calls —
-the `Dispatcher`'s `on_message` — so a spoken utterance walks the identical
+calls — the `Dispatcher`'s `on_message` — so a spoken utterance walks the identical
 path a typed one does: audit row, Honcho memory feed as a user input, the
 engage gate, and (when the gate admits it) the reactive turn that answers
-aloud through the stage-1 TTS path.
+aloud through the TTS path.
 
 Deliberately a `register_*` function taking an existing `web.Application`,
 like `nora.web.api.register_web_routes`: the route joins the health app
@@ -32,10 +31,9 @@ Returns 202 Accepted: ingest runs inline (it is deterministic — the same
 reasoning as `Dispatcher.on_message`), and downstream agent work is spawned
 by the dispatcher, never awaited here.
 
-**The GUILD decides the room, not the channel** (design/voice-channel/07
-§12.2, reversed 2026-09-17). A server has many voice channels and gains more,
-so the caller sends `guild_id` and this route resolves it to the ONE room the
-operator marked `voice = true` — see
+**The GUILD decides the room, not the channel.** A server has many voice
+channels and gains more, so the caller sends `guild_id` and this route
+resolves it to the ONE room the operator marked `voice = true` — see
 `nora.policy.Policy.voice_room` for why that is explicit rather than inferred,
 and `Conversation.voice` for why speech is a surface of a room rather than a
 room of its own. An unresolvable guild is a 400 and nothing is ingested: the
@@ -82,7 +80,7 @@ def register_voice(
 
     `on_voice_event`, when provided, also registers
     `POST /app/v1/voice/event` — the audio-controller's callback channel
-    (design/voice-channel/07 §5). The consumer owns every validation and
+    The consumer owns every validation and
     routing decision; this route only parses JSON and passes the
     (status, payload) verdict through. When `None`, the event route does
     not exist at all — a deployment without the controller wired has no
@@ -137,9 +135,9 @@ def register_voice(
             # wake service only ever joins a guild channel).
             conversation_type="group",
             sender_id=user_id,
-            # The Discord snowflake says WHO spoke (protocol-native identity,
-            # design/voice-channel/05); the display name is Discord's to give
-            # and this path never saw it — None, not a guess.
+            # The Discord snowflake says WHO spoke (protocol-native identity); the
+            # display name is Discord's to give and this path never saw it —
+            # None, not a guess.
             sender_name=None,
             timestamp=int(time.time() * 1000),
             body=text,
@@ -147,7 +145,7 @@ def register_voice(
                 "voice": True,
                 "user_id": user_id,
                 # PROVENANCE, never routing: `conversation_id` above is the
-                # guild's text room now, so these two are the only record of
+                # guild's text room, so these two are the only record of
                 # where the sentence was actually spoken.
                 "guild_id": guild_id,
                 "voice_channel_id": voice_channel_id,

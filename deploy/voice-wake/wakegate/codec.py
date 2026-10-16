@@ -11,7 +11,7 @@ an arbitrary byte stream back into `(user_id, pcm)` frames. Pure — no
 sockets, no I/O — so the codec is unit-testable against a recorded fixture.
 
 **WHICH GUILD a connection carries** is announced once, in a HELLO frame the
-sidecar writes immediately on connect (multi-guild, 2026-09-17). Its payload
+sidecar writes immediately on connect. Its payload
 is a `user_id_len` of ZERO followed by the guild id:
 
     [u32be payload_len][u8 0][guild_id utf8]
@@ -21,11 +21,7 @@ issues an empty snowflake — so the length byte discriminates the two without
 widening the layout. Announcing it ONCE rather than on every frame is what
 keeps 20 ms of audio at 3840 bytes with a 2-byte header: one sidecar
 connection belongs to exactly one guild for its lifetime, because the pump is
-created per join.
-
-Before this, the seam carried `(user_id, pcm)` and nothing else, so one wake
-gate could not tell which guild a speaker was in — which is why every guild
-needed its own gate container, at 201 MiB each.
+created per join. The HELLO is what lets one wake gate serve several guilds.
 """
 
 from __future__ import annotations
@@ -59,11 +55,9 @@ class FrameParser:
                 break
             payload = self._buf[_HEADER : _HEADER + payload_len]
             if payload_len < 1:
-                # No length byte at all. This used to raise IndexError, which
-                # `service.py`'s `except Exception` turns into a CLOSED seam
-                # connection — every guild on that pump loses audio until a
-                # reconnect. The JS half emitted a phantom frame for the empty
-                # speaker instead. Skipped on both sides now.
+                # No length byte at all: skipped (raising would close the seam
+                # connection, and every guild on that pump would lose audio
+                # until a reconnect). The JS half skips it too.
                 del self._buf[: _HEADER + payload_len]
                 continue
             id_len = payload[0]

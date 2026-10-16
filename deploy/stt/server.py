@@ -5,21 +5,19 @@ any agent framework that supports OpenAI audio API (Nora's [speech.stt] path is
 wired to hit this via an OpenAI-compatible client).
 
 Two engines behind one endpoint, selected per-request with the `model` form
-field (decision: design/voice-channel/06-stt-provider-decision.md, 2026-09-15):
+field:
 
 - `noise-detection` (DEFAULT) — JackyHoCL
   `whisper-large-v3-turbo-cantonese-noise-detection` on the plain transformers
-  runtime (fp32 CPU). Won the 2026-09-15 A/B on real Discord voice audio: the
-  only engine that kept both `RV` and `discord` intact, emits Traditional
-  Chinese with punctuation out of the box, RTF ~0.49. Trained for streaming
-  noise: silence/background comes back tagged `%nz`, which post-processing
-  strips.
-- `sensevoice` (BACKUP) — `iic/SenseVoiceSmall` via FunASR, the original
-  2026-08-21 deployment. The latency floor (RTF ~0.04) and the failover when
-  the primary is unavailable. Natively understands Cantonese (`yue`) —
-  verified on this host (voice-lab) that it preserves 口語 particles like
-  唔/嘅/喺/哋 that faster-whisper mangles — but emits Simplified Chinese and no
-  punctuation.
+  runtime (fp32 CPU). Keeps both `RV` and `discord` intact on real Discord
+  voice audio, emits Traditional Chinese with punctuation out of the box, RTF
+  ~0.49. Trained for streaming noise: silence/background comes back tagged
+  `%nz`, which post-processing strips.
+- `sensevoice` (BACKUP) — `iic/SenseVoiceSmall` via FunASR. The latency floor
+  (RTF ~0.04) and the failover when the primary is unavailable. Natively
+  understands Cantonese (`yue`) — verified on this host (voice-lab) that it
+  preserves 口語 particles like 唔/嘅/喺/哋 that faster-whisper mangles — but emits
+  Simplified Chinese and no punctuation.
 
 Post-processing runs OpenCC `s2t` for BOTH backends so Nora always receives
 yue-Hant-HK text (her doctrine is 繁體) regardless of which engine answered.
@@ -35,8 +33,8 @@ Env knobs (all optional):
 Which model is PRE-LOADED at startup (and answers a request that names none)
 comes from Nora's config.toml — `[speech.wake].stt_model`, the latency-bound
 wake path's engine — bind-mounted read-only at /app/config.toml by compose
-(`config_toml.py`; falls back to sensevoice without the file). The former
-`STT_MODEL` env var is gone: it and the config file used to disagree.
+(`config_toml.py`; falls back to sensevoice without the file). There is no
+`STT_MODEL` env var: a second source would disagree with the config file.
 """
 import argparse
 import asyncio
@@ -212,7 +210,7 @@ async def transcribe(
             tmp_path = tmp.name
         # Normalize ANY upload (mp3, ogg/opus, m4a/AAC, wav) to 16kHz mono WAV
         # with ffmpeg before the model sees it. libsndfile cannot decode
-        # audio/mp4 (measured 2026-08-21) and Signal voice notes commonly arrive
+        # audio/mp4 and Signal voice notes commonly arrive
         # as audio/mp4 — without this the endpoint 500s on real voice notes.
         # mp3/ogg pass through the same pipe, so one code path for everything.
         wav_path = tmp_path + ".wav"

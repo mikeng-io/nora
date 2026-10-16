@@ -5,13 +5,13 @@ One POST against the local `stt` service's OpenAI-compatible
 box), multipart built by hand exactly like `nora/infra/speech.py`'s
 `SenseVoiceTranscriber`: the OpenAI contract wants the audio under a `file`
 part with a filename. `model` names the engine in `deploy/stt/server.py`'s
-`MODEL_CONFIGS` (`noise-detection`, the primary since 2026-09-15).
+`MODEL_CONFIGS` (`noise-detection`, the primary).
 
 Failure posture is the wake gate's own: **no wake, no cost** — an STT
 failure retries ONCE with `language` unset (auto-LID instead of the pinned
 `yue`, in case the pin is what the engine choked on) and then drops the
 utterance silently. Nothing is queued and nothing is retried later: audio
-is transient by design (`design/voice-channel/05-sidecar-receive.md`).
+is transient by design.
 """
 
 from __future__ import annotations
@@ -95,10 +95,9 @@ async def forward_utterance(
     audio never crosses this boundary. Never raises; a refused forward drops
     the utterance (transient by design) and is visible in the log.
 
-    The GUILD is what is sent, not a conversation id (design/voice-channel/07
-    §12.2, reversed 2026-09-17): nora resolves it to the room the operator
-    marked `voice = true`, so this service never has to know — or be
-    reconfigured when — a guild's rooms change.
+    The GUILD is what is sent, not a conversation id: nora resolves it to the
+    room the operator marked `voice = true`, so this service never has to know
+    — or be reconfigured when — a guild's rooms change.
 
     `voice_channel_id` is provenance and OPTIONAL. It is whatever the
     controller reports it is CURRENTLY connected to; omitted when that could

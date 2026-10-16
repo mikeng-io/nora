@@ -133,18 +133,12 @@ def transcript_rows(
     first as written, `ts` ticking forward by `ts_step`, every row SENT — a
     row the sender's own message produced, not a pending outbound one.
 
-    **`is_nora` was hardcoded `False` until 2026-09-17**, and that made HER OWN
-    earlier speech unseedable by any corpus built on this helper. It is the
-    input a whole class of judgement turns on — «have I already said this?» —
-    and the proactive duplicate of that day (msgs 5450/5455) is exactly that
-    question answered wrong. A harness that cannot seed a speaker cannot
-    measure a judgement about that speaker. `nora.agent.prefill._speaker` reads
-    THIS flag to attribute a row, so a row that merely carries the name "Nora"
-    renders as a member with that display name instead — which is why the flag
-    and not a `sender_name` convention.
-
-    Its corpus-side caller lands with the evaluation rebuild (PR #334); the
-    test below is what keeps it honest until then.
+    **`is_nora` marks HER OWN earlier speech**, the input a whole class of
+    judgement turns on — «have I already said this?». A harness that cannot
+    seed a speaker cannot measure a judgement about that speaker.
+    `nora.agent.prefill._speaker` reads THIS flag to attribute a row, so a row
+    that merely carries the name "Nora" renders as a member with that display
+    name instead — which is why the flag and not a `sender_name` convention.
     """
     return tuple(
         TranscriptRow(
@@ -170,7 +164,7 @@ class FakeRecordStore:
     def __init__(self) -> None:
         self.rows: list[dict[str, Any]] = []
         # `message_edit`, as dicts: {"id", "message_id", "ts", "body",
-        # "raw_json", "mentions_json"} (design/message-edits/01 §2).
+        # "raw_json", "mentions_json"}.
         self.edits: list[dict[str, Any]] = []
         # `message_reaction` and `message_delete`, as dicts, mirroring the
         # columns `SqlRecordStore.append_reaction`/`append_delete` write.
@@ -192,7 +186,7 @@ class FakeRecordStore:
     ) -> int:
         # Deliberately does NOT raise when closed. `SqlRecordStore.aclose`
         # delegates to `AsyncEngine.dispose()`, which releases the pool but
-        # leaves the engine usable — verified 2026-08-05. A fake that raised
+        # leaves the engine usable. A fake that raised
         # here would be stricter than production, which is precisely the
         # drift the contract suite exists to prevent; `closed` is recorded for
         # assertions, not enforced.
@@ -216,12 +210,11 @@ class FakeRecordStore:
             # The parent pointer rides the message, exactly as it does in
             # `SqlRecordStore.append` — no extra parameter on either store.
             "quoted_ts": message.quote.quoted_ts if message.quote else None,
-            # `json.dumps`, not `None`. It used to be `None`, which was only
-            # invisible while nothing read it back: `unattributed` now returns
-            # `raw_json`, and the operator control plane
-            # (`nora.app.pending`) correlates a sender's id forms out of that
-            # envelope. A fake that dropped it would let every pending-sender
-            # test pass against a store production does not have.
+            # `json.dumps`, not `None`: `unattributed` returns `raw_json`, and
+            # the operator control plane (`nora.app.pending`) correlates a
+            # sender's id forms out of that envelope. A fake that dropped it would
+            # let every pending-sender test pass against a store production does
+            # not have.
             "raw_json": json.dumps(message.raw),
             # The custody index, produced from the message exactly as
             # `SqlRecordStore.append` produces it — NULL when Nora holds
@@ -233,7 +226,7 @@ class FakeRecordStore:
             # Mirrors `SqlRecordStore.append`, through the same domain
             # function, so the two stores cannot write different text.
             "external_files_json": external_files_json(message.external_files),
-            # Both mirror `SqlRecordStore.append` (design/message-edits/01 §2).
+            # Both mirror `SqlRecordStore.append`.
             "platform_message_id": message.message_id or None,
             "mentions_json": mentions_json(message.mentions),
         })
@@ -552,9 +545,7 @@ class FakeMemoryStore:
     """In-memory `MemoryStore`, keyword-only to match the port and
     `nora.infra.honcho.client.HonchoClient` exactly, and bound to the client by
     `tests/contract/test_memory_store_contract.py`. It is the suite's ONLY
-    memory fake: `tests/fakes.py::FakeHoncho`, an older copy that predated this
-    file and was never under the contract suite, was folded into it on
-    2026-09-07 (R-C, issue #113) once the two were behaviourally identical.
+    memory fake.
     `fail=True` simulates the service being down, the same "log and return a
     benign value" contract `HonchoClient` documents.
     """
@@ -567,7 +558,7 @@ class FakeMemoryStore:
         fail: bool = False,
     ) -> None:
         # (peer_id, text, conversation_id) — the conversation keys the session
-        # (Honcho v2, design/24), so a test can assert a message went under its
+        # (Honcho v2), so a test can assert a message went under its
         # own speaker's peer into the right conversation's session.
         self.fed: list[tuple[str, str, str]] = []
         self.peers: list[str] = []
@@ -583,7 +574,7 @@ class FakeMemoryStore:
         # (observer, observed, search_query) — the observed is `target or peer_id`,
         # so a test can assert a recall ran as `(observer=nora, observed=person)`
         # rather than the person's self-model. Kept a 3-tuple ON PURPOSE: the
-        # observer/observed pair is the whole point of design/24 §4, and a fake
+        # observer/observed pair is the whole point of the pair, and a fake
         # that dropped the observer could not tell Nora's model of Miles from
         # Miles's own — the exact "answers every request the same" trap.
         self.queries: list[tuple[str, str, str]] = []
@@ -675,7 +666,7 @@ class FakeMemoryStore:
         """Mirrors `HonchoClient.representation`, INCLUDING the shape it
         returns for a peer it has never heard of.
 
-        `peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4); the
+        `peer_id` is the OBSERVER, `target` the OBSERVED; the
         conclusions are keyed by the observed (`target or peer_id`), so a test
         sets what is known ABOUT a person and reaches it as Nora's model of them
         (`peer_id=nora, target=person`) or the person's self-model (`target=None`).
@@ -941,7 +932,7 @@ class FakeMediaSource:
     `ref.fetch_token or ref.platform_id` — stickers are addressed by TOKEN,
     attachments by id, the same split the real adapters make — answers
     `not_found` for a key it does not hold (which is what `getAttachment`
-    returned to a live probe on 2026-08-06), `no_id` for a ref with neither,
+    returns), `no_id` for a ref with neither,
     and `too_large` against the same ceiling. `unavailable` is a switch,
     because "the daemon is down" is a state the ingest stage has to degrade
     through and there is no id that means it.
@@ -1107,9 +1098,9 @@ class FakeMediaObjectStore:
     `tests/contract/test_media_object_store_contract.py`.
 
     Mirrors the SQL store's OBSERVABLE semantics rather than a convenient
-    subset, because two inline copies of this fake had already drifted apart
-    (R-C, issue #113): one substring-matched `description`/`prompt`/`title`,
-    the other returned every row for any query. Here, as in Postgres:
+    subset, because two copies that disagree (one substring-matching
+    `description`/`prompt`/`title`, the other returning every row for any query)
+    certify nothing. Here, as in Postgres:
 
     - `save` is first-source-wins (`on_conflict_do_nothing` on `sha256`) and
       answers True whether or not the row was new; every call is recorded in
@@ -1230,7 +1221,7 @@ class FakeMediaObjectStore:
         if words:
             def matches(o: MediaObject) -> bool:
                 # All THREE comprehension fields plus the provenance text,
-                # matching `SqlMediaObjectStore.search` exactly (issue #116):
+                # matching `SqlMediaObjectStore.search` exactly:
                 # one model pass writes the title and the legible content too,
                 # and a fake that searched only `description` would let a query
                 # that works in Postgres come back empty here.
@@ -1362,7 +1353,7 @@ class FakeMediaInterpreter:
     - `summarize` refuses `empty` for blank text, so the voice-note lane's
       "no transcript, no claim" branch is reachable here too.
 
-    THREE FIELDS (issue #116): `title`/`text`/`content` come back together,
+    THREE FIELDS: `title`/`text`/`content` come back together,
     because one model pass produces all three and a fake returning only a
     description would let a caller forget to store the other two.
     """
@@ -1526,8 +1517,8 @@ class FakeComputeBackend:
     """In-memory `ComputeBackend`. Every `launch`ed job defaults to immediate
     success (a caller that doesn't care about timing gets a working job with
     no setup) — call `set_result` with `polls_before_done > 0` to arrange a
-    job that reports RUNNING some number of times first, the shape Phase 4's
-    fast-path/slow-path branching (Nora Compute spec §4) needs to test both
+    job that reports RUNNING some number of times first, the shape the
+    fast-path/slow-path branching needs to test both
     branches deterministically, without a real timer.
 
     `launched` records every call's `task`/`artifact_id`/`context`/assigned
@@ -2001,9 +1992,7 @@ class FakeSocialProvider:
 class FakeSocialSubjectIndex:
     """In-memory `SocialSubjectIndex`, exercised by
     `tests/contract/test_social_provider_contract.py` through `SocialRouter`,
-    which is where the tier ladder lives (design/instagram-adoption/10 §"Who
-    owns what"; it used to live in `InstagramSocialClient` and could only
-    govern that backend's one row from there), and held to the SAME answers
+    which is where the tier ladder lives, and held to the SAME answers
     as the production `nora.infra.social.PersonsSubjectIndex` by
     `tests/contract/test_social_subject_index_contract.py`.
 
@@ -2068,8 +2057,7 @@ class FakeSocialSubjectIndex:
 
 
 class FakeInstagramAccountLookup:
-    """In-memory `InstagramAccountLookup` (design/instagram-adoption/15
-    §Links, P10), held to the SAME answers as the production
+    """In-memory `InstagramAccountLookup`, held to the SAME answers as the production
     `nora.infra.social.InstagramSocialClient` by
     `tests/contract/test_instagram_account_lookup_contract.py`.
 

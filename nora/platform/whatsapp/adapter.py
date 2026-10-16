@@ -1,11 +1,9 @@
-"""WhatsAppAdapter — the third `PlatformAdapter` implementation
-(design/whatsapp-adoption/).
+"""WhatsAppAdapter — the third `PlatformAdapter` implementation.
 
 Mirrors `nora.platform.signal.adapter.SignalAdapter`'s composition exactly:
 a thin class wiring a listener, parser, sender and reactor against the
 whatsapp-bridge's HTTP/SSE surface (`deploy/whatsapp-bridge`, the Baileys
-daemon). The wire shapes are pinned in
-`design/whatsapp-adoption/03-transport-contract.md`; this adapter holds no
+daemon). This adapter holds no
 normalization logic of its own — that lives in `parser.py`/`jid.py`, tested
 directly against the contract.
 """
@@ -66,9 +64,9 @@ class WhatsAppAdapter:
         """Satisfies the port's `listen(*, on_message)` — parsing happens
         here, internally, via `nora.platform.whatsapp.parser.parse_event`, and
         a `None` result (a non-message event, `from_me`, a broadcast JID, an
-        empty turn) is dropped before `on_message` is ever called. Trap B —
-        the parse-and-drop step lives in the adapter, not the ingest pipeline
-        — same as `SignalAdapter.listen`."""
+        empty turn) is dropped before `on_message` is ever called. The
+        parse-and-drop step lives in the adapter, not the ingest pipeline,
+        same as `SignalAdapter.listen`."""
 
         async def _on_event(raw_event: dict) -> None:
             message = parse_event(raw_event)
@@ -109,9 +107,8 @@ class WhatsAppAdapter:
         to_timestamp: int,
         # Accepted and IGNORED: the bridge addresses a message by its stanza
         # id, which is what `to_message_id` below carries — Signal's
-        # (author, timestamp) scheme cannot reconstruct one, exactly the
-        # situation `nora.domain.ports.PlatformAdapter.react` added the
-        # additive parameter for.
+        # (author, timestamp) scheme cannot reconstruct one, the situation
+        # `nora.domain.ports.PlatformAdapter.react`'s additive parameter is for.
         to_message_id: str = "",
         remove: bool = False,
     ) -> ReactionResult:

@@ -12,7 +12,7 @@ compute poller therefore never delivers), `cancel` is a no-op, nothing calls a m
 
 THE SEAM. `build_dependencies` takes no collaborators, deliberately (this package's
 docstring), and an eval branch inside production composition is the thing
-`01-boundaries` §5(2) refuses. The one name composition resolves at call time for
+the boundaries rules refuse. The one name composition resolves at call time for
 this is the module-level `build_subagent_backend`; `recording_subagent_worker`
 replaces it for the span of one composition and puts it back.
 """

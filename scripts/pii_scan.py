@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Identifier detector for what is about to enter a commit (#283).
+"""Identifier detector for what is about to enter a commit.
 
-`5694a035` took the identifier gate out of the test suite because it re-read
-every git object on every run (5.77 GB RSS, OOM). Its job moved here, where the
-look is what a commit ADDS and the cost is seconds: the staged blobs
+The scan reads only what a commit ADDS, so the cost is seconds: the staged blobs
 (pre-commit), the commit message and the author/committer identity
 (commit-msg), and every commit a push introduces (pre-push, the backstop for a
 commit made with --no-verify or before the hooks were installed).
@@ -34,7 +32,7 @@ What it knows, in the order it is applied:
    country), emails, platform snowflakes, UUIDs, WhatsApp JIDs, Signal group
    ids, Tailscale names and addresses, GPS in media metadata, and COORDINATE
    TABLES read as number fields and scored on dwell — fixes per place, and
-   dwell rows x dwell places — not on a literal count (#283 criterion 1).
+   dwell rows x dwell places — not on a literal count.
 
 Deterministic throughout: no model judges anything. A shape finding (not a
 denylist hit, not an ERROR) clears in exactly three ways: a narrow
@@ -51,14 +49,13 @@ Only what a change ADDS is judged: a value already present in the parent's copy
 of the file, as often, is not new. That is what lets the ~2,000 residue hits
 already in the tree (the scrub track's job, not this one's) sit there without
 blocking an unrelated commit — and what makes swapping a table's coordinates
-for different ones a FAIL, where the old gate's size pin stayed green
-(#283 criterion 2).
+for different ones a FAIL, which a size pin would miss.
 
 Declarations (`.githooks/pii-allowlist.txt`) and the placeholder source
 (`identity.example.toml`) are read from the newest ancestor the remote
 already has, never from HEAD or from the range being pushed: a declaration
 added beside, amended into, or pushed with the payload it would exempt does
-not exempt it (#283 criterion 3).
+not exempt it.
 
 A finding the author has looked at and judged harmless is acknowledged by its
 id — `NORA_PII_ACK=<id>[,<id>]` — and the commit-msg hook writes a
@@ -95,8 +92,8 @@ from dataclasses import dataclass, field
 # A hook must not leave files behind, and must not run bytecode it did not
 # compile: importing the fold table would otherwise write scripts/__pycache__/
 # into the worktree (where `git add -A` picks it up), and a shared cache such
-# as the old /tmp/nora-pii-pycache can be seeded with a .pyc that runs in
-# place of the repo's source (round 3, finding e). Nothing is written, and the
+# as /tmp/nora-pii-pycache can be seeded with a .pyc that runs in
+# place of the repo's source. Nothing is written, and the
 # prefix points where no cache can exist, so nothing is read either.
 sys.dont_write_bytecode = True
 sys.pycache_prefix = os.path.join(os.devnull, "nora-pii-no-pycache")
@@ -116,7 +113,7 @@ class ConfigError(Exception):
 def _env_int(name: str, default: int) -> int:
     """A positive integer from the environment. A malformed value is a
     ConfigError, which main() turns into an ERROR (exit 2): read at import
-    time, a bad value used to crash with a traceback and exit 1, a FAIL."""
+    time, a bad value would crash with a traceback and exit 1, a FAIL."""
     raw = os.environ.get(name, "").strip()
     if not raw:
         return default
@@ -139,8 +136,8 @@ def configure() -> None:
     DECODE_PUSH_MAX = _env_int("NORA_PII_DECODE_PUSH_MAX", 256 * 1024 * 1024)
 
 
-# Project identity stays; application identity goes (operator decision
-# 2026-09-10, scrub/README.md). These are the project's PUBLIC tokens: the
+# Project identity stays; application identity goes (scrub/README.md). These
+# are the project's PUBLIC tokens: the
 # GitHub org and the domain. They are removed from the denylist on load and
 # never reported by the email detector. No personal name belongs here: the
 # history rewrite replaces real names, so a name in this literal would change
@@ -184,7 +181,7 @@ class Finding:
 def finding_id(path: str, line_text: str, *parts: str) -> str:
     """Stable id of ONE finding: path and line, plus the rule and the matched
     value's normalised key, so an acknowledgement covers that finding and not
-    its neighbour on the same line (review of #591 r2, finding 6)."""
+    its neighbour on the same line."""
     body = "\0".join([path, line_text.rstrip(), *parts])
     return hashlib.sha256(body.encode("utf-8", "surrogateescape")).hexdigest()[:12]
 
@@ -205,7 +202,7 @@ def mask(value: str, *, full: bool = False) -> str:
 # Arabic letter mark, the tag block -- plus the combining grapheme joiner,
 # variation selectors (both blocks), Mongolian free variation selectors,
 # Khmer inherent vowels and Hangul fillers. Any of them inside a name split
-# it into tokens the denylist did not know (round 3, finding g).
+# it into tokens the denylist did not know.
 _INVISIBLE = re.compile(
     "[\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160"
     "\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164"
@@ -342,7 +339,7 @@ def decoded_layers(line: str, depth: int = 2) -> list[str]:
     base64/base64url and hex segments, combining accents, and an address
     spelled out (`name at host dot tld`). Layers are decoded again up to
     `depth`. Linear: a set dedupes, and segments and decoded size per line
-    are capped (review of #591 r2: a 2 MB base64 line took minutes)."""
+    are capped."""
     seen = {line}
     layers: list[str] = []
     todo = [line]
@@ -438,7 +435,7 @@ _PROJECT_TOKENS = {_tokens_of(v) for v in PROJECT_IDENTITY}
 # Project identity in TEXT is blanked before denylist matching, like a
 # keep-phrase: matching drops separators, so an owner's name whose letters
 # spell the org stem would otherwise fire inside the org, the domain and the
-# project email (2026-10-14: every `mikeng-io/<slug>` branch was refused).
+# project email (every `mikeng-io/<slug>` branch would be refused).
 # Only the org, the domain and the project email: the bare stem is also a
 # personal handle (`@stem`, `github.com/stem`), and another mailbox at the
 # domain (`x@domain`) is a person, so neither is blanked. Not glued to a
@@ -1071,7 +1068,7 @@ def _shape_placeholder(rule: str, value: str, ctx_line: str) -> bool:
 
 
 # --------------------------------------------------------------------------
-# Coordinates (#283 criterion 1: fields, not literals; rows x clusters)
+# Coordinates (fields, not literals; rows x clusters)
 
 # Not after `.` (the tail of a version), not after `d:` (the seconds of a
 # clock time), not before `.d` (the head of a version or an IPv4 address).
@@ -1084,8 +1081,8 @@ _PLUS = re.compile(r"(?<![\w+])([23456789CFGHJMPQRVWX]{8})\+([23456789CFGHJMPQRV
 _OLC_ALPHA = "23456789CFGHJMPQRVWX"
 
 CELL_DEG = 0.002  # ~220 m: one dwell place
-MAX_CLUSTER_ROWS = 2  # three fixes in one place is a residence (#283)
-# dwell rows x dwell places: home x2 + work x2 = 8 fails (review of #591);
+MAX_CLUSTER_ROWS = 2  # three fixes in one place is a residence
+# dwell rows x dwell places: home x2 + work x2 = 8 fails;
 # one place x2 = 2 passes
 MAX_SCORE = 7
 MAX_DECIMALS = 10  # a written-out coordinate; 15+ digits is float arithmetic (a metric series)
@@ -1106,7 +1103,7 @@ def _line_candidates(line: str, geo: bool) -> list[tuple[int, str, float]]:
     fraction column (which is also how a comma-decimal reads)."""
     out: list[tuple[int, str, float]] = []
     toks = list(_NUM_TOKEN.finditer(line))
-    min_frac = 2 if geo else 3  # 3 decimals is ~110 m: still a building (#166)
+    min_frac = 2 if geo else 3  # 3 decimals is ~110 m: still a building
     skip = set()
     for i, m in enumerate(toks):
         if i in skip:
@@ -1239,8 +1236,8 @@ def scan_coords(lines: list[str], geo: bool | None = None) -> CoordResult:
         elif pts or (pending and n - pending[0] > 2):
             pending = None
     res = CoordResult(points=points, rows=len(points))
-    # One fix labelled `home` is a residence already (review of #591: a
-    # two-line `[home] lat = ... lng = ...` passed on count).
+    # One fix labelled `home` is a residence already (a two-line
+    # `[home] lat = ... lng = ...` must not pass on count).
     for n in {n for n, _, _ in points}:
         if any(_PLACE_WORDS.search(lines[k]) for k in range(max(0, n - 3), n)):
             res.labelled += 1
@@ -1289,7 +1286,7 @@ def extract_strings(data: bytes) -> str:
 
 # Printable runs of valid UTF-8, multi-byte sequences included: a CJK name
 # inside a binary, or in a text file with one bad byte, is text the
-# denylist can read (round 3, finding a: extract_strings is ASCII-only).
+# denylist can read (`extract_strings` is ASCII-only).
 _UTF8_RUN = re.compile(
     rb"(?:[\x20-\x7e\t]|[\xc2-\xdf][\x80-\xbf]|[\xe0-\xef][\x80-\xbf]{2}"
     rb"|[\xf0-\xf4][\x80-\xbf]{3}){4,}"
@@ -1392,8 +1389,8 @@ class DecodeError(Exception):
 
 # One blob's whole expansion shares one budget -- decompressed bytes across
 # every member and every level, members opened, wall time -- and a push
-# shares another (review of #591 r2: a small zip of bz2 members stayed under
-# the per-member cap and ate minutes). Past any of them it is an ERROR.
+# shares another, so many small members cannot each stay under a per-member
+# cap and still cost minutes. Past any of them it is an ERROR.
 MAX_MEMBERS = 2000
 DECODE_SECONDS = 10.0
 _BUDGET: dict = {}
@@ -1974,7 +1971,7 @@ def _coords_findings(
 ) -> list[Finding]:
     """The whole file's location table, against every parent's: a finding
     when it is over the dwell limit, it gained a point, and its content is
-    not the declared digest (#283 criterion 2)."""
+    not the declared digest."""
     cres = scan_coords(normalise_text(text).split("\n"), geo=geo)
     if not cres.over:
         return []
@@ -2042,8 +2039,8 @@ def _denylist_in_unreadable(
 
 def path_findings(sc: Scanner, path: str) -> list[Finding]:
     """The path's own components -- directories and file name -- through the
-    same denylist, normalisation and shape rules as content (review of #591
-    r2: `people/<name>/notes.md` and `<phone>.vcf` passed)."""
+    same denylist, normalisation and shape rules as content (so
+    `people/<name>/notes.md` and `<phone>.vcf` are caught)."""
     scan = sc.scan_text(path.replace("/", " / "), "<path>", coords=False)
     shown = display_path(path, scan.findings)
     for f in scan.findings:
@@ -2069,7 +2066,7 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
     if job.new_path:
         rep.findings += pf
     # path-exempt lifts the shape and coordinate rules only: a denylist hit is
-    # never exempt, by any declaration (review of #591 r2)
+    # never exempt, by any declaration
     exempt = allow.path_has("path-exempt", raw_path)
     blob_id = hashlib.sha256(job.new or b"").hexdigest()
     file_fid = finding_id(path, f"<blob {blob_id}>")
@@ -2253,7 +2250,7 @@ def carried_declarations(own: bytes | None, published: list) -> list[str]:
     already holds at one of its tips. A rebase rewrites the commit that added
     a declaration, so the rebased branch's first-parent line no longer
     reaches it -- but the remote does have it, on the branch's old tip, and
-    "pushed first" is exactly that (round 3, finding b). A line the parent
+    "pushed first" is exactly that. A line the parent
     dropped is not carried; nor is one no tip has (an amend, a same-push)."""
     mine = _decl_lines(own)
     if not mine:
@@ -2275,7 +2272,7 @@ def _context_from(
     lines, each path form capped at MAX_DECL_FILES matches over the files
     `base` tracks AND the paths the change being judged touches -- a
     declaration published while its directory was empty cannot then cover a
-    thousand new files (round 3, finding d)."""
+    thousand new files."""
     errs: list[Finding] = []
     allow = Allowlist()
     text = raw.decode("utf-8", "replace") if raw is not None else ""
@@ -2347,9 +2344,9 @@ def base_within(head: str | None, tips: list[str]) -> str | None:
     """The newest first-parent ancestor of `head` that `tips` reach: what the
     remote already has on this line of history. Reached, not equal: a base
     that is an ANCESTOR of a tip the remote advertises is published too (a
-    branch behind its remote, round 3 finding b). Declarations are read from
+    branch behind its remote). Declarations are read from
     here and not from HEAD: `git commit --amend` would otherwise let a
-    commit's own declaration exempt the payload amended into it (#591)."""
+    commit's own declaration exempt the payload amended into it."""
     if not head or not tips:
         return None
     unpublished = set(
@@ -2406,7 +2403,7 @@ def with_confirmed_declarations(head: str | None, extra_paths: list[str], scan) 
     agree (almost always) no network is needed. When the declarations change
     the outcome, the remote is asked (`git ls-remote`, the truth pre-push
     uses) and the scan is redone on what IT advertises; unreachable, the
-    strict result stands (review of #591 r2: tracking refs can be forged)."""
+    strict result stands (tracking refs can be forged)."""
     strict = scan((Allowlist(), set(), []))
     local = declared_context(head, tracking_tips(), extra_paths)
     declared = scan(local)
@@ -2439,8 +2436,7 @@ def env_acks() -> set[str]:
 def trailer_acks(message: str) -> set[str]:
     """The ids a message's `PII-Ack:` trailers acknowledge. A trailer is a
     human's CLAIM, honoured as one; an `(agent ...)` trailer is not: the
-    model adjudicator it named was removed, and nothing deterministic stands
-    behind it."""
+    nothing deterministic stands behind it."""
     out = set()
     for m in re.finditer(rf"(?mi)^{ACK_TRAILER}:[ \t]*([0-9a-f]{{12}})(?:[ \t]+(.*))?$", message):
         if not re.match(r"\(agent\b", (m.group(2) or "").strip()):
@@ -2453,7 +2449,7 @@ def replay_acks() -> set[str]:
     in the commit being replayed (REBASE_HEAD / CHERRY_PICK_HEAD): its
     finding was decided when it was first committed, and the trailer travels
     with the message. Without this, a manual `git commit` at a rebase stop
-    re-blocked every acknowledged finding (round 3, finding b)."""
+    would re-block every acknowledged finding."""
     out: set[str] = set()
     for name in ("REBASE_HEAD", "CHERRY_PICK_HEAD"):
         sha = rev_exists(name)
@@ -2486,7 +2482,7 @@ def mode_staged(deny: Denylist) -> Report:
 
 def _current_branch() -> str:
     """The branch being committed to: HEAD's, or -- HEAD detached during a
-    rebase -- the branch the rebase is rewriting (round 3, finding b)."""
+    rebase -- the branch the rebase is rewriting."""
     branch = git("rev-parse", "--abbrev-ref", "HEAD", check=False).decode().strip()
     if branch and branch != "HEAD":
         return branch
@@ -2597,8 +2593,7 @@ def message_findings(sc: Scanner, body: str, label: str = "<commit-message>") ->
 
 def mode_message(deny: Denylist, msg_path: str) -> Report:
     """The message and the identity, with the declarations the remote
-    vouches for -- the same confirmation pre-commit uses (round 3: this path
-    trusted the local tracking refs unconfirmed)."""
+    vouches for -- the same confirmation pre-commit uses."""
     head = rev_exists("HEAD")
     if not head:
         return _mode_message(deny, msg_path, (Allowlist(), set(), []))
@@ -2611,7 +2606,7 @@ def _mode_message(deny: Denylist, msg_path: str, ctx: tuple) -> Report:
     # The WHOLE file: `git commit -m` and --cleanup=verbatim keep `#` lines
     # and text past the scissors, so stripping them first skipped text that
     # lands in the commit. Over-strict on git's own comment template is the
-    # price (review of #591).
+    # price.
     with open(msg_path, encoding="utf-8", errors="surrogateescape") as fh:
         body = fh.read()
     sc = Scanner(deny, allow, placeholders)
@@ -2698,7 +2693,7 @@ def remote_has(remote: str) -> set[str]:
     Asked of the remote itself (`git ls-remote`), never read off local
     remote-tracking refs: those go stale (a branch deleted on the remote),
     can be written by anyone (`git update-ref refs/remotes/...`) and belong
-    to a different remote when pushing somewhere else (review of #591).
+    to a different remote when pushing somewhere else.
     Unreachable is a GitError: an ERROR, never an assumption."""
     raw = ls_remote(remote)
     ids = {ln.split("\t", 1)[0] for ln in raw.splitlines() if "\t" in ln}
@@ -2716,8 +2711,8 @@ LS_REMOTE_TIMEOUT = 20.0
 def ls_remote(remote: str) -> str:
     """`git ls-remote`, never interactive and never unbounded: no terminal or
     GUI credential prompt, ssh in batch mode, and a timeout. Offline, a
-    prompt, or a slow host is a GitError -- an ERROR (review of #591 r2: an
-    https remote that wanted credentials hung the hook)."""
+    prompt, or a slow host is a GitError -- an ERROR (an
+    https remote that wants credentials must not hang the hook)."""
     env = dict(os.environ)
     env.update(
         GIT_TERMINAL_PROMPT="0",
@@ -2746,7 +2741,7 @@ BASELINE_HEADER = "# nora-pii-baseline v2"
 
 
 def baseline(rep: Report, remote_url: str) -> set[str]:
-    """Cutover (review of #591 r2, bound in round 3 f): pushing to a NEW
+    """Cutover: pushing to a NEW
     remote -- the scrubbed public repository -- makes every commit "new",
     and the residue in the history can never pass.
     `NORA_PII_PUSH_BASELINE=<manifest>` names a file the scrub's content
@@ -2820,8 +2815,8 @@ def baseline(rep: Report, remote_url: str) -> set[str]:
 
 def ref_findings(sc: Scanner, ref: str) -> tuple[list[Finding], str]:
     """A ref name is published with the push: it goes through the denylist
-    like a path, and is shown masked when it matched (round 3, finding e: a
-    tag named after a person was printed as written). Denylist only: a
+    like a path, and is shown masked when it matched (a
+    tag named after a person must not be printed as written). Denylist only: a
     branch named for a ticket number is not a phone."""
     scan = sc.scan_text(ref.replace("/", " / "), "<ref>", shapes=False, coords=False)
     if not scan.findings:
@@ -3089,8 +3084,8 @@ def scan_commits(
 
 def extra_headers(raw_commit: str) -> str:
     """The commit object's headers other than tree, parent, author, committer
-    and signatures (review of #591 r2: an `x-owner` header rode along
-    unread). A mergetag's embedded tag -- message included -- is kept."""
+    and signatures (so an `x-owner` header is read). A mergetag's embedded
+    tag -- message included -- is kept."""
     head, _, _msg = raw_commit.partition("\n\n")
     out, skip = [], False
     for line in head.split("\n"):
@@ -3110,8 +3105,8 @@ def mode_tree(deny: Denylist, rev: str, allow_from_worktree: bool) -> Report:
     if not commit:
         raise GitError(f"no such revision: {rev}")
     if allow_from_worktree:
-        # the same parse and the same caps as a published allowlist (round 3,
-        # finding d: this path skipped the file-count cap)
+        # the same parse and the same caps as a published allowlist, including
+        # the file-count cap
         top = git("rev-parse", "--show-toplevel").decode().strip()
 
         def read(rel: str) -> bytes | None:

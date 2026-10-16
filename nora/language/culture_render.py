@@ -1,5 +1,5 @@
 """Renders one room's culture head into the `<culture>` block — an account of
-how this room works and why (`design/culture-tier`).
+how this room works and why.
 
 **What makes it different from every other block in the prompt.** `<notes>` is
 what the room has not settled, `<group_transcript>` is what it said,
@@ -16,10 +16,9 @@ account it holds was written wrong and the block is worth nothing.
 **The body is HEDGED even though it is hers.** It is model-authored prose
 folded from the room's own messages, so a forged closing tag is reachable from
 what the room wrote, two hops away — `<standing>`'s reasoning exactly, and for
-once the sibling's argument transfers without amendment. It used to say that
-with `untrusted="true"`; since #314 it says it in the type's own words, which
-is the difference between a token this audience has no definition of and a
-sentence it can act on.
+once the sibling's argument transfers without amendment. The hedge is stated in the
+type's own words, a sentence the reader can act on, not a bare `untrusted`
+token.
 
 **`written` matters MORE here than anywhere else, not less.** Nothing in this
 tier retires (DEC-183): a quiet room's account is not stale, it is accurate, so
@@ -62,10 +61,8 @@ async def read_culture(
 ) -> CultureRevision | None:
     """One room's account for a prompt, or `None` — every occasion's ONE read.
 
-    It used to be written once, in `FirePath._read_culture`, when that was the
-    only reader (DEC-207 widened the tier to every runtime). Six copies of a
-    bounded, counted, fail-soft read would be six places for the bound or the
-    count to go missing, so the read is here and each occasion only names its
+    Every occasion shares this one bounded, counted, fail-soft read (DEC-207),
+    so the bound and the count live in one place; each occasion only names its
     `stage`.
 
     `head` is the caller's own `reader.head(key=…)` call, or `None` when there
@@ -113,10 +110,8 @@ def render_culture(
     block that appeared blank would be read as «this room has no character».
 
     `room` names WHICH room the account is of, and is passed only by an
-    occasion that reads more than one room in one prompt (the since-deleted proactive pass and note
-    curator): there, an unlabelled account is an account of nowhere. An
-    occasion inside one room omits it, and its block is byte-identical to the
-    participation turn's from before the tier was widened.
+    occasion that reads more than one room in one prompt: there, an unlabelled
+    account is an account of nowhere. An occasion inside one room omits it.
     """
     if culture is None or not culture.body.strip():
         return None
@@ -133,8 +128,8 @@ def render_culture(
 def render_unit_culture(
     culture: CultureRevision | None, *, now: datetime | None = None,
 ) -> ContextBlock | None:
-    """The `<unit_culture>` block: what the room's whole unit is like
-    (design/self-growth/10 §1, C3a). `None` while the unit has no account,
+    """The `<unit_culture>` block: what the room's whole unit is like.
+    `None` while the unit has no account,
     for `render_culture`'s reason: an empty block would say she looked and
     found nothing."""
     if culture is None or not culture.body.strip():
@@ -150,10 +145,9 @@ def render_unit_culture(
 #: first in every tag, fire and Cognition prompt and is re-sent on each model
 #: call of a loop, so it is capped on what is rendered, whatever the store
 #: holds (`BODY_MAX_CHARS` is what a revision may be). Accounts are prose in
-#: one to three lines, so a cap on LINES bounds nothing; the live heads on
-#: 2026-10-07 were 482, 553 and 1,797 characters and the longest observed is
-#: `ACCOUNT_CHARS_OBSERVED_MAX`. 4,000 is more than twice the longest: a cap is
-#: not a reservation, so headroom costs nothing until an account uses it.
+#: one to three lines, so a cap on LINES bounds nothing. 4,000 is more than
+#: twice the longest observed account (`ACCOUNT_CHARS_OBSERVED_MAX`): a cap is not a
+#: reservation, so headroom costs nothing until an account uses it.
 #: ponytail: one number for every unit; a config knob if a real account is cut.
 SELF_MAX_CHARS = 4_000
 
@@ -161,8 +155,8 @@ SELF_MAX_CHARS = 4_000
 def render_self(
     account: CultureRevision | None, *, now: datetime | None = None,
 ) -> ContextBlock | None:
-    """The `<self>` block: her own Character · Nora for this unit
-    (design/self-growth/20), capped at `SELF_MAX_CHARS` characters.
+    """The `<self>` block: her own Character · Nora for this unit,
+    capped at `SELF_MAX_CHARS` characters.
 
     `None` while the unit has no account, for `render_culture`'s reason: an
     empty block would say she looked and found herself blank. Lineage is not
@@ -205,10 +199,9 @@ async def read_character(
     The Character tier's read: one `read_culture` per person, so each keeps
     its bound and its count, and a person whose read failed or who has no
     account yet is simply absent. `unit` is the rendering room's unit: an
-    account is one per (unit, person) since C2b (design/self-growth/10 §3),
-    and `members` are the rendering room's LISTED persons, so a person's
-    account renders only in a room of their unit that lists them
-    (design/cognition-loop/50-character-and-standing.md §5).
+    account is one per (unit, person), and `members` are the rendering room's
+    LISTED persons, so a person's account renders only in a room of their unit
+    that lists them.
     """
     if reader is None or not members:
         return ()
@@ -226,14 +219,12 @@ async def read_character(
 #: The most characters ONE person's account may carry in `<character>`, and the
 #: most the whole RENDERED block may be (wrapper tags, `written` ages, escaped
 #: bodies and markers all counted, so the cap bounds what is sent, not just the
-#: prose). The block rides every model call of a turn (median 5, heavy turns
-#: 20+) and nothing capped it: a revision may be `BODY_MAX_CHARS` (20,000) long.
-#: Measured 2026-10-07 on the live heads: the friends unit's seven accounts
-#: rendered 11,183 characters (~3,000 tokens) and the largest person account was
-#: 1,739. 2,500 is ~1.4x the largest account; 12,000 is above the whole roster
-#: rendered (11,183), so no live turn is cut and the block cannot grow past it
-#: however many accounts or however much escaping: a cap is not a reservation,
-#: so headroom costs nothing until an account uses it.
+#: prose). The block rides every model call of a turn, and a revision may be
+#: `BODY_MAX_CHARS` long, so the render is capped whatever the store holds. The
+#: caps sit above the largest observed account and the whole observed roster,
+#: and the block cannot grow past them however many accounts or however much
+#: escaping: a cap is not a reservation, so headroom costs nothing until an
+#: account uses it.
 #: ponytail: constants, not config; a knob only if a real account is cut.
 PERSON_ACCOUNT_MAX_CHARS = 2_500
 CHARACTER_BLOCK_MAX_CHARS = 12_000

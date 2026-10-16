@@ -1,5 +1,5 @@
 """`AdapterRegistry` — builds every enabled platform adapter from config and
-resolves each one's own identity before returning (spec's platforms phase).
+resolves each one's own identity before returning.
 
 **Fail-fast is the point.** R-12 (`nora.engagement.stages.admission`) checks
 membership in a resolved `PlatformIdentity.aliases`, so an adapter whose
@@ -12,21 +12,19 @@ cannot resolve who it is; the caller
 `StartupError`, the same as every other fatal, ordered startup step.
 
 Each enabled platform is one more `if platforms.<x>.enabled:` block — Signal,
-Discord (DEC-102), WhatsApp (design/whatsapp-adoption/) and now Instagram
-(design/instagram-adoption/). A disabled platform is built and resolved by no
-one, silently.
+Discord (DEC-102), WhatsApp and Instagram. A disabled platform is built and
+resolved by no one, silently.
 
-**Instagram is the one exception to fail-fast, and it is Instagram-shaped**
-(design/instagram-adoption/01-bridge-container.md §Degradation, M0). Failing to
-resolve identity means a misconfiguration on Signal and Discord; on Instagram
-it means *a captcha happened overnight*, and under the unmodified rule one
+**Instagram is the one exception to fail-fast, and it is Instagram-shaped.**
+Failing to resolve identity means a misconfiguration on Signal and Discord;
+on Instagram it means *a captcha happened overnight*, and under the unmodified rule one
 checkpoint stops Nora starting AT ALL — Signal and Discord included. So an
 enabled Instagram adapter that cannot authenticate is built and registered
 DEGRADED: it answers no sends, emits no events, logs one ERROR line naming the
 reason, and reports `degraded` on Nora's `/health`. It is also registered with
 NO entry in `identities`, deliberately — see the block itself. This is an
 exception with a stated reason, not a general loosening; do not extend it to
-WhatsApp, which is its own bundle's decision.
+WhatsApp.
 
 **Nora's own account is never written to `identity.toml`** (DEC-9) — that
 file describes other people, not Nora. This module never writes to it and
@@ -34,7 +32,7 @@ never reads it; the identity it resolves comes from the platform's own daemon
 (`nora.platform.signal.account.derive_account` and
 `nora.platform.signal.self_id.derive_identifiers`), not from person mapping.
 Nora's own ids are typed `nora.domain.identity.Identifier`s — the same model
-`identity.toml` uses for everybody else (design/10 §5) — so "is this sender
+`identity.toml` uses for everybody else — so "is this sender
 Nora?" and "which person is this sender?" are answered by the same flattening.
 """
 
@@ -135,9 +133,8 @@ class AdapterRegistry:
     Frozen and built once, at startup, by `from_config` — nothing in this
     class does I/O itself; it is a lookup table over work already done.
 
-    `adapters` is typed `dict[str, PlatformAdapter]` — widened from the
-    Signal-only `dict[str, SignalAdapter]` the day `DiscordAdapter` gave the
-    port annotation something to buy (design/discord-integration/). Both
+    `adapters` is typed `dict[str, PlatformAdapter]`, the port, not a concrete
+    adapter. Both
     concrete adapters satisfy `PlatformAdapter` in full
     (`tests/contract/test_port_conformance.py`), so a caller reading through
     this registry never needs to know which one it got.
@@ -182,24 +179,24 @@ class AdapterRegistry:
         enrichment can count its own degradation (R-17). It is required for the
         reason `SignalAdapter.__init__` gives.
 
-        `music_manager` (design/discord-music/00-overview.md) is `None` unless
+        `music_manager` is `None` unless
         `[music] enabled` — composition builds it, this module only threads it
         through to `DiscordAdapter`, same shape as `discord_token`.
 
-        `voice_hub` (design/voice-channel/07) is the audio-controller's
+        `voice_hub` is the audio-controller's
         per-guild session registry — `None` when `[speech.tts]
         sidecars` is empty, which leaves every voice join and speech
         stream failing closed.
 
-        `resolve_music_channel` (design/discord-music/10-notification-routing.md)
+        `resolve_music_channel`
         maps a guild id to the channel its music announcements belong in, from
         a `policy.toml` room's `music_channel`. Threaded, never consulted here
         — same posture as `music_manager`. The default answers `None` for every
-        guild, which is the pre-field behaviour (announce where the session
-        started), so a harness that builds a registry without it is
+        guild (announce where the session started), so a harness that builds a
+        registry without it is
         unaffected.
 
-        `instagram_summons` (design/instagram-adoption/19) is where the
+        `instagram_summons` is where the
         Instagram adapter hands a `summons` SSE event, built by composition
         (`nora.app.summons_inbox.SummonsInbox`). Threaded, never consulted
         here — same posture as `music_manager`.
@@ -282,7 +279,7 @@ class AdapterRegistry:
 
         instagram_cfg = platforms.instagram
         if instagram_cfg.enabled:
-            # M0 — THE ONE BLOCK THAT DOES NOT FAIL FAST. See this module's
+            # THE ONE BLOCK THAT DOES NOT FAIL FAST. See this module's
             # docstring for why, and `nora.platform.instagram.adapter` for what
             # "degraded" is defined to mean.
             instagram_adapter = InstagramAdapter(
@@ -328,8 +325,7 @@ class AdapterRegistry:
 
         A UNION. A Signal phone is `+…` and its ACI a hyphenated UUID, so
         neither can collide with anything; a WhatsApp phone is `+…` on a
-        DEDICATED number. The BARE-DIGIT spaces are a different story and the
-        claim here used to be stronger than the values justify: a Discord
+        DEDICATED number. The BARE-DIGIT spaces are a different story: a Discord
         snowflake (17-19 digits), a WhatsApp lid and an Instagram interop fbid
         (15-17 digits measured, and Nora's own is 17) are all bare digits drawn
         from overlapping ranges, so they are disjoint by CONVENTION and luck,
@@ -369,11 +365,10 @@ class AdapterRegistry:
 
 class MediaSourceRegistry:
     """The `MediaSource` for one platform, or None — the sibling of
-    `AdapterRegistry`, and for the same reason (design/proposed/26 §1).
+    `AdapterRegistry`, and for the same reason.
 
-    Before it, the composition root built one `SignalMediaSource` and the
-    custody stage handed it every ref regardless of platform, so a Discord
-    attachment was fetched by asking signal-cli for a Discord snowflake. A
+    One `SignalMediaSource` for every ref would fetch a Discord attachment by
+    asking signal-cli for a Discord snowflake. A
     registry makes "this platform has no fetcher" a value the stage can count
     rather than a wrong call it cannot see.
     """

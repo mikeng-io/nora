@@ -1,4 +1,4 @@
-"""`DocumentsContextReader`: the `<documents>` block's one read (design/artifact §29),
+"""`DocumentsContextReader`: the `<documents>` block's one read,
 shared by the tag path (`TranscriptInjection`) and the fire path (`FirePath`).
 
 She can only revise a document whose id she can see. A revision request ("make it

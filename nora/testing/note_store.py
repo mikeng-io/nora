@@ -37,20 +37,17 @@ so a reader can check the promise without running the suite:
 `query.lower() in body.lower()`, and the contract suite's wildcard test — a
 query of `%` must return nothing — cannot fail against it, because Python's
 `in` has no wildcards to escape in the first place. That test is load-bearing
-against `SqlNoteStore` (drop `autoescape=True` there and it goes red, measured
-2026-08-21) and is a consistency check here. An earlier draft of this module
-used an escaped regex and a docstring claiming the escape was what the test
-caught; it was not — `re.escape` + `re.search` and `in` are the same function of
-the same inputs, so no test could tell them apart, and the claim was decoration
-of exactly the kind CLAUDE.md's rule is about. The property the suite pins is
-the SEMANTIC one both implementations owe — case-insensitive literal substring,
-the caller's query is data — and the simpler expression of it is the one that
-does not imply a mechanism it does not have.
+against `SqlNoteStore` (drop `autoescape=True` there and it goes red) and is a
+consistency check here. `re.escape` + `re.search` and `in` are the same function
+of the same inputs, so no test could tell them apart. The property the suite
+pins is the SEMANTIC one both implementations owe — case-insensitive literal
+substring, the caller's query is data — and the simpler expression of it is the
+one that does not imply a mechanism it does not have.
 
 `notes` and `revisions` are public attributes because the contract suite
 needs to reach state the store's own surface cannot produce. That is the
 `read_row`-per-implementation shape `tests/contract/test_dream_sink_contract.py`
-already established, kept out of the production surface where it would be a
+also uses, kept out of the production surface where it would be a
 test seam.
 """
 
@@ -87,8 +84,7 @@ def _like_matches(body: str, query: str) -> bool:
     """What `body ilike '%' || escape(query) || '%'` means: case-insensitive
     literal substring, with no wildcard syntax in the caller's query. See the
     module docstring's asymmetry note for why this is `in` and not an escaped
-    regex — the two are the same function, and pretending otherwise put a
-    mechanism in a docstring that no test could hold to."""
+    regex — the two are the same function."""
     return query.lower() in body.lower()
 
 
@@ -106,7 +102,7 @@ def _looks_like_an_id(value: str) -> bool:
 
 
 def _refuse_if_retired(note: Note) -> None:
-    """Guard 1 of design 41 §7.6, as `SqlNoteStore._append_on_conn` enforces
+    """Guard 1, as `SqlNoteStore._append_on_conn` enforces
     it: an append requires an open note."""
     if note.retired_at is not None:
         raise RetiredNoteError(
@@ -155,8 +151,8 @@ class InMemoryNoteStore:
 
     notes: dict[str, Note] = field(default_factory=dict)
     revisions: dict[str, NoteRevision] = field(default_factory=dict)
-    #: Optional — `None` is what every existing `InMemoryNoteStore()` call
-    #: site still constructs, and `merge_into` then skips the reminders step
+    #: Optional — `None` is the default (`InMemoryNoteStore()`), and `merge_into`
+    #: then skips the reminders step
     #: entirely (module docstring: this double CANNOT know a duplicate held
     #: a proactive row unless something hands it the store that would know).
     #: A caller that wants the fold's reminders half modelled constructs
@@ -167,12 +163,10 @@ class InMemoryNoteStore:
     reminders: FakeReminderStore | None = None
     _ids: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
 
-    #: **UUID-SHAPED, like the real store's.** This double minted `note-1` and
-    #: `rev-2` until 2026-08-28, and that one divergence hid the defect that
-    #: made the whole (since-deleted) curator inert: the Dreamer screens every adaptor item
-    #: against R-18/R-28 and `scan_identifiers` matches any hyphenated uuid, so
-    #: production rejected every item while this double's ids sailed through.
-    #: Eighteen tests passed over it.
+    #: **UUID-SHAPED, like the real store's.** The Dreamer screens every adaptor
+    #: item against R-18/R-28 and `scan_identifiers` matches any hyphenated uuid,
+    #: so a counter-shaped id (`note-1`, `rev-2`) would sail through this double
+    #: while production rejects every item.
     #:
     #: Deterministic rather than random — `uuid4` would make a failure
     #: unreproducible — but SHAPED like the thing it stands in for, because the
@@ -224,7 +218,7 @@ class InMemoryNoteStore:
         return note
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
-        """Uncapped (§5.1) and ordered oldest-first, matching `SqlNoteStore`'s
+        """Uncapped and ordered oldest-first, matching `SqlNoteStore`'s
         `ORDER BY created_at, id`. Dict insertion order would give the same
         answer for every test that inserts in time order, and a different one
         the first time a test does not — sorting explicitly is what makes the
@@ -274,7 +268,7 @@ class InMemoryNoteStore:
     ) -> tuple[Note, NoteRevision] | None:
         """The note and its HEAD revision, or `None` — including `None` for a
         note in another unit (module docstring (2)). Retired notes stay
-        readable: retirement is a status change, not a delete (§7.4)."""
+        readable: retirement is a status change, not a delete."""
         note = self.notes.get(note_id)
         if note is None or note.unit != unit:
             return None
@@ -293,7 +287,7 @@ class InMemoryNoteStore:
         model: str | None = None,
         evidence_room: str | None = None,
     ) -> NoteRevision:
-        """§6.3's compare-and-swap — the refusal in the module docstring's (1).
+        """The compare-and-swap — the refusal in the module docstring's (1).
 
         `evidence_room` is accepted and not kept: lineage is computed from the
         `messages` a body cites, which this fake does not hold, so its notes
@@ -341,7 +335,7 @@ class InMemoryNoteStore:
 
         A non-positive limit clamps to `()` rather than slicing: `list[:-1]`
         silently drops the last entry, which is a different, wrong answer to the
-        same input (2026-08-21 review, `standing_facts`)."""
+        same input."""
         if limit <= 0 or not query.strip():
             return ()
         hits: list[tuple[Note, str]] = []
@@ -378,7 +372,7 @@ class InMemoryNoteStore:
         expected_head: str | None = None,
     ) -> int:
         """`SqlNoteStore.supersede`'s behaviour, including guard 3's
-        `expected_head` (design 41 §7.6): a head that moved answers 0.
+        `expected_head`: a head that moved answers 0.
 
         **`source` is REFUSED, not accepted and dropped** — the same as
         `SqlNoteStore`. `note` has no column for a supersession's citation: a
@@ -386,14 +380,6 @@ class InMemoryNoteStore:
         not a URL. The port carries `source` because the fact tier needs it (a
         contradicting source IS the warrant there), and a tier that cannot
         record a field says so by refusing rather than by discarding.
-
-        **This docstring said "accepted and DROPPED" until 2026-08-27**, twelve
-        lines above code that raises, because it was the un-updated half of the
-        fix that added the refusal. Recorded rather than quietly corrected: a
-        double's docstring is what the next person reads to learn what the REAL
-        store does, so a reader trusting it would have built against
-        drop-semantics and been refused at runtime. Same family as the day's
-        other findings — two things that must agree, one silently stale.
 
         The refusals below are deliberately NOT delegated to the domain type:
         a double that refuses only because a constructor refused is more
@@ -458,7 +444,7 @@ class InMemoryNoteStore:
         BEFORE either mutation, which is where the SQL transaction's
         all-or-nothing is observable from outside.
 
-        **Models the reminders half (issue #158 residue) too, when
+        **Models the reminders half too, when
         `self.reminders` is wired.** `SqlNoteStore.merge_into` re-points or
         cancels either note's open proactive reminder inside the same
         transaction as the fold, because two notes that each held one would
@@ -584,7 +570,7 @@ class InMemoryNoteStore:
             # The SURVIVOR's own row is stale — the ordinary fire-time walk
             # on a live note would cancel it `moved`. Classify it before the
             # keeper is chosen, or a stale survivor row can win the
-            # tie-break over a live duplicate row (#520 round 3, S6).
+            # tie-break over a live duplicate row.
             reminders._put(replace(
                 s_row, state=ReminderState.CANCELLED,
                 outcome=CANCELLED_NOTE_MOVED, fired_at=fired_at,
@@ -643,4 +629,4 @@ class InMemoryNoteStore:
         if on_reminder_outcome is not None:
             on_reminder_outcome(outcome)
 
-    # ---- the create path (§4, issue #98) -----------------------------------
+    # ---- the create path -----------------------------------------------------

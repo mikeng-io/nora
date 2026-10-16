@@ -9,7 +9,7 @@ Two sources, each owning what it should (AGENTS.md, the three config files):
   change needs a restart, like identity.toml and policy.toml. No env override
   for these — one place, one answer.
 - **env** — bind addresses only: the listen/health binds and
-  `NORA_INGEST_URL`. NO deployment identity (multi-guild, 2026-09-17): the
+  `NORA_INGEST_URL`. NO deployment identity: the
   guild arrives per CONNECTION in the sidecar's hello frame, so this service
   is identical on every deployment and serves however many guilds connect to
   it. nora resolves that guild to the room marked `voice = true` in
@@ -32,10 +32,9 @@ log = logging.getLogger(__name__)
 def build_config(config_path: Path = DEFAULT_PATH, env: dict[str, str] | None = None) -> Config:
     e = os.environ if env is None else env
     wake, stt = load_sections(config_path)
-    # NO deployment identity is read here at all any more (multi-guild,
-    # 2026-09-17). The guild arrives per CONNECTION in the sidecar's hello
-    # frame, so one gate serves every guild and there is nothing per-guild
-    # left to configure — which is what removed the second gate container.
+    # No deployment identity is read here. The guild arrives per CONNECTION in
+    # the sidecar's hello frame, so one gate serves every guild and nothing
+    # per-guild is configured.
     d = Config()  # code defaults; config.toml keys override them
     return Config(
         listen_host=e.get("WAKE_LISTEN_HOST", d.listen_host),

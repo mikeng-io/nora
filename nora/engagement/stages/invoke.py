@@ -1,7 +1,6 @@
-"""Stage: invoke — one bounded LLM invocation attempt (spec C.7, R-5, R-8).
+"""Stage: invoke — one bounded LLM invocation attempt (R-5, R-8).
 
-Preserves `Handler._invoke`'s timeout/exception behaviour exactly
-(`nora/handler.py:187-203`):
+Timeout and exception behaviour:
 
 - `asyncio.wait_for(..., timeout=timeout_seconds)`; on `TimeoutError` → log +
   `nora_silent_failures_total{reason="invocation_timeout"}` + return silently.
@@ -15,23 +14,20 @@ Every series this stage moves is labelled with the `audience` keyword `run`
 takes — required, no default, all four of them: both
 `nora_silent_failures_total` increments, the latency histogram and
 `nora_llm_stop_reason_total`. The tag path passes "tag"; the participation
-occasion (design/dreamer-agent-loop/35) passes "participation". See `run`'s
+occasion passes "participation". See `run`'s
 docstring.
 
 Both reasons are R-5 cases with named tests in
 `tests/test_acceptance_rules.py::RULE_TESTS` — the strings must not change.
 
-Per spec §10's test-seam policy, faking the model means injecting a fake
-`AgentRunner` here — never an `_invoke_fn` hook. The real `AgentRunner` (Task
-8's composition root) wraps `nora.agent.factory`'s already-built AsyncOpenAI
+Faking the model means injecting a fake `AgentRunner` here, never an
+`_invoke_fn` hook. The real `AgentRunner` wraps `nora.agent.factory`'s already-built AsyncOpenAI
 client and `OpenAIModel` provider (built once, at process start, never per
 tag) together with `factory.create_agent`/`factory.invoke`; this stage never
 imports `nora.agent.factory` itself.
 
 `trace_attributes` is computed here, from `ctx`/`doctrine`, via
-`nora.obs.tracing.trace_attributes` — the same call `Handler._invoke` makes
-immediately before `factory.create_agent` (`nora/handler.py:133`) — and
-handed to the runner rather than left for it to recompute.
+`nora.obs.tracing.trace_attributes` and handed to the runner rather than left for it to recompute.
 
 
 Returns `(ok, elapsed, stop_reason, final_text, trace)` rather than just `ok`:
@@ -44,15 +40,15 @@ normally with `ok=True` and no reply, which is exactly what a model declining
 to call `send_reply` also looks like from here. The distinction is made at
 `nora.engagement.stages.deliver.check_outcome`, which needs this value.
 
-`trace` is a `TagTrace` (spec §6.1/§7.4): the reasoning-continuity record of
+`trace` is a `TagTrace`: the reasoning-continuity record of
 this invocation, `agent.messages` sliced/sanitised/capped by the `AgentRunner`
 itself (`nora.agent.tag_trace_extract.extract_tag_trace`) with `transcript`
 filled in HERE from `ctx.transcript` — the runner has no access to the
 assembled window, only to `agent`. On the `ok=False` paths (timeout/llm_error)
 `runner.invoke` never returned, so there is no `agent` to extract from: this
 function builds a blank trace instead (`messages=()`, `outcome` mapped from
-which exception fired) with `transcript` filled in the same way — §7.4's "those
-turns debrief from `transcript` alone with `messages` empty".
+which exception fired) with `transcript` filled in the same way, so those
+turns debrief from `transcript` alone with `messages` empty.
 """
 
 from __future__ import annotations
@@ -96,7 +92,7 @@ class AgentRunner(Protocol):
 
 def _blank_trace(*, ctx: TagContext, outcome: str) -> TagTrace:
     """A trace for a tag whose invocation never returned — no `agent` survived
-    to extract from (§7.4). `transcript` is still real: it comes from `ctx`,
+    to extract from. `transcript` is still real: it comes from `ctx`,
     not from the dead invocation."""
     return TagTrace(
         tag_id=ctx.tag_id, conversation_id=ctx.message.conversation_id,
@@ -134,20 +130,20 @@ async def run(
     `nora_llm_stop_reason_total{reason}` and handed back for
     `nora.engagement.stages.deliver.check_outcome` to label a silent turn
     with (R-23): `limit_total_tokens` and `no_send_call` are different
-    failures and used to be the same metric.
+    failures and are counted apart.
 
     **Every series below is labelled with the `audience` keyword, a REQUIRED
-    argument with no default** (design spec §6.2, §13). A default would compile
+    argument with no default**. A default would compile
     fine and an omitted one would record `audience=""` (`Metrics._full_labels`),
     which the A8 runbook filter `audience="tag"` then excludes — silently. The
-    tag path passes "tag"; the participation occasion (design/dreamer-agent-
-    loop/35) passes "participation". Both `nora_silent_failures_total`
-    increments, `nora_llm_latency_seconds` and `nora_llm_stop_reason_total` —
+    tag path passes "tag"; the participation occasion passes "participation".
+    Both `nora_silent_failures_total` increments,
+    `nora_llm_latency_seconds` and `nora_llm_stop_reason_total` —
     the last two because a fire turn is bounded by a DIFFERENT timeout and a
     mixed histogram describes neither population. The heartbeat's fire path
-    deliberately
-    does NOT call it: it needs `[heartbeat] timeout_seconds` rather than the
-    tier's, and it needs the failure mapped to one of §8.1's outcome strings so
+    deliberately does NOT call it: it needs `[heartbeat] timeout_seconds`
+    rather than the tier's, and it needs the failure mapped to one of the
+    reminder outcome strings so
     the reminder row records what actually happened. It calls `runner.invoke`
     inside its own `asyncio.wait_for` and counts its own two failures there.
 
@@ -230,9 +226,7 @@ async def run(
     # and that is not optional here: this runs with the conversation's slot
     # held, `release_and_dispatch` cannot run until it returns, and a wedged
     # Postgres does not raise — it does not answer, which no `except` can see.
-    # The repo has now paid for this three times (`debrief.run`, then the fire
-    # path in the same change that fixed it, then here); `fire.py`'s
-    # `standing_store_timeout_seconds` states the rule and
+    # `fire.py`'s `standing_store_timeout_seconds` states the rule and
     # `tests/architecture/test_slot_held_awaits_are_bounded.py` is what keeps
     # the `wait_for` inside `flush`.
     #

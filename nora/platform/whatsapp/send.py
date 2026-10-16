@@ -1,5 +1,4 @@
-"""whatsapp-bridge send: `POST /send` and `POST /send-media`
-(design/whatsapp-adoption/03-transport-contract.md). Never raises.
+"""whatsapp-bridge send: `POST /send` and `POST /send-media`. Never raises.
 
 Mirrors `nora.platform.signal.send.SignalSender`'s contract — same session
 construction, same "log and return" discipline — because the reader who has
@@ -11,9 +10,9 @@ are not.
 
 A 1:1 send goes only to a JID in `dm_recipients` — the direct addresses of
 the people in `identity.toml` (`nora.persons.Persons.direct_addresses`). Any
-other 1:1 JID is refused without an HTTP call (operator rule 2026-10-05:
-Nora never messages somebody who is not in `identity.toml`), and a sender
-built without the set refuses every 1:1 send, as it did before.
+other 1:1 JID is refused without an HTTP call (Nora never messages somebody
+who is not in `identity.toml`), and a sender
+built without the set refuses every 1:1 send.
 
 `mentions`/`styles`/`preview` are the port's DECORATION parameters
 (`nora.domain.ports.PlatformAdapter.send`'s own docstring: "a platform with
@@ -26,8 +25,8 @@ Attachments go through `POST /send-media`, one call per attachment, with
 any attachment exists, `/send` is NOT also called for the text, or the group
 would hear the reply twice. `data_base64` carries the verified bytes.
 
-**`media_type` is the bridge's KIND, not a MIME type** (measured live
-2026-09-24: posting a MIME string like `"image/png"` in `media_type` gets a
+**`media_type` is the bridge's KIND, not a MIME type** (posting a MIME
+string like `"image/png"` in `media_type` gets a
 bridge 400 `{"error": "media_type must be image|video|audio|sticker|document"}`
 — `handleSendMedia`/`buildMediaPayload` in `bridge.js` switch on one of those
 five literal kinds and reject anything else). `_bridge_media_kind` derives the
@@ -92,7 +91,7 @@ def _sent_timestamp(body: object) -> int | None:
     """`timestamp_ms` out of the bridge's `{ok, id, timestamp_ms}` result.
 
     The PLATFORM's own sent-timestamp — what a later reply's quote resolves
-    against, the same Bug B lesson Signal's `_sent_timestamp` records.
+    against, as in Signal's `_sent_timestamp`.
     Anything unparseable degrades to None: a send that reached the group must
     never be reported as failed over a missing field."""
     if not isinstance(body, dict):

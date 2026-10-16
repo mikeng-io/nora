@@ -73,6 +73,5 @@ async def derive_account(
     return accounts[0]
 
 
-# `derive_aliases` lived here and read `/api/v1/accounts` too. It is gone:
-# alias derivation now speaks JSON-RPC and returns typed identifiers —
-# `nora.platform.signal.self_id.derive_identifiers` (R-17, design/10 §5).
+# Alias derivation speaks JSON-RPC and returns typed identifiers —
+# `nora.platform.signal.self_id.derive_identifiers` (R-17).

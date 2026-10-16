@@ -1,5 +1,5 @@
 """`DoctrineCheck` — one instrument call: does this lesson loosen or contradict
-a LAW rule? (design/self-growth/40-lessons.md §4, L3).
+a LAW rule?
 
 It is handed the lesson and the law subset that reaches a unit's turns
 (`LAW_SURFACES`, DEC-291), asks a model that is NOT the Lessons session, and
@@ -35,7 +35,7 @@ __all__ = ["CHECK_OBJECTIVE", "DoctrineCheck", "render_check_input"]
 #: The instruction's objective name (`nora/dreamer/objectives/`).
 CHECK_OBJECTIVE = "doctrine-check"
 
-#: What the check reads, in order (`design/context-assembly/04-every-occasion.md`).
+#: What the check reads, in order.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("law_rules", 10, "turn"),
     ("lesson_to_check", 20, "turn"),
@@ -83,7 +83,7 @@ def render_check_input(*, lesson: str, rules: Sequence[LawRule]) -> str:
         )),
         # ESCAPED: the lesson is model-written from members' messages, and a
         # `</lesson_to_check>` in it would otherwise close the block and let
-        # it forge a verdict (review of #764). The law is escaped by
+        # it forge a verdict. The law is escaped by
         # `render_elements`.
         ContextBlock(name="lesson_to_check", order=_ROW["lesson_to_check"][0],
                      key=_ROW["lesson_to_check"][1], body=escape(lesson)),
@@ -97,7 +97,7 @@ class DoctrineCheck:
         metrics: Metrics | None = None,
     ) -> None:
         """`law` is `DoctrineStore.law_rules`; only `LAW_SURFACES` are read.
-        `instruction` returns the objective body now."""
+        `instruction` returns the objective body."""
         self._client = client
         self._law = law
         self._instruction = instruction

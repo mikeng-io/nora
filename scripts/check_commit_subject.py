@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 """Commit-subject convention check: `type(scope): description`.
 
-Three failure shapes this catches (each measured on this repo's log before the
-rule was written):
+Three failure shapes this catches:
 
-1. A subject with NO type at all — 294 of 2195 commits since 2026-08-01 were
-   untyped, most of them bare `Merge ...` lines (the GitHub default merge
-   message, which CONTRIBUTING.md's merge-strategy rule already forbids).
-2. An UNDECLARED type — eleven spellings lived in the log that the table in
-   CONTRIBUTING.md did not declare (`design` x69, `config` x20, `build` x12,
-   `style` x11, `ops` x7, `security`, `spec`, `plan`, ...). A type that is in
-   use but not declared is a convention that only looks agreed.
+1. A subject with NO type at all, most often a bare `Merge ...` line (the
+   GitHub default merge message, which CONTRIBUTING.md's merge-strategy rule
+   forbids).
+2. An UNDECLARED type. A type that is in use but not declared is a convention
+   that only looks agreed.
 3. A superseded or default MERGE subject — `Merge pull request #N ...` (the
-   GitHub default) and `Merge <branch>: ...` (the previous generation). Both
-   are replaced by `merge: <the arc>`; the shape is checked, not just the
-   prefix.
+   GitHub default) and `Merge <branch>: ...` (the superseded form). Both are
+   replaced by `merge: <the arc>`; the shape is checked, not just the prefix.
 
 The type list below is CLOSED: it is CONTRIBUTING.md's declared table plus the
-nine de-facto types this repo already used heavily (`design`, `config`,
-`build`, `style`, `ci`, `ops`, `doctrine`, plus `perf` and `security` from the
-standard). Add a type by changing both files in one commit — the table is the
-contract, this script only enforces it.
+types this repo uses beyond it (`design`, `config`, `build`, `style`, `ci`,
+`ops`, `doctrine`, plus `perf` and `security` from the standard). Add a type
+by changing both files in one commit — the table is the contract, this script only enforces it.
 
 Wired as a `commit-msg` hook (see `.githooks/README.md`); the Makefile `hooks`
 target installs it. It reads the message file git passes as $1 and exits 1 on
@@ -33,7 +28,7 @@ import sys
 
 # Declared in CONTRIBUTING.md §Commit messages. Keep the two in lockstep.
 TYPES = {
-    # declared in the table since the file existed
+    # declared in the table
     "feat": "new capability",
     "fix": "defect repair",
     "docs": "documentation",
@@ -42,7 +37,7 @@ TYPES = {
     "chore": "tooling, hygiene, dependencies",
     "change": "deliberate behaviour change that is neither feature nor fix",
     "merge": "the merge commit for a branch",
-    # adopted from live use, now declared
+    # in use beyond the base table, declared
     "design": "design-bundle / architecture-document work",
     "config": "configuration surface (schema, example files, loader)",
     "build": "build/deploy tooling (Dockerfile, compose, Makefile)",
@@ -67,16 +62,15 @@ REVERT_RE = re.compile(r'^Revert "')
 WIP_RE = re.compile(r"^(wip|WIP)\b")
 
 
-# `merge: <the arc>` is the current generation. The arc must be REAL text: a
-# bare `merge:` (or whitespace) states nothing, and it was the cheapest way to
-# satisfy this check without writing the arc — so it is rejected explicitly.
+# `merge: <the arc>` is the current form. The arc must be REAL text: a bare
+# `merge:` (or whitespace) states nothing and would satisfy the check without
+# writing the arc, so it is rejected explicitly.
 # `\s*` before the colon, not `\s*` inside it: `merge\t: x` is a typo, not a
 # subject, and must not sneak through.
-AUTHORED_MERGE_RE = re.compile(r"^merge:\s+\S")  # merge: <non-empty arc> — current generation
+AUTHORED_MERGE_RE = re.compile(r"^merge:\s+\S")  # merge: <non-empty arc> — current form
 # The GitHub-default bodies, checked AFTER the authored prefix matched: without
-# this, `merge: Merge pull request #1 from x` passed on the prefix alone — the
+# this, `merge: Merge pull request #N from x` would pass on the prefix alone — the
 # exact defect this script exists to catch, wearing the sanctioned type.
-# Measured 2026-09-14: that subject exited 0 before this check existed.
 DEFAULT_BODY_RE = re.compile(
     r"^Merge (pull request|branch|remote-tracking branch)\b"
 )

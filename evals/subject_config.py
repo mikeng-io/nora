@@ -1,23 +1,22 @@
 """The config an eval subject composes: the DEPLOYMENT'S Nora, not a fresh install.
 
-Until 2026-09-21 `nora/subject/obtain.py` built every subject from
-`config.example.toml`, whose job is to be a safe template for a NEW deployment
-— so it ships with almost everything off. **65 values differed** from the
-deployment, including `llm.model` (`ollamacloud/deepseek-v4-flash:0731` vs
-`nora`), `llm.reasoning_effort`, and `relevance_gate`, `participation`,
+`nora/subject/obtain.py` builds the subject from this config rather than
+from `config.example.toml`, whose job is to be a safe template for a NEW
+deployment — so it ships with almost everything off, and with a different
+`llm.model`, `llm.reasoning_effort`, and `relevance_gate`, `participation`,
 `standing`, `culture`, `notes`, `dreamer`, `search`, `online`, `weather`,
-`route` and `preview` all DISABLED. Every case ever run measured a different
-model, at a different reasoning effort, with most of Nora switched off.
+`route` and `preview` disabled. A case run against the template would measure
+a different model, at a different reasoning effort, with most of Nora switched
+off.
 
-**No case could have caught it.** `design/evaluation/01-boundaries.md` §5's
-rule 4 — "nothing reaches the model that the deployment would not send" —
-constrains the PROMPT, and the prompt was fine. What differed was the reader.
+The rule "nothing reaches the model that the deployment would not send"
+constrains the PROMPT; this module constrains the READER.
 
 GENERATED PER RUN, NEVER VENDORED. The output carries the deployment's real
 values — the doctrine canary, room ids, internal endpoints — which is exactly
-what `.gitignore` keeps `config.toml` untracked for (operator decision
-2026-09-07). Committing a pre-generated copy would re-publish them under a new
-name. So this module is the tracked artefact and its OUTPUT is ignored.
+what `.gitignore` keeps `config.toml` untracked for. Committing a pre-generated
+copy would re-publish them under a new name. So this module is the tracked
+artefact and its OUTPUT is ignored.
 
 `build()` is PURE — text in, text out — so the rules below are testable against
 fixtures without reaching the deployment. That is deliberate: a guard that
@@ -44,17 +43,17 @@ SKIP_PREFIX: tuple[str, ...] = (
     # NOT `platforms.` wholesale. Only the credentials and endpoints: an
     # adapter that is ENABLED is part of the turn, because the registry's
     # `self_aliases()` is what feeds `self_ids`
-    # (`nora/app/composition.py:2428`, `:3526`) and `self_ids` is what
+    # (`nora/app/composition.py`) and `self_ids` is what
     # `MentionPolicy`/`ReplyToNoraPolicy` match on. With the deployment's text
-    # trigger off since 2026-09-01, mention-and-reply IS how she is engaged, so
-    # a disabled adapter removes the live engagement path.
+    # trigger off, mention-and-reply IS how she is engaged, so a disabled adapter
+    # removes the live engagement path.
     #
-    # Measured, not reasoned: switching every adapter off produced
-    # `StartupError: no platform adapter is enabled` in 22 integration tests.
-    # `_baseline()` already neutralises the network by pointing
+    # Switching every adapter off raises
+    # `StartupError: no platform adapter is enabled`.
+    # `_baseline()` neutralises the network by pointing
     # `platforms.signal.account` at a placeholder, which is the right shape —
-    # enabled like the deployment. That stops the startup lookup only; a SEND
-    # still dialled until `nora.subject.sandbox_signal` made sends land.
+    # enabled like the deployment. That stops the startup lookup only; a SEND is
+    # landed in the sandbox by `nora.subject.sandbox_signal`.
     "platforms.signal.account",
     "platforms.signal.base_url",
     "platforms.discord.token_env",
@@ -66,10 +65,9 @@ SKIP_PREFIX: tuple[str, ...] = (
     "speech.tts.sidecars",
 )
 
-#: Forced OFF whatever either file says. Inheriting the EXAMPLE's value is how
-#: `platforms.signal.enabled` stayed true through the first cut of this module:
-#: the deployment has it on, the example has it on, and neither is what a
-#: sandbox wants.
+#: Forced OFF whatever either file says. Inheriting a value would leave
+#: `platforms.signal.enabled` true: the deployment has it on, the example has
+#: it on, and neither is what a sandbox wants.
 FORCE_OFF: tuple[str, ...] = (
     # A DIVERGENCE, declared rather than hidden. Signal's adapter is neutralised
     # by a placeholder account and stays ENABLED like the deployment. Discord's
@@ -78,13 +76,12 @@ FORCE_OFF: tuple[str, ...] = (
     # token is HTTP 401 and a real one means every eval run authenticates
     # against the deployment's actual bot.
     #
-    # THE COST, stated because it is real: the registry's `self_aliases()` feeds
+    # THE COST: the registry's `self_aliases()` feeds
     # `self_ids`, which `MentionPolicy`/`ReplyToNoraPolicy` match on. With
     # Discord off, a Discord room's mention-and-reply engagement cannot fire —
-    # and that IS the deployment's engagement path since the text trigger was
-    # disabled 2026-09-01. No corpus exercises it today, so nothing is
-    # measurably wrong yet; a mention/reply corpus on Discord is blocked on
-    # closing this.
+    # and that IS the deployment's engagement path while its text trigger is off.
+    # No corpus exercises it, so nothing is measurably wrong; a mention/reply
+    # corpus on Discord is blocked on closing this.
     "platforms.discord.enabled",
     "platforms.whatsapp.enabled",
     "obs.tracing.enabled", "obs.errors.enabled",
@@ -94,7 +91,7 @@ FORCE_OFF: tuple[str, ...] = (
     # it is a loop with nothing behind it, and off spares the "enabled but no
     # backend" boot warning. NOT forced off when the deployment runs the
     # sub-agent (`forced_off`): `[subagent] enabled` REFUSES to load without
-    # `[compute] enabled`, so forcing it off made every such subject unloadable.
+    # `[compute] enabled`, so forcing it off would make every such subject unloadable.
     "compute.enabled",
 )
 
@@ -112,15 +109,15 @@ FORCE_OFF: tuple[str, ...] = (
 #: WHAT THE FLAG DOES IN THE NORA PROCESS, all of it (`nora/app/composition.py`):
 #:
 #: - wires the READER, `PresenceStore` and the circles that `where_is`,
-#:   `where_been` and `routine_read` read through (`:2730`);
-#: - spawns `_presence_preflight` as a background task (`:3194`, the R-21/R-31
+#:   `where_been` and `routine_read` read through;
+#: - spawns `_presence_preflight` as a background task (the R-21/R-31
 #:   boot alarm), which reads the roster of EVERY policy conversation whose
 #:   platform has a roster. Checked, not neutralised: the rosters are exactly
-#:   the ones composition already builds for every corpus (`:2104`). Signal's
+#:   the ones composition already builds for every corpus. Signal's
 #:   dials `platforms.signal.base_url`, the example's loopback
 #:   `127.0.0.1:18080` (`SKIP_PREFIX`); Discord and WhatsApp are forced off, so
 #:   they have none; Instagram's dials the deployment's compose-private
-#:   `instagram-bridge:18082`, which `nora/platform/registry.py:292` already
+#:   `instagram-bridge:18082`, which `nora/platform/registry.py` already
 #:   dials at composition for every corpus. Every read is a GET of a member
 #:   list; it writes nothing and adds no endpoint;
 #: - and, with a store present, lets `where_is` ask `presence.refresh_url` for a
@@ -192,9 +189,9 @@ def _fmt(value: object) -> str:
     if isinstance(value, (int, float)):
         return repr(value)
     if isinstance(value, (list, tuple)):
-        # An array stays an array. Quoting its repr turned
-        # `sources = ["google_drive"]` into the STRING "['google_drive']", and
-        # the drift check refused the run (2026-10-11).
+        # An array stays an array. Quoting its repr would turn
+        # `sources = ["google_drive"]` into the STRING "['google_drive']", which the
+        # drift check refuses.
         return "[" + ", ".join(_fmt(item) for item in value) + "]"
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -224,8 +221,7 @@ def build(example_toml: str, deployment_toml: str) -> str:
     # rewrite, and then silently falls back to the CODE default — which is not
     # the deployment's value. `store.prune_enabled` defaults to True in
     # `nora/config.py`, the deployment sets it False, and the example omits it:
-    # a sandbox would have pruned its own seeded rows mid-run. Found by the
-    # guard, not by reading.
+    # a sandbox would prune its own seeded rows mid-run.
     want: dict[str, list[tuple[str, object]]] = {}
     for key, value in take.items():
         section, _, leaf = key.rpartition(".")
@@ -316,16 +312,14 @@ ALLOWED_TO_DIFFER: dict[str, str] = {
 def divergences(generated_toml: str, deployment_toml: str) -> dict[str, tuple]:
     """Settings the generated config holds differently from the deployment.
 
-    **Both directions, and the second one is where the original bug lives.**
+    **Both directions are checked.**
 
-    An earlier version iterated only what the DEPLOYMENT states, on the stated
-    reasoning that a key the example carries and the deployment does not "is a
-    code default for both". That is false, and an audit measured the exposure:
-    **44 keys** are example-stated and deployment-silent, and for every one the
-    subject takes the EXAMPLE's value while production takes
-    `nora/config.py`'s default. They agree today only by curation — and that is
-    exactly the 65-value divergence this module exists to close, reached
-    through the half of the key space the gate was not looking at.
+    Iterating only what the DEPLOYMENT states is not enough: a key the example
+    carries and the deployment does not is NOT "a code default for both". For
+    every such example-stated, deployment-silent key the subject takes the
+    EXAMPLE's value while production takes `nora/config.py`'s default. They
+    agree only by curation — the very divergence this module exists to close,
+    reached through the other half of the key space.
 
     So example-only keys are compared against the CODE DEFAULT, which is what
     production actually runs. A key whose default cannot be resolved is

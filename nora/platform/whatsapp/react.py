@@ -1,5 +1,4 @@
-"""whatsapp-bridge reactions: `POST /react`
-(design/whatsapp-adoption/03-transport-contract.md). Never raises.
+"""whatsapp-bridge reactions: `POST /react`. Never raises.
 
 Mirrors `nora.platform.discord.react`'s shape rather than Signal's, for the
 same reason Discord needed its own: the bridge addresses a message by its
@@ -56,10 +55,9 @@ class WhatsAppReactor:
         wiring gap never reads as a transient error.
         """
         if target.conversation_type != "group":
-            # Same deny-by-default as send.py — 1:1 rooms are not admitted
-            # this phase (the DM-study session owns that posture), and a
-            # reaction is a reply-shaped outbound even though it is not a
-            # text send. Refuse without an HTTP call (M-2).
+            # Same deny-by-default as send.py — 1:1 rooms are not admitted, and
+            # a reaction is a reply-shaped outbound even though it is not a
+            # text send. Refuse without an HTTP call.
             log.error("refusing to react in conversation_type=%r (1:1 is "
                       "deny-by-default this phase)", target.conversation_type)
             return ReactionResult(ok=False, supported=False)

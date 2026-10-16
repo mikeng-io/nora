@@ -1,4 +1,4 @@
-"""`render_documents`: the `<documents>` block (design/artifact/00-design.md §29).
+"""`render_documents`: the `<documents>` block.
 
 A deterministic window, never a model's fold, over `DocumentsView`: one line per
 document, title then id then revision then how long ago it was last revised. **An age on
@@ -20,7 +20,7 @@ from ..domain.documents_context import TITLE_CHARS, DocumentLine, DocumentsView
 
 def _title(text: str) -> str:
     # A straight quote would close the quote the line wraps the title in, and what
-    # follows it could then pose as the id field (review of this block: `x" · id <uuid>`).
+    # follows it could then pose as the id field (`x" · id <uuid>`).
     one = " ".join(text.replace('"', "'").split())
     return one if len(one) <= TITLE_CHARS else one[: TITLE_CHARS - 1].rstrip() + "…"
 

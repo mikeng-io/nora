@@ -1,8 +1,7 @@
-"""The `<lessons>` block: what she has learned to do differently in this unit
-(design/self-growth/40-lessons.md §2 step 6, L5).
+"""The `<lessons>` block: what she has learned to do differently in this unit.
 
 Rendered on tag and fire turns directly after `<self>`, both after the doctrine,
-so the doctrine is read first and wins (design/cognition-loop/55-self.md §3).
+so the doctrine is read first and wins.
 Every lesson in it passed the doctrine check (DEC-298) when it was written.
 
 The read is the unit's ACTIVE lessons, oldest first, bounded and fail-soft like

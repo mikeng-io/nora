@@ -1,28 +1,23 @@
-"""GET /app/v1/skills — the on-demand skill layer's metadata (design/12,
-DEC-48/50), read-only.
+"""GET /app/v1/skills — the on-demand skill layer's metadata (DEC-48/50),
+read-only.
 
 `nora.skills.loader.SkillStore` is NOT the live agent's own skill loader —
 the agent path (`nora.agent.factory.build_agent`'s `skills_dir` argument)
 wires Strands' own vended `AgentSkills` plugin directly at the same
-directory (DEC-50's "the day the operator wires strands...AgentSkills at
-these same files, nothing here is rewritten" — that day arrived). This
-module builds its OWN `SkillStore` over the identical directory purely to
+directory (DEC-50). This module builds its OWN `SkillStore` over the identical directory purely to
 read the same on-disk metadata for the web portal.
 
-**The instructions body IS included (operator 2026-09-03).** The original
-posture was "never the instructions body... has no business reaching a
-browser either" — that was written for a PUBLIC surface. The portal is
-private (auth-gated, same as every other /app/v1/* endpoint), and the
-operator wants the portal to show what a skill actually says, not just its
-name and when-to-load line. Progressive disclosure (design/12 §1) governs
-the PROMPT — the body stays out of the model's context until activation —
-and is untouched by this read-only metadata endpoint.
+**The instructions body IS included.** The portal is private (auth-gated, same
+as every other /app/v1/* endpoint) and shows what a skill actually says, not
+just its name and when-to-load line. Progressive disclosure governs the PROMPT
+— the body stays out of the model's context until activation — and is
+untouched by this read-only metadata endpoint.
 
 `strict=False`: a malformed skill file must not take the whole endpoint
 down — skip it, same R-27 posture every other web/* module holds.
 
 **A skill refused for carrying an authority key drops here too, silently**
-(issue #187 finding 3). `parse_skill` now refuses `authority_above`,
+`parse_skill` refuses `authority_above`,
 `authority_below` or `change_policy` in a skill's frontmatter, and this
 module's `strict=False` catches that `SkillError` the same as any other
 parse failure — the skill is simply absent from the payload, with nothing
@@ -60,7 +55,7 @@ def _scan(skills_dir: Path) -> list[dict[str, Any]]:
 
 async def build_skills_payload(*, skills_dir: Path) -> list[dict[str, Any]]:
     """Every loaded skill's public metadata — name, description, and the
-    instructions body (operator 2026-09-03: private portal shows the body).
+    instructions body (the portal is private, so it shows the body).
     `[]` when the directory is absent — that's the honest "no skills
     configured" state, not an error.
 

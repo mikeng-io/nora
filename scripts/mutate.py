@@ -5,12 +5,9 @@ NOTICED the bug you just fixed. Those are different claims, and conflating them
 is what this script exists to stop: revert the exact production line, run the
 test that is supposed to guard it, and require RED.
 
-The war-story is `design/19-media-comprehension.md` (issues #116/#117,
-2026-09-08). Three review rounds running, the fixes were correct and guarded by
-nothing — a reviewer reverted four production changes at once and the full suite
-stayed byte-identical to baseline. Each round's unguarded fix was what the next
-round's edit broke. Requiring a mutation result per fix ended it, and the sweep
-then caught weak tests before reviewers did, in two consecutive rounds.
+A fix no test guards can be reverted, even together with others, and the full
+suite stays byte-identical to baseline; requiring a mutation result per fix
+catches those weak tests before a reviewer does.
 
 This is hand-picked mutation testing, deliberately NOT `mutmut`/`cosmic-ray`
 over the whole tree: an automated sweep across ~6000 tests is slow, and
@@ -54,7 +51,7 @@ mutant that does not compile is a BROKEN ENTRY, never a caught one. Counting
 still compile run their tests, and the one that does not only turns the exit
 code red.
 
-Two harness rules are baked in, both learned the hard way on that branch:
+Two harness rules are baked in:
 
 * **pytest exit code 5 is «nothing collected», not «failed».** A typo'd `-k`
   selector reported "caught" while testing nothing. The baseline is asserted

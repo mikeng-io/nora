@@ -1,9 +1,8 @@
 """Watch a directory of instruction files and keep serving the last good scan.
 
-The state machine `nora.doctrine.loader` has run since the doctrine became
-bind-mounted, lifted so the Dreamer's instruction store does not fork it. It is
-~50 lines and mentioned doctrine in exactly two places — a metric name and a log
-string — both of which are now the caller's to name.
+The reload state machine shared by `nora.doctrine.loader` and the Dreamer's
+instruction store. It knows nothing about doctrine: the metric name and the log
+subject are the caller's to name.
 
 **The property it exists for is the failure path, not the happy one.** A live
 edit that breaks a file must not take the running system's instructions away:
@@ -40,8 +39,7 @@ class Loaded:
     """What one successful scan loaded: the text of every file it matched,
     keyed by path relative to the watched directory, and when (wall clock,
     epoch seconds). Read by `nora.app.revisions` to record each load, so
-    "which instructions were in force at T" is answerable
-    (design/cognition-loop/70-migration.md §5).
+    "which instructions were in force at T" is answerable.
 
     Read from disk BESIDE the scan, not by it: `scan` is the caller's and
     returns parsed sections, not bytes. An edit landing between the two
@@ -66,10 +64,10 @@ class DirectoryWatcher(Generic[T]):
     watcher never inspects the value it holds, which is what lets two callers
     with unrelated record types share one reload machine.
 
-    `failure_counter` is the caller's own Prometheus counter name, so
-    `nora_doctrine_reload_failures_total` keeps counting exactly what it always
-    counted and the Dreamer's failures land somewhere else. `subject` names the
-    corpus in the log line for the same reason. Both are required — a shared
+    `failure_counter` is the caller's own Prometheus counter name, so each corpus
+    counts its failures separately (the doctrine uses
+    `nora_doctrine_reload_failures_total`). `subject` names the corpus in the log
+    line for the same reason. Both are required — a shared
     machine that defaulted them would attribute one corpus's failures to
     another.
     """
@@ -127,8 +125,7 @@ class DirectoryWatcher(Generic[T]):
         The full path rather than `p.name`, because `glob` may be nested: the
         Dreamer's tree is `doctrine/*.md` plus `objectives/*.md`, where two
         files can share a basename. For a flat directory the two are the same
-        string modulo the prefix, so the doctrine's fingerprint is unchanged in
-        everything but spelling.
+        string modulo the prefix.
         """
         return tuple(sorted((str(p), p.stat().st_mtime_ns, p.stat().st_size)
                             for p in self._dir.glob(self._glob)))

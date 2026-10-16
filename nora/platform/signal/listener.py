@@ -1,4 +1,4 @@
-"""SSE client for signal-cli (spec C.3, design/01).
+"""SSE client for signal-cli.
 
 Long-lived GET with full-jitter exponential backoff. One bad event is logged and
 skipped; the stream is never killed by a single message or a raising callback.

@@ -21,7 +21,7 @@ from nora.domain.ports import MemoryStore
 
 
 def edit_text(*, body: str, first_body: str | None) -> str:
-    """What Honcho is fed for an EDIT (design/message-edits/02 §2).
+    """What Honcho is fed for an EDIT.
 
     Honcho stores a message's content once — its API updates metadata only —
     and its deriver has usually read the original before the edit arrives. So
@@ -47,12 +47,11 @@ async def run(
 
     `edited` is the message `message` edits, when it is an edit: the text is
     then framed as a correction and the metadata points at the original's
-    `ts` (design/message-edits/02 §2)."""
+    `ts`."""
     if person is None:
         return
     # Honcho's deriver is a model and recall hands its text back to her, so a
-    # shared file link is fed as its handle, never the URL
-    # (design/external-files §1, R-18).
+    # shared file link is fed as its handle, never the URL (R-18).
     text = render_file_links(message.body)
     metadata: dict[str, object] = {"ts": message.timestamp}
     if edited is not None:
@@ -69,8 +68,8 @@ async def _feed(
     metadata: dict[str, object], metrics: Any,
 ) -> None:
     await memory.ensure_peer(peer_id=peer_id, conversation_id=conversation_id)
-    # Fed under the SPEAKER'S peer into the CONVERSATION's session (Honcho v2,
-    # design/24). `ts` rides as metadata so the deriver has structure.
+    # Fed under the SPEAKER'S peer into the CONVERSATION's session (Honcho v2).
+    # `ts` rides as metadata so the deriver has structure.
     ok = await memory.feed(
         peer_id=peer_id, text=text, conversation_id=conversation_id,
         metadata=metadata,

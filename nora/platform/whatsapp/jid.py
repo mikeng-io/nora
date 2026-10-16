@@ -1,5 +1,4 @@
 """WhatsApp JID normalization — the pure half of the wire contract
-(design/whatsapp-adoption/03-transport-contract.md §Normalization).
 
 Everything the policy layer matches on is exact-string: `policy.toml` on
 `conversation_id`, `identity.toml` on `sender_id`, `registry.self_aliases()`

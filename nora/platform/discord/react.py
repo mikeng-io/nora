@@ -9,10 +9,9 @@ reaction that raised would reach a pipeline that has no business handling one
 WHY THIS NEEDS THE SNOWFLAKE. Signal names a message by `(author, timestamp)`;
 Discord names it by its own id. `snowflake.timestamp_ms` is one-way — the low
 22 bits (worker, process, sequence) are gone — so the Signal pair cannot be
-turned back into a Discord id. `DiscordAdapter.react` therefore answered an
-honest `supported=False` until `NormalizedMessage.message_id` gave the port a
-place to carry the real handle. Without an id there is still nothing to react
-to, and this says so rather than guessing at a message.
+turned back into a Discord id. The real handle travels in
+`NormalizedMessage.message_id`. Without an id there is nothing to react to, and
+this says so rather than guessing at a message.
 
 THE EMOJI IS PATH DATA, so it is percent-encoded. A unicode emoji goes in raw
 (URL-escaped); a CUSTOM guild emoji would need `name:id` form, which v1 does
@@ -108,8 +107,8 @@ class DiscordReactor:
                 # only in the body's `code`: 10014 Unknown Emoji (genuinely
                 # already gone), 10008 Unknown Message (deleted, or a wrong
                 # `to_message_id`), 10003 Unknown Channel (a wrong channel id).
-                # Treating all three as success reported a wrong id as a clean
-                # retraction and counted it `status="sent"`.
+                # Treating all three as success would report a wrong id as a clean
+                # retraction and count it `status="sent"`.
                 if remove and resp.status == 404:
                     code = await _error_code(resp)
                     if code == _UNKNOWN_EMOJI:

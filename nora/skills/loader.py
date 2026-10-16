@@ -1,26 +1,22 @@
 """The only module that loads skills — domain instruction bundles, activated on
-demand (design/12 §1, authority item 5).
+demand (authority item 5).
 
 **Why this is not the doctrine loader.** `nora.doctrine.loader` assembles the
 files that go into `system_prompt=` on EVERY turn: who she is, how she behaves.
-A skill is the opposite shape. design/12 §1's
-placement rule is "if it is needed on every turn it is a prompt … if it is
-instructions for a domain that is usually irrelevant it is a skill", and a skill
-costs a tool call to activate (design/12 §4). So a skill's BODY must not sit in
-the prompt — only its name and its when-to-load line do (progressive
-disclosure), and the body arrives when something reaches for it. That is a
-different lifetime from doctrine and belongs in a different module. design/17 §4
-names exactly five doctrine kinds and "skill" is not one of them, which is the
-same statement said in the taxonomy's own words.
+A skill is the opposite shape: what is needed on every turn is a prompt;
+instructions for a domain that is usually irrelevant are a skill, and a skill
+costs a tool call to activate. So a skill's BODY must not sit in the prompt —
+only its name and its when-to-load line do (progressive disclosure), and the
+body arrives when something reaches for it. That is a different lifetime from
+doctrine and belongs in a different module; "skill" is not a doctrine kind.
 
-**The authority boundary this module exists to hold (design/12 §2, R-29).**
+**The authority boundary this module exists to hold (R-29).**
 A skill is authority item 5: operator-authored, on disk, and therefore trusted —
 it may add procedure, never relax a rule above it. A MESSAGE is item 6 and
 untrusted. The load-bearing consequence: *skill sources are operator
 configuration only, and a message must never name a skill to load.* If a message
 could introduce a skill source, item 6 would reach item 5 and the ordering
-collapses (design/14 §2.1 says the same for retrieved web content: "no path from
-retrieved text to skill activation").
+collapses: there is no path from retrieved text to skill activation.
 
 This is enforced structurally, not by inspection:
 
@@ -30,17 +26,15 @@ This is enforced structurally, not by inspection:
 - `resolve(name)` is a pure lookup against the already-loaded set. It never
   touches the filesystem and never treats its argument as a path, a URL or
   inline text — so the most a message can do is name a skill the operator
-  already shipped (which is the intended activation, design/12 §4), and it can
+  already shipped (which is the intended activation), and it can
   never name a NEW one into existence. Reverting `resolve` to load from its
   argument the way `strands...Skill.from_file`/`from_url` do is exactly the
   violation R-29's probe turns red.
 
-**This module is not on the live agent's path (DEC-50 activated it elsewhere).**
-`nora.agent.factory.build_agent` wires Strands' own vended
-`AgentSkills(str(skills_dir), strict=False)` directly at `nora/skills/`
-(the day DEC-48's docstring here used to describe as future — it arrived,
-and nothing in THIS file was rewritten, exactly as planned) — that plugin
-never calls `parse_skill` or `SkillStore`. This module is still used in two
+**This module is not on the live agent's path (DEC-50).**
+`nora.agent.factory.create_agent` wires Strands' own vended
+`AgentSkills(str(skills_dir), strict=False)` directly at `nora/skills/`; that
+plugin never calls `parse_skill` or `SkillStore`. This module is used in two
 places: `nora/web/skills.py` builds its OWN `SkillStore(skills_dir,
 strict=False)` over the same directory to read the identical on-disk
 metadata for the private portal, and the test suite (`tests/test_skill_
@@ -49,16 +43,15 @@ content.py`, `tests/test_skill_loader.py`) and `nora-land`'s gate build one
 actually stops something.
 
 **So a refusal `parse_skill` raises is a GATE check, not a runtime one**
-(issue #187 finding 3, sharpened on review). `SkillError` here — including
+`SkillError` here — including
 `_FORBIDDEN_AUTHORITY_KEYS` below — is caught wherever `SkillStore` runs
 strict, and nothing else: the live agent's own loader (Strands'
 `AgentSkills`) has no idea this module's rules exist and would load a
 keyed skill's body into a turn regardless, and the portal's non-strict
 `SkillStore` in `nora/web/skills.py` drops a keyed skill from its listing
 silently (the same R-27 "skip it" posture every malformed-skill case there
-already gets — not logged or counted differently for this one reason than
-any other parse failure, and that consistency is deliberate: singling this
-failure out for extra visibility would be the inconsistency, not the gap).
+gets, deliberately: it is not logged or counted differently from any other
+parse failure).
 """
 
 from __future__ import annotations
@@ -74,8 +67,8 @@ import yaml
 from nora.domain.blocks import ContextBlock, render_elements
 
 # The AgentSkills.io name rule (strands...skills.skill._SKILL_NAME_PATTERN),
-# reproduced so a file loaded here would load identically under the vended
-# plugin later. It is also the `resolve` gate: a path, a URL or an inline
+# reproduced so a file loaded here loads identically under the vended
+# plugin. It is also the `resolve` gate: a path, a URL or an inline
 # `---` blob cannot match it, so none can name a skill.
 _NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 _MAX_NAME = 64
@@ -83,37 +76,28 @@ _FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?(.*)\Z", re.DOTALL)
 _REQUIRED = ("name", "description")
 
 # The authority vocabulary `nora.doctrine.loader` reads off a DOCTRINE
-# section's frontmatter — `authority_above`/`authority_below` (design/17 §4's
-# authority graph between doctrine sections) and `change_policy` (who may edit
-# one without asking). A skill is a DIFFERENT authority item (design/12 §2,
-# item 5 — below a doctrine section, above a message) and nothing anywhere
-# reads any of the three off a skill's frontmatter: `nora.doctrine.loader`
-# only ever opens files under `nora/doctrine/`. Before this refusal,
-# `parse_skill` popped `name` and `description` and left the rest —
-# these three included — in `metadata`, silently: a skill file could declare
-# `authority_above: [situation]`, as `navigation` and `image-generation` both
-# did, and read as though it placed the skill in that graph while nothing
-# wired it in (issue #187 finding 3, was #241 part 2).
+# section's frontmatter — `authority_above`/`authority_below` (the authority
+# graph between doctrine sections) and `change_policy` (who may edit one
+# without asking). A skill is a DIFFERENT authority item (below a doctrine
+# section, above a message) and nothing reads any of the three off a skill's
+# frontmatter: `nora.doctrine.loader` only opens files under `nora/doctrine/`.
+# A skill file declaring `authority_above: [situation]` would read as though it
+# placed the skill in that graph while nothing wired it in, so `parse_skill`
+# refuses the key rather than leaving it in `metadata`.
 #
 # REJECTED rather than honoured. Honouring them would mean this loader
-# participating in the doctrine authority graph — a bigger change with its own
-# evidence, and still open. Refusing is the smaller one: it stops a file
-# carrying a claim nothing enforces, which is the correctness-of-the-record
-# bug #241 named, not a behaviour bug.
+# participating in the doctrine authority graph — a bigger change. Refusing
+# stops a file carrying a claim nothing enforces.
 #
-# **`change_policy` checked separately, and it belongs here too** (review,
-# issue #187 finding 3). Unlike the other two it IS read and enforced —
-# `nora.doctrine.loader` and `nora.instructions.dreamer` both validate and
-# store it — but neither ever opens a file under `nora/skills/`; both read
-# only their own directories. Checked directly for a SKILL specifically:
-# `nora/web/skills.py::build_skills_payload` is the only place that reads a
-# skill's parsed metadata at all, and its payload carries `name`,
-# `description` and `instructions` only — no `change_policy`, and the portal
-# read it feeds (`app/src/server/upstream.ts`'s `skills` row) is GET-only with no
-# skill-editing surface for a policy to gate in the first place. No script or
-# git hook reads it either. So a skill's `change_policy` is exactly as
-# unenforced as its `authority_above`/`authority_below` were, and stays in
-# this tuple for the same reason.
+# **`change_policy` belongs here too.** Unlike the other two it IS read and
+# enforced — `nora.doctrine.loader` and `nora.instructions.dreamer` both
+# validate and store it — but neither opens a file under `nora/skills/`; both
+# read only their own directories. For a SKILL, `nora/web/skills.py::
+# build_skills_payload` is the only reader of parsed metadata, its payload
+# carries `name`, `description` and `instructions` only, and the portal read it
+# feeds is GET-only with no skill-editing surface for a policy to gate. So a
+# skill's `change_policy` is as unenforced as `authority_above`/
+# `authority_below`, and is refused for the same reason.
 _FORBIDDEN_AUTHORITY_KEYS = ("authority_above", "authority_below", "change_policy")
 
 
@@ -233,19 +217,16 @@ class SkillStore:
 
     def render_available(self) -> str:
         """The `<available_skills>` block for the system prompt (progressive
-        disclosure) — the vended AgentSkills shape, ready for the day activation
-        is wired. Bodies are NOT included; only name and when-to-load.
+        disclosure) — the vended AgentSkills shape.
+        Bodies are NOT included; only name and when-to-load.
         """
         # CLASS 2 throughout — a list of skills the OPERATOR installed, not
         # anything a member typed, which is what the block's type says it is.
         #
-        # `name` and `description` are ATTRIBUTES, not nested blocks. A first
-        # cut made each its own `ContextBlock`, which gave every leaf field a
-        # description of its own — three sentences of framing around two words,
-        # and
-        # a body on its own line so `<name>navigation</name>` became three
-        # lines. They are FIELDS of a skill, and the element form's whole rule
-        # is that identifying fields are attributes.
+        # `name` and `description` are ATTRIBUTES, not nested blocks: nested blocks
+        # would each need a description of their own and spread `<name>` over
+        # three lines. They are FIELDS of a skill, and the element form's rule is
+        # that identifying fields are attributes.
         body = "No skills are currently available."
         if self._skills:
             body = render_elements(

@@ -6,8 +6,8 @@ at boot is the WAKE path's — `[speech.wake].stt_model` — because that is the
 latency-bound caller; voice-note ingest names its own model per request
 (`[speech.stt].model`), so it is unaffected by what is pre-loaded.
 
-No env override on purpose: before 2026-09-17 `STT_MODEL` in compose and the
-config file disagreed. stdlib only; this container does not import nora.
+No env override on purpose: two sources (compose env and the config file) can
+disagree. stdlib only; this container does not import nora.
 """
 
 from __future__ import annotations

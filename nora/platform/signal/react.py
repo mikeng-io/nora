@@ -19,7 +19,7 @@ resolution step is needed, and none is attempted here. The one id form that
 would NOT work is a PNI presented without its prefix, which the parser cannot
 produce (signal-cli reports a PNI in `sourceUuid` already prefixed).
 
-An empty `to_author` is still refused outright rather than posted: a reaction
+An empty `to_author` is refused outright rather than posted: a reaction
 with no target author is not a reaction signal-cli can route, and posting it
 would spend a round-trip to earn a 400.
 

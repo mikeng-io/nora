@@ -1,21 +1,19 @@
 """Read back what a deploy actually did, against every container on the image.
 
-**The failure this exists for, measured 2026-09-16.** `presence` and
-`analytics` run `nora:latest` — the SAME image as `nora`, a different command.
-A `docker compose up -d --force-recreate nora` recreates one of the three, so
-the other two keep running whatever image they were created from. When
-`config.toml` then gained the voice work's `[speech.tts]` keys, the two stale
-containers rejected them (`extra_forbidden`, a Pydantic schema that predates
-the keys) and entered a restart loop: **279 restarts, `analytics` down for four
-days.** Nothing in the deploy path looked.
+**The failure this exists for.** `presence` and `analytics` run `nora:latest`
+— the SAME image as `nora`, a different command. A `docker compose up -d
+--force-recreate nora` recreates one of the three, so the other two keep
+running whatever image they were created from. When `config.toml` gains keys a
+stale image's schema predates, the stale containers reject them
+(`extra_forbidden`) and enter a restart loop. Nothing in the deploy path looks.
 
-**And detection was never the problem.** `TargetDown` fired the whole time,
-Alertmanager routed it, and the bridge delivered it to Discord. It was not
-acted on because `PlatformSilent` trips on 900s of ordinary quiet and flaps all
-day, so the channel delivers every ~25 minutes and a four-day outage is
-invisible inside it — the exact failure `deploy/alertmanager/alertmanager.yml`
-predicts in its own comment: *"a repeat every few minutes is how an alert
-channel becomes a muted one."*
+**And detection is not the problem.** `TargetDown` fires, Alertmanager routes
+it, and the bridge delivers it to Discord. It is not acted on because
+`PlatformSilent` trips on 900s of ordinary quiet and flaps all day, so the
+channel delivers every ~25 minutes and a multi-day outage is invisible inside
+it — the exact failure `deploy/alertmanager/alertmanager.yml` predicts in its
+own comment: *"a repeat every few minutes is how an alert channel becomes a
+muted one."*
 
 So this is a READ-BACK at the moment of deploy, not another alert. An alert
 competes for attention that is already exhausted; a check that fails the deploy
@@ -31,8 +29,7 @@ thing being checked:
    `docker compose up` has already returned success by then. `running` is not
    enough: a crash loop is `running` between restarts. So a container with a
    healthcheck must reach `healthy` within `--healthy-timeout`, and any
-   restart since the recreate fails the deploy (2026-09-30: nora read `ok` at
-   restarts=2, health=starting, while refusing to start).
+   restart since the recreate fails the deploy.
 
 Usage, after `scripts/build-image.sh` and the recreate:
 
@@ -76,16 +73,15 @@ def containers_for(image: str) -> list[dict]:
     """Every container that ASKED for this image, running or not.
 
     The membership test is `Config.Image` — the reference given at create time,
-    which stays `nora:latest` however far the tag has since moved. Three other
-    candidates were tried and each misses the case this check exists for:
+    which stays `nora:latest` however far the tag has since moved. The
+    alternatives each miss the case this check exists for:
 
     - `--filter ancestor=` resolves the tag to an ID and matches on that, so a
       container on the STALE image is exactly what it excludes.
     - `docker ps --format {{.Image}}` prints a DISPLAY value: after a retag it
-      may resolve to some other tag of the old ID, or to a bare ID. Measured
-      2026-09-16 against a constructed skew — the container did not appear at
-      all, and this function's first draft reported "nothing to verify" for a
-      case it was written to catch.
+      may resolve to some other tag of the old ID, or to a bare ID, so a
+      stale container may not appear at all and the check would report
+      "nothing to verify" for the case it exists to catch.
     - `.Image` (the container's resolved ID) is what we compare AGAINST; using
       it to select would make the check tautological.
 
@@ -126,10 +122,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.settle:
         time.sleep(args.settle)
     rows = containers_for(args.image)
-    # Wait for `starting` to resolve. Read on 2026-09-30: nora was `running`
-    # with health=starting and restarts=2 at the moment of the read, and this
-    # script said ok while it crash-looped on a refused startup. `running` is a
-    # moment between restarts; only `healthy` is the process having come up.
+    # Wait for `starting` to resolve. A container can read `running` with
+    # health=starting and restarts>0 while crash-looping on a refused startup.
+    # `running` is a moment between restarts; only `healthy` is the process
+    # having come up.
     deadline = time.monotonic() + args.healthy_timeout
     while (
         any(c["health"] == "starting" and c["restarts"] == 0 for c in rows)

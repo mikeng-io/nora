@@ -1,16 +1,13 @@
 """`obtain(spec)` — the only way to get Nora outside production.
 
-One function. No optional collaborators, deliberately: `build_offline_pipeline`
-takes 21 parameters of which 13 default to `None`, and that is precisely what let
-two callers each forget a different thing — the incident
-`tests/architecture/test_assembler_parity.py` records (*"composition.py passed 18
-keyword arguments and offline.py passed 7, so every eval measured an agent
-missing `<standing>`/`<notes>`/`<facts>` with nothing to notice"*).
+One function. No optional collaborators, deliberately: a builder with many
+parameters defaulting to `None` lets each caller forget a different thing, and
+an eval then measures an agent missing `<standing>`/`<notes>`/`<facts>` with
+nothing to notice (`tests/architecture/test_assembler_parity.py`).
 
 `SubjectSpec` therefore names only what is NOT Nora. Adding a field to it is a
-decision that something has stopped being part of her, and it should be argued in
-`design/evaluation/01-boundaries.md` §2 rather than added because a caller needed
-it.
+decision that something has stopped being part of her, and it should be argued
+rather than added because a caller needed it.
 """
 
 from __future__ import annotations
@@ -49,22 +46,19 @@ DEFAULT_ROOM = ("signal", "g1")
 
 
 #: The committed template. ONE place knows its name, the same rule
-#: `tests/builders.copy_example_config` holds for the test suite (R-B, #113).
+#: `tests/builders.copy_example_config` holds for the test suite (R-B).
 #: NORA AS THE DEPLOYMENT RUNS HER, not as a fresh install would.
 #:
-#: This was `config.example.toml` until 2026-09-21, and that was the single
-#: largest divergence in the suite. The example file's JOB is to be a safe
-#: template for a new deployment, so it ships with almost everything off: 65
-#: values differed from production, including `llm.model`
-#: (`ollamacloud/deepseek-v4-flash:0731` vs `nora`), `llm.reasoning_effort`,
-#: and `relevance_gate`, `participation`, `standing`, `culture`, `notes`,
-#: `dreamer`, `search`, `online`, `weather`, `route` and `preview` all
-#: DISABLED. Every case ever run measured a different model, at a different
-#: reasoning effort, with most of Nora switched off.
+#: Not `config.example.toml`, whose JOB is to be a safe template for a new
+#: deployment, so it ships with almost everything off: a different
+#: `llm.model`, `llm.reasoning_effort`, and `relevance_gate`, `participation`,
+#: `standing`, `culture`, `notes`, `dreamer`, `search`, `online`, `weather`,
+#: `route` and `preview` all DISABLED. A case run against it would measure a
+#: different model, at a different reasoning effort, with most of Nora switched
+#: off.
 #:
-#: No case could have caught it. `01-boundaries.md` §5's rule 4 — "nothing
-#: reaches the model that the deployment would not send" — constrains the
-#: PROMPT, and the prompt was fine. What differed was the reader.
+#: The rule "nothing reaches the model that the deployment would not send"
+#: constrains the PROMPT; this constrains the READER.
 _TEMPLATE = _REPO_ROOT / "config.evaluation.toml"
 
 #: `miles_novak`, matching the old driver's `_EVAL_PERSON_ID`, and it matters.
@@ -80,10 +74,10 @@ _TEMPLATE = _REPO_ROOT / "config.evaluation.toml"
 #: A SYNTHETIC account, and deliberately not the real one.
 #:
 #: Any E.164-shaped string short-circuits the startup resolution; the value is
-#: never dialled and never reaches a network. The first version hardcoded Nora's
-#: real Signal number — which `scrub/README.md` names as a scrub-map target, and
-#: which `Dockerfile`'s `COPY nora/ ./nora/` and `pyproject.toml`'s
-#: `include = ["nora*"]` put in the image and the wheel. Found by audit.
+#: never dialled and never reaches a network. It is not Nora's real Signal
+#: number, which `scrub/README.md` names as a scrub-map target and which
+#: `Dockerfile`'s `COPY nora/ ./nora/` and `pyproject.toml`'s
+#: `include = ["nora*"]` would put in the image and the wheel.
 _PLACEHOLDER_ACCOUNT = "+85200000000"
 #: An env var this process owns, so an enabled Discord adapter authenticates
 #: against nothing instead of the deployment's real bot. The value is the
@@ -110,7 +104,7 @@ _DEFAULT_IDENTITY = (
 _DOCKER_HOST = "host.docker.internal"
 _LOOPBACK = "127.0.0.1"
 #: The name nora's container reaches Honcho by on the private `honcho_memory`
-#: network (#633, DEC-259). It exists only inside that network; the host
+#: network (DEC-259). It exists only inside that network; the host
 #: reaches the same service on loopback, where Honcho still publishes.
 _HONCHO_ALIAS = "honcho"
 
@@ -130,12 +124,10 @@ def _from_host(url: str) -> str:
     or `honcho` on the private Honcho network) swapped for loopback; anything
     else untouched.
 
-    `honcho` is here because DEC-259 moved nora's route to Honcho off
-    `host.docker.internal:8000` (published on every interface, no
-    authentication) onto a network of its own. Honcho still publishes on
-    loopback, so the suite on the host reaches the same service there; without
-    this the host would try to resolve a name it cannot, and every case would
-    read as "memory unreachable".
+    `honcho` is here because nora reaches Honcho over a private network of its
+    own (DEC-259). Honcho also publishes on loopback, so the suite on the host
+    reaches the same service there; without this the host would try to resolve
+    a name it cannot, and every case would read as "memory unreachable".
     """
     for name in (_DOCKER_HOST, _HONCHO_ALIAS):
         url = url.replace(f"//{name}:", f"//{_LOOPBACK}:").replace(
@@ -154,9 +146,7 @@ def config_default(key: str) -> object:
 
     `None` means UNRESOLVABLE — a required field with no default, or a nested
     container like `dreamer.budgets.<name>` that is keyed at runtime. Callers
-    must treat that as "cannot check", never as "agrees": an earlier version
-    returned the field's ANNOTATION instead, compared a string against
-    `<class 'str'>`, and reported 57 divergences that were not.
+    must treat that as "cannot check", never as "agrees".
     """
     from pydantic_core import PydanticUndefined
 
@@ -196,7 +186,7 @@ def default_policy(room: tuple[str, str], *, unit: str = "nora") -> str:
 
     Carries a `label` (the room id, which is what this function is handed and
     all it has) because `load_policy` refuses an allowed room with none as a
-    STARTUP error (#200 part 2) — the same refusal a deployment's own
+    STARTUP error — the same refusal a deployment's own
     `policy.toml` is held to, so a subject that skipped it here would compose
     against a policy shape production could never actually run.
     """
@@ -213,8 +203,8 @@ def default_policy(room: tuple[str, str], *, unit: str = "nora") -> str:
 class SubjectSpec:
     """What is NOT Nora, and therefore what a caller states.
 
-    Every field here is on `design/evaluation/01-boundaries.md` §2's list of
-    seams — the places the world reaches her. Nothing else is settable, because
+    Every field here is a seam — a place the world reaches her. Nothing else is
+    settable, because
     everything else IS her.
     """
 
@@ -259,10 +249,7 @@ class SubjectSpec:
     #: when the case reconstructs one. Cases are isolated by DATABASE, not by
     #: room: each composes against a sandbox database of its own
     #: (`nora.subject.sandbox.sandbox_database`), so the real id is usable and
-    #: the deployment's own `policy.toml` names it verbatim. An earlier design
-    #: minted a hashed room per case because every case shared one database;
-    #: that hashing is gone, and with it the swapped policy entries and the
-    #: Discord-shaped ids it needed.
+    #: the deployment's own `policy.toml` names it verbatim.
     room: tuple[str, str] = DEFAULT_ROOM
 
     #: WHAT TIME IT IS. `None` means the wall clock, which is production.
@@ -273,9 +260,9 @@ class SubjectSpec:
     #: ask that adaptor anything — it can only watch it answer about today.
     #:
     #: FROZEN, not offset: the same instant every call, so a turn and the window
-    #: it reads cannot drift apart mid-case. That is the property the old
-    #: drivers lost by computing two clock reads a few lines apart (issue #213),
-    #: and it is cheaper to hold here than to remember at each call site.
+    #: it reads cannot drift apart mid-case. That is the property drivers
+    #: lose by computing two clock reads a few lines apart, and it is
+    #: cheaper to hold here than to remember at each call site.
     now: datetime | None = None
 
 
@@ -284,12 +271,12 @@ class Subject:
     """Nora, composed, plus the config she was composed from.
 
     `deps` is exactly what `nora/__main__.py` runs on — same type, same builder,
-    same fields — 43 today, and
-    `tests/integration/test_the_subject_is_the_deployed_graph.py` is what
-    notices when that count moves. An entry point is an attribute of it (`deps.dispatcher`,
+    same fields — and
+    `tests/integration/test_the_subject_is_the_deployed_graph.py` fails when
+    `__main__` and the subject diverge. An entry point is an attribute of it (`deps.dispatcher`,
     `deps.engagement`, `deps.participation_trigger`, `deps.dreamer_runtime`),
-    which is why `design/evaluation/01-boundaries.md` §3 can call the entry point
-    a selection on a case rather than a branch in a runner.
+    so the entry point is a selection on a case rather than a branch in a
+    runner.
     """
 
     deps: Dependencies
@@ -315,9 +302,7 @@ class Subject:
     #:
     #: NOT `cfg.memory.workspace_id`. That is Honcho's workspace, one per
     #: deployment (`nora`), while a unit is per room (`friends`, `ridgeline`);
-    #: an earlier version of this package conflated the two and refused any
-    #: policy whose unit differed from the workspace — a check the
-    #: deployment's own `policy.toml` fails on every room it has.
+    #: the two are distinct.
     unit: str
     culture_key: str
 
@@ -340,10 +325,7 @@ def _with(obj: Any, path: str, value: Any) -> Any:
 #: overrides so a caller can still change any of them.
 #:
 #: These are here rather than in each caller because a caller reinventing them
-#: is exactly how seven different assemblies happened. Each was discovered by
-#: running `obtain()` and watching it fail — not by reading the code, which is
-#: how this list stayed implicit in `tests/test_composition.py`'s fixture for as
-#: long as it did.
+#: yields divergent assemblies.
 def _baseline(cfg: Config, workdir: Path) -> Config:
     # `store.data_dir` — media custody lands in the caller's directory, never a
     # shared one.
@@ -352,17 +334,17 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # "derive from the daemon", and `build_dependencies` then makes a REAL HTTP
     # call to signal-cli at startup and raises `StartupError` when nothing
     # answers. An override returns immediately with no network. Composing Nora
-    # reaches the world unless told otherwise; that was measured here, by this
-    # call failing. It does not cover a send: `landed_signal_sends` below does.
+    # reaches the world unless told otherwise. It does not cover a
+    # send: `landed_signal_sends` below does.
     cfg = _with(cfg, "platforms.signal.account", _PLACEHOLDER_ACCOUNT)
     # `platforms.discord.token_env` — the SAME neutralisation, for the reason
     # above. The adapters stay ENABLED as the deployment has them, because the
     # registry's `self_aliases()` feeds `self_ids` and `self_ids` is what
     # `MentionPolicy`/`ReplyToNoraPolicy` match on — with the deployment's text
-    # trigger off since 2026-09-01, mention-and-reply IS the engagement path,
-    # so a disabled adapter would delete it. What must not reach the world is
-    # the CREDENTIAL, and Discord's lives in an env var rather than the config
-    # (`nora/platform/registry.py:183` refuses to start without it), so the
+    # trigger off, mention-and-reply IS the engagement path, so a disabled
+    # adapter would delete it. What must not reach the world is the CREDENTIAL,
+    # and Discord's lives in an env var rather than the config
+    # (`nora/platform/registry.py` refuses to start without it), so the
     # variable is pointed at one this process owns.
     os.environ.setdefault(_PLACEHOLDER_TOKEN_ENV, "eval-subject-not-a-real-token")
     cfg = _with(cfg, "platforms.discord.token_env", _PLACEHOLDER_TOKEN_ENV)
@@ -378,8 +360,7 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # production's Nora holds `web_search`, `route`, `online`, and
     # `generate_image`; a subject composed without their keys does not, and a
     # case whose turn would have reached one measures a Nora missing it. Full
-    # fidelity means running where the deployment runs
-    # (`design/evaluation/11-the-sandbox-rebuild.md` §1.2).
+    # fidelity means running where the deployment runs.
     for name in _CREDENTIALS_ENABLED_FEATURES_DEMAND:
         os.environ.setdefault(name, "eval-subject-placeholder")
     # `memory.workspace_id` — Honcho is the ONE store the sandbox database
@@ -392,8 +373,8 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # The fixed `-eval` sibling is the DEFAULT only. An eval draw overrides it
     # with a workspace of its own (`memory.workspace_id`, from
     # `memory_workspace.draw_workspace`), because the shared sibling made
-    # draws correlated: the tag path read earlier draws' conclusions back
-    # (issue #462). Configuration, not a new seam: which workspace is a value
+    # draws correlated: the tag path read earlier draws' conclusions back.
+    # Configuration, not a new seam: which workspace is a value
     # one deployment differs from another by, which is what `overrides` is
     # for, and `build_config` refuses any value outside the eval namespace.
     cfg = _with(cfg, "memory.workspace_id", shared_eval_workspace(cfg.memory.workspace_id))
@@ -473,16 +454,11 @@ def build_config(spec: SubjectSpec) -> Config:
     (spec.workdir / "identity.toml").write_text(spec.identity, encoding="utf-8")
     # `cfg` BEFORE the policy, so the policy is checked against what
     # `know()` will actually write notes under, not a value re-derived from
-    # `spec.overrides` by a second reading of the same dict. `nora.config
-    # .load()` does not read `policy.toml` to load `config.toml` (confirmed:
-    # it succeeds with none present), so this ordering costs nothing.
-    # Found live, fifth review pass: re-deriving `stated_unit` from
-    # `spec.overrides` with its OWN hardcoded `"nora"` fallback made the unit
-    # check pass whenever that literal happened to match `config.example
-    # .toml`'s own shipped default and `nora.policy`'s own shipped default —
-    # agreement by THREE literals in three files coinciding, exactly the
-    # "convention, not construction" this whole fix exists to close, just one
-    # layer further down than the override case pass 3/4 already tested.
+    # `spec.overrides` by a second reading of the same dict. `nora.config.load()`
+    # does not read `policy.toml` to load `config.toml`, so this ordering costs
+    # nothing. Re-deriving `stated_unit` from `spec.overrides` with its own
+    # hardcoded `"nora"` fallback would pass whenever three literals in three
+    # files happened to coincide — convention, not construction.
     cfg_path = spec.workdir / "config.toml"
     shutil.copy(_TEMPLATE, cfg_path)
     loaded = _load_config(cfg_path)
@@ -502,8 +478,8 @@ def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment:
     """Every Honcho workspace this subject can route to is `workspace` — the
     eval namespace's — and that is measured, not assumed (DEC-214).
 
-    Rewriting `memory.workspace_id` was the whole guarantee while one Nora
-    was one Honcho workspace. It is not any more: a policy with `[units]`
+    Rewriting `memory.workspace_id` alone is not the guarantee: a policy with
+    `[units]`
     routes each unit to the Honcho workspace its Nora workspace is BOUND to
     in `identity.toml`, and the eval suite composes against the deployment's
     own policy and identity by default — whose bindings name production's
@@ -552,8 +528,8 @@ _EVAL_WORKSPACE = "eval"
 
 class RoomNotInPolicyError(ValueError):
     """The subject's room is one the policy does not name. Its own type so a
-    caller that knows WHY a room can be unnamed (a pseudonymised eval anchor,
-    #776) can say so without matching on this message."""
+    caller that knows WHY a room can be unnamed (a pseudonymised eval anchor)
+    can say so without matching on this message."""
 
 
 def _conversation_for(spec: SubjectSpec) -> Conversation:
@@ -563,10 +539,9 @@ def _conversation_for(spec: SubjectSpec) -> Conversation:
     appears as SOME conversation's `id` somewhere in the file — a hand-written
     multi-entry policy can satisfy that while the subject's OWN room resolves
     to a different entry, with a different `primary_id` and a different
-    `unit`. Found live, fourth review pass: a policy whose OTHER entry
-    happened to carry the room's id string composed cleanly and silently
-    keyed culture/notes/the Dreamer's scope under a real room's identifiers
-    instead of the subject's own.
+    `unit` — so a policy whose OTHER entry carries the room's id string would
+    compose cleanly and silently key culture/notes/the Dreamer's scope under a
+    real room's identifiers instead of the subject's own.
 
     A policy that does NOT name the room is REFUSED, because it is the
     quietest failure available: ingest refuses admission, no turn runs,
@@ -594,36 +569,29 @@ def _conversation_for(spec: SubjectSpec) -> Conversation:
 async def obtain(spec: SubjectSpec) -> Subject:
     """Compose Nora. One call, one graph, no collaborators passed.
 
-    Costs ~64ms against a template-cloned database
-    (`design/evaluation/03-step0-results.md` §3), which is why this is per-case
+    Cheap against a template-cloned database, which is why this is per-case
     rather than session-scoped: a case can be plain data and nothing has to be
     reset between two of them.
 
     **The database is handed over through the ENVIRONMENT**, because that is
-    production's own seam: `composition.py:1026` reads
+    production's own seam: `composition.py` reads
     `os.environ[cfg.store.database_url_env]` and there is no parameter to pass
     it by. So `spec.database_url` goes into a variable of this call's own, named
     uniquely, and `cfg.store.database_url_env` is pointed at it — rather than
     borrowing the deployment's variable and putting it back, which cannot be
     made safe under concurrency.
 
-    **The clock is handed over as a parameter**, because `build_dependencies`
-    now takes one (it always had the dependency; it wrote the same literal nine
-    times instead of naming it). `spec.now` is frozen rather than offset, so
+    **The clock is handed over as a parameter** that `build_dependencies`
+    takes. `spec.now` is frozen rather than offset, so
     every component on the graph agrees about the instant.
 
-    This was found by writing `knowledge.py` against `cfg.store.database_url`
-    and discovering no such field exists. Before that, `spec.database_url` was
-    declared and never read: a caller passing a URL different from the
-    environment's got the environment's, silently, and the integration tests
-    passed because the two happened to be equal. A seam that is ignored is
-    worse than one that is absent — it reads as a promise.
+    `spec.database_url` is honoured: it is the URL the graph is composed
+    against, not the environment's.
 
     Nothing of the deployment's is touched, so there is nothing to restore and
-    no window in which a concurrent caller can see the wrong value. The
-    alternative — a new parameter on `build_dependencies` — is production
-    surface changed for a non-production caller, which `01-boundaries` §5(2) is
-    the rule against.
+    no window in which a concurrent caller can see the wrong value. A new
+    parameter on `build_dependencies` would change production surface for a
+    non-production caller.
     """
     cfg = build_config(spec)
     clock: Callable[[], datetime] = (
@@ -662,8 +630,7 @@ async def obtain(spec: SubjectSpec) -> Subject:
     # The variable is GONE, so the config must not go on naming it: anything
     # that re-read `os.environ[cfg.store.database_url_env]` would get a
     # KeyError. `Subject.database_url` is the field to read, and this makes the
-    # dead name unreadable rather than merely unused. Found by audit — it was a
-    # live trap, not a tidiness point.
+    # dead name unreadable rather than merely unused.
     cfg = _with(cfg, "store.database_url_env", "")
     convo = _conversation_for(spec)
     return Subject(

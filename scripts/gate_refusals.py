@@ -8,9 +8,8 @@ no summation repairs:
 1. **Scrape resolution.** A delta at *t* means at least one refusal in the
    interval ending at *t*, never exactly one and never exactly then.
 2. **Lazy labels plus restarts.** Prometheus creates a labelled series on its
-   first observation, so every restart drops a series that has not fired yet.
-   Measured 2026-09-16: the `no_go` counters reset 19 times in 7 days, and the
-   `go` series had been absent for five days.
+   first observation, so every restart drops a series that has not fired yet
+   (a `go` series can be absent for days).
 3. **Retention.** ~7 days, after which the refusals simply are not there.
 
 So the output carries `covers_from`, and the CLI REFUSES a file that does not
@@ -18,10 +17,9 @@ span the window asked for: a short refusal list makes both refusal-side
 measures look clean, which is exactly what they would say if nothing had been
 refused. The two must never be confusable.
 
-`design/culture-tier/02-measurement §3` says what actually fixes this — a
-durable per-verdict row, which DEC-179 excluded from `decision_log` on purpose.
-This script is what that decision costs, written down and runnable. When the
-row lands, this is deleted and the CLI's `--refusals` reads it instead.
+What actually fixes this is a durable per-verdict row, which DEC-179 excluded
+from `decision_log` on purpose. This script is what that decision costs. If
+such a row is added, this is deleted and the CLI's `--refusals` reads it.
 
 Run it where Prometheus is reachable (inside the deploy host):
 
@@ -54,9 +52,8 @@ def refusals(base: str, window: str, *, timeout: float) -> tuple[list[dict], int
     """Every refusal the counters still remember, as `(rows, covers_from)`.
 
     RAW SAMPLES, not `query_range`: a range query at any step can step over a
-    sample shorter than the step, which is how the same counter was reported
-    wrong three times (`00-overview §1.1`). Reset-aware, treating a drop as
-    all-new.
+    sample shorter than the step and misreport the counter. Reset-aware,
+    treating a drop as all-new.
 
     A `go` is not a refusal and is skipped. Every kind on the errors series IS
     one: a fail-closed no_go refuses the room exactly as a chosen one does.
@@ -70,7 +67,7 @@ def refusals(base: str, window: str, *, timeout: float) -> tuple[list[dict], int
                 continue
             room = labels.get("conversation_id", "")
             if not room:
-                # Pre-#221 samples carry no room and cannot be joined to
+                # Samples with no room label cannot be joined to
                 # anything. Dropped rather than bucketed under "", which would
                 # put unattributable refusals in a denominator as though they
                 # had been checked.

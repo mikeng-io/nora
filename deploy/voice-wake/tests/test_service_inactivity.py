@@ -63,11 +63,11 @@ async def test_an_utterance_ends_when_the_source_stops_sending_frames(service):
     assert fired == []  # no quiet chunk ever arrived; the chunk tail cannot end it
     await asyncio.wait_for(_until(lambda: fired), timeout=1.0)
     user_id, utterance = fired[0]
-    assert user_id == (GUILD, "u1")  # keyed by (guild, user) since 2026-09-17
+    assert user_id == (GUILD, "u1")  # keyed by (guild, user)
     assert utterance.peak_score == 0.9
     assert not svc._users[(GUILD, "u1")].gate.collecting
     assert stub.resets == 1  # the model was reset exactly as a tail-ended utterance would
-    # /health keys users by "<guild>/<user>" now — one gate serves several
+    # /health keys users by "<guild>/<user>": one gate serves several
     # guilds, so a bare user id could name two different speakers.
     health = svc._health_payload()
     assert health["users"][f"{GUILD}/u1"]["wakes"] == 1

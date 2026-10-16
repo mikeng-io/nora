@@ -1,30 +1,22 @@
-"""The ONE canonical message table for every user-facing music string
-(design/discord-music/09-message-conventions.md).
+"""The ONE canonical message table for every user-facing music string.
 
-Three surfaces publish music messages — the slash commands
+Three surfaces publish music messages: the slash commands
 (`music_commands.py`), the manager's channel auto-notify
 (`music_manager._notify_now_playing`), and the agent tool bridge's
-model-facing notes (`music_tool_bridge`) — and before this module each
-formatted its own strings, which is how `Skipped:` lost the URL, `Now next:`
-grew a third verb, and the two control paths drifted into sounding like two
-different bots. Every line now renders here, as pure functions over typed
-inputs (no `discord.py` objects), so a surface can only rephrase a message
-by changing THIS file — visible in one diff, pinned by one test module.
+model-facing notes (`music_tool_bridge`). Every line renders here, as pure
+functions over typed inputs (no `discord.py` objects), so a surface can only
+rephrase a message by changing THIS file — visible in one diff, pinned by one
+test module.
 
-Language policy (D4 of the design node): system announcements are fixed
-English strings — deterministic, locale-independent, and the slash surface
-carries no LLM to localise. Nora's conversational reply on the tag path is
-her own doctrine-register wording and is deliberately NOT rendered here;
-since `MusicPlayerManager.play` never posts a session-start line at all, her
-reply is the one announcement a tag-path play produces. (There is no
-`notify_on_play=False` parameter, and there never was — 09's own
-"announcement contract" section withdrew that plan on reading `play()`, and
-this docstring described it as shipped for three weeks.)
+Language policy: system announcements are fixed English strings —
+deterministic, locale-independent, and the slash surface carries no LLM to
+localise. Nora's conversational reply on the tag path is her own
+doctrine-register wording and is deliberately NOT rendered here;
+`MusicPlayerManager.play` never posts a session-start line, so her reply is
+the one announcement a tag-path play produces.
 
-WHERE a message lands is `music_notify.py`, not here (design/discord-music/
-10-notification-routing.md): this module owns the wording, that one owns the
-destination, and the two are separate for the same reason each is single-
-owner — a surface can only change either by changing one file.
+WHERE a message lands is `music_notify.py`, not here: this module owns the
+wording, that one owns the destination.
 """
 
 from __future__ import annotations
@@ -34,25 +26,21 @@ from nora.domain.music import QueuedTrack
 
 def now_playing_line(track: QueuedTrack, *, paused: bool = False) -> str:
     """`Now playing: {title} — {url}`, with the URL always present so a
-    listener can click through. Moved verbatim from `music_commands` (the
-    message-consistency pass, 2026-08-26) so every surface keeps the exact
-    same line."""
+    listener can click through. Every surface shows the exact same line."""
     suffix = " (paused)" if paused else ""
     return f"Now playing: {track.title} — {track.url}{suffix}"
 
 
 def autoplay_now_playing_line(track: QueuedTrack) -> str:
     """The autoplay variant of the now-playing line — tells apart a track
-    someone actually queued from one the Mix picked
-    (design/discord-music/08-autoplay.md)."""
+    someone actually queued from one the Mix picked."""
     return f"Autoplaying: {track.title} — {track.url}"
 
 
 def queued_line(track: QueuedTrack, queued_count: int) -> str:
     """`Queued: {title} — {url}`, naming the playlist total when a playlist
-    link expanded into more than one track
-    (01-playback-and-source.md) — queuing fifty tracks must not read as
-    queuing one."""
+    link expanded into more than one track — queuing fifty tracks must not
+    read as queuing one."""
     if queued_count <= 1:
         return f"Queued: {track.title} — {track.url}"
     rest = queued_count - 1
@@ -60,8 +48,7 @@ def queued_line(track: QueuedTrack, queued_count: int) -> str:
 
 
 def skipped_line(track: QueuedTrack) -> str:
-    """`Skipped: {title} — {url}` — the pre-table reply named the title only,
-    the one off-canon drift the 2026-08-26 consistency pass missed."""
+    """`Skipped: {title} — {url}`."""
     return f"Skipped: {track.title} — {track.url}"
 
 
@@ -92,9 +79,9 @@ def resumed_line() -> str:
 
 
 def cannot_pause_now_line() -> str:
-    """The controller's `pause_during_speech` refusal (design/voice-channel/07
-    §5): speech holds the connection, so neither pause nor resume can act —
-    the one arbiter-state refusal a music command can surface."""
+    """The controller's `pause_during_speech` refusal: speech holds the connection, so neither
+    pause nor resume can act — the one arbiter-state refusal a music command can
+    surface."""
     return "Can't pause or resume right now — a reply is playing."
 
 
@@ -103,7 +90,7 @@ def stopped_line() -> str:
 
 
 def controller_unavailable_line() -> str:
-    """B-3 (2026-09-16 audit): a deferred command whose `MusicPlayerManager`
+    """A deferred command whose `MusicPlayerManager`
     call raised `VoiceControllerError` — the audio-controller is down or
     unreachable mid-command. Distinct from `join_failed_line` (a failed
     JOIN specifically); this covers stop/skip/pause/resume/volume/exit
@@ -113,10 +100,8 @@ def controller_unavailable_line() -> str:
 
 def connection_lost_line() -> str:
     """Announced when the voice connection died and the session was torn
-    down — the one transition that used to end playback with ZERO
-    notification (found live 2026-09-15: pause mis-read as voice death,
-    reconnect failed, session torn down, nobody in the channel knew). The
-    line tells the room to re-invoke `/music play` to start again."""
+    down — a transition that would otherwise end playback with ZERO
+    notification. The line tells the room to re-invoke `/music play` to start again."""
     return "Music stopped — voice connection lost. Use /music play to restart."
 
 
@@ -151,8 +136,7 @@ def not_in_voice_note() -> str:
 
 
 def not_in_allowed_guild_line() -> str:
-    """The join gate's refusal (design/voice-channel/07 §12.2, reversed
-    2026-09-17): the caller IS in a voice channel, but this SERVER is not on
+    """The join gate's refusal: the caller IS in a voice channel, but this SERVER is not on
     the configured allow-list. The user-facing wording stays about the
     channel they are standing in, because that is the thing they can see."""
     return "I can't join that voice channel — this isn't a server I'm allowed in."

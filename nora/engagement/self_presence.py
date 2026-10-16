@@ -1,14 +1,12 @@
-"""`PresenceReader` — where she is, read from the systems that know it
-(design/self-awareness/02).
+"""`PresenceReader` — where she is, read from the systems that know it.
 
 ONE implementation, two callers: the tag path's assembler
 (`TranscriptInjection`) and the fire path (`FirePath.build_context`, which
-serves participation, reminders and the proactive act turn). (The proactive
-decide pass was a third, deleted 2026-10-03, DEC-277.) None of them
+serves participation, reminders and the proactive act turn). None of them
 builds its own idea of which rooms exist.
 A further reader reads it through `rooms()`: the room tools `room_list` and
-`room_read` (design/self-awareness/07), which need the same rooms plus a
-member count and each room's store key.
+`room_read`, which need the same rooms plus a member count and each room's
+store key.
 
 Two sources, both already in the process:
 
@@ -146,7 +144,7 @@ class PresenceReader:
         self, *, platform: str, conversation_id: str, direct: bool = False,
     ) -> UnitRooms:
         """Every room of this turn's unit, this one included, for the room
-        tools (design/self-awareness/07).
+        tools.
 
         Health and rosters are read on EVERY call, gathered, each under the
         same bound as `read()`. A roster that cannot be read is `members=None`
@@ -210,7 +208,7 @@ class PresenceReader:
         """One network's transport, read now, bounded, never raising.
 
         Public because `send_to` asks the same question at call time
-        (`nora.agent.relay`, operator 2026-09-24): whether a relay may be
+        (`nora.agent.relay`): whether a relay may be
         attempted is decided by the SAME mapping and the same bound that
         rendered «Discord is down» into `<presence>`, so the block and the
         tool cannot disagree about a network. Nothing is cached, here or

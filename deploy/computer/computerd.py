@@ -1,4 +1,4 @@
-"""computerd — the API Nora's computer serves (design/sandbox-runtime §2, §3).
+"""computerd — the API Nora's computer serves.
 
 It runs INSIDE the microVM, the less-trusted side, and Nora is its only
 client. `nora.infra.computer.client.ComputerdRuntime` is the other half of
@@ -42,7 +42,7 @@ What it guarantees, whatever the caller sends:
   run that carries its exit code. A bad token is HTTP 401, not a `denied`: it
   is a configuration fault, never an answer.
 
-- **What the computer holds, read fresh** (`/v1/state`, design §15.1): a
+- **What the computer holds, read fresh** (`/v1/state`): a
   scope's newest files (path, size, mtime; never through a link) and its
   tmux sessions, listed as the scope's own user on the scope's own socket,
   which is where every `run` puts a `tmux new`. A session is `running` when
@@ -93,7 +93,7 @@ MAX_TRANSFER_BYTES = 50 * 1024 * 1024
 MAX_LIST_ENTRIES = 1000
 MAX_RUN_SECONDS = 900
 MATCH_ALL = frozenset({"", "*", "**", "**/*"})
-# The observed-state read (`/v1/state`, design/sandbox-runtime §15.1): the
+# The observed-state read (`/v1/state`): the
 # newest files it returns, and how many entries it will walk to find them.
 MAX_STATE_FILES = 50
 MAX_STATE_WALK = 20_000
@@ -409,10 +409,10 @@ class Computer:
         limit = _limit(body.get("max_output_chars"), MAX_OUTPUT_CHARS, default=8000)
         # `body["limits"]` (cpu_seconds, max_processes, max_file_bytes) is a
         # RESERVED field: Nora sends it only when `[computer] limits` names
-        # one, and it is deliberately NOT applied here. The operator ruled on
-        # 2026-09-30 that the computer is semi-trusted, so no per-command
-        # resource limit is enforced; the slot exists so that turning limits
-        # on later is config plus one change here (setrlimit in a preexec).
+        # one, and it is deliberately NOT applied here. The computer is
+        # semi-trusted, so no per-command resource limit is enforced; the slot
+        # exists so limits can be enabled with config plus one change here
+        # (setrlimit in a preexec).
         await asyncio.to_thread(self._ensure_scope, scope)
         workdir = self.root / scope
         env = self._env(scope)
@@ -455,7 +455,7 @@ class Computer:
         tmux directory (see `__init__`). SHELL is bash because a scope user's
         login shell is `nologin`, and tmux runs a pane's command through
         SHELL, falling back to that login shell: without it every `tmux new`
-        exits at once and takes its server with it (measured 2026-09-30)."""
+        exits at once and takes its server with it."""
         workdir = self.root / scope
         env = {k: v for k, v in os.environ.items() if k != TOKEN_ENV}
         env.update(HOME=str(workdir), PWD=str(workdir), TMPDIR=str(workdir / ".tmp"),
@@ -470,14 +470,12 @@ class Computer:
 
     def _ensure_scope(self, scope: str) -> None:
         """The scope directory and its `.tmp`, both `0o700` and the scope
-        user's. Re-asserted on every run, so a directory made before per-scope
-        users existed is closed and handed over too. Files INSIDE such a
-        directory keep their old owner: the deploy recreates the VM, so none
-        exist (deploy/computer/README.md)."""
+        user's. Re-asserted on every run, so a pre-existing directory is closed
+        and handed over too. Files inside it keep their owner."""
         with self._dir(scope, [".tmp"], create=True) as tmp_fd:
             os.fchmod(tmp_fd, 0o700)
-            # Handed over as well: a `.tmp` made before per-scope users (owned
-            # by `computer`) would leave TMPDIR unwritable for the room's user.
+            # Handed over as well: a `.tmp` owned by another user would leave
+            # TMPDIR unwritable for the room's user.
             self.owner.chown_fd(tmp_fd, scope)
         with self._dir(scope, [], create=True) as fd:
             os.fchmod(fd, 0o700)
@@ -498,7 +496,7 @@ class Computer:
         finally:
             os.close(root_fd)
 
-    # -- observed state (design/sandbox-runtime §15.1) ---------------------
+    # -- observed state ---------------------
 
     def recent_files(self, scope: str) -> dict[str, Any]:
         """The newest regular files under the scope, newest first, capped at
@@ -614,7 +612,7 @@ class Computer:
         (with `processes_reason`) when `/proc` cannot be read: unknown,
         never none.
 
-        tmux is judged by its own rule, never here (operator, 2026-10-01): a
+        tmux is judged by its own rule, never here: a
         tmux server and a pane's own process (`panes`, from `list-panes`) are
         left out, so an idle session is not running; a pane's CHILD is an
         ordinary process and counts, which is the pane-with-a-child rule."""
@@ -655,11 +653,11 @@ def xauthority_entry(cookie: bytes) -> bytes:
 
 class Browser:
     """One room's Chrome: headed on its own Xvfb display, both running as the
-    room's user, driven over `--remote-debugging-pipe` (design/browser-runtime
-    00 §4). There is no debugging TCP port, so no other room's command, and
-    no command at all, can attach: the pipe's two file descriptors are held
-    by computerd alone. The display needs the cookie in the room's own
-    `browser/.Xauthority` (`0o600`), so another room cannot read the screen.
+    room's user, driven over `--remote-debugging-pipe`. There is no debugging
+    TCP port, so no other room's command, and no command at all, can attach:
+    the pipe's two file descriptors are held by computerd alone. The display
+    needs the cookie in the room's own `browser/.Xauthority` (`0o600`),
+    so another room cannot read the screen.
 
     Chrome speaks CDP on the pipe as NUL-terminated JSON: commands in on fd 3,
     answers and events out on fd 4. One websocket client at a time; the
@@ -747,8 +745,8 @@ def _write_all(fd: int, data: bytes) -> None:
 
 
 # Browsers: at most this many rooms have one running at once (each Chrome with
-# a few tabs is about 0.6-0.9 GiB in the 3 GiB VM, design/browser-runtime 04
-# step 2); one idle this long, with no client attached, is stopped.
+# a few tabs is about 0.6-0.9 GiB in the 3 GiB VM);
+# one idle this long, with no client attached, is stopped.
 MAX_BROWSERS = 2
 BROWSER_IDLE_SECONDS = 600.0
 CHROME_START_SECONDS = 10.0
@@ -757,9 +755,9 @@ CHROME_START_SECONDS = 10.0
 X11_DIR = Path("/tmp/.X11-unix")  # noqa: S108
 # Chrome's own flags: headed (no --headless), the pipe and never a port, a
 # profile per room, no first-run UI. `--proxy-server` is added from the VM's
-# `https_proxy` when there is one (sbx's proxy; design 00 §3). Driven over the
+# `https_proxy` when there is one (sbx's proxy). Driven over the
 # pipe, Chrome sets `navigator.webdriver` to true, the plainest bot signal
-# there is (read in the VM 2026-10-07); AutomationControlled off clears it.
+# there is; AutomationControlled off clears it.
 CHROME_FLAGS = (
     "--remote-debugging-pipe", "--no-first-run", "--no-default-browser-check",
     "--password-store=basic", "--window-size=1280,800",
@@ -914,7 +912,7 @@ class Browsers:
                 flags.append(f"--proxy-server={proxy}")
             # bash, not sh: the pipe's descriptors are usually above 9, and
             # dash (the VM's /bin/sh) only redirects single-digit ones, so it
-            # exits 2 before Chrome starts (measured on the VM, 2026-10-07).
+            # exits 2 before Chrome starts.
             browser.chrome = await asyncio.create_subprocess_exec(
                 "/bin/bash", "-c", f'exec "$0" "$@" 3<&{cmd_r} 4>&{out_w}',
                 self.chrome_bin, *flags, "about:blank",

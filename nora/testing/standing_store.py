@@ -33,35 +33,29 @@ class InMemoryStandingStore:
         redundant with `Standing.__post_init__`.
 
         The constructor refuses an over-long body, so for any caller that builds
-        a `Standing` normally this branch is unreachable — which is exactly why
-        it was missing, and why the contract suite could not tell this double
-        apart from its SQL sibling. The database CHECK exists for a writer that
-        got a `Standing` into a bad state some other way; a fake without the
-        same refusal is MORE PERMISSIVE THAN POSTGRES, so a defect that the real
-        store rejects passes here. That is the fake-answers-everything-the-same
-        failure CLAUDE.md names, and it was live in this file until
-        `test_the_store_itself_refuses_a_body_over_the_ceiling` went looking.
+        a `Standing` normally this branch is unreachable — which is why the
+        contract suite needs it to tell this double apart from its SQL sibling.
+        The database CHECK exists for a writer that got a `Standing` into a bad
+        state some other way; a fake without the same refusal is MORE
+        PERMISSIVE THAN POSTGRES, so a defect that the real store rejects
+        passes here
+        (`test_the_store_itself_refuses_a_body_over_the_ceiling` exercises it).
 
-        **`btrim` vs `strip()` is a REAL divergence, and the earlier version of
-        this docstring described it wrongly.** It claimed one-argument `btrim`
-        strips ASCII whitespace; it does not — it strips U+0020 SPACES ONLY.
-        Verified against the deployed Postgres 18: `length(btrim(E'\t')) = 1`
-        and `length(btrim(E'\n\n')) = 2`, where `length(btrim('   ')) = 0`.
+        **`btrim` vs `strip()` is a REAL divergence.** One-argument `btrim`
+        strips U+0020 SPACES ONLY, not ASCII whitespace: `length(btrim(E'\t'))
+        = 1` and `length(btrim(E'\n\n')) = 2`, where `length(btrim('   ')) = 0`.
 
         So `standing_body_fits_the_ceiling_check` ACCEPTS a tab-only or
         newline-only body and this double REFUSES it (`str.strip()` strips all
         Unicode whitespace). The two are not interchangeable on that input.
 
         Kept, because the direction is the safe one — a double that refuses a
-        superset can never let through something the real store would reject,
-        which is the failure mode that matters for a fake. And it is
-        unreachable through the type: `Standing.__post_init__` refuses a blank
-        body first, so only the `object.__setattr__` smuggling in
-        `test_the_store_itself_refuses_a_body_over_the_ceiling` can construct
-        it. Recorded rather than silently tolerated, because the claim that
-        these two refuse IDENTICALLY is what this file's contract suite rests
-        on, and it is true for length and for `fold_count` but not for
-        whitespace (review finding, 2026-08-27).
+        superset can never let through something the real store would reject.
+        And it is unreachable through the type: `Standing.__post_init__`
+        refuses a blank body first, so only the `object.__setattr__` smuggling
+        in `test_the_store_itself_refuses_a_body_over_the_ceiling` can
+        construct it. The contract suite rests on the two refusing IDENTICALLY,
+        which holds for length and for `fold_count` but not for whitespace.
         """
         if (
             not standing.body.strip()

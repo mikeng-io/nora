@@ -1,5 +1,4 @@
-"""SSE client for the whatsapp-bridge (`GET /events`,
-design/whatsapp-adoption/03-transport-contract.md).
+"""SSE client for the whatsapp-bridge (`GET /events`).
 
 Mirrors `nora.platform.signal.listener` almost exactly — long-lived GET,
 full-jitter exponential backoff, one bad line logged and skipped, a raising
@@ -18,7 +17,7 @@ this module's job to notice):
   keeping that measurement honest.
 - `dropped` — the bridge's drop-and-count report: while no SSE client was
   connected, its bounded buffer overflowed and OLDEST events were discarded
-  (design 01, review M1 — the fix for Hermes' silent `shift()`). Audit rows
+  (the bridge reports the loss rather than dropping silently). Audit rows
   were lost upstream and nothing here can recover them, so it is logged at
   WARNING, loud, with the running total.
 """

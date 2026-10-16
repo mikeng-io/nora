@@ -1,4 +1,4 @@
-"""The portal's read side of documents (ADR 0020, design/artifact §6).
+"""The portal's read side of documents (ADR 0020).
 
 Two payloads, both for ONE viewer: what `person_id` may read, which is what they
 created plus what was made in a room that names them. The rooms come from a callable
@@ -54,7 +54,7 @@ RoomLabel = Callable[[str, str], str]
 
 MAX_PAGE_SIZE = 50
 # A page number past this is a mistake or an attack, never a place to be: the SQL store's
-# OFFSET is a 32-bit-safe integer (review of PR 654: a 30-digit `page` was a 500).
+# OFFSET is a 32-bit-safe integer (a 30-digit `page` would be a 500).
 MAX_PAGE = 100_000
 
 
@@ -279,7 +279,7 @@ async def build_document_media(
     except Exception:  # noqa: BLE001 - a store that is down is "could not check"
         return DocumentMedia("unavailable")
     # Readable, AND named by one of ITS revisions (the current one, or an earlier one the
-    # history view shows, design/artifact §34): being able to open a document is not a
+    # history view shows): being able to open a document is not a
     # licence to read any picture Nora holds.
     if stored is None:
         return _not_found()

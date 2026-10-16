@@ -1,22 +1,19 @@
 """Signal sends land in a sandbox, the way they do in production.
 
 The sandbox keeps Signal's adapter ENABLED with a placeholder account
-(`obtain._baseline`) and no signal-cli behind it, so before this every send
-dialled `127.0.0.1:18080` and failed: 794 `send failed: ClientConnectorError`
-in one `tool_selection` run on 2026-10-08, every one of them a `send_reply`
-that answered `refused`. Production answers `sent`. A tool result is model
-input, so the sandbox was measuring a Nora whose every reply bounced and who
-retried until the message budget ran out (2+ sends in 141 of 141 replying
-draws; live, 302 of 317 replying turns send once). That is the prompt the
-deployment does not send (`design/evaluation/01-boundaries.md` §5(4)), the same
-rule `nora.subject.transport` holds for health.
+(`obtain._baseline`) and no signal-cli behind it, so an unpatched send would
+dial `127.0.0.1:18080` and fail, and `send_reply` would answer `refused`.
+Production answers `sent`. A tool result is model input, so a sandbox whose
+every reply bounced would measure a Nora who retries until the message budget
+runs out. That is a prompt the deployment does not send, the same rule
+`nora.subject.transport` holds for health.
 
 Only the wire is replaced (`SignalSender._rpc`): the direct-message
 allow-list, the conversation-type refusal and the payload building in
 `SignalSender.send` stay real. The answer carries no platform timestamp, so
 the row keeps the stamp `Deliverer` wrote before sending. That stamp is the
 wall clock, not the sandbox clock, so in an anchored case her reply sits in the
-anchor's future; that was already so before sends landed, and is not fixed here.
+anchor's future (a known limitation).
 """
 
 from __future__ import annotations

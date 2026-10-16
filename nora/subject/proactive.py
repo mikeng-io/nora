@@ -55,8 +55,7 @@ async def owe(
     decided_hours_ago: float = 6.0,
     note_moved: bool = False,
 ) -> Reminder:
-    """Write the row the Cognition session's `remind` writes (the decide turn
-    did, before 2026-10-03).
+    """Write the row the Cognition session's `remind` writes.
 
     `note_title` must name a note the case SEEDED: the payload carries the note
     id and the revision the decision was made against, and the screen reads
@@ -82,10 +81,9 @@ async def owe(
             )
         if len(matches) > 1:
             # LOUD. `standing()` orders by `created_at ASC`, so a silent
-            # first-match linked the EARLIER note of that title — and two act
-            # pairs share a title, so `a02`'s `note_moved` revision landed on
-            # `a01`'s note and `a07`'s screen read `a04`'s. Neither case was
-            # ever tested against the note its own transcript is about.
+            # first-match would link the EARLIER note of that title and a
+            # case would be tested against a note its own transcript is not
+            # about.
             #
             # With per-case workspaces this cannot happen; it raises anyway,
             # because the isolation is the thing that could regress.
@@ -161,9 +159,6 @@ async def act(subject: Subject, *, after_id: int = 0) -> ActPass:
     # due when a later one fires, in a room the later case's policy does not
     # trust. The screen then refuses THAT row `failed_policy` and the case
     # reads as a cancellation it never asked for.
-    #
-    # Measured: three act cases in one database, and cases two and three came
-    # back `screened:failed_policy` while case one had run fine.
     rows = [
         r for r in await subject.deps.reminders.due(now=now, limit=64)
         if r.platform == platform and r.conversation_id == conversation_id

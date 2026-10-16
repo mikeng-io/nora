@@ -1,5 +1,4 @@
-"""Change-aware test selection (the fast-test-pass design, spec §3, released
-in V4).
+"""Change-aware test selection.
 
 Takes a base ref, reads the changed paths from git, and decides which pytest
 targets are worth running for *that diff*. This backs BOTH `make test-affected`
@@ -9,38 +8,32 @@ uncommitted edit is judged too — see `git_changed_paths` below). `make
 full-gate` is the one command this script never touches: it always runs the
 whole serial suite, unconditionally, regardless of what changed.
 
-The loop's default base is `HEAD~1` — the latest commit only, not
-`origin/master`. Diffing the whole branch was the original design and it has a
-real cost: a branch that touches `nora/dreamer/**` or `nora/doctrine/**` once
-stays pinned to `ALL` for every commit for the rest of its life, because that
-path never leaves the cumulative diff. `make gate` runs on `origin/master`
-deliberately (it must judge everything the branch changed, once, before it
-lands); the loop's `HEAD~1` default is what avoids re-flagging an
-already-judged commit on every later diff.
+The loop's default base is `HEAD~1` — the latest commit only, not `origin/master`. Diffing the
+whole branch has a real cost: a branch that touches `nora/dreamer/**` or `nora/doctrine/**` once
+stays pinned to `ALL` for every commit for the rest of its life, because that path never leaves
+the cumulative diff. `make gate` runs on `origin/master` deliberately (it must judge everything
+the branch changed, once, before it lands); the loop's `HEAD~1` default is what avoids re-flagging
+an already-judged commit on every later diff.
 
 THE OUTPUT CONTRACT (one line on stdout, three shapes). `ALL` means run the
 whole suite; `NONE` means a narrow rule found that nothing reads the diff, so
 nothing runs; anything else is a space-separated list of pytest targets. The
 EMPTY string is none of these: it means the script died before it could say,
-and the Makefile treats it, and any nonzero exit status, as `ALL`. Until
-2026-10-02 empty meant "docs-only, run nothing" and the Makefile ignored the
-script's exit status, so any exception other than the two `main` caught (git
-missing, an import error, a bug in a rule) printed a traceback, left the
-captured output empty, and `make gate` reported "docs-only change" and passed
-with zero tests run. `main` now turns ANY exception into `ALL` on stdout and
-the reason on stderr.
+and the Makefile treats it, and any nonzero exit status, as `ALL`; reading
+empty as "docs-only, run nothing" would let a crash (git missing, an import
+error, a bug in a rule) pass `make gate` with zero tests run. `main` turns ANY
+exception into `ALL` on stdout and the reason on stderr.
 
 Fails closed by construction: `select` classifies EACH changed path, the
 default for a path no rule names is `ALL`, and one `ALL` anywhere in the diff
 makes the whole answer `ALL`. A confident wrong subset is the one failure mode
-this script must never have (spec §1) — a slow correct answer beats a fast
+this script must never have — a slow correct answer beats a fast
 wrong one. The classes, in order:
 
 * `nora/**`, any extension: `ALL`. The application loads `nora/doctrine`,
   `nora/dreamer`, `nora/skills` and `nora/documents/catalog-prompt.md` at
   runtime, and every `.py` is imported by dozens of tests. A hand-kept reader
-  list for these rotted twice (2026-09-25: `nora/skills` was missing
-  `tests/test_factory.py` and `tests/unit/test_generate_image_description.py`).
+  list for these goes stale.
 * `tests/**`: a collectible `test_*.py` that still exists selects itself, the
   whole of `tests/architecture/` (the meta tests: they read `tests/` itself, so
   an added, edited or deleted test can redden them — a new `tests/test_zz.py`
@@ -51,9 +44,7 @@ wrong one. The classes, in order:
   below finds reading it. Any other path (`conftest.py`, `builders.py`,
   fixtures, a deleted or renamed-away test) is `ALL`: a helper is imported by
   many modules and collects nothing itself, and a deleted test can break the
-  tests that enumerate tests. This was measured, not guessed: a full-suite run
-  with an audit hook on `open`/`listdir`/`scandir` lists which test modules
-  touch other `tests/` files (2026-10-02).
+  tests that enumerate tests.
 * documentation and data files outside the code trees (`.md` anywhere but
   `nora/`, `evals/`, `scripts/`; any `.md/.txt/.json/.toml/.yaml/.yml` under
   `docs/`, `design/`): the tests that READ them, found by scanning `tests/` at
@@ -69,14 +60,12 @@ wrong one. The classes, in order:
   `config.example.toml`, `policy.example.toml`, `identity.example.toml`,
   `.github/workflows/**`, `scripts/mutations/*.json`): `ALL`.
 
-WHY A SCAN, NOT A TABLE. This file used to keep a table of which tests read
-which `.md`. It listed AGENTS.md, CONTRIBUTING.md and the decision index and
-missed README.md, DESIGN.md, docs/runbook.md, ARCHITECTURE.md, the deploy
-READMEs and the release-fragment README (retired, DEC-314): a table is updated
+WHY A SCAN, NOT A TABLE. A table of which tests read which `.md` is updated
 by whoever remembers, and a test added later that reads a doc leaves it
 silently stale. A cross-check test for the table would only run when selected,
-and a new test file selects only itself. The scan recomputes the answer from the tests as they
-stand, so a new reader is found without anyone editing this file.
+and a new test file selects only itself. The scan recomputes the answer from
+the tests as they stand, so a new reader is found without anyone editing this
+file.
 
 What the scan reads (`_TestFacts`): every string literal in a test module
 (docstrings excluded; literals over 200 characters excluded), what it imports,

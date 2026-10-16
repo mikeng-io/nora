@@ -2,16 +2,14 @@
 
 WHAT ACTUALLY WORKS ON THIS DAEMON
 ----------------------------------
-Verified live on 2026-08-05 against signal-cli 0.14.7 at 127.0.0.1:18080, the
-container in this repo's `docker-compose.yml`. Read this before "fixing" the
-endpoint back:
+Verified against signal-cli 0.14.7 at 127.0.0.1:18080, the container in this
+repo's `docker-compose.yml`. Read this before changing the endpoint:
 
-* `GET /api/v1/accounts` — **404 Not Found, and always has been.** It is not a
-  broken route, it is not a route at all. `signal-cli-jsonrpc(5)`, shipped in
+* `GET /api/v1/accounts` — **404 Not Found.** It is not a broken route, it is
+  not a route at all. `signal-cli-jsonrpc(5)`, shipped in
   the image at `/opt/signal-cli-0.14.7/man/man5/`, states that `--http` exposes
   exactly three endpoints: `POST /api/v1/rpc`, `GET /api/v1/events`,
-  `GET /api/v1/check`. The old `derive_aliases` read `/api/v1/accounts`, so it
-  degraded to `{primary}` on every start for the whole life of the deployment.
+  `GET /api/v1/check`.
 * JSON-RPC `listAccounts` — `-32601 Method not implemented`. It exists only in
   MULTI-account mode (daemon started with no `-a`); this daemon is pinned to one
   account, so there is no RPC that will tell you which account that is. That is
@@ -25,9 +23,9 @@ endpoint back:
   identity), because it answers a phone-number lookup. Confirmed against the
   account store: `aciAccountData.serviceId` matches what `listContacts` gives,
   `pniAccountData.serviceId` matches what `getUserStatus` gives, and the two are
-  different UUIDs. Wiring `getUserStatus` alone — the obvious single-call fix —
-  would therefore have added the PNI and *missed the ACI*, which is the id form
-  that actually appears in a real envelope's `sourceUuid`. Both are collected;
+  different UUIDs. Wiring `getUserStatus` alone would therefore add the PNI and
+  *miss the ACI*, which is the id form that appears in a real envelope's
+  `sourceUuid`. Both are collected;
   neither is trusted to stand in for the other.
 
 Both calls go out as ONE batched JSON-RPC POST (the man page's "single or batch
@@ -37,9 +35,8 @@ read-only: nothing here registers, links, unlinks or writes to the account.
 WHY IT IS COUNTED
 -----------------
 R-17. Enrichment is best-effort by design — `primary` is already known when this
-runs, so failing here must not stop Nora starting. "Best-effort" is exactly how
-the previous version stayed dead in production for the deployment's entire life
-with nothing but a `log.warning` to show for it. Every degraded path here
+runs, so failing here must not stop Nora starting. A best-effort path that only logs a
+`log.warning` can stay dead unnoticed, so every degraded path here
 increments `nora_identity_enrichment_degraded_total{platform,reason}`, and the
 `nora_identity_aliases{platform}` gauge is published on EVERY path including
 total failure, so a silent regression is visible as `== 1` rather than as an
@@ -70,8 +67,8 @@ _CONTACT_FIELDS: tuple[tuple[str, str], ...] = (
     ("number", "phone"),
     ("uuid", "uuid"),
     # `username` is deliberately ABSENT: it is not a matchable kind on any
-    # platform any more (see `nora.domain.identity._ID_KINDS`), and building an
-    # `Identifier` for it would now raise `UnmatchableIdentifierError`.
+    # platform (see `nora.domain.identity._ID_KINDS`), and building an
+    # `Identifier` for it would raise `UnmatchableIdentifierError`.
 )
 
 

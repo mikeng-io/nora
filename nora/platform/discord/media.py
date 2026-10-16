@@ -1,14 +1,9 @@
 """`DiscordMediaSource` — sticker AND attachment bytes off Discord's own CDN.
 
-Before this existed, `_build_media_custody` constructed one `SignalMediaSource`
-and `nora.ingest.stages.media` did not gate on platform, so a Discord
-attachment was fetched by asking signal-cli for a Discord snowflake — which can
-only answer `not_found`, a reason that reads like "the platform lost it" when
-the truth is "we asked the wrong daemon". This module fixed that first by
-refusing attachments outright (`not_supported`, counted) while adding sticker
-custody; DEC-118 widened it to fetch attachments too, mirroring what
-`SignalMediaSource.fetch` has done for every Signal attachment since before
-this module existed (spec §3.5's "separate decision" is this one).
+Discord media must not be fetched through `SignalMediaSource`: signal-cli asked
+for a Discord snowflake can only answer `not_found`, a reason that reads like
+"the platform lost it" when the truth is "wrong daemon". This module fetches
+stickers and, per DEC-118, attachments, mirroring `SignalMediaSource.fetch`.
 
 A sticker URL is DERIVED here from the id and format the parser recorded, never
 taken from the event: `StickerItem.url` is a platform-supplied string, and a
@@ -23,15 +18,11 @@ itself ever serves attachments from, and anything else is `bad_token` before a
 socket opens. This is the same trust Signal already extends to signal-cli's
 `platform_id` — the platform's own client library, not arbitrary input.
 
-**What is NOT verified, and cannot be here:** unlike `SignalMediaSource`'s
-`getSticker`, which was probed against the live signal-cli daemon, nothing in
-this module has been checked against the real Discord CDN. The URL shape
+**Sticker URL shape is asserted, not probed:** the URL shape
 (`{cdn_base}/stickers/{id}.{ext}` on `media.discordapp.net`), the claim that
 `lottie` is served as `.json` rather than under its own extension, and the
-CDN's actual 404/error behaviour are all asserted by construction from public
-Discord documentation, not by a live probe. No guild sticker has been fetched
-by this deployment yet; the first real fetch either confirms this or is the
-thing to go fix.
+CDN's 404/error behaviour come from public Discord documentation, not from a
+live probe of the sticker path.
 
 Never raises: `nora.domain.ports.MediaSource`'s contract. The caller is the
 ingest path, and an exception there costs the MESSAGE to save bytes that are
@@ -61,7 +52,7 @@ DEFAULT_TIMEOUT_SECONDS = 8.0
 DEFAULT_MAX_BYTES = 2 * 1024 * 1024
 # The only hosts Discord itself ever serves attachment bytes from. An
 # `attachment:` token whose host is anything else is refused before a socket
-# opens — see the module docstring's DEC-118 paragraph.
+# opens — see the module docstring.
 DEFAULT_ATTACHMENT_HOSTS = frozenset({"cdn.discordapp.com", "media.discordapp.net"})
 
 _ATTACHMENT_PREFIX = "attachment:"
@@ -151,9 +142,9 @@ async def _read_limited(stream: aiohttp.StreamReader, limit: int) -> bytes:
 
     `StreamReader.read(n)` returns as soon as the FIRST buffered chunk
     arrives — it does not wait for `n` bytes or EOF. Discord's CDN streams
-    attachments in ~1.4 KB packets, so `read(max_bytes + 1)` on a 2.3 MB
-    image returned 1.4 KB and the truncated body was stored as if complete
-    (DEC-118 live defect, 2026-08-31). Loop until EOF or the ceiling, so a
+    attachments in ~1.4 KB packets, so a single `read(max_bytes + 1)` would
+    return a truncated body that is stored as if complete (DEC-118). Loop until EOF or the
+    ceiling, so a
     body larger than `limit` is detected by MEASUREMENT, not by luck.
     """
     chunks: list[bytes] = []

@@ -1,23 +1,23 @@
-"""`PresenceCollector` — the change-recorder daemon (design/19 §4, DEC-55).
+"""`PresenceCollector` — the change-recorder daemon (DEC-55).
 
 A SEPARATE process from Nora (`python -m nora.presence`). It shares the `nora`
 database and the Life360 client library, nothing else, and either can be down
-without the other (§4): if the collector is down, `whereis` degrades to
+without the other: if the collector is down, `whereis` degrades to
 `unavailable`; if Nora is down, the collector keeps recording.
 
-The per-circle loop (§4):
+The per-circle loop:
   1. read the circle (the client ensures the token, re-auths only on 403);
   2. classify each member's `wire_state` and count it, so «sharing off» is a
-     KNOWN state, not a gap (§7.3);
+     KNOWN state, not a gap;
   3. write a fix ONLY when the member's `ts` advanced — the change-recorder
      dedup lives in `PresenceStore.record_fix`, and this loop just hands it
      every located member;
   4. publish a liveness heartbeat (the age of this circle's last success);
   5. sleep the cadence — LONGER when the client reports auth failures, the
-     exponential back-off that keeps a 403 from becoming a ban (§4.1).
+     exponential back-off that keeps a 403 from becoming a ban.
 
-**The canary lives here, not in Nora (§4):** a non-JSON body and an
-unexpectedly-empty circle are the app-update breakage the study named, alarmed
+**The canary lives here, not in Nora:** a non-JSON body and an
+unexpectedly-empty circle are the app-update breakage, alarmed
 via `nora_presence_canary_total`. Nora never sees this fragility — she reads the
 local table.
 
@@ -44,19 +44,19 @@ log = logging.getLogger("nora.presence.collector")
 
 # The exponential back-off ceiling: a banned client is retried no more often than
 # once an hour, however many failures accrue. The floor is the cadence; the
-# growth is `cadence * 2^failures` (§4.1 — never hammer the credential POST).
+# growth is `cadence * 2^failures` (never hammer the credential POST).
 MAX_BACKOFF_SECONDS = 3600.0
 # Ceiling on the back-off/still EXPONENT (not the result) so `2**n` cannot
 # overflow float after days of stillness or a long ban; the result is bounded by
-# the still-ceiling / MAX_BACKOFF regardless (review 2026-08-08).
+# the still-ceiling / MAX_BACKOFF regardless.
 _EXP_CAP = 32
 
-# How often a circle's saved PLACES refresh (design/23 §3). Places are static
+# How often a circle's saved PLACES refresh. Places are static
 # household landmarks — an hourly read is generous, and it rides the member
 # cycle so it can never out-poll the back-off.
 PLACES_REFRESH_SECONDS = 3600.0
 
-# How often the retention sweep runs. Off the write path (§9), like the record
+# How often the retention sweep runs. Off the write path, like the record
 # store's prune; a movement history bounded by 180 days does not need pruning
 # more than a few times a day.
 PRUNE_INTERVAL_SECONDS = 6 * 3600.0
@@ -96,16 +96,15 @@ class PresenceCollector:
     ) -> None:
         self._client = client
         # Every background poll's outcome, one append-only row each
-        # (design/cognition-loop/20-observe.md §1): «the collector's recorded
-        # polls succeeded» is how a later step proves presence was healthy for
-        # an interval before reading an absence as a signal. `None` records
-        # nothing, which is what every test that predates it constructs.
+        # «the collector's recorded polls succeeded» is how a later step proves
+        # presence was healthy for an interval before reading an absence as a
+        # signal. `None` records nothing.
         self._health_log = health_log
         self._store = store
         self._circles = tuple(circles)
         self._cadence_seconds = cadence_seconds
-        # Adaptive band (§4.1). Default to the fixed cadence at both ends when a
-        # caller omits them, so an old construction keeps its constant interval.
+        # Adaptive band. Default to the fixed cadence at both ends when a
+        # caller omits them, giving a constant interval.
         self._cadence_moving_seconds = (
             cadence_moving_seconds if cadence_moving_seconds is not None else cadence_seconds
         )
@@ -118,11 +117,11 @@ class PresenceCollector:
         # this until a circle's first success, so a from-boot-broken collector
         # (rotated credential, challenge page on cycle one) emits a CLIMBING age
         # instead of no series at all — «not running» and «up but never
-        # collecting» must not look identical (council #8, §4).
+        # collecting» must not look identical.
         self._first_seen_ms: dict[str, int] = {}
-        # The saved-places refresh schedule (design/23 §3), per circle. Three
-        # maps rather than one because success and failure pace differently
-        # (council 2026-08-07 HIGH): `_places_fetched_ms` is the NEXT-eligible
+        # The saved-places refresh schedule, per circle. Three
+        # maps rather than one because success and failure pace differently:
+        # `_places_fetched_ms` is the NEXT-eligible
         # instant after a success (now + `PLACES_REFRESH_SECONDS` — places are
         # static); `_places_retry_ms` is the next-eligible instant after a
         # FAILURE, set by an exponential back-off so a places-endpoint 403 does
@@ -135,13 +134,13 @@ class PresenceCollector:
         # Consecutive still cycles per circle — how many OK reads in a row saw
         # NOBODY driving. 0 means the last read had a driver (poll fast); it
         # grows while the circle sits, and `sleep_seconds` reads it to ramp the
-        # interval from the moving floor toward the still ceiling (§4.1).
+        # interval from the moving floor toward the still ceiling.
         self._still_cycles: dict[str, int] = {}
 
     def circle_summary(self) -> list[dict[str, object]]:
         """The circles this collector is configured to poll, with the count of
         member→person mappings each carries — for the `/health` endpoint. The
-        diagnostic that made a stale identity.toml obvious (obs review 2026-08-08):
+        diagnostic that makes a stale identity.toml obvious:
         `1 circle, 1 member` is instantly wrong for a 10-person circle."""
         return [
             {"circle_id": c.circle_id, "members": len(c.members)}
@@ -171,11 +170,11 @@ class PresenceCollector:
 
         if not read.members:
             # A circle that read cleanly but has NO members is the study's other
-            # canary (§4): a required host/UA/token changed and the envelope came
-            # back empty. A real Ridgeline read returns five people. This is the
+            # canary: a required host/UA/token changed and the envelope came
+            # back empty. This is the
             # breakage, NOT a success — do not stamp `_last_success_ms`, or the
             # heartbeat reports age 0 (green) during the exact outage it exists to
-            # expose (council #3). Publish liveness so the age keeps climbing from
+            # expose. Publish liveness so the age keeps climbing from
             # the last real success, then stop before pretending a fix was written.
             self._count("nora_presence_canary_total", reason="empty_circle")
             self._publish_liveness(circle.circle_id, now_ms)
@@ -189,7 +188,7 @@ class PresenceCollector:
             if member.is_driving:
                 moving = True
             await self._record(circle, member, now_ms=now_ms)
-        # Adaptive cadence signal (§4.1): a circle with any driver polls at the
+        # Adaptive cadence signal: a circle with any driver polls at the
         # moving floor next cycle; one where all fixes are stationary lets the
         # still-counter grow so the interval ramps toward the ceiling. Driving is
         # the movement flag, not «a fix was written» — Life360 pushes a fresh ts
@@ -200,7 +199,7 @@ class PresenceCollector:
 
         # Places refresh AFTER a clean member read on purpose: a cycle that
         # could not even read members has no business spending a second call on
-        # the same struggling account (§3's fragility-budget argument).
+        # the same struggling account.
         await self._refresh_places(circle, now_ms=now_ms)
 
         self._last_success_ms[circle.circle_id] = now_ms
@@ -232,11 +231,11 @@ class PresenceCollector:
     async def _refresh_places(self, circle: CircleSpec, *, now_ms: int) -> None:
         """Fetch the circle's saved places if due. NEVER raises.
 
-        Two gates, not one (council 2026-08-07 HIGH): a SUCCESS waits the full
+        Two gates, not one: a SUCCESS waits the full
         `PLACES_REFRESH_SECONDS` (places are static), and a FAILURE backs off
         exponentially — `cadence * 2^failures`, capped hourly — instead of
         retrying every member cycle. Without the failure gate a places-endpoint
-        403 re-POSTed the credential every 90 s indefinitely (`read_places`'s
+        403 would re-POST the credential every cycle indefinitely (`read_places`'s
         403 path drops the token and re-auths), because the member read resets
         the client's shared `auth_failures` before each places fetch, so its own
         back-off could never see the places failure. This gate is the rate half;
@@ -275,13 +274,13 @@ class PresenceCollector:
         person_id = circle.person_id_for(member.life360_id)
         if person_id is None:
             # A circle member Nora has no person for — recorded as nothing (the
-            # config mapping is the operator's, §6). Its state was already
+            # config mapping is the operator's). Its state was already
             # counted above; there is no fix to write without a person key.
             return False
         if not member.has_fix:
             # sharing_off / disconnected / no_fix: a KNOWN state, already counted.
             # No row — its state rides the metric and its last stored fix, never
-            # a null-island row (§7.6).
+            # a null-island row.
             return False
         # `has_fix` guarantees these three are not None; narrow explicitly rather
         # than asserting (S101 forbids `assert` in production code).
@@ -289,15 +288,12 @@ class PresenceCollector:
         if ts_ms is None or lat is None or lng is None:
             return False
         # Life360's own label, stored as-is. The collector talks to Life360
-        # ALONE — it used to also reverse-geocode every fix through Google
-        # (§5, operator report 2026-08-08, reverted 2026-08-14): that ran
-        # unconditionally, every cadence_seconds tick, for every tracked
-        # person, regardless of whether anyone ever asked where they were,
-        # and cost real billed Google Geocoding calls for addresses nobody
-        # read (~12k requests / 6 days, confirmed against Cloud Monitoring).
-        # `where_is` (`nora.agent.whereis.Whereis.locate`) now does this
-        # itself, on demand, only for a fix someone actually asked about and
-        # only when Life360 gave no address of its own.
+        # ALONE. It does not reverse-geocode:
+        # that would bill a Google Geocoding call per tracked person every tick
+        # for addresses nobody reads. `where_is`
+        # (`nora.agent.whereis.Whereis.locate`) does it on demand, only for a
+        # fix someone actually asked about and only when Life360 gave no
+        # address of its own.
         address = member.address
         fix = PresenceFix(
             circle_id=circle.circle_id,
@@ -353,7 +349,7 @@ class PresenceCollector:
         failures — a 429 or a fresh-token 403), an on-demand ping+poll would fire
         UNPACED reads exactly when the account is most rate-sensitive, so it is
         skipped — `where_is` falls back to the stored fix (never load-bearing) and
-        the loop's back-off does the waiting (review 2026-08-08)."""
+        the loop's back-off does the waiting."""
         if self._client.auth_failures > 0:
             return False
         located = self._member_for(person_id)
@@ -367,9 +363,9 @@ class PresenceCollector:
             read = await self._client.read_circle(circle_id=circle.circle_id, now_ms=now_ms)
             if read.status is not ReadStatus.OK:
                 # A ban/challenge that began DURING the refresh: stop polling
-                # immediately rather than fire more unpaced reads at a now-refusing
-                # account (the entry gate only saw a clean state; Kimi audit
-                # 2026-08-08). where_is falls back to the stored fix.
+                # immediately rather than fire more unpaced reads at a refusing
+                # account (the entry gate only saw a clean state). where_is
+                # falls back to the stored fix.
                 return False
             member = next(
                 (m for m in read.members if m.life360_id == member_id), None
@@ -382,7 +378,7 @@ class PresenceCollector:
 
     def sleep_seconds(self, circle_id: str) -> float:
         """The next inter-cycle sleep for one circle. The larger of two floors,
-        so whichever demands MORE waiting wins (§4.1):
+        so whichever demands MORE waiting wins:
 
         - the adaptive cadence: the moving floor while a driver is present,
           ramped toward the still ceiling by consecutive stationary cycles;
@@ -397,7 +393,7 @@ class PresenceCollector:
         # float() because typeshed types `int ** int` as Any (a negative
         # exponent would make it a float), and this module is mypy-strict.
         #
-        # Both exponents are CLAMPED before exponentiating (review 2026-08-08).
+        # Both exponents are CLAMPED before exponentiating.
         # `min(...)` caps the RESULT but Python evaluates `2**n` first, and
         # `_still_cycles` grows unbounded (one per still cycle), so after ~1024
         # consecutive still reads — days of a circle sitting home — `2**still`
@@ -425,11 +421,11 @@ class PresenceCollector:
     def _publish_liveness(self, circle_id: str, now_ms: int) -> None:
         """Set the heartbeat gauge to the age of this circle's last SUCCESS. It
         is 0 right after a success and climbs while collections fail — «up but
-        not collecting», which a frozen fix count cannot show (§4).
+        not collecting», which a frozen fix count cannot show.
 
         Before the first success the baseline is when the circle was first
         attempted, so a collector that has NEVER succeeded still emits a climbing
-        age from boot rather than no series at all (council #8)."""
+        age from boot rather than no series at all."""
         baseline = self._last_success_ms.get(circle_id) or self._first_seen_ms.get(circle_id)
         if baseline is None:
             return

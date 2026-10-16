@@ -1,5 +1,5 @@
 """`nora-render`: Smith's image renderers as one CLI on Nora's computer
-(design/sandbox-runtime §5; S3a). Each makes a FILE, a picture, never a
+Each makes a FILE, a picture, never a
 page: a document people open is the document path's (ADR 0020), not this.
 
     nora-render chart   IN.json|IN.csv OUT.svg|OUT.png   a bar or line chart
@@ -10,7 +10,7 @@ by librsvg), and a diagram is drawn by mermaid-cli in a local headless
 Chromium: neither carries a live library, and both run offline on the
 computer's deny-all network. A PNG is what goes out as a link or into chat;
 an SVG is never a link. There is no map renderer: maps are the document
-path's (ADR 0020), and one here needed Google egress and a secret.
+path's (ADR 0020).
 
 Exit codes: 0 done; 2 the input is wrong (the message says what to fix);
 3 a renderer needs a tool the computer does not have. Standard library only:

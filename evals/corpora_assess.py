@@ -1,30 +1,24 @@
-"""The Assess adaptor's labelled corpora (design/cognition-loop/
-30-cognition.md §6, 40-register.md §5, DEC-240): event derivation and note
+"""The Assess adaptor's labelled corpora (DEC-240): event derivation and note
 derivation, each at least 40 labelled cases including negatives (a joke, a
 hypothetical, another unit's plan, a plan already cancelled/settled).
 
-**Fully synthetic — the opposite of `evals/scenarios.py`'s "every case is a
-real moment".** The tag-path corpora that module loads name a real room at a
-real instant (`snapshot:`) because they measure what Nora does with what a
-real room really held. Assess's derivation corpora measure something that
-does not exist on any deployment yet — the Cognition adaptor's event/note
-write verbs ship at step 3+ (`70-migration.md`) — so there is no real moment
-to anchor to, and this branch's own instruction is explicit: never a real
-member name or a real room message. `evals/corpora/assess_event.yaml` and
-`assess_note.yaml` use placeholder speakers (`P1`..`P5`) and invented places
-and topics throughout.
+**Fully synthetic, unlike `evals/scenarios.py`'s "every case is a real
+moment".** The tag-path corpora that module loads name a real room at a real
+instant (`snapshot:`) because they measure what Nora does with what a real room
+really held. Assess's derivation corpora have no real moment to anchor to, and
+must never carry a real member name or a real room message.
+`evals/corpora/assess_event.yaml` and `assess_note.yaml` use placeholder
+speakers (`P1`..`P5`) and invented places and topics throughout.
 
 **Loading and collection only, on purpose.** `load_assess_corpus` parses and
 validates the YAML; nothing here calls a model or drives a sandbox. Running
-these cases against a live model — the precision/recall, false-derivation
-and unasked-act measurement 30 §6 asks for — is `nora-eval`'s job, once the
-Cognition adaptor exists to derive from, and is deliberately NOT wired into
-`python -m evals`'s `CORPUS_ENTRY` (`evals/scenarios.py`): that dict is model
-calls, and gating this branch's own `make gate` on a live run would be
-exactly the boundary `AGENTS.md`'s `nora-eval` skill draws ("never against
-live models"). `tests/unit/test_assess_corpora.py` is what "the runner
-collects it" means today: it loads both corpora and asserts the shape,
-counts and negative coverage 30 §6 requires.
+these cases against a live model (precision/recall, false-derivation and
+unasked-act measurement) is `nora-eval`'s job, and is deliberately NOT wired
+into `python -m evals`'s `CORPUS_ENTRY` (`evals/scenarios.py`): that dict is
+model calls, and gating `make gate` on a live run would break the boundary
+`AGENTS.md`'s `nora-eval` skill draws ("never against live models").
+`tests/unit/test_assess_corpora.py` is what "the runner collects it" means: it
+loads both corpora and asserts the shape, counts and negative coverage.
 """
 
 from __future__ import annotations
@@ -52,18 +46,17 @@ _CORPORA = Path(__file__).parent / "corpora"
 _CASE_KEYS = frozenset({"name", "series", "category", "negative_kind", "input", "expect"})
 _INPUT_ROW_KEYS = frozenset({"t", "speaker", "text"})
 
-#: The five negative kinds 30 §6 names, in its own order, then the memo
-#: corpus's own (DEC-306, `assess_memo.yaml`): a memo already withdrawn or
-#: superseded, and the three things that are settled-looking but are not a memo
-#: (the routing rule of 40-register §1): about the speaker alone (`remember`),
-#: still open (a note), dated and attended (an event).
+#: The five event/note negative kinds, then the memo corpus's own (DEC-306,
+#: `assess_memo.yaml`): a memo already withdrawn or superseded, and the three
+#: things that look settled but are not a memo: about the speaker alone
+#: (`remember`), still open (a note), dated and attended (an event).
 NEGATIVE_KINDS: tuple[str, ...] = (
     "joke", "hypothetical", "other_unit", "already_cancelled", "already_settled",
     "already_withdrawn", "about_the_speaker", "still_open", "dated",
 )
 
-#: 30 §6's gates, declared for the run this branch does not perform (see the
-#: module docstring). Read by `nora-eval` once a derivation exists to score.
+#: Pass thresholds for a live run, which this module does not perform (see the
+#: module docstring). Read by `nora-eval`.
 GATES: dict[str, float] = {
     "precision_min": 0.90,
     "recall_min": 0.80,

@@ -1,4 +1,4 @@
-"""Nora's own Discord identity, via `GET /users/@me` (design/discord-integration/03).
+"""Nora's own Discord identity, via `GET /users/@me`.
 
 Unlike Signal (`nora.platform.signal.self_id`), this is one REST call with no
 ambiguity to enrich around: the endpoint returns the bot's own id and
@@ -6,8 +6,8 @@ username directly, with no daemon that might answer a different question for
 a different id form. No degradation/metrics story is needed the way R-17
 requires for Signal's multi-call, best-effort derivation.
 
-The same response also carries the display handle `<presence>` wants
-(design/self-awareness/02/06): `username` and `discriminator`. `derive_identity`
+The same response also carries the display handle `<presence>` wants:
+`username` and `discriminator`. `derive_identity`
 reads both off the ONE call it already makes and hands back a rendered handle
 alongside the identifiers — `DiscordAdapter.resolve_identity()` (memoized,
 called once at startup/listen) is where that handle is cached, and
@@ -33,8 +33,7 @@ class DiscordIdentityError(Exception):
 def render_handle(username: object, discriminator: object) -> str | None:
     """`@username#discriminator`, or `@username` alone once Discord has
     migrated the account to unique usernames (`discriminator == "0"`, the
-    value every migrated account now reports — Discord retired the
-    numbered-tag system in 2023). `None` when there is no usable username.
+    value every migrated account reports). `None` when there is no usable username.
 
     Pure formatting: no I/O, so it is exercised directly against the shapes
     `/users/@me` can return without a fake HTTP server.
@@ -76,8 +75,8 @@ async def derive_identity(
     # The snowflake ALONE. `username` is read back by `/health` and the
     # operator CLI for display, but it is not an identity: a bot owner can
     # rename the application at any time, so matching on it would let a rename
-    # change who Nora is (operator, 2026-08-14). It is not a matchable kind on
-    # any platform now, so `Identifier` would refuse it anyway.
+    # change who Nora is. It is not a matchable kind on
+    # any platform, so `Identifier` would refuse it anyway.
     identifiers = {Identifier("discord", "user_id", user_id)}
     handle = render_handle(body.get("username"), body.get("discriminator"))
     return user_id, frozenset(identifiers), handle

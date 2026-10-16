@@ -10,7 +10,7 @@ Two renders of one real turn, and the difference between them is the point.
   then mean two different things on two arms.
 - `shown` is what the fold's model call WAS given, verbatim. It differs between
   arms by design, and printing it is how the operator proves the arms differ
-  before any model is called (`design/standing-compact/20-verification.md` §1).
+  before any model is called.
 
 Nothing here is written into the tree: the text is the room's, read from the
 clone at run time and handed to the judge model the way every judged corpus
@@ -27,10 +27,8 @@ from typing import Any
 from nora.domain.external_files import render_file_links
 
 #: How much of one tool result the JUDGE reads. Well above the fold's own
-#: bound (4000 on this branch, 600 on master): the judge has to know what a
-#: result held to say whether the position carried any of it. Measured on 1000
-#: production tool calls: p95 7555, the largest `web_search` in the
-#: standing corpus ~10.3k. Past this the result is cut and says so.
+#: bound: the judge has to know what a result held to say whether the position
+#: carried any of it. Past this the result is cut and says so.
 _RESULT_CHARS = 16_000
 
 
@@ -128,7 +126,7 @@ def render_evidence(turn: Any, *, display_name: str, tz: tzinfo) -> str:
     for row in turn.seen or trace.transcript:
         who = display_name if row.is_nora else (row.person_name or row.sender_name or "?")
         # The handle, never the raw file link: the judge is a model too, and
-        # grades against what the fold was shown (design/external-files §1).
+        # grades against what the fold was shown.
         rows.append(f"[{_local(row.ts, tz)}] {who}: {render_file_links(row.body or '').strip()}")
     return (
         f"{prior_block}\n"
@@ -166,8 +164,7 @@ def _field(item: Any, name: str) -> Any:
 def render_working_set(items: Sequence[Any]) -> str:
     """`Outcome.working_set` (`evals.rebuilt.domain.WorkingSetFinding`, a
     plain dict with the same three keys, or anything else with the same three
-    fields), rendered for a reader who must not mistake it for the position
-    (issue #445).
+    fields), rendered for a reader who must not mistake it for the position.
 
     `""` for an empty or absent working set — never a header over nothing.
     A section that always prints, even empty, is how a fold that never tried

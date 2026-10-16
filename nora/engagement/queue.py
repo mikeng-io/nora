@@ -3,13 +3,11 @@ to R-9's debounce window and R-10's in-flight lock (R-30, DEC-49).
 
 WHY THIS EXISTS
 ---------------
-Admission used to DROP a second tag that arrived while a conversation's turn
-was already in flight (`nora_tags_dropped_total{reason="in_flight"}`). Three
-people tagging at once meant person 1 got a reply and persons 2 and 3 got
-silence — counted, but from inside the room indistinguishable from being
-ignored, which is R-5's failure shape pointed at people instead of the
-operator. The fix is to QUEUE rather than drop, and drain the queue one turn at
-a time as each in-flight turn finishes.
+A second tag that arrives while a conversation's turn is in flight is QUEUED,
+not dropped: dropping it would leave persons 2 and 3 in silence when three
+people tag at once, indistinguishable from being ignored (R-5's failure shape
+pointed at people instead of the operator). The queue drains one turn at a time
+as each in-flight turn finishes.
 
 WHY ONE TURN AT A TIME (correctness, not politeness)
 ----------------------------------------------------
@@ -26,7 +24,7 @@ State here is per-CONVERSATION, never per-tag: a `deque` per active
 conversation, and the whole entry is deleted the moment its last waiting tag is
 dequeued (`dequeue`). Nothing accumulates once a conversation goes quiet — the
 `Handler._prefills`/`_guards` leak shape CLAUDE.md names cannot reappear here,
-and `tests/architecture/test_no_retained_per_tag_state.py` still holds because
+and `tests/architecture/test_no_retained_per_tag_state.py` holds because
 a queued item is transient: it lives only while its tag genuinely waits.
 
 WHY IT IS BOUNDED

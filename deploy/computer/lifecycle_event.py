@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Lifecycle audit events for Nora's computer (design/sandbox-runtime §12, DEC-262).
+"""Lifecycle audit events for Nora's computer (DEC-262).
 
 `nora-computer` runs on the deploy host as the operator, outside the nora
-container and outside the VM. §12 requires a row for each VM create, recreate,
-computerd restart, token rotation and policy-log read, and until now there was
-none: the audit covered only calls the tools made. This is the operator-side
-writer, the smallest honest one:
+container and outside the VM. The audit needs a row for each VM create,
+recreate, computerd restart, token rotation and policy-log read; the tools'
+own audit covers only their calls. This is the operator-side writer:
 
 - **A host-side spool is the first record.** Each event is one line appended to
   `~/.local/state/nora-computer/lifecycle-events.jsonl` before anything else
