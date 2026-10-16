@@ -1030,7 +1030,9 @@ async def test_a_cursor_the_bridge_refuses_ends_the_backfill(world) -> None:
     await poller.tick()
     await ticks(world, poller, 3)
     assert world.source.cursors == [None, None, f"{ADA}-c1"], "never sent again"
-    assert [r[:2] for r in await world.polls("ada")][-1] == ("backfill", "abandoned")
+    assert [r[:2] for r in await world.polls("ada")][-2:] == [
+        ("backfill", "error"), ("backfill", "abandoned"),
+    ]
     assert ended(world, "bad_cursor") == 1
     assert world.transitions() == ["up"], "the login is fine"
 
@@ -1048,8 +1050,8 @@ async def test_a_cursor_refused_upstream_twice_ends_the_backfill(world) -> None:
     await poller.tick()
     assert world.source.cursors == [None, None, f"{ADA}-c1", f"{ADA}-c1"]
     assert [r[:2] for r in await world.polls("ada")][-2:] == [
-        ("backfill", "backed_off"), ("backfill", "abandoned"),
-    ]
+        ("backfill", "backed_off"), ("backfill", "backed_off"),
+    ], "the two refusals' own rows end the walk"
     world.clock.at(hours=2)
     await ticks(world, poller, 3)
     assert world.source.cursors.count(f"{ADA}-c1") == 2, "never sent a third time"
@@ -1078,3 +1080,91 @@ async def test_a_member_who_set_social_off_is_never_backfilled(world) -> None:
     world.subjects.social_off = frozenset({"bea"})
     await ticks(world, poller, 3)
     assert world.source.cursors[2:] == [f"{ADA}-c1", f"{ADA}-c2", f"{ADA}-c3"]
+
+
+async def test_a_first_page_read_again_leaves_a_new_post_to_the_poll(world) -> None:
+    """A member whose first list read predates the back-fill posts: the
+    back-fill reads their first page again for its cursor before the probe
+    sees the count rise. The post is the poll's, as news, with its read."""
+    store = world.store
+    await store.insert_item(
+        post(world, "old", age=timedelta(days=5)), person="ada", origin="backfill",
+        seen_at=world.clock.now,
+    )
+    await store.record_poll(
+        network="instagram", person="ada", stage="probe", outcome="items_due",
+        latest_reel_media=0, media_count=1, total_clips_count=0,
+    )
+    await store.record_poll(
+        network="instagram", person="ada", stage="items", outcome="read_ok",
+        media_count=1, total_clips_count=0, advanced_counts=True,
+    )
+    quiet(world, BEA)
+    new = post(world, "new", age=timedelta(hours=1))
+    old = post(world, "old", age=timedelta(days=5))
+    world.source.pages[ADA] = Page(items=(new, old), next_cursor=f"{ADA}-c1")
+    world.source.after[f"{ADA}-c1"] = Page(items=(), next_cursor=None)
+    world.source.probes[ADA] = probe(posts=2)
+    poller = world.poller()
+
+    await poller.tick()
+    assert world.source.cursors == [None, None], "bea's first read, then ada's page 1 again"
+    assert "new" not in await world.items(), "the re-read took the cursor only"
+
+    world.clock.at(hours=6, minutes=1)
+    await poller.tick()
+    i = SOCIAL_ITEM
+    async with world.engine.connect() as conn:
+        origin = (await conn.execute(
+            sa.select(i.c.origin).where(i.c.item_id == "new"),
+        )).scalar_one()
+    assert origin == "poll"
+    reads = await store.settled_reads(
+        require_perceived=False, units={"ada": ("u1",)},
+        since=world.clock.start - timedelta(hours=1),
+    )
+    assert [[it.item_id for it in r.items] for r in reads] == [["new"]], "its stimulus is due"
+
+
+async def test_a_cursor_that_keeps_failing_ends_the_backfill(world) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 40)
+    world.source.after[f"{ADA}-c1"] = Failed(FailureKind.UNAVAILABLE, "")
+    poller = world.poller()
+
+    await poller.tick()
+    await ticks(world, poller, 6)
+    assert world.source.cursors.count(f"{ADA}-c1") == 3
+    assert ended(world, "bad_cursor") == 1
+
+
+async def test_a_lost_abandoned_row_still_ends_the_backfill(world) -> None:
+    """The bridge refuses the cursor and the marker cannot be written: the
+    refusals' own error rows still end it."""
+    class NoMarker(SqlSocialStreamStore):
+        async def record_poll(self, **kw: Any) -> None:
+            if kw.get("outcome") == "abandoned":
+                raise RuntimeError("write refused")
+            await super().record_poll(**kw)
+
+    world.store = NoMarker(world.engine)
+    quiet(world, BEA)
+    grid(world, ADA, 40)
+    world.source.after[f"{ADA}-c1"] = Failed(FailureKind.UNAVAILABLE, "invalid_id")
+    poller = world.poller()
+
+    await poller.tick()
+    await ticks(world, poller, 6)
+    assert world.source.cursors.count(f"{ADA}-c1") == 3
+
+
+async def test_the_item_limit_holds_on_the_first_page(world) -> None:
+    quiet(world, BEA)
+    grid(world, ADA, 30)
+    poller = world.poller(backfill_max_items=5)
+
+    await poller.tick()
+    await ticks(world, poller, 2)
+    assert await backfilled(world, "ada") == 5
+    assert world.source.cursors == [None, None], "the limit was reached on page 1"
+    assert ended(world, "max_items") == 1

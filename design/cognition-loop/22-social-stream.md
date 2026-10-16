@@ -394,13 +394,15 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
   is the back-fill's first page: its items are recorded `origin = backfill`
   and its `social_poll` row has stage `backfill` and the page's next
   `cursor`. A member whose first list read was recorded before S5 has no
-  such row and starts again at the first page, once (its items are known and
-  not recorded twice). A member whose list was never read (no counts yet, or
+  such row and reads the first page again, once, for its cursor only: it
+  records nothing, since an item on it not yet recorded is new since their
+  last list read and is the poll's to record, as news. A member whose list was never read (no counts yet, or
   a network without `LIST_ITEMS`) is not back-filled until it is. Members
   with `social = false` are not on the roster, so they are never paged.
-- **How deep.** Each later page records its items newer than
-  `backfill_max_days` (default 90), until the member has `backfill_max_items`
-  (default 50) back-filled items, the first page's included. The walk ends at
+- **How deep.** The first page records up to `backfill_max_items` items
+  (default 50) whatever their age; each later page records its items newer
+  than `backfill_max_days` (default 90), until the member has
+  `backfill_max_items` back-filled items, the first page's included. The walk ends at
   the item limit, at a page read at a cursor that holds any item older than
   the day limit (every later page is older still), or at the end of the grid
   (`next_cursor` null). The first page ends it only when all its items are
@@ -424,11 +426,14 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
   (`SqlSocialStreamStore.backfills`): its `cursor` is where the next page
   starts, null is done, `abandoned` is done. Nothing is held in memory, so a
   restart reads no page twice. `social_poll` stays APPEND-ONLY.
-- **A bad cursor ends that member's back-fill** (`abandoned`): the bridge
-  refusing the request (`400 invalid_id`, which on a back-fill page can only
-  be the cursor, since the adapter shape-checks the igid and username), or
-  the same cursor refused upstream twice in a row (each refusal also backs
-  the login off, as any does). It is not restarted from the top: the cursor
+- **A bad cursor ends that member's back-fill**: the bridge refusing the
+  request (`400 invalid_id`, which on a back-fill page can only be the
+  cursor, since the adapter shape-checks the igid and username; recorded
+  `abandoned` beside the call's own `error` row), the same cursor refused
+  upstream twice in a row (each refusal also backs the login off, as any
+  does), or its pages failing three times in a row for any reason but a halt
+  or a stale query. The counts are read off the failure rows themselves, so a
+  lost `abandoned` row still stops the walk after three. It is not restarted from the top: the cursor
   is opaque, so "the oldest recorded item's position" cannot be rebuilt from
   an item, and what upstream answers for a stale cursor is unmeasured; a
   failure that recurs at one depth would recur after a restart too, spending

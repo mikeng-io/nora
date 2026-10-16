@@ -58,6 +58,7 @@ from nora.domain.social_stream import (
     PerceptionOutcome,
     PollStage,
     SocialItem,
+    cursor_is_bad,
 )
 from nora.infra.sql import memory_index
 from nora.infra.sql.blob_refs import held_elsewhere
@@ -165,13 +166,15 @@ class ProbeTimes:
 class Backfill:
     """Where one person's back-fill stands. `cursor` is where the next page
     starts (None: the first page); `items` how many items of theirs are
-    recorded `origin = backfill`; `rejected` the pages refused upstream since
-    the last page read; `last_at` when a page was last tried (None: never)."""
+    recorded `origin = backfill`; `failures` the pages that failed since the
+    last page read, `rejected` those of them refused upstream; `last_at` when
+    a page was last tried (None: never)."""
 
     items: int
     cursor: str | None = None
     done: bool = False
     rejected: int = 0
+    failures: int = 0
     last_at: datetime | None = None
 
 
@@ -349,11 +352,15 @@ class SqlSocialStreamStore:
     ) -> list[tuple[datetime, PollStage]]:
         """Every probe and read recorded on `network` after `since`, oldest
         first, as `(recorded_at, stage)`: the calls a poller that has just
-        started counts against its hourly budget."""
+        started counts against its hourly budget. An `abandoned` row marks a
+        back-fill's end beside its call's own row and is not a call."""
         p = SOCIAL_POLL
         stmt = (
             sa.select(p.c.recorded_at, p.c.stage)
-            .where(p.c.network == network, p.c.recorded_at > since)
+            .where(
+                p.c.network == network, p.c.recorded_at > since,
+                p.c.outcome != "abandoned",
+            )
             .order_by(p.c.recorded_at, p.c.id)
         )
         async with self._engine.connect() as conn:
@@ -368,8 +375,12 @@ class SqlSocialStreamStore:
         (`abandoned`) decides: abandoned, or a page with no next cursor, is
         done; otherwise the walk goes on at that page's cursor. A person with
         a list read and no such row (their first list read was recorded
-        before the back-fill existed) starts at the first page. `rejected`
-        counts the pages refused upstream (`backed_off`) since then."""
+        before the back-fill existed) starts at the first page. `failures`
+        counts the pages that failed since then (`error`, `backed_off`) and
+        `rejected` those refused upstream; once they make the cursor bad
+        (`cursor_is_bad`) it is done too, read off the failure rows
+        themselves, so it stops even when no `abandoned` row was written. A
+        halt (`halted`) is the login's or the query's, not the cursor's."""
         p, i = SOCIAL_POLL, SOCIAL_ITEM
         # ponytail: every list read and back-fill row of the network, folded
         # here; a list read is rare and a back-fill a handful of pages a
@@ -408,9 +419,16 @@ class SqlSocialStreamStore:
                     items=0, cursor=r.cursor, done=r.cursor is None, last_at=r.recorded_at,
                 )
             else:
+                failed = r.outcome in ("error", "backed_off")
+                rejected = was.rejected + (r.outcome == "backed_off")
+                failures = was.failures + failed
                 out[r.person] = Backfill(
-                    items=0, cursor=was.cursor, done=was.done,
-                    rejected=was.rejected + (r.outcome == "backed_off"), last_at=r.recorded_at,
+                    items=0, cursor=was.cursor, rejected=rejected, failures=failures,
+                    done=was.done or (
+                        was.cursor is not None
+                        and cursor_is_bad(rejected=rejected, failures=failures)
+                    ),
+                    last_at=r.recorded_at,
                 )
         return {
             person: replace(out.get(person, Backfill(items=0)), items=int(counts.get(person, 0)))

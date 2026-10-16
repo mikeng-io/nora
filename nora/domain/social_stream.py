@@ -177,6 +177,23 @@ POLL_OUTCOMES: tuple[str, ...] = get_args(PollOutcome)
 BackfillEnd = Literal["grid_end", "max_items", "max_days", "bad_cursor"]
 BACKFILL_ENDS: tuple[str, ...] = get_args(BackfillEnd)
 
+#: A back-fill cursor is judged bad once the pages sent at it were refused
+#: upstream this many times in a row: each refusal backs the login off, and
+#: the next try at the same cursor would cost another.
+BAD_CURSOR_REJECTIONS = 2
+#: ... or failed this many times in a row, whatever the failure (a refusal,
+#: an answer the adapter cannot read, not found, the bridge down), so no
+#: cursor is sent on every tick for good. A halt or a stale query is not the
+#: cursor's and does not count.
+BAD_CURSOR_FAILURES = 3
+
+
+def cursor_is_bad(*, rejected: int, failures: int) -> bool:
+    """Whether a back-fill cursor whose pages have failed `failures` times in
+    a row, `rejected` of them refused upstream, is to be given up."""
+    return rejected >= BAD_CURSOR_REJECTIONS or failures >= BAD_CURSOR_FAILURES
+
+
 #: What became of one item on a back-fill page: `recorded` new, already
 #: `known`, or `past_limit` (older than the day limit, or past the item
 #: limit), not recorded.

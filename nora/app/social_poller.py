@@ -40,7 +40,11 @@ member stands is read off their `backfill` rows every tick
 (`SqlSocialStreamStore.backfills`), so a restart reads no page twice. A cursor
 the bridge refuses (`invalid_id`, the only request field the adapter has not
 shape-checked) or one refused upstream twice in a row is judged bad and ends
-that member's back-fill (`abandoned`). Back-filled items raise no stimulus.
+that member's back-fill (`abandoned`), as does one whose pages failed three
+times in a row for any reason but a halt or a stale query; both are read off
+the rows. A first page read again only to find its cursor (the person's first
+list read predates the back-fill) records nothing: an item new on it is the
+poll's. Back-filled items raise no stimulus.
 
 **What stops it** (§4, keyed on `Failed.kind`): `halt` stops every call for
 the login until `SocialSource.healthy` says the session can read, and is
@@ -105,6 +109,7 @@ from nora.domain.social_stream import (
     Probe,
     SkipReason,
     SocialItem,
+    cursor_is_bad,
     decide,
     frame_item,
 )
@@ -121,10 +126,6 @@ _HALTS_TO_LOCK = 2
 #: A failed probe whose answer will not change on its own (no such account,
 #: no mechanism, an id that is not an id) waits for the ceiling, not the floor.
 _LASTING = frozenset({FailureKind.NOT_FOUND, FailureKind.UNSUPPORTED})
-#: A back-fill cursor refused upstream this many times in a row is judged
-#: bad: each refusal backs the login off, and retrying the same cursor would
-#: spend the next one on it too.
-_BAD_CURSOR_REJECTIONS = 2
 #: The bridge's 400 for a request it will not send. The adapter shape-checks
 #: the igid and the username before they leave, so on a back-fill page it is
 #: the cursor.
@@ -450,8 +451,11 @@ class SocialPoller:
             return await self._failed(member, stage, page, ms)
         await self._recovered("items")
         read_id = str(uuid.uuid4())
+        # A first page's items are history up to the item limit; the day
+        # limit is not applied, since a pinned post there can be old.
         recorded = await self._record_page(
             member, page, origin="backfill" if first else "poll", read_id=read_id,
+            backfilled=0 if first else None, days=False,
         )
         await self._record(
             member, stage, "read_ok", ms, media_count=probe.media_count,
@@ -463,13 +467,13 @@ class SocialPoller:
 
     async def _record_page(
         self, member: Member, page: Page, *, origin: Literal["poll", "backfill"],
-        read_id: str, backfilled: int | None = None,
+        read_id: str, backfilled: int | None = None, days: bool = True,
     ) -> int:
         """Record each new item of `page` → how many were recorded. The page
         carries each item's media: nothing is read per item. With
         `backfilled` (the person's back-filled items so far) it is a back-fill
-        page: an item older than the day limit, or past the item limit, is
-        not recorded."""
+        page: an item past the item limit, or (with `days`) older than the
+        day limit, is not recorded."""
         known = await self._store.known_items(
             network=self._network, item_ids=[i.item_id for i in page.items],
         )
@@ -481,7 +485,7 @@ class SocialPoller:
                 self._backfill_item(origin, "known")
                 continue
             if backfilled is not None and (
-                item.taken_at < horizon
+                (days and item.taken_at < horizon)
                 or backfilled + count >= self._settings.backfill_max_items
             ):
                 self._backfill_item(origin, "past_limit")
@@ -558,16 +562,29 @@ class SocialPoller:
             lambda: self._source.list_items(account=member.account, after=at.cursor),
         )
         if isinstance(page, Failed):
-            if at.cursor is not None and (
-                page.detail == _REFUSED_REQUEST
-                or (page.kind is FailureKind.BACK_OFF
-                    and at.rejected + 1 >= _BAD_CURSOR_REJECTIONS)
+            if at.cursor is None:
+                return await self._failed(member, "backfill", page, ms)
+            stop = await self._failed(member, "backfill", page, ms)
+            if page.detail == _REFUSED_REQUEST:
+                await self._abandon(member)
+                return stop
+            # Its own row counts toward the cursor's failures
+            # (`SqlSocialStreamStore.backfills`), which is what ends the walk.
+            if page.kind not in (FailureKind.HALT, FailureKind.STALE_QUERY) and cursor_is_bad(
+                rejected=at.rejected + (page.kind is FailureKind.BACK_OFF),
+                failures=at.failures + 1,
             ):
-                return await self._abandon(member, page, ms)
-            return await self._failed(member, "backfill", page, ms)
+                self._metrics.inc(
+                    "nora_social_backfill_ended_total", network=self._network,
+                    reason="bad_cursor",
+                )
+            return stop
         await self._recovered("items")
         read_id = str(uuid.uuid4())
-        recorded = await self._record_page(
+        # The first page read again (the person's first list read predates the
+        # back-fill) gives its cursor only: an item on it not yet recorded is
+        # new since their last list read, and is the poll's, as news.
+        recorded = 0 if at.cursor is None else await self._record_page(
             member, page, origin="backfill", read_id=read_id, backfilled=at.items,
         )
         await self._record(
@@ -578,18 +595,15 @@ class SocialPoller:
         )
         return None
 
-    async def _abandon(self, member: Member, failure: Failed, ms: int) -> SkipReason | None:
-        """End a member's back-fill on a cursor judged bad. A rejection still
-        backs the login off, as any rejection does."""
-        stop = (
-            await self._start_back_off(failure.detail)
-            if failure.kind is FailureKind.BACK_OFF else None
-        )
-        await self._record_failure(member, "backfill", "abandoned", ms)
+    async def _abandon(self, member: Member) -> None:
+        """End a member's back-fill on a cursor the bridge refused: an
+        `abandoned` row beside the call's own `error` row. It is a marker, not
+        a call; were it lost, the error rows still end the walk after
+        `BAD_CURSOR_FAILURES`."""
+        await self._record_failure(member, "backfill", "abandoned", 0)
         self._metrics.inc(
             "nora_social_backfill_ended_total", network=self._network, reason="bad_cursor",
         )
-        return stop
 
     async def _failed(
         self, member: Member, stage: PollStage, failure: Failed, ms: int, *,
