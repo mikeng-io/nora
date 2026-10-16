@@ -3839,9 +3839,9 @@ async def build_dependencies(
                         # runs, opted-out persons left out by the store. The
                         # read reaches back one run's longest hold, so an item
                         # recorded while a session ran is handed to the next.
-                        social=SqlSocialStreamStore(engine, opted_out=frozenset(
-                            p for p in persons.by_person if persons.social_off(p)
-                        )),
+                        social=SqlSocialStreamStore(
+                            engine, opted_out=persons.social_off_ids(),
+                        ),
                         overlap_seconds=cfg.dreamer_max_unit_hold_seconds(),
                     ),
                     keys=person_keys, metrics=metrics,
