@@ -184,7 +184,9 @@ class Conversation:
     # fallback: the system's own music announcements — `Now playing:` on a
     # natural track-end, `Autoplaying:`, the next track after a skip, the
     # connection-lost teardown — go to whichever text channel the session's
-    # FIRST play was invoked from, captured once and never moved.
+    # FIRST play was invoked from, captured once and never moved. That
+    # channel need not be an allowlisted room: `/music play` is gated by
+    # GUILD, never by room.
     #
     # A FIELD ON THIS ROOM, NOT A FLAG CLAIMING IT. A DEDICATED music channel
     # is by definition NOT the guild's discussion room, so a flag claiming the

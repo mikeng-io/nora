@@ -81,8 +81,9 @@ async def build_app(config_path: Path) -> App:
         dsn_env=cfg.obs.errors.dsn_env,
         environment=cfg.obs.errors.environment,
         # No release is passed, so Sentry groups by environment alone and "is this
-        # new since the last deploy" is not answerable from an issue. Wiring
-        # `nora/version.json`'s `version` through would make it so.
+        # new since the last deploy" is not answerable from an issue. Wiring the
+        # running version through (`nora.infra.version`, which reads the
+        # build-time `nora/version.json`; absent in a dev checkout) would make it so.
     )
     if cfg.obs.tracing.enabled:
         try:

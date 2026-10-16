@@ -2225,15 +2225,13 @@ class Proposal:
 #: `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` in `nora.domain.standing` is the
 #: same arrangement for the same reason.
 #:
-#: **15s is sized against a degraded worst case, not one healthy call.** The
-#: number multiplies SITES, and a site inside a per-note loop runs once per
-#: note, each costing a `record.recent` plus a `MediaJoin.enrich` that carries
-#: its OWN 3s bound (`[media] join_timeout_seconds`). A degraded-but-not-hung
-#: media store can spend 30 notes x 3s = 90s inside one legitimate `inputs`;
-#: at 5s x 10 sites the bound would fire at 50s, turning a slow tick into a
-#: counted store timeout and, for a daily-slotted adaptor, a lost day. 15 x 10
-#: = 150s clears that and still sits under `[dreamer] tick_seconds = 300`.
-#: Raise it only against a reading of that kind, never to quiet an alarm.
+#: **15s is a degraded-worst-case allowance, not one healthy call.** The number
+#: multiplies SITES, and a site inside a per-item loop runs once per item, so a
+#: slow-but-not-hung store can legitimately spend many seconds inside one
+#: `inputs`; a bound that fires there turns a slow tick into a counted store
+#: timeout and, for a daily-slotted adaptor, a lost day. 15 x 10 sites = 150s
+#: still sits under `[dreamer] tick_seconds = 300`. Raise it only against a
+#: measured slow tick, never to quiet an alarm.
 DEFAULT_DREAM_STORE_TIMEOUT_SECONDS = 15.0
 
 

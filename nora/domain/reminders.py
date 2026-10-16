@@ -105,11 +105,9 @@ CANCELLED_NOTE_MOVED = "cancelled_note_moved"
 def open_proactive_note(row: Reminder) -> str | None:
     """The note a row holds open, or `None` when it holds none.
 
-    ONE PROACTIVE ROW PER NOTE, OPEN AT A TIME. The wake clock
-    (`_may_wake_today` in `nora/language/proactive.py`) charges a STRIKE once
-    per Hong Kong day and never looks at the row being written, so two passes
-    could book the same note twice. Both stores therefore hold this rule at
-    insert time: a second open row on the same note is
+    ONE PROACTIVE ROW PER NOTE, OPEN AT A TIME. Two passes can each book the
+    same note, so both stores hold this rule at insert time: a second open row
+    on the same note is
     `DuplicateProactiveNoteError`. A row that has fired, failed or been
     cancelled holds nothing open, so a re-raise after silence (the strikes
     brake) and a new occasion after the first one went off are both still

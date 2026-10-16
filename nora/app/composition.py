@@ -462,7 +462,10 @@ class _RelevanceGateModelClient:
     completion sends no tools at all, so there is nothing for a tool_choice to
     select and the field never reaches the wire. The shape is
     `tests/offline_eval_support.py::_MeasuringGateClient`'s, argument for
-    argument, so the eval measures the client that is deployed.
+    argument, with one difference: the eval's client sends `NO_CACHE_HEADERS`
+    and this one sends no such header. Eval readings are therefore
+    cache-bypassed; a comparison between eval arms holds, but an absolute eval
+    reading does not transfer to production unqualified.
 
     What a raw client owes
     (`tests/architecture/test_raw_model_calls_carry_their_own_machinery.py` is
@@ -881,8 +884,8 @@ def google_credentials(cfg: Config, *, metrics: Any) -> GoogleCredentials | None
 def external_files_source(
     cfg: Config, *, google: GoogleCredentials | None,
 ) -> ExternalFilesSource | None:
-    """The shared-file source the open tool reads through,
-    or no Google identity (`google_credentials`). None answers the open
+    """The shared-file source the open tool reads through, or None:
+    `[external_files]` off, or no Google identity (`google_credentials`). None answers the open
     `unavailable`; recording a link as a handle needs none of this."""
     if not cfg.external_files.enabled or google is None:
         return None
@@ -1101,7 +1104,6 @@ class Dependencies:
     # web-reachable listing method).
     skills_dir: Path
     # The Dreamer's consolidation cursor and the scopes it ticks over.
-    # `language_store` is the CONCRETE `SqlLanguageStore` — the module keeps
     # `language_store` is the CONCRETE `SqlLanguageStore`, which is
     # the cursor and nothing else (see
     # `nora.infra.sql.language`'s own docstring). `None` when `[dreamer]
@@ -2472,9 +2474,10 @@ async def build_dependencies(
     # `x_read`, `x_search` (DEC-201), `instagram_read` and `instagram_search`
     # get ONE `SocialProvider` — `SocialRouter`
     # — and the registry stays unaware that there are two backends under it.
-    # there is NO credential on either, so `enabled` alone is the gate (the
-    # `[preview]` shape); an unwired backend answers `unavailable` for ITS OWN
-    # rows (R-5) and never widens or narrows the other's reach.
+    # Each backend is wired independently and there is NO credential on
+    # either, so `enabled` alone is the gate (the `[preview]` shape); an
+    # unwired backend answers `unavailable` for ITS OWN rows (R-5) and never
+    # widens or narrows the other's reach.
     #
     # The DEFAULT is OpenCLI, reaching the host-side bridge over loopback; its
     # read-only (site, command) allowlist is re-enforced THERE

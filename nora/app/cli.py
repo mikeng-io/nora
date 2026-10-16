@@ -1,11 +1,13 @@
 """The operator control plane: the read-only commands (`nora groups`,
 `nora persons pending`, `nora presence members`, `nora reminders list`) and
 the config write surface (`nora config set/get/unset/validate` — see
-`nora.app.config_cli`). This module's own commands only READ the record
-store; the others write elsewhere, each named where it is registered:
+`nora.app.config_cli`). Most of this module's commands only READ the record
+store; each one that writes says so where it is registered. Among them:
 `xai-login` and `openai-codex-login` (the host `.env`), `memory backfill`,
 `memory carry-conclusions` and `memory detach-unit`, each only with `--apply`
 (Honcho, DEC-214), `memory rebuild` (the memory index, unless `--dry-run`),
+`lessons retire` and `lessons rollback` (one lesson revision, only with
+`--apply`), `snapshot --into` (a separate empty sandbox database),
 `events backfill-units` (the `events` table) and `assess run-nightly` (an
 `assess_report` row).
 
@@ -179,7 +181,7 @@ def add_subcommands(
     reminders_list.set_defaults(func=cmd_reminders_list)
 
     # `measure` — the four measures that grade the ambient path against
-    # something other than its own opinion. READ ONLY like everything else in this module, and
+    # something other than its own opinion. READ ONLY, and
     # it changes no behaviour: it computes over rows that already exist.
     #
     # `--refusals` is a FILE and not a Prometheus URL on purpose. Gate
@@ -303,7 +305,7 @@ def add_subcommands(
     )
     members.set_defaults(func=cmd_presence_members)
 
-    # `memory backfill` (DEC-214): the second command here that WRITES, and
+    # `memory backfill` (DEC-214): a command here that WRITES, and
     # like `xai-login` it writes nowhere this module's read-only guarantee
     # covers — the record store is still opened read-only; what it writes
     # is Honcho, and only with `--apply`. See `nora.app.memory_backfill`.

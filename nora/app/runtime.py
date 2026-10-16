@@ -755,9 +755,8 @@ async def _dream_adaptor_once(
       with no recorded fire and the next tick would always fire, so "daily"
       would mean "once per deploy". `_ScheduleClock` keeps it in
       `dream_schedule_state`, where it survives the process.
-    - **Elapsed time cannot express a phase offset.** The fact tier's three
-      adaptors have a real data dependency (candidates write, adjudication
-      reads them, entity resolution reads what adjudication wrote), and
+    - **Elapsed time cannot express a phase offset.** Adaptors with a data
+      dependency (one writes a queue, the next drains it) need an order, and
       `dream_loop` dispatches adaptors as CONCURRENT tasks with no ordering.
       Separating their PERIODS does nothing; separating their PHASES does. A
       slot — `floor((t - offset) / interval)` — makes "daily at 06:00 UTC"
@@ -893,7 +892,8 @@ async def _dream_adaptor_once(
         # `watermark_age_seconds` reads `updated_at`, and only the batch arm
         # writes it, so an interval-only fire would otherwise latch on forever.
         stale = lag > 0 and age >= sched.min_interval_seconds
-        # The evidence wake: enough
+        # The evidence wake: enough new human messages fire at once, whatever
+        # the watermark's age.
         fires = stale or (sched.wake_batch is not None and lag >= sched.wake_batch)
     else:
         fires = (
@@ -1151,7 +1151,8 @@ async def dream_loop(
         if adaptor.key_kind == "unit":
             return units()
         if adaptor.key_kind == "entity":
-            # A Character entity: the adaptor
+            # A Character entity: the adaptor knows its own keys, one per
+            # (unit, entity), from the policy.
             entity_keys: Callable[[], Sequence[str]] | None = getattr(adaptor, "keys", None)
             if entity_keys is not None:
                 return entity_keys()

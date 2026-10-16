@@ -913,7 +913,6 @@ class MediaConfig(BaseModel):
     def describer_for(self, modality: str) -> DescriberConfig | None:
         """The describer for one modality, with the legacy alias resolved.
 
-        `None` for a modality nothing here describes — the caller's cue to
         `None` for a modality nothing here describes: the caller's cue to
         answer `unavailable` («I couldn't check»), NEVER `nothing_found`
         («there's nothing there»). A wiring gap reported as an empty result is
@@ -1191,7 +1190,6 @@ class AnalyticsConfig(BaseModel):
     # Its own knob, never `cluster_eps_m`: the match band sits well below the nearest
     # non-match, so any value in 100-500 m is safe and 50 is unsafe (hence the floor).
     place_match_radius_m: float = Field(default=150.0, ge=100.0, le=500.0)
-    # How far a non-driving fix may sit from an established stay's centre and
     # How far a non-driving fix may sit from an established stay's centre and still
     # extend it (time only, never position) -- `segment_stays`. One real stop's
     # resting fixes spread to 388 m; 400 cuts phantom trips and same-place split stays
@@ -1555,12 +1553,6 @@ class SocialConfig(BaseModel):
     shape). The read-only boundary does not live here at all: the bridge re-enforces
     its own `(site, command)` allowlist host-side before any `opencli` subprocess is
     spawned, so a write verb is unreachable whatever this config says.
-
-    KEYLESS — there is no credential, so `enabled` is the whole gate (the
-    `[preview]` shape). The read-only boundary does not live here at all: the
-    bridge re-enforces its own `(site, command)` allowlist host-side before
-    any `opencli` subprocess is spawned, so a write verb is unreachable
-    whatever this config says.
 
     `bridge_url` is where Nora's container reaches the host-side bridge. The
     container is on the private compose `nora` network (NOT host networking),
@@ -2348,14 +2340,15 @@ class StandingConfig(BaseModel):
     # loop rather than one conversation's slot. Unmeasured, and a `git checkout` on
     # the host mid-fold is the trigger.
     #
-    # 165s is the worst case at the shipped timeouts (120 + 20 + 5x5), the fifth store
-    # call being the note-proposal sink. The validator's job is to make the arithmetic
-    # impossible to get wrong silently, not to relitigate `[llm]`'s own timeout; lower
-    # this and the startup refusal tells the operator exactly which numbers no longer
-    # fit. The default (60) is headroom, not a fit to any one stage: it admits a
-    # config with no `[standing]` section, and the next stage added to this slot fails
-    # the GATE with a number to reason about rather than failing every deployment that
-    # never set the key.
+    # The validator (`Config._the_standing_slot_hold_fits_its_budget`) sums
+    # `timeout_seconds + STANDING_STORE_CALLS_PER_FOLD x store_timeout_seconds`, 40s at
+    # the defaults (20 + 4x5); `[llm] timeout_seconds` is not in the sum because the
+    # fold's model call never sees it. The validator's job is to make the arithmetic
+    # impossible to get wrong silently; lower this and the startup refusal tells the
+    # operator exactly which numbers no longer fit. The default (60) is headroom, not
+    # a fit to any one stage: it admits a config with no `[standing]` section, and the
+    # next stage added to this slot fails the GATE with a number to reason about
+    # rather than failing every deployment that never set the key.
     max_slot_hold_seconds: float = Field(default=60.0, gt=0)
 
     @model_validator(mode="after")
@@ -2413,8 +2406,8 @@ class CultureConfig(BaseModel):
     #: **What turning it on does: TWO things, under this one flag.** A background pass
     #: writes one short account of each room per wake into its own store, AND every
     #: runtime reads the room's current account as `<culture>`: the tag turn, every
-    #: fire occasion and the tag-path standing fold (DEC-207), as do the note passes
-    #: and the event fold. The relevance gate never does.
+    #: fire occasion and the character sessions (DEC-207). The relevance gate never
+    #: does.
     #:
     #: There is no separate read switch.
     enabled: bool = False
@@ -3651,7 +3644,6 @@ class AgentConfig(BaseModel):
     # HER OWN PUBLIC HANDLES, by network key — `signal = "@nora.000"`. What people
     # type to reach her, rendered in `<presence>` so she can recognise «@noraexample»
     # as herself in plain text and answer «what's your IG?».
-    # and answer «what's your IG?».
     #
     # DECLARED ONLY WHERE NOTHING CAN REPORT IT. A handle here is a copy, and a copy
     # goes stale in silence the day the account is renamed. So a network whose
@@ -3692,10 +3684,9 @@ class McpMountConfig(BaseModel):
     defaults False, so a section existing in a committed config doesn't mean
     it's live. `token_env` NAMES the environment variable holding the bearer
     token (DEC-8's `api_key_env`/`token_env` shape) — the value is never here,
-    # token (DEC-8's `api_key_env`/`token_env` shape) — the value is never here,
-    # it lives in `.env`. `budget` is the flat per-server tool-call ceiling
-    # every tool this server advertises shares — not per-tool,
-    # because auto-discovered tools have no config-time identity to key on.
+    it lives in `.env`. `budget` is the flat per-server tool-call ceiling
+    every tool this server advertises shares — not per-tool,
+    because auto-discovered tools have no config-time identity to key on.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -3818,7 +3809,7 @@ class Config(BaseModel):
     # (`enabled = false`): off, no `ParticipationTrigger` is built, the
     # dispatcher drops the participation verdict, and no quiescence window is
     # ever evaluated. On, it STILL engages nowhere until a room is opted in via
-    # `participation = true` in policy.toml.
+    # `relevance_gate = true` in policy.toml.
     participation: ParticipationConfig = ParticipationConfig()
     proactive: ProactiveConfig = ProactiveConfig()
     # The Relevance Gate: the admission call in FRONT of the participation turn.
