@@ -124,5 +124,19 @@
   "old": "            (c for c in (full, *p.aliases) if c and find_by_name(among, c) == (p,)),\n",
   "new": "            (c for c in () if c),\n",
   "target": "tests/unit/test_rollup_read_namesakes.py::test_tell_apart_prefers_a_name_that_is_theirs_alone"
+ },
+ {
+  "name": "8 store: items_of reads the place as first recorded",
+  "file": "nora/infra/sql/social_stream.py",
+  "old": "                i.c.caption, current_place(i).label(\"location\"), i.c.media_ref,\n",
+  "new": "                i.c.caption, i.c.location, i.c.media_ref,\n",
+  "target": "tests/infra/test_social_read.py::test_a_changed_tag_shows_the_new_place_and_a_removed_one_shows_none"
+ },
+ {
+  "name": "8 store: any state row, a place row included, hides an item",
+  "file": "nora/infra/sql/social_stream.py",
+  "old": "        no `gone` or `hidden` state row.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n            s.c.state.in_(HIDING_STATES),\n        )\n",
+  "new": "        no `gone` or `hidden` state row.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n        )\n",
+  "target": "tests/infra/test_social_read.py::test_a_changed_tag_shows_the_new_place_and_a_removed_one_shows_none"
  }
 ]

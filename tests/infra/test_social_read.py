@@ -392,3 +392,19 @@ async def test_a_long_carousel_is_cut_to_the_item_bound_and_says_so(engine, tmp_
     assert shown <= SOCIAL_ITEM_CHARS
     assert item["more_seen"] == 10 - len(item["seen"]) > 0
     assert "more_seen" in got["note"]
+
+
+# ---- a tag the author changed or removed ---------------------------------------------------------
+
+async def test_a_changed_tag_shows_the_new_place_and_a_removed_one_shows_none(engine, tmp_path):
+    await _seed(engine, "1", hours_ago=2, caption="moved", location="Harbour Pier")
+    await _seed(engine, "2", hours_ago=3, caption="untagged", location="Old Market")
+    store = SqlSocialStreamStore(engine)
+    await store.record_place(network="instagram", item_id="1", place="Hill Garden")
+    await store.record_place(network="instagram", item_id="2", place=None)
+    got = await _call(_tool(engine, tmp_path))
+    # A `place` row hides nothing: both items are still read.
+    moved, untagged = got["items"]
+    assert (moved["caption"], moved["location"]) == ("moved", "Hill Garden")
+    assert untagged["caption"] == "untagged" and "location" not in untagged
+    assert "Harbour Pier" not in str(got) and "Old Market" not in str(got)

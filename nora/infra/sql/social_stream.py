@@ -742,17 +742,20 @@ class SqlSocialStreamStore:
         """One person's readable items posted in `[start, end)`, newest first,
         at most `limit`: polled and back-filled alike, each with the readings
         its media already have (`media_objects` title and description, in the
-        item's media order). `persons` is every id the person's items may be
-        recorded under, their current id and each retired one. Readable is
-        `_readable`'s: not opted out, and no `social_item_state` row (gone or
-        hidden)."""
+        item's media order) and its current tagged place (`current_place`).
+        `persons` is every id the person's items may be recorded under, their
+        current id and each retired one. Readable is `_readable`'s: not opted
+        out, and no `gone` or `hidden` state row; a `place` row hides
+        nothing."""
         if not persons:
             return []
         i = SOCIAL_ITEM
         stmt = (
             sa.select(
                 i.c.network, i.c.kind, i.c.collab, i.c.taken_at, i.c.expires_at,
-                i.c.caption, i.c.location, i.c.media_ref,
+                # The place as the author has it now: a tag they changed shows
+                # the new place, one they removed shows none.
+                i.c.caption, current_place(i).label("location"), i.c.media_ref,
             )
             .where(
                 *self._readable(), i.c.person.in_(sorted(set(persons))),
