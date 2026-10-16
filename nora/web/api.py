@@ -220,6 +220,7 @@ def register_web_routes(
     workspaces_of: Callable[[str], tuple[str, ...]] | None = None,
     documents: DocumentStore | None = None,
     rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
+    room_event_shown: Callable[[Any, str, str, str], bool] | None = None,
     blobs: BlobStore | None = None,
     room_label: Callable[[str, str], str] | None = None,
     artifacts: ComputerExportStore | None = None,
@@ -229,6 +230,7 @@ def register_web_routes(
     app["web_workspaces_of"] = workspaces_of
     app["web_documents"] = documents
     app["web_rooms_of"] = rooms_of
+    app["web_room_event_shown"] = room_event_shown
     app["web_room_label"] = room_label
     app["web_blobs"] = blobs
     app["web_honcho"] = honcho
@@ -597,7 +599,7 @@ def register_web_routes(
             )
         body = await build_gatherings_payload(
             events=request.app["web_events"], person_id=person_id,
-            rooms_of=request.app["web_rooms_of"],
+            rooms_of=request.app["web_rooms_of"], shown=request.app["web_room_event_shown"],
         )
         return web.json_response(body)
 
@@ -618,7 +620,7 @@ def register_web_routes(
             return web.json_response({"status": "refused", "note": "bad id"}, status=400)
         body = await build_gathering_payload(
             events=request.app["web_events"], event_id=event_id, person_id=person_id,
-            rooms_of=request.app["web_rooms_of"],
+            rooms_of=request.app["web_rooms_of"], shown=request.app["web_room_event_shown"],
         )
         if body is None:
             return web.json_response({"status": "not_found"}, status=404)

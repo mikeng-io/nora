@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from nora.agent.lineage import LineagePolicy, visible_sections
 from nora.agent.security import screen_and_resolve_place
 from nora.domain.gatherings import (
     CITED_MESSAGE,
@@ -525,3 +526,27 @@ class GatheringService:
             + urllib.parse.quote(maps_name)
         )
         return out
+
+
+#: The event fields a room's view shows, the same four the Cognition session's
+#: event index is checked over (`nora.app.cognition_grounding._EVENT_SHOWN_FIELDS`).
+ROOM_EVENT_FIELDS = ("what", "start", "place", "status")
+
+
+def room_event_shown(
+    lineage: LineagePolicy, event: Gathering, viewer: str, platform: str, conversation_id: str,
+) -> bool:
+    """Whether a member of the room `(platform, conversation_id)` who neither
+    made nor answered `event` may see it on the portal: never when the event
+    is a surprise kept from them, and, with lineage enforced, only when every
+    shown field passes for that room, as the chat path checks before a room's
+    turn reads the event."""
+    if viewer in event.exclude_persons:
+        return False
+    if lineage.mode != "on":
+        return True
+    target = lineage.render_room(platform=platform, conversation_id=conversation_id)
+    return all(visible_sections(
+        event.lineage, ROOM_EVENT_FIELDS, target,
+        origin=room_key(platform, conversation_id), exclude_persons=event.exclude_persons,
+    ).values())

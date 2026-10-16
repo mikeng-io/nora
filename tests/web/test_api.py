@@ -629,6 +629,40 @@ async def client_with_events(aiohttp_client):
     return web_client, event
 
 
+async def test_the_events_routes_show_a_member_every_event_of_their_room(aiohttp_client):
+    """The route passes the viewer's rooms and the visibility rule: a room member
+    who neither made nor answered an event sees it in the list and the detail,
+    and someone outside the room sees neither."""
+    from nora.agent.lineage import LineagePolicy
+    from nora.app.gatherings import room_event_shown
+
+    events_service = GatheringService(
+        store=FakeGatheringStore(), route_source=None, honcho=None, ai_peer="nora",
+    )
+    event = await events_service.create_event(
+        conversation_id="group-1", requester_person_id="cognition:u",
+        title="Saturday dinner", platform="signal",
+    )
+    app = web.Application()
+    register_web_routes(
+        app, store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=FakeReminderStore(),
+        persons=Persons(by_person={"miles": MILES, "sam": SAM}, index={}),
+        ai_peer="nora", started_at=0.0, games_client=None, presence=None, presence_circles=(),
+        skills_dir=NO_SKILLS_DIR, events=events_service,
+        doctrine_store=build_test_doctrine_store(),
+        rooms_of=lambda p: frozenset({("signal", "group-1")}) if p == "miles" else frozenset(),
+        room_event_shown=lambda e, v, pl, c: room_event_shown(LineagePolicy(), e, v, pl, c),
+    )
+    web_client = await aiohttp_client(app)
+    listed = await (await web_client.get("/app/v1/events?personId=miles")).json()
+    assert [e["title"] for e in listed] == ["Saturday dinner"]
+    detail = await web_client.get(f"/app/v1/events/{event.id}?personId=miles")
+    assert detail.status == 200
+    assert await (await web_client.get("/app/v1/events?personId=sam")).json() == []
+    outside = await web_client.get(f"/app/v1/events/{event.id}?personId=sam")
+    assert outside.status == 404
+
+
 async def test_events_list_route_returns_the_seeded_event(client_with_events):
     """`miles` created it — creator is always a participant."""
     web_client, event = client_with_events
