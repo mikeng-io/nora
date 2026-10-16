@@ -1,19 +1,16 @@
 """ADR 0008 enforcement: every native tool declares its contract triple.
 
-The ADR (docs/adr/0008-tool-contract-metadata.md, accepted 2026-08-31,
-DEC-152) adds three machine-readable fields to `NativeTool` — what an
-interrupted call may have DONE (`side_effect_state`), whether replaying it
-produces the same effect (`idempotency`), and whether the harness may replay it
-(`retry`). This file is their READER.
+The ADR (docs/adr/0008-tool-contract-metadata.md, DEC-152)
+adds three machine-readable fields to `NativeTool` — what an interrupted call
+may have DONE (`side_effect_state`), whether replaying it produces the same
+effect (`idempotency`), and whether the harness may replay it (`retry`). This
+file is their READER.
 
-**Why a reader is the point.** The ADR's own Context section measured the
-failure it is avoiding: `ToolSpec.disclose_failure` and
-`ToolSpec.timeout_seconds` are both declared and read by NOTHING — a field with
-no reader is a claim about the system that the system never checks, and it rots
-in place. ADR 0008 states the rule as "each field ships with its reader (an
-enforcement test or a harness use), or it is not added". The output-contract
-validation (ADR §3) is a separate later pass; until it lands, these tests are
-what makes the three fields load-bearing rather than decorative.
+**Why a reader is the point.** A field with no reader is a claim about the
+system that the system never checks, and it rots in place. ADR 0008 states the
+rule as "each field ships with its reader (an enforcement test or a harness
+use), or it is not added". These tests are what make the three fields
+load-bearing rather than decorative.
 
 **Structural, not just runtime.** Half of what has to be true here is
 invisible at runtime: `side_effect_state` DEFAULTS to `"none"`, so a write verb
@@ -163,8 +160,8 @@ def test_send_reply_declares_the_r2_latch_policy() -> None:
     R-2's latch counts ATTEMPTS, not successes, and v2 has no auto-retry — so a
     `send_reply` that times out may already have put messages in the room
     (`nora.engagement.pipeline`: "Messages may ALREADY have gone out — under
-    multi-message that is the common shape"). Before this field that reading
-    lived in a comment. Pinned by value because the ADR names the values.
+    multi-message that is the common shape"). Pinned by value because the ADR
+    names the values.
     """
     spec = NATIVE_TOOLS["send_reply"]
     assert spec.side_effect_state == "unknown"

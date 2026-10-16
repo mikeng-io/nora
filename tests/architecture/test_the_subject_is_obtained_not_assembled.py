@@ -1,9 +1,8 @@
 """`nora.subject` is the ONE way the graph is obtained, and it cannot be assembled.
 
 `design/evaluation/` in one sentence: different evaluation suites, different
-input, ONE Nora. Seven places used to compose their own and four of them measured
-something the deployment does not send
-(`design/evaluation/03-step0-results.md`).
+input, ONE Nora. A suite that composes its own graph measures something the
+deployment does not send.
 
 WHAT THIS FILE HOLDS, and what it deliberately does not. It cannot check that a
 suite measures Nora — no test can, and pretending otherwise is the failure this
@@ -12,7 +11,7 @@ bundle is about, one layer up. It checks three things a machine CAN decide:
 1. the layer's direction — `nora.app` may not reach `nora.subject`;
 2. `SubjectSpec` names only seams, never a collaborator;
 3. the seam list only grows by decision — pinned in BOTH directions, so a field
-   added without arguing it in `01-boundaries` §2 reddens here.
+   added without arguing it reddens here.
 """
 from __future__ import annotations
 
@@ -24,28 +23,26 @@ from nora.subject import SubjectSpec
 
 ROOT = Path(__file__).resolve().parents[2]
 
-#: Everything a caller may state, because it is NOT Nora
-#: (`design/evaluation/01-boundaries.md` §2). Pinned both ways: a NEW field
+#: Everything a caller may state, because it is NOT Nora. Pinned both ways: a NEW field
 #: fails here, and removing one without editing this list fails too.
 #:
-#: **Adding a name here is a claim that something has stopped being part of
-#: her.** `build_offline_pipeline` reached 21 parameters, 13 of them defaulting
-#: to `None`, one caller at a time — each addition locally reasonable, and the
-#: result was two callers each forgetting a different thing.
-#: Added 2026-09-17 with its argument, which is what this pin exists to force:
-#: `now`. WHAT TIME IT IS is not part of Nora — it is the world reaching her,
-#: exactly as a message is. For the proactive adaptor the time IS the question
-#: it answers (is this due, has this gone stale), so a case that cannot state it
-#: cannot ask that adaptor anything; it can only watch it answer about today.
+#: **Adding a name here is a claim that something has stopped being part of her.** A
+#: pipeline builder that grows one parameter per caller ends with callers each
+#: forgetting a different thing; the pin exists to force the argument.
+#:
+#: `now`: WHAT TIME IT IS is not part of Nora — it is the world reaching her,
+#: exactly as a message is. For the proactive adaptor the time IS the question it
+#: answers (is this due, has this gone stale), so a case that cannot state it cannot
+#: ask that adaptor anything; it can only watch it answer about today.
 #: `build_dependencies` grew the parameter for the same reason and it is not an
 #: eval-only seam: nine components already took an injectable `clock` and the
 #: composition root was writing the same literal nine times.
-#: `room` added 2026-09-17, found by review rather than by a test: cases share
-#: one database, so one room is one transcript. The gate reads the newest 40
-#: rows and the Dreamer the OLDEST 64, so without a room per case a case is
-#: graded on other cases' messages — and past 64 rows its own input never
-#: reaches the adaptor at all, while it is graded anyway. WHICH ROOM is plainly
-#: not part of Nora; it is where the world reaches her.
+#:
+#: `room`: cases share one database, so one room is one transcript. The gate reads
+#: the newest 40 rows and the Dreamer the OLDEST 64, so without a room per case a
+#: case is graded on other cases' messages — and past 64 rows its own input never
+#: reaches the adaptor at all, while it is graded anyway. WHICH ROOM is plainly not
+#: part of Nora; it is where the world reaches her.
 _SEAMS = frozenset({
     "database_url", "workdir", "overrides", "identity", "policy", "now", "room",
 })
@@ -90,10 +87,9 @@ def test_obtain_is_the_only_thing_that_composes() -> None:
     """A second way to COMPOSE is a second Nora, which is the whole finding.
 
     Stated as "returns a `Dependencies`" rather than "is the only public name".
-    The first draft pinned the whole `__all__`, and `know()` — which writes rows
-    into stores the subject already has — reddened it. That was the pin
-    measuring spelling instead of the property: the finding is seven ASSEMBLIES,
-    not seven exported names.
+    Pinning the whole `__all__` would measure spelling instead of the property:
+    the finding is ASSEMBLIES, not exported names (`know()`, which writes rows
+    into stores the subject already has, is a legitimate export).
     """
     import inspect
 

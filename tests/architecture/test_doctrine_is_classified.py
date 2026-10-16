@@ -1,5 +1,5 @@
 """Every doctrine rule has a bucket (law / practice / character / seed), and carrying the
-bucket changed nothing she reads (design/self-growth/30-doctrine-sort.md, step 3).
+bucket changes nothing she reads.
 
 **What this pins, and why it is a test and not a startup check.** The side table
 `nora/doctrine/classification.yaml` is what Lessons' doctrine check will read the
@@ -11,8 +11,7 @@ refused because a table lags it.
 
 **The no-text-change claim.** The table is read only by `law_rules`; the scan is
 `**/*.md`; so the assembled doctrine of every audience must be identical with the
-table present, absent or garbage. The one-time proof against `origin/master` (old
-loader, no table) is in design/self-growth/31-doctrine-audit.md, with the digests.
+table present, absent or garbage.
 """
 
 from __future__ import annotations
@@ -91,7 +90,7 @@ def test_a_deleted_classification_entry_fails(tmp_path: Path):
 @pytest.mark.parametrize(
     ("path", "old", "new", "where"),
     [
-        # the first words change: the anchor no longer resolves
+        # the first words change: the anchor does not resolve
         (
             "rooms/constraints.md",
             "Agreement you do not hold is useless",
@@ -175,8 +174,7 @@ def test_the_law_subset_is_not_empty_and_carries_the_examples_in_30_section_1():
         # a write that did not succeed
         "Only claim you have remembered something once the recording has succeeded",
         "When it comes back broken, say you could not check",      # "I couldn't check"
-        # no capability her tools and skills do not give her (rewritten in step 2,
-        # design/context-plan/11 §6: the old text predated the cognition loop)
+        # no capability her tools and skills do not give her
         "Never offer, promise or volunteer an action that your tools and skills do not give you",
     ):
         assert needle in re.sub(r"\s+", " ", law), f"missing from the law subset: {needle!r}"
@@ -197,15 +195,12 @@ def test_the_practice_and_character_examples_in_30_section_1_are_not_law():
     assert "Banter is how this group talks" in everything
 
 
-#: The operator's rulings of 2026-10-12 on the eleven rows the sort marked
-#: AMBIGUOUS (DEC-309; design/self-growth/31-doctrine-audit.md, Judgement calls).
-#: Each names the part by its file and its opening words, so a ruling reverted in
-#: classification.yaml, or a split folded back into one part, fails here. Law parts
-#: that step 2 (design/context-plan/11 §6) moved into rooms/constraints.md or
-#: public/constraints.md are named in their new file; the bucket is the ruling.
-#: silence.md's two practice rows are gone with the file, which the ruling
-#: dissolved (design/context-plan/12 §2, built 2026-10-13); see
-#: `test_silence_md_is_dissolved`.
+#: The operator's rulings (12 Oct 2026, DEC-309) on the eleven rows the sort marked
+#: AMBIGUOUS. Each names the part by its file and its opening words, so a ruling
+#: reverted in classification.yaml, or a split folded back into one part, fails
+#: here. Law parts that live in rooms/constraints.md or public/constraints.md are
+#: named in that file; the bucket is the ruling. silence.md is dissolved and has
+#: no rows; see `test_silence_md_is_dissolved`.
 OPERATOR_RULINGS_2026_10_12 = (
     ("core/identity.md", "That's context, not a topic.", "law"),
     ("core/identity.md", "Asked directly who made you", "practice"),
@@ -229,8 +224,8 @@ def test_the_operators_rulings_on_the_ambiguous_rows_hold(path: str, starts: str
         if r.file == path and " ".join(r.text.split()).startswith(starts)
     ]
     assert len(parts) == 1, f"{path}: no single part starts {starts!r}"
-    # DEC-309 split character into seed (authored, never cut) and grown; a part
-    # ruled character that is now seed still holds the ruling, which was law vs
+    # DEC-309 splits character into seed (authored, never cut) and grown; a part
+    # ruled character that is seed still holds the ruling, which was law vs
     # character.
     got = "character" if parts[0].bucket == "seed" else parts[0].bucket
     assert got == bucket, f"{path} {starts!r} is {parts[0].bucket}, ruled {bucket}"
@@ -258,10 +253,9 @@ def test_character_and_practice_text_on_a_no_unit_surface_is_marked():
     assert not any(r.no_unit_surface for r in rules if r.bucket == "seed")
 
 
-#: The identity seed (operator 2026-10-12, design/context-plan/12 §1, DEC-309): who
-#: she is, authored, on every surface and never cut. Each part is named by its file
-#: and opening words, so a seed part moved back to `character` (and so into the cut)
-#: fails here.
+#: The identity seed (DEC-309): who she is, authored, on every surface and never
+#: cut. Each part is named by its file and opening words, so a seed part moved
+#: back to `character` (and so into the cut) fails here.
 IDENTITY_SEED = (
     ("core/identity.md", "You are Nora."),
     ("core/identity.md", "Mike Ng built you."),
@@ -279,10 +273,10 @@ def test_the_identity_seed_is_marked_and_is_nothing_else():
         assert any(f == path and t.startswith(starts) for f, t in seed), (
             f"{path} {starts!r} is not seed"
         )
-    # 2026-10-13: the character of voice, belonging and conduct joined the seed.
-    # The live <self> accounts (one per unit) describe her role and habits in a
-    # group, never her register or temperament, so nothing would carry those
-    # if they were cut as "grown" (design/context-plan/12 §1 addendum).
+    # The character of voice, belonging and conduct is in the seed. The live <self>
+    # accounts (one per unit) describe her role and habits in a group, never her
+    # register or temperament, so nothing would carry those if they were cut as
+    # "grown".
     assert {r.file for r in rules if r.bucket == "seed"} == set(SEED_FILES)
     assert len(seed) == len(IDENTITY_SEED) + 21, f"seed parts beyond the ruling: {sorted(seed)}"
     # Her own doctrine keeps no cuttable character: grown character is <self>'s.
@@ -329,7 +323,7 @@ def test_the_audit_document_lists_every_classified_section():
 
 
 def test_silence_md_is_dissolved():
-    """The operator's ruling (design/context-plan/12 §2): what a turn IS belongs
+    """The operator's ruling: what a turn IS belongs
     with the turn, so silence.md goes. Its law line lives in rooms/constraints.md,
     the right to stay silent in `ParticipationHeader` and `ProactiveHeader` (the
     base rate in the proactive one only)."""
@@ -339,9 +333,8 @@ def test_silence_md_is_dissolved():
         text[r.file] += " ".join(r.text.split()) + " "
     assert "When someone called you, you answer" in text["rooms/constraints.md"]
     # silence.md's «you do not speak again into the space after your own reply»
-    # was NOT moved into conduct.md: read there, on every turn, it cost the
-    # participation windows that should speak (stalled-question-known 23/45
-    # with it, 14/15 without, against 25/30 before; 2026-10-14).
+    # is NOT in conduct.md: read there, on every turn, it costs the
+    # participation windows that should speak.
     assert "speak again into the space after your own reply" not in text["rooms/conduct.md"]
 
 

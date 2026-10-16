@@ -159,8 +159,8 @@ async def test_all_pending_crosses_conversations_and_excludes_finished(store):
 
     Ordered like `due()` — `due_at` then `id` — and PENDING only, or the CLI's
     "what is still coming" would include everything that already went out. Both
-    implementations get their own test because Task 2 proved the SQL adapter and
-    the fake drift the moment one of them is not under the suite."""
+    implementations get their own test because the SQL adapter and the fake
+    drift the moment one of them is not under the suite."""
     early = _row(conversation_id="conv-1", due_at=T0 + timedelta(hours=1))
     late = _row(conversation_id="conv-2", due_at=T0 + timedelta(hours=2))
     done = _row(conversation_id="conv-3", state=ReminderState.DONE)
@@ -190,7 +190,7 @@ async def test_count_pending_is_per_requester(store):
 
 
 async def test_history_is_one_requesters_rows_in_every_state_oldest_first(store):
-    """The decision log (design/dreamer-agent-loop/39 D7): what one owner
+    """The decision log: what one owner
     decided and how it went. Unlike `pending_for`/`all_pending` it KEEPS the
     finished rows — a log that forgot its outcomes would read every restraint
     and every failure as «never happened»."""
@@ -237,13 +237,13 @@ async def test_history_refuses_a_naive_since(store):
 
 
 async def test_sweep_resolves_firing_rows_to_failed(store):
-    """§8.2: at-most-once. A crash mid-fire loses that reminder, visibly. It is
+    """At-most-once. A crash mid-fire loses that reminder, visibly. It is
     NEVER re-queued — re-queueing double-sends anything that crashed after
     egress, and nothing links a row to its delivered message.
 
-    The assertion reads the TERMINAL STATE via get(). An earlier draft asserted
-    only that the row vanished from due(), which stays green if the sweep moves
-    FIRING to anything at all — decorative, per CLAUDE.md."""
+    The assertion reads the TERMINAL STATE via get(). Asserting only that the row
+    vanished from due() stays green if the sweep moves FIRING to anything at
+    all — decorative, per CLAUDE.md."""
     stuck = _row(state=ReminderState.FIRING)
     ok = _row(state=ReminderState.PENDING)
     await store.create(stuck)
@@ -256,11 +256,9 @@ async def test_sweep_resolves_firing_rows_to_failed(store):
     assert swept.state is ReminderState.FAILED
     assert swept.outcome == "failed_error"
     # `fired_at` is STAMPED, exactly as `mark` stamps it on every other terminal
-    # write. A swept row is the one an operator most needs a time on — the
+    # write. A swept row is the one an operator most needs a time on: the
     # process that set it FIRING is gone and nothing else in the table records
-    # when the crash happened — and both stores used to leave it NULL, so the
-    # row with the least recoverable history was also the only one with no
-    # timestamp at all.
+    # when the crash happened.
     assert swept.fired_at == LATER
     assert swept.fired_at.utcoffset() == timedelta(0)
     assert (await store.get(ok.id)).state is ReminderState.PENDING
@@ -270,10 +268,8 @@ async def test_sweep_resolves_firing_rows_to_failed(store):
 
 
 # --------------------------------------------------------------------------
-# The four divergences the original eight tests could not see. Each one below
-# failed on at least one implementation before its fix; between them they pin
-# the timezone contract, the `limit` contract, the ordering tiebreak, and what
-# a duplicate id does.
+# Behaviours where the two implementations can diverge: the timezone contract,
+# the `limit` contract, the ordering tiebreak, and what a duplicate id does.
 # --------------------------------------------------------------------------
 
 
@@ -284,9 +280,9 @@ async def test_stored_datetimes_come_back_utc_aware(store):
     with `tzinfo=UTC`; an in-memory dict hands back exactly the object it was
     given. Both are "correct" instants, so `==` compares equal and cannot see
     the difference — `utcoffset()` is what differs, and it is what downstream
-    formatting reads. Feed a +08:00 aware row (this repo's own clock, `_HKT`)
-    and the two stores previously disagreed by eight hours' worth of printed
-    digits for the same instant.
+    formatting reads. Feed a +08:00 aware row (this repo's own clock, `_HKT`):
+    without the contract the two stores print digits eight hours apart for the
+    same instant.
     """
     due_hkt = datetime(2026, 8, 9, 17, 0, tzinfo=HKT)
     created_hkt = datetime(2026, 8, 8, 20, 0, tzinfo=HKT)
@@ -346,9 +342,9 @@ async def test_due_refuses_a_non_positive_limit(store):
     """`limit` is a batch size; a non-positive one is a caller bug.
 
     Postgres raises `InvalidRowCountInLimitClauseError` on `LIMIT -1` while
-    Python's `[:-1]` cheerfully returns everything-except-the-last — the two
-    stores answered a bad call two different ways, and one of them answered it
-    with plausible-looking data. One rule now: `limit >= 1` or `ValueError`.
+    Python's `[:-1]` cheerfully returns everything-except-the-last, which is
+    plausible-looking data for a bad call. The rule for both stores: `limit >= 1`
+    or `ValueError`.
     """
     await store.create(_row(due_at=T0))
     await store.create(_row(due_at=T0))
@@ -453,19 +449,17 @@ async def test_a_recurring_row_round_trips_every_field_of_its_series(store):
 
 
 async def test_a_sub_day_series_round_trips_its_unit_and_its_interval(store):
-    """#109's two new persisted facts, through BOTH stores.
+    """A series' persisted recurrence interval and kind, through BOTH stores.
 
     The fake holds domain objects, so it round-trips anything by construction;
     the SQL store serialises through two hand-written mappings
     (`_row_to_series` and `_insert_values`) and a widened CHECK constraint.
     Hard-coding `recurrence_interval` to 1 on write, or dropping it from the
-    read, left every other test green (#109 review) — a series would come back
-    firing every minute instead of every ten, which is the exact defect this
-    feature exists to close.
+    read, would leave every other test green — a series would come back firing
+    every minute instead of every ten.
 
-    `minutely` also proves the constraint widening by INSERT rather than by the
-    dumped text in the schema baseline: against the old
-    `ck_reminders_recurrence_kind` this row is rejected by Postgres.
+    `minutely` also proves the `ck_reminders_recurrence_kind` constraint admits
+    the kind by INSERT rather than by the dumped text in the schema baseline.
     """
     r = _daily(every=Recurrence.MINUTELY, count=7, interval=10)
     await store.create(r)
@@ -673,7 +667,7 @@ async def test_a_daily_series_keeps_its_local_time_across_a_dst_boundary(store):
     New York rather than Hong Kong deliberately: Hong Kong has had no DST since
     1979, so a store that added a flat 24 hours would pass every other test in
     this file and be wrong the first time Nora is deployed anywhere that does.
-    2026-03-08 is the US spring-forward, so 08:00 EST (13:00 UTC) becomes 08:00
+    8 Mar 2026 is the US spring-forward, so 08:00 EST (13:00 UTC) becomes 08:00
     EDT (12:00 UTC) — a 23-hour step in absolute time, which is the arithmetic
     `due_at + timedelta(days=1)` cannot produce.
     """
@@ -697,10 +691,10 @@ async def test_a_daily_series_keeps_its_local_time_across_a_dst_boundary(store):
 async def test_create_refuses_a_duplicate_id(store):
     """The same id twice is a collision, and a collision must be loud.
 
-    Postgres raised `UniqueViolationError` off the primary key; the fake
-    silently OVERWROTE the row, so a test that exercised the fake would show a
-    clobbered reminder as success and the real store as a 500. `create` is
-    insert-only in both now, and the first row is left untouched.
+    Postgres raises `UniqueViolationError` off the primary key; a fake that
+    silently OVERWROTE the row would show a clobbered reminder as success where
+    the real store errors. `create` is insert-only in both, and the first row is
+    left untouched.
     """
     first = _row(text="洗衫")
     await store.create(first)
@@ -714,13 +708,13 @@ async def test_create_refuses_a_duplicate_id(store):
 
 
 async def test_one_undecodable_row_does_not_strand_every_other_reminder(store):
-    """M2 (external review 2026-08-10). `recurrence_tz` is free `Text` — no CHECK
+    """`recurrence_tz` is free `Text` — no CHECK
     constraint can validate an IANA zone name — and `_row_to_reminder` raises on
-    one this host's tzdb cannot resolve. That raise escaped `due()` into
-    `HeartbeatLoop.tick` ABOVE its per-group `try`, whose docstring promises one
-    bad reminder must not strand the others. So a single unreadable row stopped
-    EVERY reminder firing, in every conversation, on every tick, forever —
-    visible only as `nora_errors_total{stage="heartbeat"}`.
+    one this host's tzdb cannot resolve. A raise escaping `due()` into
+    `HeartbeatLoop.tick` ABOVE its per-group `try` (whose docstring promises one
+    bad reminder must not strand the others) would stop EVERY reminder firing, in
+    every conversation, on every tick — visible only as
+    `nora_errors_total{stage="heartbeat"}`.
 
     Skipping is the fail-closed answer: the bad row never fires, the good ones
     still do. Revert `_decode_due` to a comprehension and this reds.
@@ -775,7 +769,7 @@ async def test_default_kind_is_reminder(store):
     assert back.payload is None
 
 
-# -- one open proactive row per note (issue #158) -----------------------------
+# -- one open proactive row per note -----------------------------
 
 
 def _proactive(note_id: str | None = "note-1", **kw) -> Reminder:
@@ -789,7 +783,7 @@ def _proactive(note_id: str | None = "note-1", **kw) -> Reminder:
 
 @pytest.mark.parametrize("held", [ReminderState.PENDING, ReminderState.FIRING])
 async def test_a_second_open_proactive_row_on_a_note_is_refused(store, held):
-    """The production shape: a pass wrote a row while an earlier row on the
+    """A pass writes a row while an earlier row on the
     same note still waited (or was being said). The store refuses it and
     writes nothing, whichever implementation holds it."""
     first = _proactive(state=held)

@@ -1,11 +1,10 @@
 """Every path that hands a message's text to a MODEL renders a shared file link
-as its handle, `[Google Doc link c41d09]`, never as the URL
-(design/external-files/00-design.md §1, R-18).
+as its handle, `[Google Doc link c41d09]`, never as the URL (R-18).
 
 The stored body keeps the URL (Postgres is the record), so the replacement is
-a render-time obligation, and `test_media_join_reaches_every_transcript`'s
-history says how that goes: shipped to the one builder somebody had open. So
-this file has the same two halves:
+a render-time obligation, and `test_media_join_reaches_every_transcript` shows
+the failure mode: a change that reaches only the one builder somebody had open.
+So this file has the same two halves:
 
 * **BEHAVIOUR**, parametrized over the renderers: each one, handed a row whose
   body holds a Drive URL, must produce the handle and no file id.
@@ -103,7 +102,7 @@ def _memory_backfill() -> str:
 
 def _memory_hits() -> str:
     """search_memory / search_memory_workspace: Honcho's stored words, which
-    hold raw links for everything fed before external-files S1."""
+    hold raw links for anything fed before links were rendered as handles."""
     from nora.agent.tools import _memory_hits_result
 
     return repr(_memory_hits_result(
@@ -172,9 +171,9 @@ def _leaks(out: str) -> bool:
 
 @pytest.mark.parametrize("own", [False, True])
 def test_a_cut_never_splits_a_link_into_a_raw_stub(own):
-    """Review of PR 795: the Cognition agenda cut a message to its allowance
-    BEFORE the link was swapped, so half a URL and a prefix of the file id
-    reached the model, and a stub long enough to parse carried a wrong code.
+    """The Cognition agenda swaps the link BEFORE cutting a message to its
+    allowance; cutting first would leave half a URL and a prefix of the file id
+    for the model, and a stub long enough to parse would carry a wrong code.
     Swap first, then cut, at every length and through `_shrunk`'s search."""
     from nora.language.cognition_render import _message_row, _own_row, _shrunk
 
@@ -412,7 +411,7 @@ _FSTRING_EXEMPT = {
 
 
 def test_every_message_text_in_an_fstring_is_rendered_or_exempt():
-    """The hand-built shape the review found in `evals/`: a transcript line
+    """The hand-built shape to catch, as found in `evals/`: a transcript line
     built as `f"{who}: {row.body}"`. Every function doing that, in `nora/`
     and `evals/`, renders the handle in that f-string or says why not."""
     offenders = []

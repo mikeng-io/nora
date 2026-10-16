@@ -1,22 +1,18 @@
-"""Step 5a: ONE `OpenAIModel` PER TAG, over the process-wide `AsyncOpenAI` client.
+"""ONE `OpenAIModel` PER TAG, over the process-wide `AsyncOpenAI` client.
 
-`tool_choice` is per-turn state from step 5b onwards — `required` for the first
-model call, `auto` once she has spoken — and until this change there was one
-`OpenAIModel` for the whole process (`nora.app.composition` built it once and
-handed it to `LiveAgentRunner`). The engagement in-flight lock
-(`nora.engagement.slots`) keys on
+`tool_choice` is per-turn state — `required` for the first model call, `auto`
+once she has spoken — so a single `OpenAIModel` for the whole process would be
+wrong. The engagement in-flight lock (`nora.engagement.slots`) keys on
 `(platform, conversation_id)`, so two conversations run at the same time, and a
-flip made for tag A would therefore have applied to tag B's FIRST call.
+flip made for tag A would apply to tag B's FIRST call.
 
-`design/proposed/16-multi-message-replies.md` §2.1 measured what a first call
-under `auto` does: the model answers in plain prose and calls nothing, 5/6 —
-zero messages end to end, 6/6. That is R-5's failure shape exactly, and it
-would have appeared only under concurrent load, i.e. almost never in testing.
+A first call under `auto` makes the model answer in plain prose and call
+nothing — zero messages end to end. That is R-5's failure shape exactly, and it
+would appear only under concurrent load, i.e. almost never in testing.
 
-Audit T2's guarantee is "one CLIENT per process" — that is what pools
-connections — and it is untouched: the client is still built once by
-`build_dependencies`. The MODEL is cheap and is now built per tag, the same
-argument `factory.RetryPolicy`'s docstring already makes for
+The guarantee is "one CLIENT per process" — that is what pools connections —
+and the client is built once by `build_dependencies`. The MODEL is cheap and is
+built per tag, the same argument `factory.RetryPolicy`'s docstring already makes for
 `ModelRetryStrategy` ("one shared instance would let one tag's retry counter
 decide another tag's backoff").
 
@@ -168,7 +164,7 @@ async def test_one_tags_relaxed_tool_choice_is_invisible_to_the_next_tag():
     """Sequential, and the simplest form of the leak: A finishes, then B starts.
 
     With one model per process, A's flip to `auto` is still in force when B
-    makes its FIRST call — the call §2.1 measured as sending nothing 5/6.
+    makes its FIRST call — the call that would send nothing.
     """
     log: list[tuple[str, str | None]] = []
     source = _RecordingSource(log, asyncio.Event())
@@ -180,7 +176,7 @@ async def test_one_tags_relaxed_tool_choice_is_invisible_to_the_next_tag():
 
 
 async def test_two_concurrent_tags_cannot_observe_each_others_tool_choice():
-    """THE probe named by step 5a, with the interleaving pinned rather than hoped.
+    """THE probe, with the interleaving pinned rather than hoped.
 
     B's first model call is held inside the model double until A has been
     relaxed, so "B asks after A flipped" is deterministic. Share one model

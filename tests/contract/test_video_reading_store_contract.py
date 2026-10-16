@@ -1,8 +1,7 @@
 """`VideoReadingStore` has two implementations, so it gets one suite both pass.
 
-The property the cache exists for is that EVERY input a reading depends on is
-part of its identity: a different geometry, model or prompt is a miss, never a
-stale hit (issue #117's bug, one layer down).
+The property the cache exists for is that EVERY input a reading depends on is part of its
+identity: a different geometry, model or prompt is a miss, never a stale hit.
 """
 
 from __future__ import annotations
@@ -36,8 +35,8 @@ async def store(request):
 
 
 async def test_an_unread_clip_is_a_miss(store):
-    """Against a NON-EMPTY store: an empty one misses for every key and would
-    pass this for a store that ignored the key entirely (review finding)."""
+    """Against a NON-EMPTY store: an empty one misses for every key and would pass this for a
+    store that ignored the key entirely."""
     await store.put(key=KEY, reading="0:00 — a stage at night")
     assert await store.get(key=dataclasses.replace(KEY, sha256="d" * 64)) is None
 

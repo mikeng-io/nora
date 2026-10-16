@@ -1,5 +1,4 @@
-"""`scripts/standing_edit.py` — the operator's one other writer of `standing`
-(design/dreamer-agent-loop/26-standing.md, dated section 2026-09-25).
+"""`scripts/standing_edit.py` — the operator's one other writer of `standing`.
 
 Against real Postgres, not a fake: the property under test IS the
 compare-and-set the database enforces (`SqlStandingStore.write_if_unchanged`),
@@ -146,9 +145,10 @@ async def test_apply_lands_as_operator_and_keeps_fold_count_and_watermark(
 async def test_apply_on_a_room_holding_a_working_set_lands_and_keeps_it(
     store: SqlStandingStore,
 ) -> None:
-    """#541 added `working_set`; the edit rebuilt `Standing` field by field
-    without it, so the edit wrote an empty working set over the held one and
-    `write_if_unchanged` refused every edit of such a room."""
+    """The edit must carry `working_set` over from the held `Standing`:
+    rebuilding it field by field without it would write an empty working set
+    over the held one, and `write_if_unchanged` would refuse every edit of such
+    a room."""
     held = (WorkingSetItem(what="two more options", source="web_search", found_at=T0),)
     await store.write(standing=Standing(
         platform=PLATFORM, conversation_id=CONV, body="the fold's position",
@@ -224,11 +224,10 @@ async def test_a_fold_landing_between_the_read_and_the_write_refuses_the_edit(
 async def test_a_body_over_the_operating_cap_is_refused_before_the_hard_ceiling(
     store: SqlStandingStore,
 ) -> None:
-    """`[standing] max_chars` (1200 by default) is the cap the FOLD is held
-    to; an operator edit is not exempt from it just because the database's
-    hard ceiling (4000) would still accept the body. A body between the two
-    proves this check runs before Standing's own — the old script only
-    caught the 4000 ceiling, which this body is under."""
+    """`[standing] max_chars` is the cap the FOLD is held to; an operator edit
+    is not exempt from it just because the database's hard ceiling would still
+    accept the body. A body between the two proves this check runs before
+    Standing's own."""
     await store.write(standing=Standing(
         platform=PLATFORM, conversation_id=CONV, body="a fine position",
         fold_count=1, updated_at=T0,
@@ -264,7 +263,7 @@ async def test_an_over_ceiling_body_is_still_refused_and_writes_nothing(
     assert head is not None and head.body == "a fine position"
 
 
-# --- the recheck (26-standing.md §9, "a fold can still overwrite an operator edit") --
+# --- the recheck ("a fold can still overwrite an operator edit") ---------------------
 
 
 async def test_the_recheck_reports_a_fold_that_lands_during_the_wait(
@@ -280,9 +279,9 @@ async def test_the_recheck_reports_a_fold_that_lands_during_the_wait(
     ))
 
     # The fold is written the moment the operator's compare-and-set returns,
-    # never on a wall clock. A task started before the edit raced it: under a
-    # loaded parallel gate the fold landed BEFORE the operator's write, which
-    # then refused as stale (2026-10-12).
+    # never on a wall clock. A fold started as a task before the edit would race
+    # it: under a loaded parallel gate it could land BEFORE the operator's write,
+    # which would then refuse as stale.
     operator_write = store.write_if_unchanged
 
     async def _operator_write_then_a_fold(**kwargs: Any) -> bool:

@@ -1,12 +1,11 @@
 """DEC-89 — the link a tool minted reaches the group even when the model drops it.
 
-THE PROBE these tests are built around is a real trajectory (stress test,
-2026-08-10): four restaurant recommendations, a `place_info` `maps_url` minted
-for every one, and not a single link in any reply. The tool's own docstring
-already asked for it. So the assertion that matters is the end-to-end one at the
-bottom — the tools and the sender share ONE carrier and a named place carries
-its link out — and everything above it is the narrowness that keeps this from
-rewriting her words more than it has to.
+THE PROBE these tests are built around: four restaurant recommendations, a
+`place_info` `maps_url` minted for every one, and not a single link in any
+reply. The tool's own docstring asks for it. So the assertion that matters is
+the end-to-end one at the bottom — the tools and the sender share ONE carrier
+and a named place carries its link out — and everything above it is the
+narrowness that keeps this from rewriting her words more than it has to.
 """
 
 import pytest
@@ -48,7 +47,7 @@ def test_a_reply_that_already_carries_the_link_is_untouched():
 
 
 def test_a_reply_carrying_the_link_decoded_is_untouched():
-    """FALSIFIER (ADR 0023 review): with no shortener the link is the full Maps URL,
+    """With no shortener the link is the full Maps URL,
     mostly `%E9...` escapes for a Chinese name. A model that writes it with the
     characters themselves, or `+` for a space, already carries it; read as missing,
     the link was appended a second time under her own copy."""
@@ -82,7 +81,7 @@ def test_the_resolved_name_alone_is_enough_to_earn_the_link():
 
 def test_matching_is_case_folded_but_never_a_one_character_anchor():
     """Two characters is the floor because Cantonese place names really are two
-    (譚仔, 泰斗, 池記) — the same reason `strip_markdown` had to stop reasoning
+    (譚仔, 泰斗, 池記) — the same reason `strip_markdown` does not reason
     about an alphabet Nora does not write in."""
     carry = LinkCarry()
     carry.offer(anchor="YOHO MALL", url=SHORT)
@@ -270,8 +269,8 @@ async def test_a_reply_naming_nothing_is_sent_exactly_as_written(store, doctrine
 async def test_the_leak_guard_sees_the_appended_bytes(store, doctrine):
     """The carry runs BEFORE R-6/R-18, so the guards measure what LEAVES. A
     transformation sitting in front of a fail-closed guard without the guard
-    seeing its output is the hole the 2026-08-10 audit found in DEC-82's first
-    cut; this proves the ordering by carrying a poisoned url."""
+    seeing its output is the hole DEC-82's strip avoids; this proves the
+    ordering by carrying a poisoned url."""
     links = LinkCarry()
     links.offer(anchor="Soi.29", url="https://x.test/+85298765432")
     sink = SinkSender()
@@ -319,7 +318,7 @@ async def test_deliver_build_hands_out_the_same_carrier_it_gave_the_sender(store
 
 
 async def test_place_info_through_a_shared_carrier_reaches_the_group(store, doctrine):
-    """END TO END, and the only test here that would have caught the live
+    """END TO END, and the only test here that catches the dropped-link
     defect: the tool mints, the model writes a reply that names the place and
     forgets the link, and the group gets the link anyway."""
     from nora.agent.tools import NATIVE_TOOL_BUDGETS

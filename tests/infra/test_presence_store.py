@@ -1,7 +1,7 @@
-"""`PresenceStore` against a REAL Postgres (design/19 §2, DEC-55).
+"""`PresenceStore` against a REAL Postgres (DEC-55).
 
-The load-bearing test is the change-recorder dedup (§7.2): two reads of an
-UNMOVED member produce ONE row. Revert `record_fix`'s `>` guard and
+The load-bearing test is the change-recorder dedup: two reads of an UNMOVED
+member produce ONE row. Revert `record_fix`'s `>` guard and
 `test_an_unmoved_member_is_recorded_once` goes red — the whole point of the
 collector being a change-recorder rather than a sampler.
 """
@@ -57,7 +57,7 @@ async def test_record_fix_writes_a_row_when_ts_is_new(store):
 
 
 async def test_an_unmoved_member_is_recorded_once(store):
-    """R-32 / design/19 §7.2: the change-recorder dedup. The daemon polls the
+    """R-32: the change-recorder dedup. The daemon polls the
     same fix repeatedly (a stationary phone holds one fix for minutes); only the
     FIRST poll writes a row. Two reads of an unmoved member → one row. Revert the
     `>` guard in `record_fix` and this goes red."""
@@ -140,7 +140,7 @@ async def test_prune_is_a_no_op_when_all_fixes_are_fresh(store):
     assert await store.prune(now_ms=now) == 0
 
 
-# ── saved places (design/23 §3) ──────────────────────────────────────────────
+# ── saved places ─────────────────────────────────────────────────────────────
 
 async def test_replace_places_round_trips_and_removes_what_the_wire_dropped(store):
     """Wholesale replacement: a place gone from the wire is gone from the table

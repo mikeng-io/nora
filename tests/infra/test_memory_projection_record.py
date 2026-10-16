@@ -1,7 +1,6 @@
-"""The Record's projection into the memory index (design/unified-memory/
-60-build-step-3.md S1): every message write keeps its node, its attachments'
-nodes and their edges, in the store's own transaction; a projection failure
-queues and never costs the message.
+"""The Record's projection into the memory index: every message write keeps its
+node, its attachments' nodes and their edges, in the store's own transaction; a
+projection failure queues and never costs the message.
 
 Module-scoped database per `test_withdrawal.py`'s pattern (one migrated
 database, truncated between tests)."""

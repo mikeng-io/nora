@@ -1,4 +1,4 @@
-"""The retrieval bake-off's harness measures fail-closed (design/unified-memory/20).
+"""The retrieval bake-off's harness measures fail-closed.
 
 Every embedding failure is an ERROR for that item, never a miss: an ERROR
 query is left out of the mean and counted, and any ERROR makes the arm's
@@ -406,7 +406,7 @@ def test_stage_two_still_runs_gemma_through_ollama_and_is_off_by_default() -> No
 
 def test_ollama_refuses_media_for_a_model_without_vision() -> None:
     """Ollama answers an `images` field on /api/embed with the text-only
-    vector (0.35 and 0.40.4, probed 2026-10-15): a silent pass of the wrong
+    vector (Ollama 0.35 and 0.40.4): a silent pass of the wrong
     thing, so a model that does not declare vision is never sent media."""
     t = FakeTransport(2048)
     with pytest.raises(EmbedError) as e:
@@ -417,7 +417,7 @@ def test_ollama_refuses_media_for_a_model_without_vision() -> None:
 
 
 def test_ollama_sends_media_as_image_objects_for_a_vision_model(tmp_path: Path) -> None:
-    """The one shape Ollama 0.40.4 embeds (probed 2026-10-15): an `image`
+    """The one shape Ollama 0.40.4 embeds: an `image`
     object per input. No prefix: Gemma 2's card puts none on media."""
     img = tmp_path / "a.jpg"
     img.write_bytes(b"jpeg")
@@ -506,7 +506,7 @@ def test_the_watchdog_aborts_when_swap_grows_by_more_than_one_gib() -> None:
 
 def test_the_watchdog_aborts_when_free_swap_drops_below_one_gib() -> None:
     """A host already near the end of its swap cannot grow it by 1 GiB, so
-    the growth rule alone never fires there (norty, 2026-10-15: 0.3 GiB free)."""
+    the growth rule alone never fires there (e.g. 0.3 GiB free)."""
     reading = {"MemAvailable": 8 * GIB_KIB, "SwapTotal": 24 * GIB_KIB, "SwapFree": GIB_KIB}
     dog = run.MemoryWatchdog(read=lambda: dict(reading))
     dog.check()
@@ -552,7 +552,7 @@ def test_the_result_holds_aggregates_only_no_text_and_no_vectors() -> None:
     assert "reading_gap" in result
 
 
-# --- review round 1 (PR #19) -------------------------------------------------------
+# --- embed errors, vector identity, ranking and the watchdog -----------------------
 
 
 def test_an_embed_error_from_a_batch_keeps_its_kind_for_every_item() -> None:
@@ -750,7 +750,7 @@ def test_a_truncated_embedding_is_renormalised_and_keeps_its_errors() -> None:
     assert t.errors == {"b": "timeout", "z": "zero_vector"}
 
 
-# --- the text slices (#18) ----------------------------------------------------------------
+# --- the text slices ----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(("slice_name", "pool", "queries"), [
@@ -770,7 +770,7 @@ def test_a_text_slice_carries_its_messages_and_its_time_only_queries() -> None:
     s = run.load_set(SET_DIR, "cantonese")
     assert s.media == {}
     first = s.messages["msg-001"]
-    assert first.sent_ms == 1783795260000  # 2026-07-12 02:41 Hong Kong time
+    assert first.sent_ms == 1783795260000  # 12 Jul 2026 02:41 Hong Kong time
     assert s.text("msg-001") == first.text
     assert s.subsets["time_only"] == ("ca-q16", "ca-q35", "ca-q36", "ca-q78", "ca-q79")
     assert run.load_set(SET_DIR, "names").subsets["time_only"] == ("nm-q22",)

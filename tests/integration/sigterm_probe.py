@@ -128,8 +128,8 @@ async def main() -> None:
         model, engine, metrics,
     )
     if os.environ.get("PROBE_LEGACY") == "1":
-        # `main()` as it was before `run_until_stopped`: no handler. The control that
-        # shows the harness can see the defect: SIGTERM kills this one without a trace.
+        # `main()` without `run_until_stopped`: no handler. The control that shows
+        # the harness can see the defect: SIGTERM kills this one without a trace.
         try:
             await app.run()
         finally:

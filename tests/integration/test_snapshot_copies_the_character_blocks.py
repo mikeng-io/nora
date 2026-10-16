@@ -1,14 +1,14 @@
-"""`sandbox_from_snapshot()` copies the Character blocks' accounts (self-growth
-step 1 review): the unit's own account (`<unit_culture>`) and the per-unit
-account of each person the room LISTS (`<character>`), each as of the instant
-and at the age it had.
+"""`sandbox_from_snapshot()` copies the Character blocks' accounts.
 
-The snapshot copied only the room's account, so an eval turn never carried
-either block: the case would grade a prompt missing the very thing a Character
-change is about. The source also holds what must NOT come across: an account
-written after the instant, a person the room does not list, and the same
-person's account in another unit.
-"""
+The unit's own account (`<unit_culture>`) and the per-unit account of each
+person the room LISTS (`<character>`) are copied, each as of the instant and at
+the age it had.
+
+A snapshot that copied only the room's account would give an eval turn neither
+block: the case would grade a prompt missing the very thing a Character change
+is about. The source also holds what must NOT come across: an account written
+after the instant, a person the room does not list, and the same person's
+account in another unit. """
 
 from __future__ import annotations
 

@@ -1,12 +1,11 @@
 """The services on the wake-to-first-speech path are given no swap.
 
-Measured 2026-10-01 (see the comment on `stt` in docker-compose.yml): the first
-wake of a voice session after hours of idle took 4.97s inside the STT forward
-pass for 5.3s of speech, against ~0.3s warm, and 3 of 14 recorded voice turns
-began 8.6-9.1s after the wake fired. A restart does not reproduce it, an idle
-10 minutes does not either, and norty swaps its idle containers out. A cgroup
-with `memswap_limit == mem_limit` has no swap, so its loaded weights stay
-resident. This reads the compose file as parsed YAML, like its sibling
+The first wake of a voice session after hours of idle pays seconds inside the
+STT forward pass, against ~0.3s warm (see the comment on `stt` in
+docker-compose.yml). A restart does not reproduce it, an idle 10 minutes does
+not either, and norty swaps its idle containers out. A cgroup with
+`memswap_limit == mem_limit` has no swap, so its loaded weights stay resident.
+This reads the compose file as parsed YAML, like its sibling
 `test_compose_gives_nora_no_container_control.py`.
 """
 

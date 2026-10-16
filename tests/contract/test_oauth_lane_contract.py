@@ -140,9 +140,9 @@ async def _run_keeper(lane: RotatingOAuthLane, clock: Clock, *, stop_after: int,
 
 @pytest.mark.parametrize("kind", LANES)
 async def test_the_keeper_refreshes_on_the_interval_with_no_calls(kind, tmp_path, issuer):
-    """The incident: no image call for 12 days, so no refresh, so a dead
-    login. With a 10-day access token the interval alone drives the keeper:
-    a refresh at boot (no state yet), then one per day, no call made."""
+    """No image call for days must not mean a dead login: the keeper alone
+    keeps it alive. With a 10-day access token the interval alone drives the
+    keeper: a refresh at boot (no state yet), then one per day, no call made."""
     base, srv = issuer
     lane = _lane(kind, tmp_path, base, srv["clock"])
     slept = await _run_keeper(lane, srv["clock"], stop_after=3)
@@ -165,8 +165,8 @@ async def test_the_keeper_refreshes_before_the_access_token_expires(kind, tmp_pa
 @pytest.mark.parametrize("kind", LANES)
 async def test_a_restarted_keeper_plans_from_the_state_file(kind, tmp_path, issuer):
     """A process restart must not refresh again at once (that is a spend per
-    deploy) nor forget the last one (that is the 12-day gap): it plans from
-    the link the state file holds."""
+    deploy) nor forget the last refresh: it plans from the link the state file
+    holds."""
     base, srv = issuer
     clock = srv["clock"]
     assert await _call(_lane(kind, tmp_path, base, clock))()
@@ -220,9 +220,9 @@ async def test_a_keeper_from_another_process_adopts_a_refresh_it_did_not_make(
 
 @pytest.mark.parametrize("kind", LANES)
 async def test_a_fresh_login_supersedes_a_dead_chain_in_the_state_file(kind, tmp_path, issuer):
-    """The xAI precedence bug: after `xai-login` wrote a new token to .env, the
-    old state file's dead refresh token still won and the new login was
-    ignored until someone deleted the file. The fingerprint retires it."""
+    """After `xai-login` writes a new token to .env, the old state file's dead
+    refresh token must not win over it: the fingerprint retires the old
+    chain."""
     base, srv = issuer
     clock = srv["clock"]
     assert (await _call(_lane(kind, tmp_path, base, clock))()).status == "ok"  # type: ignore[attr-defined]
@@ -235,7 +235,7 @@ async def test_a_fresh_login_supersedes_a_dead_chain_in_the_state_file(kind, tmp
 
 
 def _legacy_file(kind: str, tmp_path: Path, refresh_token: str) -> Path:
-    """The state file the xAI lane wrote before DEC-308: no fingerprint."""
+    """A legacy state file: no fingerprint."""
     folder = tmp_path / "state"
     folder.mkdir()
     name = "xai-oauth.json" if kind == "xai" else "openai-codex-oauth.json"
@@ -249,9 +249,9 @@ def _legacy_file(kind: str, tmp_path: Path, refresh_token: str) -> Path:
 async def test_a_pre_fingerprint_state_file_holding_the_live_chain_is_kept(
     kind, tmp_path, issuer, caplog,
 ):
-    """norty, 2026-10-09: a new login, then the OLD code refreshed and wrote
-    the rotated token to an unfingerprinted file. The .env token is spent;
-    the file's is the live one. Ignoring the file would log the lane out."""
+    """A new login, then a refresh that wrote the rotated token to an
+    unfingerprinted file. The .env token is spent; the file's is the live one.
+    Ignoring the file would log the lane out."""
     base, srv = issuer
     srv["live"] = {"rt-legacy-live"}  # rt-boot was spent by the old code
     path = _legacy_file(kind, tmp_path, "rt-legacy-live")
@@ -268,7 +268,7 @@ async def test_a_pre_fingerprint_state_file_holding_the_live_chain_is_kept(
 async def test_a_pre_fingerprint_state_file_holding_a_dead_chain_yields_to_the_login(
     kind, tmp_path, issuer, caplog,
 ):
-    """The precedence bug's shape: the old file's token is dead and a new
+    """The stale-file shape: the old file's token is dead and a new
     login is in .env. One refused try, then the login, with no ERROR (the
     lane is fine) and the file now fingerprinted to the login."""
     base, srv = issuer
@@ -299,7 +299,7 @@ async def test_a_pre_fingerprint_chain_refused_for_another_reason_keeps_the_logi
 @pytest.mark.parametrize("kind", LANES)
 async def test_an_edge_403_is_retried_not_a_dead_login(kind, tmp_path, issuer):
     """A 403 without a dead-token code is a challenge in front of the issuer:
-    transient. Mapped to `auth`, it paged "log in again" and parked the keeper
+    transient. Mapped to `auth`, it would page "log in again" and park the keeper
     for a day."""
     base, srv = issuer
     srv["status"], srv["error"] = 403, "challenge"
@@ -381,8 +381,7 @@ async def test_no_refresh_when_the_rotation_could_not_be_kept(kind, tmp_path, is
 async def test_a_refused_refresh_is_logged_with_its_lane_and_never_its_token(
     kind, tmp_path, issuer, caplog,
 ):
-    """2026-10-09: the xAI refresh failed with `invalid_grant` and logged
-    nothing for twelve days."""
+    """A refresh refused with `invalid_grant` must be logged, not swallowed."""
     base, srv = issuer
     lane = _lane(kind, tmp_path, base, srv["clock"], bootstrap="rt-spent-secret")
     with caplog.at_level(logging.WARNING):

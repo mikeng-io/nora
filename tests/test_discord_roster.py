@@ -1,7 +1,7 @@
 """`DiscordRoster` — the guild members read the room-scoped tools resolve in.
 
 The shared behaviour lives in `tests/contract/test_roster_source_contract.py`,
-which this implementation now passes alongside `SignalRoster` and the fake.
+which this implementation passes alongside `SignalRoster` and the fake.
 What is here is what only Discord has: four distinct REFUSAL branches, each of
 which must answer `available=False` rather than an empty roster.
 
@@ -95,7 +95,7 @@ async def test_a_forbidden_read_names_the_missing_intent_in_the_log(api, caplog)
     The RETURN VALUE is deliberately not what this test pins — 403 falls
     through to the same `available=False` a 500 gives, and asserting only that
     would pass with the whole branch deleted. What the branch buys is the
-    DIAGNOSTIC, and `docs/runbook.md` now tells an operator to grep for exactly
+    DIAGNOSTIC, and `docs/runbook.md` tells an operator to grep for exactly
     this line when every room-scoped tool has gone quiet on Discord while
     `/health` says the gateway is fine. That makes the string a contract.
     """
@@ -174,9 +174,8 @@ async def test_a_member_row_with_no_usable_id_is_reported_not_silently_dropped(a
     visible in the caller. This one keeps the roster and returns fewer people —
     UNDER-reporting, which this module's docstring calls the unsafe direction,
     because a roster that has quietly forgotten somebody is one the disclosure
-    gate will happily approve. It previously did that with no log and no count
-    at all: the only branch capable of a silent wrong answer was the only one
-    with no trace.
+    gate will happily approve. It must therefore log what it drops: the only
+    branch capable of a silent wrong answer cannot be the one with no trace.
     """
     api.state["members"] = [
         {"user": {"id": "100000000000000001"}},

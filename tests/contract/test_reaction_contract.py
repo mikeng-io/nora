@@ -3,10 +3,8 @@
 CLAUDE.md: "A port never gains a second implementation — including a test fake
 — without a shared contract suite both pass." `react()` is on
 `nora.domain.ports.PlatformAdapter`, so `nora.testing.FakeAdapter.react` is a
-genuine second implementation and `DiscordAdapter.react` a third — added here
-2026-08-14, because Discord shipped its reactions without joining this suite
-and the two implementations' shared vocabulary was holding by hand-copied
-convention alone. `FakeAdapter`'s
+genuine second implementation and `DiscordAdapter.react` a third; a shared
+vocabulary held by hand-copied convention alone would drift. `FakeAdapter`'s
 documented exemption does not cover it: that exemption is about `.parse()` and
 `.listen()`, neither of which is on the port, whereas `react()` is.
 
@@ -37,9 +35,9 @@ DISCORD_MESSAGE = "100000000000000208"
 
 WHATSAPP_GROUP = ConversationTarget("whatsapp", "152099000000000000@g.us", "group")
 
-#: The SHORT thread id. On the reaction route that is load-bearing rather than merely
-#: matching upstream: a reaction addressed with the LONG one is accepted with
-#: a 200 and is absent from the thread afterwards (measured 2026-09-22).
+#: The SHORT thread id. On the reaction route that is load-bearing rather than
+#: merely matching upstream: a reaction addressed with the LONG one is accepted
+#: with a 200 and is absent from the thread afterwards.
 INSTAGRAM_GROUP = ConversationTarget("instagram", "1183780976338188", "group")
 INSTAGRAM_MESSAGE = "mid.$gAASG4nvQLWim9MCLrWgw3tChgAAq"
 
@@ -62,7 +60,7 @@ async def _whatsapp_adapter(aiohttp_server, *, status: int = 200):
 
 async def _instagram_adapter(aiohttp_server, *, status: int = 200):
     """An `InstagramAdapter` pointed at a stand-in for the bridge's
-    `PUT /threads/{thread_fbid}/messages/{message_id}/reaction` (17 §P14),
+    `PUT /threads/{thread_fbid}/messages/{message_id}/reaction`,
     answering `{confirmed}` with no `ok`, and the error envelope on failure."""
     async def handler(request: web.Request) -> web.Response:
         if status != 200:
@@ -164,9 +162,9 @@ def test_react_matches_the_port_signature(impl):
     `ReactionResult`-returning. `isinstance` against a runtime_checkable
     Protocol only checks names, so the shape has to be asserted directly."""
     params = inspect.signature(impl.react).parameters
-    # `to_message_id` included: the port grew it when Discord's reactions
-    # landed (a snowflake is the only thing that endpoint accepts), and this
-    # list not knowing about it is exactly how an implementation drifts.
+    # `to_message_id` included (a snowflake is the only thing Discord's endpoint
+    # accepts), and this list not knowing about it is exactly how an
+    # implementation drifts.
     for name in ("target", "emoji", "to_author", "to_timestamp", "to_message_id", "remove"):
         assert params[name].kind is inspect.Parameter.KEYWORD_ONLY, name
     assert inspect.signature(impl.react).return_annotation == "ReactionResult"

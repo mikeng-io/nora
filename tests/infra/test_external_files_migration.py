@@ -1,6 +1,5 @@
 """Migration `0104_external_files` backfills the file links of rows stored
-before the column existed, so an old link's handle resolves
-(design/external-files/00-design.md §1)."""
+before the column existed, so an old link's handle resolves."""
 
 from __future__ import annotations
 

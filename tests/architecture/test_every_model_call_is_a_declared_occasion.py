@@ -1,18 +1,14 @@
 """Every place Nora sends a prompt to a model is a declared context-assembly
 occasion, found by DISCOVERY and not by a list somebody keeps.
 
-The rule, from the operator (2026-10-01): **every Nora agent assembles its
-prompt through context assembly, no exception.** A violation is a failure. There
-is no list of known violations, no debt count and no ceiling to hide one in: an
-earlier version of this file kept a PENDING ledger while the occasions were
-moved over (design/context-assembly/04-every-occasion.md, steps 0 to 5); it was
-empty when step 6 deleted it.
+The rule: **every Nora agent assembles its prompt through context assembly, no
+exception.** A violation is a failure. There is no list of known violations, no
+debt count and no ceiling to hide one in.
 
-The census this replaced, `test_the_registry_is_exhaustive.py`, read a hand list
-of five files, so a sixth occasion could not fail it. The Cognition session was
-built after that list was written and hand-wrote its whole prompt: no
-`ContextBlock`, no escaping, a different id shape from the one its own
-`note_create` demands. Nothing noticed, because nothing looked for it.
+A hand list of occasions (as `test_the_registry_is_exhaustive.py` reads) cannot
+fail for a new occasion, which could then hand-write its whole prompt: no
+`ContextBlock`, no escaping, a different id shape from the one its own tools
+demand. Nothing would notice, because nothing looks for it.
 
 This test looks. It reads source (no import of `nora`) and finds, with no list
 of occasions:
@@ -34,8 +30,7 @@ builder must itself be declared and, for `imports`, really imported) and an
 EXEMPT occasion that is not a context at all (an authored prompt plus an
 image). A module that is none of these and builds a prompt fails
 `test_nothing_builds_a_prompt_outside_context_assembly`; the fix is to join it
-(design/context-assembly/04-every-occasion.md, «How a new occasion joins»),
-never to widen a table below to excuse it.
+to context assembly, never to widen a table below to excuse it.
 
 **What the net cannot see**, so a reviewer knows what is left to review. None
 of it is recorded as debt here: a hand-built text the net cannot see is fixed,
@@ -136,8 +131,9 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     "nora/engagement/stages/debrief.py": (
         ("nora/engagement/debrief_render.py",), "imports",
     ),
-    # The sub-agent worker's run (design/subagent step 2): its prompt is the brief, built by
-    # ONE formatter that walks the declared `subagent_*` blocks through `ContextBlock`.
+    # The sub-agent worker's run: its prompt is the brief, built by ONE
+    # formatter that walks the declared `subagent_*` blocks through
+    # `ContextBlock`.
     "nora/app/subagent_runner.py": (("nora/language/subagent_render.py",), "imports"),
 }
 

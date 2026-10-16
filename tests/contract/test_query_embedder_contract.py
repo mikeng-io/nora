@@ -1,10 +1,10 @@
-"""Shared contract for `nora.domain.memory_index.QueryEmbedder` (design/
-unified-memory/65-build-step-3-vectors.md V2): `nora.infra.embedder.
-LlamaEmbedder` over the fake llama-server, and `nora.testing.memory_index.
-FakeQueryEmbedder`, which the search's tests use. What the search relies on:
-one question is one vector of the production width and unit length, the same
-question gives the same vector, two questions do not, and a down embedder
-RAISES (the search then falls back), never answers with something empty.
+"""Shared contract for `nora.domain.memory_index.QueryEmbedder`:
+`nora.infra.embedder.LlamaEmbedder` over the fake llama-server, and
+`nora.testing.memory_index.FakeQueryEmbedder`, which the search's tests use.
+What the search relies on: one question is one vector of the production width
+and unit length, the same question gives the same vector, two questions do not,
+and a down embedder RAISES (the search then falls back), never answers with
+something empty.
 """
 
 from __future__ import annotations

@@ -1,10 +1,9 @@
 from nora.obs.metrics import DECLARED_NAMES, Metrics
 
-# Every metric name that existed before this module's prometheus-client
-# rewrite (spec §9 / Phase 6 Task 1), copied verbatim from the old `DECLARED`
-# dict. Metric names are append-only in this repo — renaming one breaks
-# dashboards — so this list is the literal contract `render()` must keep
-# satisfying, independent of whatever `DECLARED_NAMES` says internally.
+# Every metric name that must keep rendering, as literals. Metric names are
+# append-only in this repo — renaming one breaks dashboards — so this list is
+# the literal contract `render()` must keep satisfying, independent of whatever
+# `DECLARED_NAMES` says internally.
 PRESERVED_METRIC_NAMES = frozenset({
     "nora_messages_total",
     "nora_tags_total",
@@ -32,17 +31,15 @@ def test_every_pre_rewrite_metric_name_is_still_declared():
 
 
 def test_every_preserved_name_still_renders():
-    """The name-preservation gate: every metric that existed before this
-    rewrite still appears in `/metrics` output, by name, exactly. A labeled
-    counter with no observations yet only emits its `# HELP`/`# TYPE` header
-    (prometheus-client suppresses the child series until first use), so this
-    checks those header lines rather than requiring a value line — which
-    would otherwise force firing every series first just to prove its name
-    survived.
+    """The name-preservation gate: every metric in the list above appears in
+    `/metrics` output, by name, exactly. A labeled counter with no observations
+    yet only emits its `# HELP`/`# TYPE` header (prometheus-client suppresses
+    the child series until first use), so this checks those header lines rather
+    than requiring a value line — which would otherwise force firing every
+    series first just to prove its name survived.
 
-    PROBE A (see task notes): renaming any one metric in the `_COUNTERS` /
-    `_GAUGES` / `_HISTOGRAMS` tables in `nora/obs/metrics.py` makes exactly
-    this assertion fail.
+    Renaming any one metric in the `_COUNTERS` / `_GAUGES` / `_HISTOGRAMS`
+    tables in `nora/obs/metrics.py` makes exactly this assertion fail.
     """
     text = Metrics().render()
     for name in PRESERVED_METRIC_NAMES:
@@ -50,11 +47,10 @@ def test_every_preserved_name_still_renders():
 
 
 def test_the_cognition_stimulus_metrics_render_under_their_renamed_names():
-    """DEC-234: `nora_signal_total`/`nora_signal_pending_age_seconds` were
-    renamed to `nora_stimulus_total`/`nora_stimulus_pending_age_seconds` hours
-    after DEC-233 shipped them — the one stated exception to metric names
-    being append-only, made before any dashboard depended on the old names.
-    The new names render; the old ones are gone outright, not aliased."""
+    """DEC-234: the series are `nora_stimulus_total` and
+    `nora_stimulus_pending_age_seconds`. The earlier `nora_signal_*` names are
+    gone outright, not aliased — the one stated exception to metric names being
+    append-only, made before any dashboard depended on them."""
     text = Metrics().render()
     assert "TYPE nora_stimulus_total " in text
     assert "TYPE nora_stimulus_pending_age_seconds " in text
@@ -134,8 +130,8 @@ def test_a_labelled_histogram_renders_one_series_per_label_value():
     """`nora_llm_latency_seconds` is the first histogram to carry a label, and
     it carries it because two paths with two different timeouts observe into it
     (`[llm] timeout_seconds` vs `[heartbeat] timeout_seconds`). A histogram that
-    accepted the keyword and dropped it — which is what `observe()` did before —
-    would leave every existing assertion green while the samples stayed mixed."""
+    accepted the keyword and dropped it would leave every existing assertion
+    green while the samples stayed mixed."""
     m = Metrics()
     m.observe("nora_llm_latency_seconds", 0.4, audience="tag")
     m.observe("nora_llm_latency_seconds", 7.0, audience="heartbeat")
@@ -160,9 +156,9 @@ def test_observations_sum_over_the_label_dimensions_a_caller_omits():
 
 
 def test_the_audience_label_is_on_both_shared_llm_series():
-    """Design §13 listed the tag-path series a fire turn must not silently move
-    and missed these two. Names are append-only; labels are not
-    (`metric_specs.py` records `platform` being added to four existing series)."""
+    """The tag-path series a fire turn must not silently move include these two
+    shared LLM series. Names are append-only; labels are not (`metric_specs.py`
+    records `platform` being added to four existing series)."""
     m = Metrics()
     m.inc("nora_llm_stop_reason_total", reason="end_turn", audience="heartbeat")
     text = m.render()
@@ -180,7 +176,7 @@ def test_gauges_render_as_gauges():
 
 
 def test_the_m4_call_sites_are_unchanged():
-    """The stub interface is preserved exactly — no call site edits in M4/M5."""
+    """The stub interface is preserved exactly, so call sites need no edits."""
     m = Metrics()
     m.inc("nora_tags_debounced_total")
     m.observe("nora_tag_latency_seconds", 1.0)
@@ -197,9 +193,9 @@ def test_render_is_parseable_as_a_whole():
 
 
 def test_platform_label_present_on_the_four_named_series():
-    """spec §6: with N adapters, only nora_messages_total could tell you
-    which platform was failing. Adding `platform` to these four closes that
-    gap — backward-compatible because it is a new label, not a rename."""
+    """With N adapters, only nora_messages_total could tell you which platform
+    was failing. Adding `platform` to these four closes that gap —
+    backward-compatible because it is a new label, not a rename."""
     m = Metrics()
     m.inc("nora_tags_total", platform="signal")
     m.inc("nora_replies_total", status="sent", platform="signal")
@@ -228,12 +224,11 @@ def test_an_unmigrated_call_site_still_records_under_an_empty_platform():
 
 
 def test_the_media_join_histograms_can_measure_a_batch_path():
-    """N9's other half, and it survived a mutation: the buckets were sized for
-    a tag window (1s, 40 blobs) while the same series now carries adoption's
-    1000-row backfill and the Dreamer's batch. A histogram whose top bucket is
-    two orders of magnitude under the value it must record reports every batch
-    path as `+Inf` — unmeasurable, which is the exact state the `path` label
-    was added to end.
+    """The buckets are sized for the values the series carries: a tag window
+    (1s, 40 blobs) and also adoption's 1000-row backfill and the Dreamer's
+    batch. A histogram whose top bucket is two orders of magnitude under the
+    value it must record reports every batch path as `+Inf` — unmeasurable,
+    which is the exact state the `path` label exists to end.
 
     Asserted on the DECLARED buckets rather than on rendered output, because
     the defect is in the sizing and a rendered series would only show it once

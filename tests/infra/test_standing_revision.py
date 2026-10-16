@@ -156,13 +156,13 @@ async def test_a_refused_write_leaves_no_revision_either(
 ) -> None:
     """A fold the database refuses advances NEITHER the head nor the history.
 
-    **This does NOT prove the two statements share a transaction, and it was
-    written as though it did.** Both tables carry the same body ceiling, so a
-    body over it is refused by whichever statement runs first and nothing lands
-    either way — moving the append into its own transaction leaves this test
-    green, measured. The atomicity claim is the test below; this one pins the
-    narrower and still-real property that the revision table enforces the head's
-    own ceiling, so history cannot record a position `standing` would refuse.
+    **This does NOT prove the two statements share a transaction.** Both
+    tables carry the same body ceiling, so a body over it is refused by
+    whichever statement runs first and nothing lands either way — moving the
+    append into its own transaction leaves this test green. The atomicity claim
+    is the test below; this one pins the narrower and still-real property that
+    the revision table enforces the head's own ceiling, so history cannot
+    record a position `standing` would refuse.
 
     `object.__setattr__` bypasses the domain type exactly as the contract
     suite's ceiling tests do: it manufactures the state a writer that went
@@ -355,25 +355,24 @@ async def test_an_instant_after_the_last_fold_reads_the_last_fold(
     assert latest == head
 
 
-#: Trials for the tie-break pin below. The ordering it replaced picked a row by
-#: uuid, so each trial was an independent coin toss: twenty-four of them put the
-#: chance of the OLD ordering passing this test at one in sixteen million. Low
-#: enough that a green run is evidence rather than luck, and cheap enough
-#: (two writes and one read each, against a container already up) not to be felt.
+#: Trials for the tie-break pin below. Ordering by uuid makes each trial an
+#: independent coin toss, so twenty-four of them put the chance of a wrong
+#: ordering passing this test at one in sixteen million. Low enough that a
+#: green run is evidence rather than luck, and cheap enough (two writes and
+#: one read each, against a container already up) not to be felt.
 _TIE_TRIALS = 24
 
 
 async def test_two_folds_in_one_millisecond_resolve_to_the_later_fold(
     store: SqlStandingStore
 ) -> None:
-    """**The tie-break is `fold_count`, and it was `id` until this test.**
+    """**The tie-break is `fold_count`, not `id`.**
 
     `standing_revision.id` is `gen_random_uuid()`. Ordering
     `updated_at DESC, id DESC` is perfectly deterministic for a fixed set of
     rows — and perfectly uncorrelated with which of two folds sharing a
     millisecond actually happened first, which is the only thing the as-of read
-    is asking. Measured before the fix: twelve trials, the EARLIER position
-    returned seven times.
+    is asking.
 
     An eval case anchored to a real message's timestamp lands on exactly this
     boundary, and the wrong answer here is not an error — it is a plausible
@@ -381,10 +380,10 @@ async def test_two_folds_in_one_millisecond_resolve_to_the_later_fold(
     detect.
 
     **Repeated rather than run once, because one run cannot tell a fix from a
-    coin toss** (the whole point of the defect). Each trial is its own room, so
-    the rows of one do not decide another, and every trial must return the
-    higher `fold_count`. Falsified by restoring `id DESC` as the tie-break: red
-    within the first few trials, every time.
+    coin toss.** Each trial is its own room, so the rows of one do not decide
+    another, and every trial must return the higher `fold_count`. Falsified by
+    restoring `id DESC` as the tie-break: red within the first few trials, every
+    time.
     """
     for trial in range(_TIE_TRIALS):
         room = f"tie-{trial}"
@@ -410,7 +409,7 @@ async def test_two_folds_in_one_millisecond_resolve_to_the_later_fold(
 async def test_the_as_of_read_is_keyed_on_platform_and_conversation(
     store: SqlStandingStore
 ) -> None:
-    """S4's key, on the history as well as the head. The revision table carries
+    """The room key, on the history as well as the head. The revision table carries
     both columns and no foreign key, so a read that filtered on
     `conversation_id` alone would hand a Discord room's position to a Signal
     room that happens to share an id — the failure the head's own key test
@@ -438,7 +437,7 @@ async def test_another_room_on_the_same_platform_has_its_own_history(
     ) is None
 
 
-# --- source (design/dreamer-agent-loop/26-standing.md, 2026-09-25) ----------
+# --- source -----------------------------------------------------------------
 
 
 async def _source(engine: Any, *, conversation_id: str = CONV) -> str:
@@ -452,9 +451,8 @@ async def _source(engine: Any, *, conversation_id: str = CONV) -> str:
 async def test_a_fold_records_source_fold_by_default(
     store: SqlStandingStore, engine: Any
 ) -> None:
-    """The fold writers (`debrief.py`, and `standing_event.py` until its deletion,
-    2026-10-03) never pass
-    `source` — this is the value every one of their calls produces."""
+    """The fold writers never pass `source` — this is the value every one of
+    their calls produces."""
     await store.write(standing=_standing("the fold's own position"))
     assert await _source(engine) == "fold"
 
@@ -487,14 +485,13 @@ async def test_an_operator_edit_is_recorded_as_operator(
 async def test_write_if_unchanged_refuses_a_standing_that_changes_the_key_or_the_watermark(
     store: SqlStandingStore, engine: Any
 ) -> None:
-    """The property the docstring used to claim the WHERE clause gave it for
-    free, and did not: `standing`'s `platform`, `conversation_id`,
+    """`write_if_unchanged` is for an operator edit, which changes `body` and
+    `updated_at` only. `standing`'s `platform`, `conversation_id`,
     `fold_count` and `last_folded_row_id` are not covered by the WHERE at
     all — they land in `.values()` and in the revision insert, entirely
-    uncontrolled by the compare-and-set. An operator edit changes `body` and
-    `updated_at` only; anything else reaching this method is a caller bug,
-    and it must be refused loudly (`ValueError`) rather than silently
-    accepted, which is what the false docstring claim let happen."""
+    uncontrolled by the compare-and-set. Anything else reaching this method
+    is a caller bug, and it must be refused loudly (`ValueError`) rather than
+    silently accepted."""
     await store.write(standing=_standing("the fold's own position", fold_count=3,
                                          last_folded_row_id=10))
     before = await store.read(platform=PLATFORM, conversation_id=CONV)

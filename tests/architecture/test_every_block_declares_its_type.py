@@ -12,15 +12,13 @@ entry for a block nothing renders.
 So both directions, for the reason
 `tests/architecture/test_media_join_reaches_every_transcript.py` gives: listing
 catches a rename and misses the thing nobody listed, and "nobody listed it" is
-the only failure that has actually happened here. Five times, per
-`catalogue()`'s own docstring.
+the failure that actually happens.
 
-**What this is guarding against, concretely.** Before `nora/domain/block_types`
-existed, 27 of 39 `ContextBlock(...)` sites authored their own description
-inline, and four block types carried TWO — `room`, `standing`, `batch` and
-`now` each described itself one way in one module and another way in another,
-with nothing able to notice. That is what a per-type declaration makes
-impossible and what this file keeps impossible.
+**What this is guarding against, concretely.** A `ContextBlock(...)` site that
+authors its own description inline lets one block type carry TWO descriptions,
+one in each module that renders it, with nothing able to notice. A per-type
+declaration in `nora/domain/block_types` makes that impossible and this file
+keeps it impossible.
 """
 
 from __future__ import annotations
@@ -82,11 +80,9 @@ def _wrapper_names() -> set[str]:
                 and isinstance(kw.value.value, str)
             ]
             names.update(found)
-    # `_transcript_block` was the third caller of this shape (a `name=`
-    # keyword with a DEFAULT in its signature, read with `inspect`). It is gone
-    # since step 2b of `design/context-assembly/04-every-occasion.md`: the
-    # debrief's `transcript` and `stretch` are literal `ContextBlock(name=…)`
-    # constructors now, so the source walk in `_rendered_names` finds both.
+    # The debrief's `transcript` and `stretch` are literal
+    # `ContextBlock(name=…)` constructors, so the source walk in
+    # `_rendered_names` finds both.
     return names
 
 
@@ -114,10 +110,9 @@ def _rendered_names() -> set[str]:
 
     `prefill` builds its blocks through a `_block(name, …)` helper off a table,
     so the literal is in `_BLOCKS` rather than at the constructor — read from
-    there too. Missing that was worth catching: the first version of this file
-    reported `peer_card`, `peer_history` and `people_in_window` as DECLARED AND
-    UNRENDERED, which would have argued for deleting three descriptions of
-    blocks that ship on every tag turn.
+    there too. Missing that would report `peer_card`, `peer_history` and
+    `people_in_window` as DECLARED AND UNRENDERED, arguing for deleting three
+    descriptions of blocks that ship on every tag turn.
     """
     found: set[str] = set(_table_names()) | _wrapper_names()
     for path in sorted((ROOT / "nora").rglob("*.py")):
@@ -185,8 +180,8 @@ def test_a_description_describes_rather_than_labels():
 
 def test_no_description_leans_on_a_word_only_we_know():
     """Vocabulary a model has no definition for is the defect that started
-    this (#314): `untrusted="true"` was defined in exactly one doctrine file,
-    loaded by one of six audiences, and rendered to all six.
+    this: an attribute such as `untrusted="true"` defined in one doctrine file,
+    loaded by one audience, and rendered to all of them.
 
     So a description may not lean on our internal nouns. It may NAME a tool she
     can call — that is a thing she has a schema for — but `tier`, `adaptor`,
@@ -205,57 +200,49 @@ def test_no_description_leans_on_a_word_only_we_know():
     )
 
 
-#: What counts as talking about absence. **Measured, 2026-09-17: the first cut
-#: of this was `"bsent" or "No block"` and it inspected FOUR of 35 descriptions.
-#: `"absence"` does not contain `"bsent"`, so `<loop_decisions>`'s «its absence
-#: says nothing about it» was never read at all** — and the ADR claimed this
-#: rule now applied to every type. A trigger narrower than its claim is the
-#: shape this whole file exists to catch, arriving in the file itself.
+#: What counts as talking about absence. The trigger has to be as wide as the
+#: rule's claim: `"absence"` does not contain `"bsent"`, so a trigger of
+#: `"bsent"` alone would never read `<loop_decisions>`'s «its absence says
+#: nothing about it». A trigger narrower than its claim is the shape this whole
+#: file exists to catch.
 _ABSENCE_WORDS = ("absent", "absence", "no block", "nothing is in front of you")
 
 
 def test_a_description_that_talks_about_ABSENCE_says_the_read_may_have_failed():
-    """R-27, moved here from the catalogue and widened to every type.
+    """R-27, checked over every type.
 
     `assemble` drops a block with an empty body, so every description is read
     on turns where its block is not there. That is fine when it says what
     absence MEANS; it is a LIE when it says «Absent means you have nothing on
-    them» and the turn in question never looked. `<people_in_window>` shipped
-    exactly that for one commit: the tag path cannot populate it at all (only
-    the participation occasion reads it), so on every tag turn the model was
-    told a lookup had come back empty when no lookup had been attempted. An
-    un-attempted read rendering as a negative result is the ERROR-as-PASS
-    AGENTS.md names, arriving inside a prompt.
+    them» and the turn in question never looked. `<people_in_window>` is the
+    case: the tag path cannot populate it at all (only the participation
+    occasion reads it), so a description claiming a lookup came back empty
+    would be false on every tag turn. An un-attempted read rendering as a
+    negative result is the ERROR-as-PASS AGENTS.md names, arriving inside a
+    prompt.
 
     So: a description MAY stay silent about absence, and one that mentions it
     MUST carry the hedge.
 
-    **It used to live in `tests/test_prefill.py` and it covered eight blocks —
-    the ones with a catalogue line.** The catalogue is gone and the claim moved
-    into the descriptions themselves (#314), which is what lets it be checked
-    over all of them at once. That is the second time this branch has found the
-    registry testing something the hand-written list could only test a subset
-    of; the first was `test_every_rendered_block_has_a_declared_type`.
+    The claim lives in the descriptions themselves, which is what lets it be
+    checked over all of them at once.
     """
     # «says nothing about it» is `<loop_decisions>`' phrasing and it is the
     # strongest of these — it refuses every conclusion rather than naming the
-    # one wrong one. Added when widening the trigger above surfaced it, which
-    # is the widening working: the sentence had been correct and unread.
+    # one wrong one.
     hedges = (
         "the read failed", "did not come back", "never that", "never look",
         "it can also mean", "says nothing about it",
-        # `<loop_decisions>`' wording after the audit found the previous one
-        # asserted a fact the type cannot know. This is the strongest form in
-        # the list: it refuses BOTH readings rather than naming one as wrong.
+        # `<loop_decisions>`' wording: the strongest form in the list, it
+        # refuses BOTH readings rather than naming one as wrong.
         "not read an absence as a fact",
     )
     for name, block_type in BLOCK_TYPES.items():
         # PER SENTENCE, not per description. Matching anywhere let a hedge
         # sitting in an unrelated clause authorise a bare «Absent means you
         # have nothing on them» three sentences away — the exact wording this
-        # refuses, so the first version of it could be satisfied by the bug.
-        # The claim and its qualifier have to be the same sentence because that
-        # is the unit she reads them in.
+        # refuses. The claim and its qualifier have to be the same sentence
+        # because that is the unit she reads them in.
         for sentence in re.split(r"(?<=\.)\s+", block_type.description):
             if not any(w in sentence.lower() for w in _ABSENCE_WORDS):
                 continue

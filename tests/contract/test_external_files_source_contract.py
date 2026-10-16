@@ -1,12 +1,12 @@
-"""`ExternalFilesSource` (design/external-files/00-design.md §4).
+"""`ExternalFilesSource`: the port the open tool programs against.
 
-Two implementations, the fake and the Google Drive adapter (S2, driven
-through `FakeDriveServer`, no network); both pass the same suite. What is
-asserted is what the open tool (S3) programs against: `recognise` is the
-domain's pure recogniser and makes no call; a read of a deleted, unshared or
-unreachable file raises `ExternalFileError` with the house status, never
-another exception and never a silent empty; a part is 1-based and says how
-many there are; nothing is kept between opens (each read reaches the source).
+Two implementations, the fake and the Google Drive adapter (driven through
+`FakeDriveServer`, no network); both pass the same suite. What is asserted
+is what the open tool programs against: `recognise` is the domain's pure
+recogniser and makes no call; a read of a deleted, unshared or unreachable
+file raises `ExternalFileError` with the house status, never another
+exception and never a silent empty; a part is 1-based and says how many
+there are; nothing is kept between opens (each read reaches the source).
 
 The one difference the suite carries per implementation is which file is
 "deleted": the fake has a missing id, while Drive answers an unknown id with

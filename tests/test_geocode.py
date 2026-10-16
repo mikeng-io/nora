@@ -1,7 +1,7 @@
-"""`ReverseGeocoder` — coordinate → place, and its fail-soft / memo discipline
-(design/19 §5). Runs offline against a local aiohttp server that behaves like the
-Google Geocoding API, INCLUDING the shapes that make it hard: a non-OK `status`
-arrives as a 200, and the key rides in the query string.
+"""`ReverseGeocoder` — coordinate → place, and its fail-soft / memo discipline. Runs offline
+against a local aiohttp server that behaves like the Google Geocoding API, INCLUDING the
+shapes that make it hard: a non-OK `status` arrives as a 200, and the key rides in the
+query string.
 """
 
 from __future__ import annotations
@@ -153,21 +153,20 @@ async def test_a_store_read_failure_still_resolves_live(google):
 
 
 async def test_no_store_behaves_exactly_as_before(google):
-    """`cache_store` is optional — a caller that does not wire one gets the
-    old in-memory-only behaviour, unchanged."""
+    """`cache_store` is optional — a caller that does not wire one gets in-memory-only
+    behaviour."""
     geo = GoogleGeocoder(api_key="k")
     assert await geo.address_for(lat=22.4445, lng=114.0289) == (
         "元朗形點 / Yoho Mall, Yuen Long"
     )
 
 
-# ---- Plus Code screening (live finding 2026-09-06) --------------------------
+# ---- Plus Code screening --------------------------------------------------
 
 
 def test_a_plus_code_embedded_after_cjk_is_rejected():
-    """The live failure: Google's zh result embeds the Plus Code directly
-    after CJK (香港新界元朗FQQQ+QQ) — a word-boundary regex does not fire
-    there, so the screen uses a boundary-free pattern."""
+    """Google's zh result embeds the Plus Code directly after CJK (香港新界元朗FQQQ+QQ) — a
+    word-boundary regex does not fire there, so the screen uses a boundary-free pattern."""
     payload = {
         "status": "OK",
         "results": [

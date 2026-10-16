@@ -1,10 +1,10 @@
-"""The four note tools (note-tier spec §5.2, §6, §16.1) and the
-read-before-write latch (§6.2), from the tool layer's side.
+"""The four note tools and the read-before-write latch, from the tool layer's
+side.
 
 The STORE is already contract-tested (`tests/contract/test_note_store_contract.py`)
 against both implementations, so nothing here re-asserts CAS or unit
 scoping at the store. What this file tests is the layer above: title
-resolution (§16.1 — the index carries no id, so the title is the handle),
+resolution (the index carries no id, so the title is the handle),
 the three-state R-27 answers each tool owes, and the latch, which is the one
 piece that lives in `ReplyGuard` rather than in a tool closure.
 """
@@ -79,8 +79,8 @@ def _tools(
     return {spec.name: spec.call for spec in specs}
 
 
-#: The transcript the tools' turn rendered: `#1` is row 501, Miles's. Design 42
-#: S4b: a body's `[#n]` is mapped to the row id at that position.
+#: The transcript the tools' turn rendered: position 1 is row 501, Miles's. A body's
+#: `[#n]` is mapped to the row id at that position.
 _WINDOW = (
     TranscriptRow(
         id=501, sender_id="+85200000001", sender_name="miles", ts=NOW - 60_000,
@@ -92,7 +92,7 @@ _WINDOW = (
 
 
 def _b(text: str) -> str:
-    """A tag-path body in the note's form, citing `#1`."""
+    """A tag-path body in the note's form, citing transcript position 1."""
     return f"## Decided\n## Open\n- {text} [#1]"
 
 
@@ -113,10 +113,10 @@ async def _seed(
     )
 
 
-# ── the table (§6.4) ─────────────────────────────────────────────────────────
+# ── the table ────────────────────────────────────────────────────────────────
 
 def test_the_four_note_tools_carry_the_budgets_the_spec_sizes_them_at():
-    """§6.4. A revision costs two calls — read then update — and the second is
+    """A revision costs two calls — read then update — and the second is
     what makes the first mandatory, so the numbers are load-bearing rather than
     bookkeeping: `note_create` at 1 is the per-turn cap on note spam."""
     assert NATIVE_TOOLS["note_read"].budget == 3
@@ -126,7 +126,7 @@ def test_the_four_note_tools_carry_the_budgets_the_spec_sizes_them_at():
 
 
 def test_no_note_tool_ends_the_turn():
-    """§6.4: none terminal — she still owes the room a reply. A terminal note
+    """None terminal — she still owes the room a reply. A terminal note
     verb would write the row and go silent, which is R-23's shape."""
     for name in ("note_read", "note_search", "note_create", "note_update"):
         assert NATIVE_TOOLS[name].terminal is False
@@ -158,7 +158,7 @@ async def test_a_store_with_no_unit_is_unavailable_not_empty():
     assert (await tools["note_search"](query="hotel"))["status"] == "unavailable"
 
 
-# ── note_read: the TITLE is the handle (§16.1) ───────────────────────────────
+# ── note_read: the TITLE is the handle ───────────────────────────────────────
 
 async def test_note_read_resolves_the_title_the_index_shows_and_returns_the_body():
     store = InMemoryNoteStore()
@@ -170,7 +170,7 @@ async def test_note_read_resolves_the_title_the_index_shows_and_returns_the_body
     assert out["status"] == "ok"
     assert out["body"] == "Nobody has booked yet."
     assert out["title"] == "Dinner, 9 Sept"
-    # The head revision id rides back so §6.3's compare-and-swap has something
+    # The head revision id rides back so the compare-and-swap has something
     # to compare, even though the model never has to hand it to `note_update`.
     assert out["revision_id"] == note.head_revision_id
 
@@ -186,7 +186,7 @@ async def test_note_read_matches_a_title_case_insensitively():
 
 
 async def test_note_read_on_a_merged_title_reaches_its_survivor():
-    """design 41 §7.5. The turn's `<notes>` was rendered before a merge, so the
+    """The turn's `<notes>` was rendered before a merge, so the
     model names the duplicate's title after it retired. «No note by that
     title» would be false of the question, which lives on in the survivor —
     the read forwards, and says which note it actually read."""
@@ -209,7 +209,7 @@ async def test_note_read_on_a_merged_title_reaches_its_survivor():
 
 
 async def test_note_create_refuses_an_open_title():
-    """design 41 §7.2. Nothing in the schema stops two open notes sharing a
+    """Nothing in the schema stops two open notes sharing a
     title, and one is an amplifier on both write paths — so the tag path
     refuses to start one, under any spelling `note_handle` treats as the
     same, and points the model at the note that already carries it."""
@@ -236,7 +236,7 @@ async def test_note_read_answers_nothing_found_for_a_title_that_is_not_there():
 
 
 async def test_note_read_refuses_an_ambiguous_title_and_names_both():
-    """§16.1: ambiguity REFUSES, it never picks one. Guessing which note was
+    """Ambiguity REFUSES, it never picks one. Guessing which note was
     meant is how a revision lands on the wrong body — and the refusal has to
     name the candidates or she cannot ask which was meant."""
     store = InMemoryNoteStore()
@@ -260,7 +260,7 @@ async def test_note_read_cannot_reach_another_units_note():
     assert (await tools["note_read"](title="Dinner, 9 Sept"))["status"] == "nothing_found"
 
 
-# ── note_search: bodies, never titles (§5.3) ────────────────────────────────
+# ── note_search: bodies, never titles ───────────────────────────────────────
 
 async def test_note_search_reaches_into_a_body_the_title_says_nothing_about():
     store = InMemoryNoteStore()
@@ -275,7 +275,7 @@ async def test_note_search_reaches_into_a_body_the_title_says_nothing_about():
 
 
 async def test_note_search_does_not_match_on_the_title_alone():
-    """§5.3: the injected index already shows every title, so a title search
+    """The injected index already shows every title, so a title search
     would duplicate the prompt and earn nothing. A hit on a word that appears
     ONLY in the title means the search is reading the wrong column."""
     store = InMemoryNoteStore()
@@ -284,7 +284,7 @@ async def test_note_search_does_not_match_on_the_title_alone():
     assert (await tools["note_search"](query="Hotel"))["status"] == "nothing_found"
 
 
-# ── note_create (§6.5) ───────────────────────────────────────────────────────
+# ── note_create ──────────────────────────────────────────────────────────────
 
 async def test_note_create_writes_the_note_and_its_first_revision():
     store = InMemoryNoteStore()
@@ -337,7 +337,7 @@ async def test_note_create_surfaces_the_domain_refusal_instead_of_swallowing_it(
 
 async def test_note_create_refuses_when_it_does_not_know_who_is_asking():
     """`established_by` distinguishes a tag-path revision from the curator's
-    own (§9.6), so a revision written under nobody's name breaks the strike
+    own, so a revision written under nobody's name breaks the strike
     reset. Same refusal `remind` makes for the same reason."""
     tools = _tools(notes=InMemoryNoteStore(), tagger=None)
     out = await tools["note_create"](
@@ -347,7 +347,7 @@ async def test_note_create_refuses_when_it_does_not_know_who_is_asking():
     assert out["status"] == "refused"
 
 
-# ── note_update: the CAS (§6.3) and the tool-layer backstop ──────────────────
+# ── note_update: the CAS and the tool-layer backstop ─────────────────────────
 
 async def test_note_update_appends_a_revision_and_moves_the_head():
     store = InMemoryNoteStore()
@@ -364,12 +364,12 @@ async def test_note_update_appends_a_revision_and_moves_the_head():
     assert head != note.head_revision_id
     assert store.revisions[head].body == _stored("Nobody has booked. Ada says 8pm.")
     assert store.revisions[head].parent_revision_id == note.head_revision_id
-    # Append-only: the revision she read is still there (§6.1).
+    # Append-only: the revision she read is still there.
     assert store.revisions[note.head_revision_id].body == "Nobody has booked."
 
 
 async def test_note_update_refuses_when_this_turn_never_read_that_note():
-    """The tool-layer half of §6.2. `ReplyGuard` vetoes this call before it
+    """The tool-layer half of the latch. `ReplyGuard` vetoes this call before it
     runs; this is the backstop for the one case the guard cannot see — a title
     that resolved to a DIFFERENT note between the read and the write."""
     store = InMemoryNoteStore()
@@ -383,7 +383,7 @@ async def test_note_update_refuses_when_this_turn_never_read_that_note():
 
 
 async def test_a_head_that_moved_under_her_is_unavailable_never_applied_on_top():
-    """§6.3. R-27's three states at the store layer: «I could not do it», not
+    """R-27's three states at the store layer: «I could not do it», not
     «there was nothing to do» and never a silent overwrite of the arrangement
     the intervening revision made."""
     store = InMemoryNoteStore()
@@ -442,10 +442,8 @@ async def test_a_read_that_found_nothing_licenses_no_revision_at_the_tool_layer(
 # `not_read` is a reading about the MODEL — it tried to rewrite a body it had
 # not seen. `title_moved` and `stale_head` are readings about CONTENTION — the
 # note it reached was not the note it read, or the head moved under the call.
-# The three used to live in two unrelated series (`nora_guard_vetoes_total`
-# and `nora_tool_calls_total`) with the reason surviving only in a log line,
-# so no query could separate «the latch is working» from «two writers are
-# fighting».
+# Each reason is its own label on one series, so a query can separate «the
+# latch is working» from «two writers are fighting».
 
 
 async def test_a_stale_head_is_counted_as_a_refusal_with_its_own_reason():
@@ -506,7 +504,7 @@ async def test_an_update_that_lands_counts_no_refusal():
 # Every test below asserts through `evaluate`'s refusal rather than by reading
 # the latch set. The set is invisible to the model; the veto is where a miss
 # costs something, and a test that reads the set goes green against a latch
-# that never vetoes anything (4d44d0d's lesson, one method over).
+# that never vetoes anything.
 
 BUDGETS = ToolRegistry().budgets()
 TERMINAL = ToolRegistry().terminal_tools()
@@ -628,9 +626,9 @@ def test_r55_an_ambiguous_read_licenses_nothing():
 
 
 def test_r55_does_not_apply_to_note_create():
-    """§5.2: the index is uncapped, so every title is already in front of her
+    """The index is uncapped, so every title is already in front of her
     and whether a note already covers this ground is checkable from the prompt
-    alone. Create needs no read — that is the payoff §5.1 pays for."""
+    alone. Create needs no read."""
     guard = _guard()
     assert guard.evaluate("note_create", {"title": "New", "body": "x"}) is None
 
@@ -661,7 +659,7 @@ async def test_two_rooms_in_different_units_see_different_notebooks():
     `friends`, deliberately never paired (DEC-105/R-49 — a unit is the
     boundary `send_to` may not cross). A process-wide unit string hands
     one room the OTHER's notebook: `note_read` answers from it, `note_update`
-    writes into it, past the boundary spec §3's scope decision rests on.
+    writes into it, past the unit boundary.
 
     Both calls below go through the SAME resolver and the same store; only the
     room differs. That is what makes this red when the tool stops consulting
@@ -702,7 +700,7 @@ async def test_a_room_policy_cannot_name_gets_unavailable_never_a_guess():
     assert out["status"] == "unavailable"
 
 
-# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+# ── ADR 0015: how to report a status rides in the result ────────────────────
 
 async def test_every_non_ok_note_status_carries_a_note():
     """The four descriptions only NAME their statuses; what to say or fix is
@@ -710,9 +708,7 @@ async def test_every_non_ok_note_status_carries_a_note():
     one that loses its note goes red.
 
     One note is exempt from the dash check: a domain refusal is
-    `nora.domain.notes`' own sentence, which the curator reads too.
-    (`notes_off` was exempt while `remind` still shared an unrewritten copy;
-    both are rewritten now and it is checked like the rest.)"""
+    `nora.domain.notes`' own sentence, which the curator reads too."""
     store = InMemoryNoteStore()
     await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
     await _seed(store, title="Wedding", body="Grant's")
@@ -766,20 +762,20 @@ async def test_every_non_ok_note_status_carries_a_note():
 
 
 async def test_a_missing_title_note_says_to_check_the_index_not_to_guess_variants():
-    """The rule that left note_read's description («the titles in <notes> are
-    the only ones there are, so check it rather than trying variations») now
-    rides on the `nothing_found` it is about."""
+    """The rule «the titles in <notes> are the only ones there are, so check it
+    rather than trying variations» rides on the `nothing_found` it is about,
+    not in note_read's description."""
     store = InMemoryNoteStore()
     out = await _tools(notes=store)["note_read"](title="Grant's wedding")
     assert out["status"] == "nothing_found"
     assert "<notes>" in out["note"] and "variations" in out["note"]
 
 
-# ── the body's form (design 42 S4b) ─────────────────────────────────────────
+# ── the body's form ─────────────────────────────────────────────────────────
 
 
 async def test_note_create_maps_positions_to_row_ids_and_stores_the_normalised_body():
-    """G4: she cites what she sees (`#1`), the store keeps ids (501)."""
+    """She cites what she sees (position 1), the store keeps ids (501)."""
     store = InMemoryNoteStore()
     tools = _tools(notes=store)
 
@@ -812,8 +808,8 @@ async def test_note_create_maps_positions_to_row_ids_and_stores_the_normalised_b
 ], ids=["prose", "position_out_of_range", "bare_id_not_carried", "misattributed",
         "nora_owes", "bad_date"])
 async def test_note_create_refuses_a_body_out_of_form_and_names_the_rule(rule, body):
-    """Refused, not repaired (G1), with the rule in the note so she can fix
-    the call (27 §5.3); nothing is written."""
+    """Refused, not repaired, with the rule in the note so she can fix
+    the call; nothing is written."""
     store = InMemoryNoteStore()
     tools = _tools(notes=store)
 
@@ -853,7 +849,7 @@ async def test_note_update_may_keep_a_bare_id_the_head_already_cites():
 
 
 def test_the_body_argument_names_the_grammar():
-    """§7: she learns the form from the `body` argument, in two sentences,
+    """She learns the form from the `body` argument, in two sentences,
     and from the refusal; nothing else teaches it on the tag path."""
     tools = _tools(notes=InMemoryNoteStore())
     create = tools["note_create"].__doc__ or ""

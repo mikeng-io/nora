@@ -1,8 +1,7 @@
-"""Nora's computer as a metric (design/sandbox-runtime §12, DEC-261).
+"""Nora's computer as a metric (DEC-261).
 
-The audit found no computer series in /metrics except `row_history`, and
-`nora_computer_audit_failures_total` never seen live. What these pin is the
-three things an alert on them needs to be true:
+What these pin is the three things an alert on the computer series needs to be
+true:
 
 - `nora_computer_up` is 1 only when computerd ANSWERED, and 0 for a refused
   connection AND for a 401 (a token rotation that did not reach the container:

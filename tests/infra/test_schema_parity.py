@@ -6,13 +6,11 @@ it reports permanent phantom drift on the expression index. This file is what
 actually guarantees the schema, so it reads Postgres's own catalogues rather
 than SQLAlchemy's opinion of them.
 
-**Oracle scope, stated honestly (design/20 §2, both reviews).** The baseline is
-a checked-in, normalised `pg_dump` (`pg_schema_baseline.sql`). A frozen dump
-catches drift *from that baseline* — it is metadata+baseline parity. It does
-**not** reach live production the way the old SQLite gate diffed against the
-in-tree `.db`; the `nora` database publishes no host port (design/20 §3), so the
-live-production half is a `docker exec nora-db pg_dump` job, named here rather
-than silently dropped.
+**Oracle scope.** The baseline is a checked-in, normalised `pg_dump`
+(`pg_schema_baseline.sql`). A frozen dump catches drift *from that baseline* —
+it is metadata+baseline parity. It does **not** reach live production; the
+`nora` database publishes no host port, so the live-production half is a
+`docker exec nora-db pg_dump` job, named here rather than silently dropped.
 
 It still asserts, from the catalogue and independent of the baseline:
   - the CHECK constraint `conversation_type IN ('group','dm')` is present;
@@ -25,19 +23,17 @@ It still asserts, from the catalogue and independent of the baseline:
     about — see `test_the_metadata_check_constraints_match_the_migrated_database`
     and the honesty note below.
 
-**The CHECK constraints were documentation until 2026-08-20.** The bullet above
-covered exactly one constraint by name; nothing covered the other twenty-five.
+**The CHECK constraints are enforced, not documentation.** The bullet above
+covers one constraint by name; the rest are covered by the metadata comparison.
 `compare_metadata` is blind to CHECKs (this file's opening paragraph says so),
 and the dump/baseline test compares the migrated database against a file
-regenerated from that same database — `schema.py` is in neither loop. Deleting
-all four `model` CHECKs from `schema.py` alone, migrations untouched, left the
-entire suite green: 3569 passed. Found while verifying red-on-revert for
-`0024_dreamer_model_provenance`, i.e. by somebody checking whether the gate
-could measure the thing before reading its output as evidence.
+regenerated from that same database — `schema.py` is in neither loop, so
+deleting a CHECK from `schema.py` alone, migrations untouched, would leave
+everything else green.
 
-Parameterised over every table in `nora`'s metadata, so when `presence_fixes`
-(design/19) joins the same database its identically alembic-check-blind
-`(circle_id, person_id, ts DESC)` index is covered with no new test.
+Parameterised over every table in `nora`'s metadata, so a new table's
+alembic-check-blind DESC index is covered by adding a row to
+`EXPECTED_DESC_INDEXES`.
 """
 
 from __future__ import annotations
@@ -59,26 +55,25 @@ from tests.conftest import PG_IMAGE
 BASELINE = Path(__file__).resolve().parent / "pg_schema_baseline.sql"
 
 # Per (table, index): column -> is_descending. The gate asserts the live
-# `indoption` DESC bit matches. `presence_fixes` adds its own row here the day it
-# lands; the CHECK/existence checks below need no editing because they iterate
+# `indoption` DESC bit matches. A new table adds its own row here; the
+# CHECK/existence checks below need no editing because they iterate
 # `METADATA`.
 EXPECTED_DESC_INDEXES = {
     "idx_messages_conv_ts": {"conversation_id": False, "ts": True},
-    # presence_fixes (design/19 §8): the identically alembic-check-blind
-    # `(circle_id, person_id, ts DESC)` index — covered here with no bespoke
-    # test, exactly as this file's docstring promised it would be.
+    # presence_fixes: the alembic-check-blind `(circle_id, person_id, ts DESC)`
+    # index.
     "idx_presence_member_ts": {"circle_id": False, "person_id": False, "ts": True},
-    # tool_call_log (tool-recall-log spec §2, §7): the identically
-    # alembic-check-blind `(conversation_id, created_at DESC)` index.
+    # tool_call_log: the alembic-check-blind `(conversation_id, created_at DESC)`
+    # index.
     "idx_tool_call_log_conv_ts": {"conversation_id": False, "created_at": True},
-    # presence_stays (presence analytics substrate design §2, DEC-115): the
-    # identically alembic-check-blind `(subject_id, started_ts DESC)` index.
+    # presence_stays (DEC-115): the alembic-check-blind
+    # `(subject_id, started_ts DESC)` index.
     "idx_presence_stays_subject_ts": {"subject_id": False, "started_ts": True},
     "idx_presence_derived_places_subject_kind": {"subject_id": False, "kind": False},
-    # presence_trips (Tier 5 routes, design/27 §4, issue #6): the identically
-    # alembic-check-blind `(subject_id, started_ts DESC)` index.
+    # presence_trips: the alembic-check-blind `(subject_id, started_ts DESC)`
+    # index.
     "idx_presence_trips_subject_started": {"subject_id": False, "started_ts": True},
-    # standing_revision (0059): `(platform, conversation_id, updated_at DESC,
+    # standing_revision: `(platform, conversation_id, updated_at DESC,
     # id DESC)` — the backwards scan the as-of read makes. Two DESC columns
     # rather than one, so this is also the row that proves the `indoption` bit
     # check reads PER COLUMN rather than taking the index's first answer for
@@ -87,7 +82,7 @@ EXPECTED_DESC_INDEXES = {
         "platform": False, "conversation_id": False,
         "updated_at": True, "id": True,
     },
-    # memory_node (0106): the embedding worker's pick, fewest failures and
+    # memory_node: the embedding worker's pick, fewest failures and
     # then newest, `(embed_attempts, id DESC)`, the order `embed_pick` asks.
     "idx_memory_node_unembedded": {"embed_attempts": False, "id": True},
 }
@@ -99,8 +94,8 @@ EXPECTED_DESC_INDEXES = {
 # in `migrations/env.py`, and their definition is asserted from the catalogue
 # instead. Both registrations or neither, as for the DESC indexes above.
 EXPECTED_EXPRESSION_INDEXES = {
-    # 0106 (design/unified-memory/65-build-step-3-vectors.md §0): HNSW over the
-    # leading 256 of the 2048 dimensions, cosine.
+    # memory_node vectors: HNSW over the leading 256 of the 2048 dimensions,
+    # cosine.
     "idx_memory_node_embedding_256": (
         "CREATE INDEX idx_memory_node_embedding_256 ON public.memory_node USING hnsw "
         "(((subvector(embedding, 1, 256))::halfvec(256)) halfvec_cosine_ops)"
@@ -207,8 +202,7 @@ def _check_constraint_problems(
     is *also* drift, for the mirror reason — `schema.py` calls itself "the
     single source of truth for Nora's tables", so an invariant absent from it is
     one a contributor reading it cannot know they are writing against. There is
-    no allow-list because there is nothing to allow: all 26 CHECKs matched on
-    both name and predicate the day this was written. A future constraint that
+    no allow-list because there is nothing to allow. A constraint that
     genuinely belongs in a migration and not in the metadata should argue for
     itself in review, not slip past a list.
 
@@ -305,7 +299,7 @@ def _dump_schema(pg_admin, dbname: str) -> str:
 
 def _normalise(dump: str) -> str:
     """Strip the SET/version-comment/`\\connect` preamble and sort the remaining
-    statements' lines — a stable, order-insensitive shape (design/20 §2)."""
+    statements' lines — a stable, order-insensitive shape."""
     keep = []
     for line in dump.splitlines():
         s = line.strip()
@@ -331,18 +325,9 @@ def migrated(pg_url) -> str:
 def test_the_test_container_tracks_the_deployment():
     """The suite's Postgres MAJOR VERSION must match the one production runs.
 
-    This file is the gate every migration passes through. Until 2026-08-20 it
-    ran on `postgres:16-alpine` while `docker-compose.yml` deployed
-    `postgres:18-alpine` — so the oracle was a major version behind the thing it
-    guarded, and `scripts/gen_pg_baseline.py` generated the checked-in baseline
-    on 16 as well. A schema gate validating against the wrong major version is
-    the repo's own «never read an instrument's output as evidence without first
-    checking it can measure the thing» rule failing on the instrument that
-    guards the schema.
-
-    Found by the fact-store workstream while measuring Apache AGE availability
-    against the live database — i.e. by somebody looking at something else,
-    which is why this test exists rather than a note.
+    This file is the gate every migration passes through. A schema gate
+    validating against a different major version than the one deployed is an
+    instrument that cannot measure the thing it guards.
 
     Compares MAJOR versions only. A patch bump in compose is a deployment
     decision and must not turn the suite red; a MAJOR bump changes what
@@ -351,10 +336,9 @@ def test_the_test_container_tracks_the_deployment():
     compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(
         encoding="utf-8"
     )
-    # Matches `postgres:18-alpine` AND `pgvector/pgvector:pg18` — the
-    # deployment moved to the second on 2026-08-28 and a regex that only knew
-    # the first would have failed OPEN, asserting nothing while looking like a
-    # gate. The major version is the group either way.
+    # Matches `postgres:18-alpine` AND `pgvector/pgvector:pg18`: a regex that
+    # only knew the first would fail OPEN, asserting nothing while looking like
+    # a gate. The major version is the group either way.
     deployed = re.search(
         r"image:\s*(?:postgres:(\d+)[\w.-]*|[\w./-]*pgvector[\w./-]*:pg(\d+))",
         compose,
@@ -388,8 +372,8 @@ def test_every_table_in_the_metadata_exists(migrated, table):
 
 
 def test_the_conversation_type_check_constraint_is_present(migrated):
-    """alembic check is blind to this — proven for the SQLite gate, and the
-    Postgres one asserts it from pg_constraint directly."""
+    """alembic check is blind to this, so it is asserted from pg_constraint
+    directly."""
     defs = _check_constraint_defs(sync_url_for(migrated), "messages")
     assert any("conversation_type" in d for d in defs), defs
 
@@ -398,14 +382,11 @@ def test_the_metadata_check_constraints_match_the_migrated_database(migrated):
     """`schema.py`'s CHECKs are enforced, not annotated.
 
     THE GAP THIS CLOSES. `test_the_conversation_type_check_constraint_is_present`
-    covers one CHECK by name. The other twenty-five were covered by nothing:
-    `compare_metadata` cannot see a CHECK, and the dump/baseline test compares
-    the migrated database against a file regenerated from it, so `schema.py` is
-    on neither side. Deleting all four `model` CHECKs from `schema.py` alone —
-    migrations untouched — left the whole suite green at 3569 passed.
-
-    Which meant the declarations were documentation of what the migrations
-    built. A contributor who added a CHECK only to `schema.py` was told nothing
+    covers one CHECK by name. `compare_metadata` cannot see a CHECK, and the
+    dump/baseline test compares the migrated database against a file
+    regenerated from it, so `schema.py` is on neither side: without this test
+    the declarations would be documentation of what the migrations built. A
+    contributor who added a CHECK only to `schema.py` would be told nothing
     when it never reached the database; one who deleted a CHECK from
     `schema.py`, likewise. `METADATA` is what the ORM issues queries through,
     and an invariant it claims that the store does not hold is a premise, not a
@@ -456,8 +437,8 @@ def test_the_check_constraint_comparison_reports_drift_in_both_directions(migrat
                 conn, "messages", _declared_checks("messages")
             ) == []
 
-            # 1. A CHECK deleted from `schema.py` — the reproduction that
-            #    started this. The database keeps it; nothing declares it.
+            # 1. A CHECK deleted from `schema.py`. The database keeps it;
+            #    nothing declares it.
             deleted = _check_constraint_problems(conn, "messages", [])
             assert len(deleted) == 1, deleted
             assert "schema.py does not declare" in deleted[0], deleted
@@ -558,14 +539,13 @@ def _metadata_diffs(sync: str) -> list:
 def _diff_kinds(diffs: list) -> set[str]:
     """The operation names in a `compare_metadata` result.
 
-    Its return shape is not flat, which is easy to get wrong and did get wrong
-    here first: table-level operations arrive as bare tuples
-    (`('add_table', Table(...))`), while COLUMN-level ones arrive grouped one
-    list per table (`[[('modify_type', None, 'sticker_index', 'size', …)]]`).
-    Iterating naively yields a `list` where a tuple was expected and the
-    operation name is never seen — which reads as "no drift detected" against
-    a database that has drifted. Flatten one level before looking.
-    """
+    Its return shape is not flat, which is easy to get wrong: table-level
+    operations arrive as bare tuples (`('add_table', Table(...))`), while
+    COLUMN-level ones arrive grouped one list per table (`[[('modify_type',
+    None, 'sticker_index', 'size', …)]]`). Iterating naively yields a `list`
+    where a tuple was expected and the operation name is never seen — which
+    reads as "no drift detected" against a database that has drifted. Flatten
+    one level before looking. """
     kinds: set[str] = set()
     for entry in diffs:
         for op in (entry if isinstance(entry, list) else [entry]):
@@ -582,22 +562,18 @@ def test_the_metadata_matches_the_migrated_database(migrated):
     `test_every_table_in_the_metadata_exists` checks a table EXISTS and never
     looks at its columns, and the dump/baseline test compares a `pg_dump`
     against a checked-in file regenerated from that same dump. `schema.py`
-    appears in neither loop. So a `sa.Column("size", sa.Integer)` in the
-    metadata against a `TEXT` column in the migration was invisible: four tests
-    blind to it, and the fifth satisfied by regenerating the file it compares
-    against.
+    appears in neither loop, so a `sa.Column("size", sa.Integer)` in the
+    metadata against a `TEXT` column in the migration would be invisible.
 
-    That mattered because `METADATA` is what the ORM issues queries through at
+    That matters because `METADATA` is what the ORM issues queries through at
     runtime. A type it is wrong about is a query built on a false premise, not
     a documentation nit.
 
-    `alembic check` is the tool for exactly this — CONVENTIONS.md says so in as
-    many words ("guards column presence, column type and server defaults") —
-    and it was dropped from the gate because it is blind to the CHECK
-    constraint and the DESC ordering, which the tests above now cover. The two
-    were always complementary; only one half got kept. This restores the other
-    half using the same autogenerate comparison, in-process, without reopening
-    the phantom-drift problem that made the CLI unusable here.
+    `alembic check` is the tool for exactly this ("guards column presence,
+    column type and server defaults"), but it is blind to the CHECK constraint
+    and the DESC ordering, which the tests above cover. The two are
+    complementary: this runs the same autogenerate comparison in-process,
+    without the phantom-drift problem that makes the CLI unusable here.
     """
     assert _metadata_diffs(sync_url_for(migrated)) == [], (
         "nora/infra/sql/schema.py disagrees with the migrated database — the "
@@ -674,7 +650,7 @@ def test_a_deliberate_column_type_drift_is_caught(pg_url, pg_admin):
 
 
 def test_a_deliberate_drift_is_caught(pg_url, pg_admin):
-    """The probe design/20 §2 demands: drop the CHECK and flip the index to ASC,
+    """The red-on-revert probe: drop the CHECK and flip the index to ASC,
     then confirm the two catalogue reads the gate relies on both report the
     drift — i.e. reverting the schema this way turns the gate red."""
     dbname = "t_" + uuid.uuid4().hex

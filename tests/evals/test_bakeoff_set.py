@@ -1,11 +1,11 @@
 """The retrieval bake-off's labelled set is whole, resolvable and locked.
 
 `evals/retrieval_bakeoff/` holds the set a retrieval arm is scored on
-(design/unified-memory/20, the rules in its PROTOCOL.md). A score is only
-evidence if the set it was scored on is the set that was labelled, so every
-check here fails closed: a missing file, a missing key or a malformed value is
-a FAIL, never a skip. Nothing here reads an image or calls a model; the image
-bytes live outside the repo and their hash check belongs to the harness.
+(the rules are in its PROTOCOL.md). A score is only evidence if the set it was
+scored on is the set that was labelled, so every check here fails closed: a
+missing file, a missing key or a malformed value is a FAIL, never a skip.
+Nothing here reads an image or calls a model; the image bytes live outside the
+repo and their hash check belongs to the harness.
 
 Each slice names where its items live (`media.yaml` for images, `texts.yaml`
 for messages) and which labels file judges it (`labels.yaml` for
@@ -30,8 +30,7 @@ SET_DIR = ROOT / "evals" / "retrieval_bakeoff"
 LOCKED = ("set.yaml", "media.yaml", "texts.yaml", "labels.yaml", "labels_text.yaml")
 LOCK = SET_DIR / "labels.lock"
 
-# design/unified-memory/20 «Slices and margins»: the three journey slices the
-# decision rule reads. A set missing one cannot decide anything.
+# The three journey slices the decision rule reads. A set missing one cannot decide anything.
 JOURNEY_SLICES = {"text_image", "cantonese", "names"}
 MEDIA_ITEMS, TEXT_ITEMS = "media.yaml", "texts.yaml"
 ITEM_FILES = {MEDIA_ITEMS, TEXT_ITEMS}

@@ -1,10 +1,9 @@
 """The nora service holds no control over the host's Docker daemon.
 
-S3b (design/sandbox-runtime decision 4) retired Smith and `LocalDockerBackend`,
-the only things that needed the host `docker.sock` mounted into the nora
-container and the `nora-compute` network with its `compute-egress` proxy.
-Nora's computer is one VM run by `deploy/computer/nora-computer` on the host,
-not by anything in her own process (ADR 0019).
+Nothing in nora needs the host `docker.sock` mounted into the nora container,
+nor the `nora-compute` network with its `compute-egress` proxy. Nora's
+computer is one VM run by `deploy/computer/nora-computer` on the host, not by
+anything in her own process (ADR 0019).
 
 This reads `docker-compose.yml` as parsed YAML, not as text: a comment that
 still names the socket is not a mount, and a mount written in the long syntax

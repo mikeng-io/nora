@@ -2,20 +2,17 @@
 CLAUDE.md's rule, and the reason `FakeMediaInterpreter` cannot quietly drift
 into answering differently from `MediaComprehender`.
 
-Why it exists (fix round 1 on the sticker work, and it still holds): review
-found `FakeMediaInterpreter` had no `media_type` gate at all, while production
-refuses an unreadable type before any model call goes out. The pipeline tests
-above this port are written against the fake — so without this suite, a
-pipeline test that never actually checks the format could still pass (the fake
-masks the omission), or a correct assertion could fail against the fake while
-passing against production. Each test below is written against the PORT,
-parametrized over both concrete classes, so that divergence can no longer
-happen silently.
+Why it exists: production refuses an unreadable `media_type` before any model
+call goes out, so the fake must gate the same way. The pipeline tests above this
+port are written against the fake — without this suite, a pipeline test that
+never actually checks the format could still pass (the fake masks the
+omission), or a correct assertion could fail against the fake while passing
+against production. Each test below is written against the PORT, parametrized
+over both concrete classes, so that divergence cannot happen silently.
 
-**The port widened with issue #116.** It used to return one sentence for a
-sticker; it returns a comprehension — title, description, content — for any
-medium, from ONE model pass, and it has a second verb (`summarize`) for the
-text lane a voice note takes. The properties pinned here are the ones every
+**The port returns a comprehension** — title, description, content — for any
+medium, from ONE model pass, and has a second verb (`summarize`) for the text
+lane a voice note takes. The properties pinned here are the ones every
 caller relies on: an unreadable type never reaches a model, an unavailable
 result never carries a partial triple, and neither verb ever raises.
 """
@@ -151,7 +148,7 @@ async def test_an_unreadable_media_type_is_refused_before_any_description(
 
 
 async def test_an_available_result_carries_all_three_fields(make_interpreter):
-    """One model pass, three fields (issue #116). An implementation that
+    """One model pass, three fields. An implementation that
     returned only a description would let every caller above it forget to store
     the other two."""
     interpreter = make_interpreter(
@@ -236,10 +233,10 @@ async def test_summarize_never_raises(make_interpreter):
 async def test_the_label_is_accepted_and_changes_nothing_it_should_not(
     make_interpreter,
 ):
-    """`label` is the one argument the port gained with issue #116, and both
-    implementations must ACCEPT it — a fake that took only `media_type` would
-    make every caller passing a label untestable against production, which is
-    the exact drift this directory exists to prevent.
+    """`label` is a port argument, and both implementations must ACCEPT it — a
+    fake that took only `media_type` would make every caller passing a label
+    untestable against production, which is the exact drift this directory
+    exists to prevent.
 
     What it may not do is change the RESULT SHAPE: the same bytes with a label
     and without one comprehend the same way. What it selects — which authored
@@ -261,9 +258,8 @@ async def test_the_label_is_accepted_and_changes_nothing_it_should_not(
 async def test_a_label_reaches_the_model_as_a_different_authored_question():
     """The production half of the test above, and the reason `label` exists at
     all: it SELECTS the authored prompt. A sticker is asked what it depicts and
-    explicitly not what its sender meant by it (DEC-108, whose position
-    survived issue #116 even though the class holding it did not); a photo is
-    asked what it shows.
+    explicitly not what its sender meant by it (DEC-108); a photo is asked what
+    it shows.
 
     Not parametrized over the fake: the fake has no prompt table, and a test
     that asserted on one would be asserting on the double rather than on the
@@ -288,10 +284,9 @@ async def test_the_model_that_wrote_the_text_comes_back_with_it(make_interpreter
     """`MediaDescription.model` is what `media_objects.describe_model` records —
     the one column an operator reads to find out which describer produced what.
 
-    Pinned on the PORT, over both implementations, because the previous shape
-    was duck-typed off the adapter and nothing checked the real one: mutating
-    `MediaComprehender`'s returns to a wrong model left the entire media suite
-    green, since every `describe_model` assertion ran against the fake."""
+    Pinned on the PORT, over both implementations: pinned only against the fake,
+    mutating `MediaComprehender`'s returns to a wrong model would leave the
+    entire media suite green."""
     interpreter = make_interpreter(available=True, text="a cartoon cat", reason="")
 
     got = await interpreter.describe(data=b"\x89PNG...", media_type="image/png")
@@ -306,7 +301,7 @@ async def test_the_text_lane_names_the_text_model_not_the_describer(
 ):
     """The case the field exists for. A voice note's title and description are
     written entirely by the text model; deriving the column from the media type
-    recorded the AUDIO describer — `""` on the shipped config — for the one
+    would record the AUDIO describer — `""` on the shipped config — for the one
     modality whose text has a single named author.
 
     So the two verbs must not report the same model, and that is checkable on

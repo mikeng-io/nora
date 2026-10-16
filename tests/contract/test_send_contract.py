@@ -1,7 +1,7 @@
 """One suite, every implementation of `PlatformAdapter.send`.
 
 CLAUDE.md: "A port never gains a second implementation — including a test fake
-— without a shared contract suite both pass." `send()` gained `mentions`,
+— without a shared contract suite both pass." `send()` takes `mentions`,
 `styles` and `preview`, and `nora.testing.FakeAdapter.send` is what every
 pipeline, integration and eval test asserts against — so without this suite a
 fake that quietly dropped the decoration would let all of them prove a mention
@@ -113,7 +113,7 @@ async def _whatsapp_adapter(aiohttp_server, *, status: int = 200):
 
 async def _instagram_adapter(aiohttp_server, *, status: int = 200):
     """An `InstagramAdapter` pointed at a stand-in for the bridge's
-    `POST /threads/{thread_fbid}/messages` (17 §P14), answering its shapes:
+    `POST /threads/{thread_fbid}/messages`, answering its shapes:
     `{id, timestamp_ms}` with no `ok`, and the error envelope on failure."""
     async def handler(request: web.Request) -> web.Response:
         if status != 200:
@@ -160,7 +160,7 @@ async def broken(request, aiohttp_server):
 )
 def test_send_accepts_the_ports_decoration_parameters(impl):
     """`isinstance` against a runtime_checkable Protocol only checks NAMES, so
-    a fake whose `send` had kept the old two-parameter shape would still be a
+    a fake whose `send` kept an older two-parameter shape would still be a
     `PlatformAdapter` by that test and would `TypeError` the moment `Deliverer`
     called it. The shape has to be asserted directly."""
     params = inspect.signature(impl.send).parameters
@@ -244,7 +244,7 @@ async def test_a_malformed_mention_range_never_costs_the_message(working):
 
 
 async def test_a_style_range_that_does_not_fit_never_costs_the_message(working):
-    """Same rule, verified on the live daemon rather than reasoned about: it
+    """Same rule, checked against the live daemon: it
     answered `-1:3:BOLD` with «Invalid textStyle syntax» and delivered nothing.
 
     `12:9` is the case a syntax check alone would miss — it matches the regex

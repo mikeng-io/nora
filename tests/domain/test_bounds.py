@@ -102,12 +102,12 @@ def test_a_non_positive_limit_returns_nothing_and_counts_nothing() -> None:
     `0 > -1` is true, so an unguarded negative limit fabricates a truncation in
     the one series whose whole job is separating «there is nothing» from «I
     could not see all of it» — a fail-OPEN in the measure verb. And `rows[:-1]`
-    silently drops a row, which is the `list[:-1]` trap both wired callers'
-    docstrings already cite as the reason for their own short-circuits.
+    silently drops a row, which is the `list[:-1]` trap the wired callers'
+    docstrings cite as the reason for their own short-circuits.
 
-    Unreachable from those two callers today. It is asserted here because this
-    helper exists to be wired to a dozen more, and an invariant re-implemented
-    by every caller is the shape that produced the defect this module is about.
+    It is asserted here because this helper is meant to be wired to many
+    callers, and an invariant re-implemented by every caller is the shape that
+    produces the defect this module is about.
     """
     metrics = _Metrics()
     assert cut([1, 2, 3], limit=0, site=SITE, metrics=metrics) == ()

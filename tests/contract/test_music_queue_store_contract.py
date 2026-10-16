@@ -185,14 +185,13 @@ async def test_move_to_front_leaves_positions_contiguous_from_zero(store):
 
 
 async def test_concurrent_enqueues_for_one_guild_never_collide_on_position(store):
-    """A subagent review found `SqlMusicQueueStore.enqueue`'s `MAX(position)
-    +1` subquery is not atomic under READ COMMITTED: two concurrent
-    transactions can both read the same max and both insert the same
-    position. `uq_music_queue_guild_position` (migration 0028) turns that
-    into a decidable `IntegrityError` `enqueue` retries against — this
-    asserts the OBSERVABLE contract (no two rows in one guild's queue ever
-    share a position), which is what actually matters, rather than trying
-    to force the exact interleaving that triggers the retry."""
+    """`SqlMusicQueueStore.enqueue`'s `MAX(position) +1` subquery is not atomic
+    under READ COMMITTED: two concurrent transactions can both read the same max
+    and both insert the same position. `uq_music_queue_guild_position`
+    (migration 0028) turns that into a decidable `IntegrityError` `enqueue`
+    retries against — this asserts the OBSERVABLE contract (no two rows in one
+    guild's queue ever share a position), which is what actually matters, rather
+    than trying to force the exact interleaving that triggers the retry."""
     tracks = await asyncio.gather(*(_enqueue(store, title=f"Track {i}") for i in range(8)))
 
     positions = [t.position for t in tracks]

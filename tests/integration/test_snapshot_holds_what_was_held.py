@@ -1,6 +1,5 @@
-"""Step 1b's first gate (design/cognition-loop/70-migration.md §2): write,
-revise and retire across every store migrated here, snapshot at two moments,
-and get EXACTLY what was held at each.
+"""Write, revise and retire across every store migrated here, snapshot at two
+moments, and get EXACTLY what was held at each.
 
 WHAT IS HELD is read from the live tables at each moment (`to_jsonb` of
 every row) — the thing the restore claims to reproduce, observed directly,
@@ -79,7 +78,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     "message_edit": lambda i: {
         "id": 3000 + i, "message_id": 1000, "ts": MS0 + i, "body": f"edit {i}",
     },
-    # Step 1's two cascading children of `messages` (0069).
+    # The two cascading children of `messages` (0069).
     "message_reaction": lambda i: {
         "id": 4000 + i, "message_id": 1000, "sender_id": f"s{i}", "emoji": "👍",
         "ts": MS0 + i,
@@ -163,7 +162,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     "sticker_index": lambda i: {
         "platform": "signal", "fetch_token": f"t{i}", "sha256": f"{i:064x}",
     },
-    # Step 2 (0071): the Rollup's builds, fold states, presence rows and
+    # (0071): the Rollup's builds, fold states, presence rows and
     # unit rollups, and the collector's saved places.
     "presence_places": lambda i: {
         "circle_id": "c", "place_id": f"pl{i}", "name": f"place {i}", "lat": 22.25,
@@ -226,14 +225,13 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "conversation_id": "g1", "sent_ts": MS0 + i, "replies": 0, "reactions": 0,
         "edits": 0, "outcome": "open", **_UNIT_ROLLUP(i),
     },
-    # Step 2b (0074_event_revision): the head, still updated in place (the
-    # compare-and-swap cache 10-tiers.md §8 allows over `event_revision`,
-    # APPEND below).
+    # (0074_event_revision): the head, still updated in place (a
+    # compare-and-swap cache over `event_revision`, APPEND below).
     "events": lambda i: {
         "id": _uuid("event", i), "conversation_id": "g1", "title": f"event {i}",
         "created_by": "p", "status": "proposed", "created_at": T0,
     },
-    # design/sandbox-runtime §15.2 (0082): one open session per scope.
+    # (0082): one open session per scope.
     "computer_sessions": lambda i: {
         "id": _uuid("cs", i), "platform": "signal", "conversation_id": f"g{i}",
         "scope": f"{i:02x}" * 16, "objective": f"task {i}", "status": "open",
@@ -344,7 +342,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "otp_attempt": lambda n: {
         "challenge_id": _uuid("otp", n), "ok": False, "attempted_at": T0,
     },
-    # 0100_lessons (design/self-growth/40-lessons.md, L1): a lesson, and one revision of it.
+    # 0100_lessons: a lesson, and one revision of it.
     "lesson": lambda n: {"id": _uuid("ls", n), "unit": "friends", "created_at": MS0 + n},
     "lesson_revision": lambda n: {
         "id": _uuid("lr", n), "lesson_id": _uuid("ls", n), "seq": 1, "body": f"lesson {n}",
@@ -361,7 +359,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "body": f"## Kept\n- kept {n} [{n + 1}]", "citations": [str(n + 1)], "mode": "told",
         "state": "kept", "written_at": MS0 + n, "established_by": "test",
     },
-    # 0101_self_tension (design/self-growth/40, L3): a lesson refused by the law.
+    # 0101_self_tension: a lesson refused by the law.
     "self_tension": lambda n: {
         "id": _uuid("st", n), "unit": "friends", "source": "lesson",
         "doctrine_file": "rooms/conduct.md", "doctrine_line": n + 1,
@@ -369,7 +367,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "citations": [f"response:{n + 1}"], "why": "it loosens the rule",
         "written_at": MS0 + n, "established_by": "test",
     },
-    # design/sandbox-runtime §6 (0083): one row per file that left the computer.
+    # (0083): one row per file that left the computer.
     "computer_exports": lambda n: {
         "id": _uuid("cx", n), "platform": "signal", "conversation_id": "g1",
         "scope": "ab" * 16, "path": f"out/{n}.png", "destination": "link",
@@ -385,8 +383,8 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "file": "policy.toml", "path": "/p", "content_sha256": f"{n:064x}", "loaded_at": T0,
     },
     "deploy_revision": lambda n: {"started_at": T0, "manifest_status": "absent"},
-    # Step 1 (0069, renamed by 0070/DEC-234): the cognition loop's stimuli,
-    # wake log and source health.
+    # (0069/0070, DEC-234): the cognition loop's stimuli, wake log and source
+    # health.
     "stimulus": lambda n: {
         "unit": "u", "kind": "message", "item": "message", "ref": f"messages:{n}",
         "at_ms": MS0 + n,
@@ -399,8 +397,8 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "source": "presence", "scope": "c1", "event": "poll", "outcome": "ok",
         "at_ms": MS0 + n,
     },
-    # Step 2b (0074_event_revision): the chain `events` is a
-    # compare-and-swap cache over, and RSVPs, append-only since this step.
+    # (0074_event_revision): the chain `events` is a compare-and-swap cache
+    # over, and RSVPs, append-only.
     "event_revision": lambda n: {
         "id": _uuid("evr", n), "event_id": _uuid("event", 0), "status": "proposed",
         "title": f"revision {n}", "written_at": T0,
@@ -409,12 +407,12 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("rsvp", n), "event_id": _uuid("event", 0), "person_id": f"p{n}",
         "response": "yes", "responded_at": T0,
     },
-    # Step 3 (0077_assess_report): the Assess adaptor's one store.
+    # (0077_assess_report): the Assess adaptor's one store.
     "assess_report": lambda n: {
         "kind": "nightly_dq", "run_at_ms": MS0 + n,
         "results": [{"check": "cross_room_duplicate_events", "status": "ok"}],
     },
-    # Step 3a (0078_cognition_session): the Cognition adaptor's session and
+    # (0078_cognition_session): the Cognition adaptor's session and
     # its write verbs. `session_id` on the other tables is left unset
     # (nullable, no FK — see the migration's own FOREIGN KEYS paragraph):
     # this fixture appends each table's row independently, with no ordering
@@ -427,14 +425,14 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "cognition_session_close": lambda n: {
         "item_index": 0, "kind": "message", "reason": "written",
     },
-    # Step 3a-ii: the pace verbs. `session_id` left unset (null, FK-nullable)
+    # The pace verbs. `session_id` left unset (null, FK-nullable)
     # for the same reason as `cognition_session_close` above.
     "cognition_self_wake": lambda n: {
         "unit": "u", "verb": "wake_at", "wake_ref": f"w{n}", "transition": "created",
         "subject_rows": [f"event:{n}"], "why": "check the venue again", "at_ms": MS0 + n,
         "outcome": "recorded",
     },
-    # Step 3a-ii, the session lifecycle (no foreign keys, see schema.py).
+    # The session lifecycle (no foreign keys, see schema.py).
     "cognition_wake_outcome": lambda n: {
         "wake_id": n, "unit": "u", "outcome": "closed", "at_ms": MS0 + n,
     },
@@ -583,9 +581,8 @@ async def test_a_history_version_missing_a_later_column_restores_it_as_null(
     pg_url: str, pg_template: str,
 ) -> None:
     """0075_withdrawal added `hidden_at` to `messages` with no row_history
-    catch-up (a manual rewrite of every existing row under `SHARE ROW
-    EXCLUSIVE`, removed): a version recorded before that migration has no
-    `hidden_at` key in its `image` at all, never a `null` value. A restore
+    catch-up: a version recorded before that migration has no `hidden_at` key
+    in its `image` at all, never a `null` value. A restore
     to an instant covered by such a version must still produce a row —
     with `hidden_at` NULL, the column's own default for a row nothing ever
     hid — not an error and not a spuriously-hidden one."""

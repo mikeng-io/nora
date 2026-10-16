@@ -1,7 +1,6 @@
-"""The memory index's seeds against Postgres (design/unified-memory/
-65-build-step-3-vectors.md V2): the dense seed's two stages with scope inside
-the HNSW scan, exact references pinned ahead of it, and the lexical seed only
-as the fallback, answered `partial`.
+"""The memory index's seeds against Postgres: the dense seed's two stages with
+scope inside the HNSW scan, exact references pinned ahead of it, and the lexical
+seed only as the fallback, answered `partial`.
 
 Vectors are written straight into `memory_node` under the fingerprint the
 search is configured with: what the property needs is a vector's distance to
@@ -13,7 +12,7 @@ The module's database plans with sequential and bitmap scans off: on a table
 of a few hundred rows the planner would otherwise sort the whole table,
 exactly, and no test here could tell an HNSW scan that loses its in-scope
 candidates from one that keeps them. Production's tables are large enough to
-choose the index on their own (#24 measured it at 15 ms p50).
+choose the index on their own.
 
 The policy: unit `u1` holds rooms B (Kit, Rin) and C (Rin); unit `u2` holds D.
 Every read is from B.
@@ -240,7 +239,7 @@ async def test_the_planner_scans_the_hnsw_index_with_the_scope_inside(engine: An
 
 
 async def test_an_exact_name_outranks_a_closer_dense_neighbour(engine: Any) -> None:
-    """Operator ruling 2026-10-16: a literal name match must not lose to a
+    """A literal name match must not lose to a
     near-duplicate. The near-duplicate is the question's own vector and newer."""
     await _node(engine, "named", "Rin booked the table", MID, at=NOW - 86_400_000 * 30)
     await _node(engine, "near-duplicate", "Ren booked the table", SAME, at=NOW - 3_600_000)
@@ -255,9 +254,9 @@ async def test_an_exact_name_outranks_a_closer_dense_neighbour(engine: Any) -> N
 async def test_literal_hits_hold_half_the_answer_and_a_cosine_one_hit_still_shows(
     engine: Any,
 ) -> None:
-    """Review of #31: with every exact hit pinned, ten nodes naming Rin
-    filled every slot and the question's own near-duplicate never showed.
-    The first `PINNED_LIMIT` are pinned; the rest rank by their cosine."""
+    """With every exact hit pinned, ten nodes naming Rin would fill every slot and
+    the question's own near-duplicate would never show. The first `PINNED_LIMIT` are
+    pinned; the rest rank by their cosine."""
     for i in range(12):
         await _node(engine, f"named{i:02}", f"Rin note {i}", MID, at=NOW - 86_400_000 * (i + 1))
     await _node(engine, "twin", "a twin with no name", SAME, at=NOW - 86_400_000 * 40)
@@ -324,7 +323,7 @@ async def test_unembedded_nodes_keep_it_partial_and_given_up_ones_are_read_by_th
     """A node waiting for a vector holds the answer `partial`. One the worker
     gave up on does not (it waits for nothing), and since no dense seed can
     reach it, the lexical seed reads it: never a confident `nothing_found`
-    for words that are there (review of #31)."""
+    for words that are there."""
     await _node(engine, "mine", "second", MID)
     await _node(engine, "waiting", "the ramen crawl plan", None)
     assert (await _search(engine)).status == "partial"
@@ -345,7 +344,7 @@ async def test_unembedded_nodes_keep_it_partial_and_given_up_ones_are_read_by_th
 async def test_a_node_waiting_in_another_unit_does_not_make_this_room_partial(
     engine: Any,
 ) -> None:
-    """Review of #31: coverage is counted within the search's scope."""
+    """Coverage is counted within the search's scope."""
     await _node(engine, "mine", "second", MID)
     await _node(engine, "waiting-elsewhere", "third", None, unit="u2")
     assert (await _search(engine)).status == "ok"
@@ -396,11 +395,11 @@ async def test_a_short_dense_scan_is_counted(engine: Any, monkeypatch: Any) -> N
 async def test_the_exact_read_is_served_by_the_trigram_index_for_every_term_kind(
     engine: Any,
 ) -> None:
-    """Review of #31: a CJK term's `strpos` in the same OR as the regular
-    expressions made the whole exact read a sequential scan. Each kind now
-    has a form `idx_memory_node_text_trgm` serves. The plan is asked of the
-    terms' OR alone: with the scope beside it, a table this small is read
-    through the scope's own indexes, which says nothing about the terms."""
+    """A CJK term's `strpos` in the same OR as the regular expressions would make
+    the whole exact read a sequential scan. Each kind has a form
+    `idx_memory_node_text_trgm` serves. The plan is asked of the terms' OR alone:
+    with the scope beside it, a table this small is read through the scope's own
+    indexes, which says nothing about the terms."""
     await _node(engine, "mine", "Kit 阿豹妹 ZX4471", MID)
     terms = [ExactTerm("Kit", cased=True), ExactTerm("阿豹妹", cased=True),
              ExactTerm("阿豹妹"), ExactTerm("ZX4471")]

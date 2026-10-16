@@ -2,19 +2,15 @@
 
 WHY THIS TEST EXISTS
 --------------------
-R-1 read *"Only the tagging path may cause a send; ambient traffic never
-reaches the agent"*, and `nora.app.fire.FirePath` made the first clause false.
-Its named test — `test_ambient_reaches_the_agent_only_through_participation_gating`
-(`tests/integration/test_ambient.py`) — asserts the ambient clause, but only
-over AMBIENT input: a reminders fire path never enters its harness, so it
-stayed green while the rule it enforces stopped holding. Amending the
-decision-index row alone would therefore have deleted the only written brake
-on a third send path with nothing going red. This is that brake, rebuilt
-around what is actually true now: there are TWO senders, both named, and
+R-1 says *"Only the tagging path may cause a send; ambient traffic never
+reaches the agent"*. `test_ambient_reaches_the_agent_only_through_participation_gating`
+(`tests/integration/test_ambient.py`) asserts the ambient clause, but only
+over AMBIENT input: a reminders fire path never enters its harness. This test
+is the brake on a third send path: there are TWO senders, both named, and
 adding a third is a test failure rather than a review comment. (The
-participation occasion, design/dreamer-agent-loop/35, speaks THROUGH
-`FirePath.speak` — it is a fifth occasion on the second path, not a third
-path, and this test is the pin that keeps it so.)
+participation occasion speaks THROUGH `FirePath.speak` — it is a fifth occasion
+on the second path, not a third path, and this test is the pin that keeps it
+so.)
 
 WHAT IT PINS, AND WHY THESE THREE FACTS
 ---------------------------------------
@@ -66,7 +62,7 @@ CALLERS = {
     # and `tests/architecture/test_the_summons_writes_in_one_place.py` pins
     # the one call that publishes what it held.
     "nora/app/summons.py",
-    # DEC-287 (operator 2026-10-05) amends R-1b: a one-time code is a
+    # DEC-287 amends R-1b: a one-time code is a
     # fourth sending path. A fixed template, no model, into a direct message
     # to somebody in identity.toml only; it goes through `deliver.build` so
     # every guard and the audit-first write still stand between it and the

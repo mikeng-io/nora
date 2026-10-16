@@ -2,34 +2,28 @@
 
 **DEC-80's missing half.** That decision unified the name space — the transcript
 labels a speaker by their `identity.toml` name, not their self-set platform
-profile name — because one prompt held `group_members: ["Grant Carver"]` while
-every transcript line read `陳志明 Chi Ming`, and asked where Grant was she
-answered that nobody in the group is called that, then told a DIFFERENT member
-that Grant was them.
+profile name — so that one prompt never holds `group_members: ["Grant Carver"]`
+while every transcript line reads `陳志明 Chi Ming`.
 
-Its four named tests each go through ONE consumer. So when the note tier grew two
-renderers ending the chain in `row.sender_id` instead of `"unknown"`, nothing went
-red — and that is two defects in one expression:
+Its named tests each go through ONE consumer. So a renderer ending the chain in
+`row.sender_id` instead of `"unknown"` turns nothing red — and that is two
+defects in one expression:
 
 * **A third name for one person in one prompt**, which is DEC-80's own bug. The
   `<notes>` index renders beside these lines.
 * **A raw platform identifier on the wire to the model provider** — an E.164 or
-  an ACI — which is the egress R-18 exists to keep closed.
-  `app/fire._gate_verdict_text` carried the identical line; its fix comment
-  records that R-18 refused the whole post at the Deliverer, so unmapped
-  senders' verdicts silently never reached the review channel. The note tier's
-  copies had no such backstop, because a prompt has no Deliverer.
+  an ACI — which is the egress R-18 exists to keep closed. On the Deliverer
+  path R-18 refuses the whole post; a prompt has no Deliverer, so a renderer
+  feeding one has no such backstop.
 
 DEC-80's own row records the shape this file exists for: *"the first pass unified
 two of THREE renderers"*, and *"the claim «both context assemblers call it, so the
-two paths cannot drift» was true and incomplete: the count was three."* It is now
-nine, and a per-consumer test cannot answer «was anything forgotten».
+two paths cannot drift» was true and incomplete: the count was three."* A
+per-consumer test cannot answer «was anything forgotten».
 
-**Discovered, not listed**, for `test_media_join_reaches_every_transcript.py`'s
-measured reason — listing the renderers catches a rename and misses the one that
-was never listed, which is the only failure mode that has actually happened.
-Issue #219 tracks folding all of these into one renderer, which is what removes
-the need for this gate rather than adding a fourth of them.
+**Discovered, not listed** — listing the renderers catches a rename and misses
+the one that was never listed. A shared renderer would remove the need for this
+gate rather than adding another one.
 """
 
 from __future__ import annotations
@@ -40,10 +34,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 #: The chain every speaker label ends in. `"unknown"` rather than
-#: `Persons.sanitize_unmapped` ("852…678") because five renderers already use it
-#: and the point of DEC-80 is ONE name space — moving all of them to the
-#: sanitized form is a live option (issue #219 lists it as a decision to record),
-#: but having both in use is the thing that is never right.
+#: `Persons.sanitize_unmapped` ("852…678") because other renderers already use
+#: it and the point of DEC-80 is ONE name space — moving all of them to the
+#: sanitized form is a live option, but having both in use is the thing that is
+#: never right.
 _FALLBACK = "unknown"
 
 def _speaker_chains() -> dict[tuple[str, str], str]:
@@ -53,11 +47,7 @@ def _speaker_chains() -> dict[tuple[str, str], str]:
     what a speaker label IS in this codebase. A renderer that spells it some
     other way is invisible here, and
     `test_no_renderer_names_a_speaker_outside_the_discovered_set` below is the
-    backstop — WRITTEN, unlike the version of this sentence that shipped on
-    2026-09-12, which cited a test by name that did not exist anywhere in the
-    tree. A docstring claiming a failure mode is covered, when it is not, is
-    worse than silence: it is the one thing in this file a review called
-    genuinely decorative.
+    backstop.
     """
     found: dict[tuple[str, str], str] = {}
     for path in sorted((ROOT / "nora").rglob("*.py")):
@@ -94,8 +84,8 @@ def _wrong_fallback(chains: dict[tuple[str, str], str]) -> dict[tuple[str, str],
 
 def test_no_renderer_names_a_speaker_by_their_platform_id():
     """The R-18 half. A `sender_id` at the end of this chain is a phone number
-    or an ACI reaching whatever the renderer feeds — a model provider for six of
-    them."""
+    or an ACI reaching whatever the renderer feeds, which may be a model
+    provider."""
     leaks = {
         site: chain for site, chain in _speaker_chains().items()
         if "sender_id" in chain
@@ -160,7 +150,7 @@ _NAMES_A_SPEAKER_ANOTHER_WAY = {
 
 
 def test_no_renderer_names_a_speaker_outside_the_discovered_set():
-    """The backstop the docstring above used to CITE without anybody writing it.
+    """The backstop the discovery docstring above names.
 
     Any module that reads `sender_name` in a rendering position but has no
     discovered `person_name` chain is naming a speaker in a way the three
@@ -170,11 +160,10 @@ def test_no_renderer_names_a_speaker_outside_the_discovered_set():
     """
     import ast
 
-    # NO skip list keyed on "this function has a chain somewhere". Two earlier
-    # cuts of this test had one — first per file, then per function — and
-    # NEITHER bound: `fire._gate_verdict_text` holds the canonical chain AND
-    # could render a bare `row.sender_name` on the very next line, and both
-    # versions waved it through on the strength of the chain above it.
+    # NO skip list keyed on "this function has a chain somewhere": that binds
+    # nothing — `fire._gate_verdict_text` holds the canonical chain AND could
+    # render a bare `row.sender_name` on the very next line, and a skip keyed on
+    # the chain would wave it through on the strength of the chain above it.
     #
     # What is actually wrong is rendering the RAW attribute into a line, whether
     # or not a correct chain exists nearby. So that is what this looks for, and
@@ -249,23 +238,14 @@ def test_the_discovered_set_covers_the_renderers_we_know_about():
     discovery finds nothing, and a refactor that renames `person_name` or moves
     these chains behind a helper would do exactly that — silently.
 
-    The floor is the DISCOVERED count at the time of writing — seven chains,
-    not the nine RENDERERS, and the first version of this sentence confused the
-    two in a file whose whole purpose is non-degeneracy. A shared
-    renderer (issue #219) will legitimately take it DOWN, and that is the moment
-    to delete this file rather than lower the number: one renderer needs no gate
-    saying the other eight agree with it.
-
-    **That moment is HALF here, and the count is the sum of both spellings.**
-    #292 moved three chains behind `nora.domain.blocks.speaker_name`, which is
-    the helper this docstring anticipated — the guard is now inside it rather
-    than repeated at the call site, and its own tests assert the fallback and
-    that `None` is skipped. Four raw chains remain (`prefill._label`,
-    `tools._speaker`, `fire._gate_verdict_text`, `debrief_render._speaker`), so
-    the file still has a job and the floor still has to be met. Counting the
-    helper's call sites keeps it non-degenerate during the migration instead of
-    lowering the number, which is what this docstring says not to do. When the
-    last four move, the count becomes all-helper and THEN this file goes.
+    The floor is the DISCOVERED count of chains, not the number of RENDERERS, and
+    the count is the sum of both spellings: raw `person_name or …` chains and
+    calls to `nora.domain.blocks.speaker_name`, the shared helper that holds the
+    guard itself (its own tests assert the fallback and that `None` is skipped).
+    Counting the helper's call sites keeps the guard non-degenerate as chains
+    migrate behind it, instead of lowering the number. Once every renderer is a
+    call to the helper, one renderer needs no gate saying the others agree with
+    it, and THEN this file goes.
     """
     chains = set(_speaker_chains()) | _helper_call_sites()
     assert len(chains) >= 7, (

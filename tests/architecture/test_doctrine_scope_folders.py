@@ -1,5 +1,5 @@
-"""`nora/doctrine/` is restructured into scope folders (this PR), and this is
-the gate that keeps the split real rather than cosmetic.
+"""`nora/doctrine/` is split into scope folders, and this is the gate that keeps
+the split real rather than cosmetic.
 
 **Why a folder, not just a convention.** `applies_to` already declares which
 occasions a file reaches (`tests/test_doctrine_content.py`'s `EXPECTED`
@@ -16,11 +16,10 @@ docstring).
 
 - `core/` — every surface she speaks on. A file here reaches ALL FOUR of her
   room audiences (`tag`, `heartbeat`, `participation`, `proactive`) AND the
-  public `summons` — not a subset, because "core" means occasion-neutral, and a core file that
-  narrowed its own audience would be a `rooms/` file mis-filed.
+  public `summons` — not a subset, because "core" means occasion-neutral, and a
+  core file that narrowed its own audience would be a `rooms/` file mis-filed.
 - `rooms/` — group chats. A file here reaches SOME of those same four
-  audiences (silence.md is the `tag`/`participation`/`proactive` split
-  itself; `participation-conduct.md` is `participation`-only) — never an
+  audiences (`participation-conduct.md` is `participation`-only) — never an
   audience `core/` does not also cover, because a `rooms/` file is still
   something SHE reads, never a model measuring her from outside.
 - `instruments/` — prompts for OTHER models, not hers: the Relevance Gate,
@@ -32,11 +31,11 @@ docstring).
   from every prompt silently" cuts both ways — the wrong name ADDS it
   somewhere it must never reach, too).
 
-- `public/` — strangers (design/instagram-adoption/19, the public summons).
-  A file here reaches EXACTLY `summons` and nothing else: a public file in a
-  group turn would tell her the room is strangers, and a room file in a
-  summons would tell strangers about the room. `core/` is the only folder
-  that reaches both, which is why `core/` now declares `summons` too.
+- `public/` — strangers (the public summons). A file here reaches EXACTLY
+  `summons` and nothing else: a public file in a group turn would tell her the
+  room is strangers, and a room file in a summons would tell strangers about the
+  room. `core/` is the only folder that reaches both, which is why `core/`
+  declares `summons` too.
 
 **This dict is the one place a folder gets added.**
 """
@@ -58,8 +57,8 @@ DOCTRINE_DIR = ROOT / "nora" / "doctrine"
 # hand-duplicated silently.
 _HER_AUDIENCES = frozenset({"tag", "heartbeat", "participation", "proactive"})
 _INSTRUMENT_AUDIENCES = frozenset({"relevance_gate", "reaction", "dreamer", "speech_format"})
-# The public surface: a turn of hers, but one strangers read (design/
-# instagram-adoption/19). Its own set, so `rooms/` can never draw from it.
+# The public surface: a turn of hers, but one strangers read. Its own set, so
+# `rooms/` can never draw from it.
 _PUBLIC_AUDIENCES = frozenset({"summons"})
 
 # folder -> ("exact" | "subset", the allowed/required audience set).

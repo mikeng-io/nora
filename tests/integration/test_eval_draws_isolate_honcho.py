@@ -1,8 +1,8 @@
-"""Every eval DRAW reads and writes a Honcho workspace of its own (issue #462).
+"""Every eval DRAW reads and writes a Honcho workspace of its own.
 
-Before this, every draw fed the one shared `<deployment>-eval` workspace and
-the tag path read it back as the tagger card, so draw 3 of a case read what
-draws 1 and 2 had said and answered «third time you've asked». These tests
+A draw that fed one shared `<deployment>-eval` workspace would have the tag path
+read it back as the tagger card, so draw 3 of a case would read what draws 1
+and 2 had said and answer «third time you've asked». These tests
 drive the real `evals.backbone._drive` and the real workspace lifecycle against
 `tests.fakes.FakeHoncho`, a server shaped after Honcho's own OpenAPI (a 409 on
 deleting a workspace with an active session, a 404 under a workspace that
@@ -117,7 +117,7 @@ async def test_each_draw_gets_its_own_workspace_created_empty_and_deleted(
     honcho, monkeypatch,
 ) -> None:
     """Three draws of one case: three workspaces, each existing and EMPTY
-    while its draw runs (the baseline `11` §1.3 states: peer cards empty),
+    while its draw runs (peer cards empty),
     each deleted afterwards, and each named on the draw's own reading."""
     seen_during: list[tuple[str, bool, list, list]] = []
 
@@ -224,7 +224,7 @@ async def test_the_sweep_deletes_only_stale_marked_draw_workspaces(honcho) -> No
     """A killed run leaves its workspace behind. The sweep removes it, and
     nothing else: not a live draw of another session, not a hand-made
     `nora-eval-...` with no marker, not the shared sibling, not production,
-    not the hashed per-case workspaces an earlier design left."""
+    not a hashed per-case workspace."""
     now = datetime(2026, 9, 24, 12, tzinfo=UTC)
     old = (now - timedelta(hours=7)).isoformat()
     young = (now - timedelta(minutes=5)).isoformat()
@@ -275,7 +275,7 @@ async def test_no_memory_call_of_a_composed_subject_escapes_the_draws_workspace(
 
     The composition root builds ONE `HonchoClient`, from
     `cfg.memory.workspace_id` with a router of no overrides, and no caller
-    passes `workspace_id=` to a verb (the deleted `note_curator` refused to, by comment).
+    passes `workspace_id=` to a verb.
     So the workspace on the config IS every read and write, and this is the
     reading that would move if a second client or an explicit workspace ever
     appeared."""

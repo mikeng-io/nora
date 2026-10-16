@@ -49,8 +49,7 @@ async def test_an_index_placeholder_row_describes_to_none(store):
     `description=""` ROW before any vision model has run — the row is the
     index entry, not a description. `describe` MUST NOT serve that
     placeholder as a cached description, or the first `media_fetch` of an
-    undescribed medium gets ok+chars=0 and never invokes the describer
-    (the 2026-08-30 video regression: cache hit on the empty inbound row).
+    undescribed medium gets ok+chars=0 and never invokes the describer.
     Empty and missing must be indistinguishable at the cache boundary: both
     None."""
     await store.remember(
@@ -113,7 +112,7 @@ async def test_remember_moves_all_three_co_dependent_columns_together(store):
 
 
 async def test_an_empty_token_writes_the_description_but_no_junk_index_row(pg_url):
-    """`media_fetch` (`VisionCache.aput`, Task 10) has no platform-side sticker
+    """`media_fetch` (`VisionCache.aput`) has no platform-side sticker
     identity for a handle-pointed image — it calls `remember` with
     `platform=""`, `token=""`. SQL-only: without the `if token:` guard this
     would insert one `sticker_index` row keyed `("", "")` that every

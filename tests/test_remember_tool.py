@@ -1,10 +1,10 @@
-"""The `remember` tool (2026-08-30) — the ONE write lane for a settled
-person-fact, as a Honcho conclusion under (observer=nora, observed=tagger).
+"""The `remember` tool — the ONE write lane for a settled person-fact, as a
+Honcho conclusion under (observer=nora, observed=tagger).
 
 The store contract (`tests/contract/test_memory_store_contract.py`) already
 covers the memory port; fakes mirror it. What THIS file tests is the tool
-layer's side of the three-state honesty contract — the whole reason the tool
-exists is that Nora used to say 「記低咗」 and write nowhere, so `ok` versus
+layer's side of the three-state honesty contract — the tool exists so that
+Nora never says 「記低咗」 and writes nowhere, so `ok` versus
 `refused` versus `unavailable` must each be a REAL, pinned outcome (R-27):
 - `ok` is the only state in which she may claim to have remembered;
 - a missing tagger is identity failure, `refused`, never a guess-peer write;
@@ -141,7 +141,7 @@ async def test_remember_keeps_the_fact_text_verbatim():
 
 async def test_every_non_ok_status_carries_a_note_that_nothing_was_saved():
     """The description only NAMES the statuses. «Never claim 記低咗 on a
-    refusal or an outage» moved out of it, so every non-ok path must now say
+    refusal or an outage» rides in the result, so every non-ok path must say
     in its own `note` that nothing was saved, dash-free."""
     cases = {
         "refused/no_tagger": (_tools(tagger=None), "屋企有兩隻貓"),

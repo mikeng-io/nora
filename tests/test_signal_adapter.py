@@ -7,13 +7,11 @@ from nora.platform.signal.adapter import SignalAdapter
 
 
 def _rpc_app(contact_row: dict | None, status_uuid: str | None) -> web.Application:
-    """A daemon answering the batched JSON-RPC `resolve_identity()` now sends.
+    """A daemon answering the batched JSON-RPC `resolve_identity()` sends.
 
-    The `/api/v1/accounts` fake this file used to serve is gone with the code
-    that read it: signal-cli has never had that endpoint (404 on the live
-    daemon, and `signal-cli-jsonrpc(5)` lists only /api/v1/rpc, /api/v1/events,
-    /api/v1/check). Serving it in a test was the reason the dead path looked
-    covered. See `tests/test_signal_self_id.py` for the derivation's own suite.
+    signal-cli has no `/api/v1/accounts` endpoint (`signal-cli-jsonrpc(5)` lists
+    only /api/v1/rpc, /api/v1/events, /api/v1/check), so the fake serves none.
+    See `tests/test_signal_self_id.py` for the derivation's own suite.
     """
 
     async def handler(request: web.Request) -> web.Response:
@@ -47,7 +45,7 @@ def test_adapter_declares_its_platform():
 
 
 def test_parse_is_not_on_the_public_surface():
-    """The platforms phase's Trap B: `PlatformAdapter` deliberately has no
+    """`PlatformAdapter` deliberately has no
     `parse()` — every adapter parses its own transport internally, inside
     `listen()`. Keeping `parse` around as a public method would let a caller
     bypass the drop rules `listen()` enforces (DMs, sync messages, self-sends,
@@ -60,7 +58,7 @@ async def test_listen_parses_and_forwards_only_parseable_events():
     anything that parses to `None` — R-12's first pass (a DM, a self-send)
     plus an empty body — before `on_message` is ever called. The daemon
     connection itself (`SignalListener`) is swapped for a canned feed here;
-    that half is `test_signal_listener.py`'s job, untouched by this phase.
+    that half is `test_signal_listener.py`'s job.
     """
     adapter = SignalAdapter("http://x", "+852999", metrics=Metrics())
     events = [
@@ -89,11 +87,9 @@ async def test_listen_parses_and_forwards_only_parseable_events():
 
 
 async def test_listen_forwarding_unparseable_events_would_fail_the_drop_case():
-    """PROBE (task-4-brief.md): if the adapter forwarded every event instead of
-    dropping the unparseable ones, this same drop-case assertion would fail —
-    this test IS that check, kept in the suite as the permanent guard against
-    that regression (the probe itself is run manually against a deliberately
-    broken adapter and reverted; see the task report)."""
+    """PROBE: if the adapter forwarded every event instead of dropping the
+    unparseable ones, this same drop-case assertion would fail — this test IS
+    that check, the permanent guard against that regression."""
     adapter = SignalAdapter("http://x", "+852999", metrics=Metrics())
     events = [_receive_event(source="+852111", group_id=None)]  # a DM: must be dropped
 
@@ -162,7 +158,7 @@ async def test_resolve_identity_includes_a_uuid_alias_when_the_daemon_reports_on
 async def test_resolve_identity_publishes_typed_identifiers_not_just_strings(
     aiohttp_server,
 ):
-    """design/10 §5: Nora's ids use the same `Identifier` model as everybody
+    """Nora's ids use the same `Identifier` model as everybody
     else's, and `aliases` is that set flattened — not a parallel source of
     truth an adapter could populate inconsistently."""
     server = await aiohttp_server(
@@ -174,7 +170,7 @@ async def test_resolve_identity_publishes_typed_identifiers_not_just_strings(
     identity = await adapter.resolve_identity()
     assert Identifier("signal", "uuid", "uuid-abc") in identity.identifiers
     # The RPC row above carries `username`, and it is dropped: a renameable
-    # handle is never a matchable identity (operator 2026-08-14). Asserted on
+    # handle is never a matchable identity. Asserted on
     # `aliases` too, because that is the flattened set R-12 tests membership in
     # — the one place a stray handle would actually be matched against.
     assert {i.kind for i in identity.identifiers} == {"phone", "uuid"}

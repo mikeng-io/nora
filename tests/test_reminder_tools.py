@@ -1,5 +1,4 @@
-"""`remind` / `list_reminders` / `cancel_reminder` — the model-facing surface
-(design spec §7, §9, §12).
+"""`remind` / `list_reminders` / `cancel_reminder` — the model-facing surface.
 
 Built through `ToolRegistry.specs(...)`, never by reaching into
 `build_tool_specs` directly, because the wiring IS most of what is under test:
@@ -11,8 +10,8 @@ reaches (`nora/app/composition.py` is the other half of that, pinned in
 WHAT EACH GROUP OF TESTS IS FOR
 -------------------------------
 * **The fire-turn refusal** is the one that is not a cap. `fire_turn` is
-  threaded to `build_tool_specs` by Task 5 and read here: without the refusal
-  Nora re-arms her own reminder every time one fires, and none of §9's caps stop
+  threaded to `build_tool_specs` and read here: without the refusal Nora
+  re-arms her own reminder every time one fires, and none of the caps stop
   it, because `max_pending_per_requester` counts PENDING rows and each fire
   frees one before the replacement is written.
 * **The five caps** each have exactly one test, naming the ONE condition it
@@ -74,8 +73,8 @@ class _FakePersons:
     tagger into `Room` directly rather than through a message. `by_person` is the
     other lookup — by `person_id`, the one `list_reminders` uses to name whoever
     set a row, and the one `FirePath.build_context` uses at fire time. A fake
-    carrying only `resolve` made every owner unresolvable, which is the answer
-    the degrade test wants and the WRONG one everywhere else.
+    carrying only `resolve` would make every owner unresolvable, which is the
+    answer the degrade test wants and the WRONG one everywhere else.
     """
 
     def __init__(self, *refs: PersonRef) -> None:
@@ -150,7 +149,7 @@ def _row(**kw) -> Reminder:
 # ---- DEC-24: nothing in these schemas is Nora's to know ----------------------
 
 def test_no_reminder_tool_asks_the_model_where_to_put_it():
-    """§7.2. A `target` parameter would be an unprompted-speech lever into a
+    """A `target` parameter would be an unprompted-speech lever into a
     room the requester may not be in, and `guards.py`'s scope counter keys on
     the literal name `conversation_id`, so it would be invisible to
     `nora_tool_scope_violations_total` as well."""
@@ -168,21 +167,21 @@ def test_no_reminder_tool_asks_the_model_where_to_put_it():
     # WHEN and HOW OFTEN, never about WHERE — the destination is still the
     # closure's conversation and nothing else.
     assert set(inspect.signature(tools["remind"]).parameters) == {
-        # `every_n` (#109) joins them: HOW OFTEN, still never WHERE.
+        # `every_n` joins them: HOW OFTEN, still never WHERE.
         "when", "text", "repeat", "every_n", "times", "until",
-        # `note` (design/dreamer-agent-loop/39 D3) is WHAT it is about — a
-        # note TITLE, resolved to an id in the closure — still never WHERE.
+        # `note` is WHAT it is about — a note TITLE, resolved to an id in the
+        # closure — still never WHERE.
         "note",
     }
     assert set(inspect.signature(tools["list_reminders"]).parameters) == set()
     assert set(inspect.signature(tools["cancel_reminder"]).parameters) == {"reminder_id"}
 
 
-# ---- §7.1: the fire-turn refusal --------------------------------------------
+# ---- the fire-turn refusal --------------------------------------------------
 
 async def test_remind_refuses_on_a_fire_turn():
-    """§7.1: without this she re-arms her own reminder each time one fires —
-    recurrence through the back door, and none of §9's caps stop it because
+    """Without this she re-arms her own reminder each time one fires —
+    recurrence through the back door, and none of the caps stop it because
     `max_pending_per_requester` counts PENDING rows and each fire frees one.
 
     The store is asserted UNTOUCHED, not merely the status: a refusal that
@@ -213,10 +212,10 @@ async def test_a_tag_turn_is_not_a_fire_turn():
     assert await store.count_pending("miles") == 1
 
 
-# ---- §12: mapped identity required ------------------------------------------
+# ---- mapped identity required -----------------------------------------------
 
 async def test_remind_refuses_an_unmapped_requester():
-    """§12. `requester_person_id` is the row's owner and the id the fire-time
+    """`requester_person_id` is the row's owner and the id the fire-time
     policy re-check runs against; there is nothing to write for a sender
     `identity.toml` does not know, and inventing one would put a reminder in a
     room under nobody's name."""
@@ -232,7 +231,7 @@ async def test_remind_refuses_an_unmapped_requester():
     assert metrics.get("nora_reminders_created_total", status="unmapped") == 1
 
 
-# ---- §9: the three caps and the two clock refusals ---------------------------
+# ---- the three caps and the two clock refusals -------------------------------
 
 async def test_remind_refuses_past_the_pending_cap():
     store = FakeReminderStore()
@@ -264,7 +263,7 @@ async def test_remind_refuses_a_time_in_the_past():
 
 
 async def test_remind_refuses_inside_min_lead_seconds():
-    """§9: `min_lead_seconds` is 120 and `tick_seconds` is 60, so a row set
+    """`min_lead_seconds` is 120 and `tick_seconds` is 60, so a row set
     inside the lead could be due before the tick that would have created it has
     finished — «I'll tell you in a second» answered by saying it now."""
     store = FakeReminderStore()
@@ -329,7 +328,7 @@ class _WriteFailingStore(FakeReminderStore):
 
 
 async def test_every_non_ok_status_carries_a_note():
-    """ADR 0015 §3/§6: the description only NAMES `refused`/`unavailable`;
+    """ADR 0015: the description only NAMES `refused`/`unavailable`;
     what to fix or say is the result's `note`. Every non-ok code path this
     file's fakes can reach is driven here, so a path that loses its note goes
     red. (`ok` carries no reporting note: its `note` key is the linked note's
@@ -369,8 +368,8 @@ async def test_every_non_ok_status_carries_a_note():
             _tools(reminders=FakeReminderStore()), {"note": "AI Hackathon dinner plan"},
         ),
     }
-    # `notes_off` is shared with the note tools; both are rewritten now, so
-    # nothing is exempt.
+    # `notes_off` is shared with the note tools, whose notes are held to the same
+    # rule, so nothing is exempt.
     shared: set[str] = set()
     for case, (tools, kwargs) in cases.items():
         result = await tools["remind"](**{"when": SOON, "text": "洗衫", **kwargs})
@@ -383,7 +382,7 @@ async def test_every_non_ok_status_carries_a_note():
 # ---- what a written row actually holds ---------------------------------------
 
 async def test_a_created_row_carries_the_requesters_own_sentence_and_this_room():
-    """§2's premise: the row stores what the REQUESTER said, so at fire time it
+    """The row stores what the REQUESTER said, so at fire time it
     can be put to Nora as a request rather than replayed as a script. And the
     destination is the closure's conversation, never a value the model chose."""
     store = FakeReminderStore()
@@ -425,7 +424,7 @@ async def test_a_when_without_an_offset_is_read_in_noras_own_zone():
     assert row.due_at == T0 + timedelta(hours=2)      # 21:00 HKT == 13:00 UTC
 
 
-# ---- §7.3: list and cancel are conversation-scoped ---------------------------
+# ---- list and cancel are conversation-scoped ---------------------------------
 
 async def test_list_reminders_is_scoped_to_this_conversation():
     store = FakeReminderStore()
@@ -443,7 +442,7 @@ async def test_list_reminders_is_scoped_to_this_conversation():
 
 
 async def test_list_reminders_names_who_set_each_one():
-    """§7.3's ownership rule made legible. A reminder is group-owned, so this
+    """The ownership rule made legible. A reminder is group-owned, so this
     listing shows everybody's and anyone here may cancel any of them — which is
     exactly why the row has to say whose it is. Without `set_by`, 「取消 Tyler
     七點嗰個」 is unanswerable and one person can call off another's with neither
@@ -474,7 +473,7 @@ async def test_list_reminders_says_so_when_the_setter_is_no_longer_known():
     """identity.toml loads once at startup and a pending row may be thirty days
     old, so the person it names may have left the file — the same lookup the fire
     path does, where it means the row will answer `failed_policy` instead of
-    firing (§12).
+    firing.
 
     Three things are asserted, and each is a way this could go wrong: the row is
     STILL LISTED (dropping it hides a reminder that is genuinely waiting), the
@@ -501,7 +500,7 @@ async def test_list_reminders_says_so_when_the_setter_is_no_longer_known():
 
 
 async def test_cancel_refuses_an_id_from_another_conversation():
-    """§7.3: a uuid carries no scope of its own, so the STORE re-checks it —
+    """A uuid carries no scope of its own, so the STORE re-checks it —
     `cancel(id, conversation_id=...)`. A tool-side check would be one the next
     caller could forget."""
     store = FakeReminderStore()
@@ -540,7 +539,7 @@ async def test_cancel_refuses_something_that_is_not_a_uuid():
 
 
 async def test_cancel_says_so_when_the_row_already_fired():
-    """§8.3: a cancel against a resolved row is a no-op, and the tool says so
+    """A cancel against a resolved row is a no-op, and the tool says so
     rather than reporting success — «I stopped it» about a message already sent
     is the one answer that cannot be repaired."""
     store = FakeReminderStore()
@@ -563,7 +562,7 @@ class _ReadAndCancelFailingStore(FakeReminderStore):
 
 
 async def test_every_non_ok_list_and_cancel_status_carries_a_note():
-    """ADR 0015 §3/§6: `list_reminders` and `cancel_reminder` only NAME their
+    """ADR 0015: `list_reminders` and `cancel_reminder` only NAME their
     statuses; how to report each is the result's `note`. Every non-ok code
     path is driven, so one that loses its note goes red."""
     done = FakeReminderStore()
@@ -591,10 +590,9 @@ async def test_every_non_ok_list_and_cancel_status_carries_a_note():
 
 
 async def test_a_list_reminders_ok_note_carries_only_the_rules_its_rows_need():
-    """The reporting rules that left list_reminders' description arrive with
-    the rows they are about: empty is an answer; the rows are the room's; a
-    repeat is a series; an unnamed setter is still real. Each clause appears
-    only when its field does."""
+    """The reporting rules arrive with the rows they are about: empty is an
+    answer; the rows are the room's; a repeat is a series; an unnamed setter is
+    still real. Each clause appears only when its field does."""
     empty = await _tools(reminders=FakeReminderStore())["list_reminders"]()
     assert "real answer" in empty["note"]
 
@@ -632,17 +630,14 @@ async def test_a_cancel_ok_says_how_to_report_it():
 # ---- the tool table (DEC-10, DEC-32) -----------------------------------------
 
 def test_none_of_the_three_is_a_terminal_verb():
-    """§6.1 adds no terminal verb. One would break
+    """The reminder tools add no terminal verb. One would break
     `_terminal_budget_spent`'s AND — a turn would end when the model had merely
     set a reminder and said nothing.
 
     This asserts only ITS OWN claim: that none of the three reminder tools is
-    terminal. It used to also pin the whole set to `{"send_reply"}`, which was
-    a THIRD copy of a fact owned by `tests/test_guards_terminal.py` and
-    `tests/unit/test_tool_registry.py` — so when `send_gif` legitimately became
-    terminal, those two were updated and this one went red while asserting
-    nothing about reminders at all. A duplicated pin does not double-check a
-    fact; it just picks a second place to break.
+    terminal. The set of terminal tools is owned by `tests/test_guards_terminal.py`
+    and `tests/unit/test_tool_registry.py`; a third copy of that pin here would
+    go red when they legitimately change while asserting nothing about reminders.
     """
     registry = ToolRegistry()
     for name in ("remind", "list_reminders", "cancel_reminder"):
@@ -652,9 +647,8 @@ def test_none_of_the_three_is_a_terminal_verb():
 
 def test_the_three_tools_are_described_to_the_model():
     """Each reminder tool's SCHEMA docstring must state WHEN to reach for it —
-    the schema is the single source of truth (DEC-150; the generated capability
-    block that used to carry the routing triggers is gone). The triggers must
-    be distinct per tool, not generic boilerplate."""
+    the schema is the single source of truth (DEC-150). The triggers must be
+    distinct per tool, not generic boilerplate."""
     tool_calls = _tools()
     docs = {name: (tool_calls[name].__doc__ or "") for name in
             ("remind", "list_reminders", "cancel_reminder")}
@@ -671,20 +665,17 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
     what its `status` axis can hold — the series is unlabelled-by-default in
     every dashboard until someone reads that line.
 
-    It listed four values while `_record_created` emitted nine, so five real
-    statuses — including `unavailable`, which means no store is wired at all,
-    and `fire_turn`, which is R-39 — were undocumented. An operator seeing one
-    could not tell a genuine status from a typo. Read out of the module SOURCE
-    rather than from a hand-kept list here, so adding a tenth refusal without
-    documenting it is what turns this red.
+    Every status `_record_created` can emit must be named there, including
+    `unavailable` (no store is wired at all) and `fire_turn` (R-39); an operator
+    seeing an undocumented one could not tell a genuine status from a typo. Read
+    out of the module SOURCE rather than from a hand-kept list here, so adding a
+    refusal without documenting it is what turns this red.
 
     TWO patterns are read, not one (DEC-85). The recurrence refusals do not
     reach `_record_created` as literals — they travel as `_RepeatRefusal`
     values and are recorded through `rule.status` — so a regex that only knew
-    the call site would have found neither `bad_repeat` nor `bad_bound` and
-    reported success, which is exactly the decorative shape this file exists to
-    keep out. Both constructors are matched, and both must name their status in
-    the help text.
+    the call site would find neither `bad_repeat` nor `bad_bound`. Both
+    constructors are matched, and both must name their status in the help text.
     """
     import re
     from pathlib import Path
@@ -707,17 +698,15 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
 
 # ---- DEC-85: recurrence, and the three asks that produced it ------------------
 #
-# Each of the three is verbatim from the group, and each was REFUSED before this
-# decision — the first two with 「我 set 唔到 recurring 每日提嘅 reminder」. They
-# are tests rather than an anecdote in a design document because what they pin
-# is the SHAPE the model has to produce: a recurrence is `when` + `repeat` +
-# a bound, and lead time (「前兩個星期」) is arithmetic on `when` rather than a
-# concept anything here stores.
+# Each of the three is verbatim from the group. They are tests rather than an
+# anecdote in a design document because what they pin is the SHAPE the model
+# has to produce: a recurrence is `when` + `repeat` + a bound, and lead time
+# (「前兩個星期」) is arithmetic on `when` rather than a concept anything here
+# stores.
 
-# `max_horizon_days` bounds the FIRST occurrence and ships at 30. Two of the
-# three asks name a date months out, so they are exercised against an operator
-# who has widened it — which is a config change, not a code one, and stating it
-# here is what stops a green test from implying the shipped default is enough.
+# `max_horizon_days` bounds the FIRST occurrence. Two of the three asks name a
+# date months out, so they are exercised against a cap widened to a year; the
+# 30-day cap the refusal tests use would refuse them.
 YEAR = ReminderCaps(max_horizon_days=365)
 
 
@@ -779,8 +768,8 @@ async def test_the_week_before_ask_stays_a_one_off():
 
     The ask that is NOT a recurrence, and the reason `repeat` defaults to
     `none`: 「一次」 is one row, and a model that reached for a recurrence here
-    would have committed her to sixty of them. The row is byte-identical to a
-    pre-DEC-85 one — no series, and no `repeat` key in the answer at all.
+    would have committed her to sixty of them. The row is a plain one-off: no
+    series, and no `repeat` key in the answer at all.
     """
     store = FakeReminderStore()
     tools = _tools(reminders=store, caps=YEAR)
@@ -790,8 +779,8 @@ async def test_the_week_before_ask_stays_a_one_off():
     )
 
     assert result["status"] == "ok"
-    # No series keys: one row, not a recurrence. The reporting `note` (ADR 0015
-    # §3) is the one key every ok carries now.
+    # No series keys: one row, not a recurrence. The reporting `note` (ADR 0015)
+    # is the one key every ok carries.
     assert set(result) == {"status", "id", "due_at", "note"}
     assert "limit" not in result["note"]
     row = (await store.pending_for(CONVERSATION))[0]
@@ -929,8 +918,8 @@ async def test_min_lead_seconds_still_holds_for_the_first_occurrence():
 async def test_a_yearly_recurrence_gets_one_period_of_horizon_headroom():
     """A yearly reminder's first occurrence is up to a year out BY DEFINITION,
     so measuring it against a 30-day horizon does not bound the recurrence — it
-    forbids it, which is exactly how 「記住我嘅生日」 was refused. One period of
-    headroom, and no more: the horizon still bounds a DAILY series to 30 days.
+    forbids it, and would refuse 「記住我嘅生日」. One period of headroom, and no
+    more: the horizon still bounds a DAILY series to 30 days.
     """
     store = FakeReminderStore()
     caps = ReminderCaps(max_horizon_days=30)
@@ -967,18 +956,13 @@ async def test_list_reminders_shows_a_repeat_as_a_repeat():
     assert result["status"] == "ok"
     [row] = result["reminders"]
     assert row["repeat"] == "daily"
-    # 13 -> 12 (#109, 2026-09-07), and the OLD number was the bug.
+    # `repeat_left` is the tighter of the `times` bound and the `until` bound.
     #
     # `times=14` with `until = T0 + 13 days` asks for fourteen but permits
     # thirteen: the first fires at T0+2h and the fourteenth would land at
     # T0+13d+2h, two hours past the bound, so `plan_successor` returns None and
-    # it never happens. `count` came from `times` alone, so `repeat_left` said
-    # 13 — a number she is instructed to SAY, describing a firing the series
-    # could not produce.
-    #
-    # The same arithmetic, unbounded, is what told the room 「仲有 59 次」 for the
-    # F1 series that had exactly one. `count` is now the tighter of the two
-    # bounds, so what she says and what will happen are the same number.
+    # it never happens. `repeat_left` is a number she is instructed to SAY, so it
+    # must describe firings the series can actually produce.
     assert row["repeat_left"] == 12
     assert row["repeat_until"] is not None
 
@@ -1017,7 +1001,7 @@ async def test_cancelling_a_repeating_reminder_ends_the_whole_series():
     assert await store.pending_for(CONVERSATION) == []
 
 
-# ---- `recall_lookups` (tool-recall-log spec §4) ------------------------------
+# ---- `recall_lookups` --------------------------------------------------------
 
 def _log_entry(**kw) -> ToolCallLogEntry:
     base = {
@@ -1126,14 +1110,12 @@ async def test_recall_lookups_truncates_once_the_char_budget_is_spent():
     assert kept_markers[0] == 4
 
 
-# ---- #109: sub-day recurrence, the floor, and the number she says -----------
+# ---- sub-day recurrence, the floor, and the number she says -----------------
 
 
 async def test_the_f1_ask_is_one_call_not_twelve():
-    """THE case. 「每 10 分鐘報一次, 直到 23:00」 was unrepresentable, so she wrote
-    one `daily` row bounded two hours out — which fires once. Her own reasoning
-    in that turn had the right workaround (twelve separate reminders) and
-    abandoned it; twelve calls would also have eaten twelve of the twenty a
+    """THE case. 「每 10 分鐘報一次, 直到 23:00」 is a sub-day series bounded
+    by `until`. Twelve separate reminders would eat twelve of the twenty a
     requester may hold, since a SERIES costs one and a one-off costs one each.
 
     One call, and `repeat_left` is the number that will actually happen.
@@ -1150,23 +1132,19 @@ async def test_the_f1_ask_is_one_call_not_twelve():
     assert out["repeat"] == "minutely"
     assert out["every_n"] == 10
     # 13:00 -> 14:00 inclusive at ten-minute steps is seven firings, so six
-    # follow the first. Asserted as a NUMBER rather than "> 0" because the
-    # whole defect was a number that did not match reality.
+    # follow the first. Asserted as a NUMBER rather than "> 0" because the number
+    # is what she says aloud.
     assert out["repeat_left"] == 6
 
     # THE STORED RULE, and the firings it will actually produce.
     #
-    # Asserting the RESULT DICT alone is what made the first version of this
-    # test worthless (#109 review): `_occurrences_through` receives `step`
-    # separately, so `repeat_left` comes out as 6 even when the rule that will
-    # fire has lost its multiplier entirely. Dropping `interval=step` from the
-    # `RecurrenceRule` construction left every assertion above satisfied by a
-    # series that finishes in six MINUTES instead of an hour — the F1 defect,
-    # reproduced inside the test named after it.
+    # Asserting the RESULT DICT alone is not enough: `_occurrences_through`
+    # receives `step` separately, so `repeat_left` comes out as 6 even when the
+    # rule that will fire has lost its multiplier entirely (a series that finishes
+    # in six MINUTES instead of an hour, with every assertion above satisfied).
     #
     # So the times are read off the persisted row. `repeat_left` is what she
-    # SAYS; this is what will HAPPEN, and the whole issue is about those two
-    # being the same thing.
+    # SAYS; this is what will HAPPEN, and the two must be the same thing.
     [row] = await store.pending_for(CONVERSATION)
     assert row.series is not None
     assert row.series.rule.interval == 10
@@ -1219,10 +1197,9 @@ async def test_an_hourly_repeat_is_above_the_floor_and_allowed():
 
 
 async def test_the_count_she_says_never_outlives_the_end_date():
-    """`repeat_left` is documented as "the bound she has to SAY", and it used to
-    be computed from `times` alone — so a series the end date cuts short still
-    announced the full number. 「每日提到聽日為止」 with `times=14` promised
-    fourteen and could deliver two."""
+    """`repeat_left` is documented as "the bound she has to SAY", so a series
+    the end date cuts short must not announce the full number. 「每日提到聽日為止」
+    with `times=14` can deliver only two, and must say two."""
     store = FakeReminderStore()
     tools = _tools(reminders=store)
 
@@ -1237,7 +1214,7 @@ async def test_the_count_she_says_never_outlives_the_end_date():
 
 async def test_a_bare_date_until_counts_the_whole_last_day():
     """The derived count against the OTHER `until` form, and the branch where
-    an off-by-one would actually live (#109 review).
+    an off-by-one would actually live.
 
     `_parse_until` reads a bare date as the END of that day — 「提到10月11號為止」
     names a day, not midnight at the start of it — so a series bounded by one
@@ -1261,8 +1238,7 @@ async def test_a_bare_date_until_counts_the_whole_last_day():
 
 async def test_a_nonsense_every_n_is_refused_rather_than_silently_becoming_one():
     """`every_n` is written by the MODEL, so a bad one is an ordinary event.
-    Both refusals were unbound: making them silently fall back to 1 left every
-    test green (#109 review), and 1 is the worst possible default — 「每 10 分鐘」
+    A silent fallback to 1 would be the worst possible default — 「每 10 分鐘」
     would become every minute, ten times too often, in the room.
     """
     store = FakeReminderStore()
@@ -1283,10 +1259,9 @@ async def test_a_nonsense_every_n_is_refused_rather_than_silently_becoming_one()
 
 
 async def test_the_repeat_floor_refusal_is_counted():
-    """Every other refusal in this file asserts its counter; `too_often` is the
-    new one and had none (#109 review). A refusal nobody can see the rate of is
-    how you find out too late that the floor is set wrong for what people
-    actually ask for."""
+    """Every refusal in this file asserts its counter, `too_often` included.
+    A refusal nobody can see the rate of is how you find out too late that the
+    floor is set wrong for what people actually ask for."""
     store = FakeReminderStore()
     tools = _tools(reminders=store, metrics=(m := Metrics()))
 
@@ -1295,7 +1270,7 @@ async def test_the_repeat_floor_refusal_is_counted():
     assert m.get("nora_reminders_created_total", status="too_often") == 1
 
 
-# ---- design/dreamer-agent-loop/39 D3/D5: `remind` under Dreamer provenance ---
+# ---- `remind` under Dreamer provenance ---------------------------------------
 
 
 async def _seeded_notes():
@@ -1316,9 +1291,9 @@ async def _seeded_notes():
 
 async def test_the_note_link_resolves_a_title_and_refuses_an_unknown_one():
     """`note` is a TITLE, resolved in code to the id and head revision the
-    heartbeat's screen compares against (39 D3/D11) — no id ever enters the
-    prompt. A title nothing answers to refuses rather than guessing, and the
-    tag path may link a note too, keeping `kind="reminder"`."""
+    heartbeat's screen compares against — no id ever enters the prompt. A title
+    nothing answers to refuses rather than guessing, and the tag path may link a
+    note too, keeping `kind="reminder"`."""
     store = FakeReminderStore()
     notes, note = await _seeded_notes()
     tools = _tools(reminders=store, notes=notes)
@@ -1353,8 +1328,8 @@ async def test_list_reminders_names_a_row_nora_set_herself():
 
 
 async def test_a_remind_ok_says_to_confirm_the_moment_and_only_a_real_limit():
-    """ADR 0015 §3: `remind`'s ok reporting rule moved from a SHOULD in the
-    description into the result. The limit clause rides only on a series."""
+    """ADR 0015: `remind`'s ok reporting rule rides in the result, not the
+    description. The limit clause rides only on a series."""
     tools = _tools(reminders=FakeReminderStore(), caps=YEAR)
     once = await tools["remind"](when="2026-10-04T09:00:00+08:00", text="交租")
     series = await tools["remind"](

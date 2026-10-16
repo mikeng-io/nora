@@ -103,9 +103,9 @@ async def test_connecting_counts_as_liveness_not_just_a_message():
     prometheus label-child is created on first write — so a listener that
     stamped `last_event_at` ONLY in `on_message` published no series at all
     until the first Discord message the process ever saw, and every supervised
-    restart rebuilds the listener and made it vanish again.
+    restart rebuilds the listener and would make it vanish again.
 
-    That is the failure the runbook now tells an operator to alert on: a
+    That is the failure the runbook tells an operator to alert on: a
     Gateway that never connects would have produced an ABSENT series, which
     greps as "no problem" and is actually "no instrument" — the thing CLAUDE.md
     forbids reading as evidence.
@@ -143,8 +143,7 @@ async def test_resuming_also_counts_as_liveness():
 
 
 async def test_on_ready_extra_is_awaited_once_the_client_is_ready():
-    """The slash-command registration hook (design/discord-music/
-    02-control-surface.md): only a full re-IDENTIFY needs it, so it lands on
+    """The slash-command registration hook: only a full re-IDENTIFY needs it, so it lands on
     `on_ready`, never `on_resumed` — Discord already has the commands from
     the earlier `on_ready` in the same session."""
     client = FakeClient()
@@ -184,7 +183,7 @@ async def test_on_ready_extra_is_not_called_again_on_resume():
 
 
 async def test_an_edit_is_heard_on_the_raw_event_and_forwards_the_edited_message(clock):
-    """design/message-edits/03 §1. `on_raw_message_edit`, not
+    """`on_raw_message_edit`, not
     `on_message_edit`: the cooked event fires only for a message still in
     discord.py's cache, so an edit to anything older would vanish. The raw
     payload's `.message` is the full edited message, and that is what the
@@ -231,7 +230,7 @@ async def test_a_raising_edit_callback_does_not_propagate():
 
 
 async def test_raw_reactions_and_deletes_reach_the_touch_callback():
-    """design/cognition-loop/20 §1: the RAW events are registered (the cached
+    """The RAW events are registered (the cached
     ones miss anything older than the cache) and each reaches `on_touch_cb`
     with its name, so the adapter can record it beside its message."""
     client = FakeClient()

@@ -15,7 +15,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.infra.weather.hko import HkoWeatherProvider
 
-# Real-shaped bodies (trimmed) captured from the live endpoint 2026-08-08.
+# Real-shaped bodies (trimmed) captured from the live endpoint.
 _RHRREAD = {
     "temperature": {
         "recordTime": "2026-08-08T18:00:00+08:00",

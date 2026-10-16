@@ -7,9 +7,8 @@ Two fixtures, on purpose. `adapter` (the two real backends) drives the shared
 `CachingBilingualGeocoder` discipline — the «中文 / English» join and the ~11 m
 memo — which is base-class behaviour a fake has no business re-implementing.
 `geocoder` (backends AND the fake) drives what the PORT promises: a coordinate
-answers a string, a failure answers None and never raises. Before 2026-09-07
-three test files each carried their own one-method geocoder fake (R-C, issue
-#113); this is where the shared one is held to the same shape as production.
+answers a string, a failure answers None and never raises. This is where the
+shared fake is held to the same shape as production.
 
 The shared discipline (the bilingual «中文 / English» join, the ~11 m memo cache,
 and never-raise fail-soft) lives ONCE in `CachingBilingualGeocoder`; this drives

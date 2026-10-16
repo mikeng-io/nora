@@ -1,15 +1,11 @@
-"""R-C (issue #113): a fake standing in for a port lives in `nora/testing/` and
-passes that port's contract suite. Inline classes are for local scaffolding.
+"""R-C: a fake standing in for a port lives in `nora/testing/` and passes that
+port's contract suite. Inline classes are for local scaffolding.
 
-CLAUDE.md has said since the start that «a port never gains a second
-implementation — INCLUDING a test fake — without a shared contract suite both
-pass». The rule governed whether a test is honest; nothing governed where the
-fake LIVED, and a fake defined inside a test module is invisible to every
-contract suite by construction. Measured 2026-09-07: 86 test files defined
-their own fakes inline, and the older memory fake in `tests/fakes.py` had 24
-users and was not under `tests/contract/test_memory_store_contract.py` at all.
-The rule existed; keeping fakes inline made it unenforceable, so it was being
-broken silently. This gate is what makes it enforceable.
+CLAUDE.md says «a port never gains a second implementation — INCLUDING a test
+fake — without a shared contract suite both pass». A fake defined inside a
+test module is invisible to every contract suite by construction, so keeping
+fakes inline makes that rule unenforceable. This gate is what makes it
+enforceable.
 
 What «standing in for a port» means here, read off the source, not guessed:
 
@@ -44,12 +40,6 @@ and the pin is checked in BOTH directions: an unpinned stand-in fails, and a
 pin whose class no longer stands in for a port fails too (a stale exemption is
 a claim). The list is an inventory to burn down, never a place to add to —
 the fix for a new entry is `nora/testing/` plus the port's contract suite.
-What the first landing (2026-09-07) burned down rather than pinned: the
-duplicate memory fake (24 files), the blob/roster/description-store copies,
-three geocoder fakes (now `FakeReverseGeocoder`, in the geocoder suite) and
-two media-object-store fakes with DIFFERENT search semantics (now
-`FakeMediaObjectStore`, whose new contract suite found the SQL store ORing
-words its docstring said it ANDed).
 
 Positive control: the matcher is run against `nora/testing/fakes.py` and must
 see the shared fakes it exists to point at. A detector that stops seeing
@@ -102,9 +92,9 @@ _ALLOWED: dict[str, str] = {
     # implementations (`_FakeAdaptor`, `_FakeDreamSink`); nothing is exported.
     "tests/unit/test_dreamer_runtime.py::_Adaptor": _NO_SHARED_FAKE,
     "tests/unit/test_runtime.py::_StubAdaptor": _NO_SHARED_FAKE,
-    # Speaker (voice playout seam, stage-3) — the only real implementation is
-    # the Discord adapter; no in-memory Speaker exists in nora/testing yet, and
-    # the voice-playout contract suite is not written (voice closure in flight).
+    # Speaker (voice playout seam) — the only real implementation is the
+    # Discord adapter; no in-memory Speaker exists in nora/testing yet, and
+    # there is no voice-playout contract suite.
     "tests/test_discord_adapter.py::_FakeSpeaker": _NO_SHARED_FAKE,
 }
 

@@ -1,7 +1,5 @@
-"""`design/context-assembly/01-the-registry.md` S1's acceptance criterion #1:
-"A test walks the registry and asserts no block is built outside it." This is
-that test, for the five occasions declared during S1
-(`design/context-assembly/03-sequencing.md`) — `nora.agent.prefill` already
+"""A test walks the registry and asserts no block is built outside it. This is
+that test, for the declared occasions — `nora.agent.prefill` already
 has a STRONGER version of this bar (`tests/test_prefill.py`'s declared-vs-
 rendered-in-a-full-fixture pair), so it is not repeated here.
 
@@ -67,7 +65,7 @@ _SHARED_BUILDER_NAMES = {
     "render_standing": "standing",
     "render_decisions": "loop_decisions",
     "render_self": "self",
-    # `nora.language.presence_render` (design/self-awareness/02): the tag
+    # `nora.language.presence_render`: the tag
     # path and the proactive pass render `<presence>` through it, and no
     # occasion builds its own copy.
     "render_presence": "presence",

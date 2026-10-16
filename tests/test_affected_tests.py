@@ -1,6 +1,5 @@
-"""scripts/affected_tests.py — change-aware selection (fast-test-pass spec §3,
-§6 item 4; PR #521 extended it to back `make gate` too, and the fixes below
-are the coverage that PR's review found missing).
+"""scripts/affected_tests.py — change-aware selection, backing both the
+iteration loop and `make gate`.
 
 `select()` is exercised directly (the real decision function, not a
 reimplementation of its rules) with injected changed-path lists for the
@@ -45,7 +44,7 @@ def _scan_the_real_tests_once():
     yield
     mp.undo()
 
-# --- select(): the decision function, per spec §3's table -----------------
+# --- select(): the decision function, per rule ----------------------------
 
 
 def test_doctrine_markdown_change_selects_all():
@@ -69,9 +68,8 @@ META = "tests/architecture"
 
 def test_tests_only_change_selects_those_files_and_the_meta_tests():
     """A test change is no longer "exactly those files": the architecture
-    tests read tests/ itself (2026-10-02 review: a new tests/test_zz.py plus
-    a release fragment passed the gate with test_tests_root_takes_no_new_files
-    red)."""
+    tests read tests/ itself (a new tests/test_zz.py plus a release fragment
+    must not pass the gate with test_tests_root_takes_no_new_files red)."""
     changed = ["tests/test_whereis.py", "tests/unit/test_blocks.py"]
     selected = select(changed)
     assert selected != ALL
@@ -97,8 +95,8 @@ def test_a_real_test_file_mixed_with_a_helper_selects_all():
 
 
 def test_a_real_test_file_alone_still_selects_narrowly():
-    """The fix above must not blunt the feature: a genuine test-only change
-    is itself plus the meta tests, never the whole suite."""
+    """A genuine test-only change is itself plus the meta tests, never the whole
+    suite."""
     selected = select(["tests/test_whereis.py"])
     assert selected != ALL and len(selected) <= 4
     assert {"tests/test_whereis.py", META} <= set(selected)
@@ -121,7 +119,7 @@ def test_a_real_test_file_alone_still_selects_narrowly():
     # the templates tests/builders.py and the loaders copy
     "config.example.toml", "policy.example.toml", "identity.example.toml",
     # the gitignored live config can never be in a diff; if it ever were,
-    # nothing narrows it (the old config-only rule for it was dead code)
+    # nothing narrows it
     "config.toml",
     # code and data outside tests/ that tests import or read
     "scripts/affected_tests.py", "scripts/mutations/context_assembly.json",
@@ -151,12 +149,12 @@ def test_empty_diff_selects_nothing():
 
 # --- documentation and data readers: found by scanning tests/, not listed ---
 #
-# Until 2026-10-02 a hand-kept table named the readers of AGENTS.md,
-# CONTRIBUTING.md and the decision index, and every other `.md` got only the
-# universal doc scan. README.md, DESIGN.md, docs/runbook.md, ARCHITECTURE.md,
-# the deploy READMEs and the release-fragment README all had a test that
-# opens them and none was selected. These cases name the real readers of the
-# real tree, so a change to how a test opens a doc shows up here.
+# Every `.md` is mapped to the tests that open it, not to a hand-kept table:
+# README.md, DESIGN.md, docs/runbook.md, ARCHITECTURE.md, AGENTS.md,
+# CONTRIBUTING.md, the decision index, the deploy READMEs and the
+# release-fragment README each have a test that opens them. These cases name
+# the real readers of the real tree, so a change to how a test opens a doc
+# shows up here.
 
 
 def _selected(path: str) -> list[str]:
@@ -208,19 +206,18 @@ def test_mixed_markdown_and_docs_tree_change_unions_every_reader():
 
 
 def test_a_docs_tree_data_file_selects_what_reads_it_not_nothing():
-    """design/*.toml used to be "docs-only, no reader" and select []. The scan
-    finds the tests that name the design tree; a file with no reader at all
-    is NONE (next test), never silently the same as a failure."""
+    """design/*.toml is not "docs-only, no reader". The scan finds the tests
+    that name the design tree; a file with no reader at all is NONE (next
+    test), never silently the same as a failure."""
     assert _selected("design/10-preview-identity.toml") != []
 
 
 def test_nora_skills_change_selects_all():
-    """nora/skills/** goes straight to ALL, not a hand-picked reader list.
-
-    Re-review on 2026-09-25 found tests/test_factory.py and
-    tests/unit/test_generate_image_description.py read the real tree and were
-    missing from the first cut's two-item list: a hand-kept reader list for
-    this tree rots. Any path under the prefix qualifies, not just `.md`."""
+    """nora/skills/** goes straight to ALL, not a hand-picked reader list:
+    tests that read the real tree (tests/test_factory.py,
+    tests/unit/test_generate_image_description.py) would be missed, and a
+    hand-kept reader list for this tree rots. Any path under the prefix
+    qualifies, not just `.md`."""
     assert select(["nora/skills/navigation/SKILL.md"]) == ALL
     assert select(["nora/skills/navigation/some_asset.txt"]) == ALL
 
@@ -231,7 +228,7 @@ def test_nora_skills_mixed_with_something_else_still_selects_all():
 
 def test_markdown_reader_regression_is_caught_by_reverting_the_mapping():
     """Revert-proof: if a generic docs/ .md silently went back to mapping to
-    nothing (the pre-#521 defect), this assertion is what turns red."""
+    nothing, this assertion is what turns red."""
     assert select(["docs/foo.md"]) != []
     assert select(["docs/foo.md"]) != ALL
 
@@ -249,7 +246,7 @@ def _synthetic(tmp_path: Path, **files: str) -> Path:
 
 
 def test_a_new_test_that_reads_a_new_doc_is_selected_for_that_doc(tmp_path):
-    """The check the old table could not make: add a test that opens a doc and
+    """The check a hand-kept table cannot make: add a test that opens a doc and
     the doc selects that test, with no edit to the selector."""
     repo = _synthetic(tmp_path, **{
         "test_reads_notes.py":
@@ -366,9 +363,8 @@ def test_a_non_ascii_path_is_reported_unquoted(tiny_repo):
     assert git_changed_paths(tiny_repo, "base-ref") == ["docs/筆記.md"]
 
 
-# --- config.example.toml (review finding #2: tests/builders.py copies it for
-# ~29 test modules' worth of config fixtures, so on its own it must be ALL,
-# not the two narrow config tests) ------------------------------------------
+# --- config.example.toml (tests/builders.py copies it into many modules' config
+# fixtures, so on its own it must be ALL, not the two narrow config tests) ---
 
 
 def test_config_example_toml_alone_selects_all():
@@ -450,10 +446,8 @@ def test_main_falls_back_to_all_when_the_base_ref_cannot_be_resolved(
 #
 # A branch that touched nora/dreamer/** or nora/doctrine/** once must not stay
 # pinned to ALL for every later commit on that branch — only the commit that
-# actually touches those paths should. Confirmed independently by three
-# sessions on 2026-08-21 hitting `make test-affected` reporting "unmapped or
-# broad change" on a trivial config.toml-only commit, because the default base
-# (origin/master) diffed the WHOLE branch, not the latest commit.
+# actually touches those paths should. The default base is HEAD~1, not
+# origin/master, which would diff the WHOLE branch.
 
 
 def test_default_base_does_not_re_flag_an_earlier_dreamer_commit(
@@ -489,14 +483,13 @@ def test_default_base_still_selects_all_when_the_latest_commit_is_dreamer(
     assert capsys.readouterr().out.strip() == "ALL"
 
 
-# --- --include-worktree (review finding #3: `make gate` must judge the tree
-# as it stands, including uncommitted edits and untracked files, not just the
-# last commit) ---------------------------------------------------------------
+# --- --include-worktree (`make gate` must judge the tree as it stands,
+# including uncommitted edits and untracked files, not just the last commit) --
 
 
 def test_default_behaviour_ignores_uncommitted_and_untracked_changes(tiny_repo):
     """Without --include-worktree (the loop's default), an uncommitted edit
-    and an untracked file are invisible — unchanged from before this flag."""
+    and an untracked file are invisible."""
     (tiny_repo / "docs" / "readme.md").write_text("uncommitted edit\n")
     (tiny_repo / "untracked.txt").write_text("x\n")
 
@@ -558,10 +551,10 @@ def test_main_without_include_worktree_flag_misses_the_same_uncommitted_edit(
 
 # --- the output contract: ANY failure is ALL, empty is never an answer ------
 #
-# 2026-10-02 audit: `main` caught only RuntimeError and IndexError. Anything
-# else (git missing, a bug in a rule) escaped as a traceback with an empty
-# stdout, and the Makefile read that empty line as "docs-only change, nothing
-# to run" and returned 0 with zero tests run.
+# `main` must turn any failure (git missing, a bug in a rule), not just
+# RuntimeError and IndexError, into ALL. An empty stdout would be read by the
+# Makefile as "docs-only change, nothing to run" and return 0 with zero tests
+# run.
 
 
 @pytest.mark.parametrize("failure", [
@@ -617,8 +610,8 @@ def test_main_prints_all_when_git_cannot_be_run_at_all(monkeypatch, capsys):
 
 def test_the_script_run_with_no_git_on_the_path_prints_all(tiny_repo):
     """End to end through the real entry point, as `make` runs it: an empty
-    PATH makes `git` unfindable. Before the fix this was a traceback, rc 1,
-    empty stdout."""
+    PATH makes `git` unfindable, and the output is still ALL, never a traceback
+    with empty stdout."""
     done = subprocess.run(  # noqa: S603 - this interpreter, this repo's script
         [sys.executable, str(REPO / "scripts" / "affected_tests.py"),
          "--base", "base-ref", "--repo", str(tiny_repo)],
@@ -698,7 +691,7 @@ def test_the_gate_recipe_fails_when_the_tests_it_runs_fail(tmp_path):
     assert done.returncode != 0
 
 
-# --- review round 2026-10-02: tests-only diffs, imports, helpers, tables ----
+# --- tests-only diffs, imports, helpers, tables ------------------------------
 
 
 def _tree(root: Path, files: dict[str, str]) -> Path:
@@ -714,8 +707,8 @@ _TRIVIAL = "def test_x():\n    assert 1\n"
 
 
 def test_a_new_root_test_is_judged_by_the_test_that_forbids_new_root_tests(tmp_path):
-    """Evasion (a): a new tests/test_zz.py + a release fragment (retired since)
-    used to select five files and pass while `test_tests_root_takes_no_new_files` was red."""
+    """Evasion (a): a new tests/test_zz.py + a release fragment must not select
+    a few files and pass while `test_tests_root_takes_no_new_files` is red."""
     repo = _tree(tmp_path, {
         "tests/test_zz.py": _TRIVIAL,
         "tests/architecture/test_tests_root_takes_no_new_files.py": _TRIVIAL,
@@ -731,7 +724,7 @@ def test_a_new_root_test_is_judged_by_the_test_that_forbids_new_root_tests(tmp_p
 
 def test_a_new_test_that_reads_the_config_template_reaches_its_architecture_test(tmp_path):
     """Evasion (b): a new tests/unit/test_zz.py reading config.example.toml +
-    a fragment, with `test_config_comes_from_the_template` red."""
+    a fragment must not pass while `test_config_comes_from_the_template` is red."""
     repo = _tree(tmp_path, {
         "tests/unit/test_zz.py":
             "from pathlib import Path\n"
@@ -765,8 +758,8 @@ def test_an_edit_to_an_existing_test_also_selects_the_meta_tests(tmp_path):
 
 def test_a_test_that_imports_another_test_module_is_selected_with_it(tmp_path):
     """tests/unit/test_cognition_failure_backoff.py imports
-    test_cognition_session_lifecycle: the audit-hook trace showed it opening
-    that file, and no literal in it names the path."""
+    test_cognition_session_lifecycle, so it opens that file even though no
+    literal in it names the path."""
     repo = _tree(tmp_path, {
         "tests/unit/test_base.py": _TRIVIAL,
         "tests/unit/test_absolute.py": "from tests.unit.test_base import test_x\n",
@@ -883,7 +876,7 @@ def test_a_deploy_readme_is_all_because_a_helper_walks_deploy_computer():
     assert select(["deploy/computer/README.md"]) == ALL
 
 
-# --- the survivors the reviewer's mutation run found -------------------------
+# --- traversal, path-matching and merge-base edge cases ----------------------
 
 
 def test_a_path_with_a_space_in_its_name_is_found(tmp_path):

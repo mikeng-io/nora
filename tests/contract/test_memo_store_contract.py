@@ -146,7 +146,7 @@ async def test_a_revision_citing_nothing_is_refused(store):
 
 
 async def test_a_withdrawn_head_is_final_and_nothing_appends_onto_it(store):
-    """Review of #781: withdrawn is final, so neither a revision nor a second
+    """Withdrawn is final, so neither a revision nor a second
     withdrawal lands on it, even against the current head."""
     memo = await _create(store)
     gone = await store.append(

@@ -2,13 +2,10 @@
 
 `ts` is not unique (a burst, a re-import, a platform that stamps by second), so
 a `ts -> row` map has to say which row a duplicated `ts` means. Prefill's
-resolver was written FIRST-wins after a reply resolved to the wrong row; the
-debrief's transcript and the tool-result transcript each built their own map
-with a dict comprehension, which is LAST-wins, and kept it for weeks: one
-reply, two different parents in the two prompts that carried it (step 4c of
-`design/context-assembly/04-every-occasion.md`). A docstring recording the
-tie-break was not enough, because the next map is written by someone who has
-not read it.
+resolver is FIRST-wins; a transcript that builds its own map with a dict
+comprehension is LAST-wins, and the same reply then resolves to two different
+parents in the two prompts that carry it. A docstring recording the tie-break is
+not enough, because the next map is written by someone who has not read it.
 
 So the test reads the tree (`nora/`, `scripts/` and `evals/`). No module may
 build a map keyed by a row's timestamp itself; the one place that does is

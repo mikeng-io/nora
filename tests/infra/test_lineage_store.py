@@ -1,9 +1,8 @@
-"""Lineage on the derived stores, against Postgres (design/cognition-loop/
-10-tiers.md §3, migration `0073_lineage`).
+"""Lineage on the derived stores, against Postgres (migration `0073_lineage`).
 
-Two halves. The BACKFILL: rows written before 0070 get lineage from their own
-citations, and origin-room-only lineage where a citation cannot be resolved
-(70 §5). The WRITERS: every new note, Standing and culture row gets the same
+Two halves. The BACKFILL: rows written before lineage existed get it from their
+own citations, and origin-room-only lineage where a citation cannot be
+resolved. The WRITERS: every new note, Standing and culture row gets the same
 rule from its store, so the column is never left to a default a reader would
 have to guess about.
 

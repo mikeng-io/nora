@@ -1,11 +1,9 @@
-"""One suite, every implementation of `SocialProvider` (DEC-151,
-design/instagram-adoption/08).
+"""One suite, every implementation of `SocialProvider` (DEC-151).
 
-The port's own docstring has been asking for this file since it had ONE
-implementation: *"a second implementation means a shared contract suite both
-pass (tests/contract/)"*. Social v1 is what produced the second — and a third,
-because `SocialRouter` is itself a `SocialProvider` and is the one the
-composition root actually injects.
+The port's own docstring asks for this file: *"a second implementation means a
+shared contract suite both pass (tests/contract/)"*. There are two backends —
+and a third implementation, because `SocialRouter` is itself a
+`SocialProvider` and is the one the composition root actually injects.
 
 **Why a contract rather than three unit files.** `nora.agent.tools`'
 social tools program against the PORT: each branches on `status` and hands
@@ -76,14 +74,13 @@ _EXCEPTION_READ = {
     "platform": "instagram", "what": "story", "target": "miles", "limit": 5,
 }
 #: Straight at the BACKEND, `target` is already the igid. The two are not the
-#: same string on purpose: subject resolution moved to the router
-#: (design/instagram-adoption/10 §"Who owns what"), so the client no longer
-#: has an index and a `person_id` arriving there would be a routing bug.
+#: same string on purpose: subject resolution belongs to the router, so the
+#: client has no index and a `person_id` arriving there would be a routing bug.
 _BACKEND_READ = {**_EXCEPTION_READ, "target": "10000001"}
 #: The same read as `instagram_read` sends it: a PERSON input, which the router
-#: resolves through the index (design/instagram-adoption/18). `target_kind` is
-#: the router's own argument, not the port's — the backends only ever see a
-#: resolved target — so it rides only the reads handed to a router.
+#: resolves through the index. `target_kind` is the router's own argument, not
+#: the port's — the backends only ever see a resolved target — so it rides only
+#: the reads handed to a router.
 _ROUTER_EXCEPTION_READ = {**_EXCEPTION_READ, "target_kind": "person"}
 #: The person index as the story arm needs it: `miles` resolves and is in a
 #: room Nora is in, which is Tier 0 and the only tier v1 serves.
@@ -299,9 +296,9 @@ async def test_no_result_carries_a_content_key(arm):
     """Strands' `_wrap_tool_result` passes a dict carrying both `status` AND
     `content` through UNCHANGED, so a bare-string `content` reaches the model
     outside the standard `[{"text": …}]` block — and the model reads that as
-    "empty" (trace 67afb6920005b741b7e314561facc002). Every native tool
-    returns a plain dict with no `content` key; this pins it for a port whose
-    whole job is returning text and links to the model."""
+    "empty". Every native tool returns a plain dict with no `content` key; this
+    pins it for a port whose whole job is returning text and links to the
+    model."""
     fake, provider, read = arm
     for mode in ("ok", "empty", "refuse"):
         fake.mode = mode
@@ -311,12 +308,12 @@ async def test_no_result_carries_a_content_key(arm):
 
 # ---- the two declared extensions, and where they are produced -------------
 #
-# `ambiguous` and `refused` are the ROUTER's now (design/instagram-
-# adoption/10 §"Who owns what"). They are asserted here rather than only in
-# `tests/unit/test_social_router.py` because the risk this file exists for is
-# a STATE risk: each social tool branches on `status` with nothing between it
-# and the model, so whichever layer produces a word, it must be one the tool's
-# vocabulary declares and it must not collapse into R-27's three.
+# `ambiguous` and `refused` are the ROUTER's. They are asserted here rather
+# than only in `tests/unit/test_social_router.py` because the risk this file
+# exists for is a STATE risk: each social tool branches on `status` with
+# nothing between it and the model, so whichever layer produces a word, it must
+# be one the tool's vocabulary declares and it must not collapse into R-27's
+# three.
 
 
 @pytest.mark.parametrize(
@@ -386,7 +383,7 @@ async def test_the_router_passes_a_backends_status_through_verbatim(read, except
 
 # ---- the in-memory implementation -----------------------------------------
 #
-# `FakeSocialProvider` is a fourth implementation of the port and is in
+# `FakeSocialProvider` is another implementation of the port and is in
 # `IMPLS` above for the shape assertions, but it cannot join the `arm` fixture
 # because it has no wire: "a gateway returned HTML" has no in-memory
 # analogue. What it CAN be held to is the same three states out of its own

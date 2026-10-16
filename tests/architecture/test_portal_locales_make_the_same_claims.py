@@ -1,31 +1,20 @@
-"""The portal's two locales must make the SAME claims, not just carry the
-same keys.
+"""The portal's two locales must make the SAME claims, not just carry the same keys.
 
-**The defect this exists for, 2026-09-13.** The note tier's landing copy said
-a background curator «merges, retires, and promotes» notes. The curator's
-merge half was deleted 2026-09-08 (`nora/language/note_curator.py`'s module
-docstring; `CURATOR_ACTIONS` no longer names it), so the sentence was false.
-It was corrected in `app/messages/en.json` and left standing in
-`app/messages/zh-Hant.json` — and `app/src/i18n/routing.ts` sets
-`defaultLocale: "zh-Hant"`, so the FALSE copy was the one the site served by
-default and the corrected English was the fallback nobody sees first. A
-one-locale correction reads as done and ships the bug.
+A one-locale correction reads as done and ships the bug: `app/src/i18n/routing.ts`
+sets `defaultLocale: "zh-Hant"`, so a falsehood left standing in `zh-Hant` is the
+copy the site serves by default, while a corrected English is the fallback
+nobody sees first. A claim about a backend capability must change in both files.
 
-Nothing caught it. No frontend test referenced `landing.tier.notes.
-description`; the only locale-parity test (`app/src/components/
-presence-profile.test.ts`) formats `map.profile.*` ICU keys and asserts
-nothing about the other ~380; and `make gate` is `lint typecheck imports
-test` — Python only, so a `vitest` file added under `app/` would run in no
-gate and no CI at all (this repo has no CI workflows). That is why this guard
-is a PYTHON test: it is the only place a check of these files actually runs.
+This is a PYTHON test because `make gate` is `lint typecheck imports test`,
+Python only: a `vitest` file added under `app/` would run in no gate.
 
 **What it measures, and what it does not.** It cannot judge whether a
-sentence is TRUE — no test can. It measures the property that was actually
-violated: the two locales disagreed. The measurement is exact rather than a
-proxy because of how this copy is written — the Cantonese-inflected
-Traditional Chinese embeds the English technical vocabulary VERBATIM
-(`closing condition`, `curator`, `retire`, `promote`, `merge`), so every
-backend term the copy names is a literal ASCII token in both files. So:
+sentence is TRUE — no test can. It measures the property that matters: the two
+locales disagree. The measurement is exact rather than a proxy because of how
+this copy is written — the Cantonese-inflected Traditional Chinese embeds the
+English technical vocabulary VERBATIM (`closing condition`, `curator`, `retire`,
+`promote`, `merge`), so every backend term the copy names is a literal ASCII
+token in both files. So:
 
   every ASCII word of four or more letters in a `zh-Hant` value must also
   appear in the English text of the same BLOCK (the parent object — title,
@@ -34,33 +23,27 @@ backend term the copy names is a literal ASCII token in both files. So:
 
 Prefix-matching either way absorbs ordinary inflection (`retire`/`retires`,
 `note`/`notes`, `review`/`reviews`). What it does not absorb is a term one
-locale names and the other does not — which is exactly `merge`.
+locale names and the other does not, such as `merge` present in `zh-Hant` and
+absent from English.
 
 Fail-closed: the pinned pairs below are the only exemptions, they are pinned
 per (key, word) rather than per word, and the list only shrinks. A word that
 is not pinned and does not match is a FAILURE, never a skip.
 
 The residue this does not see: a claim rewritten in both locales and wrong in
-both, and a divergence that uses no ASCII term. Neither is the defect that
-shipped, and pretending otherwise would be the decoration this repo's
-`measure` rule warns about. The first of those is not hypothetical —
-`landing.tier.knowledge` and `landing.tier.language` describe two tiers
-deleted on 2026-09-07 (#115), identically in both files, so this guard passes
-them. Issue #240 carries that.
+both, and a divergence that uses no ASCII term. Pretending otherwise would be
+the decoration this repo's `measure` rule warns about.
 
-A fourth hole, and not a hypothetical one either: the parametrization below
-is one-directional (`loc != "en"`), so it only asks whether a non-English
-locale names a term the English copy does not. The mirror of the shipped
-defect — a term corrected in `zh-Hant` and left standing in `en` — would pass
-silently. Making the check symmetric was tried and measured impractical as a
-literal mirror: comparing English's block text against `zh-Hant`'s word set
-the same way flags ~800 words, because the English copy is ordinary prose
-("close", "chat", "send", ...) rather than a small set of embedded loanwords
-— the asymmetry this file's argument for exactness (¶3 above) rests on runs
-only one way. Closing this hole for real needs English measured against a
-known backend-vocabulary list, not against whatever four-letter words
-`zh-Hant` happens to use; that is a different, larger guard and is not this
-one. Tracked as a follow-up rather than fixed here.
+A further hole: the parametrization below is one-directional (`loc != "en"`),
+so it only asks whether a non-English locale names a term the English copy does
+not. A term corrected in `zh-Hant` and left standing in `en` passes silently. A
+literal mirror does not work: comparing English's block text against `zh-Hant`'s
+word set the same way flags a very large number of words, because the English
+copy is ordinary prose ("close", "chat", "send", ...) rather than a small set of
+embedded loanwords — the asymmetry the exactness argument above rests on runs
+only one way. Closing this hole needs English measured against a known
+backend-vocabulary list, not against whatever four-letter words `zh-Hant`
+happens to use; that is a different, larger guard.
 """
 
 from __future__ import annotations
@@ -127,11 +110,9 @@ def test_pinned_list_only_shrinks() -> None:
     test still passes, because the pin swallows the one word that would have
     caught it.
 
-    6 was the count measured on 2026-09-13, the day this guard was added; 1
-    since 2026-09-26, when the portal's landing copy (five of the six pins)
-    moved to site/. A shrink lowers this number along with the list; growing
-    the list without lowering this number is the back door, and this is what
-    turns that red.
+    The ceiling is the current pin count, 1. A shrink lowers this number along
+    with the list; growing the list without lowering this number is the back
+    door, and this is what turns that red.
     """
     assert len(_PINNED) <= 1, (
         f"_PINNED grew to {len(_PINNED)} entries without this ceiling "

@@ -2,14 +2,11 @@
 `nora.testing.FakeMediaObjectStore` — so it gets one suite both pass
 (CLAUDE.md), and the reason the fake cannot quietly drift from Postgres.
 
-Why this suite exists at all (R-C, issue #113, measured 2026-09-07): the port
-had a SQL store and NO shared fake, so two test files each wrote their own —
-`tests/test_tools.py` substring-matched `description`/`prompt`/`title`, and
-`tests/unit/test_media_custody.py` returned every row for any query. Neither
-was compared against the SQL store, and the tools built on the port
-(`media_search`, `media_send`) were green against whichever semantics their
-file happened to invent. The properties below are the ones those tools rely
-on, pinned against the real `ilike`-over-`provenance::text` query.
+Why this suite exists at all (R-C): without one shared fake, each test file
+writes its own, and the tools built on the port (`media_search`, `media_send`)
+are green against whichever semantics their file invents. The properties below
+are the ones those tools rely on, pinned against the real
+`ilike`-over-`provenance::text` query.
 
 Database scoped to the MODULE, truncated between tests (CLAUDE.md's
 contract-suite rule): the isolation this needs is «no rows from the last
@@ -239,7 +236,7 @@ async def test_an_unreachable_database_answers_false_and_empty_and_never_raises(
     ) is False
 
 
-# ---- the comprehension verb (issue #116) -----------------------------------
+# ---- the comprehension verb ------------------------------------------------
 #
 # `save` is first-source-wins and `comprehend` is an upsert, and the pair has
 # to hold in BOTH orders because the two writers race by design: custody writes
@@ -269,8 +266,8 @@ async def test_a_comprehension_lands_on_a_row_custody_already_wrote(store):
 
 async def test_a_comprehension_that_beats_custody_creates_the_row(store):
     """The spawned read finishing before the inline index write is not an
-    error — it is the ordinary race. A plain UPDATE would have silently dropped
-    the comprehension on the floor."""
+    error — it is the ordinary race. A plain UPDATE would silently drop the
+    comprehension."""
     assert await store.comprehend(
         sha256=DOG, title="a dog", description="a dog in the park",
         content="", model="glm",
@@ -285,8 +282,8 @@ async def test_custody_repairs_the_shell_a_winning_read_left_behind(store):
     """And the row it leaves is a SHELL — `media_type=""`, `size=0`,
     `created_at_ms=0`, no birth record — because a read knows nothing about
     where the bytes came from. Under a plain `on_conflict_do_nothing` custody
-    then had nothing to update and the shell was permanent: no media type for
-    `media_fetch`'s modality gate, no size, and `search`'s
+    would have nothing to update and the shell would be permanent: no media type
+    for `media_fetch`'s modality gate, no size, and `search`'s
     `created_at_ms DESC` ordering putting it last for all time.
 
     What custody may NOT do is roll the comprehension back. The read landed
@@ -332,7 +329,7 @@ async def test_custody_still_does_not_overwrite_a_real_row(store):
 
 async def test_a_comprehension_never_overwrites_the_birth_record(store):
     """DEC-138: provenance belongs to whoever first held the bytes, and a read
-    is not a birth. The chunk record a video read leaves (issue #117) MERGES
+    is not a birth. The chunk record a video read leaves MERGES
     beside it rather than replacing it — a fact about the reading and a fact
     about the birth have to coexist on one row."""
     await store.save(obj=_obj(CAT, source="generated", prompt="a cat on a sofa"))
@@ -429,10 +426,9 @@ async def test_a_video_with_no_description_still_records_its_describer(store):
     """**The shipped config's own path.** `comprehension_text_model = ""` makes
     a video read produce `description=""` beside a full timecoded `content`,
     and custody always writes the row first — so a guard keyed on the
-    DESCRIPTION alone never recorded the video model that did the read.
-    `describe_model` was NULL for every clip on the default config, which is
-    the exact column an operator reads to find out which describer produced
-    what. The guard added to protect it defeated the fix that fills it."""
+    DESCRIPTION alone would never record the video model that did the read,
+    leaving `describe_model` NULL for every clip on the default config; that is
+    the column an operator reads to find out which describer produced what."""
     await store.save(obj=_obj(
         DOG, source="inbound", prompt="", description="",
         created_at_ms=1_700_000_000_000))
@@ -473,10 +469,9 @@ async def test_an_unreachable_database_makes_lookup_unavailable(broken):
 
 async def test_an_empty_lookup_is_available_even_while_the_store_is_down(broken):
     """No shas is no query, and a query nobody made cannot have failed. Pinned
-    on the BROKEN fixture because that is where the two implementations
-    disagreed — the SQL store returns before its `try`, the fake checked its
-    failure switch first, and the healthy fixture was the only one exercising
-    the empty tuple."""
+    on the BROKEN fixture because that is where the two implementations can
+    disagree — the SQL store returns before its `try`, so the fake must not
+    consult its failure switch first."""
     got = await broken.lookup(sha256s=())
     assert got.available is True
     assert got.objects == {}

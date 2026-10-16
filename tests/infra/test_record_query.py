@@ -1,12 +1,10 @@
-"""`record_query`, against Postgres (design/cognition-loop/15-map.md §4,
-10-tiers.md §3; migration step 2).
+"""`record_query`, against Postgres.
 
-The store: an interval, one author, words by pg_trgm on Cantonese and English
-(design/dreamer-agent-loop/24-embedding-seam.md §2), each hit with its edit,
-reactions and delete. The tool: which rooms a turn may read is lineage's
-answer for the turn's room, decided before the read; a name resolves only in
-this room (R-21); every failure is `unavailable`, never an empty answer
-(R-27).
+The store: an interval, one author, words by pg_trgm on Cantonese and English,
+each hit with its edit, reactions and delete. The tool: which rooms a turn may
+read is lineage's answer for the turn's room, decided before the read; a name
+resolves only in this room (R-21); every failure is `unavailable`, never an
+empty answer (R-27).
 
 Rooms, people and messages are placeholders; the Cantonese lines are authored
 here, not taken from any room.
@@ -223,9 +221,9 @@ async def test_an_author_keeps_only_their_messages(engine, said):
 async def test_cantonese_words_inside_a_sentence_are_found_and_unrelated_ones_are_not(
     engine, said,
 ):
-    """24 §2: a three-character term inside a sentence, and a two-character
-    one (below a full trigram), both found; «機器學習» shares no trigram with
-    «大步行» and is not."""
+    """A three-character term inside a sentence, and a two-character one (below
+    a full trigram), both found; «機器學習» shares no trigram with «大步行» and is
+    not."""
     store = SqlRecordQuery(engine)
     hits, _, near = await store.query(_q(text="大步行"))
     assert [h.row.id for h in hits] == [said["a_camp"]]
@@ -262,7 +260,7 @@ async def test_a_deleted_message_never_matches_text_and_old_versions_are_not_sea
 ):
     """A hit claims the words are there. A deleted message's words, and the
     words an edit replaced, would be proven by a hit even with the body
-    withheld, so neither matches (review of the first cut)."""
+    withheld, so neither matches."""
     store = SqlRecordQuery(engine)
     assert (await store.query(_q(text="機器學習")))[0] == ()      # deleted
     assert (await store.query(_q(text="秘密計劃")))[0] == ()      # edited away, then deleted
@@ -329,9 +327,9 @@ async def test_all_rooms_reads_only_the_rooms_whose_lineage_passes_here(
 async def test_all_rooms_reads_no_other_room_when_this_rooms_people_cannot_be_verified(
     engine, said, policy, persons, roster, why,
 ):
-    """B lists only people A lists, but who is actually in B right now decides
-    (review of the first cut): an unreadable roster or an unnamed account
-    withholds room A, and the result says rooms were left out."""
+    """B lists only people A lists, but who is actually in B right now decides:
+    an unreadable roster or an unnamed account withholds room A, and the result
+    says rooms were left out."""
     result = await _call(_tools(engine, policy, persons, roster=roster), start=START,
                          scope="all_rooms", text="大步行")
     assert {m["room"] for m in result["messages"]} == {"Small room"}, why
@@ -423,7 +421,7 @@ async def test_the_trigram_index_can_serve_both_operators(engine, said):
     """The cost side (AGENTS.md: an instrument measures the result, something
     must measure the cost): with a sequential scan priced out, the planner
     reaches `idx_messages_body_trgm` for the substring and the word-similarity
-    operator alike. At today's size it may still choose a scan, which is
+    operator alike. On a small table it may still choose a scan, which is
     correct; what must hold is that the index is reachable."""
     async with engine.connect() as conn:
         await conn.execute(sa.text("SET enable_seqscan = off"))
@@ -467,8 +465,8 @@ async def test_by_refs_reads_the_named_messages_in_the_named_rooms_only(engine, 
 
 
 async def test_by_refs_never_returns_a_message_the_withdrawal_cascade_hid(engine, said):
-    """`nora person forget` (removed) sets `messages.hidden_at`: the message is ABSENT
-    from the read (not returned and blanked), like every transcript read."""
+    """A message with `messages.hidden_at` set is ABSENT from the read (not
+    returned and blanked), like every transcript read."""
     async with engine.begin() as conn:
         await conn.execute(sa.text("UPDATE messages SET hidden_at = 1 WHERE id = :id"),
                            {"id": said["a_hotel"]})

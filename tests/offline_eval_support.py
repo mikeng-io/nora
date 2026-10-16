@@ -1,35 +1,21 @@
 """The facade `evals/` reads config, agent, doctrine, and tag pieces through.
 
 `evals/` may import `nora.app` and `nora.testing` — nothing else from `nora/`
-(a boundary test enforces this: `tests/test_boundaries.py`). `evals/run.py`
-and `evals/evaluators.py` used to import `nora.agent.factory`,
-`nora.agent.guards`, `nora.config`, `nora.doctrine.loader`, `nora.persons`, and
-`nora.tag` directly — none of those are `nora.app`, so all of it funnels
-through here instead. Every name below is a straight re-export or a thin
-pass-through wrapper; nothing here changes behavior, it only relocates which
-module gets to import the lower-level pieces. `nora.app` already imports all
-of these directly in `composition.py`, so none of this widens what `nora.app`
-itself is allowed to reach.
+(a boundary test enforces this: `tests/test_boundaries.py`). The pieces from
+`nora.agent.factory`, `nora.agent.guards`, `nora.config`, `nora.doctrine.loader`,
+`nora.persons`, and `nora.tag` are not `nora.app`, so they funnel through here.
+Every name below is a straight re-export or a thin pass-through wrapper;
+nothing here changes behavior, it only relocates which module gets to import
+the lower-level pieces.
 
-MOVED from `nora/app/eval_support.py` 2026-09-18 (`design/evaluation/` Step 5).
+This is test support, not deployed code: `nora/__main__.py` does not import it
+and no deployed path reaches it. Its consumer is `tests/offline_eval_harness.py`,
+and `tests/` has no import contract.
 
-It was never production code — `nora/__main__.py` never imported it, and no
-deployed path reaches it. It lived inside the application for ONE reason, which
-its own docstring gives: *"`evals/` may import `nora.app` and `nora.testing` and
-nothing else, so the gate's construction lives HERE rather than in
-`evals/relevance_gate.py`."* It was the BOUNDARY ADAPTER.
-
-`evals/` no longer has anything that needs it. Its only remaining consumer is
-`tests/offline_eval_harness.py`, and `tests/` has no import contract, so the
-adapter is unnecessary and the file is where it belongs.
-
-WHAT THIS DOES NOT UNDO. `design/evaluation/00-overview.md` §1's finding stands:
-five of the seven places that build a Nora are in this file, each smaller than
-production's construction of the same component. They are still here, and they
-still serve two unit tests — R-97's silence twins and the deterministic
-evaluators — because those run a case with a SCRIPTED model and the rebuilt
-layer cannot. What changed is that they are no longer inside `nora/`, so they
-can no longer be mistaken for something the deployment runs.
+Several of the places that build a Nora are in this file, each smaller than
+the deployed construction of the same component. They serve two unit tests —
+R-97's silence twins and the deterministic evaluators — because those run a
+case with a SCRIPTED model and the rebuilt layer cannot.
 """
 
 from __future__ import annotations
@@ -97,9 +83,8 @@ from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
 #: The single person the eval harness identity (`_IDENTITY_TOML`) maps — the
 #: harness's `+852111` sender resolves to this person_id (kept as the REAL
 #: production person id, e.g. "miles_novak", so a `--seed-production` run reads the
-#: actual Honcho card/conclusions instead of a synthetic "miles" that has none —
-#: measured 2026-08-31: "miles" returned an empty card while "miles_novak" has a
-#: 12-line card + 9 conclusions). The eval `Circle`'s roster is exactly this,
+#: actual Honcho card/conclusions instead of a synthetic "miles" that has none).
+#: The eval `Circle`'s roster is exactly this,
 #: so the harness room (also just this person) is a verified subset and the
 #: R-31 disclosure gate PERMITS `where_is`/`saved_places`.
 _EVAL_PERSON_ID = "miles_novak"
@@ -116,11 +101,10 @@ _EVAL_UNIT = "nora"
 #: across time — folding in a per-deployment delta would make a trajectory's
 #: verdict depend on whichever config.toml happened to be on the machine.
 #:
-#: The cost is stated rather than hidden (external review, 2026-08-11): once an
-#: operator raises a cap, an eval judges `ToolBudget` against a ceiling
-#: production no longer enforces, so a trajectory that is legal in production
-#: can fail here. That is the right way round — evals get stricter, never
-#: laxer, and the divergence shows up as a failing eval rather than as a
+#: The cost: once an operator raises a cap, an eval judges `ToolBudget` against
+#: a ceiling production no longer enforces, so a trajectory that is legal in
+#: production can fail here. That is the right way round — evals get stricter,
+#: never laxer, and the divergence shows up as a failing eval rather than as a
 #: passing one that proved nothing.
 REPLY_GUARD_BUDGETS = ToolRegistry().budgets()
 # What the doctrine loader's tool-catalogue gate checks backticked prose
@@ -166,7 +150,7 @@ BUDGET_STOP_REASONS = _BUDGET_STOP_REASONS
 
 #: OmniRoute serves cached completions (`x-omniroute-cache: HIT`, ~12ms, zero
 #: cost) and honours neither `Cache-Control: no-cache` nor its own
-#: `x-omniroute-cache: bypass` — measured 2026-09-09. A suite reading the cache
+#: `x-omniroute-cache: bypass`. A suite reading the cache
 #: is replaying old answers: every `sample: n` returns one verdict n times by
 #: construction, so the determinism control reports what the cache remembers
 #: rather than whether the model is stable.
@@ -209,12 +193,10 @@ def load_eval_config(candidates: tuple[Path, ...]) -> Config:
             last_error = exc
             continue
         # SAY WHICH ONE. The fallback is silent, and a worktree has no
-        # `config.toml` — so a suite run from one measured the TEMPLATE while
-        # reporting numbers as if they were the deployment's. Measured
-        # divergence on eval-relevant keys alone: `judge_samples` 1 vs 3,
-        # `journey_samples` 3 vs 9, a different judge model
-        # (`docs/eval-sop.md`: "a run without it measures a different model
-        # than production and its verdict is about nothing anyone deploys").
+        # `config.toml` — so a suite run from one would measure the TEMPLATE
+        # while reporting numbers as if they were the deployment's: eval keys
+        # such as `judge_samples`, `journey_samples` and the judge model differ
+        # (`docs/eval-sop.md`).
         if candidate.name != "config.toml":
             log.warning(
                 "eval config: %s has no config.toml; measuring %s instead. "
@@ -245,16 +227,13 @@ def build_live_runner(
     deliberate difference is `skills_dir=None`: the eval/offline runners leave the
     on-demand skill layer INERT (`nora.app.agent_runner.LiveAgentRunner.__init__`
     documents this convention), so a live eval measures the doctrine+tools loop
-    without the DEC-50 skill layer. A production-shape run passes the real
-    `cfg.doctrine.dir.parent / "skills"` to close that gap; exercising skills
-    live is future work when the shipped skill set stabilises.
+    without the DEC-50 skill layer. A run in the deployed shape passes the real
+    `cfg.doctrine.dir.parent / "skills"`.
 
     `effort` overrides `cfg.llm.reasoning_effort` for THIS run only — the
     drift-checking use case ("does the current harness agree with the config
     value, or with the ADR that picked it?") must be able to compare effort
-    levels WITHOUT rewriting `config.toml` between runs (and without the
-    config-drift trap of shipping a config; the operator changed the config to
-    `low` on 2026-08-21 while the ADR still says `none`). None = use the shipped
+    levels WITHOUT rewriting `config.toml` between runs. None = use the shipped
     config value, which is what a plain gate run wants.
 
     The model under test is `cfg.llm` (Nora's production model), NOT
@@ -355,17 +334,12 @@ def build_eval_tool_registry(
     `RouteClient`/`TransitClient`, not a port — the canned doubles match the one
     method each tool calls (`place_info`/`route`, `arrivals`) but not the class.
 
-    `notes` is passed by the harness and was NOT before, which made two of the
-    participation suite's three knowledge-cut twins measure nothing. The four
-    note tools were registered and their store was `None`, so `note_read` and
-    `note_search` answered `unavailable` — and the `<notes>` block renders a
-    title and a description only, never the body. A `-known` case therefore
-    differed from its `-unknown` twin by one index line containing no answer,
-    backed by a tool that said it could not look, and the model reasoned
-    exactly that: «the Raft question is already tracked in the note». A pair
-    that cannot flip measures nothing, which is why the fact-lookup and
-    correction pairs were deleted; these two were left in the same state
-    (audit, 2026-09-08).
+    `notes` is the harness's note store. Without one the four note tools are
+    registered with a `None` store, so `note_read` and `note_search` answer
+    `unavailable` — and the `<notes>` block renders a title and a description
+    only, never the body. A `-known` knowledge-cut twin would then differ from
+    its `-unknown` twin by one index line containing no answer, backed by a
+    tool that says it cannot look; a pair that cannot flip measures nothing.
 
     `note_unit` is a constant here rather than a resolver: every seeded
     row lands in the eval unit by construction (`seed_from_dict`), and a
@@ -375,7 +349,7 @@ def build_eval_tool_registry(
     loop/39 §5): without a store `remind` answers `unavailable` and every
     decide case is ERROR, and the clock must be the CASE's `now`, not the
     wall clock, or `remind`'s past/too-soon checks measure the day the suite
-    happened to run. `None` keeps every other caller exactly as it was.
+    happened to run. `None` leaves every other caller unchanged.
     """
     extra: dict[str, Any] = {}
     if clock is not None:
@@ -566,19 +540,16 @@ async def build_production_seed(
     # (`about_recall`) testable at all: without them `about` answers "nothing
     # known" and the model's reasonable fallback (search_memory/search_knowledge)
     # is counted as a sibling leak + budget overrun — a harness artifact, not a
-    # routing failure (measured 2026-08-31; injecting one conclusion flipped
-    # about_recall from 0/9 to routing-pass). Same read-only constraint: this is
-    # the same endpoint the production `about` tool calls, and nothing writes.
+    # routing failure. Same read-only constraint: this is the same endpoint the
+    # production `about` tool calls, and nothing writes.
     #
-    # PERSON-ID NOTE: `_EVAL_PERSON_ID` ("miles") is the SYNTHETIC harness person
-    # (`+852111` → miles in `evals/harness.py`'s identity), not the production
-    # person (e.g. "miles_novak"). Honcho keys conclusions under the PRODUCTION id —
-    # reading "miles" returns an empty card/conclusions even though the person
-    # exists (measured 2026-08-31: `miles` empty, `miles_novak` 12-card/9-conclusion).
-    # `build_production_seed` reads the REAL id from the transcript and keys the
-    # seed under it; `FakeMemoryStore` is a plain dict keyed however we choose,
-    # so the harness can serve it under the production id while the R-31 gate
-    # still resolves the synthetic room through `_IDENTITY_TOML`.
+    # PERSON-ID NOTE: Honcho keys conclusions under the REAL person id
+    # (`_EVAL_PERSON_ID`, "miles_novak"), not a synthetic one like "miles":
+    # reading a synthetic id returns an empty card/conclusions even though the
+    # person exists. `build_production_seed` keys the seed under the real id;
+    # `FakeMemoryStore` is a plain dict keyed however we choose, so the harness
+    # can serve it under the production id while the R-31 gate still resolves
+    # the synthetic room through `_IDENTITY_TOML`.
     conclusions: dict[str, list[str]] = {}
     honcho = HonchoClient(
         cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
@@ -618,12 +589,10 @@ def _seed_id(n: int, kind: str) -> str:
 
 def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> ProductionSeed:
     """Build a `ProductionSeed` from a case file's `seed:` mapping
-    (`evals/corpora/participation.yaml`) — the per-case seed `Case.from_dict`
-    gained for the participation suite (design/dreamer-agent-loop/35 §9
-    gap 2).
+    (`evals/corpora/participation.yaml`) — the per-case seed of `Case.from_dict`.
 
-    EVERYTHING is keyed to `_EVAL_UNIT` ("nora"). That is the footgun
-    the design audit named: the note tier is unit-keyed
+    EVERYTHING is keyed to `_EVAL_UNIT` ("nora"). That is the footgun:
+    the note tier is unit-keyed
     (DEC-105) and the eval room resolves to this unit through
     `permissive_policy()`, so a seed row keyed anywhere else silently
     vanishes — the case would grade a prompt missing the very block it is
@@ -657,17 +626,15 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
     `nora` is the observer-equals-observed key: `cfg.memory.ai_peer` on every
     shipped config, and `<self_card>` is the block it feeds.
 
-    **`now_ms` (issue #213).** Every seeded timestamp is rendered as an age
-    (`nora.agent.prefill._age`, since 2026-09-10), so the base they walk
-    forward from has to be a REAL recent instant — the same discipline
-    `_gate_records` uses for the Relevance Gate fixture, and for the same
-    reason: a frozen historical constant (the old `_SEED_TS_BASE`,
-    2026-08-31) only looks safe. It does not raise, does not fail a test, and
-    the age it prints keeps growing every calendar day the constant sits
-    untouched — the slow version of the `ts=1` defect this parameter exists
-    to close for good. Defaults to `datetime.now(UTC)` so every OTHER caller
-    (the two direct-call tests in `tests/test_evals_participation.py`) keeps
-    working unchanged; `evals.harness.run_case` passes the SAME `now_ms` it
+    **`now_ms`.** Every seeded timestamp is rendered as an age
+    (`nora.agent.prefill._age`), so the base they walk forward from has to be
+    a REAL recent instant — the same discipline `_gate_records` uses for the
+    Relevance Gate fixture, and for the same reason: a frozen historical
+    constant only looks safe. It does not raise, does not fail a test, and the
+    age it prints keeps growing every calendar day it sits untouched.
+    Defaults to `datetime.now(UTC)` so direct callers (the two direct-call
+    tests in `tests/test_evals_participation.py`) need not pass it;
+    `evals.harness.run_case` passes the SAME `now_ms` it
     then stamps the judged (incoming, untagged) line with, so the transcript
     ends strictly BEFORE that line — oldest to newest, judged line last —
     instead of the two being computed from two independent reads of the
@@ -737,7 +704,7 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
     # shape `FakeMemoryStore(conclusions=...)` takes, keyed by the OBSERVED
     # peer. Nothing is derived or defaulted — a case that seeds no conclusions
     # gets an empty dict, which is the knowledge cut for the memory tier and
-    # is exactly what the `-unknown` twin of an issue-#210 pair needs.
+    # is exactly what the `-unknown` twin of a knowledge-cut pair needs.
     conclusions = {
         str(peer): [str(line) for line in (lines or [])]
         for peer, lines in (raw.get("conclusions") or {}).items()
@@ -749,13 +716,13 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
     )
 
 
-# --- the Relevance Gate's eval seam (design/dreamer-agent-loop/36) ---------
+# --- the Relevance Gate's eval seam -----------------------------------------
 #
 # `evals/` may import `nora.app` and `nora.testing` and nothing else, so the
 # gate's construction lives HERE rather than in `evals/relevance_gate.py`:
-# building it there meant reaching into `nora.ingest`, `nora.obs`,
-# `nora.doctrine`, `nora.domain` and `nora.agent` directly, which is six
-# violations of the one boundary this module exists to hold. The suite keeps
+# building it there would reach into `nora.ingest`, `nora.obs`,
+# `nora.doctrine`, `nora.domain` and `nora.agent` directly, violating the
+# one boundary this module exists to hold. The suite keeps
 # what is genuinely its own — the cases, the four measurements, the report.
 
 
@@ -773,13 +740,10 @@ class GateProbeResult:
 
 
 #: The conversation the gate probe's rows are written under AND read back
-#: under. One constant, because two spellings is what went wrong: the store
-#: was filled under one id and `decide` was called with another, so `recent`
-#: matched nothing and every case silently judged an EMPTY ROOM. The suite
-#: still reported verdicts — the gate is fail-closed and an empty room is a
-#: legitimate no_go — so it read as three dead capabilities rather than as a
-#: broken harness. The tell was in the cost line: identical token totals for
-#: a one-line and a seven-line window.
+#: under. One constant: if the store were filled under one id and `decide`
+#: called with another, `recent` would match nothing and every case would
+#: silently judge an EMPTY ROOM. The gate is fail-closed and an empty room is a
+#: legitimate no_go, so the suite would still report verdicts.
 GATE_PROBE_CONVERSATION = "gate-eval"
 
 
@@ -789,15 +753,14 @@ async def _gate_records(bodies: tuple[str, ...]) -> FakeRecordStore:
     That fake PASSES `tests/contract/test_audit_store_contract.py`, which pins
     the two properties this suite depends on: `recent` returns rows
     OLDEST-first and its `limit` takes the NEWEST. A convenient local fake got
-    the first one wrong once already, and the gate rendered every conversation
-    backwards while the test written to guard the ordering passed — because it
-    was fed rows in the order the bug expected. A store that a contract suite
-    has already judged is the only kind worth measuring against.
+    the first one wrong would render every conversation backwards while a
+    test fed rows in the wrong order still passed. A store that a contract
+    suite has already judged is the only kind worth measuring against.
     """
     store = FakeRecordStore()
     names = ("Kit", "Sam", "Aaron")
     # REAL-LOOKING TIMES, not `timestamp=i`. The renderer prints an age per row
-    # (`(2h ago)`) since 2026-09-10, and `i` milliseconds after the epoch would
+    # (`(2h ago)`), and `i` milliseconds after the epoch would
     # print «20000d ago» on every line of every case — a fixture artefact the
     # model would have to reason around, in the one suite that exists to grade
     # its reasoning.
@@ -823,13 +786,10 @@ async def _gate_records(bodies: tuple[str, ...]) -> FakeRecordStore:
 class _GateStanding:
     """Satisfies `RelevanceGate`'s `StandingReader` — `read` and nothing else.
 
-    It carried a `write` that raised, purely to satisfy the full
-    `StandingStore` protocol the gate used to declare. That method had no
-    production counterpart and made the name ambiguous to
+    A `write` method is deliberately absent: it would have no production
+    counterpart and would make the name ambiguous to
     `tests/architecture/test_store_methods_have_production_callers.py`,
-    which is the gate that notices a store method losing its last real
-    caller. Narrowing the gate's own type was the fix; this is the fake
-    getting smaller as a result.
+    which notices a store method losing its last real caller.
     """
 
     def __init__(self, body: str | None) -> None:
@@ -896,22 +856,17 @@ class _StrandsGateClient:
 
     Satisfies the SAME `nora.ingest.relevance_gate.ModelClient` and returns a
     `Completion` whose `content` is the verdict JSON, so the gate's own
-    parsing, fail-closed rules and metrics are byte-for-byte the path they are
-    today. The only variable is how the bytes were obtained — a comparison
+    parsing, fail-closed rules and metrics are byte-for-byte the same path.
+    The only variable is how the bytes were obtained — a comparison
     that also changed the parser would measure two things and attribute the
     difference to one.
 
     The SDK call itself lives in `nora.agent.structured`, because `strands`
-    may only be imported from `nora/agent/` (`tests/test_boundaries.py`) —
-    a rule this class tripped on its first cut, and correctly: the SDK belongs
-    behind the agent boundary whoever is calling it.
+    may only be imported from `nora/agent/` (`tests/test_boundaries.py`).
 
     `GateVerdictSchema` is `nora.ingest.relevance_gate`'s, not a copy declared
-    here. It was a copy until 2026-09-11, which was survivable only while
-    production also imported it — with the gate back on a raw completion
-    (#186) the canonical one would have been left with no caller at all and
-    the two would have been free to drift apart. Two schemas is two questions,
-    and this class exists to vary the CALL and nothing else.
+    here: two schemas is two questions, and this class exists to vary the CALL
+    and nothing else.
     """
 
     def __init__(self, *, base_url: str, api_key: str, gate_cfg: Any) -> None:
@@ -958,11 +913,9 @@ class GateProbe:
     #: True is the same gate through the Agent SDK's structured output.
     via_sdk: bool = False
     _api_key_env: str = ""
-    #: `ToolRegistry.capability_digest()`, or empty. The suite could not see
-    #: this at all until 2026-09-10, so a run measured the INSTRUCTION while
-    #: production measured the instruction plus a digest — two different
-    #: prompts wearing one verdict. Empty is the historical baseline and stays
-    #: the default, so an existing run's numbers keep meaning what they meant.
+    #: `ToolRegistry.capability_digest()`, or empty. The deployed gate reads the
+    #: instruction plus this digest; empty measures the instruction alone and is
+    #: the default.
     capabilities: str = ""
 
     async def run(
@@ -985,7 +938,7 @@ class GateProbe:
             standing=_GateStanding(standing),
             transcript_limit=self._cfg.transcript_rows,
             # The deployment's own ceiling, so a suite run cannot report a
-            # verdict production would have cut short (issue #163). Both probe
+            # verdict production would have cut short. Both probe
             # clients bound themselves too; this is the gate holding the same
             # number, as the composition root does.
             call_timeout_seconds=self._cfg.timeout_seconds,
@@ -1038,22 +991,20 @@ def build_gate_probe(
 
 
 # ---------------------------------------------------------------------------
-# The proactive ACT suite (design/dreamer-agent-loop/39 §5): the REAL FirePath
+# The proactive ACT suite: the REAL FirePath
 # over one `kind="proactive"` row with the REAL ProactiveScreen in front of it,
 # graded on what the room heard (speak with must_cite, or silent).
 # ---------------------------------------------------------------------------
 
 #: The eval person, as `Persons` — the same `miles_novak`/`+852111` the harness
 #: identity maps, built in memory so the decide drive needs no temp file.
-# A REAL-SHAPED ROOM, not one synthetic member. The decide suite ran against a
-# roster of exactly one person with no aliases, which meant it could not
-# reproduce the failure that motivates issue #145 at all: a note written in the
-# group's own handles, and nothing joining those handles to the roster. A
-# fixture that cannot express the defect grades a model on a problem it will
-# never be given.
+# A REAL-SHAPED ROOM, not one synthetic member: a roster of one person with no
+# aliases cannot express a note written in the group's own handles with
+# nothing joining those handles to the roster. A fixture that cannot express
+# the defect grades a model on a problem it will never be given.
 #
 # Aliases are what the group actually types — the `@handle` a note's body is
-# written in — so a case can now put one in a note and be graded on whether she
+# written in — so a case can put one in a note and be graded on whether she
 # resolves it from the index or spends a tool call on it.
 _EVAL_PERSONS = Persons(
     by_person={
@@ -1105,10 +1056,9 @@ async def run_proactive_act_case(
     note_moved: bool = False,
 ) -> ProactiveActDrive:
     """One act case: seed the eval room, build the row the Cognition session's
-    `remind` (formerly the decide turn) would have written, put it through the
-    REAL `ProactiveScreen` and — if admitted — the REAL `FirePath.run` with the
-    proactive runner (`tool_choice=auto`),
-    and read back what the room heard.
+    `remind` would have written, put it through the REAL `ProactiveScreen`
+    and — if admitted — the REAL `FirePath.run` with the proactive runner
+    (`tool_choice=auto`), and read back what the room heard.
 
     `row` is `{note: <title>, intent, decided_hours_ago}`; `transcript`,
     `standing` and `notes` take `seed_from_dict`'s shapes; `note_moved`

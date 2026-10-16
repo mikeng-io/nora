@@ -1,12 +1,9 @@
 """The contribution conventions are mechanically pinned, not prose-only.
 
-Bought 2026-09-14: the conventions lived only in CONTRIBUTING.md prose, and
-the drift was measurable — ~25 heading spellings across 108 issues (declared
-set covered a fraction), two undeclared PR headings (`Summary` x38, `Test
-plan` x31) growing in, eleven undeclared commit types, 62 GitHub-default merge
-subjects, and a `.github/` directory that did not exist. The templates are now
-the shape at filing time; this file is what stops the shape from drifting the
-way the prose did.
+The conventions in CONTRIBUTING.md are prose, and prose drifts: heading
+spellings, undeclared PR headings, undeclared commit types, GitHub-default
+merge subjects. The templates are the shape at filing time; this file is what
+stops the shape from drifting the way the prose does.
 
 Same discipline as `tests/test_doctrine_version_parity.py`: a test cannot know
 which wording is RIGHT, but it can refuse to let the declared shape move
@@ -26,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE_DIR = ROOT / ".github" / "ISSUE_TEMPLATE"
 
 # The declared issue shapes, from CONTRIBUTING.md §Issues. This list is the
-# contract: any heading not here is drift, exactly like `Summary` was for PRs.
+# contract: any heading not here is drift, exactly like `Summary` for PRs.
 # The prose shape opens with a `**Design:** <bundle> §n (<what it covers>).`
 # line; the form renders that line as two fields, `Design anchor` + `What it
 # covers`, then carries the four declared headings verbatim.
@@ -124,11 +121,9 @@ def test_pr_template_headings_match_the_declared_shape() -> None:
 
 
 def test_commit_checker_rejects_the_measured_defect_shapes() -> None:
-    """Each rejection below is a defect shape measured in the real log
-    (2026-09-14, `git log --since=2026-08-01 --pretty=%s`, 2195 subjects):
-    294 untyped, 11 undeclared types, 62 GitHub-default merges, 141 superseded
-    `Merge <branch>:` merges. If you change the TYPES map, re-run that census
-    and update these numbers."""
+    """Each rejection below is a defect shape seen in the real log: untyped
+    subjects, undeclared types, GitHub-default merges, superseded
+    `Merge <branch>:` merges."""
     script = ROOT / "scripts" / "check_commit_subject.py"
 
     def check(subject: str) -> int:
@@ -166,9 +161,8 @@ def test_commit_checker_rejects_the_measured_defect_shapes() -> None:
         "Merge branch 'x' into y",                                 # superseded generation
         "wip: checkpoint",                                         # rebase fuel
         "obs(engagement): a standing counter",                     # undeclared type
-        # The disguise (review round 2026-09-14): the GitHub default wearing the
-        # sanctioned `merge:` prefix — it passed on the prefix alone before the
-        # body check existed.
+        # The disguise: the GitHub default wearing the sanctioned `merge:` prefix.
+        # The prefix alone must not pass; the body check refuses it.
         "merge: Merge pull request #1 from x",
         "merge: Merge branch 'x' into y",
         "merge: Merge remote-tracking branch 'origin/master'",
@@ -201,11 +195,11 @@ def test_contributing_declares_the_same_types_the_checker_enforces() -> None:
     )
 
 def test_every_declared_type_is_actually_enforced() -> None:
-    """Coordinated-drift guard (review round 2026-09-14).
+    """Coordinated-drift guard.
 
     The accept/reject lists above only sample `design` and `obs`; dropping a
     DIFFERENT declared type from BOTH the TYPES map and the CONTRIBUTING table
-    at once stayed green — `perf` and `security` could silently become
+    at once would stay green — `perf` and `security` could silently become
     undeclared while every pin still passed. This closes that by asserting,
     per declared type, that the checker's own regex machinery would REJECT
     `<type>: x` if that type were absent from the map — i.e. the type is in

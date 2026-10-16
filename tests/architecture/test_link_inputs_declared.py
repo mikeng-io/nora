@@ -1,28 +1,22 @@
 """Every built tool whose signature has a parameter named `url` OR `link` is
 EITHER an owner (`nora.agent.link_owners.LINK_OWNERS` names it as
 `owner.tool`) OR declares that parameter in `NativeTool.link_inputs`
-(design/social-per-network/30-link-owner-registry.md, "Tests and
-enforcement": "every tool whose signature has a parameter named url or link
-is either an owner or declares it in link_inputs").
+(the link-owner registry's rule).
 
-**Widened to `link` in PR 3** ("the owners use the registry"), from a PR-1
-gate scoped to `url` alone. `instagram_read`, `x_read` and `linkedin_read` now
-all consult the registry themselves for a link belonging to a DIFFERENT
-network (`owner_of`, called directly from `nora.agent.tools`, never through
-`_apply_link_owners`'s fetcher post-pass — an owner's OWN readable link must
-never be redirected away from itself, which that wrapper cannot tell apart
-from a claim by someone else). All three are exempted here as owners, the
-same as `instagram_read`'s `url` was under the PR-1 gate: none declares
-`link_inputs`, and none needs to, because none is a generic fetcher a claimed
-link should bypass entirely before the tool runs. `url` is still the
-generic-fetcher spelling (`web_fetch`, `media_fetch`) the registry actually
-routes through that post-pass, so this remains the gate that catches a new
-one of THOSE that forgets to declare itself — the failure design 30's "Where
-the lookup runs" §A calls out: "a new fetcher that forgets the call is
-silently unrouted." No tool other than the three owners has ever had a `link`
-parameter (checked by grep at PR-3 time), so widening this gate to `link` is
-about the day a fourth `link`-taking tool is added without registering as an
-owner or declaring `link_inputs`, not about today's three.
+The gate covers both `url` and `link`. `instagram_read`, `x_read` and
+`linkedin_read` consult the registry themselves for a link belonging to a
+DIFFERENT network (`owner_of`, called directly from `nora.agent.tools`, never
+through `_apply_link_owners`'s fetcher post-pass — an owner's OWN readable link
+must never be redirected away from itself, which that wrapper cannot tell apart
+from a claim by someone else). All three are exempted here as owners: none
+declares `link_inputs`, and none needs to, because none is a generic fetcher a
+claimed link should bypass entirely before the tool runs. `url` is the
+generic-fetcher spelling (`web_fetch`, `media_fetch`) the registry routes
+through that post-pass, so this is the gate that catches a new one of THOSE that
+forgets to declare itself — "a new fetcher that forgets the call is silently
+unrouted." The `link` half is about the day a `link`-taking tool beyond the
+three owners is added without registering as an owner or declaring
+`link_inputs`.
 """
 
 from __future__ import annotations
@@ -104,8 +98,8 @@ def test_every_link_parameter_tool_is_a_registered_owner():
     assert link_tools, "no built tool has a link parameter — untested widening"
     # A non-owner may take a `link` only by declaring it a link input, so
     # the registry still routes another owner's link away from it
-    # (`computer_import`, design/external-files §5, which copies a shared
-    # file and `accepts` only `file_fetch`'s links).
+    # (`computer_import`, which copies a shared file and `accepts` only
+    # `file_fetch`'s links).
     declared = {
         name for name, spec in NATIVE_TOOLS.items()
         if any(li.param == "link" for li in spec.link_inputs)
@@ -121,7 +115,7 @@ def test_accepts_is_an_explicit_allowlist_of_registered_owners():
     instead of being redirected. Pinned whole, so an over-broad `accepts` (a
     tool taking Instagram or X links it cannot handle) fails here by name;
     and each accepted name must be a registered owner, never a stray
-    string that would silently accept nothing (review of PR 807)."""
+    string that would silently accept nothing."""
     accepts = {
         name: {tool for li in spec.link_inputs for tool in li.accepts}
         for name, spec in NATIVE_TOOLS.items()

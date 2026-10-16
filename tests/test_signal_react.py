@@ -39,8 +39,8 @@ def _reactor(server) -> SignalReactor:
 
 
 async def test_react_posts_the_documented_sendreaction_shape(rpc_server):
-    """PROBE: rename any one of `sendReaction`/`groupId`/`emoji`/`targetAuthor`/
-    `targetTimestamp` in `nora/platform/signal/react.py` and this fails."""
+    """Pins the wire spellings `sendReaction`/`groupId`/`emoji`/`targetAuthor`/
+    `targetTimestamp` used by `nora/platform/signal/react.py`."""
     result = await _reactor(rpc_server).react(
         TARGET, "\N{EYES}", to_author="+85211122233", to_timestamp=1754300000000,
         request_id="tag-1",

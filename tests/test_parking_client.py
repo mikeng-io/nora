@@ -1,4 +1,4 @@
-"""ParkingClient — real-time HK vacancy from the TD feed (audit 2026-08-31).
+"""ParkingClient — real-time HK vacancy from the TD feed.
 
 Pins the index parse + name matching + vacancy extraction against the REAL
 feed shapes (captured in the tests as samples so no live network is needed).
@@ -134,7 +134,7 @@ BASIC_SAMPLE = {"car_park": [{
 @pytest.mark.asyncio
 async def test_parking_client_carries_basic_info_bonus(monkeypatch):
     """opening_status/address/fee come from the basic-info JSON when present —
-    never hardcoded (fix 2026-08-31: was a fabricated 'OPEN')."""
+    never hardcoded."""
     client = ParkingClient()
     monkeypatch.setattr(
         "aiohttp.ClientSession",
@@ -142,9 +142,9 @@ async def test_parking_client_carries_basic_info_bonus(monkeypatch):
     )
     out = await client.vacancy(name="西貢政府合署停車場")
     assert out is not None
-    # The R-27 axis owns the `status` key (Kimi audit 2026-08-31, blocker):
-    # the feed's opening status rides `opening_status`, never `status`, so a
-    # `{"status": "ok", **data}` spread cannot overwrite the contract's `ok`.
+    # The R-27 axis owns the `status` key: the feed's opening status rides
+    # `opening_status`, never `status`, so a `{"status": "ok", **data}` spread
+    # cannot overwrite the contract's `ok`.
     assert out["opening_status"] == "OPEN"
     assert "status" not in out
     assert out["address"] == "Man Nin Street No 24, Sai Kung"

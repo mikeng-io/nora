@@ -1,10 +1,10 @@
-"""`whereis` and its R-21 fail-closed disclosure seam (design/19 §5, DEC-54).
+"""`whereis` and its R-21 fail-closed disclosure seam (DEC-54).
 
 The load-bearing test is `test_whereis_refuses_to_disclose_outside_the_circle`
 (R-31): a conversation that is NOT a subset of the circle gets a REFUSAL, not a
 position and not a silent omission. Revert `DisclosureGuard.permits` to «always
 true» and it goes red — presence would leak into a room containing an outsider,
-which is the exact inverse of R-21 the reviews said nothing else enforces.
+the inverse of R-21, which nothing else enforces.
 
 The room fixtures mirror the live `Ridgeline` group (same shape as
 `tests/unit/test_agent_room.py`). The presence reader is the REAL `PresenceStore`
@@ -138,10 +138,9 @@ async def test_whereis_returns_the_latest_fix_with_its_age(persons, store):
 
 
 async def test_a_fix_past_the_record_edge_says_the_record_stopped(persons, store):
-    """2026-09-24: the collector lost its login at 00:12 and `where_is`
-    answered «Home» off a 2h17m-old fix with the refresh silently failing;
-    the model said «at home all along». Past `STALE_AFTER_MS` the answer says
-    what it is — the last recorded position, and that nothing came after."""
+    """Past `STALE_AFTER_MS` the answer says what it is: the last recorded
+    position, and that nothing came after. A stale fix is never presented as
+    where the person is now, even when the refresh silently fails."""
     await _record(store, person="miles_novak", ts=NOW - 2 * 3_600_000)
     refresher = _FakeRefresher(ok=False)
     w = _whereis(persons, store, members=(MILES, GRANT, NORA), refresher=refresher)
@@ -181,16 +180,14 @@ async def test_whereis_falls_back_to_the_stored_fix_when_the_refresh_fails(perso
     assert "address" not in out                          # no address at all (DEC-156)
 
 
-# ── on-demand reverse-geocode (moved here from the collector, 2026-08-14) ────
+# ── on-demand reverse-geocode ────────────────────────────────────────────────
 #
-# The collector used to geocode every fix unconditionally, every poll, for
-# every tracked person — real billed Google calls for addresses nobody read
-# (~12k requests / 6 days, confirmed against Cloud Monitoring). It now happens
-# HERE, lazily, only when locate() has nothing cheaper to say — so the call
-# count assertions below are the actual point of these tests, not incidental.
+# Geocoding is billed per call, so it happens here, lazily, only when locate()
+# has nothing cheaper to say — the call-count assertions below are the point of
+# these tests, not incidental.
 
 async def test_no_address_is_ever_geocoded_or_carried(persons, store):
-    """DEC-156 follow-through (operator decision 2026-09-06): locate() NEVER
+    """DEC-156: locate() NEVER
     geocodes and NEVER carries an address — not Life360's own field, not an
     on-demand lookup. The geocoder stays wired but untouched; the coordinate
     is the fetch surface (`reverse_geocode` resolves it when asked)."""
@@ -217,8 +214,8 @@ async def test_a_saved_place_hit_never_reaches_the_geocoder(persons, store):
 
 
 async def test_no_geocoder_wired_falls_back_to_raw_coordinates(persons, store):
-    """Unwired (offline/eval, or an operator who leaves it off): the old
-    last-resort shape is unchanged — the model gets `lat`/`lng` rather than
+    """Unwired (offline/eval, or an operator who leaves it off): the
+    last-resort shape holds — the model gets `lat`/`lng` rather than
     nothing, and nothing crashes for lacking a geocoder."""
     await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address=None)
     w = _whereis(persons, store, members=(MILES, GRANT, NORA))  # geocoder=None
@@ -231,8 +228,7 @@ async def test_no_geocoder_wired_falls_back_to_raw_coordinates(persons, store):
 
 async def test_a_geocode_failure_falls_back_to_raw_coordinates_not_a_crash(persons, store):
     """NEVER raises into the tool call — a geocoder outage costs an address,
-    never the whole answer (the same fail-soft shape the collector's old call
-    site held, now held here instead)."""
+    never the whole answer."""
     class _RaisingGeocoder:
         async def address_for(self, *, lat, lng):
             raise ConnectionError("geocode unreachable")
@@ -247,7 +243,7 @@ async def test_a_geocode_failure_falls_back_to_raw_coordinates_not_a_crash(perso
 
 
 async def test_whereis_refuses_to_disclose_outside_the_circle(persons, store):
-    """R-31 / design/19 §5 — the NEW fail-closed seam. The conversation contains
+    """R-31 — the fail-closed seam. The conversation contains
     an outsider (person outside the circle), so NO member's position may be
     disclosed here. A REFUSAL, not a silent omission, counted for observability.
     Revert `DisclosureGuard.permits` to «always true» and this goes red."""
@@ -261,9 +257,8 @@ async def test_whereis_refuses_to_disclose_outside_the_circle(persons, store):
 
 
 async def test_whereis_refuses_when_the_room_holds_an_unmapped_account(persons, store):
-    """Fail-closed on UNCERTAINTY, not just on a RESOLVED outsider (both #37
-    reviews, 2026-08-07). An account in the room that resolves to NO person_id — a
-    stranger not in identity.toml, design/19 §5's own trigger — is unverifiable
+    """Fail-closed on UNCERTAINTY, not just on a RESOLVED outsider. An account in
+    the room that resolves to NO person_id — a stranger not in identity.toml — is unverifiable
     against the circle, so `view.unnamed > 0` must refuse. The resolvable subset
     alone (miles, grant) would PASS the subset check; revert the `view.unnamed`
     clause and presence leaks past the unmapped outsider — this goes red."""
@@ -294,16 +289,14 @@ async def test_a_location_trusted_room_discloses_outside_the_circle(persons, sto
 
 
 async def test_a_location_trusted_room_discloses_past_an_unmapped_account(persons, store):
-    """DEC-79 REPLACES DEC-74's narrower rule, which this test used to assert in
-    the opposite direction — `location = true` now relaxes the `view.unnamed > 0`
-    refusal too, so the room is one switch rather than two.
+    """DEC-79: `location = true` relaxes the `view.unnamed > 0` refusal too, so
+    the room is one switch rather than two.
 
-    Measured, not theorised: the operator's real group permanently holds four
-    sealed-sender accounts (no phone number on the wire, never spoken, so nothing
-    to key identity.toml on). `unnamed=4` refused EVERY `where_is` call for as
-    long as the tool has been wired — 12/12 refusals, all `reason="unnamed"`, on
-    a room that already had `location = true`. Trust that cannot be expressed is
-    not a safety property, it is a dead tool.
+    A real group can permanently hold sealed-sender accounts (no phone number on
+    the wire, never spoken, so nothing to key identity.toml on). Refusing on
+    them would refuse EVERY `where_is` call in a room already marked
+    `location = true`. Trust that cannot be expressed is not a safety property,
+    it is a dead tool.
 
     The same room as `test_whereis_refuses_when_the_room_holds_an_unmapped_account`
     — that one keeps the strict default and must stay green beside this."""
@@ -320,16 +313,14 @@ async def test_a_location_trusted_room_discloses_past_an_unmapped_account(person
 
 
 async def test_a_degraded_room_answers_unavailable_and_never_refused(persons, store):
-    """R-27, fail-closed audit 2026-08-10: an ERROR must not be dressed as a
-    policy decision. `refused` tells the model «someone here is outside the
-    circle» — a claim about who is in the room — but a degraded view means
-    signal-cli could not be read at all, and after DEC-79 that is the ONLY
-    refusal a trusted room can reach. So the operator's real failure mode (the
-    daemon wedged) would have rendered to the group as 「有人唔喺個 circle 入面」,
-    which is simply false.
+    """R-27: an ERROR must not be dressed as a policy decision. `refused` tells
+    the model «someone here is outside the circle» — a claim about who is in the
+    room — but a degraded view means signal-cli could not be read at all, and
+    under DEC-79 that is the ONLY refusal a trusted room can reach. A wedged
+    daemon would otherwise render to the group as 「有人唔喺個 circle 入面」,
+    which is false.
 
-    The metric keeps `reason="degraded"` so the event stays diagnosable — the
-    status changed, the observability did not."""
+    The metric keeps `reason="degraded"` so the event stays diagnosable."""
     await _record(store, person="miles_novak", ts=NOW)
     metrics = Metrics()
     tagger = persons.resolve("signal", "+85290000101")
@@ -345,12 +336,10 @@ async def test_a_degraded_room_answers_unavailable_and_never_refused(persons, st
 
 
 async def test_a_waived_unnamed_guard_is_counted_and_never_silent(persons, store):
-    """Both 2026-08-10 reviews. DEC-79's whole diagnosis was
-    `…refusals_total{reason="unnamed"} 12` — relaxing the condition without
-    recording the waiver would retire the instrument that found the bug, leaving
-    a zero refusal counter unable to tell «the flag works» from «the room filled
-    up with strangers». The startup pre-flight warns once at boot and never
-    again, so an account joining later would otherwise produce no signal at all.
+    """Relaxing the `unnamed` condition records the waiver. Without it a zero
+    refusal counter could not tell «the flag works» from «the room filled up
+    with strangers». The startup pre-flight warns once at boot and never again,
+    so an account joining later would otherwise produce no signal at all.
 
     Delete the waiver counter and this reds while everything else stays green —
     which is exactly the failure mode it guards."""
@@ -411,7 +400,7 @@ async def test_a_location_trusted_room_still_discloses_nothing_on_a_degraded_vie
 
 
 async def test_disclosure_refusal_metric_names_which_condition(persons, store):
-    """obs review 2026-08-08: `nora_presence_disclosure_refusals_total` now carries
+    """`nora_presence_disclosure_refusals_total` carries
     WHICH of the three conditions fired, so a refusal is diagnosable from the
     metric alone instead of inferred. `not_subset` and `unnamed` are distinct."""
     await _record(store, person="miles_novak", ts=NOW)
@@ -433,7 +422,7 @@ async def test_disclosure_refusal_metric_names_which_condition(persons, store):
 
 
 async def test_whereis_is_unavailable_and_never_null_island_without_a_fix(persons, store):
-    """No stored fix → `unavailable`, never a (0,0) null-island or a guess (§7.6)."""
+    """No stored fix → `unavailable`, never a (0,0) null-island or a guess."""
     w = _whereis(persons, store, members=(MILES, GRANT, NORA))
     out = await w.locate("Miles", now_ms=NOW)
     assert out["status"] == "unavailable"
@@ -453,9 +442,9 @@ async def test_whereis_discloses_nothing_on_a_degraded_room_it_cannot_verify(
     """A degraded (tagger-only) view cannot VERIFY group ⊆ circle, so the
     fail-closed guard never discloses on an unverifiable room.
 
-    The STATUS is `unavailable`, not `refused` (R-27, 2026-08-10): the property
-    that matters is that no position escapes, and calling an unread roster a
-    policy refusal put a false sentence about the room in Nora's mouth. See
+    The STATUS is `unavailable`, not `refused` (R-27): the property that matters
+    is that no position escapes, and calling an unread roster a policy refusal
+    would put a false sentence about the room in Nora's mouth. See
     `test_a_degraded_room_answers_unavailable_and_never_refused`."""
     await _record(store, person="miles_novak", ts=NOW)
     tagger = persons.resolve("signal", "+85290000101")
@@ -471,7 +460,7 @@ async def test_whereis_not_found_for_a_name_not_in_the_room(persons, store):
     assert out["status"] == "not_found"
 
 
-# ── the startup invariant (design/19 §5, §7.7) ──────────────────────────────
+# ── the startup invariant ────────────────────────────────────────────────────
 
 def test_the_startup_invariant_holds_when_group_is_a_subset_of_the_circle():
     metrics = Metrics()
@@ -640,7 +629,7 @@ async def test_an_ok_note_carries_the_rules_its_answer_needs(persons, store):
 
 
 async def test_location_trust_threads_through_build_tool_specs_to_the_tool(persons, store):
-    """DEC-74 middle-hop coverage (review 2026-08-08): the flag must survive the
+    """DEC-74 middle-hop coverage: the flag must survive the
     `build_tool_specs → Whereis` hop, NOT just the two endpoints. Same non-subset
     room (the stranger is mapped but outside the circle) built two ways: trusted
     DISCLOSES, untrusted REFUSES. This reds if `build_tool_specs` drops the
@@ -716,7 +705,7 @@ def test_circles_from_persons_is_empty_for_an_identity_with_no_life360_blocks(pe
     assert circles_from_persons(persons) == ()
 
 
-# ── the at-place answer + saved-place resolution scope (design/23 §4.1) ──────
+# ── the at-place answer + saved-place resolution scope ───────────────────────
 
 from nora.agent.whereis import resolvable_places  # noqa: E402
 from nora.domain.presence import SavedPlace  # noqa: E402
@@ -729,8 +718,8 @@ def _saved(name, *, lat=22.44, lng=114.02, radius=300.0, circle=CIRCLE_ID):
 
 async def test_whereis_names_the_saved_place_the_fix_sits_inside(persons, store):
     """A fix inside a place's geofence answers with the household's own name
-    for the spot, AND the address — both, so the model never guesses (operator
-    ask 2026-08-07). Geometry runs server-side; the model sees only names."""
+    for the spot, AND the address — both, so the model never guesses. Geometry
+    runs server-side; the model sees only names."""
     await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
     await _record(store, person="miles_novak", ts=NOW - 60_000, address="Jvvilxgd Road")
     w = _whereis(persons, store, members=(MILES, GRANT, NORA))
@@ -767,7 +756,7 @@ async def test_resolvable_places_returns_the_subset_circles_places(persons, stor
 
 
 async def test_a_non_subset_room_resolves_no_saved_place(persons, store):
-    """R-35 (design/23 §4.1): a room containing anyone outside the circle — or
+    """R-35: a room containing anyone outside the circle — or
     anyone unmapped — resolves NOTHING, silently. Empty, not a refusal: a
     refusal would confirm the guarded name exists."""
     await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
@@ -792,15 +781,11 @@ async def test_an_unreadable_roster_resolves_no_saved_place(persons, store):
 async def test_a_location_trusted_room_resolves_saved_places_past_an_unmapped_account(
     persons, store,
 ):
-    """DEC-79 reaches the SECOND disclosure surface too — the review found this
-    one stranded when `where_is` alone was widened.
-
-    In the operator's real room that split was absurd: `where_is` disclosed a
-    live street address while `saved_places` answered «there are no saved
-    places» forever, both refusing on the same four unmappable accounts. It also
-    silently killed `where_work`, the journey DEC-77/78 spent two commits routing
-    onto `saved_places`. Drop the `location_trusted` term from
-    `resolvable_places` and this reds."""
+    """DEC-79 reaches the SECOND disclosure surface too: `saved_places` must not
+    answer «there are no saved places» in a room where `where_is` discloses.
+    Both refuse on the same unmappable accounts, and it would silently kill the
+    `where_work` journey (DEC-77/78), which routes onto `saved_places`. Drop the
+    `location_trusted` term from `resolvable_places` and this reds."""
     await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
     room = _room(persons, members=(MILES, GRANT, frozenset({"+85299999999"}), NORA))
     places = await resolvable_places(
@@ -839,11 +824,10 @@ class _ThrowingPresence:
 
 
 async def test_a_failed_read_is_none_and_never_an_empty_list(persons):
-    """R-27, fail-closed audit 2026-08-10. `()` and a THROWN read used to be the
-    same value, so an unreachable presence store rendered as
-    「你冇 save 過任何地方」 — a confident wrong answer — with `status="ok"` in the
-    metrics beside it. An ERROR is never a PASS: `()` means «no names you may
-    have», `None` means «I could not check».
+    """R-27: `()` and a THROWN read are different values; collapsing them would
+    render an unreachable presence store as 「你冇 save 過任何地方」 — a confident wrong
+    answer — with `status="ok"` in the metrics. An ERROR is never a PASS: `()`
+    means «no names you may have», `None` means «I could not check».
 
     Revert the `except` branch to `return ()` and this reds."""
     room = _room(persons, members=(MILES, GRANT, NORA))
@@ -853,7 +837,7 @@ async def test_a_failed_read_is_none_and_never_an_empty_list(persons):
     assert out is None                      # not (), which would read as «none saved»
 
 
-# ── the movement read (design/19 §6 first slice, DEC-61) ─────────────────────
+# ── the movement read (DEC-61) ───────────────────────────────────────────────
 
 async def test_whereis_reports_measured_movement_towards_a_saved_place(persons, store):
     """Two fixes closing on the saved place: `moving` and `towards` — measured
@@ -974,13 +958,13 @@ async def test_whereis_omits_speed_below_the_jitter_floor(persons, store):
     assert "speed_kmh" not in out
 
 
-# ── the route tool's saved-place GLUE (council 2026-08-07 HIGH: was untested) ──
+# ── the route tool's saved-place GLUE ────────────────────────────────────────
 #
-# The seam (`resolvable_places`) and the client (`local_places`) were each
-# tested, but NOTHING wired presence into the `route` TOOL — so the glue at
-# tools.py that turns resolvable_places into the client's map could be reverted
-# to `local_places = None` with a green suite, shipping R-35's end-to-end path
-# inert. These two tests close that: subset room → the client receives the Home
+# The seam (`resolvable_places`) and the client (`local_places`) are tested
+# separately; these two tests cover the glue at tools.py that turns
+# resolvable_places into the client's map, so reverting it to
+# `local_places = None` cannot leave R-35's end-to-end path inert under a green
+# suite. Subset room → the client receives the Home
 # map under the casefolded key; non-subset room → it receives None.
 
 from nora.agent.tools import build_tools  # noqa: E402
@@ -1034,8 +1018,8 @@ async def test_a_non_subset_room_hands_the_route_client_no_map(persons, store):
     assert rec.local_places is None
 
 
-# ── saved_places tool: list names, model picks (2026-08-07, replaces the
-#    brittle casefold filter — the model matches «屋企»→"Home" semantically) ──
+# ── saved_places tool: list names, model picks (the model matches
+#    «屋企»→"Home" semantically, no casefold filter) ──────────────────────────
 
 def _saved_places_tool(persons, store, *, members, location_trusted=False,
                        metrics=None):
@@ -1078,11 +1062,11 @@ async def test_saved_places_is_empty_for_a_non_subset_room(persons, store):
 async def test_saved_places_lists_names_in_a_location_trusted_room(persons, store):
     """DEC-79's second surface, end-to-end through the TOOL rather than the seam.
 
-    This is the `where_work` journey DEC-77/78 routed onto `saved_places`: in the
-    operator's real room (unmapped accounts present, `location = true`) it
-    answered「冇 save 過任何地方」forever, because only `where_is` had been widened.
-    The room here is the same one `test_saved_places_is_empty_for_a_non_subset_room`
-    proves stays empty untrusted — the flag is the only difference."""
+    This is the `where_work` journey DEC-77/78 routed onto `saved_places`: in a
+    room with unmapped accounts and `location = true` it must not answer 「冇 save
+    過任何地方」. The room here is the same one
+    `test_saved_places_is_empty_for_a_non_subset_room` proves stays empty
+    untrusted — the flag is the only difference."""
     await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("返工")])
     tool = _saved_places_tool(
         persons, store, members=(MILES, GRANT, frozenset({"+85299999999"}), NORA),
@@ -1094,8 +1078,8 @@ async def test_saved_places_lists_names_in_a_location_trusted_room(persons, stor
 
 
 async def test_saved_places_says_unavailable_when_the_read_fails(persons):
-    """R-27 end-to-end. A thrown read used to render as `{"status": "ok",
-    "names": []}` — so with the presence store unreachable Nora said
+    """R-27 end-to-end. A thrown read must not render as `{"status": "ok",
+    "names": []}` — with the presence store unreachable Nora would say
     「你冇 save 過任何地方」, a confident wrong answer, while
     `nora_tool_total{tool="saved_places",status="ok"}` read healthy. The model
     must be told she could not look, not that there is nothing.
@@ -1179,15 +1163,13 @@ async def test_a_saved_places_ok_note_carries_the_rules_its_list_needs(persons, 
 async def test_a_circle_member_who_is_not_in_the_room_can_still_be_asked_about(
     persons, store,
 ):
-    """Operator, 2026-08-14: "only the identity we have identified can use
-    where_is, and it can ask anyone."
+    """Only an identified person can use where_is, and it can ask about anyone
+    in the circle.
 
-    The target used to be resolved against `RoomView.find` — room membership —
-    so a friend who shares her location with Nora but is not in THIS group
-    answered «nobody in this conversation goes by that». That is a false
-    sentence about a person Nora knows perfectly well, and it was the live
-    complaint: Clara is in the Life360 circle and in identity.toml, and
-    simply is not a member of the Signal group.
+    The target is resolved against the circle, not `RoomView.find` (room
+    membership): a friend who shares her location with Nora but is not in THIS
+    group must not answer «nobody in this conversation goes by that», a false
+    sentence about a person Nora knows.
 
     The room still gates the AUDIENCE — it is checked in full before this
     resolution runs — but who may be asked about is the CIRCLE.
@@ -1219,7 +1201,7 @@ async def test_somebody_in_the_room_but_outside_the_circle_still_resolves(
     Someone present but NOT in the circle has no fix to report — but they are a
     person Nora knows, so the honest answer is «I have no recorded location for
     them», not «nobody goes by that». Resolving against the circle ALONE would
-    have regressed that into a `not_found` lie.
+    turn that into a `not_found` lie.
     """
     circle = Circle(
         circle_id=CIRCLE_ID,
@@ -1238,15 +1220,13 @@ async def test_somebody_in_the_room_but_outside_the_circle_still_resolves(
 
 
 async def test_r47_holds_in_an_ordinary_untrusted_room(persons, store):
-    """R-47 in the SHIPPED default configuration.
+    """R-47 in the default configuration.
 
-    Both of R-47's other tests pass `location_trusted=True`, which
-    short-circuits BOTH guards R-47 sits behind — so between them they could
-    not distinguish "resolves against the circle" from "resolves against the
-    circle only when the disclosure gate is waived". Every conversation without
-    an explicit `location = true` is untrusted, including the operator's own
-    Ridgeline group, so that is the configuration that most needed a test and had
-    none.
+    R-47's other tests pass `location_trusted=True`, which short-circuits BOTH
+    guards R-47 sits behind, so they cannot distinguish "resolves against the
+    circle" from "resolves against the circle only when the disclosure gate is
+    waived". Every conversation without an explicit `location = true` is
+    untrusted, so this is the configuration that needs its own test.
 
     Here the room is a genuine subset of the circle and holds no unmapped
     account, so the gate passes on its own merits and the widened target
@@ -1273,8 +1253,8 @@ async def test_r47_holds_in_an_ordinary_untrusted_room(persons, store):
 
 def test_the_disclosure_guard_never_permits_a_room_with_no_resolved_people():
     """`frozenset() <= circle` is true of every circle, and an empty roster is what
-    a room of only unmapped accounts reads as: vacuous truth verified nothing
-    (review of #647, M2). Every caller passes its roster through this guard."""
+    a room of only unmapped accounts reads as: vacuous truth verified nothing.
+    Every caller passes its roster through this guard."""
     guard = DisclosureGuard(Circle(circle_id="c", person_ids=frozenset({"p1", "p2"})))
     assert guard.permits(frozenset({"p1"}))
     assert not guard.permits(frozenset())

@@ -1,13 +1,8 @@
 """`SinkSender` (`tests/fakes.py`) — a `PlatformAdapter` stand-in that records
-sends instead of performing them (spec E.3).
+sends instead of performing them.
 
-Was `test_platform_base.py`, testing conformance against
-`nora.platform.base.PlatformAdapter` — a pre-ports-migration protocol that
-predated `nora.domain.ports.PlatformAdapter` and drifted out of date the
-moment `SignalAdapter.parse` came off the public surface (platforms phase,
-Trap B). That protocol added nothing `nora.domain.ports.PlatformAdapter`
-doesn't already cover and is deleted; `tests/contract/test_port_conformance.py`
-is where adapter/port conformance is asserted now.
+Adapter/port conformance against `nora.domain.ports.PlatformAdapter` is
+asserted in `tests/contract/test_port_conformance.py`.
 """
 
 from nora.domain.models import ConversationTarget

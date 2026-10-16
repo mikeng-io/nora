@@ -1,16 +1,13 @@
-"""`tests/README.md` (R-A, issue #113): a test directory names what makes the
+"""`tests/README.md` (R-A): a test directory names what makes the
 test TRUE, not what it is about — `unit/` no I/O, `contract/` one suite N
 implementations, `integration/` the wired pipeline, `architecture/` properties
 of the source. The `tests/` ROOT is legacy and "takes no NEW test files"; the
-~141 files already there are a known, deliberately deferred backlog — moving
-them is its own large diff (README: "the move of the root's files is
-deferred; the container-fixture gate lands with it").
+files already there are a known, deliberately deferred backlog — moving them is
+its own large diff.
 
-That sentence had no enforcement: nothing stopped a 142nd `tests/test_*.py`
-from landing tomorrow, next to the ~141 that are merely grandfathered. This
-file is the gate the README already promised. It does the "move" test's job
-without the move: pin exactly what is on disk NOW in `_ALLOWED`, generated
-from a real listing (not hand-typed), and fail on anything else at that level.
+This file enforces that rule: it pins exactly what is on disk in `_ALLOWED`,
+generated from a real listing (not hand-typed), and fails on anything else at
+that level, next to the files that are merely grandfathered.
 
 **The list only shrinks.** Removing a file that gets relocated under `unit/`,
 `contract/`, or wherever it belongs is the intended way this pin shortens over
@@ -36,7 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TESTS_ROOT = ROOT / "tests"
 
-# Generated 2026-09-08 from `sorted(p.name for p in Path("tests").glob("test_*.py"))`.
+# Generated from `sorted(p.name for p in Path("tests").glob("test_*.py"))`.
 # This is the legacy backlog tests/README.md refers to — an inventory to burn
 # down by relocating files under unit/, contract/, integration/, or
 # architecture/, never a place to add a new one.

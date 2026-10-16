@@ -18,9 +18,9 @@ What is measured, and why each:
   `.claude/skills/`, and a tracked symlink in its place would make every later
   `git pull` there refuse.
 - **Listed both ways.** Every skill appears in AGENTS.md's table, and every
-  skill the table names exists. The audit behind ADR 0017 found rules that
-  were written down and not reached at the moment they applied; a skill that
-  the entry point does not name is the same failure one level down.
+  skill the table names exists. ADR 0017 is about rules that are written down
+  and not reached at the moment they apply; a skill that the entry point does
+  not name is the same failure one level down.
 """
 
 from __future__ import annotations

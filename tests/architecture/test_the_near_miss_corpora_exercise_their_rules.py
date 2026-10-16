@@ -3,22 +3,17 @@
 `no_trigger.yaml` and `near_miss.yaml` assert that trigger-SHAPED text does not
 engage her. Each case is named for the `nora/tag.py` rule it exercises. But a
 case passes by producing no reply, and a case whose input never reaches the rule
-also produces no reply — so the corpus can be entirely inert and read 16/16.
+also produces no reply — so a corpus can be entirely inert and still read green.
 
-MEASURED 2026-09-18, by deleting each rule and re-scoring: EIGHT of the sixteen
-passed with both rules gone. Four of those — `norax`, `nora1`, `` `nora` ``,
-`Sonora` — were near-misses of the PLAIN trigger while the corpus was configured
-with `nora.000`, so `is_tagged`'s scanner found nothing and never reached the
-rule the case is named for. They were four copies of `plain_no_mention`.
-
-`near_miss.yaml` had already been templated with `{trigger}` for exactly this
-reason (an operator re-enabled the plain trigger in 2026-08 and two cases
-silently stopped being near-misses); `no_trigger.yaml` had not. The fix stopped
-at a file boundary, which is why this test reads both.
+A near-miss of the PLAIN trigger (`norax`, `nora1`, `` `nora` ``, `Sonora`)
+exercises its rule only when the corpus is rendered with the deployment's
+trigger; against any other, `is_tagged`'s scanner finds nothing and never
+reaches the rule the case is named for. So both files are templated with
+`{trigger}`, and this test reads both.
 
 The trigger is the DEPLOYMENT'S (`engagement.trigger.text`, `nora`), rendered
 here the way `evals.backbone._drive` renders it against the composed subject —
-a corpus can no longer state one of its own.
+a corpus cannot state one of its own.
 
 Costs milliseconds and needs no model: it is the cheapest real check in the
 suite.

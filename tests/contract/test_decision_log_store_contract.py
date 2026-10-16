@@ -1,5 +1,5 @@
 """Shared contract for the decision-log store. Every implementation runs every
-test (issue #199).
+test.
 
 `nora.infra.sql.decision_log.SqlDecisionLogStore` over real Postgres, and
 `nora.testing.InMemoryDecisionLogStore` built from `nora.domain.decision_log`
@@ -20,12 +20,10 @@ implementation, *including a test fake*, without a suite both pass.
   * the tie-break is deterministic, or the two implementations answer different
     rows for the same input and a contract suite cannot see it.
 
-**And it goes AROUND the domain type where the database is the real guard**
-(`test_turn_verdict_store_contract`'s lesson, a suite deleted 2026-09-24 with
-the verdict): `object.__setattr__` builds a row
-with an over-long reason and an unknown writer, because the CHECKs exist for a
-writer that got a value some other way and a fake without them is MORE
-PERMISSIVE than Postgres.
+**And it goes AROUND the domain type where the database is the real guard**:
+`object.__setattr__` builds a row with an over-long reason and an unknown
+writer, because the CHECKs exist for a writer that got a value some other way
+and a fake without them is MORE PERMISSIVE than Postgres.
 
 Database and migrations built ONCE per module, table truncated between tests —
 AGENTS.md's contract-suite rule; the isolation needed is "no rows from the last
@@ -140,9 +138,8 @@ async def test_an_appended_row_reads_back_whole(store):
 
 async def test_a_nullable_note_id_survives_the_round_trip(store):
     """`note_id` is the one nullable column, and NULL is the ordinary case —
-    only the proactive decide turn (deleted 2026-10-03; its old rows remain)
-    decided about a note. A store that coerced
-    it to `""` would make «about note X» and «about the room» the same row."""
+    only the proactive decide turn decided about a note. A store that coerced it
+    to `""` would make «about note X» and «about the room» the same row."""
     await store.append(row=_row("d1"))
     await store.append(row=_row("d2", writer="proactive_decide", verdict="remind",
                                 note_id="n-7", ts=NOW + 1))
@@ -153,8 +150,7 @@ async def test_a_nullable_note_id_survives_the_round_trip(store):
 async def test_rows_come_back_oldest_first(store):
     """The block is read top-to-bottom beside a transcript that is also
     oldest-first. A store that answered newest-first would render the loop's
-    history backwards, which is the failure `render_context` already made once
-    on the gate's transcript."""
+    history backwards."""
     await store.append(row=_row("d3", ts=NOW + 2000, reason="third"))
     await store.append(row=_row("d1", ts=NOW, reason="first"))
     await store.append(row=_row("d2", ts=NOW + 1000, reason="second"))
@@ -223,12 +219,10 @@ async def test_a_unit_read_takes_the_newest_and_honours_the_window(store):
 
 
 async def test_rows_in_the_same_millisecond_come_back_in_one_order(store):
-    """Two decisions in one millisecond are reachable — the tag turn one second
-    after a participation answer is issue #199's own example, and one
-    millisecond is the same shape. Without a deterministic tie-break Postgres
-    answers whatever the scan reached first and the double answers hash order,
-    so the two implementations render DIFFERENT blocks for identical rows and
-    this suite cannot see it."""
+    """Two decisions in one millisecond are reachable. Without a deterministic
+    tie-break Postgres answers whatever the scan reached first and the double
+    answers hash order, so the two implementations render DIFFERENT blocks for
+    identical rows and this suite cannot see it."""
     await store.append(row=_row("b", ts=NOW, reason="b"))
     await store.append(row=_row("a", ts=NOW, reason="a"))
     once = await store.recent(conversation_id=CONV, since_ms=0)
@@ -315,7 +309,7 @@ async def test_a_limit_of_zero_answers_nothing_on_both_implementations(store):
     row, `LIMIT 0` is none. Unreachable from production — the recorder always
     passes `RECENT_LIMIT` — which is exactly why it belongs in this suite: it is
     the fake-is-more-permissive-than-the-store shape the double's own docstring
-    exists to refuse, and it was found by a reviewer rather than by a test.
+    exists to refuse.
 
     Falsification: restore `inside[-limit:] if limit >= 0` in the double.
     """

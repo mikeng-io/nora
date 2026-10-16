@@ -279,7 +279,7 @@ async def test_the_returned_map_translates_a_source_row_id_into_the_copy(
 
 
 async def test_the_judges_source_names_every_speaker_and_marks_hers(sandbox, source) -> None:
-    """#458. The judge grades «X said Y» against `Sandboxed.transcript`, so
+    """The judge grades «X said Y» against `Sandboxed.transcript`, so
     each line carries the speaker SHE was shown — the identity's name for a
     member, the profile name for a sender it does not know, her display name
     on her own row — and no account id, the source's or the sandbox's minted
@@ -519,26 +519,22 @@ async def test_the_sandbox_database_exists_at_head_and_is_dropped_afterwards(
     assert name not in _databases(pg_admin)
 
 
-# --- issue #158: the store itself enforces one open proactive row per note --
+# --- the store itself enforces one open proactive row per note --------------
 
 
 async def test_the_store_refuses_two_open_proactive_rows_on_one_note(sandbox) -> None:
     """THE PROOF `nora.subject.sandbox._collapse_duplicate_proactive_notes`
-    exists for: #517's own constraint (`uq_reminders_proactive_open_note`,
-    migration 0064) is what actually enforces "one open proactive reminder
-    per note", at the SQL store `know()` writes through
-    (`nora.infra.sql.reminders.SqlReminderStore.create`).
+    exists for: the constraint `uq_reminders_proactive_open_note` is what
+    actually enforces "one open proactive reminder per note", at the SQL store
+    `know()` writes through (`nora.infra.sql.reminders.SqlReminderStore.create`).
 
-    Production HISTORY holds instants with two open proactive rows on one
-    note (the double-booking #517 fixed going forward, never undone in the
-    past) — `nora.infra.sql.snapshot._reminders` reconstructs the room AS IT
-    WAS, so `Snapshot.reminders` can still carry both. This is what
-    `as_knowledge` would hand `know()` if its own collapse (tested in
-    `tests/unit/test_subject_sandbox_translation.py`) were reverted: the
-    SECOND `create()` call raises here, live, against the real store — a
-    revert of the collapse is what turns this from passing (nothing calls
-    `know()` with two open rows on one note) to reproducing the ERROR the
-    review found ("DuplicateProactiveNoteError: note cb12...").
+    Production HISTORY can hold instants with two open proactive rows on one
+    note — `nora.infra.sql.snapshot._reminders` reconstructs the room AS IT WAS,
+    so `Snapshot.reminders` can still carry both. This is what `as_knowledge`
+    would hand `know()` if its own collapse (tested in
+    `tests/unit/test_subject_sandbox_translation.py`) were reverted: the SECOND
+    `create()` call raises here, live, against the real store, with
+    `DuplicateProactiveNoteError`.
     """
     duplicate = Knowledge(reminders=(
         ReminderSeed(
@@ -579,25 +575,24 @@ async def test_the_store_allows_two_open_reminders_on_different_notes(sandbox) -
     }
 
 
-# --- issue #158 (BLOCKING review): a note's SOURCE id, end to end ----------
+# --- a note's SOURCE id, end to end -----------------------------------------
 
 
 async def test_a_seeded_note_keeps_its_source_id_end_to_end(
     sandbox, source, engine,
 ) -> None:
-    """THE BLOCKING BUG (issue #158, final review) this proves fixed: seeding
-    a note under a FRESH sandbox id while its reminder's payload kept the
-    SOURCE id left nothing in the sandbox agreeing on what a note's id even
-    was. #517's own duplicate-note constraint (keyed on
-    `payload ->> 'note_id'`) could not see a seeded row and a fresh one on
-    the SAME note as the same note.
+    """A note keeps its SOURCE id in the sandbox. Seeding a note under a FRESH
+    sandbox id while its reminder's payload kept the SOURCE id would leave
+    nothing in the sandbox agreeing on what a note's id is, and the duplicate-note
+    constraint (keyed on `payload ->> 'note_id'`) could not see a seeded row and
+    a fresh one on the SAME note as the same note.
 
-    Two claims, each a distinct way the old seeding was wrong:
+    Two claims:
     1. the reminder seeded alongside the note carries a `note_id` that IS a
        real note's id in the sandbox's own store;
-    2. #517's `DuplicateProactiveNoteError` fires for a second `remind` on
-       that note, INSIDE the sandbox — the store sees the seeded row and the
-       new one as one note, not two.
+    2. `DuplicateProactiveNoteError` fires for a second `remind` on that note,
+       INSIDE the sandbox — the store sees the seeded row and the new one as
+       one note, not two.
 
     Revert `nora.subject.sandbox._note_seed`'s `id=note.id` (or `know()`'s
     branch that honours it) and this goes RED: claim 1 fails first (the
@@ -639,8 +634,8 @@ async def test_a_seeded_note_keeps_its_source_id_end_to_end(
         assert seeded.payload is not None
         assert seeded.payload["note_id"] == sandbox_note.id
 
-        # 2. #517's own constraint fires for a SECOND `remind` on this note,
-        #    inside the sandbox.
+        # 2. The duplicate-note constraint fires for a SECOND `remind` on this
+        #    note, inside the sandbox.
         with pytest.raises(DuplicateProactiveNoteError):
             await SqlReminderStore(sandbox_engine).create(Reminder(
                 id=UUID("77777777-0000-4000-8000-000000000002"),
@@ -662,9 +657,9 @@ async def test_a_case_row_replaces_the_seeded_copy_of_itself(
     sandbox, source, engine,
 ) -> None:
     """A case cut just before a proactive row fired carries that row as
-    PENDING, on the same note `owe()` then links. The open-note index refused
-    the case's own row and the case ERRORed before any turn ran (proactive_act
-    a12). `owe()` now cancels the seeded copy and writes its own.
+    PENDING, on the same note `owe()` then links. The open-note index would
+    refuse the case's own row, so `owe()` cancels the seeded copy and writes its
+    own.
 
     Revert the cancel loop in `nora.subject.proactive.owe` and this goes RED
     with `DuplicateProactiveNoteError`."""
@@ -701,9 +696,9 @@ async def test_a_case_row_replaces_a_seeded_copy_that_names_no_note(
     sandbox, source, engine,
 ) -> None:
     """Cognition's rows carry `subject_rows`, not `note_id`, so the seeded
-    copy of the case's own row does not collide: it fires BESIDE the case's
-    row and the turn reads the intention twice (proactive_act a12 and a13,
-    2026-10-12). `owe()` matches it by its identical text and cancels it.
+    copy of the case's own row does not collide: it would fire BESIDE the case's
+    row and the turn would read the intention twice. `owe()` matches it by its
+    identical text and cancels it.
 
     Revert the text match in `nora.subject.proactive.owe` and this goes RED:
     the copy is still pending."""
@@ -734,9 +729,8 @@ async def test_a_case_row_replaces_a_seeded_copy_that_names_no_note(
 async def test_a_note_anchored_only_by_entities_seeds_end_to_end(
     sandbox, source, engine,
 ) -> None:
-    """A note with entity anchors and no date is a legal note. Seeding used to
-    refuse it, so every case whose room held one ERRORed (proactive_act a07).
-    It now arrives in the sandbox with the same anchor.
+    """A note with entity anchors and no date is a legal note. It arrives in the
+    sandbox with the same anchor rather than being refused.
 
     Revert `anchor_entity_ids` in `nora.subject.sandbox._note_seed` and this
     goes RED: the note reaches `Note.__post_init__` with no anchor."""
@@ -779,18 +773,17 @@ async def test_a_hand_written_entity_anchored_note_seeds_through_create(sandbox)
     finally:
         await sandbox_engine.dispose()
 
-# --- migration 0075_withdrawal: an OLDER row_history image missing a new
-#     column must restore to SQL NULL, not error or misbehave -------------
+# --- an OLDER row_history image missing a newer column must restore to SQL
+#     NULL, not error or misbehave -----------------------------------------
 
 
 async def test_a_row_history_image_missing_the_new_hidden_at_key_restores_as_null(
     pg_url: str, pg_template: str, engine: Any,
 ) -> None:
-    """`0075_withdrawal` added `hidden_at` to `messages` — nullable, no
-    default — WITHOUT rewriting every existing `row_history` image to carry
-    the key (that rewrite took a `SHARE ROW EXCLUSIVE` lock blocking live
-    ingestion and was removed). So an OLDER version, recorded before the
-    migration ran, has an `image` JSONB blob with no `hidden_at` key at all.
+    """`messages.hidden_at` is nullable with no default, and existing
+    `row_history` images were not rewritten to carry the key. So an OLDER
+    version, recorded before the column existed, has an `image` JSONB blob with
+    no `hidden_at` key at all.
 
     This proves `nora.infra.sql.snapshot_at.seed` (via `nora.infra.sql.
     history.as_of` and `_insert_sql`'s `jsonb_populate_recordset`) restores
@@ -804,8 +797,9 @@ async def test_a_row_history_image_missing_the_new_hidden_at_key_restores_as_nul
     The message is seeded through the real write path (`SqlRecordStore`, so
     `row_history` gets a genuine trigger-written image with `hidden_at`
     present), then the `hidden_at` key is stripped from that version's
-    `image` directly with the jsonb `-` operator — simulating a pre-0075
-    version, never routed back through the `messages` table itself.
+    `image` directly with the jsonb `-` operator — simulating a
+    version recorded before the column existed, never routed back through the
+    `messages` table itself.
     """
     message_id = await _say(engine, "a message from before the withdrawal migration", at=BEFORE_MS)
 
@@ -834,21 +828,21 @@ async def test_a_row_history_image_missing_the_new_hidden_at_key_restores_as_nul
     assert row.hidden_at is None
 
 
-# --- migration 0094: a NOT NULL column whose backfill default was DROPPED ---
+# --- a NOT NULL column whose backfill default was DROPPED -------------------
 
 
 async def test_an_image_from_before_a_dropped_backfill_restores_the_backfill(
     pg_url: str, pg_template: str, engine: Any,
 ) -> None:
-    """`0094_compute_jobs_generic_outbox` added `compute_jobs.kind` and
-    `.payload` NOT NULL with a backfill default (`legacy`, `{}`), then DROPPED
-    the default. An image recorded before 0094 holds neither key, and the
-    target column has no default to read back, so the restore must fill the
-    migration's own backfill (`snapshot_at.BACKFILLED`) or the insert is
-    refused and every case on a full restore ERRORs (2026-10-15).
+    """`compute_jobs.kind` and `.payload` are NOT NULL, added with a backfill
+    default (`legacy`, `{}`) that was then DROPPED. An image recorded before
+    that holds neither key, and the target column has no default to read back,
+    so the restore must fill the migration's own backfill
+    (`snapshot_at.BACKFILLED`) or the insert is refused and every case on a full
+    restore ERRORs.
 
     The row is written through SQL (its trigger records a genuine image), then
-    both keys are stripped from that image, simulating a pre-0094 version.
+    both keys are stripped from that image, simulating an older version.
     """
     job_id = "00000000-0000-0000-0000-000000000094"
     async with engine.begin() as conn:

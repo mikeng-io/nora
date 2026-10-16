@@ -1,4 +1,4 @@
-"""Structural boundary tests (spec C.1). These are architecture, enforced."""
+"""Structural boundary tests. These are architecture, enforced."""
 
 import ast
 from pathlib import Path
@@ -19,14 +19,14 @@ def test_doctrine_read_boundary():
     """Only doctrine/loader.py may read doctrine files.
 
     `skills/loader.py` is exempt: a SKILL.md is NOT a doctrine file — it is the
-    parallel on-demand layer (design/12 §1, DEC-48), with its own loader for the
+    parallel on-demand layer (DEC-48), with its own loader for the
     same structural reason doctrine has one, and it reads only its own directory.
     The boundary this test protects (doctrine files have a single reader) is
     untouched by that.
 
     `instructions/frontmatter.py` is exempt for a third reason: it is the
-    GENERIC reader the doctrine's own loader now delegates to (the parse/hash
-    skeleton, extracted so the Dreamer's instruction store does not fork it). It
+    GENERIC reader the doctrine's own loader delegates to (the parse/hash
+    skeleton, shared so the Dreamer's instruction store does not fork it). It
     knows nothing about doctrine — no kinds, no authority graph, no `<section>`
     rendering — and it is deliberately the ONLY `.md` reader in that package, so
     the boundary this test protects (doctrine files have a single reader) is
@@ -49,14 +49,11 @@ def test_doctrine_read_boundary():
         text = path.read_text()
         if not ("read_text" in text or "open(" in text):
             continue
-        # A `.md` in a COMMENT is not a read. The substring form of this check
-        # flagged `nora/config.py` on 2026-09-06 for the sentence
-        # «schedule.md §7, 19-between-tiers.md §1» next to an unrelated
-        # `path.open("rb")` that reads TOML — a file that touches no doctrine
-        # at all. That is the noise CONVENTIONS.md's R-29 story is about: a
-        # gate that cries wolf is a gate somebody switches off, and this one
-        # sat red on master. So the `.md` must appear in a real STRING
-        # LITERAL, which is the only form that can name a file to open.
+        # A `.md` in a COMMENT is not a read: a substring match would flag a
+        # file whose comment mentions a `.md` next to an unrelated
+        # `path.open("rb")` that reads TOML. A gate that cries wolf is a gate
+        # somebody switches off (R-29), so the `.md` must appear in a real
+        # STRING LITERAL, which is the only form that can name a file to open.
         if any(_md_literals(text)):
             offenders.append(str(path.relative_to(ROOT)))
     assert not offenders, f"doctrine files read outside loader.py: {offenders}"
@@ -67,7 +64,7 @@ def _md_literals(source: str):
 
     AST rather than substring: comments and docstrings-about-docs are not
     reads. A docstring is itself a `Constant`, so it is excluded explicitly —
-    a module whose prose mentions `design/14.md` is documentation, not a
+    a module whose prose mentions a `.md` path is documentation, not a
     reader. What survives is a literal short enough to be a path or a suffix
     test, which is the shape an actual read has.
     """
@@ -143,16 +140,15 @@ def _imported_dotted_modules(path: Path) -> set[str]:
 
 
 EVALS_DIR = ROOT / "evals"
-#: `subject` joined 2026-09-17 (design/evaluation/, operator): it is the ONE way
-#: `evals/` obtains the composed graph, and the point of it is that no caller
-#: assembles one. THIS TEST IS THE GATE THAT BINDS — the import-linter contract
-#: "evals may only reach nora.app and nora.testing" reports KEPT while `evals/`
-#: imports a package its own name forbids, because `allow_indirect_imports` is
-#: load-bearing there (pyproject.toml, that contract's own comment). Measured
-#: 2026-09-17 while choosing the layer.
+#: `subject` is the ONE way `evals/` obtains the composed graph, and the point
+#: of it is that no caller assembles one. THIS TEST IS THE GATE THAT BINDS — the
+#: import-linter contract "evals may only reach nora.app and nora.testing"
+#: reports KEPT while `evals/` imports a package its own name forbids, because
+#: `allow_indirect_imports` is load-bearing there (pyproject.toml, that
+#: contract's own comment).
 #:
-#: `domain` joined 2026-09-19 (design/evaluation, S5 — `evals/backbone.py`'s
-#: `render_transcript_at` calls `nora.domain.blocks.render_messages` directly):
+#: `domain` is allowed because `evals/backbone.py`'s `render_transcript_at`
+#: calls `nora.domain.blocks.render_messages` directly:
 #: `nora/domain/__init__.py`'s own docstring is "framework-free contracts,
 #: imports only the standard library" — pure types and pure functions, not a
 #: collaborator or an assembly seam, so it does not reopen the "no caller
@@ -166,8 +162,8 @@ def _evals_files():
 
 def test_evals_only_imports_nora_app_and_nora_testing():
     """`evals/` may import `nora.app` and `nora.testing` and nothing else from
-    `nora/` (spec §4.1: "evals/ may import nora.app and nora.testing — nothing
-    else"). `pyproject.toml`'s "evals may only reach nora.app and nora.testing"
+    `nora/` ("evals/ may import nora.app and nora.testing — nothing else").
+    `pyproject.toml`'s "evals may only reach nora.app and nora.testing"
     import-linter contract enforces the same rule but only over evals' own
     DIRECT imports (`allow_indirect_imports = "True"` — otherwise `nora.app`
     itself legitimately importing `nora.agent`/`nora.doctrine`/etc. internally
@@ -186,10 +182,8 @@ def test_evals_only_imports_nora_app_and_nora_testing():
 
 
 def test_evals_never_imports_tests():
-    """`evals/` may not import `tests/` at all — Task 10 closed
-    `evals/harness.py`'s `from tests.integration.harness import ScriptedTurn,
-    build_handler, group_event`, the coupling that used to leave `evals/`
-    dependent on the test package (spec §8); this pins it stays closed."""
+    """`evals/` may not import `tests/` at all: `evals/` must not depend on the
+    test package."""
     offenders = []
     for path in _evals_files():
         for mod in _imported_dotted_modules(path):
@@ -202,11 +196,10 @@ def test_domain_imports_only_the_standard_library():
     """domain/ may import the stdlib and its own siblings — nothing else.
     A deny-list only catches names someone thought of; this catches everything.
 
-    Supersedes the old deny-list (`DOMAIN_BANNED`): a deny-list of eight
-    hardcoded framework names passes silently on anything not on the list —
-    `import aiosqlite` or `from nora.infra.sql import SqlRecordStore` both
-    slipped through it with every gate green. An allow-list of "stdlib + own
-    siblings" cannot be bypassed by picking an unlisted name.
+    A deny-list of hardcoded framework names passes silently on anything not on
+    the list — `import aiosqlite` or `from nora.infra.sql import SqlRecordStore`
+    would both slip through. An allow-list of "stdlib + own siblings" cannot be
+    bypassed by picking an unlisted name.
     """
     import sys
 
@@ -234,9 +227,6 @@ def test_composition_never_uses_the_permissive_policy():
     real `policy.toml` would list. In production it would silently disable
     deny-by-default: every room allowed, every sender admitted, with a valid
     policy.toml sitting on disk looking authoritative.
-
-    `nora/policy.py` claimed this test existed before it did. The one-line
-    accident it guards against would otherwise ship green.
     """
     src = (ROOT / "nora" / "app" / "composition.py").read_text()
     assert "permissive_policy" not in src, (
@@ -246,11 +236,9 @@ def test_composition_never_uses_the_permissive_policy():
 
 
 def test_nora_never_imports_evals():
-    """THE DIRECTION THE WHOLE BUNDLE IS ABOUT, and nothing looked at it.
+    """The eval layer depends on Nora; Nora depends on nothing in the eval layer.
 
-    `design/evaluation/01-boundaries.md` §1: *"the eval layer depends on Nora.
-    Nora depends on nothing in the eval layer."* Both existing gates check only
-    the first half:
+    The other gates check only the first half:
 
     - the import-linter `layers` contract orders `nora.*` rows, and `evals` is a
       second root package appearing in no layer;
@@ -258,11 +246,10 @@ def test_nora_never_imports_evals():
       so it constrains `evals -> nora` and not the reverse;
     - `test_evals_only_imports_nora_app_and_nora_testing` scans `evals/` only.
 
-    MEASURED by review 2026-09-17: `import evals.rebuilt.domain` inserted into
-    `nora/subject/dreaming.py` left `lint-imports` at *6 kept, 0 broken* and the
-    whole architecture suite green. That is §6's documented hole — "import-linter
-    knows two root packages, the boundary test scans one directory" — reproduced
-    for the direction that matters, inside the step written to close it.
+    Without this test, an `import evals...` inserted into a `nora/` module
+    leaves `lint-imports` with no broken contract and the rest of the
+    architecture suite green: import-linter knows two root packages, the boundary
+    test scans one directory.
     """
     offenders = []
     for path in PKG.rglob("*.py"):

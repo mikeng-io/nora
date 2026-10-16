@@ -1,4 +1,4 @@
-"""The identifier hooks against real git: every attack #166 and #283 name.
+"""The identifier hooks against real git: every attack the gate defends against.
 
 Each test builds a throwaway repository with this branch's `.githooks/` and
 scanner installed (`core.hooksPath`), a denylist of GENERATED values in
@@ -121,8 +121,7 @@ def repo(tmp_path: Path) -> Repo:
     r.git("config", "core.hooksPath", ".githooks")
     # the scaffold is committed around the hooks: fifty fixtures each running
     # every hook over the scanner's own source is CPU the rest of the suite
-    # needs (it starved a 5 s timeout in tests/test_vision.py under -n 8).
-    # test_the_hook_scripts_pass_their_own_scan checks that source once.
+    # needs. test_the_hook_scripts_pass_their_own_scan checks that source once.
     r.git("add", "-A")
     out = r.git("-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "chore: scaffold the hooks")
     assert out.returncode == 0, out.stderr
@@ -335,7 +334,7 @@ def test_a_merge_does_not_re_judge_what_a_parent_already_had(repo):
     assert repo.push_scan().returncode == 0
 
 
-# ---- review of #591 (finding 1): what the push gives the TARGET remote
+# ---- what the push gives the TARGET remote
 
 
 def _push(repo, *args):
@@ -417,7 +416,7 @@ def test_an_unreachable_remote_is_an_error(repo, tmp_path):
     assert out.returncode == 2 and "remote-unreachable" in out.stderr
 
 
-# ---- findings 8, 9, 6
+# ---- commit-message scissors, amend, merge and published declarations
 
 
 def test_a_hash_line_or_text_past_the_scissors_is_scanned(repo):
@@ -476,7 +475,7 @@ def test_a_declaration_pushed_together_with_its_payload_exempts_nothing(repo):
     assert rc != 0 and "phone" in out
 
 
-# ---- second review of #591
+# ---- declarations, acknowledgements and forged local state
 
 
 def test_a_denylisted_name_in_a_new_directory_is_refused_and_not_printed(repo):
@@ -520,10 +519,10 @@ def test_a_declaration_matching_too_many_files_is_an_error(repo):
 
 
 def test_no_local_file_clears_a_finding(repo):
-    """Round 3 (c): the adjudicator's verdict file and log are gone, and
-    nothing in the git dir can stand in for them: a forged verdict file, a
-    forged adjudication log and a forged ack side-file each leave the
-    finding blocking, at commit and at push."""
+    """There is no adjudicator verdict file or log, and nothing in the git dir
+    can stand in for one: a forged verdict file, a forged adjudication log and a
+    forged ack side-file each leave the finding blocking, at commit and at
+    push."""
     repo.write("c.txt", f"call {SY.phone('852', 'spaced')} tonight\n")
     out = repo.commit("chore: c")
     ids = _ids(out)
@@ -610,7 +609,7 @@ def test_pre_commit_does_not_trust_a_forged_tracking_ref_for_declarations(repo):
     assert out.returncode != 0 and "declarations NOT honoured" in out.stderr
 
 
-# ---- round 3 (b): a branch behind its remote, and `git rebase`
+# ---- a branch behind its remote, and `git rebase`
 
 
 def _hookless(repo, *args):
@@ -732,7 +731,7 @@ def test_rebasing_a_branch_keeps_an_acknowledged_finding_and_catches_an_unacknow
     assert out.returncode != 0 and "phone" in out.stderr
 
 
-# ---- round 3 (d): every declaration form is capped
+# ---- every declaration form is capped
 
 
 def test_a_declaration_cannot_grow_past_the_cap_after_it_is_published(repo):
@@ -762,7 +761,7 @@ def test_the_tree_audit_caps_worktree_declarations_too(repo):
     assert out.returncode == 2 and "allowlist-too-broad" in out.stderr
 
 
-# ---- round 3 (e): the repo's scanner, and masking before any output
+# ---- the repo's scanner, and masking before any output
 
 
 FAKE_SCANNER = "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n"
@@ -790,8 +789,8 @@ def test_a_symlinked_scanner_is_refused(repo, tmp_path, what):
 
 
 def test_a_planted_bytecode_cache_is_never_run(repo, tmp_path):
-    """The scanner used to cache its imports' bytecode in a shared
-    $TMPDIR/nora-pii-pycache; a .pyc planted there ran in place of the
+    """The scanner must not load bytecode from a shared
+    $TMPDIR/nora-pii-pycache: a .pyc planted there must not run in place of the
     repo's pii_cjk_fold.py."""
     import importlib.util
     import marshal
@@ -820,7 +819,7 @@ def test_a_planted_bytecode_cache_is_never_run(repo, tmp_path):
 
 def test_pythonpath_cannot_substitute_a_module_of_the_scanner(repo, tmp_path):
     """The hooks run `python3 -I -S`: a PYTHONPATH entry shadowing a module
-    the scanner imports (here `bisect`) used to run in its place."""
+    the scanner imports (here `bisect`) must not run in its place."""
     evil = tmp_path / "evil"
     evil.mkdir()
     marker = tmp_path / "pwned"
@@ -855,7 +854,7 @@ def test_a_ref_name_is_scanned_and_never_printed(repo):
     assert rc != 0 and "denylist:text" in out and given not in out.lower()
 
 
-# ---- round 3 (f): a cutover manifest is bound to its commits, its remote
+# ---- a cutover manifest is bound to its commits, its remote
 # and a digest pinned outside it
 
 

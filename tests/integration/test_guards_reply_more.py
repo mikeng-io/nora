@@ -1,12 +1,10 @@
-"""DEC-42 amended: a `send_reply` ends the turn unless it carried `more=true`.
-
-The relaxed loop used to make one more FULL model call after the first
-message so she could send a second; measured live, that call almost always
-ended with nothing (2 of 45 replying turns sent more than one message).
+"""DEC-42: a `send_reply` ends the turn unless it carried `more=true`, so the
+relaxed loop does not spend one more FULL model call after the first message
+just so she could send a second.
 
 Every probe here drives the REAL Strands loop with the REAL `ReplyGuard` and
 the registry's real budgets and terminal set, and counts model calls, which is
-the cost this change removes. The model is scripted: call N emits the N-th
+the cost being bounded. The model is scripted: call N emits the N-th
 `send_reply` input, then plain text once the script runs out (what `auto`
 allows after she has spoken).
 """
@@ -211,12 +209,12 @@ async def test_a_null_more_is_false_and_the_send_still_goes():
     assert (calls, sent) == (1, ["a"])
 
 
-# --- the heads-up's answer is owed until it is sent (review of #754, 2026-10-09)
+# --- the heads-up's answer is owed until it is sent ---------------------------
 
 
 async def test_a_heads_up_keeps_the_turn_open_and_owes_its_answer():
     """The pipeline's recovery reads this: without it a delivered heads-up
-    disabled DEC-93's recovery and the prose answer was dropped."""
+    would disable DEC-93's recovery and the prose answer would be dropped."""
     _calls, sent, guard = await _drive([{"text": "let me check", "heads_up": True},
                                         {"__tool__": "now"}])
     assert sent == ["let me check"] and guard.later == ["ran"]
@@ -231,9 +229,8 @@ async def test_an_answer_sent_after_the_heads_up_settles_it():
 
 
 async def test_an_answer_with_more_then_a_note_owes_nothing():
-    """Second review: inferring the heads-up from «a `more=true` send, then
-    work» read this as owed, and closing prose after the note would have
-    reached the room."""
+    """Inferring the heads-up from «a `more=true` send, then work» would read
+    this as owed, and closing prose after the note would reach the room."""
     _calls, sent, guard = await _drive([{"text": "it is Thursday", "more": True},
                                         {"__tool__": "now"}])
     assert sent == ["it is Thursday"] and guard.later == ["ran"]

@@ -1,12 +1,12 @@
 """R-23's two production halves: the SDK's behaviour, and the one line that
-used to throw it away.
+carries it out of `LiveAgentRunner.invoke`.
 
 `tests/integration/test_turn_budget_is_legible.py` proves the pipeline reports
 a budget stop distinctly, but it runs against `FakeAgentRunner`. Everything
 below the stage boundary — Strands actually populating `stop_reason`, and
-`LiveAgentRunner` actually reading it — is only exercised here. That gap is
-not academic: the bug WAS `LiveAgentRunner.invoke` awaiting `factory.invoke`
-and discarding its return value, a line no test touched.
+`LiveAgentRunner` actually reading it — is only exercised here. A runner that
+awaited `factory.invoke` and discarded its return value would pass every test
+that uses the fake.
 """
 
 from __future__ import annotations
@@ -164,10 +164,10 @@ async def test_the_same_turn_under_a_sufficient_budget_ends_normally():
 
 
 async def test_the_live_runner_returns_the_stop_reason_instead_of_discarding_it():
-    """THE regression. `LiveAgentRunner.invoke` was `await factory.invoke(...)`
-    with the `AgentResult` dropped on the floor and `None` returned, so no
-    caller could tell a cut-off turn from a finished one. A `None` here is that
-    bug exactly, whatever the loop did."""
+    """THE regression: `LiveAgentRunner.invoke` must not drop the `AgentResult`
+    from `factory.invoke(...)` and return `None`, or no caller could tell a
+    cut-off turn from a finished one. A `None` here is that bug exactly,
+    whatever the loop did."""
     for total_tokens, expected in ((4_000, "limit_total_tokens"), (64_000, "end_turn")):
         stop_reason, _model = await _run(
             tokens_per_call=5_000,
@@ -185,30 +185,24 @@ async def test_a_turn_cap_stops_the_loop_before_the_token_cap_does():
         tokens_per_call=10, limits={"turns": 1, "output_tokens": 12_000, "total_tokens": 64_000},
     )
     assert stop_reason == "limit_turns"
-    # 1 -> 2 (#110, 2026-09-07). The LOOP still makes exactly one call — the
-    # cap binds at the top of cycle two — and the second is the
-    # budget-exhaustion draft, which fires on `limit_turns` for the same reason
-    # it fires on `limit_total_tokens`: both mean "cut off mid-work", and the
-    # group is owed an answer either way. This assertion is left counting calls
-    # rather than relaxed, because the cost of that draft is a real thing to
+    # The LOOP makes exactly one call — the cap binds at the top of cycle two —
+    # and the second is the budget-exhaustion draft, which fires on
+    # `limit_turns` for the same reason it fires on `limit_total_tokens`: both
+    # mean "cut off mid-work", and the group is owed an answer either way. The
+    # assertion counts calls because the cost of that draft is a real thing to
     # keep pinned; the drafting tests below own the behaviour itself.
     assert model.calls == 2
 
 
 # ── DEC-93: what `final_text` reads, against the REAL SDK shape ──────────────
 #
-# It was `nora.app.agent_runner._final_text` until the Dreamer needed the same
-# extraction and could not import `nora.app`; it is now
-# `nora.agent.factory.final_text`, imported back by this module's runner. The
-# tests below moved with it UNCHANGED except for that import — the point of a
-# promotion rather than a reimplementation is that the behaviour is the same
-# behaviour, so a test that had to be rewritten to keep passing would have been
-# evidence against the move.
+# `nora.agent.factory.final_text` is shared by the reply runner and the Dreamer
+# (which cannot import `nora.app`), so the one extraction is tested here.
 
 
 def test_final_text_reads_only_authored_text_blocks():
-    """`final_text` is production code on the reply path and had NO coverage of
-    the shape it reads (pre-deploy review 2026-08-10).
+    """`final_text` is production code on the reply path; this covers the
+    shape it reads.
 
     The blocks it must SKIP are the point. `reasoningContent` is the model's
     private thinking — Strands emits it as
@@ -226,20 +220,19 @@ def test_final_text_reads_only_authored_text_blocks():
 
 def test_final_text_degrades_to_empty_on_an_unexpected_result_shape():
     """It reads a third-party shape on the reply path. A Strands version that
-    renames or restructures `message` must produce the pre-DEC-93 behaviour —
-    no recovery — never an exception into a turn that otherwise succeeded."""
+    renames or restructures `message` must produce no recovery text — never an
+    exception into a turn that otherwise succeeded."""
     assert factory.final_text(SimpleNamespace()) == ""                # no `message`
     assert factory.final_text(SimpleNamespace(message="not a dict")) == ""
     assert factory.final_text(SimpleNamespace(message={"role": "assistant"})) == ""
 
 
 async def test_the_live_runner_still_returns_the_promoted_final_text():
-    """The promotion's own regression: `LiveAgentRunner.invoke` returns
-    `(stop_reason, final_text, trace)`, and the second element is now produced
-    by a function in another package. An import that resolved but was never
-    CALLED — or a runner that went back to returning "" — would leave every
-    other test in this file green, because they all discard the second
-    element.
+    """`LiveAgentRunner.invoke` returns `(stop_reason, final_text, trace)`, and
+    the second element is produced by a function in another package. An import
+    that resolved but was never CALLED — or a runner that returned "" — would
+    leave every other test in this file green, because they all discard the
+    second element.
 
     The stub model ends its last cycle with a `text` block ("ok"), which is
     exactly DEC-93's shape: prose the model wrote instead of calling a tool."""
@@ -265,14 +258,14 @@ async def _run_returning_text(
 
 
 def test_a_guard_cancelled_model_call_is_not_treated_as_her_words():
-    """THE PROBE for the defect this fix exists for, at the seam that produces
-    it (`tests/unit/test_engagement_pipeline.py` covers the consumer).
+    """THE PROBE at the seam that produces the defect
+    (`tests/unit/test_engagement_pipeline.py` covers the consumer).
 
     When `ReplyGuard` cancels a model call, Strands synthesises
     `message={"content":[{"text": cancel_text}]}` with `stop_reason="end_turn"`
     — byte-identical in shape to the model having written prose. The recovery
-    would have sent «Reply already sent — the turn is finished.» to a Cantonese
-    group, fed it to Honcho as her own speech, and settled the turn ✅.
+    would send «Reply already sent — the turn is finished.» to a Cantonese
+    group, feed it to Honcho as her own speech, and settle the turn ✅.
 
     It clears both content guards trivially, so nothing downstream stops it:
     the ONLY thing that can tell the two apart is that the guard knows it
@@ -290,7 +283,7 @@ def test_a_guard_cancelled_model_call_is_not_treated_as_her_words():
     assert guard.cancelled_model_call is False
 
 
-# ── #110: the budget-exhaustion draft ────────────────────────────────────────
+# ── the budget-exhaustion draft ───────────────────────────────────────────────
 #
 # Same discipline as the R-23 tests above: the SDK decides, the double only
 # behaves like a provider. The property under test is that a turn cut off
@@ -358,10 +351,9 @@ _ROOMY = {"turns": 8, "output_tokens": 12_000, "total_tokens": 64_000}
 
 
 async def test_an_exhausted_loop_drafts_an_answer_from_what_it_already_had():
-    """THE issue (#110). A turn cut off by a cap used to hand the pipeline an
-    empty `final_text`, leaving the canned apology as the only thing to
-    deliver — on a turn that had usually already read everything it needed
-    (trace 844eb6d1: seven pages, then 「sorry」).
+    """A turn cut off by a cap must not hand the pipeline an empty
+    `final_text`, leaving the canned apology as the only thing to deliver — on
+    a turn that has usually already read everything it needed.
 
     One extra call, and the words come back. `model.calls == 2` is the whole
     claim: the loop spent one, the draft spent exactly one more.
@@ -420,7 +412,7 @@ async def test_a_cut_off_turn_that_already_wrote_prose_costs_no_extra_call():
 async def test_a_draft_that_fails_leaves_the_turn_with_nothing_to_say():
     """FAIL-CLOSED. The drafting call is an improvement on the fallback, never
     a replacement for having one: when it raises, `final_text` comes back empty
-    and the pipeline delivers the canned line exactly as it did before #110.
+    and the pipeline delivers the canned line, as it would with no draft.
     A turn that has already failed once must not fail louder."""
     stop_reason, final_text, model = await _run_recording(
         tokens_per_call=5_000, limits=_CUT_OFF, fail_on_call=2,

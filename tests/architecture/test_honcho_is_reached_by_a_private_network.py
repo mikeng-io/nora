@@ -1,17 +1,17 @@
-"""Honcho is reached on a private network, never over the host (#633, DEC-259).
+"""Honcho is reached on a private network, never over the host (DEC-259).
 
-Honcho answers with no authentication, and the operator ruled it must not get
-any (2026-10-01): the fix is where it listens. It lived on `0.0.0.0:8000`, so
-any container that could name the host (`host.docker.internal:host-gateway`)
-and anything on the LAN read and wrote Nora's memory. It now publishes on
-loopback only, and nora reaches it by name, `honcho:8000`, on the external
-network `honcho_memory`, which holds Honcho's api and this one service.
+Honcho answers with no authentication and must not get any: the protection is
+where it listens. Published on `0.0.0.0:8000`, it would let any container that
+can name the host (`host.docker.internal:host-gateway`) and anything on the LAN
+read and write Nora's memory. It publishes on loopback only, and nora reaches
+it by name, `honcho:8000`, on the external network `honcho_memory`, which holds
+Honcho's api and this one service.
 
 Honcho's own compose file is outside this repository, so what this pins is the
 half that is here: nora joins that network and nothing else does, the network
-is declared external under the name the runbook creates, and the one thing that
-broke when the name changed (the eval suite on the host, which cannot resolve a
-container-network name) is rewritten to loopback. The other half, that the port
+is declared external under the name the runbook creates, and the eval suite on
+the host, which cannot resolve a container-network name, is rewritten to
+loopback. The other half, that the port
 is in fact refused, is `deploy/honcho-closed-probe.sh`, run on norty.
 """
 
@@ -64,7 +64,7 @@ def test_the_network_is_external_and_named_as_the_runbook_creates_it() -> None:
     assert declared["external"] is True
     assert declared["name"] == NETWORK_NAME
     runbook = (ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
-    # INTERNAL, or joining it can move nora's default route (measured).
+    # INTERNAL, or joining it can move nora's default route.
     assert f"docker network create --internal {NETWORK_NAME}" in runbook
     assert f"docker network create {NETWORK_NAME}" not in runbook
 

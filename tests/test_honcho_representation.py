@@ -1,10 +1,10 @@
 """`HonchoClient.representation` — durable recall, curated to one question.
 
-Every shape asserted here was read off the LIVE instance on 2026-08-06, not out
-of documentation. That matters more than usual for this endpoint: its two
-sibling reads shipped dead against invented shapes (`ensure_session` POSTing to
-a list endpoint, `peer_card` reading a `content` key Honcho has never returned),
-and both had a passing test at the time.
+Every shape asserted here was read off a LIVE instance, not out of
+documentation. That matters more than usual for this endpoint: a client written
+against an invented shape passes its own test and is dead against the real one
+(`ensure_session` POSTing to a list endpoint, `peer_card` reading a `content`
+key Honcho never returns).
 
 The local server below therefore answers like the real one, including for the
 requests this code gets WRONG — an unknown peer is 200 with an empty string,
@@ -24,15 +24,15 @@ from aiohttp.test_utils import TestServer
 from nora.infra.honcho import HonchoClient
 from nora.infra.honcho.client import _conclusions
 
-# The exact body the live instance returned for peer `miles_novak` on 2026-08-06.
+# The exact body the live instance returned for peer `miles_novak`.
 #
-# ONE SECTION, and that is the trap this file used to be. EVERY `miles_novak`
-# document is `level='explicit'` (counted in Postgres; 16 of them when this was
-# written, 20 a few hours later — that peer is a live deployment and the count
-# keeps moving, which is why the claim here is the LEVEL and not the number).
-# So this body cannot exercise three of the four shapes `format_as_markdown`
-# emits, and for months the parser was "passing" against the only shape it
-# happened to handle. Keep it, because it is real; never treat it as coverage.
+# ONE SECTION, and that is the trap. EVERY `miles_novak` document is
+# `level='explicit'` (counted in Postgres; that peer is a live deployment and the
+# count keeps moving, which is why the claim here is the LEVEL and not the
+# number). So this body cannot exercise three of the four shapes
+# `format_as_markdown` emits, and a parser could pass against it while handling
+# only the one shape it happens to know. Keep it, because it is real; never
+# treat it as coverage.
 LIVE_BODY = (
     "## Explicit Observations\n\n"
     "[2026-08-05 17:18:04] miles_novak is named Miles\n"
@@ -40,14 +40,14 @@ LIVE_BODY = (
     "[2026-08-05 17:18:04] miles_novak is from Ridgeline\n"
 )
 
-# The exact body the live instance returned for peer `probe_zzz` on 2026-08-06,
-# for the call shape this client now sends. Copied verbatim from the wire.
+# The exact body the live instance returned for peer `probe_zzz`, for the call
+# shape this client sends. Copied verbatim from the wire.
 #
 # `probe_zzz` is a throwaway peer fed ~48 realistic first-person messages, which
-# is what it takes to make Honcho's deriver produce the OTHER levels: 77
-# explicit, 14 deductive, 11 inductive. That is why the fixture is this peer and
-# not `miles_novak` — a fixture that cannot produce the real shape is the failure
-# CLAUDE.md names, and this subsystem has now shipped three of them.
+# is what it takes to make Honcho's deriver produce the OTHER levels (explicit,
+# deductive and inductive). That is why the fixture is this peer and not
+# `miles_novak` — a fixture that cannot produce the real shape is the failure
+# CLAUDE.md names.
 LIVE_MULTI_LEVEL_BODY = (
     "## Explicit Observations\n"
     "\n"
@@ -85,16 +85,16 @@ LIVE_MULTI_LEVEL_BODY = (
 )
 
 # `## Contradictions` is the one section of the four that could NOT be taken off
-# the wire: `select level, count(*) from documents` over the whole live database
+# the wire: `select level, count(*) from documents` over the live database
 # returns explicit / deductive / inductive and no contradictions at all, in any
-# workspace — nothing has ever produced one. So this is built from the emitter
-# itself, `src/utils/representation.py::Representation.format_as_markdown`, read
-# out of the running container (honcho 3.0.11), and it reproduces that code
-# line for line: `f"{id_prefix} **CONTRADICTION**: {obs.content}"`, then
+# workspace. So this is built from the emitter itself,
+# `src/utils/representation.py::Representation.format_as_markdown`, read out of
+# the running container (honcho 3.0.11), and it reproduces that code line for
+# line: `f"{id_prefix} **CONTRADICTION**: {obs.content}"`, then
 # `"   **Conflicting statements**:"`, then `f"   - {source}"` per source.
 #
-# Stated rather than omitted, because omitting it is how the explicit-only
-# fixture above came to be mistaken for coverage.
+# Stated rather than omitted, because omitting it is how an explicit-only
+# fixture comes to be mistaken for coverage.
 CONTRADICTION_BODY = (
     "## Contradictions\n"
     "\n"
@@ -237,14 +237,12 @@ async def test_it_posts_the_search_query_to_the_representation_endpoint(server_f
 async def test_target_rides_the_body_as_the_observed_peer_and_is_absent_when_omitted(
     server_factory,
 ):
-    """`peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4). The
-    theory-of-mind form was once dead ("Nora is not a peer"); Honcho v2 makes
-    her a peer that joins every session with observe_others=True, so the pair
-    now derives — and this pins the WIRE: `target` reaches the body when given
-    (so `about` really reads Nora's model of a person, not the person's self-
+    """`peer_id` is the OBSERVER, `target` the OBSERVED. Honcho v2 makes Nora a
+    peer that joins every session with observe_others=True, so the pair
+    derives — and this pins the WIRE: `target` reaches the body when given (so
+    `about` really reads Nora's model of a person, not the person's self-
     model), and is absent when omitted (self-model). Reverting the client's
-    `if target is not None` turns this red — the load-bearing behaviour was
-    untested before (review I2, 2026-08-08)."""
+    `if target is not None` turns this red."""
     seen: list[dict] = []
 
     async def handler(request: web.Request) -> web.Response:
@@ -275,10 +273,10 @@ async def test_a_body_of_the_wrong_shape_is_reachable_with_nothing_in_it(server_
 # ---- the four levels -------------------------------------------------------
 #
 # Everything below runs the parser over output the live instance actually
-# produced (or, for contradictions, over the emitter's own source). Before this
-# commit the same body produced 151 "conclusions" from 25 documents: every
-# premise and every source bullet arrived as an independent fact, and
-# `.lstrip("-*")` ate the markdown bold so patterns read `Pattern** [high]: …`.
+# produced (or, for contradictions, over the emitter's own source). A parser
+# that is not level-aware reads every premise and every source bullet as an
+# independent fact, and `.lstrip("-*")` eats the markdown bold so patterns read
+# `Pattern** [high]: …`.
 
 
 async def test_the_three_derived_levels_all_become_plain_conclusions(server_factory):
@@ -347,8 +345,8 @@ async def test_a_contradiction_is_its_description_and_not_its_label(server_facto
 async def test_an_unknown_future_section_contributes_nothing_rather_than_garbage(
         server_factory):
     """Honcho's formatter is versioned with Honcho, not with Nora. A level added
-    upstream must degrade to silence — the alternative is what this commit
-    fixes, a new label shape read out to the group as something Nora believes.
+    upstream must degrade to silence — the alternative is a new label shape read
+    out to the group as something Nora believes.
     """
     body = (
         "## Abductive Observations\n\n"
@@ -373,10 +371,9 @@ async def test_an_unknown_future_section_contributes_nothing_rather_than_garbage
 # of the running container (honcho 3.0.11).
 #
 # It has to. A fake that returns the same rows whatever it is asked cannot tell
-# `search_top_k=9` from `search_top_k=3`, and the bug this section exists to fix
-# is *entirely* a matter of which numbers were sent — the endpoint answered 200
-# with a perfectly well-formed body the whole time. This repo has shipped three
-# no-ops behind exactly that kind of double.
+# `search_top_k=9` from `search_top_k=3`, and the property this section pins is
+# *entirely* a matter of which numbers were sent — the endpoint answers 200 with
+# a perfectly well-formed body whatever they are.
 
 
 @dataclass(frozen=True)
@@ -454,9 +451,9 @@ def _format_as_markdown(docs: list[_Doc]) -> str:
 def _representation_engine(corpus=_CORPUS, seen: list | None = None):
     """A server that spends `max_conclusions` the way the real one does.
 
-    Reproduces `_get_working_representation_internal` exactly, including the
-    three details that make the old call shape a no-op rather than a mistake of
-    degree: `search_top_k` REPLACES `total // 3` when supplied, the derived
+Reproduces `_get_working_representation_internal` exactly, including the
+three details that make a mis-sized call shape a no-op rather than a mistake of
+degree: `search_top_k` REPLACES `total // 3` when supplied, the derived
     channel is skipped entirely unless `include_most_frequent` is true, and the
     recent budget is whatever the other two left — so `search_top_k == total`
     leaves nothing for either.
@@ -516,7 +513,7 @@ async def test_all_three_channels_reach_the_answer(server_factory):
 
     Revert `search_top_k` to `max_conclusions`, or drop `include_most_frequent`,
     and both disappear while this call still answers 200 with a well-formed
-    body — which is precisely why the old shape was invisible.
+    body — which is precisely why that shape is invisible.
     """
     base = await server_factory(_representation_engine())
     got = await HonchoClient(base, "nora").representation(
@@ -532,7 +529,7 @@ async def test_the_old_shape_could_not_have_reached_two_of_them(server_factory):
     """The counterfactual, run against the SAME engine, so the test above is
     measuring the call shape rather than the fake's generosity.
 
-    This is the body this client sent until 2026-08-06: `search_top_k ==
+    This is the call shape the client must not send: `search_top_k ==
     max_conclusions`, no `include_most_frequent`, no distance floor. It
     computes to semantic 5, derived 0, recent 0.
     """
@@ -547,8 +544,8 @@ async def test_the_old_shape_could_not_have_reached_two_of_them(server_factory):
         }) as r:
             old = _conclusions((await r.json())["representation"])
 
-    assert SEMANTIC_ONLY in old            # the semantic channel still worked
-    assert DERIVED_ONLY not in old         # …and it was the only one that did
+    assert SEMANTIC_ONLY in old            # the semantic channel works
+    assert DERIVED_ONLY not in old         # …and is the only one that does
     assert RECENT_ONLY not in old
 
 
@@ -557,7 +554,7 @@ async def test_a_question_the_corpus_cannot_answer_returns_no_nearest_neighbours
     """pgvector ranks, it does not judge: without a distance floor the semantic
     channel returns `top_k` rows for a question about nothing in the corpus, and
     Nora reads the nearest unrelated facts out as though they were an answer.
-    Measured live at d=0.8 — «quantum chromodynamics» came back with the VW Golf.
+    At d=0.8, «quantum chromodynamics» comes back with the VW Golf.
 
     The other two channels still answer, which is the point of blending them:
     "I could not find anything about THAT" is not the same as "I know nothing".

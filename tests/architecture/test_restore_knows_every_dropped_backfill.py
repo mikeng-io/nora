@@ -5,8 +5,7 @@ the default (`alter_column(..., server_default=None)`), leaves the target
 column with nothing to fill a missing key from. A `row_history` image
 recorded before that migration has no key for the column, so the as-of
 restore (`nora.infra.sql.snapshot_at._insert_sql`) would insert NULL and the
-whole table would be refused. Measured 2026-10-15: every `conversational_recall`
-case ERRORed on `compute_jobs.kind`, added by 0094.
+whole table would be refused (e.g. `compute_jobs.kind`, added by 0094).
 
 History began at 0068 (`0068_system_time_history`); a column dropped earlier
 is in every image, so only later migrations matter.

@@ -1,10 +1,9 @@
 """ADR 0015 §3/§6: a tool result that is not `ok` carries a `note`.
 
 The description only NAMES a tool's statuses; how to read or report one is the
-result's `note`, sent only when that status comes back. A non-ok result with no
-note is a status she was told exists and then given no guidance on, the gap the
-rewrite closed on every tool. The per-tool tests drive each tool's paths; this
-is the generic guard for a path or a tool added later.
+result's `note`, sent only when that status comes back. A non-ok result with no note
+is a status she was told exists and then given no guidance on. The per-tool tests
+drive each tool's paths; this is the generic guard for a path or a tool added later.
 
 A static check over the modules tool results are built in: every dict literal
 whose `status` is a non-ok string must also carry a `note` key, or spread

@@ -1,36 +1,28 @@
-"""AGENTS.md's "Never" list: a DEC/R/D/A number in `design/09-decision-index.md`
-is never taken from a chat agreement — it is re-read from this file at MERGE
-time, because two sessions can independently pick the same number and land it
-without a git conflict (two different lines, no textual overlap).
+"""A DEC/R/D/A number in `design/09-decision-index.md` is unique across the whole table.
 
-**2026-08-23: a REAL duplicate sat on master for 15 days.** Two rows were both
-numbered `R-29`. The hand-run check that should have caught it is documented in
-AGENTS.md itself:
+AGENTS.md's "Never" list: a number is never taken from a chat agreement, it is
+re-read from the file at MERGE time, because two sessions can independently pick
+the same number and land it without a git conflict (two different lines, no
+textual overlap). AGENTS.md carries the hand-run check:
 
     grep -oE '^\\| R-[0-9]+ \\|' design/09-decision-index.md | grep -oE '[0-9]+' |
     sort -n | uniq -d
 
-and it "cried wolf seven times" before that — reporting sub-lettered rules
-(`R-6b`, `R-10c`) as duplicates of their parent (`R-6`, `R-10`) because an
-earlier, looser version of the command read the digits out of `R-6b` as `6`
-and collided it with the real `R-6` row. **The trailing `\\|` in the command
-above is load-bearing**: it requires the pipe to close the cell immediately
-after the digits, which `R-6b` never satisfies (its cell is `R-6b`, not `R-6`),
-so the correct command never saw the sub-lettered rows at all. A noisy gate is
-a disabled gate — seven false alarms is why nobody trusted the eighth, real one
-for 15 days.
+The trailing `\\|` in that command is load-bearing: it requires the pipe to
+close the cell immediately after the digits, which a sub-lettered id such as
+`R-6b` never satisfies (its cell is `R-6b`, not `R-6`). Without it the digits of
+`R-6b` read as `6` and collide with the real `R-6` row.
 
 This file is that check, executable: parsed off the table rows rather than
 shelled out to `grep`, so it runs under `pytest -q` with everything else in
-`make gate`, and it is picky about the SAME cell boundary the AGENTS.md command
-uses (whole ID cell, not a digit substring) so `R-6b` and `R-6` are never
-confused in either direction.
+`make gate`, and it matches the SAME cell boundary (whole ID cell, not a digit
+substring) so `R-6b` and `R-6` are never confused in either direction.
 
 Positive control: a synthetic table with a genuine duplicate (two rows both
 `R-29`) must be caught, and a synthetic table with `R-6` and `R-6b` as
-DIFFERENT rows (the false-positive shape from the story above) must NOT be
-flagged — both asserted below, so a regression in the matcher shows up as a
-missed catch or a new false alarm rather than as a silently green diff.
+DIFFERENT rows must NOT be flagged. Both are asserted below, so a regression in
+the matcher shows up as a missed catch or a false alarm rather than as a
+silently green diff.
 """
 
 from __future__ import annotations
@@ -67,7 +59,7 @@ def test_no_duplicate_ids_in_the_decision_index() -> None:
 
     # Positive control on the real file: an empty duplicate list must mean "we
     # read the table and found no dup", not "the row pattern stopped matching
-    # design/09's own formatting". Measured 2026-09-08: 259 rows.
+    # the decision index's own formatting".
     assert len(ids) >= 200, (
         f"only matched {len(ids)} decision rows in {DECISION_INDEX.relative_to(ROOT)} "
         "— the row pattern likely stopped matching the table's formatting; fix "
@@ -83,7 +75,7 @@ def test_no_duplicate_ids_in_the_decision_index() -> None:
 
 
 def test_a_genuine_duplicate_is_caught() -> None:
-    """Positive control: inject a real duplicate — the R-29 shape — into a
+    """Positive control: inject a real duplicate (two rows both `R-29`) into a
     synthetic table and confirm the detector actually flags it."""
     synthetic = "\n".join(
         [
@@ -99,9 +91,9 @@ def test_a_genuine_duplicate_is_caught() -> None:
 
 
 def test_sub_lettered_rows_are_not_confused_with_their_parent() -> None:
-    """The false-positive cause named in AGENTS.md: `R-6` and `R-6b` (and
-    `R-10` / `R-10c`) are DIFFERENT ids and must never collide, even though a
-    digit-only extraction would read `6` out of both `R-6` and `R-6b`."""
+    """`R-6` and `R-6b` (and `R-10` / `R-10c`) are DIFFERENT ids and must never
+    collide, even though a digit-only extraction would read `6` out of both
+    `R-6` and `R-6b`."""
     synthetic = "\n".join(
         [
             "| ID | Statement | Enforcing test |",

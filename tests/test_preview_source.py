@@ -67,10 +67,9 @@ def _card(body: str):
     ],
 )
 async def test_a_destination_that_is_not_globally_routable_is_refused(url):
-    """DEC-73 deleted this guard because Tavily fetches from ITS OWN servers,
-    never Nora's — true even now that `SearchProvider.fetch` (DEC-116) is handed
-    a url too. This module IS handed one, from model output, and fetches it over
-    NORA'S OWN network — so the guard comes back with the exposure.
+    """A Tavily fetch runs from ITS OWN servers, never Nora's (DEC-73, DEC-116),
+    so it needs no such guard. This module IS handed a url, from model output,
+    and fetches it over NORA'S OWN network — so the guard applies.
 
     Each of these is a real thing on Nora's network or her host, not a
     hypothetical: `127.0.0.1:9100` is her `/health`+`/metrics`, `:18080` is
@@ -193,9 +192,9 @@ def test_an_og_tag_in_the_body_is_ignored():
 def test_a_meta_tag_inside_a_script_string_is_not_read_as_markup():
     """The reason this is an HTML parser and not a regex over the document.
 
-    PROBE: replace `_OpenGraph` with a `re.findall` over `<meta ...>` and this
-    is the assertion that goes red — a page could then choose Nora's card title
-    from inside a JavaScript string literal.
+    A `re.findall` over `<meta ...>` would let a page choose Nora's card title
+    from inside a JavaScript string literal; this assertion pins the
+    HTML-parser behaviour.
     """
     card = _card(
         '<html><head><title>Real title</title>'
@@ -285,7 +284,7 @@ async def test_a_malformed_url_is_a_missing_card_not_an_exception():
     assert await source.preview_for(url="not a url at all") is None
 
 
-# ── against a REAL server, not a fixture (operator: "real test data") ────────
+# ── against a REAL server, not a fixture ─────────────────────────────────────
 
 
 @pytest.mark.network
@@ -299,10 +298,9 @@ async def test_a_real_public_page_produces_a_real_card():
     thing it exists to refuse. That is a real limit, and it means the fixtures
     can only ever prove the REFUSALS. This is the test that proves the accept.
 
-    The URL is a real public page that serves OpenGraph tags (the shortener
-    URL this used to chase was retired by ADR 0023). Network-marked, so it is
-    deselected by default and run
-    deliberately: `uv run pytest -m network`.
+    The URL is a real public page that serves OpenGraph tags. Network-marked,
+    so it is deselected by default and run deliberately:
+    `uv run pytest -m network`.
     """
     source = OpenGraphPreviewSource(timeout_seconds=10.0, fetch_image=True)
     card = await source.preview_for(url="https://github.com/")

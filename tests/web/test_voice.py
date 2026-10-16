@@ -14,8 +14,8 @@ from aiohttp import web
 from nora.web.voice import register_voice
 
 GUILD = "111111111111111111"
-# The guild's TEXT room — where its speech is recorded (design/voice-channel/07
-# §12.2, reversed 2026-09-17), deliberately NOT the voice channel below.
+# The guild's TEXT room — where its speech is recorded, deliberately NOT the
+# voice channel below.
 CONV = f"{GUILD}/222222222222222222"
 VOICE_CHANNEL = "999999999999999999"
 USER = "333333333333333333"

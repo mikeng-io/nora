@@ -6,11 +6,10 @@ prompt table are exercised against the real client in `tests/test_vision.py`;
 config resolution lives in `tests/test_config.py`.
 
 Every test here that means «the describer gap answered» uses a blob that IS in
-the store. Review round 1 found the first cut of this file asserting on
-`sha256="a"*64`, which the fixture never stores — so `unavailable` arrived from
-the ABSENT-BLOB branch and the test stayed green when the branch it named was
-deleted outright. A status alone cannot tell those two apart; the reason label
-can, and is asserted.
+the store. A blob the fixture never stores (`sha256="a"*64`) would make
+`unavailable` arrive from the ABSENT-BLOB branch, and the test would stay green
+when the branch it names is deleted outright. A status alone cannot tell those
+two apart; the reason label can, and is asserted.
 """
 
 # ruff: noqa: F811 — importing a pytest fixture and then naming it as a test
@@ -49,12 +48,10 @@ class _RecordingVision:
 
 async def test_a_voice_note_is_unavailable_when_audio_is_switched_off(wiring):
     """R-27: a wiring gap is «I couldn't check», NEVER «there's nothing there».
-    Audio ships inert, so this is the ordinary path for every voice note today.
 
     The blob IS stored (`PNG_SHA`) and the reason label is asserted, so deleting
     the describer-gap branch cannot pass by falling through to the absent-blob
-    `unavailable` — which is exactly how the first version of this test failed
-    to test anything.
+    `unavailable`.
     """
     await _append_image(wiring["store"], conversation_id="g1",
                         sha256=PNG_SHA, media_type="audio/aac")
@@ -69,9 +66,9 @@ async def test_a_voice_note_is_unavailable_when_audio_is_switched_off(wiring):
 
 
 async def test_a_video_is_unavailable_when_video_is_switched_off(wiring):
-    """Video had NO test at all: `_MODALITIES = ("image", "audio")` passed the
-    whole suite, silently answering `not_an_image` — "that's a file" — for every
-    video, the exact wrong answer this change exists to stop giving."""
+    """Video is a modality of its own: a `_MODALITIES` without it would silently
+    answer `not_an_image` — "that's a file" — for every video, the exact wrong
+    answer the describer dispatch exists to stop giving."""
     await _append_image(wiring["store"], conversation_id="g1",
                         sha256=PNG_SHA, media_type="video/mp4")
     tool = wiring["build"](describe_models={"image": "m/image"})
@@ -81,8 +78,8 @@ async def test_a_video_is_unavailable_when_video_is_switched_off(wiring):
 
 
 async def test_a_file_is_still_turned_away_before_any_model_call(wiring):
-    """A modality nothing describes stays `not_an_image` — unchanged behaviour,
-    and still decided before the bytes reach any model."""
+    """A modality nothing describes stays `not_an_image`, decided before the
+    bytes reach any model."""
     await _append_image(wiring["store"], conversation_id="g1",
                         sha256=PNG_SHA, media_type="application/pdf")
     tool = wiring["build"](describe_models={"image": "m/image", "audio": "m/audio"})
@@ -163,10 +160,9 @@ def _cfg_with(**describe) -> Config:
 
 
 def test_the_composition_root_offers_only_enabled_describers_that_name_a_model():
-    """`_describe_models` had NO test: mutating its loop to `for modality in ()`
-    left the full 2905-test suite green while every photo answered «I can't take
-    in image». It is the single joint between config and the tool, and where the
-    `vision_model` alias resolution lands.
+    """`_describe_models` is the single joint between config and the tool, and
+    where the `vision_model` alias resolution lands. An empty loop would leave
+    every photo answering «I can't take in image».
     """
     from nora.app.composition import _describe_models
 
@@ -267,10 +263,9 @@ def test_a_direct_lane_whose_key_is_unset_is_not_built(monkeypatch):
 # ---- the registry joint ------------------------------------------------------
 
 def test_the_registry_hands_the_describers_to_the_tool():
-    """`ToolRegistry` threading `describe_models` had no test either: setting it
-    to `{}` on the way through discarded every describer with 256 related tests
-    still green. Config -> composition -> registry -> tool is three joints; this
-    pins the one in the middle."""
+    """`ToolRegistry` must thread `describe_models` through: setting it to `{}`
+    on the way discards every describer. Config -> composition -> registry ->
+    tool is three joints; this pins the one in the middle."""
     from nora.agent.registry import ToolRegistry
 
     registry = ToolRegistry(describe_models={"image": "m/image", "audio": "m/audio"})

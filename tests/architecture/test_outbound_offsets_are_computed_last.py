@@ -2,7 +2,7 @@
 
 WHY THIS TEST EXISTS
 --------------------
-Two independent sources of ranges now index one message: a `Mention` is
+Two independent sources of ranges index one message: a `Mention` is
 `(start, length, recipient)` and a `TextStyle` is `(start, length, style)`, both
 in UTF-16 code units over the message body. Those numbers are meaningful
 against exactly ONE string — the one the platform receives. Any transformation
@@ -19,10 +19,9 @@ repo's "Never" list is made of — so it gets a structural brake rather than a
 comment.
 
 WHAT IT PINS, AND WHY THE PINS ARE SHAPED THIS WAY
----------------------------------------------------
-The design's claim is that the hazard is not merely tested against but
-UNREACHABLE, in four layers. Three of them are properties of code shape, which
-is what this file asserts; the fourth is a runtime invariant on the type
+--------------------------------------------------- The hazard is not merely tested
+against but UNREACHABLE, in four layers. Three of them are properties of code shape,
+which is what this file asserts; the fourth is a runtime invariant on the type
 (`Styled.__post_init__`) and lives with its own tests.
 
 1. **`Deliverer.deliver` must hand `adapter.send` an ATTRIBUTE of the composed
@@ -38,7 +37,7 @@ is what this file asserts; the fourth is a runtime invariant on the type
    would be two models of one message, and unpacking it would strand the ranges
    in this function while the text travelled on.
 3. **The guards must measure the value that gets composed.** A text
-   transformation in front of a fail-closed guard was proven to defeat it
+   transformation in front of a fail-closed guard defeats it
    (`"*+85298765432*a"` scans clean once the asterisks are gone and would have
    been SENT), so R-6 and R-18 read `<the rendered value>.text`, and this
    asserts they read THAT and not some other string.
@@ -204,7 +203,7 @@ def test_the_audited_body_is_the_composed_text_or_an_explicit_override():
     `raw` is tag bookkeeping, not an envelope), so nothing downstream would
     ever notice.
 
-    THERE IS NOW ONE DELIBERATE EXCEPTION, and this test admits exactly it and
+    There is ONE DELIBERATE EXCEPTION, and this test admits exactly it and
     nothing else. `send_gif` audits `"<caption> [GIF: <reaction>]"` while the
     wire carries the caption alone, because the row has to record that a GIF
     was sent — the bytes are not in the transcript and the caption by itself
@@ -212,10 +211,7 @@ def test_the_audited_body_is_the_composed_text_or_an_explicit_override():
     caller passed an explicit `record_text`.
 
     The shape is pinned rather than loosened: both branches are checked, so a
-    THIRD string still cannot appear here. This test asserted the plain
-    attribute and went red when `record_text` landed — correctly, because the
-    invariant it guarded really had changed; what was missing was this
-    rewrite."""
+    THIRD string cannot appear here."""
     fn = _deliver()
     composed = _compose_target(fn)
     for node in ast.walk(fn):
@@ -320,9 +316,9 @@ def test_the_composer_is_handed_the_rendered_value_and_not_a_bare_string():
 def test_the_fail_closed_guards_measure_the_value_that_gets_composed():
     """R-6 and R-18 must see the bytes that LEAVE, not only the draft.
 
-    A text transformation in front of a fail-closed guard was proven to defeat
-    it: `"*+85298765432*a"` scans clean once the asterisks are gone and would
-    have been sent. `deliver` therefore checks both forms — and this asserts
+    A text transformation in front of a fail-closed guard defeats it:
+    `"*+85298765432*a"` scans clean once the asterisks are gone and would be
+    sent. `deliver` therefore checks both forms — and this asserts
     that the converted form it checks is the SAME object it composes, not a
     second render or a stale local. Each guard is also required to be called at
     least twice, because checking either form alone is a hole in a fail-closed
@@ -375,7 +371,7 @@ def test_compose_can_see_nothing_but_the_value_it_was_handed():
     design rests on.
 
     PROBE: add a `raw: str` parameter to `compose` and pass it to `_mentions`,
-    which is exactly how the old string-taking signature would be reintroduced,
+    which is exactly how a string-taking signature would be reintroduced,
     and this goes red on the parameter count before it even reaches the reads.
     """
     fn = _compose()

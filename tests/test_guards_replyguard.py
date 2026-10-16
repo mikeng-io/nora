@@ -18,10 +18,10 @@ def _guard(metrics=None) -> ReplyGuard:
 def _send(text="hi", **extra) -> dict:
     """A `send_reply` call as the model emits it.
 
-    `send_reply(text)` is the whole schema since DEC-24, so the well-formed call
-    is just `{"text": ...}`. `extra` is how a test spells "the model also sent
-    something that is not in the schema" — the only form a scope probe can still
-    take, and the one `nora_tool_scope_violations_total` exists to see.
+    `send_reply(text)` is the whole schema (DEC-24), so the well-formed call is just
+    `{"text": ...}`. `extra` is how a test spells "the model also sent something that is
+    not in the schema" — the only form a scope probe can take, and the one
+    `nora_tool_scope_violations_total` exists to see.
     """
     return {"text": text, **extra}
 
@@ -31,11 +31,10 @@ def test_a_first_send_reply_is_allowed():
 
 
 def test_send_reply_past_the_cap_is_cancelled():
-    """The cap is `send_reply`'s budget (DEC-42, multi-message active; doubled
-    per operator 2026-08-08). Every call up to the cap is allowed; the next is
-    refused — by the R-7 budget, reported as R-2 (both branches share the
-    model-facing sentence, DEC-33). Derived from BUDGETS so a budget change
-    cannot silently un-test the cap."""
+    """The cap is `send_reply`'s budget (DEC-42, multi-message active). Every call up to the
+    cap is allowed; the next is refused — by the R-7 budget, reported as R-2 (both
+    branches share the model-facing sentence, DEC-33). Derived from BUDGETS so a budget
+    change cannot silently un-test the cap."""
     m = Metrics()
     g = _guard(m)
     for _ in range(BUDGETS["send_reply"]):
@@ -49,20 +48,17 @@ def test_send_reply_past_the_cap_is_cancelled():
 
 
 def test_send_to_another_conversation_cannot_escape_scope_and_is_counted():
-    """R-3 holds BY CONSTRUCTION, not by veto — and the argument is now
-    out-of-schema (DEC-24).
+    """R-3 holds BY CONSTRUCTION, not by veto — and the argument is out-of-schema (DEC-24).
 
-    `send_reply` never read this argument: it calls `deliverer.deliver(text)`,
-    and `Deliverer` holds its target bound from construction. Vetoing on it
-    protected nothing and made a model that cannot echo a base64 group id
-    verbatim structurally unable to reply — on the first real tag three
-    `send_reply` calls were cancelled this way and the turn ended
-    `no_send_call`. DEC-24 then deleted the parameter, so a model can only
+    `send_reply` never reads this argument: it calls `deliverer.deliver(text)`, and
+    `Deliverer` holds its target bound from construction. Vetoing on it would protect
+    nothing and would make a model that cannot echo a base64 group id verbatim
+    structurally unable to reply. The parameter is not declared, so a model can only
     supply one by inventing it.
 
-    An invented one still reaches this hook (Strands validates the tool input
-    AFTER `BeforeToolCallEvent` and its pydantic model ignores undeclared
-    properties), so it is still counted and still not vetoed.
+    An invented one still reaches this hook (Strands validates the tool input AFTER
+    `BeforeToolCallEvent` and its pydantic model ignores undeclared properties), so it is
+    still counted and still not vetoed.
     """
     m = Metrics()
     assert _guard(m).evaluate("send_reply", _send(conversation_id="g2")) is None
@@ -109,11 +105,9 @@ def test_an_unknown_tool_is_cancelled():
 
 
 def test_load_transcript_to_another_conversation_is_counted_not_cancelled():
-    """Same construction argument as send_reply: `load_transcript` reads the
-    closure's bound conversation (Phase 8 Task 1, which closed a real
-    cross-group READ leak) and, since DEC-24, does not declare one at all. The
-    rows it returns are scoped whatever the model asks for, so the probe is
-    counted rather than vetoed."""
+    """Same construction argument as send_reply: `load_transcript` reads the closure's bound
+    conversation and, since DEC-24, does not declare one at all. The rows it returns are
+    scoped whatever the model asks for, so the probe is counted rather than vetoed."""
     m = Metrics()
     assert _guard(m).evaluate("load_transcript", {"conversation_id": "g2", "limit": 40}) is None
     assert m.get("nora_tool_scope_violations_total", tool="load_transcript") == 1
@@ -121,7 +115,7 @@ def test_load_transcript_to_another_conversation_is_counted_not_cancelled():
 
 
 def test_the_scope_counter_fires_for_any_tool_not_just_the_two_scoped_ones():
-    """No tool declares a conversation any more, so "the model named a
+    """No tool declares a conversation, so "the model named a
     conversation" is a signal about the MODEL, not about which tool it aimed
     at. Counting only `send_reply`/`load_transcript` would silently miss it on
     `now` or on any tool added later."""
@@ -132,7 +126,7 @@ def test_the_scope_counter_fires_for_any_tool_not_just_the_two_scoped_ones():
 
 def test_a_well_formed_call_never_touches_the_scope_counter():
     """The load-bearing half of DEC-24's counter decision (R-17's lesson in the
-    other direction). Absence of `conversation_id` is now the NORMAL case: if it
+    other direction). Absence of `conversation_id` is the NORMAL case: if it
     were treated as a mismatch, this counter would increment on every single
     tool call and be exactly as uninformative as one pinned at zero."""
     m = Metrics()
@@ -154,10 +148,9 @@ def test_counters_are_per_guard_instance():
 
 
 def test_a_missing_conversation_id_no_longer_blocks_the_reply():
-    """It used to be a hard veto, then a counted mismatch, and is now simply
-    the shape of a correct call — there is no such parameter to omit. A model
-    that speaks with `{"text": ...}` alone must be allowed through and must not
-    be flagged for it."""
+    """Omitting `conversation_id` is simply the shape of a correct call — there is no such
+    parameter to omit. A model that speaks with `{"text": ...}` alone must be allowed
+    through and must not be flagged for it."""
     m = Metrics()
     assert _guard(m).evaluate("send_reply", {"text": "hi"}) is None
     assert m.get("nora_tool_scope_violations_total", tool="send_reply") == 0
@@ -175,16 +168,16 @@ def test_evaluate_does_not_mutate_counts():
 
 
 class _Deliverer:
-    """The properties `ReplyGuard` reads off a `Deliverer` — with the real
-    relationship between them, not three independent booleans.
+    """The properties `ReplyGuard` reads off a `Deliverer` — with the real relationship
+    between them, not three independent booleans.
 
     `exhausted` is DERIVED from `attempts` against `message_cap`, exactly as
-    `nora.agent.guards.Deliverer` derives it, so a fake that was handed 1 of 2
-    messages answers `attempted=True, exhausted=False` the way the real object
-    does. Spelling the three out independently would let a test assert a state
-    the real class cannot be in — and this section's whole subject is which of
-    two mechanisms refuses a call, so a fake that could disagree with itself
-    would be asserting the test's own arrangement back at it.
+    `nora.agent.guards.Deliverer` derives it, so a fake that was handed 1 of 2 messages
+    answers `attempted=True, exhausted=False` the way the real object does. Spelling the
+    three out independently would let a test assert a state the real class cannot be in —
+    and this section's whole subject is which of two mechanisms refuses a call, so a fake
+    that could disagree with itself would be asserting the test's own arrangement back at
+    it.
     """
 
     def __init__(self, *, attempts: int, message_cap: int) -> None:
@@ -216,20 +209,17 @@ def _guard_with(*, attempts: int, send_reply_budget: int,
 
 
 def test_relaxing_r_2_alone_does_not_buy_a_second_message():
-    """THE TRAP, still visible after DEC-40 walked past it.
+    """THE TRAP: the R-7 budget and the R-2 latch can disagree silently.
 
-    `evaluate` checks the R-7 per-tool budget BEFORE it checks the deliverer,
-    and `NATIVE_TOOL_BUDGETS["send_reply"]` is 1. So a change that relaxes R-2
-    — the latch, the thing every document calls "the one-reply rule" — and
-    touches nothing else leaves multi-message SILENTLY DEAD: the second
-    `send_reply` is refused by a number nobody edited, and the veto it emits
-    says `rule="R-2"`, which is the rule that was just relaxed.
+    `evaluate` checks the R-7 per-tool budget BEFORE it checks the deliverer, and
+    `NATIVE_TOOL_BUDGETS["send_reply"]` is 1. So a change that relaxes R-2 — the latch,
+    the thing every document calls "the one-reply rule" — and touches nothing else leaves
+    multi-message SILENTLY DEAD: the second `send_reply` is refused by a number nobody
+    edited, and the veto it emits says `rule="R-2"`, which is the rule that was just
+    relaxed.
 
-    The deliverer here is NOT exhausted (its cap is 1 but it has spent
-    nothing), so the latch below cannot be what refuses this call.
-
-    `design/proposed/16-multi-message-replies.md` §4 caught this shape one line
-    lower down, in `Deliverer._attempted`, and missed it here.
+    The deliverer here is NOT exhausted (its cap is 1 but it has spent nothing), so the
+    latch below cannot be what refuses this call.
     """
     m = Metrics()
     g = _guard_with(attempts=0, send_reply_budget=1, metrics=m)
@@ -251,15 +241,12 @@ def test_the_budget_is_the_number_that_refused_it():
 
 
 def test_a_deliverer_capped_below_the_budget_refuses_what_the_budget_allowed():
-    """The other half of the ordering, restated for DEC-40.
-
-    Before DEC-40 this said "today's deliverer latches on the first attempt",
-    which was a property of the code. It is now a property of one number, and
+    """The other half of the ordering. The deliverer's cap is a property of one number, and
     the number can only disagree with the budget if somebody wires it by hand:
-    `deliver.build` reads `message_cap` out of the same `budgets` mapping it
-    hands the guard. This is what that wiring fault would look like — R-7 lets
-    the second message through and R-2 refuses it, so multi-message ships dead
-    with the refusal filed under the rule that was relaxed to enable it.
+    `deliver.build` reads `message_cap` out of the same `budgets` mapping it hands the
+    guard. This is what that wiring fault would look like — R-7 lets the second message
+    through and R-2 refuses it, so multi-message ships dead with the refusal filed under
+    the rule that was relaxed to enable it.
     """
     m = Metrics()
     g = _guard_with(attempts=1, send_reply_budget=2, deliverer_cap=1, metrics=m)
@@ -282,21 +269,16 @@ def test_the_latch_still_refuses_the_message_after_the_last_one():
 def test_a_parallel_batch_cannot_exceed_the_budget():
     """R-7's ceiling must hold WITHIN one model turn, not only between turns.
 
-    Every other budget test in this file loops `evaluate` -> `record` ->
-    `evaluate`, which is the SEQUENTIAL shape. A model emitting its tool calls
-    as a parallel batch produces a different one: the guard is asked about
-    every call in the batch before any of them completes, so with `record`
-    firing only in `AfterToolCallEvent` they all saw the pre-batch count and
-    all passed.
+    Every other budget test in this file loops `evaluate` -> `record` -> `evaluate`, which
+    is the SEQUENTIAL shape. A model emitting its tool calls as a parallel batch produces
+    a different one: the guard is asked about every call in the batch before any of them
+    completes, so with `record` firing only in `AfterToolCallEvent` they would all see the
+    pre-batch count and all pass. That carries a turn past its token ceiling and ends it
+    with an empty message, so the group hears nothing — R-23's shape, and the worst way
+    for a budget to fail.
 
-    Found in a live Langfuse trace (2026-08-13): NINE `place_info` calls
-    against a budget of four, in two batches, carrying the turn to 148k input
-    tokens against a 128k ceiling. It ended `limit_total_tokens` with an empty
-    message, so the group heard nothing — R-23's shape, and the worst way for
-    a budget to fail.
-
-    PROBE: delete the `_in_flight` term from `evaluate`'s ceiling check and
-    this goes red while every sequential budget test above stays green.
+    PROBE: delete the `_in_flight` term from `evaluate`'s ceiling check and this goes red
+    while every sequential budget test above stays green.
     """
     g = _guard()
 
@@ -348,10 +330,11 @@ def test_the_veto_names_the_number_it_is_counting():
 
 
 def test_a_write_tools_veto_does_not_tell_her_to_answer_from_what_it_did():
-    """R-7's generic sentence says «you have that context, answer from what you already have».
-    For a tool that WRITES, every earlier call may have failed: on 2026-10-02 twelve
-    `computer_run` calls failed to parse a spec, the veto told her to answer, and she told the
-    room the document was made. The sentence for a write tool says only an `ok` call did anything.
+    """R-7's generic sentence says «you have that context, answer from what you already
+    have». For a tool that WRITES, every earlier call may have failed: if every
+    `computer_run` call failed to parse a spec, the veto would tell her to answer, and she
+    would tell the room the document was made. The sentence for a write tool says only an
+    `ok` call did anything.
 
     Reverting the `read_only` branch in `ReplyGuard.evaluate` turns this red."""
     g = _guard()
@@ -368,23 +351,16 @@ def test_a_write_tools_veto_does_not_tell_her_to_answer_from_what_it_did():
 
 
 def test_the_skills_veto_does_not_claim_she_holds_a_skill_she_never_loaded():
-    """R-7's generic sentence — «you already called X N time(s) and have that
-    context, answer from what you already have» — is true of every tool on the
-    table whose repeat call returns the identical answer. `skills` is not one of
-    them: the argument picks which body loads.
+    """R-7's generic sentence — «you already called X N time(s) and have that context, answer
+    from what you already have» — is true of every tool on the table whose repeat call
+    returns the identical answer. `skills` is not one of them: the argument picks which
+    body loads.
 
-    The defect does not depend on the directory being larger than the budget.
-    **A repeat call is not vetoed here** — the two `skills("navigation")` calls
-    below both return None — so the budget can always be spent without loading
-    everything, whatever the counts are. Telling her she has a body she never
-    loaded is telling her to describe something she was never given, which is
-    the move that produced #227.
-
-    2026-09-17: the `self-description` skill was retired into
-    `nora/doctrine/core/identity.md` (operator, #227), so two skills now ship against
-    a budget of 2. That does NOT restore R-7's generic sentence, for the reason
-    above, and this test is unchanged by it — only the skill named in the veto
-    below moved, because the retired one no longer exists to name.
+    The defect does not depend on the directory being larger than the budget. **A repeat
+    call is not vetoed here** — the two `skills("navigation")` calls below both return
+    None — so the budget can always be spent without loading everything, whatever the
+    counts are. Telling her she has a body she never loaded is telling her to describe
+    something she was never given.
 
     Reverting the `skills` branch in `ReplyGuard.evaluate` turns this red.
     """
@@ -404,30 +380,24 @@ def test_the_skills_veto_does_not_claim_she_holds_a_skill_she_never_loaded():
     # the honest move is to say so rather than fill the gap.
     assert "not in front of you" in message
     assert "cannot check" in message
-    # "called", not "activated" (review nit): `spent` is `record`'s count, and
-    # `record` fires for any completed call this guard did not veto — including a
-    # `skills(<unknown>)` that resolved nothing. A call is what was spent; an
-    # activation is not what every one of them bought.
+    # "called", not "activated": `spent` is `record`'s count, and `record` fires for any
+    # completed call this guard did not veto — including a `skills(<unknown>)` that
+    # resolved nothing. A call is what was spent; an activation is not what every one of
+    # them bought.
     assert "already called" in message
     assert "activated" not in message
 
 
 def test_the_skills_budget_can_be_spent_with_a_skill_still_unloaded():
-    """The positive control for the test above: it is only measuring something
-    while the budget CAN be exhausted with a skill still unloaded.
+    """The positive control for the test above: it is only measuring something while the
+    budget CAN be exhausted with a skill still unloaded.
 
-    **Rewritten 2026-09-17, because it was measuring the wrong property.** It
-    asserted `directory size > budget`, and fired when `self-description` was
-    retired and the two numbers met (#227). Its own docstring had the condition
-    right all along — "the budget CAN be exhausted with a skill still unloaded"
-    — and that is NOT the same claim: a repeat call is not vetoed, so spending
-    the whole budget on ONE skill leaves every other one unloaded at any
-    directory size. The old form would also have gone green on a fourth skill
-    while the defect was untouched, which is the direction that matters.
+    That is NOT the same claim as `directory size > budget`: a repeat call is not vetoed,
+    so spending the whole budget on ONE skill leaves every other one unloaded at any
+    directory size.
 
-    So this now asserts the defect is REACHABLE, by the same route the test
-    above takes: spend the budget on one skill, and name a different one that
-    ships and was never loaded."""
+    So this asserts the defect is REACHABLE, by the same route the test above takes: spend
+    the budget on one skill, and name a different one that ships and was never loaded."""
     skills_dir = Path(__file__).resolve().parents[1] / "nora" / "skills"
     shipped = sorted(p.name for p in skills_dir.iterdir()
                      if (p / "SKILL.md").is_file())

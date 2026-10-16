@@ -1,9 +1,9 @@
-"""`OpenAICodexImageGenerator` + `OpenAICodexOAuth` (DEC-304, design 29 §11).
+"""`OpenAICodexImageGenerator` + `OpenAICodexOAuth` (DEC-304).
 
-The OpenAI Codex lane against local aiohttp servers, no network: a fake
-Codex backend that streams SSE the way the live one did on 2026-10-09, and a
-fake `auth.openai.com` token endpoint that ROTATES the refresh token on every
-use and refuses a spent one, the property this lane is built around.
+The OpenAI Codex lane against local aiohttp servers, no network: a fake Codex
+backend that streams SSE the way the live one does, and a fake
+`auth.openai.com` token endpoint that ROTATES the refresh token on every use
+and refuses a spent one, the property this lane is built around.
 """
 # ruff: noqa: S105, S106 — every token here is a fake for a local server.
 
@@ -382,8 +382,8 @@ async def test_a_refused_refresh_is_auth_and_a_429_is_rate_limited(tmp_path, aut
 async def test_a_failed_write_keeps_spending_the_rotated_token_and_retries_the_write(
     tmp_path, auth_server,
 ):
-    """Review finding 1: a write failing AFTER the writability check left the
-    rotation only in memory, and the next refresh re-sent the dead bootstrap."""
+    """A write failing AFTER the writability check must not leave the rotation
+    only in memory, or the next refresh re-sends the dead bootstrap."""
     issuer, auth = auth_server
     state_file = tmp_path / "state" / "openai-codex-oauth.json"
     state_file.mkdir(parents=True)  # a directory: os.replace onto it fails
@@ -436,8 +436,8 @@ async def test_a_vanished_state_file_never_resends_the_bootstrap(tmp_path, auth_
 
 
 async def test_a_cancelled_caller_does_not_lose_a_rotation(tmp_path, auth_server):
-    """Review finding 3: the issuer rotates, the caller is cancelled before
-    the answer lands; the refresh must still finish and be written."""
+    """The issuer rotates and the caller is cancelled before the answer lands;
+    the refresh must still finish and be written."""
     issuer, auth = auth_server
     auth["delay"] = 0.3
     oauth = _oauth(tmp_path, issuer)
@@ -456,7 +456,7 @@ async def test_a_cancelled_caller_does_not_lose_a_rotation(tmp_path, auth_server
 async def test_the_state_file_is_never_readable_by_others_and_is_synced(
     tmp_path, auth_server, monkeypatch,
 ):
-    """Review finding 4: the token is written into a file that is already
+    """The token is written into a file that is already
     0600, and synced before the rename."""
     issuer, _ = auth_server
     synced: list[int] = []
@@ -478,7 +478,7 @@ async def test_the_state_file_is_never_readable_by_others_and_is_synced(
 async def test_a_lock_failure_is_unavailable_never_a_raise(
     tmp_path, auth_server, codex_server, monkeypatch,
 ):
-    """Review finding 5: an flock error must not escape `generate()`."""
+    """An flock error must not escape `generate()`."""
     import fcntl
 
     issuer, _ = auth_server
@@ -545,7 +545,7 @@ async def test_device_login_polls_until_approved_then_exchanges_with_pkce():
 
 
 def test_import_refuses_codex_home_and_a_copy_of_the_operators_token(tmp_path, monkeypatch):
-    """Review finding 2: `$CODEX_HOME/auth.json` is the operator's too, and a
+    """`$CODEX_HOME/auth.json` is the operator's too, and a
     copy of their file is the same login whatever its path."""
     monkeypatch.setenv("HOME", str(tmp_path))
     home = tmp_path / "codex-home"

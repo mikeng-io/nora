@@ -1,11 +1,10 @@
 """Every migration's revision id fits `alembic_version.version_num`.
 
-Found on PR #517's first gate: `0064_reminders_proactive_open_note` is 34
-characters, the column is `varchar(32)`, and every migration in the suite
-failed with `StringDataRightTruncation` at the `UPDATE alembic_version`. Only a
-test that actually migrates reaches that, and at boot the container would not
-start. This reads the ids off the files (as `test_alembic_single_head.py`
-does) and the width off Alembic's own version table, so neither is a guess.
+A revision id longer than the `varchar(32)` column fails the `UPDATE
+alembic_version` with `StringDataRightTruncation`, and at boot the container
+would not start. Only a test that actually migrates reaches that. This reads
+the ids off the files (as `test_alembic_single_head.py` does) and the width off
+Alembic's own version table, so neither is a guess.
 """
 
 from __future__ import annotations

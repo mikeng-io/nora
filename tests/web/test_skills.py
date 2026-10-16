@@ -41,7 +41,7 @@ async def test_lists_a_real_skill_by_name_and_description(tmp_path: Path):
 
 
 async def test_surfaces_the_instructions_body_to_the_private_portal(tmp_path: Path):
-    """The body IS included since 2026-09-03 (operator decision): the portal
+    """The body IS included: the portal
     is private (auth-gated), so it shows what a skill actually says. This does
     NOT touch progressive disclosure — the body still stays out of the model's
     prompt until activation; this is a read-only metadata endpoint."""
@@ -77,7 +77,7 @@ async def test_skips_a_malformed_skill_rather_than_failing_the_whole_list(tmp_pa
 async def test_a_skill_carrying_an_authority_key_is_dropped_silently(tmp_path: Path):
     """This endpoint's `SkillStore` runs `strict=False`, so `parse_skill`
     refusing a skill for carrying `authority_above`/`authority_below`/
-    `change_policy` (issue #187 finding 3) is just another malformed-skill
+    `change_policy` is just another malformed-skill
     case here: the skill is absent from the payload and nothing raises — the
     same outcome `test_skips_a_malformed_skill_rather_than_failing_the_whole_
     list` above proves for a skill with no frontmatter at all. The refusal

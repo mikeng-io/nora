@@ -6,8 +6,8 @@ appear when it would be a lie, and does not take the turn down when Honcho is
 slow. Those are the tests.
 
 The fake memory below answers `peer_card` and `representation` INDEPENDENTLY
-and differently, because the live pair does: read 2026-08-15 they shared zero
-items, one rendering identity claims and the other dated episodes. A double
+and differently, because the live pair does: they share no items, one rendering
+identity claims and the other dated episodes. A double
 answering both from one list would model the merge this design specifically
 rejects.
 """
@@ -125,9 +125,9 @@ async def _assemble(memory, **kw) -> TagContext:
 
 
 async def test_the_tagger_gets_both_their_card_and_their_episodes():
-    """The two halves of one person, and the reason the block was added: the
-    card says who they are, the history says what happened with them. Read
-    live they shared zero items, so having one is not having the other."""
+    """The two halves of one person: the card says who they are, the history says
+    what happened with them. Live they share no items, so having one is not
+    having the other."""
     ctx = await _assemble(_Memory())
 
     assert ctx.peer_card == CARD
@@ -146,7 +146,7 @@ async def test_the_recall_is_keyed_on_what_they_just_said():
 
 
 async def test_the_observer_is_nora_and_the_observed_is_the_tagger():
-    """design/24 §4. Reversing these reads the person's model of NORA, which is
+    """Reversing these reads the person's model of NORA, which is
     a different question and not one she should be answering from."""
     memory = _Memory()
 
@@ -252,12 +252,11 @@ async def test_the_reads_are_concurrent_not_sequential():
 
 
 async def test_an_empty_card_for_a_mapped_person_is_counted():
-    """The gap an operator found by reading a trace on 2026-08-15.
+    """The block's silent non-render is counted.
 
     `peer_card` answers `[]` for a dead endpoint, a timeout, an unknown peer
     and a genuinely empty card alike, so the block silently does not render and
-    nothing says why — which is how it stayed dead for a whole deployment once
-    already. The counter does not disambiguate those four; it makes «her card
+    nothing says why. The counter does not disambiguate those four; it makes «her card
     stopped appearing» visible at all.
     """
     metrics = _Metrics()
@@ -350,5 +349,5 @@ async def test_a_tag_turn_carries_the_rooms_account_through_assemble_and_prefill
     assert ctx.culture is not None
     blob = str(build_prefill(ctx, display_name="Nora", context_window=10))
     assert "<culture" in blob and "they decide by attrition" in blob
-    # And her own account by the unit (design/self-growth/20), first.
+    # And her own account by the unit, first.
     assert "<self " in blob and "she keeps it short here" in blob

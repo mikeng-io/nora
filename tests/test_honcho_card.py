@@ -1,6 +1,6 @@
-"""Tests for the Honcho read path (peer_card, health) on nora/infra/honcho/client.py, spec §C.5.
+"""Tests for the Honcho read path (peer_card, health) on nora/infra/honcho/client.py.
 
-Mirrors tests/test_honcho.py's (Task 21) local, zero-dependency server fixture: a
+Mirrors tests/test_honcho.py's local, zero-dependency server fixture: a
 local aiohttp.test_utils.TestServer scoped to this file, no shared conftest changes
 and no third-party pytest plugin registration.
 """
@@ -88,7 +88,7 @@ async def test_health_reports_reachability(server_factory):
 
 
 async def test_health_probes_the_root_health_endpoint(server_factory):
-    """Regression guard (fix of 2026-08-04): the probe must be GET /health.
+    """The probe must be GET /health.
 
     GET /v3/workspaces is POST-only -> 405 -> the container sits in
     'health: starting' forever. The sibling health tests mount a wildcard route
@@ -132,16 +132,13 @@ async def test_fake_honcho_can_simulate_being_down():
 
 
 async def test_the_content_key_honcho_never_returns_yields_nothing(server_factory):
-    """The shape this client invented and its old test asserted back to itself.
+    """The card is read from the `peer_card` key, not an invented `content` string.
 
-    `GET /peers/{id}/card` answers `{"peer_card": [...] | null}` — verified
-    against the live instance and its OpenAPI schema. It has never returned a
-    `content` string. Reading that key meant peer_card returned [] on every
-    call and the tagging path's recall channel was dead for the life of the
-    deployment, silently, because an empty card is indistinguishable from a
-    person Nora simply has no memories about yet.
-
-    Pinned so the invented shape cannot come back.
+    `GET /peers/{id}/card` answers `{"peer_card": [...] | null}` per the live
+    OpenAPI schema; it never returns a `content` string. Reading that key would
+    make peer_card return [] on every call and silently kill the tagging path's
+    recall channel, because an empty card is indistinguishable from a person
+    Nora simply has no memories about yet.
     """
     base_url = await server_factory(_payload_handler({"content": "- likes tea"}))
     assert await HonchoClient(base_url, "nora").peer_card(peer_id="miles") == []

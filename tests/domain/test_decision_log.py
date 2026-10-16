@@ -1,5 +1,5 @@
 """`DecisionLogRecorder` and `render_decisions` — the fail-soft writer and the
-block (issue #199).
+block.
 
 The STORE's properties are `tests/contract/test_decision_log_store_contract.py`'s
 subject, over both implementations. This file is about the two pieces that sit
@@ -40,10 +40,10 @@ NOW_MS = int(NOW.timestamp() * 1000)
 def _text(block) -> str:
     """The block's bytes, or `""` when there is no block.
 
-    The three renderers return a `ContextBlock` since #220's second half — the
-    block declares itself and `ContextBlock.render()` is the only thing that
-    turns one into text. These tests assert on the bytes, so they render here.
-    A `None` is «no block at all», which is what `""` used to mean.
+    The three renderers return a `ContextBlock` — the block declares itself and
+    `ContextBlock.render()` is the only thing that turns one into text. These
+    tests assert on the bytes, so they render here. A `None` is «no block at
+    all», which is `""` here.
     """
     return block.render() if block is not None else ""
 
@@ -140,10 +140,9 @@ async def test_a_store_that_hangs_costs_the_timeout_and_nothing_more():
             await asyncio.sleep(5)
 
     # 0.5s against a 5s sleep, NOT 0.01s against 30s. The margin is the point:
-    # a 10ms wall clock on a loaded machine is a coin flip, and this test was
-    # observed red once in five runs at that setting — on the assertion that
-    # carries this whole module's central safety claim. A falsification that
-    # flaps is a falsification nobody can cite.
+    # a 10ms wall clock on a loaded machine is a coin flip, on the assertion
+    # that carries this whole module's central safety claim. A falsification
+    # that flaps is a falsification nobody can cite.
     recorder = _recorder(_Hangs(), timeout_seconds=0.5)
     assert await recorder.record(
         writer="participation", platform="signal", conversation_id="g1",
@@ -177,7 +176,7 @@ async def test_a_long_reason_is_truncated_rather_than_dropped():
 
 
 async def test_two_decisions_in_one_millisecond_keep_their_insertion_order():
-    """**Found by writing a test, not by review.** Both stores order on
+    """Both stores order on
     `(ts, id)`, and with a bare `uuid4` id that tie-break is RANDOM — so one
     Dreamer `commit` walking a four-item envelope with no `await` that yields
     between items would render its own decisions in arbitrary order, «remind,
@@ -261,14 +260,13 @@ def test_the_block_names_itself_and_every_row_carries_an_age():
 
 
 def test_the_blocks_note_says_what_it_is_and_gives_no_instruction():
-    """AGENTS.md's measured rule: telling a model what it CAN DO made this same
-    gate worse over 40 labelled cases; telling it what it is READING fixed it.
-    So the note describes the rows, their axis of time, and what they are not —
+    """AGENTS.md's rule: telling a model what it is READING beats telling it
+    what it CAN DO. So the note describes the rows, their axis of time, and what they are not —
     and contains no verb aimed at the model.
 
     Asserted as the two halves that matter: it says what the rows ARE, and it
     says explicitly what they are NOT (notes, memory, anybody's speech), which
-    is the sentence that keeps design 36's bar intact.
+    is the sentence that keeps the block from posing as memory.
     """
     block = _text(render_decisions([("", ())], now=NOW))
     assert "own ambient loop already did across THIS GROUP" in block
@@ -352,16 +350,13 @@ def test_every_declared_verdict_renders(verdict):
 
 
 async def test_the_writer_filter_is_applied_before_the_bound():
-    """**The finding that broke the feature, as a property.** The bound is 20
+    """**The property that keeps the reader useful.** The bound is 20
     rows and every reader wants a subset — each excludes its own writer. A
     busy room's dominant writer can out-produce every other writer by an order
     of magnitude, so a filter applied to what came BACK hands the caller 20 of
     its rows and nothing it can use. Silently: an empty result renders as no
-    block at all.
-
-    Measured before the fix on exactly this shape — one `proactive_decide` row
-    followed by 25 rows from a high-volume writer — the participation reader
-    kept 0 of 20.
+    block at all. The shape: one `proactive_decide` row followed by 25 rows from
+    a high-volume writer must still reach the participation reader.
 
     Falsification: drop `writers=` from `DecisionLogRecorder.read_unit`
     (or from either store's query) and this goes red.
@@ -396,36 +391,30 @@ async def test_a_blank_unit_answers_nothing():
 
 
 def test_the_note_names_only_the_writers_it_carries():
-    """**The review's M2, and the form it survives in.** Both readers filter,
+    """Both readers filter,
     in opposite directions. A static gloss enumerating all four deciders tells
     each reader its block contains rows it will never be shown — and absence
     then reads as FACT: «participation never ran here», «she has raised
     nothing», when it is a filter. A block describing a superset of itself is
     the same defect as a block with no age on its rows, one axis over.
 
-    **The block DOES describe a superset of itself now, and this is where that
-    was traded** (#314). It named only the writers it was handed, which needs
-    the sentence composed per render — and a sentence composed per render is a
-    block described one way by one caller and another way by another, which is
-    the defect the type registry exists for and which four block types had
-    already committed. So the gloss lists all four, and the reading M2 closes
-    is closed in words: a decider you do not see ON A ROW is one this block
-    does not carry.
+    **The block DOES describe a superset of itself, deliberately.** Naming
+    only the writers it was handed needs the sentence composed per render, and
+    a sentence composed per render is a block described one way by one caller
+    and another way by another, which is the defect the type registry exists
+    to prevent. So the gloss lists all four deciders.
 
-    **The first replacement was FALSE and this is the second.** It said «a
-    decider you do not see on any row here is one this block does not carry» —
-    an assertion the TYPE cannot make, because both readers carry two of the
-    four and the type does not know which two. Measured by an audit on the
-    participation path: `proactive_decide` IS carried there, so a turn with no
+    It must not claim «a decider you do not see on any row here is one this
+    block does not carry» — an assertion the TYPE cannot make, because both
+    readers carry two of the four and the type does not know which two.
+    `proactive_decide` IS carried on the participation path, so a turn with no
     `proactive_decide` row means she raised nothing in 24 hours — real
-    information — and that sentence told her to conclude nothing from it. With
-    an empty body it claimed the block carried no deciders at all.
+    information — and that sentence would tell her to conclude nothing from it.
 
     What a type CAN say is that it does not know, and that is what is asserted
-    here. Strictly weaker than the per-render `_note_for` it replaced, and the
-    honest trade. If a measurement ever shows this read as fact anyway, the
-    answer is a per-render ANNOTATION — the field-level twin of a description,
-    which may vary — and not a second description.
+    here. If a measurement ever shows this read as fact anyway, the answer is a
+    per-render ANNOTATION — the field-level twin of a description, which may
+    vary — and not a second description.
     """
     block = _text(render_decisions([("", ())], now=NOW))
     for decider in ("participation -", "tag -", "proactive_decide -",
@@ -437,7 +426,7 @@ def test_the_note_names_only_the_writers_it_carries():
 
 
 def test_the_note_speaks_to_the_model_in_the_second_person():
-    """the deleted `nora.language.proactive` rendered this block beside `<decisions>`, whose
+    """This block renders beside `<decisions>`, whose
     note says «what YOU decided to raise». A neighbour speaking about «Nora's
     own loop» and «her deciders» invites the model — which IS Nora — to read
     the second block as somebody else's record. Same agent, same prompt, one

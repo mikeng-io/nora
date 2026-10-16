@@ -1,9 +1,7 @@
-"""Alembic's baseline IS the schema (design/20 §2).
+"""Alembic's baseline IS the schema.
 
 The single Postgres-native baseline builds the schema on a fresh, empty
-database; there is no data migration (the live store was 41 rows loaded once,
-§5). Rolling this phase back is `git revert` plus `DROP TABLE messages,
-alembic_version`.
+database; there is no data migration.
 """
 
 from __future__ import annotations
@@ -45,11 +43,10 @@ async def test_a_migrated_database_accepts_writes(pg_url):
 
 
 async def test_a_signal_magnitude_timestamp_round_trips_through_the_store(pg_url):
-    """The BLOCKER design/20 §2 names: `ts` is BigInteger, and a Signal
-    millisecond timestamp (~1.78e12) overflows INT4. This writes one through the
-    real `MESSAGES.ts` column and reads it back unchanged. Revert `schema.py`'s
-    `ts` to `sa.Integer` and the baseline builds an int4 column, so this append
-    raises NumericValueOutOfRange — the test goes red, which is the point."""
+    """`ts` is BigInteger, and a Signal millisecond timestamp (~1.78e12)
+    overflows INT4. This writes one through the real `MESSAGES.ts` column and
+    reads it back unchanged. Were `ts` an `sa.Integer`, the baseline would
+    build an int4 column and this append would raise NumericValueOutOfRange."""
     run_migrations(pg_url)
     store = SqlRecordStore(create_sql_engine(pg_url))
     magnitude = 1785950108283
@@ -64,10 +61,9 @@ async def test_a_signal_magnitude_timestamp_round_trips_through_the_store(pg_url
 
 def test_the_only_tables_are_the_declared_ones_and_alembic_version(pg_url):
     """Rollback depends on this: the migrated database holds exactly the tables
-    the metadata declares plus Alembic's own `alembic_version`. `presence_fixes`
-    (design/19) joined the chain, so the expected set is derived from
-    `schema.METADATA` rather than hard-coded — a new table lands here with no
-    edit, a STRAY table (one not in the metadata) still fails."""
+    the metadata declares plus Alembic's own `alembic_version`. The expected set
+    is derived from `schema.METADATA` rather than hard-coded — a new table lands
+    here with no edit, a STRAY table (one not in the metadata) still fails."""
     run_migrations(pg_url)
     engine = sa.create_engine(sync_url_for(pg_url))
     try:

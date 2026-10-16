@@ -1,35 +1,24 @@
 """Every renderer that puts a row on a LINE collapses that row to one line.
 
-**This file exists because the fix shipped to one renderer out of eight.**
-`_one_line` was written on 2026-09-10 for `nora.ingest.relevance_gate` — with a
-live measurement behind it (a forged commitment line took that gate to `go` 5/5
-and stayed 5/5 against a hardened instruction) — as a PRIVATE function in that
-module. Seven other renderers join rows with `"\\n"` and render each as
-`<something>: <body>`, and every one of them went on forging rows: the tag and
-fire prefill, the debrief fold, the note curator's evidence and own-sends, the
-note-candidate index, the proactive standing listing, the shadow mirror post.
-The tag prefill is the one a member actually talks to.
+`one_line` (`nora.domain.prompt`) is applied by each renderer that joins rows
+with `"\\n"` and renders each as `<something>: <body>`: the tag and fire prefill,
+the debrief fold, the note curator's evidence and own-sends, the note-candidate
+index, the proactive standing listing, the shadow mirror post. A row body that
+keeps a newline can forge a further line of the block, and `escape` does not
+help: it is blind to the line axis.
 
-It is the `test_media_join_reaches_every_transcript.py` defect exactly, one
-module over: a property established through ONE consumer, with nothing asking
-whether the other seven were forgotten. And the same sweep had already been
-run once and missed this: `note_candidates._render_line` gained its `escape`
-call on 2026-09-10, the same day, and still rendered a raw newline — because
-`escape` is blind to the line axis and nothing held the two halves together.
+The property asserted is that no renderer is FORGOTTEN, not what one renderer
+does with a particular row, so this is a STATIC read of the source. Each
+renderer's behaviour is pinned by its own unit test (`tests/test_prefill.py`,
+`tests/unit/test_relevance_gate.py`, `tests/unit/test_debrief_render.py`,
+`tests/unit/test_prompt_one_line.py`); this is the brake on the NEXT one. It
+has the same shape as `test_media_join_reaches_every_transcript.py`.
 
-**A STATIC read of the source, deliberately**, for that gate's own reason: the
-thing asserted is not what one renderer does with a particular row, it is that
-no renderer was FORGOTTEN. Each renderer's behaviour is pinned by its own unit
-test (`tests/test_prefill.py`, `tests/unit/test_relevance_gate.py`,
-`tests/unit/test_debrief_render.py`, `tests/unit/test_note_curator.py`,
-`tests/unit/test_prompt_one_line.py`); this is the brake on the NEXT one.
-
-**Inverted, like that gate and for the same measured reason.** The renderers are
-DISCOVERED from the source and the exemptions are the hand-written half, so a
-new renderer appears in the discovered set and has to be classified — collapsed,
-or exempted here with a sentence. Listing the renderers instead would catch a
-rename and miss the thing that has actually happened twice: one that was never
-listed at all.
+The gate is inverted. The renderers are DISCOVERED from the source and the
+exemptions are the hand-written half, so a new renderer appears in the
+discovered set and has to be classified: collapsed, or exempted here with a
+sentence. Listing the renderers instead would catch a rename and miss one that
+was never listed at all.
 """
 
 from __future__ import annotations
@@ -50,21 +39,20 @@ _DIRECT_COLLAPSERS = {"one_line", "_one_line"}
 #: the tripwire at the bottom of this file has to be able to tell "migrated"
 #: from "still collapsing by hand", and one set cannot answer both questions.
 #:
-#: `_snippet` used to be in here and was deleted with the function (#220). A
-#: name in this set that no longer exists does not fail anything — it quietly
+#: A name in this set that no longer exists does not fail anything; it quietly
 #: whitelists the NEXT function anybody gives that name.
 _COLLAPSERS = _DIRECT_COLLAPSERS | {"render_rows"}
 
-#: `render_rows` is in that set because it IS the collapse now (#220): it
-#: applies `one_line` to every row unconditionally and there is no `RowStyle`
-#: that turns it off, which `tests/unit/test_blocks.py` pins under every style
-#: in its parity table. A renderer that goes through it cannot forget.
+#: `render_rows` is in that set because it IS the collapse: it applies
+#: `one_line` to every row unconditionally and there is no `RowStyle` that turns
+#: it off, which `tests/unit/test_blocks.py` pins under every style in its
+#: parity table. A renderer that goes through it cannot forget.
 #:
-#: THIS FILE'S JOB SHRINKS AS THAT MIGRATION PROCEEDS, and that is the intended
-#: end: when every renderer calls `render_rows`, one unit test on one function
-#: replaces this whole gate and the file should be DELETED rather than kept as
-#: a formality. `test_the_collapse_is_reachable_from_every_layer_that_renders`
-#: is the tripwire for that moment.
+#: THIS FILE'S JOB SHRINKS AS RENDERERS MIGRATE TO `render_rows`: when every
+#: renderer calls it, one unit test on one function replaces this whole gate and
+#: the file should be DELETED rather than kept as a formality.
+#: `test_the_collapse_is_reachable_from_every_layer_that_renders` is the
+#: tripwire for that moment.
 
 #: Interpolations that render a `.body` and do NOT collapse it, each with the
 #: reason. Keyed by (module, enclosing function, the interpolated expression as
@@ -157,11 +145,9 @@ def _locals_of(fn: ast.AST) -> dict[str, list[ast.expr]]:
 
     **One level of aliasing is resolved, and it is not a nicety.** A renderer
     that writes `body = _one_line(row.body or "")` and then interpolates
-    `{escape(body)}` is the shape `relevance_gate` actually has, and an
-    interpolation-only scan reads it as a module that never collapses anything
-    — so the one renderer that HAD the fix would have been invisible to the
-    gate written about it. The same resolution is what makes a future
-    `body = escape(row.body)` red instead of unseen.
+    `{escape(body)}` is the shape `relevance_gate` has, and an interpolation-only
+    scan reads it as a module that never collapses anything. The same resolution
+    makes a future `body = escape(row.body)` red instead of unseen.
     """
     out: dict[str, list[ast.expr]] = {}
     for node in ast.walk(fn):
@@ -177,11 +163,10 @@ def _value_names(expr: ast.expr) -> set[str]:
     not the callee of a call.
 
     That exclusion is what keeps the aliasing from going everywhere. Resolving
-    every `Name` in the subtree instead made `{found.group(0)}` and
-    `{revision.note_id}` hits, because somewhere else in the same function a
-    local called `found`/`revision` had been assigned from something with a
-    `.body` — a renderer by coincidence of variable naming. A body reaches a
-    line as a VALUE, so that is the only position worth following.
+    every `Name` in the subtree would make `{found.group(0)}` and
+    `{revision.note_id}` hits, because elsewhere in the same function a local
+    called `found`/`revision` may be assigned from something with a `.body`. A
+    body reaches a line as a VALUE, so that is the only position worth following.
     """
     bases = {
         id(n.value) for n in ast.walk(expr) if isinstance(n, ast.Attribute)
@@ -286,10 +271,9 @@ def test_every_renderer_of_a_row_collapses_it_or_says_why_not():
 
 
 def test_the_exemptions_all_still_exist():
-    """The other direction, which the media-join gate learned the hard way: a
-    stale exemption is a renderer this file claims to have classified and has
-    not looked at since. A site that was fixed, moved or deleted must lose its
-    entry rather than sit here authorising nothing."""
+    """The other direction: a stale exemption is a renderer this file claims to
+    have classified and has not looked at since. A site that was fixed, moved or
+    deleted must lose its entry rather than sit here authorising nothing."""
     live = set(_discovered())
     stale = {site: why for site, why in _NOT_A_LINE.items() if site not in live}
     assert not stale, (
@@ -309,25 +293,19 @@ def test_the_collapse_is_reachable_from_every_layer_that_renders():
     """`one_line` lives in `nora.domain.prompt` rather than beside any one
     renderer, and this is what says that placement is still load-bearing.
 
-    **Counts CALLS, parsed, not the substring.** The first version of this
-    scanned each file's source text for `"one_line"` — which a COMMENT
-    satisfies. A review proved it green after deleting the collapse from
-    `nora/app/fire.py`, because the line above the deletion mentions `one_line`
-    in prose; and it was already propped up at HEAD by `nora/agent/prefill.py`,
-    which by then mentioned the name three times in docstrings and called it
-    zero times. A guard a comment can satisfy measures documentation.
+    **Counts CALLS, parsed, not the substring.** Scanning each file's source
+    text for `"one_line"` would be satisfied by a COMMENT or docstring that
+    mentions the name without calling it. A guard a comment can satisfy measures
+    documentation.
 
     `nora/domain` is excluded because the collapse and the shared renderer both
-    live there — counting it is a tautology.
+    live there; counting it is a tautology.
 
-    **`_DIRECT_COLLAPSERS`, not `_COLLAPSERS`, and that is what makes this a
-    tripwire rather than a formality.** Counting `render_rows` calls too made it
-    unfirable: the stated end-state is that every renderer goes through
-    `render_rows`, which would have left this counting five packages forever
-    while meaning the exact opposite of what it asserts. Counting only the
-    HAND-ROLLED collapse makes the number fall as the migration proceeds and
-    reach zero when it completes — the moment this docstring has always
-    described and could not, until now, detect.
+    **`_DIRECT_COLLAPSERS`, not `_COLLAPSERS`, makes this a tripwire rather than
+    a formality.** Counting `render_rows` calls too would leave it counting the
+    same packages forever, while the stated end-state is that every renderer goes
+    through `render_rows`. Counting only the HAND-ROLLED collapse makes the
+    number fall as the migration proceeds and reach zero when it completes.
     """
     import ast
     import collections

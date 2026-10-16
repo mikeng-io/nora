@@ -1,35 +1,17 @@
-"""Pipeline wiring shared by every offline (no real platform/network)
-composition root — `tests/integration/harness.py` and `evals/harness.py` both
-assemble a real `IngestPipeline` + `EngagementPipeline`, glued by a real
-`Dispatcher`, against already-built collaborators (fakes for the adapter,
-memory store, and model runner everywhere except production). This is the
-one definition of that wiring, extracted out of `tests/integration/harness.py`
-so `evals/` does not need a second copy of it (or `tests/` itself) to build
-one: `evals/` may import `nora.app` and `nora.testing` and nothing else from
-`nora/` — this module is the `nora.app` side of that boundary.
+"""Pipeline wiring shared by every offline (no real platform/network) composition root —
+`tests/integration/harness.py` and `evals/harness.py` both assemble a real
+`IngestPipeline` + `EngagementPipeline`, glued by a real `Dispatcher`, against
+already-built collaborators (fakes for the adapter, memory store, and model runner
+everywhere except production). This is the one definition of that wiring, so `evals/` does
+not need a second copy of it (or `tests/` itself) to build one: `evals/` may import
+`nora.app` and `nora.testing` and nothing else from `nora/` — this module is the
+`nora.app` side of that boundary.
 
-Deliberately builds NO collaborator itself — no `PlatformAdapter`,
-`MemoryStore`, `AgentRunner`, or `RecordStore` is constructed here. The caller
-always supplies those (real for `nora.app.composition.build_dependencies`'s
-production path; fakes from `nora.testing` everywhere else), which is what
-keeps this module free of any network concern.
-
-MOVED from `nora/app/offline.py` 2026-09-18 (`design/evaluation/` Step 5).
-
-It was never production code. Its own home said why it was there:
-`tests/integration/harness.py` put this wiring tail in `nora/app/` because
-`evals/harness.py` needed the same assembly and **`evals/` may import
-`nora.app` and `nora.testing` only** — so a shared test helper had to live
-inside the application to be reachable from both.
-
-`evals/` no longer has a harness, and every consumer is now under `tests/`,
-which has no import contract because a test is allowed to know how the thing
-is built. So the workaround is unnecessary and the file is where it belongs.
-
-`design/evaluation/02-the-rebuild.md` §1 listed it among the ~7,700 lines to
-DELETE, and an adversarial reviewer measured that deleting it stops 106
-integration tests and ten acceptance rules. It is not deleted; it is re-homed,
-which is what "not an eval module" actually implied.
+Deliberately builds NO collaborator itself — no `PlatformAdapter`, `MemoryStore`,
+`AgentRunner`, or `RecordStore` is constructed here. The caller always supplies those
+(real for `nora.app.composition.build_dependencies`'s production path; fakes from
+`nora.testing` everywhere else), which is what keeps this module free of any network
+concern.
 """
 
 from __future__ import annotations
@@ -101,37 +83,33 @@ def build_offline_pipeline(
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks, ParticipationTrigger | None]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
-    Mirrors `build_dependencies`'s own pipeline-wiring tail exactly (same
-    stages, same scalar fields read off `cfg`) but takes `adapter`/`memory`/
-    `runner` as parameters instead of constructing the real, networked ones —
-    the split `build_dependencies` doesn't need since production always wants
-    the real collaborators. The same is true of the assembler's own
-    collaborators above: this module builds none of them (module docstring),
-    so a caller that wants `<notes>`/`<standing>` to render passes
-    its own `nora.testing` in-memory doubles.
+    Mirrors `build_dependencies`'s own pipeline-wiring tail exactly (same stages, same
+    scalar fields read off `cfg`) but takes `adapter`/`memory`/`runner` as parameters
+    instead of constructing the real, networked ones — the split `build_dependencies`
+    doesn't need since production always wants the real collaborators. The same is true of
+    the assembler's own collaborators above: this module builds none of them (module
+    docstring), so a caller that wants `<notes>`/`<standing>` to render passes its own
+    `nora.testing` in-memory doubles.
 
-    `participation_runner` is the participation occasion's eval seam
-    (design/dreamer-agent-loop/35 §9 gap 1): when given, this builds a REAL
-    `FirePath` — same `deliver.build`, guards and accounting as production —
-    plus the quiescence `ParticipationTrigger`, and wires the trigger into the
-    dispatcher, so an eval drives the participation path exactly as deployed
-    (`evals/` may not import `nora.app.fire` itself — the boundary that put
-    this module here). The trigger is the fourth return value (`None` when
-    neither `participation` nor `participation_runner` was given); the caller
-    drives `close_due_windows` on it, with `participation_clock` injecting the
-    clock the settle/cooldown durations are measured against, and
-    `participation_gate` optionally putting a REAL `RelevanceGate` in front of
-    it (see the `gate=` comment at the trigger's construction).
+    `participation_runner` is the participation occasion's eval seam: when given, this
+    builds a REAL `FirePath` — same `deliver.build`, guards and accounting as production —
+    plus the quiescence `ParticipationTrigger`, and wires the trigger into the dispatcher,
+    so an eval drives the participation path exactly as deployed (`evals/` may not import
+    `nora.app.fire` itself — the boundary that put this module here). The trigger is the
+    fourth return value (`None` when neither `participation` nor `participation_runner`
+    was given); the caller drives `close_due_windows` on it, with `participation_clock`
+    injecting the clock the settle/cooldown durations are measured against, and
+    `participation_gate` optionally putting a REAL `RelevanceGate` in front of it (see the
+    `gate=` comment at the trigger's construction).
     """
     metrics = metrics or Metrics()
     background = BackgroundTasks()
     debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
-    # `extra_engage_policies` is the participation occasion's test seam
-    # (design/dreamer-agent-loop/35): an integration harness exercising the
-    # occasion wraps the trigger-text policy in a `CompositePolicy` carrying a
-    # real `RelevanceGatePolicy`, so an untagged message in an opted-in room
-    # reaches the dispatcher with `EngageDecision.relevance_gate` set exactly
-    # as production's wiring does it.
+    # `extra_engage_policies` is the participation occasion's test seam: an integration
+    # harness exercising the occasion wraps the trigger-text policy in a `CompositePolicy`
+    # carrying a real `RelevanceGatePolicy`, so an untagged message in an opted-in room
+    # reaches the dispatcher with `EngageDecision.relevance_gate` set exactly as
+    # production's wiring does it.
     policy: Any = TriggerTextPolicy(cfg.engagement.trigger.text)
     # `participation_opt_in` is the eval half of the room gate: a real
     # `RelevanceGatePolicy` over THIS harness's `permissive_policy()` (whose
@@ -145,11 +123,10 @@ def build_offline_pipeline(
         )
     if extra_engage_policies:
         policy = CompositePolicy((policy, *extra_engage_policies))
-    # `<presence>` (design/self-awareness/02) — the production reader over this
-    # harness's own policy and adapter, so an eval prompt carries the block a
-    # production turn carries: the network, the harness's (empty) room table,
-    # the fake adapter's health, and the handles `config.evaluation.toml`
-    # declares.
+    # `<presence>` — the production reader over this harness's own policy and adapter, so
+    # an eval prompt carries the block a production turn carries: the network, the
+    # harness's (empty) room table, the fake adapter's health, and the handles
+    # `config.evaluation.toml` declares.
     presence_reader = PresenceReader(
         policy=permissive_policy(), adapters={adapter.platform: adapter},
         handles=cfg.agent.handles,
@@ -158,15 +135,14 @@ def build_offline_pipeline(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
         notes=notes, standing=standing,
-        # The media join (issue #116). `None` renders the bare handles a row
-        # actually carries; an eval that wants `[image a3f2c1: …]` in its
-        # prompt builds a `MediaJoin` over `nora.testing.FakeMediaObjectStore`,
-        # exactly as it passes its own doubles for `notes`/`standing`.
+        # The media join. `None` renders the bare handles a row actually carries; an eval
+        # that wants `[image a3f2c1: …]` in its prompt builds a `MediaJoin` over
+        # `nora.testing.FakeMediaObjectStore`, exactly as it passes its own doubles for
+        # `notes`/`standing`.
         media_join=media_join,
-        # DEC-195's shared quote-window resolver. `None` is the pre-2026-09-22
-        # shape (plain `context_window`, no growth); an eval exercising the
-        # threading fix builds one over the SAME `audit` this module already
-        # takes.
+        # DEC-195's shared quote-window resolver. `None` is the plain `context_window`
+        # shape, no growth; an eval exercising the threading builds one over the SAME
+        # `audit` this module already takes.
         quote_window=quote_window,
         presence=presence_reader,
         # `<memos>` (DEC-306) — `None`: no memo store here, so no block.
@@ -178,14 +154,13 @@ def build_offline_pipeline(
         # `<lessons>` (L5) — `None`, as `culture`: no store here, and the
         # eval subject seeds lessons through its own sandbox.
         lessons=None,
-        # `<computer>` (design/sandbox-runtime §15.3) — `None`: this harness
-        # has no computer, and an eval's VM workspace would be empty anyway.
+        # `<computer>` — `None`: this harness has no computer, and an eval's VM workspace
+        # would be empty anyway.
         computer=None,
-        # `<documents>` (design/artifact §29) — `None`: this harness has no document
-        # store; the live eval subject builds the real reader through composition.
+        # `<documents>` — `None`: this harness has no document store; the live eval
+        # subject builds the real reader through composition.
         documents=None,
-        # `<subagents>` (design/subagent §7) — `None`: no job store here, and `[subagent]`
-        # ships off.
+        # `<subagents>` — `None`: no job store here, and `[subagent]` ships off.
         subagents=None,
     )
 
@@ -203,13 +178,12 @@ def build_offline_pipeline(
         turns=tier.limits.turns,
         total_tokens=tier.limits.total_tokens,
     )
-    # Default: a bare registry (every tool inert/`unavailable`). The eval's live
-    # routing gate passes one wired with canned backends (F4) so `weather`/
-    # `web_search`/`place_info`/… answer `ok`, removing the fallback confound.
-    # `budget_overrides` threaded, so an offline replay runs under the SAME
-    # ceilings production does. Without it, `[llm.budgets]` would silently make
-    # replay a different agent from the one deployed — which is the whole thing
-    # a replay path exists to rule out.
+    # Default: a bare registry (every tool inert/`unavailable`). The eval's live routing
+    # gate passes one wired with canned backends so `weather`/`web_search`/`place_info`/…
+    # answer `ok`, removing the fallback confound. `budget_overrides` threaded, so an
+    # offline replay runs under the SAME ceilings production does. Without it,
+    # `[llm.budgets]` would silently make replay a different agent from the one deployed —
+    # which is the whole thing a replay path exists to rule out.
     tool_registry = tool_registry if tool_registry is not None else ToolRegistry(
         budget_overrides=cfg.llm.budgets)
     # Hoisted out of the `EngagementPipeline(...)` call because the
@@ -247,18 +221,16 @@ def build_offline_pipeline(
         # same shape `adapters` above takes, for the same reason.
         rosters={adapter.platform: roster_source} if roster_source else {},
         slots=slots,
-        # `None` by default (Task 6): most offline/eval scenarios have no
-        # retention store and don't need one — `EngagementPipeline` treats it
-        # as fully inert, matching every other optional collaborator here. A
-        # caller that wants to assert on retained `TagTrace`s (e.g. the
-        # integration suite) passes its own.
+        # `None` by default: most offline/eval scenarios have no retention store and don't
+        # need one — `EngagementPipeline` treats it as fully inert, matching every other
+        # optional collaborator here. A caller that wants to assert on retained
+        # `TagTrace`s (e.g. the integration suite) passes its own.
         tag_trace_store=tag_trace_store,
-        # The debrief stage's collaborators (26-standing). `None` here in
-        # every eval/integration run by default, for the same reason
-        # `tag_trace_store` is: the fold spends a model call inside the
-        # reply slot, and an eval measuring a tag's trajectory must not
-        # have a second, unrelated completion added to its budget. A
-        # caller that wants to exercise the stage passes its own.
+        # The debrief stage's collaborators. `None` here in every eval/integration run by
+        # default, for the same reason `tag_trace_store` is: the fold spends a model call
+        # inside the reply slot, and an eval measuring a tag's trajectory must not have a
+        # second, unrelated completion added to its budget. A caller that wants to
+        # exercise the stage passes its own.
         debrief_wiring=debrief_wiring,
     )
     participation_trigger = participation
@@ -299,43 +271,39 @@ def build_offline_pipeline(
             preview_source=None,
             llm_state=None,
             tool_call_log_store=None,
-            # Issue #325. `None` is the honest inert default — the offline
-            # harness has no database — but the NAME has to be here:
-            # `tests/architecture/test_assembler_parity.py` requires both
-            # `FirePath` call sites to pass the same collaborators, because
-            # a name on only one side means an eval measures a turn
-            # production never builds.
+            # `None` is the honest inert default — the offline harness has no database —
+            # but the NAME has to be here: `tests/architecture/test_assembler_parity.py`
+            # requires both `FirePath` call sites to pass the same collaborators, because
+            # a name on only one side means an eval measures a turn production never
+            # builds.
             reasoning_strip_store=None,
-            # Lineage (design/cognition-loop/10-tiers.md §3): the same value
-            # `build_assembler` above builds for the tag prompt, from the same
-            # policy and identity, so an eval's fire prompt is filtered as
+            # Lineage: the same value `build_assembler` above builds for the tag prompt,
+            # from the same policy and identity, so an eval's fire prompt is filtered as
             # production's is.
             lineage=lineage_policy(cfg, policy=permissive_policy(), persons=persons),
             event_registry={
                 "reminder": reminder_occasion,
-                # The proactive act turn (design/dreamer-agent-loop/39 D4),
-                # registered as production registers it.
+                # The proactive act turn, registered as production registers it.
                 "proactive": proactive_occasion,
             },
             standing=standing,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            # The participation turn's memory reads (issue #210). ONE knob set,
-            # read at the composition root exactly as the tag assembler reads
-            # `tagger_card_conclusions` — two readers each carrying their own idea
-            # of how much memory a prompt may hold is how the fire path came to
-            # render none at all. Not gated on `[participation] enabled`: every
-            # read is gated on `occasion.kind == "participation"` in
-            # `_read_memory`, which is a condition no other occasion can meet,
-            # and a second gate here would be a place for the two to disagree.
+            # The participation turn's memory reads. ONE knob set, read at the composition
+            # root exactly as the tag assembler reads `tagger_card_conclusions`: two
+            # readers each carrying their own idea of how much memory a prompt may hold
+            # would let the fire path render none at all. Not gated on
+            # `[participation] enabled`: every read is gated on
+            # `occasion.kind == "participation"` in `_read_memory`, which is a condition
+            # no other occasion can meet, and a second gate here would be a place for the
+            # two to disagree.
             people_in_window_conclusions=cfg.memory.people_in_window_conclusions,
             people_in_window_speakers=cfg.memory.people_in_window_speakers,
             memory_read_timeout_seconds=cfg.memory.read_timeout_seconds,
-            # The shared decision log (issue #199). `None` on purpose, and the
-            # keyword is written out rather than defaulted so the parity gate
-            # can see the choice: an eval drives ONE turn against a scripted
-            # world, so there is no prior loop to have decided anything and a
-            # wired log would render an empty block on every case. Production
-            # passes a real recorder; both sides name the collaborator, which
+            # The shared decision log. `None` on purpose, and the keyword is written out
+            # rather than defaulted so the parity gate can see the choice: an eval drives
+            # ONE turn against a scripted world, so there is no prior loop to have decided
+            # anything and a wired log would render an empty block on every case.
+            # Production passes a real recorder; both sides name the collaborator, which
             # is what that gate is for.
             decisions=None,
             # `<presence>`: the SAME reader the assembler above holds.
@@ -346,33 +314,28 @@ def build_offline_pipeline(
             # FirePath read emptier tiers than its tag path would grade the
             # knowledge-cut cases against a prompt production never builds.
             notes=notes,
-            # The culture head (design/culture-tier), named here because
-            # `test_assembler_parity` pins this call's keyword NAMES to the
-            # composition root's: a collaborator production passes and the
-            # harness does not means every participation eval measures a
-            # prompt production never builds — the #210 defect this tier's own
-            # measurement arm exists to avoid reproducing.
+            # The culture head, named here because `test_assembler_parity` pins this
+            # call's keyword NAMES to the composition root's: a collaborator production
+            # passes and the harness does not means every participation eval measures a
+            # prompt production never builds.
             #
-            # `None` is the right value here rather than a gap: the rebuilt
-            # harness reconstructs a room's real culture at a real instant
-            # (`evals/corpora/participation.yaml`), so this seam does not
-            # supply one, and a case with no account should see no block.
+            # `None` is the right value here rather than a gap: the harness reconstructs a
+            # room's real culture at a real instant (`evals/corpora/participation.yaml`),
+            # so this seam does not supply one, and a case with no account should see no
+            # block.
             culture=None,
             lessons=None,
             policy=permissive_policy(),
             participation_runner=participation_runner,
-            # The proactive act turn's runner: its OWN, as the composition root
-            # builds it (design/cognition-loop/35 §3.4: a separate runner at
-            # `[proactive] reasoning_effort`). It was this harness's
-            # `participation_runner` until the two were split. The act suite
-            # drives `FirePath.run` through `nora.app.eval_support` rather than
-            # this seam, so this is parity with production's kwarg names.
+            # The proactive act turn's runner: its OWN, as the composition root builds it
+            # (a separate runner at `[proactive] reasoning_effort`). The act suite drives
+            # `FirePath.run` through `nora.app.eval_support` rather than this seam, so
+            # this is parity with production's kwarg names.
             proactive_runner=proactive_runner,
-            # The §10.6 shadow mirror, mirrored from the composition root's
-            # gating (the parity test pins these kwarg NAMES to production's):
-            # an offline/eval run can review determinations on the mirror
-            # exactly as a deployment would. The eval suites leave
-            # `[participation] shadow` off, so this is inert there by default.
+            # The shadow mirror, mirrored from the composition root's gating (the parity
+            # test pins these kwarg NAMES to production's): an offline/eval run can review
+            # determinations on the mirror exactly as a deployment would. The eval suites
+            # leave `[participation] shadow` off, so this is inert there by default.
             shadow_channel=(
                 cfg.participation.shadow_channel
                 if cfg.participation.enabled and cfg.participation.shadow else None
@@ -412,10 +375,9 @@ def build_offline_pipeline(
             # above: built by nobody here, `None` unless a caller wants the
             # stage, so no existing eval run changes.
             gate=participation_gate,
-            # `time.time`, matching the production default: the trigger's
-            # cursors are wall-clock instants since migration 0056, and an
-            # offline wiring on a different clock would measure a different
-            # thing from the one it exists to mirror.
+            # `time.time`, matching the production default: the trigger's cursors are
+            # wall-clock instants, and an offline wiring on a different clock would
+            # measure a different thing from the one it exists to mirror.
             clock=participation_clock or time.time,
         )
     dispatcher = Dispatcher(

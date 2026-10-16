@@ -1,19 +1,18 @@
 """`escape` may be switched off only where the destination is not a prompt.
 
-**Why this file exists.** `render_rows` was written for the prompt and escapes
+**Why this file exists.** `render_rows` is built for the prompt and escapes
 every accessor's output, because a line it renders goes inside an XML block and
 `&`, `<`, `>` would break it (R-13/R-13b). Two callers are not building a
 prompt: `nora.app.fire` posts the shadow mirror and the relevance-gate verdict
 to an operator's Discord review channel. Escaping there is not a safety
 property, it is damage — it writes `&amp;` in front of a person and turns every
-URL on the line into a dead one. Both shipped that way for one commit, and no
-test noticed, because the fixtures in front of them contained no `&`, `<` or
-`>`.
+URL on the line into a dead one. Fixtures with no `&`, `<` or `>` would not
+notice.
 
-So the switch exists (`markup=False`) and therefore has to be bounded. The
-release note for #220 tells the operator that escaping «cannot be switched off
-by any caller»; with a switch in the function that sentence is only true if
-something enumerates who turns it off. This is that enumeration.
+So the switch exists (`markup=False`) and therefore has to be bounded. Escaping
+is meant to be switchable by no caller in a prompt path; with a switch in the
+function that holds only if something enumerates who turns it off. This is that
+enumeration.
 
 **The COLLAPSE is not on this axis and is not switchable at all.** `one_line`
 runs under both settings, and so does `speaker_label`'s delimiter strip — a

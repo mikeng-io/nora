@@ -1,30 +1,19 @@
-"""One spelling of "this span is a model call", and it now lives upstream.
+"""One spelling of "this span is a model call", and it lives upstream.
 
-This is the strands.telemetry replacement for `test_generation_spans_use_
-the_helper.py` (deleted with the migration off `nora.obs.tracing.generation`/
-`annotate_generation`, 2026-09-19). The war-story that motivated the original
-test is unchanged and worth restating: two call sites hand-rolled the
-`langfuse.observation.*`/`gen_ai.*` attribute block and diverged from each
-other within one release, and a third group carried no spelling at all.
-Read back against the live collector on 2026-09-09: 1041 traces, four
-dialects, one modality invisible. The fix then was "one home for the
-spelling, in this repo's own code, enforced by an AST scan of everything
-else." The fix now is "the spelling is not this repo's to own" —
+Hand-rolled `langfuse.observation.*`/`gen_ai.*` attribute blocks at separate
+call sites diverge from each other, so the spelling is not this repo's to own:
 `strands.telemetry.tracer.Tracer.start_model_invoke_span`/
 `end_model_invoke_span`, wrapped by `nora.agent.telemetry.start_raw_model_
-span`/`end_raw_model_span`, already implement it, upstream-maintained.
+span`/`end_raw_model_span`, implement it, upstream-maintained.
 
-What does NOT change: a call site could still hand-type the string literal
-`"gen_ai.operation.name"` into a plain `nora.obs.tracing.span(**{...})` call
-without importing `strands` at all, so the AST-scan half of the original
-test still has a job — its HOME just moved. What DOES change: there is no
-longer a local `GENERATION_ATTRIBUTES` constant to derive the forbidden
-family list from, because the vocabulary itself is an external standard
-(OTel GenAI semantic conventions + Langfuse's own observation namespace),
-not this repo's invention — hand-copying two stable, documented external
-prefixes here does not carry the "two copies drift" risk the original
-derivation was guarding against, because there is no longer a second,
-in-repo definition for these two to drift from.
+A call site could still hand-type the string literal `"gen_ai.operation.name"`
+into a plain `nora.obs.tracing.span(**{...})` call without importing `strands`
+at all, so this AST scan still has a job. There is no local constant to derive
+the forbidden family list from, because the vocabulary is an external standard
+(OTel GenAI semantic conventions + Langfuse's own observation namespace);
+hand-copying two stable, documented external prefixes here carries no "two
+copies drift" risk, because there is no second, in-repo definition for them to
+drift from.
 """
 
 from __future__ import annotations

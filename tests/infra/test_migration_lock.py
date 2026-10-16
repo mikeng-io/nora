@@ -1,13 +1,11 @@
 """The advisory-lock guard around `run_migrations`/`stamp_head` — see the
-module docstring in `nora.infra.sql.migrations_runner` for the incident it
-fixes.
+module docstring in `nora.infra.sql.migrations_runner`.
 
-**Observed live, 2026-09-24.** Deploying migration `0062_standing_revision_source`
-recreated nora, presence and analytics from the same image at once. All three
-run `run_migrations` at their own startup, and two hit the shared database's
-`ALTER TABLE standing_revision ADD COLUMN source` at the same time: one won,
-the other raised `psycopg.errors.DuplicateColumn`, crashed, and came up clean
-on its one restart. Nothing serialized them.
+**The hazard.** Nora, presence and analytics recreated from the same image at
+once all run `run_migrations` at their own startup, and two can hit the same
+`ALTER TABLE ... ADD COLUMN` on the shared database at the same time: one wins,
+the other raises `psycopg.errors.DuplicateColumn` and crashes. The lock
+serializes them.
 
 `test_run_migrations_blocks_while_the_lock_is_held` and
 `test_stamp_head_blocks_while_the_lock_is_held` are the tests that PROVE the
@@ -15,21 +13,17 @@ guard: each holds `MIGRATION_LOCK_KEY` from a raw connection and asserts
 Alembic's own entry point (`command.upgrade`/`command.stamp`, replaced with a
 spy) is never reached while the lock is held elsewhere. That is deterministic
 by construction — it does not depend on a real migration finishing slower than
-some wait, the way an earlier version of this test did (external review,
-2026-09-25: a full migration on this branch took 0.16-0.25s against a 1.0s
-wait, a 4-6x margin that would erode as more migrations are added or on a
-slower machine).
+some wait, a margin that would erode as more migrations are added or on a
+slower machine.
 
 `test_concurrent_run_migrations_all_succeed_and_reach_head` is NOT that proof:
-measured directly (external review, 2026-09-25), five unlocked racers against
-a fresh database do not reliably raise `DuplicateColumn` the way the live
-incident did — `CREATE INDEX CONCURRENTLY` (migrations 0013/0014/0019) can
-instead make the whole group HANG (see `MIGRATION_LOCK_POLL_INTERVAL_S`'s
-docstring for the exact deadlock). This test carries a single deadline shared
-across all five threads (daemon, so a hang doesn't block interpreter exit),
-so a missing lock fails it within that deadline instead of the up-to-5x-60s a
-per-thread timeout would allow.
-"""
+five unlocked racers against a fresh database do not reliably raise
+`DuplicateColumn` the way the original race does — `CREATE INDEX CONCURRENTLY`
+(migrations 0013/0014/0019) can instead make the whole group HANG (see
+`MIGRATION_LOCK_POLL_INTERVAL_S`'s docstring for the exact deadlock). This test
+carries a single deadline shared across all five threads (daemon, so a hang
+doesn't block interpreter exit), so a missing lock fails it within that deadline
+instead of the up-to-5x-60s a per-thread timeout would allow. """
 
 from __future__ import annotations
 
@@ -82,7 +76,7 @@ def _release_lock(holder: psycopg.Connection) -> None:
 
 def test_concurrent_run_migrations_all_succeed_and_reach_head(pg_admin):
     """Several processes racing `run_migrations` against the SAME fresh
-    database — the 2026-09-24 shape, nora/presence/analytics recreated from
+    database — the shape of nora/presence/analytics recreated from
     one image at once — all return with no exception, and the database ends
     at head: never partially migrated, never a duplicate-column error.
 
@@ -208,10 +202,9 @@ def test_run_migrations_raises_after_the_deadline_while_the_lock_is_held(pg_admi
 
 def test_run_migrations_unlocks_explicitly_not_only_via_connection_close(pg_admin, monkeypatch):
     """The explicit `pg_advisory_unlock` call is what releases the key, not
-    merely `engine.dispose()` closing the session afterward — external review,
-    2026-09-25, found that removing the explicit unlock left every existing
-    test green, because dispose ran immediately after anyway and released the
-    lock incidentally.
+    merely `engine.dispose()` closing the session afterward: removing the
+    explicit unlock would leave every other test green, because dispose runs
+    immediately after anyway and releases the lock incidentally.
 
     Neuters `Engine.dispose` for this one `run_migrations` call, so the lock
     connection is never actually closed. If the key is free immediately after

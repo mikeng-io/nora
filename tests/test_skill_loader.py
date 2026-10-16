@@ -79,8 +79,8 @@ def test_a_name_that_is_not_a_slug_is_an_error(tmp_path):
         parse_skill(p)
 
 
-# --- issue #187 finding 3: authority frontmatter reaches nothing, so it is --
-# --- refused rather than silently kept in `metadata` ------------------------
+# --- authority frontmatter reaches nothing, so it is refused rather than -----
+# --- silently kept in `metadata` --------------------------------------------
 
 @pytest.mark.parametrize("key,value", [
     ("authority_above", "[situation]"),
@@ -90,13 +90,11 @@ def test_a_name_that_is_not_a_slug_is_an_error(tmp_path):
 def test_a_skill_carrying_an_authority_key_is_refused(tmp_path, key, value):
     """`nora.doctrine.loader` reads `authority_above`/`authority_below`/
     `change_policy` off DOCTRINE sections only. A skill is a different
-    authority item (design/12 §2 item 5) and nothing reads any of the three
-    off one — `parse_skill` used to pop `name`/`description` and leave the
-    rest in `metadata` silently, so a skill could declare `authority_above:
-    [situation]`, as `navigation` and `image-generation` both shipped doing,
-    and read as though it were arbitrated against doctrine when nothing wired
-    it in (was #241 part 2). Each key is refused on its own, not only in
-    combination with the other two."""
+    authority item and nothing reads any of the three off one, so `parse_skill`
+    refuses them rather than leaving them in `metadata` silently: a skill
+    declaring `authority_above: [situation]` would read as though it were
+    arbitrated against doctrine when nothing wired it in. Each key is refused
+    on its own, not only in combination with the other two."""
     p = tmp_path / "SKILL.md"
     p.write_text(f"---\nname: x\ndescription: d\n{key}: {value}\n---\nbody")
     with pytest.raises(SkillError, match="authority key"):
@@ -122,11 +120,10 @@ def test_the_error_names_every_carried_authority_key_at_once(tmp_path):
 
 
 def test_every_shipped_skill_is_free_of_authority_keys():
-    """The shipped side of the fix: `navigation` and `image-generation` both
-    carried `authority_above`/`authority_below`/`change_policy` (verified
-    2026-09-17, issue #187 finding 3) and would now fail to load at all. This
-    reads the real files, not a fixture, so a re-added key here is caught the
-    same way an operator's own edit would be."""
+    """The shipped side: `navigation` and `image-generation` must not carry
+    `authority_above`/`authority_below`/`change_policy`, or they would fail to
+    load at all. This reads the real files, not a fixture, so a re-added key
+    here is caught the same way an operator's own edit would be."""
     from pathlib import Path
 
     skills_dir = Path(__file__).resolve().parents[1] / "nora" / "skills"
@@ -174,14 +171,13 @@ def test_lenient_mode_skips_a_broken_skill_rather_than_raising(skills_dir):
 
 
 def test_lenient_mode_silently_drops_a_skill_carrying_an_authority_key(skills_dir):
-    """The refusal is a GATE check, not a runtime one (issue #187 finding 3,
-    sharpened on review). `nora/web/skills.py` — the portal's only reader of
-    this module — builds its `SkillStore` `strict=False`, so a skill carrying
-    `authority_above`/`authority_below`/`change_policy` is dropped from its
-    listing the same way any other malformed skill already is: silently, no
-    exception reaching the caller. It is `strict=True` (the default, what the
-    tests and `nora-land`'s gate build) where a carried key actually stops
-    something."""
+    """The refusal is a GATE check, not a runtime one. `nora/web/skills.py` —
+    the portal's only reader of this module — builds its `SkillStore`
+    `strict=False`, so a skill carrying `authority_above`/`authority_below`/
+    `change_policy` is dropped from its listing the same way any other
+    malformed skill already is: silently, no exception reaching the caller. It
+    is `strict=True` (the default, what the tests and `nora-land`'s gate build)
+    where a carried key actually stops something."""
     keyed = skills_dir / "keyed"
     keyed.mkdir()
     (keyed / "SKILL.md").write_text(
@@ -214,7 +210,7 @@ def test_render_available_is_explicit_when_empty(tmp_path):
 
 def test_a_message_can_name_a_skill_but_never_load_one(skills_dir, tmp_path):
     """R-29: skill sources are operator config; a message can name an existing
-    skill but can never introduce a new source (design/12 §2).
+    skill but can never introduce a new source.
 
     `resolve` is a pure lookup against the operator-loaded set. Naming the
     skill the operator shipped works — that is the intended activation. But a

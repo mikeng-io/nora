@@ -5,10 +5,8 @@ A mutation entry embeds LITERAL source text (`old`) and the sweep
 red. `make mutate` is not part of `make gate`, so when a refactor moves that
 text nothing reddens: the entry stops mutating anything, or points at a file
 that is gone, and the table keeps reading as evidence for a guard it no longer
-measures. Measured 2026-10-01 on `origin/master`: 1,485 entries in 82 tables,
-of which 88 (in 27 tables) no longer matched their source: the `old` text found
-zero times, twice, or in a file that had been deleted. Nothing reported any of them; the
-authors of #685 and #686 each found their own by running the sweep by hand.
+measures. An `old` text found zero times, twice, or in a file that has been
+deleted is such an entry, and nothing else reports it.
 
 This is the cheap half of the sweep, and the only half that can run in the gate:
 no model call, no database, no test is executed. It checks, per entry:

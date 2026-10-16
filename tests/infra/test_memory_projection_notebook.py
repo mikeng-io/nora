@@ -1,7 +1,6 @@
-"""The Notebook's projection into the memory index (design/unified-memory/
-60-build-step-3.md S2): every note, memo, lesson, event and culture or
-Character write keeps its entry's node and edges, in the store's own
-transaction, at the scope the store itself reads it by.
+"""The Notebook's projection into the memory index: every note, memo, lesson,
+event and culture or Character write keeps its entry's node and edges, in the
+store's own transaction, at the scope the store itself reads it by.
 
 Module-scoped database per `test_memory_projection_record.py`'s pattern (one
 migrated database, truncated between tests)."""
@@ -229,8 +228,8 @@ async def test_a_memo_cites_messages_and_is_retired_when_withdrawn(engine):
     assert (node.unit, node.origin_room, node.text, node.state) == (
         _UNIT, None, "Wifi\nthe code is on the fridge", "live",
     )
-    # An episode's Rollup key is an edge to that key as cited (S3): it reaches
-    # the outing's node whenever the current build holds that happening.
+    # An episode's Rollup key is an edge to that key as cited: it reaches the
+    # outing's node whenever the current build holds that happening.
     assert await _edges(engine, "memo", sid) == {
         ("memo", sid, "in_room", "room", _ROOM),
         ("memo", sid, "cites", "message", mid),
@@ -357,7 +356,7 @@ async def test_culture_and_character_accounts_take_their_keys_scope(engine):
     )
 
     # A person's account: the unit AND the person, so only a room that lists
-    # them can read it (35 §3).
+    # them can read it.
     person = nodes[("character", person_key)]
     assert (person.unit, person.origin_room, person.persons, person.text) == (
         _UNIT, None, ["member-b"], f"account of {person_key}",
@@ -376,7 +375,7 @@ async def test_culture_and_character_accounts_take_their_keys_scope(engine):
 
 async def test_an_old_room_keyed_person_account_is_never_indexed(engine):
     """`<room primary_id>#character:<p>` was written from one room's messages;
-    a unit scope would show it in every room of the unit (60 §0.8)."""
+    a unit scope would show it in every room of the unit."""
     await _said(engine)
     old_key = "g1#character:member-b"
     await SqlCultureStore(engine).append(

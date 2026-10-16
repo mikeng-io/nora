@@ -1,10 +1,9 @@
 """R-24: no single call, and no single tool result, may spend the turn.
 
-Every number asserted here was measured on the live deployment on 2026-08-06,
-and every one of them was violated by the config that shipped before that day.
-The rule exists because all three violations were invisible: a budget that is
-too small does not fail loudly, it just stops the turn early — and until R-23
-it stopped it in a way that read as the model choosing not to answer.
+The numbers asserted here were measured on the live deployment. The rule
+exists because a violation is invisible: a budget that is too small does not
+fail loudly, it just stops the turn early — which reads as the model choosing
+not to answer (R-23).
 
 The measurements, once, so the constants below are not magic:
 
@@ -39,9 +38,9 @@ from nora.agent.tools import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX
 ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = ("config.toml", "config.example.toml")
 
-# The worst measured per-call cost: 36,748 tokens over a 6-call turn. Used to
-# ask whether `turns` is reachable at all, which is the question `total_tokens
-# = 24000` silently answered "no" — it was crossed during call FIVE of eight.
+# The worst measured per-call cost: 36,748 tokens over a 6-call turn. It
+# decides whether `turns` is reachable at all: a `total_tokens` below `turns`
+# times this means the turn runs out of tokens first.
 MEASURED_TOKENS_PER_CALL = 36_748 // 6         # 6,124
 
 # One tool result is charged again on every later call in the loop, so its
@@ -54,17 +53,16 @@ def _llm(name: str) -> dict:
     """The `[llm]` table of one config file, or a SKIP when it is absent.
 
     `config.example.toml` is tracked and always present. `config.toml` is the
-    deployment's own file and untracked since 2026-09-07, so a fresh clone has
-    none — and this file asserts against BOTH on purpose (the template is what
-    a new deployment copies; the live file is what this one actually runs).
+    deployment's own file and untracked, so a fresh clone has none — and this
+    file asserts against BOTH on purpose (the template is what a new deployment
+    copies; the live file is what this one actually runs).
 
     A skip rather than a silent pass: pytest prints it, so a run that compared
     the two and a run that had only one to look at stay distinguishable. It
     does not run somewhere else instead: `config.toml` is gitignored in every
     dev worktree and in CI, and the deploy checkout is off-limits for
     verification, so this check against the live budget is not proven to run
-    anywhere under the current workflow (issue #321 tracks the same gap for
-    `tests/test_env_template.py`'s drift checks).
+    anywhere under the current workflow.
     """
     path = ROOT / name
     if not path.is_file():
@@ -82,7 +80,7 @@ def _llm(name: str) -> dict:
 def test_no_single_call_can_spend_the_whole_turn_budget(config_name):
     """R-24. The named test for the rule.
 
-    Three separate ways a single call used to be able to consume the turn,
+    Three separate ways a single call could consume the turn,
     all asserted against the shipped config rather than against a builder —
     the numbers are the deliverable here, so a test that made up its own would
     assert nothing.
@@ -90,15 +88,15 @@ def test_no_single_call_can_spend_the_whole_turn_budget(config_name):
     llm = _llm(config_name)
     limits = llm["limits"]
 
-    # 1. The loop's output budget is not one call's ceiling. These were
-    #    literally the same number (`build_limits(max_tokens=...)`), and a
-    #    measured call emitted 99.8% of it.
+    # 1. The loop's output budget is not one call's ceiling. They must not be
+    #    the same number (`build_limits(max_tokens=...)`): a measured call emitted
+    #    99.8% of its ceiling.
     assert limits["output_tokens"] > llm["max_tokens"], config_name
     assert limits["output_tokens"] >= 2 * llm["max_tokens"], config_name
 
-    # 2. `turns` is reachable, so it is the cap that binds. At the old 24,000
-    #    a turn ran out of tokens during call five and `turns = 8` was dead
-    #    config describing a limit that could never be reached.
+    # 2. `turns` is reachable, so it is the cap that binds. A `total_tokens` of
+    #    24,000 would run a turn out of tokens during call five and leave
+    #    `turns = 8` dead config describing a limit that could never be reached.
     assert limits["total_tokens"] >= limits["turns"] * MEASURED_TOKENS_PER_CALL, config_name
 
     # 3. The per-call ceiling has headroom over what a real completion costs,
@@ -106,13 +104,12 @@ def test_no_single_call_can_spend_the_whole_turn_budget(config_name):
     assert llm["max_tokens"] >= 4 * 371, config_name
 
     # 4. One `load_transcript` result — the only tool whose size the MODEL picks —
-    #    cannot be a third of the turn. At the old ceiling of 200, two calls
+    #    cannot be a third of the turn. At a ceiling of 200, two calls
     #    (its R-7 budget) were 13,184 tokens.
     #    The budget is RESOLVED through the registry, not read off the table:
     #    `[llm.budgets]` can move it per deployment, and reading the table would
     #    leave this proof green while the property it proves stopped holding in
-    #    production — the same second-reader defect the vision timeout had
-    #    (verification pass, 2026-08-11). `budget_overrides` comes from the
+    #    production. `budget_overrides` comes from the
     #    config file under test, so each config is checked against ITS OWN caps.
     effective = ToolRegistry(
         budget_overrides=llm.get("budgets", {})).budgets()["load_transcript"]
@@ -129,8 +126,7 @@ def test_no_single_call_can_spend_the_whole_turn_budget(config_name):
 def test_both_config_files_declare_the_same_budget(config_name):
     """`config.example.toml` is what a fresh install runs and what
     `tests/test_config.py` loads; `config.toml` is what this deployment runs.
-    A budget fix applied to one and not the other is the state master was in
-    when this work started — green only because of an uncommitted tree."""
+    A budget fix applied to one and not the other is half a fix."""
     assert _llm(config_name)["limits"] == _llm("config.toml")["limits"]
     assert _llm(config_name)["max_tokens"] == _llm("config.toml")["max_tokens"]
 
@@ -147,14 +143,14 @@ def test_all_three_caps_are_declared(config_name):
 def test_the_load_transcript_clamp_is_the_only_bound_on_a_model_supplied_size():
     """`limit` is the one argument in `nora.agent.tools` a model invents on
     every call, and nothing downstream bounds it — `store.recent` will happily
-    serve whatever it is given. 200 was 6,592 tokens per call, paid again on
+    serve whatever it is given. 200 costs 6,592 tokens per call, paid again on
     every subsequent call of the loop."""
     assert LOAD_TRANSCRIPT_MAX <= 60
     assert LOAD_TRANSCRIPT_DEFAULT <= LOAD_TRANSCRIPT_MAX
     # STRICTLY below the prefill's own context window (`store.context_window`
     # = 40, which the model already has in front of it): a call that does not
     # say how far back it wants is asking for a little more, not for the whole
-    # room. `<=` would be satisfied by the old default of exactly 40.
+    # room. `<=` would be satisfied by a default of exactly 40.
     assert LOAD_TRANSCRIPT_DEFAULT < 40
 
 
@@ -166,8 +162,8 @@ def test_the_model_is_told_the_same_ceiling_the_clamp_enforces():
     the model is not told about produces a silently truncated answer it thinks
     is complete."""
     source = (Path(tools.__file__)).read_text()
-    # Twice: `load_transcript` and `room_read` share the clamp. «recent» left
-    # the wording when `before` made the window movable (design/self-awareness/08).
+    # Twice: `load_transcript` and `room_read` share the clamp. «recent» is not in
+    # the wording because `before` makes the window movable.
     assert source.count(
         f"limit: How many messages to fetch (max {LOAD_TRANSCRIPT_MAX})."
     ) == 2

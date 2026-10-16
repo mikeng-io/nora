@@ -1,16 +1,14 @@
 """`_run_adaptor` wraps its whole call to `_dream_adaptor_once` in ONE
-`asyncio.timeout` — issue #191, shape (2) of the two the issue named ("one
-wall clock around the whole unit... cannot be defeated by adding a [new]
-call").
+`asyncio.timeout`: one wall clock around the whole unit cannot be defeated by
+adding a new call.
 
-`#60` bounded `_dream_adaptor_once`'s two store phases (`inputs`, `commit`)
-with their own `wait_for`s; the cursor reads around them — `clock.last_fired`/
-`record_fire`, every `language.*` watermark call, `record.since`,
-`media_join.enrich` — were still bare `await`s, and any one of them hanging
-left `dream_loop` holding `<adaptor>:<key>` in `running` forever (the exact
-defect `tests/unit/test_runtime.py::
-test_a_hung_cursor_read_is_released_by_the_unit_wall_clock` falsifies
-end to end).
+`_dream_adaptor_once`'s two store phases (`inputs`, `commit`) have their own
+`wait_for`s, but the cursor reads around them — `clock.last_fired`/`record_fire`,
+every `language.*` watermark call, `record.since`, `media_join.enrich` — do not,
+and any one of them hanging would leave `dream_loop` holding
+`<adaptor>:<key>` in `running` forever (the defect
+`tests/unit/test_runtime.py::test_a_hung_cursor_read_is_released_by_the_unit_wall_clock`
+falsifies end to end).
 
 This file is the STRUCTURAL half of that proof: it does not run the hang, it
 checks that the shape which prevents it — the whole call sitting inside an

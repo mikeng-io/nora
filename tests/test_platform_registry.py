@@ -1,5 +1,5 @@
 """`AdapterRegistry.from_config` — builds enabled adapters and resolves each
-one's own identity at startup, failing fast (spec's platforms phase).
+one's own identity at startup, failing fast.
 """
 
 from __future__ import annotations
@@ -196,8 +196,7 @@ async def test_discord_resolve_identity_failing_fails_the_whole_registry(monkeyp
 
 
 async def _whatsapp_self_server(aiohttp_server, *, status: int = 200):
-    """A stand-in for the bridge's `GET /self` (design/whatsapp-adoption/
-    03-transport-contract.md)."""
+    """A stand-in for the bridge's `GET /self`."""
 
     async def handler(request):
         if status != 200:
@@ -260,16 +259,15 @@ async def test_an_unpaired_bridge_fails_fast(aiohttp_server):
 
 
 async def test_mention_match_set_covers_every_platform_not_just_signal():
-    """The bug this pins, found live 2026-08-14: `@Nora hi` on Discord was
-    ingested, attributed, and answered with silence.
+    """`@Nora hi` on Discord must be recognised as a mention of her.
 
-    `MentionPolicy`/`ReplyToNoraPolicy` were built from
-    `registry.identity_for("signal").aliases`, so the match set held a phone
-    number and an ACI while a Discord mention carries a 17-19 digit snowflake.
-    The parser was never at fault — it fills `mentions` correctly — so nothing
-    downstream could tell this from "nobody tagged her". That is exactly the
-    ingest-attribution-silence failure `MentionPolicy`'s own docstring says it
-    exists to end, reintroduced by a second platform.
+    `MentionPolicy`/`ReplyToNoraPolicy` take their match set from the registry.
+    Built from `registry.identity_for("signal").aliases` alone it would hold a
+    phone number and an ACI while a Discord mention carries a 17-19 digit
+    snowflake. The parser fills `mentions` correctly, so nothing downstream
+    could tell this from "nobody tagged her" — the ingest-attribution-silence
+    failure `MentionPolicy`'s own docstring says it exists to end, reintroduced
+    by a second platform.
 
     Asserts the UNION, and asserts each platform's id is in it: a set built
     from either platform alone passes one half and fails the other.
@@ -289,8 +287,8 @@ async def test_mention_match_set_covers_every_platform_not_just_signal():
     )
 
     # THE PRODUCTION EXPRESSION, called — not a copy of it re-typed here.
-    # This test previously rebuilt the union in its own body and asserted about
-    # that local, so reverting the fix left it green: it measured itself.
+    # A union rebuilt in the test body and asserted about would measure itself
+    # and stay green with the production code reverted.
     self_aliases = registry.self_aliases()
 
     assert "100000000000000100" in self_aliases, (
@@ -298,14 +296,14 @@ async def test_mention_match_set_covers_every_platform_not_just_signal():
     )
     assert "+85290000100" in self_aliases, "Signal must not have been dropped"
     # No handle can be in here to begin with: identity is matched on IMMUTABLE
-    # ids only (operator 2026-08-14), enforced one level down in
+    # ids only, enforced one level down in
     # `nora.domain.identity` — `username` is not a matchable kind on any
     # platform, so `Identifier` refuses to carry one and no `aliases` set can
     # contain one. Pinned by `tests/unit/test_domain_identity.py::
     # test_a_username_is_never_a_matchable_kind_on_any_platform`.
 
 
-# --- instagram (design/instagram-adoption/) ---------------------------------
+# --- instagram ---------------------------------------------------------------
 #
 # The behaviour itself — degrade rather than refuse, and everything "degraded"
 # is defined to mean — lives in `tests/unit/test_instagram_degradation.py`.
@@ -315,8 +313,7 @@ async def test_mention_match_set_covers_every_platform_not_just_signal():
 
 
 async def _instagram_health_server(aiohttp_server, *, session: str = "authenticated"):
-    """A stand-in for the bridge's `GET /health`
-    (design/instagram-adoption/03 §"`/health` carries identity").
+    """A stand-in for the bridge's `GET /health`, which carries identity.
 
     It answers **200 even for a checkpoint**, because the real one does — an
     Instagram challenge is a normal operating state that the bridge describes
@@ -365,14 +362,13 @@ async def test_an_enabled_instagram_platform_is_built_and_its_identity_resolved(
     assert identity.platform == "instagram"
     # The interop fbid, which is what a mention carries — NOT the igid, and
     # not `viewer.GetFBID()`, both of which are different numbers for the same
-    # account and match nothing (design/instagram-adoption/02, measured).
+    # account and match nothing.
     assert identity.primary == "18247361241432477"
 
 
 async def test_a_CHECKPOINTED_instagram_does_NOT_fail_the_whole_registry(aiohttp_server):
-    """M0. The other three blocks raise `AdapterRegistryError` here; this one
-    must not, or one overnight captcha takes Signal and Discord down with it
-    (design/instagram-adoption/01 §Degradation).
+    """The other three blocks raise `AdapterRegistryError` here; this one must
+    not, or one overnight captcha takes Signal and Discord down with it.
 
     Signal is ENABLED and healthy in this case on purpose: the assertion is
     not merely that the call returned, it is that the OTHER platform survived.

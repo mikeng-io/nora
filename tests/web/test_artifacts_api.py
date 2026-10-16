@@ -240,9 +240,9 @@ def test_the_download_name_is_plain_ascii_whatever_the_title_says():
 ], ids=["first-two", "open-end", "suffix", "past-end", "multi", "other-unit"])
 async def test_a_byte_range_is_answered_with_206(world_client, header, status, body,
                                                  content_range):
-    """FALSIFIER (review of #758): Safari plays a <video> only after a 206 answers
-    its `Range: bytes=0-1`, and seeking needs ranges everywhere. A whole-file 200
-    to every request left the portal's video and long audio unplayable on iOS."""
+    """Safari plays a <video> only after a 206 answers its `Range: bytes=0-1`, and seeking
+    needs ranges everywhere. A whole-file 200 to every request leaves the portal's video
+    and long audio unplayable on iOS."""
     client, world = world_client
     row = await world.export(MP3, to="chat", path="out/song.mp3", media_type="audio/mpeg")
     resp = await client.get(f"/app/v1/artifacts/{row.id}/download?personId=mei",
@@ -255,8 +255,8 @@ async def test_a_byte_range_is_answered_with_206(world_client, header, status, b
 
 
 def test_a_long_suffix_never_pushes_the_name_past_what_the_portal_repeats():
-    """The portal repeats a name of at most 160 characters and says "file" past
-    that, losing the suffix (review of #758)."""
+    """The portal repeats a name of at most 160 characters and says "file" past that, losing
+    the suffix."""
     row = ComputerExport(
         id=uuid4(), created_at=T0, platform="signal", conversation_id="r1", scope="s",
         path="out/x." + "e" * 300, destination="chat", sha256="c" * 64, size_bytes=1,

@@ -72,10 +72,10 @@ async def test_last_event_at_advances(aiohttp_server):
 
 
 async def test_a_keepalive_comment_advances_last_event_at_without_reaching_on_event(aiohttp_server):
-    """signal-cli sends a `:` comment line about every 18s (probed on norty
-    2026-10-01). It is the only evidence a QUIET room's socket is alive, so
-    it must advance `last_event_at` — and it is not a message, so it must
-    never reach the parse/deliver path."""
+    """signal-cli sends a `:` comment line about every 18s. It is the only
+    evidence a QUIET room's socket is alive, so it must advance
+    `last_event_at` — and it is not a message, so it must never reach the
+    parse/deliver path."""
     server = await aiohttp_server(await _sse_app([':\n', ':\n']))
     got: list[dict] = []
     listener = SignalListener(str(server.make_url("")).rstrip("/"), sleeper=_stop_after(1))

@@ -1,6 +1,5 @@
 """The memory index's read stays inside the reading room's scope, on every
-node of every path (design/unified-memory/25-memory-graph.md §4, 35-persona.md
-§3, 60-build-step-3.md S5; the decision index's scope row).
+node of every path (the decision index's scope row).
 
 One migrated database for the module, truncated between tests. Messages,
 memos and hides go THROUGH THE STORES, so the index is what live writes
@@ -12,7 +11,7 @@ The policy: unit `u1` holds room B (Kit, Sam, Rin; location on), B2 (Kit,
 Rin; location off) and C (Sam, Rin); unit `u2` holds D (Kit, Sam). Every read
 is from B unless a test says otherwise, with its whole roster present.
 
-Every test runs twice (65 V2): with DENSE seeds, every embeddable node given
+Every test runs twice: with DENSE seeds, every embeddable node given
 the toy `bag_of_words` vector of its text under the search's model and the
 question embedded the same way, so «near» means shared words and an
 out-of-scope node can be as near as an in-scope one; and with LEXICAL seeds,

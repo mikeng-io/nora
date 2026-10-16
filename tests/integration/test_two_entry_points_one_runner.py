@@ -1,10 +1,8 @@
-"""`design/evaluation/01-boundaries.md` §7, driven rather than argued.
+"""Two unalike entry points go through ONE runner, driven rather than argued.
 
-Two entry points chosen for being maximally unalike — `RelevanceGate.decide`
-drives a component and no turn; `FirePath.speak` drives a whole turn and no
-gate — go through ONE runner (`evals.backbone._drive`), with one `Case` shape
-and one outcome shape. If they could not, §2's four things would really be
-five or six.
+`RelevanceGate.decide` drives a component and no turn; `FirePath.speak` drives
+a whole turn and no gate. They are chosen for being maximally unalike, and both
+go through `evals.backbone._drive`, with one `Case` shape and one outcome shape.
 
 ONE PATH. Neither case states what she knows: each names a moment in a
 SOURCE that a room's history was seeded into, and the runner reconstructs it
@@ -30,7 +28,7 @@ from tests.sandbox_fixtures import seed_source
 #: Point the subject at a port nothing answers on, so the model call fails
 #: rather than reaching a real provider from a test run. Configuration, which
 #: is the legal seam — there is no way here to pass a collaborator.
-#: Every draw creates a Honcho workspace of its own (issue #462).
+#: Every draw creates a Honcho workspace of its own.
 pytestmark = pytest.mark.usefixtures("draw_honcho")
 
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
@@ -63,7 +61,7 @@ async def _driven(entry: str, pg_url: str, pg_template: str, tmp_path) -> dict:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entry", ["gate", "participation"])
 async def test_one_runner_drives_both(entry, pg_url, pg_template, tmp_path, monkeypatch) -> None:
-    """§7's reading. One call, two maximally unalike entry points."""
+    """One call, two maximally unalike entry points."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     result = await _driven(entry, pg_url, pg_template, tmp_path)
     data = EvaluationData(input="", actual_environment_state=result["environment_state"])
@@ -71,11 +69,10 @@ async def test_one_runner_drives_both(entry, pg_url, pg_template, tmp_path, monk
     # It got far enough to TRY. A composition failure is a different error and
     # would mean the lifecycle does not in fact hold for both.
     assert "could not obtain the subject" not in error, error
-    # AND the entry point was actually THERE. This pin exists because the first
-    # version of this file passed while both were `None`: the committed template
-    # ships `[participation] enabled = false` and `[relevance_gate] enabled =
-    # false`, so nothing ran and the errors that proved "it fails closed" were
-    # "there is no gate" and "there is no fire path".
+    # AND the entry point was actually THERE: the committed template ships
+    # `[participation] enabled = false` and `[relevance_gate] enabled = false`,
+    # so without this pin nothing would run and the errors that appeared to prove
+    # "it fails closed" would be "there is no gate" and "there is no fire path".
     assert "on the graph" not in error, (
         f"{entry}: the entry point does not exist on the composed graph "
         f"({error}). The suite would then be measuring its own configuration, not Nora."

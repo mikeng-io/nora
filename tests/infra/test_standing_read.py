@@ -1,6 +1,4 @@
-"""`standing_read` and `SqlStandingStore.read_head`, against Postgres
-(design/cognition-loop/50-character-and-standing.md §2, 10-tiers.md §2 rule 7
-and §3, 30 §2; migration step 3, PR B «what she can read»).
+"""`standing_read` and `SqlStandingStore.read_head`, against Postgres.
 
 The store: the head with the id of the `standing_revision` row that IS it, and
 no id at all when the chain does not end at the head (never another
@@ -214,7 +212,7 @@ async def test_a_room_that_never_folded_is_nothing_found_not_an_error(engine, tm
 
 
 async def test_a_section_that_fails_lineage_is_withheld_and_the_rest_is_shown(engine, tmp_path):
-    """Per section (10 §3): `I hold open` rests on a `presence` entry, and room
+    """Per section: `I hold open` rests on a `presence` entry, and room
     A is not location-trusted, so that section is not shown; the others are."""
     await SqlStandingStore(engine).write(standing=_standing())
     lineage = Lineage.of({

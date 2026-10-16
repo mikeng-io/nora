@@ -1,28 +1,27 @@
 """ADR 0009 enforcement: the R-27 three-state result is a VALIDATED contract.
 
-ADR 0008 §3 declared the output contract and ADR 0009 amended its vocabulary —
-the three states are the CORE, the ten extensions the live tool surface
-already uses are DECLARED, and `load_transcript` keeps its deliberately
-status-free shape. This file is that decision's reader, in three layers:
+ADR 0008 declared the output contract and ADR 0009 amended its vocabulary: the three
+states are the CORE, the extensions the live tool surface uses are DECLARED, and
+`load_transcript` keeps its deliberately status-free shape. This file is that decision's
+reader, in three layers:
 
-1. **The vocabulary** — pinned by value, so an extension cannot be added
-   silently and the core cannot quietly grow a fourth member. `OUTPUT_STATUSES`
-   is derived from the two halves rather than restated; that derivation is what
-   the runtime validator reads, so pinning the halves pins the gate.
-2. **The declarations** — read off the SOURCE, not off the constructed
-   dataclass. `output_contract` defaults to `None`, and `None` means NOT
-   VALIDATED: a dict-returning tool that forgot to declare and a tool that
-   deliberately declines are byte-identical once `NativeTool` is built, so the
-   direction that costs a check is exactly the one a runtime read cannot see.
-3. **The seam** — `adapt()` wraps `spec.call`, so a malformed result is replaced
-   with an honest `unavailable` before Strands hands it to the model, a valid
-   one passes through untouched, and an exception still propagates.
+1. **The vocabulary** — pinned by value, so an extension cannot be added silently and the
+   core cannot quietly grow a fourth member. `OUTPUT_STATUSES` is derived from the two
+   halves rather than restated; that derivation is what the runtime validator reads, so
+   pinning the halves pins the gate.
+2. **The declarations** — read off the SOURCE, not off the constructed dataclass.
+   `output_contract` defaults to `None`, and `None` means NOT VALIDATED: a dict-returning
+   tool that forgot to declare and a tool that deliberately declines are byte-identical
+   once `NativeTool` is built, so the direction that costs a check is exactly the one a
+   runtime read cannot see.
+3. **The seam** — `adapt()` wraps `spec.call`, so a malformed result is replaced with an
+   honest `unavailable` before Strands hands it to the model, a valid one passes through
+   untouched, and an exception still propagates.
 
-**What this file does NOT test, because the harness cannot check it.** Whether a
-`refused` was really a disclosure veto or a lazy `unavailable` is a SEMANTIC
-judgment; it stays with the tool author and with the existing R-27/R-31 tests.
-The validation here is mechanical — vocabulary and shape — and saying so is the
-point of ADR 0009 §1's last bullet.
+**What this file does NOT test, because the harness cannot check it.** Whether a `refused`
+was really a disclosure veto or a lazy `unavailable` is a SEMANTIC judgment; it stays with
+the tool author and with the existing R-27/R-31 tests. The validation here is mechanical —
+vocabulary and shape — and saying so is the point of ADR 0009 §1's last bullet.
 """
 
 import ast
@@ -72,25 +71,21 @@ def test_every_declared_extension_is_named_and_documented() -> None:
     assert set(DECLARED_STATUS_EXTENSIONS) == {
         "refused", "withheld", "ambiguous", "not_found",
         "nothing_known", "not_an_image", "already_present", "no_route",
-        # A HOLD is not a refusal and not a fault: nothing vetoed the send and
-        # nothing was broken. What separates it from both is that calling again
-        # cannot help, because the hold is not about the text — which is the
-        # whole reason it needed a word of its own (2026-09-09).
+        # A HOLD is not a refusal and not a fault: nothing vetoed the send and nothing was
+        # broken. What separates it from both is that calling again cannot help, because
+        # the hold is not about the text.
         "held_for_review",
-        # R-99 (design/social-per-network/30-link-owner-registry.md,
-        # 2026-09-25): a call naming an argument the tool does not take.
-        # Deliberately NOT `unavailable` — that stays true of the whole turn
-        # afterwards (conduct.md) and this veto text reaches the debrief/
-        # Standing fold unfiltered — and NOT `refused`, since nothing vetoed
-        # disclosure. This one names a mistake in the CALL, correctable on
-        # the very next turn.
+        # R-99: a call naming an argument the tool does not take. Deliberately NOT
+        # `unavailable` — that stays true of the whole turn afterwards (conduct.md) and
+        # this veto text reaches the debrief/Standing fold unfiltered — and NOT `refused`,
+        # since nothing vetoed disclosure. This one names a mistake in the CALL,
+        # correctable on the very next turn.
         "bad_arguments",
-        # design/subagent §3 (DEC-283): a background job was launched and has no result
-        # yet. Not `ok` (that reads as done) and not `unavailable` (it did start).
+        # DEC-283: a background job was launched and has no result yet. Not `ok` (that
+        # reads as done) and not `unavailable` (it did start).
         "started",
-        # design/unified-memory/25 §4, 60 S5: the memory index answered while
-        # a rebuild is incomplete or its queue is not empty; what it did not
-        # find may still exist, so never `nothing_found`.
+        # The memory index answered while a rebuild is incomplete or its queue is not
+        # empty; what it did not find may still exist, so never `nothing_found`.
         "partial",
     }
     undocumented = sorted(k for k, v in DECLARED_STATUS_EXTENSIONS.items() if not v.strip())
@@ -100,14 +95,11 @@ def test_every_declared_extension_is_named_and_documented() -> None:
 def test_ambiguous_declares_the_sense_it_is_actually_used_in() -> None:
     """A declared meaning that has fallen behind the use is worse than none.
 
-    `ambiguous` was declared as "several candidates, cannot pick one" while
-    the Instagram rows used it for "no index entry AT ALL" too; for a while
-    the declaration named both senses. On 2026-09-24 the second sense left the
-    word (design/instagram-adoption/18): the person index now returns every
-    igid on file, and NONE is `nothing_found` with a note saying no account is
-    on file. So the declaration names the one sense in use and says, in so
-    many words, that the other is not this word — a reviewer reading an old
-    trace that used it can then tell a retired sense from a drift.
+    `ambiguous` means "several candidates, cannot pick one". The person index returns
+    every igid on file, and NONE is `nothing_found` with a note saying no account is on
+    file. So the declaration names the one sense in use and says, in so many words, that
+    the other (no index entry AT ALL) is not this word, so a reviewer reading an old trace
+    that used it can tell a retired sense from a drift.
     """
     meaning = DECLARED_STATUS_EXTENSIONS["ambiguous"]
     assert "several candidates" in meaning, "the sense in use is gone"
@@ -208,12 +200,11 @@ def test_the_structural_reader_sees_the_whole_built_table() -> None:
 def test_every_dict_returning_tool_declares_an_output_contract(tool: str) -> None:
     """The rule, applied: a result with a shape is a result the harness checks.
 
-    ADR 0008 §3 as amended — every tool whose result carries the status axis
-    declares one, DATA tools and action verbs alike. Deriving the set from
-    `source_tier` was rejected precisely because it misses the action verbs
-    (`send_to`, the events family) where the honesty axis
-    matters most, so it is derived from the RETURN TYPE instead: a tool handing
-    the model a dict is handing it a shape, whatever kind of verb it is.
+    ADR 0008 as amended: every tool whose result carries the status axis declares one,
+    DATA tools and action verbs alike. The set is derived from the RETURN TYPE, not from
+    `source_tier`, which misses the action verbs (`send_to`, the events family) where the
+    honesty axis matters most: a tool handing the model a dict is handing it a shape,
+    whatever kind of verb it is.
     """
     assert NATIVE_TOOLS[tool].output_contract is not None, (
         f"{tool} returns a dict to the model and declares no output contract"

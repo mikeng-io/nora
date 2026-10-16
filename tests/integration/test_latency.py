@@ -18,18 +18,14 @@ async def test_overhead_stays_within_the_budget(harness_factory):
     overhead = h.metrics.observations("nora_overhead_seconds")
     assert len(overhead) == 20
 
-    # MEDIAN against the budget, MAX against a loose ceiling — and the split is
-    # the fix for a test that was failing on process weight rather than on code
-    # (2026-08-21).
+    # MEDIAN against the budget, MAX against a loose ceiling.
     #
     # `statistics.quantiles(xs, n=20)[-1]` over TWENTY samples is not a p95 in
     # any useful sense: it interpolates between the two largest values, so it
     # is a reading of the single worst turn. One GC pause anywhere in the run
-    # sets it. Measured on this branch: the whole suite passed with five of its
-    # own test files deselected and failed with them present, at 0.359s —
-    # nothing in the tag path had changed, the process had simply got heavier
-    # (4224 tests against master's 3840). A gate that a *neighbouring file's
-    # test count* can flip is not measuring this code.
+    # sets it, and process weight (how many tests ran before) can flip it. A
+    # gate that a neighbouring file's test count can flip is not measuring this
+    # code.
     #
     # The claim worth gating is "our non-model work stays inside 300ms per
     # turn", and the MEDIAN states exactly that while being robust to one
@@ -66,22 +62,16 @@ async def test_llm_latency_is_recorded_separately(harness_factory):
     total = h.metrics.observations("nora_tag_latency_seconds")[0]
     overhead = h.metrics.observations("nora_overhead_seconds")[0]
 
-    # RELATIVE, not a wall-clock ceiling. This asserted `llm < DELAY + 0.3`,
-    # which is a proxy for «the model's span, not the whole turn» that a busy
-    # machine fails on its own — it went red once in a full-suite run and
-    # passed alone, which is the signature of an absolute bound under load
-    # rather than of a defect (same class as the compute-backend timing tests
-    # fixed 2026-08-14).
+    # RELATIVE, not a wall-clock ceiling: an absolute bound like
+    # `llm < DELAY + 0.3` fails on a busy machine without any defect.
     #
     # The real property is that the LLM span is STRICTLY INSIDE the turn, and
     # it holds at any speed. A regression that folded the whole turn into the
-    # LLM histogram breaks this exactly as it broke the old bound.
+    # LLM histogram breaks it.
     #
-    # Deliberately NOT asserting `total == llm + overhead`: `pipeline.py:621`
+    # Deliberately NOT asserting `total == llm + overhead`: the pipeline
     # computes overhead as `max(0.0, total - llm_elapsed)`, so that identity is
-    # true by construction and would pass with any llm value at all. It reads
-    # like a strong invariant and measures nothing — the trap this file's own
-    # history is about.
+    # true by construction and would pass with any llm value at all.
     assert llm >= FAKE_LLM_DELAY, "the model's own wait must be inside its span"
     assert llm < total, "the LLM span must not be the whole turn"
     assert overhead > 0, "some of the turn must be attributed outside the model"

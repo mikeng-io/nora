@@ -34,25 +34,20 @@ def test_config_example_exists_and_parses():
     }
 
 
-# --- Drift between the template and the real deployment (A8 / audit F11) -----
+# --- Drift between the template and the real deployment ---------------------
 #
-# `config.toml` is the REAL deployment's config. It holds no secret values —
-# every credential is a `*_env` name — so this drift would be checkable
-# statically, without reaching into the running container, WHEN the file is
-# present. It was tracked until 2026-09-07 and is gitignored since (operator
-# decision, collision rather than secrecy — see `_load_live_or_skip` below),
-# so every check in this section runs against a real `config.toml` only when
-# one happens to be present in the checkout, which is never true in a fresh
-# clone or in CI.
+# `config.toml` is the REAL deployment's config. It holds no secret values (every
+# credential is a `*_env` name), so drift would be checkable statically, without reaching
+# into the running container, WHEN the file is present. It is gitignored (collision rather
+# than secrecy; see `_load_live_or_skip` below), so every check in this section runs
+# against a real `config.toml` only when one happens to be present in the checkout, which
+# is never true in a fresh clone or in CI.
 #
-# The failure this guards is not cosmetic. `config.example.toml` is what anyone
-# reasoning about Nora from the repo reads, and when it disagreed with the
-# deployment it gave the WRONG ANSWER about her sampling — the 2026-08-20
-# prompt-architecture audit drew conclusions from `opencode-zen/…`,
-# `reasoning_effort = "low"` and `timeout_seconds = 30` while the deployment had
-# been running `ollamacloud/…`, `"high"` and `120` for over a week.
+# The failure this guards is not cosmetic. `config.example.toml` is what anyone reasoning
+# about Nora from the repo reads, and when it disagrees with the deployment it gives the
+# WRONG ANSWER about her model, sampling and timeouts.
 #
-# --- Relationship to evals/subject_config.py (issue #321) --------------------
+# --- Relationship to evals/subject_config.py ----------------------------------
 #
 # `evals/subject_config.materialise()`/`divergences()` compare the GENERATED
 # eval-subject config (`build()`'s output, `config.example.toml` rewritten
@@ -126,21 +121,17 @@ def _load_toml(name: str) -> dict[str, object]:
 def _load_live_or_skip() -> dict[str, object]:
     """`config.toml`, or a SKIP when this checkout has none.
 
-    It was tracked until 2026-09-07 and this file's loader said "fail, never
-    skip: a missing config.toml means this gate silently stopped measuring".
-    That was right while the file was guaranteed present. It is now the
-    deployment's own file and a fresh clone legitimately has none, so a hard
-    assert would fail for everyone who is not the operator — and a gate that
-    is red on every machine gets deleted, which loses the check entirely.
+    The file is the deployment's own and a fresh clone legitimately has none, so a hard
+    assert would fail for everyone who is not the operator, and a gate that is red on
+    every machine gets deleted, which loses the check entirely.
 
-    A SKIP rather than a silent pass: pytest prints it, so «this ran and
-    agreed» and «there was nothing here to compare against» stay different
-    readings. It does NOT run somewhere else instead: `config.toml` is
-    gitignored in every dev worktree and in CI, and the deploy checkout is
-    off-limits for verification (never bind-mounted for a test run), so this
-    check is not proven to run anywhere under the current workflow — issue
-    #321 tracks that gap. It is here, SKIP not silently green, for the
-    operator to run by hand against a real `config.toml` when they need it.
+    A SKIP rather than a silent pass: pytest prints it, so «this ran and agreed» and
+    «there was nothing here to compare against» stay different readings. It does NOT run
+    somewhere else instead: `config.toml` is gitignored in every dev worktree and in CI,
+    and the deploy checkout is off-limits for verification (never bind-mounted for a test
+    run), so this check is not proven to run anywhere under the current workflow. It is
+    here, SKIP not silently green, for the operator to run by hand against a real
+    `config.toml` when they need it.
     """
     path = ROOT / "config.toml"
     if not path.is_file():
@@ -165,97 +156,74 @@ _MAY_DIFFER = {
     "obs.tracing.endpoint", "obs.tracing.exporter", "obs.tracing.headers_env",
     "evals.langfuse.host", "evals.langfuse.headers_env",
     "presence.refresh_url",
-    # image_gen.enabled is the LIVE operator decision (2026-08-26: enabled
-    # after live smoke on the subscription lane); the template stays the
-    # ships-OFF default (DEC-43 posture) so a fresh deployment is inert by
-    # default.
+    # image_gen.enabled is the LIVE operator decision; the template stays the ships-OFF
+    # default (DEC-43 posture) so a fresh deployment is inert by default.
     "image_gen.enabled",
-    # The LIVE operator's ON/OFF decisions (2026-09: the cognition loop, obs
-    # error reporting, online/participation/relevance-gate/whatsapp/tts are
-    # all enabled in the deployment while the template ships every one OFF —
-    # DEC-43 posture: a copied config must never start speaking, reporting
-    # or participating on its own). Same class as image_gen.enabled above.
+    # The LIVE operator's ON/OFF decisions: the cognition loop, obs error reporting,
+    # online/participation/relevance-gate/whatsapp/tts are all enabled in the deployment
+    # while the template ships every one OFF (DEC-43 posture: a copied config must never
+    # start speaking, reporting or participating on its own). Same class as
+    # image_gen.enabled above.
     "cognition.enabled", "obs.errors.enabled",
     "obs.errors.environment", "online.enabled", "participation.enabled",
     "platforms.whatsapp.enabled", "relevance_gate.enabled",
     "relevance_gate.shadow", "speech.tts.enabled",
-    # Voice tuning is the LIVE operator's ear (2026-09-16: speed 1.3 +
-    # emotion "fluent" for a livelier, smoother delivery); the template
-    # ships vendor defaults so a copied config sounds neutral, the same
-    # DEC-43 posture as speech.tts.enabled above.
+    # Voice tuning is the LIVE operator's ear; the template ships vendor defaults so a
+    # copied config sounds neutral, the same DEC-43 posture as speech.tts.enabled above.
     "speech.tts.speed", "speech.tts.pitch", "speech.tts.vol",
     "speech.tts.emotion",
-    # The voice sidecar's own topology and the operator's vendor choice
-    # (2026-09-17). `provider` names a vendor account, `sidecar_endpoint` is a
-    # compose service on this host, and `voice_guild_ids` are Discord
-    # snowflakes for THIS deployment's servers — a copied config has none of
-    # the three, and the template shipping them would be an identifier in the
-    # tree (`tests/architecture/test_no_real_identifiers_in_the_tree.py`).
-    # `sidecars` is a LIST, so it flattens to ONE leaf however many guilds are
-    # deployed — which is why it is a list and not a table keyed by guild id
-    # (a keyed table would need a real snowflake declared in the example).
+    # The voice sidecar's own topology and the operator's vendor choice. `provider` names
+    # a vendor account, `sidecar_endpoint` is a compose service on this host, and
+    # `voice_guild_ids` are Discord snowflakes for THIS deployment's servers: a copied
+    # config has none of the three, and the template shipping them would be an identifier
+    # in the tree (`tests/architecture/test_no_real_identifiers_in_the_tree.py`).
+    # `sidecars` is a LIST, so it flattens to ONE leaf however many guilds are deployed,
+    # which is why it is a list and not a table keyed by guild id (a keyed table would
+    # need a real snowflake declared in the example).
     #
-    # `sidecar_endpoint` and `voice_guild_ids` were removed from here with the
-    # keys themselves: a dead allowlist row is a latent hole, because a key
-    # re-added under either name would bypass this gate silently.
+    # Keep this list free of dead rows: a row for a key that no longer exists is a latent
+    # hole, because a key re-added under that name would bypass this gate silently.
     "speech.tts.provider", "speech.tts.sidecars",
-    # The LIVE operator's ON decision for the culture fold (steps 0-4 are
-    # merged and running); the template ships the DEC-43 posture, OFF, so a
-    # copied config does not start folding a room it has never read. Same
-    # class as `cognition.enabled` above.
+    # The LIVE operator's ON decision for the culture fold; the template ships the DEC-43
+    # posture, OFF, so a copied config does not start folding a room it has never read.
+    # Same class as `cognition.enabled` above.
     "culture.enabled",
-    # `[dreamer] max_tokens` — the Dreamer's own per-call ceiling, `0` meaning
-    # «inherit `[llm] max_tokens`» (issue #291). The TEMPLATE must keep the
-    # sentinel: the field's whole posture is that its arrival is a runtime
-    # no-op for a deployment that does not set it, the same as `model = ""`.
-    # The live number is the operator's, raised off a measured truncation on
-    # the note batch, and a fresh install must not inherit a ceiling sized for
-    # a roster it does not have.
+    # `[dreamer] max_tokens` — the Dreamer's own per-call ceiling, `0` meaning «inherit
+    # `[llm] max_tokens`». The TEMPLATE must keep the sentinel: the field's whole posture
+    # is that its arrival is a runtime no-op for a deployment that does not set it, the
+    # same as `model = ""`. The live number is the operator's, and a fresh install must
+    # not inherit a ceiling sized for a roster it does not have.
     "dreamer.max_tokens",
     # Env-var NAMES are the operator's choice of what to call a secret.
     "media.encryption_key_env",
-    # The five model lanes, added 2026-09-06 after ea626821 routed them through
-    # NAMED OMNIROUTE COMBOS (`nora`, `nora-dreamer`, `nora-image`). A combo is
-    # not a model id — it is a name defined in the operator's own OmniRoute
-    # deployment, resolving to a primary plus a fallback that live entirely
-    # outside this repo. It is the same class of value as `llm.base_url` two
-    # blocks up: the deployment's own topology, which a fresh install cannot
-    # possibly have.
+    # The five model lanes route through NAMED OMNIROUTE COMBOS (`nora`, `nora-dreamer`,
+    # `nora-image`). A combo is not a model id; it is a name defined in the operator's own
+    # OmniRoute deployment, resolving to a primary plus a fallback that live entirely
+    # outside this repo. It is the same class of value as `llm.base_url` two blocks up:
+    # the deployment's own topology, which a fresh install cannot possibly have.
     #
-    # This test's docstring still says these are "not site-specific … the
-    # current known-good configuration", and that was TRUE when it was written
-    # — the field then held a real upstream id. The combo indirection changed
-    # what the field means, and the guard did not follow, so it has been red on
-    # master ever since.
-    #
-    # WHAT THIS GIVES UP, stated because it is the cost: the template can no
-    # longer be checked against the live lane automatically. The convention
-    # that replaces it is that the template names the combo's FIRST MEMBER
-    # (`ollamacloud/deepseek-v4-flash:0731` is `nora`'s primary per ea626821's
-    # own message), so a reader of the template still sees the real upstream.
-    # Nothing here can verify that — combo membership lives in the router — so
-    # it is a convention, not a proof, and a lane retargeted in OmniRoute
-    # without touching the template will not be caught.
+    # WHAT THIS GIVES UP, stated because it is the cost: the template cannot be checked
+    # against the live lane automatically. The convention is that the template names the
+    # combo's FIRST MEMBER (`ollamacloud/deepseek-v4-flash:0731` is `nora`'s primary), so
+    # a reader of the template still sees the real upstream. Nothing here can verify that,
+    # because combo membership lives in the router, so it is a convention, not a proof,
+    # and a lane retargeted in OmniRoute without touching the template will not be caught.
     "llm.model", "dreamer.model",
     "media.vision_model", "media.describe.image.model", "evals.judge_model",
-    # Three live opt-ins, added 2026-08-27. Each is the deployment spending
-    # something the template must not spend on a fresh operator's behalf, which
-    # is the same rule `image_gen.enabled` sits under above — NOT drift.
-    #
-    # `allow_reference_images`: sending an existing image to the provider is a
-    # data-egress decision, so the template ships it off.
+    # Three live opt-ins. Each is the deployment spending something the template must not
+    # spend on a fresh operator's behalf, which is the same rule `image_gen.enabled` sits
+    # under above — NOT drift.
     "image_gen.allow_reference_images",
-    # `provider`: which subscription lane draws her pictures is the
-    # operator's (2026-10-09: `openai_codex` live); the template keeps the
-    # original default, `xai`. Both lanes' logins are kept alive whichever is
-    # selected (DEC-308), so the choice is a switch, not a migration.
+    # `provider`: which subscription lane draws her pictures is the operator's
+    # (`openai_codex` live); the template keeps the default, `xai`. Both lanes' logins are
+    # kept alive whichever is selected (DEC-308), so the choice is a switch, not a
+    # migration.
     "image_gen.provider",
     # `autoplay_prewarm_seconds`: prewarming fetches a track nobody asked for
     # yet. 0.0 is inert; the deployment opted in at 12s (R-64).
     "music.autoplay_prewarm_seconds",
-    # RustFS's own address, live here since 2026-08-23 (DEC-136 cutover) --
-    # topology, the same bucket `llm.base_url` is in above, not an opt-in
-    # flag (that one's a few lines down).
+    # RustFS's own address (DEC-136): topology, the same bucket `llm.base_url` is in
+    # above, not an opt-in flag (that one's a few lines down).
     "media.rustfs.endpoint",
     # The template ships every optional feature INERT — reaching a service,
     # holding a key, or speaking on a timer is an operator decision, never
@@ -265,70 +233,58 @@ _MAY_DIFFER = {
     "platforms.discord.enabled", "presence.enabled", "preview.enabled",
     "route.enabled", "search.enabled",
     "tools.mcp.pulse.enabled", "weather.enabled", "speech.stt.enabled",
-    # `notes.enabled` joins them 2026-08-21: the template ships the tier inert
-    # so a copied config never silently starts writing a notebook, and this
-    # deployment has opted in. NOT `max_rendered_notes` — there is no such key
-    # and §5.1 says there must not be, because a capped index can hide a note
-    # and an invisible note is indistinguishable from one that does not exist.
+    # `notes.enabled` joins them: the template ships the tier inert so a copied config
+    # never silently starts writing a notebook, and this deployment has opted in. NOT
+    # `max_rendered_notes`: there is no such key, and there must not be, because a capped
+    # index can hide a note and an invisible note is indistinguishable from one that does
+    # not exist.
     "notes.enabled",
-    # `standing.enabled` joins them 2026-08-27, and it is the sharpest case in
-    # this list: the debrief spends a model call INSIDE the reply slot, so a
-    # copied config that switched itself on would lengthen a hold real people
-    # wait behind. Template inert, deployment opted in. NOT `max_chars` /
-    # `window` / `timeout_seconds` — those are the same known-good numbers in
-    # both files, and a template disagreeing with them is exactly the F11 drift
+    # `standing.enabled` joins them, and it is the sharpest case in this list: the debrief
+    # spends a model call INSIDE the reply slot, so a copied config that switched itself
+    # on would lengthen a hold real people wait behind. Template inert, deployment opted
+    # in. NOT `max_chars` / `window` / `timeout_seconds`: those are the same known-good
+    # numbers in both files, and a template disagreeing with them is exactly the drift
     # this test exists for.
     "standing.enabled",
-    # The one flag that runs the OTHER direction: the template ships the
-    # trigger phrase ON (the code default, `TriggerConfig.enabled = True`,
-    # matching every deployment's behaviour before this flag existed); this
-    # deployment has opted OUT (operator, 2026-08-21) — `@mention` and
-    # reply-to-her still engage her either way.
+    # The one flag that runs the OTHER direction: the template ships the trigger phrase ON
+    # (the code default, `TriggerConfig.enabled = True`); this deployment has opted OUT.
+    # `@mention` and reply-to-her still engage her either way.
     "engagement.trigger.enabled",
-    # The Dreamer runtime, live here since 2026-08-21 and INERT in the
-    # template for the same reason as its neighbours above: it spends model
-    # calls on a background clock. A copied file must not do that without
-    # somebody deciding to.
+    # The Dreamer runtime, live here and INERT in the template for the same reason as its
+    # neighbours above: it spends model calls on a background clock. A copied file must
+    # not do that without somebody deciding to.
     "dreamer.enabled",
-    # RustFS media custody (DEC-136) and the Discord music bot (design/
-    # discord-music/), both live here since 2026-08-23 for the same reason
-    # as their neighbours above -- opted in by the operator, INERT in the
+    # RustFS media custody (DEC-136) and the Discord music bot, both live here for the
+    # same reason as their neighbours above -- opted in by the operator, INERT in the
     # template until someone decides to.
     "media.rustfs.enabled", "music.enabled",
-    # `social.enabled` joins them 2026-08-31: the template ships `social_fetch`
-    # (now `x_read` and `x_search`, DEC-201) INERT (DEC-151 "explicitly on"
-    # rule — the tool reads third-party social content through an
-    # authenticated browser session), and this deployment
-    # has opted in after the live bridge wiring (PR #86/#87). NOT
-    # `timeout_seconds`/`content_max_chars` — those are the same known-good
-    # values in both files when the deployment does not override them, and a
-    # template disagreeing with them is exactly the F11 drift this test
-    # exists for.
+    # `social.enabled` joins them: the template ships `x_read` and `x_search` (DEC-201)
+    # INERT (DEC-151 "explicitly on" rule: the tools read third-party social content
+    # through an authenticated browser session), and this deployment has opted in. NOT
+    # `timeout_seconds`/`content_max_chars`: those are the same known-good values in both
+    # files when the deployment does not override them, and a template disagreeing with
+    # them is exactly the drift this test exists for.
     "social.enabled",
     # `social.bridge_url` is a HOST address like `llm.base_url` above: the
     # deployment's container sits on the private compose `nora` network and
     # reaches the bridge at host.docker.internal:19826; a fresh copy has no
     # reason to inherit that, so the template ships the loopback default.
     "social.bridge_url",
-    # A tuned value (design/discord-music/05-crossfade-spike.md), not a
-    # universal default -- 0.0 in the template is deliberately "off until
-    # you choose a fade length", not a measurement this deployment drifted
-    # from.
+    # A tuned value, not a universal default -- 0.0 in the template is deliberately "off
+    # until you choose a fade length", not a measurement this deployment drifted from.
     "music.crossfade_seconds",
-    # ON in this deployment (design/discord-music/08-autoplay.md, operator's
-    # own instruction) -- OFF in the template like every other opt-in above.
+    # ON in this deployment (operator's own instruction) -- OFF in the template like every
+    # other opt-in above.
     "music.autoplay_enabled",
-    # `search.provider` is a live operator decision (2026-09-06: switched to
-    # Exa after a live probe of both verbs), and unlike its neighbours above it
-    # is a CHOICE rather than an opt-in — neither value is the inert one. The
-    # template stays on "tavily" because that is the backend whose relevance
-    # floor is measured (DEC-157 (4)): a fresh operator copying the file gets
-    # the more filtered of the two, and picks the other deliberately.
+    # `search.provider` is a live operator decision, and unlike its neighbours above it is
+    # a CHOICE rather than an opt-in: neither value is the inert one. The template stays
+    # on "tavily" because that is the backend whose relevance floor is measured (DEC-157
+    # (4)): a fresh operator copying the file gets the more filtered of the two, and picks
+    # the other deliberately.
     "search.provider",
-    # `[memory_index] enabled` (S5, design/unified-memory/60): which memory
-    # `ask_memory` answers from is the operator's switch, measured on the
-    # deployment (`conversational_recall`) before it is turned on; the
-    # template ships the Honcho path, OFF.
+    # `[memory_index] enabled`: which memory `ask_memory` answers from is the operator's
+    # switch, measured on the deployment (`conversational_recall`) before it is turned on;
+    # the template ships the Honcho path, OFF.
     "memory_index.enabled",
     # Per-deployment policy/cost knobs.
     "doctrine.canary",            # deliberately CHANGE-ME in the template
@@ -358,14 +314,12 @@ _MAY_BE_ABSENT |= {
 def test_config_example_declares_every_key_the_deployment_sets():
     """A key set in config.toml but absent from the template is invisible.
 
-    This is the half that caught `[compute]` missing from the
-    template entirely, along with `memory.self_card_conclusions`,
-    `media.sticker_descriptions` and the adaptive-cadence presence keys — an
-    operator copying the template got the code default with no hint the knob
-    existed.
+    This is the half that catches a whole section (such as `[compute]`) or a knob (such as
+    `memory.self_card_conclusions`) missing from the template: an operator copying the
+    template gets the code default with no hint the knob exists.
 
-    The reverse is NOT an error: the template may state a value the deployment
-    leaves at its default, which is how it documents defaults.
+    The reverse is NOT an error: the template may state a value the deployment leaves at
+    its default, which is how it documents defaults.
     """
     live = _load_live_or_skip()
     example = _load_toml("config.example.toml")
@@ -382,10 +336,9 @@ def test_config_example_declares_every_key_the_deployment_sets():
 def test_config_example_agrees_with_the_deployment_except_where_argued():
     """Values must match unless `_MAY_DIFFER` says why they legitimately don't.
 
-    Catches exactly the F11 drift: `llm.model`, `llm.reasoning_effort` and
-    `llm.timeout_seconds` are not site-specific, they are the current
-    known-good configuration, and a template disagreeing with them misleads
-    every future investigation.
+    Catches template drift: `llm.model`, `llm.reasoning_effort` and `llm.timeout_seconds`
+    are not site-specific, they are the current known-good configuration, and a template
+    disagreeing with them misleads every future investigation.
     """
     live = _load_live_or_skip()
     example = _load_toml("config.example.toml")
@@ -415,8 +368,7 @@ def test_config_example_still_loads_through_the_config_model(tmp_path, monkeypat
     cfg = load(dst)
     # Spot-check the drifted values actually landed in the typed model, rather
     # than trusting that "it loaded" means "it loaded what we think".
-    # Literals re-pinned 2026-08-30 to the synced template values: the model
-    # gained its `:0731` catalog tag and the loop timeout went 120 → 240.
+    # Literals pinned to the template values; update them together with the template.
     assert cfg.llm.model == "ollamacloud/deepseek-v4-flash:0731"
     assert cfg.llm.reasoning_effort == "low"
     assert cfg.llm.timeout_seconds == 360
@@ -461,11 +413,10 @@ def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypa
         "deployment's own value is an operator decision and is listed in "
         "_MAY_DIFFER."
     )
-    # The TEMPLATE's Dreamer model is still pinned to a real upstream — a fresh
-    # install must get something it can actually reach. The LIVE side is no
-    # longer compared: since ea626821 it names the `nora-dreamer` OmniRoute
-    # combo, which resolves outside this repo (see `_MAY_DIFFER`). Asserting
-    # equality here was asserting that the operator had not adopted combos.
+    # The TEMPLATE's Dreamer model is pinned to a real upstream: a fresh install must get
+    # something it can actually reach. The LIVE side is not compared: it names the
+    # `nora-dreamer` OmniRoute combo, which resolves outside this repo (see
+    # `_MAY_DIFFER`).
     assert example.model == "ollamacloud/deepseek-v4-flash:0731", (
         "the template must name a REACHABLE upstream for the Dreamer, not a "
         "combo — a copied config has no OmniRoute combos defined"
@@ -486,22 +437,22 @@ def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypa
 
 
 def test_config_example_sets_no_top_p():
-    """`top_p` stays UNSET until somebody measures it (audit F8 / A6).
+    """`top_p` stays UNSET until somebody measures it.
 
-    `nora/agent/factory.py` sends `max_tokens`, `temperature`, `tool_choice`
-    and `reasoning_effort` and nothing else, so nucleus truncation is the
-    provider's default. `top_p = 1.0` would be a no-op; anything lower
-    truncates the distribution on a guess, and the `reasoning_effort` series in
-    `[llm]` shows sampling changes move whether she calls `send_reply` at all.
-    Deleting this test is the deliberate act that admits a measured value.
+    `nora/agent/factory.py` sends `max_tokens`, `temperature`, `tool_choice` and
+    `reasoning_effort` and nothing else, so nucleus truncation is the provider's default.
+    `top_p = 1.0` would be a no-op; anything lower truncates the distribution on a guess,
+    and the `reasoning_effort` series in `[llm]` shows sampling changes move whether she
+    calls `send_reply` at all. Deleting this test is the deliberate act that admits a
+    measured value.
     """
     # Key-level, not text-level: both files DISCUSS `top_p` at length in their
     # comments, and that prose is the point of A6 — what must not appear is a
     # SET key, in either file or in the model that would accept one.
     assert "top_p" not in LLMConfig.model_fields
-    # The TEMPLATE is checked unconditionally — it is tracked, and it is what a
-    # new deployment copies. The live file is checked when this checkout has
-    # one; it is untracked since 2026-09-07 and a fresh clone has none.
+    # The TEMPLATE is checked unconditionally — it is tracked, and it is what a new
+    # deployment copies. The live file is checked when this checkout has one; it is
+    # untracked and a fresh clone has none.
     assert "llm.top_p" not in _load_toml("config.example.toml")
     live = ROOT / "config.toml"
     if live.is_file():
@@ -527,18 +478,16 @@ def test_env_example_names_the_secret():
 def test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_it(
     tmp_path, monkeypatch,
 ):
-    """A `*_env` field names the variable a secret arrives in, and compose
-    passes an explicit list, not the whole `.env`. `NORA_COMPUTER_TOKEN` was in
-    `.env` but not in `nora`'s list, so the first `[computer] enabled` deploy
-    crash-looped nora (2026-09-30); `HKGOV_MAPS_TOKEN` was never passed either.
+    """A `*_env` field names the variable a secret arrives in, and compose passes an explicit
+    list, not the whole `.env`. A name present in `.env` but missing from `nora`'s list
+    reaches the container as unset, so enabling the feature that reads it crash-loops
+    nora.
 
-    The names come from TWO walks, because each misses what the other sees:
-    the example config LOADED through the model (so dict and list sections
-    such as `[tools.mcp.*]` and required fields such as `llm.api_key_env`
-    are present), and each optional top-level section's own default,
-    factories included (so a section the example leaves out is present
-    too). Every non-empty name
-    must reach the service that reads it."""
+    The names come from TWO walks, because each misses what the other sees: the example
+    config LOADED through the model (so dict and list sections such as `[tools.mcp.*]` and
+    required fields such as `llm.api_key_env` are present), and each optional top-level
+    section's own default, factories included (so a section the example leaves out is
+    present too). Every non-empty name must reach the service that reads it."""
     import yaml
     from pydantic import BaseModel
 

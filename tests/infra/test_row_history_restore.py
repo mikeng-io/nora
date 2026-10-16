@@ -1,6 +1,5 @@
 """A data-only `pg_dump` restore of a table carrying `nora_row_history()`
-succeeds against a freshly migrated database (migration `0072`; defect found
-measuring design/cognition-loop step 2a).
+succeeds against a freshly migrated database (migration `0072`).
 
 Against two REAL Postgres databases in the shared testcontainer, never a
 mock: the source is `pg_url` (already migrated, already exercising the
@@ -10,14 +9,13 @@ carries the identical table/function/trigger shape with no rows of its own.
 
 `pg_dump` emits `SELECT pg_catalog.set_config('search_path', '', false);`
 ahead of the data section -- `test_schema_parity.py`'s own `_normalise`
-already strips that exact line out of its schema dumps, so its presence
-here is not a new fact about `pg_dump`, only a new place it bites. The
-restore then runs every table's `COPY`, which fires the same AFTER
+already strips that exact line out of its schema dumps. The restore then
+runs every table's `COPY`, which fires the same AFTER
 INSERT/UPDATE/DELETE row triggers a live write would, with an EMPTY
-search_path in force. Before `0072` pins `nora_row_history()`'s own path,
+search_path in force. Without `0072` pinning `nora_row_history()`'s own path,
 that trigger's unqualified `row_history` fails to resolve and the whole
 restore aborts (`ON_ERROR_STOP=1` below is what turns that into a non-zero
-`psql` exit rather than a partially-applied dump); after, the function
+`psql` exit rather than a partially-applied dump); with it, the function
 resolves `row_history` regardless of the caller's path and the restore
 succeeds with the row's history intact.
 """

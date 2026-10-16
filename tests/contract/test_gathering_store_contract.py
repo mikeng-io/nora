@@ -236,9 +236,8 @@ async def test_rsvp_upserts_on_same_person(store):
     assert back[0].responded_at == second
 
 
-# ── migration 0074_event_revision (design/cognition-loop/70-migration.md §2
-# row 2b): event_revision, lifecycle statuses, base_revision_id, RSVP
-# transition rows, unit-wide search. ────────────────────────────────────────
+# ── migration 0074_event_revision: event_revision, lifecycle statuses,
+# base_revision_id, RSVP transition rows, unit-wide search. ──────────────────
 
 
 async def test_create_writes_one_revision_and_points_the_head_at_it(store):
@@ -317,7 +316,7 @@ async def test_the_full_lifecycle_is_writable(store):
 
 
 async def test_rsvp_is_stored_append_only_even_though_the_read_projects_latest(store):
-    """70 §5: "RSVP transition rows" — a repeat RSVP must be a second row in
+    """RSVP transition rows: a repeat RSVP must be a second row in
     storage, not an overwrite of the first, even though `rsvps_for` (the
     read side) still answers with only the current one (the test above)."""
     ev = _event()
@@ -378,13 +377,13 @@ async def test_search_is_unit_wide_and_filters_by_place_person_and_interval(stor
 
 
 async def test_search_room_ids_finds_legacy_events_without_leaking_other_units(store):
-    """B3(a): the migration backfilled every pre-existing event to
-    `unit_id=""` (units live in `policy.toml`, not the DB, so the migration
-    could not fill it). `room_ids` is how the caller — which resolves the
-    unit's rooms from policy — gets those rows back into a unit-wide search.
-    The negative matters as much as the positive: a legacy row in a room
-    the caller did NOT name (another unit's room) must never be returned,
-    or `room_ids` becomes a cross-unit leak."""
+    """The migration backfills every pre-existing event to `unit_id=""` (units
+    live in `policy.toml`, not the DB, so the migration cannot fill it).
+    `room_ids` is how the caller — which resolves the unit's rooms from policy
+    — gets those rows back into a unit-wide search. The negative matters as
+    much as the positive: a legacy row in a room the caller did NOT name
+    (another unit's room) must never be returned, or `room_ids` becomes a
+    cross-unit leak."""
     unit = f"unit-{uuid4()}"
     legacy_in_unit = _event(
         id=uuid4(), conversation_id="signal:room-a", unit_id="",
@@ -409,7 +408,7 @@ async def test_search_room_ids_finds_legacy_events_without_leaking_other_units(s
         "leak into another unit's search"
     )
 
-    # No room_ids at all: back to the exact, pre-B3 unit_id match — a legacy
+    # No room_ids at all: back to the exact unit_id match — a legacy
     # event is invisible unless the caller explicitly resolved its room.
     without_room_ids = await store.search(unit_id=unit)
     assert {e.id for e in without_room_ids} == {backfilled.id}

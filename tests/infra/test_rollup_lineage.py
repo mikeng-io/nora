@@ -1,13 +1,12 @@
-"""A Rollup row's lineage, as step 2a writes it, read by the lineage
-predicates (design/cognition-loop/10-tiers.md §3, 25-rollup.md «Keys and
-columns»; DEC-236).
+"""A Rollup row's lineage, as the writer stores it, read by the lineage
+predicates (DEC-236).
 
-There is one lineage format in the store: step 2a's array of
+There is one lineage format in the store: an array of
 `[kind, subject, origin]` triples, rooms keyed `platform:conversation_id`.
 A Rollup row carries ONE set for the whole row, so the predicates read it as
 the row's `ROW` section, never as malformed. This writes a real tie through
 `SqlRollupStore.apply`, reads it back through `rows`, and asks the predicates
-about it; and it pins the stored shape 2a's writer produces, so a change on
+about it; and it pins the stored shape the writer produces, so a change on
 either side reddens here.
 
 Rooms, units and people are placeholders.
@@ -49,7 +48,7 @@ async def engine(pg_url):
 
 async def _tie_row(engine) -> dict:
     """A tie between two members of unit u1, from what they said in room A
-    only (no co-location, so no presence entry), written and read by 2a's
+    only (no co-location, so no presence entry), written and read by the
     store."""
     store = SqlRollupStore(engine)
     build = await store.create_build(code_version="test", params_sha256="0" * 64)
@@ -68,7 +67,7 @@ async def _tie_row(engine) -> dict:
 
 
 async def test_step_2as_writer_stores_one_array_of_triples_for_the_row(engine):
-    """The shape both sides agree on, pinned at 2a's writer."""
+    """The shape both sides agree on, pinned at the writer."""
     row = await _tie_row(engine)
     assert row["lineage"] == [["message", None, "signal:ROOM-A"]]
     lineage = Lineage.from_json(row["lineage"])

@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_architecture_doc_covers_every_package():
     """Covers both sub-packages (dirs) and top-level modules (`handler.py`,
     `tag.py`, `persons.py`, ...) under nora/ — a new top-level module follows the
-    same "must be in the map" rule a new package does, and used to be silently
-    exempt because this test only walked directories."""
+    same "must be in the map" rule a new package does, and is not exempt just
+    because it is not a directory."""
     doc = (ROOT / "ARCHITECTURE.md").read_text()
     packages = sorted(p.name for p in (ROOT / "nora").iterdir()
                       if p.is_dir() and not p.name.startswith(("_", ".")))

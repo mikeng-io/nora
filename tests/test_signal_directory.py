@@ -1,6 +1,6 @@
 """`nora.platform.signal.directory` — the control plane's half of the daemon
-conversation. Field names here mirror what the live daemon actually returned on
-2026-08-05 (see the module docstring); these tests pin the mapping, not the
+conversation. Field names here mirror what the live daemon actually returns
+(see the module docstring); these tests pin the mapping, not the
 daemon."""
 
 from __future__ import annotations

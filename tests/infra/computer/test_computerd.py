@@ -106,7 +106,7 @@ async def test_the_file_tools_never_follow_a_link(served):
 
 
 async def test_a_planted_temp_name_cannot_redirect_a_write(served):
-    """The review's cross-room write: a command plants `.x.computerd-tmp` as a
+    """The cross-room write: a command plants `.x.computerd-tmp` as a
     link into another room, then Nora writes `x`. The temp name is random and
     opened O_EXCL|O_NOFOLLOW, so the other room's file is untouched."""
     runtime, _, root = served
@@ -165,9 +165,8 @@ async def test_a_backgrounded_command_returns_without_waiting_for_it(served):
 
 
 async def test_a_child_that_escapes_the_group_cannot_hang_a_timeout(served):
-    """os.setsid() puts the child outside computerd's kill (portable: macOS
-    has no setsid command); with pipes, its open
-    stdout kept the call alive forever (the review measured past 40 s)."""
+    """os.setsid() puts the child outside computerd's kill (portable: macOS has no setsid
+    command); with pipes, its open stdout would keep the call alive indefinitely."""
     runtime, _, _ = served
     result = await runtime.run(
         scope=SCOPE,
@@ -263,9 +262,8 @@ async def test_a_hostile_reply_never_raises_out_of_the_client():
 
 
 async def test_the_reserved_limits_slot_goes_on_the_wire_only_when_set():
-    """`[computer] limits` is reserved (operator 2026-09-30): unset, the run
-    body is exactly what it was before the slot existed; set, it carries only
-    the limits named."""
+    """`[computer] limits` is reserved: unset, the run body carries no limits
+    slot; set, it carries only the limits named."""
     from aiohttp import web
     bodies: list[dict] = []
 
@@ -343,7 +341,7 @@ async def test_a_command_gets_its_rooms_own_tmux_directory(served):
     result = await runtime.run(scope=SCOPE, command="echo $TMUX_TMPDIR", timeout_s=10)
     assert result.stdout.strip().endswith(f"/{SCOPE}")
     # tmux runs a pane through SHELL; a scope user's login shell is nologin,
-    # so without this every `tmux new` dies at once (measured 2026-09-30).
+    # so without this every `tmux new` dies at once.
     shell = await runtime.run(scope=SCOPE, command="echo $SHELL", timeout_s=10)
     assert shell.stdout.strip() == "/bin/bash"
     other = computer_scope("signal", "room-b")
@@ -380,8 +378,8 @@ def test_no_proc_means_no_children_never_a_crash(tmp_path):
 
 
 def test_computerd_has_no_way_to_end_a_tmux_session_or_delete_a_file():
-    """The operator's rule, 2026-09-30: never destroy work. Neither the
-    server nor the port offers a kill or a delete."""
+    """Never destroy work: neither the server nor the port offers a kill or a
+    delete."""
     from nora.domain.ports import SandboxRuntime
     names = {n for n in dir(SandboxRuntime) if not n.startswith("_")}
     assert not {n for n in names if "kill" in n or "delete" in n or "remove" in n}

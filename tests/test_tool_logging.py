@@ -1,14 +1,10 @@
 """Every tool says that it ran (DEC-28's unfinished half).
 
-**The regression this file exists to catch, verbatim.** On 2026-08-06
-`grep lookup_person data/nora.log` returned zero, and that was read as "the
-tool was never called". It could not have returned anything either way:
-`nora/agent/tools.py` emitted exactly one log line on any success path
-(`now`'s), and `lookup_person`, `group_members`, `about`, `load_transcript`
-and `send_reply` emitted none at all. Two architectural
-conclusions were drawn from that zero, both wrong, and one nearly retracted a
-design document. A silence that reads identically whether the code ran on every
-turn or never is not evidence.
+**The failure this file guards.** `grep lookup_person data/nora.log` returning
+zero would read as "the tool was never called", yet a tool that logs nothing on
+success returns zero either way. A silence that reads identically whether the
+code ran on every turn or never is not evidence, so every tool emits a line on
+its success path.
 
 Integration-style on purpose, through `setup_logging` and the real structlog
 pipeline rather than `caplog`: the claim being made is about what an operator
@@ -111,10 +107,9 @@ def restore_logging():
 
 
 class _Stdout:
-    """Stands in for the stream `setup_logging` writes to (stdout since
-    2026-09-09). It keeps `read_text()` so the assertions below read the same
-    way they did when the sink was a file — what changed is where the lines
-    go, not what has to be true of them."""
+    """Stands in for the stream `setup_logging` writes to (stdout). It
+    keeps `read_text()` so the assertions below read as if the sink were a
+    file: what matters is what is true of the lines, not where they go."""
 
     def __init__(self) -> None:
         self.buffer = io.StringIO()
@@ -195,10 +190,10 @@ def _tool_lines(log) -> list[dict]:
 
 
 async def test_a_turn_that_calls_lookup_person_says_so_in_the_log(wiring):
-    """THE PROBE, in the exact shape of the grep that misled us.
+    """THE PROBE, in the shape of `grep lookup_person data/nora.log`.
 
-    Delete `_log_call` from `lookup_person` and this goes red — which is what
-    the original `grep lookup_person data/nora.log` could not do.
+    Delete `_log_call` from `lookup_person` and this goes red — which that
+    grep alone could not do.
     """
     await _call(wiring["tools"]["lookup_person"], name="阿豹")
     assert "lookup_person" in wiring["log"].read_text()
@@ -209,9 +204,9 @@ async def test_a_turn_that_calls_lookup_person_says_so_in_the_log(wiring):
 
 
 async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
-    """All seven, not just the one that was grepped for. The failure was not
-    "lookup_person is quiet", it was "a tool is not expected to say anything",
-    and a test covering one tool would leave the next six free to regress.
+    """All seven, not just the one that was grepped for. The failure is not
+    "lookup_person is quiet", it is "a tool is not expected to say anything",
+    and a test covering one tool would leave the others free to regress.
     """
     tools = wiring["tools"]
     await _call(tools["now"])

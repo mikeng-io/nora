@@ -1,9 +1,7 @@
 """The engine over `postgresql+asyncpg://…`.
 
-The SQLite era's PRAGMA/WAL/busy_timeout/parent-directory tests are gone with
-the SQLite backend (design/20). What remains to prove is that the read/write
-engine writes, and that the read-only control-plane engine is refused a write by
-the SERVER — not by a caller keeping a promise.
+The read/write engine writes, and the read-only control-plane engine is refused
+a write by the SERVER — not by a caller keeping a promise.
 """
 
 from __future__ import annotations
@@ -27,12 +25,12 @@ async def test_the_readwrite_engine_can_write(pg_url):
         await engine.dispose()
 
 
-# The ts→BigInteger blocker's real guard is
+# The ts→BigInteger guard is
 # tests/test_migration.py::test_a_signal_magnitude_timestamp_round_trips_through_the_store,
 # which inserts 1785950108283 through the MIGRATED `messages` table — reverting
 # the baseline's column to Integer turns it red. A local `CREATE TABLE t (ts
-# bigint)` here would prove only that Postgres knows what bigint is (decorative,
-# both reviews 2026-08-07), so it is not repeated.
+# bigint)` here would prove only that Postgres knows what bigint is (decorative),
+# so it is not repeated.
 
 
 async def test_the_readonly_engine_reads(pg_url):

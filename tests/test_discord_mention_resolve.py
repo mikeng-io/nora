@@ -192,7 +192,7 @@ def test_text_with_no_at_sign_is_returned_unchanged():
 
 
 # ---------------------------------------------------------------------------
-# splice_composed_mentions — the composer already resolved the id (#211);
+# splice_composed_mentions — the composer already resolved the id;
 # this only converts UTF-16 offsets and splices.
 # ---------------------------------------------------------------------------
 

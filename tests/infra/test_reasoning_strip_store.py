@@ -1,4 +1,4 @@
-"""`SqlReasoningStripStore` — issue #325's durable half (migration 0057).
+"""`SqlReasoningStripStore` — the durable half of the reasoning-strip counter.
 
 Single-store file, not a contract suite (there is one implementation). The
 database is MODULE-scoped per `test_participation_state_store.py`'s pattern:
@@ -107,9 +107,9 @@ async def test_the_row_carries_its_own_denominator(
 
     `strip_calls` alone answers nothing — two strips is a catastrophe at two
     opportunities and a rounding error at two hundred, and that is exactly the
-    reading #325's production log excerpt could not be given. Both halves are
-    on the row, so the rate is computable from this table alone, long after the
-    process that produced it has been recreated.
+    reading a bare strip count cannot give. Both halves are on the row, so the
+    rate is computable from this table alone, long after the process that
+    produced it has been recreated.
     """
     await store.record_observation(_observation())
     (row,) = await _rows(engine)

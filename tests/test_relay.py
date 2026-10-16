@@ -325,7 +325,7 @@ async def test_empty_text_sends_nothing():
 
 
 # ---------------------------------------------------------------------------
-# a network that is not up is not tried (operator, 2026-09-24)
+# a network that is not up is not tried
 # ---------------------------------------------------------------------------
 
 
@@ -341,9 +341,8 @@ async def test_empty_text_sends_nothing():
     ids=["degraded", "disconnected", "health_raises", "health_hangs", "no_adapter"],
 )
 async def test_a_destination_that_is_not_up_is_never_tried(script, says, heals):
-    """The presence eval (design/self-awareness/05) watched her call `send_to`
-    into a network `<presence>` said was down, 3 of 3 draws in both arms. The
-    fix is mechanical: the destination's transport is read through the SAME
+    """She must not call `send_to` into a network `<presence>` says is down. The
+    guard is mechanical: the destination's transport is read through the SAME
     reader and mapping the block renders from, and anything but `up` answers
     `unavailable` in the block's own words without the fire path or the
     destination's slot ever being touched.

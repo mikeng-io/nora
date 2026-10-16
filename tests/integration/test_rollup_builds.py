@@ -1,6 +1,5 @@
-"""The Rollup on Postgres, end to end (design/cognition-loop/25-rollup.md §2-§4,
-70-migration.md §2 row 2): the step-2 gate for every rollup, citation by
-overlap across a rebuild, the pointer, and the stimuli with D3's rule.
+"""The Rollup on Postgres, end to end: the gate for every rollup, citation by
+overlap across a rebuild, the pointer, and the stimuli.
 
 One Record is seeded — two members' fixes and the collector's polls, their
 unit's messages, replies, mentions, reactions and edits, Nora's sends, and
@@ -343,15 +342,15 @@ async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(pg_url)
 
 
 async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup(pg_url):
-    """NEGATIVE, PR #622 review: `message_facts`'s `quoted` join carried no
-    `hidden_at` filter, so a `nora person forget` (removed)-hidden message a reply
-    quotes still counted as a reply relationship feeding `rollup_tie` (and,
-    on the main select, a hidden message's own reactions/mentions still fed
-    `rollup_daybook`/`rollup_response`). Build once as seeded — b's reply to
-    a's day-0 and day-1 message registers twice, the same positive control
-    `test_every_rollup_recomputes_identically_from_the_record` pins — hide
-    every message person "a" sent, and rebuild fresh: the replies that
-    quoted them must be GONE from the tie rollup, not merely relabelled."""
+    """NEGATIVE: `message_facts`'s `quoted` join must filter on `hidden_at`, so
+    a `nora person forget` (removed)-hidden message a reply quotes does not
+    count as a reply relationship feeding `rollup_tie` (and, on the main select,
+    a hidden message's own reactions/mentions do not feed
+    `rollup_daybook`/`rollup_response`). Build once as seeded — b's reply to a's
+    day-0 and day-1 message registers twice, the same positive control
+    `test_every_rollup_recomputes_identically_from_the_record` pins — hide every
+    message person "a" sent, and rebuild fresh: the replies that quoted them
+    must be GONE from the tie rollup, not merely relabelled."""
     engine = create_sql_engine(pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
@@ -453,7 +452,7 @@ class _Pub:
 async def test_a_colocation_start_and_an_arrival_are_raised_once(pg_url):
     """Through the REAL stimulus store: its `(unit, ref)` conflict target must
     match migration 0071's partial index, which an in-memory sink never
-    checks (the first measured run on the deployment's data failed here)."""
+    checks."""
     engine = create_sql_engine(pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
@@ -508,11 +507,10 @@ async def test_a_deviation_is_raised_only_on_healthy_sources(pg_url, outage):
 
 
 async def test_a_run_with_nothing_new_rewrites_no_settled_row(pg_url):
-    """Write amplification (measured on a copy of the deployment's data: the
-    unit rollups rewrote EVERY row EVERY tick, ~45,000 row_history versions
-    an hour, because each row's `as_of_ms` was the unit's clock). A row's
-    `as_of_ms` is its own newest evidence, so a later run whose Record adds
-    only polls changes nothing that has settled."""
+    """Write amplification: if each row's `as_of_ms` were the unit's clock, the
+    unit rollups would rewrite EVERY row EVERY tick, bloating row_history. A
+    row's `as_of_ms` is its own newest evidence, so a later run whose Record
+    adds only polls changes nothing that has settled."""
     engine = create_sql_engine(pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
@@ -552,7 +550,7 @@ async def test_a_run_with_nothing_new_rewrites_no_settled_row(pg_url):
     await engine.dispose()
 
 
-# --- the memory index's episodes (design/unified-memory/60-build-step-3.md S3) --
+# --- the memory index's episodes --
 
 _SAVED_NAME = "Hidden Den"  # a saved place's name: its existence is the secret (R-35)
 
@@ -749,8 +747,8 @@ async def test_a_tick_on_the_current_build_projects_what_it_folds(pg_url):
 async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(pg_url):
     """A drain that blocks on the build row while a switch commits must read
     the NEW current build after it, never «no build»: under READ COMMITTED the
-    locked re-check sees only the old row, now superseded, and the drain used
-    to drop the node the switch had just projected and clear its queue row."""
+    locked re-check sees only the old row, now superseded, and acting on it
+    would drop the node the switch had just projected and clear its queue row."""
     engine = create_sql_engine(pg_url)
     key = episode_key("a", _t(0, 19), _t(0, 20))
     async with engine.begin() as conn:

@@ -1,6 +1,6 @@
-"""One suite, both implementations of `ComputerEventStore` (design/
-sandbox-runtime §12). Mirrors `tests/contract/test_tool_call_log_store_contract.py`:
-the real-Postgres `pg_url` fixture, migrated up before the SQL store is
+"""One suite, both implementations of `ComputerEventStore`.
+Mirrors `tests/contract/test_tool_call_log_store_contract.py`: the
+real-Postgres `pg_url` fixture, migrated up before the SQL store is
 constructed, parametrized alongside the in-memory fake.
 """
 

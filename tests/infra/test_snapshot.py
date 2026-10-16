@@ -265,9 +265,8 @@ async def test_a_limit_keeps_the_newest_rows_still_oldest_first(
 async def test_standing_is_the_position_that_stood_at_the_instant(
     engine: Any
 ) -> None:
-    """The tier this whole capability was blocked on. Two folds, and a moment
-    between them gets the FIRST — which is a thing `standing` alone cannot
-    answer, because the second fold overwrote it in place."""
+    """Two folds, and a moment between them gets the FIRST — which `standing`
+    alone cannot answer, because the second fold overwrote it in place."""
     await _fold(engine, "they are picking a restaurant", at=T0, fold_count=1)
     await _fold(engine, "they picked one and left", at=T0 + 5 * MINUTE,
                 fold_count=2)
@@ -351,13 +350,12 @@ async def test_a_note_created_after_the_instant_is_not_in_the_notebook(
 ) -> None:
     """However standing it is now. The notebook is what she was LOOKING at.
 
-    **Two predicates enforce this and neither is individually pinned** —
-    measured, so it is stated rather than implied. `_notes` filters on
-    `created_at <= before_ms` AND takes the newest revision at or before the
-    instant, and `SqlNoteStore.create` writes a note and its first revision in
-    one transaction with one `now_ms`, so each alone excludes this note:
-    removing either leaves this test green, and only removing BOTH turns it
-    red. `nora.infra.sql.snapshot._notes` carries why they are both kept.
+    **Two predicates enforce this and neither is individually pinned.**
+    `_notes` filters on `created_at <= before_ms` AND takes the newest revision
+    at or before the instant, and `SqlNoteStore.create` writes a note and its
+    first revision in one transaction with one `now_ms`, so each alone excludes
+    this note: removing either leaves this test green, and only removing BOTH
+    turns it red. `nora.infra.sql.snapshot._notes` carries why they are both kept.
     """
     await _note(engine, "later", "written afterwards", at=T0 + 5 * MINUTE)
     seen = await _at(engine, T0 + MINUTE)
@@ -398,12 +396,12 @@ async def test_a_note_retired_since_reports_itself_as_not_yet_retired(
     """**Keeping the note is half the job; the other half is what it SAYS.**
 
     `note` has no history table, so the row `_notes` builds from is today's.
-    The visibility predicate correctly keeps a note retired after the instant —
-    and the first cut then returned it carrying `retired_at`, `retire_reason`
-    and `replaced_by` from a retirement that had not happened yet. A note the
-    snapshot itself says was OPEN, reporting the moment and the reason it was
-    closed: `Note.is_standing` reads `False` on it, so a caller asking the
-    domain type the obvious question gets the future's answer.
+    The visibility predicate correctly keeps a note retired after the instant,
+    but returning it carrying `retired_at`, `retire_reason` and `replaced_by`
+    would report a retirement that had not happened yet: a note the snapshot
+    itself says was OPEN, reporting the moment and the reason it was closed.
+    `Note.is_standing` reads `False` on it, so a caller asking the domain type
+    the obvious question gets the future's answer.
 
     Three assertions, and the third is the one that makes the other two mean
     something:
@@ -558,9 +556,7 @@ async def test_the_snapshot_writes_nothing(engine: Any) -> None:
 # convenience. The sandbox seeds every reminder through `ReminderSeed`, which
 # has no `state` field because everything it seeds was outstanding — so the
 # as-of restoration below is INVISIBLE through that path and a test written
-# there passes with `_as_of_reminder` deleted. Measured: the first version of
-# this coverage lived in the integration file and stayed green under exactly
-# that revert.
+# there passes with `_as_of_reminder` deleted.
 
 
 async def _texts(engine: Any, when: int) -> set[str]:
@@ -662,7 +658,7 @@ async def test_another_rooms_reminder_does_not_leak_in(engine: Any) -> None:
 
 
 async def test_an_edit_folds_only_once_it_had_happened(engine: Any) -> None:
-    """design/message-edits/01 §3. The transcript reads fold a message's
+    """The transcript reads fold a message's
     newest edit onto it; the reconstruction must fold only an edit made AT OR
     BEFORE the instant — a message corrected five minutes later still said
     its first text one minute in, and a snapshot that showed the correction

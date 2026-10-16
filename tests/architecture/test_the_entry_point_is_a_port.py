@@ -1,14 +1,13 @@
-"""`design/evaluation/01-boundaries.md` §7 — the reading that would refute the design.
+"""The entry point is a port: one runner drives both a component and a whole turn.
 
-> If driving `RelevanceGate.decide` and `FirePath.speak` through one runner
-> needs different lifecycles, different setup order, or different outcome
-> shapes, then §2's four things are really five or six, and the boundary is
-> drawn wrong.
+> If driving `RelevanceGate.decide` and `FirePath.speak` through one runner > needs
+different lifecycles, different setup order, or different outcome > shapes, then the
+boundary is drawn wrong.
 
-Two entry points chosen for being maximally unalike: one drives a component and
-no turn, the other a whole turn and no gate. These are the mechanical halves of
-that reading; `tests/integration/test_two_entry_points_one_runner.py` is the
-half that actually drives both.
+Two entry points chosen for being maximally unalike: one drives a component and no turn,
+the other a whole turn and no gate. These are the mechanical halves of that reading;
+`tests/integration/test_two_entry_points_one_runner.py` is the half that actually drives
+both.
 """
 from __future__ import annotations
 
@@ -17,12 +16,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REBUILT = ROOT / "evals" / "rebuilt"
-#: The runner. `evals/rebuilt/runner.py` was the old harness and is deleted
-#: (2026-09-21); `evals/backbone.py`'s `_drive` is the one path.
+#: The runner: `evals/backbone.py`'s `_drive` is the one path.
 RUNNER = ROOT / "evals" / "backbone.py"
 
-#: `01-boundaries` §5(1), stated so it can be checked: the eval layer never
-#: composes a subject. These are the call names the seven assemblies used.
+#: Stated so it can be checked: the eval layer never composes a subject. These are the
+#: call names an eval-side assembly would use.
 FORBIDDEN_CALLS = {
     "RelevanceGate",
     "FirePath",
@@ -43,21 +41,16 @@ def _sources() -> list[tuple[Path, ast.Module]]:
 
 
 def test_the_eval_layer_composes_nothing() -> None:
-    """§5(1). The property, and ALIASES RESOLVE BACK TO IT.
+    """The property, and ALIASES RESOLVE BACK TO IT.
 
-    The first version matched the call's own name against a denylist. MEASURED
-    by review 2026-09-17: two lines defeated it completely —
+    Matching the call's own name against a denylist is defeated by two lines:
 
         from nora.app.composition import RelevanceGate as _RG
         _PROBE = _RG(model=None)
 
-    — because `_RG` is not on the list and `nora.app.composition` is on the
-    IMPORT allowlist. So the rule the bundle names as one of "the two that decay
-    first" was one alias from being void, in the test written to hold it.
-
-    Every local name bound to a forbidden symbol is now resolved back through
-    `import ... as` and `from ... import ... as`, so the alias is the thing
-    that reddens.
+    — because `_RG` is not on the list and `nora.app.composition` is on the IMPORT
+    allowlist. So every local name bound to a forbidden symbol is resolved back through
+    `import ... as` and `from ... import ... as`, so the alias is the thing that reddens.
     """
     offenders = []
     for path, tree in _sources():
@@ -90,10 +83,10 @@ def test_the_eval_layer_composes_nothing() -> None:
 
 
 def test_the_runner_has_no_suite_specific_branch() -> None:
-    """§3.1 — the entry point is a SELECTION ON A CASE, not a branch.
+    """The entry point is a SELECTION ON A CASE, not a branch.
 
-    A runner that branches on `case.entry` is a runner that grows a limb per
-    suite, which is the eight drivers reappearing inside one file.
+    A runner that branches on `case.entry` is a runner that grows a limb per suite, which
+    is the eight drivers reappearing inside one file.
     """
     tree = ast.parse(RUNNER.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
@@ -108,10 +101,10 @@ def test_the_runner_has_no_suite_specific_branch() -> None:
 
 
 def test_adding_a_suite_adds_no_code() -> None:
-    """§5(3), the property that decays first.
+    """The property that decays first.
 
-    Checked as: the runner reaches an entry point ONLY through the registry, so
-    there is no name a new suite could need it to import.
+    Checked as: the runner reaches an entry point ONLY through the registry, so there is
+    no name a new suite could need it to import.
     """
     src = RUNNER.read_text(encoding="utf-8")
     tree = ast.parse(src)
@@ -127,11 +120,11 @@ def test_adding_a_suite_adds_no_code() -> None:
 
 
 def test_both_entry_points_have_the_same_signature() -> None:
-    """One lifecycle for both, or §7 fires.
+    """One lifecycle for both.
 
-    Same parameters and the same return type is the mechanical half of "they
-    share a runner": a port whose implementations take different arguments is
-    two ports wearing one name.
+    Same parameters and the same return type is the mechanical half of "they share a
+    runner": a port whose implementations take different arguments is two ports wearing
+    one name.
     """
     import inspect
 

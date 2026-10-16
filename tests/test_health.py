@@ -52,7 +52,7 @@ async def test_health_returns_200_when_everything_is_reachable(client):
 async def test_health_sse_key_set_is_pinned(client):
     """`deploy/watchdog.sh` parses `body['sse']['last_event_age_seconds']`, and
     `/health` is additive-only — this is the only test enforcing that `sse` never
-    loses a key a consumer already depends on (Trap A, the platforms phase)."""
+    loses a key a consumer already depends on."""
     body = await (await client.get("/health")).json()
     assert set(body["sse"]) >= {"connected", "last_event_age_seconds", "account", "platform"}
 
@@ -127,7 +127,7 @@ async def test_health_never_raises_on_a_broken_dependency(client, store, monkeyp
 
 
 def test_config_staleness_flags_a_file_edited_after_start(tmp_path):
-    """The inode-gotcha canary (obs review 2026-08-08): a config file whose disk
+    """The inode-gotcha canary: a config file whose disk
     mtime is NEWER than the process start is STALE — the operator's edit is not
     the one this process loaded (a recreate is needed, not a restart)."""
     from nora.obs.health import config_staleness
@@ -165,10 +165,10 @@ class _DeafAdapter:
 
 
 async def test_health_reports_every_enabled_platform(aiohttp_client, store):
-    """`/health` reported `deps.adapter` alone, so a second platform could be
-    wedged — Gateway down, every message dropped — while `/health` answered 200
-    on Signal's state. Additive: `sse` is untouched (`deploy/watchdog.sh` parses
-    it), `platforms` is the new per-platform block."""
+    """`/health` must not report `deps.adapter` alone, or a second platform
+    could be wedged — Gateway down, every message dropped — while `/health`
+    answered 200 on Signal's state. Additive: `sse` is untouched
+    (`deploy/watchdog.sh` parses it), `platforms` is the per-platform block."""
     from nora.doctrine.loader import DoctrineStore
 
     metrics = Metrics()
@@ -198,8 +198,7 @@ class _DegradedAdapter:
     """An enabled Instagram adapter whose session got checkpointed.
 
     NOT the same thing as `_DeafAdapter`: this one is not merely disconnected,
-    it is structurally unable to act until a human clears the challenge
-    (design/instagram-adoption/01 §Degradation, M0)."""
+    it is structurally unable to act until a human clears the challenge."""
 
     platform = "instagram"
 
@@ -215,7 +214,7 @@ class _DegradedAdapter:
 
 
 async def test_health_REPORTS_a_degraded_platform_and_stays_200(aiohttp_client, store):
-    """Both halves of M0's visibility, in one place.
+    """Both halves of a checkpointed platform's visibility, in one place.
 
     REPORTS: without the field, a checkpointed Instagram is indistinguishable
     from a quiet room — Nora is silently absent from every Instagram room and
@@ -252,7 +251,7 @@ async def test_health_REPORTS_a_degraded_platform_and_stays_200(aiohttp_client, 
 async def test_a_merely_DISCONNECTED_platform_is_still_unhealthy(aiohttp_client, store):
     """The positive control for the test above. A degraded platform being
     exempt from `healthy` must not quietly exempt a wedged one — that would
-    turn M0 into a way to stop noticing outages."""
+    turn the degraded exemption into a way to stop noticing outages."""
     from nora.doctrine.loader import DoctrineStore
 
     metrics = Metrics()
@@ -272,7 +271,7 @@ async def test_a_merely_DISCONNECTED_platform_is_still_unhealthy(aiohttp_client,
 
 
 async def test_health_platforms_defaults_to_the_single_adapter(client):
-    """No `adapters=` (every existing caller before this change) still reports
+    """No `adapters=` (a single-adapter caller) still reports
     the one adapter, so the new block is never empty on a Signal-only deploy."""
     body = await (await client.get("/health")).json()
     assert set(body["platforms"]) == {"signal"}

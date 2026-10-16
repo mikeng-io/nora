@@ -1,59 +1,44 @@
-"""Every Dreamer adaptor's `store_calls_per_tick` is the number of awaited
-collaborator calls its own source actually holds.
+"""Every Dreamer adaptor's `store_calls_per_tick` is the number of awaited collaborator calls
+its own source actually holds.
 
-`DreamerRuntime` bounds `adaptor.inputs` and `adaptor.commit` at
-`store_calls_per_tick` x `[dreamer] store_timeout_seconds` (issue #60).
-That bound is only as honest as the constant, and the constant is a hand-
-written integer in a module nobody re-reads — the exact shape that let
-`STANDING_STORE_CALLS_PER_FOLD` sit at 2 while the debrief made 4, then at 4
-while it made 5. `tests/unit/test_debrief.py::
-test_the_slot_hold_counts_every_store_await_the_stage_makes` is what ended that
-for the standing fold; this is the same instrument pointed at every adaptor,
-and the whole reason the number lives in the adaptor's module rather than in
-the runtime.
+`DreamerRuntime` bounds `adaptor.inputs` and `adaptor.commit` at `store_calls_per_tick` x
+`[dreamer] store_timeout_seconds`. That bound is only as honest as the constant, a
+hand-written integer in a module nobody re-reads, which is why the number lives in the
+adaptor's module rather than in the runtime.
+`tests/unit/test_debrief.py::test_the_slot_hold_counts_every_store_await_the_stage_makes`
+does this for the standing fold; this is the same instrument pointed at every adaptor.
 
-**Derived, never listed, on three axes at once**, because each hand-written
-list is a place to drift:
+**Derived, never listed, on three axes at once**, because each hand-written list is a
+place to drift:
 
-1. **The adaptors** come from walking the whole `nora` package for classes
-   declaring the port's own fields. `nora.language` alone was the first
-   version and was wrong on its own terms: nothing in `DreamAdaptor` says an
-   adaptor must live there, and the real registry is the composition root's
-   `dream_adaptors`. `test_the_adaptors_are_derived_and_not_empty` is the
-   run-that-ran control.
-2. **The collaborators** come from the `self.X = <param>` ASSIGNMENTS in
-   `__init__`, not from the parameter names. v1 read the names, so an adaptor
-   holding `candidates` as `self._db` had every call on it invisible —
-   measured on a probe: five real store awaits, gate count 1, all four tests
-   green. The debrief's own v2 was a hardcoded regex over three receiver names
-   and passed with a real `DreamSink.supersede` unbounded; deriving from the
-   wrong half of the constructor is the same failure wearing a derivation.
-3. **The count** is of awaited calls in the AST, not of `wait_for` wrappers.
-   The original defect WAS a store call with no `wait_for` at all, which a
-   count of wrappers cannot see.
+1. **The adaptors** come from walking the whole `nora` package for classes declaring the
+   port's own fields. Nothing in `DreamAdaptor` says an adaptor must live in one package,
+   and the real registry is the composition root's `dream_adaptors`.
+   `test_the_adaptors_are_derived_and_not_empty` is the run-that-ran control.
+2. **The collaborators** come from the `self.X = <param>` ASSIGNMENTS in `__init__`, not
+   from the parameter names. An adaptor holding `candidates` as `self._db` would otherwise
+   have every call on it invisible. Deriving from the wrong half of the constructor is a
+   hardcoded list wearing a derivation.
+3. **The count** is of awaited calls in the AST, not of `wait_for` wrappers. The defect to
+   catch is a store call with no `wait_for` at all, which a count of wrappers cannot see.
 
-**What "awaited" means here, and why the first version was too narrow.** v1
-required the call's DIRECT parent to be an `ast.Await`, which sees
-`await self._notes.read(...)` and nothing else. A probe with five store calls
-— two inside `await asyncio.gather(...)`, one through a local alias
-(`store = self._notes; await store.x()`), one handed to a module-level helper,
-one `async for ... in self._record.stream()` — scored 1. So the walk now
-climbs the whole expression chain to an `Await` or an `AsyncFor`, and the
-three forms it still cannot follow (a local alias, a module-level helper, a
-bare `gather` over stored coroutines) are REFUSED OUTRIGHT by
-`test_no_collaborator_is_reached_by_a_route_the_counter_cannot_follow`, rather
-than scored zero. A walk that cannot see a construct must say so; scoring it
-zero is how «no unbounded awaits» gets reported with total confidence.
+**What "awaited" means here.** The walk climbs the whole expression chain from a call to
+an `Await` or an `AsyncFor`, so it sees `await self._notes.read(...)`, calls inside
+`await asyncio.gather(...)`, and `async for ... in self._record.stream()`. The three
+forms it cannot follow (a local alias, a module-level helper, a bare `gather` over stored
+coroutines) are REFUSED OUTRIGHT by
+`test_no_collaborator_is_reached_by_a_route_the_counter_cannot_follow`, rather than scored
+zero. A walk that cannot see a construct must say so; scoring it zero is how «no unbounded
+awaits» gets reported with total confidence.
 
-**SITES, not dynamic calls.** A call inside a per-item loop runs once per item;
-the config value is an allowance per site, sized in
-`DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` against the widest degraded fan-out
-rather than against one healthy call.
+**SITES, not dynamic calls.** A call inside a per-item loop runs once per item; the config
+value is an allowance per site, sized in `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` against the
+widest degraded fan-out rather than against one healthy call.
 
-**`accept` must hold none**, and that is asserted rather than assumed: the
-runtime bounds `inputs` and `commit` and does NOT bound `accept`, which is a
-typed parse over items already in memory. An adaptor that started awaiting a
-store there would be unbounded again, with a green constant.
+**`accept` must hold none**, and that is asserted rather than assumed: the runtime bounds
+`inputs` and `commit` and does NOT bound `accept`, which is a typed parse over items
+already in memory. An adaptor that awaited a store there would be unbounded, with a green
+constant.
 """
 
 from __future__ import annotations
@@ -71,19 +56,17 @@ import pytest
 import nora
 from nora.domain.ports import DREAM_MAX_STORE_CALLS_PER_TICK
 
-#: Not a store. `metrics` is a counter sink (never awaited anyway) and the
-#: clock callables are arithmetic. Named so each exclusion is a decision
-#: rather than an oversight — and deliberately NOT a list of the things that
-#: ARE stores, which is the direction that rots.
+#: Not a store. `metrics` is a counter sink (never awaited anyway) and the clock callables
+#: are arithmetic. Named so each exclusion is a decision rather than an oversight, and
+#: deliberately NOT a list of the things that ARE stores, which is the direction that
+#: rots.
 _NOT_A_STORE = frozenset({"metrics", "clock", "today", "ai_peer", "timezone"})
 
-#: Packages that must not be imported to find an adaptor. `nora.app` is the
-#: composition root — importing it drags the whole world in — and no adaptor
-#: lives there; `nora.infra.sql.migrations` is alembic's own runner and
-#: raises `AttributeError` outside an alembic run, which is a property of
-#: alembic rather than of this repo. Each exclusion is a PREFIX and a
-#: decision; the default is to import, so a new package is walked without
-#: anyone remembering to add it.
+#: Packages that must not be imported to find an adaptor. `nora.app` is the composition
+#: root (importing it drags the whole world in) and no adaptor lives there;
+#: `nora.infra.sql.migrations` is alembic's own runner and raises `AttributeError` outside
+#: an alembic run. Each exclusion is a PREFIX and a decision; the default is to import, so
+#: a new package is walked without anyone remembering to add it.
 _SKIP_PREFIXES = (
     "nora.app.", "nora.__main__", "nora.infra.sql.migrations",
 )
@@ -121,13 +104,12 @@ def _class_tree(cls: type) -> ast.AST:
 
 
 def _receivers(cls: type) -> set[str]:
-    """The collaborator ATTRIBUTES — `self._notes`, `self._db` — read off the
-    `self.X = <param>` assignments in `__init__`.
+    """The collaborator ATTRIBUTES — `self._notes`, `self._db` — read off the `self.X =
+    <param>` assignments in `__init__`.
 
-    Derived from the ASSIGNMENTS rather than from the parameter names, which
-    is the half v1 got wrong: `def __init__(self, *, candidates)` storing
-    `self._db = candidates` left `self._db` out of the set entirely, and every
-    await on it was invisible while all four tests stayed green.
+    Derived from the ASSIGNMENTS rather than from the parameter names: `def __init__(self,
+    *, candidates)` storing `self._db = candidates` must put `self._db` in the set, or
+    every await on it is invisible.
     """
     tree = ast.parse(textwrap.dedent(inspect.getsource(cls.__init__)))
     params: set[str] = set()
@@ -307,12 +289,10 @@ def _unfollowable_routes(cls: type) -> list[str]:
     on three correct lines, and a noisy gate is a disabled gate.
     """
     receivers = _collaborators(cls)
-    # A constructor attribute handed WHOLE into an AWAITED call is a store
-    # escaping too, even when the class never calls a method on it itself —
-    # that is exactly how it becomes invisible to `_collaborators`. Found
-    # 2026-09-25 (PR #491 review): `read_culture(self._culture, …)` added a
-    # store await to three adaptors with every count here still green. An
-    # int handed to an awaited call is rare enough to be worth the noise.
+    # A constructor attribute handed WHOLE into an AWAITED call is a store escaping too,
+    # even when the class never calls a method on it itself; that is how it becomes
+    # invisible to `_collaborators`. An int handed to an awaited call is rare enough to be
+    # worth the noise.
     awaited_receivers = _receivers(cls) - _scalar_attrs(cls)
     tree = _class_tree(cls)
     parents = {c: n for n in ast.walk(tree) for c in ast.iter_child_nodes(n)}
@@ -387,15 +367,12 @@ def _reachable_from(tree: ast.AST, entries: frozenset[str]) -> set[str]:
 ADAPTORS = list(_adaptor_classes())
 IDS = [cls.__name__ for _, cls in ADAPTORS]
 
-#: One real `receiver.method` per adaptor that the walk MUST find. The
-#: positive control, and it is not optional: every assertion below is a
-#: comparison between two numbers this file computes, so a walk that found
-#: nothing would report «declared 0, counted 0» — or, once a constant moved,
-#: a failure message pointing at the wrong thing entirely. This is
-#: `test_slot_held_awaits_are_bounded.py::
-#: test_the_validator_can_see_the_calls_it_is_checking`'s job, verbatim: the
-#: debrief's validator was rewritten twice and each version was blind in the
-#: direction it advertised.
+#: One real `receiver.method` per adaptor that the walk MUST find. The positive control,
+#: and it is not optional: every assertion below is a comparison between two numbers this
+#: file computes, so a walk that found nothing would report «declared 0, counted 0», or,
+#: once a constant moved, a failure message pointing at the wrong thing. This is
+#: `test_slot_held_awaits_are_bounded.py::test_the_validator_can_see_the_calls_it_is_checking`'s
+#: job.
 _MUST_SEE: dict[str, frozenset[str]] = {
     "NoteCandidateAdaptor": frozenset({
         "self._notes.standing", "self._notes.propose",
@@ -409,17 +386,16 @@ _MUST_SEE: dict[str, frozenset[str]] = {
         "self._notes.standing", "self._notes.record_wake",
         "self._clock_store.record_fire", "self._reminders.history",
     }),
-    # The SMALLEST entry here, and that is the tier rather than an oversight:
-    # culture reads one thing (the account written last time) and writes one
-    # thing (the next account). `head` appears at two sites — once in `inputs`
-    # to render the previous account, once in `commit` to refuse a
-    # byte-identical one — and the site count, not the call count, is what
-    # `STORE_CALLS_PER_TICK` is sized against.
+    # The SMALLEST entry here, and that is the tier rather than an oversight: culture
+    # reads one thing (the account written last time) and writes one thing (the next
+    # account). `head` appears at two sites, once in `inputs` to render the previous
+    # account, once in `commit` to refuse a byte-identical one, and the site count, not
+    # the call count, is what `STORE_CALLS_PER_TICK` is sized against.
     "CultureAdaptor": frozenset({
         "self._culture.head", "self._culture.append",
     }),
-    # A person's session (design/self-growth/10 §3, C2b): its own account and
-    # the unit's room cultures in, one account out.
+    # A person's session: its own account and the unit's room cultures in, one account
+    # out.
     "CharacterPersonAdaptor": frozenset({
         "self._culture.head", "self._culture.append",
     }),
@@ -429,14 +405,14 @@ _MUST_SEE: dict[str, frozenset[str]] = {
     "CharacterUnitAdaptor": frozenset({
         "self._culture.head", "self._culture.append",
     }),
-    # Lessons (design/self-growth/40, L2): the held lessons in, and the
-    # horizon's retirements out. Its verbs write through the book during the
-    # loop, outside `inputs`/`commit`, and are not awaited in this class.
+    # Lessons: the held lessons in, and the horizon's retirements out. Its verbs write
+    # through the book during the loop, outside `inputs`/`commit`, and are not awaited in
+    # this class.
     "LessonsAdaptor": frozenset({
         "self._book.active", "self._book.retire",
     }),
-    # note-merge (design 41 §7): the change check's two reads, the fold's
-    # transaction, and the stamp that must come last.
+    # note-merge: the change check's two reads, the fold's transaction, and the stamp that
+    # must come last.
     "NoteMergeAdaptor": frozenset({
         "self._clock_store.last_fired", "self._notes.revision_chain",
         "self._notes.merge_into", "self._clock_store.record_fire",
@@ -494,12 +470,11 @@ def test_the_adaptor_declares_how_many_store_calls_it_holds(_module, cls):
 def test_no_adaptor_declares_more_store_calls_than_the_wall_clock_assumes(
     _module, cls,
 ):
-    """`[dreamer] max_unit_hold_seconds`'s startup gate (`nora.config`,
-    issue #191) proves its default against `DREAM_MAX_STORE_CALLS_PER_TICK`
-    rather than against a live walk of every adaptor — `nora.config` may not
-    import `nora.language`. That proof is only as honest as this test: an
-    adaptor declaring MORE than the ceiling the gate assumes would make its
-    arithmetic wrong while staying green everywhere else."""
+    """`[dreamer] max_unit_hold_seconds`'s startup gate (`nora.config`) proves its default
+    against `DREAM_MAX_STORE_CALLS_PER_TICK` rather than against a live walk of every
+    adaptor, because `nora.config` may not import `nora.language`. That proof is only as
+    honest as this test: an adaptor declaring MORE than the ceiling the gate assumes would
+    make its arithmetic wrong while staying green everywhere else."""
     declared = cls.store_calls_per_tick
     assert declared <= DREAM_MAX_STORE_CALLS_PER_TICK, (
         f"{cls.__name__} declares store_calls_per_tick={declared}, above "
@@ -512,10 +487,9 @@ def test_no_adaptor_declares_more_store_calls_than_the_wall_clock_assumes(
 
 @pytest.mark.parametrize(("_module", "cls"), ADAPTORS, ids=IDS)
 def test_the_declared_count_is_the_count_the_source_holds(_module, cls):
-    """**This is the assertion that makes the bound honest.** Adding a store
-    call without moving the constant reddens here rather than silently
-    widening the hold — and the standing fold's own history is the argument:
-    its number was understated by 2x, by hand, twice."""
+    """**This is the assertion that makes the bound honest.** Adding a store call without
+    moving the constant reddens here rather than silently widening the hold; a
+    hand-maintained count drifts."""
     calls = _awaited_calls(cls)
     named = [name for _, name, _ in calls]
     assert len(calls) == cls.store_calls_per_tick, (
@@ -531,14 +505,12 @@ def test_the_declared_count_is_the_count_the_source_holds(_module, cls):
 def test_no_collaborator_is_reached_by_a_route_the_counter_cannot_follow(
     _module, cls,
 ):
-    """A store bound to a local name, or handed to a function as an argument,
-    leaves the counter's sight — and the counter's answer is then a guess
-    wearing a number.
+    """A store bound to a local name, or handed to a function as an argument, leaves the
+    counter's sight, and the counter's answer is then a guess wearing a number.
 
-    REFUSED rather than approximated. A probe with five store awaits reached
-    by exactly these routes scored 1 against a declared 1 and passed every
-    other test in this file. The rule is the sibling gate's: a walk that
-    cannot see a construct must SAY so."""
+    REFUSED rather than approximated: store awaits reached by exactly these routes would
+    score low and pass every other test in this file. The rule is the sibling gate's: a
+    walk that cannot see a construct must SAY so."""
     routes = _unfollowable_routes(cls)
     assert not routes, (
         f"{cls.__name__} reaches a collaborator by a route the store-call "
@@ -549,10 +521,9 @@ def test_no_collaborator_is_reached_by_a_route_the_counter_cannot_follow(
 
 @pytest.mark.parametrize(("_module", "cls"), ADAPTORS, ids=IDS)
 def test_accept_awaits_no_collaborator(_module, cls):
-    """`accept` is the ONE port method the runtime does not bound: it is a
-    typed parse over items already in memory, between the screen and the
-    commit. A store awaited there would be unbounded with the constant still
-    green — the same shape as the original defect, one method over."""
+    """`accept` is the ONE port method the runtime does not bound: it is a typed parse over
+    items already in memory, between the screen and the commit. A store awaited there
+    would be unbounded with the constant still green."""
     leaked = _awaited_calls(cls, only=frozenset({"accept"}))
     assert not leaked, (
         f"{cls.__name__}.accept awaits {[n for _, n, _ in leaked]}. "
@@ -588,21 +559,20 @@ def test_every_awaited_collaborator_call_is_reachable_from_a_bounded_phase(
 # the walk's own controls — the forms no shipped adaptor uses YET
 # ---------------------------------------------------------------------------
 #
-# `_MUST_SEE` above proves the walk sees the calls the three shipped adaptors
-# actually make, and every one of those is a plain `await self._x.y(...)`. It
-# therefore says nothing about the forms that defeated v1, and those cannot be
-# proven against production source because production does not use them — the
-# gap would open on the day somebody wrote one, which is the day the gate is
-# needed and the last day anyone would think to check it.
+# `_MUST_SEE` above proves the walk sees the calls the shipped adaptors actually make, and
+# every one of those is a plain `await self._x.y(...)`. It says nothing about the other
+# forms, which cannot be proven against production source because production does not use
+# them: the gap would open on the day somebody wrote one, which is the day the gate is
+# needed.
 #
-# So the walk is exercised against a class written to hold exactly those
-# forms. Reverting `_awaited` to v1's direct-parent check, or `_receivers` to
-# v1's parameter names, reddens these and nothing else.
+# So the walk is exercised against a class written to hold exactly those forms. Reverting
+# `_awaited` to a direct-parent check, or `_receivers` to parameter names, reddens these
+# and nothing else.
 
 
 class _EscapeShapes:
-    """Not an adaptor — a specimen. Five collaborator awaits, none of them the
-    plain shape, plus the two routes the counter refuses outright."""
+    """Not an adaptor — a specimen. Five collaborator awaits, none of them the plain shape,
+    plus the two routes the counter refuses outright."""
 
     def __init__(self, *, notes, record, candidates, history_limit=5):
         self._notes = notes
@@ -637,11 +607,10 @@ def _helper(_store):                   # part of the specimen, not a helper
 
 
 def test_the_walk_follows_gather_async_for_and_a_renamed_attribute():
-    """v1 required the call's DIRECT parent to be an `ast.Await`, so both
-    `gather` arguments and the `async for` scored zero; and it read receivers
-    off `__init__`'s PARAMETER names, so `self._db` was not a collaborator at
-    all. Measured on a probe: five real store awaits, gate count 1, and all
-    four tests green."""
+    """The walk follows `gather` arguments and the `async for`, and reads receivers off
+    `__init__`'s assignments rather than its PARAMETER names, so `self._db` is a
+    collaborator. Reverting either to a direct-parent `Await` check or parameter names
+    would score the five real store awaits as 1."""
     seen = {name for _, name, _ in _awaited_calls(_EscapeShapes)}
 
     assert seen == {
@@ -653,11 +622,10 @@ def test_the_walk_follows_gather_async_for_and_a_renamed_attribute():
 
 
 def test_a_scalar_constructor_argument_is_not_a_collaborator():
-    """`_collaborators` is what the refusal below reads, and it must not sweep
-    up `self._history_limit`: an int handed to a call is a number being read,
-    not a store escaping. Flagging those made the rule fire on three correct
-    lines in `ProactiveAdaptor` and `NoteCuratorAdaptor`, and a noisy gate is
-    a disabled gate — this repo has the R-29 war-story for exactly that."""
+    """`_collaborators` is what the refusal below reads, and it must not sweep up
+    `self._history_limit`: an int handed to a call is a number being read, not a store
+    escaping. Flagging those makes the rule fire on correct lines in `ProactiveAdaptor`
+    and `NoteCuratorAdaptor`, and a noisy gate is a disabled gate."""
     assert "_history_limit" in _receivers(_EscapeShapes)
     assert "_history_limit" not in _collaborators(_EscapeShapes)
     assert {"_notes", "_record", "_db"} <= _collaborators(_EscapeShapes)

@@ -1,5 +1,4 @@
-"""`nora memory rebuild` equals live projection (design/unified-memory/
-60-build-step-3.md S4).
+"""`nora memory rebuild` equals live projection.
 
 One database is seeded across every indexed kind THROUGH THE STORES, so the
 index is what live writes projected: messages with an attachment, an edit and
@@ -365,10 +364,10 @@ async def test_a_restored_sandbox_reads_never(pg_url, pg_template):
 
 
 async def test_a_hub_being_attached_survives_a_concurrent_orphan_drop(pg_url):
-    """Review of #15: transaction A re-attributes a message to P while a hide
-    of P's only other message commits. A holds P's hub (`_hub` locks it), so
-    the hide's orphan drop must leave it; before the lock, the hide dropped P
-    and A committed an `authored_by` edge to a missing hub."""
+    """Transaction A re-attributes a message to P while a hide of P's only other
+    message commits. A holds P's hub (`_hub` locks it), so the hide's orphan drop
+    must leave it; otherwise A would commit an `authored_by` edge to a missing
+    hub."""
     engine = create_sql_engine(pg_url)
     try:
         record = SqlRecordStore(engine)
@@ -425,8 +424,8 @@ async def test_opposing_reattributions_do_not_deadlock(pg_url):
 
 
 async def test_a_person_known_only_through_a_stay_leaves_with_the_build(pg_url):
-    """Review of #15: a build switch that drops the only episode about a
-    person drops that person's hub too, live, as a rebuild from empty would."""
+    """A build switch that drops the only episode about a person drops that
+    person's hub too, live, as a rebuild from empty would."""
     from nora.infra.sql.rollups import SqlRollupStore
     from nora.infra.sql.schema import PRESENCE_STAYS, ROLLUP_BUILD
 

@@ -40,20 +40,6 @@ def test_the_unit_restricts_egress_to_localhost():
     assert "IPAddressAllow=localhost" in unit
 
 
-# test_the_egress_script_governs_firecrawls_ssrf_surface REMOVED (DEC-73,
-# 2026-08-08): egress.sh + the systemd units are gone with Firecrawl — Tavily
-# searches from its own servers, so there is no self-hosted fetcher to cage.
-
-
-# test_the_watchdog_uses_the_300_second_threshold REMOVED (2026-09-09): the
-# shell watchdog is deleted. Its one condition — SSE silence — is the
-# `PlatformSilent` rule in `deploy/prometheus/rules/nora.yml`, at 900s rather
-# than 300s so a quiet night does not cry wolf, and with a delivery path the
-# script never had (its alert channel was `echo >&2`). What now guards the
-# threshold is `promtool check rules` plus the rule file itself; what guards
-# the delivery is `tests/unit/test_alert_bridge.py`.
-
-
 def test_the_install_script_creates_a_shell_less_system_user():
     text = (DEPLOY / "install.sh").read_text()
     assert "useradd" in text
@@ -99,7 +85,7 @@ def test_the_dreamer_tree_is_bind_mounted_read_only():
 
 def test_the_dreamer_tree_is_data_and_never_a_package():
     """An `__init__.py` here would make `nora.dreamer` importable and invite
-    code into a directory the keystone's §5 puts neither in `nora/agent/` nor
+    code into a directory the keystone puts neither in `nora/agent/` nor
     `nora/language/`. It is also what makes the bind mount safe: replacing a
     Python package under a running process is not the same as replacing text
     it re-reads."""
@@ -112,10 +98,8 @@ def test_the_baseline_revision_is_on_disk_where_alembic_looks():
 
     versions = ROOT / "nora" / "infra" / "sql" / "migrations" / "versions"
     assert list(versions.glob("*.py")), "no revision files"
-    # The SQLite chain (0001_baseline … 0004_media_json) was squashed to a single
-    # Postgres-native baseline (design/20 §2). Assert that baseline is on disk and
-    # that a head resolves — without pinning a name a future migration would have
-    # to come back and edit.
+    # Assert the Postgres-native baseline is on disk and that a head resolves —
+    # without pinning a name a future migration would have to come back and edit.
     assert (versions / "0001_pg_baseline.py").exists(), "pg baseline revision missing"
     assert head_revision(), "no alembic head resolves"
 
@@ -128,11 +112,10 @@ def test_compose_passes_every_search_backend_key_into_the_container():
     """DEC-157 claims flipping `[search] provider` is a CONFIG change and not a
     compose change. That is only true if BOTH backends' keys are passed.
 
-    This is a gate earned the hard way, 2026-09-06: the Exa switch was one step
-    from deploying with `EXA_API_KEY` present in `.env`, named correctly by
-    `[search.exa] api_key_env`, and never passed through compose. Compose does
-    not inherit host `.env` values into a service, so the container would have
-    seen nothing — Nora logs «search enabled on provider exa but EXA_API_KEY is
+    Compose does not inherit host `.env` values into a service: with
+    `EXA_API_KEY` present in `.env`, named correctly by
+    `[search.exa] api_key_env`, but never passed through compose, the container
+    sees nothing — Nora logs «search enabled on provider exa but EXA_API_KEY is
     unset» once at startup and then answers `unavailable` to every `web_search`
     and `web_fetch`, forever, with a green test suite and a healthy container.
 
@@ -155,7 +138,7 @@ def test_compose_passes_every_search_backend_key_into_the_container():
 
 
 def test_the_life360_token_alert_matches_the_reason_the_client_emits():
-    """The alert on a dead LIFE360_AUTH_TOKEN (2026-09-24) must name the SAME
+    """The alert on a dead LIFE360_AUTH_TOKEN must name the SAME
     `reason` label `Life360Client` increments: a rule on a label nobody emits is
     silent forever and looks exactly like a healthy one. Derived from the
     client's own `_alarm(...)` calls, not hand-copied. The generic
@@ -215,8 +198,8 @@ def test_the_subagent_doctrine_is_data_declared_as_package_data():
 
 def test_signal_cli_runs_as_the_account_the_deployment_states_in_env():
     """The account is the deployment's own number: it comes from `.env`
-    (`SIGNAL_ACCOUNT`), never a literal in git. A literal was scrubbed to a
-    pseudonym (#767) and signal-cli came up unregistered, taking nora down."""
+    (`SIGNAL_ACCOUNT`), never a literal in git. A committed literal would be
+    scrubbed to a pseudonym and signal-cli would come up unregistered."""
     import yaml
 
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
@@ -227,8 +210,7 @@ def test_signal_cli_runs_as_the_account_the_deployment_states_in_env():
 
 def test_nora_is_handed_the_pulse_base_it_reads():
     """`PulseGamesClient`'s base comes from `PULSE_API_BASE`; compose hands the
-    `nora` service only the variables it lists, so it must list this one too
-    (it did not, and the games tool called the scrubbed placeholder host)."""
+    `nora` service only the variables it lists, so it must list this one too."""
     import yaml
 
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))

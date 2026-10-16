@@ -423,9 +423,9 @@ async def test_event_set_status_moves_through_the_lifecycle_and_bumps_the_revisi
     assert ev.status.value == "happened"
 
 
-# ── The tag path's event writes cite the message that raised the turn (the
-# review of PR #669: an event with no edge is out of the withdrawal cascade's
-# reach). The ids are the Room's (code's own knowledge), never a tool argument.
+# ── The tag path's event writes cite the message that raised the turn (an event
+# with no edge is out of the withdrawal cascade's reach). The ids are the Room's
+# (code's own knowledge), never a tool argument.
 
 
 async def test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn():

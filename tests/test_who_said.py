@@ -3,10 +3,10 @@
 Doctrine (§評判) orders Nora to find the line before she says 「你話咗 X」. Her two
 search tools both start where the window ENDS — `load_transcript` reads "further
 back than the messages you were shown", `search_memory` reaches past what that
-covers — so for a line inside the 40 messages already in her prompt the mandated
-check was a pure in-context re-read: no call, no span, no counter, and a checked
-attribution indistinguishable in the trace from an invented one. On 2026-08-28
-she put 「收隊」 in the wrong person's mouth and nothing could measure it.
+covers — so for a line inside the messages already in her prompt the mandated check would
+be a pure in-context re-read: no call, no span, no counter, and a checked
+attribution indistinguishable in the trace from an invented one. This tool makes
+the check a measurable call.
 
 What each test here pins, and why it is the clause worth pinning:
 
@@ -213,8 +213,7 @@ async def test_an_unread_window_is_unavailable_never_nothing_found(persons):
     `EngagementContext._recent` catches a failed store read and returns `()` so
     the turn can still produce a thinner reply, so this exact value is what an
     OUTAGE looks like at this seam. Answering `nothing_found` would convert it
-    into a confident denial in the middle of a group argument — the failure the
-    tool was built to stop, produced by the tool itself.
+    into a confident denial in the middle of a group argument.
 
     The store here is fully populated and holds the very line being asked about:
     a tool that fell back to a store read on an empty window would answer `ok`
@@ -232,7 +231,7 @@ async def test_an_unread_window_is_unavailable_never_nothing_found(persons):
 
 async def test_a_none_window_is_the_same_unavailable_as_an_empty_one(persons):
     """The composition that never wired a window at all — the offline and eval
-    builds, and any caller written before DEC-146. A wiring gap is
+    builds. A wiring gap is
     `unavailable`, exactly as it is for `reminders=None` and `versions=None`."""
     tools, metrics, _ = _build(persons, window=None)
 
@@ -299,8 +298,8 @@ async def test_the_window_it_searches_is_the_one_the_prefill_rendered(persons, t
     """Every line `who_said` can return is a line the model is already looking
     at, and every line in the block is one it can find.
 
-    The tool and `<group_transcript>` are two renderers of one tuple (DEC-80's
-    bug is what happens when they stop being). Asserting the tool against the
+    The tool and `<group_transcript>` are two renderers of one tuple (DEC-80).
+    Asserting the tool against the
     ACTUAL rendered block — not against `WINDOW` again — is what makes this a
     check rather than a restatement of the fixture.
     """
@@ -314,7 +313,7 @@ async def test_the_window_it_searches_is_the_one_the_prefill_rendered(persons, t
                                   5_000, "邊個話收隊", {}),
         tagger=None, transcript=WINDOW, peer_card=(), started_at=0.0,
     )
-    # `.render()` — `_transcript_block` returns the declared block now, and
+    # `.render()` — `_transcript_block` returns the declared block, and
     # `ContextBlock.render()` is the only thing that turns one into text.
     block = _transcript_block(ctx, "Nora", datetime.now(UTC), 40).render()
     tools, _, _ = _build(persons)
@@ -511,7 +510,7 @@ async def test_neither_the_words_nor_a_line_reaches_the_collector(
         assert scan_identifiers(rendered) is None
 
 
-# ---- an edited message (design/message-edits/02 §1) ------------------------
+# ---- an edited message -----------------------------------------------------
 
 
 def _edited_window():
@@ -536,9 +535,8 @@ class _StoreOf:
 
 
 async def test_load_transcript_says_a_message_was_edited_and_what_it_first_said(persons):
-    """Measured live 2026-09-24: asked to «read again» after an edit, she
-    called this tool, got the new text with no marker, and answered «冇變».
-    The prefill marks the row; this tool re-reads the same row and must too."""
+    """Asked to «read again» after an edit, she calls this tool; it must mark the
+    edited row, as the prefill does, or she would answer «冇變» on the new text."""
     window = _edited_window()
     # 09:00 HKT on the rows' own day, so the edit (6 s after 08:00) is 59m old.
     clock = lambda: datetime(1970, 1, 1, 1, 0, tzinfo=UTC)  # noqa: E731
@@ -546,7 +544,7 @@ async def test_load_transcript_says_a_message_was_edited_and_what_it_first_said(
     out = await _call(tools["load_transcript"], limit=10)
     last = out["messages"][-1]
     assert last["body"] == "2 3 4 5 6 7 8"
-    # `edited`, a readable time, never the raw `edited_ts` (design/self-awareness/08 §1).
+    # `edited`, a readable time, never the raw `edited_ts`.
     assert (last["edited"], last["was"]) == ("1970-01-01 Thu 08:00 (59m ago)", "2 3 4 5 7 8")
     assert all("edited" not in m and "was" not in m for m in out["messages"][:-1]), \
         "a message never edited must not carry either key"
@@ -583,7 +581,7 @@ async def test_every_non_ok_who_said_status_carries_a_note(persons):
 
 
 async def test_load_transcript_explains_an_edit_only_when_one_came_back(persons):
-    """How to read `was`/`edited_ts` left the description (ADR 0015 §3). It
+    """How to read `was`/`edited_ts` is not in the description (ADR 0015 §3). It
     rides on the answer that holds an edited row, and on no other."""
     window = _edited_window()
     tools, _, _ = _build(persons, window=window, store=_StoreOf(window))

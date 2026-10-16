@@ -1,5 +1,4 @@
-"""The bake-off's decision rule, as a table (design/unified-memory/20 «Pass»,
-operator ruling 2026-10-15).
+"""The bake-off's decision rule, as a table.
 
 The baseline is the best incumbent configuration per slice: the highest
 recall@5 of bge-m3 alone, trigram+bge-m3 and bm25+bge-m3. A candidate WINS a
@@ -119,7 +118,7 @@ def test_a_missing_incumbent_decides_error() -> None:
 
 
 def test_several_passing_the_fewest_total_misses_wins_not_the_best_images() -> None:
-    """Operator ruling 2026-10-16: among passing arms, the fewest misses summed
+    """Among passing arms, the fewest misses summed
     over text_image, cantonese and names; better images alone do not decide."""
     d = _decide(**{
         "dense:wemm@2048": _arm(1.00, 0.76, 0.70, misses=(0, 16, 5)),
@@ -193,8 +192,8 @@ def test_a_subset_whose_queries_are_not_listed_has_unknown_misses(tmp_path: Path
 
 def test_the_five_way_comparison_picks_qwen_by_fewest_total_misses() -> None:
     """The committed files: Qwen@2048 misses 12 queries (text_image 0,
-    cantonese 7, names 5), WeMM@2048 21 (0, 16, 5), Qwen@256 17; WeMM had
-    won on text_image recall alone (1.000 against 0.9855)."""
+    cantonese 7, names 5), WeMM@2048 21 (0, 16, 5), Qwen@256 17; WeMM wins
+    on text_image recall alone (1.000 against 0.9855)."""
     g = lambda pat: sorted(RESULT.parent.glob(pat))  # noqa: E731
     files = (g("20261015T105051Z-stage2-*.json") + g("20261015T125057Z-stage2-wemm-*.json")
              + g("20261015T165508Z-stage2-qwen3vl-*.json")
@@ -259,7 +258,7 @@ def test_slice_wins_applies_the_same_bar_to_one_slice() -> None:
         slice_wins({**r, "dense:gemma2@768": _arm(0.95, 0.5, 0.5, errors=1)}, "text_image")
 
 
-# --- review of #22 at 63e8d83a ---------------------------------------------------------
+# --- tie-breaks, order independence and the floor --------------------------------------
 
 
 def test_the_dimension_step_breaks_a_miss_tie_before_the_name() -> None:

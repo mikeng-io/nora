@@ -110,13 +110,10 @@ async def test_recent_limit_with_tied_ts_takes_the_highest_ids(store):
 
 
 async def test_append_does_not_prune(make_store):
-    """The defect this closes: db.append ran an INSERT plus a correlated-subquery
-    prune in ONE transaction per message. Under the SQLite era's WAL with N
-    adapters that yielded SQLITE_BUSY, and the ingest stage's failure behaviour
-    is to drop the message — silent audit loss, the one thing the record store
-    is here to prevent. Append is now a bare INSERT; pruning is a periodic
-    sweep, a shape kept under Postgres because a hot write path has no business
-    doing retention either way."""
+    """Append is a bare INSERT; pruning is a periodic sweep. A hot write path has
+    no business doing retention: the ingest stage's failure behaviour is to drop
+    the message, so an append that can fail on its prune means silent audit
+    loss, the one thing the record store is here to prevent."""
     store = make_store(max_per_conversation=3)
     for i in range(10):
         await store.append(message=_msg(body=f"m{i}", ts=i))
@@ -124,10 +121,8 @@ async def test_append_does_not_prune(make_store):
 
 
 async def test_concurrent_appends_all_land(store):
-    """The MVCC probe (design/20 §6, criterion 8): 50 appends fired concurrently
-    all land. Under SQLite's single writer this path was the whole reason for the
-    WAL/busy apparatus that the migration deleted; under Postgres MVCC the writers
-    no longer serialise, and every row commits."""
+    """The MVCC probe: 50 appends fired concurrently all land. Under Postgres
+    MVCC the writers do not serialise, and every row commits."""
     await asyncio.gather(
         *(store.append(message=_msg(body=f"c{i}", ts=i)) for i in range(50))
     )
@@ -137,7 +132,7 @@ async def test_concurrent_appends_all_land(store):
 async def test_aclose_releases_the_connection_pool(make_store):
     """`aclose` delegates to `AsyncEngine.dispose()`, which releases pooled
     connections and installs a fresh pool. It deliberately does NOT poison the
-    engine — verified 2026-08-05: a query after `dispose()` succeeds, opening a
+    engine: a query after `dispose()` succeeds, opening a
     new connection. So this asserts the pool was actually replaced, which is
     the guarantee, rather than asserting a later call raises, which it does
     not. This proves dispose() ran, not that pooled connections were actually
@@ -221,7 +216,7 @@ async def test_prune_all_keeps_the_window_per_conversation(make_store):
 
 
 async def test_prune_all_takes_a_pruned_messages_edits_with_it(make_store):
-    """design/message-edits/01 §2: `message_edit` is ON DELETE CASCADE. Without
+    """`message_edit` is ON DELETE CASCADE. Without
     it the sweep would fail on the foreign key the first time an edited
     message aged out — and a sweep that raises stops pruning every room."""
     import sqlalchemy as sa
@@ -267,7 +262,7 @@ async def test_prune_all_breaks_ts_ties_by_id_at_the_cutoff(make_store):
     """When the retention boundary falls inside a group of rows sharing one
     `ts`, the `id` tie-break decides who survives. Signal timestamps are
     milliseconds and a burst shares one, so this boundary is reachable in
-    production, not hypothetical."""
+    practice, not hypothetical."""
     store = make_store(max_per_conversation=2)
     for body in ("a", "b", "c", "d"):
         await store.append(message=_msg(body=body, ts=100))

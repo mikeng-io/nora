@@ -1,30 +1,19 @@
-"""DEC-13: CLAUDE.md's test-seam policy bans module-level mutable singletons —
-"production classes take collaborators through `__init__` only ... no
-module-level mutable singletons." Phase 6 Task 4 deleted the last two:
-`nora/obs/metrics.py`'s `METRICS = Metrics()` and `nora/agent/factory.py`'s
-`_CLIENT` (reassigned via `global` inside `create_client`/`close_client`).
+"""DEC-13: CLAUDE.md's test-seam policy bans module-level mutable singletons — "production
+classes take collaborators through `__init__` only ... no module-level mutable
+singletons."
 
-Two AST checks, one per shape of the pattern that actually occurred here:
+Two AST checks, one per shape of the pattern:
 
-1. A module-level name bound to a call that constructs a class DEFINED in
-   that same module (`METRICS = Metrics()`, right below `class Metrics:`).
-   This is the shape a plain grep for `^METRICS =` would only catch by
-   knowing the exact name in advance; walking the AST for "top-level
-   assignment whose value calls a locally-defined class" catches the *shape*
-   instead, so a differently-named reintroduction (or a new one entirely —
-   `class Foo: ...` / `FOO = Foo()` at module scope anywhere under `nora/`)
-   is caught too, not just this one name.
-2. A `global` statement anywhere under `nora/` — the mechanism `_CLIENT` used
-   to rebind a module-level name from inside a function
-   (`create_client`/`close_client`'s `global _CLIENT`). `global` has no other
-   legitimate use in this codebase (confirmed: zero occurrences after Task
-   4's rewrite), so its mere presence is the signal, not a specific name.
-
-PROBE (see notes-tasks-3-4.md for the verbatim run): temporarily restored
-`METRICS = Metrics()` at the bottom of `nora/obs/metrics.py` — check 1 above
-failed with `nora/obs/metrics.py:xxx: METRICS = Metrics()`, confirming this
-test is the one that would have caught DEC-13's deferred singletons if they'd
-resurfaced. Restored immediately after.
+1. A module-level name bound to a call that constructs a class DEFINED in that same module
+   (`METRICS = Metrics()`, right below `class Metrics:`). A plain grep for `^METRICS =`
+   would only catch this by knowing the exact name in advance; walking the AST for
+   "top-level assignment whose value calls a locally-defined class" catches the *shape*,
+   so a differently-named reintroduction (or a new one entirely — `class Foo: ...` /
+   `FOO = Foo()` at module scope anywhere under `nora/`) is caught too.
+2. A `global` statement anywhere under `nora/` — the mechanism for rebinding a
+   module-level name from inside a function (a client held in a module global and
+   reassigned by `create_client`/`close_client`). `global` has no other legitimate use in
+   this codebase, so its mere presence is the signal, not a specific name.
 """
 
 from __future__ import annotations
@@ -44,8 +33,8 @@ def _production_modules() -> list[Path]:
 #: Constructors whose result is per-process STATE rather than a value.
 #: Constant lookup tables are not here on purpose: a `dict` literal that is
 #: only ever read is a constant, and flagging every one of them buries the
-#: rule in ~80 false positives (measured). `re.compile`, `Path` and frozen
-#: dataclasses are values too.
+#: rule in false positives. `re.compile`, `Path` and frozen dataclasses are
+#: values too.
 _STATEFUL_CONSTRUCTORS = frozenset({
     "defaultdict", "Counter", "deque", "OrderedDict",
     "Lock", "RLock", "Semaphore", "Event", "Condition", "Queue",
@@ -100,14 +89,11 @@ def test_no_module_level_instantiation_of_a_locally_defined_class() -> None:
                 targets, value = node.targets, node.value
             elif isinstance(node, ast.AnnAssign) and node.value is not None:
                 targets, value = [node.target], node.value
-            # A LOCALLY-DEFINED class was the only shape this caught, so both
-            # of DEC-13's other forms walked straight through: a bare mutable
-            # container (`_HANDLER_CACHE: dict = {}`) and an instance of an
-            # IMPORTED class (`_SHARED_FORMATTER = logging.Formatter(...)`).
-            # Both were added to `nora/obs/logging.py` and this file stayed
-            # green (verified 2026-09-09). What the rule is about is
-            # module-level state that outlives a request, not where the class
-            # happens to be written.
+            # A LOCALLY-DEFINED class is not the only shape: a bare mutable container
+            # (`_HANDLER_CACHE: dict = {}`) and an instance of an IMPORTED class
+            # (`_SHARED_FORMATTER = logging.Formatter(...)`) are module-level state too.
+            # What the rule is about is module-level state that outlives a request, not
+            # where the class happens to be written.
             kind: str | None = None
             if isinstance(value, ast.Call) and (
                 (isinstance(value.func, ast.Name) and value.func.id in local_classes)
@@ -138,11 +124,10 @@ def test_no_module_level_instantiation_of_a_locally_defined_class() -> None:
 
 
 def test_no_global_statements_in_production_code() -> None:
-    """`global` is how `_CLIENT` used to get mutated from inside a function —
-    the only legitimate reason to reach for it is rebinding a module-level
-    name from a nested scope, which is the mechanism this rule exists to
-    forbid. Zero occurrences today; any new one is exactly the pattern to
-    reject on sight."""
+    """`global` is how a module-level name gets mutated from inside a function — the only
+    legitimate reason to reach for it is rebinding a module-level name from a nested
+    scope, which is the mechanism this rule exists to forbid. Any occurrence is exactly
+    the pattern to reject on sight."""
     offenders: list[str] = []
     for path in _production_modules():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

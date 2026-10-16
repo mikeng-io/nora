@@ -1,5 +1,5 @@
 """scripts/migrate_media_to_rustfs.py — the one-time filesystem-to-RustFS
-copy (DEC-136's own deferred cutover step).
+copy (DEC-136).
 
 Exercised against a REAL filesystem directory and a REAL rustfs container
 (`tests/conftest.py`'s `rustfs_client`/`rustfs_container`, the same fixtures

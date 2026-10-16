@@ -1,5 +1,5 @@
-"""`SqlTagTraceStore` — write-once archival retention for `TagTrace`
-(spec §14.6). Single-store file, not a contract suite (there is only one
+"""`SqlTagTraceStore` — write-once archival retention for `TagTrace`.
+Single-store file, not a contract suite (there is only one
 implementation), but the database setup follows
 `tests/contract/test_note_store_contract.py::_notes_db`'s MODULE-scoped
 pattern rather than the function-scoped `pg_url` fixture directly — CLAUDE.md's
@@ -96,14 +96,14 @@ async def test_save_then_recent_roundtrips(tag_trace_engine: Any) -> None:
 async def test_transcript_round_trips_including_the_delivery_status_enum(
     tag_trace_engine: Any,
 ) -> None:
-    """The brief's own sketch serialises `transcript` with `row.__dict__` —
-    which, for a REAL `TranscriptRow`, carries a `DeliveryStatus` Enum member,
-    not a JSON primitive. A store that writes that verbatim either fails the
-    JSONB encode outright or (if it happens to succeed) hands back a bare
-    string on read where the domain type promises an Enum. Either way,
+    """Serialising `transcript` with `row.__dict__` would, for a REAL
+    `TranscriptRow`, carry a `DeliveryStatus` Enum member, not a JSON
+    primitive. A store that writes that verbatim either fails the JSONB encode
+    outright or (if it happens to succeed) hands back a bare string on read
+    where the domain type promises an Enum. Either way,
     `got[0].transcript == trace.transcript` — a real equality check on the
-    round-tripped dataclass, not just a length or id check — is what would
-    catch it."""
+    round-tripped dataclass, not just a length or id check — is what catches
+    it."""
     store = SqlTagTraceStore(tag_trace_engine)
     row = _row()
     trace = TagTrace(
@@ -120,10 +120,10 @@ async def test_transcript_round_trips_including_the_delivery_status_enum(
 
 
 async def test_an_edited_row_round_trips_with_its_edit(tag_trace_engine: Any) -> None:
-    """design/message-edits/01 §3: an edited row carries a `RowEdit`, which
-    is no more a JSON primitive than the Enum above. Before the fix every tag
-    whose window held an edited message failed this save — spawned, so the
-    trace simply vanished — and a read would have rebuilt `edit` as a dict."""
+    """An edited row carries a `RowEdit`, which is no more a JSON primitive than
+    the Enum above. A tag whose window holds an edited message must still save
+    (the save is spawned, so a failure would make the trace simply vanish), and
+    a read must rebuild `edit` as a `RowEdit`, not a dict."""
     import dataclasses
 
     from nora.domain.models import RowEdit
@@ -192,7 +192,7 @@ async def test_recent_with_a_non_positive_limit_returns_nothing(
 async def test_an_invalid_outcome_is_refused_before_any_write(
     tag_trace_engine: Any,
 ) -> None:
-    """`TagTrace.__post_init__` already refuses this (Task 1) — asserted here
+    """`TagTrace.__post_init__` already refuses this — asserted here
     only to confirm the store has no path that reaches the database with a
     domain object that should never have been constructible, the same
     build-before-insert discipline `SqlNoteStore.create` documents."""

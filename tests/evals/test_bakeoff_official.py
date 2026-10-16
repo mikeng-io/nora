@@ -1,6 +1,5 @@
 """Qwen3-VL-Embedding-2B and jina-embeddings-v5-omni-small get exactly the
-input their own files define (design/unified-memory/20, the bake-off's
-stage 2).
+input their own files define.
 
 The strings below are copied from each model's files at the pinned commit
 (`adapters.py` names them). A format that drifts from them would lose the
@@ -61,8 +60,8 @@ def test_qwen3vl_gives_a_document_the_default_instruction() -> None:
 
 
 def test_the_default_instruction_variant_is_recorded_under_its_own_label() -> None:
-    """The first Qwen run gave queries the default instruction too; it stays a
-    recorded variant, never the scored arm."""
+    """Giving queries the default instruction too is a recorded variant, never
+    the scored arm."""
     v = QWEN3VL_DEFAULT_INSTRUCTION_VARIANT
     assert v.label == "qwen3vl-defaultinst" and v.label not in OFFICIAL
     assert v.sent("query", "x") == _qwen_turn("Represent the user's input.", "x")
@@ -268,7 +267,7 @@ def test_a_model_that_did_not_load_at_the_requested_dtype_is_refused() -> None:
 @pytest.mark.parametrize("mixed", [["torch.bfloat16", "torch.float32", "torch.float32"],
                                    ["torch.float32", "torch.float32", "torch.bfloat16"]])
 def test_a_model_with_any_parameter_off_the_requested_dtype_is_refused(mixed) -> None:
-    """jina's load measured 902M parameters in bf16 beside its fp32 LoRA:
+    """jina's load leaves its base parameters in bf16 beside its fp32 LoRA:
     a check that only asks whether float32 is among the dtypes passes that."""
     emb, _ = _emb(JINA, st_dtype=mixed)
     with pytest.raises(ValueError, match="bfloat16"):

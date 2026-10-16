@@ -1,14 +1,14 @@
 """Every label value the computer audit counter can carry is one that start-up
 created at zero (DEC-261).
 
-`nora_computer_audit_failures_total` is a should-be-zero counter: the audit saw
-it never emitted live, and "never emitted" cannot be told from "never failed"
-while its series only exist after the first failure, and `increase()` over a
-series whose first sample is already 1 reads 0. `ComputerMetrics.prime()`
-creates every `(tool, stage)` at zero from `COMPUTER_AUDIT_STAGES` and the tool
-names. This reads the source for the `stage=` and `tool=` literals the call
-sites pass, so a new stage added at a call site and not to the tuple is a red
-test here, not a rare series nobody can alert on.
+`nora_computer_audit_failures_total` is a should-be-zero counter: "never
+emitted" cannot be told from "never failed" while its series only exist
+after the first failure, and `increase()` over a series whose first sample
+is already 1 reads 0. `ComputerMetrics.prime()` creates every `(tool, stage)`
+at zero from `COMPUTER_AUDIT_STAGES` and the tool names. This reads the source
+for the `stage=` and `tool=` literals the call sites pass, so a new stage added
+at a call site and not to the tuple is a red test here, not a rare series
+nobody can alert on.
 """
 
 from __future__ import annotations

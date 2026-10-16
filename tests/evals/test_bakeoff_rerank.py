@@ -1,4 +1,4 @@
-"""The two-stage arm (operator's index design, 2026-10-16): the top k by
+"""The two-stage arm: the top k by
 cosine on the leading search dimensions, re-ranked by full cosine. Exact here;
 the HNSW twin is tests/integration/test_bakeoff_hnsw.py. k under 5 is refused,
 and a candidate set shorter than k while the pool is not is an ERROR."""
@@ -109,7 +109,7 @@ RESULTS = Path(__file__).resolve().parents[2] / "evals" / "retrieval_bakeoff" / 
 
 
 def test_a_tie_on_misses_goes_to_the_two_stage_arm_by_its_indexed_dimension():
-    """Fewest total misses first (operator, 2026-10-16); on a tie, the lower
+    """Fewest total misses first ; on a tie, the lower
     dimension, and a two-stage arm's is the one its index searches (256),
     not the one it re-ranks with (2048)."""
     d = decide.decide({**INCUMBENT, "dense:qwen3vl-q4@2048": _arm(0.95, misses=4),

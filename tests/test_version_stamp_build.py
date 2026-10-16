@@ -313,12 +313,10 @@ def test_the_build_gate_refuses_an_unstamped_context(repo: Path):
 def test_an_unstamped_build_is_allowed_and_leaves_no_stale_stamp(repo: Path):
     """The empty argument is the UNSTAMPED build, and it is allowed.
 
-    It used to be refused, which broke `docker compose build` and the plain
-    `docker build --network=host` in README — both documented, both failing,
-    with the new requirement recorded only in a comment (pre-deploy review,
-    2026-08-11). It also bought nothing: the property is «the reported version
-    cannot disagree with the running code», and an image that reports nothing
-    cannot disagree.
+    Refusing it would break `docker compose build` and the plain
+    `docker build --network=host` in README — both documented. It would also
+    buy nothing: the property is «the reported version cannot disagree with the
+    running code», and an image that reports nothing cannot disagree.
 
     But it has to be unstamped for REAL. A manifest left over from an earlier
     stamped build would ride into the image and be read as authoritative, so

@@ -1,25 +1,19 @@
 """Who each doctrine file is assembled for.
 
-Every authored file used to be `applies_to: [tag]`, so a non-tag turn would have
-received only the minimal non-tag sections: no identity, no voice, no
-conduct, no constraints — and `LeakGuard`'s verbatim-leak corpus (R-6) would
-have been far thinner on the very path that first speaks unprompted.
+Every authored file reaches every audience she reads, not only `tag`: a non-tag
+turn that received only the minimal sections (no identity, no voice, no conduct,
+no constraints) would also make `LeakGuard`'s verbatim-leak corpus (R-6) far
+thinner on the path that speaks unprompted.
 
-**What this file owns, after issue #177.** Two things, and stating the second
-is the point of the issue: which sections reach which audience (ROUTING), and
-that each one arrives carrying a body (NON-DEGENERACY). It does NOT own the
-WORDING of any rule — a needle is a containment test and containment cannot see
-polarity, so the inversion of a sentence is invisible here by construction. See
-the block above `SILENCE` for the measurement and for where polarity IS pinned.
+**What this file owns.** Two things: which sections reach which audience
+(ROUTING), and that each one arrives carrying a body (NON-DEGENERACY). It does
+NOT own the WORDING of any rule — a needle is a containment test and containment
+cannot see polarity, so the inversion of a sentence is invisible here by
+construction. See the block above `SILENCE` for where polarity IS pinned.
 
-The split that makes a second audience possible is smaller than it looks.
-`# Silence is the default` was not homogeneous: its first three sentences are
-FALSE on a turn nobody called, and its last sentence is DEC-40's multi-message
-rule, which is true on any turn. Splitting on the heading would have deleted
-DEC-40 from the new audience without a single test noticing. DEC-88 rewrote
-that rule (a second message is a second ACT, and one of the acts it may be is
-asking the person who knows); it is still true on any turn, so the assertion
-below still holds in both audiences and only its needle moved.
+The multi-message rule (DEC-40, DEC-88: a second message is a second ACT, and
+one of the acts it may be is asking the person who knows) is true on any turn,
+so its assertion holds in every audience.
 """
 
 import re
@@ -29,9 +23,7 @@ import pytest
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.framing import ParticipationHeader, ProactiveHeader
 
-# `pictures` joined 2026-09-26: split out of constraints.md, room occasions only.
-# `room-constraints` joined 2026-10-12: the law moved out of the room files
-# (design/context-plan/11 §6, step 2), room occasions only.
+# `pictures` and `room-constraints` are room-occasion files only.
 AUTHORED = (
     "identity", "belonging", "voice", "conduct", "pictures", "constraints", "room-constraints",
 )
@@ -49,32 +41,28 @@ AUTHORED = (
 # is the same class of defect as one losing it: `participation.md` is the
 # Relevance Gate's instruction and must never resolve into a turn she reads.
 #
-# Issue #177: this table replaced two tests that covered `heartbeat` and
-# `participation` only. Deleting `proactive` from identity/voice/conduct/
-# constraints left that audience resolving to `sections=['silence']` — no
-# identity, no voice, no constraints, on a path that speaks UNCALLED — and
-# deleting `tag` from identity/voice/constraints gutted her primary path. Both
-# passed the five tests in this file.
+# Deleting `proactive` from identity/voice/conduct/constraints would leave that
+# audience resolving to `sections=['silence']` — no identity, no voice, no
+# constraints, on a path that speaks UNCALLED — and deleting `tag` from
+# identity/voice/constraints would gut her primary path. Per-audience routing
+# tests alone would not notice either.
 #
 # HERS, so `relevance_gate` and `dreamer` are deliberately absent — they are
 # instruments, not turns she reads. That leaves the gate's own instruction with
-# NO non-degeneracy floor: a gutted `participation.md` is caught only by
+# NO non-degeneracy floor here: a gutted `participation.md` is caught only by
 # `_has_body` in `nora/ingest/relevance_gate.py` (a "carries any prose" bar) and
-# by its repin-able sha. Given what a bad gate instruction measurably costs
-# (#144, over 40 labelled windows), that is a real gap. It is not closed here
-# because this file's subject is the doctrine SHE receives; the gate's
-# instrument wants its own floor next to the gate. Filed as issue #194 rather
-# than left as a comment somebody has to rediscover.
+# by its repin-able sha. This file's subject is the doctrine SHE receives; the
+# gate's instrument wants its own floor next to the gate.
 #
 # `tag` and `proactive` assemble to byte-identical text today, so these are
 # four parameters over three distinct assemblies — not four independent checks.
-# They stay separate because the divergence is exactly what regression 2 was.
+# They stay separate so a divergence between them is caught per audience.
 HER_AUDIENCES: dict[str, tuple[str, ...]] = {
     "tag": AUTHORED,
     "heartbeat": AUTHORED,
     "participation": (*AUTHORED, "participation-conduct"),
     "proactive": AUTHORED,
-    # The public summons (design/instagram-adoption/19): who she is and the hard
+    # The public summons: who she is and the hard
     # rules from core/, and the public/ files — and nothing written for a room.
     # Strangers read this surface, so belonging, the group voice and room
     # conduct are exactly what must NOT arrive; `==` pins that side too.
@@ -85,26 +73,24 @@ HER_AUDIENCES: dict[str, tuple[str, ...]] = {
 
 # A section tag with nothing behind it is not doctrine. `voice.md` truncated to
 # its front matter plus a bare `# 你係邊個` still emits `name="voice"`, so every
-# `f'name="{name}" in text'` assertion in this file passed while the audience
-# was carrying an empty persona (issue #177, regression 4).
+# `f'name="{name}" in text'` assertion in this file would pass while the
+# audience carried an empty persona.
 #
-# 400 is a floor, not a target. Measured 2026-09-11, the shipped bodies run
-# 948 (`silence`) to 7061 (`conduct`) characters, so the tightest file has 2.4x
-# headroom — enough that an honest edit does not trip this, and far above the
-# ~10 characters a heading-only file leaves. Characters, not bytes: `voice.md`
-# is Cantonese and a byte count would hold it to a third of the standard.
+# 400 is a floor, not a target: the shipped bodies sit well above it, so an
+# honest edit does not trip it, and it is far above the ~10 characters a
+# heading-only file leaves. Characters, not bytes: `voice.md` is
+# Cantonese and a byte count would hold it to a third of the standard.
 #
 # It is a SHALLOW bar and it is meant to be: 94% of `conduct.md` can be deleted
-# and a 401-character remnant passes. It answers "did a section arrive empty",
-# which is the question #177's regression 4 asked, and it answers nothing about
-# whether what arrived is any good. Raising it toward the shipped sizes would
-# turn every honest tightening of a file into a failure, which is how a gate
-# gets deleted rather than obeyed.
+# and a 401-character remnant passes. It answers "did a section arrive empty"
+# and nothing about whether what arrived is any good. Raising it toward the
+# shipped sizes would turn every honest tightening of a file into a failure,
+# which is how a gate gets deleted rather than obeyed.
 #
-# It is also the ONLY thing left standing after a legitimate edit: truncate
-# `voice.md`, bump its `version`, repin its sha, and the parity gate goes green
-# while all four cases below stay red. Measured 2026-09-11. That is why it is
-# here and not folded into the sha.
+# It is also the ONLY thing standing after a legitimate edit that truncates
+# `voice.md`, bumps its `version` and repins its sha: the parity gate goes green
+# while all four cases below stay red. That is why it is here and not folded
+# into the sha.
 MIN_BODY_CHARS = 400
 
 # A NEEDLE CANNOT CHECK POLARITY, AND THIS FILE DOES NOT PRETEND TO.
@@ -123,21 +109,19 @@ MIN_BODY_CHARS = 400
 # "not" — turns it red unless the author also bumps the file's `version` and
 # repins, which is the deliberate act that gate exists to force.
 #
-# Measured, not assumed (2026-09-11): with that inversion applied to
-# `silence.md`, this file reported 5 passed, and the `[silence]` case of
-# `test_doctrine_version_parity.py`'s
-# `test_the_served_section_has_not_moved_without_the_version_moving`
-# failed. A second sha pin here would duplicate that, and a duplicated pin is
-# two places to update and one place to forget.
+# With that inversion applied to `silence.md`, this file passes, and the
+# `[silence]` case of `test_doctrine_version_parity.py`'s
+# `test_the_served_section_has_not_moved_without_the_version_moving` fails. A
+# second sha pin here would duplicate that, and a duplicated pin is two places
+# to update and one place to forget.
 #
-# **AND THE SHA PIN ONLY CATCHES THE UNANNOUNCED INVERSION. SAYING SO IS THE
-# POINT OF THIS BLOCK.** A reviewer ran the same inversion WITH a `version:`
-# bump: the only red was the version literal in `PINNED`, which the author then
-# repins — that is the documented workflow, not an abuse of it. After the repin
-# NOTHING IN THIS REPO CATCHES AN INVERTED DOCTRINE RULE. That is sharpest on
-# `silence.md`, which is `change_policy: agent-may-edit`, so the agent inverting
-# the sentence is the same one filling in the paperwork that would have flagged
-# it.
+# **AND THE SHA PIN ONLY CATCHES THE UNANNOUNCED INVERSION.** The same
+# inversion WITH a `version:` bump turns red only the version literal in
+# `PINNED`, which the author then repins — that is the documented workflow, not
+# an abuse of it. After the repin NOTHING IN THIS REPO CATCHES AN INVERTED
+# DOCTRINE RULE. That is sharpest on `silence.md`, which is
+# `change_policy: agent-may-edit`, so the agent inverting the sentence is the
+# same one filling in the paperwork that would have flagged it.
 #
 # Recorded rather than fixed because the fix is not a test. Polarity is a
 # claim about MEANING; the instruments that could judge it are a human reading
@@ -149,53 +133,24 @@ MIN_BODY_CHARS = 400
 # What this file DOES own is ROUTING and NON-DEGENERACY: which sections reach
 # which audience, and that each arrives with a body. Wording is the sha's, and
 # meaning is nobody's.
-# DEC-88 rewrote the rule this needle points at — it used to be the flat
-# prohibition "never split one answer across several", which was the sentence
-# multi-message and mentions were later built to contradict. The needle moves
-# with it rather than the test being deleted: what this file asserts is the
-# RULE's reach across audiences, never its wording, and a rule that is
-# rephrased and quietly loses the heartbeat audience is exactly the failure
-# this test exists to catch.
-# The v9 rewrite (DEC-96) dropped the SHOUTED "second ACT" for ordinary prose —
-# `kind: conduct` describes rather than legislates. What this file is actually
-# checking is that the multi-message rule reaches BOTH audiences, so it needs a
-# needle that is unique to that rule and indifferent to its wording.
-# Re-pointed 2026-08-17 for the operator's v12 voice / v11 conduct rewrite
-# (a2cb1ae, ad75351), which re-worded the permission from «a second act» to «a
-# genuinely separate act». The RULE is unchanged and so is what this pins; only
-# the wording it binds to moved. Still a fragment that spans no line break.
+# What this file asserts is the multi-message RULE's reach across audiences,
+# never its wording (DEC-88, DEC-96: `kind: conduct` describes rather than
+# legislates), so the needle must be unique to that rule and indifferent to its
+# wording. A rule that is rephrased and quietly loses the heartbeat audience is
+# exactly the failure this test exists to catch. The needle is a fragment that
+# spans no line break.
 MULTI_MESSAGE = "a genuinely separate act"
-# RE-POINTED for the participation occasion (design/dreamer-agent-loop/35):
-# the old needle — "That's the only reason you ever speak" — was the exact
-# claim the occasion overturns, and it left the file with the redefinition
-# (called means must-speak, offered means may-speak). The needle is the half
-# that is FALSE on a heartbeat turn, where silence is a failure: an obligation
-# occasion must never read that saying nothing is success.
+# The needle is the stem of the claim that is FALSE on a heartbeat turn, where
+# silence is a failure: an obligation occasion must never read that saying
+# nothing is success. The claim lives in the participation and proactive
+# headers, worded «silence is a complete answer here, not a failure»; the stem
+# is shared by both wordings and is asserted ABSENT from every audience's
+# doctrine.
 #
-# RE-POINTED AGAIN 2026-09-11 (issue #168). `14a55ab8` rewrote silence.md from
-# two occasions to three and rewrote this sentence with it — «Most offers of
-# the floor end that way» became «Most turns nobody asked for end that way» —
-# so the needle matched nothing and the test had been red since. The ROUTING
-# was never broken: silence.md has declared `applies_to: [tag, participation,
-# proactive]` throughout, and resolving the store shows its section reaching
-# all three. A stale needle reads exactly like a routing defect from the
-# assertion output alone, which is how the issue came to be filed as one.
-#
-# `_bodies` now collapses whitespace. NOT because this needle wraps — it sits
-# inside one 80-column line, and removing the collapse leaves this test green.
-# It is the NEGATIVE assertions it hardens: append the may-speak claim to a
-# file that reaches heartbeat, hard-wrapped across two lines, and without the
-# collapse `SILENCE not in _bodies("heartbeat")` passes while the claim is
-# being served. Measured both ways.
-# RE-POINTED 2026-09-22 (silence v4): the em dash became a comma when every
-# dash was stripped out of the doctrine she reads. Measured cause: she was shown
-# 44 em dashes in the doctrine and 13 more in the prefill block descriptions on
-# every turn, and emitted one in 13 of 22 replies where the humans in the same
-# window emitted none in 18. The sentence is otherwise unchanged.
-# SHORTENED 2026-10-13: silence.md dissolved (design/context-plan/12 §2) and the
-# claim moved into the participation and proactive headers, worded «silence is a
-# complete answer here, not a failure». The needle is the stem both wordings
-# share, and it is now asserted ABSENT from every audience's doctrine.
+# `_bodies` collapses whitespace, not because this needle wraps but for the
+# NEGATIVE assertions: append the may-speak claim to a file that reaches
+# heartbeat, hard-wrapped across two lines, and without the collapse
+# `SILENCE not in _bodies("heartbeat")` passes while the claim is being served.
 SILENCE = "silence is a complete answer"
 
 
@@ -229,16 +184,14 @@ def _sections_in(store: DoctrineStore, audience: str) -> dict[str, str]:
     Parsed out of the ASSEMBLED text rather than read off the files, because
     the assembly is what reaches the model: a section that never got selected
     is simply absent here, and one that arrived empty has an empty body here.
-    Both are invisible to `f'name="{x}"' in text`, which is what issue #177's
-    four regressions all walked through.
+    Both are invisible to `f'name="{x}"' in text`.
 
-    **Fails closed on anything it cannot parse cleanly, and that is not
-    decoration.** Section BODIES are not escaped — only attributes are — so a
-    body containing a literal `</section>` followed by a second `<section …
-    name="voice" …>` re-anchors the scan, and a plain dict comprehension keeps
-    the LAST match for a duplicate name. Measured by a reviewer on this branch:
-    that shape serves `voice` as a ~10-character section and every assertion
-    below passes. Counting the matches against the open tags, and refusing a
+    **Fails closed on anything it cannot parse cleanly.** Section BODIES are not
+    escaped — only attributes are — so a body containing a literal `</section>`
+    followed by a second `<section … name="voice" …>` re-anchors the scan, and a
+    plain dict comprehension keeps the LAST match for a duplicate name. That
+    shape serves `voice` as a ~10-character section and every assertion below
+    would pass. Counting the matches against the open tags, and refusing a
     repeated name, turns a silent pass into a loud failure. Hostile doctrine
     prose is far-fetched; a body that quotes the prompt format while explaining
     it is not.
@@ -246,8 +199,7 @@ def _sections_in(store: DoctrineStore, audience: str) -> dict[str, str]:
     The guard counts OPEN tags, so one direction is left: a stray `</section>`
     with no opening partner truncates a parsed body rather than adding a
     section, and the count still matches. That can only produce a false RED —
-    a body reading shorter than it was served — which is the safe direction,
-    and it is named here rather than left for the next reader to rediscover.
+    a body reading shorter than it was served — which is the safe direction.
     """
     text = store.get(applies_to=audience).doctrine_text
     matches = list(_SECTION_RE.finditer(text))
@@ -270,15 +222,12 @@ def test_no_audience_of_hers_is_degenerate(doctrine_store, audience: str):
     """Every audience she reads gets the full authored set, and every section
     it gets arrives with a body.
 
-    The argument is the same one `heartbeat` and `participation` each needed
-    when they were added, now stated once for all four: without the authored
-    files she delivers with no persona and no constraints, and `LeakGuard`'s
+    Without the authored files she delivers with no persona and no constraints, and `LeakGuard`'s
     verbatim-leak corpus (R-6) is built from whatever the audience resolves to,
     so a thin audience is a thin corpus on exactly the path that speaks.
 
-    `proactive` is the sharpest case and was the unguarded one: it speaks
-    UNCALLED, off her own earlier intention, and it resolved to
-    `sections=['silence']` under a four-line edit that this suite passed.
+    `proactive` is the sharpest case: it speaks UNCALLED, off her own earlier
+    intention, so an audience that resolved to almost nothing would go unnoticed.
     """
     sections = _sections_in(doctrine_store, audience)
 
@@ -300,12 +249,10 @@ def test_the_right_to_stay_silent_comes_with_the_offered_turn(doctrine_store):
     """A participation turn and a proactive one are OFFERED: silence answers them.
     A heartbeat turn is OBLIGED to speak, so the may-speak claim is false there.
 
-    Until 2026-10-13 the claim was doctrine (silence.md, `applies_to: [tag,
-    participation, proactive]`), and this test pinned its routing. The file
-    dissolved (design/context-plan/12 §2): what a turn IS belongs with the turn,
-    so the claim now lives only in `ParticipationHeader` and `ProactiveHeader`,
-    and no doctrine any audience reads may carry it, or it reaches the
-    heartbeat, which assembles from the same authored files."""
+    What a turn IS belongs with the turn, so the claim lives only in
+    `ParticipationHeader` and `ProactiveHeader`, and no doctrine any audience
+    reads may carry it, or it reaches the heartbeat, which assembles from the
+    same authored files."""
     for header in (ParticipationHeader(), ProactiveHeader(rows=())):
         text = " ".join(header.render().split())
         assert "silence is a complete answer here, not a failure" in text, header
@@ -330,9 +277,7 @@ def test_the_gate_instrument_is_not_in_the_participation_audience(doctrine_store
     somebody will later "fix" the set by adding the wrong one of the two.
 
     Reads `doctrine_text`, not `text`, so the `<runtime_context>` block is out
-    of scope. That block carries no section tags, so nothing is lost — but it
-    is a narrowing from what this assertion used to cover and is said rather
-    than left to be noticed in a diff.
+    of scope. That block carries no section tags, so nothing is lost.
     """
     text = doctrine_store.get(applies_to="participation").doctrine_text
     assert 'name="participation-conduct"' in text
@@ -345,9 +290,8 @@ def test_the_gate_instruction_reaches_no_audience_of_hers(doctrine_store):
 
     Both directions matter. Into one of HER audiences it would be a document
     about when she is worth listening to, which is not doctrine. And the
-    gate's own audience must stay thin: the superseded design injected her
-    entire doctrine into the determination, and the trace that killed it
-    showed the determination opening a weather tool.
+    gate's own audience must stay thin: injecting her entire doctrine into the
+    determination makes it behave like a turn (it opens tools).
     """
     needle = "You are a relevance gate"
     for aud in ("tag", "heartbeat", "participation"):
@@ -361,12 +305,11 @@ def test_the_gate_instruction_reaches_no_audience_of_hers(doctrine_store):
 
 
 def test_the_multi_message_rule_survives_in_both_audiences(doctrine_store):
-    """DEC-40 lived inside the silence section but is not a silence rule, and is
-    true on a turn nobody called. Splitting on the heading would have deleted it.
+    """DEC-40 is not a silence rule and is true on a turn nobody called, so it
+    must reach every audience.
 
-    The needle is a fragment that does NOT span a line break in either the
-    current wrapping or the replacement — a longer phrase fails on whitespace,
-    not on meaning.
+    The needle is a fragment that does NOT span a line break — a longer phrase
+    fails on whitespace, not on meaning.
     """
     assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "tag").split()).lower()
     assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "heartbeat").split()).lower()
@@ -385,13 +328,10 @@ _ROOM_RUNTIME_CONTEXT = (
 
 def test_the_summons_is_told_no_language_and_every_room_occasion_still_is(doctrine_store):
     """The language hint is the configured GROUP default, and a public comment
-    is not the group. On 2026-09-26 a dry-run summons carried
-    `language: yue-Hant-HK` in its runtime context and answered an English
-    comment in Cantonese. The operator's rule for that surface is that the
-    language follows the comment (public/voice.md), so the summons gets no
-    `language:` line at all, and every room occasion keeps its block
-    byte-identical: the hint is right there, and moving it would be a second
-    change riding on this one.
+    is not the group. A summons that carried `language: yue-Hant-HK` in its
+    runtime context would answer an English comment in Cantonese. The language
+    follows the comment (public/voice.md), so the summons gets no `language:`
+    line at all, and every room occasion keeps its block byte-identical.
     """
     summons = doctrine_store.get(applies_to="summons")
     assert not [line for line in summons.text.splitlines() if line.startswith("language:")]
@@ -405,12 +345,11 @@ def test_the_summons_is_told_no_language_and_every_room_occasion_still_is(doctri
 
 def test_the_summons_carries_no_room_media_mechanics(doctrine_store):
     """How a room's media placeholders read (`[image a3f2c1: …]`, the
-    transcript, asking for the full reading) is room-chat mechanics. It lived in
-    core/constraints.md until 2026-09-26, so a live dry-run summons carried it
-    to a stranger's comment, where there is no transcript and no placeholder.
-    It is rooms/pictures.md now, and every room occasion still gets it; since
-    2026-10-12 its law half is rooms/constraints.md, the last section of every
-    room occasion."""
+    transcript, asking for the full reading) is room-chat mechanics. It lives in
+    rooms/pictures.md, not core, so a summons does not carry it to a stranger's
+    comment, where there is no transcript and no placeholder. Every room
+    occasion gets it; its law half is rooms/constraints.md, the last section of
+    every room occasion."""
     summons = doctrine_store.get(applies_to="summons").text
     assert "What you already know about a picture" not in summons
     assert "transcript" not in summons

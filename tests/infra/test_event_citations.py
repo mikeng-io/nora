@@ -1,7 +1,4 @@
-"""Event citations: the store computes the lineage of an event from what it cites
-(fix PR D; design/cognition-loop/10-tiers.md §3, 40-register.md §4; the review of
-2026-09-30 M2, m6 and of #662 M8, m4). The edge table and the withdrawal cascade
-are gone (2026-10-03).
+"""Event citations: the store computes the lineage of an event from what it cites.
 
 Real Postgres, one migrated database truncated between tests
 (`test_withdrawal.py`'s pattern). Names are invented and no message is quoted.
@@ -121,7 +118,7 @@ def _msg(part: str, mid: int) -> EventCitation:
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# lineage, per field, from the citations (m6)
+# lineage, per field, from the citations
 # ---------------------------------------------------------------------------
 
 async def test_lineage_is_computed_per_field_from_the_rooms_the_citations_were_said_in(engine):
@@ -170,8 +167,8 @@ async def test_a_citation_that_cannot_be_resolved_is_unresolved_never_widened(en
 
 
 async def test_a_tag_turn_s_event_rests_on_the_room_it_was_said_in(engine):
-    """No row to cite, so no edge; the lineage is the room (m6: it was empty, and
-    an empty lineage renders nowhere but its origin)."""
+    """No row to cite, so no edge; the lineage is the room (an empty lineage
+    renders nowhere but its origin)."""
     store = SqlGatheringStore(engine)
     event = await store.create(_event(), evidence=EventEvidence(
         parts=frozenset({"what", "status"}), room=ROOM_A,
@@ -295,12 +292,10 @@ async def test_the_tag_path_s_new_citation_changes_no_lineage_so_no_lineage_mode
 ):
     """Event lineage is read by one reader, the cognition grounding, which applies
     it per `[lineage] mode` (`off` applies nothing; `shadow` reports; `on`
-    removes). The tag path's new citation of the message that raised the turn is
+    removes). The tag path cites the message that raised the turn, which is
     said in the room the turn is in, so the section it adds is the one the turn
-    itself always added: the lineage is the SAME VALUE with and without the edge,
-    hence `off` reads nothing new and `shadow`/`on` read no different answer. The
-    only new effect is the cascade (a withdrawal, which is not a lineage question
-    and applies in every mode)."""
+    itself always added: the lineage is the SAME VALUE with and without the
+    citation, hence no mode reads a different answer."""
     mid = await _message(engine, conversation_id="ga")
     service = _service(SqlGatheringStore(engine))
     cited = await service.create_event(
@@ -316,8 +311,8 @@ async def test_the_tag_path_s_new_citation_changes_no_lineage_so_no_lineage_mode
 
 
 async def test_a_note_citing_a_rollup_row_takes_the_rows_lineage(engine):
-    """#663: a note resting on a presence row was lineaged by its messages alone.
-    Now it brings the row's own entries; a key that resolves to nothing is
+    """A note resting on a presence row brings the row's own entries into its
+    lineage, not its messages alone; a key that resolves to nothing is
     unresolved, not widened."""
     from nora.infra.sql.notes import SqlNoteStore
 

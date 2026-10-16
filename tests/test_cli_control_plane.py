@@ -1,10 +1,9 @@
 """The operator control plane: `nora groups` and `nora persons pending`.
 
-Plan Task 6 / design/10 §6. Every test here drives the REAL argparse surface
-(`nora.__main__.build_parser`) against a real PostgreSQL record store and a fake
-signal-cli speaking the daemon's verified wire shape, because the properties
-that matter are end-to-end ones: that two ids of one account collapse, that the
-emitted stanza parses, and that nothing is written.
+Every test here drives the REAL argparse surface (`nora.__main__.build_parser`) against a
+real PostgreSQL record store and a fake signal-cli speaking the daemon's verified wire
+shape, because the properties that matter are end-to-end ones: that two ids of one account
+collapse, that the emitted stanza parses, and that nothing is written.
 """
 
 from __future__ import annotations
@@ -511,14 +510,13 @@ async def test_reminders_list_calls_out_an_overdue_row(env, capsys):
 
 
 async def test_reminders_list_says_truncated_only_when_it_really_is(env, capsys):
-    """`len(rows) >= limit` called a COMPLETE listing truncated.
+    """A complete listing is not reported truncated.
 
-    The store answers at most what it is asked for, so a database holding
-    exactly `--limit` rows produces the same length as one that was cut off.
-    The operator was then told to re-run with a larger limit and got the
-    identical output — the report's one piece of advice, wrong every time the
-    counts happen to match. The read asks for one row more than it prints,
-    which is what makes the two states distinguishable.
+    The store answers at most what it is asked for, so a database holding exactly
+    `--limit` rows produces the same length as one that was cut off; `len(rows) >= limit`
+    would tell the operator to re-run with a larger limit and print identical output. The
+    read asks for one row more than it prints, which is what makes the two states
+    distinguishable.
     """
     for i in range(3):
         await _seed_reminder(env, text=f"row-{i}",
@@ -743,9 +741,8 @@ async def _index_status(env):
 
 
 async def test_memory_rebuild_dry_run_writes_nothing_then_the_rebuild_completes(env, capsys):
-    """design/unified-memory/60-build-step-3.md S4: the dry run counts and
-    writes nothing; the run writes the index and `complete`. Both print
-    counts per kind, never a message's words."""
+    """The dry run counts and writes nothing; the run writes the index and `complete`. Both
+    print counts per kind, never a message's words."""
     await audit(env, sender=MILES_PHONE, raw=envelope(number=MILES_PHONE),
                 body="the lantern plan", person_id="miles")
     assert await invoke(env, "memory", "rebuild", "--dry-run") == 0
@@ -782,9 +779,8 @@ async def test_memory_rebuild_is_refused_while_another_rebuild_runs(env, capsys)
 
 
 async def test_memory_rebuild_embeddings_only_clears_vectors_and_reports_counts(env, capsys):
-    """design/unified-memory/65-build-step-3-vectors.md V1: `--embeddings-only`
-    clears vectors (all, or with `--other-models` only another model's) for
-    the worker to backfill, leaves the projection alone, and prints counts,
+    """`--embeddings-only` clears vectors (all, or with `--other-models` only another
+    model's) for the worker to backfill, leaves the projection alone, and prints counts,
     never a message's words. `--dry-run` clears nothing."""
     import sqlalchemy as sa
 

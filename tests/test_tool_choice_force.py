@@ -51,11 +51,11 @@ def test_require_resets_to_required():
 
 
 def test_require_releases_to_the_models_initial_value():
-    """A participation turn composes its model with `tool_choice="auto"`
-    (design/dreamer-agent-loop/35 §5): releasing a `force` pin to the hardcoded
-    `FIRST_CALL` would flip the rest of that turn to `required` and destroy the
-    right-to-silence the occasion exists for. The release target is the value
-    the model was BUILT with, recorded on its first mutation."""
+    """A participation turn composes its model with `tool_choice="auto"`:
+    releasing a `force` pin to the hardcoded `FIRST_CALL` would flip the rest of
+    that turn to `required` and destroy the right-to-silence the occasion exists
+    for. The release target is the value the model was BUILT with, recorded on
+    its first mutation."""
     m = _Model(tool_choice="auto")
     tool_choice.force(m, "place_info")
     assert _tc(m) == FIRST_TOOL
@@ -117,10 +117,10 @@ def test_guard_forces_on_first_call_then_releases_on_second():
 
 
 def test_a_retried_first_call_does_not_release_the_pin():
-    """A11 / audit F12. `BeforeModelCallEvent` fires INSIDE the retry loop —
+    """`BeforeModelCallEvent` fires INSIDE the retry loop —
     `strands/event_loop/event_loop.py::_handle_model_execution` invokes it at
     the top of a `while True:` that the exception path `continue`s back to — so
-    a throttled first attempt used to bump `_model_calls` to 2 and release the
+    a throttled first attempt would bump `_model_calls` to 2 and release the
     pin before any successful call had ever used it.
 
     Revert `_before_model` to `self._model_calls += 1` / `== 1` / `== 2` and

@@ -57,9 +57,9 @@ async def test_presence_disabled_returns_an_empty_list_not_an_error():
 
 
 async def test_presence_dedupes_a_person_in_more_than_one_circle():
-    """Real bug, real fix: identity.toml can place one person in more than
-    one Life360 circle (Miles's own account is in both "Ridgeline" and
-    "TEAM_42") — a naive per-circle loop lists them twice."""
+    """identity.toml can place one person in more than one Life360 circle
+    (Miles's own account is in both "Ridgeline" and "TEAM_42") — a naive
+    per-circle loop lists them twice."""
     other_circle = Circle(circle_id="c2", person_ids=frozenset({"miles"}), people=(MILES,))
     reader = FakePresenceReader(fixes={"miles": _fix("miles", ts=1000, lat=1.0, lng=2.0)})
     entries = await build_presence_payload(presence=reader, circles=(CIRCLE, other_circle))
@@ -67,7 +67,7 @@ async def test_presence_dedupes_a_person_in_more_than_one_circle():
 
 
 async def test_presence_finds_a_fix_recorded_under_the_second_circle_not_just_the_first():
-    """Real bug, real fix: a person in two circles may have their most
+    """A person in two circles may have their most
     recent fix recorded under whichever circle_id the collector wrote it
     to — not necessarily the first circle in `circles`' order. Checking
     only the first circle silently rendered `current: null` for someone
@@ -190,9 +190,9 @@ async def test_history_emits_a_new_point_past_the_10m_radius():
 
 
 async def test_history_merges_fixes_from_every_circle_a_person_belongs_to():
-    """Real bug, real fix: history windowed only against the first circle
-    silently returned an empty route for someone whose fixes were recorded
-    under a DIFFERENT circle_id."""
+    """History windowed only against the first circle would silently return an
+    empty route for someone whose fixes were recorded under a DIFFERENT
+    circle_id."""
     other_circle = Circle(circle_id="c2", person_ids=frozenset({"miles"}), people=(MILES,))
     c1_fix = _fix("miles", ts=1000, lat=1.0, lng=1.0)
     c2_fixes = [
@@ -220,8 +220,8 @@ async def test_history_resets_the_anchor_only_on_a_real_move():
     anchor for what follows."""
     fixes = [
         _fix("miles", ts=1000, lat=22.30000, lng=114.20000),
-        _fix("miles", ts=2000, lat=22.30141, lng=114.20000),   # real move #1
-        _fix("miles", ts=3000, lat=22.30142, lng=114.20000),   # jitter off move #1's anchor
+        _fix("miles", ts=2000, lat=22.30141, lng=114.20000),   # first real move
+        _fix("miles", ts=3000, lat=22.30142, lng=114.20000),   # jitter off the first move's anchor
     ]
     reader = FakePresenceReader(windows={"miles": fixes})
     result = await build_presence_history_payload(

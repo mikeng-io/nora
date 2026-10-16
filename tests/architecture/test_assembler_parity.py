@@ -1,11 +1,11 @@
 """Eval-injection parity: production and the offline harness must build their
 `TranscriptInjection` through the SAME function, or the two prompts drift
-apart exactly like they had — `nora/app/composition.py` passed 18 keyword
-arguments and `tests/offline_pipeline.py` passed 7, so every eval measured an agent
-missing `<standing>`/`<notes>`/`<facts>` with nothing to notice.
+apart: a site passing fewer keyword arguments than the other means every eval
+measures an agent missing `<standing>`/`<notes>`/`<facts>` with nothing to
+notice.
 
-`nora.app.assembler.build_assembler` is the fix: one function both
-construction sites call. This file is what keeps it that way — it parses the
+`nora.app.assembler.build_assembler` is one function both construction sites
+call. This file is what keeps it that way — it parses the
 two call sites (AST, not import, so it reads the SOURCE that ships rather
 than whatever `TranscriptInjection` happens to default to at import time) and
 asserts:
@@ -22,14 +22,14 @@ asserts:
 the wiring these calls describe actually RENDERS — this file only proves the
 two call sites cannot structurally drift apart.
 
-**FirePath, same trap, same fix** (design/dreamer-agent-loop/35 Phase 2). The
-fire path has its OWN context assembly — `build_context`, "This is the trap"
-(`nora/app/fire.py`) — and Phase 1 shipped it rendering no `<notes>`/`<facts>`
-at all while the participation header told the model they "came with it". The
-scan below pins the two `FirePath(...)` construction sites (production's
-`composition.py`, the eval/offline one in `offline.py`) to the same keyword
-set for the same reason as the assembler scan: a tier wired into one side and
-forgotten on the other is exactly the drift Phase 1 shipped.
+**FirePath, same trap.** The fire path has its OWN context assembly —
+`build_context`, "This is the trap" (`nora/app/fire.py`) — and a tier missing
+from it would render no `<notes>`/`<facts>` at all while the participation
+header told the model they "came with it". The scan below pins the two
+`FirePath(...)` construction sites (production's `composition.py`, the
+eval/offline one in `offline.py`) to the same keyword set for the same reason
+as the assembler scan: a tier wired into one side and forgotten on the other
+is the drift this test exists to catch.
 
 **Known limitations** (value-blind by design, documented rather than ignored):
 `_kwarg_names` compares NAMES only, never the values or gatings — a site that
@@ -48,11 +48,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSITION = REPO_ROOT / "nora" / "app" / "composition.py"
-#: Re-homed to `tests/` 2026-09-18: it was in `nora/app/` only because
-#: `evals/` could not import `tests/`, and `evals/` no longer has a harness.
-#: The PARITY it checks is unchanged — production against the offline
-#: mirror — and is the gate that caught "composition passed 18 keyword
-#: arguments and offline passed 7".
+#: The offline mirror of production's composition; the PARITY checked is
+#: between the two.
 OFFLINE = REPO_ROOT / "tests" / "offline_pipeline.py"
 
 

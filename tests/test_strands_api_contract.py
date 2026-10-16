@@ -51,7 +51,7 @@ def test_obligation_3_hook_events_expose_cancel_tool_and_retry():
         or set(dir(AfterToolCallEvent))
     for attr in ("result", "exception", "retry"):
         assert attr in after, f"DRIFT: AfterToolCallEvent.{attr} is gone"
-    # Load-bearing since DEC-32: this hook fires for a call `_before_tool`
+    # Load-bearing (DEC-32): this hook fires for a call `_before_tool`
     # CANCELLED as well as for one that ran (`exception` stays None for a
     # cancellation), and `cancel_message` is the only thing that tells them
     # apart. Without it a `send_reply` vetoed for empty text would set
@@ -63,7 +63,7 @@ def test_obligation_3_hook_events_expose_cancel_tool_and_retry():
 
 
 def test_obligation_3b_after_tool_call_result_is_writable():
-    """R-91 / issue #160: `DreamGuard` REPLACES a refused memory read's result.
+    """R-91: `DreamGuard` REPLACES a refused memory read's result.
 
     `BeforeToolCallEvent.cancel_tool` is the only way to stop a call from
     running and the executor turns it into an ERROR `ToolResult` — which is
@@ -85,9 +85,7 @@ def test_obligation_3b_after_tool_call_result_is_writable():
 
 
 def test_obligation_4_openai_model_accepts_a_custom_client():
-    """Call-site drift, not design drift (spec C.10 obligation 4, decided 2026-08-03).
-
-    `client` is a named __init__ param (unchanged). `model_id`/`params` arrive via
+    """`client` is a named __init__ param. `model_id`/`params` arrive via
     `**model_config: Unpack[OpenAIConfig]` instead of named params — the runtime
     behavior factory.py needs (OpenAIModel(model_id=..., params=..., client=...))
     is intact because **kwargs unpacks the TypedDict.
@@ -121,33 +119,28 @@ def test_obligation_6_hook_provider_protocol():
 
 
 def test_obligation_6b_strands_evals_surface():
-    """The judge contract (E.4) needs Case/Experiment/OutputEvaluator/TrajectoryEvaluator.
+    """The judge contract needs Case/Experiment/OutputEvaluator/TrajectoryEvaluator.
 
-    Import-path note (call-site fix, not a design change): in strands-agents-evals
-    1.0.3, OutputEvaluator and TrajectoryEvaluator are not re-exported at the
+    OutputEvaluator and TrajectoryEvaluator are not re-exported at the
     strands_evals top level (only Case/Experiment/etc. are, per __init__.py's
-    __all__). Both symbols exist unchanged at
-    strands_evals.evaluators.output_evaluator.OutputEvaluator and
-    strands_evals.evaluators.trajectory_evaluator.TrajectoryEvaluator, so per the
-    C.10 stop-rule exception this test imports them from their submodule instead
-    of asserting top-level attribute presence.
+    __all__). Both exist in the submodules `strands_evals.evaluators.output_evaluator`
+    and `strands_evals.evaluators.trajectory_evaluator`, so this test imports
+    them from there instead of asserting top-level attribute presence.
 
-    Judge-contract finding (Task 3 Step 3, recorded here since M7 is many tasks
-    away): OutputEvaluator.evaluate()/evaluate_async() hardcode
+    OutputEvaluator.evaluate()/evaluate_async() hardcode
     `structured_output_model=EvaluationOutput`, where EvaluationOutput
     (strands_evals.types) is `{score: float, test_pass: bool, reason: str | None,
-    label: str | None}`. This does NOT match spec §E.4's judge contract of
+    label: str | None}`. That does NOT match the judge contract of
     `{criterion, score, confidence, rationale}` per criterion — there is no
     `criterion` or `confidence` field, and `test_pass` is a hard bool rather than
-    the confidence-weighted score/confidence pair §E.4 requires. The structured
-    output model is inline in evaluate()/evaluate_async(), not overridable via a
-    class attribute, so subclassing OutputEvaluator cannot swap the schema.
-    RK-9's pre-approved fallback applies: M7's judge evaluator subclasses
-    strands_evals' Evaluator base directly (not OutputEvaluator) and owns its own
-    judge prompt + a custom Pydantic structured_output_model shaped
-    {criterion, score, confidence, rationale}, following the same
-    Agent(...).invoke_async(prompt, structured_output_model=...) pattern
-    OutputEvaluator itself uses internally.
+    a confidence-weighted score/confidence pair. The structured output model is
+    inline in evaluate()/evaluate_async(), not overridable via a class
+    attribute, so subclassing OutputEvaluator cannot swap the schema. The
+    judge evaluator therefore subclasses strands_evals' Evaluator base directly
+    (not OutputEvaluator) and owns its own judge prompt + a custom Pydantic
+    structured_output_model shaped {criterion, score, confidence, rationale},
+    following the same Agent(...).invoke_async(prompt,
+    structured_output_model=...) pattern OutputEvaluator itself uses internally.
     """
     strands_evals = pytest.importorskip("strands_evals")
     from strands_evals.evaluators.output_evaluator import OutputEvaluator
@@ -167,19 +160,17 @@ def test_obligation_6b_strands_evals_surface():
 def test_obligation_7_the_tool_choice_flip_is_reachable_from_a_before_model_hook():
     """DEC-42's whole mechanism, verified against the SDK rather than assumed.
 
-    `design/proposed/16-multi-message-replies.md` §4 said in an earlier draft
-    that `BeforeModelCallEvent` "cannot write it" because `_can_write` is
-    `return name == "cancel"`. That is true and it is about the EVENT: the
-    event refuses attribute assignment on itself. It says nothing about
-    reachability. `HookEvent.agent` is a plain required field, `Agent.model`
-    is public, and `OpenAIModel.update_config` exists — so
+    `BeforeModelCallEvent` "cannot write it" because `_can_write` is `return
+    name == "cancel"`, but that is about the EVENT: the event refuses attribute
+    assignment on itself. It says nothing about reachability. `HookEvent.agent`
+    is a plain required field, `Agent.model` is public, and
+    `OpenAIModel.update_config` exists — so
     `event.agent.model.update_config(params=...)` is the route, and
     `nora.agent.tool_choice.relax` takes it.
 
     Three assertions, because losing any one of them silently disables
     multi-message: she would keep `tool_choice="required"` for the whole turn,
-    never be permitted to stop, and be cut off by a cap instead — which
-    design/16 §2.1 measured (C) as never stopping, 6/6.
+    never be permitted to stop, and be cut off by a cap instead.
 
     The `update_config` REPLACE semantics are asserted too. It is
     `self.config.update(model_config)`, a shallow dict update, so writing
@@ -219,7 +210,7 @@ def test_obligation_7_the_tool_choice_flip_is_reachable_from_a_before_model_hook
 
 
 def test_obligation_8_the_before_model_hook_fires_inside_the_retry_loop():
-    """A11 / audit F12: `_model_calls` counts COMPLETIONS because the BEFORE
+    """`_model_calls` counts COMPLETIONS because the BEFORE
     hook cannot tell a fresh call from a re-attempt of the same one.
 
     Asserted against the SDK's own source rather than described in a comment,

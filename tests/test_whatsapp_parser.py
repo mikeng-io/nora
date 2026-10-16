@@ -1,7 +1,7 @@
-"""`nora.platform.whatsapp.parser.parse_event` — the executable half of
-`design/whatsapp-adoption/03-transport-contract.md`. The field names in the
-fixtures below are the bridge's, verbatim; a drift in either direction is a
-failure here, not a judgment call."""
+"""`nora.platform.whatsapp.parser.parse_event` — the executable half of the
+WhatsApp bridge's transport contract. The field names in the fixtures below
+are the bridge's, verbatim; a drift in either direction is a failure here, not
+a judgment call."""
 
 from nora.domain.identity import Identifier
 from nora.domain.models import EditTarget
@@ -70,9 +70,8 @@ def test_sender_id_prefers_the_phone_form():
 
 
 def test_a_lid_only_sender_lands_on_the_lid_form():
-    """Baileys delivers many group senders as LID JIDs (design 02: "LID
-    resolution is mandatory") — without this, a known person fails
-    resolution and hits R-31's refusal."""
+    """Baileys delivers many group senders as LID JIDs — without LID
+    resolution, a known person fails resolution and hits R-31's refusal."""
     msg = parse_event(event(
         sender_jid=f"{ALICE_LID}@lid", sender_phone=None, sender_lid=ALICE_LID,
     ))
@@ -222,7 +221,7 @@ def test_a_voice_note_only_turn_survives_as_a_placeholder_body():
 
 
 def test_media_refs_carry_no_custody_handle_and_no_sender_filename():
-    """Custody is a later phase: the event carries the FACT of media, never
+    """The parser does not take custody: the event carries the FACT of media, never
     the blob, so `platform_id`/`fetch_token` are empty. And sender-supplied
     filenames never render (`nora/domain/media.py`'s rule) — the ref does
     not even record one."""
@@ -250,7 +249,7 @@ def test_text_and_media_render_text_first_placeholders_last():
 
 
 def test_from_me_is_dropped():
-    """R-12's first pass: Nora never ingests her own sends."""
+    """R-12: Nora never ingests her own sends."""
     assert parse_event(event(from_me=True)) is None
 
 
@@ -280,9 +279,8 @@ def test_non_message_types_are_dropped():
 
 def test_an_edit_names_the_stanza_it_edits():
     """`edit_of` names the original stanza; `text` is the NEW content. It
-    becomes `NormalizedMessage.edit_of` (design/message-edits/03 §1), and
-    `message_id` stays the edit's own stanza id — the original's is what
-    `edit_of` carries."""
+    becomes `NormalizedMessage.edit_of`, and `message_id` stays the edit's own
+    stanza id — the original's is what `edit_of` carries."""
     msg = parse_event(event(
         id="3EB0F2", edit_of="3EB0F1A2B3C4", text="hello, corrected",
     ))
@@ -307,7 +305,7 @@ def test_a_malformed_event_is_none_not_an_exception():
     assert parse_event(event(mentioned="not-a-list")) is not None
 
 
-# ── reactions and revokes (design/cognition-loop/20-observe.md §1) ───────────
+# ── reactions and revokes ────────────────────────────────────────────────────
 
 
 def _touch_event(kind: str, **over) -> dict:

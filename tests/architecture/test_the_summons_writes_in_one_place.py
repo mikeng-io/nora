@@ -1,7 +1,7 @@
 """The public summons writes a comment from ONE place: the flush.
 
 `InstagramSummonsClient.post_comment` is the only public write Nora has on
-Instagram (design/instagram-adoption/19), and the account it writes with also
+Instagram, and the account it writes with also
 carries her group chats. So the call is pinned structurally, the way
 `test_only_two_paths_can_send.py` pins `adapter.send`: exactly one call site
 under `nora/`, inside `SummonsOccasion._flush`, and every call of `_flush`

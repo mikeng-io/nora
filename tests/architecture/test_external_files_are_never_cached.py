@@ -1,11 +1,10 @@
-"""Nothing fetched through a shared file link is ever cached
-(design/external-files/00-design.md §2, operator 2026-10-10).
+"""Nothing fetched through a shared file link is ever cached.
 
 A linked file is LIVE: its content, name, kind, owner and modified time all
 change, unlike an attachment's bytes, which are fixed when they arrive. So the
 external-files code keeps the parsed URL ref and nothing else, and every open
-fetches fresh. This reads the source of every external-files module, the
-adapters to come under `nora/infra/external_files/` included, and fails on an
+fetches fresh. This reads the source of every external-files module, every
+adapter under `nora/infra/external_files/` included, and fails on an
 import of anything that keeps what a read returned: the blob store, the media
 object or description stores, the media join, or a memoizing cache.
 
@@ -22,8 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 #: The external-files modules: the domain module, the ingest stage, the fake,
-#: and every adapter under `nora/infra/external_files/` (S2 onwards; the
-#: directory is also scanned whole, so a new adapter is covered unnamed).
+#: and every adapter under `nora/infra/external_files/` (the directory is also
+#: scanned whole, so a new adapter is covered unnamed).
 _MODULES = (
     "nora/domain/external_files.py",
     "nora/ingest/stages/external_files.py",

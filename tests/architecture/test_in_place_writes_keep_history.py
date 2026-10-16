@@ -1,10 +1,10 @@
 """Every table the code changes in place keeps a history, or names the step
-that will give it one (design/cognition-loop/10-tiers.md §8, step 1b).
+that will give it one.
 
 `nora.infra.sql.history.HISTORY_TABLES` is the list the migration's trigger
-covers. It was read off the code once; this is what keeps it true when a
-store grows an UPDATE, an upsert or a DELETE on a table nobody listed — the
-write would work and its history would silently not exist.
+covers. This is what keeps it true when a store grows an UPDATE, an upsert or
+a DELETE on a table nobody listed — the write would work and its history
+would silently not exist.
 
 Read from source, like the other architecture tests, anywhere under
 `nora/` outside the migrations:
@@ -48,7 +48,7 @@ _RAW = re.compile(
 
 #: Sites whose table is a variable: path -> the tables the variable can be.
 #: `mobility.py`'s place deletion clears the Tier 3 tables in a loop, and
-#: `rollups.py` diffs each unit rollup table through one helper (step 2).
+#: `rollups.py` diffs each unit rollup table through one helper.
 _VARIABLE_TARGETS: dict[str, frozenset[str]] = {
     "nora/infra/sql/mobility.py": frozenset({"presence_occupancy", "presence_place_rhythm"}),
     # The unit rollups' diffed write (`_diff_apply`), one table at a time.
@@ -58,7 +58,7 @@ _VARIABLE_TARGETS: dict[str, frozenset[str]] = {
     }),
 }
 #: How far above an `on_conflict_do_update` its `insert(T)` may be. The
-#: widest in the tree on 2026-09-28 is 25 lines (`media_objects.py`), and
+#: widest in the tree is in `media_objects.py`, and
 #: `test_every_upsert_finds_its_insert` fails before one outgrows this.
 _UPSERT_REACH = 40
 _INSERT = re.compile(r"\b(?:pg_insert|pg\.insert|insert)\(\s*([A-Z_]+)\s*\)")

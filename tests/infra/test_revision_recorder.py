@@ -1,6 +1,5 @@
 """What was in force at T: the recorder writes each load, `in_force` and
-`materialise` read the newest at or before T (design/cognition-loop/
-70-migration.md §5, step 1b).
+`materialise` read the newest at or before T.
 
 The corpora are the repo's OWN `nora/doctrine` and `nora/dreamer`, copied
 into a temp directory and loaded by the production stores, so a load here

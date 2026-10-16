@@ -59,8 +59,8 @@ class _Bridge:
         if self.mode == "unavailable":
             return web.json_response({"status": "unavailable"})
         if self.mode == "realistic-post":
-            # The exact opencli `twitter thread` shape from the live trace
-            # (2026-08-31): first item = the post, rest = replies.
+            # The opencli `twitter thread` shape: first item = the post, rest =
+            # replies.
             return web.json_response({
                 "status": "ok",
                 "source_url": "https://x.com/i/status/2093779797512253814",
@@ -156,10 +156,9 @@ class _Bridge:
         if self.mode == "slow":
             await asyncio.sleep(5)
             return web.json_response({"status": "nothing_found"})
-        # Realistic opencli shapes (verified against the live bridge
-        # 2026-08-31): `profile` is a single-item list with `screen_name`/
-        # `bio`, `thread`/`tweets` are lists of post dicts. Long bio → clamp
-        # probe.
+        # Realistic opencli shapes: `profile` is a single-item list with
+        # `screen_name`/`bio`, `thread`/`tweets` are lists of post dicts. Long
+        # bio → clamp probe.
         return web.json_response({
             "status": "ok",
             "source_url": "https://x.com/nasa",
@@ -212,7 +211,7 @@ async def test_ok_text_is_wrapped_and_the_url_rides_plain(bridge):
     # `DecoratedFunctionTool._wrap_tool_result` passes a dict with BOTH
     # `status` and `content` through UNWRAPPED, so a bare-string `content`
     # reaches the model outside the standard `[{"text": …}]` block and reads
-    # as "empty" — see guards.py:513's same invariant.
+    # as "empty" — see `nora/agent/guards.py`'s same invariant.
     assert "content" not in out
 
 
@@ -221,16 +220,11 @@ async def test_long_text_is_clamped_and_flagged(bridge):
     out = await _read(client)
     assert out["truncated"] is True
     # The wrapped body carries at most the clamp (plus the untrusted envelope).
-    # THE BOUND IS ON THE TEXT, not on the wrapped string. It was on the whole
-    # string until #314, which worked only while the wrapper was a constant
-    # ~30 characters (`<untrusted source="…" untrusted="true">`); the block
-    # carries its own description now and the wrapper is ~250, so the old
-    # assertion was measuring the description and calling it a clamp.
-    #
-    # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
-    # times however many results come back. It buys a model that can read what
-    # the block is without loading a doctrine file defining `untrusted` — which
-    # most of the audiences receiving that word never loaded.
+    # THE BOUND IS ON THE TEXT, not on the wrapped string: the block carries its
+    # own description, so the wrapper is a few hundred characters per RESULT, and
+    # a bound on the whole string would measure the description, not the clamp.
+    # That overhead buys a model that can read what the block is without loading
+    # a doctrine file defining `untrusted`.
     body = out["text"].split(">\n", 1)[1].rsplit("\n<", 1)[0]
     # 1500 is the CONTENT clamp; the body also carries the bridge's own author
     # line («nasa (NASA)\n») and the truncation marker, which are bounded and
@@ -239,14 +233,12 @@ async def test_long_text_is_clamped_and_flagged(bridge):
 
 
 async def test_content_is_readable_text_not_json_soup(bridge):
-    """The regression pin for the 2026-08-31 parse failure.
+    """The content is the post's actual text verbatim, with its URL beside it —
+    the same readable-text shape Tavily's `web_fetch` returns.
 
-    Before this fix, `bridge_client` json.dumps'ed the whole opencli payload
-    and the char clamp tore mid-record, so the model received `\"`-escaped JSON
-    cut at "founder @infer — and read it as "empty" (trace
-    2bf6939b96d18d1389f0ea7f1eac99af). The content must now be the post's
-    actual text verbatim, with its URL beside it — the same readable-text
-    shape Tavily's `web_fetch` returns, which the model demonstrably reads.
+    json.dumps'ing the whole opencli payload would let the char clamp tear
+    mid-record, so the model would receive `\"`-escaped JSON cut mid-string and
+    read it as "empty".
     """
     fake, client = bridge
     fake.mode = "realistic-post"
@@ -264,17 +256,14 @@ async def test_content_is_readable_text_not_json_soup(bridge):
 
 
 async def test_result_envelope_wraps_like_web_search(bridge):
-    """The regression pin for the REAL 2026-08-31 failure (second round).
+    """A result dict must not carry a bare-string `content` key.
 
-    The renderer fix made the text readable, but the model STILL said "No
-    output": `social_fetch` returned a dict bearing a bare-string `content`
-    key, and Strands' `_wrap_tool_result` (decorator.py:673) passes a dict
-    with BOTH `status` and `content` through UNCHANGED — so the model received
-    `content: "<string>"` outside the standard `[{"text": …}]` block and read
-    it as empty (trace 67afb6920005b741b7e314561facc002). `web_search` works
-    because its dict has no `content` key, so Strands wraps it. This test
-    feeds BOTH providers' ok-envelopes through the real SDK wrapper and pins
-    that they come out as the standard `content: [{"text": …}]` shape.
+    Strands' `_wrap_tool_result` passes a dict with BOTH `status` and `content`
+    through UNCHANGED, so the model would receive `content: "<string>"` outside
+    the standard `[{"text": …}]` block and read it as empty. `web_search` works
+    because its dict has no `content` key, so Strands wraps it. This test feeds
+    BOTH providers' ok-envelopes through the real SDK wrapper and pins that they
+    come out as the standard `content: [{"text": …}]` shape.
     """
     from strands.tools.decorator import DecoratedFunctionTool
 
@@ -303,9 +292,8 @@ async def test_result_envelope_wraps_like_web_search(bridge):
     assert inner["text"].startswith("<social_post ")
     assert "opus 5 is so bad lately" in inner["text"]
 
-    # web_fetch's provider must hit the same invariant (it had the identical
-    # bare-string `content` defect — trace 1 showed the model calling even its
-    # readable page content "empty").
+    # web_fetch's provider must hold the same invariant: no bare-string
+    # `content`.
     fetch_out = {
         "status": "ok",
         "url": "https://example.com/a",
@@ -336,7 +324,7 @@ async def test_media_urls_render_as_fetchable_markers(bridge):
     """A post carrying media renders `[image url]` / `[video url]` rows — the
     same marker shape media_fetch's docstring teaches, so the model can hand
     a returned media link straight to `media_fetch(url=…)` (the generic
-    cross-tool read path, DEC-56 extension 2026-08-31)."""
+    cross-tool read path, DEC-56 extension)."""
     fake, client = bridge
     fake.mode = "realistic-media-post"
     out = await client.read(platform="x", what="post",
@@ -358,8 +346,8 @@ async def test_video_media_renders_video_and_poster_markers(bridge):
     assert "[poster https://pbs.twimg.com/media/poster.png]" in text
 
 
-# LinkedIn (DEC-201). Shapes trimmed from the live probe on norty, 2026-09-24
-# (`opencli linkedin <command> -f json`, OpenCLI 1.8.7), names synthetic.
+# LinkedIn (DEC-201). Shapes trimmed from `opencli linkedin <command> -f json`
+# output, names synthetic.
 def test_a_linkedin_profile_renders_headline_about_and_sections():
     from nora.infra.social.bridge_client import _render_text
 
@@ -465,10 +453,10 @@ async def test_nothing_found_passes_through(bridge):
 
 @pytest.mark.parametrize("mode", ["empty-list", "empty-items"])
 async def test_an_ok_with_nothing_to_show_is_nothing_found(bridge, mode):
-    """An `ok` whose data renders to no text is a read that found nothing
-    (2026-09-24: a post id that names no post came back `ok` and empty, and
-    the model was handed an empty post). Said with the shared sentence, so
-    it is told it looked and found nothing, not that it read something."""
+    """An `ok` whose data renders to no text is a read that found nothing (a
+    post id that names no post can come back `ok` and empty). Said with the
+    shared sentence, so the model is told it looked and found nothing, not that
+    it read something."""
     fake, client = bridge
     fake.mode = mode
     out = await _read(client)
@@ -478,8 +466,8 @@ async def test_an_ok_with_nothing_to_show_is_nothing_found(bridge, mode):
 
 
 async def test_a_bridge_note_never_reaches_the_model(bridge):
-    """`note` is an INSTRUCTION to the model about what it may say, and this
-    line forwarded the bridge's own string into it verbatim — unbounded and
+    """`note` is an INSTRUCTION to the model about what it may say, so the
+    bridge's own string must never be forwarded into it — it is unbounded and
     unescaped, from another process. The STATE is what the bridge gets to
     report; the sentence for a state is ours (`nora/infra/social/results.py`).
     """
@@ -496,7 +484,7 @@ async def test_bridge_unavailable_passes_through(bridge):
     fake.mode = "unavailable"
     out = await _read(client)
     assert out["status"] == "unavailable"
-    assert out["note"].strip()  # #482: the unavailable path had no note guard
+    assert out["note"].strip()  # unavailable carries a note
 
 
 async def test_a_400_refusal_is_unavailable_never_nothing_found(bridge):
@@ -507,7 +495,7 @@ async def test_a_400_refusal_is_unavailable_never_nothing_found(bridge):
     fake.mode = "refused"
     out = await _read(client)
     assert out["status"] == "unavailable"
-    assert out["note"].strip()  # #482: the unavailable path had no note guard
+    assert out["note"].strip()  # unavailable carries a note
 
 
 async def test_a_500_is_unavailable(bridge):
@@ -515,7 +503,7 @@ async def test_a_500_is_unavailable(bridge):
     fake.mode = "error"
     out = await _read(client)
     assert out["status"] == "unavailable"
-    assert out["note"].strip()  # #482: the unavailable path had no note guard
+    assert out["note"].strip()  # unavailable carries a note
 
 
 async def test_a_non_json_body_is_unavailable(bridge):
@@ -523,7 +511,7 @@ async def test_a_non_json_body_is_unavailable(bridge):
     fake.mode = "notjson"
     out = await _read(client)
     assert out["status"] == "unavailable"
-    assert out["note"].strip()  # #482: the unavailable path had no note guard
+    assert out["note"].strip()  # unavailable carries a note
 
 
 async def test_an_envelope_with_no_status_key_is_unavailable(bridge):
@@ -531,7 +519,7 @@ async def test_an_envelope_with_no_status_key_is_unavailable(bridge):
     fake.mode = "nostatus"
     out = await _read(client)
     assert out["status"] == "unavailable"
-    assert out["note"].strip()  # #482: the unavailable path had no note guard
+    assert out["note"].strip()  # unavailable carries a note
 
 
 async def test_an_unknown_status_value_is_unavailable(bridge):
@@ -541,7 +529,7 @@ async def test_an_unknown_status_value_is_unavailable(bridge):
     fake.mode = "badstatus"
     out = await _read(client)
     assert out["status"] == "unavailable"
-    assert out["note"].strip()  # #482: the unavailable path had no note guard
+    assert out["note"].strip()  # unavailable carries a note
 
 
 async def test_an_ok_envelope_with_no_data_is_unavailable(bridge):
@@ -549,7 +537,7 @@ async def test_an_ok_envelope_with_no_data_is_unavailable(bridge):
     fake.mode = "nodata"
     out = await _read(client)
     assert out["status"] == "unavailable"
-    assert out["note"].strip()  # #482: the unavailable path had no note guard
+    assert out["note"].strip()  # unavailable carries a note
 
 
 async def test_a_timeout_is_unavailable_never_raises(bridge):
@@ -557,7 +545,7 @@ async def test_a_timeout_is_unavailable_never_raises(bridge):
     fake.mode = "slow"
     out = await _read(client)
     assert out["status"] == "unavailable"
-    assert out["note"].strip()  # #482: the unavailable path had no note guard
+    assert out["note"].strip()  # unavailable carries a note
 
 
 async def test_a_dead_host_is_unavailable_never_raises():
