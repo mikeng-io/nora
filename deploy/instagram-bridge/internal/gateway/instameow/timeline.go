@@ -52,6 +52,10 @@ func timelineDoc(docID string) webDoc {
 		env:          EnvTimelineDocID,
 		label:        "timeline query",
 		root:         "xdt_api__v1__feed__user_timeline_graphql_connection",
+		// Measured 2026-10-16: every page, in the web client too, answers its
+		// 12 edges AND a `field_exception` error beside them. The web app reads
+		// the edges; so does the bridge.
+		partialOK: true,
 	}
 }
 
