@@ -11,8 +11,16 @@ Four reads, every one a GET (nothing here can mark a story seen):
 * `story` → `GET /accounts/{igid}/story`: `found` and the frames, each with its
   own `taken_at` and `expiring_at`.
 * `list_items` → `GET /accounts/{igid}/items?after=&username=`: posts and
-  reels, newest first, `collab` marking a post another account owns.
-* `read_item` → `GET /posts/{shortcode}`: the media of one listed item.
+  reels, newest first, `collab` marking a post another account owns. Each item
+  carries its own media (`items`, the shape `/posts/{shortcode}` answers) and
+  alt text, so a listed item is recorded as listed.
+* `read_item` → `GET /posts/{shortcode}`: the media of one post by its
+  shortcode; the poller does not use it for listed items.
+
+`healthy` → `GET /health`: True only for a 200 whose `session` is
+`authenticated`. The bridge answers it from its own state, with no upstream
+call; a checkpointed session still answers 200, so the status alone says
+nothing.
 
 **Failures are typed, not raised** (`Failed`, by the bridge's error envelope,
 `deploy/instagram-bridge/internal/transport/http/errors.go`): 409 `needs_human`
@@ -61,6 +69,11 @@ log = logging.getLogger("nora.social.instagram_source")
 
 _UNAVAILABLE = Failed(FailureKind.UNAVAILABLE)
 
+#: The one `/health` session state in which the login can read
+#: (`nora.platform.instagram.self_id.AUTHENTICATED`, which this layer may not
+#: import). Matched positively: a state never heard of is not healthy.
+_AUTHENTICATED = "authenticated"
+
 _T = TypeVar("_T")
 
 
@@ -90,6 +103,9 @@ class InstagramSocialSource:
     async def read_item(self, *, ref: ItemRef) -> SocialItem | Failed:
         return await self._guarded("post", self._read_item(ref))
 
+    async def healthy(self) -> bool:
+        return await self._guarded("health", self._healthy()) is True
+
     async def _guarded(self, what: str, call: Awaitable[_T]) -> _T | Failed:
         """The never-raises backstop: a transport error or a contract violation
         degrades to `unavailable`."""
@@ -98,6 +114,11 @@ class InstagramSocialSource:
         except Exception:
             log.exception("instagram social source %s read failed", what)
             return _UNAVAILABLE
+
+    async def _healthy(self) -> bool:
+        status, payload = await self._get("/health")
+        return status == 200 and isinstance(payload, dict) \
+            and payload.get("session") == _AUTHENTICATED
 
     async def _probe(self, account: Account) -> Probe | Failed:
         if not _IGID_RE.fullmatch(account.id):
@@ -165,16 +186,16 @@ class InstagramSocialSource:
         if not isinstance(raw, list) or not (cursor is None or isinstance(cursor, str)):
             log.warning("instagram bridge items body is not the documented shape")
             return _UNAVAILABLE
-        refs: list[ItemRef] = []
+        listed: list[SocialItem] = []
         for row in raw:
-            ref = _ref(row, account.id)
-            if ref is None:
+            item = self._listed(row, account.id)
+            if item is None:
                 # One unusable row means the page is not the documented shape;
                 # skipping it would hide a hole in the listing.
                 log.warning("instagram bridge items body carried an unusable item")
                 return _UNAVAILABLE
-            refs.append(ref)
-        return Page(items=tuple(refs), next_cursor=cursor or None)
+            listed.append(item)
+        return Page(items=tuple(listed), next_cursor=cursor or None)
 
     async def _read_item(self, ref: ItemRef) -> SocialItem | Failed:
         if not SHORTCODE_RE.fullmatch(ref.shortcode):
@@ -182,16 +203,12 @@ class InstagramSocialSource:
         status, payload = await self._get(f"/posts/{ref.shortcode}")
         if status != 200 or not isinstance(payload, dict):
             return _failure(status, payload)
-        raw = payload.get("items")
-        media = tuple(
-            MediaItem(kind=row["kind"], url=row["url"])
-            for row in (raw if isinstance(raw, list) else [])
-            if isinstance(row, dict) and row.get("kind") in ("image", "video")
-            and _is_cdn_url(row.get("url"))
-        )
+        media = _media(payload.get("items"))
         if not media:
+            # Recorded without media rather than failed: the post exists, and
+            # a failure here would keep the list read incomplete and re-read
+            # the same post on every probe.
             log.warning("instagram bridge post carried no usable media")
-            return _UNAVAILABLE
         caption = payload.get("caption")
         taken = _when(payload.get("taken_at"))
         return SocialItem(
@@ -199,6 +216,30 @@ class InstagramSocialSource:
             taken_at=taken or ref.taken_at, expires_at=None,
             caption=caption if isinstance(caption, str) and caption else None,
             alt_text=None, media=media, collab=ref.collab,
+        )
+
+    def _listed(self, row: Any, account: str) -> SocialItem | None:
+        """One timeline item → the item it is recorded as, or None when it is
+        not the documented shape. An item whose media is all off the CDN (or
+        that carries none) is still an item, recorded without media."""
+        if not isinstance(row, dict):
+            return None
+        code, pk, kind = row.get("code"), row.get("pk"), row.get("kind")
+        taken = _when(row.get("taken_at"))
+        collab = row.get("collab")
+        caption = row.get("caption")
+        if not (isinstance(code, str) and SHORTCODE_RE.fullmatch(code)) or not _text(pk) \
+                or kind not in ("post", "reel") or taken is None \
+                or not isinstance(collab, bool) or not isinstance(caption, str) \
+                or not isinstance(row.get("items"), list):
+            return None
+        media = _media(row["items"])
+        if row["items"] and not media:
+            log.warning("instagram bridge listed an item with no usable media")
+        return SocialItem(
+            network=self.network, item_id=str(pk), account=account, kind=kind,
+            taken_at=taken, expires_at=None, caption=caption or None,
+            alt_text=_text(row.get("alt_text")), media=media, collab=collab,
         )
 
     async def _get(self, path: str) -> tuple[int, Any]:
@@ -294,21 +335,12 @@ def _frame(row: Any) -> StoryFrame | None:
     )
 
 
-def _ref(row: Any, account: str) -> ItemRef | None:
-    """One timeline item → a reference, or None when it is not the documented
-    shape."""
-    if not isinstance(row, dict):
-        return None
-    code, pk, kind = row.get("code"), row.get("pk"), row.get("kind")
-    taken = _when(row.get("taken_at"))
-    collab = row.get("collab")
-    caption = row.get("caption")
-    carousel = row.get("carousel_count")
-    if not (isinstance(code, str) and SHORTCODE_RE.fullmatch(code)) or not _text(pk) \
-            or kind not in ("post", "reel") or taken is None \
-            or not isinstance(collab, bool) or not isinstance(caption, str):
-        return None
-    return ItemRef(
-        account=account, item_id=str(pk), shortcode=code, kind=kind, taken_at=taken,
-        caption=caption, collab=collab, carousel_count=_count(carousel) or 0,
+def _media(raw: Any) -> tuple[MediaItem, ...]:
+    """A bridge `items` list (a post's, or one listed item's) → its image and
+    video rows whose URL is on a known CDN host; every other row is dropped."""
+    return tuple(
+        MediaItem(kind=row["kind"], url=row["url"])
+        for row in (raw if isinstance(raw, list) else [])
+        if isinstance(row, dict) and row.get("kind") in ("image", "video")
+        and _is_cdn_url(row.get("url"))
     )

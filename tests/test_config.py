@@ -522,6 +522,44 @@ def test_a_summons_without_the_instagram_backend_is_refused_at_load(toml_path):
     assert cfg.social.instagram.summons.enabled is True
 
 
+def test_the_social_poller_ships_off_and_is_live_in_the_example(toml_path):
+    """It reads through the login her Instagram messaging uses, so off is the
+    shipped state. The header is LIVE in the example, so `extra="forbid"` runs
+    against that block."""
+    cfg = load(toml_path)
+    poll = cfg.social.poll
+    assert poll.enabled is False
+    assert (poll.tick_seconds, poll.floor_minutes, poll.ceiling_hours) == (600.0, 30.0, 6.0)
+    assert (poll.hourly_budget, poll.back_off_start_minutes, poll.back_off_max_hours) == (
+        60, 15.0, 6.0,
+    )
+
+    text = toml_path.read_text()
+    head, _, tail = text.partition("\n[social.poll]\n")
+    assert tail, "config.example.toml no longer declares a live [social.poll]"
+    toml_path.write_text(head + "\n[social.poll]\nnot_a_key = 1\n" + tail)
+    with pytest.raises(ConfigError, match="not_a_key"):
+        load(toml_path)
+
+
+def test_a_social_poller_without_the_instagram_backend_is_refused_at_load(toml_path):
+    on = _in_section(toml_path.read_text(), "[social.poll]", "enabled = false", "enabled = true")
+    toml_path.write_text(on)
+    with pytest.raises(ConfigError, match=r"social.poll"):
+        load(toml_path)
+    toml_path.write_text(_in_section(on, "[social.instagram]", "enabled = false", "enabled = true"))
+    assert load(toml_path).social.poll.enabled is True
+
+
+def test_a_social_poll_floor_above_its_ceiling_is_refused(toml_path):
+    toml_path.write_text(_in_section(
+        toml_path.read_text(), "[social.poll]", "enabled = false",
+        "enabled = false\nfloor_minutes = 400.0",
+    ))
+    with pytest.raises(ConfigError, match="floor_minutes"):
+        load(toml_path)
+
+
 def test_the_analytics_section_is_optional_and_ships_inert(toml_path):
     """DEC-115. `[analytics]` deleted from the example must keep loading, and
     the default is INERT (enabled = false): the presence analytics substrate

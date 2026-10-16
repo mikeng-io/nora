@@ -1535,6 +1535,51 @@ class LinkedInSocialConfig(BaseModel):
     enabled: bool = False
 
 
+class SocialPollConfig(BaseModel):
+    """The social stream's poller (design/cognition-loop/22-social-stream.md §3,
+    §4): each member's Instagram account is probed, and a story or a list of
+    posts and reels is read only when the probe says it changed. Every value is
+    a starting value, sized after a week of `social_poll` rows.
+
+    **Off by default.** It reads through the login Nora's Instagram messaging
+    uses, so a checkpoint it provokes costs her Instagram presence; it needs
+    `[social.instagram] enabled` (refused at load otherwise), the bridge it
+    reads through.
+
+    Each tick (`tick_seconds`) probes the members not probed for
+    `ceiling_hours`, oldest first, and never a member probed (answered or not)
+    within `floor_minutes`. `hourly_budget` caps the login's upstream calls in
+    any hour, a probe counted at its source's cost and a read at one, with a
+    pause of up to `jitter_seconds` before each call. A rejected or
+    rate-limited call backs the login off for `back_off_start_minutes`,
+    doubling to `back_off_max_hours` until a clean probe.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    tick_seconds: float = Field(default=600.0, gt=0)
+    floor_minutes: float = Field(default=30.0, gt=0)
+    ceiling_hours: float = Field(default=6.0, gt=0)
+    hourly_budget: int = Field(default=60, ge=1)
+    back_off_start_minutes: float = Field(default=15.0, gt=0)
+    back_off_max_hours: float = Field(default=6.0, gt=0)
+    jitter_seconds: float = Field(default=10.0, ge=0)
+
+    @model_validator(mode="after")
+    def _bounds_are_ordered(self) -> SocialPollConfig:
+        if self.floor_minutes > self.ceiling_hours * 60:
+            raise ValueError(
+                "[social.poll] floor_minutes must not exceed ceiling_hours: no member "
+                "could be probed by the ceiling"
+            )
+        if self.back_off_start_minutes > self.back_off_max_hours * 60:
+            raise ValueError(
+                "[social.poll] back_off_start_minutes must not exceed back_off_max_hours"
+            )
+        return self
+
+
 class SocialConfig(BaseModel):
     """READ-ONLY social reads: X for the `x_read` and `x_search` tools (DEC-201) via
     the host-side OpenCLI bridge (`python -m nora.infra.social`, deployed as
@@ -1572,6 +1617,7 @@ class SocialConfig(BaseModel):
     content_max_chars: int = Field(default=4000, ge=1)
     instagram: InstagramSocialConfig = Field(default_factory=InstagramSocialConfig)
     linkedin: LinkedInSocialConfig = Field(default_factory=LinkedInSocialConfig)
+    poll: SocialPollConfig = Field(default_factory=SocialPollConfig)
 
     @model_validator(mode="after")
     def _linkedin_needs_the_opencli_bridge(self) -> SocialConfig:
@@ -1579,6 +1625,15 @@ class SocialConfig(BaseModel):
             raise ValueError(
                 "[social.linkedin] enabled needs [social] enabled: LinkedIn is "
                 "read through the same host-side OpenCLI bridge as X"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _the_poller_needs_the_instagram_backend(self) -> SocialConfig:
+        if self.poll.enabled and not self.instagram.enabled:
+            raise ValueError(
+                "[social.poll] enabled needs [social.instagram] enabled: the poller "
+                "reads through the same bridge"
             )
         return self
 

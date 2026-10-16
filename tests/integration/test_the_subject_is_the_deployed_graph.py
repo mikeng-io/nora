@@ -32,7 +32,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 65, (
+    assert len(dataclasses.fields(Dependencies)) == 66, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -95,7 +95,10 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "(DEC-308), which `nora/__main__.py` starts and the subject never does. "
         "64 -> 65 on 2026-10-16: `memory_embed`, the memory index's embedding worker "
         "the drain loop runs (None unless `[memory_index] embed`; "
-        "design/unified-memory/65-build-step-3-vectors.md V1)."
+        "design/unified-memory/65-build-step-3-vectors.md V1). "
+        "65 -> 66: `social_poller`, the social stream's poller, which "
+        "`nora/__main__.py` starts and the subject never does (None unless "
+        "`[social.poll] enabled`)."
     )
 
 

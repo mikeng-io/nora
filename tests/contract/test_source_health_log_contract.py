@@ -60,6 +60,23 @@ async def test_a_poll_and_a_transition_are_recorded_in_order(log_and_rows):
     ]
 
 
+async def test_transitions_read_back_one_source_from_a_time_oldest_first(log_and_rows):
+    log, _ = log_and_rows
+    await log.record(source="social.instagram", scope="", event="transition",
+                     outcome="up", at_ms=NOW)
+    await log.record(source="social.instagram", scope="", event="poll",
+                     outcome="ok", at_ms=NOW + 1)
+    await log.record(source="signal", scope="", event="transition",
+                     outcome="down", at_ms=NOW + 2)
+    await log.record(source="social.instagram", scope="story", event="transition",
+                     outcome="stale_query", at_ms=NOW + 3, detail="stale_query")
+    got = await log.transitions(source="social.instagram", since_ms=NOW + 1)
+    assert [(r.scope, r.outcome, r.at_ms, r.detail) for r in got] == [
+        ("story", "stale_query", NOW + 3, "stale_query"),
+    ]
+    assert len(await log.transitions(source="social.instagram", since_ms=NOW)) == 2
+
+
 async def test_a_failed_write_answers_false_and_never_raises(pg_url):
     """The SQL half on a dead engine; the fake's `fail` switch mirrors it."""
     engine = create_sql_engine(pg_url.replace("/t_", "/missing_t_"))

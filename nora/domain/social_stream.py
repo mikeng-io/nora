@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, get_args
 
 #: A story lives 24 hours; a frame that arrives without an expiry of its own is
 #: given the platform's bound.
@@ -118,8 +118,8 @@ class StorySnapshot:
 
 @dataclass(frozen=True)
 class ItemRef:
-    """One post or reel as a listing shows it: enough to dedupe, order, and
-    read the item in full."""
+    """One post or reel named by its shortcode: what `read_item` reads a single
+    post by."""
 
     account: str
     item_id: str
@@ -133,9 +133,10 @@ class ItemRef:
 
 @dataclass(frozen=True)
 class Page:
-    """A page of a listing, newest first. `next_cursor` is None at the end."""
+    """A page of a listing, newest first, each item complete enough to record
+    (its media included). `next_cursor` is None at the end."""
 
-    items: tuple[ItemRef, ...]
+    items: tuple[SocialItem, ...]
     next_cursor: str | None
 
 
@@ -148,6 +149,43 @@ class MediaItem:
 
 
 ItemKind = Literal["story_frame", "post", "reel"]
+
+#: A `social_poll` row's stage: the probe, or one of the three reads.
+PollStage = Literal["probe", "story", "items", "item"]
+POLL_STAGES: tuple[str, ...] = get_args(PollStage)
+
+#: A `social_poll` row's outcome. A probe's is `Due.outcome`; a read is
+#: `read_ok`; a failure is `halted` (the login, or one read kind), `backed_off`
+#: or `error`. The table's CHECK constraint holds the same set.
+PollOutcome = Literal[
+    "unchanged", "story_due", "items_due", "partial", "count_fell",
+    "read_ok", "halted", "backed_off", "error",
+]
+POLL_OUTCOMES: tuple[str, ...] = get_args(PollOutcome)
+
+#: Why the poller did not make a call it had due on a tick: the login is
+#: halted or backed off, the hourly budget is spent, or the roster could not
+#: be read.
+SkipReason = Literal["halted", "backed_off", "budget", "roster_unavailable"]
+SKIP_REASONS: tuple[str, ...] = get_args(SkipReason)
+
+#: What became of one media item's bytes: `stored` in custody, custody
+#: `not_configured`, `store_failed`, or the fetch's own reason
+#: (`nora.domain.media.MediaBytes.reason`, the media sources' closed set).
+CustodyOutcome = Literal[
+    "stored", "not_configured", "store_failed", "not_supported", "no_id",
+    "bad_token", "bad_payload", "unreachable", "not_found", "too_large",
+]
+CUSTODY_OUTCOMES: tuple[str, ...] = get_args(CustodyOutcome)
+
+
+@dataclass(frozen=True)
+class Member:
+    """One member's account on the network a poller reads: the person the
+    rows are recorded under, and the account that is probed."""
+
+    person: str
+    account: Account
 
 
 @dataclass(frozen=True)

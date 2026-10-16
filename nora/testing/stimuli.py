@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from nora.domain.ports import CARRY_STATES, NewCarry, NewWakeOutcome, RecordedOutcome
+from nora.domain.ports import HealthRow as DomainHealthRow
 from nora.domain.stimuli import (
     NO_CAUSE,
     OUTCOME_CAUSES,
@@ -343,6 +344,18 @@ class InMemorySourceHealthLog:
             at_ms=at_ms, detail=detail,
         ))
         return True
+
+    async def transitions(
+        self, *, source: str, since_ms: int,
+    ) -> tuple[DomainHealthRow, ...] | None:
+        if self.fail:
+            return None
+        return tuple(
+            DomainHealthRow(source=r.source, scope=r.scope, event=r.event,
+                            outcome=r.outcome, at_ms=r.at_ms, detail=r.detail)
+            for r in sorted(self.rows, key=lambda r: r.at_ms)
+            if r.source == source and r.event == "transition" and r.at_ms >= since_ms
+        )
 
     def outcomes(self, source: str) -> list[str]:
         return [r.outcome for r in self.rows if r.source == source]
