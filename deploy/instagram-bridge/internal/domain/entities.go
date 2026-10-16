@@ -151,6 +151,9 @@ type StoryItem struct {
 	// with, "" when it carries none. The author's published words: like a
 	// caption, it must not enter a span, a log line or an error.
 	Location string
+	// LocationKnown is false when the frame carried location stickers the
+	// bridge could not read: its place is unknown, not "no tag".
+	LocationKnown bool
 }
 
 // TimelinePage is one page of an account's posts and reels, newest first
@@ -189,6 +192,9 @@ type TimelineItem struct {
 	// carries none. The author's published words: like a caption, it must
 	// not enter a span, a log line or an error.
 	Location string
+	// LocationKnown is false when the node carried a `location` the bridge
+	// could not read: its place is unknown, not "no tag".
+	LocationKnown bool
 }
 
 // Thread is one group thread's membership, never short and never empty.

@@ -1255,8 +1255,10 @@ async def test_a_relisted_item_records_a_place_change_in_both_directions(world) 
     removed since is a `place` row; an unchanged one is none."""
     quiet(world, BEA)
     p1 = post(world, "p1")
+    # Another post whose tag never changes: every page carries a place.
+    anchor = tagged(post(world, "p0", age=timedelta(days=2)), "Placeholder Hill")
     world.source.probes[ADA] = probe(posts=1)
-    world.source.pages[ADA] = Page(items=(p1,), next_cursor=None)
+    world.source.pages[ADA] = Page(items=(p1, anchor), next_cursor=None)
     poller = world.poller()
     await poller.tick()
     assert "p1" in await world.items() and await places(world) == []
@@ -1264,13 +1266,51 @@ async def test_a_relisted_item_records_a_place_change_in_both_directions(world) 
     steps: list[str | None] = ["Placeholder Square", "Placeholder Pier", None, None]
     for n, place in enumerate(steps, start=2):
         world.source.probes[ADA] = probe(posts=n)
-        world.source.pages[ADA] = Page(items=(tagged(p1, place),), next_cursor=None)
+        world.source.pages[ADA] = Page(items=(tagged(p1, place), anchor), next_cursor=None)
         world.clock.at(hours=6 * (n - 1))
         await poller.tick()
     assert world.source.reads("items").count(ADA) == 5, "one list read each time, nothing more"
     assert await places(world) == [
         ("p1", "Placeholder Square"), ("p1", "Placeholder Pier"), ("p1", None),
     ], "added, edited, removed; the unchanged last read appends nothing"
+
+
+async def test_no_removal_from_an_unknown_place_or_a_read_that_carries_no_place(
+    world,
+) -> None:
+    """An item whose place the source could not read records nothing; nor
+    does a page that re-lists tagged items and carries no place at all, which
+    is what one upstream shape change would look like."""
+    quiet(world, BEA)
+    p1 = tagged(post(world, "p1"), "Placeholder Square")
+    p2 = tagged(post(world, "p2", age=timedelta(days=2)), "Placeholder Pier")
+    world.source.probes[ADA] = probe(posts=2)
+    world.source.pages[ADA] = Page(items=(p1, p2), next_cursor=None)
+    poller = world.poller()
+    await poller.tick()
+    assert await places(world) == []
+
+    unknown = dataclasses.replace(p1, location=None, location_known=False)
+    world.source.probes[ADA] = probe(posts=3)
+    world.source.pages[ADA] = Page(items=(unknown, p2), next_cursor=None)
+    world.clock.at(hours=6)
+    await poller.tick()
+    assert await places(world) == [], (
+        "an unknown place is not a removal, on a page that carries a place"
+    )
+
+    world.source.probes[ADA] = probe(posts=4)
+    world.source.pages[ADA] = Page(items=(tagged(p1, None), tagged(p2, None)), next_cursor=None)
+    world.clock.at(hours=12)
+    await poller.tick()
+    assert await places(world) == [], "a page carrying no place removes none"
+
+    world.source.probes[ADA] = probe(posts=5)
+    world.source.pages[ADA] = Page(items=(tagged(p1, None), p2), next_cursor=None)
+    world.clock.at(hours=18)
+    await poller.tick()
+    assert world.source.reads("items").count(ADA) == 4
+    assert await places(world) == [("p1", None)], "a page carrying a place removes one"
 
 
 async def walked(world: World, poller: SocialPoller) -> list[str | None]:
@@ -1349,3 +1389,42 @@ async def test_the_rewalk_ends_at_its_page_cap_whatever_an_old_pinned_post_says(
     cursors = await walked(world, world.poller(relist_pages_per_tick=2))
     assert len(cursors) - before == relist_max_pages(50) == 6
     assert cursors[before:] == [None, *(f"{ADA}-c{n}" for n in range(1, 6))]
+
+
+async def test_a_halting_backfill_page_ends_the_tick_before_any_rewalk_page(world) -> None:
+    """A back-fill page that halts the login (`needs_human`) is the tick's
+    last call: a member waiting for the re-walk is not read after it."""
+    grid(world, BEA, 5)
+    grid(world, ADA, 30)
+    world.source.after[f"{ADA}-c1"] = Failed(FailureKind.HALT, "needs_human")
+    poller = world.poller(relist_pages_per_tick=2)
+    await poller.tick()
+    assert world.source.cursors == [None, None], "each member's first list read"
+    await ticks(world, poller, 1)
+    assert world.source.cursors == [None, None, f"{ADA}-c1"], (
+        "the halting page, and no re-walk page of bea's after it"
+    )
+    assert "halted" in world.transitions()
+
+
+async def test_the_rewalk_reads_nothing_while_the_login_is_halted_or_backed_off(world) -> None:
+    """The re-walk checks the login itself, whichever path reaches it."""
+    quiet(world, ADA)
+    grid(world, BEA, 5)
+    poller = world.poller(relist_pages_per_tick=2)
+    await poller.tick()
+    roster = await instagram_roster(world.subjects)
+    assert roster is not None
+    before = list(world.source.cursors)
+    poller._listed = set()  # as at a later tick's start
+
+    poller._back_off_until = world.clock.now + timedelta(hours=1)
+    await poller._relist(roster)
+    poller._back_off_until = None
+    poller._halted = True
+    await poller._relist(roster)
+    assert world.source.cursors == before
+
+    poller._halted = False
+    await poller._relist(roster)
+    assert world.source.cursors == [*before, None], "positive control: bea's first re-walk page"

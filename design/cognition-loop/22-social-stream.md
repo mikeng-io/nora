@@ -306,7 +306,13 @@ after insert. Everything that changes about an item is a new row elsewhere.
   item's `social_location` from it (a change re-embeds the node, a removal
   drops it). Every story read, list read and back-fill page compares each
   item it lists that is already recorded with its current place and appends
-  a row only where they differ, with no call of its own. Items recorded
+  a row only where they differ, with no call of its own. An UNKNOWN place is
+  never a removal: the bridge sends `location_known: false` for a `location`
+  or `story_locations` it could not read (absent or null is no tag), and the
+  source reads a bridge that sends no `location_known` as unknown too. And a
+  read that carries no place at all records no removal, so one upstream
+  shape change cannot strip every tagged item; a real removal is recorded by
+  a later read that carries any place. Items recorded
   before places were compared get theirs from a once-only re-walk
   (`relist`, `relist_pages_per_tick`, default 2, 0 is off): after a
   member's back-fill is done, their list newest first, recording no item,

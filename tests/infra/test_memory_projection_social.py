@@ -398,3 +398,8 @@ async def test_a_place_change_reprojects_the_tagged_place_and_a_removal_drops_it
         await conn.execute(sa.delete(MEMORY_NODE))
     await memory_index.rebuild(engine)
     assert {k: (n.text, n.persons) for k, n in (await _nodes(engine)).items()} == live
+    # A place row hides nothing, so a rebuild's final pass finds the item's
+    # node current, not stale (`_source_of`).
+    report = await memory_index.rebuild(engine)
+    assert report.dropped["social"] == 0
+    assert (await memory_index.rebuild(engine, dry_run=True)).dropped["social"] == 0

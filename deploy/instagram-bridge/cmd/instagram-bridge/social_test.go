@@ -542,8 +542,9 @@ func TestStoryRefusesABadIGID(t *testing.T) {
 	}
 }
 
-// A location sticker of the wrong shape is no location, never a refused
-// story: the frames are still read.
+// A location sticker of the wrong shape is an UNKNOWN place, never "no tag"
+// and never a refused story: the frames are still read. A frame with no
+// stickers is no tag, known.
 func TestStoryAMalformedLocationStickerIsNoLocationNotARefusedStory(t *testing.T) {
 	const good = `"story_locations": [{"x": 0.5, "y": 0.5, "location": {"pk": "3001", "name": " Placeholder Harbour ", "lat": 0.0, "lng": 0.0}}]`
 	if !strings.Contains(fakeig.MeasuredStoryJSON, good) {
@@ -561,8 +562,12 @@ func TestStoryAMalformedLocationStickerIsNoLocationNotARefusedStory(t *testing.T
 				t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
 			}
 			body := decodeStory(t, rec)
-			if len(body.Items) != 2 || body.Items[0].Location != "" {
-				t.Errorf("frames = %+v, want both, the first with no location", body.Items)
+			if len(body.Items) != 2 || body.Items[0].Location != "" ||
+				body.Items[0].LocationKnown == nil || *body.Items[0].LocationKnown {
+				t.Errorf("frames = %+v, want both, the first's place unknown", body.Items)
+			}
+			if k := body.Items[1].LocationKnown; k == nil || !*k {
+				t.Errorf("the stickerless frame location_known = %v, want true", k)
 			}
 		})
 	}

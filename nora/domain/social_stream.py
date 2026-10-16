@@ -134,6 +134,9 @@ class StoryFrame:
     alt_text: str | None = None
     #: The place a location sticker tags it with (`published_location`).
     location: str | None = None
+    #: False when the source could not read its place: `location` is then
+    #: None without meaning "no tag".
+    location_known: bool = True
 
 
 @dataclass(frozen=True)
@@ -278,6 +281,10 @@ class SocialItem:
     #: The place the item is tagged with (`published_location`), None when it
     #: carries none.
     location: str | None = None
+    #: False when the source could not read its place (an unknown shape, or a
+    #: bridge too old to say): `location` is then None without meaning "no
+    #: tag", and no place change is recorded from it.
+    location_known: bool = True
 
 
 def frame_item(*, network: str, account: str, frame: StoryFrame) -> SocialItem:
@@ -286,7 +293,7 @@ def frame_item(*, network: str, account: str, frame: StoryFrame) -> SocialItem:
         network=network, item_id=frame.item_id, account=account, kind="story_frame",
         taken_at=frame.taken_at, expires_at=frame.expires_at, caption=frame.caption,
         alt_text=frame.alt_text, media=(MediaItem(kind=frame.kind, url=frame.url),),
-        location=frame.location,
+        location=frame.location, location_known=frame.location_known,
     )
 
 

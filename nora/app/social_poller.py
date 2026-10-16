@@ -50,7 +50,9 @@ poll's. Back-filled items raise no stimulus.
 compares each item it lists that is already recorded with that item's
 current place (`SqlSocialStreamStore.current_places`) and appends a `place`
 state row only where they differ: a tag added, edited or removed after the
-item was recorded. It reuses the read already made. So that items recorded
+item was recorded. It reuses the read already made. An item whose place the
+source could not read is skipped, and a read carrying no place at all records
+no removal (`_follow_places`). So that items recorded
 before places were compared get theirs, a member whose back-fill is done is
 re-walked ONCE (`relist` rows), after the back-fill and on its budget rule,
 at most `relist_pages_per_tick` pages a tick, one per member: newest first, recording no new
@@ -272,7 +274,8 @@ class SocialPoller:
             if stop is not None:
                 self._skip(stop)
                 return
-        await self._backfill(roster)
+        if await self._backfill(roster) is not None:
+            return
         await self._relist(roster)
 
     # -- the login -------------------------------------------------------------
@@ -460,7 +463,7 @@ class SocialPoller:
         for item in frames:
             if item.item_id not in known:
                 await self._insert(member, item, now, read_id=read_id)
-        await self._follow_places([f for f in frames if f.item_id in known])
+        await self._follow_places(frames)
         shown = {f.item_id for f in frames}
         live = await self._store.live_frames(network=self._network, person=member.person, now=now)
         for item_id in sorted(live - shown):
@@ -514,7 +517,7 @@ class SocialPoller:
         known = await self._store.known_items(
             network=self._network, item_ids=[i.item_id for i in page.items],
         )
-        await self._follow_places([i for i in page.items if i.item_id in known])
+        await self._follow_places(page.items)
         seen = set(known)
         horizon = self._clock() - timedelta(days=self._settings.backfill_max_days)
         count = 0
@@ -556,14 +559,14 @@ class SocialPoller:
 
     # -- the back-fill -----------------------------------------------------------
 
-    async def _backfill(self, roster: Sequence[Member]) -> None:
+    async def _backfill(self, roster: Sequence[Member]) -> SkipReason | None:
         """One page for each member whose back-fill is not done, least
         recently paged first, up to the tick's cap, with what the probes and
         due reads left (§7). A halt or a back-off ends it, as it ends the
-        tick."""
+        tick: it answers why, and the tick makes no further call."""
         cap = self._settings.backfill_pages_per_tick
         if cap <= 0 or Cap.LIST_ITEMS not in self._source.capabilities:
-            return
+            return None
         standing = await self._store.backfills(network=self._network)
         waiting = sorted(
             (m for m in roster
@@ -580,9 +583,9 @@ class SocialPoller:
         reserve = len(roster) * (self._source.probe_cost + 1)
         for member in waiting[:cap]:
             if not self._may_read(Cap.LIST_ITEMS, "items", self._clock()):
-                return
+                return None
             if not self._afford(1 + reserve):
-                return
+                return None
             try:
                 stop = await self._backfill_page(member, standing[member.person])
             except Exception:
@@ -591,7 +594,8 @@ class SocialPoller:
                 continue
             if stop is not None:
                 self._skip(stop)
-                return
+                return stop
+        return None
 
     async def _backfill_page(self, member: Member, at: Backfill) -> SkipReason | None:
         self._listed.add(member.person)
@@ -646,19 +650,31 @@ class SocialPoller:
     # -- tagged places -----------------------------------------------------------
 
     async def _follow_places(self, items: Sequence[SocialItem]) -> None:
-        """Append a `place` row for each listed, already-recorded item whose
-        tagged place differs from its current one (§5): no upstream call, the
-        read is the one just made."""
-        if not items:
+        """Append a `place` row for each item of one read (a page or a story)
+        that is already recorded and whose tagged place differs from its
+        current one (§5): no upstream call, the read is the one just made.
+
+        Never from an unknown place (`location_known` false): a shape the
+        source could not read is not "the tag was removed". And a read that
+        carries no place at all records no removal: were the source to stop
+        reading places altogether, every tagged item it re-lists would
+        otherwise lose its place at once. A tag the author really removed is
+        recorded by a later read that carries any place."""
+        known = [i for i in items if i.location_known]
+        if not known:
             return
         current = await self._store.current_places(
-            network=self._network, item_ids=[i.item_id for i in items],
+            network=self._network, item_ids=[i.item_id for i in known],
         )
-        for item in items:
-            if item.item_id in current and current[item.item_id] != item.location:
-                await self._store.record_place(
-                    network=self._network, item_id=item.item_id, place=item.location,
-                )
+        carries = any(i.location for i in known)
+        for item in known:
+            if item.item_id not in current or current[item.item_id] == item.location:
+                continue
+            if item.location is None and not carries:
+                continue
+            await self._store.record_place(
+                network=self._network, item_id=item.item_id, place=item.location,
+            )
 
     async def _relist(self, roster: Sequence[Member]) -> None:
         """One re-walk page for each member whose back-fill is done and whose
@@ -667,6 +683,11 @@ class SocialPoller:
         rule: the lowest priority of the tick."""
         cap = self._settings.relist_pages_per_tick
         if cap <= 0 or Cap.LIST_ITEMS not in self._source.capabilities:
+            return
+        backed_off = self._back_off_until is not None and self._clock() < self._back_off_until
+        if self._halted or backed_off:
+            # Its caller stops on the back-fill's halt or back-off; this holds
+            # for any other path that leaves the login stopped.
             return
         standing = await self._store.backfills(network=self._network)
         walks = await self._store.relists(network=self._network)
