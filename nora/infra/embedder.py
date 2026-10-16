@@ -84,10 +84,12 @@ TOKEN_BUDGET = UBATCH - 48
 SAFE_TEXT_CHARS = 880
 
 #: Qwen3-VL merges 2x2 patches of 16 px, so one image token is 32 x 32 px.
-#: The server caps an image at `-ub` tokens and resizes past it; sending at
-#: most 1920 tokens' worth keeps image plus prompt inside one micro-batch and
-#: leaves the server nothing to resize on an image this size or smaller.
-MAX_SEND_PIXELS = 1920 * 32 * 32
+#: 256 tokens' worth (512 x 512 px) is the largest image the bake-off measured
+#: (its 224 photos: 0.18 Mpx median, 0.26 Mpx max), where text -> image recall
+#: was 1.000 at 3.4 s an image. Live, 1920 tokens' worth took about 60 s an
+#: image on 4 threads and peaked the server at 6.5 GiB, past its 4 GiB cap,
+#: so the cap is what was measured, not what the micro-batch could hold.
+MAX_SEND_PIXELS = 256 * 32 * 32
 #: A file claiming more pixels than this is refused before decoding: a
 #: decompression bomb is a few KB that inflates to gigabytes.
 MAX_DECODE_PIXELS = 64_000_000
