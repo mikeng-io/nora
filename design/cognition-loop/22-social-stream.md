@@ -102,7 +102,12 @@ Accounts come from `identity.toml` through the one membership function of
 [20](20-observe.md) §2. A member with no account on a network is not polled
 there. A member whose off switch is set is not polled anywhere, and their
 recorded social items are excluded from every read, as §2 requires («stops
-that person's items being read at all»).
+that person's items being read at all»). The switch is `social = false` on the
+person's `identity.toml` block (default on). As built in S2 it is enforced on
+membership: `SocialSubjectIndex.members` leaves them out, so nothing of theirs
+is probed or read. Nothing reads `social_item` yet besides the poller's own
+dedupe, so the read-side exclusion of items recorded before the switch was set
+lands with the first reader (S3).
 
 ## 3. The poll: a probe decides, then the costly read
 
@@ -289,8 +294,8 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 |---|---|---|
 | S0 | **DONE 2026-10-16**: the REST story read is broken upstream; the web app's story and timeline queries captured (§1a); `latest_reel_media` equal to the newest `taken_at` (n=1); the seen mark is a separate mutation | §1 and §1a; session `authenticated` after |
 | S1 | **DONE 2026-10-16**: the bridge's story read moved onto the GraphQL story query (this also mends the live `instagram_read` story, broken today) and a new `GET /accounts/{igid}/items?after=` over the timeline query, both with `doc_id`s from config and the `stale_query` code, and a test that no read sends the seen mutation; `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `LIST_ITEMS`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads; the bridge read back live (§1) |
-| S2 | the poller: probe-then-read, ceiling cadence, budget, halt and back-off with `source_health` transitions; media fetched into custody and expired; the story rule's test rewritten ([20](20-observe.md) §2) and the bridge comments that still say «only when asked» updated (`internal/transport/http/server.go`, `internal/app/app.go`, `internal/gateway/instameow/social.go`) | a week of `social_poll` rows; the login unharmed |
-| S3 | perception of new frames under the per-unit cap; the `social` stimulus; Character's wake count; `social_item` media handed to the memory index's embed worker, and a story frame's byte deletion gated on perception and embedding | `nora_perception_total{source="social"}`; stimuli per read; story frames embedded before their bytes went |
+| S2 | **DONE 2026-10-16, off by default** (`nora/app/social_poller.py`, `[social.poll]`): probe-then-read on the ceiling cadence with the 30-minute floor, one hourly budget with jitter, halt and back-off per login with `source_health` transitions, each new item's media fetched into custody, the per-person off switch (`social = false` in `identity.toml`, §2), and the story rule's test rewritten ([20](20-observe.md) §2). The bridge comments already described the poller after S1 | a week of `social_poll` rows; the login unharmed |
+| S3 | perception of new frames under the per-unit cap; the `social` stimulus; Character's wake count; `social_item` media handed to the memory index's embed worker, and a story frame's byte deletion gated on perception and embedding; a story frame's bytes deleted at the hard limit (`story_media_keep_max_days`), with a `BlobStore` delete and the [70](70-migration.md) §9 tombstone, which custody does not have yet. Nothing reaches the 30-day bound until 31 days after the poller is enabled. The `[social]` keep keys arrive with the code that reads them; the read-side exclusion of an opted-out person's items (§2) lands with the first reader of `social_item` | `nora_perception_total{source="social"}`; stimuli per read; story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
 | S5 | the back-fill over `LIST_ITEMS` | items per member against `media_count` |
 

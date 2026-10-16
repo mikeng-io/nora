@@ -25,6 +25,7 @@ Postgres.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
@@ -32,16 +33,30 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.social_stream import Counts, SocialItem
+from nora.domain.social_stream import Counts, PollStage, SocialItem
 from nora.infra.sql.schema import SOCIAL_ITEM, SOCIAL_ITEM_STATE, SOCIAL_POLL
 
 Origin = Literal["poll", "backfill"]
-Stage = Literal["probe", "story", "items", "item"]
+Stage = PollStage
 ItemState = Literal["gone", "hidden"]
+
+#: Probe outcomes that carry no answer from the platform: the call failed, or
+#: the login was halted or backed off on it.
+_UNANSWERED = ("halted", "backed_off", "error")
+
+
+@dataclass(frozen=True)
+class ProbeTimes:
+    """When a person was last probed at all, and last probed with an answer
+    (`recorded_at`, the database's clock). `answered` is None when no probe of
+    theirs has been answered."""
+
+    attempted: datetime
+    answered: datetime | None
 
 
 class SqlSocialStreamStore:
-    """The stream's three tables, as six verbs."""
+    """The stream's three tables, as nine verbs."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -138,3 +153,44 @@ class SqlSocialStreamStore:
         async with self._engine.connect() as conn:
             state = (await conn.execute(stmt)).scalar_one_or_none()
         return state if state in ("gone", "hidden") else None
+
+    async def known_items(self, *, network: str, item_ids: list[str]) -> frozenset[str]:
+        """The ids among `item_ids` already recorded on `network`."""
+        if not item_ids:
+            return frozenset()
+        i = SOCIAL_ITEM
+        stmt = sa.select(i.c.item_id).where(i.c.network == network, i.c.item_id.in_(item_ids))
+        async with self._engine.connect() as conn:
+            return frozenset((await conn.execute(stmt)).scalars())
+
+    async def live_frames(
+        self, *, network: str, person: str, now: datetime,
+    ) -> frozenset[str]:
+        """This person's recorded story frames that have not expired by `now`
+        and are not already recorded gone: the frames a story read should
+        still show."""
+        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE
+        gone = sa.exists().where(
+            s.c.network == i.c.network, s.c.item_id == i.c.item_id, s.c.state == "gone",
+        )
+        stmt = sa.select(i.c.item_id).where(
+            i.c.network == network, i.c.person == person, i.c.kind == "story_frame",
+            i.c.expires_at > now, ~gone,
+        )
+        async with self._engine.connect() as conn:
+            return frozenset((await conn.execute(stmt)).scalars())
+
+    async def last_probes(self, *, network: str) -> dict[str, ProbeTimes]:
+        """Per person, when they were last probed and last probed with an
+        answer: what a poller that has just started schedules from, so a
+        restart keeps the cadence's floor and ceiling."""
+        p = SOCIAL_POLL
+        answered = sa.func.max(p.c.recorded_at).filter(p.c.outcome.not_in(_UNANSWERED))
+        stmt = (
+            sa.select(p.c.person, sa.func.max(p.c.recorded_at), answered)
+            .where(p.c.network == network, p.c.stage == "probe")
+            .group_by(p.c.person)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return {person: ProbeTimes(attempted, ok) for person, attempted, ok in rows}

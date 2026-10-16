@@ -325,6 +325,14 @@ class App:
         # off or no lane token set.
         if deps.oauth_keepalive is not None:
             deps.oauth_keepalive.start(deps.background.spawn)
+        # The social stream's poller, HERE for the keepalive's reason: the
+        # eval subject composes the same graph and must not poll through the
+        # deployment's Instagram login. `None` under `[social.poll] enabled =
+        # false`, the shipped default.
+        if deps.social_poller is not None:
+            deps.background.spawn(deps.social_poller.run())
+        else:
+            log.info("social poller disabled ([social.poll] enabled = false)")
         # The computer session sweeper: composition builds it only while
         # `[computer] enabled`.
         if deps.computer_sweeper is not None:

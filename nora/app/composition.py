@@ -96,6 +96,7 @@ from nora.app.memory_routing import (
 )
 from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
 from nora.app.otp import OtpService
+from nora.app.social_poller import SocialPoller
 from nora.app.source_health import AdapterHealthRecorder
 from nora.app.subagent_backend import SubagentBackend
 from nora.app.subagent_wiring import build_subagent_backend
@@ -1195,6 +1196,10 @@ class Dependencies:
     # The memory index's embedding worker: `None` under `[memory_index] embed =
     # false`, the default. `__main__` hands it to the memory drain loop.
     memory_embed: MemoryEmbedWorker | None = None
+    # The social stream's poller: `None` unless `[social.poll] enabled`.
+    # `nora/__main__.py` starts it; the eval subject, which composes the same
+    # graph, does not.
+    social_poller: SocialPoller | None = None
 
 
 def _image_gen_wiring(
@@ -3454,6 +3459,33 @@ async def build_dependencies(
                 "stream, so no summons will ever be received",
             )
 
+    # The social stream's poller (design/cognition-loop/22-social-stream.md):
+    # built here, started by `nora/__main__.py`, because the eval subject
+    # composes this graph too and must not read members' accounts through the
+    # deployment's login. `[social.poll] enabled` needs `[social.instagram]`
+    # (refused at load), so `social_subjects` is set whenever it is on.
+    social_poller: SocialPoller | None = None
+    if cfg.social.poll.enabled and social_subjects is not None:
+        from nora.infra.social.instagram_source import InstagramSocialSource
+        from nora.infra.social.subjects import instagram_roster
+        from nora.infra.sql.social_stream import SqlSocialStreamStore
+
+        social_poller = SocialPoller(
+            source=InstagramSocialSource(
+                base_url=cfg.social.instagram.base_url,
+                timeout_seconds=cfg.social.instagram.timeout_seconds,
+            ),
+            store=SqlSocialStreamStore(engine),
+            health=SqlSourceHealthLog(engine),
+            roster=functools.partial(instagram_roster, social_subjects),
+            settings=cfg.social.poll, metrics=metrics,
+            # The same custody every room's media goes through; `None` while
+            # media custody is off, and then items are recorded without bytes.
+            media=media_sources.for_platform("instagram") if media_sources else None,
+            blobs=blobs, media_objects=media_objects,
+        )
+        log.info("social poller wired (instagram)")
+
     # The participation occasion: trigger, then
     # dispatcher. Gated on BOTH the flag and a live `fire_path` — the same
     # shape as the poller above. The trigger holds `fire_path.speak` as a
@@ -4312,6 +4344,7 @@ async def build_dependencies(
         otp=otp,
         otp_api_token=otp_api_token,
         oauth_keepalive=oauth_keepalive,
+        social_poller=social_poller,
         memory_embed=(
             MemoryEmbedWorker(
                 engine, LlamaEmbedder(cfg.memory_index.embedder_url), blobs,

@@ -22,6 +22,14 @@ phone = "+85212345678"
 #
 # former_person_ids = ["miles_old_id"]
 
+# Optional. The social stream's off switch. Everyone listed in a group room of
+# policy.toml is a member whose Instagram story, posts and reels the poller
+# ([social.poll] in config.toml) reads; `social = false` takes this person out,
+# on every network. Default true. It does not stop instagram_read answering a
+# question somebody asks about them.
+#
+# social = false
+
 # A second account for the same person. Once a platform holds two or more, each
 # needs a distinct `label`. It is never matched on; `nora persons pending`
 # prints it so you can tell them apart.

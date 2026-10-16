@@ -128,8 +128,8 @@
   {
     "name": "review 4: a `*` room makes its members Tier 0",
     "file": "nora/infra/social/subjects.py",
-    "old": "                convo.persons is not None and person_id in convo.persons",
-    "new": "                convo.persons is None or person_id in convo.persons",
+    "old": "        return listed is not None and person_id in listed",
+    "new": "        return listed is not None and (person_id in listed or any(c.persons is None for c in self._policy.conversations))",
     "target": "tests/unit/test_instagram_read_links.py -k open_room_makes_nobody"
   },
   {

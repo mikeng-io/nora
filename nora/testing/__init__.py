@@ -28,7 +28,11 @@ drives `FakeSocialSubjectIndex` (`SocialSubjectIndex`, bound to
 `tests/contract/test_social_subject_index_contract.py`) and
 `FakeInstagramAccountLookup` (`InstagramAccountLookup`, bound to
 `nora.infra.social.InstagramSocialClient` by
-`tests/contract/test_instagram_account_lookup_contract.py`). Adding such a
+`tests/contract/test_instagram_account_lookup_contract.py`) and
+`FakeSocialSource` (`SocialSource`, bound to
+`nora.infra.social.instagram_source.InstagramSocialSource` by
+`tests/contract/test_social_source_contract.py`, in its own module,
+`nora.testing.social_stream`). Adding such a
 fake without one is a project rule violation, not a shortcut.
 
 `FakeComputeJobStore` is the same rule applied to `nora.domain.compute`'s own
@@ -150,6 +154,7 @@ from nora.testing.scripted_agent import (
     group_event,
     limit_stop_reason,
 )
+from nora.testing.social_stream import FakeSocialSource
 from nora.testing.standing_store import InMemoryStandingStore
 from nora.testing.summons_ledger import InMemorySummonsLedger
 
@@ -189,6 +194,7 @@ __all__ = [
     "FakeRosterSource",
     "FakeSandboxRuntime",
     "FakeSocialProvider",
+    "FakeSocialSource",
     "FakeSocialSubjectIndex",
     "FakeSteamPresenceProvider",
     "FakeToolCallLogStore",

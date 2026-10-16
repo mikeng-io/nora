@@ -2049,6 +2049,13 @@ class SocialSubjectIndex(Protocol):
 
     async def person_for_igid(self, *, igid: str) -> str | None: ...
 
+    async def members(self) -> frozenset[str] | None:
+        """Every person `is_tier_zero` answers True for, less anyone whose
+        `identity.toml` block sets `social = false`: the social stream's
+        membership (design/cognition-loop/20-observe.md §2), or `None` when
+        the index could not be read."""
+        ...
+
 
 @dataclass(frozen=True)
 class UsernameLookup:
@@ -2105,8 +2112,12 @@ class SocialSource(Protocol):
     asks for it.
 
     `probe_cost` is the upstream calls one probe spends, so a budget can count
-    it. The production implementation is `nora.infra.social.instagram_source
-    .InstagramSocialSource`, over the instagram-bridge only.
+    it. `healthy` asks whether the login can read at all, from the bridge's own
+    state and without an upstream call: a poller halted on a checkpoint reads
+    it to resume, never a read. The production implementation is
+    `nora.infra.social.instagram_source.InstagramSocialSource`, over the
+    instagram-bridge only; `nora.testing.FakeSocialSource` is held to the same
+    answers by `tests/contract/test_social_source_contract.py`.
     """
 
     network: str
@@ -2122,6 +2133,11 @@ class SocialSource(Protocol):
     ) -> Page | Failed: ...
 
     async def read_item(self, *, ref: ItemRef) -> SocialItem | Failed: ...
+
+    async def healthy(self) -> bool:
+        """True only when the login's session is known to be able to read;
+        False when it is not, or when that cannot be told."""
+        ...
 
 
 @runtime_checkable
