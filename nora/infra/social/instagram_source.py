@@ -61,6 +61,7 @@ from ...domain.social_stream import (
     SocialItem,
     StoryFrame,
     StorySnapshot,
+    published_location,
 )
 from ..trace_propagation import propagation_headers
 from .instagram_client import _IGID_RE, _USERNAME_RE, _error_code, _is_cdn_url
@@ -240,6 +241,7 @@ class InstagramSocialSource:
             network=self.network, item_id=str(pk), account=account, kind=kind,
             taken_at=taken, expires_at=None, caption=caption or None,
             alt_text=_text(row.get("alt_text")), media=media, collab=collab,
+            location=published_location(row.get("location")),
         )
 
     async def _get(self, path: str) -> tuple[int, Any]:
@@ -332,6 +334,7 @@ def _frame(row: Any) -> StoryFrame | None:
         item_id=item_id, taken_at=taken, expires_at=expires, kind=kind, url=url,
         thumbnail_url=thumbnail if _is_cdn_url(thumbnail) else None,
         caption=_text(row.get("caption")), alt_text=_text(row.get("alt_text")),
+        location=published_location(row.get("location")),
     )
 
 

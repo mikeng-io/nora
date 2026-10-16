@@ -16,7 +16,8 @@
         "taken_at": 1700000000,
         "expiring_at": 1700086400,
         "caption": "synthetic caption text",
-        "alt_text": "synthetic alt text"
+        "alt_text": "synthetic alt text",
+        "location": "Placeholder Harbour"
       },
       {
         "id": "900000000000000002",

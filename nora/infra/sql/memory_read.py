@@ -13,16 +13,22 @@ in Python, which the contract suite holds to the same answers):
     AND n.kind NOT IN (hubs)
     AND (n.unit = ANY($units) OR n.origin_room = ANY($rooms)
          OR (n.unit IS NULL AND n.origin_room IS NULL
-             AND n.kind IN ('stay', 'trip', 'social', 'social_media')))
+             AND n.kind IN ('stay', 'trip', 'social', 'social_media',
+                            'social_location')))
     AND n.persons <@ $listed_here
     AND (cardinality(n.exclude_persons) = 0
          OR (NOT $exclude_strict AND NOT n.exclude_persons && $people_here))
-    AND (n.kind NOT IN ('outing', 'stay', 'trip') OR n.persons <@ $presence_persons)
-    AND (n.kind NOT IN ('social', 'social_media') OR NOT n.persons && $social_off)
+    AND (n.kind NOT IN ('outing', 'stay', 'trip', 'social_location')
+         OR n.persons <@ $presence_persons)
+    AND (n.kind NOT IN ('social', 'social_media', 'social_location')
+         OR NOT n.persons && $social_off)
 
-The last line is a person's `social = false` (`MemoryScope.social_off`), read
-per read: their social items are out of every read, including those recorded
-before the switch, and the projector never needs to know.
+The presence line is `PRESENCE_KINDS`: an episode, and the place a social
+item is tagged with, which is a node of its own so that this line can gate
+it while the item stays readable by its caption. The last line is a
+person's `social = false` (`MemoryScope.social_off`), read per read: their
+social items are out of every read, including those recorded before the
+switch, and the projector never needs to know.
 
 **The question's narrowing rides on the same filter** (`MemoryScope.only`,
 `memory_search`'s `kinds`, `since`, `until` and `person`; `_narrowed`, and
@@ -100,10 +106,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.memory_index import (
     EMBEDDED_KINDS,
-    EPISODE_KINDS,
     HUB_KINDS,
     PERSON_RELATIONS,
     PERSON_SCOPED_KINDS,
+    PRESENCE_KINDS,
     SOCIAL_KINDS,
     ExactTerm,
     IndexedNode,
@@ -205,7 +211,7 @@ def _in_scope(n: Any, scope: MemoryScope) -> sa.ColumnElement[bool]:
         n.c.persons.contained_by(_array(scope.listed_here)),
         excluded_ok,
         sa.or_(
-            n.c.kind.not_in(EPISODE_KINDS),
+            n.c.kind.not_in(PRESENCE_KINDS),
             n.c.persons.contained_by(_array(scope.presence_persons)),
         ),
         sa.or_(

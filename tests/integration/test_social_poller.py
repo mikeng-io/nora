@@ -16,6 +16,7 @@ Database scoped to the MODULE and truncated between tests (AGENTS.md).
 from __future__ import annotations
 
 import copy
+import dataclasses
 import functools
 import json
 from collections.abc import AsyncIterator, Iterator
@@ -336,6 +337,29 @@ async def test_a_story_is_read_once_per_marker_value(world) -> None:
         "a read that found nothing is complete: it advanced the marker"
     )
     assert await world.store.read_marker(network="instagram", person="ada") == 200
+
+
+async def test_a_tagged_place_is_recorded_for_a_post_a_reel_and_a_story_frame(world) -> None:
+    """The source's `location` reaches `social_item.location` on every kind
+    the poller records; an untagged item records none."""
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(marker=100, posts=3)
+    tagged = dataclasses.replace(post(world, "p1"), location="Placeholder Square")
+    reel = dataclasses.replace(post(world, "r1"), kind="reel", location="Placeholder Pier")
+    world.source.pages[ADA] = Page(items=(tagged, reel, post(world, "p2")), next_cursor=None)
+    world.source.stories[ADA] = story(
+        dataclasses.replace(frame("f1", world.clock), location="Placeholder Harbour"),
+    )
+    held(world, "f1")
+    await world.poller().tick()
+    async with world.engine.connect() as conn:
+        rows = dict((await conn.execute(
+            sa.select(SOCIAL_ITEM.c.item_id, SOCIAL_ITEM.c.location),
+        )).tuples().all())
+    assert rows == {
+        "p1": "Placeholder Square", "r1": "Placeholder Pier", "p2": None,
+        "f1": "Placeholder Harbour",
+    }
 
 
 async def test_a_failed_list_read_leaves_the_rise_due_on_the_next_probe(world) -> None:
