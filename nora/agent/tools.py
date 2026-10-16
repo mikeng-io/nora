@@ -6229,6 +6229,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             found = await search.search(
                 query=(query or question or ref.name)[:500], person_id=ref.person_id,
                 target=target, depth=level, now_ms=int(now.timestamp() * 1000),
+                people=view.people,
             )
             if found.status == "unavailable":
                 _record_room(metrics, "ask_memory", "unavailable", reason="index")

@@ -1713,20 +1713,31 @@ async def embed_store(
 
 async def embed_failed(
     conn: AsyncConnection, item: Embeddable, *, error: str, now_ms: int, by_bytes: bool,
+    counts: bool = True,
 ) -> int:
-    """Count a failed attempt, back the node off, and return its attempts
+    """Record a failed attempt, back the node off, and return its attempts
     now (0 if the node changed meanwhile). `error` is a short class
     (`nora.infra.sql.memory_embed`), never content. `embed_input` records
     what was tried, so a new reading frees a node whose reading failed and
-    not one whose bytes did."""
-    attempts = (await conn.execute(
+    not one whose bytes did.
+
+    `counts=False` for a failure that says nothing about the input (the
+    embedder or the blob store unavailable): the attempt still backs the
+    node off, but never to `EMBED_MAX_ATTEMPTS`, so an outage gives up on
+    nothing (review of #31). Only a failure of the input itself (rejected,
+    empty, error) can reach the cap."""
+    bumped = MEMORY_NODE.c.embed_attempts + 1
+    attempts = bumped if counts else sa.func.greatest(
+        MEMORY_NODE.c.embed_attempts, sa.func.least(bumped, EMBED_MAX_ATTEMPTS - 1),
+    )
+    result = (await conn.execute(
         sa.update(MEMORY_NODE).where(_same_input(item, by_bytes)).values(
             embedding=None, embedding_model=None, embedded_at=now_ms,
-            embed_attempts=MEMORY_NODE.c.embed_attempts + 1, embed_error=error[:80],
+            embed_attempts=attempts, embed_error=error[:80],
             embed_input="bytes" if by_bytes else "text",
         ).returning(MEMORY_NODE.c.embed_attempts)
     )).scalar_one_or_none()
-    return int(attempts or 0)
+    return int(result or 0)
 
 
 def _clearable(keep_model: str | None) -> Any:
@@ -1761,27 +1772,37 @@ async def clear_embeddings(
 class EmbedCounts(NamedTuple):
     """The live, embeddable nodes with something to embed: holding a vector
     of `model`; waiting for one; of those waiting, how many have failed at
-    least once; and how many the worker has given up on
-    (`EMBED_MAX_ATTEMPTS`), which only a changed input or a clear frees."""
+    least once; how many the worker has given up on (`EMBED_MAX_ATTEMPTS`),
+    which only a changed input or a clear frees; and how many, not given up,
+    last failed as `empty` (an attachment with no reading, whose bytes are
+    not an image's or not held): those wait for their input, not the
+    worker."""
 
     embedded: int
     pending: int
     failing: int
     given_up: int
+    empty: int = 0
 
 
-async def embed_counts(conn: AsyncConnection, model: str) -> EmbedCounts:
+async def embed_counts(
+    conn: AsyncConnection, model: str, *where: sa.ColumnElement[bool],
+) -> EmbedCounts:
+    """`EmbedCounts` over every node, or over those `where` also holds (the
+    search passes its scope, `nora.infra.sql.memory_read`)."""
     node = MEMORY_NODE.c
     # IS NOT DISTINCT FROM, so a NULL model is «not current», never NULL.
     current = sa.and_(
         node.embedding.isnot(None), node.embedding_model.is_not_distinct_from(model),
     )
+    given_up = node.embed_attempts >= EMBED_MAX_ATTEMPTS
     row = (await conn.execute(
         sa.select(
             sa.func.count().filter(current),
             sa.func.count().filter(~current),
             sa.func.count().filter(sa.and_(~current, node.embed_attempts > 0)),
-            sa.func.count().filter(sa.and_(~current, node.embed_attempts >= EMBED_MAX_ATTEMPTS)),
-        ).where(*_embeddable())
+            sa.func.count().filter(sa.and_(~current, given_up)),
+            sa.func.count().filter(sa.and_(~current, ~given_up, node.embed_error == "empty")),
+        ).where(*_embeddable(), *where)
     )).one()
-    return EmbedCounts(int(row[0]), int(row[1]), int(row[2]), int(row[3]))
+    return EmbedCounts(int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]))

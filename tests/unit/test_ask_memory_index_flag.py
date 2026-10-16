@@ -20,7 +20,7 @@ from nora.domain.memory_index import IndexedNode, IndexState
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeMemoryStore, FakeRosterSource
-from nora.testing.memory_index import FakeMemoryIndex
+from nora.testing.memory_index import FakeMemoryIndex, FakeQueryEmbedder
 from tests.fakes import SinkSender
 from tests.test_room_tools import (
     _UNREACHABLE_TRANSIT,
@@ -73,6 +73,12 @@ def _build_with(
     return {t.tool_name: t for t in built}
 
 
+def _dense(index: FakeMemoryIndex, metrics: Metrics) -> MemorySearch:
+    """The search as `[memory_index] embed` builds it (65 V2): dense seeds
+    over the fake's vectors of model `m`, the question embedded by a fake."""
+    return MemorySearch(index, metrics, embedder=FakeQueryEmbedder(), model="m")
+
+
 def _index(**kw: Any) -> FakeMemoryIndex:
     return FakeMemoryIndex(
         [
@@ -81,7 +87,7 @@ def _index(**kw: Any) -> FakeMemoryIndex:
             IndexedNode("person", "miles_novak"),
         ],
         [("message", "41", "authored_by", "person", "miles_novak")],
-        **kw,
+        embed_model="m", **kw,
     )
 
 
@@ -100,7 +106,7 @@ async def test_flag_on_answers_from_the_index_and_never_calls_honcho(persons: An
     index = _index()
     metrics = Metrics()
     result = await _call(
-        _tools(persons, honcho, MemorySearch(index, metrics)),
+        _tools(persons, honcho, _dense(index, metrics)),
         person="Miles", query="football sunday",
     )
     assert honcho.chats == [] and honcho.queries == []
@@ -123,7 +129,7 @@ async def test_flag_on_every_status_carries_a_note(
 ) -> None:
     honcho = FakeMemoryStore()
     result = await _call(
-        _tools(persons, honcho, MemorySearch(index, Metrics())), person="Miles",
+        _tools(persons, honcho, _dense(index, Metrics())), person="Miles",
         query="anything at all",
     )
     assert result["status"] == status
@@ -134,9 +140,9 @@ async def test_flag_on_every_status_carries_a_note(
 async def test_flag_on_withholds_an_item_carrying_an_identifier(persons: Any) -> None:
     index = FakeMemoryIndex([IndexedNode(
         "message", "42", "football: call +85298765432", 1_700_000_000_000, origin_room=_ROOM,
-    )])
+    )], embed_model="m")
     result = await _call(
-        _tools(persons, FakeMemoryStore(), MemorySearch(index, Metrics())),
+        _tools(persons, FakeMemoryStore(), _dense(index, Metrics())),
         person="Miles", query="football",
     )
     assert result["status"] == "nothing_found" and result["withheld"] == 1
@@ -152,7 +158,7 @@ async def test_flag_on_a_render_room_that_raises_is_unavailable_with_a_note(
     monkeypatch.setattr(LineagePolicy, "render_room", boom)
     metrics = Metrics()
     result = await _call(
-        _tools(persons, FakeMemoryStore(), MemorySearch(_index(), metrics)),
+        _tools(persons, FakeMemoryStore(), _dense(_index(), metrics)),
         person="Miles", query="football",
     )
     assert result["status"] == "unavailable" and result["note"]
@@ -168,7 +174,7 @@ async def test_flag_on_a_packet_that_raises_is_unavailable_with_a_note(
 
     monkeypatch.setattr(tools_module, "render_packet", boom)
     result = await _call(
-        _tools(persons, FakeMemoryStore(), MemorySearch(_index(), Metrics())),
+        _tools(persons, FakeMemoryStore(), _dense(_index(), Metrics())),
         person="Miles", query="football",
     )
     assert result["status"] == "unavailable" and result["note"]
@@ -177,9 +183,29 @@ async def test_flag_on_a_packet_that_raises_is_unavailable_with_a_note(
 async def test_flag_on_partial_with_no_items_is_recorded_as_partial(persons: Any) -> None:
     metrics = Metrics()
     index = FakeMemoryIndex(state=IndexState("building", 0))
-    tool = _build_with(persons, FakeMemoryStore(), MemorySearch(index, Metrics()), metrics)
+    tool = _build_with(persons, FakeMemoryStore(), _dense(index, Metrics()), metrics)
     result = await _call(tool["ask_memory"], person="Miles", query="football")
     assert result["status"] == "partial"
     assert metrics.get("nora_room_lookups_total", tool="ask_memory", status="partial") == 1
     assert metrics.get(
         "nora_room_lookups_total", tool="ask_memory", status="nothing_found") == 0
+
+
+async def test_flag_on_a_listed_persons_name_in_the_question_is_pinned(persons: Any) -> None:
+    """65 V2: the names the room's roster resolves reach the search, and a
+    node holding one literally ranks first."""
+    index = FakeMemoryIndex(
+        [
+            IndexedNode("message", "43", "Tyler kept the receipts", 1_600_000_000_000,
+                        origin_room=_ROOM),
+            IndexedNode("message", "44", "who kept the receipts", 1_700_000_000_000,
+                        origin_room=_ROOM),
+        ],
+        embed_model="m",
+    )
+    result = await _call(
+        _tools(persons, FakeMemoryStore(), _dense(index, Metrics())),
+        person="Miles", query="who kept the receipts, Tyler?",
+    )
+    assert result["status"] == "ok"
+    assert [i["path"] for i in result["answer"]] == [["message (exact)"], ["message (matched)"]]

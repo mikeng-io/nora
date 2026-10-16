@@ -14,6 +14,7 @@ fails here as it would against the real server."""
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import io
@@ -30,6 +31,7 @@ from PIL import Image
 from nora.domain.embedder_input import (
     EOT,
     FORMAT_VERSION,
+    QUERY_INSTRUCTION,
     TAIL,
     head,
     image_prompt,
@@ -40,6 +42,7 @@ from nora.infra.embedder import (
     DIMENSIONS,
     MAX_SEND_PIXELS,
     SAFE_TEXT_CHARS,
+    SERVED_MODEL_TTL_SECONDS,
     TOKEN_BUDGET,
     EmbedderRejectedError,
     EmbedderUnavailableError,
@@ -71,8 +74,9 @@ def tokens_of(text: str) -> int:
 class FakeLlamaServer:
     """llama-server's /props, /health, /tokenize and /embedding (module
     docstring). `status` forces every /embedding answer's HTTP status,
-    `healthy` /health's, `width` the vector's. Records every /embedding
-    content it accepted."""
+    `healthy` /health's, `width` the vector's, `delay` how long /props and
+    /embedding each take. Records every /embedding content it accepted, and
+    counts /props calls."""
 
     def __init__(self, *, marker: str = MARKER, ubatch: int = 2048) -> None:
         self.marker = marker
@@ -83,6 +87,8 @@ class FakeLlamaServer:
         self.width = DIMENSIONS
         self.accepted: list[dict[str, Any]] = []
         self.calls = 0
+        self.props_calls = 0
+        self.delay = 0.0
         self.restarts = 0
 
     def restart(self) -> None:
@@ -99,6 +105,8 @@ class FakeLlamaServer:
         return app
 
     async def _props(self, _request: web.Request) -> web.Response:
+        self.props_calls += 1
+        await asyncio.sleep(self.delay)
         return web.json_response({"media_marker": self.marker, "model_path": self.model_path})
 
     async def _health(self, _request: web.Request) -> web.Response:
@@ -115,6 +123,7 @@ class FakeLlamaServer:
 
     async def _embedding(self, request: web.Request) -> web.Response:
         self.calls += 1
+        await asyncio.sleep(self.delay)
         if self.status != 200:
             return self._error("forced", self.status)
         content = (await request.json()).get("content")
@@ -195,7 +204,7 @@ async def test_the_bake_off_adapter_and_production_format_identically(llama, tmp
 
 async def test_a_vector_is_2048_wide_and_unit_length(llama):
     _fake, url = llama
-    vec = await LlamaEmbedder(url).embed_document("the lantern festival plan")
+    vec = (await LlamaEmbedder(url).embed_document("the lantern festival plan")).vector
     assert len(vec) == DIMENSIONS
     assert math.isclose(math.fsum(x * x for x in vec), 1.0, rel_tol=1e-9)
 
@@ -209,10 +218,68 @@ async def test_a_long_text_is_cut_to_fit_the_micro_batch(llama, text):
     """The server refuses a prompt longer than `-ub` with a 500; the client
     counts with /tokenize and cuts, so the text is embedded, from its head."""
     fake, url = llama
-    await LlamaEmbedder(url).embed_document(text)
+    embedded = await LlamaEmbedder(url).embed_document(text)
     sent = fake.accepted[0]["prompt_string"]
     assert tokens_of(sent) <= TOKEN_BUDGET
     assert text[:SAFE_TEXT_CHARS] in sent
+    assert embedded.truncated  # the worker counts it: the trigger for chunking
+
+
+@pytest.mark.parametrize("text", [
+    "the lantern festival plan",     # under the safe length: never counted
+    "x" * (SAFE_TEXT_CHARS + 500),   # counted with /tokenize, and it fits
+], ids=["short", "long-but-fits"])
+async def test_a_text_that_fits_is_not_truncated(llama, text):
+    fake, url = llama
+    embedded = await LlamaEmbedder(url).embed_document(text)
+    assert not embedded.truncated
+    assert text in fake.accepted[0]["prompt_string"]
+
+
+async def test_a_query_is_refused_while_the_server_serves_another_model(llama):
+    """65 V2: a question is never embedded by a model other than the one the
+    stored vectors came from; the search falls back on this error."""
+    fake, url = llama
+    now = [0.0]
+    client = LlamaEmbedder(url, query_model_file=Path(MODEL_PATH).name, clock=lambda: now[0])
+    assert len(await client.embed_query("where did we eat")) == DIMENSIONS
+    assert QUERY_INSTRUCTION in fake.accepted[-1]["prompt_string"]
+    fake.model_path = "/models/model-b.gguf"
+    now[0] += SERVED_MODEL_TTL_SECONDS  # the last /props match has expired
+    calls = fake.calls
+    with pytest.raises(EmbedderUnavailableError):
+        await client.embed_query("where did we eat")
+    assert fake.calls == calls  # refused before any embedding
+
+
+async def test_a_query_reads_props_once_a_minute_not_once_a_search(llama):
+    """Review of #31: /props on every search doubled a turn's calls."""
+    fake, url = llama
+    now = [0.0]
+    client = LlamaEmbedder(url, query_model_file=Path(MODEL_PATH).name, clock=lambda: now[0])
+    for _ in range(3):
+        await client.embed_query("where did we eat")
+        now[0] += 10
+    assert (fake.props_calls, fake.calls) == (1, 3)
+    now[0] += SERVED_MODEL_TTL_SECONDS
+    await client.embed_query("where did we eat")
+    assert fake.props_calls == 2
+
+
+async def test_one_deadline_covers_every_call_of_a_query(llama):
+    """Review of #31: /props and /embedding each had their own timeout, so a
+    slow server held a turn for the sum. Each call here is under the per-call
+    timeout; together they are past the query's deadline."""
+    fake, url = llama
+    fake.delay = 0.3
+    client = LlamaEmbedder(
+        url, timeout_seconds=1.0, query_model_file=Path(MODEL_PATH).name,
+        query_timeout_seconds=0.45,
+    )
+    with pytest.raises(EmbedderUnavailableError):
+        await client.embed_query("where did we eat")
+    fake.delay = 0.1
+    assert len(await client.embed_query("where did we eat")) == DIMENSIONS
 
 
 async def test_every_image_is_decoded_and_sent_as_a_bounded_png(llama):

@@ -1084,6 +1084,9 @@ enabled = false
 # `embedder_model` is `<gguf file name>@<sha256 prefix>`: the worker embeds
 # only while the service reports loading that file, and it is part of every
 # stored vector's fingerprint, so changing it clears and re-embeds them all.
+# With `enabled` too (65 V2), `ask_memory` seeds from the question's vector
+# and pins literal names, handles, URLs and ids ahead of it; the trigram seed
+# is only the fallback (embedder down, or no vectors yet), answered `partial`.
 embed = false
 embedder_url = "http://embedder:8080"
 embedder_model = "Qwen3-VL-Embedding-2B.Q4_K_M.gguf@7812c91cd1e0"

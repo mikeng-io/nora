@@ -1325,7 +1325,14 @@ class MemoryIndexConfig(BaseModel):
     changing it clears every stored vector at the worker's first tick and
     re-embeds them. The hash prefix is recorded, not checked: the server
     exposes no file hash. Off by default: the `embedder` service must be up
-    first."""
+    first.
+
+    While both are on (65 V2), `ask_memory` seeds from the question's vector
+    (embedded by the same server, with the query instruction) and pins exact
+    references ahead of it; the lexical seed runs only when the embedder
+    fails or no node holds a current vector yet, and that answer is
+    `partial`. With `enabled` on and `embed` off, every answer is that
+    fallback's `partial`."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

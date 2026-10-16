@@ -24,6 +24,7 @@ from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
 from nora.domain.memory_index import (
     EMBED_OUTCOMES,
+    EMBEDDED_KINDS,
     NODE_KINDS,
     PROJECTION_OUTCOMES,
     SEARCH_STATUSES,
@@ -2182,8 +2183,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_memory_search_total",
         "Memory index searches, by status (" + " / ".join(SEARCH_STATUSES) + "). "
-        "partial = the index is not complete or its projection queue is not "
-        "empty; unavailable = the search failed (fail closed).",
+        "partial = the index is not complete, its projection queue is not "
+        "empty, the seeds fell back to lexical (no embedder, or it failed), or "
+        "nodes still wait for a vector of the current model; unavailable = the "
+        "search failed (fail closed).",
         ("status",),
     ),
     # The memory index's embedding worker (`nora.infra.sql.memory_embed`,
@@ -2196,9 +2199,33 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "blob store did not answer (the tick stops); rejected = the input was "
         "refused or would not decode; empty = nothing to embed; error = any "
         "other failure of that node. Every failure backs the node off; "
-        "given_up is counted in addition when a failure was the node's last "
-        "allowed attempt.",
+        "given_up is counted in addition when a failure of the input itself "
+        "(rejected, empty, error) was the node's last allowed attempt; an "
+        "unavailable attempt never gives a node up.",
         ("outcome",),
+    ),
+    # The dense seed's HNSW scan coming back with fewer nodes than the
+    # search's scope holds vectors (and fewer than it asked for): the scan hit
+    # `hnsw.max_scan_tuples` first (`nora.infra.sql.memory_read`), 65 V2. No
+    # label, no content: a count of searches.
+    _CounterSpec(
+        "nora_memory_dense_short_total",
+        "Memory index searches whose dense seed returned fewer nodes than it "
+        "asked for while the search's scope held more vectors than it returned: "
+        "the HNSW scan stopped at hnsw.max_scan_tuples first.",
+        (),
+    ),
+    # The embedding worker's texts cut to fit the embedder's micro-batch
+    # (design/unified-memory/65-build-step-3-vectors.md §3): counted in
+    # addition to `ok`, by node kind, so a rise says which kind needs
+    # chunking. Bounded: the embedded kinds only.
+    _CounterSpec(
+        "nora_memory_embed_truncated_total",
+        "Memory index texts embedded from their head only, cut to fit the "
+        "embedder's micro-batch, by node kind (" + " / ".join(EMBEDDED_KINDS) + "). "
+        "Counted in addition to nora_memory_embed_total{outcome=ok}; the "
+        "trigger for chunking long nodes.",
+        ("kind",),
     ),
 )
 

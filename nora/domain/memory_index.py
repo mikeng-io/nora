@@ -11,9 +11,10 @@ fails `tests/infra/test_schema_parity.py`.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, get_args
+from typing import Any, Literal, NamedTuple, Protocol, get_args
 
 __all__ = [
     "EMBEDDED_KINDS",
@@ -29,6 +30,7 @@ __all__ = [
     "SEARCH_STATUSES",
     "EmbedInput",
     "EmbedOutcome",
+    "ExactTerm",
     "IndexState",
     "IndexedNode",
     "MemoryIndexRead",
@@ -36,11 +38,15 @@ __all__ = [
     "Neighbour",
     "NodeKind",
     "ProjectionOutcome",
+    "QueryEmbedder",
     "Relation",
     "SearchStatus",
     "Seed",
     "embeds_bytes",
+    "exact_holds",
+    "exact_pattern",
     "in_scope",
+    "is_latin",
 ]
 
 #: Every kind step 3 names (60 §3), so S2-S4 add projectors without a CHECK
@@ -116,7 +122,9 @@ PROJECTION_OUTCOMES: tuple[str, ...] = get_args(ProjectionOutcome)
 
 #: `nora_memory_search_total`'s `status`, and what `ask_memory` answers while
 #: `[memory_index] enabled` (25 §4): `partial` while a rebuild has not
-#: completed or the projection queue is not empty, never `nothing_found`;
+#: completed, the projection queue is not empty, the search fell back to the
+#: lexical seed (no embedder, or it failed), or embeddable nodes still wait
+#: for a vector of the current model (65 V2), never `nothing_found`;
 #: `unavailable` on any error (fail closed).
 SearchStatus = Literal["ok", "nothing_found", "partial", "unavailable"]
 SEARCH_STATUSES: tuple[str, ...] = get_args(SearchStatus)
@@ -191,10 +199,15 @@ class IndexedNode:
 
 @dataclass(frozen=True, slots=True)
 class Seed:
-    """A node a search starts from, with its lexical relevance in [0, 1]."""
+    """A node a search starts from, with its relevance in [0, 1]: the lexical
+    score, the full-width cosine of a dense seed, or 1 for an exact seed.
+    `near` is an exact seed's cosine to the question when it holds a vector of
+    the asked model: an exact hit past the pinned ones ranks by it, as a dense
+    hit would (65 V2)."""
 
     node: IndexedNode
     score: float
+    near: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,10 +224,73 @@ class Neighbour:
 @dataclass(frozen=True, slots=True)
 class IndexState:
     """`memory_index_state.status` (`never`, `building`, `complete`) and the
-    projection queue's length now."""
+    projection queue's length now; with a model fingerprint asked for, the
+    vector coverage too (65 V2), counted within the search's scope when one
+    is given: `embedded`, the live embeddable nodes holding a vector of that
+    model; `unembedded`, those still waiting for one; and `given_up`, those
+    the worker gave up on (`EMBED_MAX_ATTEMPTS`). A given-up node waits for
+    nothing the worker will do, so it does not hold answers `partial`; the
+    lexical seed reads it instead (`MemoryIndexRead.seed`'s `given_up_of`).
+    A node that failed as `empty` (an attachment with no reading and no
+    bytes to embed) waits for its input to change, and is in none of the
+    three."""
 
     status: str
     queue: int
+    embedded: int = 0
+    unembedded: int = 0
+    given_up: int = 0
+
+
+# --- exact seeds (65 V2) ------------------------------------------------------
+
+#: The characters that continue a Latin word, a handle or an id: a Latin
+#: term matches only where neither neighbour is one of these. ASCII letters,
+#: digits and `_`, and the accented Latin letters (Latin-1 Supplement without
+#: the multiplication and division signs, Latin Extended-A and -B), so
+#: `Zoë` is not inside `Zoëy`. A CJK character is not one: `Kit今日` holds
+#: `Kit`.
+_WORDISH = "A-Za-z0-9_\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u024f"
+#: The highest code point of a Latin term (Latin Extended-B ends at U+024F).
+_LATIN_MAX = 0x24F
+
+
+class ExactTerm(NamedTuple):
+    """One exact reference (65 V2). `cased` for a person's name, which
+    matches only as written (`Will` is not `will`); a URL, a handle or an id
+    matches in any case."""
+
+    text: str
+    cased: bool = False
+
+
+def is_latin(term: str) -> bool:
+    """Whether `term` is written in Latin script only (ASCII or accented
+    Latin), so it matches as a whole word; any other script (Chinese writes
+    no spaces between words) matches as a substring."""
+    return all(ord(c) <= _LATIN_MAX for c in term)
+
+
+def exact_holds(term: str, text: str, *, cased: bool = False) -> bool:
+    """Whether `text` contains `term` literally, as the exact seed matches it
+    (`SqlMemoryIndex.exact` states the same in SQL). Case-insensitive unless
+    `cased` (a person's name). A Latin term matches only on its own: not
+    inside a longer word, handle or id (`Kit` is not in `kitchen`, `@kit` not
+    in `@kitty`, `Zoë` not in `Zoëy`); a term with any other script matches
+    as a substring."""
+    if not term:
+        return False
+    if is_latin(term):
+        flags = 0 if cased else re.IGNORECASE
+        return re.search(exact_pattern(term), text, flags) is not None
+    return term in text if cased else term.lower() in text.lower()
+
+
+def exact_pattern(term: str) -> str:
+    """`exact_holds`' Latin rule as a Postgres regular expression (ARE: the
+    same look-arounds, and `re.escape` only escapes punctuation, which ARE
+    reads as the literal character)."""
+    return f"(?<![{_WORDISH}]){re.escape(term)}(?![{_WORDISH}])"
 
 
 def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
@@ -245,6 +321,16 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
     )
 
 
+class QueryEmbedder(Protocol):
+    """The question as a vector, with the model's query instruction
+    (`nora.infra.embedder.LlamaEmbedder.embed_query`): `DIMENSIONS` floats of
+    unit length. Raises on any failure; the search then falls back to the
+    lexical seed and answers `partial`."""
+
+    async def embed_query(self, text: str) -> list[float]:
+        ...
+
+
 class MemoryIndexRead(Protocol):
     """The read half of the memory index (25 §4): `SqlMemoryIndex`, and
     `nora.testing.memory_index.FakeMemoryIndex` under the shared contract
@@ -254,9 +340,31 @@ class MemoryIndexRead(Protocol):
 
     async def seed(
         self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
+        given_up_of: str | None = None,
     ) -> list[Seed]:
         """In-scope, non-hub nodes whose text holds the terms (pg_trgm word
-        similarity, or containment), best first. A hub never seeds."""
+        similarity, or containment), best first. A hub never seeds. With
+        `given_up_of`, only the embeddable nodes the worker gave up on with
+        no vector of that model: the dense seed cannot reach them."""
+        ...
+
+    async def dense(
+        self, vector: Sequence[float], scope: MemoryScope, *, model: str, limit: int,
+    ) -> list[Seed]:
+        """In-scope, non-hub nodes holding a vector of `model`, nearest to
+        `vector` first, scored by their full-width cosine. A vector of any
+        other model is never compared (65 V2)."""
+        ...
+
+    async def exact(
+        self, terms: Sequence[ExactTerm], scope: MemoryScope, *, limit: int,
+        vector: Sequence[float] | None = None, model: str | None = None,
+    ) -> list[Seed]:
+        """In-scope, non-hub nodes containing at least one of `terms`
+        literally (`exact_holds`, a `cased` term in its own case), scored 1:
+        those holding the most terms first, then, given a `vector`, the
+        nearest by cosine among nodes of `model` (that cosine is the seed's
+        `near`), then the newest."""
         ...
 
     async def about(
@@ -274,5 +382,9 @@ class MemoryIndexRead(Protocol):
         node is returned as a direct neighbour whatever its scope."""
         ...
 
-    async def index_state(self) -> IndexState:
+    async def index_state(
+        self, *, model: str | None = None, scope: MemoryScope | None = None,
+    ) -> IndexState:
+        """The index's state; with `model`, its vector coverage as well,
+        within `scope` when given (else over every node)."""
         ...

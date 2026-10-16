@@ -157,7 +157,7 @@ from nora.engagement.subagents_context import SubagentsContextReader
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.computer.probe import ComputerdProbe
-from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
+from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
 from nora.infra.google.auth import GoogleCredentials
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
@@ -3040,7 +3040,21 @@ async def build_dependencies(
         # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
         # `ask_memory` answers from the index; off, from Honcho as before.
         memory_search=(
-            MemorySearch(SqlMemoryIndex(engine), metrics)
+            MemorySearch(
+                SqlMemoryIndex(engine), metrics,
+                # `[memory_index] embed` (65 V2): dense and exact seeds, the
+                # lexical seed only as the fallback; off, every answer is
+                # the fallback's `partial`.
+                embedder=LlamaEmbedder(
+                    cfg.memory_index.embedder_url,
+                    timeout_seconds=QUERY_TIMEOUT_SECONDS,
+                    query_model_file=model_file(cfg.memory_index.embedder_model),
+                ) if cfg.memory_index.embed else None,
+                model=(
+                    fingerprint(cfg.memory_index.embedder_model)
+                    if cfg.memory_index.embed else None
+                ),
+            )
             if cfg.memory_index.enabled else None
         ),
         lineage=lineage,

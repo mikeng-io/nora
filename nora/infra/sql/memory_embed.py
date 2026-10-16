@@ -23,11 +23,19 @@ clears the vector.
 **No node escapes the bookkeeping, and none loops.** Every failure of one
 node, an unexpected exception included, is recorded on it: its
 `embed_attempts` rises and `embed_pick` backs it off exponentially, and after
-`EMBED_MAX_ATTEMPTS` it is not picked again (`given_up`). An unavailable
-embedder (or blob store) ends the tick at the first failure, so a dead server
-costs one call per tick. `embed_error` records a short class
+`EMBED_MAX_ATTEMPTS` failures of the input itself (rejected, empty, error) it
+is not picked again (`given_up`). An unavailable embedder (or blob store)
+ends the tick at the first failure, so a dead server costs one call per
+tick; that attempt backs the node off too, but never to the cap, so an
+outage gives up on nothing. `embed_error` records a short class
 (`unavailable:HTTP 503`, `rejected:HTTP 400`, `error:KeyError`, `empty`), and
 nothing here logs or records a node's text.
+
+**A text cut to fit** the server's micro-batch (`LlamaEmbedder.
+embed_document`'s `truncated`) is stored like any other, its vector standing
+for the head of the text, and counted on `nora_memory_embed_truncated_total
+{kind}` once its vector is stored: there is no chunking (65 §3), and that
+counter is what says when there should be.
 
 **The image throttle.** An image costs about 3.4 s of norty's CPU, a text
 about 0.4 s (65 §0). At most `images_per_hour` images are embedded in any
@@ -145,6 +153,7 @@ class MemoryEmbedWorker:
         """Embed one node and store or record the result. None: an image
         left for a later tick, the throttle having run out in this batch."""
         by_bytes = False
+        truncated = False
         try:
             vector: list[float] | None = None
             if self._blobs is not None and item.sha256 and embeds_bytes(media_type):
@@ -164,17 +173,23 @@ class MemoryEmbedWorker:
                 if not item.text.strip():
                     await self._failed(item, "empty", by_bytes=False)
                     return "empty"
-                vector = await self._embedder.embed_document(item.text)
+                embedded = await self._embedder.embed_document(item.text)
+                vector = embedded.vector
+                truncated = embedded.truncated
             async with self._engine.begin() as conn:
-                await memory_index.embed_store(
+                stored = await memory_index.embed_store(
                     conn, item, vector=vector, model=self._model,
                     now_ms=int(self._clock() * 1000), by_bytes=by_bytes,
                 )
+            # Only a vector that was stored stands for a cut text: a node
+            # that changed meanwhile is embedded again, and counted then.
+            if truncated and stored and self._metrics is not None:
+                self._metrics.inc("nora_memory_embed_truncated_total", kind=item.kind)
             return "ok"
         except (EmbedderUnavailableError, _BlobUnavailableError) as exc:
             prefix = "blob" if isinstance(exc, _BlobUnavailableError) else "unavailable"
             log.warning("memory embed: %s (%s)", prefix, exc)
-            await self._failed(item, f"{prefix}:{exc}", by_bytes=by_bytes)
+            await self._failed(item, f"{prefix}:{exc}", by_bytes=by_bytes, counts=False)
             return "unavailable"
         except EmbedderRejectedError as exc:
             log.warning("memory embed: rejected (%s)", exc)
@@ -187,12 +202,18 @@ class MemoryEmbedWorker:
             await self._failed(item, f"error:{type(exc).__name__}", by_bytes=by_bytes)
             return "error"
 
-    async def _failed(self, item: Embeddable, error: str, *, by_bytes: bool) -> None:
+    async def _failed(
+        self, item: Embeddable, error: str, *, by_bytes: bool, counts: bool = True,
+    ) -> None:
+        """Record the failure on the node. `counts` only for a failure of the
+        input itself: an unavailable embedder or blob store backs the node
+        off but never gives up on it (`memory_index.embed_failed`)."""
         async with self._engine.begin() as conn:
             attempts = await memory_index.embed_failed(
                 conn, item, error=error, now_ms=int(self._clock() * 1000), by_bytes=by_bytes,
+                counts=counts,
             )
-        if attempts >= EMBED_MAX_ATTEMPTS:
+        if counts and attempts >= EMBED_MAX_ATTEMPTS:
             log.warning(
                 "memory embed: node %d given up after %d attempts (%s)",
                 item.id, attempts, error,
