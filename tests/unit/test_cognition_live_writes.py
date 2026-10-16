@@ -241,6 +241,35 @@ async def test_a_note_linked_remind_carries_the_note_and_follows_a_merge_and_a_r
     assert row.state is ReminderState.CANCELLED and row.outcome == "cancelled_note_retired"
 
 
+async def test_a_remind_citing_a_note_by_its_bare_shown_id_links_it_and_dies_with_it():
+    """The agenda shows a note as `<note n="<id>">`, so the model cites the bare
+    id. That row must link the note: a second row on the same note is refused, and
+    retiring the note cancels the first. Unlinked, every row on a note survives
+    its retire and fires on a settled premise."""
+    stores = Stores()
+    stores.notes = InMemoryNoteStore(reminders=stores.reminders)
+    note = await _seed_note(stores, "dinner")
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["remind"](
+            intent="ask", text="ask how many are coming",
+            subject_rows=["101", note.id], at=iso(NOW + 3_600_000),
+        ))
+        answers.append(await by["remind"](
+            intent="ask", text="ask the headcount again",
+            subject_rows=[note.id, "102"], at=iso(NOW + 7_200_000),
+        ))
+        answers.append(await by["note_retire"](note_id=note.id, reason="settled"))
+
+    await session(behave, stores=stores)
+    assert [a["status"] for a in answers] == ["ok", "refused", "ok"]
+    assert answers[1]["reason"] == "duplicate_pending"
+    (row,) = stores.reminders._rows.values()
+    assert row.payload["note_id"] == note.id
+    assert row.state is ReminderState.CANCELLED and row.outcome == "cancelled_note_retired"
+
+
 def _note(note_id: str, title: str) -> Note:
     return Note(
         id=note_id, unit="u", title=title, description="d", uncertainty="u",

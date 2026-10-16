@@ -2402,6 +2402,12 @@ class CognitionSessionRunner:
                     return _refused(refusal.reason, refusal.detail)
                 link: dict[str, str] = {}
                 note_row = next((r for r in subject_rows if r.startswith("note:")), None)
+                if note_row is None:
+                    # The agenda shows a note as `<note n="<id>">`, so the model
+                    # cites the bare id. Unlinked, the row survives the note's
+                    # retire and fires on a settled premise.
+                    open_ids = {n.id for n in await self._notes.standing(unit=unit)}
+                    note_row = next((r for r in subject_rows if r in open_ids), None)
                 if note_row is not None:
                     shown_note = await self._notes.read(
                         unit=unit, note_id=_bare_row(note_row),
