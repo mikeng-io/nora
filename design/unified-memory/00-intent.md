@@ -193,6 +193,13 @@ index and Honcho's exit are now listed in their order.
    outing places. Nothing holds a place hierarchy today, and saved places
    stay out (R-35). Until this lands, "near Mong Kok" reaches only what names
    Mong Kok.
+3b. **Pre-fetch** ([25](25-memory-graph.md) §5; operator, 2026-10-16), after
+   step 3's acceptance run: code runs the same retrieval from the message's
+   own seeds (speaker, room, referenced media and handles, the text) and
+   renders one block under a token budget, through the one renderer. No
+   planning model decides what to load. It uses the adaptive cut of
+   [65](65-build-step-3-vectors.md) V3 with a smaller budget, and 25 §5's
+   pre-fetch recall (below 0.7 reopens the design) is its acceptance measure.
 4. **Note citations.** `note_create` / `note_update` gain citations like
    memos, lessons and events. `note_revision` has no citations column today
    (`nora/infra/sql/schema.py`, the `note_revision` table), so this is a schema
