@@ -20,15 +20,16 @@ import (
 
 type itemsBody struct {
 	Items []struct {
-		Code          string `json:"code"`
-		PK            string `json:"pk"`
-		TakenAt       int64  `json:"taken_at"`
-		Kind          string `json:"kind"`
-		MediaType     int    `json:"media_type"`
-		Caption       string `json:"caption"`
-		CarouselCount int    `json:"carousel_count"`
-		Collab        bool   `json:"collab"`
-		AltText       string `json:"alt_text"`
+		Code          string  `json:"code"`
+		PK            string  `json:"pk"`
+		TakenAt       int64   `json:"taken_at"`
+		Kind          string  `json:"kind"`
+		MediaType     int     `json:"media_type"`
+		Caption       string  `json:"caption"`
+		CarouselCount int     `json:"carousel_count"`
+		Collab        bool    `json:"collab"`
+		AltText       string  `json:"alt_text"`
+		Location      *string `json:"location"`
 		Items         []struct {
 			Kind            string   `json:"kind"`
 			URL             string   `json:"url"`
@@ -118,6 +119,13 @@ func TestItemsMapsReelsPostsAndTheCursor(t *testing.T) {
 	}
 	if plain.Kind != "post" || plain.Caption != "" {
 		t.Errorf("captionless post = %+v", plain)
+	}
+	// A tagged place is its name only; an item with none says "", present.
+	if plain.Location == nil || *plain.Location != "Placeholder Square" {
+		t.Errorf("tagged post location = %v, want its place's name", plain.Location)
+	}
+	if reel.Location == nil || *reel.Location != "" {
+		t.Errorf("untagged reel location = %v, want \"\", present", reel.Location)
 	}
 	if body.NextCursor == nil || *body.NextCursor != "synthetic-cursor-1" {
 		t.Errorf("next_cursor = %v, want the page's end_cursor", body.NextCursor)

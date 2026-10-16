@@ -70,6 +70,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"instagram-bridge/internal/domain"
 
@@ -289,6 +290,36 @@ type storyItemWire struct {
 		Candidates []mediaCandidate `json:"candidates"`
 	} `json:"image_versions2"`
 	VideoVersions []mediaCandidate `json:"video_versions"`
+	// StoryLocations are the frame's location stickers, each wrapping the
+	// tagged place. UNMEASURED on this document: read defensively, so a frame
+	// without them, or with another shape, carries no location.
+	StoryLocations []struct {
+		Location *wireLocation `json:"location"`
+	} `json:"story_locations"`
+}
+
+// wireLocation is a tagged place as Instagram's media objects carry it. Only
+// the name is read: the coordinates are never forwarded.
+type wireLocation struct {
+	Name string `json:"name"`
+}
+
+// name is the place's name, trimmed, "" for no location.
+func (l *wireLocation) name() string {
+	if l == nil {
+		return ""
+	}
+	return strings.TrimSpace(l.Name)
+}
+
+// location is the first location sticker's place name, "" when none names one.
+func (item *storyItemWire) location() string {
+	for _, s := range item.StoryLocations {
+		if name := s.Location.name(); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 // looseID is a wire id read as text whatever its JSON type, with no shape
@@ -422,6 +453,7 @@ func storyFrame(item *storyItemWire) domain.StoryItem {
 		TakenAt:    item.TakenAt,
 		ExpiringAt: item.ExpiringAt,
 		AltText:    item.AccessibilityCaption,
+		Location:   item.location(),
 	}
 	if item.Caption != nil {
 		out.Caption = item.Caption.Text

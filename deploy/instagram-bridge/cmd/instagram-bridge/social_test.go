@@ -376,7 +376,14 @@ func TestStoryFramesKeepBothTheClipAndTheStill(t *testing.T) {
 			"the question with no fetch at all", image.Caption, image.AltText)
 	}
 
+	if image.Location != "Placeholder Harbour" {
+		t.Errorf("frame 1 location = %q, want its location sticker's place name, trimmed", image.Location)
+	}
+
 	video := body.Items[1]
+	if video.Location != "" {
+		t.Errorf("frame 2 location = %q from a frame with no location sticker", video.Location)
+	}
 	if video.Kind != "video" {
 		t.Errorf("frame 2 kind = %q, want video", video.Kind)
 	}

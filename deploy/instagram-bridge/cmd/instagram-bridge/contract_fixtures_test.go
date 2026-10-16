@@ -289,7 +289,8 @@ func synthStoryJSON() string {
 // The author's words and Instagram's description of the frame. The bridge
 // forwards both; the Python client must not (a story result is a reference,
 // never content), and these are the values it asserts against.
-const synthStoryWords = `"caption": {"text": "synthetic caption text"}, "accessibility_caption": "synthetic alt text",`
+const synthStoryWords = `"caption": {"text": "synthetic caption text"}, "accessibility_caption": "synthetic alt text",
+     "story_locations": [{"location": {"pk": "3001", "name": "Placeholder Harbour"}}],`
 
 // A frame with NO `pk`. `storyFrame` then falls back to `id`, which Instagram
 // shapes as `<pk>_<owner igid>`, so the frame's `id` carries the story
@@ -318,6 +319,7 @@ func synthTimelineJSON(more bool) string {
   {"node": {"code": "SynthPost02", "pk": "2002", "id": "2002_` + synthIGID + `", "user": {"pk": "` + synthIGID + `"}, "taken_at": 1700000200,
     "caption": null, "media_type": 8, "product_type": "carousel_container", "carousel_media_count": 3,
     "accessibility_caption": "a photo of a plate",
+    "location": {"pk": "3002", "name": "Placeholder Square", "lat": 0.0, "lng": 0.0},
     "carousel_media": [
       {"media_type": 1, "image_versions2": {"candidates": [{"width": 1080, "height": 1080, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-c1.jpg"}]}},
       {"media_type": 2, "image_versions2": {"candidates": [{"width": 1080, "height": 1080, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-c2.jpg"}]},

@@ -289,7 +289,15 @@ after insert. Everything that changes about an item is a new row elsewhere.
 - **`social_item`**: `(network, item_id)` unique; `person`, `account`,
   `kind` (`story_frame`, `post`, `reel`, later `thread_post`), `taken_at`,
   `expires_at` (story frames), `caption`, `alt_text`, `location`, `tagged`
-  and `mentioned` handles (recorded, never read, [20](20-observe.md) §2),
+  and `mentioned` handles (recorded, never read, [20](20-observe.md) §2;
+  `location` is read by the memory index since §9 decision 4). `location`
+  is the tagged place's name only, never its coordinates: the bridge reads
+  a post's or reel's `location.name` off the timeline node and a story
+  frame's first `story_locations[].location.name`, and the source keeps it
+  as one line of at most `LOCATION_MAX_CHARS` (`published_location`), the
+  author's words kept as data. The story sticker's field is UNMEASURED on
+  the story document and read defensively; a post read alone
+  (`GET /posts/{shortcode}`) carries none.
   `media_ref`, `seen_at`, `origin` (`poll` or `backfill`), `collab` (another
   account's post the person co-authored, §1), `recorded_at`.
   No unit column: a person in two units is one row, and which units may read
@@ -501,10 +509,8 @@ detail is [unified-memory/25](../unified-memory/25-memory-graph.md) §7a.
    neither matches a search nor is rendered. It is not in the item's text,
    because a read cannot gate part of a node. Alt text stays out: it was not
    ruled on, and it would carry the place past that gate. Detail:
-   [unified-memory/25](../unified-memory/25-memory-graph.md) §7a item 4. No
-   social source records a location yet (`SqlSocialStreamStore.insert_item`
-   takes one; the poller passes none), so the node exists only once one
-   does.
+   [unified-memory/25](../unified-memory/25-memory-graph.md) §7a item 4.
+   The poller records it for posts, reels and story frames (§5).
 5. *The verb.* No new category and no tool-text change: social items are in
    `kinds=media`, and the answer's `kind` says what an item is («Instagram
    story») with its `age`.

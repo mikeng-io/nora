@@ -22,7 +22,8 @@
             "duration_seconds": 7.5
           }
         ],
-        "alt_text": ""
+        "alt_text": "",
+        "location": ""
       },
       {
         "code": "SynthPost02",
@@ -47,7 +48,8 @@
             "height": 1080
           }
         ],
-        "alt_text": "a photo of a plate"
+        "alt_text": "a photo of a plate",
+        "location": "Placeholder Square"
       }
     ],
     "next_cursor": null

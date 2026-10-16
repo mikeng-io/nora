@@ -147,6 +147,10 @@ type StoryItem struct {
 	ExpiringAt   int
 	Caption      string
 	AltText      string
+	// Location is the name of the place a location sticker tags the frame
+	// with, "" when it carries none. The author's published words: like a
+	// caption, it must not enter a span, a log line or an error.
+	Location string
 }
 
 // TimelinePage is one page of an account's posts and reels, newest first
@@ -181,6 +185,10 @@ type TimelineItem struct {
 	// AltText is `accessibility_caption`, Instagram's description of the
 	// image, "" when there is none.
 	AltText string
+	// Location is the name of the place the item is tagged with, "" when it
+	// carries none. The author's published words: like a caption, it must
+	// not enter a span, a log line or an error.
+	Location string
 }
 
 // Thread is one group thread's membership, never short and never empty.

@@ -19,6 +19,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.domain.ports import SocialSource
 from nora.domain.social_stream import (
+    LOCATION_MAX_CHARS,
     Account,
     Cap,
     Failed,
@@ -152,6 +153,8 @@ async def test_story_reads_frames_with_their_own_expiry(bridge) -> None:
     assert first.expires_at == datetime.fromtimestamp(1700086400, UTC)
     assert first.caption == "synthetic caption text"
     assert first.alt_text == "synthetic alt text"
+    assert first.location == "Placeholder Harbour"
+    assert [f.location for f in got.frames[1:]] == [None, None], "no sticker, no place"
     assert fake.calls[0][1] == f"/accounts/{_IGID}/story"
 
 
@@ -226,6 +229,30 @@ async def test_list_items_carries_a_videos_url_and_the_carousels_every_child(bri
     assert reel.taken_at == datetime.fromtimestamp(1700000300, UTC)
     assert fake.calls[0][1].startswith("/accounts/"), "the listing is the only read"
     assert len(fake.calls) == 1
+
+
+async def test_list_items_carries_the_tagged_place_and_none_for_an_untagged_item(
+    bridge,
+) -> None:
+    _, source = bridge
+    got = await source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(got, Page)
+    assert [i.location for i in got.items] == [None, "Placeholder Square"]
+
+
+async def test_a_tagged_place_is_kept_as_one_bounded_line(bridge) -> None:
+    """The author's words, kept as data: whitespace and control characters
+    collapse to one space, and a name past the bound is cut, never kept
+    whole."""
+    fake, source = bridge
+    fx = copy.deepcopy(fixture("items_ok.json"))
+    fx["body"]["items"][0]["location"] = "  Placeholder\n\tSquare\x00 "
+    fx["body"]["items"][1]["location"] = "x" * (LOCATION_MAX_CHARS + 50)
+    fake.answers["items"] = fx
+    got = await source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(got, Page)
+    assert got.items[0].location == "Placeholder Square"
+    assert got.items[1].location == "x" * LOCATION_MAX_CHARS
 
 
 async def test_list_items_carries_a_single_image_and_its_alt_text(bridge) -> None:

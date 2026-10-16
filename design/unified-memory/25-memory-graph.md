@@ -388,10 +388,10 @@ Operator rulings of 2026-10-16, answering
    `kind` says «Instagram tagged place». It is in
    `KINDS_BY_CATEGORY["media"]` with its item and opted out with it
    (`social_off`). Alt text stays out: it was not ruled on, and it would
-   carry the place past the gate. No social source records a `location` yet:
-   the column is written only through `SqlSocialStreamStore.insert_item`'s
-   `location`, which the poller does not pass, so the node is built and
-   tested and waits for a source. Items recorded with a location before
+   carry the place past the gate. The poller records `location` for posts,
+   reels and story frames, the place's name only
+   ([cognition-loop/22](../cognition-loop/22-social-stream.md) §5). Items
+   recorded with a location before
    `0113` are put on the projection queue by that migration and re-projected
    by the drain loop; no rebuild is needed.
 5. **No new `kinds` category, no tool-text change.** All three kinds are in

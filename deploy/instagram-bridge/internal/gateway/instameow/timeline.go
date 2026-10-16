@@ -126,6 +126,9 @@ type timelineNode struct {
 	CarouselMediaCount int    `json:"carousel_media_count"`
 	// AccessibilityCaption is Instagram's own description of the image.
 	AccessibilityCaption string `json:"accessibility_caption"`
+	// Location is the place the item is tagged with. Instagram's media
+	// object carries `name`, `pk` and coordinates; only the name is read.
+	Location *wireLocation `json:"location"`
 	timelineMedia
 	// CarouselMedia are a carousel's children, each of the same shape.
 	CarouselMedia []*timelineMedia `json:"carousel_media"`
@@ -316,6 +319,7 @@ func parseTimeline(ctx context.Context, raw []byte, igid domain.IGID) (domain.Ti
 			Collab:        collab,
 			Items:         n.items(ctx),
 			AltText:       n.AccessibilityCaption,
+			Location:      n.Location.name(),
 		}
 		// A reel is `product_type: clips` (§1a); a video posted to the feed
 		// is still a post.
