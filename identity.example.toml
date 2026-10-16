@@ -1,14 +1,13 @@
-# person_id doubles as the Honcho peer id, so it must match ^[a-zA-Z0-9_-]+$.
-# Reload is startup-only in v2 — adding a friend requires a restart (Q4).
+# Who people are: person_id -> the accounts they hold on each platform. Copy to
+# `identity.toml`. Read once at startup: adding a person needs a restart.
+# policy.toml refers to people by the person_id defined here.
 #
-# One [[persons.<id>.<platform>]] block per ACCOUNT (design/10 §3, §3.1). A
-# person may hold several accounts on one platform — a dual-SIM personal/work
-# pair, a second Discord, a burner Telegram — and they are all the same human,
-# so they resolve to the same person_id and share one Honcho peer card (A2).
+# person_id doubles as the Honcho peer id and must match ^[a-zA-Z0-9_-]+$.
 #
-# Inside a block, list whichever id KINDS you actually have for that account;
-# Nora matches on any of them. See design/10-preview-identity.toml for the
-# fully worked example, including why `display_name` is never accepted here.
+# One [[persons.<id>.<platform>]] block per ACCOUNT. A person may hold several
+# accounts on a platform (dual-SIM, a second Discord, a burner Telegram); all
+# resolve to the same person_id and share one peer card. Inside a block, list
+# whichever id kinds you have for the account; Nora matches on any of them.
 
 [persons.miles]
 name = "Miles"
@@ -16,79 +15,62 @@ name = "Miles"
 [[persons.miles.signal]]
 phone = "+85212345678"
 
-# If you ever rename a [persons.<id>] block's key (the id itself, not just
-# `name`), record the old id(s) here so analytics derived from data recorded
-# under the old id still resolves to this person instead of splitting into a
-# second, orphaned identity (design/27 §1.2). A former id must not also be a
-# live person_id, and no two people may claim the same former id — both are
-# refused at startup rather than guessed.
+# Optional. After renaming a [persons.<id>] key, list the old id(s) here so
+# data recorded under them still resolves to this person. A former id may not
+# also be a live person_id, and no two people may claim the same one; both are
+# refused at startup.
 #
 # former_person_ids = ["miles_old_id"]
 
-# A second account for the SAME person. Once a platform holds two or more, each
-# needs a distinct `label`: it is never matched on, it is what
-# `nora persons pending` prints back so you can tell them apart.
+# A second account for the same person. Once a platform holds two or more, each
+# needs a distinct `label`. It is never matched on; `nora persons pending`
+# prints it so you can tell them apart.
 #
 # [[persons.miles.signal]]
 # label = "business"
 # phone = "+85287654321"
 
-# WhatsApp (design/whatsapp-adoption/): two matchable kinds, `phone` and `lid`
-# (nora/domain/identity.py — the vocabulary entry already exists). `phone` is
-# the same "+<digits>" shape Signal uses. `lid` is WhatsApp's Linked Identity
-# digits (Baileys surfaces many group senders as <digits>@lid instead of a
-# phone JID); list BOTH when you have them — `nora persons pending` prints
-# whichever form an unmapped sender arrived as.
+# WhatsApp: matchable kinds are `phone` ("+<digits>", as Signal) and `lid`
+# (WhatsApp Linked Identity digits; many group senders arrive as <digits>@lid
+# instead of a phone JID). List both when you have them. `nora persons pending`
+# prints whichever form an unmapped sender arrived as.
 #
 # [[persons.miles.whatsapp]]
 # phone = "+85212345678"
 # lid   = "60000000000001"
 
-# Instagram (design/instagram-adoption/02-identity-and-policy.md): two matchable
-# kinds, `fbid` and `igid`, and they are NOT interchangeable — getting this
-# wrong is silent, not loud.
+# Instagram: matchable kinds are `fbid` and `igid`. They are different numbers
+# for the same person and neither can be derived from the other. List both.
 #
-# `fbid` is `interop_messaging_user_fbid`: the MESSAGING identity. It is what
-# an inbound message's sender carries and what an @-mention carries, so it is
-# the one that decides whether Nora heard this person speak or saw them tag
-# her. `igid` is the PUBLIC Instagram numeric id — a different number for the
-# same person — and it is what the story/profile reads take. List both when you
-# have them; neither can be derived from the other.
+# `fbid` is the messaging identity (interop_messaging_user_fbid): what inbound
+# messages and @-mentions carry. `igid` is the public numeric Instagram id, used
+# by story and profile reads.
 #
-# NOT the @handle. It is renameable, and on Instagram the freed name can be
-# taken by somebody else, so indexing it would unmap this person on a rename
-# and resolve a stranger AS them. Write it beside the ids as `username` if you
-# want the file to stay legible — it is accepted, read by nobody, and matched
-# on never.
+# The @handle is never matched: it can be renamed and the freed name taken by
+# someone else. `username` is accepted for readability and ignored.
 #
-# Both numbers are recoverable without asking anyone: they arrive together on
-# every message from a room Nora is already in, and `nora persons pending`
-# prints the fbid of any sender it could not map.
+# Both ids arrive on every message from a room Nora is already in, and
+# `nora persons pending` prints the fbid of any sender it could not map.
 #
 # [[persons.miles.instagram]]
-# username = "example_handle"   # readable, NEVER matched on
+# username = "example_handle"   # readable, never matched on
 # fbid     = "100000000000001"
 # igid     = "10000001"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RETIRING (operator 2026-10-16): removed with Honcho, see
-# design/unified-memory/35-persona.md row 6.
-# WORKSPACE BINDINGS (DEC-214). policy.toml's [units.<unit>] puts each unit in
-# a Nora workspace; this says which HONCHO workspace that Nora workspace's
-# person models live in. The two are different names for different things.
+# WORKSPACE BINDINGS (DEC-214). Retiring with Honcho. policy.toml's
+# [units.<unit>] puts each unit in a Nora workspace; this maps a Nora workspace
+# to the Honcho workspace holding its person models.
 #
-# Optional per workspace: one with no table here uses its own name as its
-# Honcho workspace id. Two Nora workspaces bound to ONE Honcho workspace refuse
-# to start (their people would merge into one set of models), and so does a
-# binding here while policy.toml has no [units] — the implicit workspace is
-# always bound to config.toml's memory.workspace_id.
+# Optional per workspace: with no table here, the Nora workspace name is used as
+# the Honcho workspace id. Startup refuses if two Nora workspaces bind to one
+# Honcho workspace, or if a binding exists while policy.toml has no [units]
+# (the implicit workspace is bound to config.toml's memory.workspace_id).
 #
-# A bound Honcho workspace must be THIS Nora's: one she created (it carries her
-# `nora_owner` marker), or one that is absent or empty, which she claims. An
-# unmarked Honcho workspace that already holds sessions belongs to some other
-# application on the same Honcho server, and Nora refuses to start on it — pick
-# another id (a `nora-` prefix keeps them apart). The one exception is
-# config.toml's memory.workspace_id, which predates the marker.
+# A bound Honcho workspace must be Nora's own (carrying her `nora_owner`
+# marker) or absent or empty, which she claims. An unmarked workspace that
+# already holds sessions is refused; pick another id (a `nora-` prefix keeps
+# them apart). config.toml's memory.workspace_id is exempt.
 #
 # [workspaces.home]
 # honcho_workspace = "nora"     # keep an existing Honcho workspace and its history

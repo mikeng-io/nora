@@ -1,257 +1,181 @@
-# WHO AND WHERE NORA ANSWERS. Copy to `policy.toml` (gitignored).
+# Who and where Nora answers. Copy to `policy.toml` (gitignored). Read once at
+# startup: a change needs a restart.
 #
-# Separate from config.toml (deploy cadence) and identity.toml (changes when a
-# human joins) because policy changes when TRUST changes. An allowlist buried
-# among port numbers is an allowlist nobody reviews.
-#
-# People are named by person_id from identity.toml, never by phone number. One
-# consequence worth knowing up front: a person_id covers EVERY account that
-# person holds, so allowlisting `miles` admits his work number too.
+# People are named by person_id from identity.toml, never by phone number. A
+# person_id covers EVERY account that person holds, so allowlisting `miles`
+# admits his work number too.
 
-# Deny by default. An empty file means nothing is allowed, and Nora REFUSES TO
-# START rather than running mute: under R-5 she is silent when broken, so a
-# silently-denied Nora is indistinguishable from a working one.
+# Deny by default. An empty file allows nothing, and Nora refuses to start
+# rather than run mute.
 default = "deny"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. DMs — a direct message has no stable conversation id; its identity IS the
-#    person, which is why this is its own list.
+# 1. DMs. Optional. A direct message has no stable conversation id; its identity
+#    is the person, so it has its own list.
 #
-#    FORWARD-LOOKING: the Signal parser still drops every non-group message
-#    ("DM — out of scope in v2"), so this section is validated but not yet
-#    reachable. Nora warns at startup if it is non-empty.
+#    Not yet reachable: the Signal parser drops every non-group message. The
+#    section is validated, and Nora warns at startup if it is non-empty.
 [dm]
-persons = ["miles"]        # [] means Nora accepts no DMs at all.
+persons = ["miles"]        # person_ids. [] means no DMs.
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. CONVERSATIONS — which rooms she participates in, and who within them.
+# 2. CONVERSATIONS. Which rooms she participates in, and who within them.
+#    Anything not listed is denied.
 #
-#    `id` is the canonical conversation_id exactly as it appears in the audit
-#    DB. Run `nora groups` to print every group's name beside its id; that is
-#    the answer to "I cannot tell which id is which group".
-#
-#    `nora groups` IS SIGNAL-ONLY. It reads signal-cli's directory, so it
-#    cannot name a Discord guild or channel. For Discord, turn on Developer
-#    Mode in the client and use Copy Server ID / Copy Channel ID. (A Discord
-#    sender you have not mapped yet still shows up in `nora persons pending`
-#    once they have spoken — as a bare snowflake, since the name lookup is
-#    Signal-only too.)
+#    `id` is the canonical conversation_id as it appears in the audit DB:
 #
 #      signal    groupId, base64
 #      telegram  chat.id, stringified int (negative for groups)
-#      discord   "<guild_id>/<channel_id>" — the adapter flattens the hierarchy
+#      discord   "<guild_id>/<channel_id>"
 #      whatsapp  group JID, ...@g.us
-
-#    `unit` is the SOCIAL UNIT a room belongs to (DEC-105) — the same
-#    people reachable in more than one place. It is the boundary `send_to`
-#    may never cross: "tell the Signal lot" from Discord resolves to the
-#    Signal room of THIS unit and nothing else. A unit holds at
-#    most one room per platform, which is what makes naming the platform a
-#    usable address; two REFUSE TO START (enforced since DEC-214). Defaults
-#    to "nora", so a single-group deployment needs nothing here. Units belong
-#    to WORKSPACES — see section 3 at the end of this file.
+#
+#    `nora groups` prints each Signal group's name beside its id. It is
+#    Signal-only. For Discord, enable Developer Mode and use Copy Server ID /
+#    Copy Channel ID. An unmapped Discord sender appears in
+#    `nora persons pending` as a bare snowflake once they have spoken.
+#
+#    `unit` (default "nora") is the social unit a room belongs to: the same
+#    people reachable in more than one place (DEC-105). `send_to` never crosses
+#    a unit, so "tell the Signal lot" from Discord resolves to the Signal room
+#    of the same unit. A unit holds at most one room per platform; two refuse
+#    to start (DEC-214). A single-group deployment needs no `unit`. Units map
+#    to workspaces, see section 3.
 
 [[conversations]]
 platform  = "signal"
 id        = "Q2hhdEdyb3VwSWRFeGFtcGxlQmFzZTY0PT0="
-unit = "family"         # paired with the Discord room below
-label     = "Family"          # for humans reading this file. NEVER matched on —
-                             # group names are not unique and are trivially
-                             # changed by anyone in the group.
-persons  = ["miles", "ada"]   # only these two may trigger Nora here. A new group
-                             # member is ignored until you add them.
+unit = "family"         # shared with the Discord room below
+label     = "Family"          # For humans reading this file. Never matched on:
+                             # group names are not unique and anyone in the
+                             # group can change them.
+persons  = ["miles", "ada"]   # Only these may trigger Nora here. A new group
+                             # member is ignored until added.
 tools    = []                # MCP servers this room may use, e.g. ["pulse"].
-                             # Empty means none, same deny-by-default as everything
-                             # else here.
-# location = true            # (default false) relax where_is's disclosure gate for
-                             # THIS room: normally Nora refuses to say where someone
-                             # is unless the room is a subset of their Life360 circle.
-                             # Set true when you trust the mapped people here with the
-                             # circle's positions even though they aren't all in it.
-                             # It is a WHOLE-ROOM switch (DEC-79): accounts you have no
-                             # identity.toml entry for stop blocking it too — real groups
-                             # keep silent sealed-sender members you cannot map at all.
-                             # The one thing it never relaxes: if Nora cannot READ the
-                             # roster, she still refuses. Trust overrules what a roster
-                             # says, never the absence of one.
-# home_room = true             # (default false) THIS room is where Nora stands when she acts
-                             # for the unit with nobody asking (design/dreamer-agent-loop/
-                             # 39 D2): the proactive adaptor's roster-gated reads (`where_is`,
-                             # `about`, `ask_memory`, `group_members`) resolve through this
-                             # room, its `location` flag applies exactly as on a tag, and the
-                             # rows it writes fire into this room. Exactly one per unit;
-                             # a second is a startup error. No home room, no proactive pass.
-# proactive = true             # (default false) a `kind="proactive"` row may FIRE here (39
-                             # D5). Those rows are owned by Nora's own ai_peer id, which is
-                             # nobody in identity.toml, so the persons list cannot admit them;
-                             # this flag is what the heartbeat checks instead. Meaningful only
-                             # on the home room, because nothing writes such rows elsewhere.
-# relevance_gate = true        # (default false) opt THIS room into the Relevance Gate
-                             # (design/dreamer-agent-loop/36): an untagged message here
-                             # may be judged, once per quiet-closed window, on whether it
-                             # deserves Nora's attention. Being allowed to answer when
-                             # tagged has never implied being allowed to speak unprompted
-                             # — the two are separate grants, and this one additionally
-                             # requires `[relevance_gate] enabled = true` in config.toml
-                             # (shipped off, and shipped in shadow mode even when on).
+                             # Empty means none.
+# location = true            # (default false) Relax where_is's disclosure gate
+                             # for this room. Normally Nora will not say where
+                             # someone is unless the room is a subset of their
+                             # Life360 circle. Set true when you trust the
+                             # mapped people here with the circle's positions.
+                             # Applies to the whole room (DEC-79), including
+                             # accounts with no identity.toml entry. It never
+                             # overrides a roster Nora cannot read: then she
+                             # still refuses.
+# home_room = true             # (default false) The room Nora acts from when she
+                             # acts for the unit unprompted. The proactive
+                             # pass's roster-gated reads (`where_is`, `about`,
+                             # `ask_memory`, `group_members`) resolve through
+                             # it, its `location` flag applies as on a tag, and
+                             # proactive rows fire into it. Exactly one per
+                             # unit; a second is a startup error. Without a
+                             # home room there is no proactive pass.
+# proactive = true             # (default false) Allow proactive rows to fire
+                             # in this room. Those rows belong to Nora's own
+                             # peer id, which is nobody in identity.toml, so
+                             # `persons` cannot admit them. Only meaningful on
+                             # the home room.
+# relevance_gate = true        # (default false) Opt this room into the Relevance
+                             # Gate: an untagged message may be judged, once
+                             # per quiet-closed window, on whether it deserves
+                             # Nora's attention. Separate from answering when
+                             # tagged. Also needs `[relevance_gate] enabled =
+                             # true` in config.toml (off by default, and shadow
+                             # mode even when on).
 
-# Discord: the guild and the channel, flattened into one id. The GUILD IS NOT
-# allowlistable on its own — being invited to a server grants technical reach,
-# never ambient presence, so every channel is listed explicitly.
+# Discord: guild and channel flattened into one id. The guild is not
+# allowlistable on its own; list every channel explicitly.
 [[conversations]]
 platform  = "discord"
 id        = "100000000000000203/100000000000000204"
-unit = "family"         # the same humans as the Signal group above
+unit = "family"         # same people as the Signal group above
 label     = "Zone 42 #general"
 persons  = ["miles", "ada"]
-# voice = true               # (optional, default false) EVERY VOICE CHANNEL IN THIS
-                             # ROOM'S GUILD SPEAKS INTO HERE. 「喂 Nora」 said in any of
-                             # the server's voice channels is transcribed and recorded as
-                             # a message in THIS room — same notebook, same culture, same
-                             # `persons` gate as the typing above it.
-                             #
-                             # Voice is a SURFACE of a room, not a room of its own
-                             # (design/voice-channel/07 §12.2, reversed 2026-09-17). Phase 1
-                             # allowlisted one voice channel and gave it its own id; a real
-                             # server has 10+ voice channels and gains more, so that list
-                             # could not be kept true — and N voice rooms in one unit
-                             # would breach DEC-105 N times over. The GUILD is matched; the
-                             # channel is recorded as provenance only.
-                             #
-                             # At most one room per guild may set it; a second is a startup
-                             # error. A guild with none refuses speech outright (400) rather
-                             # than guessing a room.
+# voice = true               # (optional, default false) Every voice channel in
+                             # this room's guild speaks into this room. 「喂 Nora」
+                             # said in any of them is transcribed and recorded
+                             # as a message here, under this room's `persons`
+                             # gate. Voice is a surface of a room, not a room of
+                             # its own: the guild is matched and the channel is
+                             # kept as provenance only. At most one room per
+                             # guild may set it (a second is a startup error). A
+                             # guild with none refuses speech (400).
 # music_channel = "1480387369830973999"
-                             # (optional, no default) WHERE THIS GUILD'S MUSIC
-                             # ANNOUNCEMENTS GO — a SIBLING channel in this room's
-                             # server, named by id. The system's own music posts —
-                             # 「Now playing:」 on a natural track-end, 「Autoplaying:」,
-                             # the next track after a skip, the connection-lost
-                             # teardown — are posted THERE, for every session in this
-                             # room's server.
+                             # (optional, no default) Where this guild's system
+                             # music announcements go: 「Now playing:」,
+                             # 「Autoplaying:」, the next track after a skip,
+                             # connection-lost teardown. A sibling channel in
+                             # this room's server, as a bare channel id: 17-20
+                             # digits, not 「<guild>/<channel>」 and not a name.
+                             # It may not be a channel this file lists (startup
+                             # error), and at most one room per server may set
+                             # it. A channel from another server falls back and
+                             # logs at send time.
                              #
-                             # Without it the destination is discovered instead of
-                             # named: whichever text channel the session's FIRST play
-                             # happened to run in, captured once and never moved. That
-                             # is invisible (nothing shows you where it points), sticky
-                             # (persisted, survives a restart, no command changes it)
-                             # and unbounded — `/music play` is gated by SERVER, never
-                             # by room, so it can capture a channel that is not listed
-                             # in this file at all.
+                             # Unset, announcements go to whichever text channel
+                             # the session's first play ran in, kept across
+                             # restarts, and `/music play` is gated by server,
+                             # not room, so that can be an unlisted channel.
                              #
-                             # A FIELD HERE, NOT A ROOM OF ITS OWN, and it may NOT name
-                             # a channel this file lists — that is a startup error. A
-                             # `[[conversations]]` entry is a bundle of answers about
-                             # PEOPLE: who may trigger her, which rooms are one social
-                             # unit, whose positions may be disclosed, whether she may
-                             # speak uncalled. Every one of them is meaningless for a
-                             # channel that is written to and never read, so listing an
-                             # announcement channel means inventing trust answers about
-                             # a non-conversation. It would also put a second room in
-                             # this server's unit (DEC-105 allows one per platform) and
-                             # make Nora record whatever ELSE is said there — her own
-                             # posts are dropped before ingest, but nobody else's are.
-                             #
-                             # Digits only, 17-20 of them: a bare channel id in THIS
-                             # room's server. Not 「<guild>/<channel>」 and not a channel
-                             # NAME (names are not stable ids). A bare id from ANOTHER
-                             # server cannot be told apart here, so the guild is checked
-                             # when the announcement is actually sent — a mismatch falls
-                             # back and logs rather than posting outside the server. At
-                             # most one room per server may carry it; a second is a
-                             # startup error.
-                             #
-                             # Changing it needs a restart, like every other line here.
-                             #
-                             # SYSTEM ANNOUNCEMENTS ONLY. A slash command still replies
-                             # where you typed it — you are looking there — and her
-                             # conversational reply still lands in the room you tagged
-                             # her in. This moves the posts nobody asked for.
-                             #
-                             # Omit it entirely to keep the where-it-started fallback,
-                             # so leaving this out changes nothing.
-# location = true            # same switch as Signal, same meaning — see below.
+                             # Moves system announcements only. Slash commands
+                             # reply where typed; conversational replies land in
+                             # the room she was tagged in.
+# location = true            # same switch as Signal, same meaning
 description = "a games room; 2200 is when people log on, not an appointment"
-                             # (optional, no default) WHAT KIND OF ROOM THIS IS, in your own
-                             # words. `label` says what the room is CALLED; this says what it
-                             # IS, and you are the only one who can say it. A background pass
-                             # reading this room's messages sees 「2200」 and 「today no?」 and,
-                             # without this line, has nothing telling it those are people
-                             # arranging to log on rather than making an appointment — it
-                             # wrote the same imaginary gathering into the notebook twice
-                             # before this field existed. It is rendered above the batch,
-                             # verbatim, as context for reading it and never as an instruction
-                             # to her.
-                             #
-                             # One or two plain sentences about the ROOM, not about Nora and
-                             # not about what you want her to do: what the room is for, what
-                             # its regular shorthand means, what a stranger reading a week of
-                             # it would misunderstand. Omit it entirely if you have nothing to
-                             # say — a room with no description is described by nothing, never
-                             # by a guess. It also reaches the proactive pass, as the
-                             # `this_room_is` of its `<presence>` block, on whichever room
-                             # is `home_room = true`.
+                             # (optional, no default) What kind of room this is,
+                             # in your words. `label` is the name; this is what
+                             # the room is for, what its regular shorthand
+                             # means, and what a stranger reading a week of it
+                             # would misread. Rendered verbatim above the
+                             # message batch as context for background passes,
+                             # never as an instruction. One or two plain
+                             # sentences about the room, not about Nora. Omit
+                             # if you have nothing to say. Also reaches the
+                             # proactive pass, via the home room's `<presence>`
+                             # block.
 
-# WhatsApp (design/whatsapp-adoption/): the id is the group JID exactly as the
-# bridge reports it, `...@g.us`. Find it in the audit DB or in the bridge's
-# logs once the room has spoken. 1:1 chats (`...@s.whatsapp.net`) are
-# DENY-BY-DEFAULT this phase — listing one here admits it, and the DM study
-# owns whether that becomes supported, so don't until it lands.
+# WhatsApp: `id` is the group JID as the bridge reports it, `...@g.us`. Find it
+# in the audit DB or the bridge logs once the room has spoken. 1:1 chats
+# (`...@s.whatsapp.net`) are denied by default; listing one here admits it, so
+# do not.
 # [[conversations]]
 # platform  = "whatsapp"
 # id        = "152099000000000000@g.us"
-# unit = "family"         # same humans again — the unit is the boundary
+# unit = "family"         # same people again
 # persons  = ["miles", "ada"]
-# tools/location stay omitted here: deny-by-default, same as every new room.
+# tools and location are omitted: denied by default.
 
 [[conversations]]
 platform = "telegram"
 id       = "-1001234567890"
-also_ids = ["-987654321"]    # Telegram CHANGES chat.id when a group becomes a
-                             # supergroup, reporting the old id once. Without
-                             # this the allowlist silently stops matching and
-                             # Nora goes quiet — invisible under R-5.
+also_ids = ["-987654321"]    # Extra ids matched as this room. Telegram changes
+                             # chat.id when a group becomes a supergroup;
+                             # without the old id the allowlist stops matching
+                             # and Nora goes silent.
 label    = "Work"
-persons  = "*"               # anyone in this chat, including someone Nora
-                             # cannot name. The room is the trust boundary you
-                             # drew. An unmapped sender is still never fed to
-                             # Honcho (D6) — they are answered, not remembered.
-                             # An explicit list excludes them instead, since
-                             # an unmapped sender matches no person_id.
+persons  = "*"               # Anyone in this chat, including senders Nora cannot
+                             # name. They are answered, never remembered. An
+                             # explicit list excludes unmapped senders.
 
 # ─────────────────────────────────────────────────────────────────────────────
-# NOT SUPPORTED, deliberately:
-#
-#   roles  = ["family"]   -> arbitrary named roles exist only on Discord.
-#   admins = true         -> would grant on membership status.
-#
-# Membership IS normalised in the domain to exactly two values (admin | member),
-# but policy does not GRANT on it: "is this sender an admin?" is a per-message
-# platform lookup on the path that must not stall the SSE reader, and granting
-# by membership hands authorisation to whoever can promote an admin, so this
-# file would stop being a complete description of who has access.
+# Not supported: granting by role (`roles = [...]`) or by admin status
+# (`admins = true`). Policy grants only on person_id, so this file stays a
+# complete description of who has access.
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. UNITS -> WORKSPACES (DEC-214) — the hierarchy is workspace > unit > room.
-#    RETIRING (operator 2026-10-16): removed with Honcho, after which the unit is
-#    the only boundary (design/unified-memory/35-persona.md row 6).
+# 3. UNITS -> WORKSPACES (DEC-214). Optional. Hierarchy: workspace > unit > room.
+#    Retiring with Honcho; the unit becomes the only boundary.
 #
-#    A Nora WORKSPACE holds one or more units; a unit holds one or more rooms
-#    (at most one per platform). Units in one workspace share one Honcho
-#    workspace — one person is one person-model across all of them — and each
-#    unit is its own named scope inside it, so what Nora recalls for a unit
-#    comes from that unit's rooms. Different workspaces are separate person
-#    models entirely: use one when a group's people must not share memory
-#    with another's.
+#    A workspace holds one or more units. Units in one workspace share one
+#    person-model, each unit is its own scope inside it, and recall for a unit
+#    comes from that unit's rooms. Different workspaces share nothing: use one
+#    when a group's people must not share memory with another's.
 #
-#    OPTIONAL. With no [units] table at all, every unit is in one implicit
-#    workspace bound to config.toml's `memory.workspace_id` — exactly how a
-#    deployment worked before this existed. Once the table is present it must
-#    name EVERY unit a room uses, and name no unit that has no room.
+#    With no [units] table, every unit is in one implicit workspace bound to
+#    config.toml's `memory.workspace_id`. Once the table exists it must name
+#    every unit a room uses, and no unit without a room.
 #
-#    Which HONCHO workspace a Nora workspace's person models live in is NOT
-#    written here: it is an external id, and it goes in identity.toml's
-#    [workspaces.<name>]. A workspace with no binding there uses its own name.
+#    The Honcho workspace a Nora workspace maps to is set in identity.toml's
+#    [workspaces.<name>], not here.
 #
 # [units.family]
 # workspace = "home"
