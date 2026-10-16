@@ -21,10 +21,30 @@ a list read reads the first page only, which carries every item's media, and
 records each new item from it; a failed list read leaves the rise due on the
 next probe. A read's row and the items it recorded share one id
 (`social_item.read_id`), which is what the read's stimulus is raised for
-(`nora.app.social_perception`). Items from a person's first list read, before any
-counts were recorded, are history and are recorded `origin = "backfill"`; a
-post with no usable media is recorded without it. A frame recorded earlier that a story read no
-longer shows, before its own expiry, is recorded `gone`.
+(`nora.app.social_perception`). A post with no usable media is recorded
+without it. A frame recorded earlier that a story read no longer shows, before
+its own expiry, is recorded `gone`.
+
+**The back-fill** (§7). A person's first list read, before any counts were
+recorded, is history: its items are recorded `origin = "backfill"` and its row
+is the first `backfill` page, carrying the cursor the next page starts at.
+After the tick's probes and due reads, each member whose back-fill is not done
+gets at most one more page, newest first, up to `backfill_pages_per_tick`
+pages a tick, and only while what is left of the hour's budget still covers a
+probe and a read of every member, so history never takes a call the news
+needs. A page records only items newer than `backfill_max_days` and up to
+`backfill_max_items` back-filled items in all; the walk ends there, at a page
+read at a cursor that reaches past the day limit (the first page: one wholly
+past it, since a pinned post there can be old), or at the end of the grid. Where each
+member stands is read off their `backfill` rows every tick
+(`SqlSocialStreamStore.backfills`), so a restart reads no page twice. A cursor
+the bridge refuses (`invalid_id`, the only request field the adapter has not
+shape-checked) or one refused upstream twice in a row is judged bad and ends
+that member's back-fill (`abandoned`), as does one whose pages failed three
+times in a row for any reason but a halt or a stale query; both are read off
+the rows. A first page read again only to find its cursor (the person's first
+list read predates the back-fill) records nothing: an item new on it is the
+poll's. Back-filled items raise no stimulus.
 
 **What stops it** (§4, keyed on `Failed.kind`): `halt` stops every call for
 the login until `SocialSource.healthy` says the session can read, and is
@@ -76,20 +96,24 @@ from nora.domain.ports import (
 )
 from nora.domain.social_stream import (
     CUSTODY_OUTCOMES,
+    BackfillEnd,
+    BackfillItemOutcome,
     Cap,
     CustodyOutcome,
     Failed,
     FailureKind,
     Member,
+    Page,
     PollOutcome,
     PollStage,
     Probe,
     SkipReason,
     SocialItem,
+    cursor_is_bad,
     decide,
     frame_item,
 )
-from nora.infra.sql.social_stream import SqlSocialStreamStore
+from nora.infra.sql.social_stream import Backfill, SqlSocialStreamStore
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.social_poller")
@@ -102,6 +126,10 @@ _HALTS_TO_LOCK = 2
 #: A failed probe whose answer will not change on its own (no such account,
 #: no mechanism, an id that is not an id) waits for the ceiling, not the floor.
 _LASTING = frozenset({FailureKind.NOT_FOUND, FailureKind.UNSUPPORTED})
+#: The bridge's 400 for a request it will not send. The adapter shape-checks
+#: the igid and the username before they leave, so on a back-fill page it is
+#: the cursor.
+_REFUSED_REQUEST = "invalid_id"
 
 #: The members to poll on the source's network, or None when they could not be
 #: read (`nora.infra.social.subjects.instagram_roster` for Instagram).
@@ -161,6 +189,11 @@ class SocialPoller:
         self._answered: dict[str, datetime] = {}
         self._seeded = False
         self._calls_this_tick = 0
+        # Whether any call this tick was answered (anything but unavailable):
+        # the bridge is up, so an unavailable page is the page's own.
+        self._answered_tick = False
+        # Persons whose list was read this tick: one list page a member a tick.
+        self._listed: set[str] = set()
 
     async def run(self) -> None:
         log.info(
@@ -179,6 +212,8 @@ class SocialPoller:
         """Probe the members due, oldest first, until the budget, a halt or a
         back-off stops it."""
         self._calls_this_tick = 0
+        self._answered_tick = False
+        self._listed = set()
         now = self._clock()
         if not self._seeded:
             await self._restore(now)
@@ -209,6 +244,7 @@ class SocialPoller:
             if stop is not None:
                 self._skip(stop)
                 return
+        await self._backfill(roster)
 
     # -- the login -------------------------------------------------------------
 
@@ -328,6 +364,9 @@ class SocialPoller:
         started = time.monotonic()
         result = await call()
         latency = int((time.monotonic() - started) * 1000)
+        if not (isinstance(result, Failed) and result.kind is FailureKind.UNAVAILABLE
+                and result.detail != _REFUSED_REQUEST):
+            self._answered_tick = True
         if isinstance(result, Failed) and result.kind is FailureKind.UNSUPPORTED:
             return result, latency
         self._spent.append((self._clock(), cost))
@@ -367,7 +406,7 @@ class SocialPoller:
                 return stop
         if due.items_due and self._may_read(Cap.LIST_ITEMS, "items", now):
             # A person's first list read, with no counts ever recorded, is
-            # their history, not news (§7).
+            # their history, not news, and the back-fill's first page (§7).
             return await self._read_items(member, probe, first=last is None)
         return None
 
@@ -410,32 +449,174 @@ class SocialPoller:
     ) -> SkipReason | None:
         if not self._afford(1):
             return "budget"
+        stage: PollStage = "backfill" if first else "items"
+        self._listed.add(member.person)
         page, ms = await self._call(
-            "items", 1, lambda: self._source.list_items(account=member.account, after=None),
+            stage, 1, lambda: self._source.list_items(account=member.account, after=None),
         )
         if isinstance(page, Failed):
-            return await self._failed(member, "items", page, ms)
+            return await self._failed(member, stage, page, ms)
         await self._recovered("items")
         read_id = str(uuid.uuid4())
+        # A first page's items are history up to the item limit; the day
+        # limit is not applied, since a pinned post there can be old.
+        recorded = await self._record_page(
+            member, page, origin="backfill" if first else "poll", read_id=read_id,
+            backfilled=0 if first else None, days=False,
+        )
+        await self._record(
+            member, stage, "read_ok", ms, media_count=probe.media_count,
+            total_clips_count=probe.total_clips_count, advanced_counts=True,
+            read_id=read_id,
+            cursor=self._onward(page, backfilled=recorded, paged=False) if first else None,
+        )
+        return None
+
+    async def _record_page(
+        self, member: Member, page: Page, *, origin: Literal["poll", "backfill"],
+        read_id: str, backfilled: int | None = None, days: bool = True,
+    ) -> int:
+        """Record each new item of `page` → how many were recorded. The page
+        carries each item's media: nothing is read per item. With
+        `backfilled` (the person's back-filled items so far) it is a back-fill
+        page: an item past the item limit, or (with `days`) older than the
+        day limit, is not recorded."""
         known = await self._store.known_items(
             network=self._network, item_ids=[i.item_id for i in page.items],
         )
-        # The page carries each item's media: nothing is read per item.
-        recorded = set(known)
+        seen = set(known)
+        horizon = self._clock() - timedelta(days=self._settings.backfill_max_days)
+        count = 0
         for item in page.items:
-            if item.item_id in recorded:
+            if item.item_id in seen:
+                self._backfill_item(origin, "known")
                 continue
-            recorded.add(item.item_id)
-            await self._insert(
-                member, item, self._clock(), origin="backfill" if first else "poll",
-                read_id=read_id,
-            )
+            if backfilled is not None and (
+                (days and item.taken_at < horizon)
+                or backfilled + count >= self._settings.backfill_max_items
+            ):
+                self._backfill_item(origin, "past_limit")
+                continue
+            seen.add(item.item_id)
+            await self._insert(member, item, self._clock(), origin=origin, read_id=read_id)
+            self._backfill_item(origin, "recorded")
+            count += 1
+        return count
+
+    def _onward(self, page: Page, *, backfilled: int, paged: bool) -> str | None:
+        """Where the back-fill goes on after `page`: its next cursor, or None
+        when the walk ends on it (the grid ended, the item limit is reached,
+        or the page reached past the day limit). A page read at a cursor
+        reaches past it when any of its items is older, since every page
+        after it is older still; the first page only when all of them are,
+        since a pinned post there can be old whatever follows."""
+        horizon = self._clock() - timedelta(days=self._settings.backfill_max_days)
+        end: BackfillEnd | None = None
+        if page.next_cursor is None:
+            end = "grid_end"
+        elif backfilled >= self._settings.backfill_max_items:
+            end = "max_items"
+        elif page.items and (any if paged else all)(i.taken_at < horizon for i in page.items):
+            end = "max_days"
+        if end is None:
+            return page.next_cursor
+        self._metrics.inc("nora_social_backfill_ended_total", network=self._network, reason=end)
+        return None
+
+    # -- the back-fill -----------------------------------------------------------
+
+    async def _backfill(self, roster: Sequence[Member]) -> None:
+        """One page for each member whose back-fill is not done, least
+        recently paged first, up to the tick's cap, with what the probes and
+        due reads left (§7). A halt or a back-off ends it, as it ends the
+        tick."""
+        cap = self._settings.backfill_pages_per_tick
+        if cap <= 0 or Cap.LIST_ITEMS not in self._source.capabilities:
+            return
+        standing = await self._store.backfills(network=self._network)
+        waiting = sorted(
+            (m for m in roster
+             if (b := standing.get(m.person)) is not None and not b.done
+             and m.person not in self._listed),
+            key=lambda m: (standing[m.person].last_at or datetime.min.replace(tzinfo=UTC),
+                           m.person),
+        )
+        # What a page may not take: one probe and one read of every member,
+        # so the hour still holds what the news needs.
+        # ponytail: past hourly_budget / (probe_cost + 1) - 1 members (19 at
+        # the defaults) no page ever fits; reserve only the members due within
+        # the hour if a unit grows that large.
+        reserve = len(roster) * (self._source.probe_cost + 1)
+        for member in waiting[:cap]:
+            if not self._may_read(Cap.LIST_ITEMS, "items", self._clock()):
+                return
+            if not self._afford(1 + reserve):
+                return
+            try:
+                stop = await self._backfill_page(member, standing[member.person])
+            except Exception:
+                log.exception("social back-fill of one member failed; the tick continues")
+                self._metrics.inc("nora_errors_total", stage="social_poller")
+                continue
+            if stop is not None:
+                self._skip(stop)
+                return
+
+    async def _backfill_page(self, member: Member, at: Backfill) -> SkipReason | None:
+        self._listed.add(member.person)
+        page, ms = await self._call(
+            "backfill", 1,
+            lambda: self._source.list_items(account=member.account, after=at.cursor),
+        )
+        if isinstance(page, Failed):
+            if at.cursor is None:
+                return await self._failed(member, "backfill", page, ms)
+            if page.kind is FailureKind.UNAVAILABLE and page.detail != _REFUSED_REQUEST \
+                    and not self._answered_tick:
+                # Nothing on this tick was answered: the bridge is healing,
+                # and the page is not to blame. Recorded, not counted.
+                await self._record(member, "backfill", "unavailable", ms)
+                return "bridge_unavailable"
+            stop = await self._failed(member, "backfill", page, ms)
+            if page.detail == _REFUSED_REQUEST:
+                await self._abandon(member)
+                return stop
+            # Its own row counts toward the cursor's failures
+            # (`SqlSocialStreamStore.backfills`), which is what ends the walk.
+            if page.kind not in (FailureKind.HALT, FailureKind.STALE_QUERY) and cursor_is_bad(
+                rejected=at.rejected + (page.kind is FailureKind.BACK_OFF),
+                failures=at.failures + 1,
+            ):
+                self._metrics.inc(
+                    "nora_social_backfill_ended_total", network=self._network,
+                    reason="bad_cursor",
+                )
+            return stop
+        await self._recovered("items")
+        read_id = str(uuid.uuid4())
+        # The first page read again (the person's first list read predates the
+        # back-fill) gives its cursor only: an item on it not yet recorded is
+        # new since their last list read, and is the poll's, as news.
+        recorded = 0 if at.cursor is None else await self._record_page(
+            member, page, origin="backfill", read_id=read_id, backfilled=at.items,
+        )
         await self._record(
-            member, "items", "read_ok", ms, media_count=probe.media_count,
-            total_clips_count=probe.total_clips_count, advanced_counts=True,
-            read_id=read_id,
+            member, "backfill", "read_ok", ms, read_id=read_id,
+            cursor=self._onward(
+                page, backfilled=at.items + recorded, paged=at.cursor is not None,
+            ),
         )
         return None
+
+    async def _abandon(self, member: Member) -> None:
+        """End a member's back-fill on a cursor the bridge refused: an
+        `abandoned` row beside the call's own `error` row. It is a marker, not
+        a call; were it lost, the error rows still end the walk after
+        `BAD_CURSOR_FAILURES`."""
+        await self._record_failure(member, "backfill", "abandoned", 0)
+        self._metrics.inc(
+            "nora_social_backfill_ended_total", network=self._network, reason="bad_cursor",
+        )
 
     async def _failed(
         self, member: Member, stage: PollStage, failure: Failed, ms: int, *,
@@ -563,7 +744,7 @@ class SocialPoller:
         probe: Probe | None = None, latest_reel_media: int | None = None,
         media_count: int | None = None, total_clips_count: int | None = None,
         advanced_marker: bool = False, advanced_counts: bool = False,
-        read_id: str | None = None,
+        read_id: str | None = None, cursor: str | None = None,
     ) -> None:
         if probe is not None:
             latest_reel_media = probe.latest_reel_media
@@ -572,7 +753,7 @@ class SocialPoller:
             network=self._network, person=member.person, stage=stage, outcome=outcome,
             latest_reel_media=latest_reel_media, media_count=media_count,
             total_clips_count=total_clips_count, advanced_marker=advanced_marker,
-            advanced_counts=advanced_counts, latency_ms=ms, id=read_id,
+            advanced_counts=advanced_counts, latency_ms=ms, id=read_id, cursor=cursor,
         )
         self._metrics.inc(
             "nora_social_polls_total", network=self._network, stage=stage, outcome=outcome,
@@ -602,6 +783,12 @@ class SocialPoller:
 
     def _skip(self, reason: SkipReason) -> None:
         self._metrics.inc("nora_social_poll_skipped_total", network=self._network, reason=reason)
+
+    def _backfill_item(self, origin: str, outcome: BackfillItemOutcome) -> None:
+        if origin == "backfill":
+            self._metrics.inc(
+                "nora_social_backfill_items_total", network=self._network, outcome=outcome,
+            )
 
     def _custody(self, outcome: CustodyOutcome) -> None:
         self._metrics.inc("nora_social_custody_total", network=self._network, outcome=outcome)
