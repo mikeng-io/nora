@@ -1,5 +1,5 @@
 """`AdapterHealthRecorder` — platform adapter health as Record, one row per
-state TRANSITION (design/cognition-loop/20-observe.md §1, step 1)."""
+state TRANSITION."""
 
 from __future__ import annotations
 

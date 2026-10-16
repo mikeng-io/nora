@@ -38,12 +38,11 @@ def test_disabled_analytics_builds_nothing(minimal_config):
 # and friends) exercise `_circles_from_identity` at.
 
 def test_a_renamed_persons_fixes_merge_under_one_subject_with_both_ids(tmp_path):
-    # The bug this test pins: a former person_id can NEVER appear as a
-    # `Life360Membership.person_id` (load_persons refuses a
-    # former_person_ids entry that collides with a live block), so
-    # resolving forward with subject_id_for over life360 memberships alone
-    # is always a no-op. former_ids_for (Task 5's reverse lookup) is the
-    # only way _subjects_from_identity can recover "clara_yates" here.
+    # A former person_id can never appear as a `Life360Membership.person_id`
+    # (load_persons refuses a former_person_ids entry that collides with a live
+    # block), so resolving forward with subject_id_for over life360 memberships
+    # alone is always a no-op. former_ids_for (the reverse lookup) is the only
+    # way _subjects_from_identity can recover "clara_yates" here.
     from nora.analytics.composition import _subjects_from_identity
     from nora.persons import load_persons
 

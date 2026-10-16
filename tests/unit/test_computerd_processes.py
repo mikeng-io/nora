@@ -103,7 +103,7 @@ def test_state_caps_processes_at_twenty_newest_first(computerd, proc, tmp_path, 
 
 
 def test_without_isolation_no_process_is_listed(computerd, proc, tmp_path, monkeypatch):
-    """FALSIFIER (review S3): not isolated, every room runs as computerd's
+    """FALSIFIER: not isolated, every room runs as computerd's
     own user, so its process list is every room's command lines and
     computerd itself. None of that is one room's to see."""
     monkeypatch.setattr(computerd.os, "sysconf", lambda name: 100)

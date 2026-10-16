@@ -1,26 +1,25 @@
 """The SHIPPED objective's declared fields must be exactly the fields the
 parser reads.
 
-**This is the test no tier has, and it is the one that would have caught the
-language tier shipping provably inert.** An objective is a prompt: it tells the
+An objective is a prompt: it tells the
 model what to return. A parser is code: it decides what to read. Nothing
 connects them — not a type, not an import, not the gate. When they drift, the
 model returns a field nobody reads, or the code reads a field nobody was asked
-for, and **every counter in the tier stays healthy** because the envelope
+for, and every counter in the tier stays healthy because the envelope
 arrived, the items parsed, and the result was empty. The tier is wired end to
 end and inert.
 
 Two properties make this a check rather than a claim:
 
-1. **It reads the SHIPPED objective**, from `nora/dreamer/objectives/`, not a
+1. It reads the SHIPPED objective, from `nora/dreamer/objectives/`, not a
    fixture. The objectives are `NATIVELY_AUTHORED` — no byte-pin,
    operator-editable on the bind mount — so a fixture would be a copy that
    drifts from the file the container loads, which is the same failure one
    level down.
-2. **It derives the parser's fields from the PARSER**, by walking its AST for
+2. It derives the parser's fields from the PARSER, by walking its AST for
    every `item[...]` / `item.get(...)` subscript. A hand-copied tuple would be
    a third place to drift; CLAUDE.md's rule about label vocabularies is the
-   same rule and this is the same reason.
+   same rule.
 
 So it is red on either side moving alone, and green only when they agree.
 """
@@ -86,9 +85,9 @@ def _balanced_objects(text: str):
 
     Objectives show the empty case as a SECOND example (`{"candidates": []}`)
     and show optional fields by omitting them from one entry and including
-    them in another. Reading only the first object made a field introduced
-    later invisible, and taking the first `{` unconditionally meant a brace in
-    prose ahead of the example silently broke the parse in the `json.loads`
+    them in another. Reading only the first object would make a field introduced
+    later invisible, and taking the first `{` unconditionally would let a brace
+    in prose ahead of the example silently break the parse in the `json.loads`
     direction — a green test measuring nothing.
     """
     depth = 0
@@ -163,12 +162,11 @@ def _adaptor_modules():
     """Every module that can hold an objective reader, DISCOVERED rather than
     listed, walked RECURSIVELY.
 
-    A hand-written tuple was the hand-copied vocabulary this file exists to
-    outlaw, and it failed in the specific way the rule predicts: a new adaptor
-    in a NEW module was invisible to the coverage check as well as to the
-    parametrisation, so `test_every_shipped_adaptor_is_covered` iterated the
-    same tuple it was meant to police and could never fail. Its own docstring
-    claimed otherwise.
+    A hand-written tuple is the hand-copied vocabulary this file exists to
+    outlaw: a new adaptor in a NEW module would be invisible to the coverage
+    check as well as to the parametrisation, so
+    `test_every_shipped_adaptor_is_covered` would iterate the same tuple it is
+    meant to police and could never fail.
 
     Recursive because `nora.engagement` has subpackages and a reader in one of
     them would otherwise be invisible in exactly the same way.
@@ -199,27 +197,21 @@ def _adaptors():
 def _read_sites(cls, module) -> list:
     """`accept` and every function it calls — the adaptor's whole READ SURFACE.
 
-    **Three parse shapes exist in this repo and the test has to cover all
-    three.** A module-level function (`_parse_claim`); a method taking one item
-    (`NoteCuratorAdaptor._ground`, since the note-curator merge folded the
-    former `NoteRevisitor._accept_one` into it); and a loop reading `item[...]`
-    INLINE in `accept` itself, with more keys read in a second method it
-    calls — which is what `NoteCuratorAdaptor.accept` itself does before
-    handing a resolved note off to `_ground`.
+    Three parse shapes exist in this repo and the test covers all three: a
+    module-level function (`_parse_claim`); a method taking one item
+    (`NoteCuratorAdaptor._ground`); and a loop reading `item[...]` INLINE in
+    `accept` itself, with more keys read in a second method it calls — which
+    is what `NoteCuratorAdaptor.accept` itself does before handing a resolved
+    note off to `_ground`.
 
-    The first version bound only to a callable whose first argument was named
-    `item`. That covered two shapes and reported the third as UNCOVERED: a red
-    test for a real gap, except the gap was in this file rather than in the
-    curator. So the unit is the ADAPTOR, not the parser — whatever `accept`
-    reads, by whatever route, is what the objective must declare — and
-    following calls one level deep catches every shape without needing to know
-    which one an adaptor chose.
+    So the unit is the ADAPTOR, not the parser — whatever `accept` reads, by
+    whatever route, is what the objective must declare — and following calls
+    one level deep catches every shape without needing to know which one an
+    adaptor chose.
 
     The start is EVERY function on the class, not `accept` alone, because a
-    reader that is not an adaptor has no `accept` at all — `Recogniser`, whose
-    entry point was `recognise`, was the case that established this and went
-    with the knowledge tier on 2026-09-07. Naming the entry point would have
-    been a third hand-copied vocabulary, and the breadth still costs nothing.
+    reader that is not an adaptor has no `accept` at all. Naming the entry
+    point would be a hand-copied vocabulary, and the breadth costs nothing.
     This is safe rather than over-broad because
     `_keys_read_by` only matches subscripts on a variable literally named
     `item`, which in these modules is only ever an envelope item.
@@ -274,9 +266,8 @@ def _cases():
 
 CASES = list(_cases())
 
-#: The adaptors that answer through their own write verbs (design/self-growth/
-#: 10 §3): their contract with the objective is the verbs and their
-#: parameters, not an envelope's fields.
+#: The adaptors that answer through their own write verbs: their contract with
+#: the objective is the verbs and their parameters, not an envelope's fields.
 VERB_CASES = [
     pytest.param(cls.objective, _verbs_of(cls), id=cls.__name__)
     for _module, cls in _adaptors()
@@ -287,7 +278,7 @@ VERB_CASES = [
 def test_the_case_list_is_derived_and_not_empty():
     """The run-that-ran control for the derivation itself. An empty or
     silently-shrinking `CASES` makes every parametrized test below vacuous, and
-    a hand-written list was exactly the hand-copied vocabulary this file's own
+    a hand-written list is exactly the hand-copied vocabulary this file's own
     docstring outlaws."""
     assert len(CASES) + len(VERB_CASES) >= 1
     assert {c.id for c in VERB_CASES} >= {"CultureAdaptor"}
@@ -313,8 +304,8 @@ def test_the_objective_names_every_verb_and_every_argument_the_model_fills(
 
 def test_every_shipped_adaptor_is_covered():
     """A new adaptor with a new objective must not arrive with zero coverage —
-    including one in a module nobody added to a list, which is the case the
-    previous hand-written tuple could not see."""
+    including one in a module nobody added to a list, which a hand-written
+    tuple could not see."""
     covered = {c.values[0] for c in (*CASES, *VERB_CASES)}
     for _module, cls in _adaptors():
         assert cls.objective in covered, (
@@ -325,8 +316,8 @@ def test_every_shipped_adaptor_is_covered():
 
 
 def test_every_shipped_objective_is_read_by_something():
-    """**The inversion**, and it is the half that catches an objective nobody
-    reads rather than a reader with no objective.
+    """The inversion: the half that catches an objective nobody reads rather than
+    a reader with no objective.
 
     Walking readers can only ever police the readers that exist. An objective
     file is a prompt shipped on the bind mount: it can be added, renamed or
@@ -335,13 +326,11 @@ def test_every_shipped_objective_is_read_by_something():
     directory is the population and the code is checked against it, not the
     other way round.
 
-    The floor is deliberately weak — the objective's NAME appears somewhere in
-    `nora/` — because a reader can declare its objective in more than one
-    shape (a `DreamAdaptor` class attribute today; a module constant
-    historically). A strong check would need to know which, which is the
-    hand-copied vocabulary this file exists to outlaw. A weak check over the
-    whole population still fails on the case that matters: an objective loaded
-    by nobody.
+    The floor is deliberately weak — the objective's NAME appears somewhere in `nora/` — because
+    a reader can declare its objective in more than one shape (a `DreamAdaptor` class attribute,
+    or a module constant). A strong check would need to know which, which is the hand-copied
+    vocabulary this file exists to outlaw. A weak check over the whole population still fails on
+    the case that matters: an objective loaded by nobody.
     """
     source = "\n".join(
         path.read_text(encoding="utf-8")
@@ -366,8 +355,7 @@ def test_the_orphan_check_can_actually_fire():
         path.stem for path in sorted(OBJECTIVES.glob("*.md"))
         if f'"{path.stem}"' not in source
     ]
-    # THREE since 2026-10-03 (DEC-277 deleted the note and proactive
-    # objectives); four before that, five before `note-entity-resolution`.
+    # Every objective shipped in the directory is an orphan against this source.
     assert len(orphans) == len(list(OBJECTIVES.glob("*.md"))) >= 3
 
 
@@ -412,7 +400,7 @@ def test_the_ast_walk_actually_finds_keys():
 
 
 def test_the_worked_example_survives_the_egress_screen():
-    """**The gate that reads what the MODEL reads** (issue #63).
+    """The gate that reads what the MODEL reads.
 
     `tests/contract/test_dream_adaptor_contract.py` drives each adaptor's
     items through the real `screen()`, and that is the right place for it —
@@ -426,13 +414,11 @@ def test_the_worked_example_survives_the_egress_screen():
     hyphenated uuid, so an objective whose example carries a row id teaches
     the model to return one — and every item it returns is then dropped
     before `accept`, while the run reports `ok`, `commit` writes nothing, and
-    the tier is inert with every counter healthy. Three adaptors shipped that
-    way.
+    the tier is inert with every counter healthy.
 
-    The fix is always the same and it is not widening the screen: render an
-    ordinal handle (`### note 1`), keep the id in the adaptor's own per-run
-    map, resolve it in `accept`. The screen is the R-18/R-28 floor and an
-    exemption for one tier is how that rule dies.
+    The remedy is never widening the screen: render an ordinal handle (`### note 1`), keep the id
+    in the adaptor's own per-run map, resolve it in `accept`. The screen is the R-18/R-28 floor
+    and an exemption for one tier is how that rule dies.
     """
     from nora.agent.dream_screen import screen
     from nora.obs.metrics import Metrics

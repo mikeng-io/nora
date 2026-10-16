@@ -1,5 +1,5 @@
 """`computer_import` copies a file somebody shared a LINK to into her
-computer's `inbox/` (design/external-files/00-design.md §5, build step S4).
+computer's `inbox/`.
 
 Built through `build_tool_specs`, as production builds it, over the REAL
 Google Drive adapter driven by `FakeDriveServer` (no network) wherever the
@@ -16,7 +16,7 @@ both byte caps refuse and write nothing; the computer off is the off answer
 with no fetch; the Drive fetch runs BEFORE the lease, so a slow provider
 never holds the room's computer; two copies are two fetches; a code a sent
 file and a link handle share is `ambiguous`, never a guess; and `file_fetch`
-stays the read it was (the split: the copy is `computer_import`'s).
+stays a read (the copy is `computer_import`'s).
 """
 
 from __future__ import annotations
@@ -184,8 +184,7 @@ async def test_a_link_handles_code_copies_the_office_export(file_id, url, kind, 
 
 
 #: A link as a model may paste it into `code`: with its scheme, with none,
-#: with an upper-case one (review of PR 807: the last two once reached the
-#: audit row raw, the Drive file id with them).
+#: with an upper-case one (the last two must not reach the audit row raw).
 SCHEMELESS = DOC_URL.removeprefix("https://")
 UPPER = "HTTPS://" + SCHEMELESS
 
@@ -280,7 +279,7 @@ async def test_with_no_source_wired_a_file_link_is_unavailable_not_unknown():
 
 
 async def test_two_copies_are_two_fetches_and_the_second_is_the_file_as_it_is_now():
-    """Never cached (§2): a copy is a snapshot, the next one fetches afresh."""
+    """Never cached: a copy is a snapshot, the next one fetches afresh."""
     server = _server()
     computer = _Computer()
     tool = _import(_drive(server), computer)
@@ -385,8 +384,8 @@ async def _sent(store: FakeRecordStore, blobs: FakeBlobStore, data: bytes) -> st
 
 
 async def test_a_sent_file_still_imports_when_only_the_link_lookup_fails():
-    """Master's behaviour for a sent file is kept: the link lookup failing
-    does not turn a matched attachment `unavailable` (review of PR 807)."""
+    """The link lookup failing does not turn a matched sent-file attachment
+    `unavailable`."""
     store, blobs, computer = _LinkLookupFails(), FakeBlobStore(), _Computer()
     key = await _sent(store, blobs, b"a,b\n1,2\n")
     out = await _tools(FakeExternalFilesSource(), computer, store, blobs)["computer_import"](
@@ -406,9 +405,9 @@ async def test_with_no_sent_file_matched_an_unreadable_link_lookup_is_unavailabl
 
 
 def test_file_fetch_stays_a_read_and_a_lookup():
-    """The copy is `computer_import`'s, so `file_fetch` keeps master's
-    declaration: read-only (the Dreamer ceiling, R-7's wording) and in R-97's
-    lookup set, where a successful file read counts as «found»."""
+    """The copy is `computer_import`'s, so `file_fetch` keeps its declaration:
+    read-only (the Dreamer ceiling, R-7's wording) and in R-97's lookup
+    set, where a successful file read counts as «found»."""
     registry = ToolRegistry()
     assert "file_fetch" in registry.read_only_tools()
     assert "file_fetch" in registry.lookup_tools()
@@ -424,8 +423,7 @@ def test_file_fetch_stays_a_read_and_a_lookup():
 ])
 @pytest.mark.parametrize("slot", ["link", "code"])
 async def test_a_link_built_around_a_handles_code_copies_that_file(made_up, slot):
-    # Live 2026-10-11: shown `[Google Drive link 491db6]`, she built
-    # `drive.google.com/file/d/491db6` around the code. It is the code.
+    # A link built around a handle's code (`drive.google.com/file/d/<code>`) is the code.
     computer = _Computer()
     store = await _store((GROUP, f"here {SHEET_URL}"))
     out = await _import(_drive(_server()), computer, store)(
@@ -436,7 +434,7 @@ async def test_a_link_built_around_a_handles_code_copies_that_file(made_up, slot
 
 
 async def test_a_made_up_link_beside_a_code_is_still_one_too_many():
-    # Review of PR 809: the rewrite must not swallow a second argument.
+    # The made-up-link rewrite must not swallow a second argument.
     # The sheet IS in this room, so swallowing `code` would copy it.
     computer = _Computer()
     store = await _store((GROUP, f"here {SHEET_URL}"))

@@ -95,9 +95,9 @@ async def test_a_per_call_voice_overrides_the_configured_default():
 
 
 async def test_voice_setting_knobs_ride_the_wire_and_emotion_stays_off_when_unset():
-    """F4 (PR #270 audit): the speed/pitch/vol knobs must reach the request
+    """The speed/pitch/vol knobs must reach the request
     body with their exact types (pitch is MiniMax's one INTEGER knob —
-    `0.0` would be a type regression on the default path), and an unset
+    `0.0` would be a type error on the default path), and an unset
     emotion must stay OFF the wire so the vendor default applies."""
     server = _Server()
     speaker = _speaker(server, speed=1.3, pitch=2, vol=0.8)
@@ -245,9 +245,9 @@ async def test_the_live_endpoint_speaks_cantonese():
     assert result.media_type == "audio/mpeg"
 
 
-# -- the speech formatter seam and the two request knobs (design/voice-
-#    channel/08). The formatter here is the REAL `SpeechFormatter` over a
-#    scripted model, so what reaches the wire is what production would send.
+# -- the speech formatter seam and the two request knobs. The formatter here is
+#    the REAL `SpeechFormatter` over a scripted model, so what reaches the wire is
+#    what production would send.
 
 class _Said:
     def __init__(self, content: str) -> None:

@@ -1,6 +1,5 @@
 """`nora.platform.instagram.send.InstagramSender` against the bridge's
-`POST /threads/{thread_fbid}/messages` (design/instagram-adoption/16
-§Resources, 17 §P14).
+`POST /threads/{thread_fbid}/messages`.
 
 The stand-in bridge RECORDS EVERY REQUEST, because the properties that matter
 here are about what reached the wire: that the text went as its own message
@@ -181,7 +180,7 @@ async def test_an_attachment_with_no_text_skips_the_text_call(bridge):
 
 async def test_a_mention_is_FORWARDED_as_fbid_offset_length(bridge):
     """Unlike WhatsApp v1, which accepts and ignores them. The wire takes
-    them and 02 measured the round trip."""
+    them and round-trips them."""
     box, sender = bridge
 
     await sender.send(GROUP, "@nora hi", mentions=(Mention(start=0, length=5, recipient="1784"),))
@@ -191,13 +190,13 @@ async def test_a_mention_is_FORWARDED_as_fbid_offset_length(bridge):
 
 
 async def test_a_mention_with_a_handle_REWRITES_the_text_to_the_username(bridge):
-    """The bug, measured live 2026-09-22: a correctly-resolved fbid still went
-    out as plain text ("@Miles Novak…") with no ping, because Instagram's mention
-    API renders a chip only when the span at `offset:offset+length` reads,
-    literally, `"@" + the account's own username` — confirmed against
-    upstream mautrix-meta (module docstring). A `Mention.handle` is the fix:
-    the WIRE text must read `"@nka_bpumvg"`, not the display name Nora wrote,
-    and the offset/length that ride beside it must describe THAT string.
+    """A correctly-resolved fbid must not go out as plain text ("@Miles
+    Novak…") with no ping: Instagram's mention API renders a chip only when
+    the span at `offset:offset+length` reads, literally, `"@" + the account's
+    own username` (upstream mautrix-meta; see `nora.platform.instagram.send`).
+    With a `Mention.handle` the WIRE text must read `"@nka_bpumvg"`, not the
+    display name Nora wrote, and the offset/length that ride beside it must
+    describe THAT string.
 
     PROBE: delete the `if m.handle:` branch in `_apply_mention_handles` (fall
     through to the `else`) and this goes red — `body["text"]` keeps the
@@ -215,7 +214,7 @@ async def test_a_mention_with_a_handle_REWRITES_the_text_to_the_username(bridge)
 
 async def test_a_mention_with_no_handle_is_forwarded_with_the_text_unchanged(bridge):
     """No `username` on file for this fbid yet (the ordinary state until an
-    operator opts a person in) — today's degraded-but-not-wrong behaviour:
+    operator opts a person in) — degraded but not wrong:
     the metadata still names the right fbid, the text stays whatever Nora
     wrote, and no chip renders."""
     box, sender = bridge
@@ -330,7 +329,7 @@ async def test_a_reply_to_at_the_limit_is_still_threaded(bridge):
 
 
 async def test_a_dm_is_REFUSED_WITHOUT_AN_HTTP_CALL(bridge):
-    """Deny-by-default this phase, and the refusal must not reach the wire —
+    """Deny-by-default, and the refusal must not reach the wire —
     a 1:1 send that the bridge merely happened to reject would be a posture
     that depends on Instagram's mood."""
     box, sender = bridge

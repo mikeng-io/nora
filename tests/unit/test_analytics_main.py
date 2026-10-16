@@ -60,10 +60,9 @@ async def test_a_run_that_raises_does_not_take_the_daemon_down():
 
 
 async def test_liveness_gauge_climbs_for_a_subject_that_keeps_failing(monkeypatch):
-    # The review finding this pins: setting the gauge to a hardcoded 0.0
-    # right after every call (success or not) can never reveal "up but not
-    # deriving" — only a value computed fresh from a baseline that ONLY
-    # advances on success can climb.
+    # A gauge set to a hardcoded 0.0 after every call (success or not) can never
+    # reveal "up but not deriving"; only a value computed fresh from a baseline
+    # that ONLY advances on success can climb.
     from nora.analytics import __main__ as main_mod
 
     clock = {"t": 1_000_000.0}

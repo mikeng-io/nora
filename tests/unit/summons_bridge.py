@@ -13,9 +13,9 @@ it is answered, and a request the client should never make still lands in
 
 The post body is the Go-generated contract fixture `posts_carousel_ok.json`.
 The comments body is written here from the Go struct, because no generated
-fixture exists for it yet. There is NO `/mentions` route: Nora no longer
-reads the notification feed, so a request for it is the mux's 404 and is
-still recorded in `calls`, where a test can see it was never made.
+fixture exists for it. There is NO `/mentions` route: Nora does not read
+the notification feed, so a request for it is the mux's 404 and is still
+recorded in `calls`, where a test can see it was never made.
 """
 
 from __future__ import annotations

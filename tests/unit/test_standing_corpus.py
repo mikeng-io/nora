@@ -1,6 +1,6 @@
 """The standing corpus's grading, without a database or a model.
 
-`design/standing-compact/20-verification.md` §1. The integration file drives
+The integration file drives
 the harness; this pins what a reading MEANS: a `fold` case is graded only on a
 judge's verdict over a written position, a typo in a case is refused at load
 (before a fold is paid for), and the corpus holds the mix of kinds the design
@@ -100,7 +100,7 @@ def test_the_position_prompt_carries_the_evidence_the_kind_and_the_case() -> Non
 
 
 def test_the_position_prompt_omits_the_working_set_section_when_there_is_none() -> None:
-    """Issue #445: a case's judge input must GAIN nothing when the fold's
+    """A case's judge input must GAIN nothing when the fold's
     working set is empty or absent — the prompt without `working_set` and the
     prompt with `working_set=""` must read identically, and neither carries
     the section's own header."""
@@ -116,7 +116,7 @@ def test_the_position_prompt_omits_the_working_set_section_when_there_is_none() 
 
 def test_the_position_prompt_shows_the_working_set_as_a_separate_labelled_thing() -> None:
     """The paragraph is her position; the working set is options she found and
-    has not given the room (context framing, per CMS: tell the judge what it
+    has not given the room (tell the judge what it
     is READING, not only what it can do). Both sections are present, in order,
     and the working-set one says out loud that it is not her position."""
     prompt = _build_position_prompt(
@@ -145,8 +145,8 @@ def test_a_working_set_item_does_not_read_as_the_position_recapping() -> None:
         position="HER WORKING STATE, NOT A RECAP",
         working_set="- the member said they would confirm tomorrow (source: web_search)",
     )
-    # The rubric's own text is untouched by this change — it says "working
-    # state" (her holding-open state, the pre-existing phrase), never
+    # The rubric's own text says "working
+    # state" (her holding-open state), never
     # "working set" (the tier's name), so the property itself never asks the
     # judge to read the section below as part of "the position".
     assert "working set" not in FOLD_KINDS["recap"].lower()
@@ -195,16 +195,14 @@ def test_a_working_set_item_does_not_count_toward_what_a_carry_position_holds() 
 
 
 def test_the_no_working_set_prompt_matches_the_pre_pr_text_byte_for_byte() -> None:
-    """PR #548 review: the widened scoring line ("...the property holds and
-    0.0...") had leaked OUT of the `if working_set:` branch and become
-    unconditional, silently changing every case's prompt — including every
-    case with no working set at all — and contradicting the "gains nothing"
-    claim the tests above only check loosely (no header, no extra words
-    named). This pins the no-working-set prompt against the PRE-#445 text
-    verbatim (`git show origin/master:evals/rebuilt/judge.py`,
-    `_build_position_prompt`, transcribed exactly, byte for byte) so a future
-    edit to the unconditional branch is caught immediately, not just an edit
-    that adds a header."""
+    """The widened scoring line ("...the property holds and 0.0...") stays INSIDE
+    the `if working_set:` branch: leaking out would silently change every
+    case's prompt — including every case with no working set at all — and
+    contradict the "gains nothing" claim the tests above only check loosely (no
+    header, no extra words named). This pins the no-working-set prompt against
+    the original `_build_position_prompt` text in `evals/rebuilt/judge.py`,
+    transcribed byte for byte, so an edit to the unconditional branch is
+    caught, not just an edit that adds a header."""
     kind, prop, evidence, position = "carry", "THE-CASE-PROPERTY", "THE-RECORD", "THE-POSITION"
     pre_pr_text = (
         "You are grading one STANDING POSITION that Nora — an AI member of a "
@@ -287,11 +285,10 @@ def test_the_corpus_holds_the_mix_the_design_asks_for() -> None:
     residue case running — ACTIVE cases, every one a named turn at its own
     instant.
 
-    Residue is the exception, and stated rather than hidden (issue #445): no
-    post-chain turn has the shape (options the room could act on, some sent),
-    and the three that stood in for it measured something else, so they are
-    parked. The one residue case is the operator's real moment with its prior
-    declared absent — a counterfactual, counted as one."""
+    Residue is the exception: no post-chain turn has the shape (options the
+    room could act on, some sent), so the one residue case is the operator's
+    real moment with its prior declared absent — a counterfactual, counted as
+    one."""
     cases = load_all("standing")
     active = [c for c in cases if not c.metadata.get("parked")]
     real = [c for c in active if not c.metadata.get("counterfactual")]
@@ -391,7 +388,7 @@ def test_render_evidence_is_the_record_in_the_deployments_zone() -> None:
     from nora.domain.tag_trace import TagTrace
     from nora.subject.standing_fold import FoldTurn
 
-    turn_at = 1_790_148_435_400                      # 2026-09-23 15:27 in Hong Kong
+    turn_at = 1_790_148_435_400                      # 15:27 in Hong Kong
     long_result = "x" * 9000 + "DEEP-FINDING" + "y" * 20000
     trace = TagTrace(
         tag_id="t", conversation_id="c", outcome="recovered", created_at=turn_at,
@@ -458,7 +455,7 @@ def test_the_prior_is_varied_in_the_standing_corpus_and_nothing_else_is(
         _check(corpus, row)
 
 
-# --- the working_set capture (issue #445, PR #541) --------------------------
+# --- the working_set capture ------------------------------------------------
 
 
 def test_the_outcome_working_set_capture_reads_a_seeded_working_set() -> None:
@@ -548,7 +545,7 @@ def test_nora_working_set_is_its_own_state_distinct_from_the_position() -> None:
 
 
 def test_the_residue_case_accepts_the_finding_in_either_the_position_or_the_working_set() -> None:
-    """Issue #445 review: the fold now has somewhere DESIGNED to hold an
+    """The fold has somewhere DESIGNED to hold an
     unsent option — `working_set` — and the one active residue case has to
     say so, or a fold that correctly used it reads as a miss. The kind-asked
     and near-the-venue conditions must still be there, unweakened."""

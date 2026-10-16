@@ -1,14 +1,14 @@
 """The typed builders fail closed exactly where the code they replaced did.
 
-Review of step 4b found `RequestBody` formatted its texts with `str()`, so a
-reminder row whose `text` was not a str (unreachable today: the column is NOT
-NULL text) would have put the literal «None» or «5» to the model, where
-`"\\n".join(...)` on master raised `TypeError` and the turn failed closed. Every
-case below was run against master (`15b6ea8b`) and raised the exception named
-here; the builders must raise the same one, never render a widened input.
+`RequestBody` must not format its texts with `str()`: a reminder row whose
+`text` was not a str (unreachable today: the column is NOT NULL text) would
+put the literal «None» or «5» to the model, where
+`"\\n".join(...)` raised `TypeError` and the turn failed closed. Every
+case below raises the exception named here; the builders must raise the same
+one, never render a widened input.
 
-The header fields master ESCAPED (`escape(x)` takes any object) keep accepting
-any object: that is not a widening, and the goldens hold their bytes.
+The header fields the replaced code escaped (`escape(x)` takes any object) keep
+accepting any object: that is not a widening, and the goldens hold their bytes.
 """
 
 from __future__ import annotations

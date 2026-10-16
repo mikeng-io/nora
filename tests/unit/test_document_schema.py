@@ -7,7 +7,7 @@ This file is the half of the comparison the app's own tests cannot run: they
 check the schema under ajv, a JavaScript engine, where `$` and `\\d` mean what
 they mean in the Zod regexes. Python's `$` also matches before a trailing
 newline and its `\\d` matches other scripts' digits, which is how a link with a
-trailing newline passed here and failed in Zod (design/artifact/00-design.md).
+trailing newline passes here and fails in Zod.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def test_an_invalid_document_is_refused(case: dict[str, Any]) -> None:
 
 def test_defaulted_props_may_be_left_out() -> None:
     # The prompt fragment tells the model `tone?` and `columns?` are optional.
-    # The schema once listed them as required and refused that very document.
+    # The schema must not list them as required.
     doc = _page(
         {"type": "Badge", "props": {"text": "x"}},
         {"type": "Grid", "props": {}, "children": []},
@@ -85,9 +85,9 @@ def _chain(kind: str, levels: int) -> dict[str, Any]:
 
 
 def test_a_hostile_chain_is_refused_fast_and_never_overflows_the_stack() -> None:
-    # `anyOf` over every component made this exponential: 18 s at depth 10, a
-    # RecursionError deeper (review, 2026-09-30). `if`/`then` stops at the first
-    # mismatch and the nesting is unrolled to the depth cap, so depth is bounded.
+    # `anyOf` over every component is exponential in depth and recurses without
+    # bound. `if`/`then` stops at the first mismatch and the nesting is unrolled
+    # to the depth cap, so depth is bounded.
     for levels in (9, 12, 60, 400):
         started = time.monotonic()
         assert not VALIDATOR.is_valid(_chain("Card", levels))

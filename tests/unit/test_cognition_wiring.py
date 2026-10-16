@@ -1,6 +1,5 @@
-"""`nora.app.cognition_wiring` and the session runner's wiring seams (migration
-step 3a-iii, DEC-244): which read tools a session holds, its budget, what it
-is told, how it is stopped and how it is traced.
+"""`nora.app.cognition_wiring` and the session runner's wiring seams (DEC-244): which
+read tools a session holds, its budget, what it is told, how it is stopped and how it is traced.
 
 No model and no Strands: the agent runner is a recording double and the
 tool source is a fake that answers like the registry's (a list of tool
@@ -59,8 +58,8 @@ FLAGS_ON = {"record_query.enabled", "culture.enabled"}
 # ---- the read catalogue ------------------------------------------------------
 
 def test_the_catalogue_is_the_designs_and_names_no_live_social_read():
-    """30 §2 / 15 §4: the warehouse queries and the tiers' reads. The live
-    `instagram_*`, `x_*` and `linkedin_*` reads stay on the tag path (20 §2)."""
+    """The warehouse queries and the tiers' reads. The live
+    `instagram_*`, `x_*` and `linkedin_*` reads stay on the tag path."""
     assert {"record_query", "note_read", "about", "event_search"} <= COGNITION_READ_CATALOGUE
     live_social = {n for n in NATIVE_TOOLS if n.startswith(("instagram_", "x_", "linkedin_"))}
     assert live_social, "positive control: the tool table has live social reads"
@@ -119,7 +118,7 @@ def test_the_session_budget_carries_every_field_the_dreamer_budget_gives_it():
 
 
 def test_every_tool_in_the_catalogue_has_an_audited_side_effect_line():
-    """#637 review, blocker: «shadow writes nothing live» is a claim about EVERY
+    """«Shadow writes nothing live» is a claim about EVERY
     tool the session holds, so a tool added to the design's catalogue without an
     audit of what it writes fails here, not in a shadow week. The audit itself
     is run, against real Postgres, by `tests/infra/test_a_cognition_sessions_
@@ -128,8 +127,8 @@ def test_every_tool_in_the_catalogue_has_an_audited_side_effect_line():
 
     assert set(READ_TOOL_AUDIT) == set(COGNITION_READ_CATALOGUE)
     assert all(text.strip() for text in READ_TOOL_AUDIT.values())
-    # `note_search` no longer records a miss (DEC-277): its audit line says it
-    # writes nothing, and no longer names a neutralised write.
+    # `note_search` records no miss (DEC-277): its audit line says it writes
+    # nothing and names no neutralised write.
     assert "No write" in READ_TOOL_AUDIT["note_search"]
     assert "NEUTRALISED" not in READ_TOOL_AUDIT["note_search"]
 
@@ -281,7 +280,7 @@ async def test_an_agenda_in_one_room_binds_the_reads_to_that_room():
 
 
 async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_home_room_instead():
-    """DEC-231, 30 §1 (#637 review, major 3): each item's reads resolve through
+    """DEC-231: each item's reads resolve through
     that item's room. The session hands the source EVERY agenda room, in agenda
     order, and never substitutes the unit's home room for an item's; the prompt
     says the reads take a `room` and lists them."""
@@ -518,7 +517,7 @@ def test_the_boot_check_refuses_an_enabled_loop_that_built_no_session():
 
 
 def test_the_boot_check_refuses_shadow_when_no_unit_can_run_a_session():
-    """#637 review, minor 1: units without a home room stay in the evaluator
+    """Units without a home room stay in the evaluator
     (their would-wakes are still recorded), but if NONE can start a session a
     shadow week would record would-wakes and run nothing, and look healthy."""
     hooked = SimpleNamespace(has_wake_hook=True)
@@ -535,9 +534,9 @@ def test_the_boot_check_refuses_shadow_when_no_unit_can_run_a_session():
 
 
 async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_and_the_audit():
-    """`App.shutdown` (the `finally` of `main`) is where the design's open
-    choice (a) lands: the sessions are cancelled BEFORE the model client and
-    the database they use are closed, and stopping twice is harmless."""
+    """`App.shutdown` (the `finally` of `main`) cancels the sessions
+    BEFORE the model client and the database they use are closed, and stopping
+    twice is harmless."""
     from nora.__main__ import App
 
     order: list[str] = []
@@ -614,7 +613,7 @@ async def test_a_probe_that_raised_is_an_error_never_a_pass():
     assert outcome.source == "fail_closed" and "fell over" in (outcome.error or "")
 
 
-# ---- the objective: what she is told she is reading (#637 review, minors) ---------------
+# ---- the objective: what she is told she is reading ---------------
 
 def _objective() -> str:
     from pathlib import Path
@@ -636,7 +635,7 @@ def test_the_objective_names_every_close_reason_the_session_closes_with():
 
 
 def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
-    """Context framing, not a capability list (AGENTS.md; measured on the gate):
+    """Context framing, not a capability list (AGENTS.md):
     it says what she is handed, in what order, and what is already written down,
     and it does not enumerate the kinds of write she can make."""
     text = _objective()
@@ -652,11 +651,10 @@ def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
 
 
 def test_the_objective_names_none_of_the_old_shapes_of_the_input():
-    """Step 3b of design/context-assembly/04-every-occasion.md: the input is an
-    `agenda` of `item`s, then notes and events. The objective quoted the OLD line
-    shape and kept its vocabulary («the list», «the lines under it», «below the
-    list», «the next list») after the format changed; none of it describes
-    anything the model is handed now."""
+    """The input is an `agenda` of `item`s, then notes and events. The objective
+    uses none of the older line-list vocabulary («the list», «the lines under
+    it», «below the list», «the next list»); none of it describes anything the
+    model is handed."""
     text = _objective().split("---\n", 2)[2]       # the instruction, not the changelog
     for old in ("[#", "min ago)", "(edited)", "[cues:", "[room ", "Nora (you)",
                 "(returning:", "earlier messages not shown",
@@ -698,7 +696,7 @@ def test_the_objective_teaches_nothing_the_block_types_already_say():
     assert fields["n"].startswith("a message's real id: ")
     assert dict(BLOCK_TYPES["note_index"].annotations)["n"].startswith("the note's real id")
     assert "`platform:conversation_id`" in BLOCK_TYPES["reads"].description
-    # and what the old objective said about the rest, now on the fields
+    # and the rest of what the input carries, said on the fields
     assert "changed after they were said" in fields["edited"]
     assert "what code noticed" in fields["cues"] and "never a reading of it" in fields["cues"]
     assert "not readable now" in fields["unreadable"]

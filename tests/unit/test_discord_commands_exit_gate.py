@@ -1,11 +1,8 @@
 """`/discord exit` applies the SAME three-condition admission gate as
-`/discord join` (design/voice-channel/07 §12.3: guild member + caller in a
-voice channel + that channel's GUILD on `voice_guild_ids` — no carve-out for
-exit; guild-scoped since 2026-09-17, §12.2 reversed). Shipped phase 1 checked
-guild membership only, so any guild member could tear down the shared
-connection (music + TTS + wake) from anywhere;
-both 2026-09-16 audits flagged it and no test pinned the gate. This file
-is that pin: every rejection path must leave the hub and the music manager
+`/discord join`: guild member + caller in a voice channel + that channel's
+GUILD on `voice_guild_ids`, with no carve-out for exit. Without the gate any
+guild member could tear down the shared connection (music + TTS + wake) from
+anywhere. Every rejection path must leave the hub and the music manager
 untouched.
 
 `discord.Interaction` is not faithfully fakeable as a whole, but the gate
@@ -107,9 +104,8 @@ async def test_exit_rejects_a_member_in_an_unallowed_guild() -> None:
 
 
 async def test_exit_admits_a_member_in_any_channel_of_an_allowed_guild() -> None:
-    """§12.2 reversed 2026-09-17: a channel that is not the configured one is
-    no longer a refusal. Before this, a member who had moved rooms could not
-    tear down the connection they were sitting in."""
+    """A channel that is not the configured one is not a refusal: a member who
+    moved rooms can tear down the connection they are sitting in."""
     commands, hub, _manager = _commands()
     interaction = _FakeInteraction(guild_id=GUILD, user=_member(channel_id=999))
     await _run_exit(commands, interaction)

@@ -191,9 +191,7 @@ def test_a_parallel_batch_is_measured_against_itself():
     emitting its tool calls as a PARALLEL BATCH produces a different shape: the
     guard is asked about every call before any of them completes, so with the
     count only advancing in `AfterToolCallEvent` all of them see the pre-batch
-    number and all pass. That is the live 2026-08-13 failure recorded in
-    `nora.agent.call_ledger` — nine calls against a budget of four, 148k input
-    tokens against a 128k ceiling, ending with an empty message.
+    number and all pass. That is the failure `nora.agent.call_ledger` exists to prevent.
 
     PROBE: this is why `evaluate` asks `at_ceiling` (finished PLUS in-flight)
     rather than reading completed counts alone. Two `reserve`s before either
@@ -282,11 +280,11 @@ def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
     tools. The way to be sure this guard is not a weakened `ReplyGuard` is that
     it cannot be handed the parts.
 
-    `result_caps` (design/dreamer-agent-loop/32 §3.3 point 3) is on the
+    `result_caps` is on the
     signature deliberately: it shapes a tool RESULT, not a turn — it cannot
     cancel, relax, or end anything, so the negative below stays intact.
 
-    `memory_tools`/`memory_budget` (R-91, issue #160) join it on the same
+    `memory_tools`/`memory_budget` (R-91) join it on the same
     terms, and the list is spelled out rather than loosened so that the next
     parameter has to be argued for here too. A ceiling on how many MEMORY
     reads one pass may make refuses a call and rewrites its result; it holds
@@ -295,7 +293,7 @@ def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
     `tests/unit/test_dream_memory_budget.py` asserts exactly that, because «a
     budget that ends the turn» is the failure mode this negative is about.
 
-    `pass_budget` (design/dreamer-agent-loop/43 §4) is the same ceiling over
+    `pass_budget` is the same ceiling over
     every verb rather than the memory cluster, argued on the same terms: it
     refuses a call and rewrites its result, and the pass runs on until the
     model stops asking (`test_the_configured_pass_ceiling_binds_through_the_
@@ -350,7 +348,7 @@ def test_a_hook_failure_never_escapes_the_loop():
     assert event.cancel_tool is None
 
 
-# ---- result caps (design/dreamer-agent-loop/32 §3.3 point 3) ----------------
+# ---- result caps ----------------
 
 
 def _capped_guard(cap: int) -> DreamGuard:
@@ -405,16 +403,13 @@ def test_a_guard_with_no_caps_behaves_exactly_as_before():
     assert event.result["content"] == [{"text": "x" * 100_000}]
 
 
-# ---- R-99: an argument the tool does not declare (design/social-per-network/
-# 30-link-owner-registry.md, added on review 2026-09-25) --------------------
+# ---- R-99: an argument the tool does not declare --------------------
 #
-# The Dreamer runs native tools built by the identical `build_tool_specs`
-# the tag path builds them from, so `media_fetch(file=...)`'s silent drop
-# (Strands' generated pydantic model ignores an undeclared key) is exactly as
-# reachable from a background pass as from a tag — and was silently exempt
-# from this rule until review caught it. `unknown_arguments_veto`
-# (`nora.agent.guards`) is the ONE function both `ReplyGuard` and `DreamGuard`
-# call, so these tests are the Dreamer-side half of the same property
+# The Dreamer runs native tools built by the identical `build_tool_specs` the tag path builds
+# them from, so `media_fetch(file=...)`'s silent drop (Strands' generated pydantic model
+# ignores an undeclared key) is exactly as reachable from a background pass as from a tag.
+# `unknown_arguments_veto` (`nora.agent.guards`) is the ONE function both `ReplyGuard` and
+# `DreamGuard` call, so these tests are the Dreamer-side half of the same property
 # `tests/unit/test_tool_unknown_arguments.py` proves for the tag path.
 
 

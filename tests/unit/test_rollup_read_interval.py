@@ -1,5 +1,5 @@
-"""`rollup_read`'s interval and its row's place words (design/cognition-loop/
-25-rollup.md §5): the reading of what a model writes, with no store.
+"""`rollup_read`'s interval and its row's place words: the reading of what a
+model writes, with no store.
 
 An interval that cannot be read is an error, never «everything»: an answer to
 a question nobody asked looks like an answer. Dates are Hong Kong days.
@@ -78,7 +78,7 @@ def test_a_row_carries_the_key_a_note_cites_it_by():
     assert row["from"] == iso(HKT_MIDNIGHT) and row["to"] == iso(HKT_MIDNIGHT + 3_600_000)
 
 
-# ---- two rooms under one label keep both counts (review of #647, M4) -----------------------
+# ---- two rooms under one label keep both counts -----------------------------------
 
 def test_two_rooms_with_one_label_are_both_counted_never_one_overwriting_the_other():
     from nora.agent.rollup_read import _rooms_by_label

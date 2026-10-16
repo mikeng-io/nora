@@ -1,8 +1,8 @@
 """`LessonsAdaptor` — one unit's lessons, per wake of its closed response
-episodes (design/self-growth/40-lessons.md, L2).
+episodes.
 
 The real `LessonBook` runs here (its citation, echo, cap and screen checks are
-L1's); the store under it is a list. What this file pins is L2's own:
+its own); the store under it is a list. What this file pins is the adaptor's:
 
 - every CLOSED episode is shown, `unanswered` included, and may be cited;
 - a lesson needs three episodes, and her own sends as bare ids never ground one;
@@ -260,7 +260,7 @@ async def test_the_horizon_wakes_the_key_and_commit_retires_what_was_not_reinfor
         citations=["response:100", "response:120", "response:130"])
     await env.adaptor.accept(key=UNIT, items=())
     # The run wrote two rows: the session's reinforcement (landed through its
-    # verb, which the runtime now counts as `ok`) and the decay's retirement.
+    # verb, which the runtime counts as `ok`) and the decay's retirement.
     assert await env.adaptor.commit(key=UNIT, proposals=(), now_ms=env.clock.now) == 2
     [left] = await env.book.active(unit=UNIT)
     assert left.head.body.endswith("then go quiet")
@@ -337,7 +337,7 @@ async def test_fewer_than_three_new_episodes_are_not_handed_over_or_consumed(env
 
 
 
-# -- L4: the correction fast path ------------------------------------------
+# -- the correction fast path ------------------------------------------
 
 def _correction_env(quiet_s: int = 600) -> _Env:
     env = _Env()

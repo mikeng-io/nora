@@ -1,11 +1,11 @@
-"""What makes a failed Cognition session the AGENDA's fault (DEC-244, third
-review of #637). `agenda` strikes human stimuli after five in a row, so it is
+"""What makes a failed Cognition session the AGENDA's fault (DEC-244).
+`agenda` strikes human stimuli after five in a row, so it is
 reached only on proof: an overflow whose prompt is a known fraction of the
 model's window, that carries no sign the provider or the transport failed, and
 that repeated on the same agenda. Everything else backs the unit off and
 strikes nothing.
 
-The error shapes are the reviewer's: Strands raises
+The error shapes are what Strands raises:
 `ContextWindowOverflowException` for ANY provider message containing «context
 length» or «too many tokens», so a 503, a 413 tokens-per-minute and a 429 all
 arrive wearing the overflow class.

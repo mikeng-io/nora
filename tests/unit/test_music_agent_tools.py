@@ -1,5 +1,4 @@
-"""`play_music`/`skip_music`/`stop_music`/`music_status`
-(design/discord-music/07-agent-tool.md) — the platform gate, the
+"""`play_music`/`skip_music`/`stop_music`/`music_status` — the platform gate, the
 wiring-gap/no-tagger refusals, and the happy-path delegation to
 `MusicToolBridge`. `DiscordMusicToolBridge` itself is covered by
 `tests/unit/test_music_tool_bridge.py`; this file is about `nora.agent.tools`
@@ -79,11 +78,9 @@ def _specs(*, platform: str, persons=None, music=None, tagger=None) -> dict:
 
 
 async def test_music_verbs_are_absent_off_discord():
-    """2026-09-16 catalog-level platform filter: music verbs are not even
-    shipped on a non-Discord catalog — the body gate (`unavailable`) was
-    the old shape; a Signal room never sees them now (token saving, decided
-    with `set_music_volume`)."""
-    # The cut is `ToolScope`'s since design/tool-catalogue phase B — the one
+    """Catalog-level platform filter: music verbs are not shipped on a non-Discord
+    catalog, so a Signal room never sees them."""
+    # The cut is `ToolScope`'s — the one
     # scope every loop's tools pass through; `build_tool_specs` builds every
     # closure and the scope admits.
     scope = ToolScope(platform="signal")
@@ -134,13 +131,12 @@ async def test_play_music_passes_the_taggers_discord_id_and_the_query():
 
 
 async def test_play_music_passes_every_discord_id_the_person_has_not_just_one():
-    """Found live 2026-08-24: a real person mapped to TWO Discord accounts in
-    identity.toml. Picking an arbitrary one of the two here (rather than
-    handing the bridge the full set) had them sitting in a voice channel on
-    one account while the tool checked the other, and refused them although
-    they were plainly already in the channel -- only `MusicToolBridge`,
-    which can see who is actually in a voice channel right now, is in a
-    position to pick the right one."""
+    """A person mapped to TWO Discord accounts in identity.toml: picking an
+    arbitrary one of the two here (rather than handing the bridge the full set)
+    would leave them in a voice channel on one account while the tool checked
+    the other, and refuse them although they are already in the channel -- only
+    `MusicToolBridge`, which can see who is actually in a voice channel right
+    now, is in a position to pick the right one."""
     bridge = _FakeBridge(
         play_outcome=MusicToolOutcome(status="ok", title="APT.", url="https://y/1"),
     )
@@ -277,7 +273,7 @@ async def test_every_non_ok_music_status_carries_a_note():
 
 
 async def test_play_music_ok_note_follows_queued():
-    """The two ok-reporting rules that left play_music's description arrive
+    """The two ok-reporting rules not in play_music's description arrive
     only with the outcome they are about: «queued» when it went behind
     something, the only-announcement rule when it actually started."""
     def _tools(queued: bool) -> dict:

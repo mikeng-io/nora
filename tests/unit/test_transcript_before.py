@@ -1,7 +1,7 @@
-"""`before` on the transcript tools (design/self-awareness/08 §2).
+"""`before` on the transcript tools.
 
-Both tools returned only the newest rows (at most 60), so «what did we say
-yesterday» could not reach yesterday in a room that had said more than a
+Both tools return only the newest rows (at most 60), so «what did we say
+yesterday» cannot reach yesterday in a room that had said more than a
 window's worth since. These pin what `before` must do: jump straight to the
 time, page without a hole, say when older rows exist and exactly how to reach
 them, and never answer an unreadable time with today's messages.
@@ -111,8 +111,8 @@ def test_a_time_it_cannot_read_is_an_error_never_a_guess():
 
 
 def test_another_zone_is_unreadable_not_eight_hours_off():
-    """Review of #538: the first parser dropped EVERY three-letter word, so
-    «21:14 UTC» read as 21:14 Hong Kong time. Only a weekday and HKT fold."""
+    """A three-letter word is not dropped blindly: «21:14 UTC» must not read as
+    21:14 Hong Kong time. Only a weekday and HKT fold."""
     for zoned in ("2026-09-24 21:14 UTC", "2026-09-24 21:14 GMT",
                   "2026-09-24 21:14 PST", "2026-09-24 21:14 (UTC)"):
         with pytest.raises(ValueError):
@@ -154,9 +154,9 @@ async def test_a_full_window_names_the_exact_value_that_reads_further_back(perso
 
 
 async def test_paging_across_a_crowded_minute_moves_on_and_skips_nothing(persons):
-    """Four rows share 12:00 and a page holds three. The first cut of this
-    tool paged by the oldest row's MINUTE, inclusive, and handed back the
-    same page forever here; the cursor is now that row's exact moment."""
+    """Four rows share 12:00 and a page holds three. The cursor is
+    the oldest row's exact moment, not its minute: a minute-inclusive cursor
+    would hand back the same page forever here."""
     rows = [(_at(24, 11, 58), "a"), (_at(24, 11, 59), "b"),
             (_at(24, 12, 0, 5), "c"), (_at(24, 12, 0, 20), "d"),
             (_at(24, 12, 0, 40), "e"), (_at(24, 12, 0, 50), "f"),
@@ -176,9 +176,9 @@ async def test_paging_across_a_crowded_minute_moves_on_and_skips_nothing(persons
 
 
 async def test_paging_never_strands_a_row_that_shares_its_timestamp(persons):
-    """Review of #538, reproduced: WhatsApp stamps whole seconds, so b and c
-    share one `ts`. With the page ending between them, the exclusive cursor
-    at that `ts` left b unreachable (pages read a, c, d, e)."""
+    """WhatsApp stamps whole seconds, so b and c share one `ts`. With the page
+    ending between them, an exclusive cursor at that `ts` would leave b
+    unreachable (pages read a, c, d, e)."""
     same = _at(24, 12, 0, 2)
     rows = [(_at(24, 12, 0, 1), "a"), (same, "b"), (same, "c"),
             (_at(24, 12, 0, 3), "d"), (_at(24, 12, 0, 4), "e")]
@@ -196,8 +196,8 @@ async def test_paging_never_strands_a_row_that_shares_its_timestamp(persons):
 
 
 async def test_a_year_past_the_calendar_is_unreadable_not_a_crash(persons):
-    """Review of #538: 9999-12-31 overflowed `datetime` and escaped the tool
-    as an OverflowError, recorded nowhere."""
+    """9999-12-31 overflows `datetime`; it must not escape the tool as an
+    OverflowError."""
     tool = _load_transcript(persons, await _store((_at(25, 9, 0), "today")))
 
     out = await _call(tool, before="9999-12-31")
@@ -233,7 +233,7 @@ async def test_leaving_before_out_reads_the_newest_rows_as_it_always_did(persons
 
 
 # ---------------------------------------------------------------------------
-# design/dreamer-agent-loop/43 §3: what a Dreamer pass LOADED is citable
+# what a Dreamer pass LOADED is citable
 # ---------------------------------------------------------------------------
 
 

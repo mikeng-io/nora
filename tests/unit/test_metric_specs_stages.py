@@ -4,23 +4,17 @@
 NAMES. Nothing covered label VALUES, and for a fail-soft block they are the
 whole instrument: the block is lost and the turn is not, so absence is the only
 symptom and `nora_errors_total` is the only tell. A stage nobody declared is a
-series nobody knows to graph — which is `nora_peer_card_empty_total`'s own
-lesson (a counter that ran on every tagged turn and was absent from `/metrics`
-for the life of a deployment), one axis over.
+series nobody knows to graph — like a counter that runs on every tagged turn
+but is absent from `/metrics`.
 
 So: every stage constant the ambient loop's memory reads use must appear
 verbatim in `metric_specs`' own `nora_errors_total` description.
 
-**The reverse direction is a check on the DECLARATION, not a cap on it**, and
-the difference is the whole design of this file. The first cut asserted that
-every declared stage was one of the four this branch added, which would have
-gone red the moment somebody documented one of the ten other fail-soft stages
-that have exactly the same property (`fire_peer_card`, `fire_notes`,
-`fire_standing`, `fire_unit`, `fire_context`, `tagger_card`,
-`proactive_self_card`, `proactive_standing`, `fire_feedback`). A gate that
-forbids the fix for the lesson it cites is inverted, and an Opus review caught
-it before it landed. What the reverse check asks instead is that a declared
-stage is one some call site actually RAISES — because a declaration nothing
+The reverse direction is a check on the DECLARATION, not a cap on it: declaring
+other fail-soft stages (`fire_peer_card`, `fire_notes`, `fire_standing`,
+`fire_unit`, `fire_context`, `tagger_card`, `proactive_self_card`,
+`proactive_standing`, `fire_feedback`) must stay legal. What the reverse check
+asks is that a declared stage is one some call site actually RAISES — because a declaration nothing
 increments is the mirror lie `AGENTS.md` already names ("a declared metric with
 no call site is a lie").
 """
@@ -40,9 +34,9 @@ from nora.obs.metric_specs import _COUNTERS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: The issue-#210 stages, as the code spells them. Imported from the
+#: The ambient loop's memory-read stages, as the code spells them. Imported from the
 #: modules rather than retyped: a vocabulary hand-copied into its own test
-#: measures the copy (`evals/harness.py`'s `TRIGGER_TEXT` war-story).
+#: measures the copy.
 _STAGES = (
     STAGE_FIRE_PEOPLE,
     STAGE_FIRE_MEMORY,
@@ -65,7 +59,7 @@ def test_every_ambient_memory_stage_is_declared(stage: str) -> None:
 
 
 def test_every_declared_stage_is_one_some_call_site_actually_raises() -> None:
-    """The other direction, and it WIDENS rather than caps: declare as many
+    """The other direction WIDENS rather than caps: declare as many
     stages as you like, but each one has to exist in the code that runs."""
     declared = set(re.findall(r'stage="([a-z_]+)"', _errors_description()))
     assert declared, "the description declares no stage at all"

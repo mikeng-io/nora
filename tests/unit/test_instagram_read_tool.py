@@ -1,5 +1,5 @@
-"""`instagram_read` end to end below the model (design/instagram-adoption/18,
-/17 P5): the tool resolves a spoken NAME to a person in the room, the router
+"""`instagram_read` end to end below the model: the tool resolves a spoken
+NAME to a person in the room, the router
 resolves the person to one igid through the REAL person index and decides
 reach, and the REAL client reads the bridge.
 
@@ -277,8 +277,7 @@ async def test_a_person_with_no_instagram_account_is_nothing_found_saying_so(wor
     """Sky matched and has no igid on file. `nothing_found` — there is nothing
     to read — with a note that says WHAT the nothing is («no account on file,
     so I didn't look»), so the model does not report «no story up» about an
-    account nobody recorded, and does not guess one from the name. Until
-    2026-09-24 this was `ambiguous`, whose sentence told the model to ask."""
+    account nobody recorded, and does not guess one from the name."""
     fake, read = world()
     out = await read(what=what, person="Sky")
 
@@ -339,7 +338,7 @@ async def test_a_dm_listing_makes_nobody_tier_zero(world):
 
 async def test_a_listing_in_a_group_room_on_another_network_is_tier_zero(world):
     """Tier 0 is a property of the PERSON, not of where the question was
-    asked (15, operator 2026-09-23): a Discord room listing River counts for a
+    asked: a Discord room listing River counts for a
     question asked in a Signal room. The positive control for the three
     refusals above."""
     discord = Conversation(
@@ -360,7 +359,7 @@ async def test_a_person_known_elsewhere_but_not_in_this_room_is_nothing_found(wo
     """Zed is in `identity.toml`, is Tier 0 through ANOTHER room, and is not a
     member of this one. A name resolves within THIS room only (the lookup
     `about` uses), so «Zed» here is nobody: `nothing_found`, with the same
-    payload as a name that exists nowhere (design/12 §3 — a difference would
+    payload as a name that exists nowhere (a difference would
     disclose who is in Nora's other rooms), and nothing is sent.
 
     The positive control is that Zed IS Tier 0 in this world: a story for
@@ -387,11 +386,9 @@ async def test_a_person_known_elsewhere_but_not_in_this_room_is_nothing_found(wo
 )
 async def test_a_story_is_never_opened_in_a_turn_nobody_asked_for(world, turn):
     """Nora does not read people's stories unprompted (a privacy choice;
-    whether the author sees the view is unmeasured, design 04, 05 §Reading a
-    story), so a background pass (a reminder or proactive fire
-    turn, a Dreamer run with a home room) must never open one. `refused`
-    before anything is resolved or sent (design/instagram-adoption/18,
-    2026-09-24).
+    whether the author sees the view is unmeasured), so a background pass
+    (a reminder or proactive fire turn, a Dreamer run with a home room) must
+    never open one. `refused` before anything is resolved or sent.
 
     Positive control: the SAME turn reads Quinn's profile, which stays
     allowed, so the empty story log is the rule and not a turn that cannot
@@ -492,7 +489,7 @@ async def test_no_igid_fbid_or_person_id_is_in_the_model_facing_result(world, wh
 
 
 async def test_every_request_the_client_makes_is_a_get_on_an_account_resource(world):
-    """Read-only at the client layer (18 §"Read-only, at three layers"): the
+    """Read-only at the client layer: the
     bridge also serves writes, so on this path the client is what keeps them
     out of reach. Across every read this tool can make, the bridge saw GETs
     under `/accounts/` and nothing else."""
@@ -544,7 +541,7 @@ async def test_unwired_is_unavailable(persons):
 async def test_an_unwired_instagram_backend_never_fails_over_to_the_default(persons):
     """Only the OpenCLI default is composed. An Instagram read is
     `unavailable` — and the default, which must not serve Instagram
-    profiles or stories, is never asked (`15`)."""
+    profiles or stories, is never asked."""
     default = FakeSocialProvider({("instagram", "profile"): {"status": "ok"}})
     router = SocialRouter(default=default)
     out = await _tools(persons, router)["instagram_read"](what="profile", person="Quinn")
@@ -597,13 +594,8 @@ def test_posts_is_in_neither_the_vocabulary_nor_the_catalogue_line():
 
 def test_the_catalogue_line_names_every_item_and_a_share():
     """The L1 says what the read RETURNS for a post or reel (every item,
-    videos included) and that a SHARE is a reason to call it (2026-09-24,
-    design 18 §«the tool-catalogue contract»). Replayed on the recorded
-    live prompt of trace ce094b70, n=12, `instagram_read` called first:
-    0/12 with the handle gone and the old L1 («Read an Instagram profile,
-    story, post or reel by name, handle or link…»), 7/12 with this L1 and
-    body sentence, 10/12 with the purged belief as well. The inputs moved
-    to the body; `test_the_description_body_names_person_handle_and_link`
+    videos included) and that a SHARE is a reason to call it. The inputs
+    live in the body; `test_the_description_body_names_person_handle_and_link`
     holds them there."""
     line = next(
         ln for ln in ToolRegistry().tool_catalogue().splitlines()
@@ -614,8 +606,8 @@ def test_the_catalogue_line_names_every_item_and_a_share():
 
 
 def test_the_description_body_names_person_handle_and_link():
-    """Design 18 requires the description to name the inputs the tool takes.
-    Since the L1 names what it returns instead, the BODY carries them: the
+    """The description names the inputs the tool takes. Since the L1 names what
+    it returns instead, the BODY carries them: the
     three parameters by name, and a person's name as the way to use
     `person`. Read from the description Strands sends, not the docstring."""
     description = ToolRegistry()._descriptions()["instagram_read"]
@@ -624,15 +616,13 @@ def test_the_description_body_names_person_handle_and_link():
     body = " ".join(body.split())
     assert "Give exactly one of `person`, `handle` or `link`" in body
     assert "Only people in this conversation can be named by `person`" in body
-    # And the body is where they are: the L1 no longer names them.
+    # And the body is where they are: the L1 does not name them.
     assert "handle" not in l1
 
 
 def test_the_body_says_every_item_and_what_it_shows():
-    """The body sentence. Its first half is the measured one (the same replay
-    as the L1): a post or a reel returns every item, videos included. Since
-    2026-09-24 (18 §"Typed views, one renderer, and readings") it also says
-    the result carries what each of the first 8 items SHOWS beside the
+    """The body sentence: a post or a reel returns every item, videos included.
+    It also says the result carries what each of the first 8 items SHOWS beside the
     caption, with a link each for `media_fetch(url=...)`, and that a story's
     frames come back the same way."""
     body = " ".join(

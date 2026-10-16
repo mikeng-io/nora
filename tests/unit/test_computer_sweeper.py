@@ -1,4 +1,4 @@
-"""The computer session sweeper (design/sandbox-runtime §15.2), on fakes and a
+"""The computer session sweeper, on fakes and a
 fake clock: when a session expires and why, that it never ends a job or
 deletes anything, and that what it cannot see is never read as «nothing
 running»."""
@@ -176,13 +176,13 @@ async def test_the_loop_survives_a_failing_sweep_and_counts_it():
     assert metrics.get("nora_errors_total", stage="computer_sweep") >= 2
 
 
-# -- processes outside tmux (live read-back, 2026-10-01) ----------------------
+# -- processes outside tmux ---------------------------------------------------
 
 
 async def test_a_nohup_job_with_no_tmux_keeps_the_session_open(world):
-    """FALSIFIER: a `nohup python tick.py &` job has no tmux session, only a
-    process the room's user owns. Read as «nothing running», the session
-    expired while the job was still going."""
+    """A `nohup python tick.py &` job has no tmux session, only a process the
+    room's user owns. Read as «nothing running», the session would expire while
+    the job was still going."""
     clock, runtime, sessions, _, _, _, sweeper = world
     s = await _open(sessions)
     runtime.start_process(SCOPE, "python tick.py", pid=159, started=T0)

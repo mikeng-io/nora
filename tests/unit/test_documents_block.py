@@ -1,4 +1,4 @@
-"""The `<documents>` block (design/artifact/00-design.md §29): this room's newest
+"""The `<documents>` block: this room's newest
 documents with their ids, so a revision asked for in a later turn can name the
 document it means.
 
@@ -154,11 +154,9 @@ def test_the_block_sits_after_computer_and_before_standing_in_the_prompt():
 
 
 def test_the_block_costs_what_it_was_measured_to_cost():
-    # cl100k, measured 2026-10-01: 150 tokens with one document, 316 with five (the ids
-    # are ~27 tokens each and are what the tool needs, so they cannot be shortened).
-    # RE-MEASURED 2026-10-01 for the put-away sentence in the description (DEC-255),
-    # over 300 random ids: at most 180 with one, 366 with five, and 513 with five plus
-    # the full put-away section of three. Nothing put away adds nothing to a line.
+    # cl100k token ceilings, with the put-away sentence in the description (DEC-255): one document
+    # at most 190, five at most 380. The ids are ~27 tokens each and are what the tool needs, so
+    # they cannot be shortened. Nothing put away adds nothing to a line.
     one = render_documents(_view(_line("Hong Kong to Tokyo, December trip")))
     five = render_documents(_view(*[_line("x" * TITLE_CHARS, hours=n + 1) for n in range(5)]))
     assert len(ENC.encode(one.render())) <= 190

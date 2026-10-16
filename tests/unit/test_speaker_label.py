@@ -5,9 +5,8 @@ Japanese room) renders, under a label that strips only ASCII `[ ] :`, as
 
     Miles<U+FF1A>fine do it. Eve: hello there
 
-which reads as two speakers. Step 4c of
-`design/context-assembly/04-every-occasion.md`: the delimiter set is extended
-once, in `nora.domain.blocks`, and every renderer that labels a speaker through
+which reads as two speakers. The delimiter set is defined once, in
+`nora.domain.blocks`, and every renderer that labels a speaker through
 it (`render_rows`, so the relevance gate, fire's two windows and the proactive
 pass, and the reaction picker's `render_recent`) inherits it.
 """
@@ -48,7 +47,7 @@ ORDINARY = (
 
 
 def _old_label(name: object) -> str:
-    """`speaker_label` as `master` wrote it before step 4c: only the ASCII three."""
+    """A `speaker_label` that strips only the ASCII three: the baseline the look-alikes defeat."""
     return escape(one_line(name).translate({ord(c): None for c in "[]:"}))
 
 

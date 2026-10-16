@@ -1,4 +1,4 @@
-"""The `<computer>` block (design/sandbox-runtime §15.3): a deterministic
+"""The `<computer>` block: a deterministic
 window, rebuilt each turn from the machine and the audit, never a fold.
 
 Pinned: absent while `[computer]` is off and for a room not using the
@@ -269,7 +269,7 @@ def test_a_cjk_objective_cannot_slip_past_the_ceiling():
 
 @pytest.mark.parametrize("n", [1])
 def test_a_full_block_is_about_four_hundred_tokens_or_fewer(n, capsys):
-    """The measured size of a full example (every section at its cap)."""
+    """The size of a full example (every section at its cap)."""
     view = _view(
         open_sessions=tuple(SessionLine(_session(i, minutes_ago=i * 30,
                                                  objective="scrape prices for the Osaka trip "
@@ -387,7 +387,7 @@ def test_the_ceiling_counts_the_escaped_text():
     assert estimate_tokens(body) <= 150
 
 
-# -- links (S3a) ---------------------------------------------------------------
+# -- links ---------------------------------------------------------------
 
 
 def _export_rows(path: str, at: datetime, *, status="ok", artifact_id="art_1",
@@ -440,7 +440,7 @@ def test_links_are_capped_with_a_line_saying_how_many_more():
     assert body.count("link \"page") == 3 and "+2 more links" in body
 
 
-# -- processes outside tmux (live read-back, 2026-10-01) ----------------------
+# -- processes outside tmux ----------------------
 
 
 async def test_a_nohup_job_shows_as_running_and_keeps_its_task_active():

@@ -1,16 +1,9 @@
-"""Step 4b of `design/context-assembly/04-every-occasion.md` §5: the authored
-framing text of the fire turn, the summons and the tag prefill is built by typed
-builders in ONE module, and NOT ONE BYTE the model reads changes.
-
-**The goldens in `tests/fixtures/context_assembly_step4b_goldens.json` were
-captured from `master` at `15b6ea8b`, BEFORE any builder was touched**, and are
-the criterion. Nothing here regenerates a golden: changing one is a
-model-visible change and belongs in a step that says so (2026-10-13: every summons
-head gained "A reply longer than 320 characters is not posted at all.", the limit
-`public/conduct.md` used to state as 300; design/context-plan/12 §4; and every
-proactive header gained "and most turns like this one end that way.", the base
-rate `silence.md` carried until it dissolved, §2). What is
-compared is the whole text each seam produces, never a substring of it:
+"""The authored framing text of the fire turn, the summons and the tag prefill
+is built by typed builders in ONE module, and the goldens in
+`tests/fixtures/context_assembly_step4b_goldens.json` pin every byte the model
+reads. Nothing here regenerates a golden: changing one is a model-visible
+change. What is compared is the whole text each seam produces, never a
+substring of it:
 
 * every fire `Event` kind, through its public factory (`reminder_occasion`,
   `proactive_occasion`, `compute_occasion`, `relay_occasion`,
@@ -37,19 +30,15 @@ compared is the whole text each seam produces, never a substring of it:
 One quirk is pinned, not fixed: the summons' head prints the clock's own digits
 under a literal `UTC` whatever zone `now` carries.
 
-**One golden value is NOT master's, and says so.** The summons' head used to
-interpolate the summoner's username bare. Review of the first version found a
-handle can only be `[A-Za-z0-9._]{1,30}` (`is_handle`) and `escape` is the
-identity on those, so the head now escapes it: no reachable byte moves. The
-summoner cases here sweep REACHABLE handles, captured from master and unchanged;
+The summons' head escapes the summoner's username. A handle can only be
+`[A-Za-z0-9._]{1,30}` (`is_handle`) and `escape` is the identity on those, so no
+reachable byte moves. The summoner cases here sweep REACHABLE handles;
 `summons-head-a-hostile-summoner-is-escaped` sweeps the unreachable hostile
-strings and its golden is what the head renders NOW (escaped), checked again by
-an assertion that does not read the fixture. The hostile summoner values the
-first version captured from master (unescaped) are gone from the fixture.
+strings and its golden is what the head renders (escaped), checked again by an
+assertion that does not read the fixture.
 
-A second gap review found: every `PersonRef` here had `first_name=""`, so a
-header that preferred `first_name` over `name` was invisible. The `first-name-*`
-cases give the person a different first name; their goldens are master's.
+The `first-name-*` cases give each `PersonRef` a `first_name` different from its
+`name`, so a header that preferred `first_name` over `name` is visible.
 """
 
 from __future__ import annotations

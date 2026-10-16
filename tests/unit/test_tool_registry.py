@@ -1,4 +1,4 @@
-"""`ToolRegistry` (Task 2) — the DEC-10 source of native-tool budgets and the
+"""`ToolRegistry` — the DEC-10 source of native-tool budgets and the
 one place that builds them for a tag, adapted to Strands tool objects."""
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def _room() -> Room:
     return Room(
         # Discord — the music verbs ride on this platform's catalog, so the
         # full-table registry contracts below see all six of them. A
-        # non-Discord room's catalog deliberately omits them (2026-09-16,
+        # non-Discord room's catalog deliberately omits them (a
         # catalog-level platform filter); that cut is pinned by
         # `test_non_discord_catalog_omits_music_tools`.
         platform="discord", conversation_id="g1", roster_source=None,
@@ -153,8 +153,8 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
     """The DECLARED surface, which is what every caller below asks about.
 
     `dream_adaptor` defaults to a name rather than `""` because
-    `search_memory_workspace` is Dreamer-only (#350) and a tag-path build no
-    longer carries it — a declared-vs-built comparison run on the tag catalog
+    `search_memory_workspace` is Dreamer-only and a tag-path build does
+    not carry it — a declared-vs-built comparison run on the tag catalog
     would be comparing against a deliberate subset. The subset itself is
     pinned by `test_a_room_catalog_omits_the_dreamer_only_memory_verb`.
     """
@@ -176,13 +176,13 @@ def test_the_registry_exposes_every_declared_tool():
         "who_said",
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "send_to",
-        # design/self-awareness/07: which rooms this group has, and what is
+        # which rooms this group has, and what is
         # said in one of them.
         "room_list", "room_read",
-        # design/cognition-loop/15-map.md §4: the Record over an interval,
+        # the Record over an interval,
         # under lineage.
         "record_query",
-        # design/cognition-loop/25 §5, 50 §2: the Dreamer-only reads.
+        # the Dreamer-only reads.
         "rollup_read", "standing_read", "character_read",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
@@ -190,18 +190,18 @@ def test_the_registry_exposes_every_declared_tool():
         "place_info", "saved_places",
         "where_is",
         # DEC-156: the coordinate -> street-address fetch surface. `where_is`
-        # stopped carrying an address in 13c530aa, so this is the ONLY tool that
-        # resolves one, and R-57 screens routes against what it disclosed.
+        # carries no address, so this is the ONLY tool that resolves one, and
+        # R-57 screens routes against what it disclosed.
         "reverse_geocode",
         # DEC-155: the derived-presence history tool (where someone HAS BEEN).
         "where_been",
-        # design/27 §4.3: the Tier 4 forecast behind where_been's own guard.
+        # the Tier 4 forecast behind where_been's own guard.
         "routine_read",
-        # design/online-status/: the LIVE digital-activity tool (who is
-        # online / playing / in voice right now) — the #248 cross-check.
+        # the LIVE digital-activity tool (who is
+        # online / playing / in voice right now), used by the proactive decide turn.
         "online_now",
         "media_fetch",
-        # design/external-files §3: a shared file link, read as text.
+        # a shared file link, read as text.
         "file_fetch",
         "generate_image",
         "media_search", "media_send",
@@ -212,39 +212,39 @@ def test_the_registry_exposes_every_declared_tool():
         # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
         # the same host bridge, inert unless [social.linkedin] enabled.
         "linkedin_read", "linkedin_search",
-        # instagram_read (design/instagram-adoption/18): a person's Instagram
+        # instagram_read: a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
-        # instagram_search (design/instagram-adoption/18, P11): Instagram
+        # instagram_search: Instagram
         # accounts matching free text, over the instagram-bridge.
         "instagram_search",
         "weather",
-        # HK parking (2026-08-31): TD open-data vacancy for a named car park,
+        # HK parking: TD open-data vacancy for a named car park,
         # and Google Places nearby-search + street meters for «near X».
         "parking_status", "find_parking",
-        # Discord-only music (design/discord-music/07-agent-tool.md).
+        # Discord-only music.
         "play_music", "skip_music", "top_music", "stop_music", "music_status",
         "set_music_volume",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "event_propose", "event_revise", "event_rsvp", "event_set_status",
         "event_search", "suggest_venue",
-        # Nora's computer (design/sandbox-runtime §4, DEC-243).
+        # Nora's computer (DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",
-        # design/browser-runtime B2: a whole browser task, by a sub-agent.
+        # a whole browser task, by a sub-agent.
         "computer_browse",
-        # design/artifact §26: a document is published to the web app, read back to edit.
+        # a document is published to the web app, read back to edit.
         "document_publish", "document_read", "document_set_status",
         # (the four `subagent_*` tools are tag-turn only: this Dreamer-path build omits them,
         # and tests/unit/test_subagent_tools.py pins where they ARE built.)
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
-        # The note tier's four verbs (note-tier spec §5.2/§6).
+        # The note tier's four verbs.
         "note_read", "note_search", "note_create", "note_update",
         # DEC-306: one kept memo of the unit.
         "memo_read",
-        # The remember verb — the conclusion write lane (2026-08-30).
+        # The remember verb — the conclusion write lane.
         "remember",
         # The memory search variant, built for the Dreamer's unit key but
         # reaching Honcho's whole workspace — every unit, not one.
@@ -253,17 +253,16 @@ def test_the_registry_exposes_every_declared_tool():
 
 
 def test_non_discord_catalog_omits_music_tools():
-    """2026-09-16 catalog-level platform filter: music verbs are Discord-only,
+    """Catalog-level platform filter: music verbs are Discord-only,
     so a non-Discord room's tools never ship them (they would only ever answer
     unavailable). The bodies still gate independently — the platform check
     stays as the second line of defence — but this test pins the TOKEN-SAVING
     cut.
 
-    Re-derived when the filter moved (design/tool-catalogue, phase B): it was a
-    branch inside `build_tool_specs` and is now `ToolScope`, applied by
-    `ToolRegistry.surface()` — the one builder every loop takes tools from.
-    `build_tool_specs` builds every closure; this asserts what a ROOM gets,
-    which is the only place the cut ever mattered."""
+    The filter is `ToolScope`, applied by `ToolRegistry.surface()` — the one
+    builder every loop takes tools from. `build_tool_specs` builds every
+    closure; this asserts what a ROOM gets, which is the only place the cut
+    matters."""
     registry = ToolRegistry()
     signal_room = Room(
         platform="signal", conversation_id="g1", roster_source=None,
@@ -291,31 +290,28 @@ def test_non_discord_catalog_omits_music_tools():
 
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
-        # design/tool-catalogue/02: 3 calls of up to 4 names covers the
-        # measured p90 of 2 cold tools per turn, with a retry after `unknown`.
+        # 3 calls of up to 4 names covers 2 cold tools per turn at p90, with a
+        # retry after `unknown`.
         "load_tools": 3,
         # 4, sized like `lookup_person`: one reply routinely carries more than
         # one attribution and each is a separate question. The call is free — a
         # scan of a tuple already in hand — so round trips are the only currency.
         "who_said": 4,
         "now": 4, "load_transcript": 4,
-        # 3 — the cap on how many messages one tag may send. 1→3 activated
-        # multi-message (DEC-42); 3→6 (DEC-95) made the BURST first-class, then
-        # 6→3 (2026-09-22, reverted) after a live incident spent all six on
-        # four rewordings of one point — the burst was a ceiling with no
-        # stated purpose and nothing had measured 6 was needed. 3 still holds
-        # a word to a second person alongside the first reply. Still the spam
+        # 3 — the cap on how many messages one tag may send (DEC-42, DEC-95).
+        # 3 holds a word to a second person alongside the first reply; a
+        # higher cap invites rewordings of one point. Still the spam
         # cap: `turns` and the token ceiling are far away, so this number is
         # the only thing bounding one inbound message's outbound volume.
             "send_reply": 3, "search_gifs": 1, "send_gif": 1,
             # DEC-105. Two, not six: relaying is a deliberate act somebody
             # asked for, not a register she can fall into.
             "send_to": 2,
-        # design/self-awareness/07. `room_list` 2: one call answers it, a
+        # `room_list` 2: one call answers it, a
         # second re-checks a transport after a send. `room_read` 3: two rooms
         # plus a corrected name.
         "room_list": 2, "room_read": 3,
-        # design/cognition-loop/15-map.md §4: an interval, then a narrower
+        # an interval, then a narrower
         # one, then one person.
         "record_query": 3,
         # Sized against model round trips, not against work — see
@@ -323,17 +319,16 @@ def test_budgets_match_todays_table():
         "group_members": 1, "lookup_person": 4, "about": 4,
         # 4 — the dialectic reasoning verb is slow (~14-19s), so the budget is
         # sized by the loop wall clock (240s); four calls (~76s) still fit.
-        # Raised from 2 (operator 2026-09-03) for the personalization
-        # decomposition's group turns.
+        # Enough for the personalization decomposition's group turns.
         "ask_memory": 4, "search_memory": 4,
         # DEC-316: the graph surface's memory verb, offered instead of the two
         # above while `[memory_index] enabled`; `ask_memory`'s number.
         "memory_search": 4,
-        # 2 (tool-recall-log spec §4): the same shape `ask_memory`'s own
+        # 2: the same shape `ask_memory`'s own
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.
         "recall_lookups": 2,
-        # Nora's computer (design/sandbox-runtime §4). `computer_run` 12: a
+        # Nora's computer. `computer_run` 12: a
         # write, run, read the error, fix, run again loop, twice in a turn.
         # `computer_read` 8: a few files or one long file read on. `write` 8:
         # a small project is several files. `edit` 8: patches across a few
@@ -343,20 +338,20 @@ def test_budgets_match_todays_table():
         # S3a: one file out, a revision after a look, one spare (a page and
         # its data); two or three of somebody's files in.
         "computer_export": 3, "computer_import": 3,
-        # design/sandbox-runtime §15.2: sessions are derived by code, so the
+        # sessions are derived by code, so the
         # one session tool reads. One call answers «what were you doing»; a
         # second is a different status filter.
         "computer_session_list": 2,
         "computer_browse": 2,
-        # design/artifact §26: no-spec catalog read, publish, a fix, an edit; a read.
+        # no-spec catalog read, publish, a fix, an edit; a read.
         "document_publish": 6, "document_read": 2,
         # Archive, delete or restore one document; a second call is an undo or
         # another document.
         "document_set_status": 2,
-        # design/subagent §3: one job started (a second call repairs a refused brief), one
+        # one job started (a second call repairs a refused brief), one
         # room's few jobs listed, one job read, one stopped.
         "subagent_create": 2, "subagent_list": 1, "subagent_read": 2, "subagent_cancel": 1,
-        # design/subagent §4d: the worker's own place-keeper; it has no per-tool ceiling in use.
+        # the worker's own place-keeper; it has no per-tool ceiling in use.
         "checkpoint_update": 1,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
@@ -365,62 +360,57 @@ def test_budgets_match_todays_table():
         # One message names two routes often enough (「68X 定 K73 快啲」) and
         # three almost never.
         "transit": 4,
-        # 4 -> 8 (operator instruction, 13c530aa 2026-09-06): multi-spot
-        # questions stopped fitting the old tight cap once naming a place took
-        # the extra where_is -> reverse_geocode round trip.
+        # 8: multi-spot questions do not fit a tight cap once naming a place
+        # takes the extra where_is -> reverse_geocode round trip.
         "route": 8,
         # Sized like route: one Places lookup per call, a turn may ask after two
         # spots.
         "place_info": 4,
         # 1 like group_members: a fixed per-room list, same answer if called twice.
         "saved_places": 1,
-        # 2 -> 8 (operator instruction, 13c530aa 2026-09-06). Sized by the
-        # QUESTION now, not the cost: naming a spot takes where_is ->
+        # 8, sized by the QUESTION, not the cost: naming a spot takes where_is ->
         # reverse_geocode, so a two-person answer is four calls before anyone
-        # asks a follow-up. NOTE the cost this walked away from — each call can
+        # asks a follow-up. NOTE the cost — each call can
         # still block on the DEC-67 live refresh (~8-10s), so 8 is ~80s of
-        # where_is alone against a 120s wall-clock. It is the operator's call;
+        # where_is alone against a 120s wall-clock.
         # `[llm.budgets]` is the lever if a turn ever times out here.
         "where_is": 8,
-        # 4 (DEC-155, the where_been spec §4.4), sized like `transit`/
+        # 4 (DEC-155), sized like `transit`/
         # `place_info`: the calls are cheap local SELECTs — no network, no
         # live-refresh block — so the currency is the model round trip, and
         # one question can legitimately walk day -> places in a turn.
         "where_been": 8,
-        # design/27 §4.3: declared like where_been (same store, same guard).
+        # declared like where_been (same store, same guard).
         "routine_read": 8,
-        # 4, sized on NETWORK cost like `transit` (design/online-status/04):
+        # 4, sized on NETWORK cost like `transit`:
         # one question is ONE batched Steam GetPlayerSummaries call (the
         # room's whole id set in a single request) and/or one gateway-cache
         # read — a second call is a second question. `cacheable=False` is
         # load-bearing: a cached "playing" replayed later is the stale-note
-        # failure (#248) this tool exists to kill.
+        # failure this tool exists to kill.
         "online_now": 4,
         # 2, like `where_is` before the raise: one turn can ask after two
         # coordinates, each a cached Google reverse-geocode.
         "reverse_geocode": 2,
         # The plugin-provided activation tool (DEC-50, activating DEC-48). It is
-        # in `budgets()` ONLY so R-7 admits the `AgentSkills` activation call;
-        # the registry does not BUILD it (see the tests below). Sized 2 since
-        # 2026-09-03: two skills shipped (navigation, personalization) and one
-        # turn may span both; the repeat-veto still stops re-activating the SAME
-        # skill, which re-injects a body already in context. `self-description`
-        # (2026-09-13, #227) made it three and the number did not move — it
-        # bounds the domains one MESSAGE can span, not the size of the
-        # directory.
+        # in `budgets` ONLY so R-7 admits the `AgentSkills` activation call;
+        # the registry does not BUILD it (see the tests below). Sized 2: one turn
+        # may span two skills; the repeat-veto still stops re-activating the SAME
+        # skill, which re-injects a body already in context. The number bounds
+        # the domains one MESSAGE can span, not the size of the directory.
         "skills": 2,
         # One message can name two images (a photo AND a screenshot); the
         # per-call vision timeout, not this number, is what keeps two describe
-        # calls inside the loop budget (DEC-56). 8 since 2026-10-02: a document with
-        # pictures looks at one per section, and 4 ended a turn before it published.
+        # calls inside the loop budget (DEC-56). 8: a document with
+        # pictures looks at one per section, and 4 would end a turn before it publishes.
         "media_fetch": 8,
-        # A file, its next part or two, or a second file (design/external-files §3).
+        # A file, its next part or two, or a second file.
         "file_fetch": 4,
         # One message can ask for one image, maybe a second take after a bad
         # first; each call is a slow provider round trip on a quota-bounded
         # subscription, so 2 is the honest turn ceiling (DEC-137).
         "generate_image": 2,
-        # design/video-generation: one clip a turn; a second call is a second clip nobody
+        # one clip a turn; a second call is a second clip nobody
         # asked for, spent on a shared weekly quota.
         "video_create": 2,
         # media_search is a local table read (like recall_lookups); media_send
@@ -441,10 +431,10 @@ def test_budgets_match_todays_table():
         # linkedin_search: one search a turn, each spends a monthly limit.
         "linkedin_read": 2,
         "linkedin_search": 1,
-        # instagram_read (design/instagram-adoption/18): one read, a second
+        # instagram_read: one read, a second
         # for the other `what` or «no, the other one».
         "instagram_read": 2,
-        # instagram_search (P11): one search, and one refinement when the
+        # instagram_search: one search, and one refinement when the
         # first list does not hold the person.
         "instagram_search": 2,
         # One weather verb (DEC-72): current + warnings + outlook always, the
@@ -456,11 +446,11 @@ def test_budgets_match_todays_table():
         # index+vacancy round usually answers; a second covers a follow-up (a
         # different venue name).
         "parking_status": 2,
-        # `find_parking` (2026-08-31): Google Places nearby search plus the TD
+        # `find_parking`: Google Places nearby search plus the TD
         # vacancy cross-ref per hit. 3 — one resolve (or one presence read) +
         # one nearby call + the vacancy cross-references that follow.
         "find_parking": 3,
-        # Discord-only music (design/discord-music/07-agent-tool.md), all 2
+        # Discord-only music, all 2
         # like `weather`: one call is the ordinary shape for each verb, a
         # second covers "no, the other one" after a bad match.
         "play_music": 2, "skip_music": 2, "top_music": 2, "stop_music": 2, "music_status": 2,
@@ -471,7 +461,7 @@ def test_budgets_match_todays_table():
         # genuinely set two reminders or set one after cancelling another.
         # Raising them would buy nothing — the real bound on how many
         # reminders exist is `max_pending_per_requester`, checked inside
-        # `remind` (§9), which no budget can substitute for.
+        # `remind`, which no budget can substitute for.
         "remind": 2, "list_reminders": 2, "cancel_reminder": 2,
         # The Event module: `list_events` is 1 like `group_members` (a
         # room-scoped read, same answer if called twice). `create_event`/
@@ -479,8 +469,7 @@ def test_budgets_match_todays_table():
         # asks Honcho's dialectic once per roster member and resolves venues
         # after, sized like `media_fetch`'s old 4; `event_propose` is 3, between
         # `remind`'s 2 and `suggest_venue`'s 4, for the same round-trip
-        # reason (renamed from `create_event`/`update_event`/`rsvp_event`/
-        # `cancel_event`/`list_events`, step 2b, DEC-237).
+        # reason (DEC-237).
         # `event_revise`/`event_set_status` are 2, sized like the
         # reminder verbs. `event_rsvp` is 1 — a single yes/no/maybe, and a
         # second call in the same turn is a model looping on its own write.
@@ -489,7 +478,7 @@ def test_budgets_match_todays_table():
         # 2 — one call answers "what version are you", a second covers the
         # follow-up about an earlier one (DEC-79).
         "version": 2,
-        # The four note verbs (note-tier spec §6.4). The RATIO is the
+        # The four note verbs. The RATIO is the
         # decision, not the absolute numbers: a revision costs two calls —
         # `note_read` then `note_update` — which is what makes the read
         # mandatory rather than advisory (R-55 enforces it). `note_read` is
@@ -498,7 +487,7 @@ def test_budgets_match_todays_table():
         # `note_search` is 2 like `web_fetch`: one query, one refinement —
         # every title is already in `<notes>`, so a second phrasing is all a
         # second call can buy. `note_create` is 1, the per-turn cap on note
-        # spam, and a cap the create/update split (§6.5) is what makes
+        # spam, and a cap the create/update split is what makes
         # meaningful: under one `note_write` an accidental create would spend
         # the revision budget instead.
         "note_read": 3, "note_search": 2, "note_create": 1, "note_update": 2,
@@ -506,7 +495,7 @@ def test_budgets_match_todays_table():
         "memo_read": 3,
         # 1, like `note_create`: one write answers the ask; a second call is the
         # model looping on a tool it should have trusted to have worked (the
-        # remember verb's write lane, 2026-08-30).
+        # remember verb's write lane).
         "remember": 1,
         # `search_memory_workspace` is 4 like its room-scoped sibling — the
         # same verb at a wider scope, the same sizing.
@@ -543,10 +532,10 @@ def test_specs_carry_the_same_budgets_as_budgets():
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
         # The DECLARED surface — see `_built_tools`. Without an adaptor name
         # this compares the table against the tag catalog, which is missing
-        # `search_memory_workspace` on purpose (#350).
+        # `search_memory_workspace` on purpose.
         metrics=Metrics(), room=_room(), dream_adaptor="proactive",
     )
-    # Every BUILT spec's budget matches `budgets()`. `budgets()` is a superset:
+    # Every BUILT spec's budget matches `budgets`. `budgets` is a superset:
     # it also carries the plugin-provided `skills` budget (DEC-50), which R-7
     # admits but `build_tool_specs` does not build — so compare against the
     # non-plugin budgets, which are exactly the specs.
@@ -576,12 +565,12 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         trace_attributes={},
         retry=factory.build_retry_policy(timeout_seconds=30.0),
     )
-    # The registry BUILDS exactly its native tools — `tool_names()` excludes the
+    # The registry BUILDS exactly its native tools — `tool_names` excludes the
     # plugin-provided `skills` (DEC-50), which this agent (no `skills_dir`) does
     # not have. `NATIVE_TOOL_BUDGETS` is a SUPERSET now: it also carries the
     # `skills` budget so R-7 can admit the plugin's activation tool where it is
     # wired — but that budget is not a built tool here.
-    # And `load_tools` is declared but not handed over: `build()` never
+    # And `load_tools` is declared but not handed over: `build` never
     # defers, and the loader ships only when something is on the shelf.
     # (this build is the Dreamer path, which the tag-only `subagent_*` and `video_create` and the
     # worker-only `checkpoint_update` never reach)
@@ -598,10 +587,10 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     assert "skills" in NATIVE_TOOL_BUDGETS
 
 
-# ---- time-shiftability (design/14 §5.1, DEC-40) ------------------------------
+# ---- time-shiftability (DEC-40) ------------------------------
 
 def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
-    """§5.1's field, and it is three-valued: `None` means the tool has no time
+    """The field is three-valued: `None` means the tool has no time
     dimension, `False` means live-only, `True` means it takes a target time.
     `None` is a real answer rather than an omission, so what a test can hold is
     that the SPEC carries the table's value — `_spec()` silently dropping the
@@ -614,7 +603,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
         # The DECLARED surface — see `_built_tools`. Without an adaptor name
         # this compares the table against the tag catalog, which is missing
-        # `search_memory_workspace` on purpose (#350).
+        # `search_memory_workspace` on purpose.
         metrics=Metrics(), room=_room(), dream_adaptor="proactive",
     )
     assert {s.name: s.time_shiftable for s in specs} == {
@@ -635,33 +624,28 @@ def test_transit_is_declared_live_only_and_not_terminal():
 
 
 def test_the_sourcing_priority_lives_in_conduct_not_a_generated_block():
-    """E1/DEC-77: the sourcing nudge moved to conduct.md with DEC-150. A
-    declared `source_tier` nothing renders is decoration; the gate found the
-    model web-searching a fact with a closer source, and the priority now
-    lives in conduct's 'Where to look first' section."""
+    """DEC-77, DEC-150: the sourcing nudge lives in conduct.md. A declared
+    `source_tier` nothing renders is decoration; the priority lives in
+    conduct's 'Where to look first' section."""
     conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
     assert "prefer your own" in conduct
     assert "open web, which is the last resort" in conduct
 
 
 def test_the_closed_world_clause_lives_in_doctrine_not_a_generated_block(): # DEC-90
-    """The list of tools was never stated to be the WHOLE list, and she filled
-    the gap: a restaurant answer ended «講清楚我幫你睇埋使唔使訂位» — offering to
-    check a booking, which no tool here does and none is planned. DEC-150 moved
-    the rule to conduct.md; it must read exactly as strongly there.
+    """The list of tools must be stated to be the WHOLE list, or she fills the
+    gap: a restaurant answer ending «講清楚我幫你睇埋使唔使訂位» offers to
+    check a booking, which no tool here does and none is planned.
 
-    RE-POINTED 2026-10-12 (design/context-plan/11 §6, step 2): the rule is law
-    and lives in rooms/constraints.md § What you can do. Only its stale parts
-    were dropped («the tool schemas are everything you can do», «no following
-    up later», which predate the cognition loop, the computer and skills,
-    design/context-plan/10); the offer ban, its concrete family and «say plainly
-    they will have to do it themselves» are kept."""
+    The rule is law and lives in rooms/constraints.md § What you can do: the
+    offer ban, its concrete family and «say plainly they will have to do it
+    themselves»."""
     law = " ".join(
         (ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text().split()
     )
     assert "Never offer, promise or volunteer an action that your tools and skills do not " \
            "give you" in law
-    # The measured overclaim, and the family it belongs to, named concretely —
+    # The overclaim, and the family it belongs to, named concretely —
     # a rule stated only in the abstract is the one the model reads past.
     assert "no booking a" in law
     assert "no phone call" in law
@@ -698,7 +682,7 @@ def test_the_closed_world_clause_forbids_offers_not_ignorance():
 def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
     """The taxonomy must stay COMPLETE over the tools routing actually confuses —
     a new local tool added untagged would silently sit outside the priority. Pins
-    the tier of each tool in the seed confusability clusters (D2)."""
+    the tier of each tool in the seed confusability clusters."""
     from nora.agent.tools import NATIVE_TOOLS
     expected = {
         "weather": "confirmed", "transit": "confirmed", "route": "confirmed",
@@ -742,7 +726,7 @@ def test_skills_declares_terminal_false_and_no_time_dimension():
     assert spec.time_shiftable is None
 
 
-# ---- discovered MCP tools (spec §3, Task 4) -----------------------------------
+# ---- discovered MCP tools ----------------------------------------------------
 
 class _FakeMcpTool:
     def __init__(self, tool_name: str) -> None:
@@ -760,7 +744,7 @@ def _mcp_groups() -> dict[str, McpToolGroup]:
 
 def test_budgets_excludes_mcp_tools_not_in_allowed_mcp():
     """R-7's default-deny must actually cover an unauthorized server's tool
-    names (Finding 1, final-review): `budgets()` called with no `allowed_mcp`
+    names: `budgets()` called with no `allowed_mcp`
     (the default, matching an unauthorized conversation) must not admit
     `pulse_server_status`/`pulse_weekly` at all — not merely leave them
     un-callable elsewhere."""
@@ -786,7 +770,7 @@ def test_unauthorized_conversations_veto_message_never_names_mcp_tools():
     `budgets` dict (`guards.py::_list_tool_names`). A conversation not
     authorized for `pulse` must never have that server's tool names appear in
     the message the MODEL sees when it hallucinates a wrong tool name —
-    the spec's non-disclosure claim, concretely (Finding 1)."""
+    a non-disclosure claim, stated concretely."""
     registry = ToolRegistry(mcp_tools=_mcp_groups())
     budgets = registry.budgets()  # allowed_mcp defaults empty: unauthorized
     guard = ReplyGuard(
@@ -857,7 +841,7 @@ def test_cacheable_tools_matches_the_declared_set():
     assert ToolRegistry().cacheable_tools() == frozenset(
         {"place_info", "route", "web_search", "web_fetch", "weather", "transit",
          "music_status", "x_read", "x_search", "instagram_search"}
-        # where_been is deliberately NOT cacheable (Kimi audit B1): the recall
+        # where_been is deliberately NOT cacheable: the recall
         # log replays a persisted result verbatim with no guard re-check, so a
         # cached `ok` would outlive the roster it was authorized under.
     )
@@ -868,52 +852,49 @@ def test_cacheable_tools_is_a_frozenset_not_a_list():
     assert isinstance(ToolRegistry().cacheable_tools(), frozenset)
 
 
-# ---- read/act: the Dreamer's ceiling (keystone §4) -------------------------
+# ---- read/act: the Dreamer's ceiling ----------------------------------------
 
 
-# Hand-listed HERE, in the test, and DERIVED in the code — deliberately the
-# opposite way round from the pre-DEC-29 catalogue. The spec's own list of act
-# verbs was four short (the whole events family, added by DEC-117 after the
-# mental model behind the list was formed), which is the strongest available
-# argument for deriving the set: a plan that copied the six would have handed a
-# background agent four write verbs.
+# Hand-listed HERE, in the test, and DERIVED in the code: a hand-copied list of
+# act verbs goes stale as verbs are added (the events family, DEC-117), and a
+# stale list would hand a background agent write verbs.
 ACT_VERBS = frozenset({
     "remind", "cancel_reminder",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
-    # design/sandbox-runtime §4: a command, a file write and a file edit all
+    # a command, a file write and a file edit all
     # change the room's workspace.
     "computer_run", "computer_write", "computer_edit",
-    # design/browser-runtime B2: the sub-agent clicks and types in a page.
+    # the sub-agent clicks and types in a page.
     "computer_browse",
     # S3a: an export publishes (a Drop link, an attachment) or stores, and an
     # import writes into the workspace.
     "computer_export", "computer_import",
-    # design/artifact §26: commits a document other people can open.
+    # commits a document other people can open.
     "document_publish",
     # Appends a `document_state` row: archives, deletes or restores a document.
     "document_set_status",
-    # design/subagent §3: starting a worker and ending one are acts (a worker runs, a row is
+    # starting a worker and ending one are acts (a worker runs, a row is
     # written); the list and the read are reads.
     "subagent_create", "subagent_cancel",
-    # design/subagent §4d: the worker's checkpoint replaces a row's value, an act.
+    # the worker's checkpoint replaces a row's value, an act.
     "checkpoint_update",
     "send_reply", "send_to", "send_gif",
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.
     "generate_image",
-    # design/video-generation: starts a clip on a provider and writes a job row.
+    # starts a clip on a provider and writes a job row.
     "video_create",
     # media_send delivers a stored attachment (an act, like send_gif);
     # media_search is a read.
     "media_send",
-    # The note tier's two write verbs (landed on master 2026-08-21). A read
+    # The note tier's two write verbs. A read
     # verb that forgets the flag fails the classification test by name; these
     # two are acts and belong here.
     "note_create", "note_update",
-    # The remember verb (2026-08-30): writing a Honcho conclusion is a write —
+    # The remember verb: writing a Honcho conclusion is a write —
     # the Dreamer may never be granted it, same as the note verbs.
     "remember",
-    # Discord-only music (design/discord-music/07-agent-tool.md) — every verb
+    # Discord-only music — every verb
     # but `music_status` mutates the voice session or its queue.
     "play_music", "skip_music", "top_music", "stop_music",
     "set_music_volume",
@@ -925,7 +906,7 @@ ACT_VERBS = frozenset({
 # test above red as a LEAK. The two directions are what make a fail-closed
 # default safe.
 READ_ONLY = frozenset({
-    # design/tool-catalogue/02: registers shelf tools onto this turn's own
+    # registers shelf tools onto this turn's own
     # agent and nothing else — no store, no room, nothing outside the turn.
     "load_tools",
     "now", "calculate", "transit", "route", "where_is", "place_info",
@@ -933,39 +914,39 @@ READ_ONLY = frozenset({
     "reverse_geocode",
     # DEC-155: `where_been` reads the derived substrate — a read everywhere
     # (SELECT-only store reads, no writes), Dreamer-ELIGIBLE but NOT granted
-    # (spec §7.4): a read verb that forgets the flag turns the classification
+    # a read verb that forgets the flag turns the classification
     # test red by name, so it is pinned here like every other read.
     "where_been",
-    # design/27 §4.3: `routine_read` reads the same substrate through the same
+    # `routine_read` reads the same substrate through the same
     # guard; a read everywhere, room-roster-scoped, not granted to a Dreamer.
     "routine_read",
-    # design/online-status/: `online_now` is a pure read at every layer —
+    # `online_now` is a pure read at every layer —
     # one batched Steam GetPlayerSummaries call and the Discord gateway's
     # voice cache, no writes anywhere. Dreamer-ELIGIBLE (the proactive
-    # decide turn holds it — the #248 cross-check) but NOT in
+    # decide turn holds it) but NOT in
     # `UNIT_SAFE_TOOLS`: it is room-roster-scoped, same as where_been.
     "online_now",
-    # design/self-awareness/07: the room tools read policy, health, rosters
+    # the room tools read policy, health, rosters
     # and stored messages, and write nothing.
     "room_list", "room_read",
-    # design/cognition-loop/15-map.md §4: a Record read under lineage.
+    # a Record read under lineage.
     "record_query",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     # DEC-316: the graph surface's memory search, an index read
     "memory_search",
-    # design/external-files §3: reads a shared file; the account cannot write.
+    # reads a shared file; the account cannot write.
     "file_fetch",
     "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
     "suggest_venue", "version", "search_gifs",
-    # The two parking verbs (2026-08-31): live reads that act on nothing —
+    # The two parking verbs: live reads that act on nothing —
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",
     "note_read", "note_search",
     # DEC-306: one kept memo of the unit, a SELECT.
     "memo_read",
-    # design/cognition-loop/25 §5, 50 §2: Dreamer-only SELECTs of the Rollup's
+    # Dreamer-only SELECTs of the Rollup's
     # current build and of a room's Standing head.
     "rollup_read", "standing_read", "character_read",
     # The unit-wide memory variant — a pure read of a store the tag path
@@ -979,28 +960,28 @@ READ_ONLY = frozenset({
     "x_read", "x_search",
     # DEC-201: the LinkedIn tools, the same three layers.
     "linkedin_read", "linkedin_search",
-    # R-86 extended (design/instagram-adoption/18): the same three layers,
+    # R-86 extended: the same three layers,
     # with a client that only ever issues GET.
     "instagram_read",
-    # R-86 again (P11): a one-row vocabulary, and the same GET-only client.
+    # R-86 again: a one-row vocabulary, and the same GET-only client.
     "instagram_search",
-    # design/sandbox-runtime §4: reads a file in the room's own workspace and
+    # reads a file in the room's own workspace and
     # writes nothing there (its audit row is a log of the call, like
     # `_log_call`, not an effect of it). Eligible, not granted.
     "computer_read",
-    # design/sandbox-runtime §15.2: reads Nora's own session rows and the
+    # reads Nora's own session rows and the
     # room's observed state; writes nothing.
     "computer_session_list",
-    # design/artifact §26: reads one document of the room; writes nothing.
+    # reads one document of the room; writes nothing.
     "document_read",
-    # design/subagent §3: this room's background jobs; a read of the outbox row and the
+    # this room's background jobs; a read of the outbox row and the
     # worker's in-memory progress. Eligible, never granted (tag-only by `ToolScope`).
     "subagent_list", "subagent_read",
 })
 
 
 def test_no_act_verb_is_ever_read_only():
-    """The hard line (keystone §4): the Dreamer may look and may not act.
+    """The hard line: the Dreamer may look and may not act.
 
     A background process that can speak to the group unprompted — or set a
     reminder, or write to the events store — with nobody waiting on it is a
@@ -1055,11 +1036,11 @@ def test_the_read_and_act_halves_partition_the_table():
 
 
 def test_a_room_catalog_omits_the_dreamer_only_memory_verb():
-    """#350: `search_memory_workspace` returns VERBATIM lines, attributed by
+    """`search_memory_workspace` returns VERBATIM lines, attributed by
     name, from Honcho's workspace `/search` — the whole deployment, every
     unit — filtered only by identity.toml's address book. Its own body says
-    it "exists for the Dreamer … never a quote into any room", and until
-    2026-09-19 that sentence was false: it shipped in every room's catalog.
+    it "exists for the Dreamer … never a quote into any room", so it must not
+    ship in a room's catalog.
 
     `dream_adaptor` is the gate, so an ordinary tag turn must not see it and
     a Dreamer build must.

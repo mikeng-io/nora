@@ -1,7 +1,6 @@
-"""`nora.domain.blocks.render_group`: the one nesting wrapper (step 3b of
-`design/context-assembly/04-every-occasion.md` §5). An occasion nests rendered
-elements in a group through it rather than writing the tag, which is what
-`test_one_block_injector` keeps true."""
+"""`nora.domain.blocks.render_group`: the one nesting wrapper. An occasion nests
+rendered elements in a group through it rather than writing the tag, which is
+what `test_one_block_injector` keeps true."""
 
 from __future__ import annotations
 

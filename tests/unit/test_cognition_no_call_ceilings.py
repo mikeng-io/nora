@@ -7,8 +7,7 @@ a scripted model, so the assertion is on what the loop did, not on what the
 guard was constructed with. The other adaptors keep every ceiling: the same
 guard, built the way the Dreamer builds it, still vetoes.
 
-What each test would catch if the change were reverted is named in
-`scripts/mutations/cognition-rounds.json`.
+What each test guards is named in `scripts/mutations/cognition-rounds.json`.
 """
 
 from __future__ import annotations

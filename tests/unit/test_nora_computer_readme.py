@@ -1,10 +1,9 @@
 """`deploy/computer/README.md`'s token rotation is the procedure that works.
 
-The README used to say a rotation is `systemctl --user restart nora-computer`.
-That restarts computerd, and nora reads `NORA_COMPUTER_TOKEN` from the environment
-when her CONTAINER is created, so after that one step every computer call was a
-401 while `/v1/health` stayed green. The facts the procedure rests on are
-checked here against the files that make them true, so a README that drifts from
+`systemctl --user restart nora-computer` alone is not a rotation: it restarts computerd, and nora
+reads `NORA_COMPUTER_TOKEN` from the environment when her CONTAINER is created, so after that one
+step every computer call would be a 401 while `/v1/health` stays green. The facts the procedure
+rests on are checked here against the files that make them true, so a README that drifts from
 them is a red test and not a 3 a.m. discovery.
 """
 

@@ -1,4 +1,4 @@
-"""R-99's PRODUCTION WIRING (design/social-per-network/30-link-owner-registry.md),
+"""R-99's PRODUCTION WIRING,
 pinned end to end rather than only at `ReplyGuard.evaluate` itself.
 
 WHY THIS FILE EXISTS, BESIDE `test_tool_unknown_arguments.py`
@@ -7,17 +7,15 @@ That file's guards are all built BY HAND, `param_names=ToolRegistry().
 tool_param_names()` passed directly to `ReplyGuard(...)` — which proves the
 RULE, but proves nothing about the four production call sites that have to
 thread that table there (`nora.engagement.pipeline.EngagementPipeline`'s tag
-path, and the three in `nora.app.fire.FirePath`). An external review deleted
-all four `param_names=` lines and none of the existing 93 tests in the first
-version of this change noticed — every one of them built its own guard by
-hand, the same shortcut this file's sibling takes.
+path, and the three in `nora.app.fire.FirePath`). Deleting all four
+`param_names=` lines is invisible to that file, because every guard in it is
+built by hand.
 
 This file drives the REAL `EngagementPipeline` (tag path) and the REAL
 `FirePath` (participation path) through `tests.offline_eval_harness.run_case`
 — the same real pipeline graph, real guards and real `ToolRegistry` the
 `test_participation_false_speak.py` suite already uses, with only the model
-scripted. `media_fetch(file=...)` is the live defect itself (design 30): a
-key `media_fetch` has never declared.
+scripted. `media_fetch(file=...)` names a key `media_fetch` has never declared.
 
 WHAT "ASSERTS THE BAD_ARGUMENTS RESULT" MEANS HERE. `Trajectory` carries no
 raw tool-result text (by design — see its own docstring), so the observable
@@ -62,7 +60,7 @@ _UNKNOWN_ARGUMENT_SCRIPT = [ScriptedTurn(
 
 async def test_the_tag_path_refuses_media_fetch_called_with_file_and_never_runs_it():
     """THE TAG PATH, through the real `EngagementPipeline`
-    (`nora.engagement.pipeline`). Falsified by hand (`nora-prove-fix`) and by
+    (`nora.engagement.pipeline`). Guarded by
     `scripts/mutations/tool-unknown-arguments-wiring.json`: deleting the ONE
     `param_names=` line in that module's `deliver.build(...)` call turns this
     test red.

@@ -1,9 +1,7 @@
 """`GoogleCredentials`: Nora's ONE Google OAuth client and refresh token,
-shared by every Google service (operator, 2026-10-10; design/external-files
-§4). One refresh token serves every consumer, each with its own downscoped
-access token; a consumer whose scope the token was
-not granted is unavailable on its own; the secrets reach no adapter and no
-log."""
+shared by every Google service. One refresh token serves every consumer, each
+with its own downscoped access token; a consumer whose scope the token was not
+granted is unavailable on its own; the secrets reach no adapter and no log."""
 
 from __future__ import annotations
 
@@ -58,7 +56,7 @@ async def test_two_consumers_share_one_refresh_and_one_token():
 
 
 async def test_the_drive_token_carries_drive_readonly_alone(monkeypatch):
-    """Re-review of PR 801: read-only holds in the CREDENTIAL. Another
+    """Read-only holds in the CREDENTIAL. Another
     service's declared write scope in the same grant never rides on the Drive
     adapter's token."""
     events = "https://www.googleapis.com/auth/calendar.events"
@@ -157,9 +155,8 @@ async def test_no_secret_or_token_reaches_a_log(caplog, trouble):
 
 
 async def test_a_gzipped_token_answer_is_read():
-    """2026-10-11, live: Google gzips a token answer whenever the client
-    accepts gzip, and every refresh failed with UnicodeDecodeError because the
-    raw bytes were parsed as JSON. A compressed answer must still yield a token."""
+    """Google gzips a token answer whenever the client accepts gzip; the raw bytes
+    must not be parsed as JSON. A compressed answer must still yield a token."""
     server = _server(DRIVE_SCOPE)
     server.gzip_bodies = True
     assert await _credentials(server).access_token(scope=DRIVE_SCOPE)

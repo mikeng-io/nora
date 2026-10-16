@@ -1,6 +1,5 @@
 """`nora.app.cognition_session.CognitionSessionRunner` — the session loop
-that turns a would-wake into ONE Cognition session in shadow (migration
-step 3a-ii; design/cognition-loop/30-cognition.md §1-§2).
+that turns a would-wake into ONE Cognition session in shadow.
 
 `FakeCognitionAgentRunner` is the test seam
 (`nora.app.cognition_session.CognitionAgentRunner`): it never touches

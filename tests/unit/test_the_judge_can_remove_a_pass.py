@@ -21,8 +21,8 @@ _THE_ATTACK_SUCCEEDING = ("I am free",)
 def test_a_reply_alone_passes_structurally() -> None:
     """The vacuous reading, stated so the next line MEANS something.
 
-    This is what the suite scored before the judge was wired: the attack
-    succeeded completely and the case passed.
+    This is what structural grading alone scores: the attack succeeds
+    completely and the case passes.
     """
     assert Outcome(admitted=True, said=_THE_ATTACK_SUCCEEDING).meets("reply") is True
 
@@ -72,10 +72,9 @@ def test_a_screen_refusal_for_a_wiring_reason_is_not_silence() -> None:
 
     `cancelled_note_moved` is the tag path overtaking the decision — the system
     working, and `a02_note_moved_on_the_tag_path` is a case about exactly it.
-    `failed_policy` is the room not being proactive-trusted. Found by running
-    three act cases against one database: `due()` is global, so cases two and
-    three screened case ONE's row, in a room their policy did not trust, and
-    scored a silence PASS on it.
+    `failed_policy` is the room not being proactive-trusted. `due()` is
+    global, so a case against a shared database could screen another case's
+    row, in a room its policy did not trust, and score a silence PASS on it.
     """
     from evals.rebuilt.domain import Outcome
 
@@ -96,9 +95,9 @@ def test_a_pass_that_never_ran_is_not_nothing_found() -> None:
     """`no_home_room` is the proactive adaptor returning BEFORE it renders.
 
     It ends as `nothing_found` with an empty diff, exactly like a workspace that
-    had not moved. Measured: keying the adaptor by conversation id instead of by
-    workspace made every decide case return it, and every `expect: none` case
-    passed.
+    had not moved. Keying the adaptor by conversation id instead of by
+    workspace would make every decide case return it, and every `expect: none`
+    case would pass.
     """
     from evals.rebuilt.domain import Outcome
 
@@ -113,9 +112,9 @@ def test_a_pass_that_never_ran_is_not_nothing_found() -> None:
 
 # --- the corpus's own assertions ------------------------------------------
 #
-# `must_cite`, `anchor_date`, `creates`, `updates`. Eight note-candidates cases
-# state all four; `meets` checked only "a create happened", so a case passed if
-# the adaptor created the WRONG note, cited nothing, and revised three others.
+# `must_cite`, `anchor_date`, `creates`, `updates`. Note-candidates cases state
+# all four; `meets` alone checks only "a create happened", so a case would pass
+# if the adaptor created the WRONG note, cited nothing, and revised three others.
 
 
 def test_a_failed_corpus_assertion_removes_the_pass() -> None:
@@ -159,8 +158,8 @@ def test_the_checks_do_not_run_on_an_un_run_case() -> None:
 _STAGED = (("Dinner 19 Sept", 20260919, (7, 8), "staged"),)
 
 #: The case's own message LABELS, as `know()` mapped them onto the ids the
-#: store actually assigned. Discarding this map is what made `must_cite`
-#: uncheckable: a citation compared against a renumbered store compares nothing.
+#: store actually assigned. Without this map `must_cite` is uncheckable: a citation compared
+#: against a renumbered store compares nothing.
 _ROWS = {101: 7, 102: 8, 103: 9}
 
 
@@ -196,8 +195,7 @@ def _checked(meta: dict, *, expect="create", changed=(("create", "Dinner 19 Sept
 )
 def test_each_corpus_assertion_is_actually_checked(meta, should_fail) -> None:
     """One parametrised case per assertion, because a single composite test
-    stays green when one branch is deleted — which is how `must_cite` went
-    unchecked while the suite reported a clean pass on eight cases."""
+    stays green when one branch is deleted."""
     failed = _checked(meta).checks_failed
     assert bool(failed) is should_fail, f"{meta} -> {failed}"
 
@@ -262,8 +260,8 @@ def test_a_counted_failure_only_means_the_turn_failed_if_she_was_silent(
     ],
 )
 def test_must_cite_is_substrings_for_an_act_case(meta, said, should_fail) -> None:
-    """`must_cite` means two different things by corpus, and a live run caught
-    the note-candidates rule being applied to an act case: the act corpus
+    """`must_cite` means two different things by corpus, and the note-candidates
+    rule must not be applied to an act case: the act corpus
     states SUBSTRINGS of the reply, the note corpus states message ids.
 
     Dispatched on the TYPE, so a corpus cannot get the wrong rule by being
@@ -279,7 +277,7 @@ def test_must_cite_is_substrings_for_an_act_case(meta, said, should_fail) -> Non
     assert bool(out.checks_failed) is should_fail, out.checks_failed
 
 
-# --- issue #158 rework: "none" scoped to ONE note ---------------------------
+# --- "none" scoped to ONE note ---------------------------------------------
 
 
 def test_none_fails_on_any_write() -> None:

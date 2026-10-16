@@ -1,4 +1,4 @@
-"""`CognitionShutdown`'s grace (the Cognition cut-over's PR-7): a session already running
+"""`CognitionShutdown`'s grace: a session already running
 is allowed `grace_seconds` to finish, and one still running at the deadline is cancelled
 and records its wake `cancelled` with a restart detail, releasing its unit. In-process
 and fast; `tests/integration/test_sigterm_releases_the_claim.py` is the same thing under

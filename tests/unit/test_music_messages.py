@@ -76,8 +76,7 @@ def test_queued_line_playlist_expansion_names_the_first_and_the_total() -> None:
 
 
 def test_skipped_line_carries_the_url_the_old_reply_lost() -> None:
-    # Pre-table, /music skip replied "Skipped: {title}" with NO URL — the one
-    # off-canon drift the 2026-08-26 pass missed. The table fixes it.
+    # /music skip carries the track URL like every other surface.
     assert skipped_line(_track()) == "Skipped: Track A — https://www.youtube.com/watch?v=x"
 
 

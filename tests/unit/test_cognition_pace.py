@@ -1,6 +1,5 @@
 """`nora.domain.cognition_pace` (pure) and `nora.agent.cognition_pace`
-(impure wrapper) — the self-wake pace verbs, migration step 3a-ii
-(design/cognition-loop/20-observe.md §3).
+(impure wrapper) — the self-wake pace verbs.
 """
 
 from __future__ import annotations
@@ -74,7 +73,7 @@ def test_wake_at_refuses_past_max_self_wakes():
 
 def test_wake_at_with_five_pending_still_admits_a_supersede():
     """A new self-wake sharing a subject with a pending one SUPERSEDES it
-    rather than counting as a sixth (20 §3)."""
+    rather than counting as a sixth."""
     pending = tuple(
         PendingSelfWake(wake_ref=f"w{i}", subject_rows=(f"event:{i}",), created_by_session_id=1)
         for i in range(5)
@@ -185,7 +184,7 @@ async def test_wake_move_records_and_reappends_a_self_stimulus(ledger, stimuli):
 
 
 # --------------------------------------------------------------------------
-# review of #627: retraction, live pending, the fired transition, the daily cap
+# retraction, live pending, the fired transition, the daily cap
 # --------------------------------------------------------------------------
 
 def _created(ref: str, *, subjects=("e:1",), stim=1, at=NOW + 3_600_000, supersedes=None):
@@ -313,8 +312,7 @@ async def test_the_fired_transition_frees_the_pending_slot(ledger, stimuli):
 
 
 # --------------------------------------------------------------------------
-# second review of #627: write order, so no failure loses a self-wake or
-# leaves one firing that was called off (minor 3, minor 4)
+# write order: no failure loses a self-wake or leaves one firing that was called off
 # --------------------------------------------------------------------------
 
 async def _set_w1(ledger: InMemoryCognitionStore, stimuli: InMemoryStimulusStore) -> Any:
@@ -332,7 +330,7 @@ async def _due(stimuli: InMemoryStimulusStore) -> list[tuple[str, int | None]]:
 
 
 async def test_a_move_whose_append_fails_leaves_the_old_time_live(ledger, stimuli):
-    """Minor 3: the move APPENDS before it retracts. An append that fails
+    """The move APPENDS before it retracts. An append that fails
     leaves the self-wake live at its old time; retract-first would lose it."""
     pending = await _set_w1(ledger, stimuli)
     stimuli.fail_on.add("append")
@@ -374,7 +372,7 @@ async def test_a_move_whose_record_fails_still_fires_once_at_the_new_time(ledger
 
 
 async def test_a_wake_at_whose_record_fails_leaves_no_orphan_stimulus(ledger, stimuli):
-    """Minor 4: the stimulus is appended before the ledger row; a record that
+    """The stimulus is appended before the ledger row; a record that
     fails takes the stimulus back, so nothing fires that the ledger never
     knew of."""
     ledger.fail_on.add("record_pace")

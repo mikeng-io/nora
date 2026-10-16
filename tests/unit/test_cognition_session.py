@@ -1,6 +1,5 @@
 """`nora.domain.cognition_session` — the Cognition adaptor's session and
-agenda, built by code (design/cognition-loop/30-cognition.md §1, migration
-step 3a)."""
+agenda, built by code."""
 
 from __future__ import annotations
 
@@ -68,9 +67,9 @@ def test_social_play_rollup_time_and_self_bind_the_home_room_not_a_stimulus_room
 
 
 def test_a_summary_states_a_fact_never_a_conclusion():
-    """30-cognition.md §1: "an item states what happened, never what to
-    conclude from it" — the summary text carries no cue CONTENT, only a
-    count, so it can never accidentally read as a judgement."""
+    """An item states what happened, never what to conclude from it: the summary text
+    carries no cue CONTENT, only a count, so it can never accidentally read as a
+    judgement."""
     pending = [_stimulus(1, cues=("date", "keep_instruction"))]
     agenda = build_agenda(pending, home_room=HOME)
     item = agenda.items[0]
@@ -184,7 +183,7 @@ def test_close_reasons_names_every_reason_the_schema_allows():
 
 def test_agenda_is_a_dataclass_not_a_mutable_list():
     # Agenda/AgendaItem are frozen — a session's row is a fixed replay
-    # input (30-cognition.md §1), never mutated after it is built.
+    # input, never mutated after it is built.
     import dataclasses
 
     import pytest

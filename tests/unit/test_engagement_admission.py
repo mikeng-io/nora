@@ -11,7 +11,7 @@ to the turn that is running.
 The lock and the queue reach this stage as one `ConversationSlots`, so a "full
 queue" is set up here by genuinely enqueueing that many waiting turns rather
 than by passing a `queue_depth` integer the real caller could never disagree
-with. That is the point of the hoist: one source for the depth and the bound.
+with. The depth and the bound have one source.
 
 R-12 takes a resolved `PlatformIdentity`, not an adapter — the caller
 (`EngagementPipeline.run`) resolves it once via `adapter.resolve_identity()`
@@ -120,8 +120,8 @@ def test_a_debounced_tag_is_refused_and_counted():
 
 def test_a_second_concurrent_tag_for_the_same_conversation_is_queued_not_dropped():
     """R-30: the in-flight key from the first tag is still held (the pipeline
-    has not released it), so a second tag for the same conversation is QUEUED —
-    the whole point of this change — rather than dropped. Admission does not
+    has not released it), so a second tag for the same conversation is QUEUED
+    rather than dropped. Admission does not
     acquire the slot for the queued tag; the running turn still owns it."""
     metrics = Metrics()
     slots = _slots()
@@ -135,7 +135,7 @@ def test_a_second_concurrent_tag_for_the_same_conversation_is_queued_not_dropped
     assert metrics.get("nora_tags_queued_total") == 1
     # A queued tag IS accepted for handling, so it is counted like a run-now one.
     assert metrics.get("nora_tags_total", platform="signal") == 2
-    # It never went through the old drop counter.
+    # A queued tag is not an in-flight drop.
     assert metrics.get("nora_tags_dropped_total", reason="in_flight") == 0
     # The queued tag left the first tag's lock untouched, and the caller — not
     # this stage — is what actually puts it in the queue.
@@ -145,8 +145,8 @@ def test_a_second_concurrent_tag_for_the_same_conversation_is_queued_not_dropped
 
 def test_a_tag_arriving_at_a_full_queue_is_dropped_with_its_own_counter():
     """R-30's flood bound: when the queue is already at the slots' `maxlen`, the
-    NEWEST arrival is shed — a distinct outcome and a distinct counter from both
-    the debounce drop and the (now removed) in-flight drop."""
+    NEWEST arrival is shed — a distinct outcome and a distinct counter from the
+    debounce drop."""
     metrics = Metrics()
     slots = _slots(held=(G1,), depth=QUEUE_MAX)
     identity = _identity()

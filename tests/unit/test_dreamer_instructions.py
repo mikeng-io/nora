@@ -98,10 +98,9 @@ def test_the_assembly_is_the_doctrine_then_the_objective(tree):
 
 
 def test_each_half_is_named_by_its_own_tag(tree):
-    """The seam D9's second bullet asked for. Before this the two documents were
-    joined by a bare newline — no separator, no heading, no marker that a second
-    document with different authority had begun — while the adaptor's rendered
-    INPUT, arriving as the first user message, was XML-framed throughout."""
+    """The doctrine and the objective are each wrapped in their own tag, so the
+    second document, with different authority, is visibly marked as having
+    begun (the adaptor's rendered INPUT is XML-framed throughout)."""
     text = _store(tree).for_objective("room-language").text
     assert text.startswith('<dreamer_doctrine name="dreamer">\n')
     assert text.endswith("\n</dreamer_objective>")
@@ -110,9 +109,9 @@ def test_each_half_is_named_by_its_own_tag(tree):
 
 
 def test_the_digest_covers_the_envelope_and_not_only_the_bodies(tree):
-    """#175, one corpus over. A digest taken over the bodies would name LESS
-    than the prompt does, so an operator who renamed an objective would move the
-    served text and leave every row's `instruction_sha256` unchanged."""
+    """A digest taken over the bodies would name LESS than the prompt does, so an
+    operator who renamed an objective would move the served text and leave every
+    row's `instruction_sha256` unchanged."""
     import hashlib
 
     instructions = _store(tree).for_objective("room-language")
@@ -156,11 +155,10 @@ def test_editing_the_objective_changes_the_digest(tree):
 
 
 def test_editing_the_doctrine_changes_every_adaptors_digest(tree):
-    """The design's own argument, asserted rather than described (spec §4.3).
-    `objective_sha256` was rejected because it names half the input: a doctrine
-    edit changes the behaviour of EVERY adaptor at once — the largest blast
-    radius in the subsystem — and under a half-input hash would leave no trace
-    on any row anywhere."""
+    """The design's own argument, asserted rather than described. A hash of the
+    objective alone would name half the input: a doctrine edit changes the
+    behaviour of EVERY adaptor at once — the largest blast radius in the
+    subsystem — and would leave no trace on any row anywhere."""
     store = _store(tree)
     before = {name: store.for_objective(name).sha256
               for name in ("room-language", "room-exchange")}
@@ -281,8 +279,8 @@ def write_skill(root, *, name="plans", version=1, body="\nSkill body.\n\n", file
 
 
 def test_a_prelude_replaces_the_doctrine_for_the_objective_it_names_only(tree):
-    """Operator decision D2 (step 4): Cognition reads its own prelude, and every
-    other adaptor's text and digest are exactly what they were."""
+    """Cognition reads its own prelude; every other adaptor's text and digest are
+    unchanged by the prelude."""
     before = _store(tree).for_objective("room-exchange")
     write_prelude(tree)
     store = _store(tree)
@@ -314,9 +312,9 @@ def test_a_prelude_naming_no_loaded_objective_is_a_startup_failure(tree):
 
 
 #: Every `applies_to` that is not a list of objective names, as the YAML a prelude
-#: would carry. Each used to raise TypeError (an int or a bool is not iterable, a nested
-#: list is unhashable at the dict lookup) or be quietly misread (a mapping iterates its
-#: keys), none of it an `InstructionError`.
+#: would carry. Left unchecked, each raises TypeError (an int or a bool is not iterable, a nested
+#: list is unhashable at the dict lookup) or is quietly misread (a mapping iterates its
+#: keys); each must be an `InstructionError`.
 BAD_APPLIES_TO = [
     "5", "true", "3.5", "[[room-language]]", "[5]", "[true]", "{room-language: 1}",
     "room-language", "~", "[~]", "[[]]", "[]",
@@ -351,8 +349,8 @@ def test_a_prelude_applies_to_that_is_not_a_list_of_names_is_an_instruction_erro
 def test_a_bad_prelude_applies_to_on_a_hot_reload_keeps_the_last_good_scan_and_counts_it(
     tree, applies,
 ):
-    """The takedown: a bad shape raised TypeError out of the reload, which the watcher does
-    not catch, so EVERY `for_objective` raised until the file was fixed."""
+    """A bad shape must not raise TypeError out of the reload: the watcher does
+    not catch it, so EVERY `for_objective` would raise until the file was fixed."""
     write_prelude(tree)
     metrics = Metrics()
     store = DreamerInstructions(tree, metrics=metrics)
@@ -441,7 +439,7 @@ def test_a_missing_required_key_names_it(tree):
 
 def test_the_doctrines_own_frontmatter_keys_are_not_required(tree):
     """`order`, `authority_above`/`authority_below` and `not_here` are read by
-    the doctrine's gates, and those gates do not run here (spec §5). Requiring a
+    the doctrine's gates, and those gates do not run here. Requiring a
     field no gate reads and no assembly renders is how frontmatter becomes
     ceremony."""
     assert _store(tree).for_objective("room-language").versions
@@ -592,55 +590,34 @@ def test_no_shipped_description_reaches_the_model():
 
 
 # --- every shipped objective is accounted for ------------------------------
-#
-# Three objectives were LIFTED verbatim out of inline constants in
-# `nora/language/`, and this file used to pin each one byte-for-byte against a
-# pre-move fixture so a loader that mangled the text could not pass. All three
-# were the language tier's and went with it, along with their fixtures — so
-# there is no lift left to pin, and the remaining check is the other direction:
-# nothing ships that nobody declared.
-#
 # The list is explicit rather than derived, and that is the whole guard. A set
 # difference alone cannot tell an accidental file apart from an honest new one;
 # naming each objective here makes adding one a deliberate act.
 NATIVELY_AUTHORED = {
     "standing-debrief",
-    # `standing-verdict` (issue #78 Phase 2's judge) was deleted 2026-09-24
-    # with the grounding verdict (design/standing-compact/).
-    # The culture tier's only pass (design/culture-tier, DEC-182). Written for
-    # it; there was no prior prompt, and the earlier plan to route this through
-    # the memory system's dialectic endpoint never shipped a prompt at all —
-    # it was falsified and closed unmerged (#237) before one existed.
+    # The culture tier's only pass (DEC-182).
     "culture",
-    # The Cognition session's instruction (design/cognition-loop/30-cognition.md,
-    # DEC-244). Written for it from 30 §1-§3; there was no prior prompt, and it
-    # lists no tool and no limit.
+    # The Cognition session's instruction (DEC-244); it lists no tool and no limit.
     "cognition",
-    # A person's Character session (design/self-growth/10-character.md §3,
-    # C2b). Written for it; the prompt it replaces was the `<people_views>`
-    # section of `culture`, which asked for an account from a pre-fetched
-    # memory answer (DEC-278).
+    # A person's Character session (DEC-278).
     "character-person",
-    # The unit's Character session (C3a): new, written for it.
+    # The unit's Character session.
     "character-unit",
-    # Her own Character session (C3b): new, written for it.
+    # Her own Character session.
     "character-nora",
-    # The Lessons session (design/self-growth/40, L2): new, written for it.
+    # The Lessons session.
     "lessons",
-    # The doctrine check (L3): an instrument's instruction, read through
-    # `objective_body`, never with the Dreamer doctrine. New, written for it.
+    # The doctrine check: an instrument's instruction, read through
+    # `objective_body`, never with the Dreamer doctrine.
     "doctrine-check",
 }
 
-# `standing-debrief` is the odd one in that set and it is worth saying why
-# it lives in this directory at all: Standing is a TAG-PATH STAGE, not a
-# Dreamer adaptor (design/dreamer-agent-loop/26-standing, §1) — it runs
-# inside the reply slot rather than on the Dreamer's clock. The file is here
-# because this is where the bind-mounted, hot-reloading instruction text
-# lives, and the stage reads it through `objective_body` and never
-# `for_objective`: the latter prepends the Dreamer's research-framed
-# doctrine, which on a task with no research is one of the two named causes
-# of the token runaway that made the debrief a plain completion.
+# `standing-debrief` lives in this directory although Standing is a TAG-PATH
+# STAGE, not a Dreamer adaptor: it runs inside the reply slot rather than on the
+# Dreamer's clock. The file is here because this is where the bind-mounted,
+# hot-reloading instruction text lives; the stage reads it through
+# `objective_body` and never `for_objective`, which prepends the Dreamer's
+# research-framed doctrine.
 
 
 def test_every_shipped_objective_is_declared_native():

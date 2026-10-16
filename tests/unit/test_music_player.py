@@ -1,15 +1,14 @@
-"""`MusicPlayer` — the per-guild state machine (design/discord-music/
-03-state-and-persistence.md, 02-control-surface.md). Exercised against a
+"""`MusicPlayer` — the per-guild state machine. Exercised against a
 fake `VoiceSession` that reproduces the one behaviour that matters for
 `skip()`'s correctness: `stop()` does NOT itself invoke `on_track_finished`
 (that is the real `discord.py` voice client's job, via its own `after`
 callback and the Discord integration layer's scheduling — out of scope
-here, per 02-control-surface.md's own boundary).
+here).
 
 `_StubSource` is a throwaway, test-file-local `TrackSource` double — not a
 `nora.testing` fake — because `MusicPlayer`'s own logic is what is under
 test here, not `TrackSource`'s fidelity to the real yt-dlp boundary
-(that's `test_ytdlp_source.py`'s job, and `YtDlpSource` is still the
+(that's `test_ytdlp_source.py`'s job, and `YtDlpSource` is the
 `TrackSource` port's only real, contract-suite-eligible implementation).
 """
 
@@ -76,7 +75,7 @@ class _StubSource:
 
 
 class _FakeVoiceSession:
-    """The awaitable `VoiceSession` port (design/voice-channel/07 B4) —
+    """The awaitable `VoiceSession` port —
     every verb is a coroutine, matching the real `HttpVoiceSession` over
     the audio-controller's HTTP control plane."""
 
@@ -96,9 +95,8 @@ class _FakeVoiceSession:
     ) -> None:
         if self._fail_on_play:
             # Stands in for the controller reporting the connection dead
-            # (HTTP 409/unavailable) -- the live failure of 2026-08-26,
-            # when a dropped voice connection made every subsequent advance
-            # raise.
+            # (HTTP 409/unavailable): a dropped voice connection makes every
+            # subsequent advance raise.
             raise RuntimeError("Not connected to voice.")
         self.played.append(stream_url)
         self._playing = True
@@ -179,11 +177,9 @@ async def test_play_while_something_is_already_playing_only_enqueues() -> None:
 
 
 async def test_play_reports_what_actually_started_when_the_queue_had_a_leftover_track() -> None:
-    """Found live 2026-08-24: a guild with a leftover queue row from an
-    earlier, since-ended session (`MusicPlayerManager.discard_persisted_
-    session` not clearing the queue was the root cause; this covers the
-    OTHER half — `play()`'s own reporting must never assume `queued[0]`
-    is what's playing). `_advance()` pops the FRONT of the queue, which is
+    """A guild with a leftover queue row from an earlier, ended session:
+    `play()`'s own reporting must never assume `queued[0]` is what's playing.
+    `_advance()` pops the FRONT of the queue, which is
     the STALE track here, not the one this call just resolved and enqueued
     behind it — `PlayOutcome.track` must say so, not claim the new request
     is what's now audible."""
@@ -230,7 +226,7 @@ async def test_play_returns_nothing_found_when_the_source_cannot_resolve() -> No
 async def test_skip_advances_to_the_next_queued_track_without_an_explicit_stop() -> None:
     """`voice.play()` for the next track (inside `_advance()`) is what
     replaces the skipped one — the controller's `/music/play` is
-    replace-not-enqueue (design/voice-channel/07 §3.2). No separate `voice.
+    replace-not-enqueue. No separate `voice.
     stop()` call is needed (or made) when there IS a next track."""
     player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
@@ -382,8 +378,7 @@ async def test_autoplay_never_seeds_from_nothing_on_the_very_first_track() -> No
 
 
 async def test_autoplay_skips_tracks_already_played_this_session() -> None:
-    """Played-history dedup (design/discord-music/08-autoplay.md, found
-    live 2026-08-26 -- \"it keep repeating some of the songs\"): a Mix
+    """Played-history dedup: a Mix
     only excludes its own seed, so a chain that keeps reseeding from the
     latest pick drifts into the same few tracks. Once a track has played
     this session, autoplay must skip it and take the next fresh one from
@@ -521,7 +516,7 @@ async def test_pause_then_resume_round_trip_and_call_voice_once_each() -> None:
 
 
 async def test_stop_clears_the_queue_stops_playback_and_stays_connected() -> None:
-    """END-MUSIC (design/voice-channel/07 §10, B3): `/music stop` ends the
+    """END-MUSIC: `/music stop` ends the
     session but must NOT disconnect — the audio-controller keeps the voice
     connection (e.g. for the wake path)."""
     player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
@@ -538,7 +533,7 @@ async def test_stop_clears_the_queue_stops_playback_and_stays_connected() -> Non
 
 
 async def test_leave_ends_the_music_and_disconnects() -> None:
-    """LEAVE-VOICE (design/voice-channel/07 §10, B3): stop AND destroy the
+    """LEAVE-VOICE: stop AND destroy the
     connection — what `/discord exit`, an emptied channel, and voice-death
     get."""
     player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
@@ -726,8 +721,7 @@ async def test_stop_deletes_the_persisted_session_row() -> None:
 
 
 async def test_resume_from_persisted_restarts_the_track_from_the_top() -> None:
-    """Boot-time resume (design/discord-music/06-session-persistence.md
-    stage 2) -- never mid-frame, always position 0."""
+    """Boot-time resume -- never mid-frame, always position 0."""
     player, voice, session = _player({"track a": _TRACK_A})
 
     resumed = await player.resume_from_persisted(
@@ -834,12 +828,11 @@ async def test_autoplay_pick_refuses_a_prewarmed_pick_already_played() -> None:
 
 
 async def test_a_dead_voice_connection_tears_down_the_session() -> None:
-    """Live incident 2026-08-26: a dropped voice websocket made every
-    `voice.play()` raise `Not connected to voice.` mid-`_advance`, which
-    previously escaped into the `on_finished` handler and stranded
-    `_now_playing` claiming a track was audible when nothing was. The
-    player must tear the session down (queue + session row cleared, voice
-    disconnected) so a fresh `/music play` can join cleanly."""
+    """A dropped voice websocket makes every `voice.play()` raise
+    `Not connected to voice.` mid-`_advance`; that must not escape into the
+    `on_finished` handler and strand `_now_playing` claiming a track is
+    audible when nothing is. The player must tear the session down (queue + session row
+    cleared, voice disconnected) so a fresh `/music play` can join cleanly."""
     voice = _FakeVoiceSession()
     session = FakeMusicSessionStore()
     queue = FakeMusicQueueStore()
@@ -854,7 +847,7 @@ async def test_a_dead_voice_connection_tears_down_the_session() -> None:
     )
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
     assert (await session.get("guild-1")) is not None
-    # The voice connection dies now (the live 2026-08-26 failure): the
+    # The voice connection dies now: the
     # NEXT advance's `voice.play()` raises.
     voice._fail_on_play = True  # type: ignore[attr-defined]
 
@@ -865,7 +858,7 @@ async def test_a_dead_voice_connection_tears_down_the_session() -> None:
     assert voice.disconnected == 1
     assert await session.get("guild-1") is None
     assert await queue.queue_for("guild-1") == []
-    # External audit MAJOR-2 (2026-08-26): the player marks itself dead so
+    # The player marks itself dead so
     # `MusicPlayerManager._after_transition` drops it from `_players` --
     # without this the manager would keep the zombie and a `/music play`
     # before the idle timeout would reuse the dead player.
@@ -873,9 +866,8 @@ async def test_a_dead_voice_connection_tears_down_the_session() -> None:
 
 
 async def test_scheduling_a_new_prewarm_cancels_the_previous_timer_and_task() -> None:
-    """External audit MAJOR-1 (2026-08-26): `_schedule_prewarm` must cancel
-    the previous timer/task before arming the new one. Left alone, an old
-    timer fires after a skip/advance, sees `_prewarm_for_locator` already
+    """`_schedule_prewarm` must cancel the previous timer/task before arming the
+    new one. Otherwise an old timer fires after a skip/advance, sees `_prewarm_for_locator` already
     updated to the NEW track, spawns a duplicate `_prewarm_pick` for it and
     races to fill `_prewarm_streams` -- a wasted `related()` network call
     per advance."""
@@ -906,8 +898,7 @@ async def test_scheduling_a_new_prewarm_cancels_the_previous_timer_and_task() ->
 
 
 async def test_an_empty_prewarm_is_retried_once_at_track_end() -> None:
-    """R-67 (amended 2026-09-01), superseding the original Codex MAJOR-1
-    form (2026-08-26): a completed prewarm that answered empty is NOT the
+    """R-67: a completed prewarm that answered empty is NOT the
     final answer — the prewarm ran up to `autoplay_prewarm_seconds` BEFORE
     the track ended,
     and a transient YouTube failure at that earlier moment must not
@@ -942,7 +933,7 @@ async def test_an_empty_prewarm_is_retried_once_at_track_end() -> None:
 
 
 async def test_resume_from_persisted_into_a_dead_voice_marks_the_session_dead() -> None:
-    """Codex MAJOR-3 (2026-08-26): a boot-time resume whose `voice.play()`
+    """A boot-time resume whose `voice.play()`
     raises (dead voice connection that reconnect claimed was up) must mark
     the player dead so the manager's `_after_transition` evicts it -- a
     zombie would sit in `_players` and a later `/music play` would reuse
@@ -970,7 +961,7 @@ class _FailingDeleteSessionStore(FakeMusicSessionStore):
 
 
 async def test_a_failed_session_delete_does_not_block_dead_voice_teardown() -> None:
-    """Codex MAJOR-4 (2026-08-26): a transient DB failure deleting the
+    """A transient DB failure deleting the
     session row during dead-voice teardown must not prevent `_session_dead`
     from being set -- the manager's `_after_transition` evicts on that
     flag; a stranded row is cleaned up by the next boot-time resume scan."""
@@ -1080,8 +1071,7 @@ async def test_stop_clears_the_last_played_seed() -> None:
 async def test_an_empty_prewarm_recovers_when_the_live_retry_has_a_track() -> None:
     """R-67: the prewarm answered empty (transient YouTube failure at
     prewarm time) but the live track-end retry finds a track — the chain
-    continues instead of dying. This is the exact live failure of
-    2026-09-01: autoplay went silent mid-session with no error."""
+    continues instead of dying silently mid-session."""
     source = _StubSource(
         {"track a": _TRACK_A, "locator-b": _TRACK_B},
         related={"locator-a": ()},  # prewarm sees empty

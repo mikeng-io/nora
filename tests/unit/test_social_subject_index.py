@@ -1,4 +1,4 @@
-"""`PersonsSubjectIndex`'s own rules (design/instagram-adoption/17 P3).
+"""`PersonsSubjectIndex`'s own rules.
 
 The answers it shares with the fake are in
 `tests/contract/test_social_subject_index_contract.py`. What is here is what

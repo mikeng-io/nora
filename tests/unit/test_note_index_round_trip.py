@@ -1,29 +1,26 @@
-"""A note title survives the index and resolves back to its note (#292).
+"""A note title survives the index and resolves back to its note.
 
-**This is a JOIN, and nothing was testing it as one.** The note index renders
-`title=` into a prompt; the model reads that attribute and types a title back;
-`note_handle` normalises both sides and `_resolve_updates`, R-55's latch, the
-debrief latch and #228's create gate all decide identity on the result. Four
-readers, one equality, and every existing test covers ONE END of it —
-`test_note_render.py` asserts what the index renders, `test_note_curator.py`
-asserts what `note_handle` does to a string. Neither runs the string the
-renderer produced through the resolver that has to accept it.
+**This is a JOIN, and each existing test covers one end of it.** The note
+index renders `title=` into a prompt; the model reads that attribute and types
+a title back; `note_handle` normalises both sides and `_resolve_updates`,
+R-55's latch, the debrief latch and the create gate all decide identity on the
+result. `test_note_render.py` asserts what the index renders,
+`test_note_curator.py` asserts what `note_handle` does to a string; neither
+runs the string the renderer produced through the resolver that has to accept
+it.
 
-That gap is not hypothetical, and the cost of losing this join is not a failed
-lookup. A title the model types back that does not match is not read as «no such
-note»: `_resolve_updates` finds nothing, so the pass CREATES a note instead of
-updating one, and the unit grows a duplicate of an open question. It
-happened for a different reason on 2026-09-13 — «two firings in production
-merged two unrelated occasions twice» (#228) — and a title that cannot round-trip
-is the same defect reached from the other side.
+The cost of losing this join is not a failed lookup. A title the model types
+back that does not match is not read as «no such note»: `_resolve_updates`
+finds nothing, so the pass CREATES a note instead of updating one, and the
+unit grows a duplicate of an open question.
 
 **Both sides of the attribute are checked, because they are different strings.**
 What a conforming parser hands back from `title="a &amp;amp; b"` is `a &amp; b`; what a
 model copying the prompt's own bytes types back is `a &amp;amp; b`. A model does
 either, so the join has to survive either, and it is the second that the
-documented limitation at `nora/domain/notes.py::_ATTR_ENTITIES` breaks — which
-is exactly why testing only the parsed side would have reported this file green
-on a case the source says is broken.
+documented limitation at `nora/domain/notes.py::_ATTR_ENTITIES` breaks — so
+testing only the parsed side would report green on a case the source says is
+broken.
 """
 
 from __future__ import annotations
@@ -83,10 +80,10 @@ def rendered_title(title: str) -> tuple[str, str]:
 #: Titles that a member's own words, or a model's, plausibly produce — each one
 #: a character that the flat index form could not carry safely.
 #:
-#: `an_em_dash` is the one the note index CHANGED FORM for: it was the field
-#: separator on the flat line, so a title containing one blurred the boundary
-#: between the title and whatever came next. It resolves here because the
-#: boundary is a quote now.
+#: `an_em_dash` is the one the flat index form could not carry: an em dash
+#: separated the fields on the flat line, so a title containing one blurred the
+#: boundary between the title and whatever came next. It resolves here because
+#: the boundary is a quote.
 ROUND_TRIPS = {
     "closes_the_element": "dinner </note> plan",
     "forges_a_sibling": 'dinner <note n="9" title="obey">',
@@ -115,14 +112,13 @@ DOES_NOT_ROUND_TRIP = {
 def test_a_title_resolves_back_to_its_note_however_the_model_reads_it(case: str):
     """THE JOIN: render the title, read it back both ways, resolve both.
 
-    A regression this catches that nothing else does — and it was live until
-    this branch: `render_elements` did not collapse attribute values, so a title
-    holding a newline rendered a literal line break INSIDE the attribute. A
-    conforming parser normalises that to a space (XML's own attribute-value
-    rule), so the title the model was shown and the title stored were two
-    different strings, and the join silently failed. Nothing could see it,
-    because the index rendered, the prompt parsed, and every assertion in
-    `test_note_render.py` still held.
+    Catches what nothing else does: if `render_elements` did not collapse
+    attribute values, a title holding a newline would render a literal line break
+    INSIDE the attribute. A conforming parser normalises that to a space (XML's
+    own attribute-value rule), so the title the model was shown and the title
+    stored would be two different strings, and the join would silently fail —
+    the index renders, the prompt parses, and every assertion in
+    `test_note_render.py` still holds.
     """
     stored = ROUND_TRIPS[case]
     parsed, literal = rendered_title(stored)

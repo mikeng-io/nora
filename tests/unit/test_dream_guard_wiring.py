@@ -1,7 +1,5 @@
-"""R-99's PRODUCTION WIRING on a Dreamer pass (design/social-per-network/
-30-link-owner-registry.md) — the Dreamer-side analogue of `tests/unit/
-test_tool_unknown_arguments_wiring.py`'s tag/participation proof, one level
-down.
+"""R-99's PRODUCTION WIRING on a Dreamer pass — the Dreamer-side analogue of
+`tests/unit/test_tool_unknown_arguments_wiring.py`'s tag/participation proof.
 
 WHY THIS FILE EXISTS, BESIDE `test_dream_guard.py`
 ---------------------------------------------------
@@ -10,9 +8,7 @@ directly to the constructor — which proves the RULE (shared with `ReplyGuard`
 through `nora.agent.guards.unknown_arguments_veto`), but proves nothing about
 `DreamerRuntime._sample` (`nora.agent.dreamer`), the one production call site
 that has to thread `self._tools.tool_param_names()` into the guard it builds
-for each sample. Reviewed and found silently missing on 2026-09-25, the exact
-shortcut every existing test of `ReplyGuard`'s own wiring took before
-`test_tool_unknown_arguments_wiring.py` closed it.
+for each sample.
 
 This drives the REAL `DreamerRuntime.run()` through the real Strands loop
 (`_ScriptedModel`, `_Tools`, `_Adaptor`, `_runtime` — all from `tests.unit.
@@ -61,9 +57,9 @@ def _runtime(model, tools) -> tuple[DreamerRuntime, Metrics]:
 
 
 async def test_a_dreamer_pass_refuses_an_unknown_argument_and_never_runs_the_tool():
-    """Falsified by deleting the `param_names=self._tools.tool_param_names(),`
-    line in `DreamerRuntime._sample` (`nora.agent.dreamer`) — see
-    `scripts/mutations/tool-unknown-arguments.json` for the recorded mutant.
+    """Guards the `param_names=self._tools.tool_param_names(),` line in
+    `DreamerRuntime._sample` (`nora.agent.dreamer`); the mutant is recorded in
+    `scripts/mutations/tool-unknown-arguments.json`.
     """
     model = _ScriptedModel(["place_info", None], inputs=['{"bogus": "x"}'])
     tools = _Tools(["place_info"])

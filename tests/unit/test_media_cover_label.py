@@ -1,12 +1,12 @@
 """A shared item's still picture renders as `[cover image …]` and is recorded
-as one (2026-09-24).
+as one.
 
-The live failure: a reel shared into an Instagram group rendered as
-`[shared reel by @x <link>] [image <handle>]`. Asked "what is in this reel",
-the model fetched the `[image …]`, read the one frame the reel's cover is,
-and told the room it could not see the clip, with `instagram_read` in its
-tools and the link in the line. The transcript said "image" about a picture
-that was not the thing being asked about. These pin the vocabulary half:
+A reel shared into an Instagram group must not render as
+`[shared reel by @x <link>] [image <handle>]`: asked "what is in this reel",
+the model would fetch the `[image …]`, read the one frame the reel's cover is,
+and tell the room it could not see the clip, with `instagram_read` in its
+tools and the link in the line. "image" would name a picture that is not the
+thing being asked about. These pin the vocabulary half:
 
 * the label a preview ref earns, and only a preview ref;
 * the placeholder grammar every consumer shares (`placeholders_in`,
@@ -14,12 +14,10 @@ that was not the thing being asked about. These pin the vocabulary half:
   label is found and rewritten exactly like the old one;
 * `MediaBlob.role`, the one field that carries "this is a cover" past the
   parser into `media_json`, where `media_fetch` reads it, and its backward
-  compatibility with every row written before it existed.
+  compatibility with every row written without it.
 
-Later the same day the label was measured not to be enough (design 13
-§«a linked share carries no picture»): a share whose link validated now
-carries no picture at all, so `[cover image …]` is the fallback for a share
-with no link, and the lines here are that shape.
+A share whose link validated carries no picture at all, so `[cover image …]`
+is the fallback for a share with no link, and the lines here are that shape.
 """
 
 from __future__ import annotations
@@ -44,8 +42,8 @@ from nora.domain.media import (
 
 SHA = "c0de01" + "0" * 58
 # A share with no link: a line that still carries a cover (so does a story
-# share with its link; a post or reel share
-# whose link validated carries no picture since 2026-09-24, after #454).
+# share with its link; a post or reel share whose link validated carries no
+# picture).
 LINE = "[shared story by @synth.example]"
 
 
@@ -112,7 +110,7 @@ def test_the_role_round_trips_through_media_json():
 
 def test_an_ordinary_blob_writes_exactly_the_four_keys_it_always_did():
     """No `role` key when there is no role, so every ordinary row's text is
-    byte-identical to what it was before the field existed."""
+    byte-identical to a row written without the field."""
     blob = MediaBlob(sha256=SHA, media_type="image/jpeg", size=3, filename="a.jpg")
 
     assert json.loads(media_json((blob,)) or "") == [{

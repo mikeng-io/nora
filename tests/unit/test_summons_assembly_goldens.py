@@ -1,11 +1,10 @@
-"""Step 4a of `design/context-assembly/04-every-occasion.md` §5: the public
-Instagram summons' prompt is built through `assemble` from a declared `_BLOCKS`
-table, and NOT ONE BYTE the model reads changes.
+"""The public Instagram summons' prompt is built through `assemble` from a
+declared `_BLOCKS` table, and NOT ONE BYTE the model reads changes.
 
 **The goldens in `tests/fixtures/context_assembly_step4a_goldens.json` were
-captured from `master` at `465f6772`, BEFORE the builder was touched**, over
-synthetic fixtures, and are the criterion. What is compared is the whole text
-each turn sends, not a substring of it:
+captured from the hand-written builder, BEFORE it was moved onto `assemble`**,
+over synthetic fixtures, and are the criterion. What is compared is the whole
+text each turn sends, not a substring of it:
 
 * `render_summons` over a hand-built `SummonsContext`, which can vary every
   field (the builder is a pure function of it): a post with and without a
@@ -23,17 +22,16 @@ each turn sends, not a substring of it:
 Nothing here regenerates a golden. Changing one is a model-visible change and
 belongs in a step that says so.
 
-**One golden value was edited by step 4b, and only its head line**
+**One golden differs from the hand-written builder, in its head line only**
 (`thread-names-and-text-with-every-delimiter`): its summoner is a hostile string
-no summoner handle can be (`is_handle` is `[A-Za-z0-9._]{1,30}`), master's head
-interpolated it bare, and the head now escapes it. For every reachable handle
-`escape` is the identity, so no reachable byte moved; the golden shows the escaped
-`@Zoe [admin]: &lt;b&gt;...` in the head and is otherwise master's.
+no summoner handle can be (`is_handle` is `[A-Za-z0-9._]{1,30}`), the
+hand-written head interpolated it bare, and the head now escapes it. For every
+reachable handle `escape` is the identity, so no reachable byte moved; the
+golden shows the escaped `@Zoe [admin]: &lt;b&gt;...` in the head.
 
-**Every golden's head line was edited 2026-10-13** (design/context-plan/12 §4): the
-head now states the reply's hard limit, "A reply longer than 320 characters is not
-posted at all.", which `public/conduct.md` used to say as "under 300 characters".
-That one sentence is the only change; every other byte is as before.
+**Every golden's head line states the reply's hard limit**, "A reply longer
+than 320 characters is not posted at all."; every other byte is as the
+hand-written builder produced it.
 
 `test_a_block_that_escapes_to_nothing_is_still_rendered` pins the one thing
 `assemble` would have changed: it drops an empty body, and a hand join does

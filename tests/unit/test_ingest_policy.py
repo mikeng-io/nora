@@ -1,8 +1,7 @@
-"""TriggerTextPolicy — the deterministic gate that ships now.
+"""TriggerTextPolicy — the deterministic gate.
 
-Deliberately has no LLM and cannot fail: spec §4.3 notes stage 5 had no
-failure-behaviour row precisely because this policy cannot raise. The future
-`ClassifierPolicy` can, which is why `EngagePolicy` is async today.
+Deliberately has no LLM and cannot raise. The future `ClassifierPolicy` can,
+which is why `EngagePolicy` is async.
 """
 
 from __future__ import annotations
@@ -79,7 +78,7 @@ def _allowlist(*, relevance_gate: bool) -> Policy:
 
 
 async def test_relevance_gate_policy_marks_an_opted_in_room_without_engaging():
-    """design/dreamer-agent-loop/36: the verdict is a CANDIDATE marker, never
+    """The verdict is a CANDIDATE marker, never
     an admission — `engage` stays False so nothing downstream can read it as a
     tag."""
     policy = RelevanceGatePolicy(_allowlist(relevance_gate=True))
@@ -127,7 +126,7 @@ async def test_the_composite_passes_a_relevance_gate_verdict_through():
 async def test_voice_wake_transcript_engages() -> None:
     """A transcript that arrived via the voice-wake channel engages her.
 
-    Measured 2026-09-16: without this policy the transcript lands in the
+    Without this policy the transcript lands in the
     audit row and the engage gate says ``no_trigger`` — DB row inserted,
     reply count 0. The wake service only POSTs after the operator said
     「喂 Nora」, the voice channel's closest thing to an explicit tag.

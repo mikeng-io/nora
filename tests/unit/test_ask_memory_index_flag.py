@@ -1,7 +1,6 @@
-"""`ask_memory` and `[memory_index] enabled` (design/unified-memory/60 S5,
-DEC-316).
+"""`ask_memory` and `[memory_index] enabled` (DEC-316).
 
-Off (no `memory_search`, the shipped default): today's Honcho path, the same
+Off (no `memory_search`, the shipped default): the Honcho path, the same
 call and the same result. On: `ask_memory` is not offered; the memory graph's
 `memory_search` is, and the index answers there.
 """
@@ -104,8 +103,8 @@ async def test_flag_off_calls_honcho_and_answers_as_before(persons: Any) -> None
 
 async def test_flag_on_ask_memory_is_not_built(persons: Any) -> None:
     """DEC-316: with the index wired, the memory surface is the graph's, so
-    `ask_memory` is not offered at all (its index branch went with it; the
-    index answers through `memory_search`, tests/unit/test_memory_search_tool.py).
-    The whole-surface pins are tests/unit/test_memory_surfaces.py."""
+    `ask_memory` is not offered at all (the index answers through `memory_search`,
+    tests/unit/test_memory_search_tool.py). The whole-surface pins are
+    tests/unit/test_memory_surfaces.py."""
     tools = _build_with(persons, FakeMemoryStore(), _dense(_index(), Metrics()))
     assert "ask_memory" not in tools and "memory_search" in tools

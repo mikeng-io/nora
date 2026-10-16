@@ -1,12 +1,9 @@
 """The clock line and the `now` tool state the same facts.
 
 Two surfaces tell her when it is: the line at the top of every turn and the
-`now` tool she may call mid-turn. They were two formatters over two clocks
-(the process zone, and a fixed `+08:00` labelled HKT); when the clock line
-gained its zone name and place on 2026-09-24, the tool kept answering
-«(HKT)». Both now read `nora.agent.clock.local_now` and render through
-`state_time`. Pinned here by giving both ONE instant: a tool that reads its
-own clock, or formats its own way, answers something else.
+`now` tool she may call mid-turn. Both read `nora.agent.clock.local_now` and
+render through `state_time`. Pinned here by giving both ONE instant: a tool
+that reads its own clock, or formats its own way, answers something else.
 """
 
 from __future__ import annotations
@@ -54,8 +51,8 @@ def test_the_now_tool_states_exactly_the_clock_lines_facts(monkeypatch):
 def test_the_now_tool_reads_the_injected_clock_not_the_wall(monkeypatch):
     """A turn whose clock is injected (the fire path's `clock`, frozen at a
     past instant in an eval sandbox) states that instant on its clock line.
-    `now` must state the same one: reading the wall instead told her a
-    Sunday plan was «yesterday» mid-turn (proactive_act a12, 2026-10-12)."""
+    `now` must state the same one: reading the wall instead would give a
+    different day mid-turn than the clock line."""
     monkeypatch.setenv("TZ", "Asia/Hong_Kong")
     frozen = datetime(2026, 10, 11, 1, 5, tzinfo=UTC)
     monkeypatch.setattr(tools_module, "local_now", lambda: _INSTANT)

@@ -1,5 +1,4 @@
-"""Every call Nora makes to instagram-bridge carries her trace context
-(design/instagram-adoption/16 §Tracing, 17 P1).
+"""Every call Nora makes to instagram-bridge carries her trace context.
 
 Without it each bridge call is its own unlinked trace, and "why did this send
 take four seconds" cannot be answered from Nora's side. The stand-in bridge
@@ -121,7 +120,7 @@ async def test_a_roster_read_carries_the_turns_trace(bridge):
     [
         ("story", "/accounts/10000001/story"),
         ("profile", "/accounts/10000001"),
-        # P11: the account search rides the same `_get`, so the same header.
+        # The account search rides the same `_get`, so the same header.
         ("search", "/accounts"),
     ],
 )

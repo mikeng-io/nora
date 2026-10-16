@@ -7,7 +7,7 @@ boot sweep fails a row a dead process left `claimed`, never retrying it.
 Over the real occasion and client against the recording fake bridge, so "one
 at a time" is counted in REQUESTS the session would have made, which is what
 the rule is about. And no request is ever `GET /mentions`: the notification
-feed is not read any more.
+feed is not read.
 """
 
 from __future__ import annotations

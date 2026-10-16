@@ -1,5 +1,4 @@
-"""`invoke.run` — the timeout/exception behaviour carried over from
-`Handler._invoke` (task-5-brief.md). R-5's two invocation-failure reasons;
+"""`invoke.run` — the timeout/exception behaviour. R-5's two invocation-failure reasons;
 the strings are pinned by `tests/test_acceptance_rules.py::RULE_TESTS`.
 """
 
@@ -74,7 +73,7 @@ class _FakeRunner:
             messages=({"role": "assistant", "content": []},), transcript=(),
             outcome="send_reply", created_at=0,
         )
-        # `(stop_reason, final_text, trace)` since DEC-93/Task 4 — the prose
+        # `(stop_reason, final_text, trace)` — the prose
         # the model wrote WITHOUT calling send_reply (empty on every healthy
         # turn) and the TagTrace this invocation produced.
         return self.stop_reason, self.final_text, trace
@@ -105,7 +104,7 @@ async def test_a_successful_invocation_returns_ok_and_observes_latency():
 async def test_invoke_run_returns_a_tag_trace_on_success():
     """The `TagTrace` the runner built comes back, with its `transcript`
     filled in here from `ctx` (the runner itself has no access to the
-    assembled window — see this module's docstring addendum)."""
+    assembled window)."""
     ctx = _ctx(tag_id="tag-99", conversation_id="g5")
     runner = _FakeRunner()
     (ok, _elapsed, _stop_reason, _text, trace), _metrics = await _run(runner, ctx=ctx)
@@ -120,7 +119,7 @@ async def test_invoke_run_returns_a_tag_trace_on_success():
 async def test_invoke_run_returns_a_blank_trace_on_timeout():
     """A runner that hangs past the timeout never returns a trace at all — the
     invocation is abandoned, so `invoke.run` builds a blank one itself, with
-    `outcome="timeout"` (§7.4: those turns debrief from `transcript` alone)."""
+    `outcome="timeout"`."""
     ctx = _ctx(tag_id="tag-100")
     runner = _FakeRunner(delay=5.0)
     (ok, _elapsed, _stop_reason, _text, trace), _metrics = await _run(
@@ -164,8 +163,8 @@ async def test_the_runner_is_called_with_every_argument():
 
 
 async def test_trace_attributes_are_computed_from_ctx_and_doctrine():
-    """Matches `Handler._invoke`'s `build_trace_attributes(ctx, doctrine)` call
-    (`nora/handler.py:133`) — provenance only, tag_id/conversation_id/
+    """Matches the stage's `build_trace_attributes(ctx, doctrine)` call —
+    provenance only, tag_id/conversation_id/
     doctrine_sha256 and one COUNT, never message content.
 
     Asserted as an EXACT dict rather than by key, and that is the point of the
@@ -188,8 +187,7 @@ async def test_trace_attributes_are_computed_from_ctx_and_doctrine():
 async def test_the_trace_reports_how_many_notes_the_turn_was_shown():
     """The cold start is invisible in a trace without this. A turn that saw an
     empty notebook and a turn where the tier was never wired produce the same
-    spans, the same tools and the same prompt shape — and the tier spent its
-    first eight days in the first state while reading as the second."""
+    spans, the same tools and the same prompt shape."""
     runner = _FakeRunner()
     notes = tuple(
         _note(f"n{i}") for i in range(3)
@@ -281,7 +279,7 @@ async def test_this_stage_labels_both_llm_series_audience_tag():
 
 
 async def test_the_turn_publishes_its_deadline_to_the_tools_it_runs():
-    """DEC-197 review: a tool spending wall clock on its own model call (the
+    """DEC-197: a tool spending wall clock on its own model call (the
     vision describer) must see how much of THIS turn is left. The runner is
     inside the `wait_for`, so what it reads is what every tool reads."""
     from nora.domain.turn_deadline import seconds_left

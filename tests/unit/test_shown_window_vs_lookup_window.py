@@ -2,8 +2,8 @@
 
 `[store] prompt_window` shows fewer rows than are read. `send_reply(reply_to=n)`
 and a note's `[#n]` must resolve against the shown rows (what the model saw
-numbered), while `who_said` keeps the deeper `lookup_window`. The two used to
-share one tuple, so `reply_to=2` quoted an older, unseen row.
+numbered), while `who_said` keeps the deeper `lookup_window`. Sharing one
+tuple would make `reply_to=2` quote an older, unseen row.
 """
 
 from __future__ import annotations

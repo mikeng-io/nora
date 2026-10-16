@@ -61,9 +61,8 @@ async def test_a_transcription_returns_the_hant_text(monkeypatch):
     url, kwargs = session.posted[0]
     assert url == "http://stt:8000/v1/audio/transcriptions"
     body = kwargs["data"]
-    # The default model is the noise-detection whisper (design/voice-channel/06,
-    # 2026-09-15) — the multipart body must carry it, not the old hardcoded
-    # sensevoice.
+    # The default model is the noise-detection whisper — the multipart body must carry it, not a
+    # hardcoded sensevoice.
     assert b"noise-detection" in body
     assert b"sensevoice" not in body
     assert b"yue-HK" in body

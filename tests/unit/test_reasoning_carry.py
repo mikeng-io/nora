@@ -1,10 +1,10 @@
-"""#325's fix: a continuation call carries the previous call's reasoning.
+"""A continuation call carries the previous call's reasoning.
 
 Two layers, both against the REAL formatter:
 
 - the request the provider `nora.agent.factory` builds carries the reasoning
   as `reasoning` on the assistant message (the field the upstream reads;
-  `reasoning_content` is discarded, measured in `nora.agent.reasoning_carry`),
+  `reasoning_content` is discarded, see `nora.agent.reasoning_carry`),
   and is otherwise the SDK's own request, byte for byte;
 - a real Strands loop driven through `invoke.run` sends that request, and the
   strip watch records the turn as CLEAN, where the same loop through the
@@ -33,8 +33,8 @@ from tests.unit.test_reasoning_strip_probe import _drive
 
 REASONING_TEXT = "the order ships from Busan, so ask for the ETA next"
 
-#: A literal, not the module's constant: the expected value is the MEASURED
-#: field (the one the upstream reads, 2026-09-25), independent of the code
+#: A literal, not the module's constant: the expected value is the
+#: field the upstream reads, independent of the code
 #: under test, so a change to the constant cannot move the test with it.
 CARRIED_REASONING_FIELD = "reasoning"
 
@@ -136,10 +136,9 @@ def test_one_carried_message_does_not_vouch_for_another() -> None:
 
 
 def test_a_dropped_block_is_not_vouched_for_by_a_longer_carried_one() -> None:
-    """Each block is judged against ITS OWN message's carried field. Found by
-    review: a reasoning-only message whose short text is a substring of
-    another message's carried reasoning was counted as carried, an
-    undercount, which is the worse error."""
+    """Each block is judged against ITS OWN message's carried field: a reasoning-only
+    message whose short text is a substring of another message's carried reasoning must not count as
+    carried (an undercount is the worse error)."""
     messages = copy.deepcopy(MULTI_TURN)
     messages[1]["content"][0][REASONING_BLOCK_KEY]["reasoningText"]["text"] = "I will call f."
     messages.append({"role": "assistant", "content": [

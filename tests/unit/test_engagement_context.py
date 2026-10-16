@@ -1,6 +1,5 @@
-"""`TranscriptInjection` — the two failure-shaped behaviours carried over
-from `Handler._collect_context` (task-3-brief.md), plus transcript ordering
-and port conformance.
+"""`TranscriptInjection` — its two failure-shaped behaviours, plus transcript
+ordering and port conformance.
 
 `nora.testing.FakeRecordStore` is the audit double throughout, per the same
 project rule `tests/unit/test_ingest_stages.py` documents: a port never
@@ -164,7 +163,7 @@ async def _seeded(
     and an assembler over it. The tagging message is the LAST row's
     successor — not itself one of the seeded rows, matching how a live reply
     arrives after what it quotes. `quote_window=None` (the default) exercises
-    the pre-DEC-195 fallback shape; pass a real `QuoteWindow` to exercise the
+    the plain-window fallback shape; pass a real `QuoteWindow` to exercise the
     growth this module tests."""
     store = FakeRecordStore()
     for i in range(count):
@@ -189,10 +188,11 @@ def _quote_window(store: FakeRecordStore, **kw) -> QuoteWindow:
 
 
 async def test_a_quote_outside_the_window_pulls_the_parent_back_into_it():
-    """The live bug (2026-09-22): a reply's quote pointed at a message 56 rows
-    back against `context_window=40`; the parent fell out of the window,
-    `_parent_of` resolved to nothing, and Nora answered as though the reply
-    were unthreaded. 25 rows seeded, `quoted_ts=5` — `depth_to` is 20
+    """A reply's quote that points past `context_window` must not leave the
+    parent out of the window (else `_parent_of` resolves to nothing and Nora
+    answers as though the reply were unthreaded).
+
+    25 rows seeded, `quoted_ts=5` — `depth_to` is 20
     (ts 5..24), past `context_window=10`, so this grows to `depth + margin`
     = 30, which reaches every row (25 < 30)."""
     store = FakeRecordStore()
@@ -218,9 +218,9 @@ async def test_a_quote_outside_the_window_pulls_the_parent_back_into_it():
 
 
 async def test_no_quote_window_wired_is_the_pre_dec_195_fallback():
-    """`quote_window=None` (a harness that predates DEC-195, or has not opted
-    in) must behave EXACTLY as before it existed: plain `context_window`
-    fetch, no growth, even when the quote's parent is out of range."""
+    """`quote_window=None` (a harness that has not opted in to DEC-195) must
+    fetch the plain `context_window`, with no growth, even when the quote's
+    parent is out of range."""
     ctx = await _seeded(25, context_window=10, quote=Quote(author_id="x", text="", quoted_ts=5))
     assert [row.body for row in ctx.transcript] == [f"m{i}" for i in range(15, 25)]
 
@@ -255,9 +255,8 @@ async def test_a_quote_beyond_the_cap_falls_back_to_the_plain_window():
     """`quote_window_multiplier` bounds the growth. depth = 100 rows back
     against `context_window=10`, `quote_window_multiplier=2` (cap 20): even
     with the margin, `depth + margin` exceeds the cap, so this degrades to
-    EXACTLY today's behaviour — the plain 10-row window, parent unresolved,
-    reply renders unthreaded. Not a regression: this is the same outcome a
-    reply to something 100 rows back already had before `depth_to` existed."""
+    EXACTLY the plain-window behaviour — the plain 10-row window, parent
+    unresolved, reply renders unthreaded."""
     store = FakeRecordStore()
     for i in range(105):
         await store.append(message=NormalizedMessage(
@@ -311,7 +310,7 @@ async def test_the_transcript_carries_the_identity_name_not_the_profile_name():
     `tag_message from=`, `group_members` and `lookup_person` use.
 
     The row is stored under the SELF-SET Signal profile name («陳志明 Chi Ming»),
-    which is what the prefill used to render; `person_name` is the projection
+    which is what the prefill would otherwise render; `person_name` is the projection
     that makes the transcript join to the rest of the prompt. Both are kept, so
     the rewrite is auditable rather than silent. Delete the `name_transcript`
     call in `assemble` and this reds."""
@@ -360,9 +359,7 @@ def test_it_satisfies_the_context_assembler_port():
 
 # ---- the assembler's helper -------------------------------------------------
 #
-# The `<self>` read (design/self-growth/20) is tested in
-# `tests/unit/test_self_block.py`; the retired `<self_card>` read's tests went
-# with it.
+# The `<self>` read is tested in `tests/unit/test_self_block.py`.
 
 
 def _assembler(memory, **kw):
@@ -386,10 +383,10 @@ async def test_a_thrown_recall_never_costs_the_turn():
 
 
 # ---------------------------------------------------------------------------
-# The note tier's read (2026-08-21 note-tier design, §5.1).
+# The note tier's read.
 #
 # The ONE read in this assembler that is not room-keyed: `standing` is scoped
-# by UNIT (§3 / DEC-105), so the fake below is a unit→notes map
+# by UNIT (DEC-105), so the fake below is a unit→notes map
 # rather than a store that says yes — a `standing` implementation ignoring its
 # argument would pass every assertion here and prove nothing about the
 # scoping, which is the only property deciding who sees a note.
@@ -460,7 +457,7 @@ async def test_notes_are_empty_when_no_store_is_configured():
 
 
 async def test_the_notes_read_is_keyed_on_the_unit_not_the_conversation():
-    """§3 is the whole point of this read: `g1` belongs to unit `ridgeline`,
+    """The unit scoping is the whole point of this read: `g1` belongs to unit `ridgeline`,
     and a note established in the OTHER unit must not appear however alike
     the two rooms are. The ARGUMENT is asserted as well as the result, because
     a read keyed on the conversation id would answer `()` here — the right
@@ -533,8 +530,8 @@ async def test_a_room_the_policy_does_not_know_reads_no_notes_and_is_counted():
 # ---- nora_note_index_entries, the gauge config.toml calls "the tell" -------
 #
 # The four tests below are one test each of the four states this gauge has to
-# keep apart, because the tier spent its first eight days unable to tell any of
-# them from any other: a notebook with notes in it, a notebook that is wired
+# keep apart, because a gauge that could not tell them apart would
+# mislead: a notebook with notes in it, a notebook that is wired
 # and empty, a tier that is switched off, and a read that failed. Only the
 # first two are readings; the last two must be ABSENT rather than `0`, which is
 # the whole reason the publish sits on the success path.
@@ -584,8 +581,7 @@ async def test_the_index_gauge_is_labelled_so_two_units_do_not_overwrite():
 
 
 async def test_an_empty_notebook_reads_zero_rather_than_going_absent():
-    """The one state the tier could not report for eight days: wired, reached,
-    and holding nothing. `0` here is a measurement — «I looked, there is
+    """A wired, reached notebook holding nothing. `0` here is a measurement — «I looked, there is
     nothing» — and it is what separates a quiet notebook from a broken one."""
     metrics = Metrics()
     assembler = TranscriptInjection(
@@ -625,7 +621,7 @@ async def test_a_failed_read_leaves_the_gauge_absent_rather_than_zero():
     assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1
 
 
-# --- Standing's read half (design/dreamer-agent-loop/26-standing §4) --------
+# --- Standing's read half ---------------------------------------------------
 
 async def test_no_standing_store_is_the_dormant_default_and_costs_no_query():
     """`[standing] enabled = false` — not an error, not counted, the same
@@ -641,7 +637,7 @@ async def test_no_standing_store_is_the_dormant_default_and_costs_no_query():
 
 
 async def test_the_position_is_read_by_platform_and_conversation():
-    """S4, asserted on the ARGUMENTS rather than on the value: this is the one
+    """Asserted on the ARGUMENTS rather than on the value: this is the one
     read in the assembler keyed on `(platform, conversation_id)` rather than on
     a unit or a scope, and a store called with the wrong key would return
     a plausible position belonging to another room."""
@@ -694,7 +690,7 @@ async def test_a_failed_standing_read_is_counted_rather_than_swallowed():
 
 
 async def test_the_tag_path_reads_presence_at_turn_start():
-    """design/self-awareness/02: the assembler hands the reader the turn's
+    """The assembler hands the reader the turn's
     own room, and what it returns reaches `TagContext.presence` — the one
     field `<presence>` renders from. Without a reader the field stays `None`
     and the prefill falls back to the network alone."""
@@ -725,13 +721,12 @@ async def test_the_tag_path_reads_presence_at_turn_start():
 
 
 # ---------------------------------------------------------------------------
-# STORE-READ SPANS (issue #55, the last open quarter: `nora/infra/**` had no
-# instrumentation at all). `traced_read` (`nora.obs.tracing`) is the ONE
-# wrapper every read below shares — asserted here on EXPORTED spans
-# (`exported_spans`, `tests/conftest.py`), the same discipline
-# `tests/test_prefill.py`'s own #55 tests use for `agent.prefill`: a test that
-# only checked `traced_read` was CALLED would stay green if the wrapper lost
-# its attributes or a call site stopped going through it.
+# STORE-READ SPANS. `traced_read` (`nora.obs.tracing`) is the ONE wrapper every
+# read below shares — asserted here on EXPORTED spans (`exported_spans`,
+# `tests/conftest.py`), the same discipline `tests/test_prefill.py` uses for
+# `agent.prefill`: a test that only checked `traced_read` was CALLED would stay
+# green if the wrapper lost its attributes or a call site stopped going through
+# it.
 # ---------------------------------------------------------------------------
 
 
@@ -769,7 +764,7 @@ async def test_assemble_emits_a_span_per_store_read(exported_spans):
 
 
 async def test_a_store_read_span_carries_row_count_and_duration(exported_spans):
-    """The issue's own ask: an unbounded or slow read must be visible. Row
+    """An unbounded or slow read must be visible. Row
     count and duration are what make a span say THAT rather than just THAT IT
     HAPPENED.
 
@@ -795,11 +790,10 @@ async def test_a_store_read_span_carries_row_count_and_duration(exported_spans):
 
 
 async def test_presence_and_culture_reads_are_also_traced(exported_spans):
-    """Review finding on #526: `_culture` and `_presence` are gathered
-    alongside the six wrapped reads `test_assemble_emits_a_span_per_store_read`
-    covers, but were left bare — same store-port boundary, same class, and
-    the issue's own ask (`build_prefill`'s reads visible) does not stop at
-    six of eight.
+    """`_culture` and `_presence` are gathered alongside the six wrapped reads
+    `test_assemble_emits_a_span_per_store_read` covers, and are wrapped the
+    same way: same store-port boundary, same class, so every `build_prefill`
+    read is visible.
 
     PROBE: replace either `traced_read(...)` call — the one wrapping
     `self._culture_reader.head(...)` or `self._presence_reader.read(...)` —
@@ -834,7 +828,7 @@ async def test_presence_and_culture_reads_are_also_traced(exported_spans):
 async def test_memory_representation_row_count_is_the_conclusions_count(
     exported_spans,
 ):
-    """Review finding on #526: `Recollection` has no `__len__`, so plain
+    """`Recollection` has no `__len__`, so plain
     `_row_count` leaves `store.memory.representation` with no row count at
     all — measurable, but never measured. `traced_read`'s `count=` callback
     is what closes that, not a special case inside `_row_count` itself.
@@ -866,7 +860,7 @@ async def test_a_failing_read_ends_its_span_with_error_status(exported_spans):
     """The transcript read fails soft (`_recent`'s own try/except: a thinner
     reply beats no reply) — but the SPAN for it must still say the read
     failed, or a store timing out reads identically to one that answered
-    fast, which is exactly the visibility issue #55 is about.
+    fast, which is exactly the visibility these spans exist for.
 
     PROBE: wrap `traced_read`'s body in a `try/except Exception: return
     default` and the span goes back to reading OK on a store that raised.
@@ -1003,7 +997,7 @@ async def test_a_failing_memos_read_is_counted_and_renders_none():
 
 
 async def test_a_room_the_policy_does_not_know_reads_no_memos_and_is_counted():
-    """Review of #781: a wired memo store with no unit to scope it by is a
+    """A wired memo store with no unit to scope it by is a
     wiring gap, counted as `_notes` counts it, never a silent empty list."""
     from nora.testing.memo_store import InMemoryMemoStore
 

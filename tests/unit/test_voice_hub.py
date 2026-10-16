@@ -1,5 +1,5 @@
 """`VoiceControllerHub` (nora/infra/voice/hub.py) against a fake controller:
-per-guild session caching, the §12.1 boot reconciliation (409 → adopt the
+per-guild session caching, the boot reconciliation (409 → adopt the
 existing connection via /voice/status), the fail-closed speech paths, and
 the bounded exactly-once event-id dedupe.
 """
@@ -97,7 +97,7 @@ def _app(
 
 async def _hub(aiohttp_client, app) -> VoiceControllerHub:
     test_client = await aiohttp_client(app)
-    # One client per guild (§12.5, multi-guild 2026-09-17). Both test guilds
+    # One client per guild. Both test guilds
     # point at the same fake controller: what is under test here is the hub's
     # per-guild bookkeeping, not two real processes.
     client = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
@@ -117,7 +117,7 @@ async def test_join_caches_the_session_per_guild(aiohttp_client):
 
 
 async def test_a_join_conflict_adopts_the_controllers_existing_connection(aiohttp_client):
-    """§12.1 boot reconciliation: nora restarted, the controller's
+    """Boot reconciliation: nora restarted, the controller's
     connection survived — the 409 answers 'already there', and /voice/status
     confirms it IS the channel asked for, so its generation is adopted."""
     record: list = []
@@ -251,7 +251,7 @@ async def test_the_event_id_window_is_bounded_fifo(aiohttp_client):
 
 
 async def test_adopting_a_status_with_an_event_seq_gap_warns(aiohttp_client, caplog):
-    """§3.3 reconciliation guard: the controller's `last_event_seq` ahead
+    """Reconciliation guard: the controller's `last_event_seq` ahead
     of the last seq nora consumed means events were emitted while nora was
     not consuming — the adoption still succeeds, but the gap is surfaced."""
     hub = await _hub(
@@ -297,7 +297,7 @@ async def test_note_event_seq_is_monotonic(aiohttp_client):
 
 
 async def test_seen_event_reads_the_dedupe_window_without_consuming(aiohttp_client):
-    """The B7 check-then-commit split: `seen_event` is the pure check the
+    """The check-then-commit split: `seen_event` is the pure check the
     consumer runs BEFORE processing; `consume_event_id` is the commit it
     runs only after success."""
     hub = await _hub(aiohttp_client, _app())
@@ -319,13 +319,12 @@ async def test_generation_for_reads_the_cached_sessions_generation(aiohttp_clien
 
 
 async def test_adopt_boot_voice_sessions_adopts_without_a_persisted_music_row(aiohttp_client):
-    """B-2 (2026-09-16 audit): a wake-only guild with no persisted music
+    """A wake-only guild with no persisted music
     session never calls `hub.join` any other way — boot adoption must reach it
     from config, and speech must stream afterwards.
 
-    Config names GUILDS since 2026-09-17 (§12.2 reversed), so the CHANNEL now
-    comes from the controller's own /voice/status: it is the only thing that
-    knows where it reconnected."""
+    Config names GUILDS, so the CHANNEL comes from the controller's own
+    /voice/status: it is the only thing that knows where it reconnected."""
     record: list = []
     hub = await _hub(aiohttp_client, _app(join_status=409, record=record))
 
@@ -340,10 +339,10 @@ async def test_adopt_boot_voice_sessions_adopts_without_a_persisted_music_row(ai
 
 
 async def test_adopt_boot_adopts_the_channel_the_controller_is_actually_in(aiohttp_client):
-    """THE REGRESSION THIS GUARDS: the config read this replaced would have
-    re-joined the CONFIGURED channel. A controller that came back up in a
-    different channel — which is now ordinary, since any channel is joinable —
-    would have been dragged back to the old one."""
+    """Adoption takes the channel from the controller's /voice/status, not the
+    configured one: a controller that came back up in a different channel —
+    ordinary, since any channel is joinable — must not be dragged back to the
+    old one."""
     record: list = []
     hub = await _hub(aiohttp_client, _app(status_channel="somewhere-else", record=record))
 
@@ -399,11 +398,11 @@ async def test_adopt_boot_voice_sessions_does_not_raise_when_the_controller_is_d
 
 
 async def test_the_event_seq_bookmark_is_per_guild(aiohttp_client):
-    """THE REGRESSION THIS GUARDS (multi-guild, 2026-09-17). Each controller
-    mints its own `event_seq` from 1. With ONE counter, guild-2's first event
+    """The `event_seq` counter is per guild. Each controller
+    mints its own from 1. With ONE counter, guild-2's first event
     would read as a jump backwards from guild-1's 40th, and guild-1's next
     would read as a 39-event gap — so the warning that exists to mean "events
-    were lost while nora was down" would have fired on every healthy
+    were lost while nora was down" would fire on every healthy
     two-guild boot, which is how a real gap stops being noticed."""
     hub = await _hub(aiohttp_client, _app())
 
@@ -436,20 +435,18 @@ async def test_guild_ids_is_the_join_allow_list(aiohttp_client):
 
 
 async def test_join_to_a_different_channel_is_a_conflict_not_a_cache_hit(aiohttp_client):
-    """THE BUG THIS GUARDS (found by review, 2026-09-17). The session cache is
-    keyed by GUILD. That was safe only while exactly one channel per guild
-    could be joined — a cache hit necessarily meant the same channel. Widening
-    the join gate to any channel in the guild (§12.2) made "cached session is
-    for a DIFFERENT channel" reachable, and the cache answered it with the
-    connection Nora already held.
+    """The session cache is keyed by GUILD, and a cache hit must mean the same
+    channel. The join gate admits any channel in the guild, so "cached session
+    is for a DIFFERENT channel" is reachable and must not be answered with the
+    connection Nora already holds.
 
-    What that cost: `/music play` from channel B while Nora sat in A played
-    the music out of A, while the player persisted B. `channel-emptied` for A
-    then never matched the player's channel, so auto-leave stopped firing, and
-    the next boot resumed against B. `/discord join` escaped it only by having
+    Otherwise `/music play` from channel B while Nora sits in A plays
+    the music out of A, while the player persists B. `channel-emptied` for A
+    then never matches the player's channel, so auto-leave stops firing, and
+    the next boot resumes against B. `/discord join` escapes it only by having
     its own `session_for` check.
 
-    The controller's own 409 never fired because nora never sent the request."""
+    The controller's own 409 never fires because nora never sends the request."""
     record: list = []
     hub = await _hub(aiohttp_client, _app(record=record))
     await hub.join("guild-1", "cortez-1")
@@ -496,8 +493,8 @@ async def test_an_adopted_join_records_the_channel_it_adopted(aiohttp_client):
     asked for, because `_adopt_existing` refuses a controller connected
     anywhere else. So "recorded" and "requested" cannot diverge here — the
     controller's own value is used anyway, because deriving cache state from
-    what we asked for rather than what we were told is how the bug above
-    happened."""
+    what we asked for rather than what we were told is how the cache ends up
+    naming the wrong channel."""
     hub = await _hub(
         aiohttp_client, _app(join_status=409, status_channel="cortez-1"),
     )
@@ -524,10 +521,10 @@ async def test_an_adoption_for_another_channel_never_caches_anything(aiohttp_cli
 
 
 async def test_boot_adoption_is_quiet_when_a_guild_has_no_connection(aiohttp_client, caplog):
-    """THE NOISE THIS REMOVES. A controller holding no connection for a guild
-    answers 404 `unknown_guild`, and since one process serves N guilds that is
-    the ordinary COLD-BOOT state — not a fault. It was logged as
-    "adoption failed" at WARNING, so it fired on every boot.
+    """A controller holding no connection for a guild answers 404
+    `unknown_guild`, and since one process serves N guilds that is the ordinary
+    COLD-BOOT state — not a fault. It is logged at INFO ("nothing to adopt"),
+    never as a failed adoption at WARNING, which would fire on every boot.
 
     A warning that always fires is one people scroll past, and then the boot
     where adoption really did fail looks like the twenty before it."""

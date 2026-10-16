@@ -1,8 +1,7 @@
-"""`<room_members>` (design/cognition-loop/15-map.md §3): who is who in THIS
-room, with the names the group calls them. Only the room's listed persons,
-never the whole identity file: a roster fed the address book listed people
-who had never been members (design/12 §3), and that leak is what the first
-test pins."""
+"""`<room_members>`: who is who in THIS room, with the names the group calls
+them. Only the room's listed persons, never the whole identity file: a roster
+fed the address book would list people who had never been members, and that
+leak is what the first test pins."""
 
 from __future__ import annotations
 
@@ -65,7 +64,7 @@ def test_only_the_rooms_listed_persons_and_never_the_address_book(tmp_path):
     assert [(m.name, m.aliases) for m in members] == [
         ("Grant Carver", ("Chi Ming",)), ("Miles Novak", ("俊爺", "Miles")),
     ]
-    # In identity.toml, not in the room: never listed (the design/12 §3 leak).
+    # In identity.toml, not in the room: never listed (the leak).
     assert all(m.name != "Sam Outsider" for m in members)
 
 
@@ -97,7 +96,7 @@ def test_the_tag_path_and_the_fire_path_give_the_same_members(tmp_path):
 def test_two_members_of_one_name_keep_one_order_in_every_process():
     """A frozenset walks in hash order, which changes per process
     (PYTHONHASHSEED); the block is a cached, snapshot-compared prefix, so a
-    tie must break the same way in every process (review 2026-09-28)."""
+    tie must break the same way in every process."""
     import os
     import subprocess
     import sys
@@ -122,8 +121,7 @@ def test_two_members_of_one_name_keep_one_order_in_every_process():
 
 async def test_the_fire_path_fills_room_members_through_build_context(tmp_path):
     """The wiring, not only the helper: a reminder fired into a listed room
-    carries that room's members (review 2026-09-28: dropping the fire wiring
-    survived)."""
+    carries that room's members (dropping the fire wiring must fail)."""
     from datetime import UTC, datetime
 
     from nora.app.fire import FirePath, reminder_occasion

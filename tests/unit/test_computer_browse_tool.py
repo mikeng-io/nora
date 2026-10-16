@@ -1,4 +1,4 @@
-"""`computer_browse` (design/browser-runtime 00 §5, ADR 0022, B2), driven through
+"""`computer_browse` (ADR 0022), driven through
 `build_tool_specs` against `FakeBrowserRunner`, the way tests/unit/
 test_computer_tools.py drives the other computer tools.
 

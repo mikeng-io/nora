@@ -1,5 +1,5 @@
 """The `<self>` block: her own Character · Nora account for the turn's unit
-(design/self-growth/20, DEC-292).
+(DEC-292).
 
 What must hold, each with the way it would fail:
 
@@ -8,7 +8,7 @@ What must hold, each with the way it would fail:
 - a unit with no account renders NO block, on every occasion, not an empty one;
 - on the tag and fire turns it is the first block, and on a Cognition turn it
   is the first block of the prompt;
-- the retired `<self_card>` is on no prompt.
+- `<self_card>` is on no prompt.
 """
 
 from __future__ import annotations

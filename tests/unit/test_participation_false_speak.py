@@ -1,23 +1,21 @@
 """R-97 — a participation turn that went looking and came back empty stays
-silent (issue #216, design/dreamer-agent-loop/35 §3②/§10.5).
+silent.
 
-WHAT THIS FILE MEASURES, AND WHY IT IS NOT THE LIVE SUITE
----------------------------------------------------------
-`make eval-participation` grades the corpus against the real model; what it
-measured on 2026-09-12, once #213 had made the judged line's age honest, is
-that the turn takes the floor to say it found nothing — **4 of the 5 silence
-twins false-spoke**, the worst of them 4 times in 5 («查咗但搵唔到實質嘢 —
+WHAT THIS FILE PINS, AND WHY IT IS NOT THE LIVE SUITE
+-----------------------------------------------------
+`make eval-participation` grades the corpus against the real model; without
+R-97 the turn takes the floor to say it found nothing (e.g. «查咗但搵唔到實質嘢 —
 Redbeet 冇公開過下個 update 嘅日子»). A stochastic suite cannot be a regression
 gate, so what is pinned here is the same five cases with the model's
-trajectory SCRIPTED to the shape that measurement found: a lookup, its R-27
+trajectory SCRIPTED to that shape: a lookup, its R-27
 answer, and the send she made off the back of it. The room's verdict is
 `Trajectory.sent` — the room-visible truth, the signal `ParticipationVerdict`
 already grades on.
 
 `FALSE_SPEAK_TWINS` is therefore a table of four false-speaks and one correct
-silence, and `test_the_five_silence_twins_stay_silent` is what turns 4/5 into
-0/5. Reverting the `lookups=` argument in `nora.app.fire` — or the R-97 branch
-in `nora.agent.guards` — puts the four back in the room.
+silence, and `test_the_five_silence_twins_stay_silent` pins that all five stay
+silent. The `lookups=` argument in `nora.app.fire` and the R-97 branch in
+`nora.agent.guards` are what keep the four out of the room.
 
 THE THREE CONTROLS ARE THE POINT
 --------------------------------
@@ -25,7 +23,7 @@ A rule that silenced every participation turn would pass the table above and
 be worthless, so three tests pin what must NOT change: the same lookup
 answering `ok` still speaks (`test_a_lookup_that_found_something_still_speaks`
 — only the tool's R-27 status varies between it and the first twin); a turn
-that never opened a tool still speaks (design 35 §3.6's fast path, the whole
+that never opened a tool still speaks (the fast path, the whole
 grounded half of the suite); and a TAG turn whose lookup came back empty still
 answers, because there somebody asked and «I looked and there is nothing» is
 what she owes them.
@@ -55,11 +53,11 @@ def _omniroute_key(monkeypatch):
     """`run_case` loads the real config, which is fail-closed on the LLM key.
     Nothing here reaches a provider — the model is scripted — so a placeholder
     is the honest value (`tests/test_evals_participation.py` carries the same
-    fixture and the measurement that made it necessary)."""
+    fixture)."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
 
 
-# ── The five silence twins, with the trajectory the live suite measured ──────
+# ── The five silence twins, with a scripted trajectory ───────────────────────
 #
 # `who_said` is the lookup for every case that "searched": it is the one read
 # on the table whose R-27 answer this harness can choose deterministically and
@@ -68,8 +66,8 @@ def _omniroute_key(monkeypatch):
 # true `ok`. No result is stubbed anywhere in this file's end-to-end half; the
 # real tool runs and answers.
 #
-# `other-service-command` uses `weather` instead, because the shape the suite
-# measured there is the OTHER non-ok status — «the forecast is unreliable» is a
+# `other-service-command` uses `weather` instead, because the shape there is
+# the OTHER non-ok status — «the forecast is unreliable» is a
 # wiring gap relayed as news, which R-27 calls `unavailable` and which R-97
 # must refuse on exactly as it refuses a `nothing_found`.
 
@@ -123,13 +121,12 @@ async def _drive(name: str, body: str, window: list[str], script: list[ScriptedT
 
 @pytest.mark.parametrize("name,body,window,lookup,reply", FALSE_SPEAK_TWINS)
 async def test_the_five_silence_twins_stay_silent(name, body, window, lookup, reply):
-    """4/5 -> 0/5. Each case looks, comes back empty, and tries to take the
+    """All five stay silent. Each case looks, comes back empty, and tries to take the
     floor to say so; the room must hear nothing.
 
     The assertion is on `Trajectory.sent` rather than on the veto, because
     "send_reply was refused" and "the room heard nothing" are different
-    verdicts and only the second is the one #216 is about — design 35 §9 gap 3
-    settled that for this suite.
+    verdicts and only the second is the one R-97 is about.
     """
     trajectory = await _drive(name, body, window, [ScriptedTurn(
         tool_calls=[lookup, ("send_reply", {"text": reply})], final_text=reply,
@@ -148,11 +145,10 @@ async def test_the_five_silence_twins_stay_silent(name, body, window, lookup, re
 
 
 async def test_the_fifth_twin_that_declined_on_its_own_still_declines():
-    """The live suite's `status-update` read 0/5 — she already declined it, and
+    """`status-update`: she already declines it, and
     a rule that only ever ADDS silence has to be shown not to have turned that
     correct silence into an error (an R-8 cap cut, a silent failure, a
-    stop_reason of None). It is the fifth of the five and the reason the
-    headline is 4/5 rather than 5/5."""
+    stop_reason of None). It is the one twin that is not a false-speak."""
     trajectory = await _drive(
         "status-update", "check this out 👉 https://example.com/that-thing",
         ["你哋睇咗尋晚嗰場波未", "睇咗 勁"],
@@ -193,7 +189,7 @@ async def test_a_lookup_that_found_something_still_speaks():
 
 
 async def test_a_turn_that_never_looked_still_speaks():
-    """Design 35 §3.6's fast path: the value of speaking is visible in what is
+    """The fast path: the value of speaking is visible in what is
     already in front of her — the transcript, standing, notes, memory — and she
     answers without opening a tool at all. Zero lookups is not "came back
     empty", and a rule that read it as one would silence the majority of the
@@ -211,7 +207,7 @@ async def test_a_tag_turn_that_found_nothing_still_answers():
     """The occasion boundary, through the real tag path and not asserted off
     the keyword that sets it.
 
-    Design 35 §3② draws this line and it is the reason R-97 is not a general
+    This line is the reason R-97 is not a general
     rule: in tagged mode «I looked and there is nothing» is an acceptable
     obligation, because she was called. Arming the rule on the tag path would
     turn every honest "I checked and it isn't there" into `no_send_call` — a
@@ -220,7 +216,7 @@ async def test_a_tag_turn_that_found_nothing_still_answers():
 
     **`final_text=""` is load-bearing here and nowhere else in this file.** The
     tag path RECOVERS prose written without a `send_reply` call into a delivery
-    (DEC-93) — a gate participation is exempt from (design 36 §7 (2)) — so a
+    (DEC-93) — a gate participation is exempt from — so a
     tag turn that ends with the same words it tried to send lands them in the
     room whether the guard refused or not, and the assertion below would hold
     against a rule that DID fire. Ending with no prose is what leaves the send
@@ -307,7 +303,7 @@ def test_a_lookup_that_was_cancelled_or_raised_never_looked_anywhere():
 def test_the_rule_is_off_unless_a_caller_arms_it():
     """`lookups=None` is the tag path — she was called, so «I looked and there
     is nothing» is an answer she owes, not noise. The default matters as much
-    as the rule: every construction site that predates #216 keeps its
+    as the rule: every existing construction site keeps its
     behaviour."""
     guard = _guard(lookups=None)
     guard._after_tool(_After("who_said", status="nothing_found"))
@@ -316,7 +312,7 @@ def test_the_rule_is_off_unless_a_caller_arms_it():
 
 def test_a_status_free_result_is_not_a_lookup():
     """`load_transcript` is `read_only` and deliberately carries NO status —
-    its empty list IS the answer (ADR 0009 §2). It is out of `lookup_tools()`
+    its empty list IS the answer (ADR 0009). It is out of `lookup_tools()`
     by declaration, and this pins the consequence: reading older messages and
     then speaking is not "went looking and came back empty"."""
     guard = _guard()

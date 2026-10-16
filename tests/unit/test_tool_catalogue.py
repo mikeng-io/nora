@@ -1,6 +1,6 @@
 """`ToolRegistry.tool_catalogue()` — the index the model selects from.
 
-The catalogue is the selection half of `design/tool-catalogue/`: one line per
+The catalogue is the selection half of tool loading: one line per
 tool, every tool, resident in every prompt, so that the full schemas need not
 be. These tests are the line discipline that keeps it an INDEX. Without them
 it rots back into a second copy of the descriptions, which is precisely what
@@ -17,75 +17,26 @@ from nora.agent.tools import HOT_TOOLS, LOADER_TOOL, NATIVE_TOOLS, on_memory_sur
 
 ENC = tiktoken.get_encoding("cl100k_base")
 
-# The block ceiling. This is gate 2a of `design/tool-catalogue/05-measurement.md`
-# and it is the one that actually protects the change: the catalogue is paid on
-# EVERY call of EVERY turn, so aggregate growth is what turns a 1k index back
-# into a 22k schema dump. Measured at 1,021 when this landed — 27% of headroom,
-# deliberately not sized to the current value.
+# The block ceiling, in tokens, asserted over the LARGEST PER-PLATFORM tag
+# catalogue (`_tag_catalogue`: the registered tools `ToolScope` admits for a
+# tag turn, every optional tool wired).
 #
-# RE-SET 2026-09-23, 1,400 -> 2,000, because the LINE changed definition, not
-# because lines drifted. It was each tool's first sentence — the «what» alone —
-# and a deferred turn judging from «Work out a number exactly» skipped
-# `calculate` (tool_selection arm B). It is now ADR 0007's L1 paragraph, what +
-# WHEN, pinned by `test_the_opening_paragraph_is_an_l1`; that measures 1,702.
-# Still an index: 7.7% of the 22,130 tokens of schemas it replaces. Headroom
-# ~18%, again not sized to the current value.
+# The catalogue is paid on EVERY call of EVERY turn, so aggregate growth is
+# what turns a small index back into a full schema dump. Each line is ADR
+# 0007's L1 paragraph (what + WHEN), pinned by
+# `test_the_opening_paragraph_is_an_l1`. The ceiling is deliberately not sized
+# to the current value: it leaves headroom over the real
+# block. Raise it only for a new tool, from the MEASURED block and with the
+# tool's own line count, never for a line rewritten to fit; `MEAN_CEILING`
+# below binds per-line drift.
 #
-# RE-SET 2026-09-29, 2,000 -> 2,100, for a NEW TOOL, not for drift:
-# `record_query` (design/cognition-loop/15-map.md §4) adds one line of 35
-# tokens to a block measured at exactly 2,000 over 63 lines. With it, 64
-# lines at a mean of 30.9, under `MEAN_CEILING` below, which is what binds
-# per-line drift; no existing line changed. The headroom the 2026-09-23 re-set
-# left had been spent by tools added since, one line each. 2,100 holds this
-# line and roughly two more; the next tool that needs more re-sets this with
-# its own line count, never a line rewritten to fit.
-#
-# RE-SET 2026-09-30, 2,100 -> 2,250, for FOUR NEW TOOLS, not for drift:
-# Nora's computer (design/sandbox-runtime §4, DEC-243) adds `computer_run`
-# (39 tokens), `computer_read` (30), `computer_write` (31) and
-# `computer_edit` (29), 132 tokens on a block measured at 2,045 over 64
-# lines, total 2,177 over 68 at a mean of 31.1, under `MEAN_CEILING`. No
-# existing line changed. 2,250 holds these and roughly two more lines.
-#
-# RE-SET 2026-10-01, 2,250 -> 2,300, for TWO NEW TOOLS, not for drift: the
-# Cognition session's `rollup_read` (38 tokens) and `standing_read` (26) on top
-# of master's block (2,216 over 69 lines): total 2,280 over 71 at a
-# mean of 32.1, under `MEAN_CEILING`. No existing line changed. Both are
-# Dreamer-only (`DREAMER_LOOP_TOOLS`): `ToolScope.admits` keeps them off every
-# tag turn's tools and catalogue, so a tag turn pays NOTHING for their lines.
-# They were counted only because `ToolRegistry.tool_catalogue()` lists every
-# registered tool (`test_every_registered_tool_has_a_catalogue_line`), which is
-# not what any turn is shown. (The sentence that stood here, «a tag turn pays
-# their lines», was wrong, and raised the ceiling for a cost nobody pays.)
-#
-# RE-SET 2026-10-01 again, 2,300 -> 2,400, for TWO MORE NEW TOOLS, not for
-# drift: S3a (design/sandbox-runtime §6, §7) adds `computer_export` (32
-# tokens) and `computer_import` (28) on top of the two reads above: total
-# 2,342 over 73 lines at a mean of 31.1. No existing line changed. The artifact tool's
-# line (38) left in S3b, which gave some of this back.
-#
-# RE-SET 2026-10-01 a third time, 2,400 -> 2,500, for TWO NEW TOOLS, from the
-# MEASURED block, not raised blindly: `document_publish` (35 tokens) and
-# `document_read` (34), design/artifact §26, on master's 2,344 over 73 lines:
-# total 2,413 over 75 at a mean of 32.2, under `MEAN_CEILING`. No existing line
-# changed. Both ship withheld (`[documents] enabled = false`), so a live turn
-# pays nothing for them until the portal pages exist. 2,500 holds these and
-# roughly two more lines.
-#
-# RE-SET 2026-10-09, 2,500 -> 2,600, for ONE NEW TOOL, from the MEASURED block:
-# `video_create` (25 tokens, design/video-generation, DEC-305) on master's 2,485
-# over 77 Discord lines: total 2,510 over 78. The line was cut from 35 to 25
-# before this re-set; no existing line changed. It ships withheld
-# (`[video_gen] enabled = false`), so a live turn pays nothing for it until the
-# operator turns it on. 2,600 holds it and roughly three more lines.
-#
-# MEASURED 2026-10-01 against what a tag turn is actually shown (fix PR C, review
-# of 2026-09-30, minor 3): the ceiling is asserted over the LARGEST PER-PLATFORM
-# tag catalogue (`_tag_catalogue`: the registered tools `ToolScope` admits for
-# a tag turn, every optional tool wired). That is Discord's, 2,310 tokens over
-# 72 lines; Signal, WhatsApp and Instagram are 2,150 over 66. 2,250 does NOT hold
-# Discord's (by 60), so it is not restored; 2,500 stays, which is the ceiling
-# from the row above and leaves 190 over the real block, about five lines.
+# Dreamer-only tools (`DREAMER_LOOP_TOOLS`) are kept off every tag turn's tools
+# and catalogue by `ToolScope.admits`, so a tag turn pays NOTHING for their
+# lines; they are counted only by `ToolRegistry.tool_catalogue()`, which lists
+# every registered tool (`test_every_registered_tool_has_a_catalogue_line`)
+# and is not what any turn is shown. Tools that ship withheld
+# (`[documents] enabled = false`, `[video_gen] enabled = false`) cost a live
+# turn nothing until they are turned on.
 BLOCK_CEILING = 2_600
 
 #: The platforms a tag turn runs on. The catalogue differs only by the tools
@@ -93,23 +44,18 @@ BLOCK_CEILING = 2_600
 #: tag turn admits.
 TAG_PLATFORMS = ("signal", "discord", "whatsapp", "instagram")
 
-# The per-line ceiling, and it was REVISED after measurement. The bundle
-# asserted 20 from an estimate; rendering the real thing put eleven lines
-# between 21 and 31, and reading them showed the lines were right and the
-# number was wrong — the extra tokens ARE the discriminator in exactly the
-# pairs that need one (`search_memory` «in this group's history» against
+# The per-line ceiling. Lines carry the tokens that discriminate between
+# neighbours (`search_memory` «in this group's history» against
 # `search_memory_workspace` «across EVERY room»; `create_event` «a NEW
-# gathering» against `update_event` «ALREADY proposed»). Cutting those to fit
-# would have removed the reason the line exists.
+# gathering» against `update_event` «ALREADY proposed»), so cutting them to a
+# tighter number would remove the reason the line exists.
 #
 # So this is set where it catches the failure it is FOR — a line that has
 # become a description — rather than where it forces cosmetic surgery on lines
 # doing real work. A description is 100+ tokens; nothing legitimate is near 40.
 # The block ceiling and the mean below are what bind ordinary drift.
 LINE_CEILING = 40
-# 25 -> 33 on the same 2026-09-23 re-definition: a when-clause costs ~8-12
-# tokens and every line now carries one (measured mean 30.0; the 16 openings
-# that ALREADY carried one averaged 29.6 before any rewrite).
+# A when-clause costs ~8-12 tokens and every line carries one.
 MEAN_CEILING = 33
 
 
@@ -195,10 +141,10 @@ def test_confusable_pairs_are_discriminated_in_the_catalogue_itself():
     """The whole risk of a one-line catalogue is selection between neighbours,
     so the neighbours are pinned HERE rather than left to a model eval.
 
-    `where_is`/`where_been` is the pair that measured badly and was repaired at
-    the docstring: «was last seen» never said RIGHT NOW, so both lines read as
-    questions about the past. The other three already discriminated; they are
-    pinned so a docstring edit cannot quietly remove the distinction.
+    `where_is`/`where_been` is the pair most easily confused: unless `where_is`
+    says RIGHT NOW, both lines read as questions about the past. The other three
+    discriminate already; they are pinned so a docstring edit cannot quietly
+    remove the distinction.
     """
     by_name = {line.split(" — ")[0][2:]: line for line in _lines()}
 

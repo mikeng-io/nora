@@ -1,8 +1,8 @@
 """`nora.agent.room` — the scope the three room-scoped tools resolve inside.
 
 Every fixture here is shaped like the live `Ridgeline` group as `listGroups`
-actually returned it on 2026-08-06: three member records, two of which are the
-same human's two Signal accounts, and one of which is Nora herself.
+returns it: three member records, two of which are the same human's two Signal
+accounts, and one of which is Nora herself.
 """
 
 from __future__ import annotations

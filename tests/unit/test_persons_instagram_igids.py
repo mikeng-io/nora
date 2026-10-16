@@ -1,10 +1,10 @@
 """`Persons.instagram_igids` — the person index knows WHICH Instagram id is
-which (design/instagram-adoption/17 P2).
+which.
 
 `Persons.index` is `(platform, value) -> person_id` and drops the id kind, so
 `platform_ids("instagram", p)` returns the fbid and the igid mixed: both are
 decimal strings, and the wrong one validates everywhere and names a different
-account or none (design/instagram-adoption/02). Every id below is synthetic,
+account or none. Every id below is synthetic,
 in `identity.example.toml`'s placeholder ranges.
 """
 

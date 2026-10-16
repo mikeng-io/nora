@@ -1,11 +1,10 @@
-"""`stamp`: a record's time as a calendar moment and an age
-(design/self-awareness/08 §1).
+"""`stamp`: a record's time as a calendar moment and an age.
 
-The transcript tools returned epoch milliseconds until 2026-09-25, so a row
-she fetched to answer «what did we say yesterday» carried no day she could
-read. These pin the three things the form exists for: the LOCAL day (an
-evening in Hong Kong is the next morning's date in UTC, and the wrong day is
-the whole failure), the weekday, and the same age wording as `age`.
+A row the transcript tools return for «what did we say yesterday» must carry a
+day she can read, not epoch milliseconds. These pin the three things the form
+exists for: the LOCAL day (an evening in Hong Kong is the next morning's date
+in UTC, and the wrong day is the whole failure), the weekday, and the same age
+wording as `age`.
 """
 
 from __future__ import annotations

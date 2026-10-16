@@ -1,5 +1,4 @@
-"""`nora.domain.speech_markup`: the deterministic half of the speech formatter
-(design/voice-channel/08).
+"""`nora.domain.speech_markup`: the deterministic half of the speech formatter.
 
 The formatter's model may ADD pauses and interjection tags and nothing else.
 These tests are the adversary: each feeds `check` an output a cheap model
@@ -35,8 +34,7 @@ _BASE = normalise(_REPLY)
     "`code` 同 __底線__ 同 ~~劃走~~",
     "家庭 👨‍👩‍👧 出街 1️⃣",
     "<#0.50#> 呢個係我自己打嘅",
-    # A code fence's backticks go; the words after them stay (review,
-    # 2026-10-01: the first fence rule ate the rest of the line).
+    # A code fence's backticks go; the words after them stay.
     "睇吓 ```python 呢段 5 行``` 先",
     "```\n一行\n```",
     "สวัสดี नमस्ते",
@@ -159,7 +157,7 @@ def test_a_pause_beside_a_number_is_still_allowed():
 
 
 def test_a_dropped_combining_mark_is_a_changed_word():
-    """Thai and Devanagari carry vowels as combining marks (review, 2026-10-01)."""
+    """Thai and Devanagari carry vowels as combining marks."""
     assert check("สวัสดี ครับ", "สวสด ครับ") == "words_changed"
     assert check("नमस्ते दोस्त", "नमसत दोस्त") == "words_changed"
 

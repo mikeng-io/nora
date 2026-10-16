@@ -1,9 +1,9 @@
-"""DEC-190 — place identity (design/27 §3.7, ADR 0014, issue #339).
+"""DEC-190 — place identity (ADR 0014).
 
 The regressions ADR 0014's Consequences section says the build owes, each
 against the defect it names: a single `(subject, kind)` slot that let a second
 `home` cluster overwrite the first one's coordinates while the first kept the
-links (88 stays linked 3.8-12.1 km from where they happened), `unlabeled`
+links (stays linked kilometres from where they happened), `unlabeled`
 stored as a deletion, and a Speed-2 recheck that wrote a flipped place at the
 subject's chronologically first stay.
 
@@ -29,7 +29,7 @@ from nora.testing.mobility import FakeMobilityStore
 
 _HKT = ZoneInfo("Asia/Hong_Kong")
 _DAY = 86_400_000
-# 2026-09-01 00:00 HKT, a Tuesday.
+# Midnight HKT on a Tuesday.
 _T0 = int(datetime(2026, 9, 1, tzinfo=_HKT).timestamp() * 1000)
 NOW = _T0 + 30 * _DAY
 
@@ -97,7 +97,7 @@ def test_a_subject_with_two_residences_gets_two_home_places():
 
 
 def test_the_corrupted_row_keeps_its_links_and_the_displaced_cluster_gets_a_new_id():
-    # Regression 1 — the measured defect. Row 7 holds HOME_B's coordinates
+    # Regression 1. Row 7 holds HOME_B's coordinates
     # (the later cluster overwrote them) but HOME_A's links (the first
     # cluster's backfill). Identity must follow the LINKS: HOME_A keeps id 7
     # and HOME_B gets a fresh row, so no stay ends up pointing 5 km away.
@@ -150,8 +150,7 @@ def test_the_match_radius_is_not_the_cluster_radius():
 
 
 def test_duplicate_tags_in_two_circles_merge_into_one_place():
-    # Regression 6: the measured duplicate pair is 50.3 m apart in two
-    # different circles and split one residence's history near-evenly.
+    # Regression 6: two tags ~50 m apart in different circles are one residence.
     north = (HOME_A[0] + 25 / 111_320.0, HOME_A[1])
     south = (HOME_A[0] - 25 / 111_320.0, HOME_A[1])
     tags = [
@@ -165,7 +164,7 @@ def test_duplicate_tags_in_two_circles_merge_into_one_place():
 
 
 def test_a_subject_with_no_tagged_place_is_still_auto_identified():
-    # Regression 7: tags cover 27.9% of stays; derivation is outranked,
+    # Regression 7: derivation is outranked,
     # never removed.
     [place] = _plan(_nights(HOME_A, range(5)))
     assert place.saved_place_id is None
@@ -329,9 +328,8 @@ async def test_a_steady_state_cycle_writes_no_place():
 
 
 async def test_last_seen_follows_the_stays_even_when_nothing_else_changes():
-    # Independent review 2026-09-28: the steady-state diff left first/last
-    # seen out, so a place whose geometry and label never moved kept a
-    # last_seen from its second day while its stays ran on.
+    # The steady-state diff includes first/last seen: a place whose geometry
+    # and label never move must still advance its last_seen as its stays run on.
     store = FakeMobilityStore()
     rollup = MobilityRollup(store=store, config=CFG)
     fid = 1

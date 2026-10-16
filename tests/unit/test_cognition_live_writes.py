@@ -1,4 +1,4 @@
-"""The Cognition session writes live (the cut-over, 2026-10-03): each verb runs the
+"""The Cognition session writes live: each verb runs the
 validator the tag path runs and then commits through the tier's own store, stamped
 `cognition:<unit>`, and a refusal still comes back to the model. One test per verb,
 over in-memory stores, with a scripted agent (`tests/unit/cognition_rig.py`)."""

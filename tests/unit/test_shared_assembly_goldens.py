@@ -1,11 +1,9 @@
-"""Step 1 of `design/context-assembly/04-every-occasion.md` §5: the builders the
-occasions each wrote for themselves become shared ones, and NOT ONE BYTE any
-model reads changes.
+"""The shared assembly builders render byte-identical to what each occasion built for
+itself.
 
 **The goldens in `tests/fixtures/context_assembly_step1_goldens.json` were
-captured from the code BEFORE it was refactored** (`master` at `db8ae781`), over
-synthetic fixtures, and are the criterion. A step declared byte-identical that is
-not is a defect, so what is compared is the whole rendered text each occasion
+captured from the code BEFORE it was refactored**, over synthetic fixtures, and
+are the criterion. What is compared is the whole rendered text each occasion
 sends, not a substring of it:
 
 * `assemble` — its default output on blocks including an empty-body one, and the

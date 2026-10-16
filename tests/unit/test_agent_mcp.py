@@ -32,8 +32,8 @@ class _FakeMcpServer:
     itself (registered via the low-level ``mcp.server.lowlevel.Server``
     that FastMCP wraps at ``app._mcp_server``) with one that raises. That is
     the MCP protocol's tool-*listing* call, distinct from ``pulse_broken_tool``
-    above which fails only when *invoked*. Verified empirically against the
-    installed `mcp`==1.29.0: `Server._handle_request` catches a plain
+    above which fails only when *invoked*. In the installed `mcp`
+    (1.29.0), `Server._handle_request` catches a plain
     `Exception` raised from a request handler and turns it into a JSON-RPC
     error response (`mcp/server/lowlevel/server.py`), which the client-side
     `ClientSession.list_tools()` then raises as `mcp.shared.exceptions.McpError`
@@ -144,7 +144,7 @@ def test_missing_token_env_yields_absent_not_raised(fake_mcp_server, monkeypatch
     assert "fake" not in groups
 
 
-# ---- tool-name collisions (Finding 3, final-review) -----------------------
+# ---- tool-name collisions -------------------------------------------------
 
 class _NamedToolsMcpServer:
     """A real MCP server (background thread, like `_FakeMcpServer` above)

@@ -1,10 +1,9 @@
-"""The sub-agent tools, step 3 (design/subagent §3, DEC-283): `subagent_create`, `subagent_list`,
+"""The sub-agent tools (DEC-283): `subagent_create`, `subagent_list`,
 `subagent_read`, `subagent_cancel`.
 
 Driven through the real `ToolRegistry` surface and the real `SubagentDesk` over the in-memory
-outbox. Two guards are load-bearing and are proved by reverting them (see the commit that added
-this file): ROOM SCOPING (`SubagentDesk._own`, so another room's job id is an unknown id) and
-the tools being ABSENT unless `[subagent] enabled` (`ToolRegistry._withheld`).
+outbox. Two guards are load-bearing: ROOM SCOPING (`SubagentDesk._own`, so another room's job id
+is an unknown id) and the tools being ABSENT unless `[subagent] enabled` (`ToolRegistry._withheld`).
 """
 
 from __future__ import annotations
@@ -465,7 +464,7 @@ def _media() -> Any:
 
 
 
-# -- review fixes ------------------------------------------------------------------------
+# -- argument validation, workspace paths, cancel edge cases -----------------------------
 
 
 @pytest.mark.parametrize("over", [{"inputs": "inbox/a.zip"}, {"document_ids": "abc"}])
@@ -534,7 +533,7 @@ async def test_the_workers_document_tools_refuse_a_document_of_another_room(tmp_
     assert revised["status"] != "ok"
 
 
-# -- titles (operator, 2026-10-05) ---------------------------------------------------------
+# -- titles ---------------------------------------------------------------
 
 
 async def test_a_title_of_exactly_sixty_characters_is_accepted_and_kept():

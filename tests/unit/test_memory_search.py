@@ -1,6 +1,5 @@
-"""The retrieval walk (`nora.agent.memory_search`, design/unified-memory/
-25-memory-graph.md §4) over `FakeMemoryIndex`, which answers through the same
-scope predicate the contract suite holds `SqlMemoryIndex` to. The scope suite
+"""The retrieval walk (`nora.agent.memory_search`) over `FakeMemoryIndex`, which answers through
+the same scope predicate the contract suite holds `SqlMemoryIndex` to. The scope suite
 against Postgres is `tests/integration/test_memory_scope.py`; this is the walk's
 own logic: seeds, the hub rule, the listed-room rule, adaptive depth, the
 ceiling, ranking, statuses and the packet.
@@ -209,9 +208,8 @@ async def _lexical(index: FakeMemoryIndex, query: str = "ramen", metrics: Metric
 
 
 async def test_kinds_narrow_the_answer_not_the_hops_so_an_outing_is_reached() -> None:
-    """Independent review of #32: an episode has no vector and its text is a
-    kind and an interval, so a search for `places` that applied the kinds
-    inside the hops too found almost nothing. The message said during the
+    """An episode has no vector and its text is a kind and an interval, so applying the kinds inside
+    the hops too would find almost nothing for a search for `places`. The message said during the
     outing seeds (the bridge pass), the hop reaches the outing, and the
     answer holds the outing alone. The outing is presence-permitted here
     (`_B` has `location`, lists Kit, and the row passes its lineage)."""
@@ -245,7 +243,7 @@ async def test_status(nodes: list[IndexedNode], state: IndexState, status: str) 
 
 
 async def test_the_lexical_fallback_is_always_partial_never_nothing_found() -> None:
-    """65 V2: with no embedder (`[memory_index] embed` off) the seeds are
+    """With no embedder (`[memory_index] embed` off) the seeds are
     lexical, and a lexical miss is not «you never said that»."""
     hit = await _lexical(FakeMemoryIndex([_msg("1", "ramen")]))
     assert (hit.status, [h.node.source_id for h in hit.hits]) == ("partial", ["1"])
@@ -313,7 +311,7 @@ async def test_a_name_of_someone_this_room_does_not_list_is_not_exact() -> None:
 @pytest.mark.parametrize(("query", "names", "terms"), [
     ("what did they say about the restaurant downtown yesterday?", [], []),
     ("remember the 2026 trip, 3pm at gate 12, room 404?", [], []),
-    # Review of #31: a time, an ordinal, a measure or a name with a number
+    # A time, an ordinal, a measure or a name with a number
     # is not an id.
     ("COVID-19 at 5pm-7pm on the 100th day, iPhone15, 128GB", [], []),
     # A person's name only as written, never a common word or a bare surname
@@ -345,7 +343,7 @@ def test_a_name_is_cased_and_a_url_handle_or_id_is_not() -> None:
 
 
 def test_a_person_is_pinned_by_full_name_and_alias_never_the_bare_surname() -> None:
-    """Review of #31: a family name pins everything about the family, and a
+    """A family name pins everything about the family, and a
     romanised one (Ho, Lo, Ma) is two letters."""
     kit = PersonRef("kit", "Kit", "kit", first_name="Kit", last_name="Ho", aliases=("阿傑",))
     assert sorted(memory_search._names(kit)) == ["Kit", "Kit", "Kit Ho", "阿傑"]
@@ -409,7 +407,7 @@ async def test_the_packet_names_people_and_rooms_never_ids_and_screens_identifie
     assert "98765432" not in text and "signal:b" not in text and "'kit'" not in text
 
 
-# --- review fixes (PR #16) ------------------------------------------------------
+# --- screening and the listed-room rule ------------------------------------------------------
 
 
 @pytest.mark.parametrize("ident", ["+85291234567", "3f2a9c1e-8b7d-4e6f-9a01-23456789abcd"])

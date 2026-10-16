@@ -1,6 +1,6 @@
 """The tick, with a fake clock and a stub `fire` — no model, no adapter, no
 network. Every collaborator `HeartbeatLoop` has arrives through `__init__`,
-including the clock, which is what makes the whole of §5 testable here."""
+including the clock, which is what makes the whole tick testable here."""
 
 from __future__ import annotations
 
@@ -157,13 +157,13 @@ async def test_a_row_not_yet_due_does_not_fire():
 
 
 async def test_rows_are_grouped_by_conversation_and_requester_one_turn_each():
-    """§5.2: a turn has one conversation scope AND one requester.
+    """A turn has one conversation scope AND one requester.
 
     One conversation scope, because a turn has one Room, one policy decision and
     one Deliverer binding — sharing a turn across conversations leaks one room's
     reminder into the other.
 
-    One REQUESTER, because §6.4 derives the whole turn from a single
+    One REQUESTER, because the whole turn is derived from a single
     `requester_person_id`: the `tagger`, the `Room` scope it grants, the peer
     card, and the `sender_name` on the synthetic message. Two people's rows in
     one turn would answer person B's reminder inside a turn scoped to person A's
@@ -198,7 +198,7 @@ async def test_rows_are_grouped_by_conversation_and_requester_one_turn_each():
 
 
 async def test_a_revoked_conversation_never_fires():
-    """§5.1: policy.toml loads once at startup and a row may be 30 days old, so
+    """policy.toml loads once at startup and a row may be 30 days old, so
     trust withdrawn in between must bite at fire time."""
     store = FakeReminderStore()
     row = _row()
@@ -225,7 +225,7 @@ async def test_a_revoked_conversation_never_fires():
 
 
 async def test_a_held_slot_defers_to_the_next_tick():
-    """§5.3: never shed, never wait. The row stays PENDING and the tick moves on
+    """Never shed, never wait. The row stays PENDING and the tick moves on
     — a reminder is not second-critical and the row persists.
 
     And it is COUNTED. A deferral is invisible to every other signal this
@@ -312,21 +312,20 @@ async def test_the_liveness_gauge_climbs_when_nothing_is_ticking():
 
 
 # --------------------------------------------------------------------------
-# The state machine reads the OUTCOME it was handed (§8.1).
+# The state machine reads the OUTCOME it was handed.
 # --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("outcome", ["failed_timeout", "failed_error", "not_wired"])
 async def test_an_outcome_that_is_not_sent_resolves_the_row_failed(outcome):
-    """§8.1: the fire path answers `sent | failed_policy | failed_timeout |
-    failed_error`, and §5's pseudocode records `done|failed` FROM it.
+    """The fire path answers `sent | failed_policy | failed_timeout |
+    failed_error`, and the state machine records `done|failed` FROM it.
 
-    Only an EXCEPTION used to produce FAILED, so every non-raising failure —
-    a timed-out turn, a turn that reported its own error, and today's
-    `not_wired` stub — was written to the row as `state=done` with a failure
-    string in `outcome`. The row then reads "delivered" to `due()`, to
-    `pending_for`, and to any operator who queries by state; only the free-text
-    column disagrees. A reminder that never reached the group must not be
+    A non-raising failure — a timed-out turn, a turn that reported its own error,
+    and the `not_wired` stub — is recorded as FAILED, never as `state=done` with a
+    failure string in `outcome`: the row would read "delivered" to `due()`, to
+    `pending_for`, and to any operator who queries by state, while only the
+    free-text column disagrees. A reminder that never reached the group must not be
     recorded as one that did.
     """
     store = FakeReminderStore()
@@ -366,10 +365,9 @@ async def test_the_sent_outcome_is_the_only_one_that_is_done():
 
 
 async def test_a_store_failure_while_claiming_strands_neither_row_nor_conversation():
-    """A store that raises on the SECOND claim used to do two things at once:
-    leave the first row FIRING with no counter and no terminal state, and take
-    the whole tick down — so every conversation ordered after it was silently
-    skipped until the next tick, and the one after that if the fault persisted.
+    """A store that raises on the SECOND claim must not leave the first row
+    FIRING with no counter and no terminal state, nor take the whole tick down so
+    that every conversation ordered after it is skipped until the next tick.
 
     Both halves are asserted here: the already-claimed row is resolved, and the
     later conversation still fires.
@@ -400,12 +398,11 @@ async def test_a_store_failure_while_claiming_strands_neither_row_nor_conversati
 
 
 async def test_a_store_failure_while_resolving_strands_neither_row_nor_conversation():
-    """The same guarantee on the way OUT. The resolve loop was unguarded too, so
-    a store that failed writing the FIRST row's terminal state skipped the
-    second row's — leaving it FIRING (and therefore only recoverable at the next
-    boot) — and killed the rest of the tick with it.
+    """The same guarantee on the way OUT: a store that fails writing the FIRST
+    row's terminal state must not skip the second row's (leaving it FIRING, and
+    therefore only recoverable at the next boot) or kill the rest of the tick.
     """
-    store = _StoreWithOneFailure(fail_on="mark", nth=1)   # claim() no longer marks
+    store = _StoreWithOneFailure(fail_on="mark", nth=1)   # claim() is separate from mark()
     a1 = _row(conversation_id="conv-1", due_at=T0 - timedelta(minutes=3))
     a2 = _row(conversation_id="conv-1", due_at=T0 - timedelta(minutes=2))
     b1 = _row(conversation_id="conv-2", due_at=T0 - timedelta(minutes=1))
@@ -417,7 +414,7 @@ async def test_a_store_failure_while_resolving_strands_neither_row_nor_conversat
     await loop.tick()          # must not raise
 
     # a1's terminal write is the one that failed: it stays FIRING and boot
-    # recovery sweeps it (§8.2). That is the visible loss; the point of this
+    # recovery sweeps it. That is the visible loss; the point of this
     # test is that it is the ONLY one.
     assert (await store.get(a1.id)).state is ReminderState.FIRING
     assert (await store.get(a2.id)).state is ReminderState.DONE
@@ -434,13 +431,10 @@ async def test_a_store_failure_while_resolving_strands_neither_row_nor_conversat
 async def test_a_row_cancelled_during_an_earlier_turn_is_not_resurrected():
     """`due()` is a query, not a claim, so its batch is a snapshot of a past
     moment — and a turn awaits, so the world moves underneath it. A cancel
-    landing while an earlier conversation's turn is in flight MUST win.
-
-    It did not: both stores' `mark` updated by id alone with no state predicate,
-    so the "already resolved" guard was dead code and the cancelled row went
-    CANCELLED -> FIRING -> DONE and would have been spoken. The claim is a
-    compare-and-set from PENDING now, which is the only thing that can decide
-    this race in the store.
+    landing while an earlier conversation's turn is in flight MUST win: the claim
+    is a compare-and-set from PENDING, which is the only thing that can decide
+    this race in the store, so a cancelled row never goes CANCELLED -> FIRING ->
+    DONE and is never spoken.
     """
     store = FakeReminderStore()
     first = _row(conversation_id="conv-1", due_at=T0 - timedelta(minutes=2))
@@ -475,9 +469,9 @@ async def test_a_row_cancelled_during_an_earlier_turn_is_not_resurrected():
 async def test_boot_recovery_counts_every_row_it_sweeps():
     """`nora_reminders_fired_total`'s own spec says a reminder that vanishes
     must never vanish from the metrics too — and the sweep is the one path that
-    makes reminders vanish without any tick having run. It logged a count and
-    incremented nothing, so the rows a crash ate were invisible to every
-    dashboard and every alert."""
+    makes reminders vanish without any tick having run. It must increment the
+    counter, or the rows a crash ate are invisible to every dashboard and every
+    alert."""
     store = FakeReminderStore()
     stuck_a = _row(state=ReminderState.FIRING)
     stuck_b = _row(state=ReminderState.FIRING)
@@ -550,12 +544,11 @@ async def test_a_constructed_loop_takes_the_gauge_back_from_the_sentinel():
 
 
 async def test_rows_of_two_kinds_same_requester_are_two_turns():
-    """DEC-139: the grouping key gains `kind`. A plain reminder and a
+    """DEC-139: the grouping key includes `kind`. A plain reminder and a
     row of another kind, same requester, same conversation, same tick, are TWO
     turns — never a mixed batch whose kind is decided by row order.
-    Accounting consequence (design/event-abstraction/04): the turns split
-    one→two, and `nora_reminders_fired_total` — which increments PER ROW —
-    counts 2 either way."""
+    Accounting consequence: `nora_reminders_fired_total` — which increments PER
+    ROW — counts 2 either way."""
     store = FakeReminderStore()
     plain = _row(text="買奶")
     other = _row(
@@ -579,7 +572,7 @@ async def test_rows_of_two_kinds_same_requester_are_two_turns():
     assert metrics.get("nora_reminders_fired_total", outcome="sent") == 2
 
 
-# ---- design/dreamer-agent-loop/39 D5/D11/D12: the proactive kind -------------
+# ---- the proactive kind -------------
 
 
 from nora.app.proactive_screen import ProactiveScreen  # noqa: E402
@@ -631,7 +624,7 @@ def _proactive_row(note, **kw) -> Reminder:
 
 
 def test_silent_is_done_not_failed():
-    """39 D12's third mapping. Only a proactive act turn can answer `silent`,
+    """The third outcome mapping. Only a proactive act turn can answer `silent`,
     and for it saying nothing is the healthy default — mapped to FAILED it
     reads as a delivery that never happened in every query, in the metric,
     and in the decision log the next decide turn learns from."""
@@ -666,7 +659,7 @@ async def test_a_silent_proactive_turn_resolves_done_with_outcome_silent():
 
 
 async def test_a_proactive_row_is_screened_on_the_flag_not_on_a_person():
-    """39 D5: the owner is the ai_peer id, which `is_allowed` can never admit
+    """The owner is the ai_peer id, which `is_allowed` can never admit
     — a policy that REFUSES every person still fires the row when the room's
     flag is on, and one that ALLOWS every person still refuses it when the
     flag is off. `is_allowed` is never even asked."""
@@ -716,7 +709,7 @@ async def test_a_proactive_row_with_no_screen_wired_fails_closed():
 
 
 async def test_a_tag_path_revision_since_the_link_cancels_the_row():
-    """39 D11: a human settling the thing at 11:00 means Nora does not raise
+    """A human settling the thing at 11:00 means Nora does not raise
     it at 14:00. A TAG-PATH revision after the row's `revision_id` cancels
     it; a background revision (a debrief append, a curator write) does not,
     or a paraphrase would cancel a row on every tag."""
@@ -784,7 +777,7 @@ async def test_a_retired_note_cancels_the_row():
 
 
 async def test_a_pending_proactive_row_on_a_merged_note_follows_its_survivor():
-    """Design 41 §7.5: a note retired `retired-merged` is not a question that
+    """A note retired `retired-merged` is not a question that
     closed — it was folded into another open note — so a pending row about
     it follows the survivor instead of being cancelled. It fires while the
     survivor stands untouched, and is cancelled `moved` once a person revises
@@ -921,7 +914,7 @@ async def test_a_proactive_row_with_no_note_is_screened_on_the_flag_alone():
 
 
 async def test_a_note_the_rows_unit_cannot_reach_fails_closed():
-    """Audit 2026-09-09: `NoteStore.read` answers None for absent, for another
+    """`NoteStore.read` answers None for absent, for another
     unit and for a malformed id — «not reachable», which is not
     «retired». The policy's unit for the room moved between decide and
     fire; the row is FAILED as a wiring gap, never CANCELLED with an outcome

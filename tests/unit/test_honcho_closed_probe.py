@@ -1,4 +1,4 @@
-"""`deploy/honcho-closed-probe.sh` reads the outcomes apart (#633, DEC-259).
+"""`deploy/honcho-closed-probe.sh` reads the outcomes apart (DEC-259).
 
 The probe is the read-back for the one property that matters here: Honcho
 answers with no authentication, so what protects it is where it listens. A probe
@@ -106,7 +106,7 @@ class _World:
         (self.dir / "ss.out").write_text("".join(f"LISTEN 0 4096 {ln} 0.0.0.0:*\n" for ln in lines))
 
     def healthy(self) -> _World:
-        """The state the fix produces: the control port answers at every address,
+        """The healthy state: the control port answers at every address,
         the port is refused (the default), Honcho answers on loopback and to nora
         and over the tailnet, every listener is loopback, the engine is new."""
         for ip in (GATEWAY, LAN):
@@ -185,8 +185,8 @@ def test_a_reset_is_not_a_closed_port_either(world: _World) -> None:
 
 
 def test_an_empty_result_is_an_error_and_never_a_pass(world: _World) -> None:
-    """docker itself failed for that address (no output): the old probe read an
-    empty code as a refusal."""
+    """docker itself failed for that address (no output): an empty code must not
+    read as a refusal."""
     world.healthy().bridge(f"http://{LAN}:8000/health", "EMPTY")
     result = world.run()
     assert result.returncode == 2, result.stdout
@@ -230,7 +230,7 @@ def test_an_ipv6_address_with_no_route_is_covered_by_the_listener_check(world: _
 
 def test_a_listener_on_a_wildcard_address_is_a_fail_in_either_family(world: _World) -> None:
     """The sockets themselves, which need no route to read: `[::]:8000` is the
-    IPv6 half of the old publish."""
+    IPv6 half of the publish."""
     world.healthy().listeners("127.0.0.1:8000", "[::]:8000")
     result = world.run()
     assert result.returncode == 1, result.stdout

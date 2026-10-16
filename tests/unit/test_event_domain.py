@@ -1,8 +1,7 @@
-"""Pure `nora.domain.gatherings` rules migration `0074_event_revision` adds
-(design/cognition-loop/70-migration.md §2 row 2b): the event field modes
-(40-register.md §4), and `Gathering`/`EventRevision` construction refusing a
-mode or confidence the tier does not allow (design 30 §3 check 5). No
-database — the same reason `tests/test_gatherings_domain.py` needs none."""
+"""Pure `nora.domain.gatherings` rules migration `0074_event_revision` adds: the
+event field modes, and `Gathering`/`EventRevision` construction refusing a mode
+or confidence the tier does not allow. No database — the same reason
+`tests/test_gatherings_domain.py` needs none."""
 
 from __future__ import annotations
 
@@ -37,8 +36,8 @@ def _event(**overrides) -> Gathering:
 
 
 def test_event_field_modes_are_the_three_40_register_names() -> None:
-    """40-register.md §4: told, deduced, abduced — never `computed`,
-    `induced` or `said`, the three other tiers get from 10-tiers.md §4."""
+    """Event field modes are told, deduced, abduced — never `computed`, `induced`
+    or `said`, which belong to the other tiers."""
     assert {"told", "deduced", "abduced"} == EVENT_FIELD_MODES
 
 
@@ -75,8 +74,8 @@ def test_a_confidence_outside_low_medium_high_is_refused(bad: str) -> None:
 
 
 def test_the_full_lifecycle_has_seven_statuses() -> None:
-    """design/cognition-loop/40-register.md §3: staged -> proposed ->
-    confirmed -> happened, or cancelled/lapsed/evicted off that chain."""
+    """Status chain: staged -> proposed -> confirmed -> happened, or
+    cancelled/lapsed/evicted off that chain."""
     assert {s.value for s in GatheringStatus} == {
         "staged", "proposed", "confirmed", "happened", "cancelled", "lapsed",
         "evicted",

@@ -1,16 +1,12 @@
 """`render_culture`, the `<culture>` block, `read_culture`, and the two turn
-paths that fill it (design/culture-tier, DEC-207).
+paths that fill it (DEC-207).
 
 The block's value is that it says what the room IS. Every test here is about a
 way it could instead say something else, say nothing when it has something,
 read the wrong room's account, or hold a turn open.
 
-**Every runtime reads it since DEC-207** (2026-09-25). Until then
-`01-the-adaptor §6` authorised one consumer, the participation turn, and this
-file pinned the tag path and the other fire occasions OUT. The operator widened
-the tier to the tag path and every Dreamer pass; the relevance gate stays out on
-#144/#147's evidence (`design/context-assembly/02`), which is pinned where the
-gate's own rows are.
+Every runtime reads it (DEC-207) except the relevance gate, which stays out;
+that is pinned where the gate's own rows are.
 """
 
 from __future__ import annotations
@@ -143,17 +139,16 @@ class _Policy:
 
 
 async def test_the_turn_reads_culture_by_PRIMARY_ID_not_the_arriving_thread():
-    """The trap `design/culture-tier/03-decisions` DEC-181 exists for.
+    """The trap DEC-181 exists for.
 
     A Dreamer adaptor is handed `scopes()`, so it writes under `primary_id`.
     Reading with the occasion's `conversation_id` matches zero rows on any
     conversation carrying more than one id — and renders as «this room has no
     account yet», which is a REAL state, so nothing anywhere reports the miss.
 
-    Every live conversation holds exactly one id today, so a wrong wiring would
-    pass every other test and every production read until the day someone adds
-    a second (#229). This asserts the key actually used.
-    """
+    Every live conversation holds exactly one id, so a wrong wiring would
+    pass every other test and every production read until a conversation gains
+    a second. This asserts the key actually used."""
     culture = _culture()
     path = _fire_path(culture=culture, policy=_Policy("the-conversation"))
 
@@ -192,10 +187,7 @@ async def test_a_store_that_never_answers_is_BOUNDED_by_the_tier_timeout():
 
     Reachable where the `except` above is not: that catches a RAISE, and this
     catches a port that simply never answers while the heartbeat holds this
-    conversation's slot (`FirePath.__init__`'s own argument for bounding the
-    standing read, and the defect that was fixed in `debrief.run` and then
-    RE-CREATED on this path in the same change).
-    """
+    conversation's slot (see `FirePath.__init__` on bounding the standing read)."""
     import asyncio
 
     class _Hangs:
@@ -235,16 +227,9 @@ def _event(kind: str) -> Event:
 
 @pytest.mark.parametrize("kind", ["participation", "reminder", "proactive"])
 async def test_every_fire_occasion_reads_the_rooms_account(kind: str):
-    """DEC-207 widened the tier from the participation turn to every runtime.
+    """Every runtime reads the tier (DEC-207), not only the participation turn.
     A reminder, a gathering and a proactive act turn all speak INTO one room,
-    and `occasion.conversation_id` is that room — so each reads its account.
-
-    This replaced three tests that pinned the opposite (`a reminder firing
-    reads NO culture`, `a proactive act turn reads NO culture`, `the TAG path
-    assembler cannot read culture at all`); the decision they encoded is
-    superseded, not the property that the read is keyed right, which the
-    tests above still hold.
-    """
+    and `occasion.conversation_id` is that room — so each reads its account."""
     culture = _culture(head=_rev("they decide by attrition"))
     path = _fire_path(culture=culture, policy=_Policy("g1"))
 
@@ -254,10 +239,9 @@ async def test_every_fire_occasion_reads_the_rooms_account(kind: str):
 
 
 async def test_the_TAG_path_reads_the_rooms_account_by_PRIMARY_ID():
-    """The tag path (`TranscriptInjection`) — the highest-traffic prompt, and
-    the one #284 was reverted for wiring. DEC-207 authorises it; what must
-    still hold is DEC-181's keying: the room's `primary_id`, never the
-    arriving thread's id."""
+    """The tag path (`TranscriptInjection`) — the highest-traffic prompt — reads
+    the account too (DEC-207); what must hold is DEC-181's keying: the room's
+    `primary_id`, never the arriving thread's id."""
     from nora.engagement.context import TranscriptInjection
 
     culture = _culture(head=_rev("they decide by attrition"))
@@ -329,7 +313,7 @@ class _UnitPolicy:
 
 
 async def test_both_paths_read_the_units_culture_by_the_rooms_UNIT():
-    """C3a: `<unit_culture>` is keyed `unit_culture_key(convo.unit)`, so a room
+    """`<unit_culture>` is keyed `unit_culture_key(convo.unit)`, so a room
     reads its own unit's account and no other."""
     from nora.domain.culture import unit_culture_key
     from nora.engagement.context import TranscriptInjection

@@ -1,6 +1,5 @@
 """The wake policy (`nora.domain.stimuli.decide`) and the SHADOW evaluator
-(`nora.app.wake.WakeEvaluator`) — design/cognition-loop/20-observe.md §3,
-migration step 1.
+(`nora.app.wake.WakeEvaluator`).
 
 Pinned here: each trigger of the wake table, in the table's order; a `waits`
 stimulus never wakes a unit alone; watermark consumption (a would-wake consumes
@@ -27,7 +26,7 @@ from nora.obs.metrics import Metrics
 from nora.testing.stimuli import InMemoryStimulusStore
 
 HK = ZoneInfo("Asia/Hong_Kong")
-# 2026-09-28 15:00 HK — no floor within the default grace.
+# 15:00 HK — no floor within the default grace.
 T = int(dt.datetime(2026, 9, 28, 15, 0, tzinfo=HK).timestamp() * 1000)
 S = 1000
 POLICY = WakePolicy(
@@ -139,8 +138,7 @@ async def test_max_age_fires_in_a_room_that_never_goes_quiet():
 async def test_a_rollup_stimulus_alone_never_wakes_the_unit():
     """DEC-279: a Rollup stimulus rides the next wake and starts none, not after
     `rollup_delay_seconds`, not at `max_age`, not by piling up to `batch_max`.
-    Measured live: six of one unit's nine sessions in a day were a lone
-    deviation closed `no_change`. Nor does it read as a unit backed up."""
+    Nor does it read as a unit backed up."""
     ev, store, clock, metrics = _setup()
     for n in range(POLICY.batch_max + 1):
         await _say(store, clock, kind="rollup", ref=f"deviation|anomaly|p1|{n}")
@@ -153,8 +151,8 @@ async def test_a_rollup_stimulus_alone_never_wakes_the_unit():
 
 
 async def test_a_self_stimulus_is_pending_only_from_its_due_time():
-    """No producer until step 3's `wake_at`; handled generically, and it
-    does not hold the queue open before it is due (20 §3)."""
+    """A `wake_at` stimulus is handled generically, and it does not hold the
+    queue open before it is due."""
     ev, store, clock, _ = _setup()
     await _say(store, clock, kind="self", ref="wake:1", due_ms=clock.ms + 3600 * S)
     clock.advance(3599)
@@ -404,13 +402,13 @@ async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
     assert store.wakes[0].at_ms == clock.ms - 5 * S   # the cutoff is the time bound
 
 
-# ── the on_wake hook (migration step 3a-ii) ─────────────────────────────────
+# ── the on_wake hook ─────────────────────────────────
 
 
 async def test_on_wake_is_never_called_when_none_the_off_wiring():
     """`[cognition] enabled = false` is exactly "the composition root never passes
     `on_wake`" — this is the evaluator-level half of that property: with no
-    hook, a tick behaves byte-identically to before the parameter existed."""
+    hook, a tick behaves byte-identically to a tick with no hook parameter."""
     ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0))
     await _say(store, clock)
     clock.advance(1)
@@ -469,7 +467,7 @@ async def test_on_wake_a_sync_hook_with_no_awaitable_return_is_a_no_op():
     assert metrics.get("nora_errors_total", stage="cognition_session") == 0
 
 
-# ── D2: a time or self wake claims only its own kind (DEC-245), and the ─────
+# ── a time or self wake claims only its own kind (DEC-245), and the ─────
 # ── Rollup stimuli riding along (DEC-279) ─────────────────────────────────────
 
 
@@ -481,7 +479,7 @@ async def _pending(store, unit="nora", *, now_ms=None, clock=None):
 async def test_a_floor_wake_takes_a_pending_rollup_and_leaves_an_unsettled_room_pending():
     """DEC-279: the daily floor's wake is what bounds a Rollup stimulus's wait in
     a unit nobody talks in, so a `time` wake claims it beside its own floor. The
-    room's unsettled messages still wait for their own settling (D2)."""
+    room's unsettled messages still wait for their own settling."""
     ev, store, clock, _ = _setup()
     m = await _say(store, clock)                                   # the room is live
     r = await _say(store, clock, kind="rollup", ref="rollup:colocation:1")
@@ -555,7 +553,7 @@ async def test_the_hook_is_handed_only_what_the_wake_claimed():
     assert seen == [[(2, "rollup"), (3, "self")]]
 
 
-# ── M8: no wake on a time floor until its skill exists (DEC-245) ──────────────
+# ── no wake on a time floor until its skill exists (DEC-245) ──────────────
 
 
 async def _noop_hook(*, unit, view, wake_id, now_ms):
@@ -597,10 +595,10 @@ async def test_a_unit_that_only_records_would_wakes_still_raises_its_floor():
 
 
 async def test_a_time_stimulus_already_pending_wakes_no_session_while_no_skill_ships():
-    """M8, the other half (strongest-tier review of #646): not RAISING a floor
-    is not enough. A floor raised before the gate (or by the previous deploy) is
-    already pending, and it woke a session all the same. It stays pending, is
-    never claimed and never consumed, and wakes the moment the kind is ready."""
+    """Not RAISING a floor is not enough. A floor already pending (raised before
+    the gate, or by an earlier deploy) must not wake a session either. It stays
+    pending, is never claimed and never consumed, and wakes the moment the kind
+    is ready."""
     seen: list[list[str]] = []
 
     async def hook(*, unit, view, wake_id, now_ms):
@@ -658,10 +656,10 @@ async def _time_floor(store, clock, *, hours_old):
 
 
 async def test_an_inert_time_stimulus_does_not_age_the_backlog_gauge():
-    """an operator reads this gauge as «the oldest stimulus that COULD wake the
+    """An operator reads this gauge as «the oldest stimulus that COULD wake the
     unit». A `time` floor while no skill ships for it never can (`inert_kinds`), so
-    five hours of it is not a stuck unit: the gauge counted it and the alert would
-    have fired on deploy and stayed (review of #714, probe: one tick set 18000)."""
+    five hours of it is not a stuck unit: counting it would fire the alert and
+    leave it firing."""
     ev, store, clock = _floor_setup(floors_ready=False)
     await _time_floor(store, clock, hours_old=5)
     assert await ev.tick() == []                          # nothing woke: it IS inert

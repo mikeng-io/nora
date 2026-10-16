@@ -1,8 +1,8 @@
 """A sandbox Signal send lands, and only the wire is replaced.
 
-Before `nora.subject.sandbox_signal`, every eval send dialled a signal-cli that
-was not there: 794 `send failed: ClientConnectorError` in one `tool_selection`
-run (2026-10-08), so `send_reply` told the model `refused` on every reply.
+Without `nora.subject.sandbox_signal`, an eval send would dial a signal-cli
+that is not there, so `send_reply` would tell the model `refused` on every
+reply.
 """
 from __future__ import annotations
 

@@ -82,9 +82,8 @@ class _Result:
 
 
 class _NormalAgent:
-    """The un-exceptional path — `ask_text`'s normal return had NO test at
-    all before this (review, 2026-09-19): both existing tests only exercise
-    the `MaxTokensReachedException` branch this file was written to add."""
+    """The un-exceptional path: `ask_text`'s normal return, which the `MaxTokensReachedException`
+    tests do not exercise."""
 
     def __init__(self, **_: Any) -> None:
         pass

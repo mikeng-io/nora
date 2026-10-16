@@ -1,8 +1,7 @@
 """The rule that answers "is sound actually moving?".
 
-Exhaustive on purpose: this replaces `playback_id is not None`, which was
-true in five of the arbiter's six states and audible in at most one, and
-which announced a ghost track to a real room on 2026-09-21.
+Exhaustive on purpose: `playback_id is not None` is true in five of the
+arbiter's six states and audible in at most one, so it cannot decide liveness.
 """
 
 from __future__ import annotations
@@ -61,8 +60,8 @@ def test_idle_while_nora_holds_a_track_is_ENDED_not_wedged() -> None:
 
 def test_an_unreachable_controller_is_UNKNOWN_and_never_a_silence_claim() -> None:
     """The whole point. Reading an absence of news as bad news would tear
-    down live audio over a blip; reading it as good news is the original
-    bug. It is neither — it is a third verdict."""
+    down live audio over a blip; reading it as good news is wrong too. It is neither — it is a third
+    verdict."""
     verdict = judge_playback(
         previous=_reading(status="playing", position_ms=5_000),
         current=PlaybackReading.unreachable(),
@@ -101,9 +100,9 @@ def test_the_first_poll_cannot_call_a_track_wedged_on_a_frozen_position() -> Non
 
 
 def test_a_new_playback_is_not_compared_against_the_previous_tracks_position() -> None:
-    """Live 2026-09-30: an autoplay advance left the old track's last reading
-    (195 s) as `previous`; the new track at 7 s read as a position that went
-    backwards, was judged WEDGED, and the song restarted from 0."""
+    """An autoplay advance leaves the old track's last reading
+    as `previous`; the new track's smaller position must not read as a position
+    that went backwards and be judged WEDGED."""
     old_track = _reading(status="playing", position_ms=195_680, playback_id="pb-old")
     new_track = _reading(status="playing", position_ms=7_400, playback_id="pb-new")
 
@@ -130,8 +129,8 @@ def test_a_frozen_position_within_one_playback_is_still_WEDGED_with_ids() -> Non
 
 def test_a_slot_stuck_at_starting_across_two_polls_is_WEDGED() -> None:
     """`starting` means accepted-but-no-sound. One poll is not evidence; two
-    consecutive ones are — this is the 2026-09-21 signature seen from nora's
-    side rather than the controller's."""
+    consecutive ones are — the signature seen from nora's side rather than the
+    controller's."""
     stuck = _reading(status="starting", position_ms=0)
 
     first = judge_playback(previous=None, current=stuck, believed_playing=True)
@@ -152,8 +151,8 @@ def test_nothing_is_falsified_when_nora_claims_nothing() -> None:
     ["playing", "starting", "suspended", "resuming", "paused", "idle"],
 )
 def test_every_arbiter_state_gets_a_verdict_and_none_of_them_raises(status: str) -> None:
-    """The old check read `playback_id is not None`, which is true in five of
-    these six. Each must now land on a named verdict."""
+    """`playback_id is not None` is true in five of these six states. Each must
+    land on a named verdict."""
     verdict = judge_playback(
         previous=None,
         current=_reading(status=status, position_ms=1, playback_id="pb-1"),

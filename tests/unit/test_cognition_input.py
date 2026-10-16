@@ -1,5 +1,5 @@
 """What a Cognition session is handed, end to end through the REAL evaluator and
-the REAL runner (the 2026-09-30 whole-loop review, PR A, DEC-245): the clock line
+the REAL runner (DEC-245): the clock line
 counts from when she last LOOKED, a rollup she cannot read is not an item, a
 room is named by its label, and a session that closed records no failure cause.
 
@@ -24,12 +24,13 @@ from tests.unit.test_cognition_session_lifecycle import POLICY, ScriptedAgent, T
 HOUR = 3600
 
 
-# ---- B2: the clock ---------------------------------------------------------------------------
+# ---- the clock ---------------------------------------------------------------------------
 
 async def test_the_clock_line_counts_from_when_the_last_session_ended_not_the_last_message():
-    """Before: `last_session_ms` was `view.last_activity_ms`, the newest PERSON
-    message, so «you last looked» said «just now» about a room whose last look
-    was two hours ago. The view here is a real one: wake, session, outcome."""
+    """`last_session_ms` is when she last looked, not `view.last_activity_ms`
+    (the newest PERSON message): «you last looked» must not say «just now» about
+    a room whose last look was two hours ago. The view here is a real one: wake,
+    session, outcome."""
     rig = _rig()
     await rig.say()
     rig.clock.advance(1)
@@ -60,7 +61,7 @@ async def test_a_unit_that_never_ran_a_session_says_it_is_the_first_look_however
     assert "This is your first look at this group." in rig.agent.prompts[0]
 
 
-# ---- B2: a rollup the session cannot read is not an agenda item ---------------------------
+# ---- a rollup the session cannot read is not an agenda item ---------------------------
 
 def _rollup(unit: str, ref: str, at: int, item: str = "deviation_silence") -> NewStimulus:
     return NewStimulus(unit=unit, kind="rollup", item=item, ref=ref, at_ms=at,
@@ -117,11 +118,10 @@ async def test_a_malformed_rollup_is_skipped_recorded_and_consumed_and_a_readabl
 
 
 async def test_a_readable_rollup_cut_by_max_items_is_deferred_and_carried_not_skipped():
-    """B1 (the strongest-tier review of #646). The old test asked the GROUNDER
-    whether a rollup was readable, and the grounder only builds lines for the items
-    the agenda kept: a readable rollup cut at `max_items` was labelled unreadable,
-    dropped from `deferred` and lost, with no carry. Two readable deviation rollups,
-    room for one."""
+    """Readability is decided from the roster, not by the grounder: the grounder
+    only builds lines for the items the agenda kept, so a readable rollup cut at
+    `max_items` would be labelled unreadable, dropped from `deferred` and lost,
+    with no carry. Two readable deviation rollups, room for one."""
     rig = _rig(person_known=_known, max_items=1)
     for ref, item in (("deviation|silence|ada|1", "deviation_silence"),
                       ("deviation|anomaly|ada|2", "deviation_anomaly")):     # two ITEMS
@@ -211,7 +211,7 @@ async def test_unreadable_rollups_riding_a_floor_are_skipped_and_the_floor_is_th
     assert 1 not in {x.id for x in view.pending}                 # skipped, not wedged
 
 
-# ---- m5: the label, and the id only where a tool needs it ---------------------------------
+# ---- the label, and the id only where a tool needs it ---------------------------------
 
 async def test_the_prompt_names_a_room_by_its_label_and_lists_ids_beside_a_tools_room_argument():
     grounding = Grounding(room_labels={
@@ -246,7 +246,7 @@ async def test_a_single_room_agenda_says_only_its_label_in_the_reads_line():
     assert "room-a" not in prompt
 
 
-# ---- m2: a session that closed records no failure cause -----------------------------------
+# ---- a session that closed records no failure cause -----------------------------------
 
 async def test_a_closed_wake_records_no_cause_and_a_failed_one_records_its_own():
     from tests.unit.test_cognition_session_lifecycle import ScriptedAgent, boom
@@ -265,7 +265,7 @@ async def test_a_closed_wake_records_no_cause_and_a_failed_one_records_its_own()
     assert (failed.outcome, failed.cause) == ("failed", "infra")
 
 
-# ---- D2: what a failing wake struck is what it CLAIMED -----------------------------------
+# ---- what a failing wake struck is what it CLAIMED -----------------------------------
 
 async def test_striking_a_failing_floor_wake_never_strikes_the_messages_it_left_pending():
     """A floor wake (carrying the rollup that rode it, DEC-279) that fails its
@@ -296,9 +296,8 @@ async def test_striking_a_failing_floor_wake_never_strikes_the_messages_it_left_
 
 
 def test_an_outcome_row_written_before_0085_reads_no_cause_and_a_failure_keeps_its_own():
-    """M2 (strongest-tier review of #646): 0085 rewrites no row (the table is
-    append-only), so a closed or cancelled outcome written with `infra` is
-    normalised when it is READ."""
+    """Migration 0085 rewrites no row (the table is append-only), so a closed or
+    cancelled outcome written with `infra` is normalised when it is READ."""
     from nora.domain.stimuli import wake_state
 
     def cause(outcome: str, stored: str) -> str:

@@ -103,7 +103,7 @@ def test_without_units_everything_is_the_default_workspace_unscoped(tmp_path):
     assert router.for_conversation("a") == HonchoRoute("nora")
     assert router.for_conversation("b") == HonchoRoute("nora")
     assert router.for_unit("one") == HonchoRoute("nora")
-    # A harness's synthetic room: the default, UNSCOPED — the pre-hierarchy path.
+    # A harness's synthetic room: the default, UNSCOPED path.
     assert router.for_conversation("synthetic") == HonchoRoute("nora")
     assert router.workspaces() == ("nora",)
 
@@ -171,7 +171,6 @@ def test_a_person_belongs_to_the_workspaces_whose_rooms_name_them(tmp_path):
 
 def test_without_units_everyone_is_in_the_one_implicit_workspace(tmp_path):
     """The portal's back-compat: no `[units]`, so every person — including one
-    who is only in `persons = "*"` rooms — reads the one workspace, as the
-    page did before DEC-214."""
+    who is only in `persons = "*"` rooms — reads the one workspace (DEC-214)."""
     body = 'default = "deny"\n' + _room("signal", "a", "one")
     assert workspaces_of_person(_policy(tmp_path, body), "anyone") == ("default",)

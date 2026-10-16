@@ -1,13 +1,10 @@
-"""A field cannot ship unexplained, and the type text is said once (step 3b of
-`design/context-assembly/04-every-occasion.md` §5).
+"""A field cannot ship unexplained, and the type text is said once.
 
 `BLOCK_TYPES` is the channel the Cognition model learns its input from: what a
 message's `n` is for, whose name `from` is, what a cut means. Two things go wrong
-silently: a renderer grows an attribute nobody glossed (the tag prompt's
-`Notation:` paragraph defined one block while `title`, `about` and `written`
-reached the model undefined), and a block repeats its text per item (an
-`agenda_item` block per item was 43k characters against 12k for twelve items).
-Both are measured here from the RENDERED prompt, not from the source.
+silently: a renderer grows an attribute nobody glossed, so it reaches the model
+undefined, and a block repeats its type text per item. Both are measured here
+from the RENDERED prompt, not from the source.
 """
 
 from __future__ import annotations
@@ -194,14 +191,13 @@ def test_the_type_text_appears_once_per_prompt_however_many_items(n_items: int):
 
 
 def test_twelve_items_cost_their_own_rows_and_not_twelve_copies_of_the_type_text():
-    """The bound the restructure was for: an item adds its attributes and its
-    rows, a few hundred characters, never the ~1.9k of type text a block per item
-    repeated (43k against 12k for twelve items)."""
+    """An item adds its attributes and its rows, a few hundred characters, never
+    a repeat of the block's type text."""
     one, five, twelve = (len(_agenda_of(n)) for n in (1, 5, 12))
     per_item = (twelve - one) / 11
     assert per_item < 600, per_item                       # item + one row + one event
     assert (five - one) / 4 < 600
-    assert twelve < 12_000, twelve                        # was 25k+ with a block per item
+    assert twelve < 12_000, twelve
     type_text = sum(
         len(BLOCK_TYPES[n].description)
         + sum(len(k) + len(v) + 6 for k, v in BLOCK_TYPES[n].annotations)
@@ -236,9 +232,8 @@ def test_every_prompt_the_fixture_renders_has_no_stray_text():
 
 
 def test_the_owed_and_ruled_out_shapes_the_description_teaches_are_the_validators():
-    """`agenda`'s description quotes two shapes that were taught nowhere until the
-    refusal after a failure. They are read off `parse_note_body`, not off a
-    comment: an Owed line takes a roster name, never Nora, a due and NO
+    """`agenda`'s description quotes two line shapes. They are read off
+    `parse_note_body`, not off a comment: an Owed line takes a roster name, never Nora, a due and NO
     `(names)`; a Ruled out line takes `(names)` (it is in `ATTRIBUTED`)."""
     from nora.domain.note_body import NoteBodyError, Shown, ShownMessage, parse_note_body
 
@@ -260,7 +255,7 @@ def test_the_owed_and_ruled_out_shapes_the_description_teaches_are_the_validator
     with pytest.raises(NoteBodyError, match="bad_date"):
         parse("## Owed\n- Ada -> book -> tomorrow [7]")
     parse("## Ruled out\n- the pier: too far (Ada) [7]")                    # the shape taught
-    # It takes (names); left out, code completes them from the cited senders (2026-10-09).
+    # It takes (names); left out, code completes them from the cited senders.
     completed = parse_note_body(
         "## Decided\n- go (Ada) [7]\n## Open\n- where [7]\n## Ruled out\n- the pier: too far [7]",
         shown=shown,

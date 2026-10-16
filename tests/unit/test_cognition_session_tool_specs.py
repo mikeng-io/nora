@@ -1,5 +1,4 @@
-"""The session's own verbs, as the SPECS Strands would hand the model (ADR
-0015; review of #627).
+"""The session's own verbs, as the SPECS Strands would hand the model (ADR 0015).
 
 A closure declared `**kwargs` reaches Strands as one untyped `kwargs`
 parameter, and a `Sequence[str]` without an item type as an array of nothing:

@@ -1,16 +1,15 @@
 """The voice pipeline WIRED: the real `MusicPlayerManager`, `VoiceControllerHub`,
 `HttpVoiceSession` and `VoiceEventConsumer` over real HTTP against
 `nora/testing/voice.py`'s `FakeVoiceController` — the same objects
-`nora.app.composition` wires, exercising the phase-1 audit findings
-(design/voice-channel/07, 2026-09-16) ACROSS the seams instead of per module:
+`nora.app.composition` wires, exercising the following ACROSS the seams instead of per module:
 
 - a stop after a controller restart tolerates the dead generation and the
-  session row still goes (B7);
+  session row still goes;
 - a voice-death / channel-emptied delayed across an exit/rejoin is validated
-  against the live generation and touches nothing (B8);
+  against the live generation and touches nothing;
 - a voice-only session exits when its channel empties;
 - the first command after a restart reconciles the generation instead of
-  409-looping, and the hub and manager agree afterwards (§12.1).
+  409-looping, and the hub and manager agree afterwards.
 
 `_StubSource` is imported from the manager's own suite rather than copied —
 the port-fakes gate pins ONE inline `TrackSource` stand-in per file and the
@@ -94,7 +93,7 @@ async def pipeline(aiohttp_client: Any) -> _Pipeline:
 async def test_play_then_controller_restart_then_stop_cleans_the_session_row(
     pipeline: _Pipeline,
 ) -> None:
-    """B7 dead-connection cleanup across the seams: after a restart the
+    """Dead-connection cleanup across the seams: after a restart the
     manager's stop tolerates the stale-generation 409 (the music slot is
     definitionally stopped) and the local teardown still completes."""
     await pipeline.play()
@@ -111,7 +110,7 @@ async def test_play_then_controller_restart_then_stop_cleans_the_session_row(
 async def test_a_delayed_voice_death_from_an_old_generation_leaves_the_new_session(
     pipeline: _Pipeline,
 ) -> None:
-    """B8 across the seams: an outbox death event delivered after an
+    """Across the seams: an outbox death event delivered after an
     exit/rejoin names the OLD generation and must not tear down the NEW
     session — and the CURRENT generation's death still does (positive
     control)."""
@@ -167,7 +166,7 @@ async def test_a_voice_only_session_exits_when_its_channel_empties(
 async def test_a_stale_generation_channel_emptied_leaves_the_voice_only_session(
     pipeline: _Pipeline,
 ) -> None:
-    """B8 for the voice-only path: a delayed `channel-emptied` from BEFORE
+    """The voice-only path: a delayed `channel-emptied` from BEFORE
     a rejoin names a dead generation and is ignored."""
     await pipeline.hub.join(GUILD, CHANNEL)
     assert pipeline.hub.generation_for(GUILD) is not None
@@ -185,7 +184,7 @@ async def test_a_stale_generation_channel_emptied_leaves_the_voice_only_session(
 async def test_a_controller_restart_mid_session_reconciles_the_next_command(
     pipeline: _Pipeline,
 ) -> None:
-    """§12.1 across the seams: after a restart the next manager command
+    """Across the seams: after a restart the next manager command
     reconciles the generation (one status read, one retry) instead of
     409-looping — and because the hub and the player hold the SAME session
     object, the hub agrees with the new generation afterwards."""

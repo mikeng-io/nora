@@ -1,18 +1,17 @@
-"""The THREAD from `policy.toml` to the three announcing surfaces
-(design/discord-music/10-notification-routing.md).
+"""The THREAD from `policy.toml` to the three announcing surfaces.
 
-Both ENDS of this were tested and the thread between them was not (audit,
-2026-09-21) — `tests/test_policy.py` pins `Policy.music_channel_for` and
-`tests/unit/test_music_notify.py` pins `make_notify`, while the four hops that
-connect them (`composition._music_channel_of` → `AdapterRegistry.from_config`
-→ `DiscordAdapter` → `music_commands.register` / `resume_persisted_sessions`,
-and separately `DiscordMusicToolBridge`) had nothing.
+Both ENDS are tested elsewhere — `tests/test_policy.py` pins
+`Policy.music_channel_for` and `tests/unit/test_music_notify.py` pins
+`make_notify` — and this file covers the four hops that connect them
+(`composition._music_channel_of` → `AdapterRegistry.from_config` →
+`DiscordAdapter` → `music_commands.register` / `resume_persisted_sessions`,
+and separately `DiscordMusicToolBridge`).
 
-That gap matters more than an ordinary untested seam because of the direction
-it fails in: `no_music_channel` is the default at five parameters, so a DROPPED
-hop answers `None` for every guild — byte-identical to the operator not having
-set the field. Fail-open, invisible, and the only part of this feature that can
-regress with no symptom at all.
+That seam matters more than an ordinary one because of the direction it fails
+in: `no_music_channel` is the default at five parameters, so a DROPPED hop
+answers `None` for every guild — byte-identical to the operator not having
+set the field. Fail-open, invisible, and the only part of this feature that
+can regress with no symptom at all.
 """
 
 from __future__ import annotations
@@ -112,7 +111,7 @@ def test_every_hop_accepts_the_resolver_and_defaults_to_the_fallback(func, param
     ],
 )
 def test_the_client_getter_reaches_the_surfaces_that_capture_one(func, param):
-    """The second thread, added by the same audit: the slash and resume paths
+    """The second thread: the slash and resume paths
     must be able to take `DiscordAdapter.current_client` rather than capturing
     a client that `listen()` will later close."""
     assert param in inspect.signature(func).parameters
@@ -122,8 +121,7 @@ def test_the_adapter_hands_its_own_getter_and_not_a_captured_client():
     """`DiscordAdapter._register_music_commands` must pass `self.current_client`
     — the bound method, re-reading `_current_client` on every call — to both
     music entry points. A `lambda: client` over the `on_ready` client would
-    satisfy the signature and defeat the point, which is what the first
-    implementation did."""
+    satisfy the signature and defeat the point."""
     source = inspect.getsource(DiscordAdapter.listen)
 
     assert source.count("client_getter=self.current_client") == 2

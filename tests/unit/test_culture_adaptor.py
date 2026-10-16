@@ -1,16 +1,14 @@
-"""`CultureAdaptor` — the culture tier's only moving part (design/culture-tier).
+"""`CultureAdaptor` — the culture tier's only moving part.
 
 Written around the places this adaptor can be wrong without anything saying so:
 it can hand the model a chronicle and then ask for an account, it can pick
 arbitrarily between two proposed accounts, it can append a link carrying no
 information, and it can fire in a room that said nothing.
 
-Since 2026-09-17 it can also be wrong in two new ways, and both are silent:
-it can be asked for a join and handed one table (`design/dreamer-agent-loop/
-03-no-agent-loop §7`, `17-failure-classes §11` — the tautology that passes every
-gate the runtime owns), and it can hold a character cap no budget can emit,
-which truncates the completion, holds the watermark and re-reads the same batch
-forever.
+It can also be wrong in two more ways, both silent: it can be asked for a join
+and handed one table (the tautology that passes every gate the runtime owns),
+and it can hold a character cap no budget can emit, which truncates the
+completion, holds the watermark and re-reads the same batch forever.
 """
 
 from __future__ import annotations
@@ -49,13 +47,11 @@ KEY = "discord/g1"
 
 
 def test_the_registered_blocks_are_exactly_what_this_pass_carries():
-    """`design/context-assembly/01-the-registry.md` S1: what this pass
-    carries is a table, not a trace through `inputs` and `_room_block`.
+    """What this pass carries is a table, not a trace through `inputs` and
+    `_room_block`.
 
-    A row the design bundle's own survey missed: `00-overview.md` counted
-    `previous_account, room, room_messages` — three — because it read
-    `ContextBlock(name=...)` literals in this file alone, and missed `notes`
-    (`nora.language.note_render.render_notes`), shared with other occasions.
+    Four rows: `previous_account`, `room`, `room_messages` and `notes`
+    (`nora.language.note_render.render_notes`, shared with other occasions).
     `test_the_previous_account_precedes_the_notes_AND_the_batch` below
     exercises all four together. There is NO `standing` row: see
     `test_the_fold_does_not_read_the_rooms_standing`.
@@ -155,16 +151,12 @@ async def test_an_empty_batch_renders_NOTHING_so_the_runtime_does_not_fire():
 
 
 async def test_a_mapped_senders_batch_line_renders_the_canonical_name():
-    """#200 follow-up: `_render_batch` reads `r.person_name` and this fold's
-    own batch, straight off `record.since`, never had it filled — nothing on
-    this path ever called `Persons.name_transcript` — so a mapped sender's
-    line was attributed to their self-set, spoofable `sender_name` instead of
-    the operator's canonical name for them. `_row` presets `person_name`
-    already, which is exactly the shape that hid this defect in
-    `note_candidates` before #544 (`tests/offline_eval_support.py`'s own
-    fix); this row leaves it unset, as a live Dreamer row does, and relies on
-    `platform_for`/`resolve_names` — wired the way composition now wires
-    them — to fill it before the batch renders."""
+    """`_render_batch` reads `r.person_name`, which this fold's own batch
+    (straight off `record.since`) does not fill by itself: a mapped sender's
+    line must carry the operator's canonical name, not their self-set,
+    spoofable `sender_name`. `_row` presets `person_name`, which would hide
+    that; this row leaves it unset, as a live Dreamer row does, and relies on
+    `platform_for`/`resolve_names` to fill it before the batch renders."""
     row = TranscriptRow(
         id=1, sender_id="u1", sender_name="not-miles", person_name=None,
         ts=T0, body="dinner Saturday?", is_nora=False,
@@ -187,18 +179,18 @@ async def test_a_mapped_senders_batch_line_renders_the_canonical_name():
 
 
 async def test_a_raising_resolver_still_renders_on_the_floor_and_the_pass_commits():
-    """#546 review: a resolver fault must DEGRADE, never take the fold down
-    with it. `resolve_names` is `Persons.name_transcript` in production —
-    dict lookups only — but an injected callable can still raise, and
-    letting that propagate out of `inputs()` would mark the whole occasion
-    `unavailable` and hold the watermark, re-reading the same batch every
-    tick over a failure that has nothing to do with what the room said.
+    """A resolver fault must DEGRADE, never take the fold down with it.
+    `resolve_names` is `Persons.name_transcript` in production — dict lookups
+    only — but an injected callable can still raise, and letting that
+    propagate out of `inputs()` would mark the whole occasion `unavailable`
+    and hold the watermark, re-reading the same batch every tick over a
+    failure that has nothing to do with what the room said.
 
-    Proved both ways: `inputs()` still renders the line on the
-    pre-resolution `speaker_name` floor (`sender_name`, here) rather than
-    raising, AND the fold still COMMITS — `accept`/`commit` write an account
-    exactly as `test_a_CHANGED_account_is_appended_over_an_existing_head`
-    proves for a working resolver."""
+    Both ways: `inputs()` still renders the line on the pre-resolution
+    `speaker_name` floor (`sender_name`, here) rather than raising, AND the
+    fold still COMMITS — `accept`/`commit` write an account exactly as
+    `test_a_CHANGED_account_is_appended_over_an_existing_head` proves for a
+    working resolver."""
     row = TranscriptRow(
         id=1, sender_id="u1", sender_name="spoofable-name", person_name=None,
         ts=T0, body="dinner Saturday?", is_nora=False,
@@ -230,12 +222,10 @@ async def test_a_raising_resolver_still_renders_on_the_floor_and_the_pass_commit
 
 
 async def test_an_unwired_resolver_still_never_renders_a_raw_id():
-    """The other half: `platform_for`/`resolve_names` both default `None`
-    (the shape every pre-#200 construction of this adaptor already has), and
+    """The other half: `platform_for`/`resolve_names` both default `None`, and
     resolution is skipped entirely rather than raising — `_render_batch`'s
-    existing `speaker_name` floor (the profile name, or `"unknown"`) is
-    unchanged, and the raw `sender_id` never reaches the prompt either way
-    (R-18)."""
+    `speaker_name` floor (the profile name, or `"unknown"`) is unchanged, and
+    the raw `sender_id` never reaches the prompt either way (R-18)."""
     row = TranscriptRow(
         id=1, sender_id="u1", sender_name=None, person_name=None,
         ts=T0, body="anyone free Friday?", is_nora=False,
@@ -281,10 +271,10 @@ async def test_the_first_fold_of_a_room_renders_no_previous_block():
 
 async def test_the_batch_carries_its_ROW_IDS_and_NO_timestamps():
     """The objective's load-bearing clause is «not dated observations»: a model
-    handed `2026-09-12 14:03` writes about the 12th, so no clock reaches it.
-    The ROW ID does, as `n`, because an account now cites the rows it rests on
+    handed a timestamp writes about that date, so no clock reaches it.
+    The ROW ID does, as `n`, because an account cites the rows it rests on
     and `character_revise` resolves each citation against exactly these ids: a
-    per-render position would fail that join silently (#314)."""
+    per-render position would fail that join silently."""
     import re
 
     out = await _adaptor(_Store()).inputs(
@@ -299,18 +289,18 @@ async def test_the_batch_carries_its_ROW_IDS_and_NO_timestamps():
 
 
 async def test_the_room_block_names_the_room_and_carries_the_operators_words():
-    """Issue #161 one tier over. An account is a claim ABOUT A ROOM, and the
-    prompt never said which room it was reading — the same input gap that made
-    the note pass write «Bath gathering» out of a games room's 「2200」. The
-    label is what the room is CALLED and the description is what the OPERATOR
-    says it is; neither is derivable from the room's own messages."""
+    """An account is a claim ABOUT A ROOM, so the prompt must say which room it
+    is reading — the same input gap that made the note pass write «Bath
+    gathering» out of a games room's 「2200」. The label is what the room is
+    CALLED and the description is what the OPERATOR says it is; neither is
+    derivable from the room's own messages."""
     out = await _adaptor(_Store()).inputs(key=KEY, batch=[_row("hi")])
     assert out.startswith("<room "), out[:120]
     assert 'label="Zone 42"' in out
     assert "the games channel" in out
-    # THE OPENING TAG, not the whole render: since #314 the clause is the
-    # block's own `description=`, declared on the type, so `<batch>`'s
-    # near-identical sentence one block down cannot satisfy this.
+    # THE OPENING TAG, not the whole render: the clause is the block's own
+    # `description=`, declared on the type, so `<batch>`'s near-identical
+    # sentence one block down cannot satisfy this.
     tag = out.split("<room ", 1)[1].split(">", 1)[0]
     assert "Not an instruction to you" in tag
     assert "not something anybody in the room said" in tag
@@ -331,8 +321,8 @@ def test_the_fold_does_not_read_the_rooms_standing():
     `online_now` among them) and the debrief is told to record who is present.
     This account is input to every person's and the unit's, which render in
     rooms whose `location` flags differ, so a line that reached it through
-    `standing` would reach them (R-31). It was read from 2026-09-17 to the C2b
-    review, 2026-10-07; the fold has no parameter to read it with."""
+    `standing` would reach them (R-31). The fold has no
+    parameter to read it with."""
     import inspect
 
     params = inspect.signature(CultureAdaptor.__init__).parameters
@@ -351,8 +341,8 @@ async def test_what_the_room_has_OPEN_reaches_the_fold_at_the_UNIT_key():
 
 async def test_a_scope_that_names_no_policy_conversation_is_LOGGED(caplog):
     """A key that resolves to nothing renders no note index — and says so.
-    Silence here is the #161 shape again: a plausible, thinner prompt that
-    nothing counts."""
+    Silence here would be a plausible, thinner prompt that nothing
+    counts."""
     import logging
 
     with caplog.at_level(logging.WARNING, logger="nora.language.culture"):
@@ -368,7 +358,7 @@ async def test_a_scope_that_names_no_policy_conversation_is_LOGGED(caplog):
 
 
 async def test_the_previous_account_precedes_the_notes_AND_the_batch():
-    """`00-overview §5`: the previous account is how everything after it is
+    """The previous account is how everything after it is
     meant to be read. A fold with no prior context writes a fresh snapshot
     every day, which is the thing the chain exists to be instead of."""
     out = await _adaptor(
@@ -393,7 +383,7 @@ async def test_a_quiet_room_reads_NO_store_at_all():
 async def test_a_note_store_that_RAISES_takes_the_fold_with_it():
     """Fail-CLOSED. A run that folded anyway would write an account that
     GUESSES at what the room has open, and the runtime would report it `ok`
-    — the §11 tautology with a store fault behind it. Raising makes the run
+    — the tautology with a store fault behind it. Raising makes the run
     `unavailable` and HOLDS the watermark, so the batch is folded later instead
     of being consumed wrong today."""
     class _Broken:
@@ -434,7 +424,7 @@ async def test_a_cited_revision_is_staged_and_returned_by_accept():
 
 
 async def test_a_citation_of_a_row_the_session_was_NOT_shown_is_refused():
-    """THE CHECK THIS VERB EXISTS FOR (design/self-growth/10 §3): every
+    """THE CHECK THIS VERB EXISTS FOR: every
     citation resolves to a row the session was handed, or the write is refused
     with a reason the model can act on, and nothing is staged. A citation
     nobody can resolve is a claim nobody can re-derive."""
@@ -664,7 +654,7 @@ def test_every_granted_verb_is_inside_the_dreamers_READ_ONLY_ceiling():
 
 
 def test_no_presence_read_reaches_a_rooms_culture():
-    """R-31, since the security review of C2-C3 (2026-10-07): a room's culture
+    """R-31: a room's culture
     is input to the unit's person and unit accounts, which render in rooms
     whose `location` flags differ, and an account is prose with nothing to
     drop at render. So no Character account may rest on a presence read, and
@@ -697,36 +687,30 @@ def test_the_grant_names_NO_act_verb():
 
 def test_a_realistic_account_fits_inside_the_loop_budget_that_must_emit_it():
     """**The silent, self-perpetuating trap** (`note-candidates`'
-    `AdaptorSchedule` comment, reached from the other end): an output cap that
-    binds truncates the JSON, `parse_envelope` reads no envelope, the run is
-    `unavailable`, the watermark is HELD, and the same batch is re-read and
-    re-truncated on every fire, forever. **This is what `[dreamer] max_tokens`
-    guards and what `BODY_MAX_CHARS` does NOT** — the character cap is read in
-    `accept`, on a body the model already emitted in full, so it is a refusal
-    and never a truncation guard.
+    `AdaptorSchedule` comment): an output cap that binds truncates the JSON,
+    `parse_envelope` reads no envelope, the run is `unavailable`, the
+    watermark is HELD, and the same batch is re-read and re-truncated on every
+    fire, forever. **This is what `[dreamer] max_tokens` guards and what
+    `BODY_MAX_CHARS` does NOT** — the character cap is read in `accept`, on a
+    body the model already emitted in full, so it is a refusal and never a
+    truncation guard.
 
-    **What this test measures changed on 2026-09-18, and the old version is
-    why.** It used to size the budget on an account written to
-    `BODY_MAX_CHARS`, which tied a TOKEN RESERVATION to a length nothing is
-    expected to reach — so the cap could not be raised without demanding a
-    23,000-token completion no fold would ever use. The budget is sized on
-    `ACCOUNT_CHARS_OBSERVED_MAX` now: 1,876 characters, the longest account the
-    live fold has been SEEN to emit.
+    The budget is sized on `ACCOUNT_CHARS_OBSERVED_MAX`, the longest account
+    the live fold has been SEEN to emit, not on `BODY_MAX_CHARS`: sizing it on
+    the cap would tie a TOKEN RESERVATION to a length nothing is expected to
+    reach, so the cap could not be raised without demanding a completion no
+    fold would use.
 
     The length is in CHARACTERS and the budget in TOKENS; the bridge is the
-    MEASURED `OUTPUT_TOKENS_PER_CHAR` (1.15, against 1.094 for a realistic
-    dense-Cantonese account and 1.131 for continuous Cantonese prose). The
-    previous 1.0 was asserted rather than taken and was optimistic on the very
-    case it named, which is the direction that truncates.
+    MEASURED `OUTPUT_TOKENS_PER_CHAR`.
 
-    The rule: **the loop must be able to emit a full account twice** — once for
-    the tool-call arguments and any preamble the pass spends before it writes,
-    once for the account. Against the SHIPPED `[dreamer.budgets.culture]`
-    block rather than `DreamBudgetConfig`'s field default, because the default
-    (4,000) does not clear it and saying otherwise would be the decoration this
-    pair of tests exists to refuse. An operator who deletes that block is
-    running a fold that cannot finish its sentence, and the block's own comment
-    says so."""
+    The rule: **the loop must be able to emit a full account twice** — once
+    for the tool-call arguments and any preamble the pass spends before it
+    writes, once for the account. Checked against the SHIPPED
+    `[dreamer.budgets.culture]` block rather than `DreamBudgetConfig`'s field
+    default, because the default (4,000) does not clear it. An operator who
+    deletes that block is running a fold that cannot finish its sentence, and
+    the block's own comment says so."""
     import tomllib
     from pathlib import Path
 
@@ -767,32 +751,17 @@ def test_a_realistic_account_fits_inside_ONE_shipped_completion():
 
 
 def test_the_cap_cannot_wedge_a_room_the_way_1400_did():
-    """**This test replaces one that certified the defect** (2026-09-18), and
-    the swap is the finding.
+    """A normal draw does not reach the cap: `accept` RAISES on oversize and
+    the Dreamer holds the watermark for a raise, so a cap inside the emission
+    distribution turns every fire into a coin toss paid for in model calls.
+    4x the observed maximum is the margin, wide enough that a somewhat larger
+    next sample cannot reach it either.
 
-    The old test pinned `BODY_MAX_CHARS` as a band (1.75x-2.05x) around the
-    objective's 739-character worked example, on the theory that the cap was a
-    QUALITY instrument: admit the second paragraph, refuse the essay. It was
-    green on 1,400 — and 1,400 sat inside what the model actually emits.
-    Measured live the same evening, n=11 across five rooms: 563, 811, 1,095,
-    1,316 and 1,323 characters written; 1,583, 1,677, 1,725, 1,812, 1,826 and
-    1,876 REFUSED. **6 of 11 — 55% — refused**, each refusal spending a model
-    call and re-folding the same batch. The deployment's busiest room paid
-    four before its fifth draw came under. The band certified all of that as
-    correct, because a ratio against a worked example is not a measurement of
-    a model.
-
-    So the property worth pinning is not the cap's ratio to the example. It is
-    that **a normal draw does not reach the cap**: `accept` RAISES on oversize
-    and the Dreamer holds the watermark for a raise, so a cap inside the
-    emission distribution turns every fire into a coin toss paid for in model
-    calls. 4x the observed maximum is the margin — wide enough that the
-    29%-higher next sample this repo has already been bitten by (`[dreamer]
-    max_tokens`, n=1 -> 4,000) cannot reach it either.
-
-    The quality guard the old test thought it was enforcing belongs to the
-    objective, which is `change_policy: operator-only`; `CultureAdaptor.accept`
-    names the line that would restore it. Nothing here pretends to stand in."""
+    This pins the cap's distance from observed emission, not its ratio to the
+    objective's worked example, which measures nothing about a model. The
+    quality guard belongs to the objective, which is `change_policy:
+    operator-only`; `CultureAdaptor.accept` names the line that would restore
+    it. Nothing here stands in for it."""
     assert BODY_MAX_CHARS >= 4 * ACCOUNT_CHARS_OBSERVED_MAX, (
         f"the cap is {BODY_MAX_CHARS} against a measured emission maximum of "
         f"{ACCOUNT_CHARS_OBSERVED_MAX}: that is inside the range the model "
@@ -808,18 +777,17 @@ def test_the_cap_cannot_wedge_a_room_the_way_1400_did():
 
 
 def test_the_character_to_token_bridge_is_the_MEASURED_one():
-    """**The one number in this pair that was asserted rather than taken.**
+    """**The one number in this pair that is measured, not asserted.**
 
-    It was 1.0 «the CJK worst case» and nothing had encoded anything. Measured
-    2026-09-17 with `tiktoken`'s `o200k_base` over the JSON envelope the
-    objective requires: 1.094 tok/char for a realistic dense-Cantonese account
-    (89% CJK, Latin technical terms, an emoji nickname), 1.131 for continuous
-    Cantonese prose with no Latin in it, and 0.227 for the objective's own
-    English worked example. So 1.0 was OPTIMISTIC on the very case it named,
-    which is the direction that truncates.
+    `OUTPUT_TOKENS_PER_CHAR` comes from `tiktoken`'s `o200k_base` over the JSON
+    envelope the objective requires: 1.094 tok/char for a realistic
+    dense-Cantonese account (89% CJK, Latin technical terms, an emoji
+    nickname), 1.131 for continuous Cantonese prose with no Latin in it, and
+    0.227 for the objective's own English worked example. A round 1.0 would be
+    optimistic on the CJK case, which is the direction that truncates.
 
-    `tiktoken` is not a test dependency — pinning the constant here is what
-    keeps the measurement from being quietly reverted to a rounder number, and
+    `tiktoken` is not a test dependency — pinning the constant here keeps it
+    from being quietly reverted to a rounder number, and
     `nora.domain.culture.OUTPUT_TOKENS_PER_CHAR` carries the table and the
     command that produced it."""
     assert OUTPUT_TOKENS_PER_CHAR >= 1.131, (
@@ -841,7 +809,7 @@ def test_the_declared_store_calls_cover_the_two_inputs_and_the_two_writes():
 
 
 async def test_a_room_session_writes_the_room_and_no_person():
-    """Since C2b a person is their own session (`nora.language.character`): a
+    """A person is their own session (`nora.language.character`): a
     room session's one entity is `room`, so a write naming a person is
     refused and the room's account alone is staged."""
     adaptor = _adaptor(_Store())

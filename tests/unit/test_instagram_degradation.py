@@ -1,6 +1,5 @@
-"""M0 — an enabled Instagram adapter that cannot authenticate is REGISTERED
-DEGRADED, not refused (design/instagram-adoption/01-bridge-container.md
-§Degradation).
+"""An enabled Instagram adapter that cannot authenticate is REGISTERED
+DEGRADED, not refused.
 
 The failure this exists to prevent has two halves and both are asserted here:
 
@@ -133,7 +132,7 @@ async def test_an_authenticated_bridge_registers_NORMALLY(bridge):
 
 
 async def test_a_CHECKPOINTED_bridge_still_lets_the_registry_BUILD(bridge, caplog):
-    """The whole of M0. This raises `AdapterRegistryError` -> `StartupError`
+    """The whole point. This raises `AdapterRegistryError` -> `StartupError`
     for Signal and Discord, and must not here."""
     box, base_url = bridge
     box["body"] = {**box["body"], "session": "checkpointed", "detail": "challenge required"}
@@ -242,7 +241,7 @@ async def test_a_degraded_adapter_EMITS_NO_EVENTS_and_NEVER_RETURNS():
 
 
 async def test_a_degraded_adapter_SAYS_SO_on_health():
-    """The continuous half of M0's visibility. A log line scrolls away; a
+    """The continuous half of visibility. A log line scrolls away; a
     health field says what is true now."""
     adapter = _degraded_adapter()
 
