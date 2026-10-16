@@ -47,12 +47,16 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import threading
 import time
 import uuid
 from pathlib import Path
 
 from nora.domain.ports import BlobDeletion
 from nora.infra.blobs.cipher import BlobCipher
+
+#: The suffix of a file `delete` has set aside while it decides.
+_ASIDE = ".deleting"
 
 
 class FilesystemBlobStore:
@@ -61,6 +65,26 @@ class FilesystemBlobStore:
     def __init__(self, root: Path, *, cipher: BlobCipher) -> None:
         self._root = Path(root)
         self._cipher = cipher
+        self._recovered = False
+        self._recovering = threading.Lock()
+
+    def _recover(self) -> None:
+        """Undo every deletion a crash interrupted, once, before this store's
+        first read or write: `delete` renames a file aside before it decides,
+        so a process killed in between leaves the bytes under a name `get`
+        never reads. A file set aside whose blob is missing is put back (the
+        deletion was never confirmed, so nothing says it is gone); one whose
+        blob was written again meanwhile is removed."""
+        with self._recovering:
+            if self._recovered:
+                return
+            for aside in self._root.glob(f"??/.*{_ASIDE}"):
+                blob = aside.with_name(aside.name[1:].split(".", 1)[0])
+                if blob.exists():
+                    aside.unlink(missing_ok=True)
+                else:
+                    os.replace(aside, blob)
+            self._recovered = True
 
     def _path_for(self, key: str) -> Path:
         """`<root>/<first2>/<rest>`, and only for a key this store could have
@@ -100,6 +124,7 @@ class FilesystemBlobStore:
         return key
 
     def _write(self, key: str, data: bytes) -> None:
+        self._recover()
         path = self._path_for(key)
         if path.exists():
             try:
@@ -129,6 +154,7 @@ class FilesystemBlobStore:
         return await asyncio.to_thread(self._read, key)
 
     def _read(self, key: str) -> bytes | None:
+        self._recover()
         path = self._path_for(key)
         if not path.exists():
             return None
@@ -152,13 +178,15 @@ class FilesystemBlobStore:
         atomic, and its modification time read there: a `put` that touched
         it before the rename shows as recent and the file is put back; a
         `put` after the rename finds no file (or loses its `utime`) and
-        writes a new one. Either way no `put` is lost.
+        writes a new one. Either way no `put` is lost. A crash while the file
+        is aside is undone by `_recover` on the next process's first use.
         """
         return await asyncio.to_thread(self._delete, key, idle_seconds)
 
     def _delete(self, key: str, idle_seconds: float) -> BlobDeletion:
+        self._recover()
         path = self._path_for(key)
-        aside = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.deleting")
+        aside = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}{_ASIDE}")
         try:
             os.rename(path, aside)
         except FileNotFoundError:

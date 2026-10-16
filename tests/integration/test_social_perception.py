@@ -232,10 +232,9 @@ async def test_a_frame_whose_bytes_expired_unread_is_failed_as_expired_with_no_c
     again."""
     await world.seed("s1", kind="story_frame")
     (sha,) = list(world.blobs.blobs)
+    deleted_at = await world.store.now()
     await world.blobs.delete(key=sha, idle_seconds=0)
-    await world.store.record_tombstone(
-        sha256=sha, reason="hard_limit", deleted_at=world.clock.now,
-    )
+    await world.store.record_tombstone(sha256=sha, reason="hard_limit", deleted_at=deleted_at)
     perception = world.perception()
 
     await perception.tick()
@@ -249,12 +248,14 @@ async def test_a_frame_whose_bytes_expired_unread_is_failed_as_expired_with_no_c
 
 async def test_an_item_recorded_after_its_bytes_were_deleted_once_is_read(world) -> None:
     """A member posts again a picture whose earlier story frame's bytes were
-    deleted: the new post stored them again, so it is not expired."""
+    being deleted: the post's row lands after the deletion was decided and
+    before its tombstone is written. It stored the bytes again, so it is not
+    expired: the tombstone covers rows recorded before its `deleted_at`, not
+    before the tombstone row itself."""
     sha = hashlib.sha256(b"bytes of p1/0").hexdigest()
-    await world.store.record_tombstone(
-        sha256=sha, reason="hard_limit", deleted_at=world.clock.now,
-    )
+    deleted_at = await world.store.now()
     await world.seed("p1", kind="post")
+    await world.store.record_tombstone(sha256=sha, reason="hard_limit", deleted_at=deleted_at)
     await world.perception().tick()
 
     assert await world.attempts() == [("p1", "ok", 1)]

@@ -4760,10 +4760,11 @@ IDX_SOCIAL_PERCEPTION_AT = sa.Index("idx_social_perception_at", SOCIAL_PERCEPTIO
 # 70-migration.md §9): the content address, the kind of thing the bytes were
 # and when they went, APPEND-ONLY, one row per deletion. The same bytes can be
 # stored again later (a member posts them anew), so a tombstone says the bytes
-# were gone for the rows written BEFORE it (`recorded_at`), never for a row
-# written after, which brought them back. A restore to a time before
-# `deleted_at` is incomplete for these bytes: the rows naming them come back,
-# the bytes do not. Only a story frame's bytes are ever deleted (22 §5);
+# were gone for the rows recorded before `deleted_at`, never for a row
+# recorded after, which brought them back. `deleted_at` is the database's
+# clock (the one `recorded_at` is on), read before the deletion. A restore to
+# a time before `deleted_at` is incomplete for these bytes: the rows naming
+# them come back, the bytes do not. Only a story frame's bytes are ever deleted (22 §5);
 # `reason` is the bound they went at (`nora.domain.social_stream.bytes_due`).
 BLOB_TOMBSTONE = sa.Table(
     "blob_tombstone",

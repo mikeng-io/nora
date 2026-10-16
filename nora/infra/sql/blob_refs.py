@@ -146,7 +146,7 @@ async def held_elsewhere(
     # A story frame whose bytes were deleted after it was recorded no longer
     # holds them: bytes stored again since belong to the rows written since.
     deleted_since = sa.exists().where(
-        BLOB_TOMBSTONE.c.sha256 == k, BLOB_TOMBSTONE.c.recorded_at > i.c.recorded_at,
+        BLOB_TOMBSTONE.c.sha256 == k, BLOB_TOMBSTONE.c.deleted_at > i.c.recorded_at,
     )
     others = sa.exists().where(
         i.c.media_ref.contains(k), ~sa.and_(i.c.kind == "story_frame", deleted_since),

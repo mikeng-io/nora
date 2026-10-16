@@ -261,15 +261,18 @@ the deletion** (a room message storing the same bytes before it writes the
 row naming them) is covered in the store: `delete` keeps bytes put within
 the last hour by the store's own clock, a `put` of held bytes counting as a
 put, and the check and the removal are one step against `put` (on the
-filesystem a rename aside, then the age read there; on RustFS a
+filesystem a rename aside, then the age read there, a file a crash left
+aside being put back on the next process's first use; on RustFS a
 `DeleteObject` conditional on the `ETag` read, `If-Match`, which the
-deployed RustFS refuses with 412 once the object changed). The tombstone
+deployed RustFS refuses with 412 once the object changed,
+`tests/integration/test_rustfs_delete_is_conditional.py`). The tombstone
 (`blob_tombstone`: content address, `kind = 'story_frame'`, `reason`
 `embedded` or `hard_limit`, `deleted_at`; APPEND-ONLY, one row per deletion)
 is written only once the store confirms the bytes are gone (`deleted`, or
 `absent` after a crash between the two); bytes it kept, or a deletion that
 failed, leave none and are tried on the next tick. **A tombstone is about the
-rows written before it**: bytes stored again later (a member posts the same
+rows recorded before its `deleted_at`**, read off the database's clock (the
+one `recorded_at` is on) before the deletion: bytes stored again later (a member posts the same
 picture) belong to the rows written since, so a later post is perceived
 normally, a later story frame is deleted at its own bound, and an earlier
 frame whose bytes went no longer holds them. An item whose bytes all went before any read is recorded by the

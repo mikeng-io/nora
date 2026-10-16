@@ -501,3 +501,21 @@ async def test_a_later_frame_with_the_same_bytes_is_deleted_at_its_own_bound(wor
     await world.expiry().tick()
     assert not world.held(sha), "the first frame no longer holds them; the second's bound passed"
     assert [t[0] for t in await world.tombstones()] == [sha, sha]
+
+
+async def test_a_frame_recorded_between_a_deletion_and_its_tombstone_keeps_its_bytes(world) -> None:
+    """The deletion is decided, the same bytes are posted again and their row
+    lands, then the tombstone is written: the new frame is not gone, and the
+    old frame does not hold the bytes for it either."""
+    sha = await world.seed("s1", data=b"one picture, twice")
+    deleted_at = await world.store.now()
+    await world.seed("s2", data=b"one picture, twice")
+    await world.store.record_tombstone(sha256=sha, reason="hard_limit", deleted_at=deleted_at)
+
+    world.clock.days(1 + MAX)
+    (frame,) = await world.store.frames_past_bound(before=world.clock.now)
+    assert (frame.item_id, frame.media) == ("s2", (sha,))
+    assert await world.store.held_elsewhere(shas=[sha], letting_go=[]) == {sha}, (
+        "s2 stored the bytes again after the deletion was decided: it holds them"
+    )
+    assert await world.store.held_elsewhere(shas=[sha], letting_go=[("instagram", "s2")]) == set()

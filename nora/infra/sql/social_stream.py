@@ -484,12 +484,12 @@ class SqlSocialStreamStore:
 
     @staticmethod
     async def _last_deleted(conn: Any, shas: list[str]) -> dict[str, datetime]:
-        """Per address, when its newest tombstone was written."""
+        """Per address, when its newest deletion was decided (`deleted_at`)."""
         if not shas:
             return {}
         t = BLOB_TOMBSTONE
         rows = await conn.execute(
-            sa.select(t.c.sha256, sa.func.max(t.c.recorded_at))
+            sa.select(t.c.sha256, sa.func.max(t.c.deleted_at))
             .where(t.c.sha256.in_(sorted(set(shas))))
             .group_by(t.c.sha256),
         )
@@ -542,11 +542,22 @@ class SqlSocialStreamStore:
         async with self._engine.connect() as conn:
             return await held_elsewhere(conn, shas, letting_go=letting_go)
 
+    async def now(self) -> datetime:
+        """The database's clock, the one every row's `recorded_at` is on: a
+        tombstone's `deleted_at` is read from it before the deletion, so a
+        row written after that instant stored the bytes again."""
+        async with self._engine.connect() as conn:
+            now: datetime = (
+                await conn.execute(sa.select(sa.func.clock_timestamp()))
+            ).scalar_one()
+        return now
+
     async def record_tombstone(
         self, *, sha256: str, reason: ByteDeletionReason, deleted_at: datetime,
     ) -> None:
         """Append that a story frame's bytes are deleted: gone for every row
-        naming them written before this one."""
+        naming them recorded before `deleted_at` (`now`, read before the
+        deletion), never for one recorded after."""
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(BLOB_TOMBSTONE).values(
                 sha256=sha256, kind="story_frame", reason=reason, deleted_at=deleted_at,

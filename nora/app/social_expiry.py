@@ -28,8 +28,9 @@ more than an hour after its `put` is the ceiling of this.
 confirms the bytes are gone: `deleted`, or `absent` (a restart between the two
 finds the frame again and its deletion answers that). Bytes it kept, or a
 deletion that failed, write nothing and are tried on the next tick. A
-tombstone is about the rows written before it: bytes stored again afterwards
-(a member posts the same picture) belong to the new rows, and a story frame
+tombstone is about the rows recorded before its `deleted_at`, read off the
+database's clock before the deletion: bytes stored again afterwards (a member
+posts the same picture) belong to the new rows, and a story frame
 recorded since is deleted at its own bound. Every fact the pass decides on is
 a row, so a restart neither deletes twice nor misses a frame whose bound
 passed while it was down.
@@ -119,21 +120,23 @@ class StoryMediaExpiry:
         letting_go = [(f.network, f.item_id) for f, _, _ in due]
         went: set[str] = set()
         for sha, reason in reasons.items():
-            if await self._delete(sha, reason, now, letting_go):
+            if await self._delete(sha, reason, letting_go):
                 went.add(sha)
         for frame, reason, embedded in due:
             if reason == "hard_limit" and not embedded and went.intersection(frame.media):
                 self._metrics.inc("nora_social_story_unembedded_total")
 
     async def _delete(
-        self, sha: str, reason: ByteDeletionReason, now: datetime,
-        letting_go: list[tuple[str, str]],
+        self, sha: str, reason: ByteDeletionReason, letting_go: list[tuple[str, str]],
     ) -> bool:
         """Delete one address's bytes, if nothing else names them, and
         tombstone it once the store confirms they are gone; True when this
         tick wrote its tombstone."""
         if await self._store.held_elsewhere(shas=[sha], letting_go=letting_go):
             return False
+        # Before the deletion: a row recorded after this instant may have
+        # stored the bytes again, and the tombstone must not cover it.
+        deleted_at = await self._store.now()
         try:
             done = await self._blobs.delete(key=sha, idle_seconds=PUT_GRACE_SECONDS)
         except Exception:
@@ -142,6 +145,6 @@ class StoryMediaExpiry:
             return False
         if done == "kept":
             return False
-        await self._store.record_tombstone(sha256=sha, reason=reason, deleted_at=now)
+        await self._store.record_tombstone(sha256=sha, reason=reason, deleted_at=deleted_at)
         self._metrics.inc("nora_social_story_bytes_deleted_total", reason=reason)
         return True
