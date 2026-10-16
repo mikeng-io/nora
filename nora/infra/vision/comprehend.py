@@ -85,8 +85,8 @@ _SHAPE = (
 )
 
 # One authored question per LABEL, falling back to one per top-level media
-# type. The sticker line follows `client._STICKER_PROMPT`'s reasoning: ingest holds the sticker and
-# NOT the conversation, so an
+# type. The sticker line: ingest holds the sticker and NOT the
+# conversation, so an
 # intent judgment made here is made blind and would replace the evidence that
 # lets anything downstream disagree with it.
 COMPREHEND_QUESTIONS = {

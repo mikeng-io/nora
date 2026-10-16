@@ -12,7 +12,7 @@ READ-ONLY, AND THAT IS STRUCTURAL RATHER THAN A PROMISE. There is no `INSERT`,
 reconstructing, and a second run over the same instant would answer differently
 from the first.
 
-WHERE IT LIVES. It composes five reads of five tables through the same store
+WHERE IT LIVES. It composes six reads of six tables through the same store
 classes production runs, over a bare `AsyncEngine`, and imports nothing above
 `nora.infra`. `nora.app` would put a read-only query behind the composition
 root; the eval-facing layer above the application may reach down to here, the
@@ -69,12 +69,13 @@ WHAT IT CANNOT FREEZE, stated rather than left to be discovered:
   it means building the reconstruction's transcript one layer up, where the
   join lives.
 - **WHEN a reminder was CANCELLED.** `reminders` has no history table, and
-  only `state`, `fired_at` and `outcome` move after create (the
-  `sa.update(REMINDERS)` sites in `nora/infra/sql/reminders.py`: `claim`,
-  `mark`, `cancel`, `sweep_firing`). Everything else (`text`, `due_at`,
-  `created_at`, `kind`, `payload`, the requester, the room, every recurrence
-  and series column) is written once by `_insert_values`, so today's row IS the
-  as-of value for all of them.
+  `state`, `fired_at` and `outcome` move after create (`claim`, `mark`,
+  `cancel`, `sweep_firing` in `nora/infra/sql/reminders.py`), and a note merge
+  (`SqlNoteStore.merge_into` in `nora/infra/sql/notes.py`) also cancels rows and
+  repoints `payload`'s note and revision ids. So `payload` reads as of today,
+  not as of the instant. The rest (`text`, `due_at`, `created_at`, `kind`, the
+  requester, the room, every recurrence and series column) is written once by
+  `_insert_values`, so today's row IS the as-of value for those.
 
   Two of the three moving columns are recoverable and one is not:
 
@@ -282,7 +283,7 @@ async def snapshot(
 
     The reads do not share a connection: each of `_transcript`,
     `SqlStandingStore.read_as_of`, `_culture` (once for the room, once for the
-    unit, once per listed person), `_notes` and `_reminders` opens and closes
+    unit, once per listed person), `_notes`, `_reminders` and `_lessons` opens and closes
     its own. One connection for the whole reconstruction would mean threading
     it through every helper, and `read_as_of` is a store method that owns its
     own.

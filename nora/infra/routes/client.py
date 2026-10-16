@@ -292,7 +292,7 @@ class RouteClient:
         return out
 
     async def locate(self, name: str) -> dict[str, Any]:
-        """The coordinate of ONE named place, for a SERVICE and never for the model
+        """The coordinate of ONE named place, for a SERVICE and never for the model.
         NEVER raises. Same resolver as `place_info`, so the same
         four statuses (`ok`, `ambiguous`, `not_found`, `unavailable`), but `ok` carries
         `lat` and `lng` as well as `name`.

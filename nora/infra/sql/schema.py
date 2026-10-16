@@ -184,8 +184,7 @@ MESSAGES = sa.Table(
     # queries it by hash, and an index here would disturb the one index that
     # matters.
     sa.Column("media_json", sa.Text),
-    # The shared file links recognised in `body` at ingest
-    # a JSON array of
+    # The shared file links recognised in `body` at ingest: a JSON array of
     # `{provider, file_id, url[, resource_key]}`, or NULL when there were none.
     # `media_json`'s shape and its reasons (a list per message, no child table
     # for `prune_all` to cascade into, unindexed). Written in the same INSERT,
@@ -980,8 +979,8 @@ REMINDERS = sa.Table(
     # ── recurrence (DEC-85) ──────────────────────────────────────────────────
     # A recurring reminder is a CHAIN of these rows, one per occurrence, and
     # only one of them is ever `pending`. `recurrence = 'none'` is a one-shot
-    # reminder, which is why every column here is nullable or has a server
-    # default.
+    # reminder. Every column here is nullable or has a server default so the
+    # columns can be added to existing rows without a backfill.
     sa.Column(
         "recurrence", sa.Text, nullable=False, server_default=sa.text("'none'"),
     ),
@@ -2917,9 +2916,8 @@ TURN_VERDICT = sa.Table(
               server_default=sa.text("'{}'")),
     sa.Column("created_at", sa.BigInteger, nullable=False),
     # The contradiction the domain type also refuses: a turn cannot be both
-    # grounded and carrying unsupported claims. Enforced here too because this
-    # is the column a re-derivation trigger reads, and a trigger firing off a
-    # self-contradictory row is worse than one that never fires.
+    # grounded and carrying unsupported claims. Enforced here too so a
+    # self-contradictory row cannot be stored for any later reader.
     sa.CheckConstraint(
         "not (grounded and cardinality(unsupported) > 0)",
         name="turn_verdict_grounded_has_no_unsupported_check",
