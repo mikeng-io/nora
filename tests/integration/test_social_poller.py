@@ -32,7 +32,7 @@ import sqlalchemy as sa
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.app.social_poller import SocialPoller
+from nora.app.social_poller import SocialPoller, relist_max_pages
 from nora.config import SocialPollConfig
 from nora.domain.social_stream import (
     Failed,
@@ -122,7 +122,11 @@ class World:
         return SocialPoller(
             source=self.source, store=self.store, health=self.health,
             roster=functools.partial(instagram_roster, self.subjects),
-            settings=SocialPollConfig(enabled=True, jitter_seconds=0, **settings),
+            # The re-walk is off unless a test asks for it: the back-fill's
+            # tests count the back-fill's own pages.
+            settings=SocialPollConfig(
+                enabled=True, jitter_seconds=0, **{"relist_pages_per_tick": 0, **settings},
+            ),
             metrics=self.metrics, media=self.media, blobs=self.blobs,
             media_objects=self.media_objects, clock=self.clock,
         )
@@ -861,7 +865,7 @@ async def test_a_post_with_no_usable_media_is_recorded_and_not_read_again(world)
             source=InstagramSocialSource(base_url=str(server.make_url("")), timeout_seconds=5),
             store=world.store, health=world.health,
             roster=functools.partial(instagram_roster, FakeSocialSubjectIndex({"ada": ADA})),
-            settings=SocialPollConfig(enabled=True, jitter_seconds=0),
+            settings=SocialPollConfig(enabled=True, jitter_seconds=0, relist_pages_per_tick=0),
             metrics=world.metrics, clock=world.clock,
         )
         await poller.tick()
@@ -1125,7 +1129,7 @@ async def test_a_first_page_read_again_leaves_a_new_post_to_the_poll(world) -> N
     )
     quiet(world, BEA)
     new = post(world, "new", age=timedelta(hours=1))
-    old = post(world, "old", age=timedelta(days=5))
+    old = tagged(post(world, "old", age=timedelta(days=5)), "Placeholder Square")
     world.source.pages[ADA] = Page(items=(new, old), next_cursor=f"{ADA}-c1")
     world.source.after[f"{ADA}-c1"] = Page(items=(), next_cursor=None)
     world.source.probes[ADA] = probe(posts=2)
@@ -1134,6 +1138,9 @@ async def test_a_first_page_read_again_leaves_a_new_post_to_the_poll(world) -> N
     await poller.tick()
     assert world.source.cursors == [None, None], "bea's first read, then ada's page 1 again"
     assert "new" not in await world.items(), "the re-read took the cursor only"
+    assert await places(world) == [("old", "Placeholder Square")], (
+        "it still compares the places of what it re-listed"
+    )
 
     world.clock.at(hours=6, minutes=1)
     await poller.tick()
@@ -1223,3 +1230,122 @@ async def test_the_item_limit_holds_on_the_first_page(world) -> None:
     assert await backfilled(world, "ada") == 5
     assert world.source.cursors == [None, None], "the limit was reached on page 1"
     assert ended(world, "max_items") == 1
+
+
+# ---- tagged places ------------------------------------------------------------
+
+
+async def places(world: World) -> list[tuple[str, str | None]]:
+    """Every `place` state row, oldest first: (item, new place)."""
+    s = SOCIAL_ITEM_STATE
+    async with world.engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(s.c.item_id, s.c.place).where(s.c.state == "place")
+            .order_by(s.c.recorded_at, s.c.id),
+        )).all()
+    return [(r.item_id, r.place) for r in rows]
+
+
+def tagged(item: SocialItem, place: str | None) -> SocialItem:
+    return dataclasses.replace(item, location=place)
+
+
+async def test_a_relisted_item_records_a_place_change_in_both_directions(world) -> None:
+    """A list read re-lists an item already recorded: a tag added, edited or
+    removed since is a `place` row; an unchanged one is none."""
+    quiet(world, BEA)
+    p1 = post(world, "p1")
+    world.source.probes[ADA] = probe(posts=1)
+    world.source.pages[ADA] = Page(items=(p1,), next_cursor=None)
+    poller = world.poller()
+    await poller.tick()
+    assert "p1" in await world.items() and await places(world) == []
+
+    steps: list[str | None] = ["Placeholder Square", "Placeholder Pier", None, None]
+    for n, place in enumerate(steps, start=2):
+        world.source.probes[ADA] = probe(posts=n)
+        world.source.pages[ADA] = Page(items=(tagged(p1, place),), next_cursor=None)
+        world.clock.at(hours=6 * (n - 1))
+        await poller.tick()
+    assert world.source.reads("items").count(ADA) == 5, "one list read each time, nothing more"
+    assert await places(world) == [
+        ("p1", "Placeholder Square"), ("p1", "Placeholder Pier"), ("p1", None),
+    ], "added, edited, removed; the unchanged last read appends nothing"
+
+
+async def walked(world: World, poller: SocialPoller) -> list[str | None]:
+    """The cursors the re-walk read: every list read after the back-fill's."""
+    await ticks(world, poller, 10)
+    return list(world.source.cursors)
+
+
+async def test_a_story_read_records_a_place_change_of_a_frame_it_shows_again(world) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(marker=100)
+    world.source.stories[ADA] = story(frame("f1", world.clock))
+    held(world, "f1")
+    poller = world.poller()
+    await poller.tick()
+    assert "f1" in await world.items() and await places(world) == []
+
+    world.source.probes[ADA] = probe(marker=200)
+    world.source.stories[ADA] = story(
+        dataclasses.replace(frame("f1", world.clock), location="Placeholder Harbour"),
+    )
+    world.clock.at(hours=6)
+    await poller.tick()
+    assert world.source.reads("story") == [ADA, ADA]
+    assert await places(world) == [("f1", "Placeholder Harbour")]
+
+
+async def test_the_rewalk_gives_recorded_items_their_place_once(world) -> None:
+    """Items recorded before places were compared (a back-fill run by a
+    poller with no re-walk), then a restart onto one with it: one re-walk
+    lists them again, newest first, and each gains its place; it ends at the
+    grid's end and never runs again."""
+    quiet(world, BEA)
+    grid(world, ADA, 30)
+    poller = world.poller()
+    await poller.tick()
+    await ticks(world, poller, 3)
+    assert world.source.cursors == [None, None, f"{ADA}-c1", f"{ADA}-c2"], "the back-fill"
+    assert await backfilled(world, "ada") == 30 and await places(world) == []
+
+    # The network now lists every item with a tag.
+    first = world.source.pages[ADA]
+    assert isinstance(first, Page)
+    world.source.pages[ADA] = Page(
+        items=tuple(tagged(i, f"Placeholder {i.item_id}") for i in first.items),
+        next_cursor=first.next_cursor,
+    )
+    for cursor, page in list(world.source.after.items()):
+        assert isinstance(page, Page)
+        world.source.after[cursor] = Page(
+            items=tuple(tagged(i, f"Placeholder {i.item_id}") for i in page.items),
+            next_cursor=page.next_cursor,
+        )
+    cursors = await walked(world, world.poller(relist_pages_per_tick=2))
+    assert cursors[4:] == [None, f"{ADA}-c1", f"{ADA}-c2"], "three pages once, then nothing"
+    got = await places(world)
+    assert len(got) == 30 and all(place == f"Placeholder {item}" for item, place in got)
+    assert [r[:2] for r in await world.polls("ada")][-1] == ("relist", "read_ok")
+
+
+async def test_the_rewalk_ends_at_its_page_cap_whatever_an_old_pinned_post_says(
+    world,
+) -> None:
+    """A pinned post years old makes the member's oldest recorded item older
+    than any page reaches, so the walk ends at `relist_max_pages` pages."""
+    quiet(world, BEA)
+    grid(world, ADA, 120)
+    first = world.source.pages[ADA]
+    assert isinstance(first, Page)
+    pinned = post(world, "pinned", age=timedelta(days=4000))
+    world.source.pages[ADA] = Page(items=(pinned, *first.items), next_cursor=first.next_cursor)
+    poller = world.poller()
+    await poller.tick()
+    await ticks(world, poller, 6)
+    before = len(world.source.cursors)
+    cursors = await walked(world, world.poller(relist_pages_per_tick=2))
+    assert len(cursors) - before == relist_max_pages(50) == 6
+    assert cursors[before:] == [None, *(f"{ADA}-c{n}" for n in range(1, 6))]

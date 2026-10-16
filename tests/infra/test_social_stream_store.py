@@ -145,3 +145,60 @@ async def test_an_items_current_state_is_its_latest_row(stores) -> None:
     await store.record_state(network="instagram", item_id="2001", state="hidden")
     assert await store.item_state(network="instagram", item_id="2001") == "hidden"
     assert await store.item_state(network="instagram", item_id="2002") is None
+
+
+async def test_a_place_row_is_the_current_place_and_hides_nothing(stores) -> None:
+    """A tag changed after the item was recorded is a `place` row: the latest
+    one is the current place (None: removed), the recorded one stands until
+    then, and no reader takes a place row for gone or hidden."""
+    store, _ = stores
+    assert await store.insert_item(
+        item("2001"), person="ada", origin="poll", seen_at=T0, media_ref="a1" * 32,
+        location="Placeholder Square",
+    )
+    assert await store.insert_item(item("2002"), person="ada", origin="poll", seen_at=T0)
+    ids = ["2001", "2002", "2003"]
+    assert await store.current_places(network="instagram", item_ids=ids) == {
+        "2001": "Placeholder Square", "2002": None,
+    }
+    await store.record_place(network="instagram", item_id="2001", place="Placeholder Pier")
+    await store.record_place(network="instagram", item_id="2002", place="Placeholder Hill")
+    await store.record_place(network="instagram", item_id="2001", place=None)
+    assert await store.current_places(network="instagram", item_ids=ids) == {
+        "2001": None, "2002": "Placeholder Hill",
+    }
+    assert await store.item_state(network="instagram", item_id="2001") is None
+    assert [u.item_id for u in await store.unperceived(since=T0, limit=10)] == ["2001"]
+    # Through any time after the inserts: `recorded_at` is the database's clock.
+    later = int((datetime.now(UTC) + timedelta(days=1)).timestamp() * 1000)
+    posted = await store.posted(persons={"ada"}, through_ms=later)
+    assert len(posted.items) == 2, "both items still count on the daybook"
+
+    await store.record_state(network="instagram", item_id="2001", state="hidden")
+    await store.record_place(network="instagram", item_id="2001", place="Placeholder Bay")
+    assert await store.item_state(network="instagram", item_id="2001") == "hidden", (
+        "a later place row does not un-hide it"
+    )
+    assert await store.unperceived(since=T0, limit=10) == []
+
+
+async def test_a_place_row_does_not_settle_a_read_whose_item_waits_for_perception(
+    stores,
+) -> None:
+    """A read's stimulus waits for each readable item with media to be
+    perceived; a `place` row does not make that item hidden, so it still
+    waits."""
+    store, _ = stores
+    read_id = "00000000-0000-4000-8000-000000000001"
+    assert await store.insert_item(
+        item("2001"), person="ada", origin="poll", seen_at=T0, media_ref="a1" * 32,
+        read_id=read_id,
+    )
+    await store.record_poll(
+        network="instagram", person="ada", stage="items", outcome="read_ok", id=read_id,
+    )
+    await store.record_place(network="instagram", item_id="2001", place="Placeholder Pier")
+    since = datetime.now(UTC) - timedelta(days=1)
+    units = {"ada": ("u1",)}
+    assert await store.settled_reads(require_perceived=False, units=units, since=since)
+    assert await store.settled_reads(require_perceived=True, units=units, since=since) == []

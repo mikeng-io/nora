@@ -109,7 +109,8 @@ is probed or read. Since S3 the read side holds it too: every read of
 `social_item` for perception or for a stimulus
 (`SqlSocialStreamStore`, given the opted-out persons at construction) leaves
 out their items, including any recorded before the switch was set, and every
-item with a `social_item_state` row (gone or hidden). The poller's own dedupe
+item with a `gone` or `hidden` state row (a `place` row hides nothing, §5).
+The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
 
 ## 3. The poll: a probe decides, then the costly read
@@ -297,13 +298,28 @@ after insert. Everything that changes about an item is a new row elsewhere.
   as one line of at most `LOCATION_MAX_CHARS` (`published_location`), the
   author's words kept as data. The story sticker's field is UNMEASURED on
   the story document and read defensively; a post read alone
-  (`GET /posts/{shortcode}`) carries none.
+  (`GET /posts/{shortcode}`) carries none. **The place follows the author**
+  (operator, 2026-10-17): this column is the place as first recorded, and
+  a tag added, edited or removed later is a `social_item_state` row, state
+  `place`, carrying the new place (NULL: removed). The current place is the
+  latest `place` row's, else this column; the memory index projects the
+  item's `social_location` from it (a change re-embeds the node, a removal
+  drops it). Every story read, list read and back-fill page compares each
+  item it lists that is already recorded with its current place and appends
+  a row only where they differ, with no call of its own. Items recorded
+  before places were compared get theirs from a once-only re-walk
+  (`relist`, `relist_pages_per_tick`, default 2, 0 is off): after a
+  member's back-fill is done, their list newest first, recording no item,
+  ending at the grid's end, at a page reaching past their oldest recorded
+  item or after `ceil(backfill_max_items / 12) + 1` pages (6 at the
+  defaults). It runs at the back-fill's priority and budget rule, one page a
+  member a tick.
   `media_ref`, `seen_at`, `origin` (`poll` or `backfill`), `collab` (another
   account's post the person co-authored, §1), `recorded_at`.
   No unit column: a person in two units is one row, and which units may read
   it is derived from membership at read time.
 - **`social_poll`**: one row per probe and per read: `network`, `person`,
-  `stage` (`probe`, `story`, `items`, `backfill`), `outcome` (`unchanged`,
+  `stage` (`probe`, `story`, `items`, `backfill`, `relist`), `outcome` (`unchanged`,
   `story_due`, `items_due`, `partial`, `count_fell`, `read_ok`, `halted`,
   `backed_off`, `error`, and for a back-fill page `abandoned` when its cursor
   was judged bad and `unavailable` when the bridge answered nothing, §7), a
@@ -335,7 +351,8 @@ configured), records it `failed`, never read again. The describer is told what i
 reads (story frame, post or reel, collab, and when it was posted, as an
 absolute time because the description is kept), never the caption. A frame gone (§3) and a hide are
 rows in an append-only `social_item_state` (`item`, `state`: `gone`,
-`hidden`; `reason`; `recorded_at`), which every read joins. No row of this
+`hidden`, or `place` with the new tagged place in `place`; `reason`;
+`recorded_at`), which every read joins for `gone` and `hidden`. No row of this
 stream has a retention key: posts and reels have none at all, and a story's
 only bound is on its bytes (above).
 
@@ -536,9 +553,6 @@ the index has not projected waits for the hard limit.
   no author's viewer list was read to confirm Nora is absent from it. That
   read needs a member's help: one story, read by the poller, then their
   viewer list.
-- A location tag the author later removes stays recorded and searchable:
-  `social_item` is append-only, its first row's place is kept, and nothing
-  compares a re-listed item's place against it. Removing it needs a place
-  change recorded as an item state row, the poller comparing each re-listed
-  item's place, and the index projecting the latest place. A withdrawn
-  whereabouts is the sensitive case; captions behave the same way.
+- A caption the author later edits stays as first recorded: nothing
+  compares a re-listed item's caption. The place's machinery (§5) is the
+  pattern if one is needed.
