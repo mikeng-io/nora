@@ -3,19 +3,14 @@ propagation — everything here is pure OpenTelemetry with no `strands` import,
 which is the point (`tests/test_boundaries.py::test_strands_import_boundary`
 allows `strands` only under `nora/agent/`).
 
-Provider/exporter setup moved to `nora.agent.telemetry.setup_agent_tracing`,
-called directly from `nora/__main__.py` (the composition root) with
-`build_sampler()` passed in as a plain value — see the comment where
-`setup_tracing` used to live, below, for why this module cannot make that
-call itself.
+Provider/exporter setup lives in `nora.agent.telemetry.setup_agent_tracing`,
+called from `nora/__main__.py` (the composition root) with `build_sampler()`
+passed in as a plain value; see the comment above `span` for why this module
+cannot make that call itself.
 
-Raw-model-call instrumentation (`generation`/`annotate_generation`, the
-hand-rolled GenAI/Langfuse dialect this module used to spell by hand) is gone
-— replaced by `nora.agent.telemetry.start_raw_model_span`/
+Raw-model-call spans are `nora.agent.telemetry.start_raw_model_span`/
 `end_raw_model_span`, thin wrappers around Strands' own
-`Tracer.start_model_invoke_span`/`end_model_invoke_span`, for the same reason:
-that dialect is upstream-maintained now, not this module's to keep two
-architecture tests in sync with.
+`Tracer.start_model_invoke_span`/`end_model_invoke_span`.
 """
 
 from __future__ import annotations
@@ -55,17 +50,16 @@ log = logging.getLogger("nora.tracing")
 #:   under it. Never exported. Its signal belongs on a counter.
 TraceKind = Literal["generation", "plumbing"]
 
-#: The attribute name itself. `nora.` prefixed like every other attribute this
-#: module's callers set, so nothing in the collector has to know it is special.
+#: The attribute name itself, `nora.` prefixed like every other attribute this
+#: module's callers set.
 TRACE_KIND = "nora.trace_kind"
 
 _TRACE_KINDS: frozenset[str] = frozenset(get_args(TraceKind))
 
-#: What `capture_context` hands back and `attached` takes. Aliased here so a
+#: What `capture_context` hands back and `attached` takes. Aliased so a
 #: pipeline that carries one across a queue names THIS module rather than
-#: `opentelemetry` — the same reason `nora.app.agent_runner` types Strands'
-#: return as `Any`: a stage should not have to import a tracing vendor to hold
-#: an opaque handle it never inspects.
+#: `opentelemetry`: a stage should not import a tracing vendor to hold an
+#: opaque handle it never inspects.
 TraceCarrier = Context
 
 
@@ -77,26 +71,23 @@ class _PlumbingIsNotATrace(Sampler):
     model call — sequencing ingest stages, writing a row, resolving an
     identity, counting a refusal — is plumbing, and plumbing's questions
     («how many», «how often», «with what outcome») are Prometheus' questions.
-    `nora/ingest/pipeline.py` opens six spans and there is no model call under
-    any of them; it is also the highest-volume entry point in the system, so it
-    was 97 of the operator's last 100 traces (measured 2026-08-28) — a
-    collector that is 97% plumbing cannot be read for the turns that matter.
+    `nora/ingest/pipeline.py` opens spans with no model call under any of
+    them, and it is the highest-volume entry point, so exporting it would bury
+    the turns that matter.
 
-    **This is a decision about ROOTS, not about every span**, and that
-    distinction is the whole design. `engagement.admission` has no generation in
-    it either, and it must keep being exported: as a CHILD of a trace that has
-    one, it is how a turn that ended before the model call ends visibly at a
-    named stage. Composed under `ParentBased`, so a child never re-decides — it
-    inherits whatever its root was given, which is also what keeps a QUEUED
-    tag's turn (re-attached to a captured context whose root span has already
-    ended) in the same trace as the root that admitted it.
+    **This is a decision about ROOTS, not about every span.**
+    `engagement.admission` has no generation in it either, and it must keep
+    being exported: as a CHILD of a trace that has one, it is how a turn that
+    ended before the model call ends visibly at a named stage. Composed under
+    `ParentBased`, so a child never re-decides — it inherits whatever its root
+    was given, which also keeps a QUEUED tag's turn (re-attached to a captured
+    context whose root span has already ended) in the same trace as the root
+    that admitted it.
 
-    **DEFAULT: EXPORT.** An undeclared root is kept, and the direction is
-    deliberate. Getting it wrong towards export costs noise, which is visible
-    and complains about itself; getting it wrong towards silence costs a
-    missing trace for a model call, which is an invisible gap in exactly the
-    traces this rule exists to protect. Only an explicit `plumbing` drops. An
-    undeclared value is LOGGED and kept, for the same reason.
+    **DEFAULT: EXPORT.** An undeclared root is kept. Erring towards export
+    costs visible noise; erring towards silence costs an invisible missing
+    trace for a model call. Only an explicit `plumbing` drops. An undeclared
+    value is LOGGED and kept.
     """
 
     def should_sample(
@@ -128,28 +119,20 @@ def build_sampler() -> Sampler:
     """The sampler `setup_tracing` installs, exposed so a TEST provider can be
     built with the SAME rule production runs.
 
-    `tests/conftest.py`'s `exported_spans` fixture uses this. Without it a test
-    provider would export spans production drops, and every assertion about
-    «what reaches the collector» would be measuring a provider that no
-    deployment has — the silent-match failure, in the instrument that exists to
-    find silent matches.
+    `tests/conftest.py`'s `exported_spans` fixture uses this; without it a test
+    provider would export spans production drops, and assertions about «what
+    reaches the collector» would measure a provider no deployment has.
     """
     return ParentBased(root=_PlumbingIsNotATrace())
 
 
-#: `setup_tracing` used to live here, assembling its own `TracerProvider`.
-#: Deleted rather than turned into a call-through to
-#: `nora.agent.telemetry.setup_agent_tracing`: `nora.agent` sits ABOVE
-#: `nora.obs` in the layered-import contract (`pyproject.toml`, "layered
-#: architecture" — `nora.agent | nora.platform` precedes `nora.obs` in the
-#: `layers` list), so this module importing FROM `nora.agent`, even lazily
-#: inside a function, is the exact violation the contract exists to catch —
-#: `uv run lint-imports` would refuse it. `nora/__main__.py` (the composition
-#: root, outside the layer graph) calls `setup_agent_tracing` directly instead
-#: and passes it `build_sampler()` from here as a plain value; that keeps the
-#: import direction the contract requires (`nora.agent` may import
-#: `nora.obs`, never the reverse) without this module needing to know
-#: `nora.agent` exists at all.
+#: Provider setup is not here: `nora.agent` sits ABOVE `nora.obs` in the
+#: layered-import contract (`pyproject.toml`, "layered architecture"), so this
+#: module importing from `nora.agent`, even lazily inside a function, would be
+#: the violation `uv run lint-imports` refuses. `nora/__main__.py` (the
+#: composition root, outside the layer graph) calls
+#: `nora.agent.telemetry.setup_agent_tracing` and passes it `build_sampler()`
+#: as a plain value.
 
 
 @contextmanager
@@ -157,21 +140,16 @@ def span(name: str, **attributes: object) -> Iterator[None]:
     """One named span, and **never load-bearing** — the same rule
     `nora.agent.telemetry.setup_agent_tracing` keeps at provider setup.
 
-    Until 2026-08-27 `nora/` opened **zero** spans: every span reaching Langfuse
-    came from Strands, from inside the agent loop, so a turn that failed BEFORE
-    the model call produced no trace at all and was indistinguishable from a turn
-    that never happened (`design/dreamer-agent-loop/02-instrument-blindness`
-    Layer 7). This is the skeleton that closes it — one span per turn, children
-    named for the stages that already exist, so a turn ending early ends
-    **visibly, at a named stage**.
+    Spans opened here (one per turn, children named for the stages) make a turn
+    that fails BEFORE the model call end **visibly, at a named stage** instead
+    of producing no trace.
 
     **It catches `BaseException`, records, and RE-RAISES.** Three properties, and
     all three are load-bearing:
 
     - `BaseException`, not `Exception`, because **cancellation is not an
       `Exception`** — a wrapper that only catches `Exception` leaves the cancel
-      path unrecorded, which is the defect the Standing debrief shipped and its
-      review caught. A cancelled turn is exactly the turn worth seeing.
+      path unrecorded. A cancelled turn is exactly the turn worth seeing.
     - It **re-raises, always**. An observation that changes control flow is not an
       observation. A span must never turn a failing turn into a passing one, and
       must never swallow a cancel.
@@ -183,8 +161,8 @@ def span(name: str, **attributes: object) -> Iterator[None]:
 
     **Attributes are passed AT START, not set afterwards**, and that is what
     makes `build_sampler`'s rule reachable at all: a `Sampler` sees only what
-    the span was started with, so a `nora.trace_kind` set one line later is a
-    kind the sampling decision has already been made without. They are coerced
+    the span was started with, so a `nora.trace_kind` set later would arrive
+    after the sampling decision. They are coerced
     to safe scalars FIRST (`_safe_attributes`, which drops a value it cannot
     render rather than raising) so that a broken attribute still costs only
     that attribute — never the span, and never the body.
@@ -195,11 +173,11 @@ def span(name: str, **attributes: object) -> Iterator[None]:
         )
         sp = cm.__enter__()
     except Exception:
-        # ACQUISITION is guarded too, not just recording. The debrief stage runs
-        # inside a `finally` AFTER the tag pipeline's outer `except BaseException`
-        # has already run, so anything raised there escapes `run()` and takes out
-        # the whole tag rather than just the trace. A span must never be able to
-        # do that. Untraced body still runs.
+        # ACQUISITION is guarded too, not just recording: a span can be opened
+        # inside a `finally` after the tag pipeline's outer
+        # `except BaseException` has run, where anything raised escapes `run()`
+        # and takes out the whole tag rather than just the trace. The untraced
+        # body still runs.
         log.debug("span %s could not start; running untraced", name, exc_info=True)
         yield
         return
@@ -224,27 +202,12 @@ def span(name: str, **attributes: object) -> Iterator[None]:
             log.debug("span %s did not close cleanly", name, exc_info=True)
 
 
-#: `generation`/`annotate_generation` (the hand-rolled `langfuse.observation.*`
-#: + `gen_ai.*` dialect this module used to spell by hand) are deleted —
-#: replaced by `nora.agent.telemetry.start_raw_model_span`/
-#: `end_raw_model_span`, thin wrappers around Strands' own
-#: `Tracer.start_model_invoke_span`/`end_model_invoke_span`. That pair already
-#: implements the OTel GenAI semantic conventions and (for the Agent-SDK path)
-#: Langfuse-observation wiring, upstream-maintained; this module no longer
-#: needs to keep a second, hand-copied dialect in sync with it via
-#: `tests/architecture/test_generation_spans_use_the_helper.py` (deleted with
-#: this change — see `tests/architecture/
-#: test_raw_model_calls_use_strands_telemetry.py` for its replacement).
-
-
 def _safe_attributes(attributes: dict[str, object]) -> dict[str, str | bool | int | float]:
     """Coerce to what OTel accepts, PER KEY, and never raise.
 
-    Per key rather than in one `try`, because the old shape set attributes in a
-    loop inside a single guard: the first unstringable value abandoned every
-    attribute after it, silently. A value that cannot be rendered now costs only
-    itself. (`tests/test_span_skeleton.py` drives this with a `__str__` that
-    raises.)
+    Per key rather than in one `try`, so a value that cannot be rendered costs
+    only itself, not the attributes after it. (`tests/test_span_skeleton.py`
+    drives this with a `__str__` that raises.)
     """
     out: dict[str, str | bool | int | float] = {}
     for key, value in attributes.items():
@@ -258,20 +221,17 @@ def _safe_attributes(attributes: dict[str, object]) -> dict[str, str | bool | in
 def annotate(**attributes: object) -> None:
     """Add attributes to the span that is CURRENT right now, and never raise.
 
-    `span` takes its attributes at entry, which is the wrong end for anything a
-    stage only learns on the way out — an outcome, a stop reason, a latency. The
-    alternative was to make `span` yield its span object, and that pushes the
-    "a broken tracer must not break a turn" guard out to every call site; here
-    it stays in one place, exactly as it is for the attributes `span` itself
-    takes.
+    `span` takes its attributes at entry; this is for anything a stage only
+    learns on the way out — an outcome, a stop reason, a latency. It keeps the
+    "a broken tracer must not break a turn" guard in one place instead of at
+    every call site.
 
-    **A no-op on a span that has already ended**, and that is a real state
-    rather than a theoretical one: the tag path's root span is closed at the
-    moment a QUEUED tag is enqueued, so a worker annotating "the root" would be
-    writing into nothing. The OTel SDK logs «Setting attribute on ended span»
-    and records neither the value nor an error (measured, 2026-08-28), which is
-    exactly why `EngagementPipeline` annotates the per-turn span it opens
-    itself and never the dispatch root.
+    **A no-op on a span that has already ended**: the tag path's root span is
+    closed when a QUEUED tag is enqueued, so a worker annotating "the root"
+    would write into nothing. The OTel SDK logs «Setting attribute on ended
+    span» and records neither the value nor an error, which is why
+    `EngagementPipeline` annotates the per-turn span it opens itself and never
+    the dispatch root.
     """
     try:
         sp = trace.get_current_span()
@@ -287,8 +247,8 @@ def current_span_ids() -> tuple[str, str]:
     or `("", "")` when there is no recording span. Never raises.
 
     For an audit row that links to its trace as a debug view (the
-    `computer_events` table, design/sandbox-runtime §12): the row is the
-    record, so an absent trace is an empty link, never a guessed one."""
+    `computer_events` table): the row is the record, so an absent trace is an
+    empty link, never a guessed one."""
     try:
         context = trace.get_current_span().get_span_context()
         if not context.is_valid:
@@ -304,8 +264,7 @@ def current_trace_id() -> str | None:
     is no recording span (tracing off, or called outside one). Never raises.
 
     For a row that must point at the trace that produced it (the summons
-    ledger's `trace_id`, `nora.app.summons`): the row is the claim, the trace
-    is its provenance, and `None` says honestly that there is none rather
+    ledger's `trace_id`, `nora.app.summons`): `None` says there is none rather
     than storing the all-zero id of a non-recording span."""
     try:
         context = trace.get_current_span().get_span_context()
@@ -329,11 +288,8 @@ def _row_count(value: object) -> int | None:
     A store READ answers either a sized collection (`list[TranscriptRow]`,
     `tuple[Note, ...]`, `[]`) — where "how many rows" is `len` — or a scalar
     (`Standing | None`, an `int` watermark, a `bool`) — where a row count
-    would be fabricated rather than measured. `None` here means the
-    attribute is left off the span entirely (`traced_read` only sets it when
-    this returns a number), which is the same "cost only itself, never
-    invent a value" rule `_safe_attributes` already holds for an
-    unstringable one.
+    would be fabricated. `None` means the attribute is left off the span
+    (`traced_read` only sets it when this returns a number).
     """
     if value is None:
         return 0
@@ -352,37 +308,24 @@ async def traced_read(
     `nora.store.row_count` recorded on success.
 
     `count`, when given, replaces `_row_count` as how the row count is
-    derived from the result — for a result `_row_count` cannot read at all.
+    derived from the result, for a result `_row_count` cannot read.
     `MemoryStore.representation` answers a `Recollection`, not a sized
-    collection, so `_row_count` leaves it unmeasured even though the read
-    plainly has a count: how many conclusions it carries
-    (`len(recall.conclusions)`). A caller that knows its own result shape
-    passes `count=lambda r: len(r.conclusions)` rather than this function
-    growing a case for every store's own answer type.
+    collection, so a caller passes `count=lambda r: len(r.conclusions)`.
 
-    Issue #55's last open quarter: `nora/infra/**` (144 files, ~25k lines) had
-    no instrumentation, and per-function spans across that surface was ruled
-    out as the fix — 144 files of `with span(...)` is both a huge diff and a
-    pattern nobody keeps applying to file #145. This is the ONE wrapper
-    instead, called at each store-port boundary that sits on a turn's
-    critical path (`nora.engagement.context.TranscriptInjection` — the reads
-    `build_prefill` renders from — and `nora.app.runtime`'s Dreamer cursor
-    reads), so an unbounded or slow read is visible without a second copy of
-    this timing-and-naming logic at every call site.
+    This is the one timing-and-naming wrapper for store-port reads on a turn's
+    critical path (`nora.engagement.context.TranscriptInjection` and
+    `nora.app.runtime`'s Dreamer cursor reads), so an unbounded or slow read is
+    visible.
 
     **The failure path is `span`'s, not this function's.** `coro` raising
-    propagates OUT of the `with span(...)` block before `annotate` runs, so
-    `span`'s own `BaseException` handler — record, `ERROR` status, re-raise —
-    is what a failing read ends up producing; this wrapper adds nothing on
-    that path and must not, because a second `except` here would be a second
-    place that failure-shaped behaviour could drift from `span`'s.
+    propagates out of the `with span(...)` block before `annotate` runs, so
+    `span`'s `BaseException` handler (record, `ERROR` status, re-raise) is what
+    a failing read produces; this wrapper adds no `except` of its own.
 
     Attributes go through `annotate`, not `span(..., **attrs)`, because both
-    are known only on the way OUT — the duration is the read's own elapsed
-    time, and the row count is a property of what came back. `span`'s
-    attributes are read by the R-76 sampler at START, which is exactly the
-    reason `nora.trace_kind` must never be one of these: nothing here decides
-    whether the read's trace is kept, only what is inside it once it is.
+    are known only on the way OUT. `span`'s attributes are read by the R-76
+    sampler at START, and `nora.trace_kind` must never be one of these:
+    nothing here decides whether the read's trace is kept.
     """
     started = time.perf_counter()
     with span(f"store.{store}.{method}"):
@@ -401,15 +344,13 @@ def capture_context() -> Context:
     """The current trace context, to be re-`attached` on whatever task picks the
     work up later. Never raises; an empty `Context` is the degraded answer.
 
-    **This exists because `asyncio.create_task` DOES copy contextvars, not
-    because it doesn't.** OTel's context is a contextvar, so a task inherits
-    whatever span was current at `create_task` time — measured, 2026-08-28. On
-    the tag path that inheritance is actively wrong: a QUEUED tag is spawned by
+    **`asyncio.create_task` copies contextvars.** OTel's context is a
+    contextvar, so a task inherits whatever span was current at `create_task`
+    time. On the tag path that inheritance is wrong: a QUEUED tag is spawned by
     `ConversationSlots.release_and_dispatch`, which runs in the PREVIOUS turn's
     `finally`, inside that turn's own span. Left alone, the queued tag's spans
-    would nest under the tag before it in the queue — one trace containing two
-    unrelated conversations' turns, which is worse than the rootless spans this
-    replaces because it reads as a causal relation that does not exist.
+    would nest under the tag before it in the queue, reading as a causal
+    relation that does not exist.
 
     So the context is captured where the tag was ADMITTED and attached where it
     RUNS, and `attached` replaces the ambient context wholesale rather than
@@ -476,18 +417,11 @@ def resolve_otlp_headers(headers_env: str) -> dict[str, str] | None:
 def trace_attributes(ctx, doctrine) -> dict:
     """Provenance only — never message content (see the dedicated test for this).
 
-    `note_index_entries` is a COUNT, which is why it belongs in a dict that
-    otherwise holds only hashes and ids: it says how many notes were in front
-    of her on this turn without saying what any of them is. The titles are
-    already in the GENERATION span's prompt for a turn that had any; this
-    number is the one fact a turn with NONE cannot otherwise report, and a
-    trace that cannot say «she was shown nothing» reads identically to one
-    where the tier was never wired.
-
-    It is the per-turn counterpart of `nora_note_index_entries`, and the two
-    answer different questions on purpose: the gauge says what the notebook
-    holds NOW, this says what THIS turn saw. They diverge exactly when a turn
-    matters — a reply written against an index that has since changed.
+    `note_index_entries` is a COUNT: how many notes were in front of her on
+    this turn, without saying what any of them is. It is the one fact a turn
+    with NO notes cannot otherwise report in its trace. It is the per-turn
+    counterpart of `nora_note_index_entries`: the gauge says what the notebook
+    holds NOW, this says what THIS turn saw.
 
     Stamped on every span in the turn (Strands applies these to the agent span
     and each tool/model child), so filtering Langfuse to «turns that saw an

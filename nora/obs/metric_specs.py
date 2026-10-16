@@ -1,14 +1,12 @@
 """Every metric Nora declares — the names, labels and help text, nothing else.
 
-Split out of `nora.obs.metrics` when that module hit 299 of the 300-line hard
-cap (`tests/architecture/test_module_size.py`) with three features queued
-behind it. The seam is real regardless of the line count: WHAT is measured is
-a slow-moving registry the whole codebase reads, while HOW it is recorded is
-one class with a prometheus-client registry inside it.
+WHAT is measured is a slow-moving registry the whole codebase reads; HOW it is
+recorded is `nora.obs.metrics.Metrics`, one class with a prometheus-client
+registry inside it.
 
-**Metric names are append-only.** This is an SRE's repo — a rename breaks
-dashboards and alerts silently, and `tests/test_metrics_export.py` enumerates
-`DECLARED_NAMES` to enforce it. Add to the end of a tuple; never edit a name.
+**Metric names are append-only.** A rename breaks dashboards and alerts
+silently, and `tests/test_metrics_export.py` enumerates `DECLARED_NAMES` to
+enforce it. Add to the end of a tuple; never edit a name.
 """
 
 from __future__ import annotations
@@ -68,20 +66,14 @@ class _GaugeSpec(NamedTuple):
     labelnames: tuple[str, ...] = ()
 
 
-#: DERIVED from `nora.domain.media_join.JOIN_PATHS`, never hand-copied — one
+#: DERIVED from `nora.domain.media_join.JOIN_PATHS`, never hand-copied: one
 #: named constant the code increments against and the help text reads from
-#: (CLAUDE.md's label-vocabulary rule). A list written out here goes stale the
-#: first time a ninth transcript builder lands, and a help text naming seven
-#: paths for an eight-path series is a metric that documents itself wrongly.
+#: (CLAUDE.md's label-vocabulary rule), so the help text cannot name a different
+#: set of paths than the series carries.
 _JOIN_PATHS = " / ".join(JOIN_PATHS)
 
-#: DERIVED for `_JOIN_PATHS`' reason, and this one has already been paid for
-#: once: `nora_reasoning_strip_total`'s help text was hand-written as
-#: «tag / participation / dreamer:<adaptor>» while `nora.app.fire` was sending
-#: `heartbeat` and `proactive` through the same label. An operator filtering a
-#: dashboard off that sentence dropped the reminder path silently. The set now
-#: comes from `nora.domain.audience.SPEAKING_AUDIENCES`, which is what the
-#: call sites pass.
+#: DERIVED for `_JOIN_PATHS`' reason. The set comes from
+#: `nora.domain.audience.SPEAKING_AUDIENCES`, which is what the call sites pass.
 _STRIP_PATHS = PATHS_HELP
 
 _WRITE_OUTCOMES = " / ".join(WRITE_OUTCOMES)
@@ -91,24 +83,20 @@ class _HistogramSpec(NamedTuple):
     name: str
     help_text: str
     buckets: tuple[float, ...] = _DEFAULT_BUCKETS
-    # Histograms were label-free until `nora_llm_latency_seconds` gained
-    # `audience` (see its entry below). `Metrics.observe` had accepted `**labels`
-    # and recorded them only in its test-readback dict all along, so a call site
-    # passing one got a silently unlabelled sample — which is why this field, not
-    # the keyword, is what makes a labelled histogram real.
+    # The prometheus histogram carries only the labels declared here;
+    # `Metrics.observe` records `**labels` in its test-readback dict regardless, so
+    # this field is what makes a labelled histogram real.
     labelnames: tuple[str, ...] = ()
 
 
-# Every metric name below already existed before this module's prometheus-client
-# rewrite — names are append-only (an SRE's repo; renames break dashboards).
-# `platform` is new on the four series spec §6 calls out (today only
-# `nora_messages_total` had one, so with N adapters a stuck/failing platform
-# was invisible in the other three): nora_tags_total, nora_replies_total,
-# nora_silent_failures_total, nora_errors_total.
+# Names are append-only (renames break dashboards).
+# `platform` is on `nora_messages_total`, nora_tags_total, nora_replies_total,
+# nora_silent_failures_total and nora_errors_total, so a stuck or failing
+# platform is visible per series.
 _COUNTERS: tuple[_CounterSpec, ...] = (
     # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`). The alert reads
-    # the timestamp gauges below, never these: a rare counter reads empty after
-    # the restarts this process sees every day.
+    # the timestamp gauges below, never these: a rare counter reads empty after a
+    # restart.
     _CounterSpec(
         "nora_oauth_refresh_failures_total",
         "OAuth refresh attempts that failed, by lane (xai / openai_codex) and "
@@ -123,14 +111,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "supervisor. Any increment is a bug; the traceback is in the log.",
         ("lane",),
     ),
-    # Music liveness (2026-09-22). There was NO music metric of any kind
-    # before this — not "not collected", never declared — so no alert rule
-    # could exist and a wedged controller sat green for days. This is the
-    # series that makes "the room is hearing nothing" alertable.
-    #
-    # `verdict` is the decided answer, not a raw state: ok | wedged | ended |
-    # paused | unknown. `unknown` is its own value and must never be read as
-    # healthy — it means nora could not reach the controller at all.
+    # Music liveness. `verdict` is the decided answer, not a raw state: ok |
+    # wedged | ended | paused | unknown. `unknown` is its own value and must never be
+    # read as healthy: it means nora could not reach the controller at all.
     _CounterSpec(
         "nora_music_liveness_total",
         "Music liveness polls, by decided verdict "
@@ -215,26 +198,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_errors_total{stage=\"participation_shadow\"} and "
         "{stage=\"relevance_gate_shadow\"}, which now move on a guard "
         "REFUSAL as well as on an exception).",
-        # `audience` is the ONE label the heartbeat adds to an existing series
-        # (design spec §6.2, §13), and it is added rather than the fire path
-        # getting its own silent-failure series, because isolation-by-omission
-        # was tried twice and undercounted twice: `Deliverer` — which the fire
-        # path MUST use, being the only caller of `adapter.send` — increments
-        # this on five branches of its own, so any "the fire path just doesn't
-        # call the counting code" scheme is wrong by construction.
+        # `audience` is the ONE label the heartbeat adds to an existing series,
+        # rather than the fire path getting its own silent-failure series: `Deliverer`,
+        # which the fire path must use as the only caller of `adapter.send`, increments
+        # this on several branches of its own.
         #
-        # **A8 is now `audience="tag"`-filtered** (`docs/runbook.md`). Without
-        # the filter a fire-path failure spends a <1% budget sized for
-        # conversation; without the LABEL at every call site, an unlabelled
-        # increment records `audience=""` (`Metrics._full_labels`) and is
-        # excluded from that filter — silently, and most damagingly at the
-        # `handler_error` site, which is R-5's last-resort signal.
+        # A8 is `audience="tag"`-filtered (`docs/runbook.md`), so every call site must
+        # pass the label: an unlabelled increment records `audience=""`
+        # (`Metrics._full_labels`) and is excluded from that filter, most damagingly at
+        # the `handler_error` site, which is R-5's last-resort signal.
         ("reason", "platform", "audience"),
     ),
     _CounterSpec("nora_guard_vetoes_total", "ReplyGuard vetoes, by rule.", ("rule",)),
-    # design/sandbox-runtime §12: a `computer_events` append that failed.
-    # The tool still answers (the audit must not cost the turn), so this
-    # counter is the only place a missing audit row shows up. Should be zero.
+    # A `computer_events` append that failed. The tool still answers (the audit
+    # must not cost the turn), so this counter is the only place a missing audit row
+    # shows up. Should be zero.
     _CounterSpec(
         "nora_computer_audit_failures_total",
         "computer_events audit writes that failed, by computer tool and stage "
@@ -247,13 +225,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "media store, so it has no code). The tool call itself still answered.",
         ("tool", "stage"),
     ),
-    # design/sandbox-runtime §15.2: the session sweeper's expiries, by reason
-    # (`nora.domain.computer_sessions.EXPIRY_REASONS`). `running_past_limit`
-    # is the flag: a tmux job still running after `max_running_days` without
-    # a computer call, left running for a person to look at.
-    # design/sandbox-runtime §15.3: a `<computer>` block rendered from the
-    # database alone because the machine read missed its budget (timeout) or
-    # the computer answered unavailable. The reply was not held for it.
+    # A `<computer>` block rendered from the database alone because the machine
+    # read missed its budget (timeout) or the computer answered unavailable. The
+    # reply was not held for it.
     _CounterSpec(
         "nora_computer_context_machine_unread_total",
         "<computer> blocks rendered without the live machine state, by reason "
@@ -297,10 +271,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("kind",),
     ),
     _CounterSpec("nora_doctrine_reload_failures_total", "Doctrine hot-reload failures."),
-    # design/cognition-loop/70-migration.md §5: each doctrine, Dreamer, config
-    # and deploy load is recorded so "what was in force at T" is answerable.
-    # A failed write loses that load's row and nothing else (the process runs
-    # on); this is how the gap shows.
+    # Each doctrine, Dreamer, config and deploy load is recorded so "what was in
+    # force at T" is answerable. A failed write loses that load's row and nothing
+    # else (the process runs on); this is how the gap shows.
     _CounterSpec(
         "nora_revision_record_failures_total",
         "Revision writes that failed (kind: deploy, config, doctrine, dreamer, "
@@ -308,50 +281,48 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("kind",),
     ),
     # The Dreamer's own instruction corpus (nora/dreamer/), counted separately
-    # from the doctrine's on purpose: they are different files with different
-    # editors and different blast radii, and one number covering both would make
-    # "did my objective edit load" unanswerable from the metric.
+    # from the doctrine's: they are different files with different editors and
+    # different blast radii, and one number covering both would make "did my
+    # objective edit load" unanswerable from the metric.
     _CounterSpec(
         "nora_dreamer_instruction_reload_failures_total",
         "Dreamer instruction (doctrine + objectives) hot-reload failures.",
     ),
     # RETAINED frozen at 0 by the append-only metric-name policy
-    # (PRESERVED_METRIC_NAMES), not deleted — a dropped name breaks any dashboard
-    # summing it. It counted SQLite WAL SQLITE_BUSY, which MVCC cannot produce,
-    # so nothing has incremented it since the 2026-08-07 Postgres migration.
+    # (PRESERVED_METRIC_NAMES): a dropped name breaks any dashboard summing it. It
+    # counted SQLite WAL SQLITE_BUSY, which Postgres MVCC cannot produce, so nothing
+    # increments it.
     _CounterSpec(
         "nora_store_busy_total",
         "SQLite-era store-contention counter (frozen; MVCC cannot produce it).",
     ),
-    # An unmapped sender is an EXPECTED outcome (D6), so it is not an error —
-    # but it was previously unobservable, and its symptom set is empty: the
-    # message is still audited, the gate still runs, the prefill still shows
-    # the sender's platform display name, and nothing reaches Honcho. Nora
-    # looks like she is working and remembers nothing. Counting it is what
-    # separates "nobody talked to her" from "her identity file is wrong, or
-    # you edited it and never restarted" (mapping is startup-only, Q4).
+    # An unmapped sender is an EXPECTED outcome (D6), so it is not an error, but
+    # its symptom set is empty: the message is still audited, the gate still runs,
+    # the prefill still shows the sender's platform display name, and nothing
+    # reaches Honcho. Counting it separates "nobody talked to her" from "her
+    # identity file is wrong, or was edited without a restart" (mapping is
+    # startup-only, Q4).
     _CounterSpec(
         "nora_unmapped_senders_total",
         "Ambient messages whose sender resolved to no person.",
         ("platform",),
     ),
-    # Deny-by-default has to be visible. "She stopped answering in that group"
-    # must be answerable without a debugger: a denied ROOM is refused before
-    # the audit write (nothing is recorded), a denied SENDER is refused only
-    # at the point of answering (the message IS recorded, which is what
+    # Deny-by-default has to be visible. A denied ROOM is refused before the
+    # audit write (nothing is recorded); a denied SENDER is refused only at the
+    # point of answering (the message IS recorded, which is what
     # `nora persons pending` reads).
     _CounterSpec(
         "nora_denied_conversations_total",
         "Ambient messages from a conversation absent from policy.toml.",
         ("platform",),
     ),
-    # THE INGEST TRACE'S REPLACEMENT (R-76). An ingest contains no model call,
+    # The ingest trace's replacement (R-76). An ingest contains no model call,
     # so its trace is plumbing and never reaches Langfuse; «how did this message
     # end» is a Prometheus question and this is where it is answered. The
     # `outcome` label's vocabulary is `nora.ingest.pipeline.IngestOutcome`,
     # derived there with `get_args` and checked at runtime before every
-    # increment — deliberately NOT restated in this help text, because a
-    # hand-copied vocabulary is exactly what drifts.
+    # increment; deliberately NOT restated in this help text, because a
+    # hand-copied vocabulary drifts.
     _CounterSpec(
         "nora_ingest_outcomes_total",
         "Ambient messages by how the ingest ended (see IngestOutcome).",
@@ -381,15 +352,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("platform",),
     ),
     # Progress reactions (nora/engagement/stages/indicate.py). Reactions are
-    # decoration and every failure of one is swallowed so it can never touch
-    # the reply — which is exactly why they need a counter, or "she stopped
-    # showing the eyes" becomes another unobservable silence. One name, three
-    # labels, because the interesting questions are all cross-cuts of the same
-    # series: `phase` (ack/done/gave_up/clear) says WHICH indicator, `status`
-    # (sent/failed/unsupported) says how it went. `unsupported` is not a
-    # failure — it is the steady state of any platform without reactions, and
-    # summing it into `failed` would make a correctly-degrading adapter look
-    # broken forever.
+    # decoration and every failure of one is swallowed so it can never touch the
+    # reply, which is why they need a counter. One name, three labels, because the
+    # questions are cross-cuts of the same series: `phase`
+    # (ack/done/gave_up/clear) says WHICH indicator, `status`
+    # (sent/failed/unsupported) says how it went. `unsupported` is not a failure:
+    # it is the steady state of any platform without reactions, and summing it into
+    # `failed` would make a correctly-degrading adapter look broken.
     _CounterSpec(
         "nora_reactions_total",
         "Progress-indicator reactions attempted, by lifecycle phase and outcome.",
@@ -402,19 +371,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "tagged one) and was ignored rather than honoured, by tool.",
         ("tool",),
     ),
-    # R-17. Nora's own-identity enrichment degraded. This one exists because it
-    # was ALREADY degrading, on every single start, for the whole life of the
-    # deployment: `derive_aliases` read `/api/v1/accounts`, an endpoint
-    # signal-cli has never served (its `--http` mode exposes exactly three:
-    # /api/v1/rpc, /api/v1/events, /api/v1/check), so `aliases` fell back to
-    # `{primary}` with one log line and no series to alert on. R-12
-    # ("never treat my own message as a tag") then collapsed to a plain
-    # equality check against the phone number, and a self-send arriving under
-    # her ACI would have been treated as somebody else's tag. `reason` is the
-    # useful cut: `unreachable` is an ops problem, `no_self_contact_row` and
-    # `bad_payload` mean the daemon answered but not with what we parse — a
-    # signal-cli upgrade breaking the shape, which is the failure mode that
-    # would otherwise reproduce the original silence exactly.
+    # R-17. Nora's own-identity enrichment degraded. R-12 ("never treat my own
+    # message as a tag") then collapses to a plain equality check against the phone
+    # number, so a self-send arriving under her ACI would be treated as somebody
+    # else's tag. `reason` is the useful cut: `unreachable` is an ops problem,
+    # `no_self_contact_row` and `bad_payload` mean the daemon answered but not with
+    # what we parse (a signal-cli upgrade breaking the shape).
     _CounterSpec(
         "nora_identity_enrichment_degraded_total",
         "Nora's own-identity derivation fell back to fewer id forms than asked "
@@ -422,16 +384,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("platform", "reason"),
     ),
     # The three room-scoped tools (`group_members`, `lookup_person`, `about`),
-    # by how they ANSWERED. `status` is the whole point: `unavailable` means
-    # Nora could not read the group's membership at all, and it must never be
-    # summed together with `not_found` — one says "I could not look", the other
-    # says "I looked and nobody here is called that", and a tool that cannot
-    # tell an operator which of those it did is the `peer_card` failure again.
-    # `not_found` is deliberately identical for a person who is in
-    # `identity.toml` but not in this room and for one who does not exist
-    # anywhere: distinguishing them in the answer would disclose membership by
-    # behaviour (design/12 §3). Alert on a sustained `unavailable` — that is
-    # signal-cli, not the model.
+    # by how they ANSWERED. `unavailable` means Nora could not read the group's
+    # membership at all, and must never be summed with `not_found`: one says "I
+    # could not look", the other "I looked and nobody here is called that".
+    # `not_found` is deliberately identical for a person who is in `identity.toml`
+    # but not in this room and for one who does not exist anywhere: distinguishing
+    # them in the answer would disclose membership by behaviour. Alert on a
+    # sustained `unavailable`; that is signal-cli, not the model.
     _CounterSpec(
         "nora_room_lookups_total",
         "Room-scoped tool calls, by tool and how the tool answered. FIVE values, "
@@ -458,23 +417,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "things she can see and cannot say.",
         ("tool", "status"),
     ),
-    # Honcho's `representation` endpoint specifically, and it exists because
-    # that endpoint cannot be trusted to fail loudly: an unknown peer answers
-    # **200 with an empty string**, not 404, so "asked and nothing known"
-    # (`empty`) and "could not ask" (`unavailable`) are indistinguishable at
-    # the HTTP layer and only the call site knows which it got. `peer_card`
-    # returned `[]` for both for the entire life of the deployment and nobody
-    # could see it. Alert on `ok == 0` while the series is being written at all.
+    # Honcho's `representation` endpoint specifically, which cannot be trusted
+    # to fail loudly: an unknown peer answers **200 with an empty string**, not 404,
+    # so "asked and nothing known" (`empty`) and "could not ask" (`unavailable`) are
+    # indistinguishable at the HTTP layer and only the call site knows which it got.
+    # Alert on `ok == 0` while the series is being written at all.
     #
-    # **The NAME keeps `recall` after the tool was renamed to `about`
-    # (DEC-39), and that is the append-only rule, not an oversight.** A metric
-    # name is a dashboard, an alert and a retention window someone else owns;
-    # renaming it does not move history, it starts a new empty series beside a
-    # frozen one, and R-17's argument is that a series which can never
-    # increment is indistinguishable from a deleted one. The tool LABEL on
-    # `nora_room_lookups_total` did move, because that one must agree with the
-    # name in `data/nora.log` or `_log_call` stops being greppable — a split
-    # there is meaningful (the tool genuinely changed) rather than a lie.
+    # **The name keeps `recall` after the tool became `about` (DEC-39)**: metric
+    # names are append-only, and renaming one starts a new empty series beside a
+    # frozen one. The tool LABEL on `nora_room_lookups_total` does follow the tool
+    # name, because it must agree with the name in `data/nora.log` for `_log_call`
+    # to stay greppable.
     _CounterSpec(
         "nora_recall_total",
         "Durable-profile lookups against Honcho by the `about` tool, "
@@ -483,33 +436,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("status",),
     ),
     # R-23. HOW the agent loop ended, every turn, straight off Strands'
-    # `AgentResult.stop_reason`. This exists because the SDK reports a turn
-    # that ran out of budget by returning normally: `_check_limits` yields an
-    # `EventLoopStopEvent` with `stop_reason="limit_total_tokens"` and stops —
-    # no exception, no log line, no warning anywhere in it. Nothing in `nora/`
-    # read `stop_reason` at all, and `LiveAgentRunner.invoke` discarded the
-    # `AgentResult` outright, so a turn cut off by the token cap was
-    # BYTE-IDENTICAL to a model that simply chose not to call `send_reply`:
-    # both surfaced as `nora_silent_failures_total{reason="no_send_call"}`
-    # plus a ⚠️. The single most likely cause of a silent turn was
-    # indistinguishable from the most benign one.
+    # `AgentResult.stop_reason`. The SDK reports a turn that ran out of budget by
+    # returning normally (`_check_limits` yields an `EventLoopStopEvent` with
+    # `stop_reason="limit_total_tokens"`): no exception, no log line. Without this
+    # series a turn cut off by the token cap is byte-identical to a model that chose
+    # not to call `send_reply`; both surface as
+    # `nora_silent_failures_total{reason="no_send_call"}`.
     #
-    # Recorded on EVERY completed invocation, not only the failing ones, so
-    # the healthy shape is visible too — `end_turn` and `tool_use` are the
-    # normal values and a series that only ever carries `limit_*` cannot tell
-    # an operator what fraction of turns are being cut off. Alert on any
-    # sustained `limit_*`; raising a cap without this counter just moves the
-    # cliff somewhere nobody is looking.
+    # Recorded on EVERY completed invocation, not only the failing ones, so the
+    # healthy shape is visible too: `end_turn` and `tool_use` are the normal values
+    # and a series that only carried `limit_*` could not say what fraction of turns
+    # are cut off. Alert on any sustained `limit_*`.
     #
-    # **`audience` for the reason `nora_silent_failures_total` has one**, and it
-    # was missed when the heartbeat's fire path shipped. Design §13 named the
-    # tag-path series a fire turn must not silently move and this was not on the
-    # list, so a reminder's turn began sharing it unlabelled. The consequence is
-    # specific rather than tidiness: `2026-08-08-turn-budget-finding.md:224`
-    # recommends alarming on `{reason=~"limit_.*"}`, and without the label that
-    # alarm cannot say whether a tag or a reminder ran out of budget — the two
-    # have different caps, different timeouts and different fixes. Names are
-    # append-only; labels are not (see this module's header).
+    # `audience` is here for the reason `nora_silent_failures_total` has one: without
+    # it an alarm on `{reason=~"limit_.*"}` cannot say whether a tag or a reminder
+    # ran out of budget, and the two have different caps, timeouts and fixes. Names
+    # are append-only; labels are not (see this module's header).
     _CounterSpec(
         "nora_llm_stop_reason_total",
         "How the agent loop terminated, by Strands stop_reason "
@@ -517,24 +459,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "which path was speaking (audience=\"tag\" | \"heartbeat\").",
         ("reason", "audience"),
     ),
-    # The tools that had NO counter of their own — `now`, `load_transcript`,
-    # `send_reply`, and now `calculate` (DEC-35), whose two
-    # statuses are `ok` and `refused`: a refusal counted as `ok` would make
-    # "is the model writing expressions she can actually evaluate" unanswerable
-    # from /metrics, which is this counter's own failure in a new place. Same
-    # `{tool, status}` shape as
-    # `nora_room_lookups_total`, and deliberately NOT a superset of it: names
-    # are append-only, `nora_room_lookups_total` is already on dashboards, and
-    # a second series counting the same three calls would double every sum of
-    # tool volume. The two together are every tool call Nora makes; neither
-    # alone is.
+    # The tools that have NO counter of their own: `now`, `load_transcript`,
+    # `send_reply`, and `calculate` (DEC-35), whose two statuses are `ok` and
+    # `refused` (a refusal counted as `ok` would make "is the model writing
+    # expressions she can actually evaluate" unanswerable from /metrics). Same
+    # `{tool, status}` shape as `nora_room_lookups_total`, and deliberately NOT a
+    # superset of it: a second series counting the same three calls would double
+    # every sum of tool volume. The two together are every tool call Nora makes;
+    # neither alone is.
     #
-    # This exists for the same reason DEC-28 does. On 2026-08-06
-    # `grep lookup_person data/nora.log` returned zero and that was read as
-    # "the tool was never called" — but no tool logged its own name on any
-    # success path, so the grep returned zero whether it ran every turn or
-    # never. Counters are the half of that fix an operator can alert on; the
-    # log line in `nora.agent.tools._log_call` is the half they can grep.
+    # Counters are the half of DEC-28 an operator can alert on; the log line in
+    # `nora.agent.tools._log_call` is the half they can grep.
     _CounterSpec(
         "nora_tool_calls_total",
         "Native tool calls that have no counter of their own, by tool and how "
@@ -544,13 +479,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("tool", "status"),
     ),
     # DEC-34. An @-mention Nora could not put a name to. It renders `@someone`
-    # — never the number, never the ACI — so the model's view is honest and
-    # completely uninformative, and this counter is the ONLY place the loss is
-    # visible. It reads like `nora_unmapped_senders_total`'s other half: that
-    # one says "somebody talked to her and she does not know who", this one
-    # says "somebody was TALKED ABOUT and she does not know who", and both have
-    # the same fix and the same trap — `identity.toml` is loaded once at
-    # startup, so editing it without a restart moves neither number.
+    # (never the number, never the ACI), so the model's view is honest and
+    # uninformative, and this counter is the ONLY place the loss is visible. It is
+    # `nora_unmapped_senders_total`'s other half: that one says "somebody talked to
+    # her and she does not know who", this one "somebody was TALKED ABOUT and she
+    # does not know who". Both have the same fix and the same trap: `identity.toml`
+    # is loaded once at startup, so editing it without a restart moves neither
+    # number.
     _CounterSpec(
         "nora_unmapped_mentions_total",
         "@-mentions rendered as an anonymous handle because the mentioned "
@@ -560,25 +495,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # DEC-42. A turn that sent SOME of its messages and then stopped for a
     # reason that was not "she was finished".
     #
-    # This is the failure multi-message introduces, and it is invisible to
-    # every series that already exists. R-23's work made a SILENT turn's cause
-    # legible — `no_send_call` versus `limit_total_tokens` — but a turn cut off
-    # after message 2 of 4 is not silent: `delivered` is True,
-    # `check_outcome` returns True, the group gets ✅, Honcho is fed, and
-    # `nora_silent_failures_total` never moves. The group simply reads half a
-    # thought, ending mid-sentence, with nothing anywhere saying so.
+    # Invisible to every other series: a turn cut off after message 2 of 4 is not
+    # silent. `delivered` is True, `check_outcome` returns True, the group gets the
+    # check mark, Honcho is fed, and `nora_silent_failures_total` never moves.
+    # `nora_messages_per_tag` cannot answer it either: a 2 is a 2 whether she meant
+    # to stop there or was stopped.
     #
-    # `nora_messages_per_tag` cannot answer it either: a 2 is a 2 whether she
-    # meant to stop there or was stopped, and once the histogram legitimately
-    # spans 1-4 there is no shape to read a truncation out of.
-    #
-    # `reason` reuses Strands' `limit_*` vocabulary where the loop reported
-    # one, so it joins directly against `nora_llm_stop_reason_total`, and adds
-    # two of its own for the paths that produce no stop reason at all:
-    # `invocation_failed` (timeout or `llm_error` — the invocation never
-    # returned, so there is nothing to ask) and `pipeline_error` (the outer
-    # `BaseException`). Alert on any of it: unlike a cap on a SILENT turn,
-    # every increment here is a message the group was meant to receive.
+    # `reason` reuses Strands' `limit_*` vocabulary where the loop reported one, so
+    # it joins against `nora_llm_stop_reason_total`, and adds two of its own for
+    # paths that produce no stop reason: `invocation_failed` (timeout or
+    # `llm_error`; the invocation never returned) and `pipeline_error` (the outer
+    # `BaseException`). Alert on any of it: every increment is a message the group
+    # was meant to receive.
     _CounterSpec(
         "nora_partial_replies_total",
         "Tags that delivered at least one message and then stopped early, by "
@@ -586,16 +514,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "limit_output_tokens / invocation_failed / pipeline_error).",
         ("reason", "platform"),
     ),
-    # DEC-43, and the FIRST of these two is the one that can measure absence.
-    # No attachment has ever arrived on this deployment — signal-cli's store
-    # has no `attachments/` directory at all — so every claim about media here
-    # is a claim about fixtures. `nora_media_attachments_total` is what turns
-    # that from a belief into a reading: it increments on every attachment
-    # SEEN, before any custody is attempted, so `0` means "none has arrived"
-    # and a non-zero `label` cut says exactly what kind did. Without it, a
-    # custody counter sitting at zero would be indistinguishable from custody
-    # being switched off, uninstalled, or never called — the null-result trap
-    # CLAUDE.md's `lookup_person` grep fell into.
+    # DEC-43. This is the counter that can measure absence: it increments on
+    # every attachment SEEN, before any custody is attempted, so `0` means "none has
+    # arrived" and a non-zero `label` cut says what kind did. Without it, a custody
+    # counter at zero would be indistinguishable from custody being switched off,
+    # uninstalled, or never called.
     _CounterSpec(
         "nora_media_attachments_total",
         "Attachments seen on ingested messages, by platform and the label they "
@@ -603,36 +526,34 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "document / file).",
         ("platform", "label"),
     ),
-    # And the second says what happened to the bytes. `stored` is the only
-    # outcome that produces a handle in the transcript; every other value is a
-    # message recorded WITHOUT custody, which is honest but lossy, and each
-    # names a different thing to fix:
-    #   not_configured — the composition root wired no blob store (the state on
-    #                    the day this shipped), so nothing was even attempted.
-    #   no_id          — signal-cli described an attachment with no id to fetch.
-    #   not_found      — the daemon has no such attachment; its own retention,
-    #                    or a receive that never downloaded it.
-    #   unreachable    — the daemon did not answer. Ops.
-    #   bad_payload    — it answered in a shape this adapter does not read; a
+    # What happened to the bytes. `stored` is the only outcome that produces a
+    # handle in the transcript; every other value is a message recorded WITHOUT
+    # custody, and each names a different thing to fix:
+    #   not_configured - the composition root wired no blob store, so nothing was
+    #                    attempted.
+    #   no_id          - signal-cli described an attachment with no id to fetch.
+    #   not_found      - the daemon has no such attachment; its own retention, or a
+    #                    receive that never downloaded it.
+    #   unreachable    - the daemon did not answer. Ops.
+    #   bad_payload    - it answered in a shape this adapter does not read; a
     #                    signal-cli upgrade changing `getAttachment`'s result.
-    #   too_large      — over the configured ceiling. A policy, not a failure.
-    #   store_failed   — the disk refused. Full, read-only, or gone.
+    #   too_large      - over the configured ceiling. A policy, not a failure.
+    #   store_failed   - the disk refused. Full, read-only, or gone.
     _CounterSpec(
         "nora_media_custody_total",
         "Attachment byte-copies into Nora's own custody, by platform and "
         "outcome (stored / not_configured / no_id / not_found / unreachable / "
         "bad_payload / too_large / store_failed).",
         ("platform", "status"),    ),
-    # ── the presence collector (design/19, DEC-54/DEC-55) ────────────────────
-    # A separate process (`python -m nora.presence`) with its own metrics
-    # endpoint; these names are declared in the shared registry so both the
-    # collector and Nora (which increments only the disclosure counter) speak
-    # them from one source. Append-only, like every name above.
+    # The presence collector (DEC-54/DEC-55). A separate process
+    # (`python -m nora.presence`) with its own metrics endpoint; these names are
+    # declared in the shared registry so both the collector and Nora (which
+    # increments only the disclosure counter) speak them from one source.
+    # Append-only, like every name above.
     #
-    # DISTINCT fixes WRITTEN. Because the collector is a change-recorder (writes
-    # only when `ts` advances), this counts DISTINCT positions, not polls — a
-    # still member polled every 90 s increments this at most when it actually
-    # moves. `wire_state` is the state that fix carried (live / stale).
+    # DISTINCT fixes WRITTEN. The collector is a change-recorder (writes only when
+    # `ts` advances), so this counts DISTINCT positions, not polls. `wire_state` is
+    # the state that fix carried (live / stale).
     _CounterSpec(
         "nora_presence_fixes_total",
         "Distinct location fixes written to presence_fixes, by circle and the "
@@ -642,58 +563,57 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     # Every circle READ, by how it resolved. `unavailable` (transport / non-200)
     # must never be summed with `ok`; `banned` (a fresh token refused) and
-    # `challenge` (a non-JSON body) are the two the study named as the fragile
-    # paths, held apart so a rising `banned` is legible as a ban risk.
+    # `challenge` (a non-JSON body) are the fragile paths, held apart so a rising
+    # `banned` is legible as a ban risk.
     _CounterSpec(
         "nora_presence_reads_total",
         "Life360 circle reads, by circle and outcome "
         "(ok / unavailable / challenge / banned).",
         ("circle", "status"),
     ),
-    # The saved-places refresh (design/23 §3): at most hourly per circle, riding
-    # the member cycle. Counted separately from `nora_presence_reads_total` so a
-    # places-only breakage (endpoint moved, shape changed) is visible on its own
-    # rather than diluted into the member-read series.
+    # The saved-places refresh: at most hourly per circle, riding the member
+    # cycle. Counted separately from `nora_presence_reads_total` so a places-only
+    # breakage (endpoint moved, shape changed) is visible on its own.
     _CounterSpec(
         "nora_presence_place_reads_total",
         "Life360 saved-place reads, by circle and outcome "
         "(ok / unavailable / challenge / banned).",
         ("circle", "status"),
     ),
-    # Per member per cycle, so «sharing off» is a KNOWN STATE, not a gap
-    # (design/19 §5, §7.3). A member who turned sharing off writes no fix row, so
-    # WITHOUT this series they would be indistinguishable from a member the
-    # daemon failed to read — the exact ambiguity R-5 forbids for a location.
+    # Per member per cycle, so «sharing off» is a KNOWN STATE, not a gap. A member
+    # who turned sharing off writes no fix row, so WITHOUT this series they would be
+    # indistinguishable from a member the daemon failed to read, the ambiguity R-5
+    # forbids for a location.
     _CounterSpec(
         "nora_presence_member_states_total",
         "Members classified per collection cycle, by wire_state "
         "(live / stale / sharing_off / disconnected / no_fix / unavailable).",
         ("wire_state",),
     ),
-    # The Life360 client's auth alarms (design/19 §4.1). `banned` = a fresh token
-    # was refused (ban risk); `challenge` = a non-JSON body; `auth_403` = the
-    # token endpoint itself refused the credential. Any sustained increment is an
-    # operator alert — the client will not re-auth-loop, so this rising while
-    # reads fail is how a ban surfaces instead of a silent 0-fix daemon.
+    # The Life360 client's auth alarms. `banned` = a fresh token was refused
+    # (ban risk); `challenge` = a non-JSON body; `auth_403` = the token endpoint
+    # itself refused the credential. Any sustained increment is an operator alert:
+    # the client will not re-auth-loop, so this rising while reads fail is how a ban
+    # surfaces instead of a silent 0-fix daemon.
     _CounterSpec(
         "nora_presence_auth_alarms_total",
         "Life360 auth/ban alarms from the client, by reason "
         "(banned / challenge / auth_403).",
         ("reason",),
     ),
-    # The collector's own canary (design/19 §4): a read whose body was not JSON,
-    # or a circle that came back unexpectedly empty. Both are the app-update
-    # breakage the study named — a required UA/host/client-token changing turns
-    # 200s into challenge pages or empty envelopes.
+    # The collector's own canary: a read whose body was not JSON, or a circle
+    # that came back unexpectedly empty. Both signal app-update breakage: a required
+    # UA/host/client-token changing turns 200s into challenge pages or empty
+    # envelopes.
     _CounterSpec(
         "nora_presence_canary_total",
         "Presence collector canary trips, by reason (non_json / empty_circle).",
         ("reason",),
     ),
     # R-21 disclosure, incremented by NORA (not the collector): a `whereis` that
-    # REFUSED because the conversation held someone outside the circle (design/19
-    # §5, the new fail-closed seam). A refusal is fail-closed and loud — this is
-    # the day-group-⊄-circle event made observable, never a silent omission.
+    # REFUSED because the conversation held someone outside the circle. A refusal is
+    # fail-closed and loud: the group-not-subset-of-circle event made observable,
+    # never a silent omission.
     _CounterSpec(
         "nora_presence_disclosure_refusals_total",
         "whereis disclosures refused (R-21 fail-closed seam, design/19 §5). "
@@ -704,20 +624,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "is outside the circle and the room is not location-trusted).",
         ("reason",),
     ),
-    # The WAIVER counter — the other half of the pair above, and the reason DEC-79
-    # is auditable rather than merely permissive. When `location = true` overrides
-    # a guard, the override is recorded; without this, relaxing `unnamed` would
-    # have retired the very instrument that diagnosed DEC-79
-    # (`…refusals_total{reason="unnamed"} 12`), leaving a zero refusal counter
+    # `nora_presence_disclosure_waived_total` is the WAIVER counter, the other
+    # half of the pair above. When `location = true` overrides a guard, the override
+    # is recorded; without it, relaxing `unnamed` would leave a zero refusal counter
     # unable to distinguish "the flag is working" from "the room filled up with
-    # strangers". The startup pre-flight warns once at boot and never again, so
-    # for an account that joins later this is the ONLY runtime signal.
-    # DEC-93. A reply the model WROTE without calling `send_reply`, recovered
-    # and delivered rather than discarded. The honest read of a non-zero value
-    # is «the LLM route is not honouring `tool_choice=required`» — not «this
-    # feature is working». It went from 0 to 2-in-4 the day the deployment moved
-    # to a provider that accepts `required` and ignores it, and it is the
-    # cheapest signal that would catch the same substitution again.
+    # strangers". The startup pre-flight warns once at boot only, so for an account
+    # that joins later this is the ONLY runtime signal.
+    #
+    # `nora_recovered_replies_total` (DEC-93): a reply the model WROTE without
+    # calling `send_reply`, recovered and delivered rather than discarded. A
+    # non-zero value means «the LLM route is not honouring `tool_choice=required`»,
+    # not «this feature is working»; it is the cheapest signal that catches a
+    # provider that accepts `required` and ignores it.
     _CounterSpec(
         "nora_recovered_replies_total",
         "Replies the model wrote as prose instead of calling send_reply, "
@@ -725,13 +643,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "honouring tool_choice=required.",
         ("platform",),
     ),
-    # Salvage-partial-reply (2026-09-03): a `max_tokens` cut-off whose partial
-    # message carried real prose, delivered rather than dropped. Distinct from
-    # `nora_recovered_replies_total` (DEC-93) on purpose: that one is a
-    # provider not honouring `tool_choice=required`, this one is the model
-    # running out of output budget mid-answer — different causes, different
-    # fixes, and a rising share here means the tier's `max_tokens` is too
-    # tight for the questions being asked.
+    # Salvage-partial-reply: a `max_tokens` cut-off whose partial message carried
+    # real prose, delivered rather than dropped. Distinct from
+    # `nora_recovered_replies_total` (DEC-93): that one is a provider not honouring
+    # `tool_choice=required`, this one is the model running out of output budget
+    # mid-answer. A rising share here means the tier's `max_tokens` is too tight for
+    # the questions being asked.
     _CounterSpec(
         "nora_salvaged_replies_total",
         "Partial replies cut off at max_tokens, salvaged and delivered "
@@ -739,18 +656,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "mid-answer.",
         ("platform",),
     ),
-    # Pure observability, no new behavioural rule (no DEC/R row — see the
-    # comment beside its call site). ONE turn, ONE increment, every admitted
-    # tag `_run_admitted`'s `finally` reaches — the standing replacement for
+    # Pure observability, no behavioural rule. ONE turn, ONE increment, for every
+    # admitted tag `_run_admitted`'s `finally` reaches: the standing replacement for
     # a manual Langfuse `nora.outcome` query. The vocabulary is
     # `nora.domain.tag_trace.VALID_OUTCOMES` plus `"unattributed"` (see
-    # `nora.engagement.pipeline._ENGAGEMENT_METRIC_OUTCOMES`), never restated
-    # here — same precedent as `nora_ingest_outcomes_total`. Deliberately NOT
-    # gated on the retention store the way `nora_tagtrace_writes_total` is:
-    # this answers "what did the turn end as", which must stay visible even
-    # if retention is unwired. `recovered` vs `send_reply` is DEC-93's own
-    # split — a rising `recovered` share means the route is not honouring
-    # `tool_choice=required`, not that the safety net is working.
+    # `nora.engagement.pipeline._ENGAGEMENT_METRIC_OUTCOMES`), never restated here
+    # (as for `nora_ingest_outcomes_total`). Deliberately NOT gated on the retention
+    # store the way `nora_tagtrace_writes_total` is: this answers "what did the turn
+    # end as", which must stay visible even if retention is unwired. `recovered` vs
+    # `send_reply` is DEC-93's own split: a rising `recovered` share means the route
+    # is not honouring `tool_choice=required`.
     _CounterSpec(
         "nora_engagement_outcomes_total",
         "Every admitted tag, by how the turn ended (see TagTrace.VALID_OUTCOMES "
@@ -773,8 +688,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "label, so cardinality stays fixed.",
         ("reason",),
     ),
-    # ── the analytics rollup (DEC-115) ────────────────────────────────────
-    # A separate process (`python -m nora.analytics`); spec §5.
+    # The analytics rollup (DEC-115). A separate process
+    # (`python -m nora.analytics`).
     _CounterSpec(
         "nora_analytics_stays_total",
         "Stays written to presence_stays, by subject.",
@@ -785,8 +700,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Derived places upserted, by subject and kind (home/work).",
         ("subject", "kind"),
     ),
-    # A rise is the tell that Life360's behaviour or the cadence changed
-    # (spec §5) — nothing here should trend upward under a stable population.
+    # A rise is the tell that Life360's behaviour or the cadence changed; nothing
+    # here should trend upward under a stable population.
     _CounterSpec(
         "nora_analytics_unlabeled_total",
         "Times a cluster resolved to unlabeled instead of home/work, or an "
@@ -798,9 +713,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Hour-of-week occupancy bins updated (Tier 3), by subject.",
         ("subject",),
     ),
-    # A rise here is EXPECTED as the corpus grows — unlike
-    # nora_analytics_unlabeled_total, this is not a health signal, it is
-    # the anomaly detector doing its job (design/27 §4, issue #6).
+    # A rise here is EXPECTED as the corpus grows. Unlike
+    # nora_analytics_unlabeled_total, this is not a health signal; it is the anomaly
+    # detector doing its job.
     _CounterSpec(
         "nora_analytics_anomalies_total",
         "Newly closed stays that are unusual against the subject's own history "
@@ -814,14 +729,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Trips written to presence_trips (Tier 5), by subject.",
         ("subject",),
     ),
-    # `outcome` is the axis that makes "no corridor has EVER been created"
-    # readable. Without it this counted attach OPERATIONS, so a flat-but-
-    # nonzero line could equally mean "one corridor, reconfirmed daily" or
-    # "corridors are being born" — and the Tier 5 defect where none could
-    # ever be born (final whole-branch review, Critical #1) was invisible
-    # except by graphing this against nora_analytics_trips_total. Counted
-    # once per DISTINCT corridor per clustering pass, not once per trip
-    # attached to it.
+    # `outcome` makes "no corridor has EVER been created" readable. A series
+    # counting attach OPERATIONS alone could not tell "one corridor, reconfirmed
+    # daily" from "corridors are being born". Counted once per DISTINCT corridor per
+    # clustering pass, not once per trip attached to it.
     _CounterSpec(
         "nora_analytics_corridors_total",
         "Corridors touched by clustering (Tier 5), by subject and outcome "
@@ -829,13 +740,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "gained samples).",
         ("subject", "outcome"),
     ),
-    # Step 2 (design/cognition-loop/25-rollup.md §4): each Rollup stimulus
-    # the unit rollups tried to raise. `duplicate` is the steady state for a
-    # co-location still starting on the next run (the stimulus table keeps
-    # one per row); `unhealthy` is a deviation withheld because a source it
-    # rests on was not proved healthy for its span (D3) — a rise there is an
-    # outage, not a quiet week; `capped` is a deviation past the per-person
-    # per-day cap (D3, DEC-245).
+    # Each Rollup stimulus the unit rollups tried to raise. `duplicate` is the
+    # steady state for a co-location still starting on the next run (the stimulus
+    # table keeps one per row); `unhealthy` is a deviation withheld because a source
+    # it rests on was not proved healthy for its span (D3): a rise there is an
+    # outage, not a quiet week; `capped` is a deviation past the per-person per-day
+    # cap (D3, DEC-245).
     _CounterSpec(
         "nora_rollup_stimuli_total",
         "Rollup stimuli the unit rollups tried to raise, by kind "
@@ -844,25 +754,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("kind", "outcome"),
     ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
-    # never actually called" impossible to read from silence: a cache hit and a
-    # miss are the SAME status=ok, and only this label tells them apart. Its own
-    # series rather than `nora_tool_calls_total` for the room-tools reason — a
-    # second series counting the same calls would double any tool-volume sum.
-    #   ok            — described (see `cached` for hit/miss).
-    #   nothing_found — no such image in view here.
-    #   ambiguous     — two in-scope blobs share the handle prefix, or a blob
+    # never actually called" readable: a cache hit and a miss are the SAME
+    # status=ok, and only this label tells them apart. Its own series rather than
+    # `nora_tool_calls_total`, for the room-tools reason: a second series counting
+    # the same calls would double any tool-volume sum.
+    #   ok            - described (see `cached` for hit/miss).
+    #   nothing_found - no such image in view here.
+    #   ambiguous     - two in-scope blobs share the handle prefix, or a blob
     #                   and a shared file's link handle do.
-    #   refused       — a shared file the source refused (not shared with her,
+    #   refused       - a shared file the source refused (not shared with her,
     #                   too large, download turned off).
-    #   not_an_image  — the handle resolved to a blob NO describer reads (a
+    #   not_an_image  - the handle resolved to a blob NO describer reads (a
     #                   file), or a shared file that is not a picture or video.
-    #                   Since DEC-114 this no longer covers voice notes
-    #                   and videos: those are describable modalities, so an
-    #                   unconfigured one is `unavailable`, not this.
-    #   unavailable   — custody off, the blob was absent/corrupt, the modality
-    #                   has no describer configured (`no_<modality>_describer`,
-    #                   the ordinary state while audio/video ship inert), the
-    #                   payload could not be built for that modality, or the
+    #                   Voice notes and videos are describable modalities (DEC-114),
+    #                   so an unconfigured one is `unavailable`, not this.
+    #   unavailable   - custody off, the blob was absent/corrupt, the modality
+    #                   has no describer configured (`no_<modality>_describer`),
+    #                   the payload could not be built for that modality, or the
     #                   model did not answer within the derived vision timeout.
     _CounterSpec(
         "nora_media_fetch_total",
@@ -872,33 +780,27 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         f"(caller={' / '.join(MEDIA_FETCH_CALLERS)}).",
         ("status", "cached", "caller"),
     ),
-    # DEC-73 (was DEC-57/R-34, retired). A person's alias appearing in a
-    # `web_search` query — COUNTED, not blocked (design/14 §2.2: unlike a routing
-    # origin, a search query has a benign reading, and a guess encoded as a block
-    # fails closed on legitimate use). The query still reaches Tavily; this counter
-    # is the only visibility into how often it happens, so the block-vs-count call
-    # can be revisited against real data rather than a guess. Identifiers in a
-    # query ARE blocked, and are counted as an ordinary `web_search`/`nothing_found`
-    # on `nora_tool_calls_total`, not here.
+    # DEC-73. A person's alias appearing in a `web_search` query is COUNTED, not
+    # blocked: unlike a routing origin, a search query has a benign reading, and a
+    # guess encoded as a block fails closed on legitimate use. The query still
+    # reaches Tavily; this counter is the only visibility into how often it happens.
+    # Identifiers in a query ARE blocked, and are counted as an ordinary
+    # `web_search`/`nothing_found` on `nora_tool_calls_total`, not here.
     _CounterSpec(
         "nora_search_alias_total",
         "Search queries containing a known person's name or alias, counted (not "
         "blocked) so the design/14 §2.2 count-vs-block call can be revisited "
         "against real queries.",
     ),
-    # Reminders, the two halves. CREATED is the `remind` tool's own answer —
-    # `status` separates an accepted row from each way the tool refuses one,
-    # which is the only visibility into a cap that is set too tight; a refusal
-    # is a sentence to a human, and sentences do not aggregate.
+    # Reminders, the two halves. CREATED is the `remind` tool's own answer:
+    # `status` separates an accepted row from each way the tool refuses one, which
+    # is the only visibility into a cap that is set too tight.
     #
     # The help text lists ALL NINE values `nora.agent.tools._record_created` can
-    # emit, not just the caps. An earlier version named four, so an operator
-    # reading the metric's own documentation could not tell whether a status it
-    # omitted (`fire_turn`, `unmapped`, `unparseable`, `past`, `unavailable`)
-    # was a value this series can take or a typo somewhere — and `unavailable`
-    # in particular means reminders are not wired at all, which is the one
-    # status here that is an outage rather than a policy decision. Keep this
-    # list in step with `_record_created`'s call sites.
+    # emit, not just the caps, so a status such as `fire_turn`, `unmapped`,
+    # `unparseable`, `past` or `unavailable` is not mistaken for a typo.
+    # `unavailable` means reminders are not wired at all: an outage rather than a
+    # policy decision. Keep this list in step with `_record_created`'s call sites.
     _CounterSpec(
         "nora_reminders_created_total",
         "Reminder creation attempts, by status: created; the caps' refusals "
@@ -925,11 +827,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("status",),
     ),
     # FIRED is the tick's outcome per reminder, and it counts the FAILURES the
-    # group never sees: `failed_policy` (trust withdrawn between setting and
-    # firing — R-5 keeps that silent in the room, so this is the only trace) and
-    # `failed_error` (the fire turn raised, or a crash left the row FIRING and
-    # boot recovery resolved it). A reminder that vanishes must never vanish
-    # from the metrics too.
+    # group never sees: `failed_policy` (trust withdrawn between setting and firing;
+    # R-5 keeps that silent in the room, so this is the only trace) and
+    # `failed_error` (the fire turn raised, or a crash left the row FIRING and boot
+    # recovery resolved it).
     _CounterSpec(
         "nora_reminders_fired_total",
         "Reminders resolved by the heartbeat, by outcome: the fire path's own "
@@ -940,31 +841,25 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "cancelled_note_moved (design 39 D11/D12).",
         ("outcome",),
     ),
-    # DEFERRALS are the third reading, and the one neither of the two above can
-    # give. A tick that finds the conversation slot held leaves its rows PENDING
-    # and moves on (§5.3) — nothing fires, nothing fails, and the tick itself
+    # DEFERRALS: a tick that finds the conversation slot held leaves its rows
+    # PENDING and moves on. Nothing fires, nothing fails, and the tick itself
     # completes, so `nora_reminders_fired_total` never moves and
-    # `nora_heartbeat_last_tick_age_seconds` stays at zero. A busy group can
-    # therefore starve a reminder for hours with every other signal reading
-    # healthy. Counted ONCE PER DEFERRED TURN, not per reminder and not per
-    # distinct row: the same rows are deferred again on the next tick, so this
-    # is a measure of CONTENTION over time (alert on a rate), never a count of
-    # how many reminders are late — `nora reminders list` answers that, by
-    # naming the overdue rows.
+    # `nora_heartbeat_last_tick_age_seconds` stays at zero. Counted ONCE PER
+    # DEFERRED TURN, not per reminder and not per distinct row: the same rows are
+    # deferred again on the next tick, so this is a measure of CONTENTION over time
+    # (alert on a rate), never a count of how many reminders are late
+    # (`nora reminders list` names the overdue rows).
     _CounterSpec(
         "nora_heartbeat_deferrals_total",
         "Fire turns the heartbeat deferred to a later tick because the "
         "conversation slot was held by a tag. One per deferred turn per tick, "
         "so a sustained rate means a group is starving its own reminders.",
     ),
-    # `ComputeJobPoller`'s own delivery outcome (Nora Compute spec §4), the
-    # same `sent` / `failed_policy` / `failed_timeout` / `failed_error`
-    # vocabulary `speak()` returns (§8.1) that `nora_reminders_fired_total`
-    # already uses this label for.
-    # `failed_error` is also what `nora.app.compute_poller.recover` reports
-    # for a `FIRING` row swept at boot (a crash mid-delivery) — the exact
-    # `nora_reminders_fired_total` precedent for a row that "vanished" without
-    # this counter moving too.
+    # `ComputeJobPoller`'s own delivery outcome, with the same `sent` /
+    # `failed_policy` / `failed_timeout` / `failed_error` vocabulary `speak()`
+    # returns that `nora_reminders_fired_total` uses for this label.
+    # `failed_error` is also what `nora.app.compute_poller.recover` reports for a
+    # `FIRING` row swept at boot (a crash mid-delivery).
     _CounterSpec(
         "nora_compute_jobs_delivered_total",
         "Compute jobs (Nora Compute spec §4) resolved by the poller, by "
@@ -1007,18 +902,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "write of the delivery still stores the final checkpoint.",
         (),
     ),
-    # #110. Paired with `nora_loop_exhausted_fallbacks_total` below and read
-    # AGAINST it: a healthy deployment moves THIS one and leaves that one flat.
+    # Paired with `nora_loop_exhausted_fallbacks_total` below and read AGAINST
+    # it: a healthy deployment moves THIS one and leaves that one flat.
     # `outcome="drafted"` is a cut-off turn that answered from what it had;
     # `outcome="empty"` is one where the drafting call itself returned nothing
-    # (timeout, exception, or a model that said nothing) and the canned line
-    # went out after all — so a rising `empty` rate is the drafting timeout
-    # being too tight, NOT the feature working.
+    # (timeout, exception, or a model that said nothing) and the canned line went
+    # out after all, so a rising `empty` rate is the drafting timeout being too
+    # tight.
     #
-    # `reason` carries the same three caps as the fallback counter so the two
-    # series line up: `drafted{reason=limit_total_tokens}` and
-    # `fallbacks{reason=limit_total_tokens}` sum to every turn that hit that
-    # cap before replying.
+    # `reason` carries the same three caps as the fallback counter so the two series
+    # line up: `drafted{reason=limit_total_tokens}` and
+    # `fallbacks{reason=limit_total_tokens}` sum to every turn that hit that cap
+    # before replying.
     _CounterSpec(
         "nora_budget_drafts_total",
         "Turns cut off by an R-8 cap before a reply, where Nora made one more "
@@ -1030,13 +925,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "tight). `reason` is the cap that fired.",
         ("outcome", "reason"),
     ),
-    # The DELIVERY half of #110, and deliberately separate from
-    # `nora_budget_drafts_total` above: that one counts what the RUNNER
-    # produced, this one counts what the room actually READ. They differ
-    # whenever `Deliverer` refuses (R-2/R-4/R-6/R-18) — a draft that was
-    # written and then screened out is a real event and must not read as a
-    # delivered one. Same `reason` vocabulary as its two neighbours so all
-    # three series line up on the cap that fired.
+    # The DELIVERY half of `nora_budget_drafts_total` above: that one counts what
+    # the RUNNER produced, this one what the room actually READ. They differ
+    # whenever `Deliverer` refuses (R-2/R-4/R-6/R-18). Same `reason` vocabulary as
+    # its two neighbours so all three series line up on the cap that fired.
     _CounterSpec(
         "nora_budget_drafts_delivered_total",
         "Budget-cut-off turns where a drafted answer (#110) actually reached "
@@ -1057,25 +949,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "here — that stays a silent_failure; see the pipeline's `if not ok`.)",
         ("reason",),
     ),
-    # The OUTBOUND half of `nora_unmapped_mentions_total`, and the pair reads
-    # as a sentence: that one says "somebody was talked about and she does not
-    # know who", this one says "she tried to tag somebody and could not".
+    # The OUTBOUND half of `nora_unmapped_mentions_total`: that one says
+    # "somebody was talked about and she does not know who", this one "she tried to
+    # tag somebody and could not".
     #
-    # `outcome` is what makes it worth having, because the four failures need
-    # four different fixes and are indistinguishable in the group (every one of
-    # them looks like an ordinary untagged message): `unresolved` = the name is
-    # not in identity.toml, or its only id form is one signal-cli's RECIPIENT
-    # grammar would not take — edit identity.toml AND RESTART (it is read once
-    # at startup, the same trap `nora_unmapped_senders_total` has);
-    # `not_in_room` = she named somebody who is not a member of this
-    # conversation, which is usually correct behaviour and not a fault;
-    # `roster_unavailable` = signal-cli could not be asked who is here, so
-    # nothing was tagged (R-22: "I could not check" is never "they are here"),
-    # and a sustained rate is a wedged or stale daemon, not a naming problem;
-    # `ambiguous` = two people in identity.toml answer to the same handle, so
-    # neither was tagged. `sent` is the denominator that makes the others
-    # readable — without it a flat `unresolved` cannot be told from a Nora who
-    # never tries to tag anyone.
+    # The four failures need four different fixes and look identical in the group
+    # (an ordinary untagged message): `unresolved` = the name is not in
+    # identity.toml, or its only id form is one signal-cli's RECIPIENT grammar would
+    # not take (edit identity.toml AND RESTART; it is read once at startup, as for
+    # `nora_unmapped_senders_total`); `not_in_room` = she named somebody who is not a
+    # member of this conversation, usually correct behaviour and not a fault;
+    # `roster_unavailable` = signal-cli could not be asked who is here, so nothing
+    # was tagged (R-22: "I could not check" is never "they are here"), and a
+    # sustained rate is a wedged or stale daemon; `ambiguous` = two people in
+    # identity.toml answer to the same handle, so neither was tagged. `sent` is the
+    # denominator that makes the others readable.
     _CounterSpec(
         "nora_outbound_mentions_total",
         "@-mentions Nora wrote in a reply, by outcome: sent; unresolved (no "
@@ -1085,15 +973,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "handle).",
         ("outcome",),
     ),
-    # Link previews, and the reason this is not a bare success counter: three
-    # of its four values mean something different to an operator. `attached` =
-    # a card went with the message; `unavailable` = the fetch produced nothing
-    # (dead host, non-HTML, no og:title, a refused SSRF check) and the message
-    # went out plain, which is the DESIGNED degradation and only interesting as
-    # a rate; `blocked` = the fetched card carried an identifier and was
-    # dropped at the egress screen, which is a real R-18 event and should be
-    # ~0. A message with no link in it increments nothing at all — the series
-    # counts decisions, not messages.
+    # Link previews. Three of the four values mean something different to an
+    # operator. `attached` = a card went with the message; `unavailable` = the
+    # fetch produced nothing (dead host, non-HTML, no og:title, a refused SSRF
+    # check) and the message went out plain, which is the DESIGNED degradation and
+    # only interesting as a rate; `blocked` = the fetched card carried an identifier
+    # and was dropped at the egress screen, a real R-18 event that should be ~0. A
+    # message with no link in it increments nothing: the series counts decisions,
+    # not messages.
     _CounterSpec(
         "nora_link_previews_total",
         "Outbound link-preview cards, by outcome: attached; unavailable (the "
@@ -1101,16 +988,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(the fetched title/description carried an identifier, R-18).",
         ("outcome",),
     ),
-    # DEC-89. The series exists to answer one question an operator cannot ask
-    # any other way: is the model quoting the links `place_info` mints, or is
-    # the egress carry the only reason the group ever sees one? A reply that
-    # already carried its link increments NOTHING — like `nora_link_previews_
-    # total`, this counts DECISIONS, not messages — so a rising rate is the
-    # model dropping links and a flat zero (with `place_info` calls happening)
-    # is the model behaving, which is the direction the doctrine is aimed at.
-    # `outcome` is a label rather than a bare counter because the one-valued
-    # version cannot grow the value that will matter next (a link EARNED but
-    # suppressed) without a rename, and metric names here are append-only.
+    # DEC-89. Answers: is the model quoting the links `place_info` mints, or is
+    # the egress carry the only reason the group ever sees one? A reply that already
+    # carried its link increments NOTHING (like `nora_link_previews_total`, this
+    # counts DECISIONS, not messages), so a rising rate is the model dropping links
+    # and a flat zero (with `place_info` calls happening) is the model behaving.
+    # `outcome` is a label rather than a bare counter so a further value (a link
+    # EARNED but suppressed) can be added without a rename; names are append-only.
     _CounterSpec(
         "nora_reply_links_carried_total",
         "Replies that left with a link the model had dropped, by outcome: "
@@ -1122,14 +1006,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("outcome",),
     ),
     # DEC-105. `ok` is a message that reached another room; every other value is
-    # a refusal, and WHICH one it is matters — `other_unit` and
-    # `not_allowed_there` are the two that mean somebody tried to speak past a
-    # trust boundary, and they are worth watching in a way that `unknown_room`
-    # (a model guessing at a name) is not.
+    # a refusal, and WHICH one matters: `other_unit` and `not_allowed_there` mean
+    # somebody tried to speak past a trust boundary, and are worth watching in a way
+    # that `unknown_room` (a model guessing at a name) is not.
     # Somebody was told «I'm working on it» and the job was then lost across a
-    # restart. This counts the CLOSING of that promise, by outcome — `sent` is
-    # the only value that means the person waiting actually heard back, and a
-    # rising `busy`/`failed_error` means they did not.
+    # restart. This counts the CLOSING of that promise, by outcome: `sent` is the
+    # only value that means the person waiting actually heard back, and a rising
+    # `busy`/`failed_error` means they did not.
     _CounterSpec(
         "nora_compute_lost_told_total",
         "Lost-compute-job notices by outcome: sent / busy / failed_* .",
@@ -1142,12 +1025,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "not_allowed_there / egress_blocked / no_adapter / failed.",
         ("outcome",),
     ),
-    # Task 14 fix round 1: what makes the dedup ladder's 41%-and-rising hit
-    # rate an OBSERVATION rather than a belief. `status` is `ok` when the
-    # sticker branch produced a description, else the `StickerOutcome.reason`
-    # that stopped it (unavailable / store_failed / blob_missing / vision /
-    # error / not_found / no_id / too_large / unreachable). `level` is
-    # `StickerReader`'s own ladder-level label — identity / content / none.
+    # What makes the dedup ladder's hit rate an OBSERVATION rather than a
+    # belief. `status` is `ok` when the sticker branch produced a description, else
+    # the `StickerOutcome.reason` that stopped it (unavailable / store_failed /
+    # blob_missing / vision / error / not_found / no_id / too_large / unreachable).
+    # `level` is `StickerReader`'s own ladder-level label: identity / content /
+    # none.
     _CounterSpec(
         "nora_sticker_descriptions_total",
         "Sticker-branch CUSTODY outcomes in the media stage, by platform, "
@@ -1157,38 +1040,34 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "this series is the identity ladder's hit rate.",
         ("platform", "status", "level"),
     ),
-    # ── media comprehension (issue #116) ────────────────────────────────────
-    # The SPAWNED read: one model pass per medium into title/description/
-    # content. R-27's three states and nothing else:
-    #   ok            — a comprehension was written for these bytes.
-    #   nothing_found — a final answer ABOUT the bytes: `unreadable` (a PDF, a
-    #                   lottie sticker — nothing here will ever read it) or
+    # Media comprehension. The SPAWNED read: one model pass per medium into
+    # title/description/content. R-27's three states and nothing else:
+    #   ok            - a comprehension was written for these bytes.
+    #   nothing_found - a final answer ABOUT the bytes: `unreadable` (a PDF, a
+    #                   lottie sticker; nothing here will ever read it) or
     #                   `already_read` (this sha256 was comprehended before; a
-    #                   description is a pure function of the bytes). Neither
-    #                   is a failure and neither is an `ok`: counting a cache
-    #                   hit as ok would make the ok rate say the describer is
-    #                   working when it may not have run for days.
-    #   unavailable   — every wiring gap and every failure: no describer
-    #                   configured for that modality (`no_<top>_describer`),
-    #                   the blob could not be opened (`blob`), the model did
-    #                   not answer (`vision`/`timeout`/`empty`), ffmpeg refused
-    #                   a video (`ffmpeg`), or the job raised (`error`).
-    #                   NEVER nothing_found — «I could not look» is not «there
-    #                   was nothing there».
-    # R-27 on the join itself. `ok` rendered at least one detail;
-    # `nothing_found` read the index and nothing in the window had been
-    # comprehended yet — a real answer about those bytes; `unavailable` is the
-    # index refusing to be read, which the old shape could not express at all
-    # because `MediaObjectStore.get` answers `None` for a miss and for an
-    # outage alike (that is why `lookup` exists).
+    #                   description is a pure function of the bytes). Neither is a
+    #                   failure and neither is an `ok`: counting a cache hit as ok
+    #                   would make the ok rate say the describer is working when it
+    #                   may not have run for days.
+    #   unavailable   - every wiring gap and every failure: no describer configured
+    #                   for that modality (`no_<top>_describer`), the blob could not
+    #                   be opened (`blob`), the model did not answer
+    #                   (`vision`/`timeout`/`empty`), ffmpeg refused a video
+    #                   (`ffmpeg`), or the job raised (`error`). NEVER
+    #                   nothing_found: «I could not look» is not «there was nothing
+    #                   there».
+    # R-27 on the join itself. `ok` rendered at least one detail; `nothing_found`
+    # read the index and nothing in the window had been comprehended yet, a real
+    # answer about those bytes; `unavailable` is the index refusing to be read
+    # (`MediaObjectStore.get` answers `None` for a miss and for an outage alike,
+    # which is why `lookup` exists).
     #
-    # It replaces a `nora_errors_total{stage="media_join"}` that could never
-    # fire for exactly that reason. Container logs are not on the docker log
-    # driver, so without this a permanently failing join is silent on the
-    # deployment — every prompt on eight paths quietly losing its media.
+    # Container logs are not on the docker log driver, so without this a
+    # permanently failing join would be silent on the deployment.
     #
-    # `reason="capped"` on an `ok` is the OTHER thing worth seeing: the window
-    # held more distinct blobs than `DEFAULT_MAX_BLOBS`, so some rendered bare.
+    # `reason="capped"` on an `ok` is also worth seeing: the window held more
+    # distinct blobs than `DEFAULT_MAX_BLOBS`, so some rendered bare.
     _CounterSpec(
         "nora_media_join_total",
         "Media join outcomes, by path and R-27 status (ok / nothing_found / "
@@ -1203,35 +1082,31 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "produced it.",
         ("platform", "label", "status", "reason"),
     ),
-    # ── the speech (STT) lane (spec 2026-08-21) ─────────────────────────────
-    # Voice-note transcription outcomes in the media custody stage, by
-    # platform and status (ok / error / timeout / unsupported / empty).
-    # `empty` is a legitimate 200 with no words (a silent/wordless voice
-    # note) — kept distinct from `error` (a transport/server failure) so an
-    # operator can tell an outage from an ordinary silent note. An ERROR is
-    # never a PASS: a failed transcription is counted here with its reason
-    # and the voice note is still recorded with a bare handle.
+    # The speech (STT) lane. Voice-note transcription outcomes in the media
+    # custody stage, by platform and status (ok / error / timeout / unsupported /
+    # empty). `empty` is a legitimate 200 with no words (a silent/wordless voice
+    # note), kept distinct from `error` (a transport/server failure) so an operator
+    # can tell an outage from an ordinary silent note. An ERROR is never a PASS: a
+    # failed transcription is counted here with its reason and the voice note is
+    # still recorded with a bare handle.
     _CounterSpec(
         "nora_speech_transcriptions_total",
         "Voice-note transcription outcomes in the media custody stage, by "
         "platform and status (ok / error / timeout / unsupported / empty).",
         ("platform", "status"),
     ),
-    # dream_loop's per-scope lock (Task 11's first non-negotiable): a slow
-    # extraction still running when the next tick comes round is SKIPPED,
-    # never re-entered — re-entering would read the same un-advanced
-    # watermark and append the same evidence twice, and the rendered
-    # "12x, 3 people" would be a fabricated number. reason="in_flight" is
-    # the only value today.
-    # Issue #291. `unavailable` holds the watermark on purpose, so the next
-    # fire re-reads the IDENTICAL range — and for a failure caused BY that
-    # range the retry fails the same way, forever, paced only by the backoff
-    # cap. Measured 2026-09-16/17: one scope re-read the same 80 messages for
-    # ~24 hours, each run truncated at exactly 2,000 completion tokens against
-    # a real need of 2,124. `nora_dream_run_total{status="unavailable"}` could
-    # not separate that from a provider outage, which is why it went a day
-    # unnoticed. This series is the one that says «something about THIS range
-    # does not fit», and a unit healing itself still shows up on it.
+    # `nora_dream_skipped_total` `reason="in_flight"`: dream_loop's per-scope
+    # lock. A slow extraction still running when the next tick comes round is
+    # SKIPPED, never re-entered, because re-entering would read the same un-advanced
+    # watermark and append the same evidence twice, and the rendered "12x, 3 people"
+    # would be a fabricated number.
+    #
+    # `nora_dream_batch_shrunk_total`: `unavailable` holds the watermark on purpose,
+    # so the next fire re-reads the IDENTICAL range, and for a failure caused BY that
+    # range the retry fails the same way, forever, paced only by the backoff cap.
+    # `nora_dream_run_total{status="unavailable"}` cannot separate that from a
+    # provider outage. This series says «something about THIS range does not fit»,
+    # and a unit healing itself still shows up on it.
     _CounterSpec(
         "nora_dream_batch_shrunk_total",
         "Dream cycles that read FEWER rows than their configured batch "
@@ -1257,25 +1132,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("reason",),
     ),
     # `SqlLanguageStore.watermark_is_behind_the_record`'s tell, read by
-    # `dream_loop`: a watermark sitting below the oldest SURVIVING message
-    # means rows were pruned before this consolidator ever read them —
-    # R-27's `unavailable` ("I could not see those"), never `nothing_found`
-    # ("nothing happened"). Labelled by scope so a specific room's loss is
-    # findable rather than merged into one process-wide number; structurally
-    # zero while `store.prune_enabled` is false.
+    # `dream_loop`: a watermark below the oldest SURVIVING message means rows were
+    # pruned before this consolidator ever read them. R-27's `unavailable` ("I could
+    # not see those"), never `nothing_found` ("nothing happened"). Labelled by scope
+    # so a specific room's loss is findable; structurally zero while
+    # `store.prune_enabled` is false.
     _CounterSpec(
         "nora_dream_evidence_lost_total",
         "Dream-loop scopes where messages were pruned before this "
         "consolidator ever read them, by scope.",
         ("scope",),
     ),
-    # ---- the Dreamer runtime (substrate plan Task 2.7) --------------------
-    #
-    # R-27's three states, at the run. A run that FAILED is `unavailable` and
-    # is counted — never silently absent — because the Dreamer has nobody
-    # waiting on it: an absent metric and a healthy-but-idle loop look
-    # identical from outside, and that is precisely how a hung provider went
-    # unnoticed long enough to need `composition.py:145-164` written about it.
+    # The Dreamer runtime. R-27's three states, at the run. A run that FAILED is
+    # `unavailable` and is counted, never silently absent: the Dreamer has nobody
+    # waiting on it, and an absent metric and a healthy-but-idle loop look identical
+    # from outside.
     _CounterSpec(
         "nora_dream_run_total",
         "Dreamer adaptor runs by outcome: ok (wrote something), "
@@ -1283,10 +1154,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "check — an ERROR is never a PASS).",
         ("adaptor", "status"),
     ),
-    # Per-fire sampling (AdaptorSchedule.samples, design 37 / issue #118):
-    # one run is N model calls unioned, and a run's `unavailable` is now
-    # «no sample was readable». This is the per-sample reading, so an operator
-    # can tell «one of five samples timed out» from «the run failed».
+    # Per-fire sampling (AdaptorSchedule.samples): one run is N model calls
+    # unioned, and a run's `unavailable` means «no sample was readable». This is the
+    # per-sample reading, so an operator can tell «one of five samples timed out»
+    # from «the run failed».
     _CounterSpec(
         "nora_dream_sample_total",
         "Model calls a Dreamer run made, by adaptor and by whether the "
@@ -1300,15 +1171,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Rows written through an adaptor's sink, by adaptor.",
         ("adaptor",),
     ),
-    # The fail-closed branch in `DreamerToolSource.build` (39 D2/D3): the
-    # adaptor's grant names a home room, the unit declares none in
-    # policy.toml, and the acts are withheld along with the room. This is a
-    # CONFIG state, true on every pass until somebody edits a file, so the log
-    # line beside it is emitted once per (adaptor, unit) — that is what
-    # this counter is for. Without it, deduplicating the log would have traded
-    # a stream of identical errors for no signal at all, and «an adaptor
-    # has been inert in this unit for a week» is exactly the
-    # reading an operator needs and cannot get from a single startup line.
+    # The fail-closed branch in `DreamerToolSource.build`: the adaptor's grant
+    # names a home room, the unit declares none in policy.toml, and the acts are
+    # withheld along with the room. This is a CONFIG state, true on every pass until
+    # a file is edited, so the log line beside it is emitted once per (adaptor,
+    # unit); this counter carries the signal that deduplicating the log removes,
+    # «an adaptor has been inert in this unit for a week».
     _CounterSpec(
         "nora_dream_home_room_missing_total",
         "Dreamer builds that wanted a home room and found none declared for "
@@ -1316,15 +1184,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "config gap, counted every pass; the log says it once.",
         ("adaptor", "unit"),
     ),
-    # Issue #200 follow-up (#546 review): `CultureAdaptor` (and the
-    # since-deleted `NoteCuratorAdaptor`) called an injected `resolve_names`
-    # (`Persons.name_transcript`) before rendering a sender's name, and a
-    # raising resolver must not take the whole occasion down with it — the
-    # occasion still renders, on the pre-#200 `speaker_name` floor (the
-    # profile name, or "unknown"), rather than being marked `unavailable`
-    # and skipped. This is how that degraded read is observed: it should be
-    # structurally zero, since `Persons.name_transcript` does dict lookups
-    # only, and a non-zero reading means the injected resolver itself is
+    # `CultureAdaptor` calls an injected `resolve_names`
+    # (`Persons.name_transcript`) before rendering a sender's name, and a raising
+    # resolver must not take the whole occasion down with it: the occasion still
+    # renders, on the `speaker_name` floor (the profile name, or "unknown"), rather
+    # than being marked `unavailable` and skipped. This is how that degraded read is
+    # observed. It should be structurally zero, since `Persons.name_transcript` does
+    # dict lookups only; a non-zero reading means the injected resolver itself is
     # failing.
     _CounterSpec(
         "nora_dream_name_resolution_failed_total",
@@ -1336,11 +1202,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "attempted, never required).",
         ("adaptor",),
     ),
-    # Screening is the second path into the prompt, and it must never be
-    # silent: a proposal dropped for carrying a phone number or a coordinate
-    # is a real event about a model reading attacker-influenceable pages, and
-    # a drop nobody counts is indistinguishable from a model that never
-    # produced one.
+    # Screening is the second path into the prompt, and it must never be silent:
+    # a proposal dropped for carrying a phone number or a coordinate is a real event
+    # about a model reading attacker-influenceable pages, and a drop nobody counts is
+    # indistinguishable from a model that never produced one.
     _CounterSpec(
         "nora_dream_screened_total",
         "Envelope items dropped before reaching a sink, by adaptor and "
@@ -1349,16 +1214,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "everything it found').",
         ("adaptor", "reason"),
     ),
-    # Issue #63's alarm, and it is the production half of a defect whose CI
-    # half is `tests/contract/test_dream_adaptor_contract.py`. An adaptor
-    # whose objective asks the model to echo a row id back has EVERY item
-    # dropped by `dream_screen` (`_UUID` matches any hyphenated uuid): the
-    # tick spends a model call, writes nothing, and reports `ok`. Three
-    # adaptors shipped that way. `nora_dream_screened_total` counts the drops
-    # per item and cannot answer «was that all of them», because a run's item
-    # count is not on that series — this is the series that can. Structurally
-    # zero while every adaptor keeps identifiers out of its envelope, which is
-    # exactly what makes a non-zero reading worth an alert.
+    # An adaptor whose objective asks the model to echo a row id back has EVERY
+    # item dropped by `dream_screen` (`_UUID` matches any hyphenated uuid): the tick
+    # spends a model call, writes nothing, and reports `ok`. The CI half of this
+    # check is `tests/contract/test_dream_adaptor_contract.py`.
+    # `nora_dream_screened_total` counts the drops per item and cannot answer «was
+    # that all of them», because a run's item count is not on that series; this
+    # series can. Structurally zero while every adaptor keeps identifiers out of its
+    # envelope, which is what makes a non-zero reading worth an alert.
     _CounterSpec(
         "nora_dream_empty_after_screen_total",
         "Dreamer runs where the model returned items and the R-18/R-28 "
@@ -1368,14 +1231,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "putting an identifier or a coordinate in its envelope.",
         ("adaptor",),
     ),
-    # Issue #60. `DreamerRuntime` bounded only `factory.invoke`, so a store
-    # call inside `adaptor.inputs` or `adaptor.commit` that never returned
-    # left `dream_loop` holding `<adaptor>:<key>` in `running` FOREVER — that
-    # unit never ticked again, and the skip landed on
-    # `nora_dream_skipped_total{reason="in_flight_adaptor"}`, which cannot
-    # separate a long run from one wedged since Tuesday. The timeout now
-    # releases the unit and lands HERE, where it is a different diagnosis
-    # from the `unavailable` a 429 or a prose reply produces.
+    # A store call inside `adaptor.inputs` or `adaptor.commit` that never returns
+    # would leave `dream_loop` holding `<adaptor>:<key>` in `running` forever; the
+    # timeout releases the unit and lands HERE. That is a different diagnosis from
+    # the `unavailable` a 429 or a prose reply produces, and from
+    # `nora_dream_skipped_total{reason="in_flight_adaptor"}`, which cannot separate a
+    # long run from a wedged one.
     _CounterSpec(
         "nora_dream_store_timeout_total",
         "Adaptor store phases cut off by the runtime's OWN wall clock, by "
@@ -1389,11 +1250,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "series that says a store wedged.",
         ("adaptor", "phase"),
     ),
-    # Strands raises nothing and logs nothing when a budget cap binds — the
-    # `AgentResult.stop_reason` string is the only channel there is — so a
-    # runaway loop spending its full ceiling every tick is invisible without
-    # this. Four scopes every 300s with nobody watching is exactly the shape
-    # that stays invisible longest.
+    # Strands raises nothing and logs nothing when a budget cap binds; the
+    # `AgentResult.stop_reason` string is the only channel, so a runaway loop
+    # spending its full ceiling every tick is invisible without this.
     _CounterSpec(
         "nora_dream_stop_reason_total",
         "How a Dreamer loop ended, by adaptor: end_turn, limit_turns, "
@@ -1401,43 +1260,34 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("adaptor", "reason"),
     ),
     # TWO findings on one series, separated by `rule`
-    # (`nora.agent.dream_guard.GuardRule`), and reading them as one is how this
-    # help text was wrong for a day:
+    # (`nora.agent.dream_guard.GuardRule`); read them separately.
     #
-    #   rule="R-7"           — the model asked for a tool its adaptor never
-    #                          granted. Under a read-only ceiling that is not a
-    #                          leak, but it IS the tell that an objective and
-    #                          its tool subset disagree about what the job
-    #                          needs. A CONFIG fault: it should be near zero,
-    #                          and a steady rate is something to go and fix.
-    #   rule="tool-budget"    — the model spent one tool's own per-pass ceiling
-    #                          and called it again (2026-09-17). Split OFF
-    #                          `R-7`, which carried both until then and so
-    #                          could not answer whether a ceiling was binding:
-    #                          the (since-deleted, DEC-277) proactive pass was refused a fourth
-    # note in
-    #                          both its scopes that morning and decided every
-    #                          note anyway, indistinguishable in this series
-    #                          from a misspelled tool name. This is the
-    #                          instrument for `[dreamer.budgets.<adaptor>]
-    #                          tool_calls` — a sustained rate on a READ verb
-    #                          says the number is too low for the work, the
-    #                          same reading `memory-budget` carries below.
-    #   rule="memory-budget" — the pass spent its whole memory ration and asked
-    #                          again (R-91, issue #160). Ordinary model
-    #                          behaviour that the ceiling absorbs, not a fault;
-    #                          the pass is answered `unavailable` and carries
-    #                          on. A NON-ZERO rate here is the ceiling doing its
-    #                          job. What is worth an alert is the pathological
-    #                          arm — a pass that spends its whole `turns` budget
-    #                          on refusals — which shows as this series climbing
-    #                          alongside `nora_dream_stop_reason_total
-    #                          {reason="limit_turns"}` and a `run_total`
-    #                          `unavailable` for the same adaptor.
-    #   rule="pass-budget"   — the pass made its whole `max_tool_calls` over
-    #                          every verb together and asked again (design
-    #                          43 §4). `memory-budget`'s reading, one ration
-    #                          wider: a sustained rate says the cap binds.
+    #   rule="R-7"           - the model asked for a tool its adaptor never granted.
+    #                          Under a read-only ceiling that is not a leak, but it
+    #                          is the tell that an objective and its tool subset
+    #                          disagree about what the job needs. A CONFIG fault: it
+    #                          should be near zero, and a steady rate is something
+    #                          to fix.
+    #   rule="tool-budget"   - the model spent one tool's own per-pass ceiling and
+    #                          called it again. Split off `R-7` so it can answer
+    #                          whether a ceiling is binding. This is the instrument
+    #                          for `[dreamer.budgets.<adaptor>] tool_calls`: a
+    #                          sustained rate on a READ verb says the number is too
+    #                          low for the work, the same reading `memory-budget`
+    #                          carries below.
+    #   rule="memory-budget" - the pass spent its whole memory ration and asked again
+    #                          (R-91). Ordinary model behaviour that the ceiling
+    #                          absorbs, not a fault; the pass is answered
+    #                          `unavailable` and carries on. A NON-ZERO rate is the
+    #                          ceiling doing its job. What is worth an alert is the
+    #                          pathological arm, a pass that spends its whole `turns`
+    #                          budget on refusals: this series climbing alongside
+    #                          `nora_dream_stop_reason_total{reason="limit_turns"}`
+    #                          and a `run_total` `unavailable` for the same adaptor.
+    #   rule="pass-budget"   - the pass made its whole `max_tool_calls` over every
+    #                          verb together and asked again. `memory-budget`'s
+    #                          reading, one ration wider: a sustained rate says the
+    #                          cap binds.
     _CounterSpec(
         "nora_dream_guard_vetoes_total",
         "Tool calls refused by DreamGuard, by adaptor and rule: R-7 is a tool "
@@ -1451,24 +1301,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "TagTrace content dropped or cut before retention, by reason.",
         ("what",),
     ),
-    # 15-roadmap §6.2b, and it was named there as a PRECONDITION of Phase 2
-    # rather than a nice-to-have. Phase 1's whole justification is «record
-    # before you fold»: retention exists so that a lossy fold is recoverable,
-    # which means a recording layer that silently stops writing fails in the
-    # one way nobody notices — the discovery point is the first fold, and by
-    # then the missing traces cannot be reconstructed.
+    # Written-versus-turns-taken for the tag-trace record. The denominator is
+    # `nora_tag_latency_seconds`' own COUNT: that histogram observes exactly once per
+    # admitted tag, on every exit path, so
+    # `nora_tagtrace_writes_total / nora_tag_latency_seconds_count` is the ratio.
+    # `tag_trace` is written in a `finally` on every exit path too, so the expected
+    # value is 1.0 and any sustained departure is a defect, not a judgement call. A
+    # recording layer that silently stops writing leaves traces that cannot be
+    # reconstructed later.
     #
-    # The denominator is `nora_tag_latency_seconds`' own COUNT: that histogram
-    # observes exactly once per admitted tag, on every exit path, so
-    # `nora_tagtrace_writes_total / nora_tag_latency_seconds_count` is the
-    # written-versus-turns-taken ratio. `tag_trace` is written in a `finally`
-    # on every exit path too, so the expected value is 1.0 and any sustained
-    # departure is a defect rather than a judgement call.
-    #
-    # The `outcome` label is the cheap second reading §6.2b asks for: the
-    # column is already written, so counting it is a label on a counter that
-    # had to exist anyway — and it is the only way to see whether R-5 silences
-    # are being retained (and therefore reviewed) at all.
+    # The `outcome` label is a second reading off a column that is already written,
+    # and the only way to see whether R-5 silences are being retained (and therefore
+    # reviewed) at all.
     _CounterSpec(
         "nora_tagtrace_writes_total",
         "TagTrace rows handed to the retention store, by turn outcome. The "
@@ -1476,75 +1320,60 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "tag); the expected ratio is 1.0.",
         ("outcome",),
     ),
-    # 26-standing §6. Every debrief lands on exactly one label, including the
-    # ones that wrote nothing:
-    #   written           — the position was revised
-    #   refused_overflow  — it would not fit even after consolidating; the
-    #                       prior stands (§4.0's refuse-never-truncate)
-    #   screened          — an identifier or coordinate reached the fold (§4.3)
-    #   malformed         — the model answered, in the wrong shape
-    #   unavailable       — the prior could not be read, or the call was cut
-    #                       off at the output ceiling. «I could not check» —
-    #                       never folded in with `malformed` (R-27)
-    #   timeout           — the fold did not finish inside its own budget
-    #   cancelled         — the process is going away mid-fold. NOT a fault,
-    #                       and deliberately not `error`: shutdown cancels an
-    #                       in-flight tag routinely, and a counter that fires
-    #                       on ordinary shutdown is one nobody reads
-    #   error             — anything else, genuinely unexpected
+    # Every debrief lands on exactly one label, including the ones that wrote
+    # nothing:
+    #   written           - the position was revised
+    #   refused_overflow  - it would not fit even after consolidating; the prior
+    #                       stands (refuse, never truncate)
+    #   screened          - an identifier or coordinate reached the fold
+    #   malformed         - the model answered, in the wrong shape
+    #   unavailable       - the prior could not be read, or the call was cut off at
+    #                       the output ceiling. «I could not check», never folded in
+    #                       with `malformed` (R-27)
+    #   timeout           - the fold did not finish inside its own budget
+    #   cancelled         - the process is going away mid-fold. NOT a fault, and
+    #                       deliberately not `error`: shutdown cancels an in-flight
+    #                       tag routinely, and a counter that fires on ordinary
+    #                       shutdown is one nobody reads
+    #   error             - anything else, genuinely unexpected
     _CounterSpec(
         "nora_debrief_total",
         "Debrief folds by disposition: written, refused_overflow, screened, "
         "malformed, unavailable, timeout, cancelled, error.",
         ("outcome",),
     ),
-    # §4's non-negotiable, made OBSERVABLE rather than assumed. A fold that
-    # read nothing is the failure D19 exists to prevent — two contradictory
-    # positions coexisting, neither able to correct the other — and the live
-    # evidence is that it happened one tier over and nobody could see it.
-    # `prior="absent"` is legitimate exactly once per conversation (the first
-    # fold); a sustained absent rate is the tell that the read is broken.
+    # Makes the "fold reads the prior Standing" requirement OBSERVABLE. A fold
+    # that read nothing leaves two contradictory positions coexisting, neither able
+    # to correct the other. `prior="absent"` is legitimate exactly once per
+    # conversation (the first fold); a sustained absent rate is the tell that the
+    # read is broken.
     _CounterSpec(
         "nora_debrief_prior_total",
         "Debrief folds by whether the current Standing was read first "
         "(prior=read|absent). A sustained absent rate is a defect.",
         ("prior",),
     ),
-    # §4.0/§6: the refuse-and-consolidate path firing is HEALTHY. Never firing
-    # means the cap is not binding — the tier is meant to be lossy, so a cap
-    # that never binds means it stopped being lossy. Firing constantly means it
-    # is too small. Both are readings, which is why this is a counter and not a
-    # log line.
+    # The refuse-and-consolidate path firing is HEALTHY. Never firing means the
+    # cap is not binding (the tier is meant to be lossy); firing constantly means it
+    # is too small. Both are readings, which is why this is a counter and not a log
+    # line.
     #
-    # `stage="first"` is the refusal the model then FIXED; `stage="final"` is
-    # the one that wrote nothing. Two very different healths wearing one name
-    # would make the series unreadable: a high `first` with a low `final` is
-    # the mechanism working.
-    # Issue #189 step 1. `nora.engagement.debrief_render._clip` cuts one block
-    # at that module's bound (600, or 4000 for a tool result or a thinking
-    # step since design/standing-compact/10 §3) before the fold sees it — and
-    # until this counter,
-    # nothing said how often, or which kind of block. It exists because the
-    # module could not answer its own question: `grep -c "metrics"
-    # nora/engagement/debrief_render.py` returned 0 before this, which made
-    # the clip rate UNREPORTABLE rather than merely unreported.
+    # `stage="first"` is the refusal the model then FIXED; `stage="final"` is the one
+    # that wrote nothing. A high `first` with a low `final` is the mechanism working.
+    #
+    # `nora.engagement.debrief_render._clip` cuts one block at that module's bound
+    # (600, or 4000 for a tool result or a thinking step) before the fold sees it;
+    # this counts how often, and which kind of block.
     #
     # `block` is `ClipKind` (`nora.engagement.debrief_render`):
-    #   reasoning   — the model's own narration was cut (at 600)
-    #   thinking    — a step of private reasoning was cut (at 4000); its own
-    #                 label since 2026-09-24 so the two bounds read apart
-    #   tool_call   — the model's own request to a tool was cut (what she
-    #                 asked, not what she was told)
-    #   tool_result — what a tool RETURNED was cut — the evidence half, and
-    #                 the one the issue's title names directly: a claim
+    #   reasoning   - the model's own narration was cut (at 600)
+    #   thinking    - a step of private reasoning was cut (at 4000); its own label so
+    #                 the two bounds read apart
+    #   tool_call   - the model's own request to a tool was cut (what she asked, not
+    #                 what she was told)
+    #   tool_result - what a tool RETURNED was cut: the evidence half. A claim
     #                 supported by the tail of a long tool result reads as
     #                 unsupported to a grader shown only the head
-    #
-    # Step 2 is the render carrying an explicit mark so the model reading a
-    # clipped block knows it is one (the `<steps>` type's `clipped`
-    # annotation). Step 3, sizing the bound, landed 2026-09-24 against the
-    # measured size of 1000 production tool results — sizing followed the
-    # count, not the other way round.
     _CounterSpec(
         "nora_debrief_clips_total",
         "Blocks the debrief render cut at its bound before the fold saw "
@@ -1552,12 +1381,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "thinking / tool_call / tool_result).",
         ("block",),
     ),
-    # `nora_standing_rederivations_total`, `..._written_total`,
-    # `nora_debrief_room_scope_overrides_total` and `nora_turn_verdict_total`
-    # were declared here until 2026-09-24 and are GONE with the verdict and the
-    # re-derivation triggers they counted (design/standing-compact/10 §1). A
-    # declared metric with no call site renders a series that is always zero,
-    # which reads as «never fired» rather than «no longer exists».
+    # A declared metric with no call site renders a series that is always zero,
+    # which reads as «never fired» rather than «no longer exists», so retired
+    # Standing series are not declared here.
     _CounterSpec(
         "nora_standing_overflow_refusals_total",
         "Standing writes refused for exceeding [standing] max_chars, by "
@@ -1566,9 +1392,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "event-path fold's, was retired 2026-10-03, DEC-277.)",
         ("stage",),
     ),
-    # design/standing-compact/30-working-set.md, issue #445. A dropped item
-    # never reaches `screen` and is never a candidate for the overflow
-    # refusal below — it was never a candidate at all.
+    # A dropped item never reaches `screen` and is never a candidate for the
+    # overflow refusal below.
     _CounterSpec(
         "nora_standing_working_set_unsourced_dropped_total",
         "Working-set items the fold's write path dropped because their "
@@ -1603,20 +1428,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(the compare-and-set lost; the note moved under the call).",
         ("reason",),
     ),
-    # DECLARED LATE, and the gap was not inert. `engagement/context.py` has
-    # incremented this name since the peer-card blindness was found on
-    # 2026-08-15, but it was never added here — so `Metrics.inc` fell through
-    # its counter branch to the bare `self._gauges[name]` lookup and raised
-    # `KeyError`. That raise lands INSIDE `_peer_card`'s own `except
-    # Exception`, which logs "peer-card read failed" and increments
-    # `nora_errors_total{stage="peer_card"}`.
-    #
-    # So the one counter whose entire purpose is to separate «her card is
-    # genuinely empty» from «the read failed» was reporting every genuinely
-    # empty card as a transport failure — the exact confusion it was added to
-    # end, inverted. The instance is one line; the reason it survived is that
-    # nothing checked call sites against this tuple, which is what
-    # `tests/architecture/test_every_recorded_metric_is_declared.py` now does.
+    # Separates «her card is genuinely empty» from «the read failed»
+    # (`nora_errors_total{stage="peer_card"}`). Every name incremented in
+    # `engagement/context.py` must be declared here: `Metrics.inc` falls through its
+    # counter branch to the bare `self._gauges[name]` lookup and raises `KeyError`
+    # for an undeclared name, which `_peer_card`'s own `except Exception` would
+    # count as a read failure.
+    # `tests/architecture/test_every_recorded_metric_is_declared.py` checks call
+    # sites against this tuple.
     _CounterSpec(
         "nora_peer_card_empty_total",
         "Peer-card reads that came back empty, by platform — i.e. tagged turns "
@@ -1633,20 +1452,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("platform",),
     ),
     # Bounded reads where the LIMIT actually bit, by site. The vocabulary is
-    # `nora.domain.bounds.BoundSite` and is deliberately NOT restated here —
-    # `nora_ingest_outcomes_total`'s own help text sets that precedent, because
-    # a hand-copied vocabulary is exactly what drifts.
+    # `nora.domain.bounds.BoundSite` and is deliberately NOT restated here (as for
+    # `nora_ingest_outcomes_total`).
     #
-    # It counts the BIT, not the remainder: one increment per truncated read,
-    # never "how many were left". Over-fetching by one is the only probe that
-    # is cheap and correct at every site, so a series carrying a magnitude from
-    # the sites that can compute one and a 1 from the sites that cannot would
-    # be lying about its own unit. Sites with a real depth to report keep their
-    # own gauges — this does not replace `nora_note_revisit_deferred_total`.
+    # It counts the BIT, not the remainder: one increment per truncated read, never
+    # "how many were left". Over-fetching by one is the only probe that is cheap and
+    # correct at every site, so a series carrying a magnitude from the sites that can
+    # compute one and a 1 from the sites that cannot would be lying about its own
+    # unit. Sites with a real depth to report keep their own gauges; this does not
+    # replace `nora_note_revisit_deferred_total`.
     #
-    # Read it AGAINST the call rate for the same site. Sustained truncation on
-    # every call is not "the cap is working", it is a backlog this series
-    # cannot size — see `nora.domain.bounds`' reversal condition.
+    # Read it AGAINST the call rate for the same site. Sustained truncation on every
+    # call is a backlog this series cannot size (see `nora.domain.bounds`' reversal
+    # condition).
     _CounterSpec(
         "nora_bound_truncated_total",
         "Bounded reads where the limit actually bit — one per truncated read, "
@@ -1657,14 +1475,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "caller; the vocabulary is `nora.domain.bounds.BoundSite`.",
         ("site",),
     ),
-    # The participation occasion (design/dreamer-agent-loop/35 §6). Silence is
-    # the HEALTHY outcome of a participation turn — the model was offered the
-    # floor and declined — so it gets its own series and NEVER lands in
-    # `nora_silent_failures_total`, whose every reason is a malfunction. The
-    # gate is `ok=True and stop_reason not in BUDGET_STOP_REASONS`: a turn the
-    # budget cut off before it could call the send tool is a malfunction of
-    # the ordinary kind and goes to `nora_silent_failures_total` with
-    # audience="participation", never here.
+    # The participation occasion. Silence is the HEALTHY outcome of a
+    # participation turn (the model was offered the floor and declined), so it gets
+    # its own series and NEVER lands in `nora_silent_failures_total`, whose every
+    # reason is a malfunction. The gate is
+    # `ok=True and stop_reason not in BUDGET_STOP_REASONS`: a turn the budget cut off
+    # before it could call the send tool is a malfunction of the ordinary kind and
+    # goes to `nora_silent_failures_total` with audience="participation", never
+    # here.
     _CounterSpec(
         "nora_participation_silence_total",
         "Participation determinations that concluded 'say nothing' (the "
@@ -1679,10 +1497,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "ratio is how often the occasion finds grounded value.",
         ("platform",),
     ),
-    # The proactive occasion (design/dreamer-agent-loop/39 D12, DEC-162) —
-    # participation's pair, one occasion later: a `kind="proactive"` row's
-    # act turn that concluded «say nothing» (the healthy default, and the
-    # row is DONE with outcome="silent") and one that spoke. Budget-cut
+    # The proactive occasion (DEC-162), participation's pair: a
+    # `kind="proactive"` row's act turn that concluded «say nothing» (the healthy
+    # default; the row is DONE with outcome="silent") and one that spoke. Budget-cut
     # turns are silent failures under audience="proactive", never here.
     _CounterSpec(
         "nora_proactive_silence_total",
@@ -1697,24 +1514,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "against nora_proactive_silence_total.",
         ("platform",),
     ),
-    # The Relevance Gate (design/dreamer-agent-loop/36). TWO series, and the
-    # split is the point: this one moves only when the gate actually decided,
-    # the one below only when it could not. Both outcomes are a `no_go` at the
-    # trigger, and folding them together would make «the room was quiet» and
-    # «the gate is down» the same reading — R-23's bug, which this repo has
-    # already paid for once.
+    # The Relevance Gate has TWO series, and the split is the point: this one
+    # moves only when the gate actually decided, the one below only when it could
+    # not. Both outcomes are a `no_go` at the trigger, and folding them together
+    # would make «the room was quiet» and «the gate is down» the same reading (R-23).
     #
-    # NEVER counted in any tag, heartbeat or participation series: the gate
-    # decides whether a turn happens and is not itself a turn, so a gate
-    # verdict landing in `nora_engagement_outcomes_total` or
-    # `nora_participation_silence_total` would corrupt the very measurement
-    # the flip decision reads.
-    # One per TAG turn that reached `send_reply` with a picker wired
-    # (`nora.agent.reaction`). `with`/`alone` are GIFs that went out with the
-    # reply; `none` is the model deciding against one; the rest are the ways a
-    # pick fails, every one of which sends the reply as written. The GIF rate
-    # is (with+alone)/all, and it was 17/104 in the replay that justified the
-    # picker, so a rate far from that is the first thing to read.
+    # NEVER counted in any tag, heartbeat or participation series: the gate decides
+    # whether a turn happens and is not itself a turn, so a gate verdict landing in
+    # `nora_engagement_outcomes_total` or `nora_participation_silence_total` would
+    # corrupt the measurement the flip decision reads.
+    #
+    # `nora_reaction_total`: one per TAG turn that reached `send_reply` with a picker
+    # wired (`nora.agent.reaction`). `with`/`alone` are GIFs that went out with the
+    # reply; `none` is the model deciding against one; the rest are the ways a pick
+    # fails, every one of which sends the reply as written. The GIF rate is
+    # (with+alone)/all.
     _CounterSpec(
         "nora_reaction_total",
         "Reaction-picker outcomes on a tag turn's first reply: with, alone "
@@ -1723,11 +1537,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Every outcome but with/alone sends her words unchanged.",
         ("outcome",),
     ),
-    # The speech formatter (design/voice-channel/08). The vocabulary is
+    # The speech formatter. The vocabulary is
     # `nora.domain.speech_markup.FORMAT_OUTCOMES`, derived from the Literal the
-    # formatter counts against. formatted/(every outcome but short and long)
-    # is how often the model's pacing is actually heard; words_changed and
-    # bad_markup are the check refusing it.
+    # formatter counts against. formatted/(every outcome but short and long) is how
+    # often the model's pacing is actually heard; words_changed and bad_markup are
+    # the check refusing it.
     _CounterSpec(
         "nora_speech_format_total",
         "Speech-formatter outcomes on a spoken reply: "
@@ -1745,22 +1559,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "mode only the go verdicts are delivered anywhere; this series is the "
         "only place the no_go rate is observable at all, which is what keeps "
         "an undelivered verdict from being an unmeasured one.",
-        # `conversation_id` is what makes a REFUSAL JOINABLE TO A ROOM
-        # (design/culture-tier/02-measurement section 3, was issue #221).
-        # Without it a `no_go` says only «somewhere on Signal», and the two
-        # measures that would grade the gate against something other than its
-        # own opinion — HOLDING refusal (it refused room R while she
-        # demonstrably held something for R) and override (a human tagged her
-        # in R within minutes of a `no_go`) — are uncomputable even though
-        # BOTH SIDES OF THE JOIN ARE ALREADY IN POSTGRES. The gate has the id
-        # in hand at every emit site; it was simply never written down.
+        # `conversation_id` makes a REFUSAL JOINABLE TO A ROOM. Without it a `no_go`
+        # says only «somewhere on Signal», and the two measures that grade the gate
+        # against something other than its own opinion, HOLDING refusal (it refused room
+        # R while she demonstrably held something for R) and override (a human tagged her
+        # in R within minutes of a `no_go`), are uncomputable. The gate has the id in
+        # hand at every emit site.
         #
-        # Cardinality is bounded by `Policy.conversations`, which is a
-        # configured roster and not user input — the same population every
-        # per-room store keys on. It does NOT touch DEC-179: the gate still
-        # neither reads nor writes `decision_log`, and a counter still cannot
-        # give per-verdict timing, so `override` stays approximate until
-        # something durable carries it.
+        # Cardinality is bounded by `Policy.conversations`, a configured roster and not
+        # user input, the same population every per-room store keys on. It does NOT touch
+        # DEC-179: the gate neither reads nor writes `decision_log`, and a counter cannot
+        # give per-verdict timing, so `override` stays approximate until something
+        # durable carries it.
         ("verdict", "platform", "conversation_id"),
     ),
     _CounterSpec(
@@ -1772,30 +1582,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "SUSTAINED count here is the gate being down while looking exactly "
         "like a quiet room, which is the one failure this series exists to "
         "make visible.",
-        # Labelled for the same reason as the verdict series above, and the
-        # reason it is not left out: a fail-closed no_go REFUSES THE ROOM just
-        # as a chosen one does, so a HOLDING measure blind to this series
-        # under-counts refusals by whatever the outage rate happens to be
-        # (14 of 290 over the 7 days to 2026-09-16). The two series stay
-        # SEPARATE — that is R-23 and is not weakened by giving both the same
-        # join key.
+        # Labelled for the same reason as the verdict series above: a fail-closed
+        # no_go REFUSES THE ROOM just as a chosen one does, so a HOLDING measure blind to
+        # this series under-counts refusals by the outage rate. The two series stay
+        # SEPARATE (R-23); giving both the same join key does not weaken that.
         ("kind", "platform", "conversation_id"),
     ),
-    # The culture tier's only counter (design/culture-tier). The vocabulary is
-    # `nora.language.culture.CULTURE_OUTCOMES` and is deliberately not restated
-    # here — a hand-copied vocabulary is what drifts.
+    # The culture tier's only counter. The vocabulary is
+    # `nora.language.culture.CULTURE_OUTCOMES` and is deliberately not restated here.
     #
-    # `unchanged` is the one worth reading and the one that looks like a
-    # failure: the adaptor declines to append an account byte-identical to the
-    # head, because the chain's whole content is that each link differs from the
-    # one before, and a link carrying no information makes the history longer
-    # without making it richer. A sustained run of it is a room that has stopped
-    # changing, which is a real reading and not an error.
+    # `unchanged` is the one worth reading and the one that looks like a failure: the
+    # adaptor declines to append an account byte-identical to the head, because each
+    # link in the chain must differ from the one before. A sustained run of it is a
+    # room that has stopped changing, a real reading and not an error.
     #
-    # Since the write verb (C2a) the outcomes are about what a session did
-    # with its room: `refused` counts one refused `character_revise` call,
-    # `unsettled` a session that ended with the room neither revised nor kept
-    # (its batch is held), `kept` a «no change» close.
+    # The outcomes are about what a session did with its room: `refused` counts one
+    # refused `character_revise` call, `unsettled` a session that ended with the room
+    # neither revised nor kept (its batch is held), `kept` a «no change» close.
     _CounterSpec(
         "nora_culture_fold_total",
         "Culture folds by what the session did with the room's account, by "
@@ -1806,8 +1609,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "times in a row and the fold advanced past it.",
         ("outcome",),
     ),
-    # The Character sessions that are not a room (design/self-growth/10 §3):
-    # one per (unit, entity) key, by entity kind and by the same outcomes.
+    # The Character sessions that are not a room: one per (unit, entity) key, by
+    # entity kind and by the same outcomes.
     _CounterSpec(
         "nora_character_session_total",
         "Character sessions (person, unit, Nora) by kind ("
@@ -1815,8 +1618,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         + " / ".join(sorted(CHARACTER_OUTCOMES)) + ").",
         ("kind", "outcome"),
     ),
-    # The Lessons session (design/self-growth/40, L2): one per unit, by what
-    # it did; `decayed` is code retiring a lesson at its horizon.
+    # The Lessons session: one per unit, by what it did; `decayed` is code
+    # retiring a lesson at its horizon.
     _CounterSpec(
         "nora_lessons_session_total",
         "Lessons sessions and their writes by outcome ("
@@ -1826,8 +1629,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "unsettled run of one batch; decayed a lesson retired at its horizon.",
         ("outcome",),
     ),
-    # The doctrine check (design/self-growth/40 §4, L3) and the tension rows it
-    # writes. An `error` refused the lesson and wrote nothing.
+    # The doctrine check and the tension rows it writes. An `error` refused the
+    # lesson and wrote nothing.
     _CounterSpec(
         "nora_doctrine_check_total",
         "Doctrine checks of a lesson by outcome (" + " / ".join(sorted(CHECK_OUTCOMES))
@@ -1847,23 +1650,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "law rule, by the doctrine file of that rule. Operator-only.",
         ("doctrine_file",),
     ),
-    # Issue #325. The OmniRoute Chat Completions transport drops
-    # `reasoningContent` in a multi-turn position; in production it does not
-    # raise, the loop runs on and the turn speaks with its reasoning gone.
+    # The OmniRoute Chat Completions transport drops `reasoningContent` in a
+    # multi-turn position; it does not raise, the loop runs on and the turn speaks
+    # with its reasoning gone.
     #
-    # **THE DENOMINATOR IS IN THE SAME SERIES, and that is the whole design of
-    # it.** A counter carrying only the strips cannot separate «no strips» from
-    # «no observation» — both read as an absent series, and this process
-    # restarts two or three times a day with prometheus-client creating label
-    # values lazily. Recording `clean` as well means an absent series says
-    # «nothing multi-turn has run since the last restart» and a present `clean`
-    # with no `stripped` says a real zero. That is the difference between an
-    # instrument and a reassurance.
+    # **THE DENOMINATOR IS IN THE SAME SERIES.** A counter carrying only the strips
+    # cannot separate «no strips» from «no observation»: both read as an absent
+    # series, and this process restarts two or three times a day with
+    # prometheus-client creating label values lazily. Recording `clean` as well means
+    # an absent series says «nothing multi-turn has run since the last restart» and a
+    # present `clean` with no `stripped` says a real zero.
     #
-    # It is still NOT the record. This resets on every deploy, and the question
-    # this signal exists to answer («how often, per opportunity, on which path,
-    # and did it move when the model did») spans deploys. `reasoning_strip_log`
-    # in Postgres is the record; see
+    # It is NOT the record: this resets on every deploy, and the question it answers
+    # («how often, per opportunity, on which path, and did it move when the model
+    # did») spans deploys. `reasoning_strip_log` in Postgres is the record; see
     # docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md.
     _CounterSpec(
         "nora_reasoning_strip_total",
@@ -1885,21 +1685,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "blip also produces.",
         ("outcome",),
     ),
-    # `[dreamer] max_unit_hold_seconds` fired (issue #191): `_run_adaptor`'s
-    # own wall clock around the WHOLE call to `_dream_adaptor_once`, covering
-    # the model budget, `#60`'s two bounded store phases AND the cursor reads
-    # around them that `#60` left bare (`clock.last_fired`/`record_fire`,
-    # every `language.*` watermark call, `record.since`, `media_join.enrich`).
-    # A DISTINCT series from `nora_dream_skipped_total
-    # {reason="in_flight_adaptor"}` on purpose: that one counts a tick that
-    # found the unit still running and cannot say whether the run in progress
-    # is long or wedged; this one fires only when the wall clock itself cuts a
-    # unit off, so a wedge is now separable from an ordinary long run. Also
-    # distinct from `nora_dream_store_timeout_total`, which is `#60`'s OWN
-    # timeout on one store phase — this fires only when the OUTER clock
-    # expires, which for a store-phase hang means the inner one somehow did
-    # not (a collaborator swallowing `CancelledError`, or a synchronous
-    # blocking call).
+    # `[dreamer] max_unit_hold_seconds` fired: `_run_adaptor`'s own wall clock
+    # around the WHOLE call to `_dream_adaptor_once`, covering the model budget, the
+    # two bounded store phases AND the cursor reads around them
+    # (`clock.last_fired`/`record_fire`, every `language.*` watermark call,
+    # `record.since`, `media_join.enrich`). A DISTINCT series from
+    # `nora_dream_skipped_total{reason="in_flight_adaptor"}`: that one counts a tick
+    # that found the unit still running and cannot say whether the run in progress is
+    # long or wedged; this one fires only when the wall clock cuts a unit off. Also
+    # distinct from `nora_dream_store_timeout_total`, the timeout on one store phase:
+    # this fires only when the OUTER clock expires, which for a store-phase hang
+    # means the inner one did not (a collaborator swallowing `CancelledError`, or a
+    # synchronous blocking call).
     _CounterSpec(
         "nora_dream_unit_timeout_total",
         "Dreamer (adaptor, key) units released by [dreamer] "
@@ -1909,9 +1706,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "tell apart from one wedged since Tuesday.",
         ("adaptor",),
     ),
-    # The public Instagram summons (design/instagram-adoption/19,
-    # `nora.app.summons`). Both label vocabularies are DERIVED from
-    # `nora.domain.summons`, which is what the increments pass.
+    # The public Instagram summons (`nora.app.summons`). Both label vocabularies
+    # are DERIVED from `nora.domain.summons`, which is what the increments pass.
     _CounterSpec(
         "nora_summons_total",
         "Public Instagram summons handled, by outcome ("
@@ -1945,15 +1741,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "pushed out of the full inbox by a newer one.",
         ("outcome",),
     ),
-    # The cognition loop's stimuli and its wake evaluator
-    # (design/cognition-loop/20-observe.md §3-§4, migration step 1). Both
-    # vocabularies are DERIVED from `nora.domain.cues` / `nora.domain.stimuli`.
-    # `nora_stimulus_total` and `nora_stimulus_pending_age_seconds` were
-    # `nora_signal_total`/`nora_signal_pending_age_seconds` for hours after
-    # #615 (DEC-233); renamed the same day, before any dashboard depended on
-    # the old spelling, to stop clashing with Signal the platform (operator
-    # 2026-09-29, DEC-234) — the one stated exception to metric names being
-    # append-only.
+    # The cognition loop's stimuli and its wake evaluator. Both vocabularies are
+    # DERIVED from `nora.domain.cues` / `nora.domain.stimuli`. The `stimulus` name
+    # (rather than `signal`) avoids clashing with Signal the platform (DEC-234); the
+    # one stated exception to metric names being append-only.
     _CounterSpec(
         "nora_stimulus_total",
         "Stimuli appended to a unit's stimulus table, by kind ("
@@ -2055,10 +1846,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "measures how long brakes hold, not how many wakes they stopped.",
         ("brake",),
     ),
-    # The session's own outcomes (design/cognition-loop/70-migration.md
-    # §10, the metrics the design named and 3a-iii had not shipped). None of the
-    # four carries a room, a person, a unit or any text as a label: each label is
-    # a closed vocabulary the code owns.
+    # The session's own outcomes. None of the four carries a room, a person, a
+    # unit or any text as a label: each label is a closed vocabulary the code
+    # owns.
     _CounterSpec(
         "nora_cognition_item_total",
         "Agenda items a Cognition session closed, by the item's kind and by how "
@@ -2099,13 +1889,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "onto its agenda).",
         ("outcome",),
     ),
-    # The Assess adaptor's nightly data-quality checks (design/cognition-loop/
-    # 30-cognition.md §6, 70-migration.md §10, migration step 3). ONE
-    # INCREMENT PER (run, check) when a check's status is `fail` — never per
-    # offending row, so this counts how many nightly runs found a check red,
-    # not how many rows it found. `nora.domain.assess.DQ_CHECKS` is the label
-    # vocabulary; `not_applicable` never increments this (a check that could
-    # not run is not a failure).
+    # The Assess adaptor's nightly data-quality checks. ONE INCREMENT PER
+    # (run, check) when a check's status is `fail`, never per offending row, so this
+    # counts how many nightly runs found a check red, not how many rows it found.
+    # `nora.domain.assess.DQ_CHECKS` is the label vocabulary; `not_applicable` never
+    # increments this (a check that could not run is not a failure).
     _CounterSpec(
         "nora_dq_failures_total",
         "Nightly data-quality check runs (nora.app.assess_run) whose check "
@@ -2119,12 +1907,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("check",),
     ),
     # A check's own function raised instead of returning a verdict (a query
-    # error, a connection drop, a programming bug) — `nora.app.assess_dq.
-    # _isolated` catches it so the rest of the night's checks still run, and
-    # counts it here rather than folding it into nora_dq_failures_total: an
-    # ERROR is never a PASS, and it must also never read as the SAME kind of
-    # red as a check that ran clean to a `fail` verdict (AGENTS.md's Measure
-    # spine).
+    # error, a connection drop, a programming bug); `nora.app.assess_dq._isolated`
+    # catches it so the rest of the night's checks still run, and counts it here
+    # rather than in nora_dq_failures_total: an ERROR is never a PASS, and it must
+    # never read as the SAME kind of red as a check that ran clean to a `fail`
+    # verdict (AGENTS.md's Measure spine).
     _CounterSpec(
         "nora_dq_errors_total",
         "Nightly data-quality check runs (nora.app.assess_run) whose check "
@@ -2136,8 +1923,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("check",),
     ),
     # One-time codes (`nora.app.otp`). The API answers every request the same
-    # way, so these are where "sent", "nobody by that name" and "rate limited"
-    # can be told apart.
+    # way, so these are where "sent", "nobody by that name" and "rate limited" can be
+    # told apart.
     _CounterSpec(
         "nora_otp_requests_total",
         "Requests for a one-time code, by platform and outcome ("
@@ -2149,24 +1936,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Checks of a one-time code, by outcome (" + " / ".join(OTP_CHECK_OUTCOMES) + ").",
         ("outcome",),
     ),
-    # Nora's one Google identity (`nora.infra.google.auth`, design/external-
-    # files §4, §7): the shared refresh token refused as `invalid_grant`
-    # (revoked, expired, or a Testing-mode consent screen's 7-day expiry).
-    # Counted on its own so a dead sign-in is one alert rather than a week of
-    # `unavailable` from every Google service at once.
+    # Nora's one Google identity (`nora.infra.google.auth`): the shared refresh
+    # token refused as `invalid_grant` (revoked, expired, or a Testing-mode consent
+    # screen's 7-day expiry). Counted on its own so a dead sign-in is one alert
+    # rather than a week of `unavailable` from every Google service at once.
     _CounterSpec(
         "nora_google_invalid_grant_total",
         "Refreshes of Nora's one Google refresh token refused as invalid_grant "
         "(the sign-in is revoked or expired: run scripts/google_auth.py again).",
         (),
     ),
-    # The memory index's projection (`nora.infra.sql.memory_index`,
-    # design/unified-memory/60-build-step-3.md §2): one per projection a store
-    # write made. `queued` is a projection that failed inside the store's
-    # transaction while the store's own write stood; its source waits on
-    # `memory_projection_queue`. `lost` failed to queue as well, so only a
-    # rebuild finds it. `ok` is counted too, so a `queued` rate has a
-    # denominator and an absent series is not read as «never failed».
+    # The memory index's projection (`nora.infra.sql.memory_index`): one per
+    # projection a store write made. `queued` is a projection that failed inside the
+    # store's transaction while the store's own write stood; its source waits on
+    # `memory_projection_queue`. `lost` failed to queue as well, so only a rebuild
+    # finds it. `ok` is counted too, so a `queued` rate has a denominator and an
+    # absent series is not read as «never failed».
     _CounterSpec(
         "nora_memory_projection_total",
         "Memory index projections made by store writes, by node kind ("
@@ -2176,10 +1961,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "write kept; lost = the queue write failed too.",
         ("kind", "outcome"),
     ),
-    # The memory index's read (`nora.agent.memory_search`, design/unified-
-    # memory/25-memory-graph.md §4, 60 S5): one per search, by the status the
-    # caller was given. `partial` is an answer from an index still being
-    # rebuilt or with sources waiting on its queue; `unavailable` an error.
+    # The memory index's read (`nora.agent.memory_search`): one per search, by
+    # the status the caller was given. `partial` is an answer from an index still
+    # being rebuilt or with sources waiting on its queue; `unavailable` an error.
     _CounterSpec(
         "nora_memory_search_total",
         "Memory index searches, by status (" + " / ".join(SEARCH_STATUSES) + "). "
@@ -2189,9 +1973,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "search failed (fail closed).",
         ("status",),
     ),
-    # The memory index's embedding worker (`nora.infra.sql.memory_embed`,
-    # design/unified-memory/65-build-step-3-vectors.md V1): one per node it
-    # tried. `ok` is counted, so a failure rate has a denominator.
+    # The memory index's embedding worker (`nora.infra.sql.memory_embed`): one
+    # per node it tried. `ok` is counted, so a failure rate has a denominator.
     _CounterSpec(
         "nora_memory_embed_total",
         "Memory index nodes the embedding worker tried, by outcome ("
@@ -2204,10 +1987,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "unavailable attempt never gives a node up.",
         ("outcome",),
     ),
-    # The dense seed's HNSW scan coming back with fewer nodes than the
-    # search's scope holds vectors (and fewer than it asked for): the scan hit
-    # `hnsw.max_scan_tuples` first (`nora.infra.sql.memory_read`), 65 V2. No
-    # label, no content: a count of searches.
+    # The dense seed's HNSW scan coming back with fewer nodes than the search's
+    # scope holds vectors (and fewer than it asked for): the scan hit
+    # `hnsw.max_scan_tuples` first (`nora.infra.sql.memory_read`). No label, no
+    # content: a count of searches.
     _CounterSpec(
         "nora_memory_dense_short_total",
         "Memory index searches whose dense seed returned fewer nodes than it "
@@ -2215,9 +1998,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "the HNSW scan stopped at hnsw.max_scan_tuples first.",
         (),
     ),
-    # The embedding worker's texts cut to fit the embedder's micro-batch
-    # (design/unified-memory/65-build-step-3-vectors.md §3): counted in
-    # addition to `ok`, by node kind, so a rise says which kind needs
+    # The embedding worker's texts cut to fit the embedder's micro-batch:
+    # counted in addition to `ok`, by node kind, so a rise says which kind needs
     # chunking. Bounded: the embedded kinds only.
     _CounterSpec(
         "nora_memory_embed_truncated_total",
@@ -2231,8 +2013,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
     # The OAuth keepalive (DEC-308). Published at registration from the state
-    # file, so a restart does not blank them; absent while no lane is kept
-    # (image generation off, or no token): not applicable, never 0.
+    # file, so a restart does not blank them; absent while no lane is kept (image
+    # generation off, or no token): not applicable, never 0.
     _GaugeSpec(
         "nora_oauth_last_refresh_timestamp_seconds",
         "Unix time of the lane's last SUCCESSFUL token refresh (0: none under "
@@ -2258,10 +2040,9 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "after a success or at registration.",
         ("lane",),
     ),
-    # The divergence itself, which IS the failure rather than a proxy for
-    # it: nora's belief on one side, the controller's own report on the
-    # other. Both 1 = agreement. expected=1 with controller=0 sustained is
-    # the shape that went unnoticed for days.
+    # The divergence itself, which IS the failure rather than a proxy for it:
+    # nora's belief on one side, the controller's own report on the other. Both 1 =
+    # agreement. expected=1 with controller=0 sustained is the failure shape.
     _GaugeSpec(
         "nora_cognition_session_units",
         "Units by whether a Cognition session can run for them: state=runnable "
@@ -2284,15 +2065,15 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         ("guild_id",),
     ),
     _GaugeSpec("nora_last_event_age_seconds", "Seconds since the last ingest event."),
-    # The per-platform answer to the same question, added rather than folded
-    # into the line above as a label: that series is UNLABELLED on purpose —
-    # it is the Signal-era liveness series, and adding a label changes a
-    # series' IDENTITY, so anything selecting it by bare name stops matching
-    # with no error anywhere. This one covers every enabled platform, so a
-    # wedged Discord Gateway is alertable instead of invisible.
-    # design/cognition-loop step 1b, DEC-232: what system-time history costs,
-    # per covered table, measured hourly by `nora.app.revisions`. The
-    # decision's reversal condition is this growth on the hot tables.
+    # The per-platform answer to the question the line above answers, as a
+    # separate series rather than a label: that series is UNLABELLED on purpose (the
+    # Signal-era liveness series), and adding a label changes a series' IDENTITY, so
+    # anything selecting it by bare name would stop matching with no error. This one
+    # covers every enabled platform, so a wedged Discord Gateway is alertable.
+    #
+    # DEC-232: what system-time history costs, per covered table, measured hourly by
+    # `nora.app.revisions`. The decision's reversal condition is this growth on the
+    # hot tables.
     _GaugeSpec(
         "nora_row_history_rows",
         "Versions held in row_history, per covered table (hourly).",
@@ -2309,44 +2090,40 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         ("platform",),
     ),
     # `Gauge`, not `Counter`, on purpose: prometheus-client's exposition format
-    # unconditionally appends `_total` to every counter-typed series' rendered
-    # name (`exposition.py::generate_latest`, hardcoded, not configurable —
-    # verified directly, including via a hand-rolled custom Collector, which
-    # hits the same unconditional munging). These two names predate that
-    # OpenMetrics convention and don't end in `_total`; using `Counter` would
-    # silently rename them to `honcho_feed_success_total` /
-    # `honcho_feed_failure_total` — exactly the kind of rename this repo's
-    # append-only metric-name contract forbids. A `Gauge` only ever
-    # incremented (see `Metrics.inc`) renders under its exact declared name
-    # and is otherwise indistinguishable from a counter for these call sites.
+    # unconditionally appends `_total` to every counter-typed series' rendered name
+    # (`exposition.py::generate_latest`, not configurable). These two names do not end
+    # in `_total`; a `Counter` would silently rename them to `honcho_feed_success_total`
+    # / `honcho_feed_failure_total`, which the append-only metric-name contract
+    # forbids. A `Gauge` only ever incremented (see `Metrics.inc`) renders under its
+    # exact declared name and is otherwise indistinguishable from a counter for these
+    # call sites.
     _GaugeSpec("honcho_feed_success", "Successful Honcho feed calls."),
     _GaugeSpec("honcho_feed_failure", "Failed Honcho feed calls."),
-    # R-17's other half, and the more important half. A failure COUNTER alone
-    # cannot distinguish "0 because enrichment is healthy" from "0 because the
-    # enrichment code was deleted, or never runs" — which is the exact trap
-    # that let the original degradation hide. This gauge is always published,
-    # on every path including total failure, so `nora_identity_aliases == 1`
-    # says "R-12 is down to equality against the primary id" out loud and
-    # `>= 2` says the derivation worked. Alert on `== 1`, not on the counter.
+    # R-17's other half. A failure COUNTER alone cannot distinguish "0 because
+    # enrichment is healthy" from "0 because the enrichment code never runs". This
+    # gauge is always published, on every path including total failure, so
+    # `nora_identity_aliases == 1` says "R-12 is down to equality against the primary
+    # id" and `>= 2` says the derivation worked. Alert on `== 1`, not on the
+    # counter.
     _GaugeSpec(
         "nora_identity_aliases",
         "Distinct id forms Nora recognises as her own, by platform. 1 means "
         "enrichment produced nothing beyond the configured primary.",
         ("platform",),
     ),
-    # Presence liveness (design/19 §4): the heartbeat. Set after every SUCCESSFUL
-    # collection to the age (seconds) of that circle's last success, so a stalled
-    # daemon shows a climbing age rather than a frozen fix count. Alert on it
-    # crossing a few cadences — that is «the collector is up but not collecting»,
-    # which R-5 would otherwise hide (a quiet circle looks identical).
+    # Presence liveness: the heartbeat. Set after every SUCCESSFUL collection to
+    # the age (seconds) of that circle's last success, so a stalled daemon shows a
+    # climbing age rather than a frozen fix count. Alert on it crossing a few
+    # cadences: «the collector is up but not collecting», which R-5 would otherwise
+    # hide (a quiet circle looks identical).
     _GaugeSpec(
         "nora_presence_last_collection_age_seconds",
         "Seconds since this circle's last SUCCESSFUL collection. Climbing means "
         "the daemon is up but not collecting.",
         ("circle",),
     ),
-    # The climbing-age liveness shape design/19 §4 uses, applied to the
-    # rollup: set after every successful run_once, so a stalled daemon
+    # The climbing-age liveness shape of `nora_presence_last_collection_age_seconds`,
+    # applied to the rollup: set after every successful run_once, so a stalled daemon
     # shows a climbing age rather than a frozen derivation count.
     _GaugeSpec(
         "nora_analytics_rollup_age_seconds",
@@ -2354,10 +2131,9 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Climbing means the daemon is up but not deriving.",
         ("subject",),
     ),
-    # The R-21 startup invariant (design/19 §5): 1 when the Signal group is a
-    # SUBSET of the Life360 circle (disclosure holds by construction), 0 the day
-    # it is not — the alarm that «group ⊄ circle» is now true. Published at
-    # startup and whenever it is checked; alert on `== 0`.
+    # The R-21 startup invariant: 1 when the Signal group is a SUBSET of the
+    # Life360 circle (disclosure holds by construction), 0 when it is not. Published
+    # at startup and whenever it is checked; alert on `== 0`.
     _GaugeSpec(
         "nora_presence_circle_subset_ok",
         "1 when the conversation's people are a subset of the circle (R-21 holds "
@@ -2368,43 +2144,34 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "alarm silently lost.",
         ("circle", "platform", "conversation"),
     ),
-    # THERE IS DELIBERATELY NO `nora_reminders_pending` HERE, and the name is
-    # left free rather than reserved. Design §13 asked for one ("runaway visible
-    # without a query"); it was declared, never published, and therefore rendered
-    # `0.0` — which reads as "no backlog" and is indistinguishable from "nobody is
-    # measuring". Declared-and-unpublished is the worse of the two states, so the
-    # declaration went rather than the honesty.
+    # THERE IS DELIBERATELY NO `nora_reminders_pending` HERE. A declared but
+    # unpublished gauge renders `0.0`, which reads as "no backlog" and is
+    # indistinguishable from "nobody is measuring".
     #
-    # **Why it cannot be published, verified rather than assumed.** The backlog is
-    # a row count, and every `ReminderStore` read is a coroutine
-    # (`all_pending`, `count_pending`). `Metrics.gauge_function` binds a
-    # SYNCHRONOUS callable that prometheus-client invokes inside
-    # `CollectorRegistry.collect()` — and `/metrics` is an aiohttp handler
-    # (`nora.obs.health`), so that callback runs ON the event loop that would have
-    # to run the query. There is no await to be had there and no second loop to
-    # hand it to.
+    # **It cannot be published.** The backlog is a row count, and every
+    # `ReminderStore` read is a coroutine (`all_pending`, `count_pending`).
+    # `Metrics.gauge_function` binds a SYNCHRONOUS callable that prometheus-client
+    # invokes inside `CollectorRegistry.collect()`, and `/metrics` is an aiohttp
+    # handler (`nora.obs.health`), so that callback runs ON the event loop that would
+    # have to run the query.
     #
-    # **And publishing it from the tick is worse than absent.** The shipped
-    # default is `[heartbeat] enabled = false` while `remind` still writes rows
-    # unconditionally (the store is wired outside the flag) — so a tick-published
-    # gauge exports `0.0` forever on precisely the deployment where the backlog
-    # only grows. Deriving it from `created_total - fired_total` drifts on the
-    # first cancel and resets on every restart while the rows survive.
+    # **Publishing it from the tick is worse than absent.** With `[heartbeat]
+    # enabled = false`, `remind` still writes rows (the store is wired outside the
+    # flag), so a tick-published gauge exports `0.0` forever on exactly the
+    # deployment where the backlog only grows. Deriving it from
+    # `created_total - fired_total` drifts on the first cancel and resets on every
+    # restart while the rows survive.
     #
-    # The backlog is a DATABASE question and `nora reminders list` (read-only,
-    # `nora.app.cli`) is what answers it, flagging overdue rows — the query §13
-    # hoped to avoid, kept because a gauge that means "unknown" while printing
-    # "fine" is not a substitute for one. The liveness signal below is the metric
-    # that makes a stuck tick visible without a query.
+    # The backlog is a DATABASE question; `nora reminders list` (read-only,
+    # `nora.app.cli`) answers it and flags overdue rows.
     #
-    # The heartbeat's LIVENESS, and the one gauge in this file that must not be
-    # written from inside the loop it measures. It is bound to a function
-    # evaluated at SCRAPE time (`Metrics.gauge_function`), so a loop that has
-    # STOPPED shows a climbing age rather than freezing at its last reading —
-    # the failure this signal exists to make visible. Alert on it crossing a few
-    # ticks. Contrast `nora_presence_last_collection_age_seconds` above, which
-    # IS published from inside its collector's loop and therefore only detects a
-    # collector that is up and failing, not one that is gone.
+    # The heartbeat's LIVENESS is the one gauge in this file that must not be written
+    # from inside the loop it measures. It is bound to a function evaluated at SCRAPE
+    # time (`Metrics.gauge_function`), so a loop that has STOPPED shows a climbing
+    # age rather than freezing at its last reading. Alert on it crossing a few ticks.
+    # Contrast `nora_presence_last_collection_age_seconds` above, which IS published
+    # from inside its collector's loop and therefore only detects a collector that is
+    # up and failing, not one that is gone.
     _GaugeSpec(
         "nora_heartbeat_last_tick_age_seconds",
         "Seconds since the heartbeat's last completed tick, computed at scrape "
@@ -2435,12 +2202,12 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "evaluator's first tick for the unit.",
         ("unit",),
     ),
-    # Nora's computer, as Nora sees it (design/sandbox-runtime §12, DEC-261).
-    # LABELLED on purpose, with one value (`computerd`): an unlabelled gauge is
-    # exported at 0 from the moment it is declared, so a deployment with
-    # `[computer] enabled = false` would read as a computer that is DOWN. A
-    # labelled gauge has no sample until it is set, so "not applicable" is the
-    # absence of the series and ComputerDown (`== 0`) can never fire on it.
+    # Nora's computer, as Nora sees it (DEC-261). LABELLED on purpose, with one
+    # value (`computerd`): an unlabelled gauge is exported at 0 from the moment it is
+    # declared, so a deployment with `[computer] enabled = false` would read as a
+    # computer that is DOWN. A labelled gauge has no sample until it is set, so "not
+    # applicable" is the absence of the series and ComputerDown (`== 0`) can never
+    # fire on it.
     _GaugeSpec(
         "nora_computer_up",
         "1 when Nora's last contact with computerd got an answer, 0 when it "
@@ -2456,14 +2223,12 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     _HistogramSpec(
         "nora_tag_latency_seconds", "End-to-end tag latency, including the model call.",
     ),
-    # The one LABELLED histogram, and the label is `audience` for the same
-    # reason `nora_llm_stop_reason_total` gained it — except that here the two
-    # populations are not merely hard to tell apart, they are bounded by
-    # DIFFERENT NUMBERS. A tag's invocation is cut at `[llm] timeout_seconds`
-    # (60); a fire turn's at `[heartbeat] timeout_seconds` (120), deliberately,
-    # because nobody is waiting on it. Mixed into one histogram the tail is a
-    # blend of two distributions with two different ceilings, so neither a p95
-    # nor a bucket count means anything about either path.
+    # The one LABELLED histogram, with `audience` as the label because the two
+    # populations are bounded by DIFFERENT NUMBERS: a tag's invocation is cut at
+    # `[llm] timeout_seconds` (60); a fire turn's at `[heartbeat] timeout_seconds`
+    # (120), because nobody is waiting on it. Mixed into one histogram the tail is a
+    # blend of two distributions with two ceilings, so neither a p95 nor a bucket
+    # count means anything about either path.
     _HistogramSpec(
         "nora_llm_latency_seconds",
         "Model invocation latency, by which path was speaking "
@@ -2472,23 +2237,15 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         ("audience",),
     ),
     _HistogramSpec("nora_overhead_seconds", "Tag latency excluding the model call."),
-    # A COUNT, not a duration, so it carries its own buckets — the default set
-    # is calibrated for seconds and would put every possible value in the first
+    # A COUNT, not a duration, so it carries its own buckets: the default set is
+    # calibrated for seconds and would put every possible value in the first
     # bucket.
     #
-    # **It is flat at 1 today and that is the point.** R-2 latches after one
-    # delivery, so every admitted tag observes 0 or 1 and this histogram says
-    # nothing interesting yet. It is a prerequisite for multi-message (step 5
-    # of the grounding plan), whose predicted failure is that the cap becomes a
-    # quota always spent in full — a shape that is only legible against a
-    # BEFORE. Established now, while the answer is known, rather than after the
-    # behaviour changes and every reading is confounded.
-    #
-    # Recorded once per ADMITTED tag on every exit path (`EngagementPipeline.
-    # _run_admitted`'s `finally`), so a turn that delivered nothing observes 0
-    # rather than being absent: "how often does she say nothing at all" is the
-    # same question, and a histogram that only records successes cannot answer
-    # it.
+    # Recorded once per ADMITTED tag on every exit path
+    # (`EngagementPipeline._run_admitted`'s `finally`), so a turn that delivered
+    # nothing observes 0 rather than being absent: "how often does she say nothing at
+    # all" is the same question, and a histogram that only records successes cannot
+    # answer it.
     _HistogramSpec(
         "nora_messages_per_tag",
         "Messages actually delivered to the group per admitted tag.",
@@ -2500,24 +2257,22 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         (1, 5, 15, 30, 60, 120, 300),
         ("adaptor",),
     ),
-    # 26-standing §5. **Deliberately NOT folded into
-    # `nora_tag_latency_seconds`**, and that is the decision this entry exists
-    # to record: the debrief holds the slot, so its cost IS user-visible, but
-    # adding it to an existing SLO series would change what that series
-    # measures — a broken gate wearing a passing number. Two series, two
-    # questions.
+    # Time the speech formatter adds before she is heard
+    # (`nora_speech_format_seconds`), on every path that called the model (a short or
+    # long reply calls none and observes nothing). Its bound is
+    # `[speech.tts.format] timeout_seconds`.
     #
-    # The gate is **p95 <= 5s**, and the case it names explicitly is the
-    # SECOND-QUEUED tag rather than an average: the person whose turn is being
-    # reviewed already has their reply, so the cost lands entirely on whoever
-    # is queued behind a busy conversation.
+    # `nora_debrief_seconds`: deliberately NOT folded into
+    # `nora_tag_latency_seconds`. The debrief holds the slot, so its cost IS
+    # user-visible, but adding it to an existing SLO series would change what that
+    # series measures. Two series, two questions.
     #
-    # Observed on EVERY exit including the failures. A latency series that only
-    # records successes describes the path that already works — which is §2's
-    # own argument, applied to this stage's instrument instead of its input.
-    # Time the speech formatter adds before she is heard, on every path that
-    # called the model (a short or long reply calls none and observes
-    # nothing). Its bound is `[speech.tts.format] timeout_seconds`.
+    # The gate is **p95 <= 5s**, and the case it names is the SECOND-QUEUED tag
+    # rather than an average: the person whose turn is being reviewed already has
+    # their reply, so the cost lands on whoever is queued behind a busy conversation.
+    #
+    # Observed on EVERY exit including the failures: a latency series that only
+    # records successes describes the path that already works.
     _HistogramSpec(
         "nora_speech_format_seconds",
         "Wall-clock duration of one speech-formatter model call, on every exit "
@@ -2530,36 +2285,27 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "Excluded from nora_tag_latency_seconds on purpose. Gate: p95 <= 5s.",
         (0.5, 1, 2, 3, 5, 8, 13, 21),
     ),
-    # REPLACES `nora_sticker_describe_seconds`, which was removed with the
-    # model rung it measured (issue #116): the sticker ladder is custody now
-    # and makes no model call, so that name would have been a declared metric
-    # with no call site — CLAUDE.md's "a lie", rendering as a series that is
-    # genuinely always zero.
-    #
-    # Measured around the READ ALONE — the interpreter call, or the whole chunk
-    # run for a video — not the job around it. A `nothing_found` never reaches
-    # this line, so the dedup that skips a re-read cannot dilute what this says
-    # about a describer's own latency. The buckets reach 300s deliberately:
-    # a chunked video read (issue #117) is ten model calls, not one, and a
-    # histogram whose top bucket is 21s would report every video as +Inf.
-    # The COST of the render join, not its result (CLAUDE.md: "instruments
-    # measure the RESULT; something must measure the COST"). Design 19 §10
-    # names this join as the condition that would reopen the decision — one
-    # sequential `get` per distinct blob in the window, on the critical path of
-    # every tagged turn — and a reopening condition with no way to read it is
-    # not a condition, it is a hope. Buckets are sub-second because anything
+    # `nora_media_join_seconds`: the COST of the render join, not its result
+    # (CLAUDE.md: "instruments measure the RESULT; something must measure the
+    # COST"). The join does one sequential `get` per distinct blob in the window, on
+    # the critical path of every tagged turn. Buckets are sub-second because anything
     # above that is already the answer.
+    #
+    # `nora_media_comprehension_seconds`: measured around the READ ALONE (the
+    # interpreter call, or the whole chunk run for a video), not the job around it. A
+    # `nothing_found` never reaches this line, so the dedup that skips a re-read
+    # cannot dilute what this says about a describer's own latency. The buckets reach
+    # 300s deliberately: a chunked video read is ten model calls, not one, and a
+    # histogram whose top bucket is 21s would report every video as +Inf.
     _HistogramSpec(
         "nora_media_join_seconds",
         "Wall-clock cost of one media join, by the PATH that paid it "
         f"({_JOIN_PATHS}). Excludes calls with no media in the window.",
-        # Reaching 30s, and labelled, because the eight paths have nothing in
-        # common but the code. A tag window is a handful of blobs under a
-        # reply's latency; adoption hands this a 1000-row backfill scan at
-        # process start. One unlabelled series with a 2s ceiling put both in
-        # one histogram, where the batch paths — the exact ones where N is not
-        # 1 — saturate `+Inf` and are unmeasurable, and the tag path is the
-        # only thing anybody can read.
+        # Reaching 30s, and labelled, because the paths have nothing in common but
+        # the code. A tag window is a handful of blobs under a reply's latency; adoption
+        # hands this a 1000-row backfill scan at process start. One unlabelled series
+        # with a 2s ceiling would put both in one histogram, where the batch paths
+        # saturate `+Inf` and are unmeasurable.
         (0.005, 0.025, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30),
         ("path",),
     ),
@@ -2577,23 +2323,20 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "image, the whole chunk run for a video. Excludes cache hits.",
         (1, 2, 5, 10, 20, 40, 80, 160, 300),
     ),
-    # Issue #163's missing half. `nora_relevance_gate_errors_total{kind=
-    # "timeout"}` says HOW OFTEN the ceiling fired; only a distribution says
-    # whether the ceiling is the wrong number. The question that stalled — «is
-    # nora-gate genuinely taking >20s on a 40-row transcript, or is the route
-    # falling through a slow arm?» — is unanswerable from a counter, and 19.5%
-    # of calls were arriving at it.
+    # `nora_relevance_gate_errors_total{kind="timeout"}` says HOW OFTEN the
+    # ceiling fired; only a distribution says whether the ceiling is the wrong
+    # number.
     #
-    # The samples are **right-censored at `[relevance_gate] timeout_seconds`**:
-    # a call cut at 20s may have wanted 45, and is recorded as 20. So this
-    # measures how long the gate WAITS, not how long the model takes, and the
-    # top bucket is the population `{kind="timeout"}` counts. Buckets are the
-    # default set (to 30) because the ceiling is 20 and nothing above it can be
-    # observed; widening them would draw buckets that can never fill.
+    # The samples are **right-censored at `[relevance_gate] timeout_seconds`**: a call
+    # cut at 20s may have wanted 45, and is recorded as 20. So this measures how long
+    # the gate WAITS, not how long the model takes, and the top bucket is the
+    # population `{kind="timeout"}` counts. Buckets are the default set (to 30)
+    # because the ceiling is 20 and nothing above it can be observed; widening them
+    # would draw buckets that can never fill.
     #
-    # Observed on every exit including the failures, `nora_debrief_seconds`'s
-    # rule: a latency series that records only successes describes the path
-    # that already works.
+    # Observed on every exit including the failures, `nora_debrief_seconds`'s rule:
+    # a latency series that records only successes describes the path that already
+    # works.
     _HistogramSpec(
         "nora_relevance_gate_seconds",
         "One Relevance Gate model call's latency, on every exit including the "
@@ -2604,7 +2347,7 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     ),
 )
 
-# The full set of declared metric names, independent of kind — what the
+# The full set of declared metric names, independent of kind: what the
 # name-preservation test (tests/test_metrics_export.py) enumerates against.
 DECLARED_NAMES: frozenset[str] = (
     frozenset(spec.name for spec in _COUNTERS)

@@ -1,6 +1,0 @@
-{
-  "type": "none",
-  "reason": "Eval-only: the retrieval bake-off measures Qwen3-VL-Embedding-2B and jina-embeddings-v5-omni-small (the latter non-commercial, measurement only) in their official input formats, and this records both runs and their verdicts. Nothing Nora runs or says changes.",
-  "details": [],
-  "limitations": []
-}

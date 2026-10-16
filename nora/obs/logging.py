@@ -34,8 +34,8 @@ _Processor = Any  # structlog.typing.Processor isn't exported in every version
 def _make_redactor(secrets: list[str]) -> _Processor:
     """Redacts every configured secret from every value in the event dict —
     the message, the formatted exception text, and any extra field a call
-    site attaches (`extra={...}`) — generalising to however many secrets
-    `setup_logging` is given, same contract as before."""
+    site attaches (`extra={...}`), for however many secrets `setup_logging`
+    is given."""
     active = [s for s in secrets if s]
 
     def redact(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
@@ -54,22 +54,18 @@ def _make_redactor(secrets: list[str]) -> _Processor:
 
 #: OpenTelemetry's SeverityNumber, by stdlib level name.
 #:
-#: **A severity you can compare.** `level` is a STRING, so "is this at least a
-#: warning" is a set-membership test against a vocabulary the reader has to
-#: know, and it sorts alphabetically — ERROR before INFO before WARNING. The
-#: OTel Logs Data Model exists because every backend needs that comparison, and
-#: it defines the answer as a NUMBER in fixed bands: TRACE 1-4, DEBUG 5-8,
-#: INFO 9-12, WARN 13-16, ERROR 17-20, FATAL 21-24. The band is what carries
-#: the meaning, so a level sitting between two of ours still lands in the right
-#: half of a `>= 17` query.
+#: A comparable severity. `level` is a STRING that sorts alphabetically, so
+#: "at least a warning" is not a range query. The OTel Logs Data Model defines
+#: the answer as a NUMBER in fixed bands: TRACE 1-4, DEBUG 5-8, INFO 9-12,
+#: WARN 13-16, ERROR 17-20, FATAL 21-24.
 #:
-#: We emit the BASE of each band rather than the middle: nothing here
-#: distinguishes "a slightly worse ERROR", and picking 17 says exactly that,
-#: where 18 would imply a scale we do not have.
+#: Each level emits the BASE of its band: nothing here distinguishes "a
+#: slightly worse ERROR", and a higher number would imply a scale we do not
+#: have.
 #:
-#: `level` stays, unchanged and uppercase. It is what a human greps and what
-#: `docs/runbook.md`'s saved queries were written against; this is the field a
-#: MACHINE filters on, and the two are not in competition.
+#: `level` stays, uppercase: it is what a human greps and what
+#: `docs/runbook.md`'s saved queries use; `severity_number` is the field a
+#: machine filters on.
 SEVERITY_NUMBERS: dict[str, int] = {
     "DEBUG": 5,
     "INFO": 9,
@@ -82,10 +78,8 @@ SEVERITY_NUMBERS: dict[str, int] = {
 def _severity_number(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict:
     """`severity_number` beside `level`, when the level is one we map.
 
-    An UNMAPPED level gets no field rather than a guessed one — a custom level
-    somebody adds is genuinely outside this vocabulary, and inventing a number
-    for it would put it in a band nobody chose. Same three-state discipline the
-    instruments use: absent means "not stated", never "zero".
+    An UNMAPPED level gets no field rather than a guessed one, which would put
+    it in a band nobody chose: absent means "not stated", never "zero".
     """
     number = SEVERITY_NUMBERS.get(str(event_dict.get("level", "")).upper())
     if number is not None:
@@ -97,19 +91,13 @@ def _exception_fields(_logger: Any, _method_name: str, event_dict: dict[str, Any
     """Split the formatted traceback into OTel's three exception fields.
 
     `format_exc_info` renders one `exception` string — the whole traceback,
-    type and message buried in its last line. That is readable by a human and
-    opaque to everything else: "how many `TimeoutError`s since the deploy" is a
-    substring search over multi-line blobs.
+    type and message buried in its last line. The OTel exception semantic
+    conventions name the three parts `exception.type`, `exception.message` and
+    `exception.stacktrace`. The stacktrace is kept WHOLE and the other two are
+    derived from its last line, so type and message become field lookups.
 
-    The OTel exception semantic conventions name the three parts —
-    `exception.type`, `exception.message`, `exception.stacktrace` — and say an
-    unhandled exception SHOULD be recorded at ERROR. The stacktrace is kept
-    WHOLE and the other two are derived from its last line, so nothing is lost
-    and the two cheap questions become field lookups.
-
-    The original `exception` key is left in place. Removing it would break
-    `docs/runbook.md`'s saved greps and every operator reflex built on them,
-    for a duplication that costs bytes in a 1.7 MB/day stream.
+    The original `exception` key is left in place, because `docs/runbook.md`'s
+    saved greps read it.
     """
     blob = event_dict.get("exception")
     if not isinstance(blob, str) or not blob:
@@ -129,9 +117,9 @@ def _exception_fields(_logger: Any, _method_name: str, event_dict: dict[str, Any
 
 
 def _uppercase_level(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict:
-    # structlog.stdlib.add_log_level renders "info"/"error"/...; the old
-    # JSONFormatter emitted `record.levelname` ("INFO"/"ERROR"/...) and
-    # docs/runbook.md's saved queries were written against that casing.
+    # structlog.stdlib.add_log_level renders "info"/"error"/...; the output
+    # is uppercase ("INFO"/"ERROR"/...) because docs/runbook.md's saved queries
+    # use that casing.
     if "level" in event_dict:
         event_dict["level"] = str(event_dict["level"]).upper()
     return event_dict
@@ -167,43 +155,37 @@ def _shared_processors(secrets: list[str]) -> list[_Processor]:
         _uppercase_level,
         structlog.stdlib.ExtraAdder(),
         # RFC 3339: `ts` is machine-read (a log store windows and sorts on it),
-        # so it must carry a UTC offset, not a naive `2026-08-06T17:03:34` whose
-        # zone a reader has to assume. `utc=True` (the default, stated) means the
-        # value IS UTC, so the literal `Z` in the format is the correct offset
-        # marker — second precision is preserved, only the ambiguity is removed.
+        # so it must carry a UTC offset rather than a naive timestamp.
+        # `utc=True` means the value IS UTC, so the literal `Z` in the format
+        # is the correct offset marker.
         structlog.processors.TimeStamper(fmt="%Y-%m-%dT%H:%M:%SZ", utc=True, key="ts"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
-        # AFTER `format_exc_info`, which is what CREATES the `exception` blob
-        # this splits — ordered before it, the key does not exist yet and the
-        # three fields are silently never written. That is the ordering with
-        # teeth, and `test_the_split_runs_after_the_traceback_is_formatted`
-        # holds it.
+        # AFTER `format_exc_info`, which CREATES the `exception` blob this
+        # splits: ordered before it, the key does not exist yet and the three
+        # fields are silently never written
+        # (`test_the_split_runs_after_the_traceback_is_formatted`).
         #
-        # Its position relative to the redactor does NOT matter, and the first
-        # version of this comment claimed it did: before, the derived fields
-        # carry the secret and the redactor then rewrites them (it walks every
-        # key); after, they are copied from an already-redacted blob. Both are
-        # safe. The claim was checked by moving it and watching the test stay
-        # green, which is how a comment gets to be wrong for a whole review.
+        # Its position relative to the redactor does not matter: the redactor
+        # walks every key, so it rewrites derived fields that carry a secret,
+        # and fields copied from an already-redacted blob are clean.
         _exception_fields,
         _severity_number,
         _make_redactor(secrets),
     ]
 
 
-#: A URL's query string, up to the next space or quote: where a signed link carries its
-#: signature and a provider may carry a key.
+#: A URL's query string, up to the next space or quote: where a signed link
+#: carries its signature and a provider may carry a key.
 _QUERY = re.compile(r"(https?://[^\s?\"']+)\?[^\s\"']*")
 
 
 class _DropUrlQueries(logging.Filter):
     """Removes the query string from every URL `httpx` logs. Its own `HTTP Request: GET <url>`
     line is INFO, on every request any client makes, and a fetched video clip's URL is a signed
-    Aliyun OSS link whose `Signature=` grants the clip to anyone holding it (2026-10-10, review
-    of the clip fetch). The method, host, path and status stay: they are what the line is for.
-    A filter on the LOGGER, not a handler, so every handler (and pytest's capture) gets the
-    redacted record."""
+    Aliyun OSS link whose `Signature=` grants the clip to anyone holding it. The method, host,
+    path and status stay. A filter on the LOGGER, not a handler, so every handler (and pytest's
+    capture) gets the redacted record."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
@@ -223,14 +205,9 @@ def drop_http_client_url_queries() -> None:
 
 
 def setup_logging(*, level: str, format: str, secrets: list[str]) -> None:
-    # `format` mirrors LoggingConfig.format (spec C.9's config shape). Only one
-    # on-disk format exists today (JSON, now rendered by structlog's
-    # JSONRenderer), so there is nothing to switch on yet — but an
-    # accepted-and-silently-ignored parameter is exactly the shape that
-    # invites a bug report ("I set format = 'text' and nothing changed"), so
-    # this honours it as a validated precondition instead: an operator who
-    # sets anything but "json" gets a loud, immediate error rather than a
-    # silent no-op.
+    # `format` mirrors LoggingConfig.format. Only JSON exists, so it is a
+    # validated precondition rather than an accepted-and-ignored parameter:
+    # anything but "json" raises instead of silently doing nothing.
     if format != "json":
         raise ValueError(f"unsupported obs.logging.format: {format!r} (only 'json' exists)")
 
@@ -255,26 +232,14 @@ def setup_logging(*, level: str, format: str, secrets: list[str]) -> None:
     for h in root.handlers[:]:
         root.removeHandler(h)
         h.close()
-    # STDOUT, not a file (2026-09-09). The `FileHandler` this replaces predated
-    # the container by ONE DAY — `nora/obs/logging.py` landed 2026-08-03 and the
-    # Dockerfile 2026-08-04 — so a host process's natural sink was never
-    # revisited once the process moved into a container. No decision row ever
-    # covered it.
-    #
-    # What it cost, twice. `docker compose logs nora` was empty, which a session
-    # investigating the dream tier read as «no dream lines, so nothing ran»; it
-    # had run (docs/CONVENTIONS.md keeps that trap). The repo's answer was to
-    # document the surprise in three files rather than remove it. And the file
-    # was a plain `FileHandler` — no rotation anywhere, no logrotate rule — so
-    # it reached 66 MB in five weeks beside the media and database volumes.
-    #
-    # The unprompted paths are what this hurt most: a tag has a human waiting on
-    # it, so a lost line is noticed. A participation determination and a
-    # proactive decline have nobody waiting, and the instrument IS the evidence.
+    # STDOUT, not a file: the process runs in a container, so
+    # `docker compose logs nora` must show the events, and a file would need
+    # its own rotation. Unprompted paths (a participation determination, a
+    # proactive decline) have nobody waiting, so the log line IS the evidence.
     #
     # `sys.stdout` explicitly, not the `StreamHandler` default of stderr: these
-    # are events, not diagnostics, and the compose default `json-file` driver
-    # captures both the same way only if you never want to tell them apart.
+    # are events, not diagnostics, and the compose `json-file` driver captures
+    # both the same way only if you never want to tell them apart.
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
     root.addHandler(handler)
@@ -285,23 +250,13 @@ async def heartbeat(metrics: Any, *, interval: float = 60.0) -> None:
     """Ingest counters every `interval` seconds until cancelled — **INFO when
     they MOVED, DEBUG when they did not.**
 
-    It was INFO unconditionally, and that made it 51,964 lines of the
-    deployment's 205,099 (25%, measured over 37 days) whose entire content was
-    two numbers that had not changed since the previous minute. Together with
-    the access log this file's sibling change silences, 78% of the log was
-    saying that nothing had happened.
+    "The process is alive" is answered by `/health` (polled by the container
+    healthcheck and `deploy/watchdog.sh`), so the log does not restate it every
+    minute. "Work happened, and here is how much" is an event and stays at INFO.
 
-    **The split is between two different claims.** "The process is alive" is
-    answered by `/health`, which the container healthcheck already polls and
-    `deploy/watchdog.sh` is written against; restating it once a minute in the
-    log is a third copy. "Work happened, and here is how much" is a real event,
-    and it stays at INFO.
-
-    The known cost, stated rather than discovered later: an idle-but-alive
-    deployment now emits nothing at the default level, so the log alone no
-    longer distinguishes idle from dead. That distinction was always better
-    served by `/health` and by the `nora_*` gauges, and it comes back the
-    moment anything scrapes them.
+    Consequence: an idle-but-alive deployment emits nothing at the default
+    level, so the log alone does not distinguish idle from dead; use `/health`
+    and the `nora_*` gauges.
     """
     log = logging.getLogger("nora.heartbeat")
     previous: tuple[Any, ...] | None = None

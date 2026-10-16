@@ -1,8 +1,7 @@
 """In-process metrics recording (spec C.9), backed by prometheus-client.
 
-M4/M5 record through this interface; this module also exports Prometheus
-text format directly, with no call-site changes to `inc`/`gauge`/`observe`
-(spec §9, audit fix #11).
+Callers record through `inc`/`gauge`/`observe`; this module also exports
+Prometheus text format directly via `render`.
 
 Every `Metrics()` instance owns its own `CollectorRegistry` — collectors are
 instance state, not a module global. That is what gives tests real isolation:
@@ -11,11 +10,10 @@ per test (`tests/conftest.py`) replaces resetting a shared one.
 
 `get`/`snapshot` do PARTIAL label matching: a query mentions only the labels
 it cares about and the result sums over every dimension it left unspecified.
-That is a deliberate widening from the old hand-rolled store's exact-tuple
-lookup — it is what lets `metrics.get("nora_errors_total", stage="ambient")`
-keep working now that `nora_errors_total` also carries a `platform` label
-that an existing call site may not yet pass (in which case it is recorded
-under `platform=""`, never dropped or rejected).
+This is what lets `metrics.get("nora_errors_total", stage="ambient")` keep
+working when `nora_errors_total` also carries a `platform` label that a call
+site may not pass (in which case it is recorded under `platform=""`, never
+dropped or rejected).
 """
 
 from __future__ import annotations
@@ -41,10 +39,9 @@ def _obs_key(name: str, labels: dict[str, object]) -> tuple[str, tuple[tuple[str
 
 def _full_labels(labelnames: tuple[str, ...], provided: dict[str, object]) -> dict[str, str]:
     """Every declared labelname gets a value. A caller that hasn't been
-    migrated to pass the new label yet (or never will — a background sweep
-    with no platform of its own) degrades to `""` instead of crashing:
-    prometheus-client requires a value for every declared label on every
-    observation, unlike the old dynamic dict-keyed store."""
+    passed the label (e.g. a background sweep with no platform of its own)
+    degrades to `""` instead of crashing: prometheus-client requires a value
+    for every declared label on every observation."""
     return {label: str(provided.get(label, "")) for label in labelnames}
 
 
@@ -59,8 +56,7 @@ class Metrics:
     Construct one per test, and exactly one for the whole process in
     production (`nora.app.composition.build_dependencies` builds it and
     threads it through `Dependencies`) — never a module-level singleton
-    (DEC-13); there is nothing to reset, so a fresh instance per scope is
-    strictly simpler than resetting a shared one.
+    (DEC-13); there is nothing to reset, so a fresh instance per scope is used.
     """
 
     def __init__(self, registry: CollectorRegistry | None = None) -> None:
@@ -85,10 +81,9 @@ class Metrics:
             )
             for spec in _HISTOGRAMS
         }
-        # Raw observations, kept purely so tests can read back exact recorded
-        # values (p95 assertions, elapsed-time comparisons) — prometheus-client's
-        # Histogram only tracks bucket counts + sum, not individual samples, and
-        # this is never rendered by `render()`.
+        # Raw observations, kept so tests can read back exact recorded values
+        # (p95 assertions, elapsed-time comparisons); prometheus-client's
+        # Histogram only tracks bucket counts + sum. Never rendered by `render()`.
         self._observations: dict[tuple, list[float]] = defaultdict(list)
 
     def inc(self, name: str, value: float = 1.0, **labels: object) -> None:
@@ -101,8 +96,7 @@ class Metrics:
                 counter.inc(value)
             return
         # honcho_feed_success/honcho_feed_failure are Gauges (see _GAUGES'
-        # comment) but are still incremented, never .set() — Gauge supports
-        # .inc() natively for exactly this "count-only, legacy name" case.
+        # comment) but are incremented, never .set(); Gauge supports .inc().
         gauge = self._gauges[name]
         labelnames = self._gauge_labels[name]
         if labelnames:
@@ -121,17 +115,14 @@ class Metrics:
     def gauge_function(self, name: str, fn: Callable[[], float]) -> None:
         """Bind a gauge to a callback evaluated at SCRAPE time, not at call time.
 
-        For the gauges whose whole point is that they keep MOVING when the thing
-        they measure has stopped. `gauge(name, value)` writes a number once, so a
-        loop that publishes its own age freezes that age the moment it dies —
-        the reading looks healthy precisely when it isn't. `set_function` is
-        prometheus-client's own answer: the callback runs inside
-        `CollectorRegistry.collect()`, so every scrape (and every `snapshot()`,
-        `get()` and `render()` here, which all collect) recomputes it.
+        For gauges that must keep MOVING when the thing they measure has
+        stopped. `gauge(name, value)` writes a number once, so a loop that
+        publishes its own age would freeze that age when it dies. The callback
+        runs inside `CollectorRegistry.collect()` (prometheus-client's
+        `set_function`), so every scrape, `snapshot()`, `get()` and `render()`
+        recomputes it.
 
-        Unlabeled gauges only. A per-child callback would need one registration
-        per label combination, and there is no caller for that; refusing is
-        better than binding the callback to a series nobody reads.
+        Unlabeled gauges only; a labeled gauge raises `ValueError`.
         """
         if self._gauge_labels[name]:
             raise ValueError(
@@ -143,11 +134,8 @@ class Metrics:
     def observe(self, name: str, value: float, **labels: object) -> None:
         """Record one sample, under whatever labels the spec declares.
 
-        `**labels` used to reach the test-readback dict ONLY — the prometheus
-        histogram itself was observed unlabelled — so a call site that passed a
-        label got a series that silently pooled every path's samples together.
-        A histogram that declares no label still takes the fast path below, so
-        the three unlabelled ones are untouched.
+        `**labels` reach both the prometheus histogram and the test-readback
+        dict. A histogram that declares no label takes the unlabelled path.
         """
         histogram = self._histograms[name]
         labelnames = self._histogram_labels[name]
@@ -160,10 +148,8 @@ class Metrics:
     def observations(self, name: str, **labels: object) -> list[float]:
         """Every recorded sample whose labels match every kwarg given.
 
-        PARTIAL matching, exactly as `get` does it and for the same reason: a
-        caller that names no label must keep seeing every sample after a label
-        is added, or "how many model calls happened at all" stops being
-        answerable the day a second audience starts observing.
+        PARTIAL matching, exactly as `get` does it: a caller that names no
+        label sees every sample regardless of which labels the series carry.
         """
         matched: list[float] = []
         for (obs_name, obs_labels), values in self._observations.items():
