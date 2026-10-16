@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from datetime import UTC, datetime
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import ClientError
@@ -37,14 +38,24 @@ if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
 
 
+#: How finely an object's `LastModified` is stamped: whole seconds, rounded
+#: down (the HTTP date `HEAD` returns). An object stamped `T` was put at some
+#: moment in `[T, T + 1 s)`.
+LAST_MODIFIED_RESOLUTION = timedelta(seconds=1)
+
+
 class RustfsBlobStore:
     """Satisfies `nora.domain.ports.BlobStore` against a real `boto3` S3
     client and bucket (RustFS)."""
 
-    def __init__(self, *, s3_client: S3Client, bucket: str, cipher: BlobCipher) -> None:
+    def __init__(
+        self, *, s3_client: S3Client, bucket: str, cipher: BlobCipher,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
         self._s3 = s3_client
         self._bucket = bucket
         self._cipher = cipher
+        self._clock = clock
 
     def ensure_bucket(self) -> None:
         """Idempotent bucket creation, called once at startup by the
@@ -114,7 +125,11 @@ class RustfsBlobStore:
         head = self._head(key)
         if head is None:
             return "absent"
-        age = (datetime.now(UTC) - head["LastModified"]).total_seconds()
+        # Aged from the LATEST moment the put could have been: the stamp is
+        # rounded down, so aging from it would read bytes as up to a second
+        # older than they are and delete them before their window ends.
+        put_by = head["LastModified"] + LAST_MODIFIED_RESOLUTION
+        age = (self._clock() - put_by).total_seconds()
         if age < idle_seconds:
             return "kept"
         try:
@@ -147,4 +162,4 @@ def _validate_key(key: str) -> None:
         raise ValueError("blob key must be a lowercase sha256 hex digest")
 
 
-__all__ = ["RustfsBlobStore"]
+__all__ = ["LAST_MODIFIED_RESOLUTION", "RustfsBlobStore"]

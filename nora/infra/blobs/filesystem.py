@@ -50,6 +50,7 @@ import os
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 from nora.domain.ports import BlobDeletion
@@ -62,9 +63,14 @@ _ASIDE = ".deleting"
 class FilesystemBlobStore:
     """Satisfies `nora.domain.ports.BlobStore`."""
 
-    def __init__(self, root: Path, *, cipher: BlobCipher) -> None:
+    def __init__(
+        self, root: Path, *, cipher: BlobCipher, clock: Callable[[], float] = time.time,
+    ) -> None:
         self._root = Path(root)
         self._cipher = cipher
+        # What `delete` measures a file's idle time against (seconds, the
+        # epoch `st_mtime` uses); a test moves it instead of sleeping.
+        self._clock = clock
         self._recovered = False
         self._recovering = threading.Lock()
 
@@ -191,7 +197,7 @@ class FilesystemBlobStore:
             os.rename(path, aside)
         except FileNotFoundError:
             return "absent"
-        if time.time() - aside.stat().st_mtime < idle_seconds:
+        if self._clock() - aside.stat().st_mtime < idle_seconds:
             if path.exists():
                 aside.unlink()  # a `put` wrote the same bytes again meanwhile
             else:
