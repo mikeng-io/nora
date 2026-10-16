@@ -1356,7 +1356,7 @@ VIDEO_READINGS = sa.Table(
 # The Dreamer's cursor, one row per (consolidator, scope). GENERIC on purpose:
 # "how far has this consumer read" is identical for any consolidator.
 #
-# `last_message_id` is `sa.BigInteger` (0114): wide enough for a Record id
+# `last_message_id` is `sa.BigInteger` (0115): wide enough for a Record id
 # (`messages.id`, INT4, which COUNTS UP: see this module's docstring) and for
 # a person session's social cursor, a microsecond count. `updated_at` is
 # `DateTime(timezone=True)`, NOT epoch-ms: the dream cycle compares it against
@@ -4707,7 +4707,8 @@ SOCIAL_POLL = sa.Table(
     # 0111: a back-fill page's next cursor (null: the walk ended there).
     sa.Column("cursor", sa.Text),
     sa.CheckConstraint(
-        "stage IN ('probe', 'story', 'items', 'item', 'backfill')", name="ck_social_poll_stage",
+        "stage IN ('probe', 'story', 'items', 'item', 'backfill', 'relist')",
+        name="ck_social_poll_stage",
     ),
     sa.CheckConstraint(
         "outcome IN ('unchanged', 'story_due', 'items_due', 'partial', 'count_fell', "
@@ -4730,7 +4731,15 @@ SOCIAL_ITEM_STATE = sa.Table(
     sa.Column("state", sa.Text, nullable=False),
     sa.Column("reason", sa.Text),
     _recorded_at(),
-    sa.CheckConstraint("state IN ('gone', 'hidden')", name="ck_social_item_state_state"),
+    # A `place` row's new tagged place, NULL when the tag was removed; NULL on
+    # every other state.
+    sa.Column("place", sa.Text),
+    sa.CheckConstraint(
+        "state IN ('gone', 'hidden', 'place')", name="ck_social_item_state_state",
+    ),
+    sa.CheckConstraint(
+        "place IS NULL OR state = 'place'", name="ck_social_item_state_place",
+    ),
 )
 IDX_SOCIAL_ITEM_STATE_ITEM = sa.Index(
     "idx_social_item_state_item", SOCIAL_ITEM_STATE.c.network, SOCIAL_ITEM_STATE.c.item_id,

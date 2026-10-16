@@ -360,3 +360,46 @@ async def test_a_social_medium_is_typed_by_its_custody_row(engine):
             conn, [], social=[("instagram:1:" + A, A), ("instagram:1:" + B, B)],
         )
     assert types == {"instagram:1:" + A: "image/png", "instagram:1:" + B: ""}
+
+
+async def test_a_place_change_reprojects_the_tagged_place_and_a_removal_drops_it(engine):
+    """The node holds the CURRENT place: a `place` row re-projects its text
+    and clears its vector (the worker re-embeds it); one that removes the
+    tag drops the node and its edge and leaves the item; a later tag brings
+    it back. A rebuild projects the same."""
+    store = SqlSocialStreamStore(engine)
+    await _insert(store, _item(), (A,), location=None)
+    sid, key = "instagram:9001", ("social_location", "instagram:9001")
+    assert key not in await _nodes(engine), "recorded with no place"
+
+    await store.record_place(network="instagram", item_id="9001", place=LOCATION)
+    assert (await _nodes(engine))[key].text == LOCATION, "a first place for a NULL item"
+    node = (await _nodes(engine))[key]
+    async with engine.begin() as conn:
+        assert await memory_index.embed_store(
+            conn, Embeddable(node.id, node.kind, node.source_id, node.text, None),
+            vector=[1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1), model="m", now_ms=1,
+            by_bytes=False,
+        )
+    await store.record_place(network="instagram", item_id="9001", place="Placeholder Pier")
+    moved = (await _nodes(engine))[key]
+    assert moved.text == "Placeholder Pier" and moved.embedding is None, "re-embedded"
+
+    await store.record_place(network="instagram", item_id="9001", place=None)
+    nodes = await _nodes(engine)
+    assert key not in nodes and ("social", sid) in nodes, "the tag goes, the item stays"
+    assert not [e for e in await _edges(engine) if e[0] == "social_location"]
+
+    await store.record_place(network="instagram", item_id="9001", place="Placeholder Bay")
+    live = {k: (n.text, n.persons) for k, n in (await _nodes(engine)).items()}
+    assert live[key] == ("Placeholder Bay", [PERSON])
+    async with engine.begin() as conn:
+        await conn.execute(sa.delete(MEMORY_EDGE))
+        await conn.execute(sa.delete(MEMORY_NODE))
+    await memory_index.rebuild(engine)
+    assert {k: (n.text, n.persons) for k, n in (await _nodes(engine)).items()} == live
+    # A place row hides nothing, so a rebuild's final pass finds the item's
+    # node current, not stale (`_source_of`).
+    report = await memory_index.rebuild(engine)
+    assert report.dropped["social"] == 0
+    assert (await memory_index.rebuild(engine, dry_run=True)).dropped["social"] == 0

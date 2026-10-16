@@ -186,7 +186,7 @@ class SqlCharacterEvidence:
         read that settled last began (`(0, 0)`: none yet). Kept on its own
         `consolidation_watermark` row (`<adaptor>:social`), beside the key's
         message watermark, because an item has no Record id: `last_message_id`
-        holds the cursor (BIGINT, 0114) and `updated_at` the read's time."""
+        holds the cursor (BIGINT, 0115) and `updated_at` the read's time."""
         t = CONSOLIDATION_WATERMARK
         stmt = sa.select(t.c.last_message_id, t.c.updated_at).where(
             t.c.consolidator_name == f"{adaptor}:social", t.c.scope_id == key,
