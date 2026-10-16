@@ -356,13 +356,14 @@ func TestItemsOwnerMustBeNamedAndMustBeTheIGID(t *testing.T) {
 		node string
 		want int
 	}{
-		"no owner anywhere":                 {`{"code":"SynthPost09","pk":"2009","id":"2009","taken_at":1,"media_type":1}`, 502},
-		"user.pk differs":                   {`{"code":"SynthPost09","pk":"2009","id":"2009_246967358","user":{"pk":"999"},"taken_at":1,"media_type":1}`, 502},
-		"owner.pk differs":                  {`{"code":"SynthPost09","pk":"2009","owner":{"pk":"999"},"taken_at":1,"media_type":1}`, 502},
-		"only user.pk, right":               {`{"code":"SynthPost09","pk":"2009","id":"2009","user":{"pk":"246967358"},"taken_at":1,"media_type":1}`, 200},
-		"only owner.id, right":              {`{"code":"SynthPost09","pk":"2009","owner":{"id":"246967358"},"taken_at":1,"media_type":1}`, 200},
-		"collab, igid a co-author":          {`{"code":"SynthPost09","pk":"2009","id":"2009_999","user":{"pk":"999"},"coauthor_producers":[{"pk":"246967358"}],"taken_at":1,"media_type":1}`, 200},
-		"collab, igid not among co-authors": {`{"code":"SynthPost09","pk":"2009","id":"2009_999","user":{"pk":"999"},"coauthor_producers":[{"pk":"555"}],"taken_at":1,"media_type":1}`, 502},
+		"no owner anywhere":                   {`{"code":"SynthPost09","pk":"2009","id":"2009","taken_at":1,"media_type":1}`, 502},
+		"user.pk differs":                     {`{"code":"SynthPost09","pk":"2009","id":"2009_246967358","user":{"pk":"999"},"taken_at":1,"media_type":1}`, 502},
+		"owner.pk differs":                    {`{"code":"SynthPost09","pk":"2009","owner":{"pk":"999"},"taken_at":1,"media_type":1}`, 502},
+		"only user.pk, right":                 {`{"code":"SynthPost09","pk":"2009","id":"2009","user":{"pk":"246967358"},"taken_at":1,"media_type":1}`, 200},
+		"only owner.id, right":                {`{"code":"SynthPost09","pk":"2009","owner":{"id":"246967358"},"taken_at":1,"media_type":1}`, 200},
+		"collab, igid a co-author":            {`{"code":"SynthPost09","pk":"2009","id":"2009_999","user":{"pk":"999"},"coauthor_producers":[{"pk":"246967358"}],"taken_at":1,"media_type":1}`, 200},
+		"owners contradict, igid a co-author": {`{"code":"SynthPost09","pk":"2009","id":"2009_246967358","user":{"pk":"999"},"coauthor_producers":[{"pk":"246967358"}],"taken_at":1,"media_type":1}`, 502},
+		"collab, igid not among co-authors":   {`{"code":"SynthPost09","pk":"2009","id":"2009_999","user":{"pk":"999"},"coauthor_producers":[{"pk":"555"}],"taken_at":1,"media_type":1}`, 502},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := getItems(t, newTestBridge(t, &fakeIG{TimelineBody: page(tc.node)}), fakeig.TimelineOwnerIGID, "")

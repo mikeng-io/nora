@@ -236,12 +236,15 @@ func parseTimeline(ctx context.Context, raw []byte, igid domain.IGID) (domain.Ti
 		if len(owners) == 0 {
 			return domain.TimelinePage{}, errOtherOwner
 		}
-		owned := true
-		for _, owner := range owners {
-			if owner != igid.String() {
-				owned = false
+		// The owner fields must agree with each other: an item whose id
+		// suffix and user.pk name different accounts is refused, whoever the
+		// co-authors are.
+		for _, owner := range owners[1:] {
+			if owner != owners[0] {
+				return domain.TimelinePage{}, errOtherOwner
 			}
 		}
+		owned := owners[0] == igid.String()
 		collab := !owned && n.coauthoredBy(igid.String())
 		if !owned && !collab {
 			return domain.TimelinePage{}, errOtherOwner
