@@ -198,7 +198,7 @@ index and Honcho's exit are now listed in their order.
    own seeds (speaker, room, referenced media and handles, the text) and
    renders one block under a token budget, through the one renderer. No
    planning model decides what to load. It uses the adaptive cut of
-   [65](65-build-step-3-vectors.md) V3 with a smaller budget, and 25 §5's
+   [65](65-build-step-3-vectors.md) V3 with a smaller budget (its figure set here, from the same measured spread), and 25 §5's
    pre-fetch recall (below 0.7 reopens the design) is its acceptance measure.
 4. **Note citations.** `note_create` / `note_update` gain citations like
    memos, lessons and events. `note_revision` has no citations column today
