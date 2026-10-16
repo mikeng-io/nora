@@ -11,11 +11,11 @@ nothing else is recorded `unavailable`, which does not count against its
 cursor. The table stays APPEND-ONLY
 (`nora.infra.sql.history.APPEND_ONLY`).
 
-Follows `0110_memory_social`. `uv run alembic heads` must print exactly ONE
+Follows `0111_memory_owed_since`. `uv run alembic heads` must print exactly ONE
 line.
 
-Revision ID: 0111_social_backfill
-Revises: 0110_memory_social
+Revision ID: 0112_social_backfill
+Revises: 0111_memory_owed_since
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0111_social_backfill"
-down_revision = "0110_memory_social"
+revision = "0112_social_backfill"
+down_revision = "0111_memory_owed_since"
 branch_labels = None
 depends_on = None
 
