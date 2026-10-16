@@ -9,15 +9,15 @@
   {
     "name": "a persons = \"*\" room counts as listing everyone",
     "file": "nora/infra/social/subjects.py",
-    "old": "convo.persons is not None and person_id in convo.persons",
-    "new": "convo.persons is None or person_id in convo.persons",
+    "old": "        return listed is not None and person_id in listed",
+    "new": "        return listed is not None and (person_id in listed or any(c.persons is None for c in self._policy.conversations))",
     "target": "tests/unit/test_instagram_read_tool.py::test_a_star_room_makes_nobody_tier_zero"
   },
   {
     "name": "a [dm] persons listing counts as Tier 0",
     "file": "nora/infra/social/subjects.py",
-    "old": "                convo.persons is not None and person_id in convo.persons\n                for convo in self._policy.conversations\n            )",
-    "new": "                convo.persons is not None and person_id in convo.persons\n                for convo in self._policy.conversations\n            ) or person_id in getattr(self._policy, \"dm_persons\", ())",
+    "old": "        return listed is not None and person_id in listed",
+    "new": "        return listed is not None and (person_id in listed or person_id in getattr(self._policy, \"dm_persons\", ()))",
     "target": "tests/unit/test_instagram_read_tool.py::test_a_dm_listing_makes_nobody_tier_zero"
   },
   {

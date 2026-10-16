@@ -34,6 +34,12 @@ from nora.domain.reasoning_strip import (
     STRIP_OUTCOMES,
     WRITE_OUTCOMES,
 )
+from nora.domain.social_stream import (
+    CUSTODY_OUTCOMES,
+    POLL_OUTCOMES,
+    POLL_STAGES,
+    SKIP_REASONS,
+)
 from nora.domain.speech_markup import FORMAT_OUTCOMES
 from nora.domain.stimuli import (
     LIMIT_STOP_REASONS,
@@ -2006,6 +2012,35 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Counted in addition to nora_memory_embed_total{outcome=ok}; the "
         "trigger for chunking long nodes.",
         ("kind",),
+    ),
+    # The social stream's poller (design/cognition-loop/22-social-stream.md §4).
+    # Every vocabulary is DERIVED from `nora.domain.social_stream`. No person,
+    # account or item is a label.
+    _CounterSpec(
+        "nora_social_polls_total",
+        "Social stream probes and reads, one per social_poll row, by network, "
+        "stage (" + " / ".join(POLL_STAGES) + ") and outcome ("
+        + " / ".join(POLL_OUTCOMES) + ").",
+        ("network", "stage", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_social_upstream_calls_total",
+        "Upstream calls the social poller spent against the login's hourly budget, "
+        "by network and stage: a probe counts its source's probe cost, a read one.",
+        ("network", "stage"),
+    ),
+    _CounterSpec(
+        "nora_social_poll_skipped_total",
+        "Social poller ticks that stopped before every due member was probed, by "
+        "network and reason (" + " / ".join(SKIP_REASONS) + ").",
+        ("network", "reason"),
+    ),
+    _CounterSpec(
+        "nora_social_custody_total",
+        "Media items of newly recorded social items, by network and what became "
+        "of their bytes (" + " / ".join(CUSTODY_OUTCOMES) + "). Only stored "
+        "names bytes in custody.",
+        ("network", "outcome"),
     ),
 )
 

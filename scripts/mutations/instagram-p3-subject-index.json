@@ -2,8 +2,8 @@
   {
     "name": "a persons = \"*\" room counts as listing everyone",
     "file": "nora/infra/social/subjects.py",
-    "old": "convo.persons is not None and person_id in convo.persons",
-    "new": "convo.persons is None or person_id in convo.persons",
+    "old": "        return listed is not None and person_id in listed",
+    "new": "        return listed is not None and (person_id in listed or any(c.persons is None for c in self._policy.conversations))",
     "target": "tests/unit/test_social_subject_index.py::test_a_star_room_does_not_make_anyone_tier_zero"
   },
   {
@@ -30,8 +30,8 @@
   {
     "name": "is_tier_zero loses its fail-closed backstop",
     "file": "nora/infra/social/subjects.py",
-    "old": "        except Exception:\n            log.exception(\"subject index: tier check failed\")",
-    "new": "        except ZeroDivisionError:\n            log.exception(\"subject index: tier check failed\")",
+    "old": "        except Exception:\n            log.exception(\"subject index: membership read failed\")",
+    "new": "        except ZeroDivisionError:\n            log.exception(\"subject index: membership read failed\")",
     "target": "tests/contract/test_social_subject_index_contract.py::test_an_unreadable_index_fails_closed_and_never_raises"
   },
   {

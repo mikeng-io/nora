@@ -8,7 +8,8 @@ evidence about production if the fake answers the way production does, and
 this file is what says it does.
 
 Each arm is built over the SAME world, from its own inputs: `jordan` holds one
-igid and is listed in a room; `sam` holds one igid and is in no room; nobody
+igid and is listed in a room; `sam` holds one igid and is in no room; `kim`
+holds one igid, is listed in a room and set `social = false`; nobody
 holds `19999999`. Every id is synthetic.
 """
 
@@ -24,7 +25,7 @@ from nora.persons import load_persons
 from nora.policy import Conversation, Policy
 from nora.testing import FakeSocialSubjectIndex
 
-_JORDAN, _SAM, _NOBODY = "10000001", "10000004", "19999999"
+_JORDAN, _SAM, _KIM, _NOBODY = "10000001", "10000004", "10000005", "19999999"
 
 
 def _persons_arm(tmp_path) -> PersonsSubjectIndex:
@@ -34,9 +35,13 @@ def _persons_arm(tmp_path) -> PersonsSubjectIndex:
         f'[[persons.jordan.instagram]]\nfbid = "100000000000001"\nigid = "{_JORDAN}"\n'
         '[persons.sam]\nname = "Sam"\n'
         f'[[persons.sam.instagram]]\nfbid = "100000000000004"\nigid = "{_SAM}"\n'
+        '[persons.kim]\nname = "Kim"\nsocial = false\n'
+        f'[[persons.kim.instagram]]\nfbid = "100000000000005"\nigid = "{_KIM}"\n'
     )
     policy = Policy(conversations=(
-        Conversation(platform="signal", ids=frozenset({"g"}), persons=frozenset({"jordan"})),
+        Conversation(
+            platform="signal", ids=frozenset({"g"}), persons=frozenset({"jordan", "kim"}),
+        ),
     ))
     return PersonsSubjectIndex(load_persons(p), policy)
 
@@ -61,7 +66,8 @@ class _BrokenPolicy:
 def index(request, tmp_path):
     if request.param == "fake":
         return FakeSocialSubjectIndex(
-            {"jordan": _JORDAN, "sam": _SAM}, out_of_reach=frozenset({"sam"}),
+            {"jordan": _JORDAN, "sam": _SAM, "kim": _KIM}, out_of_reach=frozenset({"sam"}),
+            social_off=frozenset({"kim"}),
         )
     return _persons_arm(tmp_path)
 
@@ -108,6 +114,14 @@ async def test_an_unknown_person_resolves_to_nothing_and_is_out_of_reach(index):
     assert await index.is_tier_zero(person_id="nobody") is False
 
 
+async def test_the_members_are_exactly_the_people_in_reach(index):
+    """The social stream's membership is Tier 0's roster: listed in a room,
+    and nobody else (`sam` holds an igid and is in no room), less anyone who
+    set `social = false` (`kim`, who stays Tier 0 for a story asked about)."""
+    assert await index.members() == frozenset({"jordan"})
+    assert await index.is_tier_zero(person_id="kim") is True
+
+
 async def test_the_reverse_lookup_names_the_owner_or_nobody(index):
     assert await index.person_for_igid(igid=_JORDAN) == "jordan"
     assert await index.person_for_igid(igid=_SAM) == "sam"
@@ -122,3 +136,4 @@ async def test_an_unreadable_index_fails_closed_and_never_raises(broken):
     assert await broken.igids_for(person_id="jordan") is None
     assert await broken.is_tier_zero(person_id="jordan") is False
     assert await broken.person_for_igid(igid=_JORDAN) is None
+    assert await broken.members() is None

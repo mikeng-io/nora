@@ -480,6 +480,11 @@ def ground_media_type(*, declared: str, data: bytes) -> str:
 #: born in one room, which its provenance names.
 COMPUTER_MEDIA_SOURCE = "computer"
 
+#: `MediaObject.source` of a member's social item's media, kept by the social
+#: stream's poller: born in no room, so no room-scoped read finds it; its
+#: provenance names the network, the item and its kind.
+SOCIAL_MEDIA_SOURCE = "social"
+
 
 def born_in_room(obj: MediaObject, *, platform: str, conversation_id: str) -> bool:
     """Whether `obj` was born in this room, by its provenance's `platform` and
