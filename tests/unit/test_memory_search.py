@@ -693,3 +693,46 @@ def test_a_withheld_hit_takes_no_part_in_the_cut() -> None:
     items, withheld = render_packet(hits, name_of=str, room_label=lambda k: "B",
                                     now=datetime.fromtimestamp(NOW / 1000, UTC))
     assert withheld == 1 and len(items) == 4 > MIN_RESULTS
+
+
+async def test_inside_a_date_window_the_best_seeds_are_kept_whatever_their_cosine() -> None:
+    """A question asked by time shares few words with what answers it: the
+    window narrows it, and the cosine floor there would say «you never said
+    that» about the one line in the window."""
+    from nora.agent.memory_search import DENSE_FLOOR
+    from nora.testing.memory_index import cosine
+    sent = _msg("1", "look at this photo", at=NOW - 60_000)
+    q = "what was that photo you sent just now"
+    assert cosine(bag_of_words(q), bag_of_words(sent.text)) < DENSE_FLOOR
+    index = FakeMemoryIndex([sent], embed_model=M)
+
+    async def search(since_ms: int | None) -> MemorySearchResult:
+        return await MemorySearch(index, Metrics(), embedder=FakeQueryEmbedder(), model=M).search(
+            query=q, person_id=None, target=_target(), depth="low", now_ms=NOW,
+            since_ms=since_ms, social_off=())
+
+    windowed = await search(NOW - 600_000)
+    assert (windowed.status, [h.node.source_id for h in windowed.hits]) == ("ok", ["1"])
+    assert (await search(None)).status == "nothing_found"  # the floor, outside a window
+
+
+async def test_the_lexical_fallback_keeps_the_lexical_floor() -> None:
+    """With no query vector the seeds are lexical: one term of three held
+    scores 0.33, under the cosine floor and over the lexical one."""
+    found = await _lexical(FakeMemoryIndex([_msg("1", "noodle place")]), "noodle soup tonight")
+    assert [(h.node.source_id, round(h.score, 2)) for h in found.hits] == [("1", 0.33)]
+
+
+async def test_an_exact_hit_past_the_pins_needs_the_cosine_floor() -> None:
+    """Past the pinned ones an exact hit competes on its cosine, floor and all."""
+    from nora.agent.memory_search import DENSE_FLOOR, PINNED_LIMIT
+    from nora.testing.memory_index import cosine
+    q = "did Rin say the ramen crawl downtown was good tonight"
+    near = [_msg(f"n{i}", f"Rin ramen crawl downtown good tonight {i}", at=NOW - i)
+            for i in range(PINNED_LIMIT)]
+    bare = _msg("bare", "Rin", at=NOW - 3_600_000)
+    assert cosine(bag_of_words(q), bag_of_words(bare.text)) < DENSE_FLOOR
+    rin = PersonRef("kit", "Rin", "kit")
+    found = await _search(FakeMemoryIndex([*near, bare], embed_model=M), q, people=(rin,))
+    assert sum(1 for h in found.hits if h.pin) == PINNED_LIMIT
+    assert "bare" not in {h.node.source_id for h in found.hits}

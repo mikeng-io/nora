@@ -191,13 +191,17 @@ RELEVANCE_FLOOR = 0.1
 #: The floor of a seed scored by its cosine to the question: a dense seed
 #: and an exact hit past the pinned ones (and the `about` seed, which scores
 #: above it). Measured on the backfilled index (design/unified-memory/65 §6):
-#: this model's cosines cluster high, the top 50's non-hits lying between
-#: 0.28 and 0.78; a known item ranked in the top 20 of its own query never
-#: scored under 0.387 (127 of 143 queries), and a query about nothing held
-#: scored its best at 0.33 to 0.55 (median 0.46). So the floor sits under
-#: every reachable true hit (a floor above one turns «found» into «you never
-#: said that», the worse error) and still trims the tail: three of twenty
-#: such queries seeded nothing above it, none of the 143 with a hit did.
+#: this model's cosines cluster high, the top 50's non-hits at 0.35 at the
+#: 10th percentile and up to 0.78; a known item ranked in the top 20 of its
+#: own query never scored under 0.387 (127 of 143 queries), and a query
+#: about nothing held scored its best at 0.33 to 0.55 (median 0.46). So the
+#: floor sits under every reachable true hit (a floor above one turns
+#: «found» into «you never said that», the worse error) and still trims the
+#: tail: three of twenty such queries seeded nothing above it, none of the
+#: 143 with a hit did. Not inside a date window (`since`, `until`): a
+#: question asked by time shares few words with its answer (the recall
+#: cases' evidence scored 0.07 to 0.36), and the window did the narrowing,
+#: so the walk's floor holds there, as before this floor existed.
 DENSE_FLOOR = 0.38
 #: Nodes kept per search, seeds included.
 NODE_BUDGET = 60
@@ -523,7 +527,11 @@ async def walk(
     reached: dict[tuple[str, str], Hit] = {}
     # A seed scored by its cosine has the cosine's floor; a lexical seed and
     # every hop keep the walk's (an episode has no vector: a hop reaches it).
-    seed_floor = DENSE_FLOOR if vector is not None and model is not None else RELEVANCE_FLOOR
+    # Not inside a date window (the `DENSE_FLOOR` comment).
+    only = scope.only
+    windowed = only is not None and (only.since_ms is not None or only.until_ms is not None)
+    dense = vector is not None and model is not None
+    seed_floor = DENSE_FLOOR if dense and not windowed else RELEVANCE_FLOOR
 
     def keep(
         node: IndexedNode, score: float, path: tuple[Step, ...],
