@@ -44,7 +44,7 @@
  "nora/__main__.py": 4,
  "nora/agent/rollup_read.py": 1,
  "nora/agent/speech_format.py": 1,
- "nora/agent/tools.py": 156,
+ "nora/agent/tools.py": 22,
  "nora/analytics/composition.py": 1,
  "nora/analytics/rollup.py": 23,
  "nora/app/adoption.py": 1,
