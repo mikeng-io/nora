@@ -100,8 +100,8 @@
   {
     "name": "part 2d: the Dreamer's per-completion ceiling drops under one realistic account",
     "file": "config.example.toml",
-    "old": "6,000 is 2.2x the largest of n=2 (2,124 and 2,732).\nmax_tokens = 6000",
-    "new": "6,000 is 2.2x the largest of n=2 (2,124 and 2,732).\nmax_tokens = 1000",
+    "old": "multiple of it.\nmax_tokens = 6000",
+    "new": "multiple of it.\nmax_tokens = 1000",
     "target": "tests/unit/test_culture_adaptor.py -k ONE_shipped_completion"
   },
   {
