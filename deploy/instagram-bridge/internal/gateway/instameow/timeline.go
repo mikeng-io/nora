@@ -31,7 +31,8 @@ package instameow
 //
 // Nothing of the page: the route is PatternOnlyRoute, graphqlDoc's span
 // carries the document name only, and every error here has a fixed text. A
-// caption is people's words and never leaves the 200 body.
+// caption is people's words and a media url names somebody's post; neither
+// leaves the 200 body.
 
 import (
 	"context"
@@ -123,6 +124,11 @@ type timelineNode struct {
 	MediaType          int    `json:"media_type"`
 	ProductType        string `json:"product_type"`
 	CarouselMediaCount int    `json:"carousel_media_count"`
+	// AccessibilityCaption is Instagram's own description of the image.
+	AccessibilityCaption string `json:"accessibility_caption"`
+	timelineMedia
+	// CarouselMedia are a carousel's children, each of the same shape.
+	CarouselMedia []*timelineMedia `json:"carousel_media"`
 	// The owner, from whichever of these the node carries; ownersOf reads
 	// all of them.
 	User *struct {
@@ -137,6 +143,46 @@ type timelineNode struct {
 		PK flexID `json:"pk"`
 		ID flexID `json:"id"`
 	} `json:"coauthor_producers"`
+}
+
+// timelineMedia is the renditions one image or video carries, in the shape
+// `GET /posts/{shortcode}` reads (posts.go's postItemOf).
+type timelineMedia struct {
+	ImageVersions2 struct {
+		Candidates []mediaCandidate `json:"candidates"`
+	} `json:"image_versions2"`
+	VideoVersions []mediaCandidate `json:"video_versions"`
+	VideoDuration float64          `json:"video_duration"`
+}
+
+// item reduces the renditions to one fetchable image or video.
+func (m *timelineMedia) item() (domain.PostItem, bool) {
+	return pickMedia(m.VideoVersions, m.ImageVersions2.Candidates, m.VideoDuration)
+}
+
+// items is the node's media: every carousel child in order, else the node's
+// own image or video. A child with no url is skipped, logged by position
+// only.
+func (n *timelineNode) items(ctx context.Context) []domain.PostItem {
+	out := []domain.PostItem{}
+	if len(n.CarouselMedia) == 0 {
+		if pi, ok := n.timelineMedia.item(); ok {
+			out = append(out, pi)
+		}
+		return out
+	}
+	for i, child := range n.CarouselMedia {
+		if child == nil {
+			continue
+		}
+		pi, ok := child.item()
+		if !ok {
+			slog.WarnContext(ctx, "timeline carousel item had no media url; skipped", "index", i)
+			continue
+		}
+		out = append(out, pi)
+	}
+	return out
 }
 
 // coauthoredBy says whether igid is one of the node's co-authors.
@@ -268,6 +314,8 @@ func parseTimeline(ctx context.Context, raw []byte, igid domain.IGID) (domain.Ti
 			MediaType:     n.MediaType,
 			CarouselCount: n.CarouselMediaCount,
 			Collab:        collab,
+			Items:         n.items(ctx),
+			AltText:       n.AccessibilityCaption,
 		}
 		// A reel is `product_type: clips` (§1a); a video posted to the feed
 		// is still a post.

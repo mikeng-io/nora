@@ -312,9 +312,16 @@ func synthTimelineJSON(more bool) string {
 	}
 	return `{"data":{"xdt_api__v1__feed__user_timeline_graphql_connection":{"edges":[
   {"node": {"code": "SynthReel01", "pk": "2001", "id": "2001_` + synthIGID + `", "user": {"pk": "` + synthIGID + `"}, "taken_at": 1700000300,
-    "caption": {"text": "synthetic reel caption"}, "media_type": 2, "product_type": "clips"}},
+    "caption": {"text": "synthetic reel caption"}, "media_type": 2, "product_type": "clips",
+    "video_duration": 7.5, "video_versions": [{"width": 720, "height": 1280, "url": "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-r.mp4"}],
+    "image_versions2": {"candidates": [{"width": 720, "height": 1280, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-r.jpg"}]}}},
   {"node": {"code": "SynthPost02", "pk": "2002", "id": "2002_` + synthIGID + `", "user": {"pk": "` + synthIGID + `"}, "taken_at": 1700000200,
-    "caption": null, "media_type": 8, "product_type": "carousel_container", "carousel_media_count": 3}}
+    "caption": null, "media_type": 8, "product_type": "carousel_container", "carousel_media_count": 3,
+    "accessibility_caption": "a photo of a plate",
+    "carousel_media": [
+      {"media_type": 1, "image_versions2": {"candidates": [{"width": 1080, "height": 1080, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-c1.jpg"}]}},
+      {"media_type": 2, "image_versions2": {"candidates": [{"width": 1080, "height": 1080, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-c2.jpg"}]},
+       "video_versions": [{"width": 1080, "height": 1080, "url": "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-c2.mp4"}]}]}}
 ], "page_info": ` + pageInfo + `}}}`
 }
 

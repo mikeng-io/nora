@@ -207,11 +207,57 @@ async def test_list_items_pages_newest_first_with_a_cursor(bridge) -> None:
     fake, source = bridge
     got = await source.list_items(account=_ACCOUNT, after=None)
     assert isinstance(got, Page) and got.next_cursor == "synthetic-cursor-1"
-    assert [(i.item_id, i.shortcode, i.kind, i.collab) for i in got.items] == [
-        ("2001", "SynthReel01", "reel", False), ("2002", "SynthPost02", "post", False),
+    assert [(i.item_id, i.kind, i.collab, i.account) for i in got.items] == [
+        ("2001", "reel", False, _IGID), ("2002", "post", False, _IGID),
     ]
-    assert got.items[1].carousel_count == 3
+    assert all(i.network == "instagram" and i.expires_at is None for i in got.items)
     assert fake.calls[0][1] == f"/accounts/{_IGID}/items"
+
+
+async def test_list_items_carries_a_videos_url_and_the_carousels_every_child(bridge) -> None:
+    fake, source = bridge
+    got = await source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(got, Page)
+    reel, carousel = got.items
+    assert [(m.kind, m.url.rsplit("/", 1)[1]) for m in reel.media] == [("video", "synthetic-r.mp4")]
+    assert [(m.kind, m.url.rsplit("/", 1)[1]) for m in carousel.media] == [
+        ("image", "synthetic-c1.jpg"), ("video", "synthetic-c2.mp4"),
+    ]
+    assert reel.taken_at == datetime.fromtimestamp(1700000300, UTC)
+    assert fake.calls[0][1].startswith("/accounts/"), "the listing is the only read"
+    assert len(fake.calls) == 1
+
+
+async def test_list_items_carries_a_single_image_and_its_alt_text(bridge) -> None:
+    fake, source = bridge
+    fx = copy.deepcopy(fixture("items_ok.json"))
+    fx["body"]["items"][0]["items"] = [{
+        "kind": "image", "width": 1, "height": 1,
+        "url": "https://scontent.cdninstagram.com/v/t51/synthetic-i.jpg",
+    }]
+    fx["body"]["items"][0]["alt_text"] = "a photo of a plate"
+    fake.answers["items"] = fx
+    got = await source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(got, Page)
+    assert [m.kind for m in got.items[0].media] == ["image"]
+    assert got.items[0].alt_text == "a photo of a plate"
+    assert got.items[0].caption == "synthetic reel caption"
+
+
+async def test_list_items_drops_off_cdn_media_and_keeps_an_item_with_none(bridge) -> None:
+    fake, source = bridge
+    fx = copy.deepcopy(fixture("items_ok.json"))
+    fx["body"]["items"][0]["items"] = [
+        {"kind": "image", "url": "https://evil.test/a.jpg"},
+        {"kind": "video", "url": "https://scontent.cdninstagram.com.evil.test/b.mp4"},
+        {"kind": "image", "url": "https://scontent.cdninstagram.com/v/t51/ok.jpg"},
+    ]
+    fx["body"]["items"][1]["items"] = []
+    fake.answers["items"] = fx
+    got = await source.list_items(account=_ACCOUNT, after=None)
+    assert isinstance(got, Page) and len(got.items) == 2
+    assert [m.url for m in got.items[0].media] == ["https://scontent.cdninstagram.com/v/t51/ok.jpg"]
+    assert got.items[1].media == (), "an item with no media is still returned"
 
 
 async def test_list_items_sends_the_cursor_and_the_bare_username(bridge) -> None:
@@ -241,6 +287,8 @@ async def test_list_items_reads_a_collab_flag(bridge) -> None:
     lambda b: b["items"][0].update(kind="story"),
     lambda b: b["items"][0].update(collab="no"),
     lambda b: b["items"][0].update(code="../send"),
+    lambda b: b["items"][0].update(items=None),
+    lambda b: b["items"][0].pop("items"),
 ])
 async def test_list_items_malformed_bodies_are_unavailable(bridge, mutate) -> None:
     fake, source = bridge

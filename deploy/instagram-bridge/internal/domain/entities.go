@@ -158,7 +158,7 @@ type TimelinePage struct {
 }
 
 // TimelineItem is one post or reel as the timeline lists it: enough to key
-// it and to decide whether to read it (`GET /posts/{shortcode}` reads it).
+// it and to record it, media included, without a read of its own.
 type TimelineItem struct {
 	Code string
 	PK   string
@@ -174,6 +174,13 @@ type TimelineItem struct {
 	// Collab is a collaboration post another account owns and this one
 	// co-authored: on this account's grid, under the owner's id.
 	Collab bool
+	// Items is the media the listing itself carries, one entry per image or
+	// video (every child of a carousel, in order); empty when the node had no
+	// usable url. URLs must not enter a span, a log line or an error.
+	Items []PostItem
+	// AltText is `accessibility_caption`, Instagram's description of the
+	// image, "" when there is none.
+	AltText string
 }
 
 // Thread is one group thread's membership, never short and never empty.

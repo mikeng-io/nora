@@ -57,17 +57,22 @@ type postBody struct {
 	Items     []postItem `json:"items"`
 }
 
-func postOf(p domain.Post) postBody {
-	items := make([]postItem, 0, len(p.Items))
-	for _, it := range p.Items {
+// postItemsOf is the wire items, never nil.
+func postItemsOf(in []domain.PostItem) []postItem {
+	items := make([]postItem, 0, len(in))
+	for _, it := range in {
 		items = append(items, postItem{
 			Kind: it.Kind, URL: it.URL, Width: it.Width, Height: it.Height,
 			DurationSeconds: it.DurationSeconds,
 		})
 	}
+	return items
+}
+
+func postOf(p domain.Post) postBody {
 	return postBody{
 		Shortcode: p.Shortcode, Author: p.Author, Caption: p.Caption,
-		TakenAt: p.TakenAt, Items: items,
+		TakenAt: p.TakenAt, Items: postItemsOf(p.Items),
 	}
 }
 

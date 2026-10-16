@@ -36,7 +36,6 @@ from nora.config import SocialPollConfig
 from nora.domain.social_stream import (
     Failed,
     FailureKind,
-    ItemRef,
     MediaItem,
     Page,
     Probe,
@@ -198,19 +197,14 @@ def held(world: World, *item_ids: str) -> None:
         world.media.blobs[f"attachment:{_CDN}/{item_id}.jpg"] = f"bytes of {item_id}".encode()
 
 
-def post(world: World, item_id: str, account: str = ADA) -> ItemRef:
-    """A listed post, and the item it reads as."""
-    ref = ItemRef(
-        account=account, item_id=item_id, shortcode=f"C{item_id}", kind="post",
-        taken_at=world.clock.now - timedelta(days=1), caption="c", collab=False,
-    )
-    world.source.items[item_id] = SocialItem(
-        network="instagram", item_id=item_id, account=account, kind="post",
-        taken_at=ref.taken_at, expires_at=None, caption="c", alt_text=None,
-        media=(MediaItem("image", f"{_CDN}/{item_id}.jpg"),),
-    )
+def post(world: World, item_id: str, account: str = ADA) -> SocialItem:
+    """A listed post, media included, and the CDN holding its bytes."""
     held(world, item_id)
-    return ref
+    return SocialItem(
+        network="instagram", item_id=item_id, account=account, kind="post",
+        taken_at=world.clock.now - timedelta(days=1), expires_at=None, caption="c",
+        alt_text=None, media=(MediaItem("image", f"{_CDN}/{item_id}.jpg"),),
+    )
 
 
 def quiet(world: World, *accounts: str) -> None:
@@ -355,7 +349,8 @@ async def test_a_failed_list_read_leaves_the_rise_due_on_the_next_probe(world) -
     world.clock.at(hours=6)
     await poller.tick()
     assert world.source.reads("items") == [ADA, BEA, ADA], "the rise was still due"
-    assert world.source.reads("item") == ["p1"]
+    assert world.source.reads("item") == [], "a listed item is never read on its own"
+    assert (await world.items())["p1"], "recorded with its media_ref"
     counts = await world.store.last_counts(network="instagram", person="ada")
     assert counts is not None and counts.media_count == 3
 
@@ -364,31 +359,89 @@ async def test_a_failed_list_read_leaves_the_rise_due_on_the_next_probe(world) -
     assert world.source.reads("items") == [ADA, BEA, ADA], "counts unchanged: nothing due"
     assert [r[:2] for r in await world.polls("ada")] == [
         ("probe", "items_due"), ("items", "error"),
-        ("probe", "items_due"), ("item", "read_ok"), ("items", "read_ok"),
+        ("probe", "items_due"), ("items", "read_ok"),
         ("probe", "unchanged"),
     ]
 
 
-async def test_a_list_read_cut_short_by_the_budget_does_not_advance_the_counts(world) -> None:
+async def test_a_listed_page_records_every_new_item_with_its_media_and_reads_no_post(world) -> None:
+    """Through the real Instagram adapter over the bridge's own `items` body:
+    the page's media is what is kept, and `/posts` is never asked."""
+    answers = {
+        "account": _bridge_fixture("account_ok.json"),
+        "story": _bridge_fixture("story_not_found.json"),
+        "items": _bridge_fixture("items_last_page.json"),
+    }
+    served: list[str] = []
+
+    def route(name: str) -> Any:
+        async def handler(_: web.Request) -> web.Response:
+            served.append(name)
+            return web.json_response(answers[name]["body"], status=answers[name]["status"])
+        return handler
+
+    async def health(_: web.Request) -> web.Response:
+        return web.json_response({"session": "authenticated"})
+
+    async def posts(_: web.Request) -> web.Response:
+        served.append("post")
+        return web.json_response({"code": "unsupported"}, status=501)
+
+    app = web.Application()
+    app.router.add_get("/health", health)
+    app.router.add_get("/accounts/{igid}", route("account"))
+    app.router.add_get("/accounts/{igid}/story", route("story"))
+    app.router.add_get("/accounts/{igid}/items", route("items"))
+    app.router.add_get("/posts/{shortcode}", posts)
+    listed = answers["items"]["body"]["items"]
+    for row in listed:
+        for media in row["items"]:
+            world.media.blobs[f"attachment:{media['url']}"] = b"bytes"
+    async with TestServer(app) as server:
+        poller = SocialPoller(
+            source=InstagramSocialSource(base_url=str(server.make_url("")), timeout_seconds=5),
+            store=world.store, health=world.health,
+            roster=functools.partial(instagram_roster, FakeSocialSubjectIndex({"ada": ADA})),
+            settings=SocialPollConfig(enabled=True, jitter_seconds=0),
+            metrics=world.metrics, media=world.media, blobs=world.blobs,
+            media_objects=world.media_objects, clock=world.clock,
+        )
+        await poller.tick()
+    assert "items" in served and "post" not in served
+    kept = await world.items()
+    assert set(kept) == {row["pk"] for row in listed}
+    assert all(kept[row["pk"]] for row in listed if row["items"]), "every item has media_ref"
+    assert any(len(ref.split(",")) == 2 for ref in kept.values() if ref), "a carousel keeps both"
+
+
+async def test_a_page_records_each_new_item_once_and_never_reads_it(world) -> None:
     quiet(world, BEA)
     world.source.probes[ADA] = probe(posts=2)
-    world.source.pages[ADA] = Page(
-        items=(post(world, "p1"), post(world, "p2")), next_cursor=None,
-    )
-    poller = world.poller(hourly_budget=4)  # probe 2, list 1, one item
+    p1, p2 = post(world, "p1"), post(world, "p2")
+    world.source.pages[ADA] = Page(items=(p1, p2, p1), next_cursor=None)
+    poller = world.poller(hourly_budget=3)  # probe 2, list 1: no room for an item read
 
     await poller.tick()
-    assert world.source.reads("item") == ["p1"]
-    assert await world.store.last_counts(network="instagram", person="ada") is None
-
-    world.clock.at(hours=6)
-    await poller.tick()
-    assert world.probes() == [ADA, BEA], "bea, never answered, went first and spent the hour"
-
-    world.clock.at(hours=7, minutes=5)
-    await poller.tick()
-    assert world.source.reads("item") == ["p1", "p2"], "p1 is recorded and not read again"
+    assert world.source.reads("item") == []
+    assert set(await world.items()) == {"p1", "p2"}
     assert await world.store.last_counts(network="instagram", person="ada") is not None
+
+    world.source.probes[ADA] = probe(posts=3)
+    world.source.pages[ADA] = Page(items=(post(world, "p3"), p1, p2), next_cursor=None)
+    world.clock.at(hours=7, minutes=5)
+    await world.poller().tick()
+    assert set(await world.items()) == {"p1", "p2", "p3"}, "recorded ones are not recorded again"
+
+
+async def test_an_unsupported_answer_is_not_spent_against_the_budget(world) -> None:
+    """The bridge refusing locally sent nothing upstream."""
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(posts=1)
+    world.source.pages[ADA] = Failed(FailureKind.UNSUPPORTED, "unsupported")
+    poller = world.poller()
+    await poller.tick()
+    assert world.source.reads("items") == [ADA, BEA]
+    assert sum(c for _, c in poller._spent) == 5, "both probes and bea's list read, not ada's"
 
 
 # ---- halt, back-off, skip ---------------------------------------------------
@@ -747,15 +800,15 @@ async def test_a_first_list_read_is_recorded_as_backfill_and_later_ones_as_poll(
 
 
 async def test_a_post_with_no_usable_media_is_recorded_and_not_read_again(world) -> None:
-    """Through the real Instagram adapter, over a bridge whose post's media
-    is off the CDN."""
-    posts = copy.deepcopy(_bridge_fixture("posts_carousel_ok.json"))
-    posts["body"]["items"] = [{"kind": "image", "url": "https://evil.test/a.jpg"}]
+    """Through the real Instagram adapter, over a bridge whose listed media is
+    off the CDN."""
+    listing = copy.deepcopy(_bridge_fixture("items_last_page.json"))
+    for row in listing["body"]["items"]:
+        row["items"] = [{"kind": "image", "url": "https://evil.test/a.jpg"}]
     answers = {
         "account": _bridge_fixture("account_ok.json"),
         "story": _bridge_fixture("story_not_found.json"),
-        "items": _bridge_fixture("items_last_page.json"),
-        "post": posts,
+        "items": listing,
     }
     served: list[str] = []
 
@@ -773,7 +826,6 @@ async def test_a_post_with_no_usable_media_is_recorded_and_not_read_again(world)
     app.router.add_get("/accounts/{igid}", route("account"))
     app.router.add_get("/accounts/{igid}/story", route("story"))
     app.router.add_get("/accounts/{igid}/items", route("items"))
-    app.router.add_get("/posts/{shortcode}", route("post"))
     async with TestServer(app) as server:
         poller = SocialPoller(
             source=InstagramSocialSource(base_url=str(server.make_url("")), timeout_seconds=5),
@@ -783,9 +835,10 @@ async def test_a_post_with_no_usable_media_is_recorded_and_not_read_again(world)
             metrics=world.metrics, clock=world.clock,
         )
         await poller.tick()
-        reads = served.count("post")
-        assert reads >= 1
-        assert all(ref is None for ref in (await world.items()).values())
+        reads = served.count("items")
+        recorded = await world.items()
+        assert recorded and all(ref is None for ref in recorded.values())
         world.clock.at(hours=6)
         await poller.tick()
-    assert served.count("post") == reads, "the list read completed; nothing is read again"
+    assert served.count("items") == reads, "the list read completed; nothing is read again"
+    assert "post" not in served

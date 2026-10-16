@@ -12,7 +12,17 @@
         "media_type": 2,
         "caption": "synthetic reel caption",
         "carousel_count": 0,
-        "collab": false
+        "collab": false,
+        "items": [
+          {
+            "kind": "video",
+            "url": "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-r.mp4",
+            "width": 720,
+            "height": 1280,
+            "duration_seconds": 7.5
+          }
+        ],
+        "alt_text": ""
       },
       {
         "code": "SynthPost02",
@@ -22,7 +32,22 @@
         "media_type": 8,
         "caption": "",
         "carousel_count": 3,
-        "collab": false
+        "collab": false,
+        "items": [
+          {
+            "kind": "image",
+            "url": "https://scontent.cdninstagram.com/v/t51/synthetic-c1.jpg",
+            "width": 1080,
+            "height": 1080
+          },
+          {
+            "kind": "video",
+            "url": "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-c2.mp4",
+            "width": 1080,
+            "height": 1080
+          }
+        ],
+        "alt_text": "a photo of a plate"
       }
     ],
     "next_cursor": "synthetic-cursor-1"
