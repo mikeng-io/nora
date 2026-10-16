@@ -70,6 +70,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"instagram-bridge/internal/domain"
 
@@ -289,6 +290,43 @@ type storyItemWire struct {
 		Candidates []mediaCandidate `json:"candidates"`
 	} `json:"image_versions2"`
 	VideoVersions []mediaCandidate `json:"video_versions"`
+	// StoryLocations are the frame's location stickers, each wrapping the
+	// tagged place. UNMEASURED on this document: kept raw and read leniently
+	// (storyLocationName), so a frame without them, or with another shape,
+	// carries no location and never fails the story.
+	StoryLocations json.RawMessage `json:"story_locations"`
+}
+
+// locationName is a tagged place's name out of Instagram's location object
+// (`{"name": ..., "pk": ..., "lat": ..., "lng": ...}`), trimmed. Only the name
+// is read: the coordinates are never forwarded. Any other shape, a missing
+// field or a name that is not a string is no location: a malformed tag is
+// never a reason to refuse the page or the story it rides on.
+func locationName(raw json.RawMessage) string {
+	var obj map[string]json.RawMessage
+	if len(raw) == 0 || json.Unmarshal(raw, &obj) != nil {
+		return ""
+	}
+	var name string
+	if json.Unmarshal(obj["name"], &name) != nil {
+		return ""
+	}
+	return strings.TrimSpace(name)
+}
+
+// storyLocationName is the first location sticker's place name, "" when none
+// names one or the stickers are not a list of objects.
+func storyLocationName(raw json.RawMessage) string {
+	var stickers []map[string]json.RawMessage
+	if len(raw) == 0 || json.Unmarshal(raw, &stickers) != nil {
+		return ""
+	}
+	for _, s := range stickers {
+		if name := locationName(s["location"]); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 // looseID is a wire id read as text whatever its JSON type, with no shape
@@ -422,6 +460,7 @@ func storyFrame(item *storyItemWire) domain.StoryItem {
 		TakenAt:    item.TakenAt,
 		ExpiringAt: item.ExpiringAt,
 		AltText:    item.AccessibilityCaption,
+		Location:   storyLocationName(item.StoryLocations),
 	}
 	if item.Caption != nil {
 		out.Caption = item.Caption.Text

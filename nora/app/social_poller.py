@@ -689,7 +689,7 @@ class SocialPoller:
         media_ref = await self._keep(item, now)
         await self._store.insert_item(
             item, person=member.person, origin=origin, seen_at=now, media_ref=media_ref,
-            read_id=read_id,
+            location=item.location, read_id=read_id,
         )
 
     async def _keep(self, item: SocialItem, now: datetime) -> str | None:
