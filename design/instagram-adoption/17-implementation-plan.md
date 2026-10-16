@@ -30,16 +30,15 @@ edges:
 P1 observability ──┬── P2 → P3 → P4 → P5      Nora's read path, people she knows   (Python)
                    └── P6 → P7 → P8           bridge layers                         (Go)
                                P9 probe ─ P10 links ─ P11 search ─ P12 one post     (both; needs P5 + P8)
-                                                     P13 posts/reels lists          (investigation)
+                                                     P13 posts/reels lists          (mechanism found 10-16)
                                                      P14 writes onto resources      (both; needs P8)
 ```
 
 **Status, 2026-09-24: P1 to P12 and P14 are merged and live on norty.**
 PRs: P1 #396, P2 #400, P3 #402, P4 #407, P5 #421, P6 #404, P7 #411, P8 #413,
 P9 #419 (measured), P10 #442 + #446, P11 #415 + #443, P12 #439 + #446, P14
-#447. Shared posts #435. P13 remains an investigation with no mechanism: the
-library has no list call, so a person's posts or reels list stays
-`unsupported`. Rollback images `nora:pre-p14` and `instagram-bridge:pre-p14`
+#447. Shared posts #435. P13 had no mechanism at this date (the library has
+no list call); one was found 2026-10-16, see the P13 section below. Rollback images `nora:pre-p14` and `instagram-bridge:pre-p14`
 were kept on norty at the P14 deploy.
 
 **P1 first, alone**: every later PR is verified by its trace, so tracing has to
@@ -312,9 +311,11 @@ its video with a duration.
 
 ## P13: Posts and reels lists (investigation, not a build)
 
-The routes return `501` (`ErrUnsupported`), which Nora says as `unavailable`
-with its reason. Finding a working mechanism is its own track. No PR is
-planned until one is measured.
+No route exists (corrected 2026-10-16: an earlier draft said the routes return
+`501`); Nora's side answers `unavailable` without a call
+(`nora/infra/social/instagram_client.py`). **Mechanism found 2026-10-16**: the web app's
+`PolarisProfilePostsTabContentQuery_connection` GraphQL query
+(design/cognition-loop/22-social-stream.md §1a); the route is that node's S1.
 
 ## P14: Writes onto resource paths (`16` step 5)
 

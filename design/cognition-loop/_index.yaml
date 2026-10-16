@@ -80,6 +80,7 @@ members:
   - 12-schemas.md
   - 15-map.md
   - 20-observe.md
+  - 22-social-stream.md
   - 25-rollup.md
   - 30-cognition.md
   - 35-the-proactive-turn-reviews-the-situation.md
@@ -109,6 +110,10 @@ edges:
   - {src: 15-map, dst: 55-self, rel: sequences, provenance: asserted}
   - {src: 55-self, dst: 50-character-and-standing, rel: extends, provenance: asserted}
   - {src: 20-observe, dst: 60-faces, rel: extends, provenance: asserted}
+  - {src: 22-social-stream, dst: 20-observe, rel: extends, provenance: asserted}
+  - {src: 22-social-stream, dst: ../instagram-adoption/17-implementation-plan.md, rel: depends_on, provenance: asserted}
+  - {src: 22-social-stream, dst: 70-migration, rel: depends_on, provenance: asserted}
+  - {src: 22-social-stream, dst: ../instagram-adoption/06-retention-and-custody.md, rel: amends, provenance: asserted}
   - {src: 80-prior-art, dst: 10-tiers, rel: informs, provenance: asserted}
   - {src: 70-migration, dst: 00-intent, rel: realizes, provenance: asserted}
   - {src: 00-intent, dst: ../ambient-loop/00-overview.md, rel: realizes, provenance: asserted}
