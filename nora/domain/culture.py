@@ -60,6 +60,7 @@ __all__ = [
     "character_key",
     "check_revision",
     "nora_character_key",
+    "social_citation",
     "split_culture_key",
     "unit_culture_key",
 ]
@@ -262,8 +263,9 @@ class CultureRevision:
     lineage: Lineage = field(default=Lineage(), compare=False)
     exclude_persons: tuple[str, ...] = field(default=(), compare=False)
     #: What this revision rests on, as `character_revise` checked it: Record
-    #: message ids (`"4812"`) and Rollup response episodes
-    #: (`"response:4790"`, by her send's id). Empty on a row written without
+    #: message ids (`"4812"`), Rollup response episodes
+    #: (`"response:4790"`, by her send's id) and a person's social items
+    #: (`"social:instagram:<item id>"`, `social_citation`). Empty on a row written without
     #: the verb (migration `0098_culture_citations`). Provenance, so
     #: `compare=False` like `lineage`.
     citations: tuple[str, ...] = field(default=(), compare=False)
@@ -292,14 +294,14 @@ class CultureProposal:
 #: - `empty`: no body;
 #: - `too_long`: the body is past `BODY_MAX_CHARS`;
 #: - `uncited`: no citation at all; an account rests on what it read;
-#: - `unresolved_citation`: a citation that is not one of the rows or
-#:   episodes this session was handed;
+#: - `unresolved_citation`: a citation that is not one of the rows,
+#:   episodes or social items this session was handed;
 #: - `echo`: a Character · Nora revision whose citations are only her own
 #:   sends (the echo rule);
 #: - `identifier`, `coordinate`: R-18/R-28, the Dreamer's egress screen
 #:   (`nora.agent.dream_screen`), applied to the body before it is staged;
-#: - `ids_in_body`: the account's text carries a message number it was handed:
-#:   numbers belong in `citations`, and an account
+#: - `ids_in_body`: the account's text carries a message number or a social
+#:   item's id it was handed: numbers belong in `citations`, and an account
 #:   that reads "(6888, 7020)" is a record of messages, not a description.
 REVISE_REFUSALS = frozenset({
     "unknown_entity", "empty", "too_long", "uncited", "unresolved_citation",
@@ -311,6 +313,18 @@ REVISE_REFUSALS = frozenset({
 #: <interval>)` (`nora.infra.sql.rollups._citation_scope`); inside one unit's
 #: session the send id names it exactly, and it is what the session was shown.
 _EPISODE = re.compile(r"response:(\d+)")
+
+#: `social:<network>:<item id>`: how a person session cites one of that
+#: person's social items (design/cognition-loop/22 §6). Its own id space: the
+#: item's natural key `(network, item_id)`, the one `social_item` is unique
+#: on, never a Record id, so it cannot be confused with a message.
+_SOCIAL = re.compile(r"social:([a-z]+):(\S+)")
+
+
+def social_citation(network: str, item_id: str) -> str:
+    """The citation a session writes for one social item: `social:` and the
+    item's natural key, `network:item_id` (a network name holds no `:`)."""
+    return f"social:{network}:{item_id}"
 
 #: The outcomes that are evidence on their own, whatever the counts say
 #: (`Episode.is_evidence`).
@@ -339,7 +353,8 @@ class Citable:
 
     `messages` are the Record ids it was shown; `nora` is the subset that are
     her own sends; `episodes` are the Rollup response episodes it was shown
-    that are evidence (`Episode.is_evidence`), by her send's id. `echo_rule` is
+    that are evidence (`Episode.is_evidence`), by her send's id; `social` are
+    the person's social items it was shown, as `network:item_id`. `echo_rule` is
     on for Character · Nora alone: a revision of HER account must rest on
     something other than her own words. `min_episodes` is
     how many distinct evidence episodes such a revision must cite (0: none)."""
@@ -347,6 +362,7 @@ class Citable:
     messages: frozenset[int] = frozenset()
     nora: frozenset[int] = frozenset()
     episodes: frozenset[int] = frozenset()
+    social: frozenset[str] = frozenset()
     echo_rule: bool = False
     min_episodes: int = 0
     #: Messages that told her directly how to act (Lessons L4). A write citing one is exempt from
@@ -370,30 +386,38 @@ def check_revision(
         return Refusal("empty", "the body is empty; write the account, or close "
                        "this entity as unchanged")
     shown = citable.messages
-    if shown and any(int(n) in shown for n in re.findall(r"(?<![\d.])\d{3,}(?![\d.])", body)):
-        return Refusal("ids_in_body", "the account's text carries message numbers; put "
+    numbers = re.findall(r"(?<![\d.])\d{3,}(?![\d.])", body)
+    shown_items = {key.partition(":")[2] for key in citable.social}
+    if any(int(n) in shown or n in shown_items for n in numbers):
+        return Refusal("ids_in_body", "the account's text carries message or item numbers; put "
                        "them in `citations` only, and write the account as a description")
     if len(body) > BODY_MAX_CHARS:
         return Refusal("too_long", f"the body is {len(body)} characters, past the "
                        f"{BODY_MAX_CHARS} cap; write it shorter")
     if not citations:
         return Refusal("uncited", "cite at least one message id (`n` of a message "
-                       "you were shown) that the account rests on")
+                       "you were shown), or the `cite` of a social item you were "
+                       "shown, that the account rests on")
     messages: set[int] = set()
     episodes: set[int] = set()
+    items: set[str] = set()
     for raw in citations:
         text = str(raw).strip()
         episode = _EPISODE.fullmatch(text)
+        social = _SOCIAL.fullmatch(text)
         if episode is not None and int(episode.group(1)) in citable.episodes:
             episodes.add(int(episode.group(1)))
         elif text.isdigit() and int(text) in citable.messages:
             messages.add(int(text))
+        elif social is not None and f"{social.group(1)}:{social.group(2)}" in citable.social:
+            items.add(f"{social.group(1)}:{social.group(2)}")
         else:
             return Refusal("unresolved_citation", f"{text!r} is not something you "
                            "can cite; cite only the `n` of a message you were "
-                           "shown, or the `response:<n>` of a shown episode "
+                           "shown, the `cite` of a social item you were shown, "
+                           "or the `response:<n>` of a shown episode "
                            "someone responded to (outcome `responded` or `silent`)")
-    if citable.echo_rule and not episodes and messages <= citable.nora:
+    if citable.echo_rule and not episodes and not items and messages <= citable.nora:
         return Refusal("echo", "every citation is one of your own sends; your "
                        "account must rest on how people responded: cite the "
                        "`response:<n>` of an episode whose outcome is `responded` "

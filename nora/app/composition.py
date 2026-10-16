@@ -3834,8 +3834,19 @@ async def build_dependencies(
                     culture=culture_store,
                     evidence=PersonEvidence(
                         store=SqlCharacterEvidence(engine), keys=person_keys,
+                        # Their social items are evidence too (design/
+                        # cognition-loop/22 §6), read whether or not the poller
+                        # runs, opted-out persons left out by the store. The
+                        # read reaches back one run's longest hold, so an item
+                        # recorded while a session ran is handed to the next.
+                        social=SqlSocialStreamStore(engine, opted_out=frozenset(
+                            p for p in persons.by_person if persons.social_off(p)
+                        )),
+                        overlap_seconds=cfg.dreamer_max_unit_hold_seconds(),
                     ),
                     keys=person_keys, metrics=metrics,
+                    screen=scan_identifiers,
+                    render_chars=cfg.media.comprehension_render_chars,
                 ),
             )
 

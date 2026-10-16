@@ -21,7 +21,7 @@ list read carrying its probe's counts. A probe that made a list read due does
 not advance them, so a list read that fails leaves the rise still due.
 
 **What is read is filtered here, once** (§2). Every read of items for
-perception or for a stimulus leaves out an item
+perception, for a stimulus or for a person's Character session leaves out an item
 whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `social_item_state` row (gone or hidden). The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
@@ -56,7 +56,9 @@ from nora.domain.social_stream import (
     Counts,
     Origin,
     PerceptionOutcome,
+    PersonSocialItem,
     PollStage,
+    Reading,
     SocialItem,
     cursor_is_bad,
 )
@@ -65,6 +67,7 @@ from nora.infra.sql.blob_refs import held_elsewhere
 from nora.infra.sql.memory_index import social_source_id
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
+    MEDIA_OBJECTS,
     SOCIAL_ITEM,
     SOCIAL_ITEM_STATE,
     SOCIAL_PERCEPTION,
@@ -179,7 +182,7 @@ class Backfill:
 
 
 class SqlSocialStreamStore:
-    """The stream's five tables, as eighteen verbs."""
+    """The stream's five tables, as twenty verbs."""
 
     def __init__(
         self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
@@ -596,6 +599,64 @@ class SqlSocialStreamStore:
                 announced=frozenset(r.announced or ()),
             )
         return list(reads.values())
+
+    # -- the reader: a person's Character session (§6) -------------------------
+
+    async def polled_count(self, *, person: str, since: datetime | None) -> int:
+        """How many readable items of `person` a poll recorded after `since`
+        (ever, when None): their wake pressure on Character. A back-filled
+        item never counts: a back-fill of 50 items is history, not 50 items
+        of news (§6)."""
+        i = SOCIAL_ITEM
+        where = [*self._readable(), i.c.person == person, i.c.origin == "poll"]
+        if since is not None:
+            where.append(i.c.recorded_at > since)
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(
+                sa.select(sa.func.count()).select_from(i).where(*where),
+            )).scalar_one())
+
+    async def person_items(
+        self, *, person: str, since: datetime | None, limit: int,
+    ) -> list[PersonSocialItem]:
+        """The readable items of `person` recorded after `since` (ever, when
+        None), polled and back-filled alike, newest posted first, at most
+        `limit`, each with what perception made of its media in `media_ref`'s
+        order. A medium nothing has read yet has an empty reading."""
+        if limit <= 0:
+            return []
+        i = SOCIAL_ITEM
+        where = [*self._readable(), i.c.person == person]
+        if since is not None:
+            where.append(i.c.recorded_at > since)
+        stmt = (
+            sa.select(
+                i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at,
+                i.c.origin, i.c.caption, i.c.media_ref,
+            )
+            .where(*where)
+            .order_by(i.c.taken_at.desc(), i.c.id)
+            .limit(limit)
+        )
+        m = MEDIA_OBJECTS
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            shas = sorted({sha for r in rows for sha in _media(r.media_ref)})
+            read = {
+                r.sha256: Reading(r.title, r.description, r.content)
+                for r in (await conn.execute(
+                    sa.select(m.c.sha256, m.c.title, m.c.description, m.c.content)
+                    .where(m.c.sha256.in_(shas))
+                )).all()
+            } if shas else {}
+        return [
+            PersonSocialItem(
+                network=r.network, item_id=r.item_id, kind=r.kind, collab=r.collab,
+                taken_at=r.taken_at, origin=r.origin, caption=r.caption,
+                readings=tuple(read.get(sha, Reading()) for sha in _media(r.media_ref)),
+            )
+            for r in rows
+        ]
 
     # -- a story frame's bytes (§5) --------------------------------------------
 

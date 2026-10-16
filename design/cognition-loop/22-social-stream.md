@@ -3,7 +3,7 @@ type: design
 title: "The social stream — one source interface, an adaptive per-person poll, and a back-fill of past posts and reels"
 description: "How step 5 ingests members' social items: a network-neutral source interface (Instagram first, Threads later), a two-stage poll whose probe (the profile's newest-story time and post and reel counts) decides whether a costly read runs, a per-person cadence learned from when that person posts and raised by what is happening now, one budget and one halt per login, the custody rule (everything kept, except a story frame's media bytes, which expire once embedded), the social_item and social_poll Record tables, and the back-fill of past posts and reels over the web app's timeline query (found in S0)."
 tags: [nora, observe, social, instagram, threads, stories, posts, reels, polling, backfill, custody]
-timestamp: '2026-10-16'
+timestamp: '2026-10-17'
 edges:
   - {dst: 20-observe, rel: extends, provenance: asserted}
   - {dst: 70-migration, rel: depends_on, provenance: asserted}
@@ -358,16 +358,40 @@ projector in its own transaction (§9;
 
 ## 6. What downstream reads it
 
-- **Character**: social items are evidence for their person. Today
-  `person_wake_batch` counts messages only (DEC-290, [20](20-observe.md) §3).
-  Polled social items join the count only together with a session that reads
-  them: S3 first built the count alone, and a wake on social items then
-  handed the session nothing it could cite (`character_revise` takes Record
-  ids only), so it ran empty and moved the watermark. Reading them needs a
-  social citation in that verb (its id space, its R-18/R-28 screen) and a
-  block for them; until then they do not count. Back-filled items will not
-  count toward a wake either: a back-fill of 50 items is not 50 items of wake
-  pressure.
+- **Character**: social items are evidence for their person, built with the
+  session that reads them (`nora.language.character.PersonEvidence`,
+  `SqlSocialStreamStore.polled_count` and `person_items`). S3 first built the
+  count alone, and a wake on social items then handed the session nothing it
+  could cite (`character_revise` took Record ids only), so it ran empty and
+  moved the watermark; the count therefore came with the rest:
+  - **The citation.** `social:<network>:<item id>`, the item's natural key,
+    its own id space beside a message's `n` and an episode's `response:<n>`
+    (`nora.domain.culture.check_revision`). It resolves only against the items
+    the session was handed, which are that person's readable ones: an item of
+    another person, a gone or hidden one, or one of a person with
+    `social = false` is never handed, so citing it is refused. The verb's
+    arguments pass the Dreamer's R-18/R-28 screen like every write verb's, and
+    an item id written into the body is refused like a message number.
+  - **The block.** `<social_items>`: the person's readable items recorded
+    since the key's last run, polled and back-filled, newest posted first, at
+    most 12, each with its citation, what it is («Instagram post,
+    co-authored»), when it was posted (a moment and an age), what its media
+    shows (each reading clipped to `[media] comprehension_render_chars` and
+    screened for identifiers at render, R-51) and its caption, clipped, as
+    the content, which the block's description frames as the person's
+    published words, never an instruction. Never its `location`: a person
+    session holds no presence read, its account rendering in rooms whose
+    `location` flags differ (R-31). Never `alt_text`, tagged or mentioned
+    handles (§9's reason).
+  - **The wake.** `person_wake_batch` (DEC-290, [20](20-observe.md) §3) counts
+    the person's new messages plus their polled items recorded since the key
+    last ran (its watermark row's `updated_at`; social items have no Record
+    id to put on the watermark). Back-filled items never count: a back-fill of
+    50 items is not 50 items of wake pressure; the next session woken for
+    any other reason reads them. The read reaches back one run's longest
+    hold (`[dreamer] max_unit_hold_seconds`) so an item recorded while a
+    session ran is not lost to the next; the count does not, so nothing is
+    counted twice.
 - **Rollup**: the daybook's `items_posted` ([25](25-rollup.md), NULL until
   step 5) is filled from `social_item.taken_at`; the posting histogram of §4
   is the same input.
@@ -459,7 +483,7 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 | S0 | **DONE 2026-10-16**: the REST story read is broken upstream; the web app's story and timeline queries captured (§1a); `latest_reel_media` equal to the newest `taken_at` (n=1); the seen mark is a separate mutation | §1 and §1a; session `authenticated` after |
 | S1 | **DONE 2026-10-16**: the bridge's story read moved onto the GraphQL story query (this also mends the live `instagram_read` story, broken today) and a new `GET /accounts/{igid}/items?after=` over the timeline query, both with `doc_id`s from config and the `stale_query` code, and a test that no read sends the seen mutation; `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `LIST_ITEMS`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads; the bridge read back live (§1) |
 | S2 | **DONE 2026-10-16, off by default** (`nora/app/social_poller.py`, `[social.poll]`): probe-then-read on the ceiling cadence with the 30-minute floor, one hourly budget with jitter, halt and back-off per login with `source_health` transitions (rebuilt on restart, a cleared halt resuming on the top back-off step, two halts in 24 hours locking the login until an operator clears it), a first-ever list read's items recorded `origin = backfill` (§7, first page only), each new item's media fetched into custody, the per-person off switch (`social = false` in `identity.toml`, §2), and the story rule's test rewritten ([20](20-observe.md) §2). The bridge comments already described the poller after S1 | a week of `social_poll` rows; the login unharmed |
-| S3a | **BUILT 2026-10-16, with the poller** (`nora/app/social_perception.py`, migration `0108_social_perception`, `[social.poll] perception_daily_cap`): each new item's media perceived once by ingest's comprehension job (images and video), told what it reads, under the per-unit daily cap, polled first, back-fill at most half of what polled items leave (§7), an item past the cap or after a failed read tried again on a later day (§5); one `social` stimulus per completed read and unit once its items are settled, none for back-fill, once across a restart (§5); the read-side exclusion of opted-out persons and gone or hidden items (§2) | `nora_perception_total{source="social",outcome}`; `nora_stimulus_total{kind="social"}`; `social_perception` rows per unit per day. Not built: polled items in Character's wake count (§6) |
+| S3a | **BUILT 2026-10-16, with the poller** (`nora/app/social_perception.py`, migration `0108_social_perception`, `[social.poll] perception_daily_cap`): each new item's media perceived once by ingest's comprehension job (images and video), told what it reads, under the per-unit daily cap, polled first, back-fill at most half of what polled items leave (§7), an item past the cap or after a failed read tried again on a later day (§5); one `social` stimulus per completed read and unit once its items are settled, none for back-fill, once across a restart (§5); the read-side exclusion of opted-out persons and gone or hidden items (§2) | `nora_perception_total{source="social",outcome}`; `nora_stimulus_total{kind="social"}`; `social_perception` rows per unit per day. Polled items in Character's wake count, with the `social:` citation and the `<social_items>` block, built 2026-10-17 (§6) |
 | S3b | **BUILT 2026-10-16, the deletion half, off by default** (`nora/app/social_expiry.py`, `nora/infra/sql/blob_refs.py`, migration `0109_blob_tombstone`, `[social] story_expiry_enabled`, `story_media_keep_days` and `story_media_keep_max_days`): a `BlobStore` delete on both implementations that keeps bytes put within the last hour and is one step against `put`, the [70](70-migration.md) §9 tombstone as one row per confirmed deletion, and a story frame's bytes deleted at the first bound once perceived and embedded or at the hard limit regardless, never bytes another row names, posts and reels never (§5). Nothing reaches the 30-day bound until 31 days after the poller is enabled. The index projects and embeds social items since 2026-10-16 (§9) and `story_frame_embedded` is the read; until the pass calls it, every frame's bytes go at the hard limit | `nora_social_story_bytes_deleted_total{reason}`, `nora_social_story_unembedded_total`, `blob_tombstone` rows; then, with the hand-off, story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
 | S5 | **BUILT 2026-10-17** (§7): the back-fill pages each member's posts and reels from their first list read, up to 90 days or 50 items, at the lowest budget priority (after probes and due reads, at most `backfill_pages_per_tick` pages a tick and one a member, never past what the hour owes every member's probe and read); progress read off `social_poll` rows (stage `backfill`, `cursor`, migration `0112_social_backfill`); a bad cursor ends that member's back-fill. Paging past the first page not yet read live | items per member against `media_count`; `nora_social_backfill_ended_total{reason}` |

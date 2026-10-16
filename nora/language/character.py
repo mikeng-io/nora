@@ -14,7 +14,11 @@ store and revision chain:
   id and room) and the current culture of each of the unit's rooms, read by
   code from the store. Memory is a tool it MAY call (`ask_memory`,
   `search_memory`), never a pre-fetch: the account must not depend on Honcho.
-  Its citations are the ids of the messages it was handed.
+  Its citations are the ids of the messages it was handed. Its evidence
+  also holds the person's social items recorded since its last run
+  (design/cognition-loop/22 §6): only the polled ones count toward the wake,
+  and polled and back-filled alike are handed to it, newest first, as
+  `<social_items>`, each cited `social:<network>:<item id>`.
 - **the unit** (C3a), key `unit_culture_key(unit)`: what the unit is across
   its rooms. Its evidence is new revisions of its rooms' cultures. It is
   handed its previous account and each room's current culture with the
@@ -50,7 +54,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from nora.domain.blocks import (
@@ -70,10 +74,14 @@ from nora.domain.culture import (
     CultureRevision,
     Episode,
     RoomMessage,
+    social_citation,
 )
+from nora.domain.media import media_detail, sanitize_description
+from nora.domain.memory_index import social_label
 from nora.domain.models import PersonRef
 from nora.domain.ports import Proposal
-from nora.domain.prompt import age, escape
+from nora.domain.prompt import age, escape, stamp
+from nora.domain.social_stream import PersonSocialItem
 from nora.language.character_session import EntitySessions
 from nora.obs.metrics import Metrics
 
@@ -132,6 +140,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("previous_character", 20, "turn"),
     ("room_cultures", 30, "turn"),
     ("person_messages", 40, "turn"),
+    ("social_items", 45, "turn"),
     ("episodes", 50, "turn"),
 )
 _ROW: dict[str, tuple[int, BlockKey]] = {
@@ -168,10 +177,24 @@ class PersonKey:
     home: str
 
 
+#: The most social items one person session is handed: the newest posted of
+#: those recorded since its last run. A back-fill records up to 50 at once.
+# ponytail: a fixed bound sized so the block stays a fraction of the session's
+# `[dreamer.budgets.culture]` tokens; a config key once a session's token use
+# with the block is read back.
+SOCIAL_ITEMS_MAX = 12
+
+#: The longest caption the block carries, in characters. A caption runs to a
+#: few thousand; the account wants what kind of thing they post, not the text.
+SOCIAL_CAPTION_CHARS = 500
+
+
 class _PersonMessages(Protocol):
     """`nora.infra.sql.character.SqlCharacterEvidence`'s person reads."""
 
     async def message_head(self) -> int: ...
+
+    async def last_run_ms(self, *, adaptor: str, key: str) -> int | None: ...
 
     async def person_count(
         self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
@@ -183,13 +206,40 @@ class _PersonMessages(Protocol):
     ) -> tuple[list[RoomMessage], int]: ...
 
 
+class _PersonSocial(Protocol):
+    """`nora.infra.sql.social_stream.SqlSocialStreamStore`'s Character reads:
+    gone, hidden and opted-out items are left out there."""
+
+    async def polled_count(self, *, person: str, since: datetime | None) -> int: ...
+
+    async def person_items(
+        self, *, person: str, since: datetime | None, limit: int,
+    ) -> list[PersonSocialItem]: ...
+
+
 class PersonEvidence:
     """The dream loop's count and read for a person key (`nora.app.runtime`
-    `_KeyEvidence`): that person's messages across their unit's rooms."""
+    `_KeyEvidence`): that person's messages across their unit's rooms and,
+    with `social`, their social items recorded since the key's last run.
 
-    def __init__(self, *, store: _PersonMessages, keys: Mapping[str, PersonKey]) -> None:
+    **Two cursors.** Messages go by the key's watermark, a Record id. Social
+    items have no Record id, so they go by when the key last ran (its
+    watermark row's `updated_at`, which every run that is not `unavailable`
+    sets, `last_run_ms`): a failed run moves neither, so its items are counted
+    and handed again. Only polled items count toward the wake (§6); the read
+    hands polled and back-filled alike. The read starts `overlap_seconds`
+    before the last run, the longest a run can hold its key, so an item
+    recorded while the previous session ran is still handed to the next one;
+    the count does not, so an item handed twice is never counted twice."""
+
+    def __init__(
+        self, *, store: _PersonMessages, keys: Mapping[str, PersonKey],
+        social: _PersonSocial | None = None, overlap_seconds: float = 0.0,
+    ) -> None:
         self._store = store
         self._keys = keys
+        self._social = social
+        self._overlap_ms = int(overlap_seconds * 1000)
         self._population = tuple(sorted(keys))
         self._held: dict[str, int] = {}
         #: `key -> (after, head)`: a count over `(after, head]` found nothing
@@ -225,16 +275,36 @@ class PersonEvidence:
         n = await self._store.person_count(rooms=rooms, person_id=person_id, after=floor)
         if n == 0 and head > floor:
             self._clear[key] = (min(after, floor), head)
-        return n
+        if self._social is None:
+            return n
+        since = await self._since(key, overlap_ms=0)
+        return n + await self._social.polled_count(person=person_id, since=since)
+
+    async def _since(self, key: str, *, overlap_ms: int) -> datetime | None:
+        """When the key last ran, less `overlap_ms`; None when it never has."""
+        last = await self._store.last_run_ms(adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
+        if last is None:
+            return None
+        return datetime.fromtimestamp((last - overlap_ms) / 1000, tz=UTC)
 
     async def newest(
         self, *, key: str, after: int, limit: int,
-    ) -> tuple[Sequence[RoomMessage], int]:
+    ) -> tuple[Sequence[RoomMessage | PersonSocialItem], int]:
+        """Their newest `limit` messages past `after` and the cursor past all
+        of them, then their newest `SOCIAL_ITEMS_MAX` social items recorded
+        since the last run. The cursor is the messages' alone."""
         rooms, person_id = self._of(key)
         self._held[key] = after
-        return await self._store.person_since(
+        messages, cursor = await self._store.person_since(
             rooms=rooms, person_id=person_id, after=after, limit=limit,
         )
+        if self._social is None:
+            return messages, cursor
+        items = await self._social.person_items(
+            person=person_id, since=await self._since(key, overlap_ms=self._overlap_ms),
+            limit=SOCIAL_ITEMS_MAX,
+        )
+        return [*messages, *items], cursor
 
 
 class _CultureStore(Protocol):
@@ -277,6 +347,67 @@ def _room_cultures(
     ))
 
 
+def _shows(
+    item: PersonSocialItem, *, screen: Callable[[str], str | None], render_chars: int,
+    metrics: Metrics | None,
+) -> str | None:
+    """What perception made of an item's media, one clipped reading per
+    medium, or None when nothing read them. A model wrote it about bytes a
+    member posted, so it is screened at every render (R-51, as
+    `nora.domain.media_join` does): one carrying an identifier is withheld
+    whole and counted, and the item renders without it."""
+    parts = [
+        sanitize_description(
+            media_detail(label="", title=r.title, description=r.description,
+                         content=r.content),
+            max_chars=render_chars,
+        )
+        for r in item.readings
+    ]
+    shows = "; ".join(p for p in parts if p)
+    if not shows:
+        return None
+    kind = screen(shows)
+    if kind is not None:
+        log.warning("character: a social item's description carried a %s identifier; "
+                    "withheld", kind)
+        if metrics is not None:
+            metrics.inc("nora_egress_blocks_total", kind=kind)
+        return None
+    return shows
+
+
+def _caption(text: str | None) -> str:
+    caption = (text or "").strip()
+    if len(caption) <= SOCIAL_CAPTION_CHARS:
+        return caption
+    return caption[:SOCIAL_CAPTION_CHARS].rstrip() + "…"
+
+
+def _social_items(
+    items: Sequence[PersonSocialItem], now: datetime, *,
+    screen: Callable[[str], str | None], render_chars: int, metrics: Metrics | None,
+) -> ContextBlock | None:
+    """`<social_items>`: one `item` per social item, newest posted first,
+    each with the citation it is cited by, what it is, when it was posted (a
+    moment and an age) and what its media shows; its caption is the
+    content. Never its location: a person session holds no presence, and
+    its account renders in rooms whose `location` flags differ (R-31)."""
+    if not items:
+        return None
+    return ContextBlock(name="social_items", **_at("social_items"), body=render_elements(
+        items, tag="item",
+        attrs=lambda it, _i: (
+            ("cite", social_citation(it.network, it.item_id)),
+            ("kind", social_label(it.network, it.kind, collab=it.collab)),
+            ("posted", stamp(int(it.taken_at.timestamp() * 1000), now)),
+            ("shows", _shows(it, screen=screen, render_chars=render_chars,
+                             metrics=metrics)),
+        ),
+        body=lambda it: _caption(it.caption),
+    ))
+
+
 class CharacterPersonAdaptor(EntitySessions):
     """One person's account in one unit, per wake of their own evidence."""
 
@@ -293,14 +424,20 @@ class CharacterPersonAdaptor(EntitySessions):
 
     def __init__(
         self, *, culture: _CultureStore, evidence: PersonEvidence,
-        keys: Mapping[str, PersonKey], metrics: Metrics | None = None,
+        keys: Mapping[str, PersonKey], screen: Callable[[str], str | None],
+        render_chars: int, metrics: Metrics | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        """`screen` is `nora.agent.egress.scan_identifiers`, injected because
+        this layer may not import it; `render_chars` bounds each medium's
+        reading (`[media] comprehension_render_chars`)."""
         self._culture = culture
         #: Read by the dream loop, never awaited here.
         self.evidence = evidence
         self._keys = keys
         self._population = tuple(sorted(keys))
+        self._screen = screen
+        self._render_chars = render_chars
         self._metrics = metrics
         self._clock = clock or (lambda: datetime.now().astimezone())
         self._sessions_init()
@@ -317,17 +454,22 @@ class CharacterPersonAdaptor(EntitySessions):
 
     async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
         """Who this is, the account written last time, the current culture of
-        each of the unit's rooms, and their messages (newest last, each with
-        its Record id and room). `""` with no messages: the runtime then does
-        not call a model."""
+        each of the unit's rooms, their messages (newest last, each with its
+        Record id and room) and their social items (newest first, each with
+        its citation). `""` with neither: the runtime then does not call a
+        model."""
         pk = self._keys.get(key)
         messages = [m for m in batch if isinstance(m, RoomMessage)]
-        if pk is None or not messages:
+        social = [m for m in batch if isinstance(m, PersonSocialItem)]
+        if pk is None or not (messages or social):
             return ""
         now = self._clock()
         labels = {r.key: r.label for r in pk.rooms}
         self._begin(
-            key, citable=Citable(messages=frozenset(m.row.id for m in messages)),
+            key, citable=Citable(
+                messages=frozenset(m.row.id for m in messages),
+                social=frozenset(f"{s.network}:{s.item_id}" for s in social),
+            ),
             entities={pk.person.name: None}, batch_start=self.evidence.held(key),
         )
         previous = await self._culture.head(key=key)
@@ -352,6 +494,8 @@ class CharacterPersonAdaptor(EntitySessions):
                 attrs=lambda m: (("room", labels.get(m.room) or "unnamed room"),),
                 body=lambda m: m.row.body or "",
             )),
+            _social_items(social, now, screen=self._screen,
+                          render_chars=self._render_chars, metrics=self._metrics),
         ]
         return assemble([p for p in parts if p is not None], sep="\n\n")
 

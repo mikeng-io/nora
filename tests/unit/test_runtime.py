@@ -2376,7 +2376,7 @@ def _person_adaptor_with(store):
     key = character_key("friends", "ada")
     return CharacterPersonAdaptor(
         culture=InMemoryCultureStore(), evidence=PersonEvidence(store=store, keys={key: pk}),
-        keys={key: pk},
+        keys={key: pk}, screen=lambda _text: None, render_chars=240,
     )
 
 

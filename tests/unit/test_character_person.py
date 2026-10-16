@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from nora.agent.egress import scan_identifiers
 from nora.domain.culture import CultureRevision, RoomMessage, character_key
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.domain.ports import Proposal
@@ -52,6 +53,7 @@ def _adaptor(
         culture=store or InMemoryCultureStore(),
         evidence=PersonEvidence(store=InMemoryCharacterEvidence(), keys={KEY: PK}),
         keys={KEY: PK}, metrics=metrics, clock=lambda: NOW,
+        screen=scan_identifiers, render_chars=240,
     )
 
 
@@ -76,7 +78,8 @@ async def test_the_session_is_handed_its_account_its_rooms_and_its_messages_by_i
                        written_at=T0, established_by="dream:culture:x",
                        citations=("57",))
     out = await _adaptor(store).inputs(key=KEY, batch=BATCH)
-    names = [name for name, _o, _k in _BLOCKS if name not in ("about_unit", "episodes")]
+    names = [name for name, _o, _k in _BLOCKS
+             if name not in ("about_unit", "episodes", "social_items")]
     positions = [out.index(f"<{name} ") for name in names]
     assert positions == sorted(positions), out
     assert 'name="Ada"' in out and "阿Ada" in out

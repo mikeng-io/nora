@@ -481,3 +481,33 @@ def bytes_due(
     if now >= expires_at + timedelta(days=keep_days) and perceived and embedded:
         return "embedded"
     return None
+
+
+# -- what Character reads (§6) ---------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Reading:
+    """What perception made of one medium of an item: the three comprehension
+    fields `media_objects` holds for its bytes, empty when nothing read them."""
+
+    title: str = ""
+    description: str = ""
+    content: str = ""
+
+
+@dataclass(frozen=True)
+class PersonSocialItem:
+    """One of a person's readable social items as their Character session is
+    handed it (`SqlSocialStreamStore.person_items`): what it is, when it was
+    posted, their caption and what perception made of its media. Never its
+    `location`, `alt_text`, tagged or mentioned handles."""
+
+    network: str
+    item_id: str
+    kind: str
+    collab: bool
+    taken_at: datetime
+    origin: Origin
+    caption: str | None
+    readings: tuple[Reading, ...] = ()

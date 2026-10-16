@@ -103,8 +103,9 @@ class EntitySessions:
                 body: The account, in prose. No headings, no bullet points,
                     no dates.
                 citations: What the account rests on, at least one, as
-                    strings: the `n` of a message you were shown, or a
-                    `response:<n>` episode you were shown. Nothing else.
+                    strings: the `n` of a message you were shown, the `cite`
+                    of a social item you were shown, or a `response:<n>`
+                    episode you were shown. Nothing else.
             """
             return self._revise(key, entity, body, tuple(str(c) for c in citations))
 
