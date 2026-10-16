@@ -68,3 +68,13 @@ describe("every status the backend sends", () => {
     expect(pastPlans(ended, NOW).map((p) => p.id).sort()).toEqual(["evicted", "happened", "lapsed"]);
   });
 });
+
+describe("a calendar export says what the plan is", () => {
+  it("is cancelled for a plan that is off and tentative for one not yet settled", () => {
+    const at = "2026-10-02T19:00:00+08:00";
+    expect(planToIcs(plan("c", at, "cancelled"), NOW)).toContain("STATUS:CANCELLED");
+    expect(planToIcs(plan("l", at, "lapsed"), NOW)).toContain("STATUS:CANCELLED");
+    expect(planToIcs(plan("s", at, "staged"), NOW)).toContain("STATUS:TENTATIVE");
+    expect(planToIcs(plan("h", at, "happened"), NOW)).toContain("STATUS:CONFIRMED");
+  });
+});

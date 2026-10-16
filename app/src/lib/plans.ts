@@ -71,7 +71,9 @@ export function planToIcs(p: Plan, now = Date.now()): string | null {
     `SUMMARY:${icsEscape(p.title)}`,
     where ? `LOCATION:${icsEscape(where)}` : null,
     mapsUrl(p) ? `URL:${mapsUrl(p)}` : null,
-    p.status === "confirmed" || p.status === "happened" ? "STATUS:CONFIRMED" : "STATUS:TENTATIVE",
+    p.status === "confirmed" || p.status === "happened"
+      ? "STATUS:CONFIRMED"
+      : p.status === "proposed" || p.status === "staged" ? "STATUS:TENTATIVE" : "STATUS:CANCELLED",
     "END:VEVENT",
     "END:VCALENDAR",
   ].filter(Boolean);

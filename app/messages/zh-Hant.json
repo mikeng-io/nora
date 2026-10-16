@@ -200,6 +200,7 @@
       "empty": "未有約。喺群組叫 Nora 幫手搞一個。",
       "details": "細節未定",
       "proposed": "提議中",
+      "staged": "未提出",
       "reminders": "各個房有 {count} 個提醒等緊，下一個{when}"
     },
     "playing": {
