@@ -199,3 +199,23 @@ async def test_a_subjects_signal_send_lands_as_production_s_does(spec) -> None:
         assert result.ok
     finally:
         await subject.deps.background.cancel_all()
+
+
+@pytest.mark.asyncio
+async def test_a_subject_never_holds_the_embedding_worker(spec) -> None:
+    """`[memory_index] embed` stays as deployed, because it also switches the
+    graph surface's query embedding on; the worker, its write half, is never
+    the subject's, so no sandbox writes a vector through the live embedder."""
+    from nora.app.composition import build_dependencies
+    from nora.subject.obtain import build_config
+
+    on = dataclasses.replace(
+        spec, overrides={"memory_index.enabled": True, "memory_index.embed": True},
+    )
+    subject = await obtain(on)
+    assert subject.cfg.memory_index.embed is True
+    assert subject.deps.memory_embed is None
+    # Positive control: the same config composed as production does holds one.
+    cfg = build_config(dataclasses.replace(on, workdir=on.workdir / "control"))
+    deps = await build_dependencies(cfg)
+    assert deps.memory_embed is not None

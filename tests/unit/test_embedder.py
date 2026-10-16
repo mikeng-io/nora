@@ -445,3 +445,54 @@ def test_the_embedder_service_runs_the_bake_offs_flags_with_a_pinned_marker():
     assert str(embedder_module.UBATCH) == flags["-ub"]
     assert "LLAMA_MEDIA_MARKER=<__media__>" in service["environment"]
     assert compose["networks"]["embedder"]["internal"] is True
+
+
+def test_the_embedder_is_published_on_loopback_only_for_the_eval_suite():
+    """The eval suite on the host reaches the embedder at
+    `nora.subject.EMBEDDER_FROM_HOST`: a loopback publish, never one off the
+    box, carried by a network only the embedder joins (docker publishes no
+    port for a container on internal networks only), with no masquerade so
+    the model server gets no NAT route out. nora still reaches it on the
+    internal network by name, unchanged."""
+    from urllib.parse import urlsplit
+
+    import yaml
+
+    from nora.subject import EMBEDDER_FROM_HOST
+
+    compose = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(encoding="utf-8"),
+    )
+    service = compose["services"]["embedder"]
+    url = urlsplit(EMBEDDER_FROM_HOST)
+    assert service["ports"] == [f"127.0.0.1:{url.port}:8080"]
+    assert url.hostname == "127.0.0.1"
+    assert service["networks"] == ["embedder", "embedder_host"]
+    joined = sorted(
+        name for name, svc in compose["services"].items()
+        if "embedder_host" in (svc.get("networks") or [])
+    )
+    assert joined == ["embedder"]
+    host_net = compose["networks"]["embedder_host"]
+    assert host_net["driver_opts"]["com.docker.network.bridge.enable_ip_masquerade"] == "false"
+    assert "embedder" in compose["services"]["nora"]["networks"]
+    assert "embedder_host" not in compose["services"]["nora"]["networks"]
+    # And no service publishes beyond loopback: the same check for every
+    # `ports:` the file declares, so a stray `8092:8080` is caught too.
+    for name, svc in compose["services"].items():
+        for port in svc.get("ports") or []:
+            assert str(port).startswith("127.0.0.1:"), (name, port)
+
+
+async def test_the_graph_surface_run_checks_the_served_file_before_any_draw(llama):
+    """`python -m evals` on the graph surface asks /props first: the served
+    file passes, another file or no answer refuses the run."""
+    from nora.subject import GraphIndexRefusedError, check_served_model
+
+    fake, url = llama
+    assert await check_served_model(url, "model-a.gguf@abc") == "model-a.gguf"
+    fake.model_path = "/models/model-b.gguf"
+    with pytest.raises(GraphIndexRefusedError, match=r"serves 'model-b\.gguf'"):
+        await check_served_model(url, "model-a.gguf@abc")
+    with pytest.raises(GraphIndexRefusedError, match="did not answer"):
+        await check_served_model("http://127.0.0.1:9", "model-a.gguf@abc")

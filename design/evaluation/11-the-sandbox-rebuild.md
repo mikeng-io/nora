@@ -45,6 +45,30 @@ measured.** See §1.1.
 > divergence is declared both ways: a member silent for 90 days is missing (a
 > subset, which lineage already treats as safe), and one who spoke and has since
 > left is present.
+>
+> **And on the graph surface its memory index is built (2026-10-16, design
+> unified-memory 65 V3).** The index (`memory_node`, `memory_edge`, the
+> queue, the state row) is DERIVED, so it is never restored
+> (`nora.infra.sql.history.NOT_RESTORED`), and the blank template holds none:
+> every graph-surface sandbox, on either assembly, read an empty index, and
+> every `memory_search` answered `partial` with nothing (PR #32's
+> `tool_selection` run). Now, when the arm is the graph surface
+> (`--memory-index`, or the deployment's own flag), each sandbox, after it
+> is seeded and before the drive, is projected by production's `rebuild`,
+> then given the source's vectors where a node's embedded input is identical
+> (`nora.subject.sandbox_index`, `memory_index.adopt_worker_state`): a vector
+> is a function of the model and its input alone, so the copy equals
+> re-embedding, and a node edited after the instant gets none. The worker
+> is never the subject's (`obtain` composes none), so no sandbox writes a
+> vector through the live embedder; the subject queries it at its loopback
+> publish (`EMBEDDER_FROM_HOST`, compose's `embedder_host`). Fail-closed: the
+> run is refused before any draw when the embedder does not serve the
+> configured file or the source holds under 0.95 of its owed vectors
+> (a clone older than 0106, or a backfill still running), and a draw is
+> refused (ERROR) when its sandbox holds under 0.95 of the source's coverage.
+> Each sandbox prints its coverage. A node the copy misses stays owed, so a
+> search over its scope answers `partial`, as production does for a node its
+> worker has not reached.
 
 ## 1. What this replaces, and why twice was not enough
 

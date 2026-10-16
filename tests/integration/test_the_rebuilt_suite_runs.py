@@ -177,3 +177,59 @@ async def test_a_proactive_case_never_grades_on_a_wiring_refusal(
         "produces an empty result, so an ungraded ERROR is the only reading "
         "that cannot lie."
     )
+
+
+@pytest.mark.asyncio
+async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
+    pg_url, pg_template, tmp_path, monkeypatch, capsys,
+) -> None:
+    """The graph arm builds each sandbox's index and adopts the source's
+    vectors through the SNAPSHOT path, which renumbers every row: matched on
+    the embedded input, the sandbox holds every vector it owes. A source
+    holding none refuses the draw: ERROR, never a lexical run graded."""
+    from evals.scenarios import MEMORY_INDEX_OVERRIDES
+    from nora.config import MemoryIndexConfig
+    from nora.infra.embedder import fingerprint
+    from nora.infra.sql import create_sql_engine, memory_index
+    from nora.subject import GraphIndexRefusedError
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    source = await seed_source(pg_url, tmp_path, _HISTORY, template=pg_template)
+    case = Case(name="probe/graph", input="anyway what time is lunch",
+                metadata={"expect": "silence", "snapshot": source.snapshot})
+    spec = Spec(
+        source_url=source.url, entry="tag", overrides={**_NO_PROVIDER, **MEMORY_INDEX_OVERRIDES},
+        policy=source.policy, identity=source.identity, template=source.template,
+        memory_surface="graph",
+    )
+    # `_drive` raises; `nora_task` turns it into the draw's ERROR.
+    with pytest.raises(GraphIndexRefusedError, match="no vector of"):
+        await _drive(case, spec)
+
+    engine = create_sql_engine(source.url)
+    try:
+        await memory_index.rebuild(engine)
+        async with engine.begin() as conn:
+            items = await memory_index.embed_pick(conn, limit=100, now_ms=0)
+            assert items  # positive control: the source owes vectors
+            for n, item in enumerate(items):
+                vec = [0.0] * 2048
+                vec[n] = 1.0
+                await memory_index.embed_store(
+                    conn, item, vector=vec, now_ms=1, by_bytes=False,
+                    model=fingerprint(MemoryIndexConfig().embedder_model),
+                )
+    finally:
+        await engine.dispose()
+    capsys.readouterr()
+    result = await _drive(case, spec)
+    data = EvaluationData(input="", actual_output=result["output"],
+                          actual_environment_state=result["environment_state"])
+    assert state_of(data, NORA_ERROR) is None or "memory index" not in str(
+        state_of(data, NORA_ERROR))
+    line = capsys.readouterr().out
+    assert "probe/graph: memory index:" in line and "0 owed" in line, line
+    assert "coverage 1.000" in line, line
+    # Not vacuous: nothing owed and nothing held would also read 1.000.
+    held = int(line.split("memory index: ")[1].split(" with a vector")[0])
+    assert held >= len(_HISTORY.transcript), line

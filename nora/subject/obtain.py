@@ -13,6 +13,7 @@ rather than added because a caller needed it.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import os
 import shutil
 import uuid
@@ -627,6 +628,16 @@ async def obtain(spec: SubjectSpec) -> Subject:
             deps = await build_dependencies(cfg, clock=clock)
     finally:
         os.environ.pop(var, None)
+    # NO EMBEDDING WORKER, whatever `[memory_index] embed` says. The flag also
+    # switches the graph surface's query embedding on (`composition.py`), so
+    # it stays as deployed; the worker is the write half, which only
+    # `nora/__main__.py`'s drain loop runs, and a subject must never hold one:
+    # with the embedder reachable from the host
+    # (`sandbox_index.EMBEDDER_FROM_HOST`) it would write vectors into the
+    # sandbox from the live embedder and compete with production's backfill
+    # for it. A sandbox's vectors are adopted from the source instead
+    # (`nora.subject.sandbox_index`).
+    deps = dataclasses.replace(deps, memory_embed=None)
     # The variable is GONE, so the config must not go on naming it: anything
     # that re-read `os.environ[cfg.store.database_url_env]` would get a
     # KeyError. `Subject.database_url` is the field to read, and this makes the

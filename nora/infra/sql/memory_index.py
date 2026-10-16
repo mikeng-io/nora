@@ -105,6 +105,7 @@ from datetime import datetime
 from typing import Any, NamedTuple
 
 import sqlalchemy as sa
+from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -117,6 +118,7 @@ from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_
 from nora.infra.sql.schema import (
     CULTURE,
     CULTURE_REVISION,
+    EMBEDDING_DIMENSIONS,
     EVENT_REVISION,
     EVENT_RSVPS,
     EVENTS,
@@ -149,6 +151,7 @@ __all__ = [
     "IndexStatus",
     "RebuildRefusedError",
     "RebuildReport",
+    "adopt_worker_state",
     "clear_embeddings",
     "drain_queue",
     "drop",
@@ -1802,3 +1805,105 @@ async def embed_counts(
         ).where(*_embeddable(), *where)
     )).one()
     return EmbedCounts(int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]))
+
+
+# --- an eval sandbox's vectors ----------------------------------------------
+
+
+class _Source(NamedTuple):
+    id: int
+    kind: str
+    text: str
+    sha256: str | None
+    embed_input: str
+
+
+def _input_key(kind: str, text: str, sha256: str | None) -> str:
+    """What a worker result is made from, as far as one key says: an
+    attachment's file, any other node's text. Equal keys are the identity
+    `adopt_worker_state` copies on."""
+    return (sha256 or "") if kind == "media" else text
+
+
+def _adoptable(node: Any, source: _Source) -> bool:
+    """Of a source row with `node`'s key: whether its result was made from
+    `node`'s input. An attachment's vector made from its bytes, or from a
+    reading equal to `node`'s (the projector's keep rule, `_input_changed`);
+    any other node's from its text, never an attachment's."""
+    if node.kind == "media":
+        return source.kind == "media" and (
+            source.embed_input == "bytes" or node.text == source.text
+        )
+    return source.kind != "media" and source.embed_input == "text"
+
+
+async def adopt_worker_state(
+    source: AsyncConnection, target: AsyncConnection, *, model: str, batch: int = 500,
+) -> None:
+    """Give `target`'s unembedded nodes the embedding worker's result from
+    `source` wherever the input it was made from is IDENTICAL: a vector of
+    `model`, or a failure the worker will not retry (given up, or `empty`).
+
+    For an eval sandbox (`nora.subject.sandbox_index`): `target` is a sandbox
+    whose index `rebuild` has just projected from rows as of an instant,
+    `source` the deployment's clone, read only. The worker never runs there.
+
+    **Why this is as-of safe.** A vector is a pure function of the model and
+    the input it was embedded from (`nora.infra.sql.memory_embed`: the text
+    as a document, or an image's bytes), whatever node, kind or instant it
+    belongs to. Copying one onto a node whose input is identical is therefore
+    the vector re-embedding that node would produce, never a later state of
+    it. The identity is the projector's own keep rule (`_input_changed`): the
+    bytes the `sha256` names for a vector made from them, the text for any
+    other. A node whose text changed after the instant (an edit, a later
+    reading on an image embedded from its reading) differs from the source's
+    and gets nothing: it stays unembedded and is counted so. An attachment
+    adopts only from the source's node for the same bytes, so a reading's
+    vector, or an `empty` failure, never moves to another file that shares
+    its text. Matched on the input alone, never on `(kind, source_id)`: the
+    snapshot path renumbers every row it writes, and an id says nothing about
+    what was embedded."""
+    node = MEMORY_NODE.c
+    held = sa.and_(node.embedding.isnot(None), node.embedding_model == model)
+    terminal = sa.and_(
+        node.embedding.is_(None),
+        sa.or_(node.embed_attempts >= EMBED_MAX_ATTEMPTS, node.embed_error == "empty"),
+    )
+    by_input: dict[str, list[_Source]] = {}
+    for r in await source.execute(
+        sa.select(node.id, node.kind, node.text, node.sha256, node.embed_input)
+        .where(sa.or_(held, terminal), node.embed_input.isnot(None))
+        # A vector before a failure, then the oldest: one choice per input.
+        .order_by(sa.case((held, 0), else_=1), node.id)
+    ):
+        row = _Source(*r)
+        by_input.setdefault(_input_key(row.kind, row.text, row.sha256), []).append(row)
+    adopted: dict[int, list[int]] = {}
+    for t in await target.execute(
+        sa.select(node.id, node.kind, node.text, node.sha256).where(
+            node.embedding.is_(None), node.embed_attempts == 0, *_embeddable(),
+        )
+    ):
+        candidates = by_input.get(_input_key(t.kind, t.text, t.sha256), ())
+        match = next((r for r in candidates if _adoptable(t, r)), None)
+        if match is not None:
+            adopted.setdefault(match.id, []).append(t.id)
+    ids = list(adopted)
+    for i in range(0, len(ids), batch):
+        for r in await source.execute(
+            sa.select(
+                node.id, node.embed_input, sa.cast(node.embedding, sa.Text).label("vector"),
+                node.embedding_model, node.embedded_at, node.embed_attempts, node.embed_error,
+            ).where(node.id.in_(ids[i:i + batch]))
+        ):
+            await target.execute(
+                sa.update(MEMORY_NODE).where(node.id.in_(adopted[r.id])).values(
+                    embedding=(
+                        None if r.vector is None
+                        else sa.cast(sa.literal(r.vector, sa.Text), HALFVEC(EMBEDDING_DIMENSIONS))
+                    ),
+                    embedding_model=r.embedding_model, embedded_at=r.embedded_at,
+                    embed_attempts=r.embed_attempts, embed_error=r.embed_error,
+                    embed_input=r.embed_input,
+                )
+            )
