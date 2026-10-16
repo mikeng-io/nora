@@ -26,6 +26,13 @@ whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `social_item_state` row (gone or hidden). The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
 
+**The memory index follows every write** (design/cognition-loop/22 §9):
+`insert_item`, `record_state` and `record_perception` each project the item
+(`nora.infra.sql.memory_index.project`, kind `social`) inside their own
+transaction, so a new item is searchable, a gone or hidden one stops being,
+and a perception landing re-reads its media's readings. The opt-out is not
+projected: the index's read leaves those items out.
+
 There is ONE implementation and therefore no port and no fake, for the reason
 `nora.infra.sql.otp` gives: every test points this class at a real throwaway
 Postgres.
@@ -52,7 +59,9 @@ from nora.domain.social_stream import (
     PollStage,
     SocialItem,
 )
+from nora.infra.sql import memory_index
 from nora.infra.sql.blob_refs import held_elsewhere
+from nora.infra.sql.memory_index import social_source_id
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
     SOCIAL_ITEM,
@@ -155,9 +164,13 @@ class ProbeTimes:
 class SqlSocialStreamStore:
     """The stream's five tables, as seventeen verbs."""
 
-    def __init__(self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
+        metrics: Any = None,
+    ) -> None:
         self._engine = engine
         self._opted_out = opted_out
+        self._metrics = metrics
 
     def _readable(self) -> list[Any]:
         """An item a reader may see: its person has not opted out, and it has
@@ -192,6 +205,11 @@ class SqlSocialStreamStore:
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
+            if result.rowcount:
+                await memory_index.project(
+                    conn, "social", social_source_id(item.network, item.item_id),
+                    metrics=self._metrics,
+                )
         return bool(result.rowcount)
 
     async def record_poll(
@@ -220,6 +238,9 @@ class SqlSocialStreamStore:
             await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
                 network=network, item_id=item_id, state=state, reason=reason,
             ))
+            await memory_index.project(
+                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
+            )
 
     async def read_marker(self, *, network: str, person: str) -> int | None:
         """The probe value that led to this person's last completed story read,
@@ -395,6 +416,9 @@ class SqlSocialStreamStore:
                 network=network, item_id=item_id, person=person, units=list(units),
                 origin=origin, outcome=outcome, calls=calls, at=at, reason=reason,
             ))
+            await memory_index.project(
+                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
+            )
 
     async def settled_reads(
         self, *, require_perceived: bool, units: Mapping[str, tuple[str, ...]],

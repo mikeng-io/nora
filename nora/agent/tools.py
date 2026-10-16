@@ -6074,6 +6074,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 target=target, now_ms=int(now.timestamp() * 1000), people=view.people,
                 kinds=kinds, since_ms=since_ms, until_ms=until_ms,
                 own_room=dream_adaptor in ROOM_ONLY_MEMORY_ADAPTORS,
+                # `social = false` (identity.toml): their social items are
+                # out of every read, whenever recorded (22 §2). Only a listed
+                # person's can be in scope at all.
+                social_off=frozenset(p for p in listed or () if persons.social_off(p)),
             )
             if found.status == "unavailable":
                 _record_room(metrics, "memory_search", "unavailable", reason="index")

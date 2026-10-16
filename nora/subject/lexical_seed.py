@@ -74,6 +74,7 @@ ROOM = room_key(_PLATFORM, _CONVERSATION)
 _SCOPE = MemoryScope(
     units=(), rooms=(ROOM,), listed_here=frozenset(), people_here=frozenset(),
     exclude_strict=False, presence_persons=frozenset(),
+    social_off=frozenset(),
 )
 
 #: A photo: its bytes' sha256 and the reading's three fields.

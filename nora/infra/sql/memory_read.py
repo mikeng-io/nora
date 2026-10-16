@@ -12,11 +12,17 @@ in Python, which the contract suite holds to the same answers):
     n.state = 'live'
     AND n.kind NOT IN (hubs)
     AND (n.unit = ANY($units) OR n.origin_room = ANY($rooms)
-         OR (n.unit IS NULL AND n.origin_room IS NULL AND n.kind IN ('stay', 'trip')))
+         OR (n.unit IS NULL AND n.origin_room IS NULL
+             AND n.kind IN ('stay', 'trip', 'social', 'social_media')))
     AND n.persons <@ $listed_here
     AND (cardinality(n.exclude_persons) = 0
          OR (NOT $exclude_strict AND NOT n.exclude_persons && $people_here))
     AND (n.kind NOT IN ('outing', 'stay', 'trip') OR n.persons <@ $presence_persons)
+    AND (n.kind NOT IN ('social', 'social_media') OR NOT n.persons && $social_off)
+
+The last line is a person's `social = false` (`MemoryScope.social_off`), read
+per read: their social items are out of every read, including those recorded
+before the switch, and the projector never needs to know.
 
 **The question's narrowing rides on the same filter** (`MemoryScope.only`,
 `memory_search`'s `kinds`, `since`, `until` and `person`; `_narrowed`, and
@@ -94,6 +100,7 @@ from nora.domain.memory_index import (
     HUB_KINDS,
     PERSON_RELATIONS,
     PERSON_SCOPED_KINDS,
+    SOCIAL_KINDS,
     ExactTerm,
     IndexedNode,
     IndexState,
@@ -196,6 +203,10 @@ def _in_scope(n: Any, scope: MemoryScope) -> sa.ColumnElement[bool]:
         sa.or_(
             n.c.kind.not_in(EPISODE_KINDS),
             n.c.persons.contained_by(_array(scope.presence_persons)),
+        ),
+        sa.or_(
+            n.c.kind.not_in(SOCIAL_KINDS),
+            ~n.c.persons.overlap(_array(scope.social_off)),
         ),
         *_narrowed(n, scope),
     )

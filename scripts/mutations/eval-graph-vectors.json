@@ -2,15 +2,15 @@
  {
   "name": "identity: a text adopts only a vector made from the same text",
   "file": "nora/infra/sql/memory_index.py",
-  "old": "return (sha256 or \"\") if kind == \"media\" else text",
-  "new": "return (sha256 or \"\") if kind == \"media\" else kind",
+  "old": "return (sha256 or \"\") if kind in ATTACHMENT_KINDS else text",
+  "new": "return (sha256 or \"\") if kind in ATTACHMENT_KINDS else kind",
   "target": "tests/integration/test_eval_sandbox_vectors.py::test_an_identical_text_adopts_its_vector_and_a_changed_one_does_not"
  },
  {
   "name": "identity: an attachment adopts only from the same file",
   "file": "nora/infra/sql/memory_index.py",
-  "old": "return (sha256 or \"\") if kind == \"media\" else text",
-  "new": "return \"\" if kind == \"media\" else text",
+  "old": "return (sha256 or \"\") if kind in ATTACHMENT_KINDS else text",
+  "new": "return \"\" if kind in ATTACHMENT_KINDS else text",
   "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_failure_the_worker_will_not_retry_is_adopted_for_the_same_file"
  },
  {

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, NamedTuple, Protocol, get_args
 
 __all__ = [
+    "ATTACHMENT_KINDS",
     "EMBEDDED_KINDS",
     "EMBED_INPUTS",
     "EMBED_OUTCOMES",
@@ -30,6 +31,7 @@ __all__ = [
     "PROJECTION_OUTCOMES",
     "RELATIONS",
     "SEARCH_STATUSES",
+    "SOCIAL_KINDS",
     "EmbedInput",
     "EmbedOutcome",
     "ExactTerm",
@@ -52,13 +54,22 @@ __all__ = [
     "in_scope",
     "is_latin",
     "narrowed",
+    "nothing_to_embed",
+    "social_label",
 ]
 
-#: Every node kind, so a new projector needs no CHECK migration. `media` is
-#: one attachment, `(message, sha256)`, never the bytes.
+#: Every node kind; a new one is a CHECK migration. `media` is
+#: one attachment, `(message, sha256)`, never the bytes. `social` is one
+#: social item (a story frame, a post, a reel), `(network, item_id)`, and
+#: `social_media` one medium of it, `(item, sha256)`: a carousel is several.
+#: A medium of a social item is its own kind, not a `media`, because
+#: everything about an attachment is read off its message (its room, its type
+#: in `messages.media_json`, its drop with the message) and a social item has
+#: no message and no room.
 NodeKind = Literal[
     "message", "media", "note", "memo", "event", "lesson", "character",
     "outing", "stay", "trip", "person", "room", "unit", "nora", "place",
+    "social", "social_media",
 ]
 NODE_KINDS: tuple[str, ...] = get_args(NodeKind)
 
@@ -85,7 +96,18 @@ NODE_STATES: tuple[str, ...] = ("live", "retired", "superseded")
 #: feedback, also lexical only there, have no node kind yet.
 EMBEDDED_KINDS: tuple[str, ...] = (
     "message", "media", "note", "memo", "event", "lesson", "character",
+    "social", "social_media",
 )
+
+#: The kinds that are one medium, keyed by the `sha256` of its bytes: an
+#: attachment and a social item's medium. An image of either is embedded
+#: from its bytes (`embeds_bytes`), and a reading of those bytes is its text.
+ATTACHMENT_KINDS: tuple[str, ...] = ("media", "social_media")
+
+#: The social stream's kinds (design/cognition-loop/22). A person's
+#: `social = false` (`identity.toml`) keeps every one of theirs out of every
+#: read (`MemoryScope.social_off`), including those recorded before the switch.
+SOCIAL_KINDS: tuple[str, ...] = ("social", "social_media")
 
 #: `nora_memory_embed_total`'s `outcome`, one per node the embedding worker
 #: tried. `ok` stored a vector; `unavailable` the embedder (or the
@@ -140,21 +162,23 @@ EPISODE_KINDS: tuple[str, ...] = ("outing", "stay", "trip")
 
 #: The person-only kinds: no unit and no room, readable where a room lists
 #: their person. Any other node with neither a unit nor a room is
-#: never in scope.
-PERSON_SCOPED_KINDS: tuple[str, ...] = ("stay", "trip")
+#: never in scope. A social item and its media are their author's: no unit
+#: column, so which units may read one is the rooms that list the author.
+PERSON_SCOPED_KINDS: tuple[str, ...] = ("stay", "trip", "social", "social_media")
 
 
 #: `memory_search`'s `kinds` (the tool's `Literal`): five plain categories a
 #: model names reliably, each the node kinds it covers (`KINDS_BY_CATEGORY`).
 #: Grouped by what a person would ask for, not by store: `notes` is everything
 #: she wrote down herself (a note, a memo, a lesson, a Character account),
-#: `places` is where people went (an outing, a stay, a trip). Hubs are never
-#: a category: they are never returned.
+#: `places` is where people went (an outing, a stay, a trip), and `media`
+#: holds a member's social items with the pictures and videos shared in
+#: rooms. Hubs are never a category: they are never returned.
 MemoryKind = Literal["messages", "media", "notes", "events", "places"]
 MEMORY_KINDS: tuple[str, ...] = get_args(MemoryKind)
 KINDS_BY_CATEGORY: Mapping[str, tuple[str, ...]] = {
     "messages": ("message",),
-    "media": ("media",),
+    "media": ("media", "social", "social_media"),
     "notes": ("note", "memo", "lesson", "character"),
     "events": ("event",),
     "places": ("outing", "stay", "trip"),
@@ -214,6 +238,10 @@ class MemoryScope:
       listed-room rule (evidence about P only from rooms that list P).
     - `only`: the question's narrowing (`MemoryFilter`), applied by every
       read beside the scope; `None` narrows nothing.
+    - `social_off`: persons whose `identity.toml` block sets `social = false`
+      (computed per read by the caller, which holds identity): a social node
+      naming any of them is never in scope, whenever it was recorded. The
+      projector stays pure; the switch is read, not written.
     """
 
     units: tuple[str, ...]
@@ -224,6 +252,9 @@ class MemoryScope:
     presence_persons: frozenset[str]
     room_persons: Mapping[str, frozenset[str]] = field(default_factory=dict)
     only: MemoryFilter | None = None
+    # Required, keyword-only and with no default: a scope that forgot the
+    # opt-outs would read them all (fail open), so every builder must say.
+    social_off: frozenset[str] = field(kw_only=True)
 
     def rooms_listing(self, person: str) -> tuple[str, ...]:
         """The scope's rooms that list `person`, for the listed-room rule."""
@@ -352,6 +383,32 @@ def exact_pattern(term: str) -> str:
     return f"(?<![{_WORDISH}]){re.escape(term)}(?![{_WORDISH}])"
 
 
+#: How a social item's kind is said (instagram-adoption/06: «a story must be
+#: SAID to be a story»).
+_SOCIAL_KIND_WORDS: Mapping[str, str] = {
+    "story_frame": "story", "post": "post", "reel": "reel", "thread_post": "post",
+}
+
+
+def nothing_to_embed(kind: str, text: str) -> bool:
+    """Whether a node's text holds nothing worth a vector: no text, or a
+    social item's label line alone (no caption, no reading yet). Every such
+    item would get the same few-word vector, crowding dense search; it is
+    recorded `empty` instead, found lexically by its label, and embedded once
+    a reading lands and changes its text."""
+    if not text.strip():
+        return True
+    return kind == "social" and not text.partition("\n")[2].strip()
+
+
+def social_label(network: str, kind: str, *, collab: bool = False) -> str:
+    """What a social item is, in a few words: `Instagram story`, `Instagram
+    post, co-authored`. The first line of its node's text, so a search on
+    «story» finds one and the answer says what it is."""
+    label = f"{network.capitalize()} {_SOCIAL_KIND_WORDS.get(kind, kind.replace('_', ' '))}"
+    return f"{label}, co-authored" if collab else label
+
+
 def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
     """The scope predicate for a NON-hub node, in Python: the fake index's,
     and the statement of what `SqlMemoryIndex` writes in SQL (the contract
@@ -374,6 +431,8 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
     if node.exclude_persons and (
         scope.exclude_strict or set(node.exclude_persons) & scope.people_here
     ):
+        return False
+    if node.kind in SOCIAL_KINDS and set(node.persons) & scope.social_off:
         return False
     return not (
         node.kind in EPISODE_KINDS and not set(node.persons) <= scope.presence_persons

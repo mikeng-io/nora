@@ -444,3 +444,54 @@ async def test_every_other_occasion_reads_the_unit_under_the_listed_room_rule(
     assert result["status"] == "ok", result
     assert sorted(i["text"] for i in result["results"]) == [
         "the pitch is booked here", "the pitch line from the other room"]
+
+
+# ---- the social stream's items (design/cognition-loop/22 §9) ------------------
+
+
+def _social_index() -> FakeMemoryIndex:
+    """One story by each listed member, and one by a person no room here
+    lists; and a message, which `kinds=media` leaves out."""
+    return FakeMemoryIndex(
+        [
+            IndexedNode("social", "instagram:1", "Instagram story\nlantern picnic", _T,
+                        persons=("miles_novak",)),
+            IndexedNode("social", "instagram:2", "Instagram post\nlantern picnic", _T,
+                        persons=("tyler_cortez",)),
+            IndexedNode("social", "instagram:3", "Instagram reel\nlantern picnic", _T,
+                        persons=("elsewhere_liu",)),
+            IndexedNode("message", "60", "lantern picnic", _T, origin_room=_ROOM),
+        ],
+        embed_model="m",
+    )
+
+
+async def test_on_kinds_media_returns_social_items_saying_what_and_how_old(
+    persons: Any,
+) -> None:
+    tool = _tool(persons, FakeMemoryStore(), _dense(_social_index(), Metrics()))
+    result = await _call(tool, query="lantern picnic", kinds=["media"])
+    assert result["status"] == "ok"
+    shown = {(i["kind"], i["text"]) for i in result["results"]}
+    assert shown == {
+        ("Instagram story", "lantern picnic"), ("Instagram post", "lantern picnic"),
+    }, "a person this room does not list is never read, and kinds=media has no message"
+    assert all(i.get("age") for i in result["results"])
+
+
+async def test_on_social_off_leaves_their_items_out_whenever_recorded(
+    tmp_path: Any,
+) -> None:
+    """`social = false` in identity.toml, set after the item was indexed:
+    the read leaves it out; the other member's stays."""
+    path = tmp_path / "identity.toml"
+    marked = IDENTITY.replace(
+        'aliases = ["阿豹", "Tyler"]', 'aliases = ["阿豹", "Tyler"]\nsocial = false',
+    )
+    assert marked != IDENTITY
+    path.write_text(marked)
+    off = load_persons(path)
+    assert off.social_off("tyler_cortez")
+    tool = _tool(off, FakeMemoryStore(), _dense(_social_index(), Metrics()))
+    result = await _call(tool, query="lantern picnic", kinds=["media"])
+    assert [i["kind"] for i in result["results"]] == ["Instagram story"]
