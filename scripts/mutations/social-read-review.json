@@ -1,0 +1,128 @@
+[
+ {
+  "name": "1 social_read: a name matches the roster name exactly, not by find_by_name",
+  "file": "nora/agent/tools.py",
+  "old": "        matches = find_by_name(listed, str(person)) or tuple(\n",
+  "new": "        matches = tuple(r for r in listed if r.name == str(person).strip()) or tuple(\n",
+  "target": "tests/infra/test_social_read.py::test_a_name_resolves_by_the_one_matching_rule_aliases_included"
+ },
+ {
+  "name": "2 agenda: a social stimulus binds the home room whatever room it names",
+  "file": "nora/domain/cognition_session.py",
+  "old": "_ROOM_BOUND_KINDS: frozenset[str] = frozenset({\"message\", \"social\"})",
+  "new": "_ROOM_BOUND_KINDS: frozenset[str] = frozenset({\"message\"})",
+  "target": "tests/unit/test_cognition_session.py::test_a_social_read_binds_the_room_it_names_and_home_when_it_names_none"
+ },
+ {
+  "name": "2 perception: a social stimulus names no room",
+  "file": "nora/app/social_perception.py",
+  "old": "                        platform=platform, conversation_id=conversation_id,\n",
+  "new": "",
+  "target": "tests/integration/test_social_perception.py::test_each_units_stimulus_names_the_room_there_that_lists_the_author"
+ },
+ {
+  "name": "2 composition: the home room is not preferred over another listing room",
+  "file": "nora/app/composition.py",
+  "old": "    for conv in sorted(listing, key=lambda c: homes.get(c.unit) is not c):\n",
+  "new": "    for conv in listing:\n",
+  "target": "tests/unit/test_social_store_wiring.py::test_a_social_stimulus_binds_home_when_home_lists_them_else_a_room_that_does"
+ },
+ {
+  "name": "2 composition: perception is not handed the rooms",
+  "file": "nora/app/composition.py",
+  "old": "            units=social_person_units(allowlist), rooms=social_person_rooms(allowlist),\n",
+  "new": "            units=social_person_units(allowlist),\n",
+  "target": "tests/unit/test_social_store_wiring.py::test_perception_is_built_with_the_rooms"
+ },
+ {
+  "name": "3 eval: the story case names no person",
+  "file": "evals/corpora/tool_selection_cognition.yaml",
+  "old": "    input: \"Miles posted 2 story frames\"\n",
+  "new": "    input: \"a member of room A posted 2 story frames\"\n",
+  "target": "tests/unit/test_tool_selection_cognition_corpus.py::test_no_real_name_or_quoted_message_appears_in_any_case_input"
+ },
+ {
+  "name": "4 composition: the reader store drops opted_out",
+  "file": "nora/app/composition.py",
+  "old": "    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)\n",
+  "new": "    return SqlSocialStreamStore(engine, metrics=metrics)\n",
+  "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/infra/test_social_read.py::test_an_opted_out_person_stays_out_under_a_retired_id tests/infra/test_social_read.py::test_a_person_who_opted_out_is_never_read_even_where_they_are_listed"
+ },
+ {
+  "name": "4 composition: the opt-out leaves out the current id only",
+  "file": "nora/app/composition.py",
+  "old": "    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)\n",
+  "new": "    return SqlSocialStreamStore(engine, opted_out=frozenset(p for p in persons.by_person if persons.social_off(p)), metrics=metrics)\n",
+  "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/infra/test_social_read.py::test_an_opted_out_person_stays_out_under_a_retired_id"
+ },
+ {
+  "name": "4 composition: social_read's store is built beside the helper, without opted_out",
+  "file": "nora/app/composition.py",
+  "old": "        social_items=readable_social_store(engine, persons),\n",
+  "new": "        social_items=SqlSocialStreamStore(engine),\n",
+  "target": "tests/unit/test_social_store_wiring.py::test_only_the_helper_and_the_story_expiry_build_the_store"
+ },
+ {
+  "name": "5 store: items_of reads the first id only",
+  "file": "nora/infra/sql/social_stream.py",
+  "old": "                *self._readable(), i.c.person.in_(sorted(set(persons))),\n",
+  "new": "                *self._readable(), i.c.person == persons[0],\n",
+  "target": "tests/infra/test_social_read.py::test_items_recorded_under_a_retired_id_are_read_with_the_current_ones"
+ },
+ {
+  "name": "5 social_read: the retired ids are not passed",
+  "file": "nora/agent/tools.py",
+  "old": "        ids = tuple(dict.fromkeys((who.person_id, current, *persons.former_ids_for(current))))\n",
+  "new": "        ids = (who.person_id,)\n",
+  "target": "tests/infra/test_social_read.py::test_items_recorded_under_a_retired_id_are_read_with_the_current_ones"
+ },
+ {
+  "name": "6 render: one item's readings are not bounded",
+  "file": "nora/agent/social_read.py",
+  "old": "        readings, more_seen = _fit(\n            readings, SOCIAL_ITEM_CHARS - len(caption) - len(location),\n        )\n",
+  "new": "        more_seen = 0\n",
+  "target": "tests/infra/test_social_read.py::test_a_long_carousel_is_cut_to_the_item_bound_and_says_so"
+ },
+ {
+  "name": "6 social_read: the cut item is not noted",
+  "file": "nora/agent/tools.py",
+  "old": "        if any(\"more_seen\" in i for i in shown):\n            notes.append(_SOCIAL_ITEM_CUT)\n",
+  "new": "",
+  "target": "tests/infra/test_social_read.py::test_a_long_carousel_is_cut_to_the_item_bound_and_says_so"
+ },
+ {
+  "name": "7 social_read: namesakes offered by bare name",
+  "file": "nora/agent/tools.py",
+  "old": "                \"status\": \"ambiguous\", \"could_be\": tell_apart(matches, listed),\n",
+  "new": "                \"status\": \"ambiguous\", \"could_be\": [p.name for p in matches],\n",
+  "target": "tests/infra/test_social_read.py::test_two_people_with_one_name_are_offered_by_what_tells_them_apart"
+ },
+ {
+  "name": "7 social_read: a person id does not resolve",
+  "file": "nora/agent/tools.py",
+  "old": "        matches = find_by_name(listed, str(person)) or tuple(\n            ref for ref in listed if ref.person_id == str(person).strip()\n        )\n",
+  "new": "        matches = find_by_name(listed, str(person))\n",
+  "target": "tests/infra/test_social_read.py::test_two_people_with_one_name_are_offered_by_what_tells_them_apart"
+ },
+ {
+  "name": "7 rollup_read: namesakes offered by bare name",
+  "file": "nora/agent/tools.py",
+  "old": "                    \"status\": \"ambiguous\", \"could_be\": tell_apart(matches, view.people),\n",
+  "new": "                    \"status\": \"ambiguous\", \"could_be\": [p.name for p in matches],\n",
+  "target": "tests/unit/test_rollup_read_namesakes.py::test_namesakes_are_offered_by_what_tells_them_apart"
+ },
+ {
+  "name": "7 rollup_read: a person id does not resolve",
+  "file": "nora/agent/tools.py",
+  "old": "            matches = view.find(name) or tuple(\n                p for p in view.people if p.person_id == name\n            )\n",
+  "new": "            matches = view.find(name)\n",
+  "target": "tests/unit/test_rollup_read_namesakes.py::test_namesakes_are_offered_by_what_tells_them_apart"
+ },
+ {
+  "name": "7 tell_apart: always the person id",
+  "file": "nora/agent/room.py",
+  "old": "            (c for c in (full, *p.aliases) if c and find_by_name(among, c) == (p,)),\n",
+  "new": "            (c for c in () if c),\n",
+  "target": "tests/unit/test_rollup_read_namesakes.py::test_tell_apart_prefers_a_name_that_is_theirs_alone"
+ }
+]

@@ -79,3 +79,17 @@ def test_a_social_stimulus_binds_home_when_home_lists_them_else_a_room_that_does
         ("ada", "friends"): ("signal", "side"),
         ("ada", "family"): ("signal", "other"),
     }
+
+
+def test_perception_is_built_with_the_rooms():
+    """Without `rooms` every social stimulus binds the home room, and a
+    person listed only elsewhere in the unit is named on an agenda whose
+    room cannot read them."""
+    tree = ast.parse(inspect.getsource(composition))
+    (call,) = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        and n.func.id == "SocialPerception"
+    ]
+    rooms = next(k.value for k in call.keywords if k.arg == "rooms")
+    assert isinstance(rooms, ast.Call) and ast.unparse(rooms.func) == "social_person_rooms"
