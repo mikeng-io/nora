@@ -659,3 +659,37 @@ async def test_a_line_waiting_for_its_vector_keeps_the_lexical_floor() -> None:
              now_ms=NOW, social_off=())
     assert [(h.node.source_id, round(h.score, 2)) for h in found.hits] == [("2", 0.33)]
     assert found.status == "ok"
+
+
+async def test_a_dense_seed_still_reaches_the_outing_it_was_said_during() -> None:
+    """The cosine floor is a seed's, not a hop's: an outing has no vector,
+    and a message at a typical true hit's cosine reaches it through
+    `during` (0.5) well under `DENSE_FLOOR`."""
+    from nora.agent.memory_search import DENSE_FLOOR
+    from nora.testing.memory_index import cosine
+    said = _msg("1", "ramen at the night market")
+    outing = IndexedNode("outing", "o1", "outing", NOW, unit="u1", persons=("kit",),
+                         lineage=[["presence", "kit", None]])
+    index = FakeMemoryIndex([said, outing], [("message", "1", "during", "outing", "o1")],
+                            embed_model=M)
+    q = "where did we eat ramen at the night market with everyone last weekend"
+    near = cosine(bag_of_words(q), bag_of_words(said.text))
+    assert DENSE_FLOOR <= near and near * 0.5 < DENSE_FLOOR
+    found = await MemorySearch(index, Metrics(), embedder=FakeQueryEmbedder(), model=M).search(
+        query=q, person_id=None, target=_target(), depth="low", now_ms=NOW,
+        kinds=("outing",), social_off=())
+    assert (found.status, [h.node.source_id for h in found.hits]) == ("ok", ["o1"])
+
+
+def test_a_withheld_hit_takes_no_part_in_the_cut() -> None:
+    """Screened before the cut: it is not one of the best few, spends no
+    budget and is no baseline for the next hit's drop."""
+    from nora.agent.memory_search import MIN_RESULTS
+    # Rank is relevance times age decay, so a newer hit can rank below an
+    # older one of higher relevance. Read as a baseline, the withheld 0.95
+    # would make the 0.66 after it a cliff.
+    secret = _hit(3, 0.95, "call +85291234567")
+    hits = [_hit(0, 0.7), _hit(1, 0.69), _hit(2, 0.68), secret, _hit(4, 0.66)]
+    items, withheld = render_packet(hits, name_of=str, room_label=lambda k: "B",
+                                    now=datetime.fromtimestamp(NOW / 1000, UTC))
+    assert withheld == 1 and len(items) == 4 > MIN_RESULTS
