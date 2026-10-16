@@ -424,6 +424,8 @@ async def test_a_page_records_each_new_item_once_and_never_reads_it(world) -> No
     await poller.tick()
     assert world.source.reads("item") == []
     assert set(await world.items()) == {"p1", "p2"}
+    fetched = list(world.media.fetched)
+    assert fetched and len(fetched) == len(set(fetched)), "a repeat on the page is fetched once"
     assert await world.store.last_counts(network="instagram", person="ada") is not None
 
     world.source.probes[ADA] = probe(posts=3)
@@ -431,6 +433,8 @@ async def test_a_page_records_each_new_item_once_and_never_reads_it(world) -> No
     world.clock.at(hours=7, minutes=5)
     await world.poller().tick()
     assert set(await world.items()) == {"p1", "p2", "p3"}, "recorded ones are not recorded again"
+    again = world.media.fetched[len(fetched):]
+    assert again and not set(again) & set(fetched), "only the new item's media is fetched"
 
 
 async def test_an_unsupported_answer_is_not_spent_against_the_budget(world) -> None:
