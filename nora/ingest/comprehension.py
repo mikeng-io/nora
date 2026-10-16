@@ -41,6 +41,13 @@ under it is a model call — a describer for a photo or a clip, a summarizer for
 a voice note's transcript — which is the condition R-76 keeps a trace FOR, and
 the volume is one root per attachment. DETACHING AND DROPPING ARE TWO
 DECISIONS: the detach keeps the ingest trace short; the trace itself is kept.
+
+**`perceive` is the same read, awaited.** The social stream's perception pass
+(`nora.app.social_perception`) needs each item's answer before it raises the
+read's stimulus, so it awaits one subject through the same slot, the same
+dedupe and the same three states, and is answered the state. It feeds no
+memory: a social item belongs to no conversation, and the memory index
+projects it on its own.
 """
 
 from __future__ import annotations
@@ -88,6 +95,15 @@ COMPREHENSIBLE_TOPS = ("image", "video", "audio")
 #: queued job costs latency on a path with no reader; an unqueued one costs
 #: memory on the process serving the room.
 DEFAULT_MAX_CONCURRENT = 4
+
+
+@dataclass(frozen=True)
+class Perceived:
+    """One read's R-27 state and the reason beside it, the same pair
+    `nora_media_comprehension_total` counts (`reason` is empty for `ok`)."""
+
+    status: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -174,6 +190,29 @@ class MediaComprehension:
                 conversation_id=conversation_id, person=person, timestamp=timestamp,
             ))
 
+    async def perceive(
+        self, *, subject: Subject, platform: str, context: str = "",
+    ) -> Perceived:
+        """Read one subject now and answer its R-27 state (`ok`,
+        `nothing_found`, `unavailable`) with its reason. `context` is what the describer is
+        told it is reading, a sentence of system facts. Never raises. Bytes
+        already in flight from a room answer `unavailable`: that read lands on
+        the same row, and the caller tries again on a later day."""
+        if subject.blob.sha256 in self._inflight:
+            return Perceived("unavailable", "in_flight")
+        self._inflight.add(subject.blob.sha256)
+        try:
+            async with self._slots:
+                return await self._read(
+                    subject=subject, platform=platform, conversation_id="",
+                    person=None, timestamp=0, context=context,
+                )
+        except Exception:
+            log.exception("media comprehension failed for %s", subject.blob.handle)
+            return self._count(platform, subject.label, "unavailable", "error")
+        finally:
+            self._inflight.discard(subject.blob.sha256)
+
     async def _run(
         self, *, subject: Subject, platform: str, conversation_id: str,
         person: PersonRef | None, timestamp: int,
@@ -210,9 +249,10 @@ class MediaComprehension:
 
     async def _read(
         self, *, subject: Subject, platform: str, conversation_id: str,
-        person: PersonRef | None, timestamp: int,
-    ) -> None:
-        """One job, inside the concurrency slot and under its own trace root."""
+        person: PersonRef | None, timestamp: int, context: str = "",
+    ) -> Perceived:
+        """One job, inside the concurrency slot and under its own trace root.
+        Answers its R-27 state."""
         try:
             # `attached(None)` DETACHES first, and that is the whole of it:
             # `asyncio.create_task` copies the caller's contextvars, so without it
@@ -236,27 +276,26 @@ class MediaComprehension:
                     "nora.media_handle": subject.blob.handle,
                 },
             ):
-                await self._comprehend(
+                return await self._comprehend(
                     subject=subject, platform=platform,
                     conversation_id=conversation_id, person=person,
-                    timestamp=timestamp,
+                    timestamp=timestamp, context=context,
                 )
         except Exception:
             log.exception("media comprehension failed for %s", subject.blob.handle)
-            self._count(platform, subject.label, "unavailable", "error")
+            return self._count(platform, subject.label, "unavailable", "error")
 
     async def _comprehend(
         self, *, subject: Subject, platform: str, conversation_id: str,
-        person: PersonRef | None, timestamp: int,
-    ) -> None:
+        person: PersonRef | None, timestamp: int, context: str = "",
+    ) -> Perceived:
         blob, label = subject.blob, subject.label
         top = blob.media_type.partition("/")[0].lower()
         if top not in COMPREHENSIBLE_TOPS:
             # A REAL answer about these bytes, not a failure: nothing here will
             # ever read a PDF, and saying so is what stops the job retrying it
             # on every future sighting.
-            self._count(platform, label, "nothing_found", "unreadable")
-            return
+            return self._count(platform, label, "nothing_found", "unreadable")
 
         # `lookup`, not `get`: a transient index outage answers `None` from
         # `get` and is indistinguishable from «not read yet», so the job would
@@ -264,16 +303,14 @@ class MediaComprehension:
         # availability axis is what makes «I could not check» a third answer.
         found = await self._store.lookup(sha256s=(blob.sha256,))
         if not found.available:
-            self._count(platform, label, "unavailable", "store")
-            return
+            return self._count(platform, label, "unavailable", "store")
         existing = found.objects.get(blob.sha256)
         if existing is not None and self._already_read(existing, label):
             # Already read — the same meme forwarded five times is one read.
             # NOT counted as `ok`: nothing was comprehended on this pass, and
             # counting it would make the ok rate say the describer is working
             # when it might not have run for days.
-            self._count(platform, label, "nothing_found", "already_read")
-            return
+            return self._count(platform, label, "nothing_found", "already_read")
 
         started = time.perf_counter()
         if label in CONTENT_LABELS:
@@ -285,10 +322,12 @@ class MediaComprehension:
                 # Custody said the bytes were held and the store cannot produce
                 # them — a rotated key, a pruned volume. `unavailable`, never
                 # `nothing_found`: this says nothing about what the image was.
-                self._count(platform, label, "unavailable", "blob")
-                return
+                return self._count(platform, label, "unavailable", "blob")
+            # The context rides only when there is one, so a describer that
+            # takes none (a room's media never has one) is called as before.
+            extra = {"context": context} if context else {}
             result = await self._interpreter.describe(
-                data=data, media_type=blob.media_type, label=label,
+                data=data, media_type=blob.media_type, label=label, **extra,
             )
             content = result.content
         self._metrics.observe(
@@ -296,7 +335,7 @@ class MediaComprehension:
         )
 
         if not result.available:
-            self._count(platform, label, "unavailable", result.reason or "vision")
+            status = self._count(platform, label, "unavailable", result.reason or "vision")
             if label in CONTENT_LABELS and content:
                 if existing is not None and existing.content == content:
                     # ALREADY THERE, and this is the default config's own path: with
@@ -305,7 +344,7 @@ class MediaComprehension:
                     # title/description for a content label, so re-running would re-feed the
                     # SAME words to memory on every sighting. The words are already stored
                     # and already remembered; nothing here has anything to add.
-                    return
+                    return status
                 # A voice note whose SUMMARY failed still has its words, and
                 # those words are the thing the room actually needs. Store the
                 # content with no title rather than throwing away a transcript
@@ -320,7 +359,7 @@ class MediaComprehension:
                     person=person, timestamp=timestamp, blob=blob, label=label,
                     title="", description="", content=content,
                 )
-            return
+            return status
 
         # The model that WROTE THIS TEXT, off the result. `describe_model` is
         # the provenance of the text on the row, and recording the image model
@@ -369,8 +408,7 @@ class MediaComprehension:
             # would otherwise hold a description of bytes `media_objects` has
             # no row for, and a redelivery would feed the same words twice with
             # no row to dedup against.
-            self._count(platform, label, "unavailable", "store")
-            return
+            return self._count(platform, label, "unavailable", "store")
         await self._feed(
             platform=platform, conversation_id=conversation_id, person=person,
             timestamp=timestamp, blob=blob, label=label,
@@ -380,7 +418,7 @@ class MediaComprehension:
             # is as wrong in a peer card as it is in a transcript.
             caveat=str(provenance.get("media_caveat", "")),
         )
-        self._count(platform, label, "ok", "")
+        return self._count(platform, label, "ok", "")
 
     async def _read_transcript(self, subject: Subject) -> MediaDescription:
         """The audio lane. A voice note's `content` is the STT transcript
@@ -484,7 +522,8 @@ class MediaComprehension:
             return bool(existing.title or existing.description)
         return existing.comprehended
 
-    def _count(self, platform: str, label: str, status: str, reason: str) -> None:
+    def _count(self, platform: str, label: str, status: str, reason: str) -> Perceived:
+        """Count one outcome, onto the metric and the span, and answer it."""
         self._metrics.inc(
             "nora_media_comprehension_total",
             platform=platform, label=label, status=status, reason=reason,
@@ -501,3 +540,4 @@ class MediaComprehension:
             "nora.outcome": status,
             "nora.media_comprehension.reason": reason,
         })
+        return Perceived(status, reason)

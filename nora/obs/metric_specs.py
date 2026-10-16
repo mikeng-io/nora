@@ -36,6 +36,8 @@ from nora.domain.reasoning_strip import (
 )
 from nora.domain.social_stream import (
     CUSTODY_OUTCOMES,
+    PERCEPTION_OUTCOMES,
+    PERCEPTION_SOURCES,
     POLL_OUTCOMES,
     POLL_STAGES,
     SKIP_REASONS,
@@ -2041,6 +2043,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "of their bytes (" + " / ".join(CUSTODY_OUTCOMES) + "). Only stored "
         "names bytes in custody.",
         ("network", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_perception_total",
+        "Items whose media a perception pass took up, by source ("
+        + " / ".join(PERCEPTION_SOURCES) + ") and outcome ("
+        + " / ".join(PERCEPTION_OUTCOMES) + "). capped is an item left "
+        "unperceived because a unit's daily cap was spent; it is tried again "
+        "on a later day, as is unavailable. failed is never read again (a "
+        "permanent reason, or its third failed read).",
+        ("source", "outcome"),
     ),
 )
 

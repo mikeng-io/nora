@@ -1368,15 +1368,17 @@ class FakeMediaInterpreter:
         self.reason = reason
         self.calls: list[tuple[str, int]] = []
         self.labels: list[str] = []
+        self.contexts: list[str] = []
         self.summarized: list[str] = []
         self.model = "fake-vision"
         self.text_model = "fake-text"
 
     async def describe(
-        self, *, data: bytes, media_type: str, label: str = "",
+        self, *, data: bytes, media_type: str, label: str = "", context: str = "",
     ) -> MediaDescription:
         self.calls.append((media_type, len(data)))
         self.labels.append(label)
+        self.contexts.append(context)
         top = media_type.partition("/")[0].lower()
         if top not in ("image", "video", "audio") or not data:
             return MediaDescription(available=False, reason="unsupported_format")

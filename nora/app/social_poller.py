@@ -19,7 +19,9 @@ first tick, so a restart keeps them.
 A completed story read advances the marker, including one that found nothing;
 a list read reads the first page only, which carries every item's media, and
 records each new item from it; a failed list read leaves the rise due on the
-next probe. Items from a person's first list read, before any
+next probe. A read's row and the items it recorded share one id
+(`social_item.read_id`), which is what the read's stimulus is raised for
+(`nora.app.social_perception`). Items from a person's first list read, before any
 counts were recorded, are history and are recorded `origin = "backfill"`; a
 post with no usable media is recorded without it. A frame recorded earlier that a story read no
 longer shows, before its own expiry, is recorded `gone`.
@@ -56,6 +58,7 @@ import asyncio
 import logging
 import random
 import time
+import uuid
 from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
@@ -377,6 +380,7 @@ class SocialPoller:
             )
         await self._recovered("story")
         now = self._clock()
+        read_id = str(uuid.uuid4())
         frames = [
             frame_item(network=self._network, account=member.account.id, frame=f)
             for f in snap.frames
@@ -386,7 +390,7 @@ class SocialPoller:
         )
         for item in frames:
             if item.item_id not in known:
-                await self._insert(member, item, now)
+                await self._insert(member, item, now, read_id=read_id)
         shown = {f.item_id for f in frames}
         live = await self._store.live_frames(network=self._network, person=member.person, now=now)
         for item_id in sorted(live - shown):
@@ -396,7 +400,7 @@ class SocialPoller:
             )
         await self._record(
             member, "story", "read_ok", ms, latest_reel_media=probe.latest_reel_media,
-            advanced_marker=True,
+            advanced_marker=True, read_id=read_id,
         )
         return None
 
@@ -411,6 +415,7 @@ class SocialPoller:
         if isinstance(page, Failed):
             return await self._failed(member, "items", page, ms)
         await self._recovered("items")
+        read_id = str(uuid.uuid4())
         known = await self._store.known_items(
             network=self._network, item_ids=[i.item_id for i in page.items],
         )
@@ -422,10 +427,12 @@ class SocialPoller:
             recorded.add(item.item_id)
             await self._insert(
                 member, item, self._clock(), origin="backfill" if first else "poll",
+                read_id=read_id,
             )
         await self._record(
             member, "items", "read_ok", ms, media_count=probe.media_count,
             total_clips_count=probe.total_clips_count, advanced_counts=True,
+            read_id=read_id,
         )
         return None
 
@@ -494,12 +501,13 @@ class SocialPoller:
     # -- the Record ------------------------------------------------------------
 
     async def _insert(
-        self, member: Member, item: SocialItem, now: datetime, *,
+        self, member: Member, item: SocialItem, now: datetime, *, read_id: str,
         origin: Literal["poll", "backfill"] = "poll",
     ) -> None:
         media_ref = await self._keep(item, now)
         await self._store.insert_item(
             item, person=member.person, origin=origin, seen_at=now, media_ref=media_ref,
+            read_id=read_id,
         )
 
     # ponytail: a story frame's bytes are never deleted; deleting them at
@@ -538,6 +546,10 @@ class SocialPoller:
                         provenance={
                             "network": item.network, "item_id": item.item_id,
                             "kind": item.kind,
+                            # What a video's perception will cost is read off
+                            # its length (`nora.app.social_perception`).
+                            **({"duration_seconds": media.duration_seconds}
+                               if media.duration_seconds is not None else {}),
                         },
                         created_at_ms=int(now.timestamp() * 1000),
                     ))
@@ -553,6 +565,7 @@ class SocialPoller:
         probe: Probe | None = None, latest_reel_media: int | None = None,
         media_count: int | None = None, total_clips_count: int | None = None,
         advanced_marker: bool = False, advanced_counts: bool = False,
+        read_id: str | None = None,
     ) -> None:
         if probe is not None:
             latest_reel_media = probe.latest_reel_media
@@ -561,7 +574,7 @@ class SocialPoller:
             network=self._network, person=member.person, stage=stage, outcome=outcome,
             latest_reel_media=latest_reel_media, media_count=media_count,
             total_clips_count=total_clips_count, advanced_marker=advanced_marker,
-            advanced_counts=advanced_counts, latency_ms=ms,
+            advanced_counts=advanced_counts, latency_ms=ms, id=read_id,
         )
         self._metrics.inc(
             "nora_social_polls_total", network=self._network, stage=stage, outcome=outcome,

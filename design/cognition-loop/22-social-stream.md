@@ -105,9 +105,12 @@ recorded social items are excluded from every read, as §2 requires («stops
 that person's items being read at all»). The switch is `social = false` on the
 person's `identity.toml` block (default on). As built in S2 it is enforced on
 membership: `SocialSubjectIndex.members` leaves them out, so nothing of theirs
-is probed or read. Nothing reads `social_item` yet besides the poller's own
-dedupe, so the read-side exclusion of items recorded before the switch was set
-lands with the first reader (S3).
+is probed or read. Since S3 the read side holds it too: every read of
+`social_item` for perception or for a stimulus
+(`SqlSocialStreamStore`, given the opted-out persons at construction) leaves
+out their items, including any recorded before the switch was set, and every
+item with a `social_item_state` row (gone or hidden). The poller's own dedupe
+and marker reads are the writer's state and are not filtered.
 
 ## 3. The poll: a probe decides, then the costly read
 
@@ -258,7 +261,23 @@ after insert. Everything that changes about an item is a new row elsewhere.
   login's transitions.
 
 Perception rows are the ones ingest comprehension already writes, keyed by
-the media item (`media_objects`). A frame gone (§3) and a hide are
+the media item (`media_objects`). As built in S3, a separate pass
+(`nora/app/social_perception.py`, on the poller's tick) reads what is recorded
+and unperceived, so a vision failure or a spent cap never holds up a probe:
+each attempt is an APPEND-ONLY `social_perception` row (`0108`) with the
+units it was charged to and the vision calls it spent (one per image or
+video), and an item is read only when every unit its person is listed in can afford
+what it may cost (`[social.poll] perception_daily_cap`, model calls per unit
+per day, the day `[cognition] timezone`'s: one per image; per video one per
+`chunk_seconds` window of its length up to `chunk_max`, all of them when the
+bridge sent no length, plus the text pass). It is charged what it spent:
+nothing when no model was called, a landed video's windows off its row,
+otherwise the estimate. Polled items go first; past the cap, or after a
+failed read, an item waits for a later day; its third failed read, or a
+failure no day can change (a format nothing reads, a describer not
+configured), records it `failed`, never read again. The describer is told what it
+reads (story frame, post or reel, collab, and when it was posted, as an
+absolute time because the description is kept), never the caption. A frame gone (§3) and a hide are
 rows in an append-only `social_item_state` (`item`, `state`: `gone`,
 `hidden`; `reason`; `recorded_at`), which every read joins. No row of this
 stream has a retention key: posts and reels have none at all, and a story's
@@ -272,6 +291,18 @@ not a URL ([20](20-observe.md) §2). Its cues are the deterministic ones of
 expression, a place name or tag). A back-filled item raises none (§7):
 history is evidence, not news.
 
+As built in S3: each item carries the id of the read that recorded it
+(`social_item.read_id`), and the stimulus is raised once every polled item of
+that read has an attempt on record (perceived, failed or capped) and the
+read's own `social_poll` row is written (the poller writes it after the
+read's last item, so a pass running mid-read announces nothing of it), one
+per unit the person is listed in, each unit checked on its own, `ref` `social_read:<read id>`, `item` the read's
+kinds in order (`story_frame,collab:post`), `at_ms` when the newest was
+posted. The stimulus table keeps one `social` row per `(unit, ref)` (`0108`),
+so a restart announces nothing twice. A session's agenda shows it as
+`<social at="...">Ada posted 2 story frames</social>`; what the items show is
+not pushed into the agenda: that is `social_items` (§6), not built.
+
 The memory index (design/unified-memory) projects `social_item` like any
 other store. This node writes the table and nothing in the index; the index
 reads it.
@@ -279,10 +310,15 @@ reads it.
 ## 6. What downstream reads it
 
 - **Character**: social items are evidence for their person. Today
-  `person_wake_batch` counts messages only (DEC-290, [20](20-observe.md) §3);
-  S3 adds polled social items to the count. Back-filled items do not count
-  toward a wake: Character reads them on its next wake for other reasons, so
-  a back-fill of 50 items is not 50 items of wake pressure.
+  `person_wake_batch` counts messages only (DEC-290, [20](20-observe.md) §3).
+  Polled social items join the count only together with a session that reads
+  them: S3 first built the count alone, and a wake on social items then
+  handed the session nothing it could cite (`character_revise` takes Record
+  ids only), so it ran empty and moved the watermark. Reading them needs a
+  social citation in that verb (its id space, its R-18/R-28 screen) and a
+  block for them; until then they do not count. Back-filled items will not
+  count toward a wake either: a back-fill of 50 items is not 50 items of wake
+  pressure.
 - **Rollup**: the daybook's `items_posted` ([25](25-rollup.md), NULL until
   step 5) is filled from `social_item.taken_at`; the posting histogram of §4
   is the same input.
@@ -309,7 +345,8 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 | S0 | **DONE 2026-10-16**: the REST story read is broken upstream; the web app's story and timeline queries captured (§1a); `latest_reel_media` equal to the newest `taken_at` (n=1); the seen mark is a separate mutation | §1 and §1a; session `authenticated` after |
 | S1 | **DONE 2026-10-16**: the bridge's story read moved onto the GraphQL story query (this also mends the live `instagram_read` story, broken today) and a new `GET /accounts/{igid}/items?after=` over the timeline query, both with `doc_id`s from config and the `stale_query` code, and a test that no read sends the seen mutation; `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `LIST_ITEMS`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads; the bridge read back live (§1) |
 | S2 | **DONE 2026-10-16, off by default** (`nora/app/social_poller.py`, `[social.poll]`): probe-then-read on the ceiling cadence with the 30-minute floor, one hourly budget with jitter, halt and back-off per login with `source_health` transitions (rebuilt on restart, a cleared halt resuming on the top back-off step, two halts in 24 hours locking the login until an operator clears it), a first-ever list read's items recorded `origin = backfill` (§7, first page only), each new item's media fetched into custody, the per-person off switch (`social = false` in `identity.toml`, §2), and the story rule's test rewritten ([20](20-observe.md) §2). The bridge comments already described the poller after S1 | a week of `social_poll` rows; the login unharmed |
-| S3 | perception of new frames under the per-unit cap; the `social` stimulus; Character's wake count; `social_item` media handed to the memory index's embed worker, and a story frame's byte deletion gated on perception and embedding; a story frame's bytes deleted at the hard limit (`story_media_keep_max_days`), with a `BlobStore` delete and the [70](70-migration.md) §9 tombstone, which custody does not have yet. Nothing reaches the 30-day bound until 31 days after the poller is enabled. The `[social]` keep keys arrive with the code that reads them; the read-side exclusion of an opted-out person's items (§2) lands with the first reader of `social_item` | `nora_perception_total{source="social"}`; stimuli per read; story frames embedded before their bytes went |
+| S3a | **BUILT 2026-10-16, with the poller** (`nora/app/social_perception.py`, migration `0108_social_perception`, `[social.poll] perception_daily_cap`): each new item's media perceived once by ingest's comprehension job (images and video), told what it reads, under the per-unit daily cap, polled first, back-fill at most half of what polled items leave (§7), an item past the cap or after a failed read tried again on a later day (§5); one `social` stimulus per completed read and unit once its items are settled, none for back-fill, once across a restart (§5); the read-side exclusion of opted-out persons and gone or hidden items (§2) | `nora_perception_total{source="social",outcome}`; `nora_stimulus_total{kind="social"}`; `social_perception` rows per unit per day. Not built: polled items in Character's wake count (§6) |
+| S3b | `social_item` media handed to the memory index's embed worker, and a story frame's byte deletion gated on perception and embedding; a story frame's bytes deleted at the hard limit (`story_media_keep_max_days`), with a `BlobStore` delete and the [70](70-migration.md) §9 tombstone, which custody does not have yet. Nothing reaches the 30-day bound until 31 days after the poller is enabled. The `[social]` keep keys arrive with the code that reads them | story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
 | S5 | the back-fill over `LIST_ITEMS` | items per member against `media_count` |
 

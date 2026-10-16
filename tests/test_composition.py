@@ -1527,6 +1527,7 @@ async def test_the_social_poller_is_built_only_when_enabled(cfg, monkeypatch):
     deps = await build_dependencies(override_config(cfg, {"social.instagram.enabled": True}))
     try:
         assert deps.social_poller is None
+        assert deps.social_perception is None
     finally:
         await deps.background.cancel_all()
 
@@ -1539,6 +1540,10 @@ async def test_the_social_poller_is_built_only_when_enabled(cfg, monkeypatch):
         assert poller._source.network == "instagram"
         assert isinstance(poller._media, InstagramMediaSource)
         assert poller._blobs is deps.blobs
+        # Its perception pass reads through the SAME store, the one holding
+        # who opted out.
+        assert deps.social_perception is not None
+        assert deps.social_perception._store is poller._store
     finally:
         await deps.background.cancel_all()
 

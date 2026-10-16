@@ -3475,6 +3475,13 @@ UQ_STIMULUS_ROLLUP_REF = sa.Index(
     unique=True, postgresql_where=STIMULUS.c.kind == "rollup",
 )
 
+#: A `social` stimulus is raised once per read it announces (0108): a pass
+#: that finds the same read again writes nothing.
+UQ_STIMULUS_SOCIAL_REF = sa.Index(
+    "uq_stimulus_social_ref", STIMULUS.c.unit, STIMULUS.c.ref,
+    unique=True, postgresql_where=STIMULUS.c.kind == "social",
+)
+
 #: The `self` stimuli standing for one self-wake (`item` is its `wake_ref`):
 #: what `SqlStimulusStore.retract_self` takes back.
 IDX_STIMULUS_UNIT_SELF_ITEM = sa.Index(
@@ -4648,6 +4655,9 @@ SOCIAL_ITEM = sa.Table(
     sa.Column("origin", sa.Text, nullable=False),
     sa.Column("collab", sa.Boolean, nullable=False, server_default=sa.text("false")),
     _recorded_at(),
+    # The read that recorded it (0108): the `social` stimulus a read raises
+    # waits for that read's items alone. NULL on a row recorded before it.
+    sa.Column("read_id", pg.UUID(as_uuid=False)),
     sa.CheckConstraint(
         "kind IN ('story_frame', 'post', 'reel', 'thread_post')", name="ck_social_item_kind",
     ),
@@ -4666,6 +4676,7 @@ IDX_SOCIAL_ITEM_PERSON = sa.Index(
     "idx_social_item_person", SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.person,
     SOCIAL_ITEM.c.taken_at,
 )
+IDX_SOCIAL_ITEM_READ = sa.Index("idx_social_item_read", SOCIAL_ITEM.c.read_id)
 
 SOCIAL_POLL = sa.Table(
     "social_poll",
@@ -4711,3 +4722,36 @@ IDX_SOCIAL_ITEM_STATE_ITEM = sa.Index(
     "idx_social_item_state_item", SOCIAL_ITEM_STATE.c.network, SOCIAL_ITEM_STATE.c.item_id,
     SOCIAL_ITEM_STATE.c.recorded_at,
 )
+
+# One row per attempt to perceive a social item's media (0108), APPEND-ONLY:
+# the units it was charged to, the model calls it spent and why it ended, so a
+# unit's daily perception cap is a sum over the day's rows. `at` is the
+# perception pass's clock, the day the cap counts in; `capped` is an item left
+# unperceived that day, which spent nothing; `failed` is never tried again.
+SOCIAL_PERCEPTION = sa.Table(
+    "social_perception",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("network", sa.Text, nullable=False),
+    sa.Column("item_id", sa.Text, nullable=False),
+    sa.Column("person", sa.Text, nullable=False),
+    sa.Column("units", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
+    sa.Column("origin", sa.Text, nullable=False),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("calls", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("reason", sa.Text),
+    sa.Column("at", sa.DateTime(timezone=True), nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint("origin IN ('poll', 'backfill')", name="ck_social_perception_origin"),
+    sa.CheckConstraint(
+        "outcome IN ('ok', 'nothing_found', 'unavailable', 'failed', 'capped')",
+        name="ck_social_perception_outcome",
+    ),
+    sa.CheckConstraint("calls >= 0", name="ck_social_perception_calls"),
+)
+IDX_SOCIAL_PERCEPTION_ITEM = sa.Index(
+    "idx_social_perception_item", SOCIAL_PERCEPTION.c.network,
+    SOCIAL_PERCEPTION.c.item_id, SOCIAL_PERCEPTION.c.at,
+)
+IDX_SOCIAL_PERCEPTION_AT = sa.Index("idx_social_perception_at", SOCIAL_PERCEPTION.c.at)
