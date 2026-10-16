@@ -1033,7 +1033,8 @@ def test_full_gate_and_the_loop_default_are_unchanged():
     assert [line.split()[:3] for line in full[:3]] == [
         ["uv", "run", "ruff"], ["uv", "run", "mypy"], ["uv", "run", "lint-imports"],
     ]
-    assert full[3] == "uv run pytest -q"
+    assert full[3] == "cd deploy/instagram-bridge && go vet ./... && go test ./..."
+    assert full[4] == "uv run pytest -q"
     assert not any("affected_tests" in line for line in full)
 
     loop = _dry_run("test-affected")

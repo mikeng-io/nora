@@ -27,8 +27,8 @@ import (
 
 // Events is the SSE hub as /events and /health read it.
 type Events interface {
-	Subscribe() (cortez []byte, [][]byte, int)
-	Unsubscribe(cortez []byte)
+	Subscribe() (chan []byte, [][]byte, int)
+	Unsubscribe(chan []byte)
 	Stats() (clients, buffered, dropped int)
 }
 
