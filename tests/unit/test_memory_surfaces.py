@@ -43,8 +43,17 @@ from tests.fakes import SinkSender
 from tests.test_room_tools import GROUP, IDENTITY, MILES, NORA, TYLER, _NullStore
 
 #: Every verb either surface could carry, so a set below is what one place
-#: offers of them.
-MEMORY_VERBS = HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS | {"load_transcript"}
+#: offers of them. A literal, not built from `HONCHO_MEMORY_TOOLS`: a tool
+#: dropped from that constant must still be seen here, or the graph test
+#: would pass by no longer looking for it.
+MEMORY_VERBS = frozenset({
+    "ask_memory", "search_memory", "search_memory_workspace", "who_said",
+    "about", "remember", "memory_search", "load_transcript",
+})
+
+
+def test_memory_verbs_cover_both_surfaces() -> None:
+    assert HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS <= MEMORY_VERBS
 
 #: What each assembly point offers of `MEMORY_VERBS`, per surface. The graph
 #: column is the Honcho column with every Honcho tool taken out (`about` and
