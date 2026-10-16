@@ -96,8 +96,10 @@ handed.** Each of these was found by reading the input before the instruction
   `room` argument takes.
 
 **Every item binds one room**: the room its stimulus came from, or, for an item
-with none (a Rollup, `time`, `self`, social or play stimulus), the unit's home
-room (39 D2). That
+with none (a Rollup, `time`, `self` or play stimulus), the unit's home room
+(39 D2). A social stimulus names a room of the unit that lists its author, the
+home room when it does ([22](22-social-stream.md) §6): only such a room may be
+shown the author's items. That
 item's room-scoped reads resolve through its room (R-21), and every read
 returns only what its room may be shown ([10](10-tiers.md) §3). Which tools a
 unit-keyed session may hold at all stays decided by `UNIT_SAFE_TOOLS` and

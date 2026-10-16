@@ -41,7 +41,7 @@ Postgres.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -634,13 +634,17 @@ class SqlSocialStreamStore:
     # -- the reader: `social_read` (§6) ----------------------------------------
 
     async def items_of(
-        self, *, person: str, start: datetime, end: datetime, limit: int,
+        self, *, persons: Sequence[str], start: datetime, end: datetime, limit: int,
     ) -> list[RecordedItem]:
         """One person's readable items posted in `[start, end)`, newest first,
         at most `limit`: polled and back-filled alike, each with the readings
         its media already have (`media_objects` title and description, in the
-        item's media order). Readable is `_readable`'s: not opted out, and no
-        `social_item_state` row (gone or hidden)."""
+        item's media order). `persons` is every id the person's items may be
+        recorded under, their current id and each retired one. Readable is
+        `_readable`'s: not opted out, and no `social_item_state` row (gone or
+        hidden)."""
+        if not persons:
+            return []
         i = SOCIAL_ITEM
         stmt = (
             sa.select(
@@ -648,7 +652,7 @@ class SqlSocialStreamStore:
                 i.c.caption, i.c.location, i.c.media_ref,
             )
             .where(
-                *self._readable(), i.c.person == person,
+                *self._readable(), i.c.person.in_(sorted(set(persons))),
                 i.c.taken_at >= start, i.c.taken_at < end,
             )
             .order_by(i.c.taken_at.desc(), i.c.id.desc())

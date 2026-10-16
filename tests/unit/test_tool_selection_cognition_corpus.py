@@ -25,8 +25,8 @@ _COGNITION_CATALOGUE = frozenset({
     # DEC-306: the memo verbs, the memo read, and the retire a settled note's
     # memo is followed by.
     "memo_write", "memo_revise", "memo_withdraw", "memo_read", "note_retire",
-    # `social_read` and the account read it is measured against.
-    "social_read", "character_read",
+    # `social_read` and the account and event reads it is measured against.
+    "social_read", "character_read", "event_search",
 })
 
 
@@ -54,14 +54,20 @@ def test_census_reports_every_case_active_and_none_parked():
 def test_no_real_name_or_quoted_message_appears_in_any_case_input():
     """The safety rule ("never name room members or quote
     messages"), checked against this corpus's own content: `input` is
-    always an agenda item's FACT sentence, never a transcript line — none
-    of the names this repo's own fixtures use for a real member (Miles,
-    Ada) appear anywhere in a case's `input`."""
+    always an agenda item's FACT sentence, never a transcript line. Of the
+    names this repo's own fixtures use for a real member (Miles, Ada), only
+    `Miles`, room A's pseudonym (`NORA_EVAL_PSEUDONYM_MAP` resolves it), and
+    only in a `social_read` case: that tool takes a name and resolves it among
+    the people the room lists, and the live agenda line it answers names the
+    person («Miles posted 2 story frames»)."""
     cases = load_corpus(NAME)
-    forbidden = ("Miles", "Ada")
     for case in cases:
-        for name in forbidden:
-            assert name not in case.input, (case.name, name)
+        allowed = {"Miles"} if "social_read" in case.metadata["tools"] else set()
+        for name in ("Miles", "Ada"):
+            if name not in allowed:
+                assert name not in case.input, (case.name, name)
+    named = [c.name for c in cases if "Miles" in c.input]
+    assert len(named) == 3, named
 
 
 def test_every_case_names_only_verbs_from_the_cognition_catalogue():
@@ -76,8 +82,8 @@ def test_each_new_read_is_measured_against_the_sibling_it_is_confusable_with():
     cases against their confusable siblings: `rollup_read` against
     `record_query` and `where_been`, `standing_read` against
     `note_read`/`note_search`, `social_read` against `record_query`,
-    `rollup_read` and `character_read`, and the order a revision needs (read
-    before `standing_revise`)."""
+    `rollup_read`, `character_read` and `event_search`, and the order a
+    revision needs (read before `standing_revise`)."""
     by_name = {c.name: c.metadata for c in load_corpus(NAME)}
     against = {
         tool: {n for m in by_name.values() if tool in m["tools"] for n in m.get("not_tools", [])}
@@ -85,6 +91,8 @@ def test_each_new_read_is_measured_against_the_sibling_it_is_confusable_with():
     }
     assert {"record_query", "where_been"} <= against["rollup_read"]
     assert {"note_read", "note_search"} <= against["standing_read"]
-    assert {"record_query", "rollup_read", "character_read"} <= against["social_read"]
+    assert {"record_query", "rollup_read", "character_read", "event_search"} <= (
+        against["social_read"]
+    )
     ordered = by_name["cognition_standing_read_before_standing_revise"]
     assert ordered["before"] == {"standing_read": ["standing_revise"]}

@@ -287,7 +287,7 @@ from .ports import ToolSpec, adapt
 from .relay import Relay
 from .rollup_read import iso as rollup_iso
 from .rollup_read import parse_interval, render_row, visible_rows
-from .room import Room, RoomView, _key, _names_of, find_by_name
+from .room import Room, RoomView, _key, _names_of, find_by_name, tell_apart
 from .social_read import SOCIAL_READ_MAX, location_shown, render_items
 from .standing_read import render_standing
 from .subagent_desk import JobView, SubagentDesk
@@ -2741,11 +2741,12 @@ class RollupReadSource(Protocol):
 class SocialItemsSource(Protocol):
     """The social stream's read `social_read` runs (`nora.infra.sql.
     social_stream.SqlSocialStreamStore.items_of`, the one implementation): one
-    person's readable items in an interval, newest first. Readable is the
+    person's readable items in an interval, newest first, under every id in
+    `persons` (their current id and each retired one). Readable is the
     store's own rule: not opted out (`social = false`), not gone or hidden."""
 
     async def items_of(
-        self, *, person: str, start: datetime, end: datetime, limit: int,
+        self, *, persons: Sequence[str], start: datetime, end: datetime, limit: int,
     ) -> list[RecordedItem]: ...
 
 
@@ -3122,6 +3123,16 @@ _SOCIAL_COLLAB = (
 )
 _SOCIAL_MORE = (
     "More items matched than are shown. Narrow the interval for the older ones."
+)
+_SOCIAL_ITEM_CUT = (
+    "An item with `more_seen` had more pictures or videos than are shown; "
+    "`seen` covers the first of them only."
+)
+#: Several people go by the name asked; `could_be` names each one so that
+#: naming it again reads that person alone.
+_AMBIGUOUS_PERSON = (
+    "More than one person here goes by that. Ask which one, or call again "
+    "with one of could_be."
 )
 _SOCIAL_WITHHELD = (
     "Some items carry something that can't be repeated here and are not "
@@ -5642,15 +5653,19 @@ def build_tool_specs(
                 _record(metrics, "rollup_read", "nothing_found", reason="subject")
                 return {"status": "nothing_found", "note": _ROLLUP_NO_PERSON}
         for name in [] if everyone else names:
-            matches = view.find(name)
+            # By name (`view.find`), or by the person id `could_be` gives for
+            # two people who share every name they go by.
+            matches = view.find(name) or tuple(
+                p for p in view.people if p.person_id == name
+            )
             if not matches:
                 _record(metrics, "rollup_read", "nothing_found", reason="subject")
                 return {"status": "nothing_found", "note": _ROLLUP_NO_PERSON}
             if len(matches) > 1:
                 _record(metrics, "rollup_read", "ambiguous")
                 return {
-                    "status": "ambiguous", "could_be": [p.name for p in matches],
-                    "note": "More than one person here goes by that. Ask which one.",
+                    "status": "ambiguous", "could_be": tell_apart(matches, view.people),
+                    "note": _AMBIGUOUS_PERSON,
                 }
             people.append(matches[0])
         subjects = tuple(dict.fromkeys(persons.subject_id_for(p.person_id) for p in people))
@@ -5841,32 +5856,34 @@ def build_tool_specs(
         target = bound[0]
         # A social item is readable only in a room that lists its author (the
         # `social` lineage predicate), so the name resolves among exactly
-        # those people: anyone else answers like a name nobody uses, and is
-        # never read.
-        listed = {
-            pid: ref for pid, ref in persons.by_person.items()
+        # those people, by the one matching rule (`find_by_name`: name, first
+        # and last names, aliases) or by person id: anyone else answers like a
+        # name nobody uses, and is never read.
+        listed = [
+            ref for pid, ref in persons.by_person.items()
             if entry_permits(LineageEntry(SOCIAL, subject=pid), target, origin=None)
-        }
-        wanted = " ".join(str(person).split()).casefold()
-        matches = [
-            pid for pid, ref in listed.items()
-            if wanted and (pid == str(person).strip()
-                           or " ".join(ref.name.split()).casefold() == wanted)
         ]
+        matches = find_by_name(listed, str(person)) or tuple(
+            ref for ref in listed if ref.person_id == str(person).strip()
+        )
         if not matches:
             _record(metrics, "social_read", "nothing_found", reason="person")
             return {"status": "nothing_found", "note": _SOCIAL_NO_PERSON}
         if len(matches) > 1:
             _record(metrics, "social_read", "ambiguous")
             return {
-                "status": "ambiguous", "could_be": [listed[p].name for p in matches],
-                "note": "More than one person here goes by that. Ask which one.",
+                "status": "ambiguous", "could_be": tell_apart(matches, listed),
+                "note": _AMBIGUOUS_PERSON,
             }
-        pid = matches[0]
+        who = matches[0]
+        # Every id their items may be recorded under: an item recorded before
+        # a rename carries the retired id.
+        current = persons.subject_id_for(who.person_id)
+        ids = tuple(dict.fromkeys((who.person_id, current, *persons.former_ids_for(current))))
         try:
             # One more than is shown, so a full page says there are more.
             got = await social_items.items_of(
-                person=pid, start=datetime.fromtimestamp(start_ms / 1000, tz=UTC),
+                persons=ids, start=datetime.fromtimestamp(start_ms / 1000, tz=UTC),
                 end=datetime.fromtimestamp(end_ms / 1000, tz=UTC),
                 limit=SOCIAL_READ_MAX + 1,
             )
@@ -5876,8 +5893,8 @@ def build_tool_specs(
             return {"status": "unavailable", "note": _SOCIAL_OFF}
         more = len(got) > SOCIAL_READ_MAX
         shown, withheld, cut = render_items(
-            got[:SOCIAL_READ_MAX], by=listed[pid].name,
-            place=location_shown(pid, target), now=now_fn().astimezone(_HKT),
+            got[:SOCIAL_READ_MAX], by=who.name,
+            place=location_shown(who.person_id, target), now=now_fn().astimezone(_HKT),
         )
         if not shown:
             _record(metrics, "social_read", "nothing_found", withheld=withheld)
@@ -5888,6 +5905,8 @@ def build_tool_specs(
             notes.append(_SOCIAL_COLLAB)
         if more or cut:
             notes.append(_SOCIAL_MORE)
+        if any("more_seen" in i for i in shown):
+            notes.append(_SOCIAL_ITEM_CUT)
         if withheld:
             notes.append(_SOCIAL_WITHHELD)
         _record(metrics, "social_read", "ok", items=len(shown), withheld=withheld,

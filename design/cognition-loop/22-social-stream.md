@@ -377,10 +377,15 @@ projector in its own transaction (§9;
 - **Cognition**: `social_items(person, interval)` ([15](15-map.md) §4),
   **built 2026-10-17 as `social_read`** (S7, §8): a session reads one
   person's recorded items in an interval, newest first, through the room its
-  agenda item is bound to. §2's rules hold at the read: only a room that
-  lists the author reads their items, an opted-out person's and a gone or
-  hidden item never, and a location only where the room may place the
-  author. No item is citable from this read: the result has no id.
+  agenda item is bound to. A `social` stimulus binds a room of its unit that
+  lists the author, the home room when it does, so the person its agenda line
+  names is one that room can read. §2's rules hold at the read: only a room
+  that lists the author reads their items, under their current id and every
+  retired one; an opted-out person's and a gone or hidden item never; and a
+  location only where the room may place the author. A name resolves by the
+  roster's one matching rule (name, first and last names, aliases) or by
+  person id; two people it fits are offered each by a name only they go by,
+  else their id. No item is citable from this read: the result has no id.
 
 ## 7. The back-fill of past posts and reels
 

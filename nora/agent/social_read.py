@@ -16,7 +16,10 @@ carries an identifier or a coordinate is dropped alone.
 
 **Bounded.** At most `SOCIAL_READ_MAX` items and `SOCIAL_READ_CHARS`
 characters of caption, readings and location together, newest first; what
-did not fit is counted, so the tool can say the answer was cut.
+did not fit is counted, so the tool can say the answer was cut. One item is
+bounded too, at `SOCIAL_ITEM_CHARS`: a carousel's readings past it are left
+out and counted on the item as `more_seen`, so one long carousel neither
+overruns the answer nor reads as everything it showed.
 """
 
 from __future__ import annotations
@@ -32,12 +35,17 @@ from nora.domain.memory_index import social_label
 from nora.domain.prompt import stamp
 from nora.domain.social_stream import RecordedItem
 
-__all__ = ["SOCIAL_READ_CHARS", "SOCIAL_READ_MAX", "location_shown", "render_items"]
+__all__ = [
+    "SOCIAL_ITEM_CHARS", "SOCIAL_READ_CHARS", "SOCIAL_READ_MAX", "location_shown",
+    "render_items",
+]
 
 #: The most items one call returns, newest first.
 SOCIAL_READ_MAX = 20
 #: The most characters of caption, readings and location one call returns.
 SOCIAL_READ_CHARS = 6000
+#: The most characters of one item's caption, readings and location.
+SOCIAL_ITEM_CHARS = SOCIAL_READ_CHARS // 2
 #: The most characters of any one caption or reading.
 _FIELD_CHARS = 800
 
@@ -56,13 +64,27 @@ def _cut(text: str) -> str:
     return text if len(text) <= _FIELD_CHARS else text[:_FIELD_CHARS].rstrip() + "…"
 
 
+def _fit(readings: list[str], room: int) -> tuple[list[str], int]:
+    """The readings, in media order, that fit in `room` characters, and how
+    many were left out. In order, so what is shown is the carousel's start."""
+    kept: list[str] = []
+    for r in readings:
+        if len(r) > room:
+            break
+        kept.append(r)
+        room -= len(r)
+    return kept, len(readings) - len(kept)
+
+
 def render_items(
     items: Sequence[RecordedItem], *, by: str, place: bool, now: datetime,
     max_chars: int = SOCIAL_READ_CHARS,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """`(shown, withheld, cut)`: the items in order as the model reads them,
     how many were withheld for an identifier, and how many did not fit in
-    `max_chars`. `place` is `location_shown` for the author."""
+    `max_chars`. `place` is `location_shown` for the author. An item whose
+    readings did not all fit in `SOCIAL_ITEM_CHARS` carries `more_seen`, the
+    count left out."""
     shown: list[dict[str, Any]] = []
     withheld = cut = 0
     spent = 0
@@ -77,6 +99,9 @@ def render_items(
         location = (it.location or "").strip() if place else ""
         if location and scan_reply(location) is not None:
             location = ""
+        readings, more_seen = _fit(
+            readings, SOCIAL_ITEM_CHARS - len(caption) - len(location),
+        )
         size = len(caption) + sum(len(r) for r in readings) + len(location)
         # Newest first, so once one item does not fit every older one is cut
         # too: an answer with a gap in its middle would read as complete.
@@ -91,7 +116,9 @@ def render_items(
         if caption:
             item["caption"] = caption
         # What the media were read as; said, never left out, while unread.
-        item["seen"] = readings or "not read yet"
+        item["seen"] = readings or ("not shown" if more_seen else "not read yet")
+        if more_seen:
+            item["more_seen"] = more_seen
         if location:
             item["location"] = location
         shown.append(item)

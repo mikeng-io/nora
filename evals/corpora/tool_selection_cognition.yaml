@@ -10,9 +10,9 @@
 # event_propose/event_revise/event_set_status, wake_at/wake_move/wake_cancel,
 # remind/remind_move/remind_cancel.
 #
-# SYNTHETIC INPUT, deliberately: no real room member is named and no real
-# message is quoted anywhere in this file (the migration's own safety rule,
-# restated for eval content) — `input` here is an AGENDA ITEM's own summary,
+# SYNTHETIC INPUT, deliberately: no real message is quoted anywhere in this
+# file, and the one member named is by a pseudonym (the `social_read` cases
+# below) (the migration's own safety rule, restated for eval content) — `input` here is an AGENDA ITEM's own summary,
 # the fact-only sentence `nora.domain.cognition_session._summary` builds
 # ("room X has N new messages", "a self-wake is due: ..."), never a
 # transcript line.
@@ -245,15 +245,22 @@ cases:
 
   # ---- `social_read` (design/cognition-loop/22 §6, the map's `social_items`):
   # a member's recorded stories, posts and reels, against the reads it is
-  # confusable with. The input is the agenda's own `social` line, unnamed.
-  # SYNTHETIC, like every case above. NOT RUN when written: the eval owner runs
-  # them (`--sample 5 --reasons`, master and branch) and the numbers go in the PR.
+  # confusable with. The input is the sentence a live agenda's `<social>` row
+  # carries (`nora.language.cognition_render._social_row`: «<name> posted
+  # <describe_read>»), naming the person by their roster name, because
+  # `social_read` takes a name and resolves it among the people the room
+  # lists. `Miles` is the one name `tool_selection.yaml` uses for a member of
+  # room A (`route_where_is_now`), a pseudonym `NORA_EVAL_PSEUDONYM_MAP`
+  # resolves; the probe hands the sentence as the item's summary, so what is
+  # synthetic is the agenda text, not the person. NOT RUN when written: the
+  # eval owner runs them (`--sample 5 --reasons`, master and branch) and the
+  # numbers go in the PR.
 
   - name: cognition_social_read_vs_record_query_new_story
     entry: dreamer
     category: cognition
     expect: reply
-    input: "a member of room A posted 2 story frames"
+    input: "Miles posted 2 story frames"
     metadata: {tools: [social_read], not_tools: [record_query, rollup_read]}
     snapshot: *room_a
 
@@ -261,14 +268,14 @@ cases:
     entry: dreamer
     category: cognition
     expect: reply
-    input: "room A has 1 new message asking what one member's weekend trip looked like; they posted 3 posts that weekend"
+    input: "room A has 1 new message asking what Miles's weekend trip looked like; Miles posted 3 posts that weekend"
     metadata: {tools: [social_read], not_tools: [rollup_read, record_query]}
     snapshot: *room_a
 
-  - name: cognition_social_read_vs_character_read_what_a_reel_showed
+  - name: cognition_social_read_vs_event_search_what_a_reel_showed
     entry: dreamer
     category: cognition
     expect: reply
-    input: "a member of room A posted a reel; event E1 is their birthday dinner tonight"
-    metadata: {tools: [social_read], not_tools: [character_read, record_query]}
+    input: "Miles posted a reel; event E1 is Miles's birthday dinner tonight"
+    metadata: {tools: [social_read], not_tools: [event_search, character_read]}
     snapshot: *room_a

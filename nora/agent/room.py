@@ -115,6 +115,23 @@ def find_by_name(people, name: str) -> tuple[PersonRef, ...]:
     return tuple(p for p in people if wanted in _names_of(p))
 
 
+def tell_apart(matches: Sequence[PersonRef], among: Sequence[PersonRef]) -> list[str]:
+    """What to call each of `matches` so that naming it again resolves to it
+    alone among `among`: the first of its full name and its aliases that
+    `find_by_name` resolves to exactly that person, else its `person_id`, which
+    the tools that answer `ambiguous` also accept. Two people who share every
+    name they are known by are still two entries a model can tell apart."""
+    out: list[str] = []
+    for p in matches:
+        full = " ".join(n for n in (p.first_name, p.last_name) if n)
+        label = next(
+            (c for c in (full, *p.aliases) if c and find_by_name(among, c) == (p,)),
+            p.person_id,
+        )
+        out.append(label)
+    return out
+
+
 def _names_of(person: PersonRef) -> frozenset[str]:
     """Every string this person may be called by, normalised. Scoped by the
     caller: `RoomView.people` for room lookups, a circle's people for

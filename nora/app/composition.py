@@ -927,6 +927,17 @@ def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
     }
 
 
+def readable_social_store(
+    engine: Any, persons: Any, *, metrics: Any = None,
+) -> SqlSocialStreamStore:
+    """The social stream's store for every reader: the poller's and
+    `social_read`'s. It leaves out each item of a person whose `identity.toml`
+    block sets `social = false`, under their current id and every retired one
+    (`Persons.social_off_ids`). The one store built without it is the story
+    expiry's, which deletes every person's frames' bytes at their bound."""
+    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)
+
+
 def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
     """Each person LISTED by id in a room, and the units of the rooms that list
     them, in policy order: the units a social item of theirs is charged to and
@@ -941,6 +952,24 @@ def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
             if conv.unit not in units:
                 units.append(conv.unit)
     return {person: tuple(units) for person, units in out.items()}
+
+
+def social_person_rooms(allowlist: Any) -> dict[tuple[str, str], tuple[str, str]]:
+    """`(person, unit) -> (platform, conversation_id)`: the room a social
+    stimulus of theirs binds in that unit, the unit's home room when it lists
+    them and otherwise the first room of the unit that does, in policy order.
+    A social item is shown only in a room that lists its author (the `social`
+    lineage predicate), so the session reads it through a room that may be
+    shown it."""
+    homes = allowlist.home_rooms()
+    out: dict[tuple[str, str], tuple[str, str]] = {}
+    listing = [
+        c for c in allowlist.conversations if c.persons is not None and c.unit
+    ]
+    for conv in sorted(listing, key=lambda c: homes.get(c.unit) is not c):
+        for person in conv.persons:
+            out.setdefault((person, conv.unit), (conv.platform, conv.primary_id))
+    return out
 
 
 def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
@@ -2965,7 +2994,7 @@ async def build_dependencies(
         # flag (an empty Record answers `nothing_found`). Its store leaves out
         # every item of a person whose `identity.toml` block sets `social =
         # false`, the same set the poller's store is given.
-        social_items=SqlSocialStreamStore(engine, opted_out=persons.social_off_ids()),
+        social_items=readable_social_store(engine, persons),
         # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
         memos=memo_store,
         route=route_client, vision=vision_client,
@@ -3528,9 +3557,7 @@ async def build_dependencies(
 
         # ONE store for the poller and every reader, holding who opted out:
         # the read-side exclusion lives in the store's reads (§2).
-        social_store = SqlSocialStreamStore(
-            engine, opted_out=persons.social_off_ids(), metrics=metrics,
-        )
+        social_store = readable_social_store(engine, persons, metrics=metrics)
         social_poller = SocialPoller(
             source=InstagramSocialSource(
                 base_url=cfg.social.instagram.base_url,
@@ -3551,7 +3578,7 @@ async def build_dependencies(
         social_perception = SocialPerception(
             store=social_store, media_objects=media_objects,
             comprehension=comprehension, stimuli=stimulus_store,
-            units=social_person_units(allowlist),
+            units=social_person_units(allowlist), rooms=social_person_rooms(allowlist),
             daily_cap=cfg.social.poll.perception_daily_cap,
             tz=ZoneInfo(cfg.cognition.timezone),
             chunk_seconds=cfg.media.describe.video.chunk_seconds,
