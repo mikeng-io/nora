@@ -1,23 +1,23 @@
-"""What `rollup_read` does with a Rollup read, apart from the read itself
-(design/cognition-loop/25-rollup.md §5, 10-tiers.md §3): the interval a model
+"""What `rollup_read` does with a Rollup read, apart from the read itself:
+the interval a model
 writes, the lineage a room's rows must pass, and the compact typed row a model
 is shown. Pure functions over `nora.domain.rollup_read`, so each rule is a
 test that needs no store and no Strands.
 
 **Lineage is applied after the read, per row** (a Rollup row's lineage is per
-row, 10 §3): every entry of the row's set must pass for the calling room, and
+row): every entry of the row's set must pass for the calling room, and
 a row with no lineage is unknown, which passes nowhere (`origin=None`). The
 count of what did not pass is returned so the tool can say a room was not
 shown some rows without saying which.
 
 **A row is shown with its key.** `subject`, `from` and `to` are the citation
-`(kind, subject, interval)` a note cites the row by (25 §2): the subject is
+`(kind, subject, interval)` a note cites the row by: the subject is
 exactly `nora.domain.rollup.Citation`'s (a person for a person-scoped kind,
 `unit|key` for a unit kind), never a row id, because a rebuild recomputes rows.
 Names are for reading; the `subject` is for citing.
 
 **No coordinate** (R-28): a place is words, and an unlabelled one is said to be
-unlabelled (design 27 §3.4), never guessed.
+unlabelled, never guessed.
 """
 
 from __future__ import annotations

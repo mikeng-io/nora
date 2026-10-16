@@ -1,33 +1,25 @@
 """R-28's identifier/coordinate egress screen. Applied at every place where
 a string that might name a person or carry a raw coordinate is about to
-leave the host in a tool argument (Google Places/Routes today; anything
-else with the same shape later) — moved out of `nora.agent.tools` so
-`nora.app.gatherings.GatheringService` can apply the identical screen to a venue
-string without a second, unaudited copy of this logic.
+leave the host in a tool argument (Google Places/Routes), so that
+`nora.agent.tools` and `nora.app.gatherings.GatheringService` apply the
+identical screen to a venue string without a second copy of this logic.
 
 `scan_identifiers` is re-exported here rather than redefined: its body
 lives in `nora.agent.egress`, paired there with `scan_reply` over a shared
-pattern table, and that module's docstring is explicit that the split
-between the two predicates is deliberate and that a third name for either
-job is how the wrong one gets called later. Re-exporting keeps that pairing
-intact — one source of truth, reachable from here too — instead of forking
-a second copy of the pattern table into this module.
+pattern table, and that module's docstring says the split between the two
+predicates is deliberate and that a third name for either job is how the wrong
+one gets called later. Re-exporting keeps one source of truth.
 
-`looks_like_coordinate` (formerly `nora.agent.tools._looks_like_coordinate`)
-moves here in full: it had no other home, and callers outside `tools.py`
-need it without reaching into that 3000+ line tool-definitions module for
-one regex predicate.
+`looks_like_coordinate` lives here so callers outside `tools.py` can use it
+without reaching into that tool-definitions module for one regex predicate.
 
-`screen_and_resolve_place` (Fix I4) finishes what the move above started:
-`nora.agent.tools`'s `place_info` tool applied the FULL R-28 screen-call-screen
-sandwich (outbound identifier/coordinate/person screen, the actual call
-wrapped in `try/except`, and a return-path screen on Google's own `name`/
-`address`), but `GatheringService._resolve_place` only ever got the outbound
-half — no person-name check, no `try/except` around the call, and no
-return-path screen, so a Google-returned `name`/`address` that itself trips
-`scan_identifiers`/`looks_like_coordinate` was written straight into
-`venue_name`/`venue_address` and persisted. Both call sites now share this
-one function instead of one carrying two-thirds of an audited guard.
+`screen_and_resolve_place` is the FULL R-28 screen-call-screen sandwich
+(outbound identifier/coordinate/person screen, the call wrapped in
+`try/except`, and a return-path screen on Google's own `name`/`address`).
+`nora.agent.tools`'s `place_info` tool and
+`GatheringService._resolve_place` share it, so a Google-returned `name` or
+`address` that itself trips `scan_identifiers`/`looks_like_coordinate` is never
+persisted as `venue_name`/`venue_address`.
 """
 
 from __future__ import annotations
@@ -48,20 +40,20 @@ log = logging.getLogger(__name__)
 # way, so a coordinate in a route argument is a leaked machine position, not
 # somewhere a person typed. See `looks_like_coordinate`.
 # A comma OR plain whitespace between the two numbers: Google Text Search locates a bare pair
-# written either way, and a pair with no comma got through while it was only a `route` argument.
+# written either way.
 _COORD_RE = re.compile(r"-?\d{1,3}\.\d+(?:\s*,\s*|\s+)-?\d{1,3}\.\d+")
 
 
 def looks_like_coordinate(text: str) -> bool:
-    """Whether a route argument is a raw coordinate (design/19 §5, R-28).
+    """Whether a route argument is a raw coordinate (R-28).
 
-    This is the outbound barrier for presence: a stored position (from Life360,
-    once `whereis` is wired) must never leave in a tool ARGUMENT to Google. A
-    person names a place — «沙田廣場», «Yoho Mall» — they do not type a decimal
-    lat/lng pair, so blocking the pair costs no real query and closes the one
-    exfil shape `scan_identifiers`/`_names_a_person` do not see (council #4,
-    2026-08-07). Range is NOT checked: an out-of-range pair is still a leaked
-    coordinate, and blocking it too is the safe direction."""
+    This is the outbound barrier for presence: a stored position (from Life360)
+    must never leave in a tool ARGUMENT to Google. A person names a place —
+    «沙田廣場», «Yoho Mall» — they do not type a decimal lat/lng pair, so
+    blocking the pair costs no real query and closes the one exfil shape
+    `scan_identifiers`/`_names_a_person` do not see. Range is NOT checked: an
+    out-of-range pair is still a leaked coordinate, and blocking it too is the
+    safe direction."""
     return _COORD_RE.search(text) is not None
 
 
@@ -92,19 +84,14 @@ def trace_safe(text: str) -> tuple[str, str]:
     coordinate anywhere in a prompt withholds the whole prompt. The provenance
     survives it — a caller stamps a `*_sha256` either way and the turn's own
     row is retained in Postgres — so the text is re-derivable by reference
-    exactly when it is not readable inline. Splitting the render into per-block
-    redaction is the better answer and is a larger change than this carries.
+    exactly when it is not readable inline. Per-block redaction would be finer
+    but is a larger change.
 
-    **It lives HERE rather than in `nora.obs.tracing`**, and that placement is
-    forced rather than chosen: `nora.obs` sits BELOW `nora.agent` in the import
-    contract, so the tracing helper cannot reach these predicates. The screen is
-    therefore the CALLER's obligation at every generation span — stated in
-    `docs/observability.md`, and the reason `generation`'s `prompt`/`completion`
-    parameters document that they take already-screened text.
-
-    It was `_trace_safe` in `nora/engagement/stages/debrief.py` until 2026-09-09,
-    private to the one stage that had thought about it, while the relevance gate
-    put a prompt digest on its span and no prompt at all.
+    **It lives HERE rather than in `nora.obs.tracing`** because `nora.obs` sits
+    BELOW `nora.agent` in the import contract, so the tracing helper cannot
+    reach these predicates. The screen is therefore the CALLER's obligation at
+    every generation span (`docs/observability.md`), and `generation`'s
+    `prompt`/`completion` parameters take already-screened text.
     """
     offence = scan_identifiers(text)
     if offence is not None:
@@ -117,9 +104,8 @@ def trace_safe(text: str) -> tuple[str, str]:
 def _names_a_person(text: str, names: frozenset[str]) -> bool:
     """Whether a venue/route argument names a known person. Substring,
     because a home address is phrased AROUND a name (「陳生屋企」), not as
-    one. Moved here alongside `looks_like_coordinate` (Fix I4) — it is the
-    third leg of the same outbound screen, and `screen_and_resolve_place`
-    needs it without a second copy living only in `nora.agent.tools`."""
+    one. It is the third leg of the same outbound screen with
+    `scan_identifiers` and `looks_like_coordinate`."""
     key = _key(text)
     return any(name in key for name in names)
 
@@ -163,10 +149,10 @@ async def screen_and_locate_place(
     place_locator: PlaceLocator | None,
     person_names: frozenset[str] | None = None,
 ) -> PlaceScreenResult:
-    """`screen_and_resolve_place`'s twin for a SERVICE that needs the coordinate (design/artifact
-    §40): the same outbound screen, the call wrapped so it never raises, and the same return-path
-    screen on Google's name, but the reply carries `lat` and `lng`. Only a caller that stores the
-    pair may use it; its result must never reach a tool result (DEC-24)."""
+    """`screen_and_resolve_place`'s twin for a SERVICE that needs the coordinate: the
+    same outbound screen, the call wrapped so it never raises, and the same return-path screen on
+    Google's name, but the reply carries `lat` and `lng`. Only a caller that stores the pair may
+    use it; its result must never reach a tool result (DEC-24)."""
     reason = _refused_before_the_call(query, person_names)
     if reason is not None:
         return PlaceScreenResult(status="refused", reason=reason)
@@ -191,8 +177,7 @@ async def screen_and_resolve_place(
 ) -> PlaceScreenResult:
     """The FULL R-28 screen-call-screen sandwich for resolving a free-text
     venue/place name through Google Places — shared by `nora.agent.tools`'s
-    `place_info` tool and `nora.app.gatherings.GatheringService._resolve_place`
-    (Fix I4).
+    `place_info` tool and `nora.app.gatherings.GatheringService._resolve_place`.
 
     Three phases, all load-bearing:
       1. OUTBOUND screen — `scan_identifiers`/`looks_like_coordinate` on the

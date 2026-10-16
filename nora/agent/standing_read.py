@@ -1,16 +1,15 @@
-"""What `standing_read` shows of a room's Standing head
-(design/cognition-loop/50-character-and-standing.md §2, 10-tiers.md §2 rule 7
-and §3): the sections that pass, each one only where its own lineage passes.
+"""What `standing_read` shows of a room's Standing head: the sections that
+pass, each one only where its own lineage passes.
 
-**Lineage is per section** (10 §3): `Where it stands`, `I hold open`, `I owe`
+**Lineage is per section**: `Where it stands`, `I hold open`, `I owe`
 and `Found, not yet given` each render only where every entry of that
 section's own lineage passes for the calling room; a section that fails is
 withheld and the rest is shown. A surprise (`exclude_persons`) withholds every
 section at once.
 
-**The revision id is exposed** so a revision can name the position it replaces
-(M6's preparation): it is `standing_revision.id`, or absent when the chain
-holds none that IS the head (`nora.domain.standing.StandingHead`).
+**The revision id is exposed** so a revision can name the position it replaces:
+it is `standing_revision.id`, or absent when the chain holds none that IS the
+head (`nora.domain.standing.StandingHead`).
 """
 
 from __future__ import annotations

@@ -2,12 +2,8 @@
 
 Two surfaces tell her when it is: the clock line at the top of every turn
 (`nora.agent.prefill._now_line`) and the `now` tool, which she may call in
-the middle of one. Until 2026-09-24 they were two `strftime` calls reading two
-clocks: the prefill read the process's local zone, the tool a fixed `+08:00`
-labelled HKT. When the clock line gained its zone name and place, the tool
-kept saying «(HKT)», so a mid-turn `now()` stated fewer facts than the line
-above it. Both now read `local_now()` and render through `state_time`, so they
-cannot disagree about anything but the minute that passed between them.
+the middle of one. Both read `local_now()` and render through `state_time`, so
+they cannot disagree about anything but the minute that passed between them.
 
 The place is the zone's own city (`Asia/Hong_Kong` is Hong Kong), not a
 location feed: it is where the clock is, which is what the deployment's zone

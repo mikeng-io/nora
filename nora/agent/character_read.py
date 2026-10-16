@@ -1,6 +1,5 @@
 """What `character_read` resolves before it reads: which accounts of THIS unit a
-model's `room` or `person` argument names (design/self-growth/10-character.md
-§6 C4, design/cognition-loop/50-character-and-standing.md §5).
+model's `room` or `person` argument names.
 
 **The unit is the boundary, drawn by scope.** Every function here is handed the
 unit's own rooms and nothing else, so a room or a person of another unit is not
@@ -10,7 +9,7 @@ list them: a `persons = "*"` room lists nobody (`Persons.room_members`'s rule),
 so it is the fail-closed side.
 
 **No lineage filter: the unit is the read boundary** (DEC-231; `[lineage]` is
-do-not-enable, design/cognition-loop/10-tiers.md §3, AGENTS.md). Text read
+do-not-enable, AGENTS.md). Text read
 here can reach another room of the same unit through a `remind` brief, which
 the unit boundary permits. Accounts are linked, never cited, so anything
 built from one carries no lineage of its own.
@@ -18,9 +17,9 @@ built from one carries no lineage of its own.
 paths. Account bodies are screened for identifiers on the way out (R-18).
 
 **`account_key` is the ONE place a store key is built.** A room's account is
-keyed by the room; a person's by their UNIT since C2b (one account per (unit,
-person), design/self-growth/10 §3), so every room of the unit that lists them
-names the same key and `character_read` reads it once.
+keyed by the room; a person's by their UNIT (one account per (unit, person)),
+so every room of the unit that lists them names the same key and
+`character_read` reads it once.
 """
 
 from __future__ import annotations

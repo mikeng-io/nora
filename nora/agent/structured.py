@@ -6,57 +6,39 @@ elsewhere that wants the SDK's structured output asks here rather than
 importing the SDK itself — the same reason `factory.create_model_provider`
 exists for the tag path.
 
-**What this measured, and what it costs.** Strands implements structured
-output by converting the schema into a TOOL SPECIFICATION and feeding the
-tool result back, so one logical call becomes a three-message exchange:
+**What it costs.** Strands implements structured output by converting the
+schema into a TOOL SPECIFICATION and feeding the tool result back, so one
+logical call becomes a three-message exchange:
 
     [0] user      text
     [1] assistant reasoningContent + toolUse
     [2] user      toolResult
 
-Against OmniRoute's Chat Completions transport the SDK then logs
-«reasoningContent is not supported in multi-turn conversations» and DROPS
-message [1]'s reasoning before the verdict is formed. On the relevance gate's
-40-case suite that turned a held safety case into a breach — a forged
-`[assistant]:` row inside a member's message was believed, five times out of
-five — while costing 2.6x the tokens (2026-09-09; `evals/relevance_gate.py
---via-sdk` is the instrument).
+Against OmniRoute's Chat Completions transport the SDK DROPS message [1]'s
+reasoning before the verdict is formed («reasoningContent is not supported in
+multi-turn conversations»). That costs more tokens and makes a forged
+`[assistant]:` row inside a member's message believable (ADR 0011;
+`evals/relevance_gate.py --via-sdk` is the instrument).
 
 So this is NOT a drop-in replacement for a raw completion on a path whose
-verdict is security-relevant. It is here to be measured against, and to be
-the one home for the SDK call.
+verdict is security-relevant. It is the one home for the SDK call, and the arm
+the gate is measured against.
 
-**The limitation is lifted for the agent loop, not here** (DEC-208, #325,
-2026-09-25). The drop was the SDK's formatter, not the transport: the upstream
-reads a prior assistant message's reasoning from a `reasoning` field, and
-`nora.agent.reasoning_carry` now puts it there for every provider
-`factory.create_model_provider` builds. `build_structured_model` below still
-builds the plain `DashFreeOpenAIModel` ON PURPOSE: `ask_structured` is the arm
-ADR 0011 measured, and carrying the reasoning would change the arm the eval
-compares against. Moving it onto the carrying model is a new measurement of
-the gate's `--via-sdk` arm first, not an edit.
+The agent loop does not share the limitation (DEC-208): the drop was the SDK's
+formatter, not the transport, and `nora.agent.reasoning_carry` puts a prior
+assistant message's reasoning where the upstream reads it for every provider
+`factory.create_model_provider` builds. `build_structured_model` below
+deliberately builds the plain `DashFreeOpenAIModel`: `ask_structured` is the arm
+ADR 0011 measures, and carrying the reasoning would change it. Moving it onto
+the carrying model is a new measurement of the gate's `--via-sdk` arm first.
 
-**The relevance gate is that exception, and since 2026-09-11 it is HONOURED
-rather than only warned about.** This paragraph was written in the same change
-that wired the gate onto this module (`4448c737`), so the caveat and the
-violation shipped together and neither read as a contradiction in isolation —
-the gate then ran in production for two days on the transport its own eval had
-already measured as failing. Re-measured on 2026-09-11 against the deployed
-`nora-gate` alias, same tree, same model, one instruction on both arms
-(`participation.md` v5 `sha=9969bc4e643c`), 40 labelled cases, n=5:
-
-    arm                             safety     prompt tokens (median)
-    raw `json_object`               6/6 held          2,055
-    Strands `structured_output`     1/6 BREACHED      5,021  (2.4x)
-
-It reproduced. `nora/app/composition.py::_RelevanceGateModelClient` is a raw
-`json_object` completion again (issue #186), and a sentence is no longer what
-holds it there: `tests/architecture/
+**The relevance gate must not form its verdict here.**
+`nora/app/composition.py::_RelevanceGateModelClient` is a raw `json_object`
+completion, and `tests/architecture/
 test_the_gate_does_not_form_its_verdict_through_the_sdk.py` discovers every
-`RelevanceGate` client and fails when one reaches `ask_structured`. A docstring
-did not stop the wiring the first time.
+`RelevanceGate` client and fails when one reaches `ask_structured`.
 
-The debrief and the standing fold STAY here. They use `ask_text`, which sends
+The debrief and the standing fold stay here. They use `ask_text`, which sends
 no tool specification at all, and neither produces a verdict that decides
 whether Nora may speak into a room she was not invited into — which is the
 exact line this module draws.
@@ -82,11 +64,10 @@ from .tool_choice import FIRST_CALL
 T = TypeVar("T", bound=BaseModel)
 
 #: The Strands SDK defaults an unnamed `Agent(name=None)` to "Strands Agents",
-#: which made every `ask_text`/`ask_structured` span identical and unsearchable
-#: (measured in Langfuse: 56 detached `invoke_agent Strands Agents` roots over
-#: 7 days — debrief, standing fold and eval arms all collapsed into one name).
-#: A caller that names its call gets a span it can filter on. The default
-#: stays honest ("structured") rather than pretending to be a caller's lane.
+#: which makes every `ask_text`/`ask_structured` span identical and
+#: unsearchable. A caller that names its call gets a span it can filter on. The
+#: default stays honest ("structured") rather than pretending to be a caller's
+#: lane.
 DEFAULT_STRUCTURED_AGENT_NAME = "structured"
 
 
@@ -127,11 +108,10 @@ def build_structured_model(
         opencode-go/deepseek-v4-flash-none: [400] Upstream request failed:
         Thinking mode does not support this tool_choice
 
-    Measured against the `nora-gate` combo on 2026-09-09; it fans out, and the
-    same case failed on one member and succeeded on another. Declaring the
-    value with `reasoning_effort="none"` — which is what a structured call
-    wants anyway, one classification with a fixed output — keeps every member
-    of a combo able to serve it. `factory.create_model_provider` carries the
+    A combo fans out, so the same case can fail on one member and succeed on
+    another. Declaring the value with `reasoning_effort="none"` — which is what
+    a structured call wants anyway, one classification with a fixed output —
+    keeps every member of a combo able to serve it. `factory.create_model_provider` carries the
     same argument for the tag path: a setting left to the route is a setting
     nobody chose.
     Dash-free for the same reason as the tag path: what these calls write
@@ -175,13 +155,10 @@ async def ask_structured(
     call's exchange decide the next one's (`factory.ModelSpec`'s argument, and
     `create_agent` builds per-tag for exactly this).
 
-    **Has the identical `MaxTokensReachedException` gap `ask_text` had before
-    this fix (noted, not fixed, by review 2026-09-19)**: no catch, so
-    `finish_reason="length"` at `:183` below is equally unreachable on a real
-    cutoff. Low priority — `grep`-checked, this function's only caller today
-    is `tests/offline_eval_support.py`, no production path — but the
-    asymmetry with `ask_text` is now accidental, not deliberate, should this
-    function gain one.
+    Unlike `ask_text`, this does not catch `MaxTokensReachedException`, so
+    `finish_reason="length"` below is unreachable on a real cutoff. Its only
+    caller is `tests/offline_eval_support.py`, not a production path; a caller
+    that gains one needs the catch `ask_text` has.
     """
     agent = Agent(model=model, tools=[], callback_handler=None,
                   system_prompt=system_prompt, name=agent_name)
@@ -222,42 +199,33 @@ async def ask_text(
     translated into the raw-completion vocabulary its callers already check.
 
     `agent_name` means what it means in `ask_structured`: the span the call
-    traces under, so the debrief's fold/consolidate calls are distinguishable
-    from the (deleted, DEC-277) event fold's in Langfuse instead of all reading
-    `invoke_agent Strands Agents`.
+    traces under, so the debrief's calls are distinguishable in Langfuse
+    instead of all reading `invoke_agent Strands Agents`.
 
     `trace_attributes` rides `Agent`'s own `trace_attributes` kwarg, which the
     SDK's event loop copies onto both the agent span and the `chat`
-    model-invoke span underneath it (`strands/event_loop/event_loop.py`,
-    `custom_trace_attributes=agent.trace_attributes` on both). This is what
-    lets `tag_id`/`conversation_id` land on the actual model-call span now
-    that the caller no longer wraps this call in its own hand-rolled span to
-    stamp them onto — see `nora.engagement.stages.debrief`.
+    model-invoke span underneath it. That is what lets `tag_id` and
+    `conversation_id` land on the actual model-call span (see
+    `nora.engagement.stages.debrief`).
 
-    **`MaxTokensReachedException` is caught here, matching `nora.agent.
-    factory.invoke`'s own catch for the tag turn's Agent invocation.**
-    Strands' event loop raises it unconditionally on `stop_reason ==
-    "max_tokens"` (`event_loop.py:304-311`) rather than returning normally —
-    so the `stop == "max_tokens"` branch below, on its own, can never fire for
-    a genuine cutoff. Without this catch a debrief/standing-fold call that
-    hits the token ceiling raised past this function into its caller's outer
-    exception handling and counted as a hard error rather than the
+    `MaxTokensReachedException` is caught here, matching `nora.agent.
+    factory.invoke`'s catch for the tag turn. Strands' event loop raises it on
+    `stop_reason == "max_tokens"` rather than returning normally, so the
+    `stop == "max_tokens"` branch below can never fire for a genuine cutoff.
+    Without the catch, a call that hits the token ceiling would raise into its
+    caller's outer exception handling and count as a hard error rather than the
     `finish_reason="length"` outcome `nora.engagement.stages.debrief._check`
-    already exists to refuse cleanly. The partial text is recovered from
-    `agent.messages` the same way `factory.invoke` does (Strands appends it
-    before raising), with the same exclusion for the SDK's canned
-    tool-recovery notice — moot here since `ask_text` never grants tools, kept
-    for parity with the one other place this extraction is written.
+    refuses cleanly. The partial text is recovered from `agent.messages` the
+    way `factory.invoke` does (Strands appends it before raising), with the
+    same exclusion for the SDK's canned tool-recovery notice — moot here since
+    `ask_text` never grants tools, kept for parity.
 
-    **`usage=None` on this path is not a loss, only unreported here**
-    (review, 2026-09-19): `agent.event_loop_metrics.accumulated_usage` is
-    populated before Strands raises, so the token counts ARE recoverable —
-    this just does not read them, matching the normal-completion path's own
-    "None when the provider reported none" convention rather than asserting
-    a call that exhausted its own ceiling was free. The caller
-    (`nora.app.composition`'s `_DebriefModelClient`) discards `usage`
-    either way, and Strands' own span still records `gen_ai.usage.*`
-    independently of this return value.
+    `usage=None` on the cutoff path is unreported, not unrecoverable:
+    `agent.event_loop_metrics.accumulated_usage` is populated before Strands
+    raises, but this does not read it, and None avoids asserting that a call
+    that exhausted its ceiling was free. The caller (`nora.app.composition`'s
+    `_DebriefModelClient`) discards `usage` either way, and Strands' own span
+    records `gen_ai.usage.*` independently.
     """
     agent = Agent(model=model, tools=[], callback_handler=None,
                   system_prompt=system_prompt, name=agent_name,

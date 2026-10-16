@@ -1,12 +1,11 @@
-"""Cognition's pace verbs (design/cognition-loop/20-observe.md §3). The impure
-half of `nora.domain.cognition_pace`: validate, then record — and, on a successful
-`wake_at`/`wake_move`, append the `self` stimulus the ALREADY-LIVE wake
-evaluator (`nora.app.wake.WakeEvaluator`, step 1) picks up with no change of
-its own, because `nora.domain.stimuli._trigger` already fires on any
-pending `self`-kind stimulus (20 §3's wake table, row "self").
+"""Cognition's pace verbs. The impure half of `nora.domain.cognition_pace`:
+validate, then record — and, on a successful `wake_at`/`wake_move`, append the
+`self` stimulus the wake evaluator (`nora.app.wake.WakeEvaluator`) picks up,
+because `nora.domain.stimuli._trigger` fires on any pending `self`-kind
+stimulus.
 
 **Write order, so no failure loses a self-wake or leaves one that fires
-after it was called off** (DEC-242, second review of #627). A self-wake is
+after it was called off** (DEC-242). A self-wake is
 live while a `self` stimulus stands for its `wake_ref` (`item`) unretracted;
 the ledger row is its bookkeeping. `wake_at` appends, then records; if the
 record fails the new stimulus is retracted before the error is raised, so no
@@ -163,13 +162,13 @@ async def wake_at(
         why=why, at_ms=at_ms, now_ms=now_ms, supersedes=supersedes,
     )
     if supersedes is not None:
-        # The displaced self-wake's stimulus is retracted (20 §3: a new
-        # self-wake sharing a subject row SUPERSEDES the pending one), or it
-        # would still fire beside its replacement. After the record: a failed
-        # record must not take the old one away with the new. And AFTER the record
-        # the new wake is a fact: a failure here must not turn a created wake into
-        # an error (the model would retry it and a second one would stand), so it is
-        # logged, and the worst it leaves is the superseded wake firing once more.
+        # A new self-wake sharing a subject row SUPERSEDES the pending one, so
+        # the displaced stimulus is retracted or it would fire beside its
+        # replacement. After the record: a failed record must not take the old
+        # one away with the new. And once recorded the new wake is a fact: a
+        # failure here must not turn a created wake into an error (the model
+        # would retry it and a second one would stand), so it is logged, and the
+        # worst it leaves is the superseded wake firing once more.
         try:
             await stimuli.retract_self(
                 unit=unit, wake_ref=supersedes, keep=None, reason="superseded",
@@ -201,10 +200,9 @@ async def wake_move(
             now_ms=now_ms, outcome="refused", refusal_reason=refusal.reason,
             refusal_detail=refusal.detail,
         )
-    # APPEND the new due time first, then retract the old one: a move
-    # replaces the due time, it does not add a second wake at the old one
-    # (20 §3: «versioned transitions»), and a failure between the two must
-    # leave one of them live, never neither.
+    # APPEND the new due time first, then retract the old one: a move replaces
+    # the due time rather than adding a second wake, and a failure between the
+    # two must leave one of them live, never neither.
     stimulus_id = await stimuli.append(
         stimulus=NewStimulus(
             unit=unit, kind="self", item=wake_ref, ref=f"self:{wake_ref}:{at_ms}",

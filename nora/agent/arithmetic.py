@@ -23,8 +23,8 @@ one. An expression is a genuine model decision; `people=6` is Nora guessing in
 advance which question will be asked.
 
 
-THE FOUR THINGS MEASURED BEFORE THIS WAS WRITTEN (2026-08-06, this machine)
---------------------------------------------------------------------------
+THE FOUR CONSTRAINTS THIS MODULE ENFORCES
+-----------------------------------------
 
 1. **Python's default rounding is ROUND_HALF_EVEN, and you get it by NOT
    choosing.** `Decimal("2.005").quantize(Decimal("0.01"))` is **2.00**, not
@@ -42,10 +42,9 @@ THE FOUR THINGS MEASURED BEFORE THIS WAS WRITTEN (2026-08-06, this machine)
 
 3. **`Pow` is a denial of service before it is a safety question.**
    `2**9999999999` parses cleanly as `BinOp`/`Pow` and passes any
-   operator-level whitelist. Over Python ints it was still running when
-   `timeout 10` killed it. Over `Decimal` it raises `Overflow` in 54
-   microseconds — which is a real mitigation, but it is one this module does
-   not own: it is the ambient context's `Emax=999999` plus the `Overflow`
+   operator-level whitelist. Over Python ints it runs effectively forever.
+   Over `Decimal` it raises `Overflow` almost at once — a real mitigation, but
+   one this module does not own: it is the ambient context's `Emax=999999` plus the `Overflow`
    trap being enabled, either of which another `localcontext` could change,
    and «Overflow» is not a sentence a model can act on. `Pow` is therefore
    KEPT — compound interest and percentages are ordinary group-chat questions
@@ -95,16 +94,15 @@ from decimal import (
 
 # Checked BEFORE `ast.parse`. The `ast` docs warn that parsing can crash the
 # interpreter outright on sufficiently nested input ("stack depth limitations
-# in Python's AST compiler"). MEASURED on CPython 3.13: 5,000 nested parens is
-# a `SyntaxError` in 0.5 ms and 200 parses fine — so today's parser happens to
-# defend itself. That is a CPython implementation detail and not a promise, and
-# it is the wrong layer anyway: this cap is also what bounds the node count and
+# in Python's AST compiler"). CPython's parser happens to reject deeply nested
+# parens with a `SyntaxError`, but that is an implementation detail and not a
+# promise, and it is the wrong layer anyway: this cap is also what bounds the node count and
 # therefore `_eval`'s recursion depth (a 200-character expression cannot nest
 # deeper than ~100, against a default recursion limit of 1000). 200 characters
 # is far more than any arithmetic a group chat contains.
 MAX_EXPRESSION_CHARS = 200
 
-# `Pow`'s exponent, per measurement 3 above. 1000 is generous by orders of
+# `Pow`'s exponent, per constraint 3 above. 1000 is generous by orders of
 # magnitude against what this exists for — `1.05 ** 30` is thirty years of
 # compound interest, `1.15 ** 1` is a service charge — while being far below
 # anything that can cost real time.
@@ -145,7 +143,7 @@ def _constant(node: ast.Constant, source: str) -> Decimal:
     """One numeric literal, exactly.
 
     `ast` hands back `Constant(value=0.1)` — a Python FLOAT, already rounded at
-    parse time. MEASURED: `Decimal(0.1)` is
+    parse time. `Decimal(0.1)` is
     0.1000000000000000055511151231257827021181583404541015625, so `0.1 + 0.2`
     would not be `0.3` and the tool would be wrong in exactly the way it exists
     to prevent. `Decimal(str(0.1))` fixes that one case but not the general one
@@ -153,7 +151,7 @@ def _constant(node: ast.Constant, source: str) -> Decimal:
 
     So a float literal is re-read from its SOURCE TEXT, which is the only form
     that never lost anything. `Decimal` accepts the underscores Python allows
-    in literals (measured: `Decimal("1_000")` is 1000), so `1_000.5` survives.
+    in literals (`Decimal("1_000")` is 1000), so `1_000.5` survives.
 
     INT literals take the other path deliberately: `Decimal(int)` is exact by
     construction and needs no text, and it is the only form that reads `0xff`,
@@ -193,10 +191,10 @@ def _guard(value: Decimal) -> Decimal:
 # ---- the allowlist ----------------------------------------------------------
 #
 # One branch per permitted node type; anything else falls to the `else`. This
-# is the shape measurement 4 argues for, and the `else` is why `IfExp`,
+# is the shape constraint 4 argues for, and the `else` is why `IfExp`,
 # `Subscript`, `Lambda`, `ListComp`, `JoinedStr`, `Compare`, `BoolOp`,
-# `NamedExpr` and every construct added to Python after this was written are
-# refused without being enumerated: they were never allowed.
+# `NamedExpr` and every construct added to Python later are refused without
+# being enumerated: they are not allowed.
 #
 # Bitwise and shift operators (`|`, `&`, `^`, `<<`, `>>`) and `not`/`~` are
 # absent on purpose rather than by oversight. `Decimal` does not implement any
@@ -230,7 +228,7 @@ def _binop(node: ast.BinOp, source: str) -> Decimal:
         # ones fit" means and that is the question these get asked.
         return left // right if op is ast.FloorDiv else left % right
     if op is ast.Pow:
-        # Measurement 3. The bound is checked before the operation, not
+        # Constraint 3. The bound is checked before the operation, not
         # inferred from whatever the ambient context's Emax happens to be.
         if abs(right) > MAX_POW_EXPONENT:
             raise _RefusalError(

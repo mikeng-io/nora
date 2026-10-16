@@ -1,13 +1,11 @@
 """The speech formatter: a late, lite call that fits a spoken reply to the TTS
-voice, between her words being final and MiniMax reading them
-(design/voice-channel/08).
+voice, between her words being final and MiniMax reading them.
 
 **Why it is not Nora's job.** Her doctrine is written chat, and her reply
 text is recorded: the audit row, the Honcho feed and the notes carry it
 exactly as she wrote it. Pause markers and interjection tags are for the ear.
 Putting them in her reply would put `<#0.40#>` into every store that reads
-her words, and asking her to write two registers at once is the optional
-garnish this repo has measured a cheap model never chooses (`nora.agent.
+garnish a cheap model never chooses (`nora.agent.
 reaction`'s docstring). So the formatter runs where the reaction picker runs,
 after her reply is written, and it sees only the copy that is about to be
 spoken. Nothing it returns is recorded anywhere but the audio.
@@ -24,7 +22,7 @@ speaks her normalised reply instead. A spoken reply is never delayed past
 
 **A reply too short to pace skips the model** (`min_chars`): a pause needs a
 stretch of speech on both sides, and most voice replies are a single short
-clause (median 16 characters over the first 26, 2026-09-17 to 09-30).
+clause.
 """
 
 from __future__ import annotations
@@ -48,8 +46,8 @@ log = logging.getLogger("nora.agent.speech_format")
 
 AUDIENCE = "speech_format"
 
-#: The one block the formatter reads. Declared as data (design/context-
-#: assembly): what this call carries is a table, not a trace through code.
+#: The one block the formatter reads. Declared as data: what this call carries
+#: is a table, not a trace through code.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("spoken_reply", 10, "turn"),
 )

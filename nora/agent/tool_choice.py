@@ -1,6 +1,5 @@
 """The `tool_choice` sequence — `required` for a turn's first model call, `auto`
-once she has spoken. This IS the multi-message mechanism
-(`design/proposed/16-multi-message-replies.md` §2).
+once she has spoken. This IS the multi-message mechanism.
 
 Two constants and one function, in their own module because both ends of the
 sequence read them and neither may import the other: `nora.agent.factory`
@@ -8,30 +7,21 @@ sets the opening value on every model it builds, and `nora.agent.guards`
 relaxes it mid-turn — and `factory` already imports `guards` (for `ReplyGuard`),
 so the shared names cannot live in either.
 
-**Measured, 2026-08-06, `opencode-zen/deepseek-v4-flash`, `reasoning_effort="low"`
-(design/16 §2.1) — do not re-derive:**
+**Why `required` first, `auto` after.** Under `auto` on the FIRST call the model
+tends to answer in prose, which is not a tool call, which is not a message —
+Nora silent in the group while the turn looks successful. That is R-5's exact
+failure shape, so the opening value is `required` and relaxing globally is
+not an option.
 
-    A. auto, fresh question          plain text 5/6, called a tool 1/6
-    B. auto, already replied         STOPPED 8/8
-    C. required, already replied     kept going 6/6            (control)
-    D. auto throughout, invited      0 messages sent 6/6
-
-A and D are why `required` cannot simply be dropped: under `auto` on the FIRST
-call the model answers in prose, which is not a tool call, which is not a
-message — Nora silent in the group while the turn looks successful. That is
-R-5's exact failure shape, and relaxing globally would have shipped it.
-
-B against its control C is the permission: once a reply exists in history,
-`auto` lets her stop 8/8 where `required` never stops 6/6. The loop ends
-because she declines to call anything, not because a limit caught her — which
-is why a message cap can never BE the stopping mechanism, only a backstop
-(§1: with no way to stop early a cap becomes a quota that is always spent in
-full).
+Once a reply exists in history, `auto` lets her stop where `required` never
+stops. The loop ends because she declines to call anything, not because a
+limit caught her — which is why a message cap can only be a backstop, never
+the stopping mechanism (with no way to stop early a cap becomes a quota that
+is always spent in full).
 
 **HOW MANY messages she then sends is a `voice.md` decision, not this
-module's.** Identical mechanism, two doctrines: a neutral prompt yields exactly
-one message 6/6 — today's behaviour, no regression — and an invitation to chat
-like a person yields 3-5.
+module's.** Identical mechanism, two doctrines: a neutral prompt yields one
+message, and an invitation to chat like a person yields several.
 """
 
 from __future__ import annotations
@@ -51,10 +41,9 @@ AFTER_SPEAKING = "auto"
 def relax(model: Any) -> bool:
     """Flip one tag's model to `auto`. True if it changed, False otherwise.
 
-    **Safe only because the model is per tag** (step 5a,
-    `nora.agent.factory.ModelSource`). Against the process-wide model this
-    repo built until 2026-08-06 it would have flipped a CONCURRENT tag's first
-    call to `auto` — see the measurements above for what that call sends.
+    **Safe only because the model is per tag** (`nora.agent.factory.ModelSource`).
+    Against a process-wide model it would flip a CONCURRENT tag's first call to
+    `auto` — see the sequence above for what that call sends.
 
     `params` is READ, COPIED and WRITTEN BACK WHOLE on purpose:
     `OpenAIModel.update_config` is `self.config.update(model_config)`
@@ -69,12 +58,10 @@ def relax(model: Any) -> bool:
     than going quiet, which R-5 says is the direction to fail in).
     """
     if model is None:
-        # No agent on the event. Not a production shape — `HookEvent.agent` is
-        # a required dataclass field — so this is the older hand-rolled event
-        # doubles in `tests/test_guards_terminal.py`, which assert on
-        # cancellation and have no model to relax. Silent rather than logged:
-        # an exception traceback per turn in those tests would be noise that
-        # says nothing about the code under test.
+        # No agent on the event: not a production shape (`HookEvent.agent` is
+        # a required dataclass field), but the hand-rolled event doubles in
+        # `tests/test_guards_terminal.py` have none and no model to relax.
+        # Silent rather than logged: a traceback per turn would be noise.
         return False
     return _set(model, AFTER_SPEAKING, "relax")
 
@@ -104,11 +91,10 @@ def require(model: Any) -> bool:
     the first time it mutates that model — not the module constant. For a tag
     model that is `FIRST_CALL` (`required`) and nothing changes: she has not
     spoken yet, and `auto` on a not-yet-spoken turn sends prose, R-5's
-    silent-failure shape (see the measurements above). But a participation turn
+    silent-failure shape (see the module docstring). But a participation turn
     composes its model with `tool_choice="auto"` ON PURPOSE (speaking is
-    optional; design/dreamer-agent-loop/35 §5) — releasing its pin to
-    `FIRST_CALL` would flip the rest of that turn to `required`, destroying the
-    right-to-silence the occasion exists to create."""
+    optional) — releasing its pin to `FIRST_CALL` would flip the rest of that
+    turn to `required`, destroying the right-to-silence the occasion exists to create."""
     if model is None:
         return False
     initial = getattr(model, "_nora_initial_tool_choice", None)
@@ -124,9 +110,9 @@ def require(model: Any) -> bool:
 
 def _set(model: Any, value: Any, what: str) -> bool:
     """Read the model's `params`, set `tool_choice=value`, write the whole dict
-    back. Shared by `relax`/`force`/`require` for the reason the module docstring
-    gives: `update_config` is a shallow update, so `params` must be written WHOLE
-    or `max_tokens`/`temperature`/`reasoning_effort` vanish for the rest of the
+    back. Shared by `relax`/`force`/`require` for the reason `relax` gives:
+    `update_config` is a shallow update, so `params` must be written WHOLE or
+    `max_tokens`/`temperature`/`reasoning_effort` vanish for the rest of the
     turn. Never raises.
 
     The first mutation of a model records its as-built `tool_choice` ON the

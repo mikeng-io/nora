@@ -1,14 +1,12 @@
 """`ShelfLoader` — a shelved tool called BY NAME is loaded on the spot.
 
-Measured 2026-09-23 on the `tool_selection` corpus (design/tool-catalogue,
-arm B): with the catalogue in front of her, she very often calls a shelved tool
-directly from its catalogue line instead of calling `load_tools` first. Strands
-has no such tool registered, answers «Unknown tool», and she then loads it and
-calls again — one wasted model call per cold tool, and a prefix-cache miss with
-it. Per turn that was 3.54 → 5.15 model calls and roughly double the uncached
-input, which is the whole saving and then some.
+With the catalogue in front of her, she often calls a shelved tool directly
+from its catalogue line instead of calling `load_tools` first. Strands has no
+such tool registered and answers «Unknown tool»; she then loads it and calls
+again — one wasted model call per cold tool, and a prefix-cache miss with it.
 
-The fix is on the framework's own seam, not in her instructions: Strands fires
+The remedy is on the framework's own seam, not in her instructions: Strands
+fires
 `BeforeToolCallEvent` with `selected_tool=None` for a name it does not hold,
 and `selected_tool` is one of the three fields a hook may write
 (`BeforeToolCallEvent._can_write`). So when the name is on THIS turn's shelf,

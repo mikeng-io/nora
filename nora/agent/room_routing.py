@@ -1,14 +1,12 @@
 """One read tool per name for an agenda that spans several rooms, each read
-resolved through the room it names (design/cognition-loop/30-cognition.md §1,
-DEC-231, R-21; #637 review, major 3).
+resolved through the room it names (DEC-231, R-21).
 
 **The problem.** A tool NAME is one tool: two rooms' `record_query` cannot both
 be «record_query» (Strands keeps the LAST silently, which reads one room's
-Record through another room's binding without a word). #637 first bound the
-whole session to the unit's home room when the agenda spanned several rooms,
-which contradicts the design: «each item's room-scoped reads resolve through
-that item's room», and it made every read about another room's people fail
-closed on the home room's roster, or worse, answer through the wrong one.
+Record through another room's binding without a word). Binding the whole
+session to the unit's home room would make every read about another room's
+people fail closed on the home room's roster, or answer through the wrong one;
+each item's room-scoped reads must resolve through that item's room.
 
 **The shape.** The registry builds each read tool for each agenda room, as it
 always does (`RegistryToolSource.build`, so lineage, the roster guard and the

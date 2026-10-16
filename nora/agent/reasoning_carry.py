@@ -1,43 +1,16 @@
 """Her reasoning reaches her next call: `ReasoningCarryingOpenAIModel`.
 
-Issue #325, ADR 0013. Strands' `OpenAIModel._format_regular_messages` drops
-every `reasoningContent` block out of a Chat Completions request, so in a
-tool-using loop each continuation call was formed WITHOUT the reasoning the
-previous call produced. `reasoning_strip_log` measured it on production
-(2026-09-17 to 2026-09-24): every continuation call on the two Dreamer paths
-that run at `reasoning_effort = "low"` (`dreamer:proactive`, `dreamer:culture`)
-was a strip, 86 of 86, over 46 samples; the paths at `none` produced nothing to
-strip.
+Strands' `OpenAIModel._format_regular_messages` drops every
+`reasoningContent` block out of a Chat Completions request, so without this a
+continuation call in a tool-using loop is formed WITHOUT the reasoning the
+previous call produced (ADR 0013).
 
-**What the upstream reads, measured rather than assumed** (2026-09-25, direct
-requests against OmniRoute on the deploy host, aliases `nora-dreamer` and
-`nora`, both served by `deepseek-v4.1-flash`, one multi-turn tool exchange,
-the same second request with one field added to the prior assistant message
-carrying ~1,200 tokens of padding; `prompt_tokens` is the reading):
-
-    field on the assistant message        prompt_tokens   reaches the model
-    (none: the shape Strands sends)            597             -
-    reasoning_content                          597             NO, discarded
-    thinking                                   597             NO, discarded
-    reasoning                                 1798             YES
-    content (control)                         1797             YES
-
-Streaming requests read the same (481 / 481 / 1682). The response carries the
-model's reasoning as `reasoning`, not `reasoning_content`, and no variant was
-refused (every arm 200), including the one Strands sends today: the upstream
-neither REQUIRES the reasoning back nor rejects it. It simply never saw it.
-
-The combos' FALLBACK members, probed the same way: `nora-dreamer`'s
-`opencode-go/deepseek-v4-flash` answers with `reasoning_content` and reads
-padding in either `reasoning` or `reasoning_content` (+1,176 tokens each), so
-the carry does not break a fallback; `nora`'s `opencode-go/deepseek-v4.1-flash`
-returned no reasoning to carry; `ollama-cloud/deepseek-v4-flash` is out of the
-catalogue (400 on every request, which the combo already falls past).
-
-So the field is `reasoning`, the spelling the upstream both writes and reads.
-`reasoning_content` (DeepSeek's native API) would have been accepted and
-silently thrown away, which is exactly the defect a fix must not recreate: a
-request that looks carried and is not.
+**Which field.** The upstream (OmniRoute) writes the model's reasoning as
+`reasoning` and reads it back as `reasoning`. `reasoning_content` (DeepSeek's
+native API) and `thinking` are accepted without error and silently discarded,
+which is the defect this class exists to avoid: a request that looks carried
+and is not. The upstream neither REQUIRES the reasoning back nor rejects it,
+so the field must be the one it reads.
 
 **Scope.** Assistant messages only. One whose only content is reasoning is
 still dropped whole by the SDK's `format_request_messages` (it keeps only
@@ -48,9 +21,8 @@ it. Every reasoning block in `agent.messages` comes from THIS loop
 (`nora.agent.prefill` renders plain text, ADR 0013 §3), so carrying all of
 them is carrying the current turn's reasoning, never a past turn's.
 
-Dash-free is kept and applies to the carried text too: the reasoning is
-something she READS on the next call, which is the line `nora.agent.
-punctuation` draws.
+Dash-free applies to the carried text too: the reasoning is something she
+READS on the next call, which is the line `nora.agent.punctuation` draws.
 """
 
 from __future__ import annotations

@@ -1,13 +1,12 @@
-"""What a session FETCHED through its read tools, so a write may cite it
-(`design/cognition-loop/30-cognition.md` §3 check 1: "Citations resolve to ids
-this session was shown or fetched"; review of 2026-09-30, m4).
+"""What a session FETCHED through its read tools, so a write may cite it:
+citations must resolve to ids this session was shown or fetched.
 
-A note's citations were held to the ids the agenda's stimuli named, so a session
-that read an older message with `record_query`, or the ids an existing note
-already cites with `note_read`, could not write a line resting on them: the
-validator refused `unknown_id` for a row the session had in front of it. This
-module watches the three reads that hand out citable rows and keeps what they
-returned:
+A note's citations are not limited to the ids the agenda's stimuli named: a
+session that read an older message with `record_query`, or the ids an existing
+note already cites with `note_read`, may write a line resting on them, so the
+validator does not refuse `unknown_id` for a row the session had in front of
+it. This module watches the three reads that hand out citable rows and keeps
+what they returned:
 
 - `note_read`: the ids the note's body cites (`cited_ids_in`), which a revision
   carries forward (`Shown.carried`: accepted without a re-read, because a row
@@ -26,8 +25,8 @@ unavailable or unparseable result keeps nothing.
 **Per room.** What a read returned is kept under the room it was routed through
 (the tool call's `room` argument, or the one room of a one-room agenda), and a
 write in a room is shown only that room's fetched rows. A Rollup row read
-through room A is not citable in a note filed to room B (#663 review, major 1):
-the read's room is the binding its roster and lineage resolved through.
+through room A is not citable in a note filed to room B: the read's room is
+the binding its roster and lineage resolved through.
 
 **`record_query` prints `n` for the Cognition session only** (DEC-250): its rows
 carry the message number a note cites, WITH the sender, and never on a tag turn

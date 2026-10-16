@@ -8,16 +8,10 @@ then throws away.
 resolves — a real Google deep link (the full Maps URL, ADR 0023: no
 shortener), already screened, already in the tool result the
 model is reasoning over, and named in the tool's own docstring («include it in
-your reply so they can tap through»). Measured live 2026-08-10: in one
-stress-test session she recommended four restaurants, `place_info` returned a
-link for every one, and she used **none** of them. The data was there; the
-reply was the thing that lost it.
-
-That is DEC-82's shape exactly, one exit later. `voice.md` forbidding bold did
-not stop bold, and a docstring asking for the link did not produce the link —
-DEC-78's lesson is that a maxim in the prompt does not move behaviour and the
-matched surface does, so the rule lives where the text LEAVES rather than being
-asserted a third time in prose.
+your reply so they can tap through»). The model can still drop it from the
+reply, and a maxim in the prompt does not reliably move behaviour (DEC-78,
+DEC-82), so the rule lives where the text LEAVES rather than being asserted
+again in prose.
 
 **Deliberately NARROW, because it edits her authored words** (the same bar
 `strip_markdown` is held to):
@@ -41,23 +35,19 @@ It is not a leak guard: everything it appends was already screened by the tool
 that minted it and is screened again by R-6/R-18 downstream, because this runs
 BEFORE them and those guards must measure the bytes that actually leave.
 
-**A link to one of OUR documents is minted, never authored (R-100, design/artifact §39).**
+**A link to one of OUR documents is minted, never authored (R-100).**
 Only `document_publish`, `document_read` and `document_set_status` return a
 document URL, and the `<documents>` block she reads carries a title and an id,
-never a URL. So she has nothing to write and only something to copy, and on
-2026-10-01 and 02 she wrote two links that matched no document, after a publish
-that never returned `ok`, and told the room the document was made. The first
-cut refused such a reply (459 lines, a store lookup, a refusal reason that went
-stale, and the room got a canned apology). This does the one thing that makes the
-claim true or absent: a document link the carrier was not handed is REMOVED, and
-the link of a document published this turn is added. The link in the room is the
-receipt; if it is not there, nothing was saved.
+never a URL. So she has nothing to write and only something to copy. A document
+link the carrier was not handed is REMOVED, and the link of a document published
+this turn is added, which makes the claim true or absent. The link in the room
+is the receipt; if it is not there, nothing was saved.
 
-**A turn that reached for `document_publish` and saved nothing says so (2026-10-02, trace
-3ba6b39c).** She read the catalog, wrote the spec to her own computer, never published it and
-told the room it was made, with no link in the reply for anything to strip. The one fact that
-is true in every such turn, whatever she wrote, is that nothing was saved, so the reply carries
-it once, whether or not a public origin is configured.
+**A turn that reached for `document_publish` and saved nothing says so.** She
+may tell the room a document was made without ever publishing it, with no link
+in the reply for anything to strip. The one fact that is true in every such
+turn, whatever she wrote, is that nothing was saved, so the reply carries it
+once, whether or not a public origin is configured.
 
 It goes on a message that can be the last one, never on a progress message sent before the
 work: a catalog read alone does not mark a message sent through `send_reply` (she may still be
@@ -80,8 +70,8 @@ log = logging.getLogger("nora.links")
 # Below this an anchor is not evidence that she named the place. Two characters
 # is the floor rather than a comfortable four because Cantonese place names are
 # routinely two (譚仔, 泰斗, 池記) — the length that would be reckless in English
-# is the common case here, the same way `strip_markdown` had to be rewritten
-# once for having reasoned about `\w` in an alphabet Nora does not write in.
+# is the common case here (and `\w` reasoning does not fit the scripts Nora
+# writes in, as `strip_markdown` also accounts for).
 _MIN_ANCHOR = 2
 
 # Appended to a reply when `document_publish` was called this turn and none stored a document.
@@ -349,5 +339,5 @@ def _present(url: str, text: str, decoded: str) -> bool:
     """Whether the reply already carries `url`, as sent or percent-decoded. A full Maps
     URL with a Chinese place name is mostly `%E9...` escapes, and a model copying it
     often writes the characters themselves (or `+` for a space); read as absent, the
-    link would be appended a second time under the model's own copy (ADR 0023 review)."""
+    link would be appended a second time under the model's own copy (ADR 0023)."""
     return url in text or unquote_plus(url) in decoded

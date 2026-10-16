@@ -1,46 +1,37 @@
-"""The instrument for a defect that had none: OmniRoute's Chat Completions
-transport DISCARDS `reasoningContent` in a multi-turn position, and until this
-module nothing in the system could tell such a turn from a healthy one
-(issue #325, `docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md`).
+"""Detector for reasoning blocks the Chat Completions transport discards.
+
+OmniRoute's Chat Completions transport DISCARDS `reasoningContent` in a
+multi-turn position; this module counts the turns where that happens
+(`docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md`).
 
 OBSERVATION ONLY. Nothing here changes a request, a retry, a `reasoning_effort`
-or a transport. The drop is deterministic — a request-shape incompatibility,
-not flakiness — and a retry would turn it into an apparently intermittent one.
+or a transport. The drop is deterministic (a request-shape incompatibility), and
+a retry would make it look intermittent.
 
-The FIX lives beside it, not in it: `nora.agent.reasoning_carry` puts the
-reasoning back on the wire, and the watch asks the model which blocks it still
-drops, judged against the request it actually formats
-(`dropped_reasoning_blocks`), rather than assuming all of them are.
+The fix lives beside it: `nora.agent.reasoning_carry` puts the reasoning back on
+the wire, and the watch asks the model which blocks it still drops
+(`dropped_reasoning_blocks`), judged against the request it actually formats.
 
-WHY THE DETECTOR IS NOT A LOG SCRAPER
--------------------------------------
-The only signal the SDK emits is one line from `strands.models.openai` at
-WARNING level:
+The detector is not a log scraper. The only signal the SDK emits is a WARNING
+line from `strands.models.openai` ("reasoningContent is not supported in
+multi-turn conversations with the Chat Completions API."). Matching that string
+would bind the instrument to a third-party sentence, and a detector that
+silently stops detecting reads as a fix.
 
-    reasoningContent is not supported in multi-turn conversations with the
-    Chat Completions API.
+It binds to the property instead. `OpenAIModel._format_regular_messages` drops
+every content block carrying a `reasoningContent` key before it builds the
+request (the same `if any(block_type in content for block_type in ["toolResult",
+"toolUse", "reasoningContent"]): continue` that emits the warning one loop
+above). `reasoning_blocks` counts exactly those blocks in the message list the
+pending call is about to be formatted from: same predicate, first-party, no
+string.
 
-Matching that string would bind the instrument to a third-party sentence that
-can change in a patch release, and a detector that silently stops detecting is
-worse than none — the failure mode would be a series that quietly goes to zero
-and reads as a fix.
-
-So this binds to the PROPERTY instead. `OpenAIModel._format_regular_messages`
-drops every content block carrying a `reasoningContent` key before it builds
-the request (it is the same `if any(block_type in content for block_type in
-["toolResult", "toolUse", "reasoningContent"]): continue` that emits the
-warning one loop above). `reasoning_blocks` below counts exactly those blocks
-in the message list the pending call is about to be formatted from. Same
-predicate, first-party, no string.
-
-THE FAILURE IS LOUD, and it is a test rather than a hope.
-`tests/unit/test_strands_reasoning_transport_contract.py` formats a
-synthetic multi-turn exchange through the REAL `OpenAIModel` and asserts both
-halves at once: the SDK drops the reasoning, and `reasoning_blocks` agrees that
-it will. If a future SDK starts carrying reasoning through, that test goes RED
-and says so — it does not leave this module quietly over-counting a drop that
-no longer happens. That is the no-self-attestation rule applied to a detector:
-it is judged against the formatter's own output, never against itself.
+`tests/unit/test_strands_reasoning_transport_contract.py` formats a synthetic
+multi-turn exchange through the REAL `OpenAIModel` and asserts both halves: the
+SDK drops the reasoning, and `reasoning_blocks` agrees that it will. If an SDK
+starts carrying reasoning through, that test goes red instead of leaving this
+module over-counting. The detector is judged against the formatter's own output,
+never against itself.
 """
 
 from __future__ import annotations
@@ -67,55 +58,46 @@ log = logging.getLogger("nora.reasoning_strip")
 
 
 def _utc_now() -> datetime:
-    """The default clock. Local rather than imported from `nora.agent.tools`,
-    which pulls the whole tool surface in behind it for one function."""
+    """The default clock. Local because importing `nora.agent.tools` would pull
+    in the whole tool surface for one function."""
     return datetime.now(UTC)
 
 
 #: How long ONE row's INSERT may take before it is abandoned.
 #:
-#: **This is a slot-hold bound, not a tuning knob, and the rule is fifty lines
-#: from the call site that needed it** (`nora.app.fire.FirePath.__init__`,
-#: `standing_store_timeout_seconds`): the conversation's slot is held around
-#: the whole turn, `create_sql_engine` sets no `command_timeout` and nora sets
-#: no `statement_timeout`, so an unbounded store await here wedges the room —
-#: not with an error, which `except Exception` would catch, but with silence,
-#: which it cannot. That defect has now been found three times in this repo:
-#: `debrief.run`, then re-created on the fire path in the same change that
-#: fixed it, then here (audit, 2026-09-17).
+#: A slot-hold bound, not a tuning knob (same rule as
+#: `nora.app.fire.FirePath.__init__`, `standing_store_timeout_seconds`): the
+#: conversation's slot is held around the whole turn, `create_sql_engine` sets
+#: no `command_timeout` and nora sets no `statement_timeout`, so an unbounded
+#: store await wedges the room silently, which `except Exception` cannot catch.
 #:
-#: Two seconds because the work is one INSERT of ten small columns into a
-#: table with one index. A value sized for a query that should take single-digit
-#: milliseconds is a bound, not a budget: if it ever binds, the database is
-#: wedged and the right outcome is to lose the row rather than the room.
+#: Two seconds because the work is one INSERT of ten small columns into a table
+#: with one index. If the bound binds, the database is wedged and losing the row
+#: is better than losing the room.
 #:
-#: NOT a config key. `nora.agent` may not import `nora.config`, and a knob
-#: nobody turns is a second thing to keep consistent with the timeout it has to
-#: fit inside. Injectable through `__init__` for the test seam, like every
-#: other collaborator here.
+#: Not a config key: `nora.agent` may not import `nora.config`. Injectable
+#: through `__init__` as a test seam, like every other collaborator here.
 DEFAULT_WRITE_TIMEOUT_SECONDS = 2.0
 
 #: The content-block key the Chat Completions formatter refuses to carry.
-#: ONE spelling, read by the detector and by the contract test that pins the
-#: SDK's behaviour against it, so the two cannot drift apart.
+#: One spelling, shared by the detector and the contract test that pins the
+#: SDK's behaviour against it.
 REASONING_BLOCK_KEY = "reasoningContent"
 
 #: The request field `nora.agent.reasoning_carry` puts a prior assistant
 #: message's reasoning in: the one the upstream READS (`reasoning_content` is
-#: accepted and discarded, measured 2026-09-25, #325). One spelling, read by
-#: the carry and by the detector that judges it.
+#: accepted and discarded). One spelling, shared by the carry and the detector
+#: that judges it.
 CARRIED_REASONING_FIELD = "reasoning"
 
 
 def reasoning_blocks(messages: Iterable[Any] | None) -> int:
     """How many content blocks in this message list the transport will DROP.
 
-    Defensive at every level — `getattr`/`isinstance` throughout — for
-    `factory.final_text`'s reason: this reads a third-party structure on the
-    reply path, and a Strands version that reshapes a message must degrade to
-    "I saw none" rather than raise into a turn that is otherwise fine. A zero
-    read for the wrong reason is caught by the contract test, not by a crash
-    in production.
+    Defensive at every level (`getattr`/`isinstance` throughout), as in
+    `factory.final_text`: this reads a third-party structure on the reply path,
+    and a reshaped message must degrade to "I saw none" rather than raise into
+    the turn. A zero read for the wrong reason is caught by the contract test.
     """
     total = 0
     for message in messages or ():
@@ -161,21 +143,18 @@ def dropped_reasoning_blocks(model: Any, messages: Iterable[Any] | None) -> int:
     judged against what the model formats rather than predicted from the
     messages.
 
-    ADR 0013 decision 1 applied to the fix: each message holding reasoning is
-    FORMATTED by the model (`format_request`, the method its `stream` calls),
-    and a `reasoningContent` block counts as carried only when its text is in
-    the `reasoning` field of ITS OWN message's formatted entry. A Strands
-    release that stops routing through `nora.agent.reasoning_carry`'s
-    override, or a model that never had it, therefore reads as a strip, not as
-    a fix. Pairing per message, never «found in any carried field», is what
-    keeps a dropped short reasoning from being vouched for by a longer carried
-    one that happens to contain it (review of #506).
+    Each message holding reasoning is FORMATTED by the model (`format_request`,
+    the method its `stream` calls), and a `reasoningContent` block counts as
+    carried only when its text is in the `reasoning` field of ITS OWN message's
+    formatted entry (ADR 0013). A model that does not route through
+    `nora.agent.reasoning_carry`'s override therefore reads as a strip. Pairing
+    per message, never "found in any carried field", keeps a dropped short
+    reasoning from being vouched for by a longer carried one that contains it.
 
-    No block, no formatting: a turn at `reasoning_effort = "none"` pays one
-    walk of the list and nothing else. A model with no `format_request`, or
-    one that raises, counts every block as dropped. The failure is toward
-    COUNTING: an over-count is visible in the table; an under-count reads as
-    the fix.
+    No block, no formatting: a turn at `reasoning_effort = "none"` pays one walk
+    of the list. A model with no `format_request`, or one that raises, counts
+    every block as dropped; failures err toward over-counting, which is visible,
+    where an under-count reads as a fix.
     """
     messages = list(messages or ())
     blocks = reasoning_blocks(messages)
@@ -194,8 +173,8 @@ def dropped_reasoning_blocks(model: Any, messages: Iterable[Any] | None) -> int:
                 continue
             for block in message["content"]:
                 text = reasoning_text(block)
-                # `undash`, because the dash-free model rewrites the request
-                # after formatting it and the carried text is what she READS.
+                # `undash`: the dash-free model rewrites the request after
+                # formatting, and the carried text is what she reads.
                 if text and (text in field or undash(text) in field):
                     reached += 1
     except Exception:  # noqa: BLE001 — on the reply path, inside a hook
@@ -207,15 +186,12 @@ def dropped_reasoning_blocks(model: Any, messages: Iterable[Any] | None) -> int:
 def _model_identity(agent: Any) -> tuple[str, str]:
     """`(model_id, reasoning_effort)` as the PROVIDER holds them right now.
 
-    Read off the model rather than passed in from `nora.config`, and the
-    difference is the whole point of recording them: config says what was
-    configured, this says what the call actually carried. #325's two hours of
-    log-diving were spent establishing exactly that, after the combo behind the
-    alias changed upstream and the operator moved `reasoning_effort` on two
-    paths in the same session.
+    Read off the model rather than passed in from `nora.config`: config says
+    what was configured, this says what the call actually carried (the combo
+    behind an alias can change upstream).
 
-    Unreadable degrades to `("", "")` — an absence, which the row records as an
-    absence. It never guesses.
+    Unreadable degrades to `("", "")`, which the row records as an absence. It
+    never guesses.
     """
     model = getattr(agent, "model", None)
     get_config = getattr(model, "get_config", None)
@@ -235,26 +211,22 @@ class ReasoningStripWatch(HookProvider):
     calls had their reasoning thrown away by the transport.
 
     Constructed fresh per turn / per Dreamer sample, like `ReplyGuard` and
-    `ToolCallLog`, and a `HookProvider` of its own rather than a method on
-    either of them: the guard is veto logic and `ToolCallLog` is the tool-recall
-    log's write path, and this is a third responsibility with a third store.
+    `ToolCallLog`, and a `HookProvider` of its own: the guard is veto logic and
+    `ToolCallLog` is the tool-recall log's write path; this is a third
+    responsibility with a third store.
 
-    **`store=None` is the honest INERT default** — the offline and eval
-    compositions, and any deployment that has not wired one, record the
-    Prometheus counters and write no row. Never a raised error and never a
-    fallback that pretends to have remembered something.
+    `store=None` is the inert default (offline and eval compositions): the
+    Prometheus counters are recorded and no row is written.
 
-    REGISTER IT AFTER THE GUARD. `BeforeModelCallEvent` dispatches in
-    REGISTRATION order (`HookEvent.should_reverse_callbacks` is False; only the
+    Register it AFTER the guard. `BeforeModelCallEvent` dispatches in
+    registration order (`HookEvent.should_reverse_callbacks` is False; only the
     After events reverse), so a watch registered after `ReplyGuard` sees
-    `event.cancel` already set by it. That matters more than it sounds: the
-    guard cancels the pass that follows a terminal verb, which on the tag path
-    is most turns, and at that moment `agent.messages` holds exactly the
-    reasoning-carrying assistant message that a naive watch would count as a
-    strip. A request that is never formatted strips nothing. `nora.agent.
-    factory` puts it last in `hooks=[...]` and
-    `tests/unit/test_reasoning_strip_probe.py::
-    test_a_cancelled_model_call_is_not_an_opportunity` is what holds it there.
+    `event.cancel` already set. The guard cancels the pass that follows a
+    terminal verb, and then `agent.messages` holds the reasoning-carrying
+    assistant message that a naive watch would count as a strip; a request that
+    is never formatted strips nothing. `nora.agent.factory` puts it last in
+    `hooks=[...]` and `tests/unit/test_reasoning_strip_probe.py::
+    test_a_cancelled_model_call_is_not_an_opportunity` holds it there.
     """
 
     def __init__(
@@ -273,23 +245,21 @@ class ReasoningStripWatch(HookProvider):
         self._store = store
         self._clock = clock
         self._write_timeout_seconds = write_timeout_seconds
-        # Calls that COMPLETED, not attempts — `ReplyGuard._after_model`'s rule
-        # and for its reason: `BeforeModelCallEvent` fires inside the retry
-        # loop, so an attempt that raised is the SAME call re-entered, not the
-        # next one.
+        # Calls that COMPLETED, not attempts (as in `ReplyGuard._after_model`):
+        # `BeforeModelCallEvent` fires inside the retry loop, so an attempt that
+        # raised is the same call re-entered, not the next one.
         self._model_calls = 0
         self._continuation_calls = 0
         self._strip_calls = 0
         self._stripped_blocks = 0
         self._model = ""
         self._reasoning_effort = ""
-        # `(depth, blocks)` for a call that has been admitted and not yet
-        # settled. `depth` is `len(agent.messages)`, which is strictly
-        # increasing between real calls (the loop appends the answer and the
-        # tool results before the next pass) and IDENTICAL across the attempts
-        # of one call — so it is what separates «a retry of this call» from
-        # «the next call», and what keeps a hook that re-asks a successful
-        # response from counting one position twice.
+        # `(depth, blocks)` for a call admitted and not yet settled. `depth` is
+        # `len(agent.messages)`: strictly increasing between real calls (the
+        # loop appends the answer and tool results before the next pass) and
+        # identical across the attempts of one call. It separates a retry from
+        # the next call, and stops a hook that re-asks a successful response
+        # from counting one position twice.
         self._pending: tuple[int, int] | None = None
         self._last_depth = -1
         self._flushed = False
@@ -303,22 +273,18 @@ class ReasoningStripWatch(HookProvider):
     def _before_model(self, event: BeforeModelCallEvent) -> None:
         try:
             if event.cancel:
-                # Another hook has already refused this pass — see the class
-                # docstring. Nothing will be formatted, so nothing is stripped.
+                # Another hook already refused this pass (see the class
+                # docstring). Nothing will be formatted, so nothing is stripped.
                 self._pending = None
                 return
             agent = getattr(event, "agent", None)
             messages = getattr(agent, "messages", None) or []
             model, effort = _model_identity(agent)
-            # **`unavailable` never overwrites `available`** (R-27's rule,
-            # applied to provenance). `_model_identity` answers `("", "")` for
-            # four distinct conditions — no model, no `get_config`, a config
-            # that raised, a config missing the keys — and all four land in a
-            # NOT NULL TEXT column as the same empty string. Overwriting
-            # unconditionally meant a transient read failure on the LAST call
-            # of a turn erased a good read from the first, turning a known
-            # model into an unknown one with nothing reporting the
-            # substitution. Only a real reading replaces a real reading.
+            # `unavailable` never overwrites `available` (R-27). `_model_identity`
+            # answers `("", "")` for four distinct conditions (no model, no
+            # `get_config`, a config that raised, a config missing the keys),
+            # and all four land in a NOT NULL TEXT column as the same empty
+            # string. Only a real reading replaces a real reading.
             if model:
                 self._model = model
             if effort:
@@ -334,9 +300,9 @@ class ReasoningStripWatch(HookProvider):
     def _after_model(self, event: AfterModelCallEvent) -> None:
         """Settle the pass that just answered.
 
-        `exception is None` is the discriminator, exactly as in
-        `ReplyGuard._after_model`: the shipped retry strategy only retries a
-        pass that raised, so a pass that raised produced no answer and the next
+        `exception is None` is the discriminator, as in
+        `ReplyGuard._after_model`: the retry strategy only retries a pass that
+        raised, so that pass produced no answer and the next
         `BeforeModelCallEvent` is a re-attempt of the same position.
         """
         try:
@@ -347,9 +313,9 @@ class ReasoningStripWatch(HookProvider):
                 return
             depth, blocks = pending
             if depth <= self._last_depth:
-                # The same position, asked twice. Counted once: the ratio this
-                # instrument exists to report is strips per OPPORTUNITY in the
-                # conversation, not per HTTP request.
+                # The same position, asked twice. Counted once: the ratio is
+                # strips per opportunity in the conversation, not per HTTP
+                # request.
                 return
             self._last_depth = depth
             is_continuation = self._model_calls > 0
@@ -358,27 +324,21 @@ class ReasoningStripWatch(HookProvider):
                 self._continuation_calls += 1
             if blocks:
                 self._strip_calls += 1
-                # MAX, not a running sum, and the difference is what the number
-                # means. The message list only grows, so every later request
-                # re-drops the blocks the earlier ones already lost: a five-pass
-                # turn would sum the first block four times and report "10
-                # blocks lost" for two pieces of reasoning. The maximum is how
-                # many DISTINCT reasoning blocks the transport refused to carry
-                # by the end of the turn, which is the quantity a reader is
-                # actually asking about. How OFTEN it happened is `strip_calls`.
+                # MAX, not a running sum: the message list only grows, so every
+                # later request re-drops blocks earlier ones already lost, and a
+                # sum would count the first block once per pass. The maximum is
+                # the number of DISTINCT blocks refused by the end of the turn;
+                # how often it happened is `strip_calls`.
                 self._stripped_blocks = max(self._stripped_blocks, blocks)
                 if not is_continuation:
-                    # Structurally unreachable today — a `reasoningContent`
-                    # block can only enter `agent.messages` from a model answer
-                    # this loop received, and `nora.agent.prefill` builds plain
-                    # text. Counted anyway rather than clamped away, because a
-                    # clamp would make the impossible look ordinary; the row it
-                    # would produce carries `strip_calls > continuation_calls`,
-                    # `flush` refuses to write it, and the write counter
-                    # records `impossible` rather than `failed`. THIS LINE is
-                    # the channel that reaches a reader — an earlier version of
-                    # this comment claimed the ROW was, which the table's own
-                    # CHECK made untrue.
+                    # Structurally unreachable: a `reasoningContent` block can
+                    # only enter `agent.messages` from a model answer this loop
+                    # received, and `nora.agent.prefill` builds plain text.
+                    # Counted rather than clamped, because a clamp would make
+                    # the impossible look ordinary; the resulting row has
+                    # `strip_calls > continuation_calls`, `flush` refuses to
+                    # write it, and the write counter records `impossible`.
+                    # This log line is the channel that reaches a reader.
                     log.warning(
                         "reasoning_strip: the FIRST model call of a %s turn "
                         "already carried %d reasoning block(s) — the prefill, "
@@ -400,9 +360,8 @@ class ReasoningStripWatch(HookProvider):
         """The row this turn would write, or `None` when it had no opportunity.
 
         `None` means the loop never went multi-turn: zero continuation calls,
-        so zero denominator and nothing to divide. Writing it would turn this
-        table from a census of the calls at risk into a log of every model
-        invocation in the system.
+        so zero denominator. Writing it would turn the table from a census of
+        the calls at risk into a log of every model invocation.
         """
         if self._continuation_calls <= 0:
             return None
@@ -421,42 +380,38 @@ class ReasoningStripWatch(HookProvider):
         )
 
     async def flush(self) -> None:
-        """Write the row, once, BOUNDED, and never at the cost of the turn.
+        """Write the row, once, bounded, and never at the cost of the turn.
 
-        **The bound is the point, and it is why this method is not one line.**
         Every caller awaits this while the conversation's slot is held, and
-        `release_and_dispatch` cannot run until it returns — so an unbounded
-        store await here is a room that stops answering, with arriving tags
-        queued or shed (`nora_tags_dropped_total{reason="in_flight"}`) and
-        heartbeat reminders deferred. `except Exception` is no defence: a
-        wedged Postgres does not raise, it does not ANSWER, and there is no
-        `command_timeout` on the engine and no `statement_timeout` on the
-        server. `asyncio.wait_for` is the only thing between the two.
+        `release_and_dispatch` cannot run until it returns, so an unbounded
+        store await is a room that stops answering (arriving tags queued or
+        shed, `nora_tags_dropped_total{reason="in_flight"}`; heartbeat reminders
+        deferred). `except Exception` is no defence: a wedged Postgres does not
+        raise, it does not answer, and there is no `command_timeout` on the
+        engine or `statement_timeout` on the server. `asyncio.wait_for` is the
+        only bound.
 
-        The bound lives HERE rather than at the five call sites because the
-        store is reached from exactly one place, and five `wait_for`s with five
-        `except TimeoutError`s around them is five chances to write four of
-        them. `tests/architecture/test_slot_held_awaits_are_bounded.py` reads
-        this function and fails if the `wait_for` leaves it or loses its
-        timeout.
+        The bound lives here, not at the call sites, because the store is
+        reached from exactly one place.
+        `tests/architecture/test_slot_held_awaits_are_bounded.py` fails if the
+        `wait_for` leaves this function or loses its timeout.
 
         Idempotent: a caller that flushes on both the happy path and an error
-        path writes one row, and the Dreamer flushes from three exits.
+        path writes one row.
 
         Everything is inside the `try`, including building the observation and
-        recording the counter — this runs past the stage's own `except`, so an
-        exception escaping here lands on the turn it was supposed to cost
-        nothing.
+        recording the counter: this runs past the stage's own `except`, so an
+        escaping exception would land on the turn.
         """
         if self._flushed:
             return
         self._flushed = True
         if self._store is None:
             return
-        # `None` until there is something to report. A turn with no
-        # opportunity writes no row AND moves no write counter — recording
-        # a `failed` for it would put every single-call turn in the system
-        # on the one series that says the record has gone blind.
+        # `None` until there is something to report. A turn with no opportunity
+        # writes no row and moves no write counter; a `failed` for it would put
+        # every single-call turn on the series that says the record has gone
+        # blind.
         outcome: str | None = "failed"
         try:
             observation = self.observation
@@ -464,9 +419,9 @@ class ReasoningStripWatch(HookProvider):
                 outcome = None
                 return
             if observation.strip_calls > observation.continuation_calls:
-                # Cannot come from the loop; the table's CHECK refuses it and
-                # would arrive as an `IntegrityError` indistinguishable from a
-                # database blip. Refused here instead, under its own name.
+                # Cannot come from the loop. The table's CHECK would refuse it as
+                # an `IntegrityError` indistinguishable from a database blip, so
+                # it is refused here under its own name.
                 log.error(
                     "reasoning_strip: refusing an impossible row (%s): "
                     "strip_calls=%d > continuation_calls=%d",
@@ -489,7 +444,7 @@ class ReasoningStripWatch(HookProvider):
                         "nora_reasoning_strip_writes_total", outcome=outcome,
                     )
             except Exception:
-                # The counter itself is the last thing that may take a turn
-                # down. `Metrics.inc` raises `KeyError` on an undeclared name,
-                # and this runs past the stage's own `except`.
+                # The counter is the last thing that may take a turn down:
+                # `Metrics.inc` raises `KeyError` on an undeclared name, and this
+                # runs past the stage's own `except`.
                 log.exception("ReasoningStripWatch could not record its outcome")

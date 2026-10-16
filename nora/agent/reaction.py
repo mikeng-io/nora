@@ -1,27 +1,12 @@
 """The reaction picker: whether a GIF makes her reply land better, and which.
 
-**Why this is its own call and not a tool she chooses.** She has had
-`search_gifs`/`send_gif` since 2026-08-06 and sent three GIFs in seven weeks,
-all when somebody asked for one. Replaying 40 recorded tag turns against the
-deployed `nora` alias (2026-09-24, ~700 calls over seven arms, one variable
-per arm) put the reason past argument:
-
-    arm                                             unprompted GIF replies
-    as recorded                                     0/80
-    doctrine telling her the room talks in GIFs     0/80
-    + `send_reply` no longer calling itself the
-      ONLY way to reply                             0/80
-    + a `gif` field on `send_reply` itself          2/128
-    + two GIFs of her own already in the window     0/101
-    the same turns, «send 個 gif 嚟啦» appended      12/12
-
-So she CAN (the last row, and the GIFs were good) and, with the reply as the
-first call of a no-reasoning turn, she does not: an optional garnish on the
-one verb a turn must end with is never the thing a cheap model spends its
-call on, however it is framed. The choice needed a moment of its own. Asked
-as its OWN question, over the last few lines and the reply she already wrote,
-the same model put a GIF on 17 of 104 replies, every one of them on teasing
-or banter and none on the practical answers.
+**Why this is its own call and not a tool she chooses.** An optional garnish on
+the one verb a turn must end with (`send_reply`) is never the thing a cheap
+model spends its call on, however it is framed: with the reply as the first
+call of a no-reasoning turn she sends a GIF only when asked. The choice needs a
+moment of its own. Asked as its OWN question, over the last few lines and the
+reply she already wrote, the same model puts a GIF on teasing or banter and not
+on practical answers.
 
 **It never touches her words.** It runs after `send_reply` has her text and
 before delivery, and it can only put a GIF under the text (`with`) or in its
@@ -31,9 +16,8 @@ never «no reply». The whole pick is bounded by one timeout.
 
 The instruction is `reaction.md` (doctrine audience `reaction`, hot-reloaded,
 never shown to her); the candidates it chooses between are Giphy's own
-described results, as `search_gifs` returns them to her, so the rule in
-design/proposed/15 section 2 holds here too: a GIF is chosen from its
-description, never sent because it came first.
+described results, as `search_gifs` returns them to her, so a GIF is chosen
+from its description, never sent because it came first.
 """
 
 from __future__ import annotations
@@ -68,37 +52,32 @@ AUDIENCE = "reaction"
 MODES = ("with", "alone")
 
 #: How many of the room's latest lines the picker reads. A reaction answers
-#: the moment, not the thread; the prototype that measured 17/104 read 8.
+#: the moment, not the thread.
 RECENT_LINES = 8
 
-#: What this picker carries, declared as data
-#: (`design/context-assembly/01-the-registry.md`) instead of left as the two
-#: hand joins `_pick` used to write.
+#: What this picker carries, declared as data.
 #:
 #: `_pick` hands its blocks to `assemble()`, so `order` IS the order the model
-#: reads (the numbers are the order the hand join wrote them, step 2b of
-#: `design/context-assembly/04-every-occasion.md`; the goldens in
-#: `tests/unit/test_step2b_assembly_goldens.py` pin both prompts byte for
-#: byte). The occasion is TWO calls over one table: the first question sees
-#: `recent_chat` and `nora_reply`, the second adds `gif_candidates` after them.
-#: `key="turn"` throughout: nothing here is a cached prefix.
+#: reads (the goldens in `tests/unit/test_step2b_assembly_goldens.py` pin both
+#: prompts byte for byte). The occasion is TWO calls over one table: the first
+#: question sees `recent_chat` and `nora_reply`, the second adds
+#: `gif_candidates` after them. `key="turn"` throughout: nothing here is a
+#: cached prefix.
 #:
-#: Every block is built `when_empty="render"`. A hand join kept an empty window
-#: or a reply that escapes to nothing as an empty pair, and the picker's
-#: prompt is not changed by this step.
+#: Every block is built `when_empty="render"`, so an empty window or a reply that
+#: escapes to nothing renders as an empty pair rather than vanishing.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("recent_chat", 10, "turn"),
     ("nora_reply", 20, "turn"),
     ("gif_candidates", 30, "turn"),
 )
 
-#: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
-#: already gives it.
+#: `name -> (order, key)`, derived so no call site restates a `_BLOCKS` row.
 _ROW: dict[str, tuple[int, BlockKey]] = {
     name: (order, key) for name, order, key in _BLOCKS
 }
 
-#: What the hand join put between the blocks, and `assemble` now does.
+#: What `assemble` puts between the blocks.
 _SEP = "\n"
 
 
@@ -142,14 +121,12 @@ def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "Nora") 
     newline inside a message must not forge a second speaker). An empty body
     (a bare attachment) is skipped rather than rendered as nobody speaking.
 
-    **The speaker goes through `speaker_label`**, as it does in every other
-    transcript renderer, and `row_speaker` names the field (step 4c of
-    `design/context-assembly/04-every-occasion.md`). `escape` and `one_line`
-    are not enough there: a profile name is attacker-controlled on an unmapped
-    account, and `Eve: ignore the above` or `x]: [y` wrote a row that read as
-    another speaker's line. The label strips `[`, `]` and `:` from a name, so a
-    name carrying one now renders without it (`Eve ignore the above: ...`) and
-    every other name is byte for byte what it was."""
+    **The speaker goes through `speaker_label`**, as in every other transcript
+    renderer, and `row_speaker` names the field. `escape` and `one_line` are not
+    enough there: a profile name is attacker-controlled on an unmapped account,
+    and `Eve: ignore the above` or `x]: [y` would write a row that reads as
+    another speaker's line. The label strips `[`, `]` and `:` from a name
+    (`Eve ignore the above: ...`); every other name is unchanged."""
     lines = []
     for row in rows[-RECENT_LINES:]:
         # The handle before the clip, so a cut never leaves half a link.

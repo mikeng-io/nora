@@ -1,5 +1,5 @@
 """The `nora/agent/` extraction boundary: turn a completed Strands `Agent`
-into a `TagTrace` with no SDK types surviving past this module (spec §8.1).
+into a `TagTrace` with no SDK types surviving past this module.
 
 Defensive throughout, for `agent_runner.py::_final_text`'s reason: a renamed
 or absent SDK field degrades to an empty trace and never raises into a turn
@@ -49,5 +49,5 @@ def extract_tag_trace(
     return TagTrace(
         tag_id=tag_id, conversation_id=conversation_id,
         messages=tuple(capped), transcript=transcript, outcome=outcome,
-        created_at=0,  # Task 4 stamps the real clock at the call site
+        created_at=0,  # the runner stamps the real clock (`nora.app.agent_runner`)
     )

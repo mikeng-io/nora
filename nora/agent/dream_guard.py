@@ -20,16 +20,11 @@ So this is a SEPARATE guard rather than a weakened `ReplyGuard`. What it keeps:
 
 What it ADDS, and the tag path has no equivalent:
 
-* **a per-PASS ceiling on MEMORY reads** (issue #160). The per-tool budgets
-  bound each verb on its own, which a turn spends by asking four different
-  memory verbs the same question: the (since-deleted, DEC-277) proactive decide
-  turn's live trace (Langfuse `340373cd`, 2026-09-10) held two notes whose two handles were
-  already rendered in its own `<people>` index and still spent `about`,
-  `search_memory_workspace` and `ask_memory` on them. The objective was
-  rewritten four ways to ration it; the count moved every time and never
-  landed, which is the signal to stop persuading and enforce. So: N reads
-  across the whole pass, whichever verbs they are, and the (N+1)th is
-  ANSWERED rather than vetoed — R-27's `unavailable` with a reason, in the
+* **a per-PASS ceiling on MEMORY reads**. The per-tool budgets bound each verb
+  on its own, which a pass can spend by asking several different memory verbs
+  the same question. Rationing that in the objective's prose does not hold, so
+  it is enforced: N reads across the whole pass, whichever verbs they are, and
+  the (N+1)th is ANSWERED rather than vetoed — R-27's `unavailable` with a reason, in the
   same shape a memory verb's own wiring gap produces, because a corrective
   sentence invites the retry and a state does not.
 
@@ -78,38 +73,30 @@ __all__ = [
 #: entry this is, so the per-tool ledger never sees it and it never sees a
 #: per-tool count.
 _PASS_MEMORY = "<memory reads this pass>"  # noqa: S105 — a ledger key, not a secret
-#: The pass-wide TOOL ledger's one key (design/dreamer-agent-loop/43 §4): every
+#: The pass-wide TOOL ledger's one key: every
 #: tool call of one pass, whatever the verb, on a third `CallLedger` instance.
 _PASS_TOOLS = "<tool calls this pass>"  # noqa: S105 — a ledger key, not a secret
 
 #: The `rule` label vocabulary on `nora_dream_guard_vetoes_total`, DERIVED off
 #: a `Literal` rather than written as a bare string at each call site
 #: (AGENTS.md: «Label vocabularies are DERIVED from the code, never
-#: hand-copied»). It had no vocabulary at all while there was one value; the
-#: second is where a typo would silently start a new series instead of an
-#: error, so it gets one now.
+#: hand-copied»). A typo in a bare string would silently start a new series
+#: instead of an error.
 #:
-#: The three are different FINDINGS and must not collapse into one label:
+#: The labels are different FINDINGS and must not collapse into one:
 #: `R-7` says the objective asked for something it was never granted — a
 #: config fault worth chasing — while `memory-budget` says it asked for MORE
 #: of something it WAS granted than a pass is worth, which is ordinary model
 #: behaviour the ceiling is there to absorb.
 #:
-#: **`tool-budget` is the third, split off `R-7` on 2026-09-17**, and the
-#: split is the same argument one ceiling over. It had been reported as `R-7`
-#: — so «this tool does not exist» and «this pass has read as many notes as
-#: it may» were one series, and the series could not answer the only question
-#: worth asking of it: is a ceiling BINDING. Measured that morning, the 05:00
-#: proactive pass (deleted 2026-10-03, DEC-277) was refused a fourth note in each of its two
-#: scopes and
-#: went on to decide every note anyway; nothing in Prometheus could
-#: distinguish that from a misspelled tool name, and nothing did. Its own
-#: rate is the instrument for `[dreamer.budgets.<adaptor>] tool_calls`: a
+#: **`tool-budget` is the third**, kept apart from `R-7` so «this tool does not
+#: exist» and «this tool is at its ceiling» are different series, and the
+#: second can answer the question worth asking of it: is a ceiling BINDING. Its
+#: own rate is the instrument for `[dreamer.budgets.<adaptor>] tool_calls`: a
 #: sustained non-zero on a read verb says the number is too low for the work,
 #: which is exactly what `memory-budget` says for the memory ration.
 #:
-#: **`R-99` is the fourth** (design/social-per-network/30-link-owner-registry.md,
-#: added on review 2026-09-25): an argument a tool's own signature does not
+#: **`R-99` is the fourth**: an argument a tool's own signature does not
 #: declare, refused before Strands' generated pydantic model can silently drop
 #: it. It shares the exact name `ReplyGuard` uses for the identical rule on the
 #: tag/participation path — the two counters differ (`nora_dream_guard_vetoes_
@@ -117,7 +104,7 @@ _PASS_TOOLS = "<tool calls this pass>"  # noqa: S105 — a ledger key, not a sec
 #: is the same decision-index row, and `unknown_arguments_veto` (`nora.agent.
 #: guards`) is the one function both guards call, so the two cannot drift.
 #:
-#: **`pass-budget` is the fifth** (design/dreamer-agent-loop/43 §4): the pass
+#: **`pass-budget` is the fifth**: the pass
 #: made as many tool calls, over every verb together, as one pass may. It is
 #: `memory-budget`'s shape over the whole grant rather than the memory cluster,
 #: and it is its own label because «this pass researched as much as it may» is
@@ -188,26 +175,23 @@ class DreamGuard(HookProvider):
         self._per_tool_ceilings = per_tool_ceilings
         self._metrics = metrics
         self._ledger = CallLedger(budgets)
-        # R-99 (design/social-per-network/30-link-owner-registry.md): each
+        # R-99: each
         # tool's accepted argument names, from `DreamToolSource.tool_param_
         # names()` (`RegistryToolSource` delegates to the same `ToolRegistry.
         # tool_param_names()` `ReplyGuard` reads — one source, two guards).
-        # `None`, the shape every field on this guard not yet given a caller
-        # takes, is the rule OFF: a Dreamer test built with no tool source in
-        # scope keeps its old, veto-free behaviour rather than being forced to
-        # invent a table it does not have.
+        # `None` is the rule OFF: a guard built with no tool source in scope is
+        # veto-free on arguments rather than forced to invent a table.
         self._param_names = param_names
         # For the unknown-tool sentence only. The ledger is the authority on
         # membership (`knows`); this is the same set spelled for a human, held
         # once rather than re-derived on every veto.
         self._tool_names = frozenset(budgets)
-        # Per-tool result size caps (design/dreamer-agent-loop/32 §3.3 point
-        # 3), enforced in `_after_tool`. A run with no caps behaves exactly as
-        # before — the tag path's results are bounded upstream by their
-        # callers; the Dreamer's were not, and one unbounded page fetch could
-        # spend the run's whole token budget on context.
+        # Per-tool result size caps, enforced in `_after_tool`. The tag path's
+        # results are bounded upstream by their callers; the Dreamer's are not,
+        # and one unbounded page fetch could spend the run's whole token budget
+        # on context. A run with no caps clamps nothing.
         self._result_caps = result_caps or {}
-        # THE PER-PASS MEMORY CEILING (issue #160). A second `CallLedger` with
+        # THE PER-PASS MEMORY CEILING. A second `CallLedger` with
         # one synthetic key, rather than a bare integer, and the reuse is the
         # argument: the ledger already separates «finished» from «admitted and
         # still running», which is the half that makes a ceiling hold WITHIN a
@@ -216,8 +200,8 @@ class DreamGuard(HookProvider):
         # counter here would be a second copy of both rules, and the copy that
         # gets fixed is never both.
         #
-        # `None` (or an empty verb set) keeps the pre-#160 behaviour exactly:
-        # no ceiling, nothing counted, nothing refused. An adaptor holding no
+        # `None` (or an empty verb set) means no ceiling: nothing counted,
+        # nothing refused. An adaptor holding no
         # memory verb is unaffected either way.
         self._memory_tools = frozenset(memory_tools)
         self._memory: CallLedger | None = (
@@ -236,7 +220,7 @@ class DreamGuard(HookProvider):
         # guard lives ONE sample, so the worst case is bounded by that sample's
         # `turns` x batch size — a few dozen short strings — which is why this
         # is a dict rather than a cache with an eviction policy.
-        # Every tool call of the pass, whatever the verb (design 43 §4).
+        # Every tool call of the pass, whatever the verb.
         # `None` is no pass-wide ceiling, which is every adaptor that does
         # not set `max_tool_calls`: the per-tool and memory ceilings alone.
         self._pass: CallLedger | None = (
@@ -255,25 +239,21 @@ class DreamGuard(HookProvider):
     def evaluate(self, tool_name: str, tool_input: dict) -> str | None:
         """The corrective sentence to cancel this call with, or None to admit it.
 
-        Pure and SDK-free. `tool_input` was accepted and unread until R-99
-        (2026-09-25) — it is the raw input the model emitted, and it was
-        already part of the signature so a rule that looks at arguments (the
-        shape R-4 takes on the tag path) could be added here without
-        changing every call site and every test. R-99 is exactly that rule.
+        Pure and SDK-free. `tool_input` is the raw input the model emitted; R-99
+        is the rule that reads it.
         """
         if not self._ledger.knows(tool_name):
             return self._veto(
                 _R7_RULE, f"The tool {tool_name!r} does not exist. "
                        f"Use {_list_tool_names(self._tool_names)}.",
             )
-        # R-99 (design/social-per-network/30-link-owner-registry.md): the
+        # R-99: the
         # SAME check `ReplyGuard.evaluate` runs, from the SAME function
         # (`nora.agent.guards.unknown_arguments_veto`) — see that function's
         # own docstring for the exemption and the fail-closed-on-no-data
         # reasoning, which apply here unchanged. A Dreamer pass runs native
-        # tools built by the identical `build_tool_specs` and was silently
-        # exempt from this rule until review caught it: the `file=`-shaped
-        # defect is exactly as reachable from a background pass as a tag.
+        # tools built by the identical `build_tool_specs`, so an unknown
+        # argument is as reachable from a background pass as from a tag.
         bad_arguments = unknown_arguments_veto(tool_name, tool_input, self._param_names)
         if bad_arguments is not None:
             return self._veto(_BAD_ARGUMENTS_RULE, bad_arguments)
@@ -298,15 +278,12 @@ class DreamGuard(HookProvider):
         returns a corrective SENTENCE for a call that should not have been made,
         this returns a tool RESULT for a call that was reasonable and has no
         answer left to give. Folding them would force one return type on both
-        and the fold would be the veto's, which is the outcome #160 measured
-        four objectives' worth of evidence against.
+        and the fold would be the veto's.
 
-        **The note does NOT offer her a way out, and that omission is
-        measured.** The objective rewrite that stated a ration in words cost
-        `d02` 5/5 -> 1/5 — told a hard cap, the model declines the work rather
-        than spending less — so a refusal ending «say so and decide nothing»
-        would deliver that same permission mid-pass, at the moment she is least
-        sure. It names what to do instead and tells her to finish.
+        **The note does NOT offer her a way out.** Told a hard cap, the model
+        declines the work rather than spending less, so a refusal ending «say so
+        and decide nothing» would grant that permission mid-pass, at the moment
+        she is least sure. It names what to do instead and tells her to finish.
 
         **`unavailable`, never `nothing_found` and never an error.** A spent
         budget is «I could not check», exactly the state R-27 reserves for a
@@ -461,10 +438,9 @@ class DreamGuard(HookProvider):
 
         **Keyed on the SDK's `toolUseId`**, so it drops THIS call's reservation
         rather than whichever one is outstanding. A vetoed call reaches this
-        hook and never reserved, so a name-keyed release let it decrement a
+        hook and never reserved, so a name-keyed release would decrement a
         SIBLING's reservation in the same parallel batch — reopening the
         ceiling by one, and with it the trace `call_ledger` exists to prevent.
-        Measured on both guards, 2026-08-21 review.
         """
         try:
             tool_use = getattr(event, "tool_use", None) or {}
@@ -476,7 +452,7 @@ class DreamGuard(HookProvider):
                 # every non-memory call and for a refused one — no branch on
                 # the tool name is needed or wanted here.
                 #
-                # **`and ref` is load-bearing, and its absence was a bug.**
+                # **`and ref` is load-bearing.**
                 # `CallLedger.release` only takes the id-keyed path `if ref`;
                 # with an empty one it falls through to the NAME-keyed path and
                 # decrements `_in_flight[_PASS_MEMORY]` — and this ledger's
@@ -535,9 +511,8 @@ class DreamGuard(HookProvider):
     def _clamp_result(self, event: Any, name: str, cap: int) -> None:
         """Cut a capped tool's result text down to its cap, IN PLACE.
 
-        The marker says the cap exists — design/dreamer-agent-loop/32 §3.3:
-        "a truncated result reads as truncated, not as the whole answer",
-        which is what stops the model summarising half a page as if it were
+        The marker says the cap exists: a truncated result reads as truncated,
+        not as the whole answer, which is what stops the model summarising half a page as if it were
         the page. Only `text` content blocks are clamped: the dream tools
         return plain dicts, which Strands wraps as one `text` block
         (`strands.tools.decorator._wrap_tool_result`, verified against the

@@ -144,14 +144,14 @@
   "file": "nora/domain/cognition_remind.py",
   "old": "    if duplicate:\n        return RemindRefusal(",
   "new": "    if False:\n        return RemindRefusal(",
-  "target": "tests/unit/test_cognition_limit_stop.py::test_a_rerun_after_a_limit_stop_duplicates_neither_a_self_wake_nor_a_reminder"
+  "target": "tests/unit/test_cognition_live_writes.py::test_remind_writes_the_proactive_row_the_fire_path_fires_and_can_move_and_cancel_it"
  },
  {
   "name": "a re-run self-wake no longer retracts the one it supersedes",
   "file": "nora/agent/cognition_pace.py",
-  "old": "    if supersedes is not None:\n        # The displaced",
-  "new": "    if False:\n        # The displaced",
-  "target": "tests/unit/test_cognition_limit_stop.py::test_a_rerun_after_a_limit_stop_duplicates_neither_a_self_wake_nor_a_reminder"
+  "old": "    if supersedes is not None:\n        # A new self-wake sharing a subject row SUPERSEDES the pending one, so",
+  "new": "    if False:\n        # A new self-wake sharing a subject row SUPERSEDES the pending one, so",
+  "target": "tests/unit/test_cognition_pace.py::test_wake_move_retracts_the_old_stimulus_and_supersede_retracts_the_displaced"
  },
  {
   "name": "the Dreamer builds every adaptor's guard without per-tool ceilings",

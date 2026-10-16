@@ -1,4 +1,4 @@
-"""What a running sub-agent worker has done, counted as it happens (design/subagent §4b, §8).
+"""What a running sub-agent worker has done, counted as it happens.
 
 One `HookProvider` per job, registered AFTER the guard so it sees the guard's verdicts:
 
@@ -10,7 +10,7 @@ One `HookProvider` per job, registered AFTER the guard so it sees the guard's ve
   report is prose the model wrote and may name a document that was never stored; a result the
   tool returned is evidence. A vetoed or failed call has no `ok` result and adds nothing.
 
-- the CHECKPOINT (design/subagent §4d): the worker's own `checkpoint_update` lists, held here
+- the CHECKPOINT: the worker's own `checkpoint_update` lists, held here
   and persisted through `persist` on every update; and `kept_files`, the paths a successful
   `computer_export` to `keep` stored. Like `document_ids` they come from tool results, never
   from the checkpoint's words.
@@ -93,8 +93,8 @@ class SubagentProgress(HookProvider):
         # What the pinned message's anchor was last written from; rewritten when either moves.
         self._anchored: tuple[int, int] | None = None
         self._version = 0
-        #: The job's Langfuse trace id, set by the runner inside its span (no row column is
-        #: written from it yet: `compute_jobs.trace_id` has no writer on the poller's path).
+        #: The job's Langfuse trace id, set by the runner inside its span; the backend writes it
+        #: to the row when it marks the job.
         self.trace_id: str | None = None
         self._document_ids: list[str] = []
 

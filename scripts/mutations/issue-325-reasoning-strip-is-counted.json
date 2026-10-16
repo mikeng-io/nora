@@ -11,7 +11,7 @@
     "name": "a pass another hook cancelled is not an opportunity",
     "comment": "The pass ReplyGuard refuses is never formatted, so it strips nothing \u2014 and on the tag path it is MOST turns, with a reasoning block sitting in agent.messages at exactly that moment.",
     "file": "nora/agent/reasoning_strip.py",
-    "old": "            if event.cancel:\n                # Another hook has already refused this pass \u2014 see the class\n                # docstring. Nothing will be formatted, so nothing is stripped.\n                self._pending = None\n                return",
+    "old": "            if event.cancel:\n                # Another hook already refused this pass (see the class\n                # docstring). Nothing will be formatted, so nothing is stripped.\n                self._pending = None\n                return",
     "new": "            if False:\n                self._pending = None\n                return",
     "target": "tests/unit/test_reasoning_strip_probe.py -k test_a_cancelled_model_call_is_not_an_opportunity"
   },
@@ -26,7 +26,7 @@
   {
     "name": "one position asked twice is one opportunity",
     "file": "nora/agent/reasoning_strip.py",
-    "old": "            if depth <= self._last_depth:\n                # The same position, asked twice. Counted once: the ratio this\n                # instrument exists to report is strips per OPPORTUNITY in the\n                # conversation, not per HTTP request.\n                return",
+    "old": "            if depth <= self._last_depth:\n                # The same position, asked twice. Counted once: the ratio is\n                # strips per opportunity in the conversation, not per HTTP\n                # request.\n                return",
     "new": "            if False:\n                return",
     "target": "tests/unit/test_reasoning_strip_watch.py -k test_a_position_asked_twice_is_counted_once"
   },
