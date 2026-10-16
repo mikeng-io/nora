@@ -128,7 +128,8 @@ type timelineNode struct {
 	AccessibilityCaption string `json:"accessibility_caption"`
 	// Location is the place the item is tagged with. Instagram's media
 	// object carries `name`, `pk` and coordinates; only the name is read, and
-	// leniently (locationName): a malformed tag never fails the page.
+	// leniently (placeOf): a malformed tag never fails the page, and is
+	// carried as an UNKNOWN place, never as "no tag".
 	Location json.RawMessage `json:"location"`
 	timelineMedia
 	// CarouselMedia are a carousel's children, each of the same shape.
@@ -320,8 +321,8 @@ func parseTimeline(ctx context.Context, raw []byte, igid domain.IGID) (domain.Ti
 			Collab:        collab,
 			Items:         n.items(ctx),
 			AltText:       n.AccessibilityCaption,
-			Location:      locationName(n.Location),
 		}
+		item.Location, item.LocationKnown = placeOf(n.Location)
 		// A reel is `product_type: clips` (§1a); a video posted to the feed
 		// is still a post.
 		if n.ProductType == "clips" {
