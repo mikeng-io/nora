@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 
 from nora.domain.ports import BlobStore
@@ -57,6 +57,12 @@ log = logging.getLogger("nora.app.social_expiry")
 PUT_GRACE_SECONDS = 3600.0
 
 
+#: The memory index's answer: of these `(network, item_id)` frames, the ones
+#: whose every medium is embedded or given up on. None means no index reads
+#: them, so no frame is embedded and each waits for the hard limit.
+EmbeddedFrames = Callable[[Sequence[tuple[str, str]]], Awaitable[set[tuple[str, str]]]]
+
+
 class StoryMediaExpiry:
     def __init__(
         self,
@@ -69,8 +75,10 @@ class StoryMediaExpiry:
         metrics: Metrics,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        embedded: EmbeddedFrames | None = None,
     ) -> None:
         self._store = store
+        self._embedded = embedded
         self._blobs = blobs
         self._keep_days = keep_days
         self._max_days = max_days
@@ -99,12 +107,16 @@ class StoryMediaExpiry:
         frames = await self._store.frames_past_bound(
             before=now - timedelta(days=self._keep_days),
         )
+        done: set[tuple[str, str]] = set()
+        if self._embedded is not None:
+            # Asked only for perceived frames: an unperceived one waits for
+            # the hard limit whatever the index holds.
+            asked = [(f.network, f.item_id) for f in frames if f.perceived]
+            if asked:
+                done = await self._embedded(asked)
         due: list[tuple[ExpiringFrame, ByteDeletionReason, bool]] = []
         for frame in frames:
-            # ponytail: the memory index projects no social item yet, so no
-            # frame's media has a vector and every frame waits for the hard
-            # limit. Read the frame's vector off the index here once it does.
-            embedded = False
+            embedded = (frame.network, frame.item_id) in done
             reason = bytes_due(
                 expires_at=frame.expires_at, now=now, perceived=frame.perceived,
                 embedded=embedded, keep_days=self._keep_days, max_days=self._max_days,

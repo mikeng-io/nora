@@ -432,9 +432,10 @@ co-owner's listing and `social = false` are not consulted.
 
 A gone or hidden item has no node; every write of `social_item`,
 `social_item_state` and `social_perception` re-projects its item. What is
-left for this stream: `StoryMediaExpiry` calls
-`nora.infra.sql.memory_index.story_frame_embedded` in place of its
-`# ponytail:` false, and the first bound starts deleting.
+`StoryMediaExpiry` asks `nora.infra.sql.memory_index.story_frame_embedded`
+which of its perceived frames are embedded under the deployed embedder, so a
+frame both perceived and embedded loses its bytes at the first bound; a frame
+the index has not projected waits for the hard limit.
 
 ## 10. Open
 
