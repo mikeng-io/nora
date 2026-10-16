@@ -13,8 +13,12 @@ agree.
 Vectors: `vectors` maps a node's key to `(model, vector)`. The dense
 read is an exact cosine search, which the store's two-stage search equals on
 any set no larger than its candidates; given-up nodes (`given_up`) are what
-the store counts at `EMBED_MAX_ATTEMPTS`, and what `seed(given_up_of=...)`
-reads. The fake has no `empty` failures (an `IndexedNode` carries no
+the store counts at `EMBED_MAX_ATTEMPTS`, and `seed(unembedded_of=...)`
+reads them with every other embeddable node holding no vector of that
+model. The fake has no clock: `fresh` are the waiting nodes that have owed
+their vector for less than any positive `fresh_seconds` window (counted
+only with a text, as the store counts them), every other waiting node has
+waited longer. The fake has no `empty` failures (an `IndexedNode` carries no
 `embed_error`). `bag_of_words` is a toy embedding
 (one hashed axis per word) under which cosine tracks shared words, so a
 test can say «near» and «far» with texts; `FakeQueryEmbedder` embeds a
@@ -101,6 +105,7 @@ class FakeMemoryIndex:
         state: IndexState | None = None, fail: BaseException | None = None,
         vectors: Mapping[tuple[str, str], tuple[str, Sequence[float]]] | None = None,
         embed_model: str | None = None, given_up: Iterable[tuple[str, str]] = (),
+        fresh: Iterable[tuple[str, str]] = (),
     ) -> None:
         self.nodes: dict[tuple[str, str], IndexedNode] = {n.key: n for n in nodes}
         #: `(src_kind, src_id, rel, dst_kind, dst_id)`; no end need exist.
@@ -117,6 +122,7 @@ class FakeMemoryIndex:
                 if node.key not in self.vectors and _embeddable(node):
                     self.vectors[node.key] = (embed_model, bag_of_words(node.text))
         self.given_up = set(given_up)
+        self.fresh = set(fresh)
         #: Raised by every read when set: the store being down.
         self.fail = fail
         self.calls: list[str] = []
@@ -139,7 +145,7 @@ class FakeMemoryIndex:
 
     async def seed(
         self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
-        given_up_of: str | None = None,
+        unembedded_of: str | None = None,
     ) -> list[Seed]:
         self._check("seed")
         wanted = [t for t in dict.fromkeys(t.strip() for t in terms) if t]
@@ -147,9 +153,9 @@ class FakeMemoryIndex:
             return []
         out: list[Seed] = []
         for node in self.nodes.values():
-            if given_up_of is not None and not (
-                node.key in self.given_up and _embeddable(node)
-                and self.vectors.get(node.key, ("", []))[0] != given_up_of
+            if unembedded_of is not None and not (
+                _embeddable(node)
+                and self.vectors.get(node.key, ("", []))[0] != unembedded_of
             ):
                 continue
             held = sum(1 for t in wanted if t.lower() in node.text.lower())
@@ -227,6 +233,7 @@ class FakeMemoryIndex:
 
     async def index_state(
         self, *, model: str | None = None, scope: MemoryScope | None = None,
+        fresh_seconds: float = 0.0,
     ) -> IndexState:
         self._check("index_state")
         if model is None:
@@ -237,9 +244,14 @@ class FakeMemoryIndex:
         ]
         current = {n.key for n in nodes if self.vectors.get(n.key, ("", []))[0] == model}
         given_up = {n.key for n in nodes if n.key in self.given_up} - current
+        waiting = {n.key for n in nodes} - current - given_up
+        # Fresh only where the lexical seed can read it: a text.
+        fresh = {
+            k for k in waiting & self.fresh if self.nodes[k].text
+        } if fresh_seconds > 0 else set()
         return IndexState(
             self.state.status, self.state.queue, embedded=len(current),
-            unembedded=len(nodes) - len(current) - len(given_up), given_up=len(given_up),
+            unembedded=len(waiting), given_up=len(given_up), fresh=len(fresh),
         )
 
 

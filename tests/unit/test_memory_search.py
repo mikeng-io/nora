@@ -16,6 +16,7 @@ from nora.agent.memory_search import (
     HOP_CEILING,
     RELEVANCE_FLOOR,
     MemorySearch,
+    MemorySearchResult,
     exact_terms_of,
     render_packet,
     scope_for,
@@ -229,6 +230,28 @@ async def test_kinds_narrow_the_answer_not_the_hops_so_an_outing_is_reached() ->
     assert [h.node.key for h in found.hits] == [("outing", "o1")]
 
 
+async def test_with_kinds_a_line_waiting_for_its_vector_still_bridges_to_an_outing() -> None:
+    """The seed over unvectored nodes is wanted when the scope WITHOUT the
+    kinds holds any: the kinds-narrowed scope holds only the outing, which
+    is never embedded, so counted there the bridge pass would skip the
+    waiting message the outing is reached from."""
+    outing = IndexedNode("outing", "o1", "outing", NOW, unit="u1", persons=("kit",),
+                         lineage=[["presence", "kit", None]])
+    waiting = _msg("1", "ramen at the night market")
+    index = FakeMemoryIndex(
+        [waiting, _msg("2", "something else entirely"), outing],
+        [("message", "1", "during", "outing", "o1")],
+        embed_model=M, fresh=[waiting.key],
+    )
+    del index.vectors[waiting.key]
+    found = await MemorySearch(
+        index, Metrics(), embedder=FakeQueryEmbedder(), model=M, drain_seconds=60.0,
+    ).search(query="ramen night market", person_id=None, target=_target(),
+             depth="low", now_ms=NOW, kinds=("outing", "stay", "trip"), social_off=())
+    assert found.status == "ok", found
+    assert [h.node.key for h in found.hits] == [("outing", "o1")]
+
+
 @pytest.mark.parametrize(("nodes", "state", "status"), [
     ([_msg("1", "ramen")], IndexState("complete", 0), "ok"),
     ([], IndexState("complete", 0), "nothing_found"),
@@ -275,6 +298,29 @@ async def test_coverage_holds_it_partial_until_every_embeddable_node_has_a_vecto
     assert (await _search(index)).status == "partial"
     index.given_up.add(waiting.key)  # the worker gave up: not waited for
     assert (await _search(index)).status == "ok"
+
+
+async def test_a_fresh_wait_is_read_by_its_words_and_is_not_partial() -> None:
+    """A node inside the worker's few-tick window is normal operation: the
+    lexical seed reads it beside the dense one, and the answer is `ok`. The
+    same wait without the tick, or past the window, is a backlog."""
+    fresh = _msg("2", "noodle shop")
+    index = FakeMemoryIndex([_msg("1", "ramen"), fresh], embed_model=M, fresh=[fresh.key])
+    del index.vectors[fresh.key]
+
+    async def search(drain_seconds: float | None) -> MemorySearchResult:
+        return await MemorySearch(
+            index, Metrics(), embedder=FakeQueryEmbedder(), model=M,
+            drain_seconds=drain_seconds,
+        ).search(query="noodle shop", person_id=None, target=_target(), depth="low",
+                 now_ms=NOW, social_off=())
+
+    found = await search(60.0)
+    assert (found.status, [h.node.source_id for h in found.hits]) == ("ok", ["2"])
+    assert found.hits[0].path[0].how == "matched"
+    assert (await search(None)).status == "partial"
+    index.fresh.clear()  # still waiting past the window
+    assert (await search(60.0)).status == "partial"
 
 
 async def test_no_vector_yet_uses_lexical_without_calling_the_embedder() -> None:

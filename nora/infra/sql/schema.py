@@ -4504,6 +4504,14 @@ MEMORY_NODE = sa.Table(
         "projected_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("clock_timestamp()"),
     ),
+    # When the node's vector became owed (0111): written with the row, and
+    # reset only when the input its vector is made from changes
+    # (`_cleared_when`), never by a re-projection of the same input, so a
+    # node's wait for its vector is `clock_timestamp() - owed_since`.
+    sa.Column(
+        "owed_since", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("clock_timestamp()"),
+    ),
     # The dense channel (0106). The node is its own embedding queue: `project()` clears all six when
     # the input the vector was made from changes (`embed_input`: the `text`,
     # or the `bytes` its `sha256` names), and the embedding worker fills a

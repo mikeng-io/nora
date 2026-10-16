@@ -11,7 +11,8 @@ containment agree.
 The seeds: `dense` compares only vectors of the asked model,
 nearest first; `exact` matches a term literally and whole (an ASCII term not
 inside a longer word, any other script as a substring); `index_state` with a
-model counts the vector coverage, leaving out nodes the worker gave up on.
+model counts the vector coverage, leaving out nodes the worker gave up on,
+and, given a window, how many waiting nodes were projected within it.
 """
 
 from __future__ import annotations
@@ -108,13 +109,17 @@ Load = Callable[..., Awaitable[MemoryIndexRead]]
 
 @pytest.fixture(params=["fake", "sql"])
 async def load(request: Any) -> AsyncIterator[Load]:
-    """`load(nodes, edges, vectors={key: (model, vector)}, given_up={key})`."""
+    """`load(nodes, edges, vectors={key: (model, vector)}, given_up={key},
+    fresh={key})`: `fresh` nodes have owed their vector since now, every
+    other since a day ago."""
     if request.param == "fake":
         async def fake(
             nodes: list[IndexedNode], edges: list[Any], vectors: Vectors | None = None,
             given_up: frozenset[tuple[str, str]] = frozenset(),
+            fresh: frozenset[tuple[str, str]] = frozenset(),
         ) -> MemoryIndexRead:
-            return FakeMemoryIndex(nodes, edges, vectors=vectors, given_up=given_up)
+            return FakeMemoryIndex(nodes, edges, vectors=vectors, given_up=given_up,
+                                   fresh=fresh)
         yield fake
         return
     engine = create_sql_engine(request.getfixturevalue("_db"))
@@ -122,6 +127,7 @@ async def load(request: Any) -> AsyncIterator[Load]:
     async def sql(
         nodes: list[IndexedNode], edges: list[Any], vectors: Vectors | None = None,
         given_up: frozenset[tuple[str, str]] = frozenset(),
+        fresh: frozenset[tuple[str, str]] = frozenset(),
     ) -> MemoryIndexRead:
         async with engine.begin() as conn:
             await conn.execute(sa.update(MEMORY_INDEX_STATE).values(status="complete"))
@@ -134,6 +140,11 @@ async def load(request: Any) -> AsyncIterator[Load]:
                     lineage=n.lineage if n.lineage is not None else [], state=n.state,
                     embedding=vector, embedding_model=model,
                     embed_attempts=EMBED_MAX_ATTEMPTS if n.key in given_up else 0,
+                    sha256=n.sha256,
+                    owed_since=(
+                        sa.func.clock_timestamp() if n.key in fresh
+                        else sa.func.clock_timestamp() - sa.text("interval '1 day'")
+                    ),
                 ))
             for sk, si, rel, dk, di in edges:
                 await conn.execute(pg_insert(MEMORY_EDGE).values(
@@ -312,8 +323,37 @@ async def test_coverage_counts_within_a_scope_and_lexical_reads_the_given_up(loa
                        frozenset({("message", "given-up"), ("message", "given-up-elsewhere")}))
     assert await index.index_state(model=M, scope=SCOPE) == IndexState("complete", 0, 1, 0, 1)
     assert await index.index_state(model=M) == IndexState("complete", 0, 1, 1, 2)
-    found = await index.seed(["ramen"], SCOPE, limit=10, given_up_of=M)
+    found = await index.seed(["ramen"], SCOPE, limit=10, unembedded_of=M)
     assert [s.node.source_id for s in found] == ["given-up"]
+
+
+async def test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node(
+    load: Load,
+) -> None:
+    """A node projected within the window is `fresh`; one waiting longer,
+    or a given-up one, is not. Out of scope, neither is counted. The
+    lexical seed over unembedded nodes reads waiting and given-up ones alike,
+    in scope only, and never a node holding a current vector."""
+    nodes = [
+        IndexedNode("message", "done", "ramen crawl", 1, origin_room="signal:b"),
+        IndexedNode("message", "just-said", "ramen tonight", 5, origin_room="signal:b"),
+        IndexedNode("message", "old-wait", "ramen again", 4, origin_room="signal:b"),
+        IndexedNode("message", "given-up", "ramen night", 3, origin_room="signal:b"),
+        IndexedNode("message", "fresh-elsewhere", "ramen too", 6, unit="u2"),
+        # Embeddable from its bytes, but no seed reads it: never fresh.
+        IndexedNode("media", "1:abc", "", 7, origin_room="signal:b", sha256="ab" * 32),
+    ]
+    index = await load(
+        nodes, [], {("message", "done"): (M, Q)}, frozenset({("message", "given-up")}),
+        frozenset({("message", "just-said"), ("message", "fresh-elsewhere"),
+                   ("message", "done"), ("message", "given-up"), ("media", "1:abc")}),
+    )
+    assert await index.index_state(model=M, scope=SCOPE, fresh_seconds=180) \
+        == IndexState("complete", 0, 1, 3, 1, 1)
+    # No window: nothing is fresh, every wait is a backlog.
+    assert await index.index_state(model=M, scope=SCOPE) == IndexState("complete", 0, 1, 3, 1)
+    found = await index.seed(["ramen"], SCOPE, limit=10, unembedded_of=M)
+    assert [s.node.source_id for s in found] == ["just-said", "old-wait", "given-up"]
 
 
 # ---------------------------------------------------------------------------

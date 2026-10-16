@@ -2946,6 +2946,9 @@ async def build_dependencies(
                     fingerprint(cfg.memory_index.embedder_model)
                     if cfg.memory_index.embed else None
                 ),
+                # The embedding worker's tick: a node waiting less than a
+                # few of them is fresh, not a backlog that answers `partial`.
+                drain_seconds=cfg.memory_index.drain_seconds,
             )
             if cfg.memory_index.enabled else None
         ),

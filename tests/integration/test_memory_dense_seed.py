@@ -52,6 +52,8 @@ from nora.testing.memory_index import DIMENSIONS, FakeQueryEmbedder
 
 NOW = 1_790_000_000_000
 MODEL = "model-a.gguf@0000+fmt1"
+#: `[memory_index] drain_seconds`' default, as composition passes it.
+DRAIN_SECONDS = 60.0
 _B = RoomFacts("signal", frozenset({"b"}), "u1", frozenset({"kit", "rin"}), label="B")
 _C = RoomFacts("signal", frozenset({"c"}), "u1", frozenset({"rin"}), label="C")
 _D = RoomFacts("signal", frozenset({"d"}), "u2", frozenset({"kit"}), label="D")
@@ -149,13 +151,24 @@ async def _node(
         ))
 
 
+async def _age(engine: Any, *sids: str) -> None:
+    """Owing its vector for an hour: a node still without one is then a
+    backlog, past `BACKLOG_TICKS` drain periods."""
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(MEMORY_NODE).where(MEMORY_NODE.c.source_id.in_(sids))
+                           .values(owed_since=sa.func.clock_timestamp()
+                                   - sa.text("interval '1 hour'")))
+
+
 async def _search(
     engine: Any, query: str = "the question", *, embedder: FakeQueryEmbedder | None = None,
     people: tuple[PersonRef, ...] = (), metrics: Metrics | None = None,
+    drain_seconds: float | None = DRAIN_SECONDS,
 ) -> MemorySearchResult:
     embedder = embedder or FakeQueryEmbedder({query: QUESTION})
     return await MemorySearch(
         SqlMemoryIndex(engine), metrics or Metrics(), embedder=embedder, model=MODEL,
+        drain_seconds=drain_seconds,
     ).search(query=query, person_id=None, target=_TARGET, depth="low", now_ms=NOW,
              people=people, social_off=())
 
@@ -190,6 +203,7 @@ async def test_another_units_node_is_never_returned_however_close(engine: Any) -
 async def test_a_vector_of_another_model_is_never_compared(engine: Any) -> None:
     await _node(engine, "old-model", "first", SAME, model="model-b.gguf@1111+fmt1")
     await _node(engine, "current", "second", MID)
+    await _age(engine, "old-model")
     found = await _search(engine)
     assert _ids(found) == ["current"]
     # The other model's node waits for a vector of this one: not complete.
@@ -318,15 +332,17 @@ async def test_no_vectors_yet_falls_back_without_asking_the_embedder(engine: Any
     assert (_ids(found), found.status, embedder.calls) == (["lex"], "partial", [])
 
 
-async def test_unembedded_nodes_keep_it_partial_and_given_up_ones_are_read_by_their_words(
+async def test_a_backlog_keeps_it_partial_and_given_up_ones_are_read_by_their_words(
     engine: Any,
 ) -> None:
-    """A node waiting for a vector holds the answer `partial`. One the worker
-    gave up on does not (it waits for nothing), and since no dense seed can
-    reach it, the lexical seed reads it: never a confident `nothing_found`
-    for words that are there."""
+    """A node that has waited past `BACKLOG_TICKS` drain periods for a vector
+    holds the answer `partial`: the worker is behind. One the worker gave up
+    on does not (it waits for nothing), and since no dense seed can reach
+    it, the lexical seed reads it: never a confident `nothing_found` for
+    words that are there."""
     await _node(engine, "mine", "second", MID)
     await _node(engine, "waiting", "the ramen crawl plan", None)
+    await _age(engine, "waiting")
     assert (await _search(engine)).status == "partial"
     async with engine.begin() as conn:
         await conn.execute(sa.update(MEMORY_NODE).where(MEMORY_NODE.c.source_id == "waiting")
@@ -348,9 +364,61 @@ async def test_a_node_waiting_in_another_unit_does_not_make_this_room_partial(
     """Coverage is counted within the search's scope."""
     await _node(engine, "mine", "second", MID)
     await _node(engine, "waiting-elsewhere", "third", None, unit="u2")
+    await _age(engine, "waiting-elsewhere")
     assert (await _search(engine)).status == "ok"
     await _node(engine, "waiting-here", "fourth", None)
+    await _age(engine, "waiting-here")
     assert (await _search(engine)).status == "partial"
+
+
+async def test_a_line_just_said_is_found_by_its_words_and_the_answer_is_ok(
+    engine: Any,
+) -> None:
+    """The defect: a node is projected as its row is written, its vector
+    comes at the worker's next tick. Until then the dense seed cannot reach
+    it, so the lexical seed reads it, and a wait that short is normal
+    operation, not a reason for `partial`. The same words waiting in another
+    unit are never returned."""
+    await _node(engine, "mine", "second", MID)
+    await _node(engine, "just-said", "the dumpling stall moved to the pier", None)
+    await _node(engine, "said-elsewhere", "the dumpling stall moved too", None, unit="u2")
+    q = "where did the dumpling stall move"
+    found = await _search(engine, q, embedder=FakeQueryEmbedder({q: FAR}))
+    assert (found.status, _ids(found)) == ("ok", ["just-said"])
+    assert found.hits[0].path[0].how == "matched"
+    # Everything in scope was searched, the waiting line by its words.
+    nothing = await _search(engine, "nothing near",
+                            embedder=FakeQueryEmbedder({"nothing near": FAR}))
+    assert (nothing.status, nothing.hits) == ("nothing_found", ())
+    # A question with no search terms cannot read it by its words.
+    assert (await _search(engine, "what was that")).status == "partial"
+    # Without the tick, no wait is fresh: the safe side.
+    assert (await _search(engine, drain_seconds=None)).status == "partial"
+    # Still waiting three ticks on, it is a backlog.
+    await _age(engine, "just-said")
+    found = await _search(engine, q, embedder=FakeQueryEmbedder({q: FAR}))
+    assert (found.status, _ids(found)) == ("partial", ["just-said"])
+
+
+async def test_a_fresh_attachment_with_no_text_is_never_fresh(engine: Any) -> None:
+    """An attachment with no reading is embeddable from its bytes, so it
+    waits for a vector, but no seed reads it until the vector lands: it is
+    not searched, so the answer is never `nothing_found`."""
+    await _node(engine, "mine", "second", MID)
+    await _node(engine, "1:abc", "", None, kind="media", sha256="ab" * 32,
+                origin_room="signal:b")
+    found = await _search(engine, "nothing near",
+                          embedder=FakeQueryEmbedder({"nothing near": FAR}))
+    assert (found.status, found.hits) == ("partial", ())
+
+
+async def test_a_given_up_node_and_a_question_with_no_terms_is_partial(engine: Any) -> None:
+    """No dense seed reaches a given-up node and a question with no search
+    terms runs no lexical one: it was not searched."""
+    await _node(engine, "mine", "second", FAR)
+    await _node(engine, "gave-up", "the ramen crawl plan", None, attempts=EMBED_MAX_ATTEMPTS)
+    found = await _search(engine, "what was that")
+    assert (found.status, found.hits) == ("partial", ())
 
 
 async def test_an_attachment_with_nothing_to_embed_does_not_hold_it_partial(

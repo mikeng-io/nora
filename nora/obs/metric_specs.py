@@ -1976,7 +1976,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Memory index searches, by status (" + " / ".join(SEARCH_STATUSES) + "). "
         "partial = the index is not complete, its projection queue is not "
         "empty, the seeds fell back to lexical (no embedder, or it failed), or "
-        "nodes still wait for a vector of the current model; unavailable = the "
+        "nodes in scope have waited past a few worker ticks for a vector of the "
+        "current model (a backlog); unavailable = the "
         "search failed (fail closed).",
         ("status",),
     ),
