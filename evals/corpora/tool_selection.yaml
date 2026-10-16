@@ -1203,6 +1203,9 @@ cases:
   # the group case expects the reply and forbids the two writes the turn must
   # not make; "she wrote nothing at all" is not expressible as a criterion.
   # NOT RUN when written: the eval owner runs them on master and the branch.
+  # `remember` is a Honcho tool, so the own-fact case is Honcho-surface only:
+  # the graph surface holds no Honcho tool (DEC-316, ruling 2026-10-17) and
+  # no person-fact write verb, so it has no route to expect there.
   - name: route_keep_group_fact_is_not_remember
     entry: tag
     expect: reply
@@ -1216,7 +1219,7 @@ cases:
     expect: reply
     mention: true
     input: 記低 我食素
-    metadata: {tools: [remember], not_tools: [note_create]}
+    metadata: {tools: [remember], not_tools: [note_create], memory_surface: honcho}
     snapshot: *room_a
 
   # --- memory_search (DEC-316, operator ruling 2026-10-16) ----------------------
@@ -1224,23 +1227,25 @@ cases:
   # (`memory_search`) or Honcho's (`ask_memory`, `search_memory`,
   # `search_memory_workspace`, `who_said`), never both. These cases measure
   # `memory_search`'s routing against the neighbours on its own surface it
-  # could take from, or lose to: `about` (a person's standing profile),
-  # `where_been` (where someone's phone has been), `media_search` (pictures by
-  # what they show) and `lookup_person` (who a name in this chat is). The time
-  # and kind cases also check the narrowing reaches the call (`args_include`).
+  # could take from, or lose to: `where_been` (where someone's phone has
+  # been), `media_search` (pictures by what they show) and `lookup_person` (who
+  # a name in this chat is). `about` and `remember` are Honcho tools and are
+  # not on the graph surface at all (operator ruling 2026-10-17), so no graph
+  # case names them: a profile question there is `memory_search` with
+  # `person`. The time and kind cases also check the narrowing reaches the
+  # call (`args_include`).
   #
   # `memory_surface: graph` runs only under `python -m evals --memory-index`;
   # `memory_surface: honcho` only without it (`evals.scenarios.MEMORY_SURFACES`).
   # On a master checkout, which predates the key, the graph cases run and FAIL
-  # by construction (no `memory_search` there). `route_about_profile_not_memory_search`
-  # states no surface and reads on both arms. Synthetic inputs; `Miles` is
+  # by construction (no `memory_search` there). Synthetic inputs; `Miles` is
   # the corpus's one member name.
   - name: route_memory_search_what_a_person_said_long_ago
     entry: tag
     expect: reply
     mention: true
     input: Miles之前話過佢想學咩樂器㗎？
-    metadata: {tools: [memory_search], not_tools: [about, lookup_person], memory_surface: graph}
+    metadata: {tools: [memory_search], not_tools: [lookup_person], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_memory_search_a_name_he_mentioned
@@ -1248,7 +1253,7 @@ cases:
     expect: reply
     mention: true
     input: Miles講過佢新同事叫咩名，我唔記得咗
-    metadata: {tools: [memory_search], not_tools: [lookup_person, about], memory_surface: graph}
+    metadata: {tools: [memory_search], not_tools: [lookup_person], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_memory_search_across_the_groups_rooms
@@ -1256,7 +1261,7 @@ cases:
     expect: reply
     mention: true
     input: 我哋係咪喺第二個group講過搬屋嘅嘢？講咗啲咩？
-    metadata: {tools: [memory_search], not_tools: [about], memory_surface: graph}
+    metadata: {tools: [memory_search], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_memory_search_a_span_of_dates
@@ -1281,7 +1286,6 @@ cases:
     input: what did Miles say he wanted for his birthday, back in early September?
     metadata:
       tools: [memory_search]
-      not_tools: [about]
       memory_surface: graph
       args_include:
         memory_search: [person, since]
@@ -1333,7 +1337,6 @@ cases:
     input: what did we decide and keep about the camping trip? only what got written down
     metadata:
       tools: [memory_search]
-      not_tools: [about]
       memory_surface: graph
       args_include:
         memory_search: [kinds, notes]
@@ -1344,11 +1347,24 @@ cases:
     expect: reply
     mention: true
     input: Miles平時鍾意食咩？
-    # On the graph arm `about` reads Honcho, whose per-draw eval workspace is
-    # empty, so `about` answers nothing_known in every draw and a
-    # `memory_search` after it is the right follow-up. A search BEFORE `about`
-    # is still the routing error this case catches.
-    metadata: {tools: [about], before: {about: [memory_search]}}
+    # Honcho surface only: `about` is a Honcho tool, and the graph surface
+    # holds none (ruling 2026-10-17). The graph's route for the same question
+    # is the next case.
+    metadata: {tools: [about], memory_surface: honcho}
+    snapshot: *room_a
+
+  - name: route_memory_search_profile_on_graph
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles平時鍾意食咩？
+    # The same profile question on the graph surface, which has no `about`:
+    # what is known about someone is `memory_search` narrowed to them.
+    metadata:
+      tools: [memory_search]
+      memory_surface: graph
+      args_include:
+        memory_search: [person]
     snapshot: *room_a
 
   - name: route_who_said_in_view_not_memory_search

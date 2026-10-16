@@ -966,16 +966,20 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # its `person`, `since`, `until` and
     # `kinds` applied inside the index's reads. No Honcho behind it. It is
     # offered only while `[memory_index] enabled`, and then `ask_memory`,
-    # `search_memory`, `search_memory_workspace` and `who_said` are not
-    # (`GRAPH_MEMORY_TOOLS`, `HONCHO_MEMORY_TOOLS`): one memory surface at a
-    # time, never both.
+    # `search_memory`, `search_memory_workspace`, `who_said`, `about` and
+    # `remember` are not (`GRAPH_MEMORY_TOOLS`, `HONCHO_MEMORY_TOOLS`): one
+    # memory surface at a time, never both.
     #
-    # 4, `ask_memory`'s: a search refined once or twice over a group turn's
-    # key people.
+    # 8: it replaces three Honcho verbs budgeted 4 each (`ask_memory`,
+    # `search_memory`, `search_memory_workspace`). Measured on Honcho-surface
+    # Langfuse traces over 40 days: of 35 tag turns that made any memory call,
+    # 9 made 5 to 7 across those verbs and `who_said` combined, and a
+    # `dreamer:proactive` pass made up to 8. At 4 about 1 in 4 memory-using tag
+    # turns would be cut short. A cap is a ceiling, not a reservation.
     #
     # `level=2` (ADR 0015 §3): L1 plus one SHOULD (write `query` yourself).
     # `kinds` is a Literal; every status's reading is in its result's `note`.
-    "memory_search": NativeTool(4,
+    "memory_search": NativeTool(8,
                                 source_tier="remembered", read_only=True,
                                 side_effect_state="none", idempotency="idempotent",
                                 retry="safe", output_contract="three_state", level=2),
@@ -4549,15 +4553,19 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 #: the memory graph never sit on one tool surface: `[memory_index] enabled`
 #: selects one, wherever tools are built (`build_tool_specs`, so the tag,
 #: fire, Cognition, every Dreamer adaptor and the sub-agent worker alike).
-#: Off (the default, and the rollback): the Honcho verbs. On:
-#: `memory_search`. `about`, `remember` and `load_transcript` are on both:
-#: the profile read and the memory write (Persona and step 9 replace them,
-#: not search), and the in-room scroll-back. `who_said` is deprecated: the
-#: graph surface does without it (`memory_search` names who said each hit,
-#: `load_transcript` reads around it), and it goes with the rest of the
-#: Honcho surface at step 9.
+#: Off (the default, and the rollback): the Honcho tools. On:
+#: `memory_search`, and no Honcho tool at all (DEC-316):
+#: `about` (the profile read) and `remember` (the person-fact write) are
+#: Honcho's, so they sit on the Honcho surface alone. A profile question on
+#: the graph is `memory_search` with `person`; the graph surface has no
+#: person-fact write verb (`note_create` keeps an open question, not a
+#: settled fact). `load_transcript` reads the room's own rows and is on both.
+#: `who_said` is deprecated: the graph surface does without it
+#: (`memory_search` names who said each hit, `load_transcript` reads around
+#: it), and it goes with the rest of the Honcho surface at step 9.
 HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "search_memory_workspace", "who_said",
+    "about", "remember",
 })
 GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search"})
 #: The Dreamer adaptors whose `memory_search` reads their OWN room alone
@@ -6077,7 +6085,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 # `social = false` (identity.toml): their social items are
                 # out of every read, whenever recorded (22 §2). Only a listed
                 # person's can be in scope at all.
-                social_off=frozenset(p for p in listed or () if persons.social_off(p)),
+                social_off=persons.social_off_ids(listed or ()),
             )
             if found.status == "unavailable":
                 _record_room(metrics, "memory_search", "unavailable", reason="index")
@@ -6124,7 +6132,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         It returns what matches, with each item's age and how it was found. The
         other arguments narrow it to one person, a span of dates or some kinds
-        of memory.
+        of memory. Asked what you know about someone, set `person` to them.
 
         SHOULD: write `query` yourself, as what you are looking for, not the raw
         tag message.

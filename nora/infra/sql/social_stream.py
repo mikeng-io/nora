@@ -21,7 +21,7 @@ list read carrying its probe's counts. A probe that made a list read due does
 not advance them, so a list read that fails leaves the rise still due.
 
 **What is read is filtered here, once** (§2). Every read of items for
-perception or for a stimulus leaves out an item
+perception, for a stimulus or for the Rollup's daybook leaves out an item
 whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `social_item_state` row (gone or hidden). The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
@@ -40,9 +40,9 @@ Postgres.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import sqlalchemy as sa
@@ -50,6 +50,7 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.rollup import SocialFact, SocialInput
 from nora.domain.social_stream import (
     SOCIAL_READ_REF,
     ByteDeletionReason,
@@ -77,7 +78,7 @@ ItemState = Literal["gone", "hidden"]
 
 #: Probe outcomes that carry no answer from the platform: the call failed, or
 #: the login was halted or backed off on it.
-_UNANSWERED = ("halted", "backed_off", "error")
+_UNANSWERED = ("halted", "backed_off", "error", "abandoned", "unavailable")
 
 
 #: Perception outcomes that settle an item for good.
@@ -133,6 +134,10 @@ def _media(ref: str | None) -> tuple[str, ...]:
     return tuple(filter(None, (ref or "").split(",")))
 
 
+def _ms(moment: datetime) -> int:
+    return round(moment.timestamp() * 1000)
+
+
 def _gone(deleted: Mapping[str, datetime], sha: str, recorded_at: datetime) -> bool:
     """Whether `sha`'s bytes were deleted after a row recorded at
     `recorded_at`: a row written after the deletion stored them again."""
@@ -179,7 +184,7 @@ class Backfill:
 
 
 class SqlSocialStreamStore:
-    """The stream's five tables, as eighteen verbs."""
+    """The stream's five tables, as nineteen verbs."""
 
     def __init__(
         self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
@@ -292,6 +297,32 @@ class SqlSocialStreamStore:
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).one_or_none()
         return Counts(row.media_count, row.total_clips_count) if row else None
+
+    async def posted(self, *, persons: Collection[str], through_ms: int) -> SocialInput:
+        """What the Rollup's daybook counts for `persons`: each readable item
+        recorded at or before `through_ms`, whenever it was taken (a back-filled
+        item lands in its own day), and per person the first answered poll
+        recorded by then. A person who has opted out has neither."""
+        at = datetime.fromtimestamp(through_ms / 1000, tz=UTC)
+        i, p = SOCIAL_ITEM, SOCIAL_POLL
+        who = sorted(set(persons) - self._opted_out)
+        items = (
+            sa.select(i.c.person, i.c.taken_at)
+            .where(*self._readable(), i.c.person.in_(who), i.c.recorded_at <= at)
+            .order_by(i.c.person, i.c.taken_at, i.c.id)
+        )
+        first = (
+            sa.select(p.c.person, sa.func.min(p.c.recorded_at))
+            .where(p.c.person.in_(who), p.c.outcome.not_in(_UNANSWERED), p.c.recorded_at <= at)
+            .group_by(p.c.person)
+        )
+        async with self._engine.connect() as conn:
+            item_rows = (await conn.execute(items)).all()
+            poll_rows = (await conn.execute(first)).all()
+        return SocialInput(
+            items=tuple(SocialFact(r.person, _ms(r.taken_at)) for r in item_rows),
+            observed_from={person: _ms(recorded) for person, recorded in poll_rows},
+        )
 
     async def item_state(self, *, network: str, item_id: str) -> ItemState | None:
         """The item's current state, the latest row, or None when it has none."""
