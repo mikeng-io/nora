@@ -17,6 +17,7 @@ from scripts.log_markers import BASELINE, census, count
 
 def test_detector_sees_a_log_marker() -> None:
     assert count('"""Raised after #191 (2026-09-01)."""\n# see #42\nx = 1\n') == 2
+    assert count("# see #7\n# PR#123\n# issue#45\nx = 1\n") == 3
     assert count('COLOR = "#000000"  # black, 24-bit\nURL = "a/#123"\n') == 0
 
 

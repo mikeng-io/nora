@@ -624,13 +624,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "is outside the circle and the room is not location-trusted).",
         ("reason",),
     ),
-    # `nora_presence_disclosure_waived_total` is the WAIVER counter, the other
-    # half of the pair above. When `location = true` overrides a guard, the override
-    # is recorded; without it, relaxing `unnamed` would leave a zero refusal counter
-    # unable to distinguish "the flag is working" from "the room filled up with
-    # strangers". The startup pre-flight warns once at boot only, so for an account
-    # that joins later this is the ONLY runtime signal.
-    #
     # `nora_recovered_replies_total` (DEC-93): a reply the model WROTE without
     # calling `send_reply`, recovered and delivered rather than discarded. A
     # non-zero value means «the LLM route is not honouring `tool_choice=required`»,
@@ -677,6 +670,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "outcome landing here unlabelled would be indistinguishable from one.",
         ("outcome", "audience"),
     ),
+    # `nora_presence_disclosure_waived_total` is the WAIVER counter, the other
+    # half of the pair above. When `location = true` overrides a guard, the override
+    # is recorded; without it, relaxing `unnamed` would leave a zero refusal counter
+    # unable to distinguish "the flag is working" from "the room filled up with
+    # strangers". The startup pre-flight warns once at boot only, so for an account
+    # that joins later this is the ONLY runtime signal.
     _CounterSpec(
         "nora_presence_disclosure_waived_total",
         "whereis disclosures that PASSED only because the conversation is "
@@ -1095,12 +1094,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "platform and status (ok / error / timeout / unsupported / empty).",
         ("platform", "status"),
     ),
-    # `nora_dream_skipped_total` `reason="in_flight"`: dream_loop's per-scope
-    # lock. A slow extraction still running when the next tick comes round is
-    # SKIPPED, never re-entered, because re-entering would read the same un-advanced
-    # watermark and append the same evidence twice, and the rendered "12x, 3 people"
-    # would be a fabricated number.
-    #
     # `nora_dream_batch_shrunk_total`: `unavailable` holds the watermark on purpose,
     # so the next fire re-reads the IDENTICAL range, and for a failure caused BY that
     # range the retry fails the same way, forever, paced only by the backoff cap.
@@ -1117,6 +1110,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "not that the provider is down.",
         ("adaptor",),
     ),
+    # `nora_dream_skipped_total` `reason="in_flight"`: dream_loop's per-scope
+    # lock. A slow extraction still running when the next tick comes round is
+    # SKIPPED, never re-entered, because re-entering would read the same un-advanced
+    # watermark and append the same evidence twice, and the rendered "12x, 3 people"
+    # would be a fabricated number.
     _CounterSpec(
         "nora_dream_skipped_total",
         "Dream-loop ticks skipped, by reason. reason=\"in_flight\": the "
@@ -2223,7 +2221,7 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     _HistogramSpec(
         "nora_tag_latency_seconds", "End-to-end tag latency, including the model call.",
     ),
-    # The one LABELLED histogram, with `audience` as the label because the two
+    # Labelled by `audience` because the two
     # populations are bounded by DIFFERENT NUMBERS: a tag's invocation is cut at
     # `[llm] timeout_seconds` (60); a fire turn's at `[heartbeat] timeout_seconds`
     # (120), because nobody is waiting on it. Mixed into one histogram the tail is a
@@ -2262,15 +2260,6 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     # long reply calls none and observes nothing). Its bound is
     # `[speech.tts.format] timeout_seconds`.
     #
-    # `nora_debrief_seconds`: deliberately NOT folded into
-    # `nora_tag_latency_seconds`. The debrief holds the slot, so its cost IS
-    # user-visible, but adding it to an existing SLO series would change what that
-    # series measures. Two series, two questions.
-    #
-    # The gate is **p95 <= 5s**, and the case it names is the SECOND-QUEUED tag
-    # rather than an average: the person whose turn is being reviewed already has
-    # their reply, so the cost lands on whoever is queued behind a busy conversation.
-    #
     # Observed on EVERY exit including the failures: a latency series that only
     # records successes describes the path that already works.
     _HistogramSpec(
@@ -2279,6 +2268,14 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "that made one, refusals and timeouts included.",
         (0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5),
     ),
+    # `nora_debrief_seconds`: deliberately NOT folded into
+    # `nora_tag_latency_seconds`. The debrief holds the slot, so its cost IS
+    # user-visible, but adding it to an existing SLO series would change what that
+    # series measures. Two series, two questions.
+    #
+    # The gate is **p95 <= 5s**, and the case it names is the SECOND-QUEUED tag
+    # rather than an average: the person whose turn is being reviewed already has
+    # their reply, so the cost lands on whoever is queued behind a busy conversation.
     _HistogramSpec(
         "nora_debrief_seconds",
         "Wall-clock duration of one debrief fold, on every exit path. "
@@ -2291,12 +2288,6 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     # the critical path of every tagged turn. Buckets are sub-second because anything
     # above that is already the answer.
     #
-    # `nora_media_comprehension_seconds`: measured around the READ ALONE (the
-    # interpreter call, or the whole chunk run for a video), not the job around it. A
-    # `nothing_found` never reaches this line, so the dedup that skips a re-read
-    # cannot dilute what this says about a describer's own latency. The buckets reach
-    # 300s deliberately: a chunked video read is ten model calls, not one, and a
-    # histogram whose top bucket is 21s would report every video as +Inf.
     _HistogramSpec(
         "nora_media_join_seconds",
         "Wall-clock cost of one media join, by the PATH that paid it "
@@ -2317,6 +2308,12 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         (1, 3, 8, 21, 50, 100, 200, 500),
         ("path",),
     ),
+    # `nora_media_comprehension_seconds`: measured around the READ ALONE (the
+    # interpreter call, or the whole chunk run for a video), not the job around it. A
+    # `nothing_found` never reaches this line, so the dedup that skips a re-read
+    # cannot dilute what this says about a describer's own latency. The buckets reach
+    # 300s deliberately: a chunked video read is ten model calls, not one, and a
+    # histogram whose top bucket is 21s would report every video as +Inf.
     _HistogramSpec(
         "nora_media_comprehension_seconds",
         "One media comprehension read's latency — the model call alone for an "

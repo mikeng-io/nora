@@ -26,7 +26,8 @@ BASELINE = ROOT / "tests" / "architecture" / "log_marker_baseline.json"
 
 LOG_MARKER = re.compile(
     r"\b20\d\d-\d\d-\d\d\b"  # a calendar date
-    r"|(?<![\w&/])#\d{2,5}\b"  # an issue or PR number
+    r"|(?<![\w&/])#\d{1,5}\b"  # an issue or PR number
+    r"|\b(?:PR|[Ii]ssues?)\s*#\d+"  # one glued to its word
 )
 
 
@@ -53,7 +54,8 @@ def count(source: str) -> int:
 
 def tracked_python_files() -> list[str]:
     out = subprocess.run(
-        ["git", "ls-files", "*.py"], cwd=ROOT, check=True, capture_output=True, text=True,
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.py"],  # noqa: S607
+        cwd=ROOT, check=True, capture_output=True, text=True,
     ).stdout
     return sorted(p for p in out.splitlines() if (ROOT / p).is_file())
 
@@ -73,7 +75,8 @@ def main() -> int:
         return 2
     counts = census()
     BASELINE.write_text(json.dumps(counts, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"{len(counts)} files, {sum(counts.values())} marker lines -> {BASELINE.relative_to(ROOT)}")
+    total = sum(counts.values())
+    print(f"{len(counts)} files, {total} marker lines -> {BASELINE.relative_to(ROOT)}")
     return 0
 
 

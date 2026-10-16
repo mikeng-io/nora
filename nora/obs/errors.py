@@ -5,8 +5,8 @@ often, with what outcome", Langfuse holds the traces with a model call in them,
 and logs are forensic. All three answer questions about things that happened;
 none groups many occurrences of the same stack trace into one issue, which is
 what this module is for. It does not mark an issue as new since the last deploy
-unless `setup_errors` is given a `release`, and it does not capture a frame's
-local variables (`include_local_variables=False`).
+unless `setup_errors` is given a `release` (`__main__` passes none), and it does
+not capture a frame's local variables (`include_local_variables=False`).
 
 **Errors only: `traces_sample_rate` is 0.** `sentry_sdk` can instrument spans,
 but that would give this process two tracing pipelines writing two
@@ -44,8 +44,8 @@ def setup_errors(
 ) -> bool:
     """Wire Sentry for error capture. Returns whether it is ON.
 
-    `__main__` logs the return value, so "Sentry is configured" is a line in
-    the log rather than an assumption.
+    Every exit logs whether reporting is on and why, so "Sentry is configured"
+    is a line in the log rather than an assumption.
 
     `dsn_env` NAMES an environment variable; the DSN is never inlined in
     `config.toml` (DEC-8), and an empty or unset value means OFF rather than an
