@@ -748,27 +748,26 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                   time_shiftable=None, source_tier="confirmed", read_only=True,
                                   side_effect_state="none", idempotency="idempotent", retry="safe",
                                   output_contract="three_state", level=2),
-    # 4, sized like `transit`/`place_info` (DEC-155): the calls are cheap local
-    # SELECTs (no network, no live-refresh block — unlike `where_is`'s held-2
-    # refresh cost), so the currency is the model round trip, and one question
-    # can legitimately walk day -> places in a turn.
+    # 4, sized like `transit`/`place_info` (DEC-155): the calls are cheap local SELECTs
+    # (no network, no live-refresh block — unlike `where_is`'s held-2 refresh cost), so
+    # the currency is the model round trip, and one question can legitimately walk day
+    # -> places in a turn.
     #
-    # **`time_shiftable=True` is the load-bearing declaration** (DEC-40), and
-    # this is the DERIVED-DATA tool that sets it: every answer is a WINDOW answer — the past N days,
-    # or one named
-    # date — never a claim about right now, and the docstring carries the
-    # window with the numbers, so asking about last week reads the same
-    # derived facts it would read today.
+    # **`time_shiftable=True` is the load-bearing declaration** (DEC-40), and this is
+    # the DERIVED-DATA tool that sets it: every answer is a WINDOW answer — the past N
+    # days, or one named date — never a claim about right now, and the docstring carries
+    # the window with the numbers, so asking about last week reads the same derived
+    # facts it would read today.
     #
-    # `cacheable=False`: the R-31 gate runs against the room's LIVE roster on
-    # every call, and the tool-recall log replays a persisted result verbatim
-    # with no guard re-check — so a cached `ok` would stay replayable after the
-    # roster changed (an unnamed account joins, `location_trusted` flips off).
-    # That is exactly the case the `cacheable` field's own contract excludes.
+    # `cacheable=False`: the R-31 gate runs against the room's LIVE roster on every
+    # call, and the tool-recall log replays a persisted result verbatim with no guard
+    # re-check — so a cached `ok` would stay replayable after the roster changed (an
+    # unnamed account joins, `location_trusted` flips off). That is exactly the case the
+    # `cacheable` field's own contract excludes.
     #
-    # `level=2` (ADR 0015 §3): L1 plus one constraint (never for RIGHT NOW, that
-    # is `where_is`) and the four arms. Reporting rules, the `unlabeled` one
-    # included, ride in each result's `note`.
+    # `level=2` (ADR 0015 §3): L1 plus one constraint (never for RIGHT NOW, that is
+    # `where_is`) and the four arms. Reporting rules, the `unlabeled` one included, ride
+    # in each result's `note`.
     "where_been": NativeTool(8,
                              time_shiftable=True, source_tier="confirmed", cacheable=False,
                              read_only=True,
@@ -782,22 +781,20 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                read_only=True,
                                side_effect_state="none", idempotency="idempotent", retry="safe",
                                output_contract="three_state", level=3),
-    # 4, sized on NETWORK cost like `transit`: one question is ONE batched GetPlayerSummaries call —
-    # the
-    # room's whole id set goes out in a single request, up to Steam's
-    # documented 100 ids — and/or one read of the Discord gateway's voice
+    # 4, sized on NETWORK cost like `transit`: one question is ONE batched
+    # GetPlayerSummaries call — the room's whole id set goes out in a single request, up
+    # to Steam's documented 100 ids — and/or one read of the Discord gateway's voice
     # cache. A second call is a second question, never a per-person fan-out.
     #
-    # `time_shiftable=False`: live state, the same declaration `now` and
-    # `transit` carry — the answer describes this instant and decays.
-    # `cacheable=False` is load-bearing: a cached "playing" replayed minutes
-    # later is the exact stale-note failure this tool exists to kill.
-    # Contrast `transit`'s cacheable=True — transit answers a STABLE schedule;
-    # this answers a mutable instant.
+    # `time_shiftable=False`: live state, the same declaration `now` and `transit` carry
+    # — the answer describes this instant and decays. `cacheable=False` is load-bearing:
+    # a cached "playing" replayed minutes later is the exact stale-note failure this
+    # tool exists to kill. Contrast `transit`'s cacheable=True — transit answers a
+    # STABLE schedule; this answers a mutable instant.
     #
-    # `level=1` (ADR 0015 §3): what + when + what it returns (the three arms).
-    # The honesty rules (away/snooze, profile_hidden, the *_wired halves) are in
-    # the `ok` result's `note`, and only when the field they are about is there.
+    # `level=1` (ADR 0015 §3): what + when + what it returns (the three arms). The
+    # honesty rules (away/snooze, profile_hidden, the *_wired halves) are in the `ok`
+    # result's `note`, and only when the field they are about is there.
     "online_now": NativeTool(4,
                              time_shiftable=False, source_tier="confirmed", cacheable=False,
                              read_only=True,
@@ -1058,7 +1055,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # body asks the one `ExternalFilesSource` for its bytes and looks at a
     # picture or a video, so a Drive photo is seen.
     # Budget 8: a document with pictures looks at one per section, and a turn can run well past
-    # four looks; once the ceiling refuses further calls the turn ends without ever publishing.
+    # four looks; a ceiling below that refuses looks the answer needs.
     # Each look is a vision call, so the number is a cost bound as much as a behaviour one; a
     # message naming two images still needs two.
     "media_fetch": NativeTool(8,
@@ -1201,19 +1198,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            source_tier="web", cacheable=True, read_only=True,
                            side_effect_state="none", idempotency="idempotent", retry="safe",
                            output_contract="three_state", level=3),
-    # `linkedin_read` and `linkedin_search` (DEC-201): READ-ONLY LinkedIn via the same host bridge,
-    # on a dedicated
-    # account. `linkedin_read` budget 2: a profile, then its experience or
-    # posts. `linkedin_search` budget 1: each search spends LinkedIn's monthly
-    # people-search limit. `read_only=True` is R-86's third layer.
-    # `side_effect_state="none"` is written with a caveat: opening a profile
-    # is a visit LinkedIn can show its owner. The account's profile viewing is
-    # set to private, and ADR 0008 §1 binds
-    # `read_only=True` to `none`; what holds the rest is a rule in the tools:
-    # neither runs in a turn nobody asked for (a fire turn, a Dreamer pass).
-    # `cacheable=False`: that rule is a decision about THIS turn, and a
-    # replayed answer would carry it into another. `time_shiftable=False`:
-    # a profile and its posts drift.
+    # `linkedin_read` and `linkedin_search` (DEC-201): READ-ONLY LinkedIn via the same
+    # host bridge, on a dedicated account. `linkedin_read` budget 2: a profile, then its
+    # experience or posts. `linkedin_search` budget 1: each search spends LinkedIn's
+    # monthly people-search limit. `read_only=True` is R-86's third layer.
+    # `side_effect_state="none"` is written with a caveat: opening a profile is a visit
+    # LinkedIn can show its owner. The account's profile viewing is set to private, and
+    # ADR 0008 §1 binds `read_only=True` to `none`; what holds the rest is a rule in the
+    # tools: neither runs in a turn nobody asked for (a fire turn, a Dreamer pass).
+    # `cacheable=False`: that rule is a decision about THIS turn, and a replayed answer
+    # would carry it into another. `time_shiftable=False`: a profile and its posts
+    # drift.
     "linkedin_read": NativeTool(2, time_shiftable=False,
                                 source_tier="web", cacheable=False, read_only=True,
                                 side_effect_state="none", idempotency="idempotent",
@@ -1805,9 +1800,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # against `llm.limits.turns = 20`. A second `skills(same_skill)` in one turn
     # re-injects a body ALREADY in context — the exact context-cost
     # `load_transcript`'s clamp exists to bound — and cannot improve the answer,
-    # the same reason `group_members` is 1. The directory is two
-    # (`image-generation`, `navigation`) and one message can legitimately span
-    # both domains, so a turn may need two DIFFERENT activations. The number
+    # the same reason `group_members` is 1. One message can legitimately span
+    # two domains, so a turn may need two DIFFERENT activations. The number
     # bounds how many domains ONE message can span, not how many skills exist:
     # raise it when a message is measured spanning three domains, not because
     # the directory grew.
@@ -1897,8 +1891,7 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 # least 3% of calls and together more than half of them, for a small schema
 # cost; those turns never fetch anything. Re-derive it when a tool's share
 # moves; it is a fact about the measured window, not a constant. `play_music`
-# and `where_is` also clear the floor, but `play_music` is already
-# Discord-scoped so it is free there and absent elsewhere.
+# is not listed because it is Discord-scoped: free there and absent elsewhere.
 #
 # A tool that is hot on ONE KIND of turn, not on every turn, declares it on its
 # own entry instead (`NativeTool.hot_on`, DEC-256): the music verbs are
@@ -1976,8 +1969,8 @@ LOADER_TOOL = "load_tools"
 #
 # `load_transcript` has `budget: 2` (R-7/DEC-10), so two calls at the ceiling
 # must stay a small fraction of `total_tokens`. 60 caps the pair at roughly
-# 4,000 tokens, in the same order as the three cheap tools rather than an
-# order above them. 25 is the default because the prefill already carries the
+# 4,000 tokens, the size of a few ordinary tool results rather than an order
+# above them. 25 is the default because the prefill already carries the
 # last `store.context_window` (40) messages: a call that does not say how far
 # back it wants is looking for a little more, not for the whole room.
 LOAD_TRANSCRIPT_MAX = 60
@@ -4272,11 +4265,11 @@ class NoteCollaborator(Protocol):
 
 
 #: NOT DEFINED HERE — an ordinary import, used by `note_read`/`note_update`
-#: below. `note_handle` lives in `nora.domain.notes` because `nora.language`
-#: sits below `nora.agent` in the layered import contract and reads it too;
-#: the whole argument for one spelling is in that function's own docstring. It
-#: stays importable FROM here because `nora.agent.guards` reads it off this
-#: module; that re-export is incidental, not the reason the name is in this file.
+#: below. `note_handle` lives in `nora.domain.notes` so layers below
+#: `nora.agent` can use the same spelling; the whole argument for one spelling
+#: is in that function's own docstring. It stays importable FROM here because
+#: `nora.agent.guards` reads it off this module; that re-export is incidental,
+#: not the reason the name is in this file.
 
 
 #: A computer call refused because its `started` audit row (or, for a write,
@@ -4782,7 +4775,7 @@ def build_tool_specs(
     # `unavailable`; the tool is still offered, so a claimed link has
     # somewhere to go and «I can't open that» is said, not guessed around.
     external_files: ExternalFilesSource | None = None,
-    # `[memory_index] enabled` the retrieval
+    # `[memory_index] enabled`: the retrieval
     # service `ask_memory` answers from instead of Honcho. `None` (the
     # shipped default, offline, eval) is the Honcho path.
     memory_retrieval: MemorySearch | None = None,
@@ -5985,7 +5978,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             card, memory = await asyncio.gather(
                 _card_of(ref.honcho_peer_id),
                 honcho.representation(
-                # OBSERVER = Nora, OBSERVED = the person This is
+                # OBSERVER = Nora, OBSERVED = the person. This is
                 # what NORA has come to understand about them from messages she
                 # witnessed — her own model — NOT the person's self-description.
                 # The pair only exists because Nora joins every session with
@@ -6026,18 +6019,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "now, and do not say you don't remember them.",
             }
         # An IDENTIFIER is dropped HERE rather than at egress, and that is not
-        # belt-and-braces: R-18 fails closed on the WHOLE reply, so one
-        # conclusion carrying somebody's number would cost the entire message.
-        # Honcho conclusions are distilled from what people actually said, so
-        # they can and do carry exactly that.
+        # belt-and-braces: R-18 fails closed on the WHOLE reply, so one conclusion
+        # carrying somebody's number would cost the entire message. Honcho conclusions
+        # are distilled from what people actually said, so they can and do carry exactly
+        # that.
         #
-        # `scan_identifiers`, not the reply predicate: `scan_egress` would
-        # withhold every durable memory naming an LLM — `claude`, `gemini`, `haiku`, `opus`,
-        # `sonnet` and
-        # four more — from a group of software engineers who talk about
-        # them constantly. What she runs on stays hers because
-        # `Deliverer` refuses to SAY it, not because she is made to forget
-        # what other people said.
+        # `scan_identifiers`, not the reply predicate: `scan_egress` would withhold
+        # every durable memory naming an LLM — `claude`, `gemini`, `haiku`, `opus`,
+        # `sonnet` and four more — from a group of software engineers who talk about
+        # them constantly. What she runs on stays hers because `Deliverer` refuses to
+        # SAY it, not because she is made to forget what other people said.
         kept = tuple(c for c in memory.conclusions if scan_identifiers(c) is None)
         # THE CARD GETS THE SAME SCREEN, and it needs it more than the
         # conclusions do: a card renders IDENTITY claims distilled from what
@@ -7042,8 +7033,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # same R-47 name resolution) and reads `SqlMobilityStore` only AFTER the
     # guard passes. `unlabeled` is a load-bearing third state the docstring
     # forbids smoothing; coordinates and corridor road-sequences never enter a
-    # reply or pass to another tool (R-28); the Dreamer is NOT granted this
-    # tool.
+    # reply or pass to another tool (R-28). Of the Dreamer's adaptors, only
+    # `cognition` is granted it (`COGNITION_READ_CATALOGUE`).
     _been_day_ms = 24 * 60 * 60 * 1000
     # Same 90-day bound the store clamps to and the portal uses
     # (`_MAX_ANALYTICS_DAYS`). Copied here rather than imported from
@@ -8912,13 +8903,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         #
         # What it buys: the media BYTES reach this provider on every read anyway, so the
         # screen adds nothing for an identifier that is in the picture. It protects an
-        # identifier that is in the CONVERSATION and NOT in the media (e.g. a number from
-        # the chat text composed into `question="confirm the number 90000101 on it"`).
+        # identifier that is in the CONVERSATION and NOT in the media (e.g. a number
+        # from the chat text composed into `question="confirm the number 90000101 on
+        # it"`).
         #
         # The RAW question, before `_QUERY_FRAME` wraps it: the frame is authored text.
         #
-        # NOT SENT, and not silently stripped — stripping would answer a question she did
-        # not ask, on bytes she cannot re-check. The value is never echoed back:
+        # NOT SENT, and not silently stripped — stripping would answer a question she
+        # did not ask, on bytes she cannot re-check. The value is never echoed back:
         # repeating it into the transcript is the leak one surface over.
         if question:
             kind = scan_identifiers(question)
@@ -9114,10 +9106,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         for sha, obj in kept.objects.items()
                         if obj.source == "fetched"
                     }
-            # The same six hex may name a shared file's LINK handle in this room, looked up
-            # among the room's own rows. Both kinds, or two links, is `ambiguous`: never a
-            # guess.
-            # An unreadable link lookup does not cost a picture that DID
+            # The same six hex may name a shared file's LINK handle in this room, looked
+            # up among the room's own rows. Both kinds, or two links, is `ambiguous`:
+            # never a guess. An unreadable link lookup does not cost a picture that DID
             # match; with none matched it is «I couldn't check».
             links = await resolve_file_code(
                 store, code=hex_handle, conversation_id=bound_conversation_id,
@@ -9894,21 +9885,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             media_type=result.media_type or "image/png",
                             size=len(raw),
                             source="generated",
-                            # SEEDED description (DEC-138): Nora is the creator, so the prompt IS
-                            # the
-                            # description — a later `media_fetch` of this image must never burn a
-                            # vision
-                            # call to re-read what Nora already knows. `describe_model` stays NULL:
-                            # no
-                            # describer produced it. `scan_identifiers` still runs on every SERVE,
-                            # so
-                            # seeding cannot bypass the identifier screen.
+                            # SEEDED description (DEC-138): Nora is the creator, so the
+                            # prompt IS the description — a later `media_fetch` of this
+                            # image must never burn a vision call to re-read what Nora
+                            # already knows. `describe_model` stays NULL: no describer
+                            # produced it. `scan_identifiers` still runs on every SERVE,
+                            # so seeding cannot bypass the identifier screen.
                             description=prompt,
-                            # The same seeding goes into the `title` COLUMN, so `media_search`
-                            # returns a
-                            # generated image with its title. It stays in provenance too — that is
-                            # the birth
-                            # record.
+                            # The same seeding goes into the `title` COLUMN, so
+                            # `media_search` returns a generated image with its title.
+                            # It stays in provenance too — that is the birth record.
                             title=prompt[:80] or "generated image",
                             provenance={
                                 "prompt": prompt,
@@ -10494,10 +10480,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     # ---- web_search (DEC-73, Tavily) -------------------------------------
     #
-    # ONE verb: Tavily returns ranked results WITH a content snippet each in a single
-    # call, and there is no per-tag `allowed_urls` fence. Tavily searches from ITS
-    # servers and is never handed a URL, so there is no SSRF surface to fence. What
-    # guards egress is the query EGRESS screen below.
+    # One search call: Tavily returns ranked results WITH a content snippet
+    # each, and there is no per-tag `allowed_urls` fence. Tavily searches from
+    # ITS servers and is never handed a URL, so there is no SSRF surface to
+    # fence. What guards egress is the query EGRESS screen below.
     #
     # The person-name set for the search alias COUNT, built once per
     # tag from the whole address book — the same set R-28 blocks routing on, reused
@@ -11238,40 +11224,40 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     # ---- instagram_read -----------------------------------------------------
     #
-    # A person's Instagram profile or current story, or one post or reel, over
-    # the instagram-bridge, the only way in. The tool stays THIN. It does the things no other layer
-    # can:
+    # A person's Instagram profile or current story, or one post or reel, over the
+    # instagram-bridge, the only way in. The tool stays THIN. It does the things no
+    # other layer can:
     #
     # * it resolves a spoken NAME to a person with the turn's room —
-    #   `room.scope().find`, the lookup `about` uses — because only the tool
-    #   holds the room;
-    # * it parses a pasted LINK with the one link parser
-    #   (`nora.domain.instagram_links`, the rules the transcript renders shared
-    #   links by), so the router is handed a username or a shortcode, never a
-    #   URL, and nothing the parser refuses reaches the bridge;
-    # * it holds the turn's provenance, so it enforces «only when a person
-    #   asks» for a story and for a post.
+    #   `room.scope().find`, the lookup `about` uses — because only the tool holds the
+    #   room;
+    # * it parses a pasted LINK with the one link parser (`nora.domain.instagram_links`,
+    #   the rules the transcript renders shared links by), so the router is handed a
+    #   username or a shortcode, never a URL, and nothing the parser refuses reaches the
+    #   bridge;
+    # * it holds the turn's provenance, so it enforces «only when a person asks» for a
+    #   story and for a post.
     #
-    # Everything else belongs to `SocialRouter`: a person -> igid through the
-    # person index (none is `nothing_found`, several `ambiguous`, never a
-    # pick), a handle -> igid through the bridge's exact username lookup, the
-    # Tier 0 reach check for a story on the igid the input named, and the
-    # dispatch. A tool with its own copy of either would drift.
+    # Everything else belongs to `SocialRouter`: a person -> igid through the person
+    # index (none is `nothing_found`, several `ambiguous`, never a pick), a handle ->
+    # igid through the bridge's exact username lookup, the Tier 0 reach check for a
+    # story on the igid the input named, and the dispatch. A tool with its own copy of
+    # either would drift.
     #
-    # The person id never leaves this closure except into the router, and the
-    # igid is never seen here at all: the result carries the person's NAME
-    # (what Nora calls them) and the backend's curated, wrapped text. No id —
-    # person, igid or fbid — is on the wire (R-18).
+    # The person id never leaves this closure except into the router, and the igid is
+    # never seen here at all: the result carries the person's NAME (what Nora calls
+    # them) and the backend's curated, wrapped text. No id — person, igid or fbid — is
+    # on the wire (R-18).
     #
-    # A person's post LIST (`posts`, and with it `limit`/`cursor`) is not in
-    # the vocabulary: a verb, an input kind and the words advertising them
-    # land together, only once they work end to end, and a parameter in the
-    # schema is a word advertising one.
+    # A person's post LIST (`posts`, and with it `limit`/`cursor`) is not in the
+    # vocabulary: a verb, an input kind and the words advertising them land together,
+    # only once they work end to end, and a parameter in the schema is a word
+    # advertising one.
     #
-    # The automatic readings of a post's or a story's items share ONE set of slots per turn,
-    # so two `instagram_read` calls the model batches cannot run eight looks
-    # at once. Each look is `media_fetch` itself, labelled `instagram_read`
-    # on its counter, and for a STORY frame it writes neither content cache.
+    # The automatic readings of a post's or a story's items share ONE set of slots per
+    # turn, so two `instagram_read` calls the model batches cannot run eight looks at
+    # once. Each look is `media_fetch` itself, labelled `instagram_read` on its counter,
+    # and for a STORY frame it writes neither content cache.
     _instagram_slots = asyncio.Semaphore(_INSTAGRAM_READ_CONCURRENCY)
     # The story-frame links this turn's story reads returned. `media_fetch`
     # on one of them, by the model itself, writes no cache either: a story
@@ -13296,9 +13282,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # session-scoped so a roster member's PRIVATE DM words never
             # surface into a room; that reason does not bind here, because
             # this verb exists for the Dreamer, whose output is verdicts,
-            # never a quote into any room. The catalog gate in
-            # `build_tool_specs` enforces it: this verb ships only under
-            # `dream_adaptor`.
+            # never a quote into any room. `ToolScope` keeps this verb off the
+            # tag surface.
             found = await honcho.search(query=query[:500], unit=_unit())
         except Exception:
             # Belt-and-braces, exactly as on the room path: the adapter catches
@@ -13704,10 +13689,9 @@ Args:
             }
         entry = lookup.entry
         out: dict = {"status": "ok", "version": entry.version}
-        # Only what the manifest actually recorded. An absent `notes` or
-        # `changes` is left OUT rather than sent as an empty string: a tool
-        # result is re-sent on every subsequent model call (DEC-73), and an empty field invites the
-        # model to
+        # Only what the manifest actually recorded. An absent `notes` or `changes` is
+        # left OUT rather than sent as an empty string: a tool result is re-sent on
+        # every subsequent model call (DEC-73), and an empty field invites the model to
         # fill it.
         if entry.released:
             out["released"] = entry.released
@@ -16368,9 +16352,8 @@ def build_tools(
     memos: MemoStore | None = None,
     unit_for: Callable[[str, str], str | None] | None = None,
     supplied_unit: str | None = None,
-    # Forwarded, not defaulted away: `build_tool_specs` gates
-    # `search_memory_workspace` on it, so a wrapper that dropped it
-    # would silently build the tag catalog for a Dreamer caller.
+    # Forwarded, not defaulted away: a wrapper that dropped it would build
+    # the tools for a Dreamer caller as if for a tag turn.
     dream_adaptor: str = "",
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
