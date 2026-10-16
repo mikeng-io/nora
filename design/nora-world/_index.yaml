@@ -1,0 +1,64 @@
+kind: design_index
+title: "Nora World — a 3D place that is a View of her Notebook"
+description: >
+  A shared 3D web world, reached from the portal with Discord sign-in, whose
+  fixed hand-built base is filled and changed by Nora's judgement. The world
+  is a portal View (cognition-loop 05 §6), one world per unit because the
+  unit is the read boundary (DEC-231) and lineage stays off: it draws
+  knowledge from the Notebook and the Rollup under withdrawal, never shows an
+  observation of a person, and a withdrawn entry takes its object with it.
+  Its own rows are placed in the data model: her placement choices and their
+  assets and people's avatar choices are acts in the Record, projected
+  placements computed at assembly and never stored, the scene a View. Nora decides what should exist by writing a
+  short spec; a deferred-job pipeline turns the spec into a 3D item (library
+  search, a picture on a stock object, or Hunyuan3D on Modal as the last
+  resort), checks it with a vision model, and caches it. Avatars have two
+  parts: the person's own look, which Nora never changes, and Nora's
+  reading of them from that unit's Notebook, which the person may hide. The first building is a shared
+  venue for karaoke and concerts, where every WebRTC path is ours, so the
+  backing track is a local file on every client and a singer's voice is
+  aligned by song position, not by arrival time. Parked: the base, the
+  avatars and the venue can be built now; the projection waits for the
+  Notebook's kinds to converge on the entry.
+status: proposed
+governance: pre-governance-input
+timestamp: '2026-10-16'
+origin: "research session with the operator, 2026-10-16 (Discord karaoke question that grew into a world)"
+members:
+  - 00-overview.md
+  - 10-world-as-a-view.md
+  - 20-presentation-and-avatars.md
+  - 30-asset-pipeline.md
+  - 40-shared-venue.md
+  - 50-open-questions.md
+edges:
+  - {src: 10-world-as-a-view, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 20-presentation-and-avatars, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 20-presentation-and-avatars, dst: 10-world-as-a-view, rel: depends_on, provenance: asserted}
+  - {src: 30-asset-pipeline, dst: 10-world-as-a-view, rel: depends_on, provenance: asserted}
+  - {src: 30-asset-pipeline, dst: 20-presentation-and-avatars, rel: realizes, provenance: asserted}
+  - {src: 40-shared-venue, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 40-shared-venue, dst: 20-presentation-and-avatars, rel: depends_on, provenance: asserted}
+  - {src: 50-open-questions, dst: 00-overview, rel: motivated_by, provenance: asserted}
+  - {src: 10-world-as-a-view, dst: ../cognition-loop/05-data-model.md, rel: depends_on, provenance: asserted}
+  - {src: 30-asset-pipeline, dst: ../video-generation/00-design.md, rel: relates_to, provenance: asserted}
+  - {src: 40-shared-venue, dst: ../discord-music/_index.yaml, rel: relates_to, provenance: asserted}
+scope:
+  v1:
+    - "A portal route (app/, Next.js) with react-three-fiber: an isometric, toon-shaded diorama world, Discord sign-in through the existing Auth.js setup"
+    - "A hand-built base: Nora's home at the centre, one world per unit, one district per room of the unit, one shared venue building"
+    - "VRM avatars: the person's look, chosen by the person"
+    - "The shared venue: karaoke with a local backing track, lyrics, and position-tagged voice over our own WebRTC"
+  later:
+    - "The projection: the world assembled as a portal View of the Notebook and Rollup (waits on the entry convergence, DEC-249)"
+    - "Nora's reading on avatars, from that unit's Notebook"
+    - "world_place: Nora decides what to make real, from Cognition"
+    - "The asset pipeline's generation step (Hunyuan3D on Modal)"
+    - "Voice cover (RVC on a GPU) in the venue"
+    - "A Discord Activity wrapper of the same page"
+  out:
+    - "Showing an observation of a person (transcript, photo, perception)"
+    - "Any per-viewer filter inside a unit (lineage stays off)"
+    - "Generated buildings or districts (structure is hand-built)"
+    - "Generated clothing that deforms with the body"
+    - "Real-time duets between remote singers"
