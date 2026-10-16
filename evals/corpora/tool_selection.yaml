@@ -1295,17 +1295,35 @@ cases:
     metadata: {tools: [memory_search], not_tools: [where_been], memory_surface: graph}
     snapshot: *room_a
 
-  - name: route_memory_search_a_shared_link_by_kind
+  # `kinds=media` is pictures and videos SENT in the chat (media nodes are
+  # message attachments). A shared link is a `message` node, so `media` would
+  # exclude it: that wording is the next case, with no kinds requirement.
+  # `media_search` reaches fetched media in the library, so it may follow the
+  # memory search but never replace it (`before`).
+  - name: route_memory_search_media_sent_in_chat_by_kind
     entry: tag
     expect: reply
     mention: true
-    input: 搵返八月有人share過嗰條拉麵店reel，淨係睇相同片嗰啲
+    input: 搵返八月有人send過嘅拉麵店相同片，淨係睇相同片嗰啲
     metadata:
       tools: [memory_search]
-      not_tools: [media_search, web_search]
+      not_tools: [web_search]
+      before: {memory_search: [media_search]}
       memory_surface: graph
       args_include:
         memory_search: [kinds, media]
+    snapshot: *room_a
+
+  - name: route_memory_search_a_shared_link
+    entry: tag
+    expect: reply
+    mention: true
+    input: 搵返八月有人share過嗰條拉麵店reel
+    metadata:
+      tools: [memory_search]
+      not_tools: [web_search]
+      before: {memory_search: [media_search]}
+      memory_surface: graph
     snapshot: *room_a
 
   - name: route_memory_search_what_was_kept
@@ -1326,7 +1344,11 @@ cases:
     expect: reply
     mention: true
     input: Miles平時鍾意食咩？
-    metadata: {tools: [about], not_tools: [memory_search]}
+    # On the graph arm `about` reads Honcho, whose per-draw eval workspace is
+    # empty, so `about` answers nothing_known in every draw and a
+    # `memory_search` after it is the right follow-up. A search BEFORE `about`
+    # is still the routing error this case catches.
+    metadata: {tools: [about], before: {about: [memory_search]}}
     snapshot: *room_a
 
   - name: route_who_said_in_view_not_memory_search
