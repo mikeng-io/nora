@@ -1,0 +1,9 @@
+--- relevance_gate: 40 total, 19 active, 21 parked, 0 unanchored ---
+  spend: 18 model call(s), in=75031 (cached 0, fresh 75031), out=354
+  turn:  0 call(s) over 19 turn(s) (0.00/turn), in/turn=0 (fresh 0, cached 0), out/turn=0
+  honcho: 19 draw workspace(s), create median 11ms (max 44ms), delete median 15ms (max 48ms)
+  passed=16 failed=2 errored=1
+  closed/where-been-no-name                FAIL   did not meet expect='go'
+  closed/where-is-named                    FAIL   did not meet expect='go'
+  bound/already-answered                   ERROR  the case did not run: gate failed closed: timeout
+RC=1
