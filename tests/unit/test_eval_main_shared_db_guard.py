@@ -406,6 +406,10 @@ def test_main_resolves_the_memory_surface_from_the_generated_config(
         return None
 
     monkeypatch.setattr(m, "close_private_blank_templates", _close)
+    checked: list[str] = []
+    monkeypatch.setattr(
+        m, "graph_surface_lines", lambda url, model: checked.append(model) or ["checked"],
+    )
     seen: list[bool] = []
     monkeypatch.setattr(
         m, "_run_one", lambda *a, **k: seen.append(k["memory_index"]) or True,
@@ -413,4 +417,40 @@ def test_main_resolves_the_memory_surface_from_the_generated_config(
     _set_argv(monkeypatch, "tool_selection", *(["--memory-index"] if flag else []))
     assert m.main() == 0
     assert seen == [graph]
-    assert header in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert header in out
+    # The graph arm's preconditions are read before any draw, and only there.
+    assert len(checked) == (1 if graph else 0)
+    assert ("checked" in out) is graph
+
+
+def test_a_graph_surface_run_refuses_before_any_draw(monkeypatch, capsys, tmp_path):
+    """An embedder that does not serve the configured file, or a source
+    without the model's vectors: rc 2, and no case runs lexical in its place."""
+    from nora.subject import GraphIndexRefusedError
+
+    generated = tmp_path / "config.evaluation.toml"
+    generated.write_text("[memory_index]\nenabled = false\n")
+    monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
+    monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
+    _stub_leaked_blank_sweep(monkeypatch)
+    monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
+    monkeypatch.setattr(m, "materialise", lambda **k: generated)
+    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
+    monkeypatch.setattr(m, "assert_shared_databases_unchanged", lambda url, before: None)
+
+    async def _close() -> None:
+        return None
+
+    monkeypatch.setattr(m, "close_private_blank_templates", _close)
+
+    def _refuse(url: str, model: str) -> list[str]:
+        raise GraphIndexRefusedError("the eval source holds no vector of it")
+
+    monkeypatch.setattr(m, "graph_surface_lines", _refuse)
+    ran: list[bool] = []
+    monkeypatch.setattr(m, "_run_one", lambda *a, **k: ran.append(True) or True)
+    _set_argv(monkeypatch, "tool_selection", "--memory-index")
+    assert m.main() == 2
+    assert ran == []
+    assert "refusing to run: the eval source holds no vector" in capsys.readouterr().err

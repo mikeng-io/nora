@@ -81,6 +81,7 @@ from nora.subject import (
     DrawWorkspace,
     SubjectSpec,
     draw_workspace,
+    index_sandbox,
     new_run_id,
     obtain,
     restored_room,
@@ -1591,6 +1592,16 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             # attaches, written into the subject's unit. Seeded in EVERY arm; only
             # `[lessons] render` decides whether the turn reads them.
             await seed_lessons(subject, case.name, varied_lessons(md), now_ms=seeded.now_ms)
+            if spec.memory_surface == "graph":
+                # LAST, after every seed: the sandbox's memory index, projected
+                # by production's rebuild and holding the source's vectors
+                # where the input is identical, or the draw is refused
+                # (`nora.subject.sandbox_index`). One line per sandbox.
+                built = await index_sandbox(
+                    subject.database_url, source_url=spec.source_url,
+                    model_id=subject.cfg.memory_index.embedder_model,
+                )
+                print(f"  {case.name}: {built.line()}", flush=True)
             exporter = _prefill_capture()
             exporter.clear()
             nora_case = _as_nora_case(case, spec, trigger=subject.cfg.engagement.trigger.text)

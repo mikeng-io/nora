@@ -86,6 +86,20 @@ From [20](20-embedding-bakeoff.md) and PRs #22 and #24:
 | **V2** | S5 seeds: **dense** (the two-stage search, scope inside the scan, `hnsw.iterative_scan` so a scoped search still returns its 50) and **exact** (a literal handle, URL, id or listed person's name contained in the node: the first five pinned ahead of every dense hit, operator 2026-10-16; §4.1). Trigram similarity remains only as the fallback when the embedder is down, and the answer is then `partial`. Coverage: while embeddable nodes are unembedded, the answer is `partial` | the scope suite again with dense seeds; an exact name match ranks above a closer dense neighbour; embedder down gives `partial` with lexical results, never `nothing_found`; an out-of-scope node never returned however near its vector |
 | **V3** | the acceptance run: deploy (asked first), backfill, `[memory_index] enabled = true` in a sandbox, `conversational_recall` no worse than 7/8; `tool_selection --memory-index` re-run on the built index (on an empty index every `memory_search` answers `partial` with no items, so sibling calls after it cannot be judged, PR #32). Then the **adaptive cut** (operator, 2026-10-16): from the cosine spread of labelled hits and misses on the built index, set the dense relevance floor and a score-gap stop, and replace `RESULT_LIMIT = 10` with a token budget (about 2,000 tokens of packet text, not the embedder's 2,000-token input cut of §1; at least one item before the identifier screen, which can still withhold it); `PINNED_LIMIT`, now derived from `RESULT_LIMIT`, becomes its own value (a count or a share of the budget) so half the answer still goes by score; the walk's floor and the `about` seed's 0.6 are set in the same step. `RESULT_LIMIT` is a temporary cap until then | the eval read-back; the cosine spread recorded here |
 
+**V3's harness (2026-10-16).** Two things stood between V3 and a reading.
+The eval runs on the deploy host, where `embedder:8080` does not resolve and
+an internal network publishes nothing; and a sandbox's index was empty (the
+memory tables are derived, never restored). The embedder now also joins
+`embedder_host`, a network of its own carrying a loopback publish
+(`127.0.0.1:8092`), and a graph-surface subject queries it there. Each
+graph-surface sandbox is projected by `rebuild` and adopts the eval
+source's vectors where the embedded input is identical; the run refuses
+before any draw on a source under 0.95 coverage or an embedder serving
+another file, and a draw under 0.95 of the source's coverage is an ERROR
+(`design/evaluation/11-the-sandbox-rebuild.md`, the 2026-10-16 amendment).
+The subject never holds the worker. So the order is: backfill, `make
+eval-source`, then the two runs.
+
 The reranker test (Qwen3-VL-Reranker-2B against bge-reranker-v2-m3, within
 300 ms on a tag turn and 2 s in Cognition) is after V3, and only if V3's
 misses are ranking misses.

@@ -48,12 +48,17 @@ from evals.scenarios import (
 )
 from evals.subject_config import materialise
 from nora.subject import (
+    EMBEDDER_FROM_HOST,
+    GraphIndexRefusedError,
     SharedDatabaseMutatedError,
     SourceRevisionMismatchError,
     assert_shared_databases_unchanged,
+    check_served_model,
     close_private_blank_templates,
+    config_default,
     refuse_if_source_diverges_from_head,
     shared_database_versions,
+    source_coverage,
     sweep_stale_draw_workspaces,
     sweep_stale_private_blank_templates,
 )
@@ -404,6 +409,26 @@ def memory_index_enabled(config_toml: str) -> bool:
     return bool(tomllib.loads(config_toml).get("memory_index", {}).get("enabled", False))
 
 
+def embedder_model_of(config_toml: str) -> str:
+    """`[memory_index] embedder_model` in a config's text; absent is the
+    code default."""
+    stated = tomllib.loads(config_toml).get("memory_index", {}).get("embedder_model")
+    return str(stated or config_default("memory_index.embedder_model"))
+
+
+def graph_surface_lines(source_url: str, model_id: str) -> list[str]:
+    """The graph surface's two preconditions, read before the first draw:
+    the embedder the subject queries serves `model_id`'s file, and the
+    source holds that model's vectors at `COVERAGE_FLOOR`. Raises
+    `GraphIndexRefusedError` (the run is refused, never run lexical)."""
+    served = asyncio.run(check_served_model(EMBEDDER_FROM_HOST, model_id))
+    coverage = asyncio.run(source_coverage(source_url, model_id))
+    return [
+        f"embedder: {EMBEDDER_FROM_HOST} serves {served}",
+        f"source vectors: {coverage.line()}",
+    ]
+
+
 def memory_surface_line(deployed: bool, flag: bool) -> str:
     """The run header's account of which memory surface it measures, and why."""
     if deployed:
@@ -493,7 +518,9 @@ def main() -> int:
              "memory graph's tool surface (memory_search, no Honcho memory "
              "verb; DEC-316). The after arm of a memory routing run while the "
              "deployment runs the Honcho surface. A subject override, so the "
-             "drift gate is unchanged",
+             "drift gate is unchanged. Needs the embedder's loopback publish "
+             "and a source holding the model's vectors (make eval-source); "
+             "each sandbox's index is built and gets the source's vectors",
     )
     ap.add_argument("--context-arm", choices=("full", "rules", "flash"), default="full",
                     help="experiment-only tag exposure filter; retrieval stays unchanged")
@@ -631,6 +658,15 @@ def main() -> int:
 
             if args.print_input:
                 return _print_input(names[0], args.print_input, source_url=source_url)
+            if graph:
+                try:
+                    for line in graph_surface_lines(
+                        source_url, embedder_model_of(written.read_text(encoding="utf-8")),
+                    ):
+                        print(line)
+                except GraphIndexRefusedError as exc:
+                    print(f"refusing to run: {exc}", file=sys.stderr)
+                    return 2
 
             judge = None if not args.judge else Judge(
                 base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,

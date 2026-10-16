@@ -32,6 +32,7 @@ from strands_evals import Case, Experiment
 from evals import pseudonyms
 from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, ToolRouteGrader, nora_task
 from evals.recall import evidence_problems
+from nora.subject.sandbox_index import EMBEDDER_FROM_HOST
 from nora.subject.transport import TRANSPORT_STATES
 
 _CORPORA = Path(__file__).parent / "corpora"
@@ -429,9 +430,21 @@ MEMORY_SURFACES = frozenset({"graph", "honcho"})
 #: memory verbs), the after arm of a routing measurement whose deployment
 #: still runs the Honcho surface. Applied as a subject override
 #: (`Spec.overrides`), never written into the generated config, so the drift
-#: gate still compares that config with the deployment's own. Routing grades
-#: which tools ran, so the sandbox's index may be empty for it.
-MEMORY_INDEX_OVERRIDES: dict[str, object] = {"memory_index.enabled": True}
+#: gate still compares that config with the deployment's own. Applied on the
+#: graph arm whatever the deployment's flag, so a deployment that turned the
+#: surface on is composed the same way.
+#:
+#: `embedder_url`: the query embedder, reached from the host where the suite
+#: runs (`nora.subject.EMBEDDER_FROM_HOST`); the deployment's `embedder:8080`
+#: resolves only on the compose network. Never on the honcho arm, which builds
+#: no `memory_search`. The worker is not the subject's (`nora.subject.obtain`
+#: composes none), so nothing writes through it, and every graph-surface
+#: sandbox gets its index and the source's vectors before the drive
+#: (`nora.subject.index_sandbox`).
+MEMORY_INDEX_OVERRIDES: dict[str, object] = {
+    "memory_index.enabled": True,
+    "memory_index.embedder_url": EMBEDDER_FROM_HOST,
+}
 
 
 def experiment_for(
