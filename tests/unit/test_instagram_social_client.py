@@ -780,3 +780,15 @@ async def test_a_username_that_is_not_a_handle_is_never_sent(post_bridge, userna
     fake, provider = post_bridge
     assert (await provider.igid_for_username(username=username)).status == "unavailable"
     assert fake.calls == []
+
+
+async def test_a_stale_story_query_is_unavailable_and_logs_its_code(client, caplog):
+    """A rotated story doc_id answers 501 `stale_query`. The user-facing
+    result is the same `unavailable` as any other non-200; the operator's
+    log line is what names the code, so the halt is visible."""
+    fake, provider = client
+    fake.story = fixture("story_stale_query_501.json")
+    with caplog.at_level("WARNING", logger="nora.social.instagram"):
+        out = await provider.read(**_STORY)
+    assert out["status"] == "unavailable"
+    assert any("stale_query" in r.getMessage() and "501" in r.getMessage() for r in caplog.records)

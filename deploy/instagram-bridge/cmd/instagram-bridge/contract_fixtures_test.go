@@ -5,7 +5,7 @@ package main
 //
 // Nora's Python side is tested against `tests/fixtures/instagram_bridge/*.json`:
 // the social client (`nora/infra/social/instagram_client.py`) for the account,
-// story and search routes, and the platform adapter (`nora/platform/instagram/`:
+// story, items and search routes, and the platform adapter (`nora/platform/instagram/`:
 // send, react, roster) for the thread routes, whose fake bridge serves exactly
 // the routes these fixtures name. This file is what makes those bytes the
 // bridge's: each fixture is GENERATED here by the real handler, through the
@@ -40,6 +40,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -54,7 +55,6 @@ import (
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
-	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
@@ -261,55 +261,61 @@ func synthUsernameLookupAmbiguous() []*slidetypes.SearchResult {
 	}
 }
 
-func synthReel() *responses.ReelInfoResponse {
-	image := &responses.ReelItem{ExpiringAt: 1700086400}
-	image.Pk = "900000000000000001"
-	image.TakenAt = 1700000000
-	image.MediaType = 1
-	// The author's words and Instagram's description of the frame. The
-	// bridge forwards both; the Python client must not (a story result is a
-	// reference, never content), and these are the values it asserts against.
-	image.Caption.Text = "synthetic caption text"
-	image.AccessibilityCaption = "synthetic alt text"
-	image.ImageVersions2.Candidates = []responses.Candidates{
-		{Width: 1080, Height: 1920, URL: "https://scontent.cdninstagram.com/v/t51/synthetic-1.jpg?oh=00_A&oe=0"},
-	}
+// synthPK is the n-th synthetic story frame pk, a 9 then n zero-padded to 17
+// digits: the values the Python client's tests assert against
+// (tests/unit/test_instagram_views.py). Built rather than written so this
+// source carries no id-shaped literal, while story_found.json keeps the bytes
+// it had when the read was REST.
+func synthPK(n int) string { return fmt.Sprintf("9%017d", n) }
 
-	video := &responses.ReelItem{ExpiringAt: 1700086400}
-	video.Pk = "900000000000000002"
-	video.TakenAt = 1700003600
-	video.MediaType = 2
-	video.ImageVersions2.Candidates = []responses.Candidates{
-		{Width: 1080, Height: 1920, URL: "https://scontent.cdninstagram.com/v/t51/synthetic-2-cover.jpg?oh=00_B&oe=0"},
-	}
-	video.VideoVersions = []responses.VideoVersions{
-		{Width: 1080, URL: "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-2.mp4?oh=00_C&oe=0"},
-	}
+// synthStoryJSON is a `PolarisStoriesV3ReelPageStandaloneQuery` answer in the
+// S0 shape (design/cognition-loop/22-social-stream.md §1a): the reel's own
+// `expiring_at` null, each frame's its own.
+func synthStoryJSON() string {
+	return `{"data":{"xdt_api__v1__feed__reels_media":{"reels_media":[{
+  "id": "` + synthIGID + `", "reel_type": "user_reel", "seen": 0, "expiring_at": null,
+  "user": {"pk": "` + synthIGID + `", "username": "` + synthUsername + `"},
+  "items": [
+    {"pk": "` + synthPK(1) + `", "taken_at": 1700000000, "expiring_at": 1700086400, "media_type": 1,
+     ` + synthStoryWords + `
+     "image_versions2": {"candidates": [{"width": 1080, "height": 1920, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-1.jpg?oh=00_A&oe=0"}]}},
+    {"pk": "` + synthPK(2) + `", "taken_at": 1700003600, "expiring_at": 1700086400, "media_type": 2, "caption": null,
+     "image_versions2": {"candidates": [{"width": 1080, "height": 1920, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-2-cover.jpg?oh=00_B&oe=0"}]},
+     "video_versions": [{"width": 1080, "url": "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-2.mp4?oh=00_C&oe=0"}]},
+    ` + synthStoryNoPK + `
+  ]}]}}}`
+}
 
-	// A frame with NO `pk`. `storyFrame` then falls back to `item.ID`, which
-	// Instagram shapes as `<pk>_<owner igid>` — so the frame's `id` carries
-	// the story OWNER's igid. The Python client must never hand that to the
-	// model (design/instagram-adoption/18, R-18); this row is what it is
-	// tested against.
-	fallback := &responses.ReelItem{ExpiringAt: 1700086400}
-	fallback.ID = "900000000000000003_" + synthIGID
-	fallback.TakenAt = 1700007200
-	fallback.MediaType = 1
-	fallback.ImageVersions2.Candidates = []responses.Candidates{
-		{Width: 1080, Height: 1920, URL: "https://scontent.cdninstagram.com/v/t51/synthetic-3.jpg?oh=00_D&oe=0"},
-	}
+// The author's words and Instagram's description of the frame. The bridge
+// forwards both; the Python client must not (a story result is a reference,
+// never content), and these are the values it asserts against.
+const synthStoryWords = `"caption": {"text": "synthetic caption text"}, "accessibility_caption": "synthetic alt text",`
 
-	return &responses.ReelInfoResponse{
-		Reels: map[string]responses.ReelInfo{
-			synthIGID: {
-				ID:         synthIGID,
-				ExpiringAt: 1700086400,
-				Seen:       0,
-				User:       &responses.User{Username: synthUsername},
-				Items:      []*responses.ReelItem{image, video, fallback},
-			},
-		},
+// A frame with NO `pk`. `storyFrame` then falls back to `id`, which Instagram
+// shapes as `<pk>_<owner igid>`, so the frame's `id` carries the story
+// OWNER's igid. The Python client must never hand that to the model
+// (design/instagram-adoption/18, R-18); this row is what it is tested against.
+var synthStoryNoPK = `{"id": "` + synthPK(3) + `_` + synthIGID + `", "taken_at": 1700007200, "expiring_at": 1700086400, "media_type": 1,
+     "image_versions2": {"candidates": [{"width": 1080, "height": 1920, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-3.jpg?oh=00_D&oe=0"}]}}`
+
+// synthStaleQuery is a GraphQL error naming the document: a rotated doc_id.
+// UNMEASURED wording (docs.go's staleMarkers).
+const synthStaleQuery = `{"errors":[{"message":"PersistedQueryNotFound","code":1675002,"summary":"Query not found"}]}`
+
+// synthTimelineJSON is one `PolarisProfilePostsTabContentQuery_connection`
+// page for the synthetic account: a reel and a carousel post, more after it
+// when `more` is set.
+func synthTimelineJSON(more bool) string {
+	pageInfo := `{"end_cursor": null, "has_next_page": false}`
+	if more {
+		pageInfo = `{"end_cursor": "synthetic-cursor-1", "has_next_page": true}`
 	}
+	return `{"data":{"xdt_api__v1__feed__user_timeline_graphql_connection":{"edges":[
+  {"node": {"code": "SynthReel01", "pk": "2001", "id": "2001_` + synthIGID + `", "user": {"pk": "` + synthIGID + `"}, "taken_at": 1700000300,
+    "caption": {"text": "synthetic reel caption"}, "media_type": 2, "product_type": "clips"}},
+  {"node": {"code": "SynthPost02", "pk": "2002", "id": "2002_` + synthIGID + `", "user": {"pk": "` + synthIGID + `"}, "taken_at": 1700000200,
+    "caption": null, "media_type": 8, "product_type": "carousel_container", "carousel_media_count": 3}}
+], "page_info": ` + pageInfo + `}}}`
 }
 
 // contractCase is one fixture: how to set the bridge up, and what to ask.
@@ -514,17 +520,56 @@ func readContractCases() []contractCase {
 		},
 		{
 			file: "story_found.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
-			fake: func() *fakeIG { return &fakeIG{ReelSet: true, ReelResp: synthReel()} },
+			fake: func() *fakeIG { return &fakeIG{StoryBody: []byte(synthStoryJSON())} },
 		},
 		{
-			// No reel for the igid: no story up, OR not permitted to see it.
+			// An empty reels_media: no story up, OR not permitted to see it.
 			// The route has no "no such account" answer; this is it too.
 			file: "story_not_found.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
-			fake: func() *fakeIG { return &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{}} },
+			fake: func() *fakeIG { return &fakeIG{StoryBody: []byte(fakeig.NoStoryJSON)} },
 		},
 		{
 			file: "story_checkpointed_409.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
-			fake: func() *fakeIG { return &fakeIG{ReelErr: httpclient.ErrCheckpointRequired} },
+			fake: func() *fakeIG { return &fakeIG{DocErr: httpclient.ErrCheckpointRequired} },
+		},
+		{
+			// A rotated doc_id: halt this read, not the login (22 §4).
+			file: "story_stale_query_501.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
+			fake: func() *fakeIG { return &fakeIG{StoryBody: []byte(synthStaleQuery)} },
+		},
+		{
+			file: "story_unconfigured_501.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
+			fake: func() *fakeIG { return &fakeIG{} },
+			opts: []bridgeOpt{withDocs(gateway.QueryDocs{Timeline: testTimelineDocID})},
+		},
+		// GET /accounts/{igid}/items (22 §1a, §7): one timeline page.
+		{
+			file: "items_ok.json", route: "GET /accounts/{igid}/items", path: "/accounts/" + synthIGID + "/items",
+			fake: func() *fakeIG {
+				return &fakeIG{ProfileUserSet: true, ProfileUser: synthProfileUser(), TimelineBody: []byte(synthTimelineJSON(true))}
+			},
+		},
+		{
+			// The end of the timeline: `next_cursor: null`.
+			file: "items_last_page.json", route: "GET /accounts/{igid}/items", path: "/accounts/" + synthIGID + "/items?after=synthetic-cursor-1",
+			fake: func() *fakeIG {
+				return &fakeIG{ProfileUserSet: true, ProfileUser: synthProfileUser(), TimelineBody: []byte(synthTimelineJSON(false))}
+			},
+		},
+		{
+			file: "items_stale_query_501.json", route: "GET /accounts/{igid}/items", path: "/accounts/" + synthIGID + "/items",
+			fake: func() *fakeIG {
+				return &fakeIG{ProfileUserSet: true, ProfileUser: synthProfileUser(), TimelineBody: []byte(synthStaleQuery)}
+			},
+		},
+		{
+			file: "items_unconfigured_501.json", route: "GET /accounts/{igid}/items", path: "/accounts/" + synthIGID + "/items",
+			fake: func() *fakeIG { return &fakeIG{ProfileUserSet: true, ProfileUser: synthProfileUser()} },
+			opts: []bridgeOpt{withDocs(gateway.QueryDocs{Story: testStoryDocID})},
+		},
+		{
+			file: "items_checkpointed_409.json", route: "GET /accounts/{igid}/items", path: "/accounts/" + synthIGID + "/items",
+			fake: func() *fakeIG { return &fakeIG{ProfileErr: httpclient.ErrCheckpointRequired} },
 		},
 		{
 			// The first fixture on the NEW response conventions (16 §Resources):

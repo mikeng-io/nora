@@ -178,15 +178,96 @@ func (b *Bridge) rawGraphQL() (GraphQLIssuer, error) {
 	return issuerFor(cli)
 }
 
-// Story reads one account's current story. ONE igid, never a batch: a batch
-// would open stories nobody asked about (whether the author sees the view is
-// unmeasured, design 04, 05 §Reading a story).
+// Story reads one account's current story over the web app's story
+// document (social.go). ONE igid, never a batch: a batch would open stories
+// nobody asked about. A checkpoint goes through sessionRejected, as on
+// SocialProfile; a stale document does not (the login is fine).
 func (b *Bridge) Story(ctx context.Context, igid domain.IGID) (domain.Story, error) {
-	cli, err := b.client()
+	if err := b.docs.Problem(); err != nil {
+		return domain.Story{}, err
+	}
+	if b.docs.Story == "" {
+		return domain.Story{}, storyDoc("").unconfigured()
+	}
+	issuer, err := b.rawDocs()
 	if err != nil {
 		return domain.Story{}, err
 	}
-	return readStory(ctx, cli, igid)
+	story, err := readStory(ctx, issuer, b.docs.Story, igid)
+	b.checkRejected(ctx, err)
+	return story, err
+}
+
+// Items reads one page of an account's posts and reels over the web app's
+// timeline document (timeline.go). The document takes a USERNAME. A caller
+// that already holds it (a back-fill paging on) passes it, and the page costs
+// one upstream call; otherwise the account is read first through
+// readProfile, the lookup `GET /accounts/{igid}` makes, and its igid must be
+// the one asked about. Either way every item's owner is checked against the
+// igid, which is what makes a caller-supplied username safe to trust. No
+// call at all when the document is not configured. `after` is the previous
+// page's cursor, "" for the newest page.
+func (b *Bridge) Items(
+	ctx context.Context, igid domain.IGID, username domain.Username, after string,
+) (domain.TimelinePage, error) {
+	if err := b.docs.Problem(); err != nil {
+		return domain.TimelinePage{}, err
+	}
+	if b.docs.Timeline == "" {
+		return domain.TimelinePage{}, timelineDoc("").unconfigured()
+	}
+	issuer, err := b.rawDocs()
+	if err != nil {
+		return domain.TimelinePage{}, err
+	}
+	if username.String() == "" {
+		cli, err := b.client()
+		if err != nil {
+			return domain.TimelinePage{}, err
+		}
+		acct, err := readProfile(ctx, cli, igid)
+		if err != nil {
+			return domain.TimelinePage{}, err
+		}
+		if acct.IGID != igid.String() {
+			// The lookup answered about another account: its username would
+			// page somebody else's timeline.
+			return domain.TimelinePage{}, errOtherAccount
+		}
+		username, err = domain.ParseUsername(acct.Username)
+		if err != nil {
+			// Fixed text: the parser's own quotes the value.
+			return domain.TimelinePage{}, errNoUsername
+		}
+	}
+	page, err := readTimeline(ctx, issuer, b.docs.Timeline, igid, username, after)
+	b.checkRejected(ctx, err)
+	return page, err
+}
+
+// errOtherAccount is a profile read that answered about a different igid
+// than the one the timeline was asked for.
+var errOtherAccount = domain.Classify(domain.ErrUpstreamRejected,
+	errors.New("profile read answered about a different account"))
+
+// errNoUsername is a profile read whose username is not one: the timeline
+// document is keyed on it, so there is nothing to send.
+var errNoUsername = domain.Classify(domain.ErrUpstreamRejected,
+	errors.New("profile read returned no usable username"))
+
+// rawDocs is the issuer the configured documents go through: the injected
+// one in a test, otherwise the live session client's. The client is checked
+// FIRST either way, so a session being rebuilt answers 503 and sends nothing,
+// in a test as in production.
+func (b *Bridge) rawDocs() (DocIssuer, error) {
+	cli, err := b.client()
+	if err != nil {
+		return nil, err
+	}
+	if b.docIssuer != nil {
+		return b.docIssuer, nil
+	}
+	return docIssuerFor(cli)
 }
 
 // SearchAccounts searches Instagram accounts by free text, in the library's

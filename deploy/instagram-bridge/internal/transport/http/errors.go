@@ -22,7 +22,14 @@ package httptransport
 //	413  a payload over a limit: the body, or a message Instagram refused as
 //	     too long. Never retryable.
 //	500  a failure nobody has a name for (fail closed: never 503)
-//	501  no mechanism exists for this request
+//	501  no mechanism exists for this request (`unsupported`), including a
+//	     GraphQL read whose doc_id is not configured. `stale_query` is a 501
+//	     too: Instagram answered a configured document with an error naming
+//	     the DOCUMENT (its doc_id rotated with a web build), so the read has
+//	     no working mechanism until an operator captures the id again
+//	     (design/cognition-loop/22-social-stream.md §1a). It is NOT a session
+//	     problem and NOT a 502: a caller halts that one read and must not
+//	     back the login off, which a 502 asks for (§4).
 //	502  Instagram answered, and the answer was an error
 //	503  no session client yet, or the socket is down: retryable, the bridge
 //	     heals itself
@@ -151,6 +158,7 @@ func statusForDomainError(err error) int {
 		// match here and the route would lose the 413.
 		return http.StatusRequestEntityTooLarge
 	case errors.Is(err, domain.ErrUnsupported):
+		// ErrStaleQuery refines it, and shares its status.
 		return http.StatusNotImplemented
 	case errors.Is(err, domain.ErrUpstreamRejected):
 		return http.StatusBadGateway
@@ -177,6 +185,9 @@ func errorCode(err error) string {
 		return "needs_human"
 	case errors.Is(err, domain.ErrTooLarge):
 		return "too_large"
+	case errors.Is(err, domain.ErrStaleQuery):
+		// Before ErrUnsupported, which it refines (ErrTooLarge's reason).
+		return "stale_query"
 	case errors.Is(err, domain.ErrUnsupported):
 		return "unsupported"
 	case errors.Is(err, domain.ErrUpstreamRejected):

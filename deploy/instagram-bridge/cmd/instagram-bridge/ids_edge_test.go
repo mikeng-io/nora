@@ -99,14 +99,14 @@ func TestAMalformedIDIs400EvenWhileCheckpointed(t *testing.T) {
 					state, route, rec.Code)
 			}
 		}
-		for _, path := range []string{"/accounts/not_a_number", "/accounts/not_a_number/story"} {
+		for _, path := range []string{"/accounts/not_a_number", "/accounts/not_a_number/story", "/accounts/not_a_number/items"} {
 			rec := httptest.NewRecorder()
 			b.routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("session %q: GET %s answered %d, want 400", state, path, rec.Code)
 			}
 		}
-		if f.Fetches != 0 || len(f.ProfileIGIDs) != 0 || len(f.ReelIDs) != 0 {
+		if f.Fetches != 0 || len(f.ProfileIGIDs) != 0 || len(f.DocRequests) != 0 {
 			t.Errorf("session %q: a request reached Instagram while checkpointed", state)
 		}
 	}
