@@ -3038,7 +3038,8 @@ async def build_dependencies(
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
         # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
-        # `ask_memory` answers from the index; off, from Honcho as before.
+        # one memory surface: `memory_search` over the index; off, the Honcho
+        # verbs as before (DEC-316, `nora.agent.tools.GRAPH_MEMORY_TOOLS`).
         memory_search=(
             MemorySearch(
                 SqlMemoryIndex(engine), metrics,
@@ -4256,6 +4257,9 @@ async def build_dependencies(
                     *(("record_query.enabled",) if cfg.record_query.enabled else ()),
                     *(("culture.enabled",) if cfg.culture.enabled else ()),
                 ),
+                # The memory surface the registry selected (DEC-316), read
+                # from the registry that builds the tools, not from config.
+                registry_withheld=tool_registry.withheld_tools(),
             )
             log.info(
                 "cognition sessions: read tools wired=%s missing=%s withheld=%s",

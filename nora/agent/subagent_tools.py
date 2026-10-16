@@ -54,6 +54,9 @@ ACTS: frozenset[str] = frozenset({
 NOT_LOOKUPS: frozenset[str] = frozenset({
     # reads that leave the launching room: the worker's reach is one room (§4c)
     "room_list", "room_read", "search_memory_workspace",
+    # `memory_search` (DEC-316) reads the memory index across the unit's
+    # rooms, so it is not the worker's either
+    "memory_search",
     # the social reads stay on the tag path (a person asked for that account, now)
     "instagram_read", "instagram_search", "x_read", "x_search",
     "linkedin_read", "linkedin_search",

@@ -12,7 +12,7 @@ fails `tests/infra/test_schema_parity.py`.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, NamedTuple, Protocol, get_args
 
@@ -22,8 +22,11 @@ __all__ = [
     "EMBED_OUTCOMES",
     "EPISODE_KINDS",
     "HUB_KINDS",
+    "KINDS_BY_CATEGORY",
+    "MEMORY_KINDS",
     "NODE_KINDS",
     "NODE_STATES",
+    "PERSON_RELATIONS",
     "PERSON_SCOPED_KINDS",
     "PROJECTION_OUTCOMES",
     "RELATIONS",
@@ -33,7 +36,9 @@ __all__ = [
     "ExactTerm",
     "IndexState",
     "IndexedNode",
+    "MemoryFilter",
     "MemoryIndexRead",
+    "MemoryKind",
     "MemoryScope",
     "Neighbour",
     "NodeKind",
@@ -47,6 +52,7 @@ __all__ = [
     "exact_pattern",
     "in_scope",
     "is_latin",
+    "narrowed",
 ]
 
 #: Every kind step 3 names (60 §3), so S2-S4 add projectors without a CHECK
@@ -120,7 +126,7 @@ PROJECTION_OUTCOMES: tuple[str, ...] = get_args(ProjectionOutcome)
 
 # --- the read (S5, design/unified-memory/25-memory-graph.md §4) --------------
 
-#: `nora_memory_search_total`'s `status`, and what `ask_memory` answers while
+#: `nora_memory_search_total`'s `status`, and what `memory_search` answers while
 #: `[memory_index] enabled` (25 §4): `partial` while a rebuild has not
 #: completed, the projection queue is not empty, the search fell back to the
 #: lexical seed (no embedder, or it failed), or embeddable nodes still wait
@@ -137,6 +143,53 @@ EPISODE_KINDS: tuple[str, ...] = ("outing", "stay", "trip")
 #: their person (60 §0.3). Any other node with neither a unit nor a room is
 #: never in scope.
 PERSON_SCOPED_KINDS: tuple[str, ...] = ("stay", "trip")
+
+
+#: `memory_search`'s `kinds` (the tool's `Literal`): five plain categories a
+#: model names reliably, each the node kinds it covers (`KINDS_BY_CATEGORY`).
+#: Grouped by what a person would ask for, not by store: `notes` is everything
+#: she wrote down herself (a note, a memo, a lesson, a Character account),
+#: `places` is where people went (an outing, a stay, a trip). Hubs are never
+#: a category: they are never returned (25 §4 step 3).
+MemoryKind = Literal["messages", "media", "notes", "events", "places"]
+MEMORY_KINDS: tuple[str, ...] = get_args(MemoryKind)
+KINDS_BY_CATEGORY: Mapping[str, tuple[str, ...]] = {
+    "messages": ("message",),
+    "media": ("media",),
+    "notes": ("note", "memo", "lesson", "character"),
+    "events": ("event",),
+    "places": ("outing", "stay", "trip"),
+}
+
+#: The relations that tie a node to the person a `memory_search` names: an
+#: entry `about` them, a message `authored_by` them, an attachment
+#: `shared_by` them. `mentions` and `depicts` join when something writes them
+#: (60 §0.6); until then they would match nothing.
+PERSON_RELATIONS: tuple[str, ...] = ("about", "authored_by", "shared_by")
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryFilter:
+    """The question's own narrowing (`memory_search`'s `kinds`, `since`,
+    `until` and `person`), carried on the scope (`MemoryScope.only`) so every
+    read applies it INSIDE its scan, exactly where it applies the scope: a
+    node outside it is never read, never returned, never a bridge for the
+    walk and never takes a slot. Not a disclosure boundary; it only narrows
+    what the scope already admits.
+
+    - `kinds`: node kinds (`KINDS_BY_CATEGORY`'s values); empty is every kind.
+    - `since_ms`, `until_ms`: the node's `at_ms` within them, inclusive. A
+      node with no time is outside any window.
+    - `person`: a node `about`, `authored_by` or `shared_by` that person
+      (`PERSON_RELATIONS`), or one whose `persons` lists them; and, the
+      `about` seed's own rule (35 §3), only where the reading room lists them
+      and the node was said in a room that lists them too, or in no room.
+    """
+
+    kinds: tuple[str, ...] = ()
+    since_ms: int | None = None
+    until_ms: int | None = None
+    person: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +213,8 @@ class MemoryScope:
       scope only if every person of it is one.
     - `room_persons`: each room of the unit and the persons it lists, for the
       listed-room rule (evidence about P only from rooms that list P).
+    - `only`: the question's narrowing (`MemoryFilter`), applied by every
+      read beside the scope; `None` narrows nothing.
     """
 
     units: tuple[str, ...]
@@ -169,6 +224,11 @@ class MemoryScope:
     exclude_strict: bool
     presence_persons: frozenset[str]
     room_persons: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    only: MemoryFilter | None = None
+
+    def rooms_listing(self, person: str) -> tuple[str, ...]:
+        """The scope's rooms that list `person`, for the listed-room rule."""
+        return tuple(sorted(r for r, ps in self.room_persons.items() if person in ps))
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +381,35 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
     )
 
 
+def narrowed(node: IndexedNode, scope: MemoryScope, linked: Collection[str] = ()) -> bool:
+    """`scope.only` for a NON-hub node, in Python (the fake index's, and the
+    statement of what `SqlMemoryIndex` writes in SQL): `linked` is every
+    person the node has a `PERSON_RELATIONS` edge to. True when nothing
+    narrows."""
+    f = scope.only
+    if f is None:
+        return True
+    if f.kinds and node.kind not in f.kinds:
+        return False
+    if f.since_ms is not None or f.until_ms is not None:
+        if node.at_ms is None:
+            return False
+        if f.since_ms is not None and node.at_ms < f.since_ms:
+            return False
+        if f.until_ms is not None and node.at_ms > f.until_ms:
+            return False
+    if f.person is not None:
+        if f.person not in scope.listed_here:
+            return False
+        if f.person not in node.persons and f.person not in linked:
+            return False
+        if node.origin_room is not None and node.origin_room not in scope.rooms_listing(
+            f.person,
+        ):
+            return False
+    return True
+
+
 class QueryEmbedder(Protocol):
     """The question as a vector, with the model's query instruction
     (`nora.infra.embedder.LlamaEmbedder.embed_query`): `DIMENSIONS` floats of
@@ -334,9 +423,10 @@ class QueryEmbedder(Protocol):
 class MemoryIndexRead(Protocol):
     """The read half of the memory index (25 §4): `SqlMemoryIndex`, and
     `nora.testing.memory_index.FakeMemoryIndex` under the shared contract
-    suite. Every method applies `scope` INSIDE its read (25 §3): a node out
-    of scope is never returned, so nothing after the read has to remember
-    to drop it."""
+    suite. Every method applies `scope` INSIDE its read (25 §3), and its
+    `only` beside it (`narrowed`): a node out of scope, or outside the
+    question's narrowing, is never returned, so nothing after the read has
+    to remember to drop it."""
 
     async def seed(
         self, terms: Sequence[str], scope: MemoryScope, *, limit: int,

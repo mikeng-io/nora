@@ -1218,3 +1218,123 @@ cases:
     input: 記低 我食素
     metadata: {tools: [remember], not_tools: [note_create]}
     snapshot: *room_a
+
+  # --- memory_search (DEC-316, operator ruling 2026-10-16) ----------------------
+  # `[memory_index] enabled` selects ONE memory surface: the graph's
+  # (`memory_search`) or Honcho's (`ask_memory`, `search_memory`,
+  # `search_memory_workspace`, `who_said`), never both. These cases measure
+  # `memory_search`'s routing against the neighbours on its own surface it
+  # could take from, or lose to: `about` (a person's standing profile),
+  # `where_been` (where someone's phone has been), `media_search` (pictures by
+  # what they show) and `lookup_person` (who a name in this chat is). The time
+  # and kind cases also check the narrowing reaches the call (`args_include`).
+  #
+  # `memory_surface: graph` runs only under `python -m evals --memory-index`;
+  # `memory_surface: honcho` only without it (`evals.scenarios.MEMORY_SURFACES`).
+  # On a master checkout, which predates the key, the graph cases run and FAIL
+  # by construction (no `memory_search` there). `route_about_profile_not_memory_search`
+  # states no surface and reads on both arms. Synthetic inputs; `Miles` is
+  # the corpus's one member name.
+  - name: route_memory_search_what_a_person_said_long_ago
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles之前話過佢想學咩樂器㗎？
+    metadata: {tools: [memory_search], not_tools: [about, lookup_person], memory_surface: graph}
+    snapshot: *room_a
+
+  - name: route_memory_search_a_name_he_mentioned
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles講過佢新同事叫咩名，我唔記得咗
+    metadata: {tools: [memory_search], not_tools: [lookup_person, about], memory_surface: graph}
+    snapshot: *room_a
+
+  - name: route_memory_search_across_the_groups_rooms
+    entry: tag
+    expect: reply
+    mention: true
+    input: 我哋係咪喺第二個group講過搬屋嘅嘢？講咗啲咩？
+    metadata: {tools: [memory_search], not_tools: [about], memory_surface: graph}
+    snapshot: *room_a
+
+  - name: route_memory_search_a_span_of_dates
+    entry: tag
+    expect: reply
+    mention: true
+    input: 九月頭嗰兩個禮拜，我哋傾過去邊度食生日飯？
+    metadata:
+      tools: [memory_search]
+      not_tools: [where_been]
+      memory_surface: graph
+      # The span must reach the call: a search without it answers a
+      # different question.
+      args_include:
+        memory_search: [since]
+    snapshot: *room_a
+
+  - name: route_memory_search_a_span_of_dates_english
+    entry: tag
+    expect: reply
+    mention: true
+    input: what did Miles say he wanted for his birthday, back in early September?
+    metadata:
+      tools: [memory_search]
+      not_tools: [about]
+      memory_surface: graph
+      args_include:
+        memory_search: [person, since]
+    snapshot: *room_a
+
+  - name: route_memory_search_a_plan_not_a_trip
+    entry: tag
+    expect: reply
+    mention: true
+    input: 上年夏天我哋講過想去邊度行山？
+    metadata: {tools: [memory_search], not_tools: [where_been], memory_surface: graph}
+    snapshot: *room_a
+
+  - name: route_memory_search_a_shared_link_by_kind
+    entry: tag
+    expect: reply
+    mention: true
+    input: 搵返八月有人share過嗰條拉麵店reel，淨係睇相同片嗰啲
+    metadata:
+      tools: [memory_search]
+      not_tools: [media_search, web_search]
+      memory_surface: graph
+      args_include:
+        memory_search: [kinds, media]
+    snapshot: *room_a
+
+  - name: route_memory_search_what_was_kept
+    entry: tag
+    expect: reply
+    mention: true
+    input: what did we decide and keep about the camping trip? only what got written down
+    metadata:
+      tools: [memory_search]
+      not_tools: [about]
+      memory_surface: graph
+      args_include:
+        memory_search: [kinds, notes]
+    snapshot: *room_a
+
+  - name: route_about_profile_not_memory_search
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles平時鍾意食咩？
+    metadata: {tools: [about], not_tools: [memory_search]}
+    snapshot: *room_a
+
+  - name: route_who_said_in_view_not_memory_search
+    entry: tag
+    expect: reply
+    mention: true
+    input: 頭先邊個話要book枱？
+    # The Honcho surface's boundary: lines already in view are `who_said`'s,
+    # and `who_said` is not on the graph surface (deprecated, DEC-316).
+    metadata: {tools: [who_said], not_tools: [memory_search], memory_surface: honcho}
+    snapshot: *room_a

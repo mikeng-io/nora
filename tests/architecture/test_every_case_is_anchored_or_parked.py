@@ -307,10 +307,14 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     of a rule), plus the `conversational_recall` corpus's 8 (2026-10-14,
     design/unified-memory/00-intent.md "Sequence" step 0: J1 a photo's
     reading twice, J2 a dated plan twice, J3 an outing's food and doings,
-    J4 outings in a week twice, every case on a full restore; NOT yet run);
+    J4 outings in a week twice, every case on a full restore; NOT yet run),
+    plus 10 `tool_selection` cases for `memory_search` (2026-10-16, DEC-316:
+    8 positives against `about`, `who_said`, `where_been`, `media_search` and
+    `lookup_person`, two with a date span and two with `kinds`, and 2
+    boundary controls that stay `about`'s and `who_said`'s; NOT yet run);
     a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 307
-    assert sum(c.active + c.parked for c in totals) == 307
+    assert sum(c.total for c in totals) == 317
+    assert sum(c.active + c.parked for c in totals) == 317

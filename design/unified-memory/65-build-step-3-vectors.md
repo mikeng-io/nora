@@ -102,7 +102,7 @@ artifacts or long transcripts join the index. Its trigger is
 embedder cut to fit its micro-batch whose vector it stored (V2), on top of
 `ok`. The iGPU (`norty` is not in `render`) is an
 operator action that changes the throttle, not the design. The `ask_memory`
-text alignment is its own `nora-tool` PR.
+text alignment is its own `nora-tool` PR (done as `memory_search`, DEC-316, §5).
 
 ## 4. V2 as built (2026-10-16)
 
@@ -213,3 +213,55 @@ What V2 decided where the plan above left room (DEC-315; the code is
 6. **Episodes are lexical only** (§1.4), so with dense seeds a stay, trip or
    outing is reached only through an edge or as a named person's `about`
    seed, never by its own text. The scope suite runs both ways.
+
+## 5. One memory surface, and its verb (2026-10-16, DEC-316)
+
+The index is read through ONE tool, `memory_search(query, person?, since?,
+until?, kinds?)`, and only on the memory graph's tool surface.
+`[memory_index] enabled` selects the surface wherever tools are built (a
+tag, a fire turn, the Cognition session, every Dreamer adaptor, the
+sub-agent worker); the two never sit side by side.
+
+| surface | flag | memory verbs offered |
+|---|---|---|
+| Honcho (production, the rollback) | off | `ask_memory`, `search_memory`, `search_memory_workspace`, `who_said`, plus `about`, `remember`, `load_transcript` |
+| graph | on | `memory_search`, plus `about`, `remember`, `load_transcript` |
+
+- **No Honcho behind `memory_search`.** It is the retrieval service of §4
+  and nothing else. `ask_memory` no longer reads the index: with the flag on
+  it is not offered.
+- **`about`, `remember` and `load_transcript` stay on both.** The first two
+  are the profile read and the memory write, which Persona (steps 5 to 8)
+  and step 9 replace; they are not search. `load_transcript` is the in-room
+  scroll-back.
+- **`who_said` is deprecated.** It is absent from the graph surface:
+  `memory_search` names who said each hit, and `load_transcript` reads
+  around it. It is deleted with the rest of the Honcho surface at step 9.
+- **Why not both.** With `memory_search` beside Honcho's `search_memory`, a
+  `tool_selection` run called `search_memory` in 6 of 8 new cases and
+  `memory_search` in none (n=1): two names sharing both tokens, ADR 0004's
+  near-name pattern.
+- **Narrowing.** `person`, `since` and `until` narrow every read inside the
+  scan (DEC-313's filter, ANDed). `kinds` narrows the seeds and the answer,
+  not the hops (item 6 above: an episode has no vector, so `places` is
+  reached from what was said during one). A person this room's policy does
+  not list is `unavailable`, not a false `nothing_found`.
+- **Reach.** The culture adaptor's `memory_search` reads its own room
+  alone: a room's culture is not written from another room's speech, as its
+  Honcho `search_memory` read only its own session. Every other occasion,
+  the character-person session included, reads the unit under the
+  listed-room rule.
+- **One source.** The registry selects the surface (it holds a
+  `MemorySearch` or not), builds only that surface, and withholds the other
+  from the capability digest and from Cognition's read surface.
+- **Measuring it.** `python -m evals tool_selection --memory-index` composes
+  the subject on the graph surface; without the flag the subject is the
+  deployment's, whichever surface its config selects, and the header says
+  which. A case that routes on one surface only says so
+  (`metadata.memory_surface`), the other arm skips it, and a subject composed
+  on the other surface is refused per case.
+- **Before the flag goes on.** Per-pass search capacity is lower on the
+  graph surface: a tag or fire turn had `ask_memory` 4 + `search_memory` 4 +
+  `who_said` 4 calls and has `memory_search` 4; the culture and
+  character-person passes now spend it inside `max_memory_calls`. Measure it
+  first.

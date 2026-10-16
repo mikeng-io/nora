@@ -1309,10 +1309,13 @@ class MemoryIndexConfig(BaseModel):
     (`nora.app.runtime.memory_drain_loop`). Optional and defaulted, so a
     `config.toml` without the section keeps loading.
 
-    `enabled` (S5) is the READ: on, `ask_memory` answers from the index
-    through `nora.agent.memory_search` and Honcho is not called; off (the
-    default), `ask_memory` is today's Honcho path, unchanged. Undo is this
-    flag and a restart.
+    `enabled` (S5, DEC-316) is the READ, and it selects ONE memory tool
+    surface wherever tools are built: on, the memory graph's, `memory_search`
+    over the index through `nora.agent.memory_search`, with no Honcho behind
+    it and none of `ask_memory`, `search_memory`, `search_memory_workspace`
+    or `who_said` offered; off (the default), the Honcho surface exactly as
+    before, and no `memory_search`. `about`, `remember` and `load_transcript`
+    are on both. Undo is this flag and a restart.
 
     `embed` (design/unified-memory/65-build-step-3-vectors.md V1) starts the
     embedding worker on the same drain tick: up to `embed_batch` nodes per
@@ -1327,7 +1330,7 @@ class MemoryIndexConfig(BaseModel):
     exposes no file hash. Off by default: the `embedder` service must be up
     first.
 
-    While both are on (65 V2), `ask_memory` seeds from the question's vector
+    While both are on (65 V2), `memory_search` seeds from the question's vector
     (embedded by the same server, with the query instruction) and pins exact
     references ahead of it; the lexical seed runs only when the embedder
     fails or no node holds a current vector yet, and that answer is
