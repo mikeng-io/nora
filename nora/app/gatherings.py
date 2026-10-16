@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import urllib.parse
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -347,16 +347,21 @@ class GatheringService:
         """A reader: an id that does not exist reads as absent."""
         return await self._store.get(event_id)
 
-    async def list_events_for_person(self, *, person_id: str) -> Sequence[Gathering]:
+    async def list_events_for_person(
+        self, *, person_id: str, conversation_ids: Collection[str] = (),
+    ) -> Sequence[Gathering]:
         """The web app's ONLY read path (not conversation-scoped, unlike
         `list_events`, which the chat tools use): every event `person_id`
-        created or RSVP'd to, across every conversation — deliberately not
-        limited to one group, so a friend group split across Discord and
-        Signal still sees the same event either way."""
-        return await self._store.list_for_person(person_id=person_id)
+        created or RSVP'd to, across every conversation, plus every event held
+        in one of `conversation_ids`, the rooms they are a member of. Without
+        the rooms, an event Cognition records (created by `cognition:<unit>`,
+        no RSVPs) is shown to nobody."""
+        return await self._store.list_for_person(
+            person_id=person_id, conversation_ids=conversation_ids,
+        )
 
     async def get_event_for_person(
-        self, *, event_id: UUID, person_id: str,
+        self, *, event_id: UUID, person_id: str, conversation_ids: Collection[str] = (),
     ) -> Gathering | None:
         """The web app's per-event read: `None` (→ 404, never a distinct
         "forbidden") unless `person_id` created this event or has an RSVP
@@ -367,7 +372,7 @@ class GatheringService:
         event = await self._store.get(event_id)
         if event is None:
             return None
-        if event.created_by == person_id:
+        if event.created_by == person_id or event.conversation_id in conversation_ids:
             return event
         rsvps = await self._store.rsvps_for(event_id)
         if any(r.person_id == person_id for r in rsvps):

@@ -20,7 +20,7 @@ on-demand check, never a cached column).
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -499,7 +499,11 @@ class GatheringStore(Protocol):
     ) -> Sequence[Gathering]:
         """A room's events."""
 
-    async def list_for_person(self, *, person_id: str) -> Sequence[Gathering]: ...
+    async def list_for_person(
+        self, *, person_id: str, conversation_ids: Collection[str] = (),
+    ) -> Sequence[Gathering]:
+        """Every event `person_id` created or RSVP'd to, and every event held in
+        one of `conversation_ids` (the rooms they are a member of)."""
 
     async def update(
         self, event: Gathering, *, base_revision_id: UUID | None = None,

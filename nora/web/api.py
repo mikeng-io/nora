@@ -585,10 +585,10 @@ def register_web_routes(
         # the Next.js proxy from the session, never client-supplied) — and it
         # must resolve to a person this deployment actually knows, mirroring
         # `build_memory_payload`'s `persons.by_person.get(person_id)` check.
-        # No `conversation_id` — this list is participant-scoped, not
-        # conversation-scoped: `build_gatherings_payload` already only returns
-        # events `person_id` created or RSVP'd to, so there is nothing left
-        # for a query param to filter or leak.
+        # No `conversation_id` query param: the scope is the viewer's own,
+        # events they created or RSVP'd to plus every event in a room that
+        # names them (`web_rooms_of`), so there is nothing left for a param to
+        # filter or leak.
         person_id = request.query.get("personId")
         if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
             return web.json_response(
@@ -597,14 +597,15 @@ def register_web_routes(
             )
         body = await build_gatherings_payload(
             events=request.app["web_events"], person_id=person_id,
+            rooms_of=request.app["web_rooms_of"],
         )
         return web.json_response(body)
 
     async def events_detail(request: web.Request) -> web.Response:
-        # Same personId-required minimum as `events_list` above, PLUS
-        # participant scoping: `build_gathering_payload` returns `None` (→ 404,
-        # never a distinct "forbidden") unless `person_id` created this
-        # event or has an RSVP on it.
+        # Same personId-required minimum and scope as `events_list` above:
+        # `build_gathering_payload` returns `None` (→ 404, never a distinct
+        # "forbidden") unless `person_id` created this event, has an RSVP on
+        # it, or is in the room it is held in.
         person_id = request.query.get("personId")
         if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
             return web.json_response(
@@ -617,6 +618,7 @@ def register_web_routes(
             return web.json_response({"status": "refused", "note": "bad id"}, status=400)
         body = await build_gathering_payload(
             events=request.app["web_events"], event_id=event_id, person_id=person_id,
+            rooms_of=request.app["web_rooms_of"],
         )
         if body is None:
             return web.json_response({"status": "not_found"}, status=404)

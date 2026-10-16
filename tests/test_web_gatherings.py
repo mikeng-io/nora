@@ -90,3 +90,34 @@ async def test_build_gathering_payload_includes_rsvps():
 
     out = await build_gathering_payload(events=svc, event_id=ev.id, person_id="miles")
     assert out["rsvps"] == [{"person_id": "daisy", "response": "yes"}]
+
+
+async def test_an_event_in_a_room_i_am_in_is_shown_under_either_id_form():
+    """Cognition records an event as `cognition:<unit>`, with no RSVPs; a
+    member of its room sees it, by the room's bare id or its `platform:` form,
+    in the list and in the detail read. A room they are not in stays hidden."""
+    svc = await _service()
+    bare = await svc.create_event(
+        conversation_id="group-1", requester_person_id="cognition:u",
+        title="Saturday dinner", platform="signal",
+    )
+    prefixed = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="cognition:u",
+        title="Sunday lunch", platform="signal",
+    )
+    await svc.create_event(
+        conversation_id="group-2", requester_person_id="cognition:u",
+        title="Another room's dinner", platform="signal",
+    )
+
+    def rooms_of(person_id: str) -> frozenset[tuple[str, str]]:
+        return frozenset({("signal", "group-1")}) if person_id == "miles" else frozenset()
+
+    out = await build_gatherings_payload(events=svc, person_id="miles", rooms_of=rooms_of)
+    assert sorted(e["title"] for e in out) == ["Saturday dinner", "Sunday lunch"]
+    for ev in (bare, prefixed):
+        detail = await build_gathering_payload(
+            events=svc, event_id=ev.id, person_id="miles", rooms_of=rooms_of,
+        )
+        assert detail is not None and detail["id"] == str(ev.id)
+    assert await build_gatherings_payload(events=svc, person_id="daisy", rooms_of=rooms_of) == []

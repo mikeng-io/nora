@@ -8,7 +8,7 @@ every call the same way (CLAUDE.md's rule)."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from uuid import UUID, uuid4
 
@@ -106,12 +106,13 @@ class FakeGatheringStore:
         return sorted(out, key=lambda e: e.created_at)
 
     async def list_for_person(
-        self, *, person_id: str,
+        self, *, person_id: str, conversation_ids: Collection[str] = (),
     ) -> Sequence[Gathering]:
         rsvpd_ids = {r.event_id for r in self._rsvps if r.person_id == person_id}
+        rooms = set(conversation_ids)
         out = [
             e for e in self._events.values()
-            if e.created_by == person_id or e.id in rsvpd_ids
+            if e.created_by == person_id or e.id in rsvpd_ids or e.conversation_id in rooms
         ]
         return sorted(out, key=lambda e: e.created_at)
 
