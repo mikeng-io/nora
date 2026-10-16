@@ -256,6 +256,36 @@ async def test_a_block_of_maximal_items_stays_within_its_budget(social) -> None:
     assert len(block) <= SOCIAL_BLOCK_BUDGET_CHARS, len(block)
 
 
+async def test_the_budget_holds_on_the_escaped_block_and_drops_the_newest_whole(
+    social,
+) -> None:
+    """The budget is enforced on the block as rendered, after escaping (an
+    `&` renders as five characters), by leaving whole items out from the
+    most recently recorded end. Those are neither citable nor passed by the
+    cursor: the next session is handed them."""
+    store, engine = social
+    await _perceived(engine, SWIM, "&<" * 400)
+    ids = [str(9400 + n) for n in range(SOCIAL_ITEMS_MAX)]
+    for n, item_id in enumerate(ids):
+        await _record(store, item_id, media=SWIM, caption="&<" * 400,
+                      taken_at=T0 + timedelta(minutes=n))
+    adaptor = _session(store)
+    out = await _wake(adaptor)
+
+    block = out[out.index("<social_items "):out.index("</social_items>") + len("</social_items>")]
+    assert len(block) <= SOCIAL_BLOCK_BUDGET_CHARS, len(block)
+    shown = _cites(out)
+    assert 0 < len(shown) < SOCIAL_ITEMS_MAX
+    assert sorted(shown) == ids[:len(shown)]
+    revise, _keep = adaptor.verbs(key=KEY)
+    dropped = ids[len(shown)]
+    answer = await revise(entity="Ada", body="x", citations=[f"social:instagram:{dropped}"])
+    assert answer["reason"] == "unresolved_citation"
+
+    await adaptor.evidence.settle(key=KEY)
+    assert sorted(_cites(await _wake(adaptor)))[0] == dropped
+
+
 def test_the_block_is_at_most_a_third_of_the_sessions_token_budget(example_config) -> None:
     """`total_tokens` counts every model call's whole input, so the block is
     paid once per call: at the dense-Cantonese rate and the shipped
@@ -271,20 +301,17 @@ def test_the_block_is_at_most_a_third_of_the_sessions_token_budget(example_confi
 
 async def test_a_backlog_does_not_wake_a_session_on_every_tick(social) -> None:
     """A back-log counts at most one session's worth, and only what arrived
-    since the key last ran: after a session, the rest of a back-log waits for
-    the next wake for any reason, so sessions never run back to back."""
+    since the last settled read began: after a session, the rest of a
+    back-log waits for the next wake for any reason, so sessions never run
+    back to back."""
     store, _engine = social
-    record = InMemoryCharacterEvidence()
-    adaptor = _session(store, record=record)
+    adaptor = _session(store)
     for n in range(40):
         await _record(store, str(6000 + n), taken_at=T0 - timedelta(minutes=n))
     assert await adaptor.evidence.count(key=KEY, after=0) == SOCIAL_ITEMS_MAX
 
     first = _cites(await _wake(adaptor))
     await adaptor.evidence.settle(key=KEY)
-    ran = await store.now()
-    record.set_last_run(adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=KEY,
-                        at_ms=int(ran.timestamp() * 1000) + 1)
     # 34 are still to hand, and none of them wakes the key again.
     assert await adaptor.evidence.count(key=KEY, after=0) == 0
     await _record(store, "6999", caption="a new story")
@@ -293,6 +320,49 @@ async def test_a_backlog_does_not_wake_a_session_on_every_tick(social) -> None:
     second = _cites(await _wake(adaptor))
     assert len(second) == SOCIAL_ITEMS_MAX and not set(first) & set(second)
     assert "6999" not in second
+
+
+async def test_an_item_recorded_while_a_session_runs_wakes_the_next(social) -> None:
+    """An item polled after a session's read began, before that run
+    settled, is in no batch yet, so it counts toward the next wake."""
+    store, _engine = social
+    adaptor = _session(store)
+    await _record(store, "6100")
+    assert _cites(await _wake(adaptor)) == ["6100"]
+    await _record(store, "6101", caption="posted mid-session")
+    await adaptor.evidence.settle(key=KEY)
+
+    assert await adaptor.evidence.count(key=KEY, after=0) == 1
+    assert _cites(await _wake(adaptor)) == ["6101"]
+
+
+async def _abandon(adaptor: CharacterPersonAdaptor) -> list[str]:
+    """One run on the session path that is rejected until abandoned
+    (DEC-280), then settled as the dream loop settles it: the items it was
+    handed."""
+    handed = _cites(await _wake(adaptor))
+    for _ in range(MAX_CONSECUTIVE_REJECTIONS - 1):
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=())
+        await _wake(adaptor)
+    assert await adaptor.accept(key=KEY, items=()) == ()  # abandoned
+    await adaptor.evidence.settle(key=KEY)
+    return handed
+
+
+async def test_a_batch_abandoned_twice_is_consumed(social) -> None:
+    """A batch no session can settle is handed once more, then consumed:
+    abandoned again from the same position, the cursor moves past it, so
+    it cannot hold every newer item behind it for good."""
+    store, _engine = social
+    for n in range(3):
+        await _record(store, str(8100 + n))
+    adaptor = _session(store)
+
+    first = await _abandon(adaptor)
+    assert await _abandon(adaptor) == first
+    await _record(store, "8199", caption="a newer post")
+    assert _cites(await _wake(adaptor)) == ["8199"]
 
 
 async def test_a_session_that_gives_up_keeps_its_items_and_a_kept_one_uses_them(social) -> None:
@@ -461,3 +531,38 @@ async def test_a_handle_padded_with_marks_or_fillers_and_every_link_are_redacted
     assert "a @… b @… c @… d @… e @… f @ada.swims g xy</item>" in out
     assert ">instagram.com/…instagram.com/ada.swims instagram.com/…</item>" in out
     assert "reels" not in out and "igsh" not in out
+
+
+async def test_the_authors_own_handle_ends_where_their_username_does(social) -> None:
+    """The author's own handle is theirs with a full stop or CJK text after
+    it; whatever follows it is redacted like any other text. A handle after
+    `@` and a space, and a profile link on any Instagram host or written
+    with an ideographic or full-width dot, is redacted."""
+    store, _engine = social
+    await _record(store, "9204", caption=(
+        "a @ada.swims. b @ada.swims\uff0c去 c @ada.swims,@bo_runs d @ bo_runs "
+        "e instagr.am/bo_runs f ig.me/bo_runs g instagram\u3002com/bo_runs "
+        "h www\uff61instagram\uff0ecom/bo_runs"
+    ))
+    out = await _wake(_session(store))
+
+    assert "bo_runs" not in out
+    assert ("a @ada.swims. b @ada.swims,去 c @ada.swims,@… d @… "
+            "e instagram.com/… f instagram.com/… g instagram.com/… "
+            "h instagram.com/…</item>") in out
+
+
+async def test_a_selector_after_a_script_and_a_flag_are_kept(social) -> None:
+    """A variation selector after an ideograph or an emoji, and a subdivision
+    flag's tag characters, are part of the text: kept. After an ASCII
+    character a selector is removed, and tag characters outside a flag (ASCII
+    nobody sees) are removed wherever they are."""
+    store, _engine = social
+    scotland = "\U0001f3f4" + "".join(chr(0xE0000 + ord(c)) for c in "gbsct") + "\U000e007f"
+    hidden = "".join(chr(0xE0000 + ord(c)) for c in "hi")
+    await _record(store, "9205", caption=(
+        f"\u845b\U000e0100 \u2764\ufe0f {scotland} ok\ufe0f x{hidden}y \u845b{hidden}"
+    ))
+    out = await _wake(_session(store))
+
+    assert f"\u845b\U000e0100 \u2764\ufe0f {scotland} ok xy \u845b</item>" in out

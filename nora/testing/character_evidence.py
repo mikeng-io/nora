@@ -40,7 +40,7 @@ class InMemoryCharacterEvidence:
         self._revisions: list[tuple[str, int]] = []
         self._episodes: list[tuple[str, Episode, bool]] = []
         self._last_run: dict[tuple[str, str], int] = {}
-        self._social_cursor: dict[tuple[str, str], int] = {}
+        self._social_cursor: dict[tuple[str, str], tuple[int, int]] = {}
 
     def add_episode(self, *, unit: str, episode: Episode, open_: bool = False) -> None:
         """One `response` episode of the current build; `open_` is one whose
@@ -92,12 +92,14 @@ class InMemoryCharacterEvidence:
         ]
         return [RoomMessage(room=m.room, row=self._row(m)) for m in found[-limit:]]
 
-    async def social_cursor(self, *, adaptor: str, key: str) -> int:
-        return self._social_cursor.get((adaptor, key), 0)
+    async def social_cursor(self, *, adaptor: str, key: str) -> tuple[int, int]:
+        return self._social_cursor.get((adaptor, key), (0, 0))
 
-    async def advance_social_cursor(self, *, adaptor: str, key: str, cursor: int) -> None:
-        held = self._social_cursor.get((adaptor, key), 0)
-        self._social_cursor[(adaptor, key)] = max(held, cursor)
+    async def advance_social_cursor(
+        self, *, adaptor: str, key: str, cursor: int, read_at: int,
+    ) -> None:
+        held, at = self._social_cursor.get((adaptor, key), (0, 0))
+        self._social_cursor[(adaptor, key)] = (max(held, cursor), max(at, read_at))
 
     def set_last_run(self, *, adaptor: str, key: str, at_ms: int) -> None:
         self._last_run[(adaptor, key)] = at_ms

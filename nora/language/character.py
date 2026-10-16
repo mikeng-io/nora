@@ -84,8 +84,8 @@ from nora.domain.memory_index import social_label
 from nora.domain.models import PersonRef
 from nora.domain.ports import Proposal
 from nora.domain.prompt import age, escape, stamp
-from nora.domain.social_stream import PersonSocialItem
-from nora.language.character_session import EntitySessions
+from nora.domain.social_stream import PersonSocialItem, to_us
+from nora.language.character_session import AccountNotRecordableError, EntitySessions
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
@@ -213,11 +213,11 @@ class _PersonMessages(Protocol):
 
     async def message_head(self) -> int: ...
 
-    async def last_run_ms(self, *, adaptor: str, key: str) -> int | None: ...
+    async def social_cursor(self, *, adaptor: str, key: str) -> tuple[int, int]: ...
 
-    async def social_cursor(self, *, adaptor: str, key: str) -> int: ...
-
-    async def advance_social_cursor(self, *, adaptor: str, key: str, cursor: int) -> None: ...
+    async def advance_social_cursor(
+        self, *, adaptor: str, key: str, cursor: int, read_at: int,
+    ) -> None: ...
 
     async def person_count(
         self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
@@ -235,9 +235,22 @@ class _PersonSocial(Protocol):
 
     async def polled_count(self, *, persons: Sequence[str], after_us: int) -> int: ...
 
+    async def now(self) -> datetime: ...
+
     async def person_items(
         self, *, persons: Sequence[str], after_us: int, limit: int,
     ) -> list[PersonSocialItem]: ...
+
+
+@dataclass
+class _Read:
+    """One social read in flight for a key: where it started, when (the
+    database's clock, in microseconds) and how far it reaches once the
+    session's items are known (`handed`)."""
+
+    start: int
+    at: int
+    reach: int
 
 
 class PersonEvidence:
@@ -246,17 +259,25 @@ class PersonEvidence:
     with `social`, their social items not yet handed to a session.
 
     **Two cursors.** Messages go by the key's watermark, a Record id. Social
-    items have no Record id, so they go by their own cursor (`social_cursor`,
-    when the last item handed was recorded). `newest` hands the oldest
-    `SOCIAL_ITEMS_MAX` items past it and remembers how far that reaches;
-    `settle`, which the dream loop calls only after a run that is not
-    `unavailable` (the same rule as the watermark), moves the cursor there,
-    unless the session gave up on its batch (`forget`). So a failed or
-    abandoned run hands the same items again, and a backlog past the bound
-    is handed over the next sessions, every item once. Only polled items
-    count toward the wake (§6), and only those recorded since the key last
-    ran, at most `SOCIAL_ITEMS_MAX`; back-filled ones are handed with the
-    rest."""
+    items have no Record id, so they go by their own cursor (`social_cursor`:
+    when the last item handed was recorded, and when the read that handed it
+    ran). `newest` reads the oldest `SOCIAL_ITEMS_MAX` items past it; the
+    session says which of them it rendered (`handed`); `settle`, which the
+    dream loop calls only after a run that is not `unavailable` (the same rule
+    as the watermark), moves the cursor past those, unless the session gave
+    up on its batch (`gave_up`). So a failed run hands the same items again,
+    and a backlog past the bound is handed over the next sessions, every
+    item once.
+
+    **The wake.** Only polled items count (§6), only those recorded after
+    the last settled read began (an item polled while a session ran counts
+    toward the next wake), and at most `SOCIAL_ITEMS_MAX`: a backlog
+    already waiting at that read never wakes the key again, so it cannot fire
+    sessions back to back.
+
+    **A batch a session cannot settle** (DEC-280 for messages): the first
+    time it is abandoned its items are kept for the next session; abandoned
+    again from the same position, they are consumed, so the key advances."""
 
     def __init__(
         self, *, store: _PersonMessages, keys: Mapping[str, PersonKey],
@@ -269,8 +290,12 @@ class PersonEvidence:
         self._keys = keys
         self._social = social
         self._former_ids = former_ids
-        #: `key -> cursor` the read in flight reaches, for `settle`.
-        self._pending: dict[str, int] = {}
+        self._reads: dict[str, _Read] = {}
+        # ponytail: in memory, so a restart forgets one abandonment and a
+        # poison batch is abandoned once more before it is consumed; the
+        # message side's `_rejections` makes the same trade.
+        #: `key -> the position its batch was last abandoned from`.
+        self._abandoned: dict[str, int] = {}
         self._population = tuple(sorted(keys))
         self._held: dict[str, int] = {}
         #: `key -> (after, head)`: a count over `(after, head]` found nothing
@@ -294,7 +319,8 @@ class PersonEvidence:
         unit's rooms for them. The read is `newest`, which does start at the
         watermark, so a message this count's floor skipped (an id that committed
         out of order, below the head read) still reaches the batch the next
-        wake reads. In memory: a restart is one more full count."""
+        wake reads. In memory: a restart is one more full count. Then their
+        social items, as the class docstring says."""
         rooms, person_id = self._of(key)
         scanned = self._clear.get(key)
         floor = after
@@ -308,15 +334,10 @@ class PersonEvidence:
             self._clear[key] = (min(after, floor), head)
         if self._social is None:
             return n
-        # Only what arrived since the key last ran, and at most one
-        # session's worth: a backlog already pending at the last run (the
-        # rest of a back-fill, or polled items past what one session takes)
-        # waits for the next wake for any reason, and never fires one
-        # session after another.
-        cursor = await self._store.social_cursor(adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
-        last = await self._store.last_run_ms(adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
+        cursor, read_at = await self._store.social_cursor(
+            adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
         polled = await self._social.polled_count(
-            persons=self._ids(person_id), after_us=max(cursor, (last or 0) * 1000))
+            persons=self._ids(person_id), after_us=max(cursor, read_at))
         return n + min(polled, SOCIAL_ITEMS_MAX)
 
     def _ids(self, person_id: str) -> tuple[str, ...]:
@@ -332,36 +353,61 @@ class PersonEvidence:
         moved by `settle`."""
         rooms, person_id = self._of(key)
         self._held[key] = after
-        self._pending.pop(key, None)
+        self._reads.pop(key, None)
         messages, cursor = await self._store.person_since(
             rooms=rooms, person_id=person_id, after=after, limit=limit,
         )
         if self._social is None:
             return messages, cursor
+        start, _read_at = await self._store.social_cursor(
+            adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key)
+        # The database's clock BEFORE the read: an item recorded after it is
+        # not in this batch, so it counts toward the next wake.
+        at = to_us(await self._social.now())
         items = await self._social.person_items(
-            persons=self._ids(person_id), limit=SOCIAL_ITEMS_MAX,
-            after_us=await self._store.social_cursor(
-                adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key),
+            persons=self._ids(person_id), limit=SOCIAL_ITEMS_MAX, after_us=start,
         )
-        if items:
-            self._pending[key] = max(i.recorded_us for i in items)
+        self._reads[key] = _Read(start=start, at=at, reach=start)
         return [*messages, *items], cursor
 
+    def handed(self, key: str, items: Sequence[PersonSocialItem]) -> None:
+        """The items the session for `key` was actually shown: the cursor
+        may move past these and no further."""
+        read = self._reads.get(key)
+        if read is not None and items:
+            read.reach = max(read.start, *(i.recorded_us for i in items))
+
+    def gave_up(self, key: str) -> None:
+        """The session for `key` was abandoned without settling its account.
+        The first time from a position its items are kept for the next
+        session; the second time from the same position they are consumed."""
+        read = self._reads.get(key)
+        if read is None:
+            return
+        if self._abandoned.get(key) == read.start:
+            del self._abandoned[key]
+            return
+        self._abandoned[key] = read.start
+        read.reach = read.start
+
     def forget(self, key: str) -> None:
-        """The session for `key` did not settle its account (it gave up on
-        the batch): its social items were not used, so `settle` keeps them
-        for the next one."""
-        self._pending.pop(key, None)
+        """The session for `key` raised: the run is `unavailable`, nothing
+        settles, and the same items are read again."""
+        self._reads.pop(key, None)
 
     async def settle(self, *, key: str) -> None:
-        """The run that read `newest` for `key` was not `unavailable` and its
-        session settled its account (revised or kept it): its social items
-        were used, so the cursor moves past them."""
-        reached = self._pending.pop(key, None)
-        if reached is not None:
-            await self._store.advance_social_cursor(
-                adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key, cursor=reached,
-            )
+        """The run that read `newest` for `key` was not `unavailable`: the
+        cursor moves past the items its session used, and the wake's floor to
+        when its read began."""
+        read = self._reads.pop(key, None)
+        if read is None:
+            return
+        if read.reach > read.start:
+            self._abandoned.pop(key, None)
+        await self._store.advance_social_cursor(
+            adaptor=CHARACTER_PERSON_ADAPTOR_NAME, key=key, cursor=read.reach,
+            read_at=read.at,
+        )
 
 
 class _CultureStore(Protocol):
@@ -455,7 +501,7 @@ def _clip(text: str, limit: int) -> str:
 #: pad a handle: Unicode's Default_Ignorable_Code_Point set (soft hyphen,
 #: combining grapheme joiner, Hangul fillers, zero-width and direction
 #: marks, variation selectors, tags), plus the blank braille pattern. Every
-#: Cf character is removed as well (`_invisible`).
+#: Cf character counts as well (`_invisible`).
 _IGNORABLE = (
     (0x00AD, 0x00AD), (0x034F, 0x034F), (0x061C, 0x061C), (0x115F, 0x1160),
     (0x17B4, 0x17B5), (0x180B, 0x180F), (0x200B, 0x200F), (0x202A, 0x202E),
@@ -464,50 +510,106 @@ _IGNORABLE = (
     (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
 )
 
+#: Of those, the ones a script needs: variation selectors (an ideograph's
+#: variant, an emoji's presentation), kept after a character that is not
+#: ASCII and removed after an ASCII one, where they could only split a word
+#: or a handle.
+_SELECTORS = ((0xFE00, 0xFE0F), (0xE0100, 0xE01EF))
+
+#: And a subdivision flag (Scotland's, say): the black flag, up to six tag
+#: letters or digits, the cancel tag. Tag characters anywhere else go: they
+#: spell ASCII nobody sees, a way to write to the model unseen.
+_FLAG = re.compile(
+    "\U0001f3f4[\U000e0030-\U000e0039\U000e0061-\U000e007a]{1,6}\U000e007f"
+)
+
+
+def _in(c: str, ranges: tuple[tuple[int, int], ...]) -> bool:
+    n = ord(c)
+    return any(lo <= n <= hi for lo, hi in ranges)
+
 
 def _invisible(c: str) -> bool:
-    n = ord(c)
-    return unicodedata.category(c) == "Cf" or any(lo <= n <= hi for lo, hi in _IGNORABLE)
+    return unicodedata.category(c) == "Cf" or _in(c, _IGNORABLE)
 
 
-#: An `@` and every non-whitespace character after it: the whole run is
-#: redacted unless it is exactly the author's own username. Nothing before
-#: or inside the run (a CJK character, `-`, a combining mark, a filler) lets
-#: a handle through, an email's domain included: fail closed.
-_HANDLE = re.compile(r"@(\S+)")
+def _visible(text: str) -> str:
+    """`text` without its invisible code points, keeping a subdivision flag
+    whole (`_FLAG`) and a variation selector that follows a character that
+    is not ASCII (`_SELECTORS`)."""
+    out: list[str] = []
+    at = 0
+    for flag in [*_FLAG.finditer(text), None]:
+        for c in text[at:flag.start() if flag else len(text)]:
+            if _invisible(c) and not (
+                _in(c, _SELECTORS) and out and not out[-1][-1].isascii()
+            ):
+                continue
+            out.append(c)
+        if flag:
+            out.append(flag.group(0))
+            at = flag.end()
+    return "".join(out)
 
-#: A link to anything on Instagram: its first path segment, and the rest of
-#: the link (path, query, fragment) up to whitespace or the next link.
+
+#: An `@`, any whitespace after it, and every non-whitespace character after
+#: that: redacted unless the run starts with the author's own username
+#: (`_redact`). Nothing before or inside the run (a CJK character, `-`, a
+#: combining mark, a filler, a space) lets a handle through, an email's
+#: domain included: fail closed.
+_HANDLE = re.compile(r"@\s*(\S+)")
+
+#: A username's characters, at the start of an `@` run.
+_NAME = re.compile(r"[A-Za-z0-9_.]+")
+
+#: A dot, in any of the forms NFKC leaves apart: ASCII, ideographic,
+#: full-width, half-width.
+_DOT = "[.\u3002\uff0e\uff61]"
+
+#: Where an Instagram link starts: any scheme, `www.`, and the profile hosts
+#: (`instagram.com`, `instagr.am`, `ig.me`), with any of `_DOT`'s dots.
+_LINK_START = (
+    rf"(?:https?://)?(?:www{_DOT})?"
+    rf"(?:instagram{_DOT}com|instagr{_DOT}am|ig{_DOT}me)/"
+)
+
+#: A link: its first path segment, and the rest of it (path, query,
+#: fragment) up to whitespace or the next link.
 _PROFILE = re.compile(
-    r"(?:https?://)?(?:www\.)?instagram\.com/([^\s/?#]*)"
-    r"(?:(?!(?:https?://)?(?:www\.)?instagram\.com/)\S)*",
-    re.IGNORECASE,
+    rf"{_LINK_START}([^\s/?#]*)(?:(?!{_LINK_START})\S)*", re.IGNORECASE,
 )
 
 
 def _redact(text: str, *, person: str, owners: Owners) -> str:
-    """`text` NFKC-normalized, every invisible code point removed
-    (`_invisible`: a zero-width space, a filler, a variation selector), then
-    every Instagram link and every `@` run that is not the author's own
-    written `instagram.com/…` and `@…`. The author's own link keeps only
-    `instagram.com/<their handle>`, never what follows it; their own handle
-    stays only when the run after the `@` is it exactly, so one followed by
-    punctuation is redacted too. A handle names somebody who never chose to
-    be in this account, and it is an identifier on a network; whose handle it
-    is comes from `identity.toml` (`owners`), so one nobody recorded is
-    redacted too. Removing Cf also splits an emoji joined by a zero-width
-    joiner into its parts."""
-    normal = unicodedata.normalize("NFKC", text.strip())
-    normal = "".join(c for c in normal if not _invisible(c))
+    """`text` NFKC-normalized and without its invisible code points
+    (`_visible`), then every Instagram link and every `@` run that is not the
+    author's own written `instagram.com/…` and `@…`. The author's own link
+    keeps only `instagram.com/<their handle>`, never what follows it. An `@`
+    run keeps only when it starts with the author's own username (invisible
+    code points removed from it, trailing dots aside), then whatever follows
+    it, punctuation or CJK text, is redacted the same way. A handle names
+    somebody who never chose to be in this account, and it is an identifier
+    on a network; whose handle it is comes from `identity.toml` (`owners`),
+    so one nobody recorded is redacted too."""
+    normal = _visible(unicodedata.normalize("NFKC", text.strip()))
 
     def own(handle: str) -> bool:
         return bool(handle) and person in owners(handle)
+
+    def handle(m: re.Match[str]) -> str:
+        run = "".join(c for c in m.group(1) if not _invisible(c))
+        name = _NAME.match(run)
+        if name is not None:
+            own_name = name.group(0).rstrip(".")
+            if own(own_name):
+                return "@" + own_name + _HANDLE.sub(handle, run[len(own_name):])
+        return "@…"
 
     normal = _PROFILE.sub(
         lambda m: f"instagram.com/{m.group(1)}" if own(m.group(1)) else "instagram.com/…",
         normal,
     )
-    return _HANDLE.sub(lambda m: m.group(0) if own(m.group(1)) else "@…", normal)
+    return _HANDLE.sub(handle, normal)
 
 
 def _caption(text: str | None, *, person: str, owners: Owners) -> str:
@@ -516,33 +618,56 @@ def _caption(text: str | None, *, person: str, owners: Owners) -> str:
     return _clip(_redact(text or "", person=person, owners=owners), SOCIAL_CAPTION_CHARS)
 
 
-def _social_items(
-    items: Sequence[PersonSocialItem], now: datetime, *, person: str,
-    screen: Callable[[str], str | None], render_chars: int, metrics: Metrics | None,
-    owners: Owners,
-) -> ContextBlock | None:
+@dataclass(frozen=True)
+class _Shown:
+    """One item as the block renders it: redacted, screened and clipped once."""
+
+    item: PersonSocialItem
+    shows: str | None
+    caption: str
+
+
+def _social_block(rows: Sequence[_Shown], now: datetime) -> ContextBlock:
     """`<social_items>`: one `item` per social item, newest posted first,
     each with the citation it is cited by, what it is, when it was posted (a
     moment and an age) and what its media shows; its caption, other people's
-    handles redacted, is the content. At most `SOCIAL_BLOCK_BUDGET_CHARS` in
-    all. Never its location: a person session holds no presence, and its
-    account renders in rooms whose `location` flags differ (R-31); never its
-    `alt_text`, nor its tagged or mentioned handles, which the read does not
-    return."""
-    if not items:
-        return None
-    ordered = sorted(items, key=lambda it: it.taken_at, reverse=True)
+    handles redacted, is the content. Never its location: a person session
+    holds no presence, and its account renders in rooms whose `location`
+    flags differ (R-31); never its `alt_text`, nor its tagged or mentioned
+    handles, which the read does not return."""
+    ordered = sorted(rows, key=lambda r: r.item.taken_at, reverse=True)
     return ContextBlock(name="social_items", **_at("social_items"), body=render_elements(
         ordered, tag="item",
-        attrs=lambda it, _i: (
-            ("cite", social_citation(it.network, it.item_id)),
-            ("kind", social_label(it.network, it.kind, collab=it.collab)),
-            ("posted", stamp(int(it.taken_at.timestamp() * 1000), now)),
-            ("shows", _shows(it, screen=screen, render_chars=render_chars,
-                             metrics=metrics, person=person, owners=owners)),
+        attrs=lambda r, _i: (
+            ("cite", social_citation(r.item.network, r.item.item_id)),
+            ("kind", social_label(r.item.network, r.item.kind, collab=r.item.collab)),
+            ("posted", stamp(int(r.item.taken_at.timestamp() * 1000), now)),
+            ("shows", r.shows),
         ),
-        body=lambda it: _caption(it.caption, person=person, owners=owners),
+        body=lambda r: r.caption,
     ))
+
+
+def _within_budget(
+    rows: list[_Shown], now: datetime,
+) -> tuple[list[_Shown], ContextBlock | None]:
+    """The rows whose rendered block is at most `SOCIAL_BLOCK_BUDGET_CHARS`,
+    measured on the final text, escaping included (a caption of `&` grows
+    fivefold), and the block. Whole items go from the most recently recorded
+    end, every item of a microsecond together, so the ones kept are a prefix
+    of the read and the cursor moves past nothing left out. Only when the
+    oldest microsecond's items alone overflow do single items go, and the
+    cursor passes those unread: a session that could read nothing would hold
+    the cursor there for good."""
+    kept = sorted(rows, key=lambda r: r.item.recorded_us)
+    while kept:
+        block = _social_block(kept, now)
+        if len(block.render()) <= SOCIAL_BLOCK_BUDGET_CHARS:
+            return kept, block
+        last = kept[-1].item.recorded_us
+        older = [r for r in kept if r.item.recorded_us < last]
+        kept = older if older else kept[:-1]
+    return [], None
 
 
 class CharacterPersonAdaptor(EntitySessions):
@@ -607,10 +732,25 @@ class CharacterPersonAdaptor(EntitySessions):
             return ""
         now = self._clock()
         labels = {r.key: r.label for r in pk.rooms}
+        person = pk.person.person_id
+        shown, social_block = _within_budget([
+            _Shown(
+                item=it,
+                shows=_shows(it, screen=self._screen, render_chars=self._render_chars,
+                             metrics=self._metrics, person=person,
+                             owners=self._handle_owners),
+                caption=_caption(it.caption, person=person, owners=self._handle_owners),
+            )
+            for it in social
+        ], now)
+        # Only what the block carries is handed, cited, and passed by the cursor.
+        self.evidence.handed(key, [r.item for r in shown])
+        if not (messages or shown):
+            return ""
         self._begin(
             key, citable=Citable(
                 messages=frozenset(m.row.id for m in messages),
-                social=frozenset(f"{s.network}:{s.item_id}" for s in social),
+                social=frozenset(f"{r.item.network}:{r.item.item_id}" for r in shown),
             ),
             entities={pk.person.name: None}, batch_start=self.evidence.held(key),
         )
@@ -636,9 +776,7 @@ class CharacterPersonAdaptor(EntitySessions):
                 attrs=lambda m: (("room", labels.get(m.room) or "unnamed room"),),
                 body=lambda m: m.row.body or "",
             )),
-            _social_items(social, now, person=pk.person.person_id, screen=self._screen,
-                          render_chars=self._render_chars, metrics=self._metrics,
-                          owners=self._handle_owners),
+            social_block,
         ]
         return assemble([p for p in parts if p is not None], sep="\n\n")
 
@@ -646,16 +784,20 @@ class CharacterPersonAdaptor(EntitySessions):
         self, *, key: str, items: Sequence[Mapping[str, object]]
     ) -> Sequence[object]:
         """`EntitySessions.accept`, and the social items' cursor told whether
-        they were used: a session that did not settle its account (it
-        raised, or was abandoned after `MAX_CONSECUTIVE_REJECTIONS`) keeps
-        them for the next one. A session that kept its account unchanged
-        used them: it read them and judged they add nothing, and handing
-        them again would hold every newer item behind them."""
+        they were used. A session that raised is retried with the same items
+        (`forget`). One abandoned after `MAX_CONSECUTIVE_REJECTIONS` keeps them
+        for the next session once, and consumes them if that one is
+        abandoned too (`PersonEvidence.gave_up`). A session that kept its
+        account unchanged used them: it read them and judged they add
+        nothing, and handing them again would hold every newer item behind
+        them."""
         try:
             out = await super().accept(key=key, items=items)
-        finally:
-            if not self.settled(key):
-                self.evidence.forget(key)
+        except AccountNotRecordableError:
+            self.evidence.forget(key)
+            raise
+        if not self.settled(key):
+            self.evidence.gave_up(key)
         return out
 
     async def commit(
