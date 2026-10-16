@@ -354,3 +354,29 @@ cases:
         intent: 星期日 My Garden 行程今日 11:00 入場；28座小巴 09:30 天水圍天祐苑迴旋處開。集合時間同地點仲未講實，問吓邊度幾點等。
         decided_hours_ago: 1.48
       origin: the 2026-10-11 triple-ask incident
+
+  - name: a14_the_booking_was_confirmed_after_the_ask_was_written
+    entry: proactive_act
+    expect: silence
+    # REAL: a Saturday dinner. Two days before it, Cognition wrote an `ask`
+    # because the note recorded the headcount as open (the booking said 7, an
+    # earlier holding booking said 8). The morning of the day before, the
+    # booking's own confirmation, 7 people, was posted in the room, and nobody
+    # raised the number again. The case fires minutes after that confirmation,
+    # while the note is still open, so the screen admits the row and only the
+    # turn can see that the thing is settled. Live, 34 hours after the decision
+    # and 8 after the confirmation, she read the confirmation, sided with her
+    # own intention, and asked the headcount. The intention reached her as a
+    # `<tag_message>` («what this person said to you, just now») stamped with an
+    # absolute decision time, beside a transcript of relative ages.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1792116800000
+    metadata:
+      expect_original: silent
+      row:
+        note: 星期六串燒飯局
+        intent: 星期六牛大人 7pm：訂位寫 7 人，但之前有人話 book 住 8 個 — 問實人數，好等訂位嗰個改訂位。
+        decided_hours_ago: 34
+      origin: a settled headcount asked again
