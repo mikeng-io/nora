@@ -34,11 +34,13 @@ node.
 
 | fact | source | status |
 |---|---|---|
-| a member's current story | bridge `GET /accounts/{igid}/story`, over the library's REST `/api/v1/feed/reels_media/` | **broken**: Instagram answers `500` (4/4 on 2026-10-16, library v0.2609.0, the latest; Nora follows all four). Replaced by the web app's GraphQL story query (§1a) |
+| a member's current story | bridge `GET /accounts/{igid}/story` | the library's REST `/api/v1/feed/reels_media/` was **broken** (Instagram answered `500`, 4/4 on 2026-10-16, library v0.2609.0, the latest). **Moved** onto the web app's GraphQL story query (§1a) in S1: live, a story in 0.3 s, a member with none `found: false` |
 | when a member's newest story was posted, without opening it | bridge `GET /accounts/{igid}`, top-level `latest_reel_media` (`reads.go:140`; `has_story` is `!= 0`) | built |
 | how many posts and reels a member has | the same route's `social` half: `social.media_count`, `social.total_clips_count` (`reads.go:207-208`) | built; a **second upstream call** that fails on its own (`social_available: false`, `social_error: "<status>: …"`, `reads.go:240-254`) |
 | one post or reel by shortcode | bridge `GET /posts/{shortcode}` | built |
-| **a list of a member's posts or reels** | no bridge route yet; the web app's GraphQL timeline query (§1a) | **mechanism found** (S0, 2026-10-16); the bridge route is S1 |
+| **a list of a member's posts or reels** | bridge `GET /accounts/{igid}/items?after=&username=`, over the web app's GraphQL timeline query (§1a) | **built** (S1, 2026-10-16): live, 12 items a page, newest first, with a cursor; paging past the first page not yet read live |
+| what a timeline page carries besides its items | S1 live read-back | **every page** came back with a `field_exception` error beside its edges, in the logged-in browser too; the bridge reads the page and refuses only a page with no edges |
+| whose items a member's grid holds | S1 live read-back | **collaboration posts**: 11 of one member's first 12 were owned by another account with the member as co-author. The bridge lists them with `collab: true`, and `social_item.collab` records it; an item whose owner fields disagree, or that names the member nowhere, is refused |
 | whether `latest_reel_media` equals the newest frame's `taken_at` | S0 | **equal** on the one story read (n=1): the probe value and the newest of 3 frames were the same second. §3's marker does not rely on it |
 | a frame's expiry | S0 | **per frame** on the one reel read (n=1, 3 frames): each item's `expiring_at` was its `taken_at` + 86400, and the reel's own `expiring_at` was null. The stream stores each frame's own expiry |
 | whether reading a story marks it seen to its author | S0 | **a separate call**: the web viewer marks a story seen with `PolarisStoriesV3SeenMutation`, sent after the read. With it blocked, the reel's `seen` stayed `0`. The stream sends the read only, never the mutation |
@@ -221,7 +223,8 @@ after insert. Everything that changes about an item is a new row elsewhere.
   `kind` (`story_frame`, `post`, `reel`, later `thread_post`), `taken_at`,
   `expires_at` (story frames), `caption`, `alt_text`, `location`, `tagged`
   and `mentioned` handles (recorded, never read, [20](20-observe.md) §2),
-  `media_ref`, `seen_at`, `origin` (`poll` or `backfill`), `recorded_at`.
+  `media_ref`, `seen_at`, `origin` (`poll` or `backfill`), `collab` (another
+  account's post the person co-authored, §1), `recorded_at`.
   No unit column: a person in two units is one row, and which units may read
   it is derived from membership at read time.
 - **`social_poll`**: one row per probe and per read: `network`, `person`,
@@ -282,7 +285,7 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 | step | ships | measured by |
 |---|---|---|
 | S0 | **DONE 2026-10-16**: the REST story read is broken upstream; the web app's story and timeline queries captured (§1a); `latest_reel_media` equal to the newest `taken_at` (n=1); the seen mark is a separate mutation | §1 and §1a; session `authenticated` after |
-| S1 | the bridge's story read moved onto the GraphQL story query (this also mends the live `instagram_read` story, broken today) and a new `GET /accounts/{igid}/items?after=` over the timeline query, both with `doc_id`s from config and the `stale_query` code, and a test that no read sends the seen mutation; `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `LIST_ITEMS`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads |
+| S1 | **DONE 2026-10-16**: the bridge's story read moved onto the GraphQL story query (this also mends the live `instagram_read` story, broken today) and a new `GET /accounts/{igid}/items?after=` over the timeline query, both with `doc_id`s from config and the `stale_query` code, and a test that no read sends the seen mutation; `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `LIST_ITEMS`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads; the bridge read back live (§1) |
 | S2 | the poller: probe-then-read, ceiling cadence, budget, halt and back-off with `source_health` transitions; media fetched into custody and expired; the story rule's test rewritten ([20](20-observe.md) §2) and the bridge comments that still say «only when asked» updated (`internal/transport/http/server.go`, `internal/app/app.go`, `internal/gateway/instameow/social.go`) | a week of `social_poll` rows; the login unharmed |
 | S3 | perception of new frames under the per-unit cap; the `social` stimulus; Character's wake count; `social_item` media handed to the memory index's embed worker, and a story frame's byte deletion gated on perception and embedding | `nora_perception_total{source="social"}`; stimuli per read; story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |

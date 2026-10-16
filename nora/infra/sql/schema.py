@@ -4619,3 +4619,94 @@ MEMORY_INDEX_STATE = sa.Table(
         "status IN ('never', 'building', 'complete')", name="ck_memory_index_state_status",
     ),
 )
+
+# The social stream (migration `0107_social_stream`): what a member's networks
+# showed, one row per story frame, post or reel; one row per probe and per read;
+# and a frame gone or hidden. ALL THREE APPEND-ONLY: nothing is updated after
+# insert, and what changes about an item is a `social_item_state` row. No
+# foreign keys, for the reason `documents` gives. `social_item` is unique on
+# `(network, item_id)` and has no unit column: a person in two units is one row.
+SOCIAL_ITEM = sa.Table(
+    "social_item",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("network", sa.Text, nullable=False),
+    sa.Column("item_id", sa.Text, nullable=False),
+    sa.Column("person", sa.Text, nullable=False),
+    sa.Column("account", sa.Text, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("taken_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("expires_at", sa.DateTime(timezone=True)),
+    sa.Column("caption", sa.Text),
+    sa.Column("alt_text", sa.Text),
+    sa.Column("location", sa.Text),
+    sa.Column("tagged", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
+    sa.Column("mentioned", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
+    sa.Column("media_ref", sa.Text),
+    sa.Column("seen_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("origin", sa.Text, nullable=False),
+    sa.Column("collab", sa.Boolean, nullable=False, server_default=sa.text("false")),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "kind IN ('story_frame', 'post', 'reel', 'thread_post')", name="ck_social_item_kind",
+    ),
+    sa.CheckConstraint("origin IN ('poll', 'backfill')", name="ck_social_item_origin"),
+    sa.CheckConstraint(
+        "kind <> 'story_frame' OR expires_at IS NOT NULL",
+        name="ck_social_item_story_frame_expires",
+    ),
+    sa.CheckConstraint("length(btrim(item_id)) > 0", name="ck_social_item_has_an_id"),
+)
+# The dedupe: a frame, post or reel already recorded is not written again.
+UQ_SOCIAL_ITEM_KEY = sa.Index(
+    "uq_social_item_key", SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.item_id, unique=True,
+)
+IDX_SOCIAL_ITEM_PERSON = sa.Index(
+    "idx_social_item_person", SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.person,
+    SOCIAL_ITEM.c.taken_at,
+)
+
+SOCIAL_POLL = sa.Table(
+    "social_poll",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("network", sa.Text, nullable=False),
+    sa.Column("person", sa.Text, nullable=False),
+    sa.Column("stage", sa.Text, nullable=False),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("latest_reel_media", sa.BigInteger),
+    sa.Column("media_count", sa.Integer),
+    sa.Column("total_clips_count", sa.Integer),
+    sa.Column("advanced_marker", sa.Boolean, nullable=False, server_default=sa.text("false")),
+    sa.Column("latency_ms", sa.Integer),
+    _recorded_at(),
+    sa.CheckConstraint("stage IN ('probe', 'story', 'items', 'item')", name="ck_social_poll_stage"),
+    sa.CheckConstraint(
+        "outcome IN ('unchanged', 'story_due', 'items_due', 'partial', 'count_fell', "
+        "'read_ok', 'halted', 'backed_off', 'error')",
+        name="ck_social_poll_outcome",
+    ),
+)
+IDX_SOCIAL_POLL_PERSON = sa.Index(
+    "idx_social_poll_person", SOCIAL_POLL.c.network, SOCIAL_POLL.c.person,
+    SOCIAL_POLL.c.recorded_at,
+)
+
+SOCIAL_ITEM_STATE = sa.Table(
+    "social_item_state",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("network", sa.Text, nullable=False),
+    sa.Column("item_id", sa.Text, nullable=False),
+    sa.Column("state", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text),
+    _recorded_at(),
+    sa.CheckConstraint("state IN ('gone', 'hidden')", name="ck_social_item_state_state"),
+)
+IDX_SOCIAL_ITEM_STATE_ITEM = sa.Index(
+    "idx_social_item_state_item", SOCIAL_ITEM_STATE.c.network, SOCIAL_ITEM_STATE.c.item_id,
+    SOCIAL_ITEM_STATE.c.recorded_at,
+)

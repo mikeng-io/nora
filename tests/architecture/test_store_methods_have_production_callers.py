@@ -235,6 +235,42 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "(12-schemas.md §3's `Changes`, 'every revision: field, from, to, "
         "mode, why, when'), not built at step 2b.",
     ),
+    ("social_stream.py", "insert_item"): _Pin(
+        "deferred_consumer",
+        "The social stream's Record (design/cognition-loop/22-social-stream.md "
+        "§8): the poller that calls it is the next build step, so the store "
+        "ships ahead of its one consumer.",
+    ),
+    ("social_stream.py", "record_poll"): _Pin(
+        "deferred_consumer",
+        "The social stream's Record (design/cognition-loop/22-social-stream.md "
+        "§8): the poller that calls it is the next build step, so the store "
+        "ships ahead of its one consumer.",
+    ),
+    ("social_stream.py", "record_state"): _Pin(
+        "deferred_consumer",
+        "The social stream's Record (design/cognition-loop/22-social-stream.md "
+        "§8): the poller that calls it is the next build step, so the store "
+        "ships ahead of its one consumer.",
+    ),
+    ("social_stream.py", "read_marker"): _Pin(
+        "deferred_consumer",
+        "The social stream's Record (design/cognition-loop/22-social-stream.md "
+        "§8): the poller that calls it is the next build step, so the store "
+        "ships ahead of its one consumer.",
+    ),
+    ("social_stream.py", "last_counts"): _Pin(
+        "deferred_consumer",
+        "The social stream's Record (design/cognition-loop/22-social-stream.md "
+        "§8): the poller that calls it is the next build step, so the store "
+        "ships ahead of its one consumer.",
+    ),
+    ("social_stream.py", "item_state"): _Pin(
+        "deferred_consumer",
+        "The social stream's Record (design/cognition-loop/22-social-stream.md "
+        "§8): the poller that calls it is the next build step, so the store "
+        "ships ahead of its one consumer.",
+    ),
     ("standing.py", "write_if_unchanged"): _Pin(
         "operator_script",
         "The compare-and-set write for a manual Standing edit (design/"
@@ -314,7 +350,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "participation_state.py", "presence.py",
         "reasoning_strip.py", "record_query.py",
         "reminders.py", "revisions.py", "rollup_read.py", "rollups.py",
-        "snapshot_at.py",
+        "snapshot_at.py", "social_stream.py",
         "stimuli.py",
         "source_health.py", "tag_debounce.py",
         "standing.py", "summons.py", "tag_traces.py", "tool_call_log.py",

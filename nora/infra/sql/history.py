@@ -152,6 +152,11 @@ APPEND_ONLY: dict[str, str] = {
     # withdrawal) a revision.
     "memo": "recorded_at",
     "memo_revision": "recorded_at",
+    # 0107_social_stream: an item a member's network showed, every probe and read
+    # of it, and a frame gone or hidden; a change to an item is a state row.
+    "social_item": "recorded_at",
+    "social_poll": "recorded_at",
+    "social_item_state": "recorded_at",
     "decision_log": "recorded_at",
     "note_merge_decision": "recorded_at",
     "tool_call_log": "created_at",
