@@ -297,8 +297,9 @@ after insert. Everything that changes about an item is a new row elsewhere.
 - **`social_poll`**: one row per probe and per read: `network`, `person`,
   `stage` (`probe`, `story`, `items`, `backfill`), `outcome` (`unchanged`,
   `story_due`, `items_due`, `partial`, `count_fell`, `read_ok`, `halted`,
-  `backed_off`, `error`, and `abandoned` for a back-fill page whose cursor
-  was judged bad, §7), a back-fill page's next `cursor` (§7), the probed
+  `backed_off`, `error`, and for a back-fill page `abandoned` when its cursor
+  was judged bad and `unavailable` when the bridge answered nothing, §7), a
+  back-fill page's next `cursor` (§7), the probed
   `latest_reel_media`, `media_count` and `total_clips_count` (null when
   absent), whether this row advanced the marker and whether it advanced the
   counts (a probe that made no list read due, or a completed list read; a
@@ -432,7 +433,11 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
   `abandoned` beside the call's own `error` row), the same cursor refused
   upstream twice in a row (each refusal also backs the login off, as any
   does), or its pages failing three times in a row for any reason but a halt
-  or a stale query. The counts are read off the failure rows themselves, so a
+  or a stale query. An unavailable page on a tick when no other call was
+  answered is the bridge healing, not the cursor: it is recorded
+  `unavailable`, not counted, and the back-fill stops for that tick, so an
+  outage of hours ends nobody's back-fill. A page the adapter cannot read
+  while the tick's probes are answered still counts. The counts are read off the failure rows themselves, so a
   lost `abandoned` row still stops the walk after three. It is not restarted from the top: the cursor
   is opaque, so "the oldest recorded item's position" cannot be rebuilt from
   an item, and what upstream answers for a stale cursor is unmeasured; a

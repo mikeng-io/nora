@@ -1126,16 +1126,47 @@ async def test_a_first_page_read_again_leaves_a_new_post_to_the_poll(world) -> N
     assert [[it.item_id for it in r.items] for r in reads] == [["new"]], "its stimulus is due"
 
 
-async def test_a_cursor_that_keeps_failing_ends_the_backfill(world) -> None:
+async def test_an_unusable_page_ends_the_backfill_after_three_while_probes_answer(
+    world,
+) -> None:
+    """The adapter cannot read the page at ada's cursor, while every tick's
+    probes are answered: the bridge is up, so the page is to blame."""
     quiet(world, BEA)
     grid(world, ADA, 40)
     world.source.after[f"{ADA}-c1"] = Failed(FailureKind.UNAVAILABLE, "")
-    poller = world.poller()
+    poller = world.poller(floor_minutes=10, ceiling_hours=0.5)
 
     await poller.tick()
-    await ticks(world, poller, 6)
+    await ticks(world, poller, 6, every=30)
+    assert world.probes().count(ADA) == 7, "both probed and answered on every tick"
     assert world.source.cursors.count(f"{ADA}-c1") == 3
     assert ended(world, "bad_cursor") == 1
+
+
+async def test_a_bridge_outage_of_several_ticks_abandons_no_backfill(world) -> None:
+    """Every call answers unavailable for hours: the pages' rows are recorded
+    and not counted, and the walk goes on once the bridge is back."""
+    quiet(world, BEA)
+    grid(world, ADA, 40)
+    poller = world.poller()
+    await poller.tick()
+
+    page = world.source.after[f"{ADA}-c1"]
+    down = Failed(FailureKind.UNAVAILABLE, "503")
+    world.source.after[f"{ADA}-c1"] = down
+    world.source.probes[ADA] = world.source.probes[BEA] = down
+    world.clock.at(minutes=5)
+    await ticks(world, poller, 30)
+    sent = world.source.cursors.count(f"{ADA}-c1")
+    assert sent > 3, "the outage outlasted three tries"
+    assert ended(world, "bad_cursor") == 0
+    assert ("backfill", "unavailable") in [r[:2] for r in await world.polls("ada")]
+
+    world.source.after[f"{ADA}-c1"] = page
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(posts=40)
+    await ticks(world, poller, 2)
+    assert world.source.cursors[-2:] == [f"{ADA}-c1", f"{ADA}-c2"], "the walk went on"
 
 
 async def test_a_lost_abandoned_row_still_ends_the_backfill(world) -> None:

@@ -4701,7 +4701,7 @@ SOCIAL_POLL = sa.Table(
     ),
     sa.CheckConstraint(
         "outcome IN ('unchanged', 'story_due', 'items_due', 'partial', 'count_fell', "
-        "'read_ok', 'halted', 'backed_off', 'error', 'abandoned')",
+        "'read_ok', 'halted', 'backed_off', 'error', 'abandoned', 'unavailable')",
         name="ck_social_poll_outcome",
     ),
 )

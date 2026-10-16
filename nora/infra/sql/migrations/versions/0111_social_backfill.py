@@ -6,7 +6,9 @@ starts (null: the walk ended on that page). A member's back-fill stands at the
 cursor of their latest `backfill` row that read a page, so the progress is
 read off rows that are never changed, and a restart re-reads no page. A page
 whose cursor the poller judged bad is recorded `abandoned`, which ends that
-member's back-fill. The table stays APPEND-ONLY
+member's back-fill; one that failed unavailable while the bridge answered
+nothing else is recorded `unavailable`, which does not count against its
+cursor. The table stays APPEND-ONLY
 (`nora.infra.sql.history.APPEND_ONLY`).
 
 Follows `0110_memory_social`. `uv run alembic heads` must print exactly ONE
@@ -44,13 +46,16 @@ def _checks(stages: str, outcomes: str) -> None:
 
 def upgrade() -> None:
     op.add_column("social_poll", sa.Column("cursor", sa.Text))
-    _checks(f"{_STAGES}, 'backfill'", f"{_OUTCOMES}, 'abandoned'")
+    _checks(f"{_STAGES}, 'backfill'", f"{_OUTCOMES}, 'abandoned', 'unavailable'")
 
 
 def downgrade() -> None:
     # The older code knows no back-fill stage: a back-fill page is a list
     # read to it, and an abandoned one a failed read.
-    op.execute("UPDATE social_poll SET outcome = 'error' WHERE outcome = 'abandoned'")
+    op.execute(
+        "UPDATE social_poll SET outcome = 'error' "
+        "WHERE outcome IN ('abandoned', 'unavailable')"
+    )
     op.execute("UPDATE social_poll SET stage = 'items' WHERE stage = 'backfill'")
     _checks(_STAGES, _OUTCOMES)
     op.drop_column("social_poll", "cursor")

@@ -380,7 +380,9 @@ class SqlSocialStreamStore:
         `rejected` those refused upstream; once they make the cursor bad
         (`cursor_is_bad`) it is done too, read off the failure rows
         themselves, so it stops even when no `abandoned` row was written. A
-        halt (`halted`) is the login's or the query's, not the cursor's."""
+        halt (`halted`) is the login's or the query's, and an `unavailable`
+        page the bridge's while it answered nothing: neither is the
+        cursor's."""
         p, i = SOCIAL_POLL, SOCIAL_ITEM
         # ponytail: every list read and back-fill row of the network, folded
         # here; a list read is rare and a back-fill a handful of pages a

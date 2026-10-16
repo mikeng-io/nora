@@ -189,6 +189,9 @@ class SocialPoller:
         self._answered: dict[str, datetime] = {}
         self._seeded = False
         self._calls_this_tick = 0
+        # Whether any call this tick was answered (anything but unavailable):
+        # the bridge is up, so an unavailable page is the page's own.
+        self._answered_tick = False
         # Persons whose list was read this tick: one list page a member a tick.
         self._listed: set[str] = set()
 
@@ -209,6 +212,7 @@ class SocialPoller:
         """Probe the members due, oldest first, until the budget, a halt or a
         back-off stops it."""
         self._calls_this_tick = 0
+        self._answered_tick = False
         self._listed = set()
         now = self._clock()
         if not self._seeded:
@@ -360,6 +364,9 @@ class SocialPoller:
         started = time.monotonic()
         result = await call()
         latency = int((time.monotonic() - started) * 1000)
+        if not (isinstance(result, Failed) and result.kind is FailureKind.UNAVAILABLE
+                and result.detail != _REFUSED_REQUEST):
+            self._answered_tick = True
         if isinstance(result, Failed) and result.kind is FailureKind.UNSUPPORTED:
             return result, latency
         self._spent.append((self._clock(), cost))
@@ -564,6 +571,12 @@ class SocialPoller:
         if isinstance(page, Failed):
             if at.cursor is None:
                 return await self._failed(member, "backfill", page, ms)
+            if page.kind is FailureKind.UNAVAILABLE and page.detail != _REFUSED_REQUEST \
+                    and not self._answered_tick:
+                # Nothing on this tick was answered: the bridge is healing,
+                # and the page is not to blame. Recorded, not counted.
+                await self._record(member, "backfill", "unavailable", ms)
+                return "bridge_unavailable"
             stop = await self._failed(member, "backfill", page, ms)
             if page.detail == _REFUSED_REQUEST:
                 await self._abandon(member)

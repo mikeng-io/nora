@@ -163,11 +163,13 @@ POLL_STAGES: tuple[str, ...] = get_args(PollStage)
 #: A `social_poll` row's outcome. A probe's is `Due.outcome`; a read is
 #: `read_ok`; a failure is `halted` (the login, or one read kind), `backed_off`
 #: or `error`; `abandoned` is a back-fill page whose cursor was judged bad,
-#: which ends that member's back-fill. The table's CHECK constraint holds the
-#: same set.
+#: which ends that member's back-fill; `unavailable` is a back-fill page that
+#: failed unavailable on a tick no other call was answered on (the bridge
+#: healing), which does not count against its cursor. The table's CHECK
+#: constraint holds the same set.
 PollOutcome = Literal[
     "unchanged", "story_due", "items_due", "partial", "count_fell",
-    "read_ok", "halted", "backed_off", "error", "abandoned",
+    "read_ok", "halted", "backed_off", "error", "abandoned", "unavailable",
 ]
 POLL_OUTCOMES: tuple[str, ...] = get_args(PollOutcome)
 
@@ -182,9 +184,10 @@ BACKFILL_ENDS: tuple[str, ...] = get_args(BackfillEnd)
 #: the next try at the same cursor would cost another.
 BAD_CURSOR_REJECTIONS = 2
 #: ... or failed this many times in a row, whatever the failure (a refusal,
-#: an answer the adapter cannot read, not found, the bridge down), so no
-#: cursor is sent on every tick for good. A halt or a stale query is not the
-#: cursor's and does not count.
+#: an answer the adapter cannot read, not found), so no cursor is sent on
+#: every tick for good. A halt, a stale query, or an unavailable page while
+#: nothing else is answered (the bridge down) is not the cursor's and does
+#: not count.
 BAD_CURSOR_FAILURES = 3
 
 
@@ -201,9 +204,12 @@ BackfillItemOutcome = Literal["recorded", "known", "past_limit"]
 BACKFILL_ITEM_OUTCOMES: tuple[str, ...] = get_args(BackfillItemOutcome)
 
 #: Why the poller did not make a call it had due on a tick: the login is
-#: halted or backed off, the hourly budget is spent, or the roster could not
-#: be read.
-SkipReason = Literal["halted", "backed_off", "budget", "roster_unavailable"]
+#: halted or backed off, the hourly budget is spent, the roster could not be
+#: read, or the bridge answered nothing on the tick (`bridge_unavailable`,
+#: which stops the back-fill for that tick).
+SkipReason = Literal[
+    "halted", "backed_off", "budget", "roster_unavailable", "bridge_unavailable",
+]
 SKIP_REASONS: tuple[str, ...] = get_args(SkipReason)
 
 #: What became of one media item's bytes: `stored` in custody, custody
