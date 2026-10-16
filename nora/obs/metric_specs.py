@@ -35,6 +35,7 @@ from nora.domain.reasoning_strip import (
     WRITE_OUTCOMES,
 )
 from nora.domain.social_stream import (
+    BYTE_DELETION_REASONS,
     CUSTODY_OUTCOMES,
     PERCEPTION_OUTCOMES,
     PERCEPTION_SOURCES,
@@ -2043,6 +2044,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "of their bytes (" + " / ".join(CUSTODY_OUTCOMES) + "). Only stored "
         "names bytes in custody.",
         ("network", "outcome"),
+    ),
+    # A story frame's bytes deleted at their bound (22 §5,
+    # `nora.app.social_expiry`), one per content address tombstoned.
+    _CounterSpec(
+        "nora_social_story_bytes_deleted_total",
+        "Story frame media deleted at their bound, one per content address "
+        "tombstoned, by reason (" + " / ".join(BYTE_DELETION_REASONS) + "): embedded "
+        "went story_media_keep_days after expiry once perceived and embedded, "
+        "hard_limit at story_media_keep_max_days whatever existed.",
+        ("reason",),
+    ),
+    _CounterSpec(
+        "nora_social_story_unembedded_total",
+        "Story frames whose bytes went at the hard limit with no embedding: they "
+        "stay unembedded for good. Counted, not an error.",
+        (),
     ),
     _CounterSpec(
         "nora_perception_total",

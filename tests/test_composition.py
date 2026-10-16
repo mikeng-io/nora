@@ -321,6 +321,7 @@ async def test_media_custody_is_off_when_the_key_env_is_unset(cfg):
     deps = await build_dependencies(cfg)
     assert deps.ingest._media_sources is None
     assert deps.ingest._blobs is None
+    assert deps.story_expiry is None, "no bytes in custody, none to expire"
 
 
 async def test_a_valid_key_turns_media_custody_on_with_an_encrypting_store(cfg, monkeypatch):
@@ -340,6 +341,21 @@ async def test_a_valid_key_turns_media_custody_on_with_an_encrypting_store(cfg, 
         deps.ingest._media_sources.for_platform("instagram"), InstagramMediaSource,
     )
     assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
+    # A story frame's bytes are deleted only once an operator turns it on.
+    assert deps.story_expiry is None, "[social] story_expiry_enabled is off by default"
+
+
+async def test_story_expiry_runs_on_custodys_store_once_turned_on(cfg, monkeypatch):
+    """With custody on and `[social] story_expiry_enabled`, the pass is built
+    on the store custody writes to, poller on or off (`[social.poll]` is off
+    in the template)."""
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
+    on = cfg.model_copy(update={
+        "social": cfg.social.model_copy(update={"story_expiry_enabled": True}),
+    })
+    deps = await build_dependencies(on)
+    assert deps.story_expiry is not None
+    assert deps.story_expiry._blobs is deps.ingest._blobs
 
 
 async def test_an_enabled_instagram_gets_its_own_roster_even_while_degraded(cfg):

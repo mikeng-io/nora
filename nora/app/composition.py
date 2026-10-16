@@ -96,6 +96,7 @@ from nora.app.memory_routing import (
 )
 from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
 from nora.app.otp import OtpService
+from nora.app.social_expiry import StoryMediaExpiry
 from nora.app.social_perception import SocialPerception
 from nora.app.social_poller import SocialPoller
 from nora.app.source_health import AdapterHealthRecorder
@@ -1225,6 +1226,11 @@ class Dependencies:
     # Its perception pass: `None` whenever the poller is. `nora/__main__.py`
     # starts it beside the poller.
     social_perception: SocialPerception | None = None
+    # A story frame's bytes deleted at their bound: `None` unless `[social]
+    # story_expiry_enabled` and media custody is on; built whether or not the
+    # poller runs, so bytes it kept still go once it is switched off.
+    # `nora/__main__.py` starts it.
+    story_expiry: StoryMediaExpiry | None = None
 
 
 def _image_gen_wiring(
@@ -3528,6 +3534,14 @@ async def build_dependencies(
             tick_seconds=cfg.social.poll.tick_seconds, metrics=metrics,
         )
         log.info("social poller wired (instagram)")
+    # The bound is on bytes the poller already kept, so it holds while the
+    # poller is off; it reads every person's frames, opted out or not.
+    story_expiry = StoryMediaExpiry(
+        store=SqlSocialStreamStore(engine), blobs=blobs,
+        keep_days=cfg.social.story_media_keep_days,
+        max_days=cfg.social.story_media_keep_max_days,
+        tick_seconds=cfg.social.poll.tick_seconds, metrics=metrics,
+    ) if blobs is not None and cfg.social.story_expiry_enabled else None
 
     # The participation occasion: trigger, then
     # dispatcher. Gated on BOTH the flag and a live `fire_path` — the same
@@ -4391,6 +4405,7 @@ async def build_dependencies(
         oauth_keepalive=oauth_keepalive,
         social_poller=social_poller,
         social_perception=social_perception,
+        story_expiry=story_expiry,
         memory_embed=(
             MemoryEmbedWorker(
                 engine, LlamaEmbedder(cfg.memory_index.embedder_url), blobs,

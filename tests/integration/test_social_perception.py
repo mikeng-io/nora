@@ -13,6 +13,7 @@ Database scoped to the MODULE and truncated between tests (AGENTS.md).
 from __future__ import annotations
 
 import functools
+import hashlib
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field, replace
@@ -197,7 +198,7 @@ async def world(_db: str) -> AsyncIterator[World]:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text(
                 "truncate social_item, social_poll, social_item_state, social_perception, "
-                "stimulus",
+                "stimulus, blob_tombstone",
             ))
         await engine.dispose()
 
@@ -223,6 +224,41 @@ async def test_an_item_is_perceived_once_and_told_what_it_is(world) -> None:
     posted = (world.clock.now - timedelta(days=1, hours=1)).astimezone(HK)
     assert f"posted {posted:%Y-%m-%d %H:%M}" in context
     assert world.metrics.get("nora_perception_total", source="social", outcome="ok") == 1
+
+
+async def test_a_frame_whose_bytes_expired_unread_is_failed_as_expired_with_no_call(world) -> None:
+    """Its bytes went at the story bound before a read landed (the cap held it
+    every day): the pass says so, never reads the missing bytes, never asks
+    again."""
+    await world.seed("s1", kind="story_frame")
+    (sha,) = list(world.blobs.blobs)
+    await world.blobs.delete(key=sha, idle_seconds=0)
+    await world.store.record_tombstone(
+        sha256=sha, reason="hard_limit", deleted_at=world.clock.now,
+    )
+    perception = world.perception()
+
+    await perception.tick()
+    world.clock.next_day()
+    await perception.tick()
+
+    assert world.interpreter.calls == []
+    assert await world.attempts() == [("s1", "failed", 0)]
+    assert await world.reasons() == ["expired"]
+
+
+async def test_an_item_recorded_after_its_bytes_were_deleted_once_is_read(world) -> None:
+    """A member posts again a picture whose earlier story frame's bytes were
+    deleted: the new post stored them again, so it is not expired."""
+    sha = hashlib.sha256(b"bytes of p1/0").hexdigest()
+    await world.store.record_tombstone(
+        sha256=sha, reason="hard_limit", deleted_at=world.clock.now,
+    )
+    await world.seed("p1", kind="post")
+    await world.perception().tick()
+
+    assert await world.attempts() == [("p1", "ok", 1)]
+    assert len(world.interpreter.calls) == 1
 
 
 async def test_past_the_cap_an_item_waits_unperceived_for_the_next_day(world) -> None:

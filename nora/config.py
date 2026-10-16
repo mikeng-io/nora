@@ -1615,6 +1615,15 @@ class SocialConfig(BaseModel):
     browser timeout); `content_max_chars` clamps the retrieved text, because a
     tool result is re-sent on every subsequent model call and what accumulates
     must be bounded.
+
+    **A story frame's bytes** (design/cognition-loop/22-social-stream.md §5),
+    kept in custody by the poller, are deleted `story_media_keep_days` after
+    the frame's `expires_at` once its media is both perceived and embedded,
+    and `story_media_keep_max_days` after it whatever is done
+    (`nora.app.social_expiry`). Its rows and its description stay; a post's
+    and a reel's bytes are never deleted. **Off by default**
+    (`story_expiry_enabled`): the pass deletes bytes for good, so it starts
+    only when an operator turns it on, and turning it off stops it.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1623,6 +1632,9 @@ class SocialConfig(BaseModel):
     bridge_url: str = "http://127.0.0.1:19826"
     timeout_seconds: float = Field(default=90.0, gt=0)
     content_max_chars: int = Field(default=4000, ge=1)
+    story_expiry_enabled: bool = False
+    story_media_keep_days: int = Field(default=7, ge=0)
+    story_media_keep_max_days: int = Field(default=30, ge=1)
     instagram: InstagramSocialConfig = Field(default_factory=InstagramSocialConfig)
     linkedin: LinkedInSocialConfig = Field(default_factory=LinkedInSocialConfig)
     poll: SocialPollConfig = Field(default_factory=SocialPollConfig)
@@ -1633,6 +1645,15 @@ class SocialConfig(BaseModel):
             raise ValueError(
                 "[social.linkedin] enabled needs [social] enabled: LinkedIn is "
                 "read through the same host-side OpenCLI bridge as X"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _the_story_bounds_are_ordered(self) -> SocialConfig:
+        if self.story_media_keep_days > self.story_media_keep_max_days:
+            raise ValueError(
+                "[social] story_media_keep_days must not exceed story_media_keep_max_days: "
+                "the hard limit is the latest a story frame's bytes are kept"
             )
         return self
 

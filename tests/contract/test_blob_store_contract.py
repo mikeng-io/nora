@@ -1,4 +1,4 @@
-"""One suite, three `BlobStore`s (DEC-43, DEC-136).
+"""One suite, three `BlobStore`s (DEC-43, DEC-136): `put`, `get` and `delete`.
 
 `FilesystemBlobStore` and `RustfsBlobStore` are both production, chosen by
 `[media.rustfs].enabled`; `FakeBlobStore` is what the ingest tests run
@@ -18,6 +18,7 @@ container lazily, on the first test that asks for it, exactly like `pg_url`.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 
 import pytest
@@ -104,3 +105,39 @@ async def test_a_key_that_is_not_a_sha256_is_refused_not_resolved(store):
     for bad in ("../../etc/passwd", "", "ZZ" * 32, "abc"):
         with pytest.raises(ValueError):
             await store.get(key=bad)
+
+
+async def test_delete_drops_idle_bytes_and_says_what_it_did(store):
+    """A story frame's bytes go at their bound (cognition-loop/22 §5). After
+    `deleted`, `get` is None; a second `delete` answers `absent`, so a
+    deletion retried after a restart is safe and says the bytes are gone."""
+    key = await store.put(data=PAYLOAD)
+    other = await store.put(data=b"kept")
+    assert await store.delete(key=key, idle_seconds=0) == "deleted"
+    assert await store.get(key=key) is None
+    assert await store.delete(key=key, idle_seconds=0) == "absent"
+    assert await store.get(key=other) == b"kept"
+
+
+async def test_bytes_put_within_the_idle_window_are_kept(store):
+    key = await store.put(data=PAYLOAD)
+    assert await store.delete(key=key, idle_seconds=3600) == "kept"
+    assert await store.get(key=key) == PAYLOAD
+
+
+async def test_putting_held_bytes_again_counts_as_a_put(store):
+    """The race a deletion must not win: a writer stores bytes the store
+    already holds, and has not yet written the row naming them. Its `put`
+    must make the bytes recent, or a deletion in that gap takes them."""
+    key = await store.put(data=PAYLOAD)
+    await asyncio.sleep(1.5)
+    assert await store.put(data=PAYLOAD) == key
+    assert await store.delete(key=key, idle_seconds=1.0) == "kept"
+    await asyncio.sleep(1.5)
+    assert await store.delete(key=key, idle_seconds=1.0) == "deleted", "the control"
+
+
+async def test_delete_refuses_a_key_that_is_not_a_sha256(store):
+    for bad in ("../../etc/passwd", "", "ZZ" * 32, "abc"):
+        with pytest.raises(ValueError):
+            await store.delete(key=bad, idle_seconds=0)
