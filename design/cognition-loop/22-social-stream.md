@@ -394,20 +394,31 @@ projector in its own transaction (§9;
     words, never an instruction. Caption and readings are NFKC-normalized
     and stripped of every invisible code point (Unicode's
     Default_Ignorable_Code_Point set, every Cf character, the blank braille
-    pattern). Then, failing closed: every Instagram link becomes
-    `instagram.com/…`, path and query included, the author's own (by
-    `identity.toml`'s Instagram `username`) keeping only
-    `instagram.com/<their handle>`; and every `@` with the non-whitespace
-    run after it becomes `@…` unless that run is exactly the author's own
-    username. A handle followed by punctuation or text up to the next space
-    is redacted with it, an email's domain included. A location sticker's text
+    pattern), except a variation selector after a character that is not
+    ASCII (an ideograph's variant, an emoji's presentation) and a
+    well-formed subdivision flag; tag characters anywhere else go, since
+    they spell ASCII nobody sees. Then, failing closed: every Instagram link
+    (`instagram.com`, `instagr.am` or `ig.me`, with an ASCII, ideographic,
+    full-width or half-width dot) becomes `instagram.com/…`, path and query
+    included, the author's own (by `identity.toml`'s Instagram `username`)
+    keeping only `instagram.com/<their handle>`; and every `@`, any space
+    after it and the non-whitespace run after that becomes `@…` unless the
+    run starts with the author's own username (its invisible code points
+    removed, a trailing full stop aside), whose rest, punctuation or CJK
+    text, is redacted the same way. Any other handle followed by punctuation
+    or text up to the next space is redacted with it, an email's domain
+    included. A location sticker's text
     in a reading is not told apart from the rest of it (the describer writes
     it as prose), which is the stated ceiling. Never its `location`: a person
     session holds no presence read, its account rendering in rooms whose
     `location` flags differ (R-31). Never `alt_text`, tagged or mentioned
     handles (§9's reason).
   - **The block's budget.** The whole rendered block is at most 3,400
-    characters, its opening tag included. `total_tokens` counts every model
+    characters, its opening tag included, measured on the final text after
+    escaping (an `&` renders as five characters): when it would be longer,
+    whole items are left out from the most recently recorded end, every item
+    of one microsecond together, and those are neither citable nor passed by
+    the cursor, so the next session is handed them. `total_tokens` counts every model
     call's whole input, so the block is paid once per call: at the
     dense-Cantonese 1.15 tokens a character, a session that runs to
     `[dreamer.budgets.culture]`'s `turns = 10` spends at most 39,100 of its
@@ -417,9 +428,10 @@ projector in its own transaction (§9;
     before it is cut off, a behaviour change; the block was made smaller.
   - **The wake and the hand-off.** `person_wake_batch` (DEC-290,
     [20](20-observe.md) §3) counts the person's new messages plus their
-    polled items recorded since the key last ran and not yet handed, at most
-    6 (one session's worth). A back-log already waiting at the last run
-    never wakes the key again, so a back-log cannot fire sessions back to
+    polled items recorded since the last settled read began and not yet
+    handed, at most 6 (one session's worth); an item polled while a session
+    ran is in no batch, so it counts toward the next wake. A back-log
+    already waiting at that read never wakes the key again, so a back-log cannot fire sessions back to
     back, and a heavy story poster weighs at most 6 against 100 messages.
     Back-filled items never count: a back-fill of 50 items is not 50 items
     of wake pressure. A session woken for any reason (its messages, or the
@@ -428,10 +440,13 @@ projector in its own transaction (§9;
     cursor is seeded at deploy. Items have no Record id, so they go by a
     cursor of their own (`recorded_at` of the last item handed, in
     microseconds, on a BIGINT `consolidation_watermark` row
-    `character-person:social`, migration `0114_watermark_bigint`). It moves
-    past a session's items only after a run that is not `unavailable` whose
-    session settled its account (revised it, or kept it after reading them);
-    a session abandoned after its retries leaves them for the next one. A
+    `character-person:social`, migration `0115_watermark_bigint`, with the
+    read's time in `updated_at`). It moves past the items a session was
+    shown only after a run that is not `unavailable` whose session settled
+    its account (revised it, or kept it after reading them). A session
+    abandoned after its retries leaves them for the next one once;
+    abandoned again from the same position, they are consumed, so a batch
+    no session can settle cannot hold every newer item behind it. A
     read never stops inside a microsecond, so the cursor skips nothing.
     Known limit: a collab post is attributed to the polled author only (§9).
 - **Rollup**: the daybook's `items_posted` ([25](25-rollup.md)) is filled
