@@ -414,3 +414,35 @@ func TestItemsRefusesAMalformedUsername(t *testing.T) {
 		t.Error("a malformed username reached Instagram")
 	}
 }
+
+// Measured 2026-10-16: a real timeline page answers its edges with a
+// `field_exception` error beside them (the web client's own page does too),
+// so errors beside the connection must not drop the page. Errors with no
+// connection, and a checkpoint beside data, keep their codes.
+func TestItemsErrorsBesideThePageStillReadThePage(t *testing.T) {
+	withErr := strings.Replace(fakeig.TimelineFirstPageJSON, `{"data":`,
+		`{"errors":[{"message":"A server error field_exception occured. Check server logs for details.","code":1675030,"summary":"Query Error"}],"data":`, 1)
+	body := decodeItems(t, getItems(t, newTestBridge(t, &fakeIG{TimelineBody: []byte(withErr)}), fakeig.TimelineOwnerIGID, ""))
+	if len(body.Items) != 3 || body.NextCursor == nil {
+		t.Errorf("items=%d cursor=%v; a field_exception beside the page must not drop it", len(body.Items), body.NextCursor)
+	}
+
+	noPage := `{"data":{"xdt_api__v1__feed__user_timeline_graphql_connection":null},"errors":[{"message":"A server error field_exception occured.","code":1675030,"summary":"Query Error"}]}`
+	rec := getItems(t, newTestBridge(t, &fakeIG{TimelineBody: []byte(noPage)}), fakeig.TimelineOwnerIGID, "")
+	if rec.Code != http.StatusBadGateway || decodeEnvelope(t, rec).Error.Code != "upstream_rejected" {
+		t.Errorf("errors with no page answered %d %s, want 502", rec.Code, rec.Body.String())
+	}
+
+	staleBeside := strings.Replace(fakeig.TimelineFirstPageJSON, `{"data":`,
+		`{"errors":[{"message":"PersistedQueryNotFound: unknown doc_id","code":1675002}],"data":`, 1)
+	rec = getItems(t, newTestBridge(t, &fakeIG{TimelineBody: []byte(staleBeside)}), fakeig.TimelineOwnerIGID, "")
+	if rec.Code != http.StatusNotImplemented || decodeEnvelope(t, rec).Error.Code != "stale_query" {
+		t.Errorf("a stale-document error beside data answered %d %s, want 501 stale_query", rec.Code, rec.Body.String())
+	}
+
+	checkpoint := `{"status":"fail","message":"checkpoint_required","checkpoint_url":"https://i.instagram.com/challenge/x","errors":[{"message":"x"}],"data":{"xdt_api__v1__feed__user_timeline_graphql_connection":{"edges":[],"page_info":{"has_next_page":false}}}}`
+	rec = getItems(t, newTestBridge(t, &fakeIG{TimelineBody: []byte(checkpoint)}), fakeig.TimelineOwnerIGID, "")
+	if rec.Code != http.StatusConflict {
+		t.Errorf("a checkpoint beside data answered %d, want 409", rec.Code)
+	}
+}
