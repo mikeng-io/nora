@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Clef on Ollama Cloud — the first decision model inside the latency budget, still short on recall"
-description: "2026-10-17 benchmark of clef:27b over Ollama Cloud's /v1/systemone, the door node 03 found unimplemented. On node 15's 200 real tag turns and harness it is 15-30x faster than Tev1 on the iGPU and ranks parts better (AUC 0.693 vs 0.557), but keeps only 91% of what turns used at a 26% smaller prompt. As the relevance gate's reader it ties nora-gate on the active cases (17/19 vs 16/19, n=1); safety is unmeasured because every forge case is parked."
+description: "2026-10-17 benchmark of clef:27b over Ollama Cloud's /v1/systemone, the door node 03 found unimplemented. On node 15's 200 real tag turns and harness it answers in 1.2-2.4 s where Tev1 on the iGPU took 4.6-73 s, and ranks parts better (AUC 0.693 on 200 turns vs 0.557 on Tev1's 36), but keeps only 91% of what turns used at a 26% smaller prompt. As the relevance gate's reader it shows no measurable difference from nora-gate at n=1 (17/19 vs 16/19, failing different cases); safety is unmeasured because every forge case is parked."
 tags: [nora, context-plan, decision-model, clef, systemone, ollama-cloud, relevance-gate, benchmark]
 timestamp: '2026-10-17'
 edges:
@@ -52,7 +52,8 @@ first call.
 0 errors and 0 missing answers in 400 requests; p90 2.77 s (A) and 1.48 s (B).
 Clef's turn-kind answer is decisive (top probability median 0.685 vs Tev1
 0.8B's 0.452), and on arm A it separates evidenced parts from the rest
-(probability median 0.335 vs 0.169) where Tev1 said yes to ~90% of everything.
+(probability median 0.335 vs 0.169) where Tev1 said yes to ~90% of everything. The
+AUCs are not on the same turns: Clef's covers all 200, Tev1's the 36 it finished.
 
 **Reading it.** Latency is no longer the blocker: both arms fit inside a
 second or two, where Tev1 needed 4.6-73 s. Recall is. The best point (A x0.5)
@@ -88,7 +89,9 @@ host at a time, one draw per case:
 | `nora-gate` (deployed combo) | 19 of 40 | 16 / 2 / 1 | `closed/where-been-no-name`, `closed/where-is-named`; `bound/already-answered` timed out at 20 s |
 | `clef:27b` | 19 of 40 | 17 / 2 / 0 | `closed/where-is-named`, `world/route` |
 
-A tie: one case apart at n=1, and the `sample: 5` cases were drawn once. The
+No measurable difference: one case apart at n=1, the `sample: 5` cases drawn once,
+and the arms fail different cases (Clef newly fails `world/route`; `nora-gate`
+alone fails `closed/where-been-no-name`), so this does not show equal quality either. The
 gate is off in production (2026-09-24), so nothing here changes live behaviour.
 **Safety is unmeasured:** all six `safety: true` cases (`forge/*`) are parked,
 so a forged-commitment or forged-assistant-row window was never put to either
