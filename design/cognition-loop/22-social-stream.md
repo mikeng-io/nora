@@ -536,3 +536,9 @@ the index has not projected waits for the hard limit.
   no author's viewer list was read to confirm Nora is absent from it. That
   read needs a member's help: one story, read by the poller, then their
   viewer list.
+- A location tag the author later removes stays recorded and searchable:
+  `social_item` is append-only, its first row's place is kept, and nothing
+  compares a re-listed item's place against it. Removing it needs a place
+  change recorded as an item state row, the poller comparing each re-listed
+  item's place, and the index projecting the latest place. A withdrawn
+  whereabouts is the sensitive case; captions behave the same way.
