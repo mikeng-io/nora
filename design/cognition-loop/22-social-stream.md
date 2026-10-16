@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The social stream — one source interface, an adaptive per-person poll, and a back-fill of past posts and reels"
-description: "How step 5 ingests members' social items: a network-neutral source interface (Instagram first, Threads later), a two-stage poll whose probe (the profile's newest-story time and post and reel counts) decides whether a costly read runs, a per-person cadence learned from when that person posts and raised by what is happening now, one budget and one halt per login, the custody rule (everything kept, except a story frame's media bytes, which expire once embedded), the social_item and social_poll Record tables, and the back-fill of past posts and reels, which waits on a listing mechanism (P13)."
+description: "How step 5 ingests members' social items: a network-neutral source interface (Instagram first, Threads later), a two-stage poll whose probe (the profile's newest-story time and post and reel counts) decides whether a costly read runs, a per-person cadence learned from when that person posts and raised by what is happening now, one budget and one halt per login, the custody rule (everything kept, except a story frame's media bytes, which expire once embedded), the social_item and social_poll Record tables, and the back-fill of past posts and reels over the web app's timeline query (found in S0)."
 tags: [nora, observe, social, instagram, threads, stories, posts, reels, polling, backfill, custody]
 timestamp: '2026-10-16'
 edges:
@@ -34,13 +34,14 @@ node.
 
 | fact | source | status |
 |---|---|---|
-| a member's current story, every frame with `taken_at`, the reel's `expiring_at`; `found: false` when Nora may not see it | bridge `GET /accounts/{igid}/story` | built and live (P10/P12) |
+| a member's current story | bridge `GET /accounts/{igid}/story`, over the library's REST `/api/v1/feed/reels_media/` | **broken**: Instagram answers `500` (4/4 on 2026-10-16, library v0.2609.0, the latest; Nora follows all four). Replaced by the web app's GraphQL story query (§1a) |
 | when a member's newest story was posted, without opening it | bridge `GET /accounts/{igid}`, top-level `latest_reel_media` (`reads.go:140`; `has_story` is `!= 0`) | built |
 | how many posts and reels a member has | the same route's `social` half: `social.media_count`, `social.total_clips_count` (`reads.go:207-208`) | built; a **second upstream call** that fails on its own (`social_available: false`, `social_error: "<status>: …"`, `reads.go:240-254`) |
 | one post or reel by shortcode | bridge `GET /posts/{shortcode}` | built |
-| **a list of a member's posts or reels** | **no route**: Nora's side answers `unavailable` without a call (`nora/infra/social/instagram_client.py:30`) | **no mechanism** (P13) |
-| whether `latest_reel_media` equals the newest frame's `taken_at` | none | **unmeasured**; S0 measures it |
-| whether reading a story marks it seen to its author | none | **unmeasured** (instagram-adoption/04; 05 withdrew the probe) |
+| **a list of a member's posts or reels** | no bridge route yet; the web app's GraphQL timeline query (§1a) | **mechanism found** (S0, 2026-10-16); the bridge route is S1 |
+| whether `latest_reel_media` equals the newest frame's `taken_at` | S0 | **equal** on the one story read (n=1): the probe value and the newest of 3 frames were the same second. §3's marker does not rely on it |
+| a frame's expiry | S0 | **per frame**: each item's `expiring_at` is its `taken_at` + 86400; the reel's own `expiring_at` was null |
+| whether reading a story marks it seen to its author | S0 | **a separate call**: the web viewer marks a story seen with `PolarisStoriesV3SeenMutation`, sent after the read. With it blocked, the reel's `seen` stayed `0`. The stream sends the read only, never the mutation |
 
 What the official API can do here, from Meta's documentation and not measured
 by this repo: the Instagram Graph API lists only the authenticated
@@ -48,6 +49,26 @@ professional account's own media; Business Discovery reads another *business
 or creator* account's public media, never a personal account and never
 stories; the Basic Display API was shut down on 2024-12-04. Members are
 personal accounts, so the official API does not serve this stream.
+
+### 1a. The web app's queries (S0, 2026-10-16)
+
+Captured from the logged-in web client on norty (OpenCLI's `nora` Browser
+Bridge profile, the login the bridge's session is synced from), one member,
+with the seen mutation blocked in the page:
+
+| read | friendly name | `doc_id` | variables | response root |
+|---|---|---|---|---|
+| a member's story | `PolarisStoriesV3ReelPageStandaloneQuery` | captured | `reel_ids_arr: [igid]` | `xdt_api__v1__feed__reels_media.reels_media[]`: `items[]` with `pk`, `taken_at`, `expiring_at`, `media_type`, `video_versions`, `image_versions2`; reel `latest_reel_media`, `seen` |
+| a member's posts and reels, newest first | `PolarisProfilePostsTabContentQuery_connection` (`/graphql/query`) | captured | `username`, `first: 12`, `after` (cursor), `data.count: 12` and the relay provider flags | `xdt_api__v1__feed__user_timeline_graphql_connection.edges[].node`: `code`, `pk`, `taken_at`, `caption`, `video_versions`, … and `page_info` |
+
+Both are the shape `social_profile.go` already sends for
+`PolarisProfilePageContentQuery`, through the same session. The two `doc_id`s are not
+written here (they are id-shaped, and the repo's PII hook refuses them):
+they go into the live config at S1, and §1a's capture recovers them. **A `doc_id`
+rotates** when Instagram ships a new web build: each is config, never a
+constant. What a rotated id answers is not measured; S1 maps any GraphQL
+error naming the document to the bridge's own code (`stale_query`), which
+halts that read (not the login) until the id is captured again the same way.
 
 ## 2. One source interface, per network
 
@@ -67,8 +88,8 @@ SocialSource
 
 A capability a network lacks is absent, not an error: Threads has no stories,
 so it never exposes `STORY`, and the poller never schedules a story read for
-it. Instagram today exposes `PROBE`, `STORY` and `READ_ITEM`; `LIST_ITEMS`
-joins when P13 finds a mechanism (§7). The port sits beside `SocialRouter`
+it. Instagram exposes all four from S1: `LIST_ITEMS` over the timeline query
+S0 found (§1a). The port sits beside `SocialRouter`
 and goes through the same doors: for Instagram, the bridge only
 (instagram-adoption/15).
 
@@ -246,32 +267,26 @@ are written with `origin = backfill` under the custody rule of §5. Back-fill
 perception may use at most half of the per-unit daily cap that remains when it
 runs; past that, items are recorded unperceived and perceived on a later day.
 
-**Blocked on P13.** No listing mechanism is known: the Go library's GraphQL
-registry has no feed document, OpenCLI's `instagram user` returns the HTML
-shell, and the official API does not serve personal accounts (§1). The one
-untried path is Instagram's private web API (`/api/v1/feed/user/{id}/`,
-`/api/v1/clips/user/`) through the bridge's own session, which already calls
-`/api/v1/media/{id}/info/` (instagram-adoption/04). It is probed on its own,
-on norty, before anything here depends on it: one member, one page, the
-response shape and the session's health an hour later. If it fails, the
-back-fill does not ship, and §3's probe still records each new post as a
-count on `social_poll`.
+**The mechanism is the timeline query of §1a** (S0 found it, closing P13's
+investigation): 12 items a page, newest first, paged by `after`. A member
+with 281 posts is 24 pages; the depth limit stops far earlier.
 
 ## 8. Build order
 
 | step | ships | measured by |
 |---|---|---|
-| S0 | P13 probe of the private feed route; and, for 5 members with a story up, `latest_reel_media` against the newest frame's `taken_at` | one page read back on norty, the session healthy an hour later; the equality table |
-| S1 | `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads |
+| S0 | **DONE 2026-10-16**: the REST story read is broken upstream; the web app's story and timeline queries captured (§1a); `latest_reel_media` equal to the newest `taken_at` (n=1); the seen mark is a separate mutation | §1 and §1a; session `authenticated` after |
+| S1 | the bridge's story read moved onto the GraphQL story query (this also mends the live `instagram_read` story, broken today) and a new `GET /accounts/{igid}/items?after=` over the timeline query, both with `doc_id`s from config and the `stale_query` code, and a test that no read sends the seen mutation; `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `LIST_ITEMS`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads |
 | S2 | the poller: probe-then-read, ceiling cadence, budget, halt and back-off with `source_health` transitions; media fetched into custody and expired; the story rule's test rewritten ([20](20-observe.md) §2) and the bridge comments that still say «only when asked» updated (`internal/transport/http/server.go`, `internal/app/app.go`, `internal/gateway/instameow/social.go`) | a week of `social_poll` rows; the login unharmed |
 | S3 | perception of new frames under the per-unit cap; the `social` stimulus; Character's wake count; `social_item` media handed to the memory index's embed worker, and a story frame's byte deletion gated on perception and embedding | `nora_perception_total{source="social"}`; stimuli per read; story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
-| S5 | `LIST_ITEMS` and the back-fill, only if S0 found a mechanism | items per member against `media_count` |
+| S5 | the back-fill over `LIST_ITEMS` | items per member against `media_count` |
 
-S1 to S3 need no answer from P13. S4 needs a week of S2's rows to learn from.
+S4 needs a week of S2's rows to learn from.
 
 ## 9. Open
 
-- Whether a story read is visible to its author is unmeasured (§1). The
-  operator accepted the login risk in [20](20-observe.md) §2; visibility is a
-  separate fact, and a measurement of it, if one is found, belongs here.
+- The seen mark is a separate mutation the stream never sends (§1), but
+  no author's viewer list was read to confirm Nora is absent from it. That
+  read needs a member's help: one story, read by the poller, then their
+  viewer list.

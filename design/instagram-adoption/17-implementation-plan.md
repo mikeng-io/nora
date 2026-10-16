@@ -314,8 +314,9 @@ its video with a duration.
 
 No route exists (corrected 2026-10-16: an earlier draft said the routes return
 `501`); Nora's side answers `unavailable` without a call
-(`nora/infra/social/instagram_client.py`). The one untried mechanism is in
-design/cognition-loop/22-social-stream.md §7. Finding a working mechanism is its own track. No PR is
+(`nora/infra/social/instagram_client.py`). **Mechanism found 2026-10-16**: the web app's
+`PolarisProfilePostsTabContentQuery_connection` GraphQL query
+(design/cognition-loop/22-social-stream.md §1a); the route is that node's S1. Finding a working mechanism is its own track. No PR is
 planned until one is measured.
 
 ## P14: Writes onto resource paths (`16` step 5)
