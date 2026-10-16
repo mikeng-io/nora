@@ -35,6 +35,9 @@ func (searchOnlyPorts) SocialProfile(context.Context, domain.IGID) domain.Social
 func (searchOnlyPorts) Story(context.Context, domain.IGID) (domain.Story, error) {
 	return domain.Story{}, errors.New("unused in these tests")
 }
+func (searchOnlyPorts) Items(context.Context, domain.IGID, domain.Username, string) (domain.TimelinePage, error) {
+	return domain.TimelinePage{}, errors.New("unused in these tests")
+}
 func (searchOnlyPorts) Post(context.Context, domain.Shortcode) (domain.Post, error) {
 	return domain.Post{}, errors.New("unused in these tests")
 }

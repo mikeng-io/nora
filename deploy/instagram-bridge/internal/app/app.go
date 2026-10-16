@@ -44,6 +44,11 @@ type Social interface {
 	Account(ctx context.Context, igid domain.IGID) (domain.Account, error)
 	SocialProfile(ctx context.Context, igid domain.IGID) domain.SocialRead
 	Story(ctx context.Context, igid domain.IGID) (domain.Story, error)
+	// Items reads one page of an account's posts and reels, checked against
+	// the igid. A zero username is resolved through the profile read; a
+	// given one is trusted only as far as the page's owners agree with the
+	// igid. `after` is "" for the newest page.
+	Items(ctx context.Context, igid domain.IGID, username domain.Username, after string) (domain.TimelinePage, error)
 	SearchAccounts(ctx context.Context, query string) ([]domain.AccountSummary, error)
 	// Post reads one post by its shortcode, with every carousel item.
 	Post(ctx context.Context, code domain.Shortcode) (domain.Post, error)
@@ -256,8 +261,10 @@ func (s *Service) ReadAccount(ctx context.Context, id domain.IGID) (AccountRead,
 }
 
 // ReadStory reads one account's current story — ONE igid, because a batch
-// would open stories nobody asked about (a privacy choice; whether the author
-// sees the view is unmeasured, design 04, 05 §Reading a story).
+// would open stories nobody asked about. The social stream's poller reads
+// members' stories, each only when its probe moved
+// (design/cognition-loop/22-social-stream.md §3); the read never marks a
+// story seen (§1).
 //
 // Like ReadAccount, it takes the igid already parsed at the edge.
 func (s *Service) ReadStory(ctx context.Context, id domain.IGID) (domain.Story, error) {
@@ -265,6 +272,25 @@ func (s *Service) ReadStory(ctx context.Context, id domain.IGID) (domain.Story, 
 		return domain.Story{}, err
 	}
 	return s.social.Story(ctx, id)
+}
+
+// ReadItems reads one page of an account's posts and reels (`GET
+// /accounts/{igid}/items`, design/cognition-loop/22-social-stream.md §1a,
+// §7). The timeline document takes a USERNAME: the caller's, parsed at the
+// edge, when it gave one (a back-fill paging on, one upstream call a page);
+// otherwise the gateway resolves it through the same profile read `GET
+// /accounts/{igid}` makes. Either way the page's owners are checked against
+// the igid, because a username can change hands.
+//
+// `after` is the caller's opaque cursor, "" for the newest page; the edge
+// bounds it.
+func (s *Service) ReadItems(
+	ctx context.Context, id domain.IGID, username domain.Username, after string,
+) (domain.TimelinePage, error) {
+	if _, err := s.ready(); err != nil {
+		return domain.TimelinePage{}, err
+	}
+	return s.social.Items(ctx, id, username, after)
 }
 
 // SearchAccounts searches Instagram accounts by free text. Session gate

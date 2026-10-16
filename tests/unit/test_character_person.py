@@ -167,6 +167,8 @@ def test_a_person_session_holds_no_web_tool():
     assert CHARACTER_PERSON_TOOLS.isdisjoint({"web_search", "web_fetch"})
     assert {
         "ask_memory", "search_memory", "about", "lookup_person", "group_members",
+        # DEC-316: built instead of the first two while the index is on
+        "memory_search",
     } == CHARACTER_PERSON_TOOLS
 
 

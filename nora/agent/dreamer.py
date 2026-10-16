@@ -148,6 +148,10 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "search_memory_workspace": MAX_MEMORY_RESULT_CHARS,
     "about": MAX_MEMORY_RESULT_CHARS,
     "ask_memory": MAX_MEMORY_RESULT_CHARS,
+    # The memory graph's one search verb (DEC-316), offered instead of the
+    # Honcho verbs above while `[memory_index] enabled`: same number, same
+    # reason.
+    "memory_search": MAX_MEMORY_RESULT_CHARS,
 }
 
 #: The same table under a public name, for the Cognition session's guard
@@ -189,8 +193,14 @@ TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
 #: verbs (how big may one answer be, not how many answers may a pass have) and
 #: includes `search_memory`, the room-scoped sibling no unit-keyed adaptor
 #: holds.
+#:
+#: `memory_search` (DEC-316) is the graph surface's memory verb, offered
+#: INSTEAD of `ask_memory` and `search_memory_workspace` while `[memory_index]
+#: enabled`. The ration holds every memory verb of both surfaces, so it binds
+#: whichever one a deployment registers.
 MEMORY_TOOLS: frozenset[str] = frozenset({
     "about", "ask_memory", "search_memory_workspace", "lookup_person",
+    "memory_search",
 })
 
 DreamStatus = Literal["ok", "nothing_found", "unavailable"]
@@ -639,6 +649,11 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     # `memo_read` (DEC-306) resolves its unit the way the note reads do.
     "memo_read",
     "search_memory_workspace",
+    # `memory_search` (DEC-316), the graph surface's memory verb: it reads
+    # the memory index through a room's scope, so a unit-keyed run with no
+    # home room answers `unavailable` (`media_search`'s shape above), never
+    # an empty answer. Offered only while `[memory_index] enabled`.
+    "memory_search",
     # `load_tools` (design/tool-catalogue/02) reads neither a room nor a
     # unit: it registers tools from THIS run's own shelf onto THIS run's own
     # agent, so it is as unit-safe as `now`. Being here makes it grantable;

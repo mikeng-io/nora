@@ -1,0 +1,11 @@
+{
+  "route": "GET /accounts/{igid}/story",
+  "path": "/accounts/10000001/story",
+  "status": 501,
+  "body": {
+    "error": {
+      "code": "stale_query",
+      "message": "story query: Instagram does not know the configured document; capture INSTAGRAM_STORY_DOC_ID again (Query not found, code=1675002)"
+    }
+  }
+}

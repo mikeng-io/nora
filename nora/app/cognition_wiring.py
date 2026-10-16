@@ -66,6 +66,9 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     "where_been", "routine_read", "note_read", "note_search",
     # memory
     "about", "ask_memory", "search_memory", "search_memory_workspace",
+    # the graph surface's (DEC-316): built instead of the Honcho memory verbs
+    # above while `[memory_index] enabled`, never beside them
+    "memory_search",
 })
 
 #: The side-effect audit of every tool in the catalogue
@@ -111,6 +114,9 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
     "search_memory": "Honcho session `search` read; counters only.",
     "search_memory_workspace": "Honcho workspace `search` read, narrowed to the "
                                "unit's scope; counters only.",
+    "memory_search": "SQL reads of the memory index (`SqlMemoryIndex`, which "
+                     "writes nothing) and one query embedding; counters only. "
+                     "No write.",
 }
 
 #: Tools withheld while their flag is off. `record_query` is offered only with
@@ -130,21 +136,29 @@ class ReadSurface:
     `wired`: in the catalogue, in the tool table, read-only, not withheld.
     `missing`: named by the design and absent from the tool table (or not
     read-only): the design's tool does not exist yet. `withheld`: exists, held
-    back by a flag that is off."""
+    back by a flag that is off, or not offered by the registry (the memory
+    surface it did not select, DEC-316)."""
 
     wired: frozenset[str]
     missing: frozenset[str]
     withheld: frozenset[str]
 
 
-def read_surface(*, read_only: frozenset[str], enabled_flags: Collection[str]) -> ReadSurface:
-    """The catalogue against the registry's read-only set and the flags that
-    are on (`enabled_flags` holds the FLAGGED_READS values that are true)."""
+def read_surface(
+    *, read_only: frozenset[str], enabled_flags: Collection[str],
+    registry_withheld: frozenset[str],
+) -> ReadSurface:
+    """The catalogue against the registry's read-only set, the flags that
+    are on (`enabled_flags` holds the FLAGGED_READS values that are true),
+    and what the registry itself does not offer (`ToolRegistry.
+    withheld_tools()`). REQUIRED, so the memory surface (DEC-316) has one
+    source, the registry that builds the tools: a caller cannot leave it out
+    and have the catalogue claim the Honcho verbs with the graph's built."""
     present = COGNITION_READ_CATALOGUE & read_only
     withheld = frozenset(
         name for name, flag in FLAGGED_READS.items()
         if name in present and flag not in enabled_flags
-    )
+    ) | (present & registry_withheld)
     return ReadSurface(
         wired=present - withheld,
         missing=COGNITION_READ_CATALOGUE - read_only,

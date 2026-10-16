@@ -29,10 +29,20 @@ var (
 	// `errors` array inside an HTTP 200 is one; so is a read that came back
 	// without the thing it was asked for.
 	ErrUpstreamRejected = errors.New("upstream rejected")
-	// ErrUnsupported is a request no mechanism exists for yet (a list of an
-	// account's posts, today).
+	// ErrUnsupported is a request no mechanism exists for: a shortcode no
+	// known decoding reads, or a read whose GraphQL `doc_id` is not
+	// configured (INSTAGRAM_STORY_DOC_ID, INSTAGRAM_TIMELINE_DOC_ID).
 	ErrUnsupported = errors.New("unsupported")
 )
+
+// ErrStaleQuery REFINES ErrUnsupported, the way ErrTooLarge refines
+// ErrUpstreamRejected: Instagram no longer knows a configured GraphQL
+// document (its `doc_id` rotated with a new web build). The read has no
+// working mechanism until an operator captures the id again, which is
+// ErrUnsupported's meaning; it is named because the consequence differs from
+// a plain refusal: the LOGIN is fine, so a caller halts that one read and
+// must not back the login off (design/cognition-loop/22-social-stream.md §4).
+var ErrStaleQuery = refine(ErrUnsupported, "stale query document")
 
 // ErrTooLarge REFINES ErrUpstreamRejected; it is not a seventh kind.
 //

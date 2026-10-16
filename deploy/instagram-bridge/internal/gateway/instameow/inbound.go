@@ -63,7 +63,7 @@ type eventSender struct {
 	// GetOwnFBID() returns. R-12's "was this me?" binds on THIS field.
 	FBID string `json:"fbid"`
 	// IGID is the public Instagram numeric id, which is what GetProfile and
-	// FetchReel take. Both are emitted because different subsystems need
+	// the story read take. Both are emitted because different subsystems need
 	// different ones and neither can be derived from the other.
 	IGID     string `json:"igid"`
 	Username string `json:"username"`

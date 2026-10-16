@@ -12,13 +12,15 @@
 // Every upstream call passes through one of two helpers in this file:
 //
 //   - call: every TYPED instameow method (SendMessage, GetThread, GetProfile,
-//     FetchReel, the upload, LoadIndex, ...). instameow issues the HTTP
+//     FetchMedia, the upload, LoadIndex, ...). instameow issues the HTTP
 //     itself and returns decoded structs, so the bytes are not ours to check;
 //     what the helper owns is the upstream span and the error mapping.
 //   - graphql: a RAW GraphQL document, for the fields the typed methods throw
 //     away. It checks the transport status AND decodes the GraphQL `errors`
 //     array before `data`, because a failed document answers HTTP 200. The
-//     absence of that check hid a real bug for a day on 2026-09-22.
+//     absence of that check hid a real bug for a day on 2026-09-22. Its
+//     sibling graphqlDoc (docs.go) sends a document the library does not
+//     carry, under a doc_id from config, through the same checks.
 //
 // The design names a third, `rest`, for raw REST endpoints, written as
 // `restDo` (a method, a referer, a form body) with its first caller,
@@ -86,6 +88,18 @@ func graphql(
 	defer span.End()
 
 	resp, raw, err := issuer.MakeGraphQLRequest(ctx, doc, vars)
+	return graphqlAnswer(span, label, resp, raw, err, nil)
+}
+
+// graphqlAnswer reads one raw GraphQL answer: the transport status, a
+// checkpoint in the body, and the envelope's `errors` array before `data`.
+// It is graphql's checks, shared with graphqlDoc (docs.go), whose documents
+// carry a CONFIGURED doc_id: for those, `doc` is set and an error naming the
+// document is ErrStaleQuery rather than a plain upstream rejection. The span
+// is the caller's, and the caller ends it.
+func graphqlAnswer(
+	span trace.Span, label string, resp *http.Response, raw []byte, err error, doc *webDoc,
+) (int, []byte, error) {
 	// The library answers every status >= 400 with an error (ErrUnexpectedError,
 	// http.go's makeRequestOnce) AND the response and its body, the only place
 	// a checkpoint shows up on a raw call (issue #533; restDo reads it the same
@@ -110,6 +124,11 @@ func graphql(
 				return resp.StatusCode, nil, domain.Classify(domain.ErrNeedsHuman,
 					fmt.Errorf("%s: %w", label, sentinel))
 			}
+			if doc != nil {
+				if e, ok := doc.staleIn(raw); ok {
+					return resp.StatusCode, nil, staleQuery(span, label, *doc, e)
+				}
+			}
 			return resp.StatusCode, nil, domain.Classify(domain.ErrUpstreamRejected,
 				fmt.Errorf("%s returned a non-200: %d", label, resp.StatusCode))
 		}
@@ -118,12 +137,8 @@ func graphql(
 	// `errors` BEFORE `data`. A failed document is still an HTTP 200, with an
 	// `errors` array where `data` would be.
 	var envelope struct {
-		Status string `json:"status"`
-		Errors []struct {
-			Message string `json:"message"`
-			Code    int    `json:"code"`
-			Summary string `json:"summary"`
-		} `json:"errors"`
+		Status string         `json:"status"`
+		Errors []graphQLError `json:"errors"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		// A 200 that is not JSON at all (an HTML challenge page, a truncated
@@ -149,6 +164,11 @@ func graphql(
 		return http.StatusOK, nil, domain.Classify(domain.ErrUpstreamRejected,
 			fmt.Errorf("%s returned status fail", label))
 	}
+	if doc != nil {
+		// A configured document reads its errors AND its data root together
+		// (docAnswer): which of the two is present decides the answer.
+		return docAnswer(span, label, *doc, raw, envelope.Errors)
+	}
 	if len(envelope.Errors) > 0 {
 		e := envelope.Errors[0]
 		span.SetAttributes(
@@ -160,6 +180,16 @@ func graphql(
 			fmt.Errorf("%s returned a GraphQL error: %s (code=%d): %s", label, e.Summary, e.Code, e.Message))
 	}
 	return http.StatusOK, raw, nil
+}
+
+// graphQLError is one entry of a GraphQL envelope's `errors` array, as far
+// as this bridge reads it.
+type graphQLError struct {
+	Message     string `json:"message"`
+	Code        int    `json:"code"`
+	Subcode     int    `json:"error_subcode"`
+	Summary     string `json:"summary"`
+	Description string `json:"description"`
 }
 
 // RESTIssuer is the one pair of methods the raw REST path needs off
@@ -689,6 +719,9 @@ func errorType(err error) string {
 	switch {
 	case needsHuman(err):
 		return "needs_human"
+	case errors.Is(err, domain.ErrStaleQuery):
+		// graphqlDoc's: a configured document Instagram no longer knows.
+		return "stale_query"
 	case errors.Is(err, domain.ErrNotFound):
 		// Reachable only from a wrapped function that classifies its own
 		// failure before returning it (posts.go does, so that a REST answer

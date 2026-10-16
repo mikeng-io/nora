@@ -57,6 +57,9 @@ func (f failingPorts) SocialProfile(context.Context, domain.IGID) domain.SocialR
 func (f failingPorts) Story(context.Context, domain.IGID) (domain.Story, error) {
 	return domain.Story{}, f.err
 }
+func (f failingPorts) Items(context.Context, domain.IGID, domain.Username, string) (domain.TimelinePage, error) {
+	return domain.TimelinePage{}, f.err
+}
 func (f failingPorts) SearchAccounts(context.Context, string) ([]domain.AccountSummary, error) {
 	return nil, f.err
 }
@@ -140,6 +143,10 @@ func (p *okPorts) Story(_ context.Context, igid domain.IGID) (domain.Story, erro
 	p.hit()
 	return domain.Story{IGID: igid.String()}, nil
 }
+func (p *okPorts) Items(context.Context, domain.IGID, domain.Username, string) (domain.TimelinePage, error) {
+	p.hit()
+	return domain.TimelinePage{}, nil
+}
 func (p *okPorts) SearchAccounts(context.Context, string) ([]domain.AccountSummary, error) {
 	p.hit()
 	return nil, nil
@@ -218,6 +225,7 @@ var everyRoute = []routeCall{
 	{"typing", http.MethodPut, "/threads/" + room + "/typing", `{"typing":true}`},
 	{"account", http.MethodGet, "/accounts/10000001", ""},
 	{"story", http.MethodGet, "/accounts/10000001/story", ""},
+	{"items", http.MethodGet, "/accounts/10000001/items", ""},
 }
 
 var threadRoutes = everyRoute[:6]
@@ -240,6 +248,8 @@ func TestEveryDomainKindMapsToItsOneStatusOnEveryRoute(t *testing.T) {
 		{domain.Classify(domain.ErrUnavailable, cause), http.StatusServiceUnavailable, "unavailable"},
 		{domain.Classify(domain.ErrUpstreamRejected, cause), http.StatusBadGateway, "upstream_rejected"},
 		{domain.Classify(domain.ErrUnsupported, cause), http.StatusNotImplemented, "unsupported"},
+		// A refinement keeps its parent's status and its own code.
+		{domain.Classify(domain.ErrStaleQuery, cause), http.StatusNotImplemented, "stale_query"},
 		// Fail closed: no kind is 500, never 503.
 		{cause, http.StatusInternalServerError, "internal"},
 	} {

@@ -561,3 +561,90 @@ def test_the_judge_is_handed_the_lesson_and_the_cases_behaviour():
     assert facts is not None and "- say less" in facts and "a short reply" in facts
     assert _lesson_facts({"criteria": []}, SimpleNamespace(expected_output="x")) is None
     assert varied_lessons({"lessons": ["say less"]}) == ()
+
+
+def test_memory_index_composes_the_graph_surface_and_only_when_asked(monkeypatch):
+    """`python -m evals --memory-index` (DEC-316): the after arm of a memory
+    routing run composes the subject with `[memory_index] enabled = true`
+    through `Spec.overrides`, the subject-override path the full restore uses;
+    without the flag nothing is overridden, so every other run is unchanged."""
+    from evals import scenarios
+
+    captured: list = []
+    monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
+    scenarios.experiment_for("tool_selection", source_url="x", memory_index=True)
+    scenarios.experiment_for("tool_selection", source_url="x")
+    assert captured[0].overrides == {"memory_index.enabled": True}
+    assert captured[1].overrides is None
+
+
+def test_each_arm_runs_only_the_cases_its_memory_surface_can_route():
+    """A `memory_surface: graph` case runs only under `--memory-index`, a
+    `honcho` one only without it, and a case stating neither on both. Naming
+    a case of the other surface is refused, not skipped in silence."""
+    from evals.scenarios import load_corpus
+
+    cases = {c.name: c.metadata.get("memory_surface") for c in load_corpus("tool_selection")}
+    graph = {n for n, s in cases.items() if s == "graph"}
+    honcho = {n for n, s in cases.items() if s == "honcho"}
+    assert graph and honcho, "positive control: the corpus marks both surfaces"
+    on, _ = experiment_for("tool_selection", source_url="x", memory_index=True)
+    off, _ = experiment_for("tool_selection", source_url="x")
+    on_names = {c.name for c in on.cases}
+    off_names = {c.name for c in off.cases}
+    assert graph <= on_names and not honcho & on_names
+    assert honcho <= off_names and not graph & off_names
+    assert on_names - graph == off_names - honcho
+    with pytest.raises(ValueError, match="pass --memory-index"):
+        experiment_for("tool_selection", source_url="x", only=frozenset(graph))
+
+
+def test_an_unknown_memory_surface_is_refused(tmp_path, monkeypatch):
+    from evals import scenarios
+
+    corpus = tmp_path / "tool_selection.yaml"
+    corpus.write_text(
+        "cases:\n"
+        "  - name: c1\n    entry: tag\n    expect: reply\n    input: hi\n"
+        "    metadata: {tools: [now], memory_surface: both}\n"
+    )
+    monkeypatch.setattr("evals.scenarios._CORPORA", tmp_path)
+    with pytest.raises(ValueError, match="memory_surface"):
+        scenarios.load_all("tool_selection")
+
+
+@pytest.mark.parametrize(("config", "flag", "graph", "says"), [
+    ("[memory_index]\nenabled = false\n", False, False, "honcho"),
+    ("[memory_index]\nenabled = false\n", True, True, "--memory-index"),
+    # The live config turned the index on: a run without the flag measures
+    # the graph surface, and says why, instead of filtering for honcho.
+    ("[memory_index]\nenabled = true\n", False, True, "deployment's config"),
+    ("", False, False, "honcho"),
+])
+def test_the_arm_is_resolved_from_the_generated_config_or_the_flag(
+    config: str, flag: bool, graph: bool, says: str,
+) -> None:
+    from evals.__main__ import memory_index_enabled, memory_surface_line
+
+    deployed = memory_index_enabled(config)
+    assert (deployed or flag) is graph
+    line = memory_surface_line(deployed, flag)
+    assert line.startswith("graph" if graph else "honcho") and says in line
+
+
+def test_the_spec_carries_the_arm_and_a_disagreeing_subject_is_refused(monkeypatch):
+    from evals import scenarios
+    from evals.backbone import refuse_a_memory_surface_mismatch
+
+    captured: list = []
+    monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
+    scenarios.experiment_for("tool_selection", source_url="x", memory_index=True)
+    scenarios.experiment_for("tool_selection", source_url="x")
+    assert [s.memory_surface for s in captured] == ["graph", "honcho"]
+    refuse_a_memory_surface_mismatch("graph", True)
+    refuse_a_memory_surface_mismatch("honcho", False)
+    refuse_a_memory_surface_mismatch(None, True)
+    with pytest.raises(ValueError, match="disagree"):
+        refuse_a_memory_surface_mismatch("honcho", True)
+    with pytest.raises(ValueError, match="disagree"):
+        refuse_a_memory_surface_mismatch("graph", False)

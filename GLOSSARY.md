@@ -67,6 +67,16 @@ until `design/cognition-loop` step 0: both call `HonchoClient.search`
 (`nora/agent/tools.py::search_memory`), so despite reading like a transcript
 tool by name they are memory, not Record, and belong in the row above.
 
+**One memory surface at a time** (DEC-316). The table above is the Honcho
+surface, what `[memory_index] enabled = false` offers (the default, and
+production). With it on, the memory graph's surface replaces it: one search
+verb, `memory_search` (search every room of the unit by question, person,
+dates and kinds; the index, no Honcho behind it), and none of `ask_memory`,
+`search_memory`, `search_memory_workspace` or `who_said`. `about`,
+`remember` and `load_transcript` are on both. `who_said` is deprecated: the
+graph surface does without it, and it goes with the rest of the Honcho
+surface at step 9.
+
 Two more things she carries between turns are NOT memory in this sense and
 have their own sections below: **notes** (the unit's open questions) and
 **Standing** (her own position, per subject).

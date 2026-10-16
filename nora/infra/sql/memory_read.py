@@ -19,6 +19,17 @@ in Python, which the contract suite holds to the same answers):
          OR (NOT $exclude_strict AND NOT n.exclude_persons && $people_here))
     AND (n.kind NOT IN ('outing', 'stay', 'trip') OR n.persons <@ $presence_persons)
 
+**The question's narrowing rides on the same filter** (`MemoryScope.only`,
+`memory_search`'s `kinds`, `since`, `until` and `person`; `_narrowed`, and
+`nora.domain.memory_index.narrowed` in Python): ANDed onto it, so it is
+inside whichever read is handed it, never a cut of a top k. A node outside
+it is not read, so it takes no slot and bridges nothing. The caller decides
+which reads carry `kinds`: `nora.agent.memory_search` hands it to the seeds
+only, and runs the hops on the same scope without it. A person narrows to nodes with an
+`about`, `authored_by` or `shared_by` edge to them (an `EXISTS` on the
+edge's primary key) or listing them in `persons`, said in a room that lists
+them or in no room.
+
 **A hub carries no scope** (a person, room, unit, Nora or a venue's place):
 `neighbours` returns one only as a direct neighbour of an in-scope frontier
 node, and no read seeds from one. Keeping a hub off the next frontier (the
@@ -82,6 +93,7 @@ from nora.domain.memory_index import (
     EMBEDDED_KINDS,
     EPISODE_KINDS,
     HUB_KINDS,
+    PERSON_RELATIONS,
     PERSON_SCOPED_KINDS,
     ExactTerm,
     IndexedNode,
@@ -133,8 +145,39 @@ def _array(values: Sequence[str] | frozenset[str]) -> Any:
     return sa.cast(sa.bindparam(None, sorted(values), type_=_TEXTS), _TEXTS)
 
 
+def _narrowed(n: Any, scope: MemoryScope) -> list[sa.ColumnElement[bool]]:
+    """`scope.only` for the `memory_node` alias `n` (the module docstring);
+    nothing when it narrows nothing."""
+    f = scope.only
+    if f is None:
+        return []
+    out: list[sa.ColumnElement[bool]] = []
+    if f.kinds:
+        out.append(n.c.kind == sa.any_(_array(f.kinds)))
+    if f.since_ms is not None:
+        out.append(n.c.at_ms >= f.since_ms)
+    if f.until_ms is not None:
+        out.append(n.c.at_ms <= f.until_ms)
+    if f.person is not None:
+        if f.person not in scope.listed_here:
+            return [sa.false()]
+        e = MEMORY_EDGE.alias("pe")
+        linked = sa.exists().where(
+            e.c.src_kind == n.c.kind, e.c.src_id == n.c.source_id,
+            e.c.rel.in_(PERSON_RELATIONS), e.c.dst_kind == "person",
+            e.c.dst_id == f.person,
+        )
+        out.append(sa.or_(linked, n.c.persons.contains(_array([f.person]))))
+        out.append(sa.or_(
+            n.c.origin_room.is_(None),
+            n.c.origin_room == sa.any_(_array(scope.rooms_listing(f.person))),
+        ))
+    return out
+
+
 def _in_scope(n: Any, scope: MemoryScope) -> sa.ColumnElement[bool]:
-    """The module docstring's filter, for the `memory_node` alias `n`."""
+    """The module docstring's filter, for the `memory_node` alias `n`, with
+    the question's narrowing (`_narrowed`) ANDed on."""
     excluded_ok = sa.or_(
         sa.func.cardinality(n.c.exclude_persons) == 0,
         sa.and_(
@@ -159,6 +202,7 @@ def _in_scope(n: Any, scope: MemoryScope) -> sa.ColumnElement[bool]:
             n.c.kind.not_in(EPISODE_KINDS),
             n.c.persons.contained_by(_array(scope.presence_persons)),
         ),
+        *_narrowed(n, scope),
     )
 
 
