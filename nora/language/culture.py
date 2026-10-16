@@ -189,6 +189,9 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # would; that is a claim about a relationship across months, and the batch
     # is a few days.
     "ask_memory", "search_memory",
+    # The same reach on the graph surface (DEC-316): built instead of the two
+    # above while `[memory_index] enabled`, never beside them.
+    "memory_search",
     # THE ROSTER — who is actually in this room, and who a handle IS. A batch
     # renders display names; an account that calls one person by two names, or
     # two people by one, is wrong in the way nobody notices. `lookup_person` is

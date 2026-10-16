@@ -16,6 +16,7 @@ from nora.agent.room import Room
 from nora.agent.surface import WORKER_ONLY_TOOLS
 from nora.agent.tools import (
     COMPUTER_TOOLS,
+    GRAPH_MEMORY_TOOLS,
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
     SUBAGENT_TOOLS,
@@ -325,6 +326,9 @@ def test_budgets_match_todays_table():
         # Raised from 2 (operator 2026-09-03) for the personalization
         # decomposition's group turns.
         "ask_memory": 4, "search_memory": 4,
+        # DEC-316: the graph surface's memory verb, offered instead of the two
+        # above while `[memory_index] enabled`; `ask_memory`'s number.
+        "memory_search": 4,
         # 2 (tool-recall-log spec §4): the same shape `ask_memory`'s own
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.
@@ -546,8 +550,11 @@ def test_specs_carry_the_same_budgets_as_budgets():
     # it also carries the plugin-provided `skills` budget (DEC-50), which R-7
     # admits but `build_tool_specs` does not build — so compare against the
     # non-plugin budgets, which are exactly the specs.
+    # No index wired, so the Honcho memory surface: `memory_search` is the
+    # graph surface's and is not built here (DEC-316).
     non_plugin_budgets = {
-        name: spec.budget for name, spec in NATIVE_TOOLS.items() if not spec.plugin
+        name: spec.budget for name, spec in NATIVE_TOOLS.items()
+        if not spec.plugin and name not in GRAPH_MEMORY_TOOLS
     }
     assert {s.name: s.budget for s in specs} == non_plugin_budgets
 
@@ -581,9 +588,12 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     assert set(agent.tool_names) == (
         set(ToolRegistry().tool_names())
         - {LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS}
+        # no index wired: the Honcho memory surface (DEC-316)
+        - GRAPH_MEMORY_TOOLS
     )
     assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {
         "skills", LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS,
+        *GRAPH_MEMORY_TOOLS,
     }
     assert "skills" in NATIVE_TOOL_BUDGETS
 
@@ -611,6 +621,8 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
         name: spec.time_shiftable
         for name, spec in NATIVE_TOOLS.items()
         if not spec.plugin  # `skills` is not built as a spec (DEC-50)
+        # the Honcho memory surface: no index wired (DEC-316)
+        and name not in GRAPH_MEMORY_TOOLS
     }
     assert {s.time_shiftable for s in specs} <= {None, False, True}
 
@@ -940,6 +952,8 @@ READ_ONLY = frozenset({
     "record_query",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
+    # DEC-316: the graph surface's memory search, an index read
+    "memory_search",
     # design/external-files §3: reads a shared file; the account cannot write.
     "file_fetch",
     "media_search",

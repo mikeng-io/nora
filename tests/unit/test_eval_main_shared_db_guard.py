@@ -381,3 +381,37 @@ def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch
     receipts.append({"case": "generated#2"})
     assert m._run_one("tool_selection", source_url="URL", judge=None, sample=1,
                       context_receipts=receipts)
+
+
+@pytest.mark.parametrize(("deployed", "flag", "graph", "header"), [
+    (False, False, False, "memory surface: honcho"),
+    (False, True, True, "memory surface: graph (--memory-index"),
+    # The live config already runs the graph surface: a run without the flag
+    # must measure it, not the Honcho surface's case filter (DEC-316).
+    (True, False, True, "memory surface: graph ([memory_index] enabled = true"),
+])
+def test_main_resolves_the_memory_surface_from_the_generated_config(
+    monkeypatch, capsys, tmp_path, deployed, flag, graph, header,
+):
+    generated = tmp_path / "config.evaluation.toml"
+    generated.write_text(f"[memory_index]\nenabled = {'true' if deployed else 'false'}\n")
+    monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
+    monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
+    _stub_leaked_blank_sweep(monkeypatch)
+    monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
+    monkeypatch.setattr(m, "materialise", lambda **k: generated)
+    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
+    monkeypatch.setattr(m, "assert_shared_databases_unchanged", lambda url, before: None)
+
+    async def _close() -> None:
+        return None
+
+    monkeypatch.setattr(m, "close_private_blank_templates", _close)
+    seen: list[bool] = []
+    monkeypatch.setattr(
+        m, "_run_one", lambda *a, **k: seen.append(k["memory_index"]) or True,
+    )
+    _set_argv(monkeypatch, "tool_selection", *(["--memory-index"] if flag else []))
+    assert m.main() == 0
+    assert seen == [graph]
+    assert header in capsys.readouterr().out

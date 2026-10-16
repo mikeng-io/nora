@@ -82,7 +82,7 @@ From [20](20-embedding-bakeoff.md) and PRs #22 and #24:
 |---|---|---|
 | **V1** | migration `0106_memory_vectors`: `memory_node.embedding halfvec(2048)`, `embedding_model text` (the fingerprint: model file hash plus format version), `embedded_at`, `embed_attempts`, `embed_error`, `embed_input` (§1.1); the HNSW expression index; a partial index on the unembedded embeddable nodes, in the pick's order; drop `embedding`. An `embedder` compose service (llama.cpp server with the bake-off's flags, §1.7, the model files bind-mounted read-only, threads capped so turns keep the CPU). `nora/infra/embedder.py`: the one client, over the one formatter `nora/domain/embedder_input.py`. The embedding worker in the runtime's drain loop: a batch per tick, a failure counted and backed off, given up after 8 (§1.5), never a hot loop. `nora memory rebuild --embeddings-only` and a media throttle sized from the measured media count | the upsert clears a vector when its recorded input changes and keeps it otherwise; a poisoned image, an unexpected exception and an oversized text are each one node's recorded failure; a restarted server's new marker still embeds; the worker fills NULLs and records the model; an embedder error leaves the node NULL and counted; a node from another model reads as unembedded; the HNSW index exists and the planner uses it; the bake-off adapter and production format a query, a document and an image identically; schema-parity, row-history and single-head tests |
 | **V2** | S5 seeds: **dense** (the two-stage search, scope inside the scan, `hnsw.iterative_scan` so a scoped search still returns its 50) and **exact** (a literal handle, URL, id or listed person's name contained in the node: the first five pinned ahead of every dense hit, operator 2026-10-16; §4.1). Trigram similarity remains only as the fallback when the embedder is down, and the answer is then `partial`. Coverage: while embeddable nodes are unembedded, the answer is `partial` | the scope suite again with dense seeds; an exact name match ranks above a closer dense neighbour; embedder down gives `partial` with lexical results, never `nothing_found`; an out-of-scope node never returned however near its vector |
-| **V3** | the acceptance run: deploy (asked first), backfill, `[memory_index] enabled = true` in a sandbox, `conversational_recall` no worse than 7/8 | the eval read-back |
+| **V3** | the acceptance run: deploy (asked first), backfill, `[memory_index] enabled = true` in a sandbox, `conversational_recall` no worse than 7/8; `tool_selection --memory-index` re-run on the built index (on an empty index every `memory_search` answers `partial` with no items, so sibling calls after it cannot be judged, PR #32). Then the **adaptive cut** (operator, 2026-10-16): from the cosine spread of labelled hits and misses on the built index, set the dense relevance floor and a score-gap stop, and replace `RESULT_LIMIT = 10` with a token budget (about 2,000 tokens of packet text, not the embedder's 2,000-token input cut of §1; at least one item before the identifier screen, which can still withhold it); `PINNED_LIMIT`, now derived from `RESULT_LIMIT`, becomes its own value (a count or a share of the budget) so half the answer still goes by score; the walk's floor and the `about` seed's 0.6 are set in the same step. `RESULT_LIMIT` is a temporary cap until then | the eval read-back; the cosine spread recorded here |
 
 The reranker test (Qwen3-VL-Reranker-2B against bge-reranker-v2-m3, within
 300 ms on a tag turn and 2 s in Cognition) is after V3, and only if V3's
@@ -102,7 +102,7 @@ artifacts or long transcripts join the index. Its trigger is
 embedder cut to fit its micro-batch whose vector it stored (V2), on top of
 `ok`. The iGPU (`norty` is not in `render`) is an
 operator action that changes the throttle, not the design. The `ask_memory`
-text alignment is its own `nora-tool` PR.
+text alignment is its own `nora-tool` PR (done as `memory_search`, DEC-316, §5).
 
 ## 4. V2 as built (2026-10-16)
 
@@ -213,3 +213,55 @@ What V2 decided where the plan above left room (DEC-315; the code is
 6. **Episodes are lexical only** (§1.4), so with dense seeds a stay, trip or
    outing is reached only through an edge or as a named person's `about`
    seed, never by its own text. The scope suite runs both ways.
+
+## 5. One memory surface, and its verb (2026-10-16, DEC-316)
+
+The index is read through ONE tool, `memory_search(query, person?, since?,
+until?, kinds?)`, and only on the memory graph's tool surface.
+`[memory_index] enabled` selects the surface wherever tools are built (a
+tag, a fire turn, the Cognition session, every Dreamer adaptor, the
+sub-agent worker); the two never sit side by side.
+
+| surface | flag | memory verbs offered |
+|---|---|---|
+| Honcho (production, the rollback) | off | `ask_memory`, `search_memory`, `search_memory_workspace`, `who_said`, plus `about`, `remember`, `load_transcript` |
+| graph | on | `memory_search`, plus `about`, `remember`, `load_transcript` |
+
+- **No Honcho behind `memory_search`.** It is the retrieval service of §4
+  and nothing else. `ask_memory` no longer reads the index: with the flag on
+  it is not offered.
+- **`about`, `remember` and `load_transcript` stay on both.** The first two
+  are the profile read and the memory write, which Persona (steps 5 to 8)
+  and step 9 replace; they are not search. `load_transcript` is the in-room
+  scroll-back.
+- **`who_said` is deprecated.** It is absent from the graph surface:
+  `memory_search` names who said each hit, and `load_transcript` reads
+  around it. It is deleted with the rest of the Honcho surface at step 9.
+- **Why not both.** With `memory_search` beside Honcho's `search_memory`, a
+  `tool_selection` run called `search_memory` in 6 of 8 new cases and
+  `memory_search` in none (n=1): two names sharing both tokens, ADR 0004's
+  near-name pattern.
+- **Narrowing.** `person`, `since` and `until` narrow every read inside the
+  scan (DEC-313's filter, ANDed). `kinds` narrows the seeds and the answer,
+  not the hops (item 6 above: an episode has no vector, so `places` is
+  reached from what was said during one). A person this room's policy does
+  not list is `unavailable`, not a false `nothing_found`.
+- **Reach.** The culture adaptor's `memory_search` reads its own room
+  alone: a room's culture is not written from another room's speech, as its
+  Honcho `search_memory` read only its own session. Every other occasion,
+  the character-person session included, reads the unit under the
+  listed-room rule.
+- **One source.** The registry selects the surface (it holds a
+  `MemorySearch` or not), builds only that surface, and withholds the other
+  from the capability digest and from Cognition's read surface.
+- **Measuring it.** `python -m evals tool_selection --memory-index` composes
+  the subject on the graph surface; without the flag the subject is the
+  deployment's, whichever surface its config selects, and the header says
+  which. A case that routes on one surface only says so
+  (`metadata.memory_surface`), the other arm skips it, and a subject composed
+  on the other surface is refused per case.
+- **Before the flag goes on.** Per-pass search capacity is lower on the
+  graph surface: a tag or fire turn had `ask_memory` 4 + `search_memory` 4 +
+  `who_said` 4 calls and has `memory_search` 4; the culture and
+  character-person passes now spend it inside `max_memory_calls`. Measure it
+  first.

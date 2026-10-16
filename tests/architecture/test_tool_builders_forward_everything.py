@@ -77,6 +77,9 @@ _SPECS_ONLY = frozenset({
     # `clock` left this set 2026-09-24: `room_list` reports how long ago a
     # room last spoke, and its tests freeze time through `build_tools`.
     "events", "fire_turn",
+    # DEC-316: both memory surfaces at once, for `ToolRegistry`'s
+    # introspection build (the catalog and R-99's argument table) alone.
+    "all_memory_surfaces",
     # design/subagent step 2: the third provenance, threaded from `ToolRegistry.specs` by
     # `SubagentToolSource`. `build_tools` is the legacy wrapper no worker is built through.
     "subagent_job",

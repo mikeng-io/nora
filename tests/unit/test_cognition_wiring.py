@@ -68,29 +68,32 @@ def test_the_catalogue_is_the_designs_and_names_no_live_social_read():
 
 
 def test_every_tool_the_session_would_wire_exists_and_is_read_only():
-    surface = read_surface(read_only=READ_ONLY, enabled_flags=FLAGS_ON)
+    surface = read_surface(
+        read_only=READ_ONLY, enabled_flags=FLAGS_ON, registry_withheld=frozenset())
     assert surface.wired, "positive control"
     assert surface.wired <= READ_ONLY
     assert all(NATIVE_TOOLS[n].read_only for n in surface.wired)
 
 
 def test_the_designs_tools_the_tree_does_not_have_are_named_missing_not_dropped():
-    surface = read_surface(read_only=READ_ONLY, enabled_flags=FLAGS_ON)
+    surface = read_surface(
+        read_only=READ_ONLY, enabled_flags=FLAGS_ON, registry_withheld=frozenset())
     assert surface.missing == {"social_items"}
-    assert surface.wired | surface.missing == COGNITION_READ_CATALOGUE
+    assert surface.wired | surface.missing | surface.withheld == COGNITION_READ_CATALOGUE
 
 
 def test_record_query_is_withheld_until_its_flag_is_on():
-    off = read_surface(read_only=READ_ONLY, enabled_flags=())
-    on = read_surface(read_only=READ_ONLY, enabled_flags=FLAGS_ON)
+    off = read_surface(read_only=READ_ONLY, enabled_flags=(), registry_withheld=frozenset())
+    on = read_surface(read_only=READ_ONLY, enabled_flags=FLAGS_ON, registry_withheld=frozenset())
     assert "record_query" in off.withheld and "record_query" not in off.wired
-    assert "record_query" in on.wired and not on.withheld
+    assert "record_query" in on.wired and "record_query" not in on.withheld
 
 
 def test_an_act_verb_is_never_wired_even_when_the_catalogue_names_it():
     """The read-only set decides, not the catalogue: a name that is not in it
     is `missing`, never wired."""
-    surface = read_surface(read_only=frozenset({"note_read"}), enabled_flags=())
+    surface = read_surface(
+        read_only=frozenset({"note_read"}), enabled_flags=(), registry_withheld=frozenset())
     assert surface.wired == {"note_read"}
     assert "about" in surface.missing
 

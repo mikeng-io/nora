@@ -1217,8 +1217,13 @@ def test_the_digest_is_derived_from_the_registry_and_read_only():
     from nora.agent.surface import DREAMER_LOOP_TOOLS, TAG_ONLY_TOOLS
 
     # (the tag-only `subagent_*` reads are not offered to a gate about an untagged window)
+    # And minus the memory surface the registry did not select (DEC-316): no
+    # index wired here, so the graph's `memory_search` is not offered.
+    from nora.agent.tools import GRAPH_MEMORY_TOOLS
+
     assert named == (
         set(registry.read_only_tools()) - {"load_tools"} - DREAMER_LOOP_TOOLS - TAG_ONLY_TOOLS
+        - GRAPH_MEMORY_TOOLS
     )
     # The two the live miss turned on, and the one #145 grants the Dreamer.
     assert "weather" in named

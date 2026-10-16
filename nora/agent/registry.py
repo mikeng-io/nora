@@ -91,6 +91,8 @@ from .surface import (
 from .tools import (
     COMPUTER_TOOLS,
     DOCUMENT_TOOLS,
+    GRAPH_MEMORY_TOOLS,
+    HONCHO_MEMORY_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
@@ -287,8 +289,10 @@ class ToolRegistry:
         # `unavailable`.
         external_files: ExternalFilesSource | None = None,
         # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
-        # the retrieval service `ask_memory` answers from instead of Honcho.
-        # Process-lifetime like `record`; `None` keeps the Honcho path.
+        # the retrieval service `memory_search` answers from, and the switch
+        # between the two memory surfaces (DEC-316): wired, every build offers
+        # `memory_search` and none of the Honcho memory verbs; `None` keeps the
+        # Honcho surface. Process-lifetime like `record`.
         memory_search: MemorySearch | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
@@ -319,6 +323,12 @@ class ToolRegistry:
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
+            # The memory surface not selected (DEC-316): with no index wired
+            # the graph's `memory_search`, with one the Honcho memory verbs.
+            # `build_tool_specs` never builds them; withholding them here
+            # keeps the digest and `withheld_tools()` (Cognition's read
+            # surface) true to the same one choice.
+            | (GRAPH_MEMORY_TOOLS if memory_search is None else HONCHO_MEMORY_TOOLS)
         )
         self._subagent = subagent
         self._video = video
@@ -688,6 +698,14 @@ class ToolRegistry:
             and name != LOADER_TOOL
         )
 
+    def withheld_tools(self) -> frozenset[str]:
+        """The tools no occasion in this process is offered: a read with no
+        store wired, and the memory surface not selected (DEC-316). The ONE
+        answer to «is X offered here», so a consumer that keeps its own
+        catalogue (Cognition's `read_surface`) reads it rather than
+        re-deriving it from config."""
+        return self._withheld
+
     def read_only_tools(self) -> frozenset[str]:
         """The tools that only LOOK — the Dreamer's ceiling (keystone §4).
 
@@ -904,6 +922,10 @@ class ToolRegistry:
             # (#350). Both gates live in `build_tool_specs`, and an endpoint
             # that dropped either would under-report what the agent can do.
             dream_adaptor="catalog",
+            # Both memory surfaces, for the same reason (DEC-316): the flag
+            # picks one per deployment, and the catalog and R-99's argument
+            # table describe what the code declares, not one config.
+            all_memory_surfaces=True,
             question="",
             context_window=40,
             transit_source=self._transit,
@@ -1100,7 +1122,7 @@ class ToolRegistry:
             relay=self._relay,
             rooms=self._rooms,
             record=self._record,
-            memory_search=self._memory_search,
+            memory_retrieval=self._memory_search,
             lineage=self._lineage,
             rollup=self._rollup,
             standing_head=self._standing_head,

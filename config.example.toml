@@ -595,9 +595,10 @@ refresh_timeout_seconds = 8
 
 # Memory index: a projection written by every store's own write. A failed
 # projection is queued and re-projected every `drain_seconds`. `nora memory
-# rebuild` rebuilds the whole index. `enabled` is the read switch: on,
-# `ask_memory` answers from the index (scoped to the room's unit) and Honcho is
-# not called; off, it uses Honcho.
+# rebuild` rebuilds the whole index. `enabled` selects ONE memory tool surface
+# (DEC-316): on, `memory_search` answers from the index (scoped to the room's
+# unit) and `ask_memory`, `search_memory`, `search_memory_workspace` and
+# `who_said` are not offered; off, those Honcho verbs and no `memory_search`.
 [memory_index]
 drain_seconds = 60.0
 enabled = false
@@ -605,7 +606,7 @@ enabled = false
 # `embedder_model` is `<gguf file name>@<sha256 prefix>`; the worker embeds only
 # while the service reports loading that file. It is part of every stored
 # vector's fingerprint, so changing it clears and re-embeds all vectors. With
-# `enabled` also on, `ask_memory` seeds from the question's vector and pins
+# `enabled` also on, `memory_search` seeds from the question's vector and pins
 # literal names, handles, URLs and ids; the trigram seed is the fallback
 # (embedder down or no vectors yet) and answers `partial`.
 embed = false
