@@ -241,7 +241,7 @@ class InstagramSocialSource:
             network=self.network, item_id=str(pk), account=account, kind=kind,
             taken_at=taken, expires_at=None, caption=caption or None,
             alt_text=_text(row.get("alt_text")), media=media, collab=collab,
-            location=published_location(row.get("location")),
+            **_place(row),
         )
 
     async def _get(self, path: str) -> tuple[int, Any]:
@@ -312,6 +312,15 @@ def _text(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _place(row: dict[str, Any]) -> dict[str, Any]:
+    """A listed item's tagged place: `location` (None: no tag) when the
+    bridge says it read it (`location_known: true`), else unknown. A bridge
+    that does not say is unknown too, never "no tag"."""
+    if row.get("location_known") is not True:
+        return {"location": None, "location_known": False}
+    return {"location": published_location(row.get("location")), "location_known": True}
+
+
 def _frame(row: Any) -> StoryFrame | None:
     """One story item → a frame, or None when it is not usable: no id, no time,
     a kind that is neither image nor video, or a media URL off the CDN. A frame
@@ -334,7 +343,7 @@ def _frame(row: Any) -> StoryFrame | None:
         item_id=item_id, taken_at=taken, expires_at=expires, kind=kind, url=url,
         thumbnail_url=thumbnail if _is_cdn_url(thumbnail) else None,
         caption=_text(row.get("caption")), alt_text=_text(row.get("alt_text")),
-        location=published_location(row.get("location")),
+        **_place(row),
     )
 
 

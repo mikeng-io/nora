@@ -33,6 +33,15 @@ STORY_LIFETIME_SECONDS = 86_400
 LOCATION_MAX_CHARS = 120
 
 
+#: The states that hide a recorded item (`social_item_state`) from every
+#: reader and the memory index.
+ItemState = Literal["gone", "hidden"]
+HIDING_STATES: tuple[str, ...] = get_args(ItemState)
+#: The state a change of an item's tagged place is recorded as: it carries the
+#: new place, NULL when the tag was removed, and hides nothing.
+PLACE_STATE = "place"
+
+
 def published_location(value: object) -> str | None:
     """A tagged place's name as the author published it, made safe to keep:
     one line (every run of whitespace or control characters one space),
@@ -125,6 +134,9 @@ class StoryFrame:
     alt_text: str | None = None
     #: The place a location sticker tags it with (`published_location`).
     location: str | None = None
+    #: False when the source could not read its place: `location` is then
+    #: None without meaning "no tag".
+    location_known: bool = True
 
 
 @dataclass(frozen=True)
@@ -175,7 +187,7 @@ ItemKind = Literal["story_frame", "post", "reel"]
 #: A `social_poll` row's stage: the probe, or one of the reads. `backfill` is
 #: a page of a member's history (§7): their first list read, and each page
 #: paged back from it.
-PollStage = Literal["probe", "story", "items", "item", "backfill"]
+PollStage = Literal["probe", "story", "items", "item", "backfill", "relist"]
 POLL_STAGES: tuple[str, ...] = get_args(PollStage)
 
 #: A `social_poll` row's outcome. A probe's is `Due.outcome`; a read is
@@ -269,6 +281,10 @@ class SocialItem:
     #: The place the item is tagged with (`published_location`), None when it
     #: carries none.
     location: str | None = None
+    #: False when the source could not read its place (an unknown shape, or a
+    #: bridge too old to say): `location` is then None without meaning "no
+    #: tag", and no place change is recorded from it.
+    location_known: bool = True
 
 
 def frame_item(*, network: str, account: str, frame: StoryFrame) -> SocialItem:
@@ -277,7 +293,7 @@ def frame_item(*, network: str, account: str, frame: StoryFrame) -> SocialItem:
         network=network, item_id=frame.item_id, account=account, kind="story_frame",
         taken_at=frame.taken_at, expires_at=frame.expires_at, caption=frame.caption,
         alt_text=frame.alt_text, media=(MediaItem(kind=frame.kind, url=frame.url),),
-        location=frame.location,
+        location=frame.location, location_known=frame.location_known,
     )
 
 

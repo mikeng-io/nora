@@ -594,13 +594,14 @@ CONSTRAINT ck_self_tension_source CHECK ((source = 'lesson'::text))
 CONSTRAINT ck_social_item_has_an_id CHECK ((length(btrim(item_id)) > 0)),
 CONSTRAINT ck_social_item_kind CHECK ((kind = ANY (ARRAY['story_frame'::text, 'post'::text, 'reel'::text, 'thread_post'::text]))),
 CONSTRAINT ck_social_item_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
-CONSTRAINT ck_social_item_state_state CHECK ((state = ANY (ARRAY['gone'::text, 'hidden'::text])))
+CONSTRAINT ck_social_item_state_place CHECK (((place IS NULL) OR (state = 'place'::text))),
+CONSTRAINT ck_social_item_state_state CHECK ((state = ANY (ARRAY['gone'::text, 'hidden'::text, 'place'::text])))
 CONSTRAINT ck_social_item_story_frame_expires CHECK (((kind <> 'story_frame'::text) OR (expires_at IS NOT NULL)))
 CONSTRAINT ck_social_perception_calls CHECK ((calls >= 0)),
 CONSTRAINT ck_social_perception_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
 CONSTRAINT ck_social_perception_outcome CHECK ((outcome = ANY (ARRAY['ok'::text, 'nothing_found'::text, 'unavailable'::text, 'failed'::text, 'capped'::text])))
 CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text, 'abandoned'::text, 'unavailable'::text]))),
-CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text])))
+CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text, 'relist'::text])))
 CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
@@ -1888,6 +1889,7 @@ persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] NOT NULL,
 persons text[] NOT NULL,
 phase text NOT NULL,
+place text,
 place_id integer NOT NULL,
 place_id integer NOT NULL,
 place_id integer,

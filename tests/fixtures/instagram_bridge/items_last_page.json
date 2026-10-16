@@ -23,7 +23,8 @@
           }
         ],
         "alt_text": "",
-        "location": ""
+        "location": "",
+        "location_known": true
       },
       {
         "code": "SynthPost02",
@@ -49,7 +50,8 @@
           }
         ],
         "alt_text": "a photo of a plate",
-        "location": "Placeholder Square"
+        "location": "Placeholder Square",
+        "location_known": true
       }
     ],
     "next_cursor": null
