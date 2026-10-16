@@ -1,7 +1,7 @@
 """ADR 0007 structural enforcement: every model-facing tool description must
 match the tool-surface policy.
 
-The policy (docs/adr/0007-tool-surface-policy.md, accepted 2026-08-31):
+The policy (docs/adr/0007-tool-surface-policy.md):
 
 1. Opening = what + when-to-call. The first sentence(s) state what the tool
    does and when to call it. Style guidance, voice control and negative
@@ -16,14 +16,10 @@ The policy (docs/adr/0007-tool-surface-policy.md, accepted 2026-08-31):
 4. Three-level length ladder: L1 sentence (what+when), L2 +one constraint,
    L3 contract (status machines). Most tools are L1.
 
-Background — why this exists (measured 2026-08-31): the old `send_reply`
-description was a 3,960-char style essay ("Read text back... fix these: Too
-long. A verdict that is only a scoreboard... Too soft."). An ISO probe
-(same prompt, same model, same tool_choice=required, n=5, only description
-changed) showed reasoning models read that guidance as preconditions on
-deserving to call: `none` 5/5 tool_calls, `low` 0/5 prose, `high` 0/5
-prose. A MUST-first rewrite restored 5/5/5. This test exists so the essay
-shape cannot return and the opening cannot drift back to style-first.
+Why this exists: a long style essay in a tool description is read by
+reasoning models as preconditions on deserving to call, and they answer in
+prose instead of calling. This test exists so the essay shape cannot return
+and the opening cannot drift back to style-first.
 """
 
 import ast
@@ -215,13 +211,11 @@ L1_LINE_CEILING = 40
 def test_the_opening_paragraph_is_an_l1(tool: str, doc: str) -> None:
     """Policy 4's L1 — «what + when» — is the docstring's FIRST PARAGRAPH, and
     that paragraph is the tool's catalogue line (`nora.agent.registry.
-    _opening`, design/tool-catalogue/01). So it must carry the when-to-call
-    clause ITSELF, not somewhere in the next eight lines, and fit a line.
+    _opening`). So it must carry the when-to-call clause ITSELF, not somewhere
+    in the next eight lines, and fit a line.
 
-    Measured when this was added (2026-09-23): 24 of 55 openings carried a
-    when-clause and one ran to 136 tokens. `test_opening_has_a_when_to_call_
-    clause` above passed all 55 because it reads eight lines, not the unit
-    the catalogue is cut from — a gate on the wrong span.
+    `test_opening_has_a_when_to_call_clause` above reads eight lines, not the
+    unit the catalogue is cut from, so it cannot hold this.
     """
     import tiktoken
 
@@ -244,21 +238,18 @@ def test_the_opening_paragraph_is_an_l1(tool: str, doc: str) -> None:
 # the docstring minus `Args:`), not the AST docstring the tests above read:
 # that is the text every call pays for.
 
-#: ADR 0015 §3's ceilings, cl100k tokens over the sent description. Starting
-#: values: each moves only with a measurement recorded beside it.
+#: ADR 0015's ceilings, cl100k tokens over the sent description; each moves only
+#: with a measurement recorded beside it.
 LEVEL_CEILINGS = {1: 80, 2: 160, 3: 320}
 
 #: The tools not yet rewritten to ADR 0015. It only SHRINKS: it must stay a
-#: subset of the digest-pinned 2026-09-24 name snapshot, so a tool added after
-#: the ADR can never be exempted here. A rewrite batch removes its tools in the
-#: same commit that rewrites them.
+#: subset of the digest-pinned name snapshot, so a tool added after the ADR can
+#: never be exempted here. A rewrite batch removes its tools in the same commit
+#: that rewrites them.
 #:
-#: EMPTY since 2026-09-24: `send_reply`, the last entry, left when its
-#: SHOULD/MAY block on how to write a reply moved to `voice.md` and
-#: `conduct.md` (operator: «keep the voice in voice.md») and it declared
-#: `level=3`. Every rule below now covers every tool. The name is kept so the
-#: shrink-only test still has something to hold: adding a tool back here is
-#: an exemption, and that test refuses any name newer than the snapshot.
+#: EMPTY: every rule below covers every tool. The name is kept so the
+#: shrink-only test still has something to hold: adding a tool back here is an
+#: exemption, and that test refuses any name newer than the snapshot.
 _NOT_YET_REWRITTEN: frozenset[str] = frozenset()
 
 
@@ -332,11 +323,11 @@ def test_the_allowlist_only_shrinks() -> None:
 def test_send_reply_is_held_to_the_policy_like_every_other_tool() -> None:
     """POSITIVE CONTROL for the empty allowlist. With nothing exempt, a bug in
     `_rewritten()` that dropped tools would make every rule below pass on less
-    than it claims; `send_reply` is the tool that was exempt longest, so it is
-    the one asserted present. Its description is Level 3: delivery (ADR 0007
-    §5a's MUST) plus its `sent`/`held_for_review`/`refused` contract, which
-    stays in the description because the tool returns a bare string and has
-    no `note` to carry it."""
+    than it claims, so `send_reply` is asserted present. Its description is
+    Level 3: delivery (ADR 0007 §5a's MUST) plus its
+    `sent`/`held_for_review`/`refused` contract, which stays in the
+    description because the tool returns a bare string and has no `note` to
+    carry it."""
     from nora.agent.tools import NATIVE_TOOLS
 
     assert "send_reply" in _rewritten()
@@ -438,72 +429,55 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 
 # ---- ADR 0015 §6: "a Level 3 status has a result `note`" -----------------
 #
-# 0015 §6 names this check `test_every_listed_status_returns_a_note` and it
-# did not exist (issue #482, 2026-09-24 governance audit: the ADR's table
-# claimed a test the tree did not have). This is it.
+# 0015 §6 names this check `test_every_listed_status_returns_a_note`.
 #
 # WHAT THIS CHECKS: every `ast.Return` belonging to a Level 3,
 # `output_contract="three_state"` tool's OWN closure in nora/agent/tools.py
 # -- not a nested helper's returns (`generate_image`'s `_made_note`/
 # `_canonical_self`/`resolve` return bytes, a marker, `str | None`, never the
-# tool's own status dict). This read every OWN return and classifies its
-# value into one of six shapes, drawn from what these eight tools actually
-# do, TWICE REVISED after review (Opus, issue #482 follow-up, 2026-09-25 and
-# a same-day second pass) -- what each pass found is recorded beside the
-# shape it broke, because the fixes are the spec -- plus one shape ADDED,
-# not revised, on 2026-09-25 (design/social-per-network/
-# 30-link-owner-registry.md "Migration" PR 3):
+# tool's own status dict). Each own return's value is classified into one of
+# the shapes below:
 #
-#   (a) a dict literal, `{"status": "X", ..., "note": ...}`. Pass 1: a
-#       `status` that is not itself a literal (`remind`'s `{"status": rule.
-#       outcome, "note": rule.note}`, built from a rate-limit rule object)
-#       was SKIPPED entirely, including its `note`. Pass 2: it is still
-#       skipped for matching against the listed statuses (nobody can say
-#       which status this is), but it must still carry a `note` key whose
-#       value is not a literal empty string or `None` -- dropping the key
-#       entirely, as a mutation, is caught; a dynamic value (`rule.note`)
-#       that cannot be proven non-empty either way is not blamed for that.
+#   (a) a dict literal, `{"status": "X", ..., "note": ...}`. A `status` that
+#       is not itself a literal (`remind`'s `{"status": rule.outcome, "note":
+#       rule.note}`, built from a rate-limit rule object) cannot be matched
+#       against the listed statuses, but must still carry a `note` key whose
+#       value is not a literal empty string or `None`; a dynamic value
+#       (`rule.note`) that cannot be proven non-empty either way is not
+#       blamed for that.
 #   (b) `dict(NAME)` / bare `NAME`, where NAME is a module-level (or
 #       `build_tool_specs`-body-level, `remind`'s `notes_off`) constant dict.
 #   (c) `_with_note(out, NOTES)`, where NOTES is a notes mapping naming what
-#       it covers. Pass 2: `out` (its first argument) is now ALSO required
-#       to be a verified pass-through (see (e)) -- previously nothing read
-#       it at all, so stripping `out`'s `note` before the call passed.
-#   (d) a bare `NAME` whose dict was built with no `note`, later given one
-#       by `NAME["note"] = ...` (`remind`'s `result`). Pass 2: that
-#       assignment now has to be a DIRECT SIBLING of the `return`, in the
-#       same block, before it -- not merely present somewhere earlier in the
-#       function regardless of which `if` it is nested in. A mutant that
-#       moved `remind`'s `result["note"] = ...` inside `if rule is not
-#       None:` while `return result` stayed unconditional passed under pass
-#       1's "anywhere in the function" search; it does not now.
+#       it covers. `out` (its first argument) must also be a verified
+#       pass-through (see (e)), so stripping `out`'s `note` before the call
+#       is caught.
+#   (d) a bare `NAME` whose dict was built with no `note`, later given one by
+#       `NAME["note"] = ...` (`remind`'s `result`). The assignment has to be
+#       a DIRECT SIBLING of the `return`, in the same block, before it -- not
+#       merely present somewhere earlier in the function regardless of which
+#       `if` it is nested in. A mutant that moved `remind`'s
+#       `result["note"] = ...` inside `if rule is not None:` while
+#       `return result` stayed unconditional must fail.
 #   (e) a named PASS-THROUGH: a bare `NAME` bound to an opaque external call
 #       (`out` from `social_source.read(...)`), or a dict literal spreading
-#       one (`instagram_read`'s `{**out, "person": name}`). Pass 1 trusted
-#       ANY bare name that was not a recognised constant or local dict --
-#       `instagram_read`'s `return read` (a plain STRING) passed as a
-#       "pass-through", and `out = {k: v for k, v in out.items() if k !=
-#       "note"}` immediately before `return out` / `return _with_note(out,
-#       ...)` passed too, because nothing re-checked `out`'s binding once it
-#       stopped being the awaited call. Pass 2: a bare name is trusted as a
-#       pass-through only if EVERY assignment to it in the tool is either an
-#       awaited `*.read(...)` call or an already-classifiable note-bearing
-#       value (a literal dict with a note, or `dict(CONST)` with one); any
-#       other binding -- a comprehension, a subscript, a plain string --
-#       fails closed, naming the offending binding.
+#       one (`instagram_read`'s `{**out, "person": name}`). A bare name is
+#       trusted as a pass-through only if EVERY assignment to it in the tool
+#       is either an awaited `*.read(...)` call or an already-classifiable
+#       note-bearing value (a literal dict with a note, or `dict(CONST)` with
+#       one); any other binding -- a comprehension that strips `"note"`, a
+#       subscript, a plain string (`instagram_read`'s `read`) -- fails
+#       closed, naming the offending binding.
 #   (f) `_link_redirect(owner, claim, link_input)` -- `nora.agent.
 #       link_owners.redirect`, imported under that name, called directly
 #       from `x_read`'s, `linkedin_read`'s and `instagram_read`'s own
-#       closures (PR 3, "the owners use the registry": a claim by another
-#       registered owner). Recognised by name rather than followed into its
-#       own module the way an in-module helper is (f) is not (b)/(d) reread
-#       through an import: `redirect()`'s CONTRACT is what is trusted, not
-#       its current source -- it always returns `{"status": "nothing_found",
-#       "note": <composed>}`, and the note is never empty by construction
-#       (`LinkClaim.__post_init__` refuses to build an unreadable claim with
-#       no `unreadable_template`; the readable template always fills every
-#       slot). A literal status ("nothing_found") with a note this test can
-#       trust, same as (a).
+#       closures (a claim by another registered owner). Recognised by name
+#       rather than followed into its own module: `redirect()`'s CONTRACT is
+#       what is trusted, not its current source -- it always returns
+#       `{"status": "nothing_found", "note": <composed>}`, and the note is
+#       never empty by construction (`LinkClaim.__post_init__` refuses to
+#       build an unreadable claim with no `unreadable_template`; the
+#       readable template always fills every slot). A literal status
+#       ("nothing_found") with a note this test can trust, same as (a).
 #
 # For (a)/(b)/(d)/(f), whose literal status is one the docstring lists, the
 # return's `note` must be present and PROVABLY a non-empty string (a
@@ -517,19 +491,16 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 # per-tool declaration (`_DELEGATE_REACHABLE_STATUSES`, hand-verified
 # against each backend's own status vocabulary, e.g. `SocialBridgeClient.
 # _read` never answers `refused`), never "whatever some unrelated return
-# happens to prove" -- an EARLIER pass subtracted every status already
-# proven ANYWHERE in the tool from what the delegate still had to answer
-# for, so removing `"unavailable"` from `_backend_notes()["x_read"]` still
-# passed: `unavailable` was "proven" by input-validation returns that have
-# nothing to do with what the backend can send back. The notes mapping ((c)
+# happens to prove": a status proven by an input-validation return says
+# nothing about what the backend can send back. The notes mapping ((c)
 # only) covers whatever keys it names; anything left in the reachable set
 # must be in `_backend_notes()` -- see its own docstring for exactly what
 # that does and does not verify, and for what is still NOT checked (a
-# genuine, stated limit of static analysis, not an oversight).
+# genuine, stated limit of static analysis).
 #
-# A `return` whose value fits none of the six shapes -- or a bare `return`
-# with no value, or a helper call this cannot resolve, or a pass-through
-# binding this cannot verify -- is a FAILURE naming the shape, not a skip
+# A `return` whose value fits none of the shapes -- or a bare `return` with
+# no value, or a helper call this cannot resolve, or a pass-through binding
+# this cannot verify -- is a FAILURE naming the shape, not a skip
 # (fail-closed): the property this enforces is "every return path has a
 # note", so a return this test cannot read is one it cannot vouch for. A
 # call to a module-level helper function taking no arguments
@@ -541,10 +512,9 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 # own documented exception (it returns a bare string, not a dict, so it has
 # no `note` to carry).
 #
-# WHAT THIS STILL DOES NOT CATCH, on the current tree: whether
+# WHAT THIS STILL DOES NOT CATCH: whether
 # `nora.infra.social.bridge_client.SocialBridgeClient._read` or
-# `nora.infra.social.render._search` (the Instagram search `ok` result, moved
-# there from `InstagramSocialClient._search` by #486)
+# `nora.infra.social.render._search` (the Instagram search `ok` result)
 # actually RETURN the note-bearing payload this test trusts them to -- that
 # is a claim about a call site in a DIFFERENT module, which this test does
 # not read (it only verifies, in `_backend_notes()`, that the named
@@ -553,15 +523,11 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 # `unavailable`) is guarded instead by `tests/test_social_bridge_client.py`
 # (`test_a_bridge_note_never_reaches_the_model`,
 # `test_bridge_unavailable_passes_through` and six sibling tests, all
-# asserting `out["note"].strip()` since issue #482 -- proved 2026-09-25 by
-# reverting `SocialBridgeClient._read`'s shared-constant return to a bare
-# `{"status": status}` and watching `test_bridge_unavailable_passes_through`
-# and `test_a_bridge_note_never_reaches_the_model` go red, then restoring).
-# `render._search` dropping `"note": SEARCH_FRAMING` from its OWN
-# return is guarded by `tests/unit/test_instagram_search_tool.py`; that gap
-# was not touched this round and remains a genuine, stated limit -- fixing
-# it would mean reading a second module's control flow, which this static
-# pass over `nora/agent/tools.py` deliberately does not do.
+# asserting `out["note"].strip()`). `render._search` dropping
+# `"note": SEARCH_FRAMING` from its OWN return is guarded by
+# `tests/unit/test_instagram_search_tool.py`; closing that gap here would
+# mean reading a second module's control flow, which this static pass over
+# `nora/agent/tools.py` deliberately does not do.
 
 
 #: Per tool, the statuses its DELEGATE return(s) -- (c)/(e) -- can actually
@@ -1053,18 +1019,16 @@ def _backend_notes() -> dict[str, set[str]]:
     SEARCH_NOTHING_FOUND`) fails every test that calls this function,
     immediately, on the assert.
 
-    What it does NOT check, and cannot from this file alone: that the
-    backend actually RETURNS the named constant for that status at its own
-    call site. That is a claim about `nora/infra/social/bridge_client.py`
-    and `nora/infra/social/instagram_client.py`'s own control flow, neither
-    of which this test reads. `bridge_client.py`'s non-ok path (both
-    `nothing_found` and `unavailable`) is guarded by `tests/test_social_
-    bridge_client.py` (proved 2026-09-25: reverting its shared-constant
-    return to a bare `{"status": status}` turns `test_bridge_unavailable_
-    passes_through` and `test_a_bridge_note_never_reaches_the_model` red;
-    restored, green). `render._search` dropping `SEARCH_FRAMING`
-    from its own return is guarded by `tests/unit/
-    test_instagram_search_tool.py`, a gap this round did not close.
+    What it does NOT check, and cannot from this file alone: that the backend
+    actually RETURNS the named constant for that status at its own call site.
+    That is a claim about `nora/infra/social/bridge_client.py` and
+    `nora/infra/social/instagram_client.py`'s own control flow, neither of
+    which this test reads. `bridge_client.py`'s non-ok path (both
+    `nothing_found` and `unavailable`) is guarded by
+    `tests/test_social_bridge_client.py` (`test_bridge_unavailable_passes_through`
+    and `test_a_bridge_note_never_reaches_the_model`). `render._search`
+    dropping `SEARCH_FRAMING` from its own return is guarded by
+    `tests/unit/test_instagram_search_tool.py`.
     """
     from nora.infra.social import instagram_client, render, results
 
@@ -1112,7 +1076,7 @@ def _classify_value(
     ret: ast.Return, blocks: dict[int, list[ast.stmt]],
     local_funcs: dict[str, ast.AST] | None = None, allow_helper: bool = True,
 ) -> list[tuple]:
-    """Classify one `ast.Return`'s value into the six shapes (see the
+    """Classify one `ast.Return`'s value into the shapes (see the
     module comment): `("literal", status, ok)` for (a)/(b)/(d)/(f) -- a known
     status and whether its note is provably non-empty; `("delegate",
     mapping_keys)` for (c)/(e) -- status unknown, `mapping_keys` is what a
@@ -1251,17 +1215,17 @@ def _classify_value(
     return [("bad", f"unrecognised return shape: {ast.unparse(value)[:80]}")]
 
 
-#: The write path into her computer's `inbox/` (design/external-files §5):
-#: `computer_import`, for a sent file and a shared file alike, ends in
-#: `return await _computer_copy_in(tool, request, take, copied)`, a closure
-#: of `build_tool_specs`. Shape (g): such a return is read as the returns it
-#: stands for, never trusted: every own return of `_computer_copy_in` except
-#: the two that hand back the caller's answers (`<x>.answer`, `copied(...)`);
-#: every return of the caller's `take` closure (and of any closure of the
-#: tool it hands off to with `return await NAME(...)`), each of which must be
-#: `_Stopped(outcome, row, ANSWER)` (ANSWER classified like any return) or
-#: `_Inbound(...)` (bytes, no answer); and every return of its `copied`
-#: closure. Anything else there is `bad`, fail-closed like the rest.
+#: The write path into her computer's `inbox/`: `computer_import`, for a sent
+#: file and a shared file alike, ends in `return await _computer_copy_in(tool,
+#: request, take, copied)`, a closure of `build_tool_specs`. Shape (g): such a
+#: return is read as the returns it stands for, never trusted: every own
+#: return of `_computer_copy_in` except the two that hand back the caller's
+#: answers (`<x>.answer`, `copied(...)`); every return of the caller's `take`
+#: closure (and of any closure of the tool it hands off to with
+#: `return await NAME(...)`), each of which must be `_Stopped(outcome, row,
+#: ANSWER)` (ANSWER classified like any return) or `_Inbound(...)` (bytes, no
+#: answer); and every return of its `copied` closure. Anything else there is
+#: `bad`, fail-closed like the rest.
 _COPY_IN = "_computer_copy_in"
 
 
@@ -1338,7 +1302,7 @@ def _expand_copy_in(
 def _check_tool(tool: str, doc: str) -> list[str]:
     """Every problem found for `tool` (empty = every return whose status is
     one this tool's docstring lists carries a note). See the module comment
-    above for the five shapes and what is and is not verified."""
+    above for the shapes and what is and is not verified."""
     src = TOOLS_PATH.read_text()
     tree = ast.parse(src)
     fn = _tool_function_node(tool)
@@ -1390,12 +1354,10 @@ def _check_tool(tool: str, doc: str) -> list[str]:
                 problems.append(f"return #{i}: unhandled classification {item!r}")
 
     for mapping_keys in delegate_mapping_keys:
-        # Checked ONLY against the declared reachable set and the named
-        # backend allowlist -- NEVER against a status some unrelated,
-        # locally-proven return also happens to carry (dropped 2026-09-25:
-        # that let removing "unavailable" from `_backend_notes()["x_read"]`
-        # still pass, "proven" by input-validation returns that have
-        # nothing to do with what the backend can send back).
+        # Checked only against the declared reachable set and the named backend
+        # allowlist, never against a status some unrelated, locally-proven return
+        # also carries: input-validation returns say nothing about what the
+        # backend can send back.
         missing = sorted((required & reachable) - mapping_keys - backend)
         if missing:
             problems.append(
@@ -1408,12 +1370,10 @@ def _check_tool(tool: str, doc: str) -> list[str]:
 
 @pytest.mark.parametrize("tool", _level3_three_state_tools())
 def test_every_listed_status_returns_a_note(tool: str) -> None:
-    """ADR 0015 §6: "a Level 3 status has a result `note`", named there as
-    `test_every_listed_status_returns_a_note` (issue #482: the name existed
-    in the ADR's table before the test did). See the module comment above
-    this function for the five return shapes this reads, what "every
-    return, not at least one" means, and what it still cannot see (two
-    backend call sites, guarded by other named tests instead).
+    """ADR 0015 §6: "a Level 3 status has a result `note`". See the module comment
+    above this function for the return shapes this reads, why every return (not
+    at least one) must carry a note, and what it cannot see (two backend call
+    sites, guarded by other named tests).
     """
     doc = dict(_model_facing_docstrings())[tool]
     problems = _check_tool(tool, doc)

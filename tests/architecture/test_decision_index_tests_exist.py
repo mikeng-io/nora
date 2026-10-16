@@ -2,48 +2,30 @@
 
 `design/09-decision-index.md`'s last column names the test that enforces each
 decision. That column is the whole point of the index — `AGENTS.md` sends you
-here to answer "which test guards this?" — and until 2026-09-08 nothing checked
-that the named test was real.
+here to answer "which test guards this?" — so the named test has to be real.
 
-Five rows were citing test files that do not exist:
-
-- **DEC-148 / R-85** named `tests/test_attribution.py` and a predicate module
-  `nora/agent/attribution.py`. Both were **deleted** in `6f05181e` ("remove the
-  R-85 misattribution guard after a live false refusal") — the decision was
-  reversed by evidence, correctly, and the row was left claiming enforcement it
-  no longer had. The row also claimed registration in
-  `tests/test_acceptance_rules.py::RULE_TESTS`, where it is absent.
-- **R-34, DEC-57, DEC-62, DEC-69** each named `tests/test_search.py`, deleted in
-  `d3a2b4a7` when the Exa adapter landed; those assertions live in
-  `tests/contract/test_search_provider_contract.py` now.
-
-`RULE_TESTS`'s own gate could not catch any of this: it asserts that every entry
-IN the registry collects, never that a rule claiming a test HAS one. A row can
-therefore name a test that was deleted years of commits ago and stay green — the
+`RULE_TESTS`'s own gate cannot catch a row naming a missing test: it asserts
+that every entry IN the registry collects, never that a rule claiming a test
+HAS one. A row can therefore name a test that was deleted and stay green — the
 decision-index form of "a declared metric with no call site is a lie".
 
 **Rows that legitimately cite deleted tests are marked, not exempted by name.**
-The knowledge tier and the language tier were deprecated 2026-09-07 with their
-code deleted (issue #115); eleven rows cite their tests and every one carries a
-`DEPRECATED` banner. That marking is what this test reads — a banner is a
-deliberate statement that the row is a record rather than a live guarantee,
-which is exactly the distinction the index's own deprecation convention makes.
-So the check is not "the test exists" but "the test exists OR the row says it
-does not", and adding a banner to silence a real regression would be a visible,
+A row whose decision was deprecated with its code deleted carries a `DEPRECATED`
+banner. That marking is what this test reads — a banner is a deliberate
+statement that the row is a record rather than a live guarantee, which is
+exactly the distinction the index's own deprecation convention makes. So the
+check is not "the test exists" but "the test exists OR the row says it does
+not", and adding a banner to silence a real regression would be a visible,
 reviewable edit rather than a quiet one.
 
-## The `::selector` extension (issue #187 finding 1)
+## The `::selector` extension
 
-The check above matches only the **file path** and stops at `.py` — the
-`::selector` half of a `file.py::test_name` citation was never read, so a row
-whose file exists but whose named `def`/`class` does not (a test renamed or
-moved WITHIN a file that still exists) stayed invisible to it. Two
-2026-09-17/22 re-measurements of the same index disagreed on the size of that
-hole — 64 vs. 91 — and the 09-21 finding is why: a reproducible DERIVATION is
-the deliverable here, not a headline count, because the count moves depending
-on what a re-run counts as a citation at all (this file's own `test_the_index_
-still_cites_tests_at_all` almost missed the parametrize/registry forms below
-the first time through).
+The file-level check matches only the **file path** and stops at `.py`. The
+`::selector` half of a `file.py::test_name` citation is read separately, so a
+row whose file exists but whose named `def`/`class` does not (a test renamed or
+moved WITHIN a file that still exists) is caught too. A reproducible DERIVATION
+is the deliverable here, not a headline count, because the count moves
+depending on what a re-run counts as a citation at all.
 
 `_resolved_selectors()` below is that derivation. It parses every
 backtick-quoted `` `file.py::name` `` citation AND the bare `` `::name` ``
@@ -51,22 +33,21 @@ continuation form the index uses to cite several tests in one file without
 repeating the path (the LAST file path named earlier in the same row), then
 resolves `name` against the target file's AST — every `def`/`class` at any
 nesting depth, so a bare method name still resolves even though this index
-never actually uses the two-segment `Class::method` form (checked: zero
-citations in the corpus carry a second `::`) and a bare class name (`` `file.py
-::SomeClass` ``) is legal on the same footing as a function.
+never uses the two-segment `Class::method` form, and a bare class name
+(`` `file.py::SomeClass` ``) is legal on the same footing as a function.
 
 Two citation shapes are NOT pytest node ids and are named here, explicitly, as
 an accepted blind spot rather than silently matched or silently failed:
 
-- **The registry form**, `` `tests/test_acceptance_rules.py::RULE_TESTS` ``
-  (sixteen rows use it): `RULE_TESTS` is a module-level dict, not a `def`/
-  `class`, so an exact-name AST match can never see it. This gate accepts any
-  selector that resolves to a module-level **assignment** target as this form
-  and does not attempt to verify the DICT KEY it may also carry (`RULE_TESTS
-  ["R-29"]`) — that would need evaluating the dict, which is exactly the kind
-  of thing the R-29 story warns against building a second version of.
+- **The registry form**, `` `tests/test_acceptance_rules.py::RULE_TESTS` ``:
+  `RULE_TESTS` is a module-level dict, not a `def`/`class`, so an exact-name
+  AST match can never see it. This gate accepts any selector that resolves to
+  a module-level **assignment** target as this form and does not attempt to
+  verify the DICT KEY it may also carry (`RULE_TESTS["R-29"]`) — that would
+  need evaluating the dict, which is exactly the kind of thing a noisy gate
+  warns against building a second version of.
 - **The `-k`-style partial name**, e.g. `` `::test_resolve_identity_` `` (a
-  trailing-underscore prefix of four real tests in `test_signal_adapter.py`)
+  trailing-underscore prefix of several real tests in `test_signal_adapter.py`)
   and `` `::test_obligation_7_` `` (a prefix of one long test name in
   `test_strands_api_contract.py`). A selector that is a proper PREFIX of at
   least one real `def`/`class` name in the file is accepted rather than
@@ -74,13 +55,10 @@ an accepted blind spot rather than silently matched or silently failed:
   with it, and pytest's own `-k` matches it the same way.
 
 What is left after both blind spots and the file-level DEPRECATED/REVERSED/NOT
-ENFORCED marking is a real, TRIAGED regression list. Each finding was checked
-with `git log -S 'def <name>'` against the file it should have been in — the
-majority were renamed or moved and are repointed in this same PR; a few are
-genuine `-k`-prefix false alarms already covered above. The ones that need a
-product judgement call this gate cannot make on its own (does a doctrine
-rewrite's new, differently-shaped test still enforce an old row's exact clause;
-does a narrowed successor test satisfy an old port-level claim) are pinned in
+ENFORCED marking is a real regression list. The entries that need a product
+judgement call this gate cannot make on its own (does a doctrine rewrite's
+new, differently-shaped test still enforce an old row's exact clause; does a
+narrowed successor test satisfy an old port-level claim) are pinned in
 `_KNOWN_UNRESOLVED`, exactly like `_KNOWN_DANGLING` in
 `test_doc_references_resolve.py`: a NEW unresolved selector fails the gate, a
 fixed one must be dropped from the pin (checked below), and the pin itself is
@@ -102,16 +80,15 @@ INDEX = ROOT / "design" / "09-decision-index.md"
 
 #: A row carrying one of these is asserting that it does NOT describe a live
 #: guarantee. `DEPRECATED` is the index's own established convention (rows are
-#: marked, never renumbered and never removed); the other two were added by the
-#: 2026-09-08 audit for a decision reversed by evidence and for one whose stated
-#: enforcement mechanism never existed.
+#: marked, never renumbered and never removed); `REVERSED` marks a decision
+#: reversed by evidence and `NOT ENFORCED` one whose stated enforcement
+#: mechanism never existed.
 _UNENFORCED_MARKERS = ("DEPRECATED", "NOT ENFORCED", "REVERSED")
 
 #: Matches a backticked path into `tests/`, stopping at the first character that
 #: cannot appear in one. Deliberately narrow: the column also carries `::node`
-#: selectors and prose, and over-matching here would produce the noisy gate this
-#: repo already learned to distrust (the R-29 duplicate that sat 15 days because
-#: the check cried wolf seven times).
+#: selectors and prose, and over-matching here would produce a noisy gate that
+#: cries wolf.
 _TEST_PATH = re.compile(r"`(tests/[A-Za-z0-9_/]+\.py)")
 
 #: Every backtick-quoted span, read whole so the selector logic below can
@@ -132,10 +109,7 @@ _ROW_ID = re.compile(r"\|\s*((?:DEC|R|D|A)-?[0-9]+[a-z]?)\s*\|")
 #: Rows whose stale selector needs a product judgement call this gate cannot
 #: make from the code history alone — repointing or marking would be a guess
 #: about which of several plausible successor tests (or none) now carries the
-#: clause. Triaged 2026-09-25 (issue #187 finding 1); every entry was checked
-#: with `git log -S 'def <name>'` against its file first, and the ones WITH an
-#: unambiguous single successor were repointed in the index itself rather than
-#: pinned here (see the PR body's triage table for the full repoint list).
+#: clause.
 _KNOWN_UNRESOLVED: dict[tuple[str, str, str], str] = {
     (
         "R-33", "tests/test_vision.py",
@@ -382,8 +356,7 @@ def _is_marked(line: str) -> bool:
 
     «DEPRECATED IN PART» retires ONE clause; the rest of the row still stands
     and still names its enforcing tests, so it must not excuse the whole row
-    the way a bare DEPRECATED does (DEC-197 review: two live rows gained the
-    prefix and silently left this gate).
+    the way a bare DEPRECATED does.
     """
     unexcused = line.replace("DEPRECATED IN PART", "")
     return any(marker in unexcused for marker in _UNENFORCED_MARKERS)
@@ -441,7 +414,7 @@ def test_a_row_citing_a_deleted_test_is_caught() -> None:
 def test_a_marked_row_citing_a_deleted_test_is_allowed() -> None:
     """The deprecation convention is honoured rather than special-cased by name.
 
-    This is the eleven knowledge/language-tier rows' shape: the test is genuinely
+    This is the shape of a deprecated tier's rows: the test is genuinely
     gone, and the row says so.
     """
     row = (
@@ -697,9 +670,9 @@ def test_known_unresolved_selectors_are_still_unresolved() -> None:
 
 
 def test_a_pin_whose_selector_now_resolves_is_flagged_stale(tmp_path, monkeypatch) -> None:
-    """The bug this test guards against: a pin that never re-runs `_resolve`
-    stays pinned even after its function is re-added, restored, or renamed
-    back onto the exact name the pin recorded as missing."""
+    """A pin that never re-runs `_resolve` stays pinned even after its function
+    is re-added, restored, or renamed back onto the exact name the pin recorded
+    as missing."""
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
     (tests_dir / "test_fixture_module.py").write_text(

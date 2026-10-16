@@ -72,17 +72,15 @@ async def test_pending_returns_only_pending_rows(store):
 
 
 async def test_pending_with_zero_limit_returns_nothing_on_both_stores(store):
-    """`SqlComputeJobStore.pending` passes `limit` straight into `.limit(limit)`
-    with no `check_limit`-style floor, unlike `ReminderStore.due()` — flagged
-    by Task 2's own review rather than the brief. `limit=0` is the one input
-    the two implementations could plausibly disagree on without either raising:
-    Postgres accepts `LIMIT 0` and returns zero rows, and Python's `rows[:0]`
-    also returns `[]` (unlike a NEGATIVE limit, where `rows[:-1]` silently
-    returns everything but the last row instead of erroring — the divergence
-    `ReminderStore.due()`'s own `check_limit` guards against). Nothing in this
-    plan has `ComputeJobPoller` ever call `pending` with a negative limit, so
-    that case is not exercised here — only the real boundary input both
-    implementations must agree on.
+    """`SqlComputeJobStore.pending` passes `limit` straight into `.limit(limit)` with no
+    `check_limit`-style floor, unlike `ReminderStore.due()`. `limit=0` is the one input
+    the two implementations could plausibly disagree on without either raising: Postgres
+    accepts `LIMIT 0` and returns zero rows, and Python's `rows[:0]` also returns `[]`
+    (unlike a NEGATIVE limit, where `rows[:-1]` silently returns everything but the last
+    row instead of erroring — the divergence `ReminderStore.due()`'s own `check_limit`
+    guards against). `ComputeJobPoller` never calls `pending` with a negative limit, so
+    that case is not exercised here — only the real boundary input both implementations
+    must agree on.
     """
     await store.create(_job())
     assert await store.pending(limit=0) == []
@@ -282,7 +280,7 @@ async def test_room_jobs_returns_only_that_rooms_rows_of_that_kind_newest_first(
     assert [j.id for j in capped] == [newer.id]
 
 
-# -- the sub-agent's checkpoint (design/subagent §4d) ---------------------------------------
+# -- the sub-agent's checkpoint ---------------------------------------
 
 
 async def test_a_new_row_has_no_checkpoint(store):

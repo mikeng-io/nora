@@ -11,15 +11,13 @@ async def test_every_message_is_appended_to_the_audit(harness):
 
 
 async def test_ambient_reaches_the_agent_only_through_participation_gating(harness):
-    """R-1, clause 2 — REVISED (design/dreamer-agent-loop/35).
+    """R-1, clause 2: ambient traffic reaches no agent, except through the participation
+    occasion.
 
-    The old wording — "ambient traffic never reaches the agent" — held until
-    the participation occasion: an untagged message in an OPERATOR-OPTED-IN
-    room may now reach the agent, once per quiescence-closed window, through
-    `FirePath.speak`. Everything else about the clause is untouched, and this
-    test keeps the original pin byte-for-byte: ordinary ambient traffic, in
-    rooms with no relevance_gate opt-in, constructs ZERO agents and sends
-    nothing. The exception's own gating is pinned beside it, below and in
+    An untagged message in an OPERATOR-OPTED-IN room may reach the agent, once per
+    quiescence-closed window, through `FirePath.speak`. Ordinary ambient traffic, in rooms
+    with no relevance_gate opt-in, constructs ZERO agents and sends nothing, and this test
+    pins exactly that. The exception's own gating is pinned beside it, below and in
     `tests/integration/test_silent_failures.py`'s participation rows.
     """
     for i in range(10):
@@ -105,13 +103,10 @@ async def test_a_honcho_failure_does_not_block_ingest(harness):
 
 
 async def test_ingest_does_not_wait_on_a_slow_honcho(harness):
-    """Ingest SPAWNS the memory feed; it never awaits it. Proven on the
-    condition, not the clock: the fake feed blocks on an event nobody sets
-    until after `on_event` has returned, so an ingest that awaited the feed
-    would never return and `wait_for` would time out. The wall-clock bound
-    this replaced (`< 0.2s` against a 1s sleep) failed under full-suite load
-    on the deploy host (load average about 6) while passing 3/3 alone, the
-    class #430 and #180 retired elsewhere."""
+    """Ingest SPAWNS the memory feed; it never awaits it. Proven on the condition, not the
+    clock: the fake feed blocks on an event nobody sets until after `on_event` has
+    returned, so an ingest that awaited the feed would never return and `wait_for` would
+    time out. A wall-clock bound would fail under full-suite load while passing alone."""
     entered = False
     release = asyncio.Event()
 
@@ -133,14 +128,13 @@ async def test_ingest_does_not_wait_on_a_slow_honcho(harness):
     # An ingest that awaited the feed would block on `release` forever; the
     # timeout is a hang guard, not a latency bound.
     await asyncio.wait_for(harness.handler.on_event(group_event(body="hi")), timeout=10)
-    # THE POSITIVE CONTROL, and the reason the signature fix matters: with the
-    # wrong signature the fake raised in microseconds, so returning promptly
-    # was true of a call that never blocked and the test measured nothing.
-    # Asserting the fake was actually entered is what makes the return a
+    # THE POSITIVE CONTROL: with a wrong signature the fake raises in microseconds, so
+    # returning promptly would be true of a call that never blocked and the test would
+    # measure nothing. Asserting the fake was actually entered is what makes the return a
     # statement about the SPAWN rather than about an exception.
     #
-    # After one loop tick, not before: the feed is SPAWNED, so it has not
-    # started when `on_event` returns.
+    # After one loop tick, not before: the feed is SPAWNED, so it has not started when
+    # `on_event` returns.
     await asyncio.sleep(0)
     assert entered, "the slow feed must have been reached, or the return proves nothing"
     release.set()

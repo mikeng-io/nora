@@ -1,4 +1,4 @@
-"""Shared contract for the source health log (design/cognition-loop/20 §1).
+"""Shared contract for the source health log.
 
 `nora.infra.sql.source_health.SqlSourceHealthLog` over real Postgres and
 `nora.testing.stimuli.InMemorySourceHealthLog`. The property: a row is

@@ -137,12 +137,11 @@ async def test_send_never_raises_on_a_timeout(aiohttp_server):
 async def test_send_does_not_log_the_message_body(rpc_server, caplog):
     """Group content is private; the send log line carries ids and length only.
 
-    `set_level` is load-bearing, not decoration (pre-deploy review 2026-08-10).
-    The success line is `log.info`, and `caplog` defaults to WARNING — so this
-    assertion was reading a stream the line never reached, and stayed green even
-    when the body WAS logged. It is the only assertion in this module protecting
-    a member's words, and it could not fail. The positive control below is what
-    proves the stream is now being read at all.
+    `set_level` is load-bearing, not decoration. The success line is `log.info`,
+    and `caplog` defaults to WARNING, so without it the assertion would read a
+    stream the line never reaches and stay green even when the body WAS logged.
+    It is the only assertion in this module protecting a member's words. The
+    positive control below proves the stream is being read at all.
     """
     caplog.set_level(logging.INFO, logger="nora.signal.send")
     sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
@@ -152,7 +151,7 @@ async def test_send_does_not_log_the_message_body(rpc_server, caplog):
 
 
 async def test_a_dm_to_an_address_not_in_identity_toml_is_refused(rpc_server, caplog):
-    """Operator rule 2026-10-05: a direct message goes only to somebody in
+    """A direct message goes only to somebody in
     identity.toml. A sender handed no addresses refuses every one, and one
     handed some refuses the rest, before any call to signal-cli — and the log
     line does not carry the number it refused."""
@@ -178,18 +177,17 @@ async def test_a_dm_to_a_known_address_goes_to_the_recipient_not_a_group(rpc_ser
     assert ACI not in caplog.text            # logged as "dm", not as the ACI
 
 
-# ── the platform's own sent-timestamp (design/11 §2.3, Bug B) ────────────────
+# ── the platform's own sent-timestamp ─────────────────────────────────────────
 
 
 async def test_send_returns_the_platform_assigned_timestamp(aiohttp_server):
     """`Deliverer` stamps `int(time.time() * 1000)` locally; Signal assigns its
     OWN sent-timestamp, and that is what a reply's `dataMessage.quote.id` points
-    at — measured 8 ms apart on live data, so a join by `ts` silently never
-    matched Nora's own rows.
+    at — the two differ by milliseconds, so a join by `ts` would silently never
+    match Nora's own rows.
 
-    The response body carries it and `send` used to discard the whole body after
-    checking for `error`. Shape confirmed from the shipped jar rather than by a
-    live send: `org.asamk.signal.util.SendMessageResultUtils.outputResult`
+    The response body carries it and `send` returns it. Shape read out of the
+    signal-cli jar: `org.asamk.signal.util.SendMessageResultUtils.outputResult`
     writes `Map.of("timestamp", <long>, "results", [...])` to the `JsonWriter`,
     and `SignalJsonRpcCommandHandler.runCommand` returns exactly that object as
     the JSON-RPC `result`.
@@ -247,7 +245,7 @@ async def test_a_non_integer_timestamp_is_ignored_rather_than_raising(aiohttp_se
 # parameter it never reads, the message goes out unmentioned or unstyled, and no
 # error appears anywhere.
 #
-# The names were then CONFIRMED against the running daemon on 2026-08-10 —
+# The names were also CONFIRMED against the running daemon —
 # `nora.platform.signal.send`'s module docstring records the probe and its
 # negative controls. That matters for how to read this file: these tests hold
 # the names STEADY, and the daemon is what established them. A test whose
@@ -283,7 +281,7 @@ async def test_several_mentions_ride_one_array(rpc_server):
 
 
 async def test_a_plain_message_carries_no_decoration_key_at_all(rpc_server):
-    """A plain send's payload is still exactly the two keys it always was.
+    """A plain send's payload is exactly the two keys `groupId` and `message`.
 
     Not cosmetic: an argparse4j namespace holding an EMPTY list is a different
     object from one holding no key at all, and this is what keeps the shipped
@@ -479,18 +477,18 @@ async def test_a_valid_range_survives_alongside_a_malformed_one(rpc_server):
     assert rpc_server.calls[0]["params"]["mention"] == [f"0:5:{ACI}"]
 
 
-# ── the undecorated retry (external review 2026-08-10) ──────────────────────
+# ── the undecorated retry ─────────────────────────────────────────────────────
 
 
 async def test_a_rejected_decorated_send_is_retried_without_the_decoration(aiohttp_server):
     """THE PROBE. Decoration is a nicety; the message is not.
 
-    The four `preview*` params were never covered by the live-daemon probe —
+    The four `preview*` params are not covered by the live-daemon probe —
     `getString` has no parse step, so a key that is READ and a key that is
     IGNORED look identical — and `previewImage`'s `data:` URI acceptance rests
     on a jar reading. If any of that is wrong, signal-cli rejects the CALL, not
-    the card: `ok=False`, row FAILED, and the group hears NOTHING. DEC-89 has
-    just made URL-carrying replies the common case rather than a corner.
+    the card: `ok=False`, row FAILED, and the group hears NOTHING. DEC-89 makes
+    URL-carrying replies the common case rather than a corner.
 
     R-5 says silence beats a WRONG answer. It does not say silence beats a
     PLAIN one. Delete the retry and this reds."""
@@ -547,15 +545,11 @@ async def test_an_undecorated_rejection_is_not_retried(aiohttp_server):
 
 # --- the attachment timeout ---------------------------------------------------
 #
-# Measured 2026-09-22, five consecutive times in the Friends room: an image was
-# generated, `send` raised `TimeoutError` ~10s later, and the picture arrived in
-# the group ANYWAY. The flat 10s budget is sized for a text send; an attachment
-# rides as a base64 `data:` URI in the JSON-RPC body, so a megabyte-scale
-# picture is two orders of magnitude more to serialize and ship.
-#
-# The cost was not a lost picture, it was a LIE: `ok=False` reached
-# `send_reply`, and Nora told the room the path was broken and described the
-# image in words instead. She was honest about what she had been told.
+# The flat 10s budget is sized for a text send; an attachment rides as a base64
+# `data:` URI in the JSON-RPC body, so a megabyte-scale picture is two orders of
+# magnitude more to serialize and ship. A timeout on a send that still arrives
+# is a LIE: `ok=False` reaches `send_reply`, and Nora tells the room the path
+# was broken and describes the image in words instead.
 
 
 async def test_an_attachment_send_gets_a_longer_budget_than_a_text_send():
@@ -596,12 +590,10 @@ async def test_the_attachment_budget_is_chosen_off_the_payload(
 ):
     """The budget ACTUALLY HANDED to the session, per send.
 
-    A first version of this test asserted only that both kinds of send
-    returned `ok=True` against the fake server. It passed with the selection
-    line deleted — the fake answers instantly, so every budget works and the
-    test could not fail on the defect it was written for. Recording that here
-    because the shape is the trap, not the line: asserting an OUTCOME that any
-    timeout produces proves nothing about which timeout was used.
+    Asserting only that both kinds of send return `ok=True` against the fake
+    server would pass with the selection line deleted — the fake answers
+    instantly, so every budget works. Asserting an OUTCOME that any timeout
+    produces proves nothing about which timeout was used.
 
     So this records the `timeout=` each `ClientSession` is constructed with,
     which is the only place the choice is observable.

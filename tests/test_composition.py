@@ -45,8 +45,8 @@ _HOME_POLICY = (
 @pytest.fixture
 def cfg(tmp_path, monkeypatch, pg_url, example_config_path):
     # `pg_url` (tests/conftest.py) creates a fresh Postgres database and exports
-    # DATABASE_URL, which build_dependencies() reads (store.database_url_env) to
-    # run migrations and wire the store — a throwaway database, never production.
+    # DATABASE_URL, which build_dependencies() reads (store.database_url_env) to run
+    # migrations and wire the store: a throwaway database, never production.
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     dst = example_config_path
     # config.example.toml's identity_file ("identity.toml") resolves relative to
@@ -55,11 +55,10 @@ def cfg(tmp_path, monkeypatch, pg_url, example_config_path):
     (tmp_path / "identity.toml").write_text(
         '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "+852111"\n'
     )
-    # policy.toml resolves the same way. `persons = "*"` keeps these wiring
-    # tests about the dependency graph rather than the allowlist. `label` is
-    # required at startup as of #200 part 2 (an unlabelled allowed room is a
-    # `PolicyError`, the way a second home room already is) — this fixture's
-    # room needs one for `load_policy` to succeed at all.
+    # policy.toml resolves the same way. `persons = "*"` keeps these wiring tests about
+    # the dependency graph rather than the allowlist. `label` is required at startup (an
+    # unlabelled allowed room is a `PolicyError`, the way a second home room is), so this
+    # fixture's room needs one for `load_policy` to succeed.
     (tmp_path / "policy.toml").write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
         'id = "g1"\nlabel = "g1"\npersons = "*"\n'
@@ -105,10 +104,9 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
 
 
 async def test_the_trigger_phrase_engages_by_default(cfg):
-    """`[engagement.trigger].enabled` defaults to True — the trigger phrase
-    already engaged her on every deployment before this flag existed, so the
-    wired `CompositePolicy` must still include `TriggerTextPolicy` when the
-    key is left at its default."""
+    """`[engagement.trigger].enabled` defaults to True: the trigger phrase engages her on
+    every deployment, so the wired `CompositePolicy` must include `TriggerTextPolicy` when
+    the key is left at its default."""
     deps = await build_dependencies(cfg)
     msg = NormalizedMessage(
         platform="signal", conversation_id="g1", conversation_type="group",
@@ -180,9 +178,8 @@ async def test_dependencies_speaker_is_none_when_tts_is_disabled(cfg, monkeypatc
 
 
 async def test_dependencies_speaker_is_none_when_tts_is_enabled_but_keyless(cfg, monkeypatch):
-    """The keyless-`route`/`search` shape (design/voice-channel/01 §5):
-    enabled with a provider named but the env var unset is a loud warning and
-    NO speaker — never a speaker that fails on every call."""
+    """The keyless-`route`/`search` shape: enabled with a provider named but the env var
+    unset is a loud warning and NO speaker, never a speaker that fails on every call."""
     monkeypatch.delenv("MINIMAX_CN_API_KEY", raising=False)
     keyless = override_config(cfg, {
         "speech.tts.enabled": True,
@@ -209,9 +206,9 @@ async def test_dependencies_builds_a_speaker_when_tts_is_enabled_and_keyed(cfg, 
     ("off", type(None)), ("normalise", "_NormaliseOnly"), ("model", "SpeechFormatter"),
 ])
 async def test_the_speech_formatter_is_wired_by_its_mode(cfg, monkeypatch, mode, kind):
-    """design/voice-channel/08: `off` (the template's value) wires NO
-    formatter, so the speaker sends her reply exactly as written; the other
-    two modes wire the deterministic half alone or the model call."""
+    """`off` (the template's value) wires NO formatter, so the speaker sends her reply
+    exactly as written; the other two modes wire the deterministic half alone or the model
+    call."""
     monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-minimax-key")
     keyed = override_config(cfg, {
         "speech.tts.enabled": True,
@@ -227,12 +224,12 @@ async def test_the_speech_formatter_is_wired_by_its_mode(cfg, monkeypatch, mode,
 
 
 async def test_the_doctrine_the_root_builds_carries_no_capability_section(cfg):
-    """DEC-150: the composition root must no longer wire a capability block.
+    """DEC-150: the composition root must not wire a capability block.
 
-    The store assembles only the authored sections; the schema is the single
-    source of truth for what she can do. If the root starts passing a
-    capability= argument again, the generated section reappears and this
-    reddens (and `DoctrineStore` no longer even accepts the parameter)."""
+    The store assembles only the authored sections; the schema is the single source of
+    truth for what she can do. If the root passes a `capability=` argument, the generated
+    section reappears and this reddens (and `DoctrineStore` does not accept the
+    parameter)."""
     deps = await build_dependencies(cfg)
     text = deps.doctrine.doctrine_text
     assert '<section kind="capability"' not in text
@@ -247,13 +244,11 @@ async def test_the_doctrine_the_root_builds_carries_no_capability_section(cfg):
 
 
 async def test_the_runtime_context_carries_the_configured_language_tag(cfg):
-    """The composition root must hand the loader `doctrine.language_hint`, or
-    every tag's runtime_context ships a blank `language:` line — the model is
-    then never told, from outside, what to speak. This was a live defect: the
-    DoctrineStore had the parameter and defaulted it to "", and the root never
-    passed it. The value is a BCP 47 tag (RFC 5646), asserted here against the
-    real assembled runtime_context. Drop `language_hint=` from the root and the
-    line reads `language:` with nothing after it, and this goes red.
+    """The composition root must hand the loader `doctrine.language_hint`, or every tag's
+    runtime_context ships a blank `language:` line and the model is never told, from
+    outside, what to speak. The value is a BCP 47 tag (RFC 5646), asserted against the
+    real assembled runtime_context. Drop `language_hint=` from the root and the line reads
+    `language:` with nothing after it, and this goes red.
     """
     deps = await build_dependencies(cfg)
     assert "language: yue-Hant-HK" in deps.doctrine.runtime_context
@@ -261,14 +256,13 @@ async def test_the_runtime_context_carries_the_configured_language_tag(cfg):
 
 
 async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_path):
-    """The catalogue gate's backticked half is inert without them, and an inert
-    gate that nobody notices is worse than no gate.
+    """The catalogue gate's backticked half is inert without `tool_names`, and an inert gate
+    that nobody notices is worse than no gate.
 
-    It has to be a tool whose name is an ordinary English word — `now` or
-    `about`. Every other native is snake_case, which the STRUCTURAL detector
-    catches on its own, so injecting one of those would make this pass whether
-    or not `tool_names` was ever handed over. This used to inject `recall`;
-    DEC-39 renamed that tool to `about`, which is still in the same class.
+    It has to be a tool whose name is an ordinary English word, such as `now` or `about`.
+    Every other native is snake_case, which the STRUCTURAL detector catches on its own, so
+    injecting one of those would make this pass whether or not `tool_names` was ever
+    handed over.
     """
     import shutil
 
@@ -283,31 +277,29 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
 
 
 async def test_the_nora_aipeer_id_is_reserved_and_no_human_may_hold_it(cfg):
-    """Honcho v2 corpus-safety (council 2026-08-07): the aiPeer id is Nora's
-    self-model peer. A human mapped to it would feed under it and merge
-    IRREVERSIBLY into her card (Honcho keeps conclusions, not text). Setting
-    `memory.ai_peer` to an existing person id ("miles" in this fixture) must
-    refuse to start, not silently corrupt the corpus."""
+    """Honcho v2 corpus-safety: the aiPeer id is Nora's self-model peer. A human mapped to it
+    would feed under it and merge IRREVERSIBLY into her card (Honcho keeps conclusions,
+    not text). Setting `memory.ai_peer` to an existing person id ("miles" in this fixture)
+    must refuse to start, not silently corrupt the corpus."""
     with pytest.raises(StartupError, match="reserved for Nora"):
         await build_dependencies(override_config(cfg, {"memory.ai_peer": "miles"}))
 
 
 async def test_no_enabled_platform_refuses_to_start(cfg):
-    """`platforms.signal.enabled = false` is honoured now (nora.platform.registry
-    .AdapterRegistry) — previously (config.py's "NOT YET HONOURED" comment)
-    SignalAdapter started regardless. With no platform enabled there is nothing
-    for the engagement pipeline to send through, so this is a startup failure,
-    not a degraded start."""
+    """`platforms.signal.enabled = false` is honoured
+    (nora.platform.registry.AdapterRegistry): SignalAdapter does not start. With no
+    platform enabled there is nothing for the engagement pipeline to send through, so this
+    is a startup failure, not a degraded start."""
     disabled = override_config(cfg, {"platforms.signal.enabled": False})
     with pytest.raises(StartupError, match="no platform adapter is enabled"):
         await build_dependencies(disabled)
 
 
 def test_build_dependencies_never_wires_the_real_database(cfg, tmp_path, pg_url):
-    """Regression guard: a fixture that forgot to point the store at a throwaway
-    database would wire a real SqlRecordStore against production. The store's URL
-    comes from DATABASE_URL, which `pg_url` set to an ephemeral `t_…` database;
-    the media root is under tmp_path. Both being throwaways is what proves it."""
+    """A fixture that forgot to point the store at a throwaway database would wire a real
+    SqlRecordStore against production. The store's URL comes from DATABASE_URL, which
+    `pg_url` set to an ephemeral `t_…` database; the media root is under tmp_path. Both
+    being throwaways is what proves it."""
     assert os.environ["DATABASE_URL"] == pg_url
     assert "/t_" in pg_url                          # the ephemeral-database marker
     assert cfg.store.data_dir == tmp_path
@@ -353,18 +345,17 @@ async def test_a_valid_key_turns_media_custody_on_with_an_encrypting_store(cfg, 
 async def test_an_enabled_instagram_gets_its_own_roster_even_while_degraded(cfg):
     """ONE ROSTER PER PLATFORM, and Instagram's is built for a DEGRADED adapter.
 
-    The map used to hold Signal and Discord only, so every Instagram room was
-    looked up in nothing at all: `group_members` answered `unavailable`,
-    `where_is` could not establish the room and refused, and every outbound
-    @-mention resolved to nobody and went out as plain text with no ping.
+    Every Instagram room needs a roster: without one `group_members` answers
+    `unavailable`, `where_is` cannot establish the room and refuses, and every outbound
+    @-mention resolves to nobody and goes out as plain text with no ping.
 
-    The adapter here IS degraded — the bridge base_url refuses instantly, so
-    `resolve_identity()` fails and M0 registers it anyway. That is the point:
-    an Instagram checkpoint clears without a restart, so a roster withheld on
-    the startup state would stay withheld for the life of the process, with the
-    room-scoped tools silently unavailable long after the session came back.
-    The READ is what fails closed — a checkpointed bridge answers 409 and the
-    roster is `available=False` for exactly as long as that is true.
+    The adapter here IS degraded: the bridge base_url refuses instantly, so
+    `resolve_identity()` fails and M0 registers it anyway. That is the point: an Instagram
+    checkpoint clears without a restart, so a roster withheld on the startup state would
+    stay withheld for the life of the process, with the room-scoped tools silently
+    unavailable long after the session came back. The READ is what fails closed: a
+    checkpointed bridge answers 409 and the roster is `available=False` for exactly as
+    long as that is true.
     """
     from nora.platform.instagram.roster import InstagramRoster
 
@@ -493,16 +484,13 @@ async def test_media_disabled_is_off_even_with_a_valid_key(cfg, monkeypatch):
 async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
     """The tick's `fire` collaborator is a `FirePath`, not a stub.
 
-    This replaces the startup refusal that guarded the stub while it existed.
-    The refusal was a statement about the stub; this is a statement about the
-    feature, and it is the assertion the whole wiring step needs: `HeartbeatLoop`
-    takes `fire` as a collaborator and calls whatever it is handed, so a stub
-    left in place claims every due row, delivers nothing, and resolves it — with
-    every unit test green, because each one supplies its own fake `fire`.
+    `HeartbeatLoop` takes `fire` as a collaborator and calls whatever it is handed, so a
+    stub left in place claims every due row, delivers nothing, and resolves it, with every
+    unit test green because each one supplies its own fake `fire`.
 
-    Reaching into `background._tasks` and `_fire` is the only way to see it from
-    out here: `Dependencies` deliberately exposes no heartbeat, and widening it
-    to make one test easier is exactly what its docstring refuses.
+    Reaching into `background._tasks` and `_fire` is the only way to see it from out here:
+    `Dependencies` deliberately exposes no heartbeat, and widening it to make one test
+    easier is exactly what its docstring refuses.
     """
     on = override_config(cfg, {"heartbeat.enabled": True})
     deps = await build_dependencies(on)
@@ -519,16 +507,15 @@ async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
 
 
 async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
-    """The participation occasion's wiring pin (design/dreamer-agent-loop/35
-    §3.5/§4), the heartbeat test's shape for the same reason: every unit test
-    supplies its own fake `speak`, so only here is it asserted that the
-    composition root hands the trigger `FirePath.speak` itself — and that the
-    FirePath's participation runner composes `tool_choice="auto"`, without
-    which a determination could never end in silence (the tag runner's
-    `required` pin demands a call, and the only terminal call is a send).
+    """The participation occasion's wiring pin, the heartbeat test's shape for the same
+    reason: every unit test supplies its own fake `speak`, so only here is it asserted
+    that the composition root hands the trigger `FirePath.speak` itself, and that the
+    FirePath's participation runner composes `tool_choice="auto"`, without which a
+    determination could never end in silence (the tag runner's `required` pin demands a
+    call, and the only terminal call is a send).
 
-    Reaching through `_speak.__self__` and `_participation_runner` is the only
-    way to see it from out here, exactly as with the heartbeat above.
+    Reaching through `_speak.__self__` and `_participation_runner` is the only way to see
+    it from out here, exactly as with the heartbeat above.
     """
     assert (await _participation_trigger_of(cfg)) is None, (
         "off by default: no trigger unless [relevance_gate] enabled = true"
@@ -543,12 +530,11 @@ async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
 
     # `shadow_channel` is set because the shipped default is `shadow = true`
     # and `_shadow_needs_a_channel` refuses that combination without one.
-    # `override_config` uses `model_copy`, which does NOT re-run validators,
-    # so a test can silently assert against a config that would refuse to
-    # start — this one deliberately does not. Which is why it carries the
-    # GUILD half too: the bare `"999"` this used to pass is a value the
-    # schema now refuses, and model_copy is exactly the door through which a
-    # test keeps asserting against a config the deployment could not load.
+    # `override_config` uses `model_copy`, which does NOT re-run validators, so a test can
+    # silently assert against a config that would refuse to start. This one deliberately
+    # does not, which is why it carries the GUILD half too: a bare `"999"` is a value the
+    # schema refuses, and model_copy is exactly the door through which a test keeps
+    # asserting against a config the deployment could not load.
     on = override_config(cfg, {
         "participation.enabled": True, "relevance_gate.enabled": True,
         "relevance_gate.shadow_channel": "888/999",
@@ -618,19 +604,18 @@ def _spawned(deps, qualname: str) -> list:
 
 
 async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg, pg_url):
-    """The live `ToolRegistry` gets the reminders store, and `[heartbeat]` being
-    off does not change that.
+    """The live `ToolRegistry` gets the reminders store, and `[heartbeat]` being off does not
+    change that.
 
-    Without `reminders=` on that constructor, `remind` answers `unavailable` in
-    production while every test in `tests/test_reminder_tools.py` passes — each
-    builds its OWN registry around the fake, so none of them can see the wiring.
-    That is the whole failure mode this test exists for, which is why it goes all
-    the way to a row in the database rather than asserting on an attribute: a
-    store held but never reached would satisfy the weaker check.
+    Without `reminders=` on that constructor, `remind` answers `unavailable` in production
+    while every test in `tests/test_reminder_tools.py` passes: each builds its OWN
+    registry around the fake, so none of them can see the wiring. That is why this goes
+    all the way to a row in the database rather than asserting on an attribute: a store
+    held but never reached would satisfy the weaker check.
 
-    `cfg.heartbeat.enabled` is False here (the shipped default). The tick is
-    gated; the TOOLS are not — the model may set, list and cancel reminders on a
-    deployment that never fires them, and the rows wait for the flag.
+    `cfg.heartbeat.enabled` is False here (the shipped default). The tick is gated; the
+    TOOLS are not: the model may set, list and cancel reminders on a deployment that never
+    fires them, and the rows wait for the flag.
     """
     from nora.agent.room import Room
     from nora.domain.models import PersonRef
@@ -642,7 +627,7 @@ async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg
     deps = await build_dependencies(cfg)
     try:
         registry = deps.engagement._tool_registry
-        # §9's caps came from `[reminders]`, converted at the composition root —
+        # The caps come from `[reminders]`, converted at the composition root —
         # `nora.agent` may not import `nora.config`, so a caps object that
         # silently fell back to its defaults would ignore every operator value.
         assert registry._caps == ReminderCaps(**cfg.reminders.model_dump())
@@ -675,14 +660,13 @@ async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg
 
 
 async def test_boot_recovery_counts_the_rows_it_swept(cfg, pg_url):
-    """The sweep is the only path that resolves reminders with no tick running,
-    and `nora_reminders_fired_total`'s spec says a reminder that vanishes must
-    never vanish from the metrics too. It logged a count and incremented
-    nothing, so a crash that ate reminders left no trace on any dashboard.
+    """The sweep is the only path that resolves reminders with no tick running, and
+    `nora_reminders_fired_total`'s spec says a reminder that vanishes must never vanish
+    from the metrics too. A sweep that only logs a count and increments nothing leaves a
+    crash that ate reminders with no trace on any dashboard.
 
-    This asserts the WIRING, with a real stranded row in the real database — the
-    counting function itself is unit-tested; a function nobody calls would pass
-    that test and leave this defect exactly where it was.
+    This asserts the WIRING, with a real stranded row in the real database: the counting
+    function itself is unit-tested, and a function nobody calls would pass that test.
     """
     from nora.domain.reminders import Reminder, ReminderState
     from nora.infra.sql import create_sql_engine, run_migrations
@@ -707,10 +691,10 @@ async def test_boot_recovery_counts_the_rows_it_swept(cfg, pg_url):
 
 
 async def test_the_liveness_gauge_is_seeded_even_with_the_heartbeat_off(cfg):
-    """`[heartbeat] enabled = false` SHIPS, and the gauge's callback was bound
-    inside `HeartbeatLoop.__init__` — so on every default deployment the series
-    exported `0.0` forever, which reads exactly like "ticked a moment ago". The
-    one reading an operator must be able to trust is the one it could not give.
+    """`[heartbeat] enabled = false` SHIPS, so the gauge must also be seeded outside
+    `HeartbeatLoop.__init__`; bound only inside it, on every default deployment the
+    series exports `0.0` forever, which reads exactly like "ticked a moment ago". The one
+    reading an operator must be able to trust is the one it could not give.
     """
     deps = await build_dependencies(cfg)
     assert cfg.heartbeat.enabled is False
@@ -720,16 +704,13 @@ async def test_the_liveness_gauge_is_seeded_even_with_the_heartbeat_off(cfg):
 
 
 async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cfg, pg_url):
-    """Mirrors `test_boot_recovery_counts_the_rows_it_swept`: a `FIRING`
-    `ComputeJob` (a crash mid-delivery) must resolve to `FAILED` at boot
-    whether or not `[compute] enabled` is true — the whole point of the
-    unconditional `compute_poller_recover` call in `build_dependencies`
-    (composition.py, beside `reminders`' own unconditional sweep). An earlier
-    draft gated this call behind `cfg.compute.enabled`, which would leave a
-    row stranded forever on exactly the deployment that looks safest: one
-    that crashed with compute on and was then switched off, unrelated to the
-    crash. `cfg.compute.enabled` is False here (the shipped default) — the
-    sweep must still run.
+    """Mirrors `test_boot_recovery_counts_the_rows_it_swept`: a `FIRING` `ComputeJob` (a
+    crash mid-delivery) must resolve to `FAILED` at boot whether or not `[compute]
+    enabled` is true. That is the point of the unconditional `compute_poller_recover` call
+    in `build_dependencies` (composition.py, beside `reminders`' own unconditional sweep):
+    gating it behind `cfg.compute.enabled` would leave a row stranded forever on a
+    deployment that crashed with compute on and was then switched off.
+    `cfg.compute.enabled` is False here (the shipped default); the sweep must still run.
     """
     from nora.domain.compute import ComputeJob, ComputeJobState
     from nora.infra.sql import create_sql_engine, run_migrations
@@ -759,11 +740,10 @@ async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cf
 
 @pytest.mark.parametrize("token", [None, "", "   "])
 async def test_computer_refuses_to_start_without_its_token(cfg, monkeypatch, token):
-    """`[computer] enabled` with computerd's bearer token unset or blank
-    refuses to start (R-5), the `policy.toml` discipline: otherwise every
-    computer call would answer `unavailable` from computerd's 401, in front of
-    the group, for a fault only the operator can fix. The variable NAME is
-    read off `cfg` (DEC-8)."""
+    """`[computer] enabled` with computerd's bearer token unset or blank refuses to start
+    (R-5), the `policy.toml` discipline: otherwise every computer call would answer
+    `unavailable` from computerd's 401, in front of the group, for a fault only the
+    operator can fix. The variable NAME is read off `cfg` (DEC-8)."""
     on = override_config(cfg, {"computer.enabled": True, "heartbeat.enabled": False})
     if token is None:
         monkeypatch.delenv(cfg.computer.token_env, raising=False)
@@ -777,14 +757,11 @@ async def test_computer_refuses_to_start_without_its_token(cfg, monkeypatch, tok
 async def test_compute_enabled_without_an_adapter_boots_and_spawns_no_poller(
     cfg, monkeypatch, no_build_stamp,
 ):
-    """S3b retired the only `ComputeBackend` adapter (design/sandbox-runtime
-    decision 4) and kept the outbox, the poller and boot recovery as generic
-    deferred delivery for a future `delegate_task`. A deployment whose
-    `config.toml` still says `[compute] enabled = true` must therefore still
-    BOOT (the old host-injected-secret refusals are gone with the backend that
-    needed them), and the poller must not be spawned: it has no backend to
-    poll, so a spawned one would claim `pending` rows it cannot answer for.
-    Reaching into `background._tasks` for the same reason
+    """The outbox, the poller and boot recovery are generic deferred delivery. With
+    `[subagent]` off no `ComputeBackend` is registered, so a deployment whose
+    `config.toml` says `[compute] enabled = true` must still BOOT, and the poller must
+    not be spawned: it has nothing to poll, so a spawned one would claim `pending` rows
+    it cannot answer for. Reaching into `background._tasks` for the same reason
     `test_the_heartbeat_is_wired_to_the_real_fire_path` does."""
     on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
     deps = await build_dependencies(on)
@@ -811,12 +788,12 @@ async def test_the_composed_registry_holds_the_rollup_read_and_the_standing_head
 
 async def test_subagent_off_registers_no_backend(cfg, no_build_stamp):
     """`[subagent] enabled = false` is the shipped default: nothing is built, nothing is
-    registered with the poller, and boot is what it was (design/subagent step 2)."""
+    registered with the poller, and boot is unchanged."""
     assert cfg.subagent.enabled is False
     deps = await build_dependencies(cfg)
     try:
         assert deps.subagent_backend is None
-        # and the four model-facing tools are withheld from every turn (step 3)
+        # and the four model-facing tools are withheld from every turn
         from nora.agent.tools import SUBAGENT_TOOLS
 
         assert deps.engagement._tool_registry._withheld >= SUBAGENT_TOOLS
@@ -827,8 +804,8 @@ async def test_subagent_off_registers_no_backend(cfg, no_build_stamp):
 async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_runs(
     cfg, no_build_stamp,
 ):
-    """On, the worker is the one `ComputeBackend` the poller resolves by kind `subagent`,
-    and the poller (which needs a backend to be spawned) now runs."""
+    """On, the worker is the one `ComputeBackend` the poller resolves by kind `subagent`, and
+    the poller (which needs a backend to be spawned) runs."""
     from nora.app.subagent_backend import SubagentBackend
 
     on = override_config(cfg, {
@@ -838,7 +815,7 @@ async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_r
     deps = await build_dependencies(on)
     try:
         assert isinstance(deps.subagent_backend, SubagentBackend)
-        # step 3: the tools are offered, and their desk launches into THIS backend
+        # the tools are offered, and their desk launches into THIS backend
         from nora.agent.tools import SUBAGENT_TOOLS
 
         registry = deps.engagement._tool_registry
@@ -933,14 +910,12 @@ def test_only_app_and_main_import_config():
         # lists none as forbidden), same standing as `__main__.py`/`config.py`
         # themselves.
         #
-        # `subject/` is the FOURTH, and it is the one that needs an argument
-        # rather than a precedent (`design/evaluation/01-boundaries.md` §6,
-        # edit 2 — which that node flagged as arguable before this test ever
-        # ran). It is a composition root by the same definition: `obtain()`
-        # calls `build_dependencies(cfg)`, so it must build a `Config` to call
-        # it with. Composing the real graph means reading the real config, and
-        # a subject that read something else would not be Nora — which is the
-        # entire property it exists to hold.
+        # `subject/` is the FOURTH, and it needs an argument rather than a precedent. It
+        # is a composition root by the same definition: `obtain()` calls
+        # `build_dependencies(cfg)`, so it must build a `Config` to call it with.
+        # Composing the real graph means reading the real config, and a subject that read
+        # something else would not be Nora, which is the entire property it exists
+        # to hold.
         #
         # The exemption is narrow: it admits ONE caller of `build_dependencies`
         # outside the application, and `tests/architecture/
@@ -1032,7 +1007,7 @@ async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
 
 
 
-# --- Standing / the debrief stage (design/dreamer-agent-loop/26-standing) ---
+# --- Standing / the debrief stage ---------------------------------------
 
 async def test_standing_disabled_wires_no_debrief_and_no_block(cfg):
     """`[standing] enabled = false` is the shipped default, and OFF has to mean
@@ -1046,7 +1021,7 @@ async def test_standing_disabled_wires_no_debrief_and_no_block(cfg):
 
 
 async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg):
-    """**One instance, two callers**, and this is the structural half of §4's
+    """**One instance, two callers**, and this is the structural half of a
     non-negotiable: the fold must read the position it is about to overwrite.
     Two separate store objects would still satisfy every type here and still be
     the same row, but it is the kind of wiring that invites a later change to
@@ -1057,18 +1032,17 @@ async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg):
     assert wiring is not None
     assert wiring.store is deps.engagement._context._standing_store
     assert wiring.max_chars == 1200
-    # Read the value from the config under test, not a hardcoded literal —
-    # the operator owns fold_batch and changed it 200 -> 40 on 2026-09-05
-    # (0d96b49c), which silently broke this assertion.
+    # Read the value from the config under test, not a hardcoded literal: the operator
+    # owns fold_batch, and a literal breaks when it is changed.
     assert wiring.fold_batch == cfg.standing.fold_batch
     assert wiring.record_store is deps.ingest._audit
 
 
 async def test_the_debrief_model_defaults_to_the_reply_model(cfg):
-    """`[standing] model = ""` means `[llm] model`, the same defaulting
-    `[language] exchange_model` uses. An empty string reaching the provider
-    would be a 400 on the first fold, in production, after a config change that
-    looked like it left the model alone."""
+    """`[standing] model = ""` means `[llm] model`, the same defaulting `[language]
+    exchange_model` uses. An empty string reaching the provider would be a 400 on the
+    first fold, in production, after a config change that looked like it left the model
+    alone."""
     deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
     assert deps.engagement._debrief_wiring.client.model == cfg.llm.model
 
@@ -1093,25 +1067,21 @@ def _effort_of(client: object) -> str:
 
 
 async def test_the_debrief_declares_a_reasoning_effort_rather_than_inheriting_silently(cfg):
-    """It passed none at all, so the fold ran at the provider's default — an
-    unchosen setting on a call that spends the conversation's slot, while the
-    tag path passes `[llm] reasoning_effort` explicitly.
+    """Passing none runs the fold at the provider's default — an unchosen setting
+    on a call that spends the conversation's slot, while the tag path passes
+    `[llm] reasoning_effort` explicitly.
 
-    Empty means inherit `[llm]`, which is the honest default while the spike
-    that would CHOOSE a value has not been run: `18-flows.md` calls the fold's
-    effort "a measurement, not a setting" and `09-measurement.md` forbids
-    asserting the plausible-sounding answer without it.
+    Empty means inherit `[llm]`, the honest default while no measurement has
+    chosen a value for the fold.
     """
     # PRECEDENCE, not one branch of it: an explicit `[standing]` value wins,
-    # and empty falls back to `[llm]`. The first version asserted only the
-    # fallback and went red the moment the operator set a value — which is a
-    # test pinning today's config rather than the rule.
+    # and empty falls back to `[llm]`. Asserting only the fallback goes red once
+    # the operator sets a value, which pins today's config rather than the rule.
     explicit = await build_dependencies(override_config(
         cfg, {"standing.enabled": True, "standing.reasoning_effort": "none"}))
-    # Read off the PROVIDER the client built, not a field it stored. Since the
-    # fold moved onto the Agent SDK the effort's whole job is to reach the
-    # request; an attribute nobody sends would satisfy a stored-field check and
-    # change nothing about the call.
+    # Read off the PROVIDER the client built, not a field it stored. The
+    # effort's whole job is to reach the request; an attribute nobody sends would
+    # satisfy a stored-field check and change nothing about the call.
     assert _effort_of(explicit.engagement._debrief_wiring.client) == "none"
 
     inherited = await build_dependencies(override_config(
@@ -1162,16 +1132,13 @@ async def test_an_unusable_reasoning_effort_refuses_to_start(cfg):
 
 
 async def test_the_dreamer_model_is_built_with_the_dreamers_own_effort(cfg):
-    """**A config key nothing reads is the phantom-metric rule again**, and
-    the first version of this change had exactly that: three config tests
-    asserting the VALUE, and removing the line in composition that uses it
-    left them all green.
+    """**A config key nothing reads is the phantom-metric rule again.** Config tests that
+    assert only the VALUE stay green when the line in composition that uses it is removed.
 
-    The effort is baked into the model object at construction rather than
-    passed per call, so the only place it can be observed is the spec the
-    Dreamer's own `ModelSource` was built with. Asserted with a value that is
-    NOT the tier's, so a composition still reading `[llm]` fails rather than
-    coincidentally agreeing.
+    The effort is baked into the model object at construction rather than passed per call,
+    so the only place it can be observed is the spec the Dreamer's own `ModelSource` was
+    built with. Asserted with a value that is NOT the tier's, so a composition still
+    reading `[llm]` fails rather than coincidentally agreeing.
     """
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True,
@@ -1198,18 +1165,17 @@ async def test_an_unset_dreamer_effort_leaves_the_model_on_the_tiers(cfg):
 
 
 async def test_the_dreamer_is_built_with_its_own_per_call_max_tokens(cfg):
-    """Issue #291: the Dreamer's PER-CALL ceiling is its own, not the tier's.
+    """The Dreamer's PER-CALL ceiling is its own, not the tier's.
 
-    Asserted on the SPEC and not on the config value, for the reason the
-    effort test above states outright — a config key nothing reads is a
-    phantom. Reverting `composition.py` to `max_tokens=tier.max_tokens` must
-    turn THIS red, so the value asserted is deliberately not the tier's.
+    Asserted on the SPEC and not on the config value, for the reason the effort test above
+    states outright: a config key nothing reads is a phantom. Reverting `composition.py`
+    to `max_tokens=tier.max_tokens` must turn THIS red, so the value asserted is
+    deliberately not the tier's.
 
-    This is the ceiling that raises. `[dreamer.budgets.*] output_tokens` is
-    the Strands LOOP budget and binds without raising
-    (`nora/agent/factory.py:238`); exceeding THIS one raises
-    `MaxTokensReachedException` -> `PartialReplyError` (`factory.py:541`),
-    which is the error that held one scope's watermark for ~24 hours.
+    This is the ceiling that raises. `[dreamer.budgets.*] output_tokens` is the Strands
+    LOOP budget and binds without raising (`nora/agent/factory.py`); exceeding THIS one
+    raises `MaxTokensReachedException` -> `PartialReplyError`, which holds one scope's
+    watermark.
     """
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True,
@@ -1246,16 +1212,14 @@ async def test_an_unset_dreamer_max_tokens_leaves_it_on_the_tiers(cfg):
 async def test_a_misspelt_inherited_effort_refuses_to_start(cfg):
     """**The typed declaration alone does not give the boot refusal it claims.**
 
-    `[dreamer] reasoning_effort` is typed, so it cannot arrive wrong. But `""`
-    is its default AND its documented inherit value — and what it inherits is
-    `[llm] reasoning_effort`, a bare `str`. Unwrapped, `[llm] = "hgh"` with
-    `[dreamer] = ""` LOADS and resolves to `"hgh"`, which reaches the provider
-    as a 400 mid-tick and surfaces as one more `unavailable` in a background
-    pass nobody watches — the exact scenario the declaration's comment says is
-    now impossible.
+    `[dreamer] reasoning_effort` is typed, so it cannot arrive wrong. But `""` is its
+    default AND its documented inherit value, and what it inherits is `[llm]
+    reasoning_effort`, a bare `str`. Unwrapped, `[llm] = "hgh"` with `[dreamer] = ""`
+    LOADS and resolves to `"hgh"`, which reaches the provider as a 400 mid-tick and
+    surfaces as one more `unavailable` in a background pass nobody watches.
 
-    Copying `StandingConfig`'s declaration without its RESOLUTION is half the
-    precedent; `_reasoning_effort` is the other half and exists for this case.
+    A declaration copied from `StandingConfig` needs its RESOLUTION too:
+    `_reasoning_effort` is that half and exists for this case.
     """
     with pytest.raises(StartupError, match="reasoning effort"):
         await build_dependencies(override_config(cfg, {
@@ -1286,7 +1250,7 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
 
 
 
-# --- the proactive adaptor (design/dreamer-agent-loop/39, DEC-162) -----------
+# --- the proactive adaptor (DEC-162) ------------------------------------
 
 
 
@@ -1296,19 +1260,16 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
 async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
     cfg, tmp_path,
 ):
-    """**The end of the wiring defect** (design/culture-tier `03-decisions`
-    correction 14). Three things have to line up or the grant is inert and
-    nothing says so: the runtime must hold a grant under the adaptor's OWN name
-    (a second spelling is a grant that silently does not apply), the tool
-    source must hold this key's room in `scope_rooms`, and the room must carry
-    the platform — without it there is no roster source, `view.available` is
-    `False`, and every room-scoped verb answers `unavailable` forever while
-    every counter stays green.
+    """**The grant is not inert.** Three things have to line up or the grant is inert and
+    nothing says so: the runtime must hold a grant under the adaptor's OWN name (a second
+    spelling is a grant that silently does not apply), the tool source must hold this
+    key's room in `scope_rooms`, and the room must carry the platform. Without it there is
+    no roster source, `view.available` is `False`, and every room-scoped verb answers
+    `unavailable` forever while every counter stays green.
 
-    `home_rooms` is asserted NOT to be the resolution path: culture is
-    scope-keyed and `DreamerRuntime.run` supplies `unit=None` for it, so a
-    resolution through `home_rooms` would look up `""` and find nothing — which
-    is exactly the branch this change replaces."""
+    `home_rooms` is asserted NOT to be the resolution path: culture is scope-keyed and
+    `DreamerRuntime.run` supplies `unit=None` for it, so a resolution through `home_rooms`
+    would look up `""` and find nothing."""
     from nora.agent.dreamer import culture_grant
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
@@ -1330,15 +1291,14 @@ async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
 
 
 async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_path):
-    """The property the grant exists for, measured at the seam rather than
-    inferred from it: `RegistryToolSource.build` with the culture adaptor's own
-    name, key and grant returns the room-scoped verbs (`group_members`,
-    `ask_memory`; the presence verbs left the grant on 2026-10-07) over a room
-    with a real platform rather than the empty one.
+    """The property the grant exists for, measured at the seam rather than inferred from it:
+    `RegistryToolSource.build` with the culture adaptor's own name, key and grant returns
+    the room-scoped verbs (`group_members`, `ask_memory`) over a room with a real platform
+    rather than the empty one.
 
-    Without the scope-keyed resolution this returns the same NAMES built
-    against `Room(platform="", roster_source=None)`, which is why the room is
-    asserted too: a green name list is exactly what the defect looked like."""
+    Without the scope-keyed resolution this returns the same NAMES built against
+    `Room(platform="", roster_source=None)`, which is why the room is asserted too: a
+    green name list is exactly what the defect looks like."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "culture.enabled": True,
@@ -1390,7 +1350,7 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
 async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent(
     cfg, tmp_path,
 ):
-    """39 D5/D11/D12 at the root: the heartbeat holds a `ProactiveScreen` over
+    """At the root: the heartbeat holds a `ProactiveScreen` over
     the SAME allowlist and note store, `event_registry` maps the kind, and
     the fire path holds an auto-runner under `proactive_runner` even with
     participation off. Reached the way the heartbeat wiring test reaches
@@ -1417,11 +1377,10 @@ async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_s
 
 
 async def test_the_proactive_runner_thinks_at_its_own_effort(cfg, tmp_path):
-    """design/cognition-loop/35 §3.4: the proactive act turn reasons at
-    `[proactive] reasoning_effort`, not `[participation]`'s. They shared one
-    runner, and at `none` a proactive turn spoke on every case where silence
-    was right. With participation ON, the two runners are distinct and each
-    carries its own effort."""
+    """The proactive act turn reasons at `[proactive] reasoning_effort`, not
+    `[participation]`'s. With participation ON, the two runners are distinct and each
+    carries its own effort; a shared runner would speak on every case where silence was
+    right at effort `none`."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "notes.enabled": True, "heartbeat.enabled": True,
@@ -1441,11 +1400,10 @@ async def test_the_proactive_runner_thinks_at_its_own_effort(cfg, tmp_path):
 async def test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off(
     cfg, tmp_path,
 ):
-    """Audit 2026-09-09: a proactive row written yesterday still comes due
-    after `[dreamer] enabled` is flipped off, and the screen admits it — so
-    the act turn's runner is gated on the home room (the row's existence
-    condition), not on the adaptor being wired. Without it every such row
-    would die `failed_error`."""
+    """A proactive row written yesterday still comes due after `[dreamer] enabled` is flipped
+    off, so the act turn's runner is gated on the home room (the row's existence
+    condition), not on the adaptor being wired. Without it every such row would die
+    `failed_error`."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": False, "notes.enabled": True, "heartbeat.enabled": True,
@@ -1461,11 +1419,10 @@ async def test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off(
 
 
 async def test_the_instagram_backend_is_composed_with_the_person_index(cfg):
-    """design/instagram-adoption/18, P5. `[social.instagram] enabled` composes
-    the bridge client behind BOTH Instagram rows, with `PersonsSubjectIndex`
-    beside it. The router refuses to be built with a person-keyed backend and
-    no index, so a composition that forgot the index would not boot — and one
-    that wired only the story row would leave profiles `unavailable` forever
+    """`[social.instagram] enabled` composes the bridge client behind BOTH Instagram rows,
+    with `PersonsSubjectIndex` beside it. The router refuses to be built with a
+    person-keyed backend and no index, so a composition that forgot the index would not
+    boot, and one that wired only the story row would leave profiles `unavailable` forever
     while the flag read as on."""
     from nora.infra.social import (
         EXCEPTION_ROUTES,
@@ -1494,12 +1451,11 @@ async def test_the_instagram_backend_is_composed_with_the_person_index(cfg):
 
 @pytest.mark.parametrize("linkedin_on", [False, True])
 async def test_the_linkedin_tools_get_the_router_only_when_switched_on(cfg, linkedin_on):
-    """design/social-per-network/10 §Config (DEC-201). The router's one
-    default backend serves X AND LinkedIn, so LinkedIn's switch is at the
-    composition root: `[social.linkedin] enabled` hands the SAME router to the
-    LinkedIn tools, and off hands them `None` while X keeps it. A root that
-    ignored the flag would read LinkedIn on a deployment whose operator never
-    set up a dedicated, private-viewing account."""
+    """DEC-201: the router's one default backend serves X AND LinkedIn, so LinkedIn's switch
+    is at the composition root: `[social.linkedin] enabled` hands the SAME router to the
+    LinkedIn tools, and off hands them `None` while X keeps it. A root that ignored the
+    flag would read LinkedIn on a deployment whose operator never set up a dedicated,
+    private-viewing account."""
     from nora.infra.social import SocialRouter
 
     deps = await build_dependencies(override_config(cfg, {
@@ -1520,11 +1476,10 @@ async def test_the_linkedin_tools_get_the_router_only_when_switched_on(cfg, link
 async def test_the_summons_consumer_is_not_spawned_unless_both_flags_are_on(
     cfg, instagram, summons,
 ):
-    """design/instagram-adoption/19: the summons consumer runs only under
-    `[social.instagram] enabled` AND `[social.instagram.summons] enabled`
-    (the config refuses the second without the first). Off is the shipped
-    state, and a summons spends requests on the session her group chats run
-    on, so off must mean not spawned."""
+    """The summons consumer runs only under `[social.instagram] enabled` AND
+    `[social.instagram.summons] enabled` (the config refuses the second without the
+    first). Off is the shipped state, and a summons spends requests on the session her
+    group chats run on, so off must mean not spawned."""
     on = override_config(cfg, {
         "social.instagram.enabled": instagram,
         "social.instagram.summons.enabled": summons,
@@ -1541,7 +1496,7 @@ async def test_the_summons_consumer_is_spawned_with_both_flags_on_and_no_poller_
     that never wires at all. The consumer drains an ENABLED inbox (the same
     `summons_wired` gate), its occasion holds an `AFTER_SPEAKING` runner
     (silence is expressible) and the mode the config names. And nothing polls
-    the notification feed any more: no poller task, no poller module."""
+    the notification feed: no poller task, no poller module."""
     import importlib.util
 
     on = override_config(cfg, {
@@ -1565,7 +1520,7 @@ async def test_the_summons_consumer_is_spawned_with_both_flags_on_and_no_poller_
 async def test_cognition_off_builds_no_stimulus_stage_and_no_evaluator(cfg):
     """`[cognition] enabled = false` is the shipped default: nothing is written
     to `stimulus`, no evaluator is spawned. Adapter health is recorded anyway —
-    it is Record, not a subsystem that acts (20-observe.md §1)."""
+    it is Record, not a subsystem that acts."""
     deps = await build_dependencies(cfg)
     assert deps.wake_evaluator is None
     assert deps.ingest._stimulus_wiring is None
@@ -1601,9 +1556,8 @@ async def test_the_evaluators_floors_ready_follows_the_one_agenda_table(
     cfg, tmp_path, monkeypatch,
 ):
     """`nora.app.cognition_wiring.AGENDA_SKILLS` is the table the evaluator and the age gauge
-    both read. Production maps the `time` skill, so floors
-    are ready; a table without it must leave every floor inert (a root that hard-coded
-    the answer would not follow it)."""
+    both read. Production maps the `time` skill, so floors are ready; a table without it
+    must leave every floor inert (a root that hard-coded the answer would not follow it)."""
     from types import MappingProxyType
 
     import nora.app.cognition_wiring as wiring
@@ -1644,7 +1598,7 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     agent = runner._agent_runner
     assert agent._result_caps == dict(TOOL_RESULT_CAPS)
     assert not hasattr(agent, "_read_tool_budgets")
-    # PR B (DEC-246): the two new reads are wired and BUILT through the real
+    # DEC-246: the two reads are wired and BUILT through the real
     # registry (a tool whose read the composition root did not hand the registry
     # is withheld from every surface and would be «wired» in name only).
     unit, home = next(iter(runner._home_rooms.items()))
@@ -1654,13 +1608,13 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     # `remind`/`note_create`, whose arguments differ from the session's own
     # verbs of those names, and R-99 would veto every call to them.
     assert agent._param_names is not None and "note_read" in agent._param_names
-    # R-99 must accept the `room` argument the routed tools of a multi-room
-    # agenda take (#637 review, major 3), for every read tool held.
+    # R-99 must accept the `room` argument the routed tools of a multi-room agenda take,
+    # for every read tool held.
     assert all("room" in names for names in agent._param_names.values())
     assert set(agent._param_names) <= runner._read_only_tools
     # The session's instruction is the Dreamer's objective for it, read from
-    # the bind-mounted corpus, its own prelude first (not the shared doctrine,
-    # step 4 PR-1), and the composed runner injects the Register skill for a
+    # the bind-mounted corpus, its own prelude first (not the shared doctrine),
+    # and the composed runner injects the Register skill for a
     # `message` agenda and records it; `time` is mapped, so the floors wake.
     text, sha = runner._doctrine()
     assert text.startswith('<dreamer_doctrine name="cognition-prelude">')
@@ -1689,8 +1643,8 @@ async def test_a_session_whose_prelude_or_skill_is_missing_is_a_startup_error(
     cfg, tmp_path, how,
 ):
     """Without its prelude, `cognition` silently reads the shared Dreamer doctrine («you
-    look; you do not act»), and a mapped skill that is not installed raised a raw
-    `LookupError` out of the composition. Both are a named `StartupError` now."""
+    look; you do not act»), and a mapped skill that is not installed would raise a raw
+    `LookupError` out of the composition. Both must be a named `StartupError`."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     root = _dreamer_tree(tmp_path)
     prelude = root / "preludes" / "cognition-prelude.md"
@@ -1757,7 +1711,7 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     assert "character_read" in with_culture.cognition_runner._read_only_tools
     wired = off.cognition_runner._read_only_tools
     assert {"note_read", "about", "where_been", "event_search"} <= wired
-    assert {"rollup_read", "standing_read"} <= wired                    # PR B, DEC-246
+    assert {"rollup_read", "standing_read"} <= wired                    # DEC-246
     assert "memo_read" in wired                                         # DEC-306
     assert "social_items" not in wired  # not built yet
     # Built for a real room they are real, read-only tools, and only wired ones.
@@ -1799,9 +1753,9 @@ async def test_cognition_on_that_built_no_runner_refuses_to_boot(
 async def test_the_session_is_grounded_from_the_record_with_record_query_off(
     cfg, tmp_path, pg_url,
 ):
-    """#637 review, major 2: the rows that raised a stimulus are read by code for
-    the agenda whether or not `[record_query] enabled` offers a MODEL the tool.
-    Real Postgres, the composition's own grounder: who said what, with the id."""
+    """The rows that raised a stimulus are read by code for the agenda whether or not
+    `[record_query] enabled` offers a MODEL the tool. Real Postgres, the composition's own
+    grounder: who said what, with the id."""
     import sqlalchemy as sa
 
     from nora.domain.cognition_session import Room, build_situation
@@ -1847,9 +1801,8 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
 
 
 async def test_shadow_sessions_with_no_unit_that_can_run_them_refuse_to_boot(cfg, tmp_path):
-    """#637 review, minor 1: units without a home room stay in the evaluator,
-    but a shadow week in which NO unit can start a session would record
-    would-wakes and look healthy."""
+    """Units without a home room stay in the evaluator, but a shadow week in which NO unit
+    can start a session would record would-wakes and look healthy."""
     from nora.app import composition
 
     (tmp_path / "policy.toml").write_text(
@@ -1869,10 +1822,9 @@ async def test_units_without_a_home_room_are_gauged_and_never_woken(cfg, tmp_pat
 
 
 async def test_the_document_tools_reach_the_registry_only_while_documents_are_on(cfg):
-    """design/artifact §26: `[documents] enabled` ships false, and off the registry is
-    built with no document service, so no turn is offered `document_publish` or
-    `document_read`. The portal pages that open a document are a later step, and a
-    published document with nowhere to open it is worse than no tool."""
+    """`[documents] enabled` ships false, and off the registry is built with no document
+    service, so no turn is offered `document_publish` or `document_read`. A published
+    document with nowhere to open it is worse than no tool."""
     off = await build_dependencies(cfg)
     assert off.engagement._tool_registry._documents is None
     on = await build_dependencies(override_config(cfg, {"documents.enabled": True}))
@@ -1880,9 +1832,9 @@ async def test_the_document_tools_reach_the_registry_only_while_documents_are_on
 
 
 async def test_the_documents_block_reaches_both_turn_paths_only_while_documents_are_on(cfg):
-    """design/artifact §29: one `DocumentsContextReader`, built only under `[documents]
-    enabled` (the flag that withholds the two tools), handed to the tag path's assembler
-    and to the fire path. Off, no room renders `<documents>`."""
+    """One `DocumentsContextReader`, built only under `[documents] enabled` (the flag that
+    withholds the two tools), handed to the tag path's assembler and to the fire path.
+    Off, no room renders `<documents>`."""
     off = await build_dependencies(cfg)
     assert off.assembler._documents_reader is None
     on = await build_dependencies(override_config(cfg, {"documents.enabled": True}))
@@ -1902,8 +1854,8 @@ async def test_the_documents_block_reaches_both_turn_paths_only_while_documents_
 
 
 async def test_computer_sweeper_and_block_exist_only_while_on(cfg, monkeypatch):
-    """Design/sandbox-runtime §15.2: composition builds the session sweeper
-    (and `__main__` spawns its loop) only under `[computer] enabled`."""
+    """Composition builds the session sweeper (and `__main__` spawns its loop) only under
+    `[computer] enabled`."""
     off = await build_dependencies(cfg)
     assert off.computer_sweeper is None
     # `<computer>` likewise: no reader, so no room renders the block.
@@ -1991,9 +1943,9 @@ async def test_a_person_session_reads_its_wake_batch_not_a_rooms_batch_limit(cfg
 
 
 async def test_culture_resolves_a_mapped_senders_canonical_name(cfg):
-    """#200 follow-up: `CultureAdaptor` names its `<room_messages>` through
-    `Persons.name_transcript` (`identity.toml`'s `[persons.miles]` maps signal
-    `+852111` to `Miles`, the `cfg` fixture's own shape)."""
+    """`CultureAdaptor` names its `<room_messages>` through `Persons.name_transcript`
+    (`identity.toml`'s `[persons.miles]` maps signal `+852111` to `Miles`, the `cfg`
+    fixture's own shape)."""
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "culture.enabled": True,
     }))

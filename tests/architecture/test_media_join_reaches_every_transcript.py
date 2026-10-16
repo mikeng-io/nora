@@ -1,22 +1,14 @@
 """Every transcript builder joins the media, not just the tag assembler.
 
-**This file exists because the first cut of issue #116 shipped without it.**
-`MediaJoin` was a private method on `TranscriptInjection`, so the tag path saw
-what a photo showed and the other SEVEN builders — the fire path, the tag-path
-debrief, the standing event fold, the Dreamer's batch, the note curator, lazy
-adoption and `load_transcript` — rendered bare handles. On master the sticker
-description and the voice-note transcript were baked into `messages.body`,
-which meant every one of them had it; the change was a regression on both flag
-settings, and it left the note tier blind to exactly the content the issue was
-opened to capture.
+**Why this file exists.** A transcript builder that skips `MediaJoin` renders
+bare handles (`[image a3f2c1]`) where the room saw a photo, a sticker
+description or a voice-note transcript, and a test written through ONE consumer
+cannot notice. This file is the brake on that defect.
 
-Every test above the join was written through ONE consumer, so nothing went
-red. That is the defect this file is the brake on.
-
-**A STATIC read of the source, deliberately.** The alternative is eight
-integration tests, one per builder, each needing that builder's whole
-composition — and the thing being asserted is not what one builder does with a
-particular row, it is that no builder was FORGOTTEN. A grep-shaped question
+**A STATIC read of the source, deliberately.** The alternative is one
+integration test per builder, each needing that builder's whole composition —
+and the thing being asserted is not what one builder does with a particular
+row, it is that no builder was FORGOTTEN. A grep-shaped question
 gets a grep-shaped gate: the builder set is DERIVED from the source, and every
 module reading the record store either joins or is exempted with a reason.
 
@@ -35,31 +27,29 @@ ROOT = Path(__file__).resolve().parents[2]
 
 #: The record-store reads that MAKE a module a transcript builder. Any module
 #: calling one of these on the audit store is handing rows to something, and
-#: since issue #116 those rows carry `[image a3f2c1]` where master carried the
-#: description — so it either joins or it renders less than master did.
+#: those rows carry `[image a3f2c1]` handles rather than what the media showed
+#: — so it either joins or it renders less than the room saw.
 _TRANSCRIPT_READS = (
     "recent", "since", "since_including_nora", "unattributed", "media_rows",
 )
 
-#: Modules that call one of the four above and are NOT transcript builders,
+#: Modules that call one of the reads above and are NOT transcript builders,
 #: each with the reason. **This is the allowlist, and the direction matters.**
-#: The first version of this gate listed the BUILDERS instead, with no
-#: discovery step — so a rename was caught and a builder that was never listed
-#: was not, and «never listed» is the only failure mode that has actually
-#: happened. Twice: FIVE builders missed when the join shipped, then
-#: `load_transcript` missed by the gate written to catch that.
+#: A gate that lists the BUILDERS, with no discovery step, catches a rename but
+#: not a builder that was never listed, and «never listed» is the failure mode
+#: that actually happens.
 #:
 #: Inverted, a new module reading the record store appears in the discovered
 #: set and has to be classified — joined, or exempted here with a sentence.
 _NOT_A_BUILDER = {
-    # `room_sightings` (the ONLY caller of `media_rows`, shared by `media_fetch`, room
-    # search and the documents. Image resolver, which needs no entry itself; this test's mechanism
-    # is per module path, so the exemption cannot be narrowed to the function)
-    # reads `media_json` for content addresses (which blob a
-    # room sent, and when), never a rendered transcript: no row body reaches a
+    # `room_sightings` (the ONLY caller of `media_rows`, shared by `media_fetch`,
+    # room search and the documents. Image resolver, which needs no entry itself;
+    # this test's mechanism is per module path, so the exemption cannot be
+    # narrowed to the function) reads `media_json` for content addresses (which
+    # blob a room sent, and when), never a rendered transcript: no row body reaches a
     # model through it except a shared item's own link, read by `media_fetch`.
     "nora/domain/media.py": "resolves media codes from media_json, hands no transcript to a model",
-    # design/sandbox-runtime §15.3: `recent` here is `ComputerEventStore`'s,
+    # `recent` here is `ComputerEventStore`'s,
     # the computer audit (commands and their exit codes), never a message
     # row; no transcript body reaches the `<computer>` block through it.
     "nora/engagement/computer_context.py": "reads computer audit rows, not messages",
@@ -68,7 +58,7 @@ _NOT_A_BUILDER = {
     # human reading `[image a3f2c1]` in a CLI table is not being told a photo
     # was never looked at; a model reading it in a prompt is.
     "nora/app/cli.py": "renders unattributed rows for an operator on the CLI",
-    # The eval seam's read-back (`design/evaluation/01-boundaries.md`): `heard`
+    # The eval seam's read-back: `heard`
     # reads NORA'S OWN rows after a turn, to report what the room heard, and
     # `last_row_id` reads one row's id as a watermark. Neither body reaches a
     # prompt — they are the OUTPUT side. What this test guards is the input
@@ -89,16 +79,15 @@ _NOT_A_BUILDER = {
 
 #: Modules that BUILD a transcript and that `_discovered_readers` structurally
 #: cannot see, because they read `messages` with their own SQL instead of
-#: calling one of the four store reads above. Each maps to the sentence a caller
-#: needs: what it renders that master rendered better, and why it is not joined.
+#: calling one of the store reads above. Each maps to the sentence a caller
+#: needs: what it renders thinner than a joined builder, and why it is not joined.
 #:
 #: **This is not a second allowlist, it is the gate's blind spot written down.**
 #: The discovery is keyed on the record store's method NAMES; a `sa.select` over
 #: `MESSAGES` is invisible to it, so such a module passes silently — which is
 #: verbatim the failure this file's docstring says it exists to catch («never
-#: listed» is the only failure mode that has actually happened, twice). A third
-#: instance would be the same failure in a new disguise, so the entry is
-#: required rather than optional, and `test_the_unjoined_builders_are_still
+#: listed»). Another such module would be the same failure in a new disguise,
+#: so the entry is required rather than optional, and `test_the_unjoined_builders_are_still
 #: _unjoined_and_still_say_so` keeps it honest in BOTH directions: it goes red
 #: if the module stops reading `messages` (stale entry — delete it) and red if
 #: it starts joining (limitation closed — delete it).
@@ -135,8 +124,7 @@ _NOT_A_RAW_READER = {
     # not a caller bypassing them. Its own `MESSAGES.c.body` selects are the
     # store's storage, not a second transcript rendered for a model.
     "nora/infra/sql/audit.py": "defines the record store's own reads, is not a caller of them",
-    # design/cognition-loop/15-map.md §4: the Record read behind
-    # `record_query`, a store like `audit.py`. Its one caller, the tool in
+    # The Record read behind `record_query`, a store like `audit.py`. Its one caller, the tool in
     # `nora/agent/tools.py`, runs the rows through the shared `MediaJoin`.
     "nora/infra/sql/record_query.py": (
         "a store read; its one caller, record_query, joins the rows it returns"
@@ -147,9 +135,8 @@ _NOT_A_RAW_READER = {
     "nora/infra/sql/rollups.py": (
         "matches a member's body against her name and keeps a boolean, renders no transcript"
     ),
-    # design/unified-memory/60-build-step-3.md S1: the memory index copies a
-    # message's body into its node and joins its attachments' readings into
-    # their own nodes itself; no model sees what it reads until S5's service.
+    # The memory index copies a message's body into its node and joins its
+    # attachments' readings into their own nodes itself.
     "nora/infra/sql/memory_index.py": (
         "projects a message into its index node and joins its readings itself, "
         "renders no transcript"
@@ -166,9 +153,9 @@ def _discovered_raw_message_readers(root: pathlib.Path | None = None) -> set[str
 
     `_discovered_readers` below is keyed on the store's method NAMES, so a
     module doing `sa.select(MESSAGES.c.body)` directly is invisible to it —
-    which is exactly how `_UNJOINED_BY_OWN_SQL` could have grown a second,
-    unenforced entry with nobody scanning for a third. Same shape as
-    `_discovered_readers`, different AST pattern.
+    which would leave `_UNJOINED_BY_OWN_SQL` an unenforced list with nobody
+    scanning for another entry. Same shape as `_discovered_readers`, different
+    AST pattern.
 
     Narrowed to the `body` column specifically, not `MESSAGES.c.<anything>`:
     several modules query `ts`/`id`/`is_nora`/`conversation_id` for watermarks,
@@ -187,11 +174,10 @@ def _discovered_raw_message_readers(root: pathlib.Path | None = None) -> set[str
         except SyntaxError:                                # pragma: no cover
             continue
         # OR a call of `transcript_select`, the store's own column set
-        # exported for the snapshot's as-of read (design/message-edits/01 §3).
-        # It selects `MESSAGES.c.body` INSIDE `audit.py`, so a module building
-        # a transcript through it reads bodies with its own SQL while naming
-        # no `body` column at all — the snapshot became exactly that, and
-        # without this clause it silently left the set it is still in.
+        # exported for the snapshot's as-of read. It selects `MESSAGES.c.body`
+        # INSIDE `audit.py`, so a module building a transcript through it reads
+        # bodies with its own SQL while naming no `body` column at all; without
+        # this clause such a module would silently fall out of the set.
         hit = any(
             (
                 isinstance(node, ast.Attribute)
@@ -256,13 +242,13 @@ PATHS = {
     "nora/app/adoption.py": "adoption",
     "nora/agent/tools.py": "load_transcript",
     "nora/ingest/relevance_gate.py": "relevance_gate",
-    # The eval seam's dream pass (`design/evaluation/`). Its OWN label: this
+    # The eval seam's dream pass. Its OWN label: this
     # test's control refuses a reused one, and it is right to — nothing here is
     # scraped alongside the loop's read (a `Subject` carries its own `Metrics()`,
     # built per case), so the distinct label costs nothing and says something
     # true about where the read came from.
     "nora/subject/dreaming.py": "dreamer_eval",
-    # The eval seam's JUDGE source (#458): the seeded window, rendered as she
+    # The eval seam's JUDGE source: the seeded window, rendered as she
     # was shown it, for a model that grades her reply against it.
     "nora/subject/sandbox.py": "judge_source",
     # `nora memory backfill` (DEC-214): a unit's history replayed into its own
@@ -326,9 +312,9 @@ def test_every_transcript_builder_awaits_the_shared_join(rel: str) -> None:
     assert calls_enrich, f"{rel} imports MediaJoin but never calls enrich()"
 
     # And the result must go somewhere. `await join.enrich([])` — awaiting the
-    # call and discarding both its input and its output — satisfied the check
-    # above, which is verbatim the regression this file's docstring exists to
-    # prevent (verified against `nora/app/adoption.py`, 2026-09-09).
+    # call and discarding both its input and its output — would satisfy the
+    # check above, which is verbatim the regression this file's docstring
+    # exists to prevent.
     used = any(
         isinstance(node, ast.Assign | ast.AnnAssign | ast.Return)
         and "enrich" in ast.dump(node)
@@ -348,13 +334,10 @@ def test_every_transcript_builder_awaits_the_shared_join(rel: str) -> None:
 
 
 def test_the_builder_set_is_not_hand_maintained() -> None:
-    """**The gate that would have caught `load_transcript`.**
+    """**The discovery gate: no builder is forgotten, only classified.**
 
-    `BUILDERS` was a hand-written allowlist with no discovery step, so a
-    renamed builder failed and a builder that was never listed did not — and
-    «never listed» is the only failure mode that has happened, twice: five
-    builders when the join shipped, then `load_transcript` past the gate
-    written to catch exactly that.
+    A hand-written `BUILDERS` allowlist with no discovery step fails on a
+    renamed builder but not on a builder that was never listed.
 
     Every module under `nora/` that calls one of the record store's transcript
     reads must be classified: a builder, or exempt with a reason. A new one is
@@ -380,9 +363,8 @@ def test_the_builder_set_is_not_hand_maintained() -> None:
 def test_the_unjoined_by_own_sql_set_is_not_hand_maintained() -> None:
     """The raw-SQL mirror of `test_the_builder_set_is_not_hand_maintained`.
 
-    `_UNJOINED_BY_OWN_SQL` was added as a plain dict with no scan behind it —
-    a second allowlist of the exact kind this file's own docstring names as
-    the failure mode that has already happened twice. A module reading
+    `_UNJOINED_BY_OWN_SQL` is a plain dict, a second allowlist of the kind this
+    file's own docstring names as the failure mode. A module reading
     `MESSAGES.c.body` with its own SQL and never listed in either set below
     would pass silently: invisible to `_discovered_readers` (wrong AST shape),
     and unmentioned in `_UNJOINED_BY_OWN_SQL` (nobody added it). This closes
@@ -431,7 +413,7 @@ def test_the_unjoined_builders_are_still_unjoined_and_still_say_so(
         closed and the entry is a lie;
       - its own module docstring names the handle a caller will see, so the
         disclosure the reader actually reaches and this list cannot drift
-        apart. The literal is the one issue #116's handles are spelled with.
+        apart. The literal is the one the media handles are spelled with.
     """
     assert reason.strip(), f"{rel} is listed with no reason"
     source = _source(rel)
@@ -483,18 +465,17 @@ def test_each_builder_still_makes_the_read_that_makes_it_one(
     passing on an import nobody uses.
 
     It asserts the SPECIFIC read this module was classified on, not merely that
-    the name appears somewhere — an earlier version accepted any attribute call
-    with a matching name, so a builder keeping an unrelated `foo.recent(...)`
-    stayed green."""
+    the name appears somewhere; matching any attribute call by name would stay
+    green on a builder keeping an unrelated `foo.recent(...)`."""
     assert read in _discovered_readers().get(rel, set()), (
         f"{rel} no longer calls {read}() — is it still a transcript builder?"
     )
 
 
 def test_the_join_is_constructed_exactly_once() -> None:
-    """ONE instance for the process. Eight copies would be eight chances to
-    disagree about what a picture shows — and eight render bounds, eight
-    screens, eight places to forget one."""
+    """ONE instance for the process. Per-builder copies would each be a chance to
+    disagree about what a picture shows, with their own render bounds and
+    screens."""
     composition = _source("nora/app/composition.py")
     assert composition.count("MediaJoin(") == 1, (
         "the composition root builds more than one MediaJoin; every consumer "
@@ -505,10 +486,10 @@ def test_the_join_is_constructed_exactly_once() -> None:
 def test_the_screen_is_injected_rather_than_imported_by_the_join() -> None:
     """`nora/language/` sits two layers below `nora/agent/` in the import
     contract, so a join that imported `scan_identifiers` directly could never
-    be reached by the note tier — the layering failure that would have pushed
+    be reached by the note tier — the layering failure that would push
     the join back to one consumer. `lint-imports` would catch the violation;
     this catches the shape BEFORE somebody writes it and then has to unpick
-    seven call sites.
+    every call site.
     """
     join = _source("nora/domain/media_join.py")
     tree = ast.parse(join)
@@ -522,8 +503,8 @@ def test_the_screen_is_injected_rather_than_imported_by_the_join() -> None:
     # By AST, not substring. `"screen=scan_identifiers" in source` is satisfied
     # by the words appearing ANYWHERE — including in a comment — so replacing
     # the screen with `lambda text: text` and mentioning the old name in the
-    # line above kept this green while every model-authored description reached
-    # all eight prompts unscreened (verified 2026-09-09).
+    # line above would keep this green while every model-authored description
+    # reached the prompts unscreened.
     tree = ast.parse(_source("nora/app/composition.py"))
     screened = any(
         isinstance(node, ast.Call)
@@ -545,7 +526,7 @@ def test_the_screen_is_injected_rather_than_imported_by_the_join() -> None:
 def test_each_builder_labels_its_own_path(rel: str, path: str) -> None:
     """One `path=` per site, and each its own.
 
-    The two cost histograms are labelled BY path because the eight callers have
+    The two cost histograms are labelled BY path because the callers have
     nothing in common but the code — a tag window is a handful of blobs under a
     reply's latency, adoption's is a thousand-row backfill — so a copy-pasted
     label collapses them into one series where the batch paths saturate and
@@ -569,19 +550,18 @@ def test_each_builder_labels_its_own_path(rel: str, path: str) -> None:
 
 def test_the_labels_are_distinct() -> None:
     """The control for the parametrized test above: it would pass just as
-    happily if `PATHS` named the same string eight times."""
+    happily if `PATHS` named the same string for every site."""
     assert len(set(PATHS.values())) == len(PATHS)
     assert set(PATHS) == set(BUILDERS)
 
 
 def test_the_discovery_finds_a_builder_it_has_never_seen(tmp_path) -> None:
-    """**K10: prove the gate works.**
+    """**Prove the gate works.**
 
-    `test_the_builder_set_is_not_hand_maintained` is the reason a ninth
-    unjoined builder cannot ship, and nothing demonstrated that its AST
-    discovery actually FINDS one — a walk that returned nothing would report
-    «all builders classified» with total confidence, which is the same
-    null-result trap the classification is there to close.
+    `test_the_builder_set_is_not_hand_maintained` is the reason an unjoined
+    builder cannot ship, so its AST discovery must actually FIND one — a walk that returned
+    nothing would report «all builders classified» with total confidence, the
+    same null-result trap the classification is there to close.
 
     Driven through the same function the gate uses, over a synthetic tree, so
     the demonstration does not depend on somebody adding a real builder."""

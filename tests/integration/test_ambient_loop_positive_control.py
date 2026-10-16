@@ -1,15 +1,14 @@
-"""The ambient loop's POSITIVE CONTROL, as one executable journey (issue #199).
+"""The ambient loop's POSITIVE CONTROL, as one executable journey.
 
 WHAT THIS FILE IS
 -----------------
-The incident of 2026-09-11 read end to end, driven through the REAL stages with
-a fake clock and a scripted model, asserting at every stage boundary. In one
-line: an untagged question is admitted by the gate and answered by a
-participation turn; the user tags her one second later, having not yet seen the
-answer; the tag turn dies with `llm_error`; and **nothing more may land in any
-room**.
+One scenario (11 Sep 2026, HKT) driven through the REAL stages with a fake
+clock and a scripted model, asserting at every stage boundary. In one line: an
+untagged question is admitted by the gate and answered by a participation turn;
+the user tags her one second later, having not yet seen the answer; the tag
+turn dies with `llm_error`; and **nothing more may land in any room**.
 
-The incident, with the timestamps this case replays (all HKT, 2026-09-11):
+The timestamps this case replays:
 
 | when | stage | what happened |
 |---|---|---|
@@ -20,15 +19,12 @@ The incident, with the timestamps this case replays (all HKT, 2026-09-11):
 | 16:43:57 | Observe | Miles tags her — the same second; he has not seen the answer |
 | 16:45:13 | Act · tag | the tag turn dies — `APIError`, `llm_error`, staying silent |
 | 16:45:14 | Orient · debrief | the fold runs over that dead turn |
-| 18:03:33 | Decide · proactive | the hourly proactive pass, +80 minutes |
 
-What actually shipped: the debrief was handed
-`<what_happened>the model call failed; nothing was sent</what_happened>` — true
-of that TURN, false of the ROOM — generalised it into a Standing position
-saying she had sent nothing all day, proposed a note on the same false premise,
-had that blessed by a `grounded: true` verdict, and 80 minutes later the
-proactive decider told him in a different room that she had never answered a
-question she had answered.
+The defect this guards: the debrief is handed
+`<what_happened>the model call failed; nothing was sent</what_happened>` —
+true of that TURN, false of the ROOM. A fold that generalises it into a
+Standing position saying she sent nothing all day, and proposes a note on the
+same false premise, misleads everything downstream that reads that position.
 
 THE ASSERTIONS, EACH AT THE STAGE WHERE IT BECOMES DECIDABLE
 ------------------------------------------------------------
@@ -36,28 +32,10 @@ THE ASSERTIONS, EACH AT THE STAGE WHERE IT BECOMES DECIDABLE
    `delivery_status=sent`  (`test_1_*`)
 2. after the tag turn — `llm_error`, and no second send  (`test_2_*`)
 3. after the debrief — the header is turn-scoped (`3a`), the fold is told her
-   row in the window was delivered (`3a2`) (the note-candidates and proactive
-   passes this case once followed further are deleted; the Cognition session
-   replaced them)
+   row in the window was delivered (`3a2`)
 5. across the whole run — zero sends into the home room  (`test_5_*`)
 
-**3 WAS RED ON MASTER AND THAT WAS THE POINT.** This case was landed as the
-instrument for the debrief fix, not as the fix: the five stage-3 assertions
-carried `@pytest.mark.xfail(strict=True)` citing #199, so the gate stayed
-green here while the case stayed honest, and `strict=True` meant the XPASS
-would fail the suite the day the fix landed and force the markers out. That
-happened on 2026-09-11 and all five markers are gone. They are now ordinary
-assertions and a regression in any of the four fixes reddens this file — which
-is the only reason the instrument was worth building before the fix.
-(Stage 3's verdict assertion, `3b`, was deleted on 2026-09-24 with the
-grounding verdict it measured — design/standing-compact/.)
-
-Two things the XPASS caught that the fix's own unit tests did not, and both
-are why a journey case earns its keep: the first draft of the scoped header
-also carried a clause about replies in the transcript, which `3a` scored as
-widening the claim past the turn (correctly — a header whose one job is not to
-widen); and the transcript legend was rendered as a line INSIDE `<transcript>`,
-where `test_0`'s own control counted it as a fourth message.
+(There is no stage 4; the numbers follow the test names.)
 
 WHY IT IS NOT GREEN FOR THE WRONG REASON
 ----------------------------------------
@@ -94,75 +72,18 @@ true for exactly that reason: it assembles the real pipelines through
 nothing it asserts would be more true against SQL — every store it touches is a
 double the contract suites already bind to its production sibling. Driving it
 on the real engine would buy one fact this case is not about (the SQL stores
-agree with their doubles) for a Postgres container and 0.9s -> minutes. The
-precedent for the shape is `tests/unit/test_offline_pipeline_assembler.py`,
-which sits in `unit/` because it asserts about a call, not about a run; this
-asserts about a run.
+agree with their doubles) for a Postgres container. The precedent for the shape
+is `tests/unit/test_offline_pipeline_assembler.py`, which sits in `unit/`
+because it asserts about a call, not about a run; this asserts about a run.
 
-Two deliberate departures from the incident, stated rather than hidden:
-
-* **Both rooms are on one platform.** The live home room is Discord and the
-  thread was on Signal; `build_offline_pipeline` wires exactly one adapter
-  (`adapters={adapter.platform: adapter}`). Putting the home room on a platform
-  with no adapter would make assertion 5 pass vacuously — nothing could reach
-  it even if the code tried. So the home room is a second conversation on the
-  SAME adapter: a send into it is genuinely reachable, and "zero sends into the
-  home room" is therefore a measurement rather than a tautology.
-* **The two background passes are driven at `inputs`**, the real
-  deterministic check that decides whether a model is paid for at all, not
-  through `DreamerRuntime.run`. `inputs() == ""` IS the runtime's fire
-  condition, and everything that could write a row — the tool build, the sample
-  loop — sits strictly below it, so the reduction can only ever suppress, never
-  manufacture, a raise. With a scripted model, "she chose not to remind" is not
-  a measurement; it is my script. The pass check is.
-  **The blind spot this leaves**, named rather than discovered later:
-  `DreamerRuntime.run` declines a pass at `tool_subset_faults` BEFORE `inputs`
-  is called, so a drift in the proactive grant or tool set would make
-  production decline while this case still reports "declined for the right
-  reason". `test_4_*` would not see it.
-
-THE TWO SHORT VARIANTS, FOR LIFTING INTO A SUITE LATER
--------------------------------------------------------
-Not executed here — written in the shape `evals/`'s YAML cases take, so they
-can be moved into a suite file without re-deriving them. Both come from the
-same incident, and both are about the two Decide paths not seeing each other.
-
-```yaml
-# S2 — participation already spoke; the proactive pass must HOLD.
-- name: participation_spoke_then_proactive_holds
-  expect: none                       # no reminder row, no raise
-  unit: ridgeline
-  now: 2026-09-11T16:00:00+08:00
-  rooms:
-    - {platform: signal, conversation_id: signal-thread, label: thread, home: false}
-    - {platform: telegram, conversation_id: home-room,   label: home,   home: true}
-  notes:
-    - title: X is open
-      description: the group has not settled X
-      anchor_date: 20260912
-  standing:
-    - room: thread
-      age_hours: 2
-      body: >-
-        at 14:00 I spoke about X in this room, unprompted, and said what I
-        had; nobody has come back on it yet
-  # THE POINT: X is open AND she already spoke to X two hours ago. A pass that
-  # raises X again is raising something she has already said. PASS is zero rows.
-
-# S3 — the tag one second after the participation send; the tag must not
-# re-derive what was just sent.
-- name: tag_one_second_after_participation_does_not_rederive
-  expect: silent                     # graded on the tag turn's trajectory
-  room: signal-thread
-  transcript:
-    - {at: "16:42:43", who: miles, body: "how do I get to Cyberport at 10 tomorrow?"}
-    - {at: "16:43:57", who: nora, body: "<the route: 969P from 天華邨, ~8:25, 970 to 數碼港>"}
-    - {at: "16:43:58", who: miles, body: "@Nora", tag: true}
-  # THE POINT: the tag is a RACE, not a new question — he had not seen the row
-  # above it when he typed. PASS is a turn that does not re-run `route`;
-  # grade on the tool path (`route` absent), never on the reply text. The live
-  # turn re-derived `saved_places`, `skills` and `route` twice and died doing it.
-```
+One deliberate departure from the scenario, stated rather than hidden:
+**both rooms are on one platform.** The live home room is Discord and the
+thread was on Signal; `build_offline_pipeline` wires exactly one adapter
+(`adapters={adapter.platform: adapter}`). Putting the home room on a platform
+with no adapter would make assertion 5 pass vacuously — nothing could reach
+it even if the code tried. So the home room is a second conversation on the
+SAME adapter: a send into it is genuinely reachable, and "zero sends into the
+home room" is therefore a measurement rather than a tautology.
 """
 
 from __future__ import annotations
@@ -209,9 +130,9 @@ DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
 HKT = ZoneInfo("Asia/Hong_Kong")
 
 UNIT = "ridgeline"
-#: The room the thread lives in — Signal in the incident, opted in to the gate.
+#: The room the thread lives in — Signal, opted in to the gate.
 THREAD_ROOM = "signal-thread"
-#: The room a proactive row would fire into — Discord in the incident. Here it
+#: The room a proactive row would fire into — Discord in the scenario. Here it
 #: is a second conversation on the SAME adapter, on purpose: see the module
 #: docstring. Nothing in this journey may ever send here.
 HOME_ROOM = "home-room"
@@ -224,30 +145,29 @@ _IDENTITY_TOML = (
 
 
 def _ms(hh: int, mm: int, ss: int) -> int:
-    """A wall-clock time on 2026-09-11 HKT, as epoch milliseconds."""
+    """A wall-clock time on 11 Sep 2026 HKT, as epoch milliseconds."""
     return int(datetime(2026, 9, 11, hh, mm, ss, tzinfo=HKT).timestamp() * 1000)
 
 
-#: The incident's clock, to the second.
+#: The scenario's clock, to the second.
 T_QUESTION = _ms(16, 42, 43)
 T_ANSWER = _ms(16, 43, 57)
-#: The SAME second her answer landed — `messages` recorded both at 16:43:57.
-#: That the tag is a RACE and not a reply to what she said is the whole reason
-#: the fold had her row in its window and generalised past it anyway.
+#: The SAME second her answer landed: the tag is a RACE, not a reply to what she
+#: said, so the fold has her row in its window and must not generalise past it.
 T_TAG = _ms(16, 43, 57)
 T_DEBRIEF = _ms(16, 45, 14)
 
 QUESTION = "聽朝10點要由屋企到Cyberport ABC Service Centre，點去？"
 ROUTE_ANSWER = "聽朝 10 點到數碼港：喺天華邨搭 969P，8:25 左右出門，轉 970 入數碼港。"
 
-#: The position the fold ACTUALLY wrote, from the `standing` row in #199.
-#: Scripted verbatim: this case reproduces the incident's model output and
-#: measures what the CODE does with it — it does not measure the model.
+#: The position the fold writes in the scenario, scripted verbatim: this case
+#: replays a fixed model output and measures what the CODE does with it — it
+#: does not measure the model.
 INCIDENT_STANDING = (
     "我今日冇出過任何回覆——model call 死咗，成個 turn 冇嘢送出。"
     "佢問緊聽朝點去 Cyberport，佢未收到任何路線，要補返。"
 )
-#: The note the same fold proposed, from `note` 589863b9 in #199.
+#: The note the same fold proposed in the scenario.
 INCIDENT_NOTE = {
     "title": "Miles 聽朝 10 點去 Cyberport 路線未覆",
     "description": "model call 失敗，Nora 冇送出任何回覆",
@@ -286,16 +206,15 @@ class _ScriptedGateClient:
 
 
 class _ScriptedDebriefClient:
-    """The debrief's `ModelClient`, replaying the incident's position.
+    """The debrief's `ModelClient`, replaying the scripted position.
 
-    The stage makes ONE call per fold since the grounding verdict was deleted
-    (2026-09-24, design/standing-compact/). This still dispatches on the
-    objective body in the system prompt, and records anything else as an
-    OTHER call answered with an empty object, so a second call per fold is
-    counted rather than silently served.
+    The stage makes ONE call per fold. This dispatches on the objective body
+    in the system prompt, and records anything else as an OTHER call answered
+    with an empty object, so a second call per fold is counted rather than
+    silently served.
 
-    The reply is the incident's own, verbatim: the false position. The case
-    asserts on what the CODE does with it.
+    The reply is fixed, verbatim: the false position. The case asserts on
+    what the CODE does with it.
     """
 
     def __init__(self, *, standing_body: str) -> None:
@@ -418,8 +337,8 @@ async def _drive(tmp_path: Path) -> _Journey:
         f'label = "{THREAD_ROOM}"\npersons = "*"\nrelevance_gate = true\n'
         f'unit = "{UNIT}"\n'
         # The home room is on ANOTHER platform: a unit holds at most one
-        # room per platform (DEC-105), which `load_policy` refuses since
-        # DEC-214, and a thread plus a home room are two rooms of one unit.
+        # room per platform (DEC-105, enforced by `load_policy`), and a thread
+        # plus a home room are two rooms of one unit.
         f'[[conversations]]\nplatform = "telegram"\nid = "{HOME_ROOM}"\n'
         f'label = "{HOME_ROOM}"\npersons = "*"\n'
         f'unit = "{UNIT}"\nhome_room = true\n'
@@ -521,10 +440,9 @@ async def _drive(tmp_path: Path) -> _Journey:
     # matters more: her OWN message's timestamp is stamped by
     # `nora/agent/guards.py`'s `send_reply` from `time.time()`, and that row is
     # the one the fold's transcript window renders as
-    # `<m at="2026-09-11 16:43" from="Nora" …>`. Left on
-    # the wall clock it renders as whatever time the suite runs at — so the
-    # instrument's rendered input would differ from the incident's at exactly
-    # the place #199 says it matters, and any ordering check ("a `Nora:` row in
+    # `<m at="… 16:43" from="Nora" …>`. Left on the wall clock it
+    # renders as whatever time the suite runs at, so the rendered input would
+    # differ from the scripted one and any ordering check ("a `Nora:` row in
     # the window AFTER the tag") would pass or fail by hour of day.
     clock.advance_to(T_ANSWER)
     assert trigger is not None
@@ -606,24 +524,23 @@ def test_0_every_stage_of_the_journey_actually_ran(journey: _Journey) -> None:
     assert journey.debrief_client.other_calls == [], (
         "the debrief fold made a call other than its one position call"
     )
-    # THE CONTROL THE WHOLE OF STAGE 3 RESTS ON, asserted here rather than
-    # inside an xfail (where it would never execute): the fold's own window
-    # carries her sent row, at the clock the incident recorded, ABOVE the tag.
-    # Without it every stage-3 assertion is about a prompt the fold never saw.
-    # PAST the opening tag, not just past the tag NAME: since #292 routed this
-    # block through `ContextBlock` the opening tag carries `untrusted` and a
-    # `note=`, so splitting on `"<transcript "` alone left the rest of that tag
-    # as a fourth "line" and this control counted it as a message.
+    # THE CONTROL THE WHOLE OF STAGE 3 RESTS ON: the fold's own window carries
+    # her sent row, at the recorded clock, ABOVE the tag. Without it every
+    # stage-3 assertion is about a prompt the fold never saw.
+    # Split PAST the opening tag, not just past the tag NAME: the opening tag
+    # carries `untrusted` and a `note=` (the block is built through
+    # `ContextBlock`), so splitting on `"<transcript "` alone would leave the
+    # rest of that tag as a fourth "line" and this control would count it as a
+    # message.
     window = journey.fold_input.split("<transcript ", 1)[1].split(">\n", 1)[1]
     window = window.split("</transcript>", 1)[0]
     lines = [line for line in window.splitlines() if line.strip()]
     assert len(lines) == 3, f"expected question, answer, tag; got {lines}"
-    # The clock and the speaker, as ATTRIBUTES — and deliberately NOT pinning
-    # what else the opening tag carries. The row may also carry a delivery
-    # mark, which is one of the shapes `3a2` accepts for "the fold is told this
-    # row went out"; pinning the full tag would make this control refuse a fix
-    # `3a2` was written to pass, exactly as pinning the trailing colon would
-    # have under the flat grammar.
+    # The clock and the speaker, as ATTRIBUTES, deliberately NOT pinning what
+    # else the opening tag carries. The row may also carry a delivery mark,
+    # which is one of the shapes `3a2` accepts for "the fold is told this row
+    # went out"; pinning the full tag would make this control refuse a fix
+    # `3a2` is written to pass.
     assert 'at="2026-09-11 16:43"' in lines[1] and 'from="Nora"' in lines[1], (
         f"her sent row must render at 16:43 as the middle element; got {lines}"
     )
@@ -690,9 +607,7 @@ def test_2_the_tag_turn_died_with_llm_error_and_sent_nothing(
 
 
 # ---------------------------------------------------------------------------
-# 3 — after the debrief.  RED ON MASTER UNTIL 2026-09-11 (#199); the five
-# `xfail(strict=True)` markers came off when the fix landed, exactly as they
-# were built to.
+# 3 — after the debrief
 # ---------------------------------------------------------------------------
 
 
@@ -707,7 +622,7 @@ _ROOM_SCOPE_TOKENS = ("today", "anywhere", "at all", "any reply", "nothing all")
 def test_3a_the_fold_is_told_the_header_is_about_this_turn(
     journey: _Journey,
 ) -> None:
-    """#199 shape 1, first half — the INPUT, where the defect actually lives.
+    """Shape 1, first half — the INPUT, where the defect lives.
 
     The header is RENDERED, not asked for: `_OUTCOME_GLOSS` is a constant, so
     this is decidable with no model in it at all. The property is that an
@@ -716,23 +631,20 @@ def test_3a_the_fold_is_told_the_header_is_about_this_turn(
     `Nora:` row that WAS sent.
 
     **Asserted as a pair, and the pair is the point**: a scope token must be
-    present, and no widening token may be. Scored against the wordings a fix
-    for #199 could plausibly choose:
+    present, and no widening token may be. Scored against candidate wordings:
 
     | candidate | verdict |
     |---|---|
-    | `the model call failed; nothing was sent` (master) | red — no scope |
+    | `the model call failed; nothing was sent` | red — no scope |
     | `the model call failed; nothing was sent in this turn` | green |
     | `this turn: the model call failed; nothing was sent` | green |
-    | `this turn produced no reply` (#199's own wording) | green |
+    | `this turn produced no reply` | green |
     | `the model call failed; this attempt produced no reply` | green |
     | `the turn ran; nothing was delivered anywhere today` | red — widened |
     | `the model call failed` (clause deleted) | red — no scope |
 
-    Scored by running the predicate, not by reading it. So the two obvious
-    minimal fixes pass, #199's own wording passes, and a "fix" that keeps a
-    room-wide claim while mentioning the turn does not. A flat ban on the
-    phrase «nothing was sent» would have failed the first two, which is a test
+    Scored by running the predicate, not by reading it. A flat ban on the
+    phrase «nothing was sent» would fail the scoped wordings, which is a test
     pinning one sentence rather than the property.
 
     The last row is deliberate: deleting the clause rather than scoping it
@@ -757,8 +669,8 @@ def test_3a_the_fold_is_told_the_header_is_about_this_turn(
 def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     journey: _Journey,
 ) -> None:
-    """#199 shape 1, second half — «and the fold is told that a `Nora:` row in
-    the window after the tag is a reply that was sent, whatever the turn's
+    """Shape 1, second half — «the fold is told that a `Nora:` row in the
+    window after the tag is a reply that was sent, whatever the turn's
     outcome».
 
     Both halves of shape 1 are render, not instruction, and this is the half a
@@ -771,9 +683,10 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     of its own all satisfy it. What it refuses is a render that shows the row
     and says nothing about whether it went out.
 
-    The header is cut out of the haystack first, on purpose: master's header
-    contains the word «sent» («nothing was sent»), and a search that counted it
-    would read the defect as the fix.
+    The header is cut out of the haystack first, on purpose: an `llm_error`
+    header may contain the word «sent» («this turn's model call failed, so THIS
+    TURN sent nothing»), and a search that counted it would read the defect as
+    the fix.
     """
     header_block = journey.fold_input.split("<what_happened ")[1].split(
         "</what_happened>",
@@ -786,13 +699,12 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
         "just that it exists — it reads:\n"
         + journey.fold_input.split("<transcript ")[1].split("</transcript>")[0]
     )
-    # AND THE ROW ITSELF CARRIES IT. Measured 2026-09-11: with the per-row
-    # marker stripped and only the legend left standing, every assertion in
-    # this file passed — the legend contains the words "delivered" and "was
-    # sent", so the haystack above is satisfied by an explanation of a mark
-    # that is not there. A legend explaining a marker nobody rendered is
-    # precisely the block-that-does-not-say-what-it-is defect this case
-    # exists to catch, one level up.
+    # AND THE ROW ITSELF CARRIES IT. With the per-row marker stripped and only
+    # the legend left standing, every assertion above would still pass: the
+    # legend contains the words "delivered" and "was sent", so the haystack
+    # is satisfied by an explanation of a mark that is not there. A legend
+    # explaining a marker nobody rendered is the block-that-does-not-say-what-
+    # it-is defect this case exists to catch, one level up.
     window = journey.fold_input.split("<transcript ")[1].split("</transcript>")[0]
     her_row = next(
         line for line in window.splitlines()
@@ -804,11 +716,6 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
         "her row must say on the row that it went out; the legend alone is an "
         f"explanation of a mark that is not there. The row reads: {her_row!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# 4 — the proactive decide tick, +80 minutes
-# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -824,11 +731,11 @@ def test_5_nothing_was_ever_sent_into_the_home_room(journey: _Journey) -> None:
     thread (module docstring): a send there is reachable, and `test_1_*` proves
     that adapter records sends.
 
-    SCOPE. This covers the paths this journey drives — ingest, the
-    participation turn, the tag turn and the fold. The stage that actually
-    misrouted live, the proactive ACT turn, is never reached here, because the
-    decide pass never rendered; so read this as "the tag and participation
-    paths did not misroute", not as the whole of the incident's final harm.
+    SCOPE. This covers the paths this journey drives: ingest, the
+    participation turn, the tag turn and the fold. The proactive ACT turn is
+    never reached here, because the decide pass never renders; read this as
+    "the tag and participation paths did not misroute", not as a claim about
+    the proactive path.
     """
     assert [cid for cid, _ in journey.sent_all if cid == HOME_ROOM] == [], (
         f"nothing may be sent into the home room: {journey.sent_all}"

@@ -3,13 +3,12 @@ CLAUDE.md's rule, and the reason `FakeTranscriber` cannot quietly drift into
 answering differently from `SenseVoiceTranscriber`. Mirrors
 `test_media_interpreter_contract.py`'s shape for `MediaInterpreter`.
 
-Fix round: review of the STT infrastructure PR (2026-08-21) found `Transcriber`
-shipped a second implementation with no contract suite. `FakeTranscriber` had
-no `media_type` gate at all while `SenseVoiceTranscriber.transcribe` refuses a
-known non-audio type (`unsupported`) before any network call goes out — the
-exact "fake masks the omission" gap `test_media_interpreter_contract.py`'s own
-docstring names. Each test below is written against the PORT, parametrized
-over both concrete classes, so that divergence can no longer happen silently.
+`SenseVoiceTranscriber.transcribe` refuses a known non-audio type
+(`unsupported`) before any network call goes out, so `FakeTranscriber` must
+gate on `media_type` too — otherwise the fake masks the omission, the gap
+`test_media_interpreter_contract.py`'s own docstring names. Each test below is
+written against the PORT, parametrized over both concrete classes, so that
+divergence cannot happen silently.
 """
 
 from __future__ import annotations
@@ -88,7 +87,7 @@ def make_transcriber(request, monkeypatch: pytest.MonkeyPatch):
 
 
 async def test_a_known_non_audio_media_type_is_refused_before_any_call(make_transcriber):
-    """A song is not a voice note (spec §4.2) — the port's OWN belt, in
+    """A song is not a voice note — the port's OWN belt, in
     addition to the caller's `ref.voice_note` gate. Refused BEFORE any
     underlying call could matter, regardless of what the underlying result
     would have been had it been asked."""

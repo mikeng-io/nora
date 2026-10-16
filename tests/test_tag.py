@@ -69,8 +69,9 @@ NORA_ACI = "a1000000-0000-4000-8000-000000000000"
 
 async def test_an_at_mention_of_nora_engages():
     """The real envelope from the live group. Signal puts U+FFFC in the body
-    and the mentioned ids in a parallel array, so `is_tagged` cannot see it —
-    tagging her the obvious way produced ingest, attribution, and silence."""
+    and the mentioned ids in a parallel array, so `is_tagged` cannot see the
+    mention in the text alone, so a tag the obvious way would be recorded and
+    never answered."""
     from nora.ingest.policy import MentionPolicy
     policy = MentionPolicy(frozenset({"+85290000100", NORA_ACI}))
     d = await policy.should_engage(message=_mention_msg({NORA_ACI}))
@@ -92,9 +93,8 @@ async def test_no_mentions_at_all_does_not_engage():
 
 
 async def test_an_empty_self_id_set_never_engages():
-    """Degraded identity must not make her answer everything. Before DEC-19
-    the alias set was `{primary}` on every start, so this is the state the
-    codebase actually shipped in for months."""
+    """Degraded identity (an empty self-id set) must not make her
+    answer everything."""
     from nora.ingest.policy import MentionPolicy
     policy = MentionPolicy(frozenset())
     assert (await policy.should_engage(message=_mention_msg({NORA_ACI}))).engage is False
@@ -123,7 +123,7 @@ def _reply_msg(author_id, text="早晨", quoted_ts=1785950108291):
 async def test_replying_to_noras_message_engages():
     """Replying is how you address someone in a group chat — arguably more
     directly than @-mentioning, since it points at a specific thing they said.
-    Without this, answering her meant typing the trigger text again."""
+    Without this, answering her would mean typing the trigger text again."""
     from nora.ingest.policy import ReplyToNoraPolicy
     p = ReplyToNoraPolicy(frozenset({NORA_ACI, "+85290000100"}))
     d = await p.should_engage(message=_reply_msg(NORA_ACI))
@@ -138,11 +138,10 @@ async def test_replying_to_somebody_else_does_not_engage():
 
 
 async def test_a_spoofed_display_name_cannot_trigger_her():
-    """Matched on the author's ID, never their name — and there is now no name
-    on the wire to match even if someone wanted to: signal-cli's quote payload
-    has no `authorName` field at all, so `Quote` carries none (design/11 §2.1,
-    Bug A). A member calling themselves ทᴏʀɑ carries their own id and is
-    refused on that."""
+    """Matched on the author's ID, never their name — and there is no name on
+    the wire to match even if someone wanted to: signal-cli's quote payload has
+    no `authorName` field at all, so `Quote` carries none. A member calling
+    themselves ทᴏʀɑ carries their own id and is refused on that."""
     from dataclasses import fields
 
     from nora.domain.models import Quote
@@ -174,7 +173,7 @@ def _voice_msg(voice=True, body="[voice note #ab12: 餵你今日得唔得閒]"):
 
 
 async def test_any_voice_note_engages():
-    """Operator directive 2026-08-26: 總之任何 Voice Note 都會直入上 Nora 度先囉.
+    """Operator directive: 總之任何 Voice Note 都會直入上 Nora 度先囉.
     The note is conversation content whether or not the transcript succeeded —
     the handle alone must engage her (R-27: never invent words, never drop)."""
     from nora.ingest.policy import VoiceNotePolicy

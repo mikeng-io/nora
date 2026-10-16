@@ -1,11 +1,9 @@
-"""Proves trap 1 (task-8-brief.md) is actually closed, not just relocated.
+"""Proves no per-tag state is retained.
 
-`Handler._prefills`/`_guards` (`nora/handler.py:41-46`, deleted alongside `Handler`
-in this commit) were appended to on every tag and never cleared — each retained
-`ReplyGuard` pinned a `Deliverer` -> doctrine -> adapter chain, an unbounded memory
-leak. Deleting the two attributes is not proof the leak is gone: the same shape of
-bug reappears the moment anything else — production or test — starts accumulating
-`ReplyGuard` instances in a collection nothing ever drains.
+A `ReplyGuard` retained per tag pins a `Deliverer` -> doctrine -> adapter chain,
+an unbounded memory leak. The same shape of bug appears the moment anything —
+production or test — starts accumulating `ReplyGuard` instances in a collection
+nothing ever drains.
 
 This test drives real tags through the real `EngagementPipeline` (fakes only at the
 adapter/memory/doctrine boundary — the model runner is a minimal stand-in that
@@ -106,7 +104,7 @@ class _ReplyingRunner:
             if hasattr(result, "__await__"):
                 await result
             guard.record("send_reply")
-        # `(stop_reason, final_text, trace)` since DEC-93/Task 4. The empty
+        # `(stop_reason, final_text, trace)` (DEC-93). The empty
         # text is the point: this double SENDS through the tool, so there is
         # no un-routed prose to recover and the recovery path must stay
         # untaken. `trace` is blank — this test is about `ReplyGuard`

@@ -119,11 +119,10 @@ async def test_long_content_is_clamped_and_flagged(tavily):
     long_result = out["results"][1]
     assert long_result["truncated"] is True
     # The wrapped body carries at most the clamp (plus the untrusted envelope).
-    # THE BOUND IS ON THE TEXT, not on the wrapped string. It was on the whole
-    # string until #314, which worked only while the wrapper was a constant
-    # ~30 characters (`<untrusted source="…" untrusted="true">`); the block
-    # carries its own description now and the wrapper is ~250, so the old
-    # assertion was measuring the description and calling it a clamp.
+    # THE BOUND IS ON THE TEXT, not on the wrapped string: the block carries its
+    # own description, so the wrapper is ~250 characters (the
+    # `<untrusted source="…" untrusted="true">` tag plus that description), and a
+    # bound on the whole string would measure the description and call it a clamp.
     #
     # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
     # times however many results come back. It buys a model that can read what
@@ -194,11 +193,10 @@ async def test_long_fetched_text_is_clamped_and_flagged(tavily):
     _fake, provider = tavily
     out = await provider.fetch(url="https://hko.gov.hk/x")
     assert out["truncated"] is True
-    # THE BOUND IS ON THE TEXT, not on the wrapped string. It was on the whole
-    # string until #314, which worked only while the wrapper was a constant
-    # ~30 characters (`<untrusted source="…" untrusted="true">`); the block
-    # carries its own description now and the wrapper is ~250, so the old
-    # assertion was measuring the description and calling it a clamp.
+    # THE BOUND IS ON THE TEXT, not on the wrapped string: the block carries its
+    # own description, so the wrapper is ~250 characters (the
+    # `<untrusted source="…" untrusted="true">` tag plus that description), and a
+    # bound on the whole string would measure the description and call it a clamp.
     #
     # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
     # times however many results come back. It buys a model that can read what
@@ -271,7 +269,7 @@ async def test_search_and_fetch_share_one_client_and_key(tavily):
     assert len(fake.extract_requests) == 1
 
 
-# ---- relevance floor (2026-08-31, measured) --------------------------------
+# ---- relevance floor -------------------------------------------------------
 
 async def test_below_floor_results_are_dropped(tavily):
     """A result whose Tavily `score` sits under `min_score` is dropped — the
@@ -293,7 +291,7 @@ async def test_below_floor_results_are_dropped(tavily):
 async def test_malformed_score_is_dropped_not_admitted(tavily):
     """A missing/null score cannot be measured against the floor, so it is
     dropped too — a response-shape change must not silently admit unmeasured
-    content (Codex review 2026-08-31, MAJOR)."""
+    content."""
     fake, provider = tavily
     fake.mode = "ok"
     out = await provider.search(query="q")

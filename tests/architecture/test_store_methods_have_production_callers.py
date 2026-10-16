@@ -2,44 +2,27 @@
 
 WHAT THIS IS FOR
 ----------------
-A full audit of every store method across the standing, knowledge, language and
-note tiers found methods that nothing under `nora/` calls, plus reverse-direction
-gaps — columns with no writer, tables with no store, a config key read nowhere.
-The obvious reading is "unfinished work", and it is wrong for most of them. The
-reading that survives all of it is narrower and worse:
+Some store methods are called by nothing under `nora/`, and a green contract
+suite does not notice: it measures that the verb WORKS, and nothing measures
+that the verb is USED. A method whose only caller is its own contract test, or
+a test asserting that it raises, is certified by the doer's own gate — the
+no-self-attestation rule landing on a store method. Wiring a pinned method into
+production forces its row OUT (see `test_pinned_methods_still_have_no_caller`),
+which is the graduation this mechanism exists to require.
 
-    **the contract suite was accepted as the completion gate.**
+This file is not a to-do list and emphatically not an instruction to wire these
+up. Several of them SHOULD NOT be wired; there is nothing on the other end. It
+exists so that the inventory is a checked artifact, and so that the NEXT method
+to arrive unwired has to be classified deliberately rather than by default.
 
-`SqlNoteStore.record_wake` had roughly fifteen call sites in
-`tests/contract/test_note_store_contract.py` and zero in production for the
-seven months between its build (2026-08-28) and the note-curator merge
-(design/dreamer-agent-loop/34, issue #99), which wired it into
-`NoteCuratorAdaptor.commit` — its row here is DELETED accordingly (see "wiring
-one up forces its row OUT", below), the exact graduation this file's own
-mechanism exists to require rather than merely permit.
-`SqlTurnVerdictStore.read` said outright that it was "present for the contract
-suite" (the store was deleted with the verdict, 2026-09-24).
-`nora/domain/tag_trace_rederive.rebuild_state` has a named test asserting that
-it raises. In each case a green test measured that the verb
-WORKS, and nothing anywhere measured that the verb is USED — which is
-CLAUDE.md's no-self-attestation rule landing on a store method: the doer's own
-gate certified the wrong property.
-
-So this file is not a to-do list and emphatically not an instruction to wire
-these up. Several of them SHOULD NOT be wired; there is nothing on the other
-end. It exists so that the inventory is a checked artifact instead of one that
-a session rediscovers every few weeks at the cost of a twenty-agent sweep, and
-so that the NEXT method to arrive unwired has to be classified deliberately
-rather than by default.
-
-THE FOUR SHAPES, because lumping them together is what made the list look
-like a pile of bugs:
+THE FOUR SHAPES, because lumping them together makes the list look like a pile
+of bugs:
 
   `read_back_affordance` — a by-id read shipped on the store's own surface for
       the contract suite and for an operator, with no consumer designed. Its
       own docstring usually says so. Wiring it up would be inventing a caller.
   `deferred_consumer`    — the write half is live and the read half is named
-      in a spec but deliberately not built yet. A decision with a date on it.
+      in a spec but deliberately not built yet.
   `defect`               — a live write path creates state that no production
       code can act on or leave. These are the ones that want fixing.
   `operator_script`      — a real caller exists and runs it deliberately, but
@@ -49,46 +32,30 @@ like a pile of bugs:
       wrong direction: the whole point is that a manual, human-invoked path
       stays outside the code the tag/participation loop runs.
 
-THE COUNTS, so they reconcile with something: FIVE methods are pinned below.
-ONE more is known to have no production caller and cannot be proven so here —
-`SqlTagTraceStore.recent` — because its name is shared with other stores (see
-the ambiguity rule). Six in total; the five are what this file can check.
-(`SqlTurnVerdictStore.read` was a second such method until its store was
-deleted with the verdict on 2026-09-24.)
-
-These counts were SIX and EIGHT until 2026-09-07 and were not re-derived when
-the knowledge and language tiers were deleted — `SqlEntityStore.lookup` left
-the ambiguous set (the method went with the tools that were its only
-consumers) and `SqlRenderedClaimStore` left the module set entirely. They
-were FIVE and SEVEN for one day after that: `SqlEntityStore.resolve_or_create`
-was pinned here as a `defect` — «the fact_entity registry now has no writer»
-— and the operator's answer on 2026-09-08 was to remove the registry store
-and the note tier's whole entity-resolution chain, so the pin went with the
-module. A count in prose that nothing recomputes is a claim, and this file
-exists to refuse exactly that shape of claim about somebody else's code.
+Methods in `_AMBIGUOUS` (below) may also have no production caller and cannot
+be proven so here; `SqlTagTraceStore.recent` is one, because its name is shared
+with other stores. A count in prose that nothing recomputes is a claim, so this
+docstring states none.
 
 HOW A CALLER IS RESOLVED, AND WHAT THAT STILL CANNOT SEE
 --------------------------------------------------------
 A caller of a METHOD is a PARSED `ast.Call` whose function is an attribute
 access on a NAME-BOUND receiver — `self._facts.propose(...)`,
 `store.pending(...)`. A caller of a PROPERTY is a bare Load of the same shape,
-because a property is read rather than called; `window_ms` is the one pinned
-member that needs it. Every part of that is load-bearing, and successive
-versions of this file got each part wrong in turn:
+because a property is read rather than called. Every part of that is
+load-bearing:
 
-  - Parsing, not text, because a DOCSTRING that mentions a method vouched for
-    it. `nora/domain/compute.py` contains the prose «Unlike `ReminderStore.due()`»
-    and that alone certified `SqlReminderStore.due` as called; deleting its one
-    real caller left this gate green.
+  - Parsing, not text, because a DOCSTRING that mentions a method would vouch
+    for it: `nora/domain/compute.py` contains the prose «Unlike
+    `ReminderStore.due()`», which must not certify `SqlReminderStore.due`.
   - A name-bound receiver, because `(await conn.execute(stmt)).all()` — which
-    appears in twenty-odd store modules — certified `SqlMusicSessionStore.all`.
+    appears in many store modules — would certify `SqlMusicSessionStore.all`.
     A store is always reached through a name, never off the result of a call.
   - CALLS for methods, not every attribute, because collecting bare Loads for
-    everything let a dataclass field, a SQLAlchemy column accessor, a decorator,
-    an annotation and even an assignment TARGET vouch for a method. 1265 names
-    on this tree were borrowable that way, and none of them is a method — so
-    `_namesakes` never saw them and the result read `ok` instead of
-    `unavailable`.
+    everything lets a dataclass field, a SQLAlchemy column accessor, a
+    decorator, an annotation and even an assignment TARGET vouch for a method.
+    None of those names is a method, so `_namesakes` never sees them and the
+    result would read `ok` instead of `unavailable`.
 
 What remains unresolvable is a NAMESAKE: a method of the same name on some
 other class. Two kinds are excluded from checking entirely and listed in
@@ -111,28 +78,22 @@ is DERIVED from the code every run rather than hand-maintained, so a name that
 stops being ambiguous cannot keep its exemption.
 
 STILL NOT SEEN, and stated rather than left to be discovered:
-  - A THIRD-PARTY namesake, and this is the real remaining hole. `_namesakes`
-    only sees classes defined under `nora/`, so a store method whose name
-    matches a method on a stdlib or library object is wrongly cleared. The two
-    methods that used to demonstrate it — `count` and `close` on the knowledge
-    tier's store — went with that tier on 2026-09-07, so the demonstration is
-    stated from the CLEARING side, which is what survives and is what a reader
-    can still check:
+  - A THIRD-PARTY namesake, the real remaining hole. `_namesakes` only sees
+    classes defined under `nora/`, so a store method whose name matches a
+    method on a stdlib or library object is wrongly cleared:
       `count`  — `sa.func.count()` (`nora/infra/sql/audit.py`,
                  `reminders.py`) and `str.count` in the compute package;
       `close`  — `await client.close()` (`nora/platform/discord/adapter.py`),
                  `h.close()` (`nora/obs/logging.py`).
-    NEITHER name is defined on any class under `nora/` today, so nothing would
-    push them into `_AMBIGUOUS`: a store method landing on either name
-    tomorrow reads `ok` rather than `unavailable`, on those call sites alone.
-    (`all` is the near miss that shows the mechanism working — every `.all()`
-    in this tree is SQLAlchemy's `Result.all`, and it stays checked only
-    because `MusicSessionStore` also declares it and pushes it into
-    `_AMBIGUOUS`.) Closing this properly needs receiver type inference, which
-    is more machinery than this gate is worth. Said plainly instead of left
-    for someone to trip over. The cheap partial mitigation if it ever does
-    bite: add the name to `_AMBIGUOUS` by hand, which turns the silent clear
-    into a loud "unchecked".
+    Neither name is defined on any class under `nora/`, so nothing pushes them
+    into `_AMBIGUOUS`: a store method landing on either name reads `ok` rather
+    than `unavailable`, on those call sites alone. (`all` shows the mechanism
+    working — every `.all()` in this tree is SQLAlchemy's `Result.all`, and it
+    stays checked only because `MusicSessionStore` also declares it and pushes
+    it into `_AMBIGUOUS`.) Closing this properly needs receiver type inference,
+    which is more machinery than this gate is worth. The cheap partial
+    mitigation: add the name to `_AMBIGUOUS` by hand, which turns the silent
+    clear into a loud "unchecked".
   - Dynamic dispatch — `getattr(store, name)`, a string-keyed registry. Nothing
     here would catch it.
   - REACHABILITY. A caller that is itself dead — an unimported module, a branch
@@ -140,12 +101,8 @@ STILL NOT SEEN, and stated rather than left to be discovered:
   - Whether the call actually lands on THIS store. A call on a port whose bound
     implementation is a different class counts here.
 
-PROBE (2026-08-29, production code only; each mutation asserted to have applied
-AND to still parse, because one that does not compile can redden for the wrong
-reason and one whose anchor missed measures the original code). It was run
-against the knowledge tier's store, which no longer exists — the mutations
-are recorded as the shape to repeat on a surviving store, not as something a
-reader can re-run verbatim:
+WHAT FALSIFIES EACH GUARD (production code only; a mutation must apply AND still
+parse, or it can redden for the wrong reason):
   - A new uncalled public store method:
     `test_every_uncalled_store_method_is_pinned` RED, naming it.
   - A call to a PINNED method added to a live module:
@@ -156,10 +113,9 @@ reader can re-run verbatim:
     and the pin independently RED as missing.
   - One row deleted from the pin table: RED, so the table is content and not
     decoration.
-  - THE TWO A REVIEWER USED TO BREAK THE PREVIOUS VERSION, both now caught and
-    both green before: deleting the only real caller of `SqlReminderStore.due`
-    (previously vouched for by a docstring) and of `SqlMusicSessionStore.all`
-    (previously vouched for by `Result.all()`).
+  - Deleting the only real caller of `SqlReminderStore.due` or
+    `SqlMusicSessionStore.all`: RED, since neither a docstring nor `Result.all()`
+    vouches for them.
 """
 
 from __future__ import annotations
@@ -290,10 +246,9 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 # Two kinds, both unresolvable for the same reason — a call to `.read(...)`
 # cannot be attributed: defined on more than one store class, or also defined on
 # a non-Protocol class elsewhere under `nora/`. One method KNOWN to have no
-# production caller hides in here and cannot be proven so: `tag_traces.recent`
-# (`turn_verdicts.read` was a second until 2026-09-24, deleted with its store).
+# production caller hides in here and cannot be proven so: `tag_traces.recent`.
 #
-# `lookup` joined on 2026-09-08 with `MediaObjectStore.lookup` (issue #116):
+# `lookup` is here because `MediaObjectStore.lookup` shares the name:
 # `nora/infra/version.py` and `nora/infra/transit/catalogue.py` each define an
 # unrelated one, so `.lookup(...)` cannot be attributed. Its real caller is
 # `nora.domain.media_join.MediaJoin`, pinned by
@@ -306,8 +261,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "sweep_firing", "apply",
         # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.
         "set_state",
-        # `SubagentBackend.cancel` (design/subagent step 2) is a `ComputeBackend` method, not a
-        # store's, and shares its name with a store's.
+        # `SubagentBackend.cancel` is a `ComputeBackend` method, not a store's, and
+        # shares its name with a store's.
         "cancel",
         # `SqlMemoStore.revisions` (DEC-306) shares the name with `SqlLessonStore`'s.
         "revisions",
@@ -316,7 +271,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # the analytics process. Callers: `nora.app.runtime.memory_drain_loop`
         # and `nora.analytics.runner`.
         "drain_index_queue",
-        # `MemoryEmbedWorker.run_once` (design/unified-memory/65 V1) shares the
+        # `MemoryEmbedWorker.run_once` shares the
         # name with other workers' ticks. Caller: `nora.app.runtime.
         # memory_drain_loop`, pinned by `tests/unit/test_runtime.py`.
         "run_once",
@@ -326,13 +281,10 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 # THE POSITIVE CONTROL, and it must be a LITERAL: every store module that
 # defines at least one public method, written out rather than globbed.
 #
-# Two versions of this control were wrong before it. A bare name COUNT had
-# enough slack that nine of these modules could vanish from the walk with every
-# assertion still green. Replacing it with a module SET did not fix it either,
-# because the expected set was computed from the same glob the walk used —
-# narrowing the walk narrowed both sides equally, and a reviewer dropped three
-# modules, one of them carrying a freshly added uncalled method, and stayed
-# green. A control derived from the thing it controls is not a control.
+# A bare name COUNT has enough slack that several modules could vanish from the
+# walk with every assertion still green, and a module SET computed from the
+# same glob the walk uses narrows both sides equally. A control derived from the
+# thing it controls is not a control.
 #
 # `engine.py`, `migrations_runner.py` and `schema.py` are the package's only
 # other files and define no public methods, so they are simply not here.
@@ -359,12 +311,8 @@ _STORE_MODULES: frozenset[str] = frozenset(
 )
 
 # Secondary, against the walk going thin WITHIN the modules it does reach.
-# LOWERED 2026-09-07 with the knowledge and language tiers deletion, which took
-# six store modules out of the package; the walk now finds 104 names, and the
-# floor sits just under that rather than at a round number far below it.
-# 97 on 2026-09-08, after `entities.py` (the `fact_entity` registry store)
-# went with the note tier's entity-resolution chain and `SqlNoteStore` lost
-# `merge`/`merge_groups`; the floor sits just under, on the same rule.
+# The floor sits just under the number of names the walk finds, rather than at a
+# round number far below it, so a thinning walk is noticed.
 _MIN_METHOD_NAMES = 95
 
 
@@ -466,18 +414,17 @@ def _call_sites() -> tuple[dict[str, list[_Site]], dict[str, list[_Site]]]:
     attribute that is the `func` of an `ast.Call` counts; a property is READ, so
     a bare Load counts too.
 
-    Collecting every attribute for both — which an earlier version did — meant a
-    dataclass field, a SQLAlchemy column accessor, a decorator, a type
-    annotation and even an assignment TARGET all vouched for a store method. A
-    reviewer measured 1265 such borrowable names on this tree, concentrated in
-    exactly the column-name space store methods draw from (`due_at`,
-    `revisit_at`, `disputed_at`, `anchor_date`). None of them is a method, so
-    `_namesakes` never saw them either and the name read `ok` rather than
-    `unavailable` — this file's own subject, one level up inside it.
+    Collecting every attribute for both would let a dataclass field, a
+    SQLAlchemy column accessor, a decorator, a type annotation and even an
+    assignment TARGET vouch for a store method, concentrated in exactly the
+    column-name space store methods draw from (`due_at`, `revisit_at`,
+    `disputed_at`, `anchor_date`). None of them is a method, so `_namesakes`
+    would not see them either and the name would read `ok` rather than
+    `unavailable`.
 
     The receiver must be a `Name` or an `Attribute`, never the result of a call:
     `(await conn.execute(stmt)).all()` is not a store call, and treating it as
-    one previously certified `SqlMusicSessionStore.all` as used.
+    one would certify `SqlMusicSessionStore.all` as used.
     """
     calls: dict[str, list[_Site]] = defaultdict(list)
     reads: dict[str, list[_Site]] = defaultdict(list)
@@ -633,10 +580,9 @@ def test_every_pin_declares_a_known_shape() -> None:
 def _scripts_call_sites() -> dict[str, list[_Site]]:
     """Call sites under `scripts/`, in the same shape as `_call_sites`'s
     `calls` half. `_call_sites` deliberately never looks here (`scripts/` is
-    not the daemon), which is exactly why an `operator_script` pin's claim —
-    "a real caller exists, just not where this file scans" — was unchecked:
-    nothing verified the claim was true rather than merely unfalsifiable by
-    the other tests in this file."""
+    not the daemon), which is exactly why this scan exists: it verifies an
+    `operator_script` pin's claim — "a real caller exists, just not where this
+    file scans" — rather than leaving it unfalsifiable by the other tests."""
     calls: dict[str, list[_Site]] = defaultdict(list)
     for path in sorted((ROOT / "scripts").glob("*.py")):
         for node in ast.walk(_parse(path)):
@@ -653,8 +599,7 @@ def test_every_operator_script_pin_has_a_caller_under_scripts() -> None:
     """`operator_script` is not a rebadged `read_back_affordance` — it claims
     a REAL caller exists, just outside `_call_sites`' `nora/`-only scan. A pin
     with no `scripts/` caller at all would be a plain defect wearing this
-    shape's label instead of being fixed or reclassified, and nothing before
-    this test could tell the two apart."""
+    shape's label instead of being fixed or reclassified."""
     calls = _scripts_call_sites()
     missing = [
         f"{mod}::{name}"

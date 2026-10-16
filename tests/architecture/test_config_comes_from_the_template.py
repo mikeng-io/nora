@@ -1,22 +1,21 @@
-"""R-B (issue #113): a test gets its config from the template, through the one
-fixture; only a test whose SUBJECT is the deployment reads the real file.
+"""R-B: a test gets its config from the template, through the one fixture; only
+a test whose SUBJECT is the deployment reads the real file.
 
-Measured 2026-09-07: the suite acquired a `Config` seven different ways across
-~29 files — the `tests.builders` helper, `shutil.copy(config.example.toml)`,
-`tomllib.load` on the example, `load_eval_config((real, example))`, a direct
-read of the real `config.toml`, a hand-built `Config(...)`, and inline TOML.
-Every one of those is a site that changes when the config file's name, format
-or a key moves, and four of them coupled unit tests of the eval harness to
-the DEPLOYMENT's values — `tests/test_evals_gate.py` once went red the moment
-the operator enabled an export, a false dependency the file's own docstring
-still records. One fixture (`example_config_path` / `example_config` in
-`tests/conftest.py`, built on `tests.builders.copy_example_config`) collapses
-the seven to two: the template, or — for the pinned files below — the real
-file, because comparing the template against the deployment is the test.
+A suite that acquires a `Config` by many routes — the `tests.builders` helper,
+`shutil.copy(config.example.toml)`, `tomllib.load` on the example,
+`load_eval_config((real, example))`, a direct read of the real `config.toml`, a
+hand-built `Config(...)`, inline TOML — has a site to change whenever the config
+file's name, format or a key moves, and a read of the real file couples unit
+tests to the DEPLOYMENT's values: a unit test of the eval harness goes red the
+moment the operator enables an export. One fixture (`example_config_path` /
+`example_config` in `tests/conftest.py`, built on
+`tests.builders.copy_example_config`) collapses this to two sources: the
+template, or — for the pinned files below — the real file, because comparing the
+template against the deployment is the test.
 
 The three files allowed to read the real `config.toml` (and to name the
 template beside it) are pinned in `_DEPLOYMENT_SUBJECTS`. A fixture cannot
-substitute in any of them: point the F11 drift gate at the template and it
+substitute in any of them: point the drift gate at the template and it
 compares the template to itself, green forever, measuring nothing.
 
 What the gate reads, off the AST rather than a grep, so a message string that

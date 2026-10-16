@@ -1,13 +1,11 @@
-"""A Cognition session's READ tools write nothing (#637 review,
-blocker).
+"""A Cognition session's READ tools write nothing.
 
-**The defect.** `note_search` upserted `note_candidate` and bumped
-`nora_note_candidates_total{trigger="miss"}` on every miss: a READ tool
-writing the table the live note curator reads to decide a note should exist.
-«Shadow writes nothing live» had been pinned only for the session's own write
-verbs, driven with `read_tools_for=lambda u, r: []`, so no read tool was ever
-run. That is the class: not one tool but «the session holds tools whose side
-effects nobody audited».
+**The hazard.** A READ tool that wrote `note_candidate` or bumped
+`nora_note_candidates_total` would be writing the table the live note curator
+reads to decide a note should exist. Pinning «shadow writes nothing live» only
+for the session's own write verbs, driven with `read_tools_for=lambda u, r: []`,
+never runs a read tool. That is the class: not one tool but «the session holds
+tools whose side effects nobody audited».
 
 **What this runs.** Every read tool the session is wired with
 (`COGNITION_READ_CATALOGUE` less what a flag withholds), built through the REAL
@@ -23,7 +21,7 @@ it exists to catch.
 
 Rooms, people and words are placeholders.
 
-What each test would catch if the fix were reverted is named in
+What each test would catch if its guard were removed is named in
 `scripts/mutations/cognition-step3a3-review.json`.
 """
 
@@ -369,7 +367,7 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
 
 async def test_the_positive_control_a_live_write_moves_the_snapshot(engine, world):
     """Without this the assertions above could pass because the snapshot cannot
-    see a write. `note_search` no longer records a miss anywhere (DEC-277), so
+    see a write. `note_search` records no miss anywhere (DEC-277), so
     the control is a row written to a live table directly: `_live` must move."""
     before = await _counts(engine)
     await _say(engine, platform="signal", room="ROOM-A", person="p1", sender=ADA,

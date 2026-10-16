@@ -1,6 +1,5 @@
 """Lessons through the book and Postgres (`nora.language.lesson_book.LessonBook`,
-`nora.infra.sql.lessons.SqlLessonStore`, `nora lessons`; design/self-growth/
-40-lessons.md, step L1).
+`nora.infra.sql.lessons.SqlLessonStore`, `nora lessons`).
 
 Real Postgres: the chain's head is the highest `seq` and `uq_lesson_revision_seq`
 decides a race, and the row CHECKs are what make a bad write impossible rather
@@ -387,7 +386,7 @@ async def test_losing_the_unique_seq_race_is_a_conflict_and_other_integrity_erro
 
 
 async def test_a_tension_row_round_trips_and_lists_newest_first(env):
-    """L3: the operator's record of a lesson the doctrine check refused, with the
+    """The operator's record of a lesson the doctrine check refused, with the
     rule quoted (`nora.infra.sql.tension`, migration `0101_self_tension`)."""
     from nora.domain.doctrine_check import Tension
     from nora.infra.sql.tension import SqlTensionStore
@@ -413,7 +412,7 @@ async def test_a_tension_row_round_trips_and_lists_newest_first(env):
 
 
 async def test_the_snapshot_holds_the_lessons_active_at_the_instant(env):
-    """The eval sandbox's copy of `<lessons>` (L5): per lesson, the revision
+    """The eval sandbox's copy of `<lessons>`: per lesson, the revision
     current at `before_ms`, kept when active; a lesson written after the instant
     is absent."""
     from nora.infra.sql.snapshot import _lessons
@@ -443,9 +442,9 @@ async def test_the_snapshot_holds_the_lessons_active_at_the_instant(env):
 
 
 async def test_a_lessons_counterfactual_seeds_active_lessons_in_the_stated_order(env):
-    """design/self-growth/40 §8: the eval's `lessons` tier writes the case's
-    lessons into the subject's unit, active, oldest first, at the sandbox's own
-    instant, so `<lessons>` renders them in the order the case states."""
+    """The eval's `lessons` tier writes the case's lessons into the subject's
+    unit, active, oldest first, at the sandbox's own instant, so `<lessons>`
+    renders them in the order the case states."""
     from nora.subject.sandbox import seed_lessons
 
     subject = SimpleNamespace(database_url=env.url, unit=UNIT)

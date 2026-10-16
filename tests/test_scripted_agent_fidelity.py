@@ -2,14 +2,13 @@
 
 The double replays a scripted tool sequence against the REAL tools and the
 REAL guard, which is the only reason a scripted scenario proves anything about
-`ReplyGuard`. It used to call `evaluate`/`record` by hand instead of going
-through the guard's hook callbacks, and the hand-written version diverged in
-one place: on a veto it skipped the after-tool notification entirely. So the
-budget a vetoed call costs was decided by the FAKE in tests and by
-`ReplyGuard._after_tool` in production, and those two disagreed for the whole
-life of the deployment. No scripted scenario could reproduce the live R-4 →
-R-2 lockout, and a regression test written against the old double would have
-been decorative (CLAUDE.md, "make the fake behave like the real server").
+`ReplyGuard`. It must go through the guard's hook callbacks rather than call
+`evaluate`/`record` by hand: a hand-written version skips the after-tool
+notification on a veto, so the budget a vetoed call costs would be decided by
+the FAKE in tests and by `ReplyGuard._after_tool` in production. No scripted
+scenario could then reproduce the R-4 → R-2 lockout, and a regression test
+written against the double would be decorative (CLAUDE.md, "make the fake
+behave like the real server").
 
 Both halves below assert the SAME observable — the sequence of after-tool
 notifications a `HookProvider` receives, and specifically whether a CANCELLED
@@ -157,7 +156,7 @@ async def test_the_real_sdk_fires_after_tool_for_a_call_the_guard_cancelled():
 async def test_the_scripted_double_fires_the_same_after_tool_for_a_cancelled_call():
     """THE PROBE. Delete the `_AfterToolCall` dispatch from `FakeAgentRunner`'s
     veto branch and this goes red while every scripted scenario stays green —
-    which is exactly how the live budget bug survived."""
+    the divergence this file exists to catch."""
     guard = _guard()
     await FakeAgentRunner([ScriptedTurn(tool_calls=[("now", {}), ("now", {})])]).invoke(
         tools=[_tool()], guard=guard, limits=None,
@@ -193,12 +192,11 @@ async def test_the_double_never_runs_the_tool_it_cancelled():
 
 # ---- the before-model half: the agent, the model, and the flip -------------
 #
-# `ReplyGuard._before_model` gained a second job in DEC-42: it relaxes
+# `ReplyGuard._before_model` has a second job (DEC-42): it relaxes
 # `tool_choice` through `event.agent.model`. A double that dispatched a
 # before-model event with no `agent` would silently exercise nothing — the
 # relaxation would be a no-op in every scripted scenario and real in
-# production, which is the same divergence this file already exists for, in a
-# new place.
+# production, which is the divergence this file exists to prevent.
 
 
 def test_the_double_dispatches_a_before_model_event_carrying_an_agent_and_a_model():
@@ -215,7 +213,7 @@ def test_the_doubles_first_call_tool_choice_agrees_with_the_real_one():
 
     `nora.testing` sits below `nora.agent` in the layers contract and cannot
     import it, so `TOOL_CHOICE_FIRST_CALL` is a copy — and a copy nobody
-    compares is how the doctrine catalogue drifted for eight weeks.
+    compares drifts silently.
     """
     from nora.agent.tool_choice import FIRST_CALL
     from nora.testing import TOOL_CHOICE_FIRST_CALL
@@ -237,9 +235,9 @@ async def test_the_double_relaxes_tool_choice_after_a_terminal_verb_runs():
     """THE PROBE for the before-model half.
 
     `now` is terminal with a budget of 2, so the guard permits a second model
-    call and relaxes it — the `required → auto` sequence design/16 §2 is
-    entirely about. Drop `agent` from `_BeforeModelCall` (or stop passing a
-    model) and this goes red while every other scripted scenario stays green.
+    call and relaxes it — the `required → auto` relaxation sequence. Drop
+    `agent` from `_BeforeModelCall` (or stop passing a model) and this goes red
+    while every other scripted scenario stays green.
     """
     guard = ReplyGuard(conversation_id="g1", budgets={"now": 2}, terminal={"now"},
                        metrics=Metrics())
@@ -254,9 +252,9 @@ async def test_the_double_relaxes_tool_choice_after_a_terminal_verb_runs():
 
 
 async def test_each_invocation_gets_its_own_scripted_model():
-    """Per-tag, mirroring `LiveAgentRunner`'s `ModelSource` (step 5a). Share one
-    and the second tag would start where the first left off — `auto` on its
-    first call, which design/16 §2.1 measured as sending nothing 5/6."""
+    """Per-tag, mirroring `LiveAgentRunner`'s `ModelSource`. Share one and the
+    second tag would start where the first left off — `auto` on its first call,
+    which can answer in prose and send nothing."""
     runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("now", {})])])
     tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
                           budget=2, terminal=True))

@@ -4,7 +4,7 @@ onto the root stdlib logger, so the realistic way to exercise it is a real
 `logging.getLogger(...)` call followed by reading the stream back, not
 constructing processors in isolation.
 
-The sink is STDOUT (2026-09-09), so `_configure` hands back a buffer standing
+The sink is STDOUT, so `_configure` hands back a buffer standing
 in for it rather than a path. `setup_logging` binds `sys.stdout` at call time,
 so the redirect has to be in place BEFORE it runs — which is why the fixture
 patches first and configures second.
@@ -258,13 +258,11 @@ def test_a_secret_inside_a_traceback_is_redacted_in_the_derived_fields_too(tmp_p
     """R-16 holds across the new keys: splitting the traceback must not create
     a third place a secret can sit.
 
-    **Not an ordering test, though it was written as one.** The claim was that
-    `_exception_fields` had to precede the redactor or the derived fields would
-    leak; moving it after left this green, because the redactor walks EVERY key
-    (so a pre-split leak is cleaned) and a post-split copy is taken from
-    already-redacted text. Both orders are safe. What this guards is the
-    property itself — a new key that the redactor did not walk, say — and it is
-    recorded as such rather than as a proof of an ordering it cannot see.
+    **Not an ordering test.** Either order of `_exception_fields` and the
+    redactor is safe: the redactor walks EVERY key (so a pre-split leak is
+    cleaned) and a post-split copy is taken from already-redacted text. What
+    this guards is the property itself — a new key that the redactor did not
+    walk, say — not an ordering it cannot see.
     """
     path = _configure(tmp_path)
     try:
@@ -285,7 +283,7 @@ def test_a_line_with_no_exception_gains_no_exception_fields(tmp_path):
     assert not [k for k in record if k.startswith("exception")]
 
 
-# --- the two things that were 78% of the log --------------------------------
+# --- the two highest-volume log sources ------------------------------------
 
 
 class _Counters:
@@ -299,9 +297,8 @@ class _Counters:
 
 
 async def test_the_heartbeat_drops_to_debug_when_nothing_moved(tmp_path):
-    """25% of the deployment's log (51,964 of 205,099 lines over 37 days) was
-    this loop saying at INFO that two counters had not changed since the
-    previous minute.
+    """A heartbeat saying at INFO that two counters had not changed since the
+    previous minute would dominate the log; it drops to DEBUG when nothing moved.
 
     Three beats: the FIRST is INFO whatever it says — it records where the
     counters started, which is what makes every later delta readable. The
@@ -356,11 +353,10 @@ async def test_the_health_server_writes_no_per_request_access_line(tmp_path):
     `aiohttp.access` at INFO for a server that routes two paths, polled by a
     container healthcheck.
 
-    A REAL request against the real helper, read back off the log file. The
-    first version asserted `runner._kwargs["access_log"] is None`, which is a
-    test of the argument this file passes rather than of the line it stops —
-    it would stay green if aiohttp changed which kwarg it honours, and it
-    reaches into a private attribute to do it.
+    A REAL request against the real helper, read back off the log file. Asserting
+    `runner._kwargs["access_log"] is None` would test the argument this file
+    passes rather than the line it stops — it would stay green if aiohttp
+    changed which kwarg it honours, and it reaches into a private attribute.
     """
     import aiohttp
     from aiohttp import web

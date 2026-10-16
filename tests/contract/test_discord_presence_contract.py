@@ -10,8 +10,8 @@ hands over a guild cache built the way discord.py's own looks — guilds
 with `get_member`, members with `.status` and `.activities`, the
 activities real discord.py objects so the implementation's own isinstance
 checks are what admits them. The port's promise, pinned here for both
-sides (design/online-status/, the 2026-09-15 correction: per-person
-presence, NOT voice membership, is what "Discord online" means):
+sides (per-person presence, NOT voice membership, is what "Discord online"
+means):
 
 - a member the client can see answers a `DiscordPresenceState` KEYED BY
   THEIR DISCORD USER ID — Discord's own status word, plus rich presence

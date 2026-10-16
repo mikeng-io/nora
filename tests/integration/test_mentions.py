@@ -1,15 +1,14 @@
-"""DEC-34: an @-mention reaches the model as a NAME, never as U+FFFC and never
-as a phone number.
+"""DEC-34: an @-mention reaches the model as a NAME, never as U+FFFC and never as a phone
+number.
 
-End-to-end, through the real ingest path, the real audit store and the real
-prefill: a mentioning message is ingested ambiently, a tag follows, and the
-assertions are on the prompt the model was actually handed. That matters here
-more than usual — the bug was not in any one function, it was that the array
-carrying the identity was read for the trigger check and then dropped, so every
-layer worked and the model saw a void.
+End-to-end, through the real ingest path, the real audit store and the real prefill: a
+mentioning message is ingested ambiently, a tag follows, and the assertions are on the
+prompt the model was actually handed. That matters here more than usual: the array
+carrying the identity is read for the trigger check, so a layer that dropped it afterwards
+would leave every function working and the model seeing a void.
 
-Revert `MentionRenderer` (or the `rehydrate` call in `EngagementPipeline`) and
-every test in this file goes red on a bare ￼.
+Revert `MentionRenderer` (or the `rehydrate` call in `EngagementPipeline`) and every test
+in this file goes red on a bare ￼.
 """
 
 from __future__ import annotations
@@ -50,8 +49,8 @@ def _transcript(h) -> str:
 
 
 async def test_a_stored_mention_renders_the_persons_name(harness_factory):
-    """THE PROBE. Row 28's real shape: a placeholder, then a question about
-    somebody. She was reading `￼ 邊個係阿豹妹` — a void where the name goes."""
+    """THE PROBE: a placeholder, then a question about somebody. A void where the name goes
+    (`￼ 邊個係阿豹妹`) must not reach her."""
     h = await harness_factory(script=_reply(), identity_toml=IDENTITY)
     await h.handler.on_event(group_event(
         body=f"{PLACEHOLDER} 邊個係阿豹妹", ts=1,
@@ -65,8 +64,8 @@ async def test_a_stored_mention_renders_the_persons_name(harness_factory):
 
 
 async def test_a_message_that_was_only_a_mention_is_no_longer_empty(harness_factory):
-    """Row 24 — a message whose entire content was one @-mention. It reached
-    the model as a single invisible character and nothing else."""
+    """A message whose entire content is one @-mention must not reach the model as a single
+    invisible character and nothing else."""
     h = await harness_factory(script=_reply(), identity_toml=IDENTITY)
     await h.handler.on_event(group_event(
         body=PLACEHOLDER, ts=1, mentions=[_mention(TYLER, start=0)]))
@@ -77,12 +76,12 @@ async def test_a_message_that_was_only_a_mention_is_no_longer_empty(harness_fact
 
 
 async def test_a_mention_of_nora_herself_says_her_name(harness_factory):
-    """「@nora 你好」 reached her as 「￼ 你好」 — the one message shape that is
-    unambiguously addressed to her was the one she could not see was.
+    """「@nora 你好」 must not reach her as 「￼ 你好」 — the one message shape that is unambiguously
+    addressed to her.
 
-    Nora is deliberately absent from `identity.toml`, so this can only work
-    through `PlatformIdentity.aliases`; drop `self_ids` and it renders
-    `@someone`, which asserts a stranger was tagged.
+    Nora is deliberately absent from `identity.toml`, so this can only work through
+    `PlatformIdentity.aliases`; drop `self_ids` and it renders `@someone`, which asserts a
+    stranger was tagged.
     """
     h = await harness_factory(script=_reply(), identity_toml=IDENTITY)
     await h.handler.on_event(group_event(

@@ -1,7 +1,6 @@
-"""One suite, both implementations of `ComputerSessionStore` (design/
-sandbox-runtime §15.2, migration `0082_computer_sessions`): the Postgres store
-on a database migrated once per module and truncated between tests, and the
-in-memory fake.
+"""One suite, both implementations of `ComputerSessionStore` (migration
+`0082_computer_sessions`): the Postgres store on a database migrated once per module
+and truncated between tests, and the in-memory fake.
 
 What both must hold: a call in a room with no open session opens exactly
 one, and a call while one is open continues it (even two at once); expiry

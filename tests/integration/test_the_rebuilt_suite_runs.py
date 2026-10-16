@@ -2,8 +2,7 @@
 
 The reading that matters here is the NEGATIVE one. A run that reached no model
 must say so FIRST and must not print a clean bar: an unreachable provider
-producing `PASS` is the exact substitution this layer was rebuilt to stop, and
-it has happened before in this repo's own instruments.
+producing `PASS` is the exact substitution this layer exists to prevent.
 
 One case in three DOES grade without a model, and that is a property rather
 than a leak: an untagged, unmentioning line is refused by ingest before any
@@ -37,7 +36,7 @@ from evals.backbone import (
 from nora.subject import Knowledge, NoteSeed
 from tests.sandbox_fixtures import ROOM, seed_source
 
-#: Every draw creates a Honcho workspace of its own (issue #462).
+#: Every draw creates a Honcho workspace of its own.
 pytestmark = pytest.mark.usefixtures("draw_honcho")
 
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
@@ -140,12 +139,9 @@ async def test_a_room_without_proactive_trust_is_an_error_not_silence(
         f"a room without proactive trust graded {out.label}: {out.reason}. The "
         "screen refused the row, so nothing was measured."
     )
-    # The screen's own name for it, once the row reaches the screen. Today
-    # `nora/subject/proactive.py` still resolves the notebook through
-    # `cfg.memory.workspace_id` (Honcho's workspace, suffixed `-eval` in the
-    # sandbox) rather than `subject.unit`, so `owe()` cannot find the seeded
-    # note and refuses earlier, by name. Either refusal is an ERROR; neither
-    # is a silence.
+    # The screen's own name for it, once the row reaches the screen, or the
+    # seeded-notes refusal that can precede it. Either refusal is an ERROR;
+    # neither is a silence.
     reason = f"{state['token']} {state['error']}"
     assert "failed_policy" in reason or "seeded notes are" in reason, state
 

@@ -77,7 +77,7 @@ async def test_a_broken_doctrine_edit_uses_the_last_good_doctrine(harness_factor
     assert h.doctrine_store.reload_failures == 1
 
 
-# ---- R-5's participation row (design/dreamer-agent-loop/35 §6) -----------------
+# ---- R-5's participation row ----------------------------------------------
 # For the participation audience `no_send_call` is the HEALTHY default, not a
 # failure: the model was offered the floor and declined it. These drive the
 # real ingest -> dispatcher -> trigger -> FirePath.speak chain with only the

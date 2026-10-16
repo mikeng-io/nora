@@ -1,4 +1,4 @@
-"""computerd's browsers (design/browser-runtime 00 §4, B1): a room's Chrome is
+"""computerd's browsers: a room's Chrome is
 reached only through computerd's authenticated CDP websocket, relayed over
 Chrome's `--remote-debugging-pipe`; there is never a debugging port.
 
@@ -329,7 +329,7 @@ async def test_chromes_stderr_lands_in_the_rooms_own_log(server, fakes):
 
 async def test_chrome_is_started_without_the_automation_flag_pages_can_read(server, fakes):
     """Driven over the pipe, Chrome reports `navigator.webdriver = true`
-    unless AutomationControlled is disabled (measured in the VM)."""
+    unless AutomationControlled is disabled."""
     async with ClientSession() as session:
         argv = (await _ask(session, server, SCOPE))["result"]["argv"]
     assert "--disable-blink-features=AutomationControlled" in argv

@@ -1,21 +1,19 @@
-"""One suite, both implementations of `SandboxRuntime` (design/sandbox-runtime §3).
+"""One suite, both implementations of `SandboxRuntime`.
 
 "The real implementation" is `ComputerdRuntime` talking to the REAL computerd
-(`deploy/computer/computerd.py`), loaded from its file and served in-process
-on a tmp workspace. So this suite exercises the actual protocol both halves
-speak, not a double of one of them. The other is `FakeSandboxRuntime`.
+(`deploy/computer/computerd.py`), loaded from its file and served in-process on a tmp
+workspace. So this suite exercises the actual protocol both halves speak, not a double of
+one of them. The other is `FakeSandboxRuntime`.
 
-What both must hold: a scope is a hex key; a path outside the workspace is
-`denied`; a missing file is `nothing_found`, never an empty `ok`; an edit
-changes exactly one match or refuses; caps are `denied`; a write reads back
-byte for byte, with the sha256 of what was written. The observed-state read
-(`state`, design §15.1) lists the newest files newest first and hides what
-no one would name; tmux sessions are per room, a job reads as running and a
-shell at its prompt does not.
+What both must hold: a scope is a hex key; a path outside the workspace is `denied`; a
+missing file is `nothing_found`, never an empty `ok`; an edit changes exactly one match or
+refuses; caps are `denied`; a write reads back byte for byte, with the sha256 of what was
+written. The observed-state read (`state`) lists the newest files newest first and hides
+what no one would name; tmux sessions are per room, a job reads as running and a shell at
+its prompt does not.
 
-The tmux half needs a real `tmux` for the computerd side and is SKIPPED
-where there is none (the Mac this repo is developed on has none); the image
-installs it (`deploy/computer/Dockerfile`).
+The tmux half needs a real `tmux` for the computerd side and is SKIPPED where there is
+none; the image installs it (`deploy/computer/Dockerfile`).
 """
 
 from __future__ import annotations
@@ -126,9 +124,8 @@ async def test_a_write_reads_back_byte_for_byte(runtime):
 
 
 async def test_a_write_and_an_edit_report_what_the_file_held_before(runtime):
-    """The audit's before and after (design/sandbox-runtime §12): a new file
-    has no `previous_sha256`; an overwrite and an edit report the sha256 of
-    the bytes they replaced."""
+    """The audit's before and after: a new file has no `previous_sha256`; an overwrite and an
+    edit report the sha256 of the bytes they replaced."""
     first = await runtime.write_text(scope=SCOPE, path="p/a.txt", content="one\n")
     assert first.status is SandboxStatus.OK
     assert first.previous_sha256 is None
@@ -215,8 +212,8 @@ async def test_a_read_honours_offset_and_limit(runtime):
 
 
 async def test_the_default_listing_includes_top_level_files(runtime):
-    """`**/*` needs a literal slash in fnmatch, so it once dropped every
-    top-level file, and both runtimes shared the bug."""
+    """`**/*` needs a literal slash in fnmatch, so a naive match drops every top-level file;
+    both runtimes must list them."""
     await runtime.write_text(scope=SCOPE, path="top.txt", content="1")
     await runtime.write_text(scope=SCOPE, path="d/sub.txt", content="2")
     listed = await runtime.files(scope=SCOPE)
@@ -238,7 +235,7 @@ async def test_a_read_limit_of_zero_means_the_default(runtime):
     assert (await runtime.read(scope=SCOPE, path="z.txt", limit=0)).content == "abc"
 
 
-# -- the observed state (design/sandbox-runtime §15.1) ---------------------
+# -- the observed state -------------------------------------------------
 
 
 async def test_state_lists_the_newest_files_first_with_size_and_age(runtime):

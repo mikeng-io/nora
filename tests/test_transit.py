@@ -1,17 +1,16 @@
-"""`transit` — live bus arrivals from two operators (design/14 §3, §5.5; DEC-40, R-27).
+"""`transit` — live bus arrivals from two operators (DEC-40, R-27).
 
 Every scenario here is offline, against a local `aiohttp` server that behaves like
 the two real endpoints — including the shapes they return for the WRONG call.
 That is not decoration. This is a TWO-OPERATOR tool, and a fake answering both
-the same way proves nothing: the whole defect design/14 §5.5 records is that KMB
-answers `200 {"data": []}` for a route MTR runs, which is byte-identical to "no
-buses". So the fake below serves KMB only over `GET
-/v1/transport/kmb/route-eta/...` and MTR only over `POST
-.../mtr/bus/getSchedule`, and answers the other verb the way the real hosts do —
-`405`/`404` — so a client that asked the wrong operator would fail rather than
-quietly agree.
+the same way proves nothing: KMB answers `200 {"data": []}` for a route MTR
+runs, which is byte-identical to "no buses". So the fake below serves KMB only
+over `GET /v1/transport/kmb/route-eta/...` and MTR only over `POST
+.../mtr/bus/getSchedule`, and answers the other verb the way the real hosts do
+— `405`/`404` — so a client that asked the wrong operator would fail rather
+than quietly agree.
 
-The payload fixtures are trimmed copies of live responses captured 2026-08-06
+The payload fixtures are trimmed copies of live responses captured
 (K73 at 23:15 HKT, 68X at 23:16 HKT), field names and value TYPES verbatim from
 the wire: `service_type` is a string in the KMB route list and an int in a KMB
 ETA row; every MTR number is a string; `status` is `"0"` on both a real route
@@ -31,10 +30,9 @@ from nora.infra.transit import TransitClient
 
 # ---- what the two operators really return -----------------------------------
 
-# The KMB route list is the operator resolver (design/14 §5.5): 791 distinct
-# route numbers on 2026-08-06, "68X" present and "K73" absent. `service_type` is
-# a STRING here and an int in an ETA row — that divergence is on the wire, not a
-# transcription slip.
+# The KMB route list is the operator resolver: "68X" present and "K73" absent.
+# `service_type` is a STRING here and an int in an ETA row — that divergence is
+# on the wire, not a transcription slip.
 KMB_ROUTES = [
     {"route": "68X", "bound": "O", "service_type": "1",
      "orig_en": "HUNG SHUI KIU (HUNG FUK ESTATE)", "dest_en": "MONG KOK (PARK AVENUE)"},
@@ -77,7 +75,7 @@ KMB_68X_ETA = {
 }
 
 # `eta: null` with the reason in a free-text remark — the shape the KMB spec's
-# own sample uses for a route that is not running today (spec v1.05 §9).
+# own sample uses for a route that is not running today.
 KMB_N48_ETA = {
     "type": "RouteETA", "version": "1.0",
     "generated_timestamp": "2026-08-06T23:16:39+08:00",
@@ -98,9 +96,9 @@ MTR_ROUTES_CSV = (
 
 # ---- the stop datasets the place resolver reads (DEC-41) ---------------------
 
-# Trimmed copies of the live KMB stop list (probed 2026-08-06, 6,740 rows).
-# Names, ids and coordinates verbatim from the wire, including the two shapes
-# that make matching interesting: every KMB name carries a "(TN970)"-style stop
+# Trimmed copies of the live KMB stop list (probed live). Names, ids and
+# coordinates verbatim from the wire, including the two shapes that make
+# matching interesting: every KMB name carries a "(TN970)"-style stop
 # code — so 「天恆」 can never EXACT-match a KMB stop — and the three 天恆邨總站
 # poles are the same terminus, metres apart, while the three 大學-suffixed
 # campuses are in three different districts.
@@ -135,7 +133,7 @@ KMB_STOPS = [
 ]
 
 # Route-stop rows: `seq` is a STRING on the live wire ("1") where the spec's own
-# sample shows an int (spec v1.05 §7) — the same intra-spec divergence the route
+# sample shows an int — the same intra-spec divergence the route
 # list has for `service_type`, kept verbatim so the parser is tested against
 # what the host actually sends.
 KMB_ROUTE_STOPS = {
@@ -162,7 +160,7 @@ KMB_ROUTE_STOPS = {
 }
 
 # Per-stop ETA (`GET /v1/transport/kmb/eta/{stop_id}/{route}/{service_type}`,
-# spec v1.05 §8, verified live 2026-08-06 23:58 HKT). Same row shape as
+# verified live 23:58 HKT). Same row shape as
 # route-eta; every row is already at the asked-for stop.
 KMB_STOP_ETA = {
     ("147D513A708AA741", "68X"): [
@@ -188,7 +186,7 @@ KMB_STOP_ETA = {
 }
 
 # Trimmed copy of opendata.mtr.com.hk/data/mtr_bus_stops.csv (probed
-# 2026-08-06): BOM, quoted names carrying commas, and STATION_ID in exactly the
+# live): BOM, quoted names carrying commas, and STATION_ID in exactly the
 # format `getSchedule` uses for `busStopId` — that equality is the join key the
 # resolver stands on. 輕鐵 appears in two stops ~2.2 km apart, BOTH on K73: the
 # honest on-route ambiguity case.
@@ -264,7 +262,7 @@ MTR_K73 = {
 }
 
 # THE TRAP, captured live. This is what MTR returns for `ZZZ999` — and, at
-# 23:15 on 2026-08-06, for K12, K14, K51A, K52A, K52P, K53S, K58, K65A, K74,
+# 23:15, for K12, K14, K51A, K52A, K52P, K53S, K58, K65A, K74,
 # K75S and K76S, every one of them a REAL published route that had simply
 # stopped running for the night. The envelope is identical. Nothing inside it
 # distinguishes "no such route" from "no service", so nothing inside it may be
@@ -415,7 +413,7 @@ async def operators():
 # ---- R-27 --------------------------------------------------------------------
 
 async def test_an_unknown_route_is_never_reported_as_no_service(operators):
-    """R-27. The trap design/14 §5.5 records, and the reason route validation is
+    """R-27. The trap, and the reason route validation is
     a correctness requirement rather than a nicety.
 
     `ZZZ999` and `K74` produce the SAME MTR envelope — 200, `status: "0"`,
@@ -532,15 +530,14 @@ async def test_a_scheduled_time_is_not_presented_as_a_live_one(operators):
 
 
 async def test_a_free_text_operator_remark_is_wrapped_and_says_what_it_is(operators):
-    """design/14 §2.1: a typed envelope is not wrapped, but a free-text field
+    """A typed envelope is not wrapped, but a free-text field
     inside one is. KMB's `rmk_en` is an operator-authored sentence."""
     out = await operators.client.arrivals("N48")
     assert out["status"] == "nothing_found"
-    # NAMED for what it is, not `<untrusted>` (#314). One tag served this,
-    # a fetched web page and a social post, so all three carried one
-    # description — a model reading a page was told it was a transit remark —
-    # and the tag's own NAME was a word defined in a doctrine file most
-    # audiences never load.
+    # NAMED for what it is, not `<untrusted>`: a tag shared with a fetched web
+    # page and a social post would carry one description for all three, and
+    # its NAME would be a word defined in a doctrine file most audiences never
+    # load.
     assert out["operator_note"].startswith('<transit_remark source="KMB" ')
     assert "service remark from the operator" in out["operator_note"]
     assert "Sundays and Public Holidays" in out["operator_note"]
@@ -548,7 +545,7 @@ async def test_a_free_text_operator_remark_is_wrapped_and_says_what_it_is(operat
 
 async def test_the_answer_is_bounded_and_says_so_when_it_truncates(operators):
     """Every tool result is re-sent on every subsequent model call, so the cost
-    of one is `tokens x calls remaining` (design/14 §4)."""
+    of one is `tokens x calls remaining`."""
     out = await operators.client.arrivals("68X")
     assert len(json.dumps(out, ensure_ascii=False)) < 1200
     assert out["truncated"] is False
@@ -574,7 +571,7 @@ async def test_near_times_come_from_the_named_stop_not_the_origin(operators):
 
 async def test_kmb_near_asks_the_per_stop_eta_endpoint(operators):
     """The KMB half: stop list -> route-stop intersection -> `eta/{stop}/{route}/
-    {service_type}`, all verified live 2026-08-06. 「灰沙圍」 exact-matches only
+    {service_type}`, all verified live. 「灰沙圍」 exact-matches only
     after the "(YL353)" code is set aside, and the 23:31 row the origin logic
     must exclude (seq 7) is exactly the answer here."""
     out = await operators.client.arrivals("68X", near="灰沙圍")
@@ -694,10 +691,8 @@ async def test_the_tool_returns_the_three_states_and_counts_each_apart(operators
     operators.mtr_status = 503
     assert (await _call(wiring["transit"], route="K73"))["status"] == "unavailable"
 
-    # `{tool, status}`, the shape design/14 §3 asks for. A single
-    # `nora_tool_calls_total{tool="transit"}` would make "the API is down" and
-    # "no such bus" one number, which is the ambiguity that hid a dead
-    # `peer_card` for the life of the deployment.
+    # `{tool, status}`. A single `nora_tool_calls_total{tool="transit"}` would
+    # make "the API is down" and "no such bus" one number.
     for status in ("ok", "nothing_found", "unavailable"):
         assert wiring["metrics"].get(
             "nora_tool_calls_total", tool="transit", status=status,

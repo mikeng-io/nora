@@ -70,9 +70,8 @@ async def client(tmp_path, monkeypatch, pg_url, aiohttp_client):
         f'id = "{CONV}"\n'
         f'label = "{CONV}"\n'
         'persons = "*"\n'
-        # The guild's speech is recorded HERE (design/voice-channel/07 §12.2,
-        # reversed 2026-09-17) — this room is a TEXT channel, and that is the
-        # point: voice is a surface of it, not a room of its own.
+        # The guild's speech is recorded HERE: this room is a TEXT channel, and
+        # voice is a surface of it, not a room of its own.
         "voice = true\n"
     )
     cfg = override_config(
@@ -150,13 +149,12 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
     `build_offline_pipeline` hardcodes a PERMISSIVE allowlist, so this test
     wires a bare `IngestPipeline` the way the composition root does.
 
-    The refusal MOVED on 2026-09-17 (§12.2 reversed). It used to be the scope
-    stage dropping an unlisted conversation AFTER a 202; the guild now has to
-    resolve to a room before a message exists at all, so it is a 400 and
-    ingest is never entered. 400 rather than the old 202 on purpose: the only
-    caller is our own wake container, and answering "accepted" for something
-    that was definitely not accepted is the silent failure R-5 exists to
-    forbid — a misconfigured guild would look exactly like a quiet room."""
+    The guild has to resolve to a room before a message exists at all, so an
+    unlisted guild is a 400 and ingest is never entered. 400 rather than 202 on
+    purpose: the only caller is our own wake container, and answering
+    "accepted" for something that was definitely not accepted is the silent
+    failure R-5 exists to forbid — a misconfigured guild would look exactly like
+    a quiet room."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     persons_path = tmp_path / "identity.toml"
     persons_path.write_text(
@@ -172,9 +170,8 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
         f'id = "{CONV}"\n'
         f'label = "{CONV}"\n'
         'persons = "*"\n'
-        # The guild's speech is recorded HERE (design/voice-channel/07 §12.2,
-        # reversed 2026-09-17) — this room is a TEXT channel, and that is the
-        # point: voice is a surface of it, not a room of its own.
+        # The guild's speech is recorded HERE: this room is a TEXT channel, and
+        # voice is a surface of it, not a room of its own.
         "voice = true\n"
     )
     cfg = override_config(

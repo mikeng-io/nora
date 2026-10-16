@@ -5,16 +5,16 @@ the shapes signal-cli actually returns), `DiscordRoster`, `InstagramRoster`
 (both over a stand-in for their real HTTP endpoint) and
 `nora.testing.FakeRosterSource`.
 CLAUDE.md's rule — "a port never gains a second implementation, INCLUDING a
-test fake, without a shared contract suite" — exists because of the three
-no-ops this codebase shipped green: each had a fake that answered every request
-the same way, so the test asserted the implementation back to itself.
+test fake, without a shared contract suite" — exists because a fake that
+answers every request the same way makes a test assert the implementation back
+to itself.
 
 The property that actually needs both implementations held to it is the
 degradation: `available=False` and an EMPTY roster must never be the same
 value, and both implementations must reach `available=False` by both routes an
 operator can hit — the daemon is unreadable, and the daemon answers but does
-not list this conversation (stale group state on a linked device, which this
-deployment has hit and which `sendSyncRequest` is the fix for).
+not list this conversation (stale group state on a linked device, which
+`sendSyncRequest` is the fix for).
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ async def _signal(aiohttp_server, *, groups, status=200):
 
 
 def _live_group(group_id=GROUP):
-    """One `listGroups` row in the shape the live daemon returned on 2026-08-06."""
+    """One `listGroups` row in the shape the live daemon returns."""
     return {
         "id": group_id, "name": "Ridgeline", "isMember": True, "isBlocked": False,
         "members": [
@@ -94,7 +94,7 @@ async def _discord(aiohttp_server, *, members: list[dict], status: int = 200):
 
 INSTAGRAM_ROOM = "1183780976338188"
 INSTAGRAM_OTHER = "9999999999999999"
-# The measured three-person room: TWO rows, because `Users[]` excludes the
+# A three-person room: TWO rows, because `Users[]` excludes the
 # viewer and Nora is not a member of her own room. Both id spaces are on the
 # wire; only the messaging fbid becomes a membership token (see the roster
 # module's docstring).
@@ -142,12 +142,11 @@ async def sources(request, aiohttp_server):
     classes compared to each other.
 
     `ids_per_account` is declared rather than asserted as a constant because it
-    is a genuine platform difference, and flattening it into one number was
-    what made this suite unable to admit Discord at all: Signal pairs a phone
-    number with an ACI for one account (sealed sender delivers either), while a
-    Discord member has exactly one immutable snowflake. What must hold on BOTH
-    is the shape — one frozenset PER ACCOUNT, never a flat set of ids — which
-    is what the pairing test actually checks.
+    is a genuine platform difference: Signal pairs a phone number with an ACI
+    for one account (sealed sender delivers either), while a Discord member has
+    exactly one immutable snowflake. What must hold on BOTH is the shape — one
+    frozenset PER ACCOUNT, never a flat set of ids — which is what the pairing
+    test actually checks.
     """
     if request.param == "signal":
         return {
@@ -245,9 +244,8 @@ async def test_an_unreadable_daemon_is_unavailable_and_never_raises(sources):
 
 async def test_a_conversation_the_daemon_does_not_list_is_unavailable_not_empty(sources):
     """signal-cli returning nothing for a group Nora is demonstrably in is a
-    real observed state — group state goes stale on a linked device. Reporting
-    it as "this group has no members" would be a confident lie told by the
-    exact failure mode this deployment has already had."""
+    real state — group state goes stale on a linked device. Reporting it as
+    "this group has no members" would be a confident lie."""
     roster = await sources["wrong_group"].roster(conversation_id=_other(sources))
     assert roster.available is False
     assert roster.members == ()

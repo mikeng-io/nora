@@ -28,10 +28,10 @@ async def test_happy_tag_produces_one_reply_one_row_one_feed(harness_factory, tm
     # DEC-36, end to end: every text Honcho was handed for this tag is the
     # TAGGER's, under the tagger's peer. Nora's reply — which the group
     # demonstrably received, one assertion above — is in none of them.
-    # Honcho v2 (design/24): the ambient path feeds the tagger's message under
-    # the tagger's peer; the feedback stage feeds NORA's reply under the Nora
-    # aiPeer. Both in the g1 session, each under its own speaker — DEC-36 at the
-    # peer level: her reply is fed, but never under a human's peer.
+    # The ambient path feeds the tagger's message under the tagger's peer; the
+    # feedback stage feeds NORA's reply under the Nora aiPeer. Both in the g1
+    # session, each under its own speaker — DEC-36 at the peer level: her reply
+    # is fed, but never under a human's peer.
     assert h.honcho.fed == [("miles", "nora.000 幾點食飯", "g1"),
                             ("nora", "今晚七點半得", "g1")]
     assert not any(peer == "miles" and "今晚七點半得" in text
@@ -39,7 +39,7 @@ async def test_happy_tag_produces_one_reply_one_row_one_feed(harness_factory, tm
 
 
 async def test_a_completed_tag_leaves_a_retrievable_tag_trace(harness_factory):
-    """Task 6 (spec §7.4/§14.6): retention is real, end to end — a driven tag
+    """Retention is real, end to end — a driven tag
     through the FULL pipeline (real `SqlTagTraceStore`, real Postgres) leaves
     exactly one row `recent()` can read back, and it carries a REAL outcome —
     not `LiveAgentRunner`/`FakeAgentRunner`'s `"send_reply"` placeholder left
@@ -73,21 +73,16 @@ async def test_context_is_collected_before_the_model_runs(harness_factory):
 
 
 async def test_a_model_that_writes_nothing_at_all_means_strict_silence(harness_factory):
-    """Q5, narrowed by DEC-93 — and the narrowing is a deliberate weakening of
-    R-4 that should be argued with, not inherited.
+    """DEC-93 narrows R-4 deliberately: the rule is «nothing reaches the group
+    unless she WROTE it».
 
-    The rule WAS «final text without a `send_reply` call is dropped», and it
-    held because `tool_choice="required"` made prose impossible: text outside
-    the tool meant the model had chosen not to speak. On the DEC-84 route
-    `required` is accepted and ignored, so prose no longer carries that meaning
-    — live, 2 of the first 4 tags wrote a complete group-addressed reply that
-    nobody received.
-
-    The rule is now «nothing reaches the group unless she WROTE it», and
-    `test_a_reply_written_without_calling_send_reply_is_RECOVERED` pins the
-    other side. What is unchanged, and what this test exists for: a turn that
-    produced neither a tool call nor any text still says nothing. There is no
-    path by which Nora emits words she did not author."""
+    On the DEC-84 route `tool_choice="required"` is accepted and ignored, so
+    text outside `send_reply` no longer means the model chose not to speak, and
+    a complete group-addressed reply written as prose would otherwise reach
+    nobody. `test_a_reply_written_without_calling_send_reply_is_RECOVERED` pins
+    that side. What this test exists for: a turn that produced neither a tool
+    call nor any text still says nothing. There is no path by which Nora emits
+    words she did not author."""
     h = await harness_factory(script=[ScriptedTurn(final_text="")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
@@ -99,14 +94,13 @@ async def test_a_model_that_writes_nothing_at_all_means_strict_silence(harness_f
 
 async def test_send_reply_is_capped_at_the_budget_end_to_end(harness_factory):
     """Multi-message end-to-end (DEC-42): every send up to the cap reaches the
-    group; the one past it is refused (one R-2 veto). Was
-    `test_second_send_reply_is_cancelled`, which pinned the cap-of-1 behaviour.
+    group; the one past it is refused (one R-2 veto).
 
     The cap is read from the registry, not written here — DEC-10 keeps the
     number with the tool and DEC-32 requires exactly one copy of it. Asserting
-    a literal made this test go red for the right reason but the wrong cause at
-    3→6 (DEC-95): the behaviour under test is «the (cap+1)th is refused», which
-    is true at any cap."""
+    a literal would go red for the wrong cause whenever the cap changes: the
+    behaviour under test is «the (cap+1)th is refused», which is true at any
+    cap."""
     cap = ToolRegistry().budgets()["send_reply"]
     texts = [f"msg{i}" for i in range(cap + 1)]
     h = await harness_factory(script=[ScriptedTurn(
@@ -122,21 +116,15 @@ async def test_send_to_other_group_cannot_escape_the_tagged_conversation(harness
     """R-3 end-to-end, asserting the invariant rather than the mechanism.
 
     The rule is "a reply may only reach the conversation that produced the
-    tag". It used to be enforced by VETOING a mismatched `conversation_id`
-    argument; DEC-21 made it hold by construction instead (`send_reply` calls
+    tag". It holds by construction (DEC-21): `send_reply` calls
     `deliverer.deliver(text)` and `Deliverer` holds its target bound from
-    construction), and DEC-24 then deleted the argument from the schema
-    entirely. That is strictly stronger at each step: the original check could
-    be satisfied by a model echoing the right string, and now there is no
-    string to echo.
+    construction, and the schema has no `conversation_id` argument at all
+    (DEC-24). A veto on a mismatched argument could be satisfied by a model
+    echoing the right string, and a model that cannot reproduce a base64 group
+    id verbatim could never reply; with no argument there is no string to echo.
 
-    It also had to change. Vetoing meant a model that cannot reproduce a base64
-    group id verbatim could never reply at all — on the first real tag,
-    `deepseek-v4-flash` supplied a wrong id three times and the turn died
-    `no_send_call`.
-
-    So the probe is now a model emitting an OUT-OF-SCHEMA `conversation_id`,
-    which is the only form the attempt can still take. Strands drops it during
+    So the probe is a model emitting an OUT-OF-SCHEMA `conversation_id`, the
+    only form the attempt can take. Strands drops it during
     validation, the reply goes to the tagged conversation anyway, and the
     attempt is counted — the observation DEC-24 deliberately keeps alive so
     `nora_tool_scope_violations_total` is not a counter pinned at zero.
@@ -185,7 +173,7 @@ async def test_lock_released_on_timeout(harness_factory):
 
 async def test_concurrent_tags_same_conversation(harness_factory):
     """R-10 + R-29: at most ONE turn runs at a time for a conversation (the
-    lock), but the second tag is now QUEUED and answered after the first —
+    lock), but the second tag is QUEUED and answered after the first —
     not dropped. Three people tagging at once each get a reply."""
     h = await harness_factory(script=_reply_script(), delay=0.3, debounce=0)
     await h.handler.on_event(group_event(body="nora.000 one"))
@@ -194,11 +182,11 @@ async def test_concurrent_tags_same_conversation(harness_factory):
     assert h.handler.slots.held(GROUP) is True
     await h.handler.on_event(group_event(body="nora.000 two"))
     # R-10 still holds: exactly one in-flight turn — the second is QUEUED behind
-    # it, not running concurrently. (Only `g1` is ever tagged here, so this is
-    # the same claim the pre-hoist `len(_in_flight) == 1` made. It is not also
-    # asserted that the second tag is ALREADY queued: `Dispatcher.on_message`
-    # SPAWNS the engagement run, so at this instant it may not have reached
-    # admission yet — the drained assertions below are what prove it queued.)
+    # it, not running concurrently. (Only `g1` is ever tagged here, so
+    # `held(GROUP)` is the whole in-flight set.) It is not also asserted that
+    # the second tag is ALREADY queued: `Dispatcher.on_message` SPAWNS the
+    # engagement run, so at this instant it may not have reached admission yet —
+    # the drained assertions below are what prove it queued.
     assert h.handler.slots.held(GROUP) is True
 
     await h.drain()
@@ -236,8 +224,8 @@ async def test_the_tag_path_feed_happens_exactly_once_per_delivered_reply(harnes
 
     `nora.ingest.stages.memory_feed` runs for EVERY message before the engage
     gate, so it has already fed this exact body under this exact peer by the
-    time `feedback.run` fires. Since DEC-36 removed the `[Nora]:` half, the two
-    writes are byte-identical and the tag path's is a pure duplicate — a
+    time `feedback.run` fires. The two writes are byte-identical (DEC-36
+    removed the `[Nora]:` half) and the tag path's is a pure duplicate — a
     RECORDED redundancy, not an accident (DEC-36 (4)); it costs the deriver a
     second pass over one message and is left in place because removing it
     deletes a pipeline stage that session-per-conversation is expected to want
@@ -283,12 +271,11 @@ async def test_a_vetoed_send_reply_leaves_the_budget_for_the_correction(harness_
     told "you already sent your reply" — and the group hears nothing at all,
     which under R-5 is indistinguishable from a quiet Nora.
 
-    This is an END-TO-END probe on purpose: the divergence that hid this bug
-    for the life of the deployment was in `nora.testing.FakeAgentRunner`, which
-    skipped the guard's after-tool hook on a veto and so could not reproduce it
-    at any layer. Revert `_after_tool`'s `cancel_message` check and this goes
-    red; revert the fake's hook dispatch and it goes green again while the live
-    bug is still there.
+    This is an END-TO-END probe on purpose: `nora.testing.FakeAgentRunner` must
+    dispatch the guard's after-tool hook on a veto, or the bug cannot be
+    reproduced at any layer. Revert `_after_tool`'s `cancel_message` check and
+    this goes red; revert the fake's hook dispatch and it goes green again while
+    the live bug is still there.
     """
     h = await harness_factory(script=[ScriptedTurn(
         tool_calls=[("send_reply", {"text": ""}),

@@ -1,6 +1,6 @@
 """Shared fixtures.
 
-The record store is PostgreSQL (design/20), so DB-touching tests run against a
+The record store is PostgreSQL, so DB-touching tests run against a
 REAL Postgres in a testcontainer — never a mock, never an in-memory shim that
 would answer every query the same way (CLAUDE.md). One container is shared for
 the whole session; **each test that asks for `pg_url` gets its own freshly
@@ -38,30 +38,24 @@ from tests.builders import copy_example_config
 
 # MUST track `docker-compose.yml`'s `db` image, and
 # `test_the_test_container_tracks_the_deployment` is what pins the two
-# together. It was pinned to 16 while production ran 18, which made
-# `tests/infra/test_schema_parity.py` — the gate every migration passes
-# through — validate against a major version behind the thing it guards, and
-# made `scripts/gen_pg_baseline.py` generate its oracle there too. Found
-# 2026-08-20 by the fact-store workstream while measuring Apache AGE.
+# together. A test container on a different major version than production
+# makes `tests/infra/test_schema_parity.py` — the gate every migration passes
+# through — validate against a version other than the one it guards, and makes
+# `scripts/gen_pg_baseline.py` generate its oracle there too.
 #
-# **2026-08-28: `postgres:18-alpine` -> `pgvector/pgvector:pg18`**, with the
-# deployment, and the reason the swap needed doing at all is the same class of
-# bug one layer down. Alpine is musl and this image is Debian/glibc, and the
-# two sort `en_US.utf8` DIFFERENTLY — so the sixty-nine collation-dependent
-# indexes built under musl gave silently wrong range scans when read under
-# glibc. Not a crash: wrong answers. `REINDEX DATABASE` after the swap is what
-# repairs it, and it was run against the live database with all 71 index
-# definitions verified md5-identical afterwards.
+# The image is Debian/glibc, not Alpine/musl: the two sort `en_US.utf8`
+# DIFFERENTLY, so collation-dependent indexes built under one give silently
+# wrong range scans when read under the other.
 #
 # The test container tracking the deployment is also what makes the `vector`
 # extension available here at all: `postgres:18-alpine` does not carry it, so
 # every migration touching a vector column would fail in CI while working in
-# production — the oracle disagreeing with the thing it guards, again.
+# production.
 PG_IMAGE = "pgvector/pgvector:pg18"
 
 # The runtime_context values the shipped doctrine is read with in tests. They
 # are module constants rather than inline literals because
-# `tests/fixtures/tag_doctrine_bodies.txt` was captured from this same builder —
+# `tests/fixtures/tag_doctrine_bodies.txt` is captured from this same builder —
 # `Doctrine.text` appends a `<runtime_context>` block built from exactly these
 # three, so a mismatch would fail a body comparison for a reason that has
 # nothing to do with doctrine.
@@ -75,7 +69,7 @@ def build_test_doctrine_store() -> DoctrineStore:
 
     Module-level, not fixture-only, so a one-off script can build the identical
     store outside a pytest run — that is how
-    `tests/fixtures/tag_doctrine_bodies.txt` was captured.
+    `tests/fixtures/tag_doctrine_bodies.txt` is captured.
     """
     return DoctrineStore(
         Path("nora/doctrine"), strict=True, reload="startup",
@@ -99,9 +93,8 @@ def example_config_path(tmp_path: Path) -> Path:
     `example_config` when it only needs the loaded `Config`. The template is
     the contract `nora/config.py` is written against, so a test that loads it
     tests the code — a test that loaded the deployment's `config.toml` would
-    test the operator's choices, and go red when they changed
-    (`tests/test_evals_gate.py`'s own history). Only a test whose SUBJECT is
-    the deployment reads the real file; those are pinned in
+    test the operator's choices, and go red when they changed. Only a test
+    whose SUBJECT is the deployment reads the real file; those are pinned in
     `tests/architecture/test_config_comes_from_the_template.py`."""
     return copy_example_config(tmp_path)
 
@@ -129,7 +122,7 @@ def exported_spans(monkeypatch) -> Iterator[Any]:
 
     Trace ids are the point. A rootless span IS a trace, so «is this one trace
     or three» is a question only the exported ids can answer; asserting that a
-    helper was called cannot see the defect at all (issue #64).
+    helper was called cannot see the defect at all.
 
     **It is built with `build_sampler()` — production's own rule.** A test
     provider that sampled everything would export spans the deployment drops,
@@ -143,10 +136,9 @@ def exported_spans(monkeypatch) -> Iterator[Any]:
     `trace.set_tracer_provider` is ONE-SHOT per process — a second call is
     ignored with a warning — so a provider-based fixture silently hands every
     file after the first the FIRST file's exporter, and a provider that has been
-    shut down exports nothing at all for the rest of the run.
-    `tests/test_span_skeleton.py` found both the hard way and says so. Patching
-    the lookup keeps the capture local to one test and leaves the global
-    provider untouched.
+    shut down exports nothing at all for the rest of the run. Patching the
+    lookup keeps the capture local to one test and leaves the global provider
+    untouched.
     """
     from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -202,7 +194,7 @@ def _wait_until_rustfs_is_serving(host: str, port: int) -> None:
     settled for: ANY HTTP response means the process is up, because RustFS's
     IAM subsystem answers every route — health path included — with an
     unsigned 403 until it finishes initializing (that healthcheck's own
-    comment, verified 2026-08-12). A connection-level failure means "not
+    comment). A connection-level failure means "not
     listening yet" and is retried; an HTTP error status is still "up"."""
     deadline = time.monotonic() + 30
     url = f"http://{host}:{port}/"
@@ -275,20 +267,17 @@ def pg_template(pg_admin: _PgAdmin) -> str:
     """One database with the WHOLE migration chain applied, built once per
     session and used as a `CREATE DATABASE ... TEMPLATE` source.
 
-    **Why this exists, measured 2026-08-21.** `pg_url` below hands out a fresh
-    database per test and ~54 call sites then run the full Alembic chain into
-    it. At 27 revisions and rising that is the dominant cost of a full run, and
-    it is not paid where it is spent: replaying migrations hammers the shared
+    **Why this exists.** `pg_url` below hands out a fresh database per test, and
+    running the full Alembic chain into each is the dominant cost of a full run.
+    It is not paid where it is spent: replaying migrations hammers the shared
     testcontainer, and the bill lands on
     `tests/integration/test_latency.py::test_overhead_stays_within_the_budget`,
-    which writes audit rows to the same container and asserts a p95. That test
-    passes standalone and in its own directory and fails in the full suite —
-    the signature of a cost incurred by other files.
+    which writes audit rows to the same container and asserts a p95.
 
     Copying a template is a file-level clone inside Postgres, so a per-test
     database still costs a `CREATE DATABASE` and nothing more. Isolation is
-    UNCHANGED: every test still gets its own database, and `run_migrations` at
-    the call sites becomes a cheap no-op because the chain is already at head.
+    unchanged: every test gets its own database, and `run_migrations` at the
+    call sites is a cheap no-op because the chain is already at head.
 
     Session-scoped on purpose. It is never written to — Postgres refuses to
     copy a template with other sessions connected, and the only connection it
@@ -315,11 +304,9 @@ def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
     connections are terminated first so the DROP cannot hang on a pooled handle.
 
     **Cloned from `pg_template`, not created empty** — see that fixture. Callers
-    that still call `run_migrations(url)` are correct and now cheap: the chain
-    is already at head, so it costs one connection and a version check instead
-    of 27 revisions. Callers that never migrated at all get a migrated database
-    where they used to get an empty one, which is a strictly larger schema and
-    breaks nothing that was passing.
+    that call `run_migrations(url)` are correct and cheap: the chain is already
+    at head, so it costs one connection and a version check. Callers that never
+    migrate get a migrated database.
     """
     dbname = "t_" + uuid.uuid4().hex
     with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
@@ -353,19 +340,18 @@ def no_build_stamp():
     """Force `nora/version.json` ABSENT for the duration of a test.
 
     `scripts/build-image.sh` writes that file into the working tree, and it is
-    gitignored — so once anyone runs a real build (V1, 2026-08-11) it stays
-    there silently, and every test that assumed "a source checkout has no
-    stamp" quietly starts exercising the STAMPED path while claiming to prove
-    the unstamped one. Two tests went red the first time a build ran; they were
-    the honest ones. Any test asserting unstamped behaviour takes this rather
-    than trusting the machine's mood.
+    gitignored — so once anyone runs a real build it stays there silently, and
+    every test that assumed "a source checkout has no stamp" quietly starts
+    exercising the STAMPED path while claiming to prove the unstamped one. Any
+    test asserting unstamped behaviour takes this rather than trusting the
+    machine's mood.
     """
     stamp = Path(__file__).resolve().parents[1] / "nora" / "version.json"
     # RENAMED aside, not read-into-memory-and-deleted. The file is gitignored,
     # so if the process is SIGKILLed between the delete and the restore, git
     # cannot bring it back and the next build silently ships unstamped. A
     # sibling rename survives process death — the file is still there to move
-    # back by hand (verification pass, 2026-08-11).
+    # back by hand.
     parked = stamp.with_suffix(".json.parked-by-test")
     moved = stamp.exists()
     if moved:
@@ -382,11 +368,10 @@ def no_build_stamp():
 #: `nora/subject/obtain.py` points every subject at `config.evaluation.toml`,
 #: which is gitignored and written ONLY by `python -m evals`. So on a fresh
 #: clone, in CI, or in a new worktree the file does not exist and every such
-#: test dies with `FileNotFoundError` — measured, 7 of 10 in
-#: `test_subject_obtain.py`. Worse in a checkout where it DOES exist: those
-#: tests compose whatever a previous run left behind, from whatever deployment
-#: that run pointed at, with no freshness check — the exact staleness
-#: `materialise()`'s own docstring says must never happen.
+#: test dies with `FileNotFoundError`. Where it DOES exist, those tests would
+#: compose whatever a previous run left behind, from whatever deployment that
+#: run pointed at, with no freshness check — the staleness `materialise()`'s
+#: own docstring says must never happen.
 #:
 #: NOT a second composition path. It is the SAME generator, fed a STATED
 #: deployment instead of a discovered one — which is what a fixture is. A test
@@ -421,9 +406,8 @@ def evaluation_config() -> Path:
 
     Prefers the DEPLOYMENT's own config when it is reachable, so a run on the
     deploy host measures the deployed Nora. Falls back to a stated deployment
-    elsewhere, and says which it used — a silent fallback to the example is the
-    65-value divergence this whole layer exists to close, so the fallback is
-    explicit and narrow.
+    elsewhere, and says which it used: a silent fallback to the example would
+    diverge from the deployment, so the fallback is explicit and narrow.
     """
     from evals.subject_config import build, materialise
 

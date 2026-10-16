@@ -1,8 +1,7 @@
-"""The Assess adaptor's nightly data-quality checks (design/cognition-loop/
-30-cognition.md §6, DEC-240; `nora.app.assess_dq`). Module-scoped database per
-`tests/infra/test_withdrawal.py`'s pattern. Every check is proved BOTH ways:
-`ok` on a clean fixture, `fail` once the fixture is broken the way the check
-names — the gate's own "cover the negative too" rule.
+"""The Assess adaptor's nightly data-quality checks (DEC-240; `nora.app.assess_dq`).
+Module-scoped database per `tests/infra/test_withdrawal.py`'s pattern. Every
+check is proved BOTH ways: `ok` on a clean fixture, `fail` once the fixture is
+broken the way the check names — the gate's own "cover the negative too" rule.
 """
 
 from __future__ import annotations
@@ -231,10 +230,10 @@ async def test_induced_line_no_aggregate_is_not_applicable_before_step_8(engine)
 
 
 async def test_a_raising_check_errors_without_dropping_the_others(engine, monkeypatch):
-    """PR #623 review: a check that raises must not take the whole night's
-    report down with it, including checks that already passed. Patches
-    `cross_room_duplicate_events` — the first check `run_deterministic_checks` runs
-    — to raise, and asserts every OTHER check still ran to its own verdict."""
+    """A check that raises must not take the whole night's report down with it,
+    including checks that already passed. Patches `cross_room_duplicate_events` —
+    the first check `run_deterministic_checks` runs — to raise, and asserts every
+    OTHER check still ran to its own verdict."""
 
     async def _raises(conn):
         raise RuntimeError("boom: citation query exploded")
@@ -263,9 +262,9 @@ async def test_a_raising_check_errors_without_dropping_the_others(engine, monkey
 
 
 async def test_a_raising_check_still_gets_a_recorded_report(engine, monkeypatch):
-    """The reviewer's repro, end to end through `run_nightly`: one check
-    raises, and the run still reaches `--record` with the FULL report — the
-    checks that ran clean are not lost because one check blew up."""
+    """End to end through `run_nightly`: one check raises, and the run
+    still reaches `--record` with the FULL report — the checks that ran
+    clean are not lost because one check blew up."""
 
     async def _raises(conn):
         raise ValueError("rollup connection dropped")

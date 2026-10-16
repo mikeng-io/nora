@@ -1,12 +1,11 @@
 """`obtain()` returns what the deployment runs — proven by driving it, not by reading it.
 
-`design/evaluation/03-step0-results.md` measured seven eval-side assemblies, four
-of which reached the model with something production does not send. This is the
-control on the replacement: the graph `nora.subject.obtain` hands back is the
-same object `nora/__main__.py` runs, with the entry points present as attributes.
+The graph `nora.subject.obtain` hands back is the same object `nora/__main__.py` runs,
+with the entry points present as attributes, so an eval never reaches the model with
+something production does not send.
 
-Costs ~64ms per call against the template-cloned database (§3 of that file),
-which is what makes per-case obtaining affordable and a case plain data.
+Obtaining costs about 64ms per call against the template-cloned database, which is what
+makes per-case obtaining affordable and a case plain data.
 """
 from __future__ import annotations
 
@@ -167,10 +166,10 @@ async def test_two_subjects_do_not_share_an_environment_variable(
         database_url=pg_url, workdir=tmp_path / "b", room=("signal", "g-b"),
     ))
     assert os.environ["DATABASE_URL"] == "postgresql+asyncpg://untouched/db"
-    # The returned config NAMES NO VARIABLE. Each call used one of its own and
-    # deleted it, so a config still pointing at that name would be a live trap:
-    # anything re-reading `os.environ[database_url_env]` gets a KeyError.
-    # `Subject.database_url` is the field to read.
+    # The returned config NAMES NO VARIABLE. Each call used one of its own and deleted it,
+    # so a config still pointing at that name would be a live trap: anything re-reading
+    # `os.environ[database_url_env]` gets a KeyError. `Subject.database_url` is the field
+    # to read.
     assert a.cfg.store.database_url_env == ""
     assert b.cfg.store.database_url_env == ""
     assert a.database_url == b.database_url == pg_url
@@ -179,10 +178,9 @@ async def test_two_subjects_do_not_share_an_environment_variable(
 
 @pytest.mark.asyncio
 async def test_a_subjects_signal_send_lands_as_production_s_does(spec) -> None:
-    """The sandbox has no signal-cli, and production's send answers `sent`.
-    Without `landed_signal_sends` in `obtain`, every send here failed and
-    `send_reply` told the model `refused` on every reply (2026-10-08: 794
-    `send failed` in one `tool_selection` run)."""
+    """The sandbox has no signal-cli, and production's send answers `sent`. Without
+    `landed_signal_sends` in `obtain`, every send here fails and `send_reply` tells the
+    model `refused` on every reply."""
     from nora.domain.models import ConversationTarget
     from nora.subject.sandbox_signal import LandedSignalSender
 

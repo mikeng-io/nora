@@ -1,4 +1,4 @@
-"""ToolCallLog — the write path (R-48, tool-recall-log spec §3)."""
+"""ToolCallLog — the write path (R-48)."""
 
 from datetime import UTC, datetime
 
@@ -16,9 +16,8 @@ CACHEABLE = frozenset({"place_info", "route", "web_search", "weather", "transit"
 
 def _wrapped(payload: dict) -> dict:
     """The Strands `ToolResult` shape a plain-dict-returning tool actually
-    produces (`strands.tools.decorator.DecoratedFunctionTool._wrap_tool_result`
-    — verified: `content` carries `json.dumps(payload)`, not the payload
-    itself)."""
+    produces (`strands.tools.decorator.DecoratedFunctionTool._wrap_tool_result`):
+    `content` carries `json.dumps(payload)`, not the payload itself."""
     import json
     return {"status": "success", "content": [{"text": json.dumps(payload)}], "toolUseId": "x"}
 
@@ -109,10 +108,10 @@ async def test_a_vetoed_call_is_never_logged():
 
 async def test_the_default_clock_produces_a_row_a_real_construction_would_write():
     """No test in this file omits `clock` — every one pins a fixed UTC value.
-    That is exactly why the naive `datetime.now` default shipped unnoticed:
-    the only construction site that matters (deliver.py, production) never
-    passes `clock` either. This test constructs ToolCallLog the same way
-    production does — no clock override — and proves a row actually lands."""
+    That is how a naive `datetime.now` default would go unnoticed: the only
+    construction site that matters (deliver.py, production) never passes
+    `clock` either. This test constructs ToolCallLog the same way production
+    does — no clock override — and proves a row actually lands."""
     store = FakeToolCallLogStore()
     log = ToolCallLog(
         conversation_id="conv-1", conversation_type="group", tag_id="tag-1",
@@ -188,15 +187,13 @@ async def test_a_failed_write_increments_the_writes_counter_as_failed():
 # Everything above drives `ToolCallLog._after_tool_async` directly with a
 # hand-built event — necessary for the fast, focused cases above, but it
 # cannot catch a defect in the WIRING between the real tools, the real
-# `FakeAgentRunner` double, and the real `ReplyGuard`. Task 3(a)'s scripted
-# double used to hardcode `content: [{"text": "True"}]` for every successful
-# call regardless of what the tool actually returned, so `ToolCallLog`
-# registered on a scripted scenario could never see a real payload and could
-# never write a real row — no scripted test could have caught Fix 1's naive
-# clock. This test goes through `ToolRegistry.specs()` (the same call
-# `nora.engagement.stages.deliver.build` makes), `adapt()` (the same
-# Strands conversion production uses), and `FakeAgentRunner` (which now
-# threads the tool's REAL return value into the after-tool hook) — the one
+# `FakeAgentRunner` double, and the real `ReplyGuard`. A double that
+# hardcoded `content: [{"text": "True"}]` for every successful call would
+# keep `ToolCallLog` from ever seeing a real payload or writing a real row,
+# so `FakeAgentRunner` threads the tool's REAL return value into the
+# after-tool hook. This test goes through `ToolRegistry.specs()` (the same
+# call `nora.engagement.stages.deliver.build` makes), `adapt()` (the same
+# Strands conversion production uses), and `FakeAgentRunner` — the one
 # test that proves place_info → a written row → recall_lookups seeing it
 # work TOGETHER.
 
@@ -241,7 +238,7 @@ async def _run_the_chain(*, tool_call_log_clock=None) -> tuple[Metrics, FakeTool
     `tool_call_log_clock` defaults to None — meaning `ToolCallLog` is
     constructed WITHOUT a `clock=` override, the same as the one production
     construction site (`deliver.build`). A caller may pass the naive
-    `datetime.now` here to reproduce Fix 1's original bug.
+    `datetime.now` here to reproduce the naive-clock failure.
     """
     metrics = Metrics()
     store = FakeToolCallLogStore()
@@ -302,11 +299,9 @@ async def test_the_whole_chain_writes_and_reads_together():
 
 
 async def test_the_whole_chain_goes_red_if_fix_1s_bug_returns():
-    """The mutation proof: reintroducing Fix 1's naive-clock default (by
-    passing it explicitly, standing in for the old default) makes the write
-    fail exactly the way it did in production — silently, behind
-    `ToolCallLog`'s own swallow-and-log — so no row ever lands and this
-    end-to-end chain cannot see one either."""
+    """The mutation proof: passing a naive-clock default explicitly makes the
+    write fail silently, behind `ToolCallLog`'s own swallow-and-log — so no row
+    ever lands and this end-to-end chain cannot see one either."""
     metrics, store, _specs_by_name = await _run_the_chain(tool_call_log_clock=datetime.now)
     rows = await store.recent(
         conversation_id=CONVERSATION, since=datetime(2020, 1, 1, tzinfo=UTC), limit=10,
@@ -317,7 +312,7 @@ async def test_the_whole_chain_goes_red_if_fix_1s_bug_returns():
     ) == 0
 
 
-# ---- ADR 0015 §3: recall_lookups' statuses carry their own note -------------
+# ---- ADR 0015: recall_lookups' statuses carry their own note ----------------
 
 
 class _RaisingToolCallLogStore(FakeToolCallLogStore):
@@ -328,7 +323,7 @@ class _RaisingToolCallLogStore(FakeToolCallLogStore):
 async def test_every_non_ok_recall_lookups_status_carries_a_note():
     """The description only NAMES `nothing_found` and `unavailable`. That a
     failed read is not «I never checked» (the reason the tool exists) is the
-    result's `note` now, on each path, dash-free."""
+    result's `note`, on each path, dash-free."""
     def _recall(store):
         specs = ToolRegistry(tool_call_log_store=store).specs(
             store=_FakeStore(), conversation_id=CONVERSATION, conversation_type="group",

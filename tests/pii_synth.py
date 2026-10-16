@@ -1,5 +1,5 @@
-"""Seeded, realistic-looking, INVENTED values for the identifier hook's tests
-(#283). Nothing here is copied from a record and the file holds no
+"""Seeded, realistic-looking, INVENTED values for the identifier hook's tests.
+Nothing here is copied from a record and the file holds no
 identifier-shaped literal: every phone, id and email is drawn from a seeded
 RNG at run time, names from generic pools. The scanner reads this file like
 any other.

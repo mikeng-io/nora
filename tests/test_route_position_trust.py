@@ -1,11 +1,10 @@
 """R-57: a live position `where_is` disclosed this turn may seed a `route`
 argument only where the room already trusts you with location.
 
-Before this rule, the block on a `where_is`-derived address entering `route`
-lived ONLY in `nora/skills/navigation/SKILL.md` prose — the skill might not
-even load that turn (confirmed live 2026-08-22: the F1/Fung/Clara trace
-that prompted this rule never called `skills`), so nothing in CODE stopped a
-live position from reaching Google. `route`'s R-28 screen already catches an
+The block on a `where_is`-derived address entering `route` must live in CODE,
+not only in `nora/skills/navigation/SKILL.md` prose — the skill might not even
+load that turn, so prose alone would not stop a live position from reaching
+Google. `route`'s R-28 screen already catches an
 identifier, a raw coordinate, and a known person's name; this adds the fourth
 case it never covered — a plain address string, which cannot be told apart
 from a place the user typed by SHAPE alone. The only ground truth is
@@ -98,13 +97,11 @@ async def _call(tool, **kwargs):
 
 
 async def _disclose_live_address(where_is, reverse_geocode):
-    """The two-step journey R-57 now has to screen (13c530aa, DEC-156).
+    """The two-step journey R-57 screens (DEC-156).
 
-    `where_is` STOPPED returning an address on 2026-09-06 — it answers a
-    position (saved place + age + lat/lng) and nothing else, so the single-call
-    shape these tests used no longer exists. Naming the street is now an
-    explicit second call to `reverse_geocode`, and that tool is what fills the
-    turn-scoped disclosed set `route` screens against.
+    `where_is` answers a position (saved place + age + lat/lng) and no address.
+    Naming the street is an explicit second call to `reverse_geocode`, and that
+    tool is what fills the turn-scoped disclosed set `route` screens against.
 
     Going through BOTH calls is the point, not ceremony: the coordinate has to
     come from the live fix for the disclosure to be real. Handing
@@ -113,9 +110,9 @@ async def _disclose_live_address(where_is, reverse_geocode):
     """
     position = await _call(where_is, person="Fung")
     assert position["status"] == "ok"
-    # The address is gone from this payload — that IS the new contract, and a
-    # regression that put it back would make the screen below reachable by a
-    # path this file no longer covers.
+    # No address in this payload — that IS the contract, and a regression that
+    # put it back would make the screen below reachable by a path this file does
+    # not cover.
     assert "address" not in position
     named = await _call(reverse_geocode, lat=position["lat"], lng=position["lng"])
     assert named["status"] == "ok"
@@ -130,7 +127,7 @@ async def test_a_disclosed_live_position_is_refused_as_a_route_argument_in_an_un
     out = await _call(route, origin=address, destination="Yoho Mall")
     assert out["status"] == "refused"
     assert client.calls == []                       # never reached Google
-    # ADR 0015 §3: what to do instead rides in the refusal (it left the
+    # ADR 0015: what to do instead rides in the refusal (not in the
     # description): do not retry, report the position without a travel time.
     assert "Do not retry" in out["note"]
     assert "—" not in out["note"] and "–" not in out["note"]
@@ -158,7 +155,7 @@ async def test_an_ordinary_place_name_is_never_screened_by_r57():
 
 async def test_a_bound_place_label_that_is_a_disclosed_live_address_is_still_refused():
     """A presence read binds a place whose label is the same street `where_is`
-    just disclosed: the bound name must not skip R-57 (review 2026-09-28)."""
+    just disclosed: the bound name must not skip R-57."""
     from datetime import UTC, datetime
 
     from nora.domain.mobility import DerivedPlace, Stay
@@ -207,7 +204,7 @@ async def test_a_bound_place_label_that_is_a_disclosed_live_address_is_still_ref
     by = {t.tool_name: t for t in tools}
     read = await _call(by["routine_read"], date="2026-10-14", from_hour=0, to_hour=23,
                        name="Fung")
-    # Unsaved (the common case live: 77 of 98 derived places), so its label is
+    # Unsaved (the common case), so its label is
     # the geocoded street and the bound words are «… near Tsuen Wan Road».
     words = "a place they go near Tsuen Wan Road"
     assert words in str(read)

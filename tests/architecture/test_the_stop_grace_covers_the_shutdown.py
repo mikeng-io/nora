@@ -1,5 +1,5 @@
 """`docker stop` gives nora `stop_grace_period` between SIGTERM and SIGKILL, and what
-nora does in that time has a number (the Cognition cut-over's PR-7).
+nora does in that time has a number.
 
 The default grace is 10 s. A stopping nora cancels its adapters and loops, lets a session
 already running finish for `SESSION_SHUTDOWN_GRACE_SECONDS`, cancels what is left (each
@@ -26,8 +26,8 @@ from nora.app.cognition_wiring import SESSION_SHUTDOWN_GRACE_SECONDS
 
 ROOT = Path(__file__).resolve().parents[2]
 #: What the rest of shutdown needs after the session grace: stopping the adapters, one
-#: cancelled outcome write per session, closing the model client and the store. Measured
-#: in the probe test at well under 5 s; 30 is a margin, not a measurement.
+#: cancelled outcome write per session, closing the model client and the store. 30 is a
+#: margin, not a measurement.
 REST_OF_SHUTDOWN_SECONDS = 30.0
 DOCKER_DEFAULT_GRACE_SECONDS = 10.0
 
@@ -59,7 +59,7 @@ def test_the_session_grace_is_pinned_to_its_production_value():
     with room to spare: the constant could be zeroed (every running session cancelled
     at once, never given its last moments) and nothing here would notice. The number is
     pinned to a literal on purpose, so changing it is a decision made in this file and
-    in `docker-compose.yml` together (review of #714, mutant 4a)."""
+    in `docker-compose.yml` together."""
     assert SESSION_SHUTDOWN_GRACE_SECONDS == 30.0
 
 

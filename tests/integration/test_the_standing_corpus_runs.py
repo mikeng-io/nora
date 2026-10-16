@@ -1,11 +1,10 @@
 """The standing corpus's harness, end to end, with no model reachable.
 
-`design/standing-compact/20-verification.md` §1. Three readings the harness
-must give before a single model call is spent on it:
+Three readings the harness must give before a single model call is spent on it:
 
 - **the arm is measurable** — the fold's rendered input, printed without a
-  model, carries what this branch changed: `<standing_prior written=…>`,
-  `<steps>`, a tool result past the old 600-character clip. And it reads the
+  model, carries `<standing_prior written=…>`,
+  `<steps>`, a tool result longer than 600 characters, inside the 4000 bound. And it reads the
   RIGHT stretch: the sandbox renumbers every row, so the prior's watermark and
   the trace's own rows have to be translated or the fold reads a different
   batch than production's did;
@@ -67,7 +66,7 @@ from nora.subject import (
 from nora.subject.standing_fold import FoldCall, Folded, fold, read_fold_turn
 from tests.sandbox_fixtures import BEFORE_MS, ROOM, STEP_MS, seed_source
 
-#: Every draw creates a Honcho workspace of its own (issue #462).
+#: Every draw creates a Honcho workspace of its own.
 pytestmark = pytest.mark.usefixtures("draw_honcho")
 
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
@@ -75,9 +74,8 @@ _TAG = "t-fold-probe"
 _PRIOR = "I owe the room an answer about the venue; nobody has confirmed the date."
 #: What production's fold wrote AFTER the turn — must never be read as the prior.
 _PRODUCTION_FOLD = "PRODUCTION-FOLD-OUTPUT"
-#: Placed PAST the old 600-character clip and inside the new 4000 bound, so
-#: its presence in the fold's input is the branch's arm and its absence is
-#: master's.
+#: Placed past 600 characters and inside the 4000 bound, so its presence in the
+#: fold's input shows the 4000 bound is applied.
 _FINDING = "FINDING-PAST-THE-OLD-CLIP"
 _RESULT = ("r" * 3000) + _FINDING + ("r" * 500)
 #: Her `recovered` reply: written 300 ms AFTER the turn's record closed, and
@@ -139,8 +137,8 @@ async def _seed(
                 fold_count=4, updated_at=_FOLDED, last_folded_row_id=by_body["row-7"].id,
             ))
         if later_chain:
-            # The chain BEGINS long after the turn — the shape of every
-            # pre-2026-09-20 moment. Its first revision is today's position,
+            # The chain BEGINS long after the turn — the shape of a moment from
+            # before the chain existed. Its first revision is today's position,
             # never the one the turn had.
             await standing.write(standing=Standing(
                 platform=ROOM[0], conversation_id=ROOM[1], body=_LATER_CHAIN,
@@ -290,7 +288,7 @@ async def test_the_judge_reads_the_record_not_the_folds_input(
 async def test_the_verdict_chain_is_seeded_as_of_the_turn(
     pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
-    """Master's fold re-derives off `turn_verdict`; its arm reproduces
+    """The fold re-derives off `turn_verdict`; its arm reproduces
     production only if the sandbox holds the verdicts that stood BEFORE the
     turn — and not the one this turn's own fold wrote."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -396,7 +394,7 @@ async def test_a_row_id_the_sandbox_cannot_translate_is_an_error(
     assert not state_of(data, NORA_SHOWN)
 
 
-# --- the counterfactual: a prior declared ABSENT (issue #445) ----------------
+# --- the counterfactual: a prior declared ABSENT ----------------
 
 
 @pytest.mark.asyncio

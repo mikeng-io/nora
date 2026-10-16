@@ -1,12 +1,11 @@
 """The new outbound surfaces, driven by a REAL INBOUND MESSAGE — not by calling
-`Deliverer.deliver` (operator, 2026-08-10).
+`Deliverer.deliver`.
 
 Everything DEC-82 (styles), DEC-86 (mentions) and DEC-89 (link carry) ships is
-already unit-tested at its own seam, and the pre-deploy review still found that
-deleting the `LinkCarry.apply` call from `Deliverer.deliver` left the whole
-suite green. That is DEC-42's "present, wired, inert" failure: every piece
-correct, the wiring untested, and nothing that fails when the feature stops
-happening.
+unit-tested at its own seam, but deleting the `LinkCarry.apply` call from
+`Deliverer.deliver` would leave those green. That is DEC-42's "present, wired,
+inert" failure: every piece correct, the wiring untested, and nothing that
+fails when the feature stops happening.
 
 So these tests start where a real turn starts — a signal-cli-shaped envelope
 through `handler.on_event` — and end where a real turn ends, on what the adapter
@@ -54,9 +53,9 @@ async def test_a_reply_written_with_emphasis_goes_out_styled_not_asterisked(
     Markdown; the group must see formatting, never `**`.
 
     CJK-adjacent on purpose: `\\w` is Unicode-aware, so 投/資 ARE word characters,
-    and the first version of this conversion mangled exactly this shape into
-    `*投資*方面` — half-stripped, asterisks still on screen. Cantonese has no
-    spaces, so this is the COMMON case here, not an edge case."""
+    and a naive conversion mangles exactly this shape into `*投資*方面` —
+    half-stripped, asterisks still on screen. Cantonese has no spaces, so this
+    is the COMMON case here, not an edge case."""
     h = await harness_factory(
         script=_says("**投資**方面我建議月供 ETF"), identity_toml=IDENTITY, roster=ROOM,
     )
@@ -75,8 +74,8 @@ async def test_a_reply_naming_someone_here_goes_out_as_a_real_mention(harness_fa
     is no mentions parameter on `send_reply`, deliberately, so a model can never
     hand over an ACI — and the composer turns it into a real range.
 
-    This is the operator's own case: she should be able to say she does not know
-    and then ASK the person who does."""
+    She should be able to say she does not know and then ASK the person who
+    does."""
     h = await harness_factory(
         script=_says("我唔知你幾高喎 @Grant 你幾高?"), identity_toml=IDENTITY, roster=ROOM,
     )

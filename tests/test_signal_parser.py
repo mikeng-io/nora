@@ -75,10 +75,10 @@ def test_drops_our_own_message_by_source_uuid():
 
 
 def test_a_number_hidden_sender_resolves_via_source_uuid():
-    """design/10 §1.1/§1.2 PROBE: with the phone number hidden, signal-cli
-    sends neither `source` nor `sourceNumber` — only `sourceUuid`. Before this
-    fix, `parser.py` never read that field and such a sender's `sender_id`
-    came back empty, so no identity.toml mapping could ever match them."""
+    """With the phone number hidden, signal-cli sends neither `source` nor
+    `sourceNumber` — only `sourceUuid`. The parser must read that field, or such
+    a sender's `sender_id` comes back empty and no identity.toml mapping can
+    ever match them."""
     e = envelope()
     e["params"]["envelope"].pop("source")
     e["params"]["envelope"]["sourceUuid"] = "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
@@ -99,11 +99,10 @@ def test_drops_a_reaction_only_payload():
 
 
 def test_a_sticker_becomes_a_fetchable_ref_not_a_bare_string():
-    """A sticker used to render `[sticker]` with no `MediaRef`, because the
-    parser's comment said there was 'no attachment id to fetch'. That was true
-    of `getAttachment` and false of the daemon: `getSticker(packId, stickerId)`
-    is verified to exist on 0.14.7 and to return bytes (spec §1). Without a ref
-    the sticker never enters custody and can never be read."""
+    """A sticker has no attachment id for `getAttachment`, but
+    `getSticker(packId, stickerId)` exists (signal-cli 0.14.7) and returns bytes,
+    so the parser gives it a `MediaRef`. Without a ref the sticker never enters
+    custody and can never be read."""
     msg = parse_event(
         envelope(message=None, sticker={"packId": "x", "stickerId": 3}), OWN
     )
@@ -116,10 +115,10 @@ def test_a_sticker_becomes_a_fetchable_ref_not_a_bare_string():
 
 
 def test_a_captioned_sticker_keeps_both_halves():
-    """The booster used to be the half that was lost: `_body_parts` appended
-    `[sticker]` only when nothing else had rendered, so a sticker sent WITH a
-    caption vanished from the record entirely. That is precisely the case this
-    feature exists for — several messages, then a sticker as a booster."""
+    """A sticker sent WITH a caption must not vanish from the record:
+    `_body_parts` must append `[sticker]` even when something else has rendered.
+    That is the case this feature exists for — several messages, then a sticker
+    as a booster."""
     msg = parse_event(
         envelope(message="haha", sticker={"packId": "x", "stickerId": 3}), OWN
     )
@@ -183,8 +182,7 @@ def test_audio_that_is_not_a_voice_note_is_not_called_one():
 
 def test_a_voice_note_is_still_recognised_when_signal_cli_omits_the_flag():
     """signal-cli 0.14.7's JSON-RPC `JsonAttachment` never emits `voiceNote`
-    at all (confirmed 2026-08-23 by decompiling the shipped jar — the fix
-    landed upstream 2026-08-10 but is unreleased), so every real Signal voice
+    at all, so every real Signal voice
     note arrives with no flag and must still be recognised from the filename
     Signal's own recorder generates."""
     msg = parse_event(
@@ -311,9 +309,8 @@ def test_whitespace_only_message_with_no_attachment_is_dropped():
 # ── transport framing ────────────────────────────────────────────────────────
 # signal-cli frames the same envelope two ways and the man page documents only
 # the JSON-RPC one. Nora runs on the HTTP SSE transport, which uses the other.
-# Every test above builds the JSON-RPC form, which is exactly why a parser that
-# understood ONLY that form passed the whole suite while ingesting nothing in
-# production for 61 days. These pin the shape actually observed on the wire.
+# A parser that understood ONLY the JSON-RPC form would ingest nothing in
+# production. These pin the shape actually observed on the wire.
 
 
 def sse_envelope(**data_over) -> dict:
@@ -376,8 +373,8 @@ def test_drops_an_event_that_is_neither_framing():
 # ── edited messages ─────────────────────────────────────────────────────────
 # signal-cli nests an edit as `envelope.editMessage.dataMessage` (JsonEditMessage,
 # alongside targetSentTimestamp), NOT as `envelope.dataMessage`. Reading only the
-# top-level key made every edit silently invisible — the same wrong-silence shape
-# as the framing bug above, one key deeper.
+# top-level key makes every edit silently invisible — the same wrong-silence
+# shape as the framing above, one key deeper.
 
 
 def sse_edit(message: str = "corrected", **over) -> dict:
@@ -406,7 +403,7 @@ def test_an_edited_message_is_ingested():
 
 
 def test_an_edit_names_the_message_it_edits_by_its_sent_timestamp():
-    """design/message-edits/03 §1: `targetSentTimestamp` is the ORIGINAL's
+    """`targetSentTimestamp` is the ORIGINAL's
     sent-timestamp — with the author, Signal's address for a message. The
     edit's own `timestamp` is when it was edited."""
     msg = parse_event(sse_edit(), OWN)
@@ -453,8 +450,8 @@ def test_an_edit_in_the_jsonrpc_framing_also_parses():
 # Captured from the live group: Signal replaces the mentioned name in `body`
 # with U+FFFC (OBJECT REPLACEMENT CHARACTER) and carries who was mentioned in
 # a parallel array. A mention is therefore structurally invisible to any
-# substring trigger match, which is why tagging Nora the obvious way produced
-# ingest, attribution and total silence.
+# substring trigger match, so tagging Nora the obvious way would give ingest,
+# attribution and total silence.
 
 
 def test_mentions_are_extracted_in_every_id_form():
@@ -482,12 +479,12 @@ def test_a_malformed_mentions_entry_is_skipped_not_fatal():
     assert parse_event(e, OWN).mentions == frozenset({"u1"})
 
 
-# ── the quote is a typed parent pointer (design/11 §2.1, §2.8) ───────────────
-# Bug A: signal-cli's shipped `quote.schema.json` carries `id` (REQUIRED),
+# ── the quote is a typed parent pointer ──────────────────────────────────────
+# signal-cli's shipped `quote.schema.json` carries `id` (REQUIRED),
 # `author`, `authorNumber`, `authorUuid`, `text`, `attachments`, `mentions` and
 # `textStyles` — and NO `authorName`. `_quoted`'s `q.get("authorName") or ""`
-# therefore yielded `""` on every real message, and `<replying_to author="">`
-# rendered "replying to nobody" for the whole life of that feature.
+# therefore yields `""` on every real message, and `<replying_to author="">`
+# would render "replying to nobody".
 
 
 def test_a_quote_becomes_a_typed_pointer_at_the_parent_message():
@@ -510,8 +507,8 @@ def test_a_quote_with_no_id_is_not_threadable_and_is_dropped():
 
 
 def test_quote_carries_no_author_name_because_signal_cli_never_sends_one():
-    """A field that is provably always empty is exactly how the `peer_card` bug
-    happened. The parent ROW's own `sender_name` is the attribution now."""
+    """A field that is provably always empty reads as data while carrying none. The parent ROW's
+    own `sender_name` is the attribution."""
     from dataclasses import fields
 
     from nora.domain.models import Quote
@@ -599,7 +596,7 @@ def test_mention_spans_is_total(event):
     assert mention_spans(event) == ()
 
 
-# ── reactions and remote deletes (design/cognition-loop/20-observe.md §1) ──
+# ── reactions and remote deletes ──
 
 
 def test_a_reaction_becomes_a_touch_on_the_message_it_reacts_to():

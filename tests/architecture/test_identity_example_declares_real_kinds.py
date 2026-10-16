@@ -4,10 +4,9 @@ identifiers (AGENTS.md, «Never paste production rows into a fixture»). Both
 jobs fail the same way: an example that names a key the loader would refuse is
 a trap an operator copies, and it fails at THEIR startup rather than here.
 
-Nothing checked it. The file is commented out end to end — which is correct,
-since a live `[[persons.…]]` block would make a fresh clone claim to know
-somebody — so no parser has ever seen it and a typo'd kind could sit there
-indefinitely.
+The file is commented out end to end — which is correct, since a live
+`[[persons.…]]` block would make a fresh clone claim to know somebody — so no
+parser sees it and a typo'd kind could sit there indefinitely.
 
 What this reads is the COMMENTED example blocks, uncommented, and it checks
 every key against the same vocabulary `nora.persons` enforces at startup:

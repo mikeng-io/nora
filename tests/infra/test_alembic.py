@@ -4,9 +4,7 @@
 What it is good for is column presence, column type and server defaults, and
 that is all this file claims for it.
 
-The SQLite-era per-revision batch-rebuild tests (0002/0003/0004) are gone with
-the squash to one Postgres-native baseline (design/20 §2): there is no batch
-mode on Postgres and no chain to walk.
+There are no per-revision batch-rebuild tests: Postgres has no batch mode.
 """
 
 from __future__ import annotations
@@ -90,11 +88,11 @@ def test_the_x_db_override_redirects_the_target(pg_admin):
     was left untouched.
 
     **Both databases are created here rather than taking `pg_url`**, and that
-    is a requirement rather than a style choice: since 2026-08-21 `pg_url`
-    hands out a CLONE of an already-migrated template, so "untouched" could no
-    longer be expressed as `current_revision(...) is None` — the fixture's
-    database arrives at head. This test is the one place in the suite that
-    genuinely needs an EMPTY database, so it makes its own."""
+    is a requirement rather than a style choice: `pg_url` hands out a CLONE of
+    an already-migrated template, so "untouched" cannot be expressed as
+    `current_revision(...) is None` — the fixture's database arrives at head.
+    This test is the one place in the suite that genuinely needs an EMPTY
+    database, so it makes its own."""
     import psycopg
 
     scratch = "t_" + uuid.uuid4().hex
@@ -143,17 +141,17 @@ def test_alembic_ini_does_not_point_at_the_production_database():
 
 
 def test_pre_0033_row_inserted_before_kind_columns_gets_the_reminder_default(pg_url):
-    """03-reminder-schema's migration compatibility claim, against the REAL
-    migration path: a row written BEFORE 0033 (no `kind`, no `payload` — the
-    raw INSERT omits both) upgrades through the migration and reads back with
-    `kind='reminder'`, `payload=NULL`. The server default does the backfill;
-    no rewrite pass is needed."""
+    """Migration compatibility, against the REAL migration path: a row written
+    BEFORE 0033 (no `kind`, no `payload` — the raw INSERT omits both) upgrades
+    through the migration and reads back with `kind='reminder'`,
+    `payload=NULL`. The server default does the backfill; no rewrite pass is
+    needed."""
     from alembic import command as alembic_command
 
     from nora.infra.sql.migrations_runner import alembic_config
 
     run_migrations(pg_url)
-    # Take the schema back to 0032, the state a pre-DEC-139 database had.
+    # Take the schema back to 0032, before `kind` and `payload` (DEC-139).
     alembic_command.downgrade(alembic_config(pg_url), "0032_media_objects")
 
     engine = sa.create_engine(sync_url_for(pg_url))
@@ -186,13 +184,12 @@ def test_pre_0033_row_inserted_before_kind_columns_gets_the_reminder_default(pg_
 
 
 def test_0062_backfills_source_fold_on_a_pre_existing_revision(pg_url):
-    """design/dreamer-agent-loop/26-standing.md, dated section 2026-09-25: a
-    `standing_revision` row written before the `source` column existed is,
-    by construction, a fold — `SqlStandingStore.write` had exactly one
-    caller shape until this migration's sibling method landed. The server
-    default does the backfill in the same `ADD COLUMN` statement; no rewrite
-    pass is needed, mirroring `test_pre_0033_row_inserted_before_kind_
-    columns_gets_the_reminder_default` one migration family over.
+    """A `standing_revision` row from before the `source` column is, by
+    construction, a fold: `SqlStandingStore.write` had one caller shape until the
+    column existed. The server default does the backfill in the same `ADD COLUMN`
+    statement; no rewrite pass is needed, mirroring
+    `test_pre_0033_row_inserted_before_kind_columns_gets_the_reminder_default`
+    one migration family over.
     """
     from alembic import command as alembic_command
 
@@ -252,7 +249,7 @@ def test_0062_downgrade_drops_the_source_column_and_its_check(pg_url):
 
 
 def test_0060_backfills_the_platform_handle_from_raw_json(pg_url):
-    """design/message-edits/01 §2: an edit names its target by the platform's
+    """An edit names its target by the platform's
     handle, and a message stored BEFORE 0060 had it only inside `raw_json`.
     Without the backfill, every edit to a message sent before the deploy is an
     orphan. Each platform keeps it under its own key — `id` for WhatsApp and
@@ -299,9 +296,9 @@ def test_0060_backfills_the_platform_handle_from_raw_json(pg_url):
 
 
 def test_0064_resolves_open_duplicates_before_it_builds_the_index(pg_url):
-    """Issue #158, review of #517: migrations run at app start, so an index
-    that could not be built over an existing duplicate would stop Nora
-    booting — and the old image writes duplicates until the new one is live.
+    """Migrations run at app start, so an index that could not be built over
+    an existing duplicate would stop Nora booting — and the old image writes
+    duplicates until the new one is live.
     Two open proactive rows on one note, seeded under 0063: 0064 keeps the
     earliest-due one, cancels the other `cancelled_duplicate_note`, leaves a
     finished row and another note's row alone, and then builds the index."""
@@ -376,11 +373,10 @@ def test_0064_resolves_open_duplicates_before_it_builds_the_index(pg_url):
 
 
 def test_0065_working_set_column_defaults_to_an_empty_array(pg_url):
-    """design/standing-compact/30-working-set.md, issue #445: `working_set`
-    is NOT NULL DEFAULT '[]'::jsonb on both `standing` and
-    `standing_revision` — no backfill, migration 0059's own argument one
-    field over: nothing before this column existed could have written
-    anything else."""
+    """`working_set` is NOT NULL DEFAULT '[]'::jsonb on both `standing` and
+    `standing_revision` — no backfill, migration 0059's own argument one field
+    over: nothing before this column existed could have written anything
+    else."""
     run_migrations(pg_url)
     engine = sa.create_engine(sync_url_for(pg_url))
     try:
@@ -561,11 +557,10 @@ def test_0076_the_check_refuses_a_blank_section_given_rather_than_omitted(pg_url
 
 
 def test_0067_keys_a_pre_existing_summons_row_on_a_legacy_message_id(pg_url):
-    """design/instagram-adoption/19, the 2026-09-26 intake: a row the retired
-    `GET /mentions` poller wrote has no card, so 0067 backfills its new
-    NOT NULL, UNIQUE `message_id` as `'legacy:' || comment_id`, keeps its
-    comment, and a new card's row may carry no comment at all. The round trip
-    deletes that comment-less row on the way down (0066's NOT NULL) and
+    """A row the `GET /mentions` poller wrote has no card, so 0067 backfills
+    its new NOT NULL, UNIQUE `message_id` as `'legacy:' || comment_id`, keeps
+    its comment, and a new card's row may carry no comment at all. The round
+    trip deletes that comment-less row on the way down (0066's NOT NULL) and
     reaches the head again."""
     from alembic import command as alembic_command
 
@@ -615,7 +610,7 @@ def test_0067_keys_a_pre_existing_summons_row_on_a_legacy_message_id(pg_url):
 
 
 def test_0085_rewrites_no_outcome_row_and_a_downgrade_survives_a_none_row(pg_url):
-    """`cognition_wake_outcome` is APPEND_ONLY (10 §8): 0085 only widens the check.
+    """`cognition_wake_outcome` is APPEND_ONLY: 0085 only widens the check.
     A closed outcome written before it keeps `infra` (readers normalise, see
     `wake_state`), and going back down does not UPDATE the `none` rows a newer
     deploy wrote (the restored check is NOT VALID: it still refuses a new one)."""

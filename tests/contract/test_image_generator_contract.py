@@ -9,13 +9,12 @@ fail-closed custody:
 - `unavailable` carries a reason the tool maps to a plain sentence: quota /
   auth / rate_limited / down.
 
-Live-credential calls are deliberately OUT (the live-credential gate F6
-asked for in the adversarial review): the xAI lane is a real subscription,
-and a CI that burned quota on every `make gate` would be a bill, not a
-gate. Every path here runs against a local aiohttp `TestServer`, no
+Live-credential calls are deliberately OUT: the xAI lane is a real
+subscription, and a CI that burned quota on every `make gate` would be a bill,
+not a gate. Every path here runs against a local aiohttp `TestServer`, no
 network.
 
-The 403 ambiguity (design §7) is the centrepiece: xAI answers 403 for BOTH
+The 403 ambiguity is the centrepiece: xAI answers 403 for BOTH
 quota exhaustion and entitlement failure. The adapter must read the body
 and report the reason — never guess from the status alone.
 """
@@ -379,7 +378,7 @@ async def test_device_flow_never_waits_forever(device_server):
     assert started["polls"] > 0
 
 
-# -- refresh path (M11) ------------------------------------------------------
+# -- refresh path ------------------------------------------------------------
 
 @pytest.fixture
 async def oauth_server():
@@ -435,7 +434,7 @@ async def test_refresh_success_writes_state_atomic(tmp_path, oauth_server):
     assert state["refreshes"] == 1
     assert state["grant_type"] == "refresh_token"
     assert state["sent_refresh"] == "rt-boot"
-    # state file exists with 0o600 (M4) and is JSON
+    # state file exists with 0o600 and is JSON
     sf = tmp_path / "xai-oauth.json"
     assert sf.exists()
     assert (sf.stat().st_mode & 0o777) == 0o600
@@ -461,7 +460,7 @@ async def test_refresh_rotation_persisted(tmp_path, oauth_server):
 
 
 async def test_expired_state_adopts_rotated_refresh_before_refresh(tmp_path, oauth_server):
-    """Regression: xAI rotates refresh tokens on use. With an EXPIRED access
+    """xAI rotates refresh tokens on use. With an EXPIRED access
     token in the state file plus a rotated (newer) refresh token there, the
     lane must refresh with the ROTATED token — never the stale `.env`/boot
     one — so a state-mutating lane heals without a re-login. The `.env`
@@ -537,7 +536,7 @@ async def test_refresh_single_flight(tmp_path, oauth_server):
 
 
 async def test_refresh_boot_precedence_uses_state_file(tmp_path, oauth_server):
-    """Boot precedence (M3): a valid state file is used as-is; the .env
+    """Boot precedence: a valid state file is used as-is; the .env
     refresh token is NOT hit on every boot."""
     base, state = oauth_server
     sf = tmp_path / "xai-oauth.json"
@@ -575,7 +574,7 @@ async def test_resolution_is_sent(server_factory):
 
 
 async def test_drop_is_not_involved(tmp_path):
-    """Miles 2026-08-26: the generate lane does NOT use `drop` at all — the
+    """The generate lane does NOT use `drop` at all — the
     adapter returns raw bytes for Nora's OWN custody (rustfs), never uploads
     to an external host. There is no drop parameter to wire, and the raw
     bytes ride along on the result."""

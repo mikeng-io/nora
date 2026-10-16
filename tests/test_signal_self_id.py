@@ -1,7 +1,7 @@
 """R-17 — Nora's own id forms, and the metric that proves the derivation ran.
 
-The payload shapes asserted here are the ones the real daemon returned on
-2026-08-05 (signal-cli 0.14.7, 127.0.0.1:18080), including the ACI/PNI split
+The payload shapes asserted here are the ones the real daemon returns
+(signal-cli 0.14.7, 127.0.0.1:18080), including the ACI/PNI split
 that makes `getUserStatus` alone the wrong fix. See
 `nora/platform/signal/self_id.py`'s module docstring for the full survey.
 """
@@ -76,8 +76,8 @@ def _rpc_app(*, contacts=None, status=None, contacts_error=False):
 
 def _accounts_only_app():
     """The daemon as it actually is: `/api/v1/rpc` exists, `/api/v1/accounts`
-    does not. Serving only the endpoint the OLD code read is what makes this a
-    regression test rather than a generic 404 test."""
+    does not. Serving only `/api/v1/accounts`, the endpoint the daemon lacks, is what makes
+    this a regression test rather than a generic 404 test."""
 
     async def handler(request: web.Request) -> web.Response:
         return web.json_response([{"number": PRIMARY, "uuid": ACI}])
@@ -106,13 +106,13 @@ async def test_the_working_rpc_yields_every_typed_id_form(aiohttp_server):
         Identifier("signal", "uuid", PNI),
     })
     assert metrics.get(DEGRADED_METRIC) == 0.0
-    # 3, not 4: the contact row's `username` is no longer collected — a
-    # renameable handle is never a matchable identity (operator 2026-08-14).
+    # 3, not 4: the contact row's `username` is not collected — a renameable
+    # handle is never a matchable identity.
     assert metrics.get(ALIASES_METRIC, platform="signal") == 3.0
 
 
 async def test_the_aci_and_the_pni_are_both_kept(aiohttp_server):
-    """The trap this task exists to avoid. `getUserStatus` returns the PNI, not
+    """The trap: `getUserStatus` returns the PNI, not
     the ACI, so a fix wired to it alone would have collected the wrong UUID and
     still looked like it worked. `sourceUuid` on a real envelope is the ACI."""
     metrics = Metrics()
@@ -141,9 +141,9 @@ async def test_an_unreachable_daemon_counts_the_degradation():
 async def test_a_daemon_serving_only_the_old_404_endpoint_counts_the_degradation(
     aiohttp_server,
 ):
-    """The production shape, exactly. The endpoint the old code read is the ONLY
-    one this fake serves — `/api/v1/rpc` 404s — which is the mirror image of the
-    real daemon and must still be counted rather than logged and forgotten."""
+    """The production shape, exactly. `/api/v1/accounts` is the ONLY endpoint
+    this fake serves and `/api/v1/rpc` 404s — the mirror image of the real
+    daemon — which must still be counted rather than logged and forgotten."""
     metrics = Metrics()
     url = await _url(aiohttp_server, _accounts_only_app())
 
@@ -198,7 +198,7 @@ async def test_a_missing_user_status_is_counted_separately(aiohttp_server):
     identifiers = await derive_identifiers(url, PRIMARY, metrics=metrics)
 
     # USERNAME deliberately absent: a renameable handle is never a matchable
-    # identity (operator 2026-08-14) — only the phone number / uuid is stable.
+    # identity — only the phone number / uuid is stable.
     # The contact row the fake returns DOES carry it, so this proves it is
     # dropped rather than missing from the fixture.
     assert {i.value for i in identifiers} == {PRIMARY, ACI}
@@ -227,20 +227,19 @@ def _slots() -> ConversationSlots:
 async def test_degraded_identity_enrichment_is_counted_and_r12_still_holds(
     aiohttp_server,
 ):
-    """R-17, the plan's PROBE, end to end through the real adapter.
+    """R-17, end to end through the real adapter.
 
-    Two claims, and BOTH have to hold at once, because the pre-R-17 code
-    satisfied the second one and quietly failed the first for the whole life of
-    the deployment:
+    Two claims, and BOTH have to hold at once, because satisfying the second
+    while quietly failing the first is the failure this guards:
 
       1. enrichment being unavailable is COUNTED — a series an operator can
          alert on, not a `log.warning` nobody reads;
       2. R-12 nevertheless still refuses a self-tag arriving under the primary
          id, because degradation must never widen what Nora will answer.
 
-    The daemon here serves only `/api/v1/accounts` — the endpoint the old code
-    read and the real daemon does not have — so `/api/v1/rpc` 404s and the
-    derivation genuinely fails. Nothing is stubbed.
+    The daemon here serves only `/api/v1/accounts` — an endpoint the real daemon
+    does not have — so `/api/v1/rpc` 404s and the derivation genuinely fails.
+    Nothing is stubbed.
     """
     metrics = Metrics()
     url = await _url(aiohttp_server, _accounts_only_app())
@@ -272,10 +271,10 @@ async def test_degraded_identity_enrichment_is_counted_and_r12_still_holds(
 async def test_enrichment_widens_r12_to_the_aci_it_could_not_see_before(
     aiohttp_server,
 ):
-    """The other side of the probe, and the reason the degradation matters: a
+    """The other side, and the reason the degradation matters: a
     self-send arriving under her ACI is refused ONLY when enrichment worked.
     Under the degraded set the same message is admitted as somebody else's tag
-    — which is the R-12 hole this task closes."""
+    — which is the R-12 hole this closes."""
     working = Metrics()
     degraded = Metrics()
 

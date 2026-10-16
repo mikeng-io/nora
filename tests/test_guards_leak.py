@@ -79,11 +79,9 @@ def test_an_empty_canary_never_matches(doctrine):
     assert LeakGuard(doctrine, canary="").check("anything at all") is None
 
 
-# DEC-82's own tests moved to `tests/unit/test_markdown.py` when the strip
-# became a CONVERSION: the grammar left `nora.agent.egress` for
-# `nora.agent.markdown`, and asserting a text rewrite in the middle of the
-# module about doctrine leaks was already a mid-file `noqa: E402` import
-# apologising for itself. What stays here is the half that is genuinely about
+# DEC-82's tests live in `tests/unit/test_markdown.py`: the grammar is in
+# `nora.agent.markdown`, and a text-rewrite assertion does not belong in a module
+# about doctrine leaks. What stays here is the half that is genuinely about
 # LeakGuard — the haystack speaking the same dialect as the candidate, above.
 
 
@@ -108,7 +106,7 @@ def test_a_recital_of_what_the_model_was_shown_is_caught_across_a_dash(tmp_path)
 def test_leak_guard_blocks_the_prompts_transcript_markup(guard):
     """A draft quoting a transcript row by its tag is the prompt leaking, not a
     reply: members' bodies are escaped when rendered, so `<m n=` can only come
-    from the prompt (seen live 2026-10-06, a deliberation delivered as prose)."""
+    from the prompt (e.g. a deliberation delivered as prose)."""
     draft = 'Let me reread.\n\n<m n="12">see you at six</m> came after my question.\n\n"Six works."'
     assert guard.check(draft) == "prompt_markup"
     assert guard.check("<m  n = '7'>x</m>") == "prompt_markup"

@@ -189,8 +189,8 @@ async def test_an_unrecognized_name_is_sent_as_plain_text(rest_server_with_membe
 
 
 async def test_a_failed_member_lookup_falls_back_to_the_original_text(rest_server_with_members):
-    """Fail-closed: never guess, never raise mid-send — the same degraded
-    behaviour as before this feature existed, an inert '@Name'."""
+    """Fail-closed: never guess, never raise mid-send — the degraded behaviour
+    is an inert '@Name'."""
     rest_server_with_members.state["status"] = 403
     sender = DiscordSender("tok", base_url=str(rest_server_with_members.make_url("")).rstrip("/"))
 
@@ -206,13 +206,13 @@ async def test_a_failed_member_lookup_falls_back_to_the_original_text(rest_serve
 async def test_a_composed_mention_is_spliced_and_listed_in_allowed_mentions(
     rest_server_with_members,
 ):
-    """Issue #211: `OutboundComposer` on `discord` now resolves a handle to a
+    """`OutboundComposer` on `discord` resolves a handle to a
     real snowflake and hands `send` a `Mention` for it — the POST body must
     carry exactly one `<@id>` chip and list the id in `allowed_mentions.users`,
     with NO member-list round trip: the composer already confirmed the
     person against the roster, and there is nothing left outside the chip to
-    look up (external review, 2026-09-11 — a naive `"@" in resolved_text`
-    check fires on the chip itself, since `<@id>` contains an `@`)."""
+    look up (a naive `"@" in resolved_text` check would fire on the chip itself,
+    since `<@id>` contains an `@`)."""
     sender = DiscordSender(
         "tok", base_url=str(rest_server_with_members.make_url("")).rstrip("/"),
     )
@@ -237,7 +237,7 @@ async def test_a_composed_mention_is_spliced_and_listed_in_allowed_mentions(
 async def test_a_composed_mentions_chip_is_immune_to_the_name_fallback(
     rest_server_with_members,
 ):
-    """External review, 2026-09-11: `<@100000000000000002>` — the chip the
+    """`<@100000000000000002>` — the chip the
     splice just wrote — starts with `@100000000000000002`, so a guild member
     whose NICKNAME is a digit-prefix of that id (`3477`) would corrupt the
     chip if the name fallback ever saw the whole string. It must not: the
@@ -273,7 +273,7 @@ async def test_a_composed_mention_leaves_a_genuinely_unmapped_handle_untouched(
 ):
     """The composer only ever covers a handle it resolved; an `@Name` it did
     NOT produce a `Mention` for (unmapped in `identity.toml`, or not in this
-    room) still goes through the OLD name-matching fallback against the
+    room) still goes through the name-matching fallback against the
     room's REAL member list — not an empty one, which would prove nothing —
     and when that list has other members but not this name, the handle is
     left exactly as the model wrote it, never guessed."""
@@ -363,7 +363,7 @@ async def test_no_mentions_and_no_at_sign_never_touches_the_composed_path(rest_s
 
 
 async def test_an_attachment_is_sent_as_multipart(aiohttp_server):
-    """`attachments` is the payload and IS supported (2026-08-26): a
+    """`attachments` is the payload and IS supported: a
     multipart form with `payload_json` + `files[0]`, so a generated image
     arrives as a real Discord attachment."""
     from nora.domain.ports import OutboundAttachment
@@ -430,10 +430,8 @@ async def test_send_refuses_a_conversation_id_that_names_no_channel(rest_server_
 
     `partition("/")` puts the whole id in `guild_id` and leaves `channel_id`
     empty, so the POST would go to `/channels//messages`: a route that does
-    not exist, which Discord answers **405**. That is what happened on the
-    deployment (NORA-4) — `config.toml` held `shadow_channel = "<channel id>"`
-    with no guild, and the Relevance Gate's review posts 405'd for a fortnight
-    while the log upstream called it a guard refusal.
+    not exist, which Discord answers **405**. A config holding
+    `shadow_channel = "<channel id>"` with no guild reaches this path.
 
     Refusing here is worth more than the 405: the status says «this route
     rejects POST», the log line says which value is wrong. The assertion is

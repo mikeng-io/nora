@@ -1,11 +1,11 @@
-"""The turn skeleton (`02-instrument-blindness.md` Layer 7).
+"""The turn skeleton.
 
-Until 2026-08-27 `nora/` opened ZERO spans — every span in Langfuse came from
-Strands, inside the agent loop, so a turn failing BEFORE the model call left no
-trace at all and was indistinguishable from a turn that never happened.
+`nora/` opens spans of its own. Spans opened only by Strands, inside the agent loop, would
+leave a turn failing BEFORE the model call with no trace at all, indistinguishable from a
+turn that never happened.
 
-These tests use a real in-memory SDK exporter, so they assert what is EXPORTED
-rather than that a helper was called. Deleting a `with span(...)` turns them red.
+These tests use a real in-memory SDK exporter, so they assert what is EXPORTED rather than
+that a helper was called. Deleting a `with span(...)` turns them red.
 """
 
 import asyncio
@@ -29,21 +29,19 @@ _EXPORTER = InMemorySpanExporter()
 
 @pytest.fixture(scope="module", autouse=True)
 def _provider():
-    """A provider of this file's own, reached by patching `get_tracer` — the
-    same shape as `tests/conftest.py`'s `exported_spans`, and for the reason
-    it gives: `trace.set_tracer_provider` is ONE-SHOT per process.
+    """A provider of this file's own, reached by patching `get_tracer` — the same shape as
+    `tests/conftest.py`'s `exported_spans`, and for the reason it gives:
+    `trace.set_tracer_provider` is ONE-SHOT per process.
 
-    An earlier version installed a GLOBAL provider here and relied on being
-    the first file to do so. `evals.backbone._prefill_capture()` installs one
-    too (it must — it reads a span the composed subject emits through the
-    global tracer), so any run in which an eval integration test collected
-    before this file left every test here reading a provider with the wrong
-    sampler and the wrong exporter: 13 failures that vanished when the file
-    ran alone. Patching the lookup keeps the capture local and order-free.
+    A GLOBAL provider installed here would depend on this being the first file to do so.
+    `evals.backbone._prefill_capture()` installs one too (it must: it reads a span the
+    composed subject emits through the global tracer), so any run in which an eval
+    integration test collected first would leave every test here reading a provider with
+    the wrong sampler and the wrong exporter. Patching the lookup keeps the capture local
+    and order-free.
 
-    Built with `build_sampler()`, production's own rule — this file is where
-    the rule's own tests live, and a provider that sampled everything could
-    not see it at all."""
+    Built with `build_sampler()`, production's own rule — this file is where the rule's
+    own tests live, and a provider that sampled everything could not see it at all."""
     from nora.obs import tracing as _tracing
 
     provider = TracerProvider(sampler=build_sampler())
@@ -79,10 +77,9 @@ def test_an_exception_is_recorded_and_re_raised(spans):
 
 
 def test_cancellation_is_recorded_and_re_raised(spans):
-    """`BaseException`, not `Exception`. Cancellation is not an `Exception`, so a
-    wrapper catching only `Exception` leaves the cancel path unrecorded — the
-    defect the Standing debrief shipped and its review caught. A cancelled turn
-    is exactly the turn worth seeing."""
+    """`BaseException`, not `Exception`. Cancellation is not an `Exception`, so a wrapper
+    catching only `Exception` leaves the cancel path unrecorded. A cancelled turn is
+    exactly the turn worth seeing."""
     async def run():
         with span("engagement.invoke"):
             raise asyncio.CancelledError()
@@ -105,14 +102,12 @@ def test_a_broken_attribute_does_not_break_the_body(spans):
 
 
 def test_children_nest_under_the_turn(spans):
-    """The skeleton's whole point: a turn that ends early ends VISIBLY, at a
-    named stage, rather than as a trace that simply stops.
+    """The skeleton's whole point: a turn that ends early ends VISIBLY, at a named stage,
+    rather than as a trace that simply stops.
 
-    **This test OPENS ITS OWN TWO SPANS**, so it proves the `span` helper nests
-    and nothing more. It stayed green for the whole of issue #64, while the
-    engagement pipeline had no root span at all and every stage was its own
-    trace — a test that constructs the thing it verifies cannot see that. The
-    pipeline's real topology is asserted against the real pipeline in
+    **This test OPENS ITS OWN TWO SPANS**, so it proves the `span` helper nests and
+    nothing more: a test that constructs the thing it verifies cannot see a pipeline with
+    no root span. The pipeline's real topology is asserted against the real pipeline in
     `tests/unit/test_engagement_pipeline.py::test_every_stage_span_hangs_under_the_tag_root`;
     read THAT one as the evidence, and this one as a unit test of the helper.
     """
@@ -166,11 +161,10 @@ class _NoopSpan:
 
 
 # ---------------------------------------------------------------------------
-# `annotate`, `capture_context`, `attached` — the three helpers issue #64's fix
-# needed and the span skeleton did not have. Each one is exercised here for the
-# property that makes it safe at the call site that uses it, because that call
-# site (`EngagementPipeline`) runs them in a `finally` PAST its own outer
-# handler: an exception from an observation there skips the lock release and
+# `annotate`, `capture_context`, `attached` — the three helpers the span skeleton needs.
+# Each one is exercised here for the property that makes it safe at the call site that
+# uses it, because that call site (`EngagementPipeline`) runs them in a `finally` PAST its
+# own outer handler: an exception from an observation there skips the lock release and
 # wedges the conversation forever, with no error anywhere.
 # ---------------------------------------------------------------------------
 
@@ -193,11 +187,10 @@ def test_annotate_outside_any_span_is_a_no_op(spans):
 
 
 def test_annotate_on_an_ended_span_does_not_raise(spans):
-    """MEASURED, 2026-08-28, and it is why `EngagementPipeline` annotates the
-    per-turn span it opens rather than the dispatch root: the root is already
-    closed when a QUEUED tag runs, and the SDK drops a late attribute with a log
-    line and no error. Silent, so it has to be designed around rather than
-    caught."""
+    """`EngagementPipeline` annotates the per-turn span it opens rather than the dispatch
+    root: the root is already closed when a QUEUED tag runs, and the SDK drops a late
+    attribute with a log line and no error. Silent, so it has to be designed around rather
+    than caught."""
     with span("engagement"):
         pass
     annotate(**{"nora.outcome": "send_reply"})     # must not raise
@@ -413,13 +406,12 @@ def test_the_sampler_reads_the_attributes_a_span_started_with(spans):
 
 
 def test_an_attribute_that_cannot_be_rendered_costs_only_itself(spans):
-    """Coercion is PER KEY. The old shape set attributes in a loop inside one
-    guard, so the first unstringable value silently abandoned every attribute
-    after it — including, now, a `trace_kind` that decides whether the trace
-    exists.
+    """Coercion is PER KEY. Setting attributes in a loop inside one guard would let the first
+    unstringable value silently abandon every attribute after it, including a `trace_kind`
+    that decides whether the trace exists.
 
-    PROBE: wrap `_safe_attributes`' body in a single `try` and `keeper` is lost
-    with the broken one.
+    PROBE: wrap `_safe_attributes`' body in a single `try` and `keeper` is lost with the
+    broken one.
     """
     class Unstringable:
         def __str__(self): raise RuntimeError("nope")
@@ -433,11 +425,11 @@ def test_an_attribute_that_cannot_be_rendered_costs_only_itself(spans):
 
 
 # ---------------------------------------------------------------------------
-# `traced_read` — issue #55's last open quarter, `nora/infra/**` store reads.
-# The ONE wrapper `nora.engagement.context.TranscriptInjection` and
-# `nora.app.runtime`'s Dreamer cursor reads both go through, tested here in
-# isolation from either call site: what it names the span, what it records on
-# success, and that a raising read still ends up `span`'s own ERROR path.
+# `traced_read` — `nora/infra/**` store reads. The ONE wrapper
+# `nora.engagement.context.TranscriptInjection` and `nora.app.runtime`'s Dreamer cursor
+# reads both go through, tested here in isolation from either call site: what it names the
+# span, what it records on success, and that a raising read still ends up `span`'s own
+# ERROR path.
 # ---------------------------------------------------------------------------
 
 
@@ -467,14 +459,13 @@ async def test_traced_read_records_row_count_and_duration_on_success(spans):
 
 
 async def test_traced_read_uses_count_when_the_result_has_no_len(spans):
-    """Review finding on #526: `MemoryStore.representation` answers a
-    `Recollection`, which has no `__len__` — `_row_count` alone would leave
-    it unmeasured forever even though the read plainly has a count. `count=`
-    is the caller's own answer to "how many", for a result `_row_count`
+    """`MemoryStore.representation` answers a `Recollection`, which has no `__len__`, so
+    `_row_count` alone would leave it unmeasured forever even though the read plainly has
+    a count. `count=` is the caller's own answer to "how many", for a result `_row_count`
     cannot read.
 
-    PROBE: make `traced_read` ignore its `count` argument (always fall back
-    to `_row_count`) and this reddens — `nora.store.row_count` disappears.
+    PROBE: make `traced_read` ignore its `count` argument (always fall back to
+    `_row_count`) and this reddens — `nora.store.row_count` disappears.
     """
     class _Recollection:
         def __init__(self, conclusions):

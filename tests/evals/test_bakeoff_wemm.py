@@ -1,7 +1,7 @@
 """WeMM-Embedding-2B through llama-server: the input the model was trained on,
-checked against the server that embeds it (design/unified-memory/20, PR #21
-review). Every check fails closed: a server that would embed anything other
-than WeMM's own token sequence is an `unsupported` ERROR, never a vector.
+checked against the server that embeds it. Every check fails closed: a server
+that would embed anything other than WeMM's own token sequence is an
+`unsupported` ERROR, never a vector.
 """
 
 from __future__ import annotations
@@ -169,8 +169,8 @@ def test_a_pid_whose_server_listens_on_another_port_is_refused() -> None:
 
 
 @pytest.mark.parametrize(("raw", "normalised"), [
-    # From the official tokenizer.json (sha256 40e444c7..., tokenizers 0.22.2,
-    # 2026-10-15): Replace(Regex("\n$"), "") with Onig's `$` = end of line,
+    # From the official tokenizer.json (sha256 40e444c7..., tokenizers 0.22.2):
+    # Replace(Regex("\n$"), "") with Onig's `$` = end of line,
     # then NFC, applied to the text between special tokens.
     ("a\n\nb", "a\nb"),
     ("a\n", "a"),
@@ -357,7 +357,7 @@ def test_every_arm_records_the_rank_of_each_querys_first_relevant_item() -> None
         assert q.text not in blob
 
 
-# --- review round 2 ----------------------------------------------------------------
+# --- the official tokenizer, the media marker and the result merge -----------------
 
 GOLDEN = Path(__file__).resolve().parents[1] / "fixtures" / "wemm_normaliser_golden.json"
 
@@ -385,7 +385,7 @@ def test_the_normaliser_splits_on_every_added_token_of_the_tokenizer() -> None:
 
 def test_an_image_prompt_with_a_newline_after_the_role_is_refused(tmp_path: Path) -> None:
     """WeMM's template puts no newline between the role and a leading image. A
-    marker that starts with one would put it there (the review's N9)."""
+    marker that starts with one would put it there."""
     server = FakeServer(marker="\n<__media_abc__>")
     with pytest.raises(EmbedError) as e:
         _llama(server).embed_media([_img(tmp_path)])

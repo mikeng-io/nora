@@ -1,12 +1,10 @@
 """The authored framing text around the blocks is built in ONE typed place:
 `nora.domain.framing`.
 
-Step 4b of `design/context-assembly/04-every-occasion.md` §5. A reviewer found
-that `nora/app/fire.py` hand-built five header paragraphs from f-strings before
-the context blocks of every fire turn, and that the summons' head and the tag
-prefill's clock line, `<context_header>` message and closing line were the same
-kind of text. Nothing stopped a ninth from being written inline, escaping its
-values its own way. This file is what does.
+Fire-turn header paragraphs, the summons' head and the tag prefill's clock
+line, `<context_header>` message and closing line are the same kind of text.
+Nothing but this file stops another from being written inline, escaping its
+values its own way.
 
 Four rules, each with a positive control (a synthetic offender it must catch)
 and a negative control (the real tree it must pass):
@@ -31,10 +29,9 @@ and a negative control (the real tree it must pass):
    a visible diff; there is no `bare` kind, and a value marked `system` or
    `carried` that a person controls is exactly what that pin makes a reviewer
    look at.
-4. **No prose outside it.** In the modules that used to carry the text
-   (`nora/app/fire.py`, `nora/domain/summons.py`, `nora/agent/prefill.py`;
-   `nora/app/announce.py` was the fourth until DEC-314 retired it) no string of
-   five words or more is built outside `framing`: not an f-string, not a `+` or
+4. **No prose outside it.** In the modules that consume the text
+   (`nora/app/fire.py`, `nora/domain/summons.py`, `nora/agent/prefill.py`) no
+   string of five words or more is built outside `framing`: not an f-string, not a `+` or
    `%` or `.format` over literals, not a bare literal returned or assigned.
    Docstrings, `raise`, `assert` and log messages are not prompt text and are
    skipped. The few entries that remain are DATA a block carries or a label an
@@ -84,7 +81,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PKG = ROOT / "nora"
 FRAMING_REL = "nora/domain/framing.py"
 
-#: The modules that carried the text before 4b. Rule 4 reads these.
+#: The modules that consume the framing text. Rule 4 reads these.
 SCANNED = (
     "nora/app/fire.py",
     "nora/domain/summons.py",
@@ -423,8 +420,8 @@ def test_every_builder_is_used_somewhere(modules):
 
 
 def test_a_builder_named_only_in_the_tables_is_not_used():
-    """The positive control: a table row is not a use. The real tree counted every
-    builder as used through the `FRAMING` tuple until review caught it."""
+    """The positive control: a table row is not a use. Counting the `FRAMING`
+    tuple as a use would mark every builder used."""
     tree = ast.parse(
         "FRAMING = {c.__name__: c for c in (RepeatClause, ReminderHeader)}\n"
         "FIRE_HEADERS = {'reminder': ReminderHeader}\n"

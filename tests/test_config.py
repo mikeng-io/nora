@@ -61,11 +61,9 @@ def _trigger_line(toml_path) -> str:
 
     Read, never hardcoded. These tests do string surgery on the real config to
     build malformed variants, so a literal trigger couples them to a value the
-    operator owns: when the trigger changed from `nora.000` to `nora` on
-    2026-08-26 every `str.replace` below silently became a no-op, the "malformed"
-    config stayed valid, and the startup-failure tests failed for a reason that
-    had nothing to do with what they measure. A no-op replace is the dangerous
-    half — it leaves a test asserting against an input it never actually built.
+    operator owns: if the trigger changes, every `str.replace` below silently
+    becomes a no-op and the "malformed" config stays valid. A no-op replace is the
+    dangerous half — it leaves a test asserting against an input it never built.
     """
     for line in toml_path.read_text().splitlines():
         if line.startswith("text = "):
@@ -155,11 +153,10 @@ def test_trigger_enabled_defaults_to_true_when_absent_from_the_toml(toml_path):
     the silent behaviour change, not defaulting it on (unlike `[speech]`/
     `[weather]`'s INERT-by-default shape, where the capability never existed
     before)."""
-    # Drop the key from ITS OWN SECTION rather than by adjacency to another line.
-    # An earlier version matched "enabled = true\ntext = ...", which assumed the two
-    # sat next to each other; a comment was added between them and the replace
-    # silently became a no-op, so the test loaded a config that still HAD `enabled`
-    # and proved nothing about the default. Section-scoped surgery cannot rot that way.
+    # Drop the key from ITS OWN SECTION rather than by adjacency to another line:
+    # matching "enabled = true\ntext = ..." assumes the two sit next to each other, and
+    # a comment between them turns the replace into a silent no-op that leaves
+    # `enabled` in place and proves nothing about the default.
     head, rest = toml_path.read_text().split("[engagement.trigger]", 1)
     section, tail = rest.split("[store]", 1)
     stripped = "\n".join(ln for ln in section.splitlines()
@@ -195,7 +192,7 @@ def test_config_uses_the_target_shape(toml_path):
     # platforms replaces signal_cli, keyed by adapter name
     assert cfg.platforms.signal.base_url.startswith("http")
     assert cfg.platforms.signal.enabled is True
-    # `nora_sender_id` is GONE (DEC-102): Nora's id in her own rows now comes
+    # `nora_sender_id` is absent (DEC-102): Nora's id in her own rows comes
     # from the platform (`resolve_identity().primary`), never from a string an
     # operator typed — with two platforms wired one configured name is
     # necessarily wrong for one of them.
@@ -206,21 +203,17 @@ def test_config_uses_the_target_shape(toml_path):
     assert cfg.store.max_per_conversation == 500
     assert cfg.store.context_window == 40
     # tiers replace default/deep, and carry their own timeout. These two track
-    # the DEPLOYMENT (DEC-84's opencode-zen → ollamacloud move, and 30 → 60 →
-    # 120 → 240; the model gained its `:0731` catalog tag 2026-08-30);
-    # `tests/test_env_template.py` is what keeps the template and
-    # config.toml from drifting apart again.
+    # the DEPLOYMENT (DEC-84); `tests/test_env_template.py` is what keeps the
+    # template and config.toml from drifting apart.
     assert cfg.llm.model == "ollamacloud/deepseek-v4-flash:0731"
-    assert cfg.llm.timeout_seconds == 360  # 240 → 360, DEC-197 (2026-09-24)
+    assert cfg.llm.timeout_seconds == 360  # DEC-197
     assert cfg.llm.limits.turns == 20
     assert cfg.llm.max_tokens == 2000
     # engagement owns the trigger; policy is declared even though only one exists
     assert cfg.engagement.policy == "trigger_text"
     assert cfg.engagement.trigger.enabled is True
-    # The trigger STRING is the operator's, not this test's — pinning it here is
-    # what kept the suite red from 2026-08-26, when `nora.000` was replaced by
-    # `nora` and this assertion started measuring the operator's choice rather
-    # than the config shape. Assert the shape.
+    # The trigger STRING is the operator's, not this test's — pinning it would
+    # measure the operator's choice rather than the config shape. Assert the shape.
     assert cfg.engagement.trigger.text and not cfg.engagement.trigger.text.isspace()
     assert cfg.engagement.trigger.min_interval_seconds == 5
     # obs groups the three signals
@@ -427,13 +420,13 @@ def test_the_presence_section_is_optional_and_ships_inert(toml_path):
 def test_the_instagram_social_backend_is_declared_live_in_the_example(toml_path):
     """A wholly commented-out section is not "the default, shown".
 
-    `[social.instagram]` shipped with its HEADER commented out too, so
-    `InstagramSocialConfig` was never constructed from `config.example.toml`
-    and `extra="forbid"` never ran against it — a typo'd key in that block
-    would have been found by an operator in production rather than here.
-    `[social]` above ships a live header for exactly this reason, and the
-    probe is the same one the other sections use: delete it and the config
-    must still load, with the class defaults.
+    A commented-out `[social.instagram]` header would mean
+    `InstagramSocialConfig` is never constructed from `config.example.toml`
+    and `extra="forbid"` never runs against it — a typo'd key in that block
+    would be found by an operator rather than here. `[social]` above ships a
+    live header for exactly this reason, and the probe is the same one the
+    other sections use: delete it and the config must still load, with the
+    class defaults.
     """
     text = toml_path.read_text()
     head, _, tail = text.partition("\n[social.instagram]\n")
@@ -441,14 +434,14 @@ def test_the_instagram_social_backend_is_declared_live_in_the_example(toml_path)
     # Live, not commented: the section must actually reach the model.
     cfg = load(toml_path)
     assert cfg.social.instagram.enabled is False
-    # And `extra="forbid"` is genuinely armed against that block now.
+    # And `extra="forbid"` is armed against that block.
     toml_path.write_text(head + "\n[social.instagram]\nnot_a_key = 1\n" + tail)
     with pytest.raises(ConfigError, match="not_a_key"):
         load(toml_path)
 
 
 def test_the_instagram_summons_ships_off_in_dry_run_and_is_live_in_the_example(toml_path):
-    """design/instagram-adoption/19. Off and `dry_run` are two separate brakes
+    """Off and `dry_run` are two separate brakes
     and both are the shipped state. The header is LIVE in the example, so
     `extra="forbid"` runs against that block (the `[social.instagram]`
     argument above), and deleting the block still loads with the same
@@ -485,7 +478,7 @@ def _in_section(text: str, header: str, old: str, new: str) -> str:
 def test_the_deprecated_summons_poll_interval_is_still_accepted(toml_path):
     """The live config.toml sets `poll_seconds = 120` (the retired poller's
     interval) and the model forbids unknown keys: it must still load, and
-    nothing reads it. Deleting the field would crash-loop the deployment."""
+    nothing reads it. Deleting the field would make that config fail to start."""
     text = _in_section(
         toml_path.read_text(), "[social.instagram.summons]",
         "enabled = false\n", "enabled = false\npoll_seconds = 120\n",
@@ -495,10 +488,8 @@ def test_the_deprecated_summons_poll_interval_is_still_accepted(toml_path):
 
 
 def test_a_shortener_section_is_refused(toml_path):
-    """DEC-296: the shortener is gone and so is its key. Kept as a deprecated table
-    while the live config.toml still carried `[shortener]`; that section was
-    removed from every live and eval config on 2026-10-08, so a file that brings
-    it back is a mistake to report, not a setting to ignore."""
+    """DEC-296: the shortener has no key. A file that sets `[shortener]` is a
+    mistake to report, not a setting to ignore."""
     toml_path.write_text(toml_path.read_text() + '\n[shortener]\nenabled = true\n')
     with pytest.raises(ConfigError, match="shortener"):
         load(toml_path)
@@ -580,11 +571,9 @@ def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_p
     assert cfg.heartbeat.timeout_seconds == 120.0
     assert cfg.reminders.max_pending_per_requester == 20
     assert cfg.reminders.min_lead_seconds == 120
-    # 365 since 2026-08-10: 30 refused the real asks (a wedding 55 days out, a
-    # birthday 6 months out) and the code default now MATCHES the shipped config
-    # — they had drifted, which made the eval harness measure a horizon
-    # production does not have (`nora.app.offline` builds `ToolRegistry()` with
-    # no caps). This assertion is what keeps the two from drifting again.
+    # The code default MATCHES the shipped config: a drift would make the eval
+    # harness measure a horizon production does not have (`nora.app.offline`
+    # builds `ToolRegistry()` with no caps). This assertion keeps the two equal.
     assert cfg.reminders.max_horizon_days == 365
     assert cfg.reminders.min_lead_seconds > cfg.heartbeat.tick_seconds
 
@@ -597,11 +586,11 @@ def test_the_notes_section_is_optional_and_ships_inert(toml_path):
     `<notes>` block out of every tag until somebody decides otherwise.
 
     One field only, and the ABSENCE is the assertion worth making: there is no
-    render cap here, unlike `[facts]`' two slice caps. §5.1 makes the index
-    uncapped on purpose — a note missing from it is invisible to her, and
-    invisible is indistinguishable from absent — so a top-N knob would be a
-    supported way to reintroduce that failure. The per-entry caps in
-    `nora.domain.notes` are where the prompt budget is held instead."""
+    render cap here, unlike `[facts]`' two slice caps. The index is uncapped on
+    purpose — a note missing from it is invisible to her, and invisible is
+    indistinguishable from absent — so a top-N knob would be a supported way to
+    reintroduce that failure. The per-entry caps in `nora.domain.notes` are where
+    the prompt budget is held instead."""
     text = toml_path.read_text()
     head, _, tail = text.partition("[notes]\n")
     assert tail, "config.example.toml no longer declares [notes]"
@@ -618,7 +607,7 @@ def test_the_notes_section_is_optional_and_ships_inert(toml_path):
 
 
 def test_a_minimum_lead_inside_the_tick_is_refused(toml_path):
-    """The relation was a COMMENT in three files and a rule in none.
+    """The tick/lead relation is a rule, not a comment.
 
     An operator who lengthens the tick past the minimum lead gets a reminder
     that becomes due inside the tick already running — so Nora answers 「等陣提
@@ -647,7 +636,7 @@ def test_a_lead_equal_to_the_tick_is_refused_too(toml_path):
 
 def test_presence_config_carries_no_ids(toml_path):
     """The [presence] section holds only operational knobs — no circle or member
-    ids. Circle membership lives in identity.toml (design/19 §3), so config.toml
+    ids. Circle membership lives in identity.toml, so config.toml
     is id-free and safe to track. An unknown key like `circles` is rejected."""
     cfg = load(toml_path)
     assert not hasattr(cfg.presence, "circles")
@@ -698,11 +687,9 @@ def test_min_trip_fixes_defaults_to_two_and_refuses_a_one_fix_trip():
     `presence_corridor_speed`'s percentiles, which is precisely the
     "never assert what you cannot ground" rule.
 
-    3 -> 2 (2026-09-05 live-data finding): Life360's 30-min cadence means a
-    real 30km drive produces only 2 movement fixes between stays; a 3-fix
-    floor dropped those trips as noise (miles_novak's 17:00 Tsing Long Highway
-    run). 2 is the minimum that still distinguishes movement from a stray
-    fix."""
+    Life360's 30-min cadence means a real 30km drive produces only 2 movement
+    fixes between stays, so a 3-fix floor would drop those trips as noise. 2 is
+    the minimum that still distinguishes movement from a stray fix."""
     assert AnalyticsConfig().min_trip_fixes == 2
     assert AnalyticsConfig(min_trip_fixes=2).min_trip_fixes == 2
     with pytest.raises(ValidationError):
@@ -711,10 +698,9 @@ def test_min_trip_fixes_defaults_to_two_and_refuses_a_one_fix_trip():
 
 def test_corridor_cluster_batch_limit_defaults_to_the_measured_bound():
     """Tier 5. How many not-yet-clustered trips one corridor-clustering
-    pass may re-cluster. MEASURED, unlike the two knobs beside it:
-    `cluster_trips` is O(n^2) over an edit-distance metric, n=500 costs
-    1.87s on this machine and n=1000 costs 7.59s, so 500 is under 2% of a
-    `tick_seconds=120` tick for one subject."""
+    pass may re-cluster. `cluster_trips` is O(n^2) over an edit-distance
+    metric, which is why the pool is capped; 500 keeps a pass under about 2%
+    of a tick."""
     assert AnalyticsConfig().corridor_cluster_batch_limit == 500
     assert AnalyticsConfig(corridor_cluster_batch_limit=50).corridor_cluster_batch_limit == 50
     with pytest.raises(ValidationError):
@@ -722,15 +708,12 @@ def test_corridor_cluster_batch_limit_defaults_to_the_measured_bound():
 
 
 def test_max_trip_duration_seconds_defaults_to_three_hours():
-    """Tier 5. Trip settlement (design/27 §4, 2026-08-20 trip-settlement design
-    §2.4): the safety valve against a stuck `is_driving` signal — if Life360
-    ever reports `True` indefinitely (a stale flag, a phone that stopped
-    updating mid-drive), a trip could otherwise never settle and hold the
-    watermark back forever. This default is a JUDGMENT CALL, not a measured
-    value — no genuine multi-hour trip data exists yet to derive a percentile
-    from (the trips in production today are exactly the fragments this fix
-    corrects). 3 hours is generous enough to cover a real long drive without
-    leaving a stuck signal unbounded."""
+    """Tier 5. Trip settlement: the safety valve against a stuck `is_driving`
+    signal — if Life360 ever reports `True` indefinitely (a stale flag, a phone
+    that stopped updating mid-drive), a trip could otherwise never settle and
+    hold the watermark back forever. The default is a judgment call, not a
+    measured value: 3 hours is generous enough to cover a real long drive
+    without leaving a stuck signal unbounded."""
     assert AnalyticsConfig().max_trip_duration_seconds == 10800.0
     assert AnalyticsConfig(max_trip_duration_seconds=7200.0).max_trip_duration_seconds == 7200.0
 
@@ -738,10 +721,9 @@ def test_max_trip_duration_seconds_defaults_to_three_hours():
 def test_a_cluster_batch_limit_below_corridor_min_samples_is_refused():
     """Fail-closed on a config that could never mint a corridor. A pool
     smaller than `corridor_min_samples` cannot arithmetically hold enough
-    similar trips for `cluster_trips` to call any of them a cluster — the
-    exact shape of the defect this knob exists to fix (Tier 5's final
-    whole-branch review, Critical #1), and one with no log line and no
-    metric of its own, only a counter that never moves."""
+    similar trips for `cluster_trips` to call any of them a cluster — a
+    failure with no log line and no metric of its own, only a counter that
+    never moves."""
     with pytest.raises(ValidationError):
         AnalyticsConfig(corridor_cluster_batch_limit=2, corridor_min_samples=3)
     # ...and the boundary itself is allowed: exactly enough IS enough.
@@ -804,9 +786,9 @@ def _llm_config(**kw) -> LLMConfig:
 
 def test_a_budget_override_naming_an_unknown_tool_refuses_to_start():
     """A typo here is an operator certain they raised a cap that never moved —
-    the same class as the `peer_card` endpoint that answered `[]` for the life
-    of a deployment. Validated against the LIVE registry, so it cannot go stale
-    when a tool is added or removed."""
+    the same class as a `peer_card` endpoint that answers `[]` forever.
+    Validated against the LIVE registry, so it cannot go stale when a tool is
+    added or removed."""
     with pytest.raises(ValidationError, match="unknown tool 'send_replies'"):
         _llm_config(budgets={"send_replies": 8})
 
@@ -830,8 +812,7 @@ def test_audio_and_video_describers_ship_inert():
 
     Asserted against the CODE DEFAULTS, not against a loaded config.example.toml
     — that file literally writes `enabled = true/false/false`, so reading it
-    back proved only that TOML parses. Inverting the defaults in
-    `DescribersConfig` left the original version of this test green.
+    back would prove only that TOML parses.
     """
     describe = MediaConfig().describe
     assert describe.image.enabled is True
@@ -863,18 +844,17 @@ def test_speech_ships_inert():
 def test_a_config_written_before_the_split_still_describes_images(toml_path):
     """Backward compatibility here is a LIVENESS property, not a courtesy.
 
-    `MediaConfig` is `extra="forbid"`, and on 2026-08-17 a `[language]` block
-    against an image whose `Config` lacked the field put Nora into a startup
-    crash-loop. A live config.toml naming only `vision_model` must therefore keep
-    loading AND keep describing images — so `vision_model` stays as the image
-    describer's deprecated alias.
+    `MediaConfig` is `extra="forbid"`, so a config naming a key the image's
+    `Config` lacks fails to start. A live config.toml naming only `vision_model`
+    must therefore keep loading AND keep describing images — so `vision_model`
+    stays as the image describer's deprecated alias.
     """
     # A genuinely pre-split file: the `[media.describe.*]` tables do not exist at
     # all, and `vision_model` is the only place a model is named.
     # Anchored on the TABLE HEADER at the start of a line, not on the bare
-    # string: the `[media]` comment block now names `[media.describe.image]`
-    # prose to point the operator forward, and partitioning on that mention
-    # truncated the file above `[doctrine]`.
+    # string: the `[media]` comment block names `[media.describe.image]` in
+    # prose, and partitioning on that mention would truncate the file above
+    # `[doctrine]`.
     head, sep, _ = toml_path.read_text().partition("\n[media.describe.image]\n")
     assert sep, "config.example.toml no longer declares [media.describe.image]"
     toml_path.write_text(re.sub(
@@ -894,7 +874,7 @@ def test_an_explicit_image_model_wins_over_the_legacy_alias(toml_path):
     assert load(toml_path).media.describer_for("image").model == "new/image-model"
 
 
-# --- [dreamer] (instruction-substrate spec §4.1) ---------------------------
+# --- [dreamer] -------------------------------------------------------------
 
 
 def test_the_dreamer_directory_resolves_against_the_config_file(toml_path):
@@ -932,10 +912,10 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     # The CLASS default, not the shipped file's value: this test deletes the
     # section, so what it measures is what a config predating it gets. Empty
     # still means "fall back to [llm].model", which is why that fallback stays
-    # wired even though config.toml now states the model outright.
+    # wired even though config.toml states the model outright.
     assert cfg.dreamer.model == ""
     assert cfg.dreamer_model() == cfg.llm.model
-    # `0` is the inherit sentinel (issue #291), so a config predating
+    # `0` is the inherit sentinel, so a config predating
     # this field still gets the tier's per-call ceiling rather than a
     # model asked to emit nothing.
     assert cfg.dreamer.max_tokens == 0
@@ -949,7 +929,7 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     assert cfg.dreamer.quiet_seconds == 1800.0
     assert cfg.dreamer.max_age_seconds == 86_400.0
     assert cfg.dreamer.batch_limit == 400
-    # The wall clock around a whole unit (issue #191): a config predating it
+    # The wall clock around a whole unit: a config predating it
     # still gets a bounded `_run_adaptor`, not an unbounded one — `None`
     # (unset, the class default) DERIVES a real number rather than reading as
     # "no bound" (`Config.dreamer_max_unit_hold_seconds`).
@@ -986,11 +966,9 @@ def test_an_unknown_dreamer_key_is_a_startup_failure(toml_path):
     """`extra="forbid"`: a typo'd key is a silent no-op everywhere it is
     tolerated, and this section's whole job is to be edited by hand.
 
-    The probe used to be `enabled = true`, which stopped being an unknown key
-    the moment the runtime's own switch landed — and would then have passed for
-    the wrong reason (a DUPLICATE `enabled` in one table is a TOML decode
-    error, not an `extra="forbid"` refusal). A misspelling of a real key is the
-    probe that stays honest as the section grows."""
+    The probe is a misspelling of a real key, not `enabled = true`: a DUPLICATE
+    `enabled` in one table is a TOML decode error, not an `extra="forbid"`
+    refusal, so it would pass for the wrong reason."""
     toml_path.write_text(toml_path.read_text().replace(
         '[dreamer]\n', '[dreamer]\nenbaled = true\n'))
     with pytest.raises(ConfigError, match="enbaled"):
@@ -998,14 +976,7 @@ def test_an_unknown_dreamer_key_is_a_startup_failure(toml_path):
 
 
 def test_the_dreamer_runtime_ships_off(toml_path):
-    """`enabled` arrives WITH the runtime it gates, shipping False.
-
-    Phase 1 shipped `[dreamer]` with no `enabled` field at all, and said why
-    (DEC-128): the section described a CORPUS two already-running adaptors read
-    regardless, and a flag that gates nothing is a flag an operator will
-    eventually set expecting it to gate something. That argument named its own
-    expiry — "it arrives with the Dreamer RUNTIME, shipping false" — and this is
-    that arrival.
+    """`enabled` gates the Dreamer runtime and ships False (DEC-128).
 
     Asserted BOTH ways on purpose: the CODE default (what a config.toml written
     before this field existed gets) and the SHIPPED value in the template (what
@@ -1016,21 +987,14 @@ def test_the_dreamer_runtime_ships_off(toml_path):
 
 
 def test_the_shipped_dreamer_model_is_the_one_nora_runs(toml_path):
-    """`deepseek-v4-flash`, stated explicitly — an OPERATOR DECISION
-    (2026-08-21), not a measurement.
+    """`deepseek-v4-flash`, stated explicitly — an operator decision, not a
+    measurement.
 
-    Plan gate D2 asked which model the Dreamer should run and answered "measure
-    it". That is closed as unanswerable in its own terms for now: nothing is
-    deployed, the fact tier holds zero rows, and a research loop's quality
-    cannot be graded against an empty store. A number produced there would look
-    like evidence and not be one.
-
-    Running Nora's own model is also what keeps the architecture's claim
-    falsifiable — the Dreamer is meant to do better because it is DIFFERENTLY
-    SITUATED, not smarter — so this equality is asserted rather than left to
-    coincidence."""
+    Running Nora's own model keeps the architecture's claim falsifiable — the
+    Dreamer is meant to do better because it is DIFFERENTLY SITUATED, not
+    smarter — so this equality is asserted rather than left to coincidence."""
     cfg = load(toml_path)
-    # Literal carries the `:0731` catalog tag the deployment moved to 2026-08-30.
+    # The literal carries the deployment's `:0731` catalog tag.
     assert cfg.dreamer.model == "ollamacloud/deepseek-v4-flash:0731"
     assert cfg.dreamer_model() == cfg.llm.model
 
@@ -1038,7 +1002,7 @@ def test_the_shipped_dreamer_model_is_the_one_nora_runs(toml_path):
 def test_an_adaptor_with_no_budget_block_gets_the_default_budget(toml_path):
     """Never a `KeyError` at tick time, and never an unbounded run.
 
-    An adaptor added later — or renamed, or misspelled in the TOML — must still
+    An adaptor added, renamed or misspelled in the TOML must still
     be bounded. The failure this replaces has no metric of its own: a `KeyError`
     inside the dream tick is caught per unit, counted, and backed off, so it
     would look exactly like a provider outage."""
@@ -1112,11 +1076,11 @@ def test_a_declared_budget_block_parses_into_a_bounded_budget(toml_path):
     assert budget.timeout_seconds == 90.0
 
 
-# --- [standing] (design/dreamer-agent-loop/26-standing §4.0) ----------------
+# --- [standing] --------------------------------------------------------------
 
 
 
-# --- [participation] (design/dreamer-agent-loop/35 §8) ----------------------
+# --- [participation] --------------------------------------------------------
 
 def test_the_participation_section_is_optional_and_ships_inert(toml_path):
     """A config.toml written before this section existed must keep loading
@@ -1131,7 +1095,7 @@ def test_the_participation_section_is_optional_and_ships_inert(toml_path):
     assert cfg.participation.enabled is False
     assert cfg.participation.settle_seconds == 10
     assert cfg.participation.cooldown_minutes == 10
-    # §10.6's review surface ships OFF too, and with no destination.
+    # The review surface ships OFF too, and with no destination.
     assert cfg.participation.shadow is False
     assert cfg.participation.shadow_channel == ""
     assert cfg.participation.shadow_platform == "discord"
@@ -1155,14 +1119,12 @@ def test_shadow_mode_requires_a_channel(toml_path):
 
 
 def test_a_discord_shadow_channel_needs_its_guild_half(toml_path):
-    """`shadow_channel = "100000000000000207"` is what the operator wrote,
-    because this file's own docs said "a channel id" — and Discord addresses a
-    room as `"<guild_id>/<channel_id>"`.
+    """A bare channel id such as `shadow_channel = "100000000000000207"` is
+    refused: Discord addresses a room as `"<guild_id>/<channel_id>"`.
 
-    `DiscordSender.send` partitioned the bare snowflake into
-    `guild_id="100000000000000207"`, `channel_id=""`, posted to
-    `/channels//messages`, and Discord answered **405** on every participation
-    mirror and every Relevance Gate GO (NORA-3/NORA-4, 2026-09-09).
+    `DiscordSender.send` partitions a bare snowflake into
+    `guild_id="100000000000000207"`, `channel_id=""` and posts to
+    `/channels//messages`, which Discord answers with 405.
 
     A set-but-unsendable channel fails soft on every determination exactly as
     an unset one does, so it is the SAME config error and is refused in the
@@ -1210,7 +1172,7 @@ def test_a_shadow_channel_on_a_platform_without_guilds_is_not_shape_checked(toml
 
 
 def test_the_relevance_gate_ships_inert(toml_path):
-    """design/dreamer-agent-loop/36: OFF, and in review mode when on."""
+    """The relevance gate is OFF, and in review mode when on."""
     cfg = load(toml_path)
     assert cfg.relevance_gate.enabled is False
     assert cfg.relevance_gate.model == "nora-gate"
@@ -1269,7 +1231,7 @@ def test_the_gate_refuses_to_start_with_no_turn_behind_it(toml_path):
     than a log: the failure it prevents is INVISIBLE. With the gate on and
     `[participation] enabled = false`, every window is judged and every GO is
     counted while the room hears nothing — which reads exactly like a gate
-    correctly declining. Design 36's first draft shipped this bug in prose."""
+    correctly declining."""
     text = toml_path.read_text()
     start = text.index("\n[relevance_gate]")
     end = text.index("\n[engagement]")
@@ -1295,9 +1257,8 @@ def test_a_standing_cap_above_the_database_ceiling_refuses_to_start(toml_path):
     """**The startup refusal, not a runtime one.** `max_chars` is a knob and
     `standing_body_fits_the_ceiling_check` is DDL that cannot be one, so a
     config above the ceiling means every fold the sink accepted is refused by
-    Postgres — a config error discovered by a production turn, on the live
-    reply path, rather than at boot. `policy.toml`'s own refuse-to-start shape,
-    applied to a number.
+    Postgres — a config error discovered on the live reply path rather than
+    at boot. `policy.toml`'s own refuse-to-start shape, applied to a number.
     """
     toml_path.write_text(
         toml_path.read_text().replace("max_chars = 1200", "max_chars = 5000"))
@@ -1329,12 +1290,8 @@ def _real_slot_hold(toml_path) -> float:
     """The hold `Config._check_standing_slot_hold` actually computes, DERIVED
     from the same two values and the same constant it uses.
 
-    Hand-computed in both tests below until 2026-09-07, and that is exactly how
-    they stopped measuring: the sum lost a term (recognition's classify
-    timeout, deleted with the knowledge tier) and the hardcoded 58 stayed above
-    the real 50, so the test that documents itself as reddening on a dropped
-    term passed silently. A literal cannot notice a term leaving the sum. This
-    can.
+    A hand-computed literal cannot notice a term entering or leaving the sum;
+    a derived value can.
     """
     cfg = load(toml_path)
     return (
@@ -1346,11 +1303,10 @@ def _real_slot_hold(toml_path) -> float:
 def _uncomment_and_set(text: str, key: str, value: str) -> str:
     """Turn a commented-out `# key = ...` template line into an active
     `key = value` line, and ASSERT the edit landed — `_set_key`'s own reason,
-    one step earlier. `[dreamer] max_unit_hold_seconds` ships COMMENTED OUT
-    (issue #191 independent review, BLOCKER: a fixed literal went stale
-    against the deployment's own numbers), so a test that wants an EXPLICIT
-    override has to uncomment it first — `_set_key`'s `^key = .*$` regex does
-    not match a line starting with `# `."""
+    one step earlier. `[dreamer] max_unit_hold_seconds` ships COMMENTED OUT (a fixed
+    literal would go stale against the deployment's own numbers), so a test that
+    wants an EXPLICIT override has to uncomment it first — `_set_key`'s `^key = .*$`
+    regex does not match a line starting with `# `."""
     new, n = re.subn(
         rf"(?m)^# ?{re.escape(key)} = .*$", f"{key} = {value}", text,
     )
@@ -1364,9 +1320,9 @@ def test_the_dream_unit_hold_refuses_an_explicit_budget_the_timeouts_do_not_fit(
     toml_path,
 ):
     """`[dreamer] max_unit_hold_seconds`, EXPLICITLY SET, must PROVABLY
-    exceed the known-bounded minimum — the model budget, both of #60's store
-    bounds, and the media join's own bound — the same shape `[standing]
-    max_slot_hold_seconds` checks one tier over (issue #191).
+    exceed the known-bounded minimum — the model budget, both store bounds, and
+    the media join's own bound — the same shape `[standing]
+    max_slot_hold_seconds` checks one tier over.
 
     Set one second UNDER the real minimum, DERIVED from `Config.
     _dream_unit_hold_known_minimum` rather than a literal, so this stays a
@@ -1383,10 +1339,9 @@ def test_the_dream_unit_hold_refuses_an_explicit_budget_the_timeouts_do_not_fit(
 
 def test_the_dream_unit_hold_check_fires_even_while_the_dreamer_is_off(toml_path):
     """**Not gated on `[dreamer] enabled`** — `[standing]`'s own sibling check
-    settled on this after review (2026-08-27): a number that lies about the
-    deployment is wrong on the page whether or not the loop is running, and
-    the moment `enabled` flips to `true` is the worst one to discover an
-    impossible budget."""
+    deliberately matches: a number that lies about the deployment is wrong on
+    the page whether or not the loop is running, and the moment `enabled`
+    flips to `true` is the worst one to discover an impossible budget."""
     toml_path.write_text(
         _uncomment_and_set(toml_path.read_text(), "max_unit_hold_seconds", "1.0"))
     with pytest.raises(ConfigError, match="max_unit_hold_seconds"):
@@ -1411,20 +1366,15 @@ def test_an_explicit_dream_unit_hold_above_the_minimum_is_accepted(toml_path):
 
 def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_path):
     """**The gate that catches an arity error in the one number deciding how
-    long a live conversation can stop answering.** It has been wrong four
-    times: 2x store calls when there were two, then four, then five, and then
-    an `[llm] timeout_seconds` term that bounds nothing here at all.
+    long a live conversation can stop answering.**
 
     The budget is derived as one second UNDER the real hold, so it stays
     under whatever the sum currently is rather than under whatever it was the
     day someone typed a literal.
     """
-    # `count=0` on `re.sub` means replace ALL, not none — so the line that used
-    # to sit here flipped every `enabled = false` in the file (~18 sections:
-    # heartbeat, dreamer, facts, notes, presence...) while the comment beneath
-    # it claimed the opposite, and made this test depend on every unrelated
-    # subsystem tolerating being switched on. Removed; the targeted replace
-    # below is the whole mechanism (review finding, 2026-08-27).
+    # Only the targeted replace below switches the tier on. A blanket `re.sub`
+    # (`count=0` means ALL) would flip every `enabled = false` in the file and make
+    # this test depend on every unrelated subsystem tolerating being switched on.
     text = _set_key(
         toml_path.read_text(), "max_slot_hold_seconds",
         f"{_real_slot_hold(toml_path) - 1:g}",
@@ -1438,8 +1388,7 @@ def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_pa
 
 def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
     """**`[llm] timeout_seconds` bounds NOTHING in the debrief**, and counting
-    it made an operator-facing budget claim a 165-second hold where the real
-    one is 45.
+    it would make an operator-facing budget claim a hold longer than the real one.
 
     The fold's model call is built with `[standing] timeout_seconds` in
     `_DebriefModelClient` AND wrapped in an `asyncio.wait_for` on the same
@@ -1451,11 +1400,9 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
 
     The budget is set to EXACTLY the real hold, deliberately, so a term added
     to the sum or dropped from it reddens this test as well as the one above.
-    It is now DERIVED rather than typed — a literal 58 sat here while the sum
-    fell to 50 (recognition's classify timeout went with the knowledge tier on
-    2026-09-07) and 58 > 50 passed silently, which is the precise failure this
-    docstring claims the number prevents. A gate that cannot notice the thing
-    it exists to notice is worse than no gate, because it reads as coverage.
+    It is DERIVED rather than typed: a literal goes stale when the sum changes
+    and then passes silently, and a gate that cannot notice the thing it exists
+    to notice is worse than no gate, because it reads as coverage.
     """
     text = _set_key(
         toml_path.read_text(), "max_slot_hold_seconds",
@@ -1484,15 +1431,13 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
 
 
 def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
-    """**Reversed after review, 2026-08-27.** This used to assert the check was
-    INERT while the tier was off, which set a trap: an operator could write an
-    impossible budget, boot fine, and only discover it on the restart that
-    switched Standing on — the exact moment the sibling window validator's
-    docstring names as the worst one to find out.
+    """The check is NOT gated on the tier being enabled: otherwise an operator
+    could write an impossible budget, boot fine, and only discover it on the
+    restart that switched Standing on.
 
-    The window validator was already ungated on that reasoning. This one's
-    failure is worse (a live conversation that stops answering, versus a fold
-    reading fewer rows), so gating it was the inconsistency, not ungating it.
+    The window validator is ungated on the same reasoning, and this failure is
+    worse (a live conversation that stops answering, versus a fold reading
+    fewer rows).
     """
     toml_path.write_text(_set_key(toml_path.read_text(), "max_slot_hold_seconds", "1.0"))
     with pytest.raises(ConfigError, match="hold a conversation's slot"):
@@ -1500,14 +1445,13 @@ def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
 
 
 def test_a_standing_fold_batch_bigger_than_the_reply_window_is_accepted(toml_path):
-    """The old `window` cap relationship is GONE (design/standing-watermark
-    D6): `fold_batch` is a BATCH SIZE, not a recency window — the fold reads
-    the NEXT `fold_batch` rows since its row-id watermark, which may reach
-    further back than `[store] context_window` (that is the whole point; the
-    watermark replaces the reply path's window). A value larger than
-    `context_window` must LOAD, or the new read could not do its job."""
+    """There is no `window` cap relationship: `fold_batch` is a BATCH SIZE, not a
+    recency window — the fold reads the NEXT `fold_batch` rows since its row-id
+    watermark, which may reach further back than `[store] context_window` (that is
+    the whole point; the watermark replaces the reply path's window). A value larger
+    than `context_window` must LOAD, or the read could not do its job."""
     # `_set_key` asserts the edit landed — a hardcoded `str.replace` on the
-    # old value would silently no-op the day the operator changes fold_batch.
+    # shipped value would silently no-op if the operator changes fold_batch.
     toml_path.write_text(_set_key(toml_path.read_text(), "fold_batch", "400"))
     cfg = load(toml_path)
     assert cfg.standing.fold_batch == 400
@@ -1525,14 +1469,12 @@ def test_a_standing_fold_batch_of_zero_refuses_to_start(toml_path):
 
 
 def test_the_dreamer_carries_its_own_reasoning_effort(toml_path):
-    """**The knowledge tier's first production failure**, and the reason the
-    key is the Dreamer's rather than one level up.
+    """The key is the Dreamer's rather than one level up.
 
     Reasoning is billed as COMPLETION on this model, so `reasoning_effort` is
-    a budget spent before any answer text is written. At the tier's "low" the
-    extractor reasons its way to `{"candidates": []}` on a transcript that
-    plainly contains claims, and to `MaxTokensReachedException` on a real
-    room's. At "none" it returns three candidates in 133 tokens.
+    a budget spent before any answer text is written; at "low" the extractor
+    can reason its way to an empty candidate list or to
+    `MaxTokensReachedException`.
 
     Asserted as a SEPARATION, not just a value: `[llm] reasoning_effort` must
     keep its own, because that one is shared with her replies and changing it
@@ -1543,11 +1485,10 @@ def test_the_dreamer_carries_its_own_reasoning_effort(toml_path):
     assert cfg.dreamer.reasoning_effort == "none"
 
     # The separation asserted STRUCTURALLY, not by pinning `[llm]`'s content.
-    # The first version asserted `cfg.llm.reasoning_effort != "none"`, which
-    # forbids a value DEC-84 records as the operator's decision with an ADR
-    # behind it: restoring it would turn this red claiming the separation was
-    # broken when nothing was. What the tier owes is a field of its own that
-    # is READ, not a particular value in the other one.
+    # Asserting `cfg.llm.reasoning_effort != "none"` would forbid a value DEC-84
+    # records as the operator's decision: restoring it would turn this red claiming
+    # the separation was broken when nothing was. What the tier owes is a field of
+    # its own that is READ, not a particular value in the other one.
     assert "reasoning_effort" in type(cfg.dreamer).model_fields, (
         "the Dreamer must carry its own field rather than reading [llm]'s"
     )
@@ -1598,10 +1539,9 @@ def _with_sidecars(text: str, entries: str) -> str:
 
 
 def test_two_guilds_each_with_a_controller_load(toml_path):
-    """MULTI-GUILD (2026-09-17). There is deliberately no cap: the single-guild
-    bound belongs to a CONTROLLER (§12.5) and each still enforces its own, so
-    two entries here mean two controller containers — which is what multi-guild
-    is. The key that came before this refused a second guild outright."""
+    """Multi-guild: there is deliberately no cap. The single-guild bound belongs to
+    a CONTROLLER and each enforces its own, so two entries here mean two
+    controller containers."""
     toml_path.write_text(_with_sidecars(
         toml_path.read_text(),
         '[{ guild = "g1", endpoint = "http://voice-sidecar:4600" },'
@@ -1619,7 +1559,7 @@ def test_two_guilds_each_with_a_controller_load(toml_path):
 def test_a_guild_channel_pair_as_a_key_refuses_to_start(toml_path):
     """An operator carrying forward either earlier key must SEE that the shape
     changed — `voice_channel_ids` named channels, `voice_guild_ids` named
-    guilds, and both are gone. A pair silently truncated to its guild half
+    guilds, and neither is a key. A pair silently truncated to its guild half
     would look like it kept working while meaning something else."""
     toml_path.write_text(_with_sidecars(
         toml_path.read_text(),
@@ -1656,9 +1596,9 @@ def test_one_guild_listed_twice_refuses_to_start(toml_path):
 
 
 def test_an_endpoint_is_stripped_not_merely_checked(toml_path):
-    """THE BUG THIS GUARDS: the validator accepted on `.strip()` while
-    composition passed the RAW value to the client, so a leading space loaded
-    clean and died at the first request with a URL error instead of at load."""
+    """The loaded endpoint is the stripped value: validating on `.strip()` while
+    passing the raw value would load clean and fail at the first request with a
+    URL error instead of at load."""
     toml_path.write_text(_with_sidecars(
         toml_path.read_text(),
         '[{ guild = "g1", endpoint = "  http://voice-sidecar:4600  " }]',
@@ -1677,14 +1617,12 @@ def test_no_sidecars_loads_and_fails_closed(toml_path):
     assert cfg.speech.tts.sidecars_by_guild == {}
 
 
-# ── [cognition] (design/cognition-loop/) ─────────────────────────────────────
+# ── [cognition] ───────────────────────────────────────────────────────────────
 
 
 def test_cognition_ships_off_with_20s_starting_values(toml_path):
-    """A new subsystem does not switch itself on; the numbers are 20 §3's.
-
-    `quiet_seconds` (settled) is 1800 by operator decision (2026-09-29, was
-    600); the other starting values are unchanged.
+    """A new subsystem does not switch itself on; `quiet_seconds` (settled) is
+    1800 by operator decision.
     """
     c = load(toml_path).cognition
     assert c.enabled is False
@@ -1700,7 +1638,7 @@ def test_cognition_config_bare_default_is_1800():
     """The class default, unmediated by the example file: the two are
     independent sources of truth for the same number, and a test reading
     only through `load(toml_path)` never re-checks THIS one — it would stay
-    green if the field default alone regressed to 600."""
+    green if the field default alone changed."""
     assert CognitionConfig().quiet_seconds == 1800.0
 
 
@@ -1713,8 +1651,8 @@ def test_the_cognition_section_is_optional(toml_path):
 
 
 def test_the_retired_cognition_modes_refuse_to_load(toml_path):
-    """`mode` and `session_mode` collapsed into `enabled` at the cut-over: a
-    config still naming either refuses to start rather than load half-read."""
+    """`enabled` replaces `mode` and `session_mode`: a config still naming
+    either refuses to start rather than load half-read."""
     for retired in ('mode = "shadow"', 'session_mode = "shadow"'):
         toml_path.write_text(_cognition_on(toml_path.read_text()).replace(
             "[cognition]\n", f"[cognition]\n{retired}\n", 1))
@@ -1777,10 +1715,9 @@ def test_cognition_on_with_the_dreamer_loads(toml_path):
 
 
 def test_cognition_on_refuses_to_load_without_an_explicit_cognition_budget(toml_path):
-    """#637 review, minor 4: `budget_for` answers an adaptor with no block from
-    the class defaults (6 turns, 40k tokens, 120 s), a budget nobody chose for a
-    session that reads and writes across up to `max_items` items. The review
-    found a live config with no block, silently running on it."""
+    """`budget_for` answers an adaptor with no block from the class defaults
+    (6 turns, 40k tokens, 120 s), a budget nobody chose for a session that reads
+    and writes across up to `max_items` items."""
     import re as _re
 
     text = _cognition_on(toml_path.read_text())
@@ -1812,10 +1749,10 @@ def test_the_failure_backoff_and_grounding_keys_load_with_their_documented_defau
 
 
 
-#: The tag turn's own loop bounds on the live deployment, read from norty's
-#: config.toml on 2026-10-01: `[llm.limits]` turns / total_tokens / output_tokens
-#: and `[llm] timeout_seconds` (the tag turn's whole-loop clock), and `[llm]
-#: max_tokens`. DEC-247: a Cognition session's are at least 10x each.
+#: The tag turn's own loop bounds on the live deployment: `[llm.limits]` turns /
+#: total_tokens / output_tokens and `[llm] timeout_seconds` (the tag turn's
+#: whole-loop clock), and `[llm] max_tokens`. DEC-247: a Cognition session's are at
+#: least 10x each.
 _TAG_TURN = {"turns": 20, "total_tokens": 1_024_000, "output_tokens": 12_000,
              "timeout_seconds": 360.0}
 
@@ -1850,8 +1787,8 @@ def test_the_wakes_timeout_stays_above_the_sessions_by_the_margin(toml_path):
 
 @pytest.mark.parametrize("key", ["max_memory_calls = 6\n", "max_tool_calls = 60\n", None])
 def test_a_cognition_block_that_sets_a_call_ceiling_refuses_to_load(toml_path, key):
-    """DEC-247: the keys the operator's block carried before are refused, not
-    ignored: an ignored ceiling is one the operator believes binds."""
+    """DEC-247: the retired keys are refused, not ignored: an ignored ceiling is one
+    the operator believes binds."""
     text = toml_path.read_text()
     marker = "[dreamer.budgets.cognition]\n"
     assert marker in text
@@ -1918,8 +1855,8 @@ def test_documents_public_url_refuses_anything_that_is_not_an_origin(bad) -> Non
 def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
     """`budget_for` falls back SILENTLY for an unknown key, so an adaptor with no
     block runs on numbers nobody chose. The template declares three: culture, the
-    Cognition session and the sub-agent worker (DEC-247 and its amendment: rounds, tokens
-    and time, no call ceiling)."""
+    Cognition session and the sub-agent worker (DEC-247: rounds, tokens and
+    time, no call ceiling)."""
     from nora.config import (
         COGNITION_OUTPUT_TOKENS,
         COGNITION_TIMEOUT_SECONDS,
@@ -1958,14 +1895,14 @@ def test_the_standing_section_is_optional_and_ships_inert(toml_path):
 
 
 def test_the_dream_unit_hold_ships_unset_and_derives_a_default(toml_path):
-    """`[dreamer] max_unit_hold_seconds` ships commented out (#191): the value
+    """`[dreamer] max_unit_hold_seconds` ships commented out: the value
     is derived from this config's own numbers, always above the known minimum."""
     cfg = load(toml_path)
     assert cfg.dreamer.max_unit_hold_seconds is None
     assert cfg.dreamer_max_unit_hold_seconds() > cfg._dream_unit_hold_known_minimum()
 
 
-# --------------------------------------------------------- [subagent] (design/subagent §5)
+# --------------------------------------------------------- [subagent]
 def _subagent_on(text: str) -> str:
     """`[subagent] enabled = true` with the Dreamer and the compute poller on."""
     import re as _re
@@ -1997,7 +1934,7 @@ def test_subagent_on_with_the_dreamer_and_the_poller_loads(toml_path):
 
 @pytest.mark.parametrize("key", ["max_memory_calls = 6\n", "max_tool_calls = 60\n", None])
 def test_a_subagent_block_that_sets_a_call_ceiling_refuses_to_load(toml_path, key):
-    """DEC-247, amended: the keys are refused, not ignored (an ignored ceiling is one the
+    """DEC-247: the keys are refused, not ignored (an ignored ceiling is one the
     operator believes binds), exactly as for cognition."""
     text = toml_path.read_text()
     marker = "[dreamer.budgets.subagent]\n"
@@ -2052,7 +1989,7 @@ def test_prompt_window_defaults_to_20_clamps_to_a_small_read_and_refuses_an_expl
         store(prompt_window=41)
 
 
-# ------------------------------------------------- [video_gen] (design/video-generation §2)
+# ------------------------------------------------- [video_gen]
 def _section_on(text: str, section: str) -> str:
     head, sep, tail = text.partition(f"\n[{section}]\n")
     assert sep, f"the template has no [{section}] section"
@@ -2069,7 +2006,7 @@ def test_video_gen_ships_off_with_the_operators_settings(toml_path):
     assert (video.minimax_cn.model, video.minimax_cn.api_key_env) == (
         "MiniMax-H3", "MINIMAX_CN_API_KEY")
     # A clip or a voice note leaves the box like a photo, and a voice note lends a voice:
-    # each kind is off until switched on by itself (amended 2026-10-10).
+    # each kind is off until switched on by itself.
     assert video.allow_reference_video is False and video.allow_reference_audio is False
     assert video.reference_seconds == 6.0
 
@@ -2086,7 +2023,7 @@ def test_video_gen_reference_seconds_stays_inside_what_the_provider_takes(toml_p
 
 
 def test_video_gen_refuses_the_old_all_rooms_cap_key_naming_the_new_one(toml_path):
-    """2026-10-09: the cap became per room, so the key was renamed. A file that still sets
+    """The cap is per room (`max_clips_per_day` is not a key). A file that still sets
     `max_clips_per_day = 2` must not boot as if it meant two clips for the whole house."""
     head, sep, tail = toml_path.read_text().partition("\n[video_gen]\n")
     assert sep, "the template has no [video_gen] section"
@@ -2112,7 +2049,7 @@ def test_video_gen_on_without_the_poller_refuses_to_load(toml_path):
     ("wide", "must be"), ("3:0", "must be"),
 ])
 def test_video_gen_refuses_a_ratio_that_is_not_explicit(toml_path, ratio, says):
-    """`adaptive` is refused with the reason (the live API rejected it, 2026-10-02), not
+    """`adaptive` is refused with the reason (the live API rejects it), not
     only as a malformed value."""
     text = toml_path.read_text()
     assert 'ratio = "3:4"' in text

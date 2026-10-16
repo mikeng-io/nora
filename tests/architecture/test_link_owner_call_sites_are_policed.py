@@ -1,12 +1,7 @@
-"""design/social-per-network/30-link-owner-registry.md, "Tests and
-enforcement": "No function in nora/agent/tools.py calls a network parser or
-host predicate outside the registry, except an owner's own read of its own
-network and the two Instagram share helpers ... new architecture test, AST
-over the call sites, with an allowlist that only shrinks." Never built in
-PR 1 or PR 2 (grepped `tests/architecture/` at PR-3 time: nothing named this
-shape, and no test walked the AST for these call sites either); this is
-that test, built alongside PR 3 ("the owners use the registry"), the change
-it falsifies (reviewer, 2026-09-25).
+"""No function under `nora/agent/` calls a network parser or host predicate
+outside the link-owner registry, except an owner's own read of its own network
+and the Instagram share helper. AST over the call sites, with an allowlist that
+only shrinks.
 
 WHAT IS GOVERNED: `parse_link` from `nora.domain.x_links`/
 `linkedin_links`/`instagram_links`, and each module's own host predicate
@@ -25,16 +20,12 @@ line number, so it survives the file moving around it: `x_read`,
 `linkedin_read` and `instagram_read` each read their OWN network's link to
 decide what to read (never another's, which goes through
 `nora.agent.tools._other_link_owner`/`owner_of` instead), and
-`_shared_page_link` is the Instagram share render's
-own helper (design 30, "What the registry does not do": a different
+`_shared_page_link` is the Instagram share render's own helper (a different
 question, from a different input -- a rendered transcript line or a stored
-share's own two links, never a model-facing tool argument). It only
-SHRINKS: removing a row because a hand-written branch was replaced by the
-registry is the point (PR 3 shrank it by zero here, since `x_read`/
-`linkedin_read`/`instagram_read`'s OWN reads were always allowed and stay
-allowed; what shrank was the SEPARATE cross-network branches these three
-used to also carry, which this table never listed as allowed because they
-never should have called the parser for anyone else's network).
+share's own two links, never a model-facing tool argument). It only SHRINKS:
+removing a row because a hand-written branch was replaced by the registry is
+the point, and a cross-network branch is never a row, since it should go
+through the registry.
 
 AST, not import: importing `nora.agent.tools` constructs the whole tool
 registry and its dependencies, which a census over source text does not
@@ -64,7 +55,7 @@ def _is_governed_original_name(name: str) -> bool:
 
 
 #: enclosing function name -> the ONE reason it may call a governed name.
-#: An allowlist that only SHRINKS (design 30's own words): a fourth owner
+#: An allowlist that only SHRINKS: a fourth owner
 #: adds one row for its own read; nothing here should ever grow for a
 #: cross-network branch, since that is exactly what the registry replaced.
 _ALLOWED: dict[str, str] = {

@@ -1,14 +1,12 @@
 """Every model-facing block reaches the prompt through ONE injector.
 
-**`ContextBlock` is that injector and it has one assembler caller.** #220 built
-it — `render()` owns the tag, the `untrusted` marker, the `note=` clause and the
-attribute order; `assemble` owns placement and empty-vs-omit; `catalogue` derives
-the header's «What you can see:» list from the same declaration so it cannot go
-stale a fifth time. `build_prefill` used all three and nine other modules wrote
-their opening tags by hand — which is how `<open_notes>` shipped with no
-`untrusted="true"` and the note curator's `<note>` elements shipped with no
-container at all. #292 converted all nine; this file is what keeps them
-converted.
+**`ContextBlock` is that injector and it has one assembler caller.**
+`render()` owns the tag, the `untrusted` marker, the `note=` clause and the
+attribute order; `assemble` owns placement and empty-vs-omit; `catalogue`
+derives the header's «What you can see:» list from the same declaration so it
+cannot go stale. A module that writes its opening tag by hand can ship a block
+with no `untrusted="true"` or with no container at all; this file is what keeps
+the modules converted.
 
 **Why a static gate, and why it is not the whole story.** The question is «was a
 block FORGOTTEN», and a grep-shaped question gets a grep-shaped gate — the same
@@ -18,18 +16,15 @@ than merely not noticed.
 
 The static half cannot see whether a block that DOES go through `ContextBlock`
 carries anything, because `_declared` will happily emit one with `note=""` and
-`body=""` purely so the catalogue names it — which is what `replying_to` and
-`tag_message` WERE until #292 gave them real ones. That is #187's pattern, a
-declaration standing in for the thing declared, and the runtime half of this
-gate lives in
+`body=""` purely so the catalogue names it. That is a declaration standing in
+for the thing declared, and the runtime half of this gate lives in
 `tests/test_prefill.py::test_the_whole_turn_renders_no_unframed_block`, which
 computes over every message the turn emits rather than the one `_served_blocks`
 happens to read.
 
-Issue #292. There is no list of unconverted modules: a module that opens and
-closes an element by hand fails `test_every_module_that_writes_a_tag_is_classified`
-at once, and `HAND_WRITTEN`, the debt table that stood here until step 6 of
-`design/context-assembly/04-every-occasion.md`, is gone.
+There is no list of unconverted modules: a module that opens and closes an
+element by hand fails `test_every_module_that_writes_a_tag_is_classified` at
+once.
 """
 
 from __future__ import annotations
@@ -45,7 +40,7 @@ ROOT = Path(__file__).resolve().parents[2]
 _OPEN = re.compile(r"<([a-z_][a-z0-9_]*)[\s>]")
 _CLOSE = re.compile(r"</([a-z_][a-z0-9_]*)>")
 
-#: Has its own injector, and it is the one #220 took the pattern FROM.
+#: Has its own injector, the pattern `ContextBlock` follows.
 #: `render_section` produces the exact bytes a section contributes and has two
 #: consumers — the assembler and the hasher — which is the trick `ContextBlock`
 #: borrows for the block and its catalogue line.
@@ -57,12 +52,12 @@ _OWN_INJECTOR = {
 #: ("opens AND closes in emitted text") cannot tell a strip from a build,
 #: because a strip names both tags too.
 #:
-#: **Scoped per TAG, not per module, and that is the fix for a hole this file
-#: had for one commit.** `relevance_gate` was exempted wholesale for its
-#: `<nora_doctrine>` strip, which also excused every other block in it — a
-#: module on `_OWN_INJECTOR` gets no per-module check at all, so the file that
-#: exists to stop hand-written blocks was giving one module a free pass to grow
-#: them. Now the module is checked and only the tag is allowed.
+#: **Scoped per TAG, not per module.** Exempting a module wholesale (say
+#: `relevance_gate` for its `<nora_doctrine>` strip) would also excuse every
+#: other block in it — a module on `_OWN_INJECTOR` gets no per-module check at
+#: all, so the file that exists to stop hand-written blocks would give one
+#: module a free pass to grow them. The module is checked and only the tag is
+#: allowed.
 _NOT_BUILT_HERE = {
     ("nora/ingest/relevance_gate.py", "nora_doctrine"):
         "strips the wrapper doctrine/loader.py builds",
@@ -137,7 +132,7 @@ _CLASSIFIED = set(_OWN_INJECTOR)
 def _unclassified(discovered: dict[str, tuple[str, ...]]) -> set[str]:
     # `CONVERTED` counts as classified: those modules ARE checked, per module,
     # by `test_no_block_is_written_by_hand`. Leaving them out of `_CLASSIFIED`
-    # made the census demand a second classification for a module the stricter
+    # would make the census demand a second classification for a module the stricter
     # test already covers.
     return set(discovered) - _CLASSIFIED - set(CONVERTED)
 
@@ -176,7 +171,7 @@ def test_a_module_that_writes_a_tag_by_hand_is_caught():
 #: per-module guard below has something to iterate (a test parametrised over an
 #: empty dict COLLECTS NOTHING: pytest emits one skipped `[NOTSET]` case and the
 #: file reads as though a gate is running when none is, which is this file's own
-#: subject, a declaration that reads as a guarantee and enforces nothing, #187).
+#: subject, a declaration that reads as a guarantee and enforces nothing).
 #: `test_the_converted_list_is_not_quietly_shrinking` checks the list against the
 #: source, so a module that builds blocks and is missing here fails.
 CONVERTED = (
@@ -229,7 +224,7 @@ def test_no_block_is_written_by_hand(rel: str):
 
 
 def test_the_converted_list_is_not_quietly_shrinking():
-    """`CONVERTED` is a hand-written list, which this repo's history says goes
+    """`CONVERTED` is a hand-written list, which goes
     stale — so it is checked against the source rather than trusted. Every
     module that builds a prompt block through `ContextBlock` must be on it, or
     dropping a module's line here would silently stop guarding it."""
@@ -237,11 +232,11 @@ def test_the_converted_list_is_not_quietly_shrinking():
     uses_injector = set()
     for path in sorted((ROOT / "nora").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
-        # AST, not a substring. `"ContextBlock(" in source` also matches PROSE:
-        # `nora/domain/block_types.py`'s docstring says «27 of 39
-        # `ContextBlock(...)` call sites», and the substring check read that as
-        # a module building blocks. Same defect as a gate satisfied by its own
-        # documentation, arriving from the false-POSITIVE side.
+        # AST, not a substring. `"ContextBlock(" in source` also matches PROSE
+        # (a docstring quoting a `ContextBlock(...)` call-site count), and the
+        # substring check would read that as a module building blocks. Same
+        # defect as a gate satisfied by its own documentation, arriving from the
+        # false-POSITIVE side.
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:                                # pragma: no cover

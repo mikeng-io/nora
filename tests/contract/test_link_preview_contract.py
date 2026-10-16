@@ -1,26 +1,22 @@
 """One suite, both implementations of `LinkPreviewSource`.
 
-CLAUDE.md: "A port never gains a second implementation — including a test fake
-— without a shared contract suite both pass." `nora.testing.
-FakeLinkPreviewSource` is that second implementation, and it is what
-`tests/unit/test_outbound_composer.py` asserts every preview behaviour against
-— so if it drifted from `OpenGraphPreviewSource`, every one of those tests
-would be proving something about a fake and nothing about production.
+CLAUDE.md: "A port never gains a second implementation — including a test fake — without a
+shared contract suite both pass." `nora.testing.FakeLinkPreviewSource` is that second
+implementation, and it is what `tests/unit/test_outbound_composer.py` asserts every
+preview behaviour against — so if it drifted from `OpenGraphPreviewSource`, every one of
+those tests would be proving something about a fake and nothing about production.
 
-**What this suite deliberately does NOT try to be.** The fake cannot resolve
-hostnames and the real one cannot be pointed at a loopback server (its own
-guard refuses one — `tests/test_preview_source.py` explains that at length), so
-there is no shared setup in which both can be asked to produce the SAME card
-from the SAME page. Pretending otherwise — a fake that returns a card for
-anything, parametrized beside a real source that is never reached — is exactly
-the "fake that answers every request the same way" this repo has been bitten by
-three times.
+**What this suite deliberately does NOT try to be.** The fake cannot resolve hostnames and
+the real one cannot be pointed at a loopback server (its own guard refuses one —
+`tests/test_preview_source.py` explains that at length), so there is no shared setup in
+which both can be asked to produce the SAME card from the SAME page. Pretending otherwise
+— a fake that returns a card for anything, parametrized beside a real source that is never
+reached — is the "fake that answers every request the same way".
 
-So the contract asserted here is the one both really do hold, and it is the one
-the composer actually programs against: **every failure is `None`, no failure
-is an exception, and a destination that is not on the public internet is a
-failure.** That is the whole of `LinkPreviewSource`'s behavioural surface as
-far as any caller is concerned.
+So the contract asserted here is the one both really do hold, and it is the one the
+composer actually programs against: **every failure is `None`, no failure is an exception,
+and a destination that is not on the public internet is a failure.** That is the whole of
+`LinkPreviewSource`'s behavioural surface as far as any caller is concerned.
 """
 
 import inspect

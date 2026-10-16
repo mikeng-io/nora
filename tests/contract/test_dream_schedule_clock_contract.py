@@ -4,8 +4,7 @@ CLAUDE.md's rule.
 The properties that matter are all about the ONE thing this port exists for:
 a schedule that survives the process. A store that forgot, or that invented a
 timestamp for a pair it had never seen, would let a daily adaptor fire on every
-tick while every test stayed green — which is the defect that put this table in
-the database in the first place.
+tick while every test stayed green.
 """
 
 from __future__ import annotations

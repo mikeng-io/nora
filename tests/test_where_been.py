@@ -8,9 +8,8 @@ shape this file mirrors) — room ⊄ circle → `refused`, an unnamed account �
 `location_trusted` waiver counted. The mobility store is a FAKE here on
 purpose: the disclosure decision is room-side, and the store reads are thin
 SELECTs whose shapes the store tests own — a fake keeps every guard answer
-reachable without a database, exactly the seam the where_been spec §7.1
-pins. The `unlabeled` third state and the R-28 no-egress assertions are the
-other two contract legs.
+reachable without a database. The `unlabeled` third state and the R-28
+no-egress assertions are the other two contract legs.
 """
 
 from __future__ import annotations
@@ -99,7 +98,7 @@ class _FakeMobility:
 
     async def rhythm_bins(self, *, subject_id, window_ms):
         self.calls.append(("rhythm", subject_id, window_ms))
-        # The store's own clamp: `window_ms=0` answers empty (design/27 §3.5).
+        # The store's own clamp: `window_ms=0` answers empty.
         return list(self.rhythm) if window_ms > 0 else []
 
     async def trips_with_corridors(self, *, subject_id, window_ms):
@@ -112,9 +111,9 @@ class _FakeMobility:
 
 
 class _FakeMobilityWithHistory(_FakeMobility):
-    """Adds the full-history reads the `day` arm's `unusual` flags use
-    (design/27 §4.3). The plain fake lacks them on purpose: that is the
-    fail-soft path, and the day must still be answered."""
+    """Adds the full-history reads the `day` arm's `unusual` flags use.
+    The plain fake lacks them on purpose: that is the fail-soft path, and the
+    day must still be answered."""
 
     def __init__(self, *, history, derived_places, **kw):
         super().__init__(**kw)
@@ -151,7 +150,7 @@ TRIPS = {
         "last_seen_ts": NOW_MS, "sequence": ["Tai Ho Road", "Castle Peak Road"],
     }],
 }
-# One stay and one trip inside 2026-09-04 (HK), plus one of each the next
+# One stay and one trip inside 4 Sep 2026 (HK), plus one of each the next
 # morning — the day filter must keep the in-day rows and drop the rest.
 DAY_STAY_TS = int(datetime(2026, 9, 4, 9, 0, tzinfo=HK).timestamp() * 1000)
 DAY_TRIP_TS = int(datetime(2026, 9, 4, 18, 0, tzinfo=HK).timestamp() * 1000)
@@ -285,7 +284,7 @@ async def test_where_been_refuses_an_unnamed_account(persons):
 
 async def test_where_been_degraded_room_is_unavailable_not_refused(persons):
     """A room she cannot READ is an ERROR, not a policy decision — the split
-    R-27 draws and the 2026-08-10 fail-closed audit fixed for `where_is`.
+    R-27 draws, as `where_is` does.
 
     `fail=True` plus a tagger is the TRUE degraded path: `Room.scope` narrows
     to the tagger with `degraded=True` rather than going dark. Without the
@@ -457,7 +456,7 @@ async def test_every_non_ok_status_carries_a_note(persons):
 async def test_an_ok_note_carries_the_rules_its_answer_needs(persons):
     """The reporting rules that left the description (the numbers carry their
     window; `unlabeled` is no pattern, never a place; an unmatched stay's
-    lat/lng is never read as a neighbourhood, 2026-09-06) arrive in the `ok`
+    lat/lng is never read as a neighbourhood) arrive in the `ok`
     they are about, and a clause arrives only when its field is there."""
     mobility = _FakeMobility(
         places=[dict(UNLABELED_PLACE), dict(MILES_PLACE)], rhythm=list(RHYTHM_BINS),
@@ -489,7 +488,7 @@ async def test_an_ok_note_carries_the_rules_its_answer_needs(persons):
 
 
 async def test_unlabeled_kind_survives_end_to_end(persons):
-    """design/27 §3.4: `unlabeled` is a precise, load-bearing answer, not a
+    """`unlabeled` is a precise, load-bearing answer, not a
     gap — the fixture place's kind comes back AS `unlabeled`, and the model-
     facing contract (the docstring) forbids smoothing it into a place."""
     mobility = _FakeMobility(places=[dict(UNLABELED_PLACE), dict(MILES_PLACE)])
@@ -540,8 +539,8 @@ async def test_r28_speech_boundary_after_dec156(persons):
 
 
 async def test_day_carries_iso_timestamps_and_latlng(persons):
-    """DEC-156: unix-ms alone is unreadable to the model — the 02:16
-    max-tokens incident burned the budget on calculate conversions. Every
+    """DEC-156: unix-ms alone is unreadable to the model, and converting it
+    burns the budget on calculate calls. Every
     timestamp the tool emits carries an RFC 3339 form beside the raw ms, and
     the day arm's stays carry the stay centroid for the fetch surface."""
     mobility = _FakeMobility(
@@ -692,15 +691,15 @@ async def test_routes_carry_linkage_without_the_sequence(persons):
     assert "sequence" not in payload["corridors"][0]
 
 
-# ---- the record's edge (2026-09-24) ------------------------------------------
+# ---- the record's edge -------------------------------------------------------
 #
-# The collector lost its Life360 login at 00:12; asked at 02:29, `where_been`
-# served a home stay ending 00:12 and then nothing, and the model read the
-# nothing as «stayed home» through a 1am ride. The derived facts stop where the
-# raw fixes stop, so the answer carries that edge.
+# If the collector stops (say its Life360 login is lost at 00:12), a later
+# question would get a home stay ending 00:12 and then nothing, and the model
+# could read the nothing as «stayed home». The derived facts stop where the raw
+# fixes stop, so the answer carries that edge.
 
-# The live shape, moved onto this file's clock: the last fix 00:12 today,
-# asked at noon — a home stay from yesterday evening ending exactly there.
+# The last fix 00:12 today, asked at noon — a home stay from yesterday evening
+# ending exactly there.
 LAST_FIX_TS = int(datetime(2026, 9, 5, 0, 12, tzinfo=HK).timestamp() * 1000)
 STAY_TO_EDGE = [
     {"started_ts": LAST_FIX_TS - 7 * 3_600_000, "ended_ts": LAST_FIX_TS,
@@ -713,7 +712,7 @@ def _iso(ts_ms):
 
 
 async def test_day_says_where_the_record_stops(persons):
-    """The live case: history that ends at the last fix names that edge, so
+    """History that ends at the last fix names that edge, so
     an empty stretch after it cannot read as the person staying put."""
     mobility = _FakeMobility(stays=[dict(s) for s in STAY_TO_EDGE])
     fixes = _FakeFixes({"miles_novak": LAST_FIX_TS})
@@ -728,9 +727,9 @@ async def test_day_says_where_the_record_stops(persons):
 
 
 async def test_nothing_found_still_says_where_the_record_stops(persons):
-    """`nothing_found` for today was the SECOND half of the live answer: with
-    no rows at all, the edge is the only thing that separates «stayed put»
-    from «nothing was recorded»."""
+    """`nothing_found` for today carries the edge too: with no rows at all, the
+    edge is the only thing that separates «stayed put» from «nothing was
+    recorded»."""
     mobility = _FakeMobility()
     fixes = _FakeFixes({"miles_novak": LAST_FIX_TS})
     tool = _where_been(persons, mobility, members=(MILES,), fixes=fixes)
@@ -765,7 +764,7 @@ async def test_a_past_day_the_record_covers_is_not_stopped(persons):
     assert "recording_stopped" not in out
 
 
-# ---- the day arm's `unusual` flags (design/27 §4.3) -------------------------
+# ---- the day arm's `unusual` flags ------------------------------------------
 
 
 def _office_history():
@@ -841,7 +840,7 @@ async def test_the_day_is_answered_when_the_flags_cannot_be_computed(persons):
     assert all("unusual" not in s for s in out["people"][0]["stays"])
 
 
-# ---- the routes arm's usual trips, and places' refs (design/27 §4.4 M2, M3) -
+# ---- the routes arm's usual trips, and places' refs --------------------------
 
 
 async def test_the_routes_arm_says_how_long_their_repeated_trips_take(persons):
@@ -891,8 +890,8 @@ async def test_routes_are_answered_when_usual_trips_cannot_be_worked_out(persons
 
 
 async def test_an_unsaved_label_never_reaches_her_as_a_label(persons):
-    """A geocoded street beside `name` was read as a road he passed, even
-    with 26 hours of stays next to it (replay 2026-09-28, 10 of 10)."""
+    """A geocoded street beside `name` must not be read as a road he passed,
+    even with 26 hours of stays next to it."""
     street = dict(UNLABELED_PLACE, label="Main Road", saved=False)
     tool = _where_been(persons, _FakeMobility(places=[street]), members=(MILES,))
     [place] = (await tool("places", name="Miles"))["people"][0]["places"]

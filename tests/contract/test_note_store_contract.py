@@ -102,20 +102,13 @@ class _Harness:
 def _notes_db(pg_admin: Any) -> Iterator[str]:
     """ONE database and ONE migration run for this whole file.
 
-    The obvious fixture is the shared function-scoped `pg_url`, and this suite
-    used it until 2026-08-21. It creates a database, runs the full 26-migration
-    chain and drops the database **per test** — 31 sql-param tests, so 31 full
-    rebuilds. That is correct and, for a small suite, affordable.
-
-    It stopped being affordable here, and the way it showed up is worth
-    recording: `tests/integration/test_latency.py` — a p95 budget on Nora's
-    non-model overhead, and one of the few tests that writes audit rows to this
-    same container — went from **0.032s in-suite on master to 0.346s in-suite
-    with this file present**, a 10x regression that reproduced four times and
-    was *absent* when the latency test ran standalone. The container was being
-    left degraded by the churn, and the cost landed on an unrelated test rather
-    than on this one, which is why it read as somebody else's flake for most of
-    a morning.
+    The shared function-scoped `pg_url` creates a database, runs the full
+    migration chain and drops the database **per test**, one full rebuild per
+    sql-param test. Churn of that size leaves the container degraded, and the
+    cost lands on unrelated tests: `tests/integration/test_latency.py` (a p95
+    budget on Nora's non-model overhead, one of the few tests that writes audit
+    rows to this same container) slows by an order of magnitude with such a file
+    present.
 
     Isolation is preserved by truncating the four note tables between tests
     (see the `notes` fixture) rather than by rebuilding the world. That is
@@ -258,7 +251,7 @@ async def test_create_refuses_a_note_with_no_anchor(notes: _Harness) -> None:
     assert await notes.store.standing(unit=WS) == ()
 
 
-# --- compare-and-swap (spec §6.3) -------------------------------------------
+# --- compare-and-swap -------------------------------------------
 
 
 async def test_append_revision_accepts_the_current_head_and_moves_it(
@@ -466,7 +459,7 @@ async def test_read_still_works_on_a_retired_note(notes: _Harness) -> None:
     assert got[0].is_standing is False
 
 
-# --- search (spec §5.3) -----------------------------------------------------
+# --- search -----------------------------------------------------
 
 
 async def test_search_never_returns_a_superseded_body(notes: _Harness) -> None:
@@ -580,8 +573,7 @@ async def test_search_treats_wildcards_as_literal_text(notes: _Harness) -> None:
 async def test_search_clamps_a_non_positive_limit(notes: _Harness) -> None:
     """`list[:0]` and `list[:-1]` disagree: the second silently drops the last
     entry instead of returning nothing, and Postgres errors outright on a
-    negative LIMIT. Both implementations clamp, the way `standing_facts` does
-    (2026-08-21 review)."""
+    negative LIMIT. Both implementations clamp, the way `standing_facts` does."""
     await _make(notes.store, body="a hotel")
 
     assert await notes.store.search(unit=WS, query="hotel", limit=0) == ()
@@ -627,12 +619,11 @@ async def test_supersede_records_the_successor_and_the_reason(
     assert affected == 1
     standing = await notes.store.standing(unit=WS)
     assert [n.id for n in standing] == [survivor.id]
-    # READ THE REASON BACK. Until 2026-08-27 this test named the reason in its
-    # own title and never asserted it: `retire_reason` was read only by the
-    # sink suite's `_note_read_row`, which runs the SQL store alone, so
-    # deleting `retire_reason=because` from the double left the whole suite
-    # green. A field written by both implementations and asserted for one is
-    # not under contract.
+    # READ THE REASON BACK. `retire_reason` is also read by the sink suite's
+    # `_note_read_row`, but that runs the SQL store alone, so deleting
+    # `retire_reason=because` from the double would leave the whole suite green.
+    # A field written by both implementations and asserted for one is not under
+    # contract.
     retired = await notes.store.read(unit=WS, note_id=duplicate.id)
     assert retired is not None
     assert retired[0].retire_reason == NoteSupersedeReason.RETIRED_CLOSED
@@ -659,9 +650,7 @@ async def test_supersede_refuses_a_reason_outside_the_tier_vocabulary(
 ) -> None:
     """Free text would make "how many notes did the curator retire this week,
     and on what ground" unanswerable, which is the reading that justifies the
-    curator existing. (This said "how many did the curator merge this week"
-    until 2026-09-13; merge was deleted 2026-09-08 and
-    `NoteSupersedeReason.ALL` no longer names it.)"""
+    curator existing."""
     note = await _make(notes.store)
 
     with pytest.raises(ValueError):
@@ -706,9 +695,8 @@ async def test_the_database_refuses_a_body_over_the_ceiling(_notes_db) -> None:
     """**Driven against real Postgres with the full migration chain applied**,
     not asserted from `schema.py`. `compare_metadata` is blind to CHECK
     constraints, so a constraint declared on the `sa.Table` and never written to
-    a database is documentation — this repo demonstrated that in 2026-08-20 by
-    deleting four of them from `schema.py` alone and watching the suite stay
-    green.
+    a database is documentation: deleting one from `schema.py` alone leaves a
+    schema-only suite green.
 
     So this writes 32001 characters straight at the table, bypassing the domain
     type entirely, and reads back the refusal. Bypassing is the point: the
@@ -793,12 +781,11 @@ async def test_a_minted_id_is_shaped_the_way_the_egress_screen_reads(
     test_inputs_renders_nothing_the_egress_screen_would_reject` rests its whole
     power on.
 
-    `InMemoryNoteStore` minted `note-1` and `rev-2` until 2026-08-28, and that
-    single divergence hid the defect that made the whole curator inert:
-    production rejected every item while the double's ids sailed through, and
-    eighteen tests passed over it. The comment on `_shaped_id` records the fix;
-    this is the gate, asserted against BOTH implementations so a future double
-    cannot quietly reintroduce it.
+    A double minting ids like `note-1` and `rev-2` would hide a defect that makes
+    the whole curator inert: production rejects every item while the double's
+    ids sail through. This is the gate, asserted against BOTH implementations so
+    a double cannot quietly reintroduce it; the comment on `_shaped_id` records
+    the shape.
     """
     from nora.agent.egress import scan_identifiers
 
@@ -819,9 +806,8 @@ async def test_a_minted_id_is_shaped_the_way_the_egress_screen_reads(
 async def _merge_away(
     notes: _Harness, *, duplicate: Note, survivor: Note, now_ms: int = NOW + 50,
 ) -> None:
-    """A merge's retirement half, through the one verb that writes it today.
-    `merge_into` (§7.6, guard 2) lands with note-merge; until then an
-    operator retirement is exactly this row."""
+    """A merge's retirement half (`merge_into`, guard 2): `supersede` with
+    reason `RETIRED_MERGED`."""
     affected = await notes.store.supersede(
         key=WS, target=duplicate.id, replaced_by=survivor.id,
         because=NoteSupersedeReason.RETIRED_MERGED, source=None, now_ms=now_ms,
@@ -833,9 +819,9 @@ async def test_an_append_to_a_retired_note_raises_retired_note_error(
     notes: _Harness,
 ) -> None:
     """Guard 1. `supersede` never touches the head, so the head a writer read
-    before a retirement still matches after it; until 2026-09-24 the append
-    succeeded into a note nothing reads again. It must refuse, write nothing,
-    and say where a merged note went."""
+    before a retirement still matches after it, and an append would succeed into
+    a note nothing reads again. It must refuse, write nothing, and say where a
+    merged note went."""
     survivor = await _make(notes.store, title="Saturday dinner")
     duplicate = await _make(notes.store, title="Miles 星期六飯局細節未定")
     await _merge_away(notes, duplicate=duplicate, survivor=survivor)
@@ -876,8 +862,8 @@ async def test_successor_follows_a_merged_chain_to_the_open_note(
 
 
 async def test_only_a_merged_note_forwards(notes: _Harness) -> None:
-    """A `replaced_by` on a closed note is provenance (the 2026-09-24 triage
-    wrote some), not a promise the successor carries the same question."""
+    """A `replaced_by` on a closed note is provenance (written by
+    hand), not a promise the successor carries the same question."""
     kept = await _make(notes.store, title="kept")
     closed = await _make(notes.store, title="closed")
     await notes.store.supersede(
@@ -1079,8 +1065,8 @@ async def test_merge_into_refuses_a_duplicate_retired_under_an_unmoved_head(
 async def test_the_revision_chain_is_readable_oldest_first_and_unit_scoped(
     notes: _Harness,
 ) -> None:
-    """The chain the fire-time screen walks (design/dreamer-agent-loop/39 D11):
-    oldest first, and `()` — never a partial chain — across a unit boundary."""
+    """The chain the fire-time screen walks: oldest first, and `()` — never a
+    partial chain — across a unit boundary."""
     note = await _make(notes.store)
     second = await notes.store.append_revision(
         unit=WS, note_id=note.id, body="Two venues, one call made.",

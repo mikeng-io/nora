@@ -34,7 +34,7 @@ class SinkSender:
         self._succeed = succeed
         self._account = account
         # The platform's OWN sent-timestamp, which real signal-cli returns and
-        # a reply's `quote.id` points at (design/11 §2.3). `None` — the default
+        # a reply's `quote.id` points at. `None` — the default
         # — is the shape of a daemon that answered without one.
         self._timestamp = timestamp
 
@@ -121,11 +121,11 @@ _HONCHO_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 class FakeHoncho:
     """A Honcho v3 server in-process, for the eval side's per-draw workspaces
-    (issue #462) and the subject's own memory traffic.
+    and the subject's own memory traffic.
 
-    Shaped after the deploy host's `/openapi.json` (Honcho 3.1.2, read
-    2026-09-24), including its wrong-call answers, because a fake that answers
-    everything 200 cannot show a leak or a mis-ordered delete:
+    Shaped after the deploy host's `/openapi.json`, including its wrong-call
+    answers, because a fake that answers everything 200 cannot show a leak or a
+    mis-ordered delete:
 
     - a workspace id outside `^[a-zA-Z0-9_-]+$` (or over 512) is a 422;
     - `DELETE /v3/workspaces/{id}` is a 409 while any session in it is active,

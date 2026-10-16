@@ -111,7 +111,7 @@ async def test_a_bare_string_with_no_scheme_is_refused():
 async def test_an_identifier_in_the_url_is_refused_before_the_provider_is_called():
     """The egress concern is not SSRF (Tavily connects, never Nora) — it is that
     the URL itself leaves to a THIRD PARTY, model-chosen, and can carry an
-    identifier the same way a `web_search` query can (design/14 §2.2)."""
+    identifier the same way a `web_search` query can."""
     fake = _FakeSearchProvider()
     tools = _tools(search=fake)
     out = await tools["web_fetch"](url="https://example.com/?n=+85212345678")
@@ -150,10 +150,9 @@ async def test_a_raising_provider_degrades_to_unavailable():
     assert out["status"] == "unavailable"
 
 
-# ---- an Instagram page is instagram_read's (design 13, 2026-09-24) -----------
-# 3 of 12 replays of a shared post sent its page link here. The guard is the
-# one `media_fetch` has (#471), through the same helper. Every link below is
-# synthetic.
+# ---- an Instagram page is instagram_read's ----------------------------------
+# A shared post's page link must not be fetched here. The guard is the one
+# `media_fetch` has, through the same helper. Every link below is synthetic.
 
 _INSTAGRAM_PAGES = {
     "post": "https://www.instagram.com/p/SynthPost01/",
@@ -217,7 +216,7 @@ async def test_a_mobile_instagram_page_link_asks_for_the_www_link():
 
 
 # ---- an X post/profile or LinkedIn person/company link is x_read's/
-# linkedin_read's (design 30, PR 2). Every link below is synthetic.
+# linkedin_read's. Every link below is synthetic.
 
 _X_PAGES = {
     "post": "https://x.com/synth_user01/status/9000000000000000001",
@@ -243,7 +242,7 @@ async def test_an_x_link_is_routed_to_x_read_and_never_fetched():
     mobile/alternate host `x_links.X_HOSTS` already reads: `nothing_found`, a
     note naming `x_read`, and no call to the provider. Positive control on
     the SAME fake: X's shortener, X's own CDN, a reserved X page and a
-    lookalike host still reach it (design 30's non-goals and "Types")."""
+    lookalike host still reach it."""
     fake = _FakeSearchProvider()
     tools = _tools(search=fake)
     for kind, url in _X_PAGES.items():
@@ -304,7 +303,7 @@ async def test_a_mobile_linkedin_link_asks_for_the_www_link():
 async def test_a_linkedin_post_and_other_unclaimed_linkedin_urls_still_fetch():
     """A LinkedIn post is never claimed: `linkedin_read` cannot read one from
     its link, and a public post page is something `web_fetch` may still be
-    able to read (design 30, "Design" §"Types"). Same treatment as `lnkd.in`
+    able to read. Same treatment as `lnkd.in`
     and LinkedIn's own CDN host."""
     fake = _FakeSearchProvider()
     tools = _tools(search=fake)
@@ -387,17 +386,15 @@ async def test_an_ok_web_note_comes_before_the_page_written_text():
     assert list(page)[:2] == ["status", "note"]
     assert page["text"] == "the page"
     assert "which page" in page["note"] and "stranger" in page["note"]
-    # A page or snippet is partial: absence from it is not proof of absence
-    # (2026-09-25, a shop list's first page used to tell someone they were wrong).
+    # A page or snippet is partial: absence from it is not proof of absence.
     assert "not proof it doesn't exist" in found["note"]
     assert "not proof it doesn't exist" in page["note"]
 
 
 async def test_a_file_link_handle_points_at_file_fetch_not_at_the_url():
-    # tool_selection `route_file_fetch_shared_doc`, 2026-10-11: the model is
-    # shown `[Google Doc link c41d09]`, never the URL; passing that to
-    # web_fetch used to answer "ask them for the actual URL" and the turn
-    # gave up. Brackets or not, the note names file_fetch and the code.
+    # The model is shown `[Google Doc link c41d09]`, never the URL; passing that
+    # to web_fetch must not answer "ask them for the actual URL" and give up.
+    # Brackets or not, the note names file_fetch and the code.
     fake = _FakeSearchProvider()
     tools = _tools(search=fake)
     for given in (
@@ -420,9 +417,10 @@ async def test_a_bare_word_is_still_asked_for_its_url():
 
 
 async def test_a_link_built_around_a_handles_code_points_at_its_code():
-    # Live 2026-10-11: shown `[Google Drive link 491db6]`, she sent
-    # `https://drive.google.com/file/d/491db6` and a folder URL to web_fetch;
-    # both reached the provider and came back "couldn't read that page".
+    # Shown `[Google Drive link 491db6]`, she may send
+    # `https://drive.google.com/file/d/491db6` or a folder URL to web_fetch;
+    # neither may reach the provider, which would answer "couldn't read that
+    # page".
     fake = _FakeSearchProvider()
     tools = _tools(search=fake)
     for given in ("https://drive.google.com/file/d/491db6",

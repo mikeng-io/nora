@@ -2,15 +2,13 @@
 
 `build_tools` declares the same keyword-only parameters as `build_tool_specs`
 and hands them on by name. A parameter accepted here and dropped there is a
-caller configuring something that silently keeps its default — and it is not
-hypothetical: `describe_max_bytes` (a per-modality byte ceiling) had been
-accepted and dropped since it was added, and issue #116 then added the video
-chunk geometry and the media join beside it, all three silent.
+caller configuring something that silently keeps its default (for example
+`describe_max_bytes`, a per-modality byte ceiling, or the video chunk geometry).
 
 Production reaches `build_tool_specs` through `ToolRegistry.build`, so the
-deployed path was never affected; every `build_tools` caller in the tree is a
-test, which is precisely why nothing went red. The class of defect is what this
-closes, not one instance of it.
+deployed path is not affected; every `build_tools` caller in the tree is a
+test, which is why a dropped parameter turns nothing red. This closes the class
+of defect, not one instance of it.
 
 A STATIC comparison, deliberately: calling both and diffing the tools would
 prove they produce the same NAMES, which they do either way — the difference
@@ -71,44 +69,44 @@ def test_build_tools_forwards_every_parameter_it_accepts() -> None:
 #: On `build_tool_specs` and deliberately NOT on the wrapper. `build_tools` is
 #: the narrower, test-facing shape — production reaches the specs builder
 #: through `ToolRegistry.build`, which is where these are threaded from. Pinned
-#: as a LITERAL so a twelfth divergence is a decision somebody makes rather
+#: as a LITERAL so a new divergence is a decision somebody makes rather
 #: than one that accumulates.
 _SPECS_ONLY = frozenset({
-    # `clock` left this set 2026-09-24: `room_list` reports how long ago a
-    # room last spoke, and its tests freeze time through `build_tools`.
+    # `clock` is not here: `room_list` reports how long ago a room last
+    # spoke, and its tests freeze time through `build_tools`.
     "events", "fire_turn",
     # DEC-316: both memory surfaces at once, for `ToolRegistry`'s
     # introspection build (the catalog and R-99's argument table) alone.
     "all_memory_surfaces",
-    # design/subagent step 2: the third provenance, threaded from `ToolRegistry.specs` by
+    # The third provenance, threaded from `ToolRegistry.specs` by
     # `SubagentToolSource`. `build_tools` is the legacy wrapper no worker is built through.
     "subagent_job",
-    # design/subagent §4d: the worker's progress record, where `checkpoint_update` writes;
+    # The worker's progress record, where `checkpoint_update` writes;
     # threaded the same way as `subagent_job`.
     "checkpoint_sink",
     "music", "relay", "reminder_caps", "reminders", "tool_call_log_store",
     "versions",
-    # design/tool-catalogue/02: `load_tools`' per-turn shelf. Created and
+    # `load_tools`' per-turn shelf. Created and
     # stocked inside `ToolRegistry.surface()`, which is the only thing that
     # knows what was deferred; a `build_tools` caller has no shelf to pass,
     # and `load_tools` answers `unavailable` without one.
     "shelf",
-    # Nora's computer (design/sandbox-runtime, DEC-243): the runtime, its
+    # Nora's computer (DEC-243): the runtime, its
     # audit store and its bounds, threaded from the composition root through
     # `ToolRegistry.build` like `reminders`. Its tests build the specs
     # directly (tests/unit/test_computer_tools.py).
     "computer", "computer_events", "computer_settings",
-    # Its sessions and the process's one lease table (design/sandbox-runtime
-    # §15.2, §15.4), threaded the same way.
+    # Its sessions and the process's one lease table,
+    # threaded the same way.
     "computer_sessions", "computer_leases",
-    # `computer_export`'s record of what left the computer (S3a) and its link's
+    # `computer_export`'s record of what left the computer and its link's
     # portal origin (ADR 0023), threaded the same way.
     "computer_exports", "artifact_link_base",
-    # `computer_browse`'s sub-agent (design/browser-runtime B2), threaded the
+    # `computer_browse`'s sub-agent, threaded the
     # same way as the computer runtime above; its tests build through
     # `build_tool_specs` (tests/unit/test_computer_browse_tool.py).
     "browser",
-    # `file_fetch`'s source (design/external-files §4), threaded from the
+    # `file_fetch`'s source, threaded from the
     # composition root through `ToolRegistry.build` like `browser`; its tests
     # build through `build_tool_specs` (tests/unit/test_file_fetch_tool.py).
     "external_files",

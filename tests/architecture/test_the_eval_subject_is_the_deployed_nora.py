@@ -1,19 +1,17 @@
 """The subject an eval composes IS the deployment's Nora, not a fresh install.
 
-Until 2026-09-21 `nora/subject/obtain.py` built every eval subject from
+`nora/subject/obtain.py` must not build an eval subject from
 `config.example.toml`, whose job is to be a SAFE TEMPLATE for a new deployment
-— so it ships with almost everything off. 65 values differed from the
-deployment, including `llm.model`, `llm.reasoning_effort`, and
-`relevance_gate`, `participation`, `standing`, `culture`, `notes`, `dreamer`,
-`search`, `online`, `weather`, `route` and `preview` all DISABLED. Every case
-ever run measured a different model, at a different reasoning effort, with most
-of Nora switched off.
+— it ships with almost everything off, and differs from the deployment in
+`llm.model`, `llm.reasoning_effort`, and `relevance_gate`, `participation`,
+`standing`, `culture`, `notes`, `dreamer`, `search`, `online`, `weather`,
+`route` and `preview` all DISABLED. Cases would measure a different model, at a
+different reasoning effort, with most of Nora switched off.
 
-**No case could have caught it, and that is the point of pinning it here.**
-`design/evaluation/01-boundaries.md` §5's rule 4 — "nothing reaches the model
-that the deployment would not send" — constrains the PROMPT, and the prompt was
-fine. What differed was the reader. Rule 5 and these tests are what hold the
-other half.
+**No case could catch that, and that is the point of pinning it here.** The
+rule "nothing reaches the model that the deployment would not send" constrains
+the PROMPT, and the prompt would be fine. What differs is the reader. These
+tests hold the other half.
 """
 
 from __future__ import annotations
@@ -49,7 +47,7 @@ def _flat(d: dict, prefix: str = ""):
 #: refuse. `build()` is pure, so the rules are checked against its OUTPUT on a
 #: stated input instead.
 #:
-#: Every value here is one the deployment really sets (verified 2026-09-21),
+#: Every value here is one the deployment really sets,
 #: with the room id and canary replaced: the fixture states the SHAPE, and the
 #: repo stays clear of deployment values for the same reason `config.toml` is
 #: untracked.
@@ -186,16 +184,14 @@ def test_a_deployment_key_the_example_never_mentions_is_written_not_lost():
 
 
 def test_an_enabled_adapter_is_adopted_but_its_credentials_are_not():
-    """Corrected 2026-09-21 after measuring, not reasoning.
+    """Platform adapters stay ENABLED as the deployment has them.
 
-    An earlier cut forced every `platforms.*.enabled` OFF, on the argument
-    that an eval drives entry points directly and never listens. That produced
-    `StartupError: no platform adapter is enabled` in 22 integration tests —
-    and the argument was wrong anyway: the registry's `self_aliases()` feeds
-    `self_ids` (`nora/app/composition.py:2428`), and `self_ids` is what
-    `MentionPolicy`/`ReplyToNoraPolicy` match on. With the deployment's text
-    trigger off since 2026-09-01, mention-and-reply IS the engagement path, so
-    a disabled adapter deletes it.
+    Forcing every `platforms.*.enabled` OFF would give
+    `StartupError: no platform adapter is enabled`, and it is wrong anyway: the
+    registry's `self_aliases()` feeds `self_ids` (`nora/app/composition.py`),
+    and `self_ids` is what `MentionPolicy`/`ReplyToNoraPolicy` match on. With
+    the deployment's text trigger off, mention-and-reply IS the engagement path,
+    so a disabled adapter deletes it.
 
     So the adapter is ENABLED as the deployment has it, and the NETWORK is
     neutralised instead — `_baseline()` points the account at a placeholder.
@@ -218,11 +214,10 @@ def test_a_skipped_prefix_is_not_taken_from_the_deployment():
     """Endpoints that resolve only inside the deploy network, and sinks a run
     would write into beside real traffic.
 
-    STRENGTHENED after an audit: the first version asserted no `obs.` key was
-    adopted truthy, while the fixture stated no `obs.` key AT ALL and
-    `FORCE_OFF` independently wrote the two booleans False. Removing `"obs."`
-    from `SKIP_PREFIX` — the exact thing the test is named for — was a full
-    pass. It now uses NON-BOOLEAN keys, which only `SKIP_PREFIX` can exclude.
+    The fixture uses NON-BOOLEAN `obs.` keys, which only `SKIP_PREFIX` can
+    exclude: a boolean `obs.` key would be forced False by `FORCE_OFF`
+    independently, so removing `"obs."` from `SKIP_PREFIX` — the exact thing the
+    test is named for — would still pass.
     """
     from evals.subject_config import adopted
 
@@ -281,8 +276,8 @@ def test_the_models_are_the_deployments_aliases_not_a_raw_upstream_id(
 
 def test_the_canary_is_the_deployments_own():
     """`doctrine.canary` is the string a leak test looks for. The example ships
-    `CHANGE-ME-PER-DEPLOYMENT`, so every leak assertion in the suite was
-    hunting a placeholder that the deployed doctrine never contains.
+    `CHANGE-ME-PER-DEPLOYMENT`, so a leak assertion built on it would hunt
+    a placeholder that the deployed doctrine never contains.
     """
     canary = _eval_config().get("doctrine.canary", "")
     assert canary and "CHANGE-ME" not in canary, (
@@ -295,13 +290,11 @@ def test_the_canary_is_the_deployments_own():
 
 
 def test_the_room_swap_is_gone():
-    """`sandbox_room_for`/`policy_for`/`identity_for` minted a hashed room per
-    case and rewrote the deployment's policy entry onto it, because every
-    case once shared one database. A case now composes against a sandbox
-    database of its own (`nora.subject.sandbox_database`) under the REAL
-    room's id, with the deployment's `policy.toml` and `identity.toml`
-    verbatim — so there is nothing to swap, and a helper that reappeared here
-    would be a second copy of the room drifting from the first."""
+    """A case composes against a sandbox database of its own
+    (`nora.subject.sandbox_database`) under the REAL room's id, with the
+    deployment's `policy.toml` and `identity.toml` verbatim — so there is
+    nothing to swap, and a helper that reappeared here would be a second copy of
+    the room drifting from the first."""
     import evals.subject_config as subject_config
 
     reappeared = [
@@ -312,9 +305,8 @@ def test_the_room_swap_is_gone():
 
 
 def test_materialise_refuses_to_write_when_the_result_disagrees(tmp_path, monkeypatch):
-    """`materialise()` had NO test — an audit found the one place that reads
-    the real deployment and fails closed was itself unguarded, while the test
-    named for it actually called `divergences()`.
+    """`materialise()` is the one place that reads the real deployment and fails
+    closed, so it is tested directly (not through `divergences()`).
 
     The trigger is a GENERATOR THAT STOPPED WORKING, not a config that
     disagrees: every setting in `FORCE_OFF` is also in `ALLOWED_TO_DIFFER`, by
@@ -363,23 +355,21 @@ def test_materialise_writes_when_the_result_agrees(tmp_path):
 
 
 def test_the_gate_looks_at_keys_the_deployment_never_states():
-    """The half of the key space the gate was blind to — the original bug's
-    own shape, one layer down.
+    """The half of the key space a deployment-keys-only gate is blind to.
 
-    An earlier `divergences()` iterated only DEPLOYMENT-stated keys, reasoning
-    that a key the example carries and the deployment does not "is a code
-    default for both". False: it is the EXAMPLE's value for the subject and
-    `nora/config.py`'s default for production. An audit measured 44 such keys
-    against the real deployment. They agree today by curation alone, and
-    nothing pinned that — so one tidied line in the example, or one new
-    default in `config.py`, moved production and left the subject behind with
-    the gate green.
+    `divergences()` must not iterate only DEPLOYMENT-stated keys on the
+    reasoning that a key the example carries and the deployment does not "is a
+    code default for both". False: it is the EXAMPLE's value for the subject and
+    `nora/config.py`'s default for production. Such keys agree only by
+    curation, so one tidied line in the example, or one new default in
+    `config.py`, would move production and leave the subject behind with the
+    gate green.
     """
     from evals.subject_config import build, divergences
 
     example = (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8")
     # `participation.reasoning_effort` is example-stated, deployment-silent,
-    # and its code default is "none" — the audit's own worked example.
+    # and its code default is "none".
     drifted = example.replace('reasoning_effort = "none"', 'reasoning_effort = "high"', 1)
 
     assert not divergences(build(example, _DEPLOYMENT_FIXTURE), _DEPLOYMENT_FIXTURE), (
@@ -430,8 +420,8 @@ _SUBAGENT_DEPLOYMENT = (
 
 def test_a_deployment_with_the_subagent_on_keeps_the_preconditions_it_needs():
     """`[subagent] enabled` refuses to load without `[dreamer]` and `[compute]`
-    on. FORCE_OFF wrote `compute.enabled = false` over it, so the generated
-    config could not even be loaded (measured on norty 2026-10-05)."""
+    on, so FORCE_OFF writing `compute.enabled = false` over it would leave a
+    generated config that cannot be loaded."""
     from evals.subject_config import adopted
 
     taken = adopted(_SUBAGENT_DEPLOYMENT)

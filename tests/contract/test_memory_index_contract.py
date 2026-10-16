@@ -1,6 +1,5 @@
 """Shared contract for the memory index's read (`nora.domain.memory_index.
-MemoryIndexRead`, design/unified-memory/25-memory-graph.md §4). Every
-implementation runs every test.
+MemoryIndexRead`). Every implementation runs every test.
 
 Two implementations: `nora.infra.sql.memory_read.SqlMemoryIndex` over real
 Postgres, and `nora.testing.memory_index.FakeMemoryIndex`, which the walk's
@@ -9,7 +8,7 @@ nodes, and a hub only as a direct neighbour. One database for the module,
 truncated between tests. Texts are whole words, where pg_trgm and the fake's
 containment agree.
 
-The seeds of 65 V2 too: `dense` compares only vectors of the asked model,
+The seeds: `dense` compares only vectors of the asked model,
 nearest first; `exact` matches a term literally and whole (an ASCII term not
 inside a longer word, any other script as a substring); `index_state` with a
 model counts the vector coverage, leaving out nodes the worker gave up on.
@@ -214,7 +213,7 @@ async def test_state_reads_the_index_state(load: Load) -> None:
     assert await index.index_state() == IndexState("complete", 0)
 
 
-# --- the seeds of 65 V2 ---------------------------------------------------------
+# --- the seeds ------------------------------------------------------------------
 
 M = "model-a"
 
@@ -299,7 +298,7 @@ async def test_coverage_counts_embedded_and_waiting_and_not_the_given_up(load: L
 
 
 async def test_coverage_counts_within_a_scope_and_lexical_reads_the_given_up(load: Load) -> None:
-    """Review of #31: a node waiting in another unit does not hold this
+    """A node waiting in another unit does not hold this
     room's answers `partial`; a node the worker gave up on, which no dense
     seed reaches, is still found by its words."""
     nodes = [
@@ -347,7 +346,7 @@ async def test_a_narrowing_applies_inside_the_seed(
 
 async def test_a_person_narrowing_keeps_the_listed_room_rule(load: Load) -> None:
     """Kit's own message in room c, which does not list kit, is in scope and
-    still not evidence about kit (35 §3, the `about` seed's rule)."""
+    still not evidence about kit (the `about` seed's rule)."""
     nodes = [
         IndexedNode("message", "b1", "lantern", 2, origin_room="signal:b"),
         IndexedNode("message", "c1", "lantern", 1, origin_room="signal:c"),

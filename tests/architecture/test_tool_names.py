@@ -26,59 +26,51 @@ _CHARSET = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 #: known subject, `fetch` a URL, `search` free text, `list` enumerates; the rest
 #: act. A new verb is added HERE, in a PR that states why it is not one of these.
 #:
-#: `query` (2026-09-29, `record_query`, design/cognition-loop/15-map.md §4): a
-#: filtered read over an interval. Not `read` (it names no one subject), not
-#: `search` (its free text is optional; «what was said on Saturday» has none),
-#: not `list` (it filters by time, author and words, and enumerates nothing
-#: fixed). The design named the tool before this rule was applied to it.
+#: `query` (`record_query`): a filtered read over an interval. Not `read` (it
+#: names no one subject), not `search` (its free text is optional; «what was said
+#: on Saturday» has none), not `list` (it filters by time, author and words, and
+#: enumerates nothing fixed).
 #:
-#: `propose`, `revise`, `set_status`, `rsvp` (2026-09-29, the event verbs,
-#: design/cognition-loop/70-migration.md §8, DEC-237): `event_propose` is not
-#: `create` — it stages or proposes, a status `event_set_status` may later
-#: move on, never a finished write the way `create_event` was; `event_revise`
-#: is not `update` — it appends a REVISION to a chain (`base_revision_id`,
-#: 10-tiers.md §3), never an in-place change; `event_set_status` is not
-#: `cancel` — it moves an event through the WHOLE lifecycle (confirmed,
-#: happened, lapsed, not only cancelled), so one verb replaces what
-#: `cancel_event` alone could not cover; `event_rsvp` is not `create` or
-#: `update` — a person's own response, appended (RSVP transition rows), naming
-#: neither.
+#: `propose`, `revise`, `set_status`, `rsvp` (the event verbs, DEC-237):
+#: `event_propose` is not `create` — it stages or proposes, a status
+#: `event_set_status` may later move on, never a finished write; `event_revise`
+#: is not `update` — it appends a REVISION to a chain (`base_revision_id`), never
+#: an in-place change; `event_set_status` is not `cancel` — it moves an event
+#: through the WHOLE lifecycle (confirmed, happened, lapsed, not only
+#: cancelled), so one verb covers what `cancel` alone could not; `event_rsvp` is
+#: not `create` or `update` — a person's own response, appended (RSVP transition
+#: rows), naming neither.
 VERBS: tuple[str, ...] = (
     "read", "fetch", "search", "list", "create", "update", "cancel", "send",
     "query", "propose", "revise", "set_status", "rsvp",
-    # Nora's computer (design/sandbox-runtime §4, DEC-243): the coding-agent
-    # convention, Claude Code's Bash/Read/Write/Edit (and Pi's core set).
-    # `run` executes a command: the operator chose all-bash execution on
-    # 2026-09-30, because restricting the language is not restricting the
-    # capability, so there is one runner, not a tool per language. `write`
-    # replaces a whole file and `edit` swaps one exact match, two different
-    # operations none of `create`/`update` names: `create` implies the thing
-    # is new, and `update` a record's fields.
+    # Nora's computer (DEC-243): the coding-agent convention, Claude Code's
+    # Bash/Read/Write/Edit (and Pi's core set). `run` executes a command:
+    # restricting the language is not restricting the capability, so there is
+    # one runner, not a tool per language. `write` replaces a whole file and
+    # `edit` swaps one exact match, two different operations none of
+    # `create`/`update` names: `create` implies the thing is new, and `update` a
+    # record's fields.
     "run", "write", "edit",
-    # S3a (design/sandbox-runtime §4, §6, §7): files crossing the computer's
-    # edge. `export` moves a file OUT of the workspace to a destination (a
-    # link, the room, private custody) and `import` copies one IN. None of
-    # the existing verbs fits: `send` names one destination of three and
-    # implies a message; `fetch` is taken for reading a remote thing INTO
-    # the turn (`media_fetch`), the opposite direction of `export`, and
-    # `create`/`write` name the file, not its crossing of the VM boundary.
-    # The pair is Claude Code's and the design's own words for the two
-    # directions.
+    # Files crossing the computer's edge. `export` moves a file OUT of the
+    # workspace to a destination (a link, the room, private custody) and `import`
+    # copies one IN. None of the existing verbs fits: `send` names one
+    # destination of three and implies a message; `fetch` is taken for reading a
+    # remote thing INTO the turn (`media_fetch`), the opposite direction of
+    # `export`, and `create`/`write` name the file, not its crossing of the VM
+    # boundary. The pair is Claude Code's own words for the two directions.
     "export", "import",
-    # Documents (design/artifact §26, ADR 0020): `publish` makes a written piece
-    # readable in the web app AND is how it is revised, one act with two
-    # outcomes (a new document, or the next revision of one). `create` would
-    # say the thing is always new and `update` that a record's fields change;
-    # neither says that the result is now for other people to open, which is
-    # the point and the reason the model must be told what it may put in it.
+    # Documents (ADR 0020): `publish` makes a written piece readable in the web
+    # app AND is how it is revised, one act with two outcomes (a new document, or
+    # the next revision of one). `create` would say the thing is always new and
+    # `update` that a record's fields change; neither says that the result is now
+    # for other people to open, which is the point and the reason the model must
+    # be told what it may put in it.
     "publish",
-    # The browser (design/browser-runtime 00 §5, ADR 0022, B2): `browse` hands a
-    # whole task in a web browser to a sub-agent, many page actions behind one
-    # call. `fetch` reads one known thing into the turn (`web_fetch` is one
-    # page's text); `search` asks an index; `run` executes a command. None names
-    # an interactive session that navigates, clicks and fills, which is what the
-    # model must know it is choosing. sandbox-runtime §14 named the tool
-    # `computer_browse` on 2026-09-30.
+    # The browser (ADR 0022): `browse` hands a whole task in a web browser to a
+    # sub-agent, many page actions behind one call. `fetch` reads one known thing
+    # into the turn (`web_fetch` is one page's text); `search` asks an index;
+    # `run` executes a command. None names an interactive session that navigates,
+    # clicks and fills, which is what the model must know it is choosing.
     "browse",
 )
 
@@ -87,7 +79,7 @@ def _shape(verbs: tuple[str, ...] = VERBS) -> re.Pattern[str]:
     return re.compile(rf"^[a-z][a-z0-9]*(_[a-z0-9]+)*_({'|'.join(verbs)})$")
 
 
-#: Every tool name that existed when ADR 0015 landed (2026-09-24). A SNAPSHOT,
+#: Every tool name that existed when ADR 0015 landed. A SNAPSHOT,
 #: never edited: its digest is pinned below, so adding a name to it (exempting a
 #: new tool by hand) fails the build. A name leaves the exemption by being
 #: added to `_RENAMED_SINCE`, which is how the exempt set only shrinks.
@@ -112,15 +104,13 @@ _SNAPSHOT_SHA256 = (
 #: Snapshot names renamed to the pattern or removed since. Grows; the exempt
 #: set below shrinks with it.
 _RENAMED_SINCE: frozenset[str] = frozenset({
-    # DEC-201 (design/social-per-network): retired into `x_read` and
-    # `x_search`, which meet the pattern.
+    # DEC-201: retired into `x_read` and `x_search`, which meet the pattern.
     "social_fetch",
-    # DEC-237 (design/cognition-loop/70-migration.md §8, migration step 2b):
-    # renamed to the event verbs and `event_search`.
+    # DEC-237: renamed to the event verbs and `event_search`.
     "create_event", "update_event", "rsvp_event", "cancel_event", "list_events",
-    # S3b (design/sandbox-runtime decision 4): retired. A file is made on the
-    # computer and leaves through `computer_export`; a document is published
-    # through `document_publish` (ADR 0020).
+    # Retired. A file is made on the computer and leaves through
+    # `computer_export`; a document is published through `document_publish`
+    # (ADR 0020).
     "make_artifact",
 })
 

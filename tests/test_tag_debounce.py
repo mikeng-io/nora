@@ -221,10 +221,9 @@ def test_a_blocked_tag_is_never_written_down():
 
 
 def test_a_key_with_no_durable_form_stays_in_memory():
-    """`ConversationTarget` is a dataclass, not production's two-tuple. It has
-    no row to be, and coercing one would hydrate a window against a room nobody
-    can name — so it is kept in memory and nowhere else, which is what it
-    already was."""
+    """`ConversationTarget` is a dataclass, not production's two-tuple. It has no row to be,
+    and coercing one would hydrate a window against a room nobody can name — so it is kept
+    in memory and nowhere else."""
     store, tasks, clock = FakeStore(), [], FakeClock()
     d = Debounce(5, clock=clock, store=store, spawn=spawner(tasks))
     assert d.allow(A) is True
@@ -253,8 +252,8 @@ def test_a_spawn_that_refuses_never_refuses_the_tag():
 
 
 def test_without_a_store_nothing_survives_a_restart():
-    """The dormant default, pinned rather than assumed: `store=None` is exactly
-    what shipped before 0056, and every test above this line constructs it."""
+    """The dormant default, pinned rather than assumed: `store=None` is the in-memory-only
+    shape, and every test above this line constructs it."""
     clock = FakeClock()
     assert Debounce(5, clock=clock).allow(KEY) is True
     clock.advance(1)

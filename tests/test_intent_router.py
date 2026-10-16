@@ -1,4 +1,4 @@
-"""Phase 2 intent router: precision-first, ABSTAINING. It must force `place_info`
+"""The intent router: precision-first, ABSTAINING. It must force `place_info`
 ONLY on an explicit opening-hours / still-open surface, and abstain (None) on
 everything else — especially the carpark vacancy case, which correctly wants
 `web_search` and shares a mall name with the hours case ("same place, different
@@ -18,7 +18,7 @@ ABSTAIN = [
     "出街使唔使帶遮呀?",            # weather_alt
     "金鐘太古廣場而家仲有冇車位?",  # carpark — MUST abstain (web_search is correct)
     "銅鑼灣時代廣場泊車貴唔貴呀而家?",  # carpark_alt — MUST abstain
-    "我邊度返工嚟?",                # where_work (fixed by realignment, not the router)
+    "我邊度返工嚟?",                # where_work
     "我間公司個地址係邊嚟?",         # where_work_alt
 ]
 

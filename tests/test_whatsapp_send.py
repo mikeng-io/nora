@@ -1,8 +1,7 @@
 """`nora.platform.whatsapp.send.WhatsAppSender`, against a stand-in for the
 bridge's `/send` and `/send-media` routes — mirroring
 `tests/test_signal_send.py`'s shape. The wire names (`jid`, `text`,
-`caption`, `data_base64`) are the contract's
-(`design/whatsapp-adoption/03-transport-contract.md`)."""
+`caption`, `data_base64`) are the transport contract's."""
 
 import pytest
 from aiohttp import web
@@ -12,9 +11,8 @@ from nora.domain.ports import OutboundAttachment, SendResult
 from nora.platform.whatsapp.send import WhatsAppSender, _bridge_media_kind
 
 # The bridge's OWN closed kind vocabulary for `/send-media`'s `media_type`
-# (`buildMediaPayload`'s `switch`, `deploy/whatsapp-bridge/bridge_helpers.js`;
-# pinned in `design/whatsapp-adoption/03-transport-contract.md`). Anything
-# outside this set is the bridge's 400
+# (`buildMediaPayload`'s `switch`, `deploy/whatsapp-bridge/bridge_helpers.js`).
+# Anything outside this set is the bridge's 400
 # `{"error": "media_type must be image|video|audio|sticker|document"}` —
 # this is the oracle the contract-style tests below check against, kept
 # separate from `nora.platform.whatsapp.send._BRIDGE_MEDIA_KINDS` so a typo
@@ -67,7 +65,7 @@ async def test_a_200_without_a_timestamp_degrades_to_none(aiohttp_server):
 
 
 async def test_a_dm_to_a_jid_not_in_identity_toml_is_refused_without_an_http_call(bridge):
-    """Operator rule 2026-10-05: a 1:1 message goes only to somebody in
+    """A 1:1 message goes only to somebody in
     identity.toml. A sender handed no JIDs refuses every one; one handed some
     refuses the rest."""
     dm = ConversationTarget("whatsapp", "86183254648@s.whatsapp.net", "dm")
@@ -167,15 +165,15 @@ async def test_attachments_route_through_send_media_with_the_caption_on_the_firs
     assert "caption" not in second
 
 
-# ── media_type is the bridge's KIND, never the raw MIME (2026-09-24 bug) ─────
+# ── media_type is the bridge's KIND, never the raw MIME ──────────────────────
 #
-# Reproduced live against the deployed bridge: posting the attachment's MIME
-# type verbatim in `media_type` (e.g. `"image/png"`) got HTTP 400
+# Posting the attachment's MIME type verbatim in `media_type` (e.g.
+# `"image/png"`) gets HTTP 400
 # `{"error": "media_type must be image|video|audio|sticker|document"}` from
 # `handleSendMedia`/`buildMediaPayload` (`deploy/whatsapp-bridge/bridge.js`,
 # `bridge_helpers.js`). These tests pin the exact payload for the MIME types
 # Nora actually produces (`nora/infra/giphy.py`, `nora/agent/tools.py`) plus
-# `document`'s catch-all, and prove the 400 is now impossible for ANY MIME
+# `document`'s catch-all, and prove the 400 is impossible for ANY MIME
 # input — not just the ones under test.
 
 
@@ -226,10 +224,9 @@ async def test_the_exact_payload_for_each_mime_the_bridge_must_accept(
 def test_bridge_media_kind_never_produces_the_400_for_any_mime_input(mime):
     """`_bridge_media_kind` is total and closed over the bridge's own
     vocabulary — the contract-style oracle both sides must agree on
-    (`design/whatsapp-adoption/03-transport-contract.md`,
-    `deploy/whatsapp-bridge/bridge_helpers.js`'s `buildMediaPayload` switch).
-    A result outside this set is exactly what earns the 400 that started
-    this fix, for ANY MIME string, not only the cases enumerated above."""
+    (`deploy/whatsapp-bridge/bridge_helpers.js`'s `buildMediaPayload` switch).
+    A result outside this set earns the 400, for ANY MIME string, not only the
+    cases enumerated above."""
     kind = _bridge_media_kind(mime)
     assert kind in _BRIDGE_VALID_KINDS
     # And never the MIME itself passed through unmapped — the literal bug.

@@ -538,7 +538,7 @@ def test_no_instagram_whoami_is_ever_made(world, bridge_dir, tmp_path):
     assert "instagram" not in world.whoami_sites()
 
 
-# ---- authenticated but disconnected (the 2026-09-29 failure) ----------------
+# ---- authenticated but disconnected ----------------------------------------
 
 DISCONNECTED = '{"session":"authenticated","connected":false,"seq":0}'
 CONNECTED = '{"session":"authenticated","connected":true,"seq":7}'

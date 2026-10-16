@@ -15,7 +15,7 @@ AST is faster than invoking Alembic (no DB, no `Config`, no import of the
 package), and it is exactly the graph Alembic itself walks to answer `heads`.
 
 Positive control: two migrations independently cut from the same parent — the
-exact shape of the incident — must resolve to two heads, not one; built in a
+exact shape of the failure above — must resolve to two heads, not one; built in a
 tmp_path so the assertion is about the DETECTOR, not about this repo's current
 migration tree happening to be healthy.
 """
@@ -28,10 +28,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = ROOT / "nora" / "infra" / "sql" / "migrations" / "versions"
 
-# Measured 2026-09-08: 52 revision files. The floor is "just under", not a
-# round number far below it (CLAUDE.md's own rule for a positive control) — a
-# walk that stopped reading revision modules must fail loud, not report a
-# suspiciously-empty-but-technically-single head set.
+# The floor is "just under" the real revision count, not a round number far
+# below it (CLAUDE.md's own rule for a positive control) — a walk that stopped
+# reading revision modules must fail loud, not report a suspiciously-empty-but-
+# technically-single head set.
 _MIN_REVISIONS = 50
 
 
@@ -121,7 +121,7 @@ def test_the_migration_chain_resolves_to_exactly_one_head() -> None:
 def test_two_branches_cut_from_the_same_parent_are_detected_as_two_heads(
     tmp_path: Path,
 ) -> None:
-    """Positive control: the incident itself, reconstructed. Two sessions
+    """Positive control: the failure itself, reconstructed. Two sessions
     branch off the same revision and each writes `down_revision = <that
     revision>` — exactly what git merges without a conflict. The detector
     must report two heads, not one."""

@@ -1,20 +1,17 @@
-"""One suite, every implementation of `InstagramAccountLookup`
-(design/instagram-adoption/15 §Links, /17 P9, P10).
+"""One suite, every implementation of `InstagramAccountLookup`.
 
-`SocialRouter` resolves a typed handle, or the username in a pasted link,
-through this port, and every router test that drives it through
-`FakeInstagramAccountLookup` is evidence about production only if the fake
-answers the way `InstagramSocialClient` does over the real bridge contract.
-This file is what says it does (AGENTS.md: a fake is bound to its production
-implementation by a shared contract suite).
+`SocialRouter` resolves a typed handle, or the username in a pasted link, through this
+port, and every router test that drives it through `FakeInstagramAccountLookup` is
+evidence about production only if the fake answers the way `InstagramSocialClient` does
+over the real bridge contract. This file is what says it does (AGENTS.md: a fake is bound
+to its production implementation by a shared contract suite).
 
-The production arm talks to a fake instagram-bridge that behaves like the
-real `GET /accounts?username=`: it validates the username the way the Go
-handler does (400), filters its accounts to an exact, ASCII
-case-insensitive match with one leading `@` ignored, and answers the LIST
-shape with 0 or 1 items. Its bodies start from the shared fixtures the Go
-handlers generate (`tests/fixtures/instagram_bridge/accounts_by_username_*`).
-Every name and id is synthetic.
+The production arm talks to a fake instagram-bridge that behaves like the real
+`GET /accounts?username=`: it validates the username the way the Go handler does (400),
+filters its accounts to an exact, ASCII case-insensitive match with one leading `@`
+ignored, and answers the LIST shape with 0 or 1 items. Its bodies start from the shared
+fixtures (`tests/fixtures/instagram_bridge/accounts_by_username_*`) the Go handlers
+generate. Every name and id is synthetic.
 """
 
 from __future__ import annotations

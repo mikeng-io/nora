@@ -4,16 +4,14 @@ choose for itself.
 **The class has a default and the default is the hole.** `call_timeout_seconds`
 mirrors `[relevance_gate] timeout_seconds` the way `transcript_limit` mirrors
 `transcript_rows`, which means a construction that omits it still runs — at
-20s, silently, whatever the operator's file says. That is the shape issue #163
-was reported as from the other side: a number that describes the deployment
-sitting in one place while the code reads another.
+20s, silently, whatever the operator's file says: a number that describes the
+deployment sits in one place while the code reads another.
 
 **Why a bound at all is not a matter of taste here.** The trigger takes the
 room's SLOT before `decide` and walks its due windows serially
 (`nora/app/participation.py`), so an unbounded gate call is not one slow
 window — it is that room refusing tags and every other room's window never
-being judged. 8 of 41 calls in the 20.3h after the shadow flip already ended
-in a timeout; a construction with no ceiling would have ended in nothing.
+being judged.
 
 **DISCOVERED, not listed**, for its sibling's reason
 (`test_the_gate_does_not_form_its_verdict_through_the_sdk.py`): the question is
@@ -39,8 +37,7 @@ def _gate_constructions() -> list[tuple[str, int, frozenset[str]]]:
     """`(module, line, keywords)` for every `RelevanceGate(...)` under `nora/`.
 
     Matched on the TRAILING name so `relevance_gate.RelevanceGate(...)` counts
-    as well as a bare `RelevanceGate(...)` — the sibling gate had to learn that
-    one by falsification.
+    as well as a bare `RelevanceGate(...)`.
     """
     out: list[tuple[str, int, frozenset[str]]] = []
     for path in sorted((ROOT / "nora").rglob("*.py")):

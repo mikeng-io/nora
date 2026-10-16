@@ -1,13 +1,11 @@
-"""One suite, every implementation of `SocialSubjectIndex`
-(design/instagram-adoption/17 P3).
+"""One suite, every implementation of `SocialSubjectIndex`.
 
-The port gained its production implementation, `PersonsSubjectIndex`, and
-with it a second implementation beside `FakeSocialSubjectIndex` — so both are
-held to the same answers here (AGENTS.md: a port never gains a second
-implementation without a shared contract suite). Every router test that
-drives the tier ladder through the fake is only evidence about production if
-the fake answers the way production does, and this file is what says it
-does.
+The port has two implementations, `PersonsSubjectIndex` and
+`FakeSocialSubjectIndex`, so both are held to the same answers here (AGENTS.md:
+a port never gains a second implementation without a shared contract suite).
+Every router test that drives the tier ladder through the fake is only
+evidence about production if the fake answers the way production does, and
+this file is what says it does.
 
 Each arm is built over the SAME world, from its own inputs: `jordan` holds one
 igid and is listed in a room; `sam` holds one igid and is in no room; nobody

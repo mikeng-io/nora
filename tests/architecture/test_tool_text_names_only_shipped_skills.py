@@ -1,10 +1,9 @@
 """A tool's text may point the model at a skill only if that skill ships.
 
-Review of #649 (2026-10-01): `computer_export`'s description and a refusal
-note told her to follow "the document skill", which did not exist yet, so she
-was told to load something she could not find. Every «the <name> skill» in a
-string of `nora/agent/tools.py` (descriptions and result notes alike; comments
-are not strings and do not count) must name a skill in `nora/skills/`.
+Text that tells her to follow a skill that does not exist sends her to load
+something she cannot find. Every «the <name> skill» in a string of
+`nora/agent/tools.py` (descriptions and result notes alike; comments are not
+strings and do not count) must name a skill in `nora/skills/`.
 """
 
 from __future__ import annotations

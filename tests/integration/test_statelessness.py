@@ -19,7 +19,7 @@ async def test_two_tags_produce_two_independent_invocations(harness_factory):
 
 
 async def test_restart_statelessness(harness_factory):
-    """Continuity is SQLite + Honcho only — never agent memory."""
+    """Continuity is the database + Honcho only — never agent memory."""
     h = await harness_factory(script=_script("before"), debounce=0)
     await h.handler.on_event(group_event(body="nora.000 one"))
     await h.drain()
@@ -29,7 +29,7 @@ async def test_restart_statelessness(harness_factory):
     await h2.drain()
 
     assert h2.sink.texts == ["after"]
-    # the second agent still sees the first exchange, because it came from SQLite
+    # the second agent still sees the first exchange, because it came from the database
     transcript = h2.prefills[-1][1]["content"][0]["text"]
     assert "before" in transcript
 

@@ -1,22 +1,19 @@
-"""Step 1b's second gate (design/cognition-loop/70-migration.md §2): a tag
-turn's blocks, rendered from a snapshot at its moment, equal the blocks the
-turn was handed — memory and the Live blocks excepted, the transcript
-rendered through the media join as of T.
+"""The snapshot gate: a tag turn's blocks, rendered from a snapshot at its moment, equal the
+blocks the turn was handed — memory and the Live blocks excepted, the transcript rendered
+through the media join as of T.
 
-THE RECORDING. No Langfuse trace exists offline, so the turn is recorded the
-way its trace records it: the production assembler and `build_prefill`,
-composed as the deployed graph (`obtain`), render the blocks for a tagging
-line at T on a seeded source — that text is what the trace's generation
-carries as its input. `nora.subject.as_of.blocks_of` cuts it into blocks,
-the same function the live procedure runs over a real trace
+THE RECORDING. No Langfuse trace exists offline, so the turn is recorded the way its trace
+records it: the production assembler and `build_prefill`, composed as the deployed graph
+(`obtain`), render the blocks for a tagging line at T on a seeded source — that text is
+what the trace's generation carries as its input. `nora.subject.as_of.blocks_of` cuts it
+into blocks, the same function the live procedure runs over a real trace
 (`scripts/snapshot_block_equivalence.py`).
 
-THEN THE SOURCE MOVES ON, in every tier a tag block reads: a late line lands
-inside the window, an older line is pruned, the photo's comprehension is
-rewritten, the note is revised, the standing and culture are refolded.
-Rendering from the moved source must differ (the positive control: a restore
-that returned today's state could not pass). Rendering from a sandbox
-seeded as of T (`sandbox_as_of`) must not.
+THEN THE SOURCE MOVES ON, in every tier a tag block reads: a late line lands inside the
+window, an older line is pruned, the photo's comprehension is rewritten, the note is
+revised, the standing and culture are refolded. Rendering from the moved source must
+differ (the positive control: a restore that returned today's state could not pass).
+Rendering from a sandbox seeded as of T (`sandbox_as_of`) must not.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
-"""One suite, both implementations of `ToolCallLogStore` (tool-recall-log
-spec §7). Mirrors `tests/contract/test_compute_job_store_contract.py`'s own
-shape — the same real-Postgres `pg_url` fixture, migrated up before the
-SQL store is constructed, parametrized alongside the in-memory fake.
+"""One suite, both implementations of `ToolCallLogStore`. Mirrors
+`tests/contract/test_compute_job_store_contract.py`'s own shape — the same
+real-Postgres `pg_url` fixture, migrated up before the SQL store is
+constructed, parametrized alongside the in-memory fake.
 """
 
 from __future__ import annotations

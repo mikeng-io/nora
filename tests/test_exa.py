@@ -106,7 +106,7 @@ class _Exa:
         url = (body.get("urls") or ["https://hko.gov.hk/x"])[0]
         # Behave like the real host: Exa honours `maxCharacters` and returns a
         # page ALREADY CUT to it. A fake that ignored the field would hide the
-        # truncation-under-reporting bug the live probe found (2026-09-06).
+        # truncation-under-reporting bug.
         cap = (body.get("text") or {}).get("maxCharacters") or 5000
         return web.json_response({
             "requestId": "r2",
@@ -169,16 +169,15 @@ async def test_long_content_is_clamped_and_flagged(exa):
     out = await provider.search(query="q")
     long_result = out["results"][1]
     assert long_result["truncated"] is True
-    # THE BOUND IS ON THE PAGE TEXT, not on the wrapped string. It was on the
-    # whole string until #314, which worked only while the wrapper was a
-    # constant ~30 characters (`<untrusted source="…" untrusted="true">`); the
-    # block now carries its own description and the wrapper is ~250, so the
-    # old assertion measured the description and called it a clamp.
+    # THE BOUND IS ON THE PAGE TEXT, not on the wrapped string. The block
+    # carries its own description, so the wrapper is ~250 characters, not a
+    # constant ~30 (`<untrusted source="…" untrusted="true">`); a bound on the
+    # whole string would measure the description and call it a clamp.
     #
     # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
     # times however many results a search returns. It buys a model that can
     # read what the block is without loading a doctrine file that defines
-    # `untrusted`, which is what #314 measured as the thing that matters.
+    # `untrusted`.
     body = long_result["content"].split(">\n", 1)[1].rsplit("\n<", 1)[0]
     assert len(body) <= 1500
 
@@ -235,11 +234,10 @@ async def test_long_fetched_text_is_clamped_and_flagged(exa):
     _fake, provider = exa
     out = await provider.fetch(url="https://hko.gov.hk/x")
     assert out["truncated"] is True
-    # THE BOUND IS ON THE TEXT, not on the wrapped string. It was on the whole
-    # string until #314, which worked only while the wrapper was a constant
-    # ~30 characters (`<untrusted source="…" untrusted="true">`); the block
-    # carries its own description now and the wrapper is ~250, so the old
-    # assertion was measuring the description and calling it a clamp.
+    # THE BOUND IS ON THE TEXT, not on the wrapped string. The block carries
+    # its own description, so the wrapper is ~250 characters, not a constant
+    # ~30 (`<untrusted source="…" untrusted="true">`); a bound on the whole
+    # string would measure the description and call it a clamp.
     #
     # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
     # times however many results come back. It buys a model that can read what
@@ -370,13 +368,10 @@ async def test_the_search_type_is_sent_and_defaults_to_auto(exa):
 
 
 async def test_a_page_exa_already_cut_is_reported_as_truncated(exa):
-    """The live-probe defect (2026-09-06), and it is this adapter's own making:
-    pushing `maxCharacters` to Exa means the page arrives ALREADY cut, the local
-    clamp then finds nothing to clamp, and `truncated: False` tells the model it
-    holds a whole page when it holds the first N characters of one.
-
-    HKO's front page came back at exactly 3000 of a longer document and was
-    reported complete. Both verbs must read Exa's own cut back."""
+    """Pushing `maxCharacters` to Exa means the page arrives ALREADY cut, the
+    local clamp then finds nothing to clamp, and `truncated: False` would tell
+    the model it holds a whole page when it holds the first N characters of
+    one. Both verbs must read Exa's own cut back."""
     fake, provider = exa
     out = await provider.fetch(url="https://hko.gov.hk/x")
     assert out["status"] == "ok"
@@ -402,9 +397,8 @@ async def test_a_genuinely_short_page_is_not_reported_as_truncated(exa):
 
 # ---- freshness (maxAgeHours) ------------------------------------------------
 #
-# Without `maxAgeHours` Exa serves its cache however old: on 2026-09-25 a store
-# list came back six shops long while the live page had eight, and Nora told a
-# group the shop they had seen did not exist.
+# Without `maxAgeHours` Exa serves its cache however old, so a stale copy of a
+# list can omit items the live page has.
 
 
 async def test_fetch_bounds_the_cache_age_at_24_hours_by_default(exa):

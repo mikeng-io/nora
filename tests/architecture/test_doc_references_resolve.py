@@ -1,53 +1,49 @@
 """Docs cite repo paths inline in backticks — `design/09-decision-index.md`,
-`nora/agent/tools.py` — and nothing checks that the cited path still exists.
-**This actually broke this session**: the ADRs moved from `design/adr/` to
-`docs/adr/` and every backticked citation of the old location went dangling
-silently, because a doc move is not a `grep` anyone runs by habit.
+`nora/agent/tools.py` — and a doc move (such as the ADRs moving from
+`design/adr/` to `docs/adr/`) leaves every backticked citation of the old
+location dangling silently, because a doc move is not a `grep` anyone runs by
+habit. This gate checks that each cited path still exists.
 
 **The one deliberate, large-scale exception is `docs/superpowers/` (and
-`.superpowers/`).** AGENTS.md's reading-order section states outright that the
-superpowers process was removed 2026-09-07 and its ~115 historical citations
-"resolve only in git history" — they are kept ON PURPOSE as provenance for
-*why*, not as live pointers, and rewriting them would erase exactly the
-history the reading order says to go read. This gate exempts that tree by
-name, in both directions: a citation FROM a file under it, and a citation OF a
-path under it from anywhere else.
+`.superpowers/`).** AGENTS.md's reading-order section states that the
+superpowers process was removed and its historical citations "resolve only in
+git history" — they are kept ON PURPOSE as provenance for *why*, not as live
+pointers, and rewriting them would erase the history the reading order says to
+go read. This gate exempts that tree by name, in both directions: a citation
+FROM a file under it, and a citation OF a path under it from anywhere else.
 
-**Conservative on purpose.** CLAUDE.md's own R-29 story is that a noisy gate
-is a disabled gate, and an initial unscoped sweep of every backticked,
-slash-containing token in every tracked `.md` file produced a large majority
-of non-defects before any tightening: version-like numbers and IPs (no
-extension), bare relative mentions inside a file already scoped to that
-subtree (`agent/guards.py` inside a doc under `design/whatsapp-adoption/`),
-and — the largest category — prose that talks ABOUT a deleted or not-yet-built
-file rather than pointing at a live one. Each tightening below is a
-STRUCTURAL signal already present in this repo's own conventions, not a
-per-path guess:
+**Conservative on purpose.** A noisy gate is a disabled gate, and an unscoped
+sweep of every backticked, slash-containing token in every tracked `.md` file
+produces mostly non-defects: version-like numbers and IPs (no extension), bare
+relative mentions inside a file already scoped to that subtree
+(`agent/guards.py` inside a doc under `design/whatsapp-adoption/`), and — the
+largest category — prose that talks ABOUT a deleted or not-yet-built file
+rather than pointing at a live one. Each tightening below is a STRUCTURAL
+signal already present in this repo's own conventions, not a per-path guess:
 
   - Only a reference anchored at a real top-level directory (`nora/`,
     `design/`, `docs/`, `tests/`, `evals/`, `deploy/`, `scripts/`,
-    `.github/`) or a known root file counts as a path
+    `.github/`, `.agents/`) or a known root file counts as a path
     CLAIM. A bare `doctrine/identity.md` is prose shorthand for a concept
     ("her doctrine"), not a root-relative path — `doctrine/` is not itself a
     top-level directory (the real files live under `nora/doctrine/` and
     `nora/dreamer/doctrine/`), so nothing anchored there is checked.
   - A path that is itself under `docs/superpowers/` or `.superpowers/` is
     never checked, from anywhere (the exemption above).
-  - A file whose own first ~30 lines carry a `> **DEPRECATED` /
-    `> **PARTLY DEPRECATED` banner is a self-declared historical record —
-    CLAUDE.md states this is how a deprecated design node is marked — and is
-    skipped whole, the same reasoning as the superpowers exemption one level
-    down from a directory to a single file.
+  - A file whose own first ~30 lines carry a `> **DEPRECATED` banner is a
+    self-declared historical record — CLAUDE.md states this is how a deprecated
+    design node is marked — and is skipped whole, the same reasoning as the
+    superpowers exemption one level down from a directory to a single file. A
+    `PARTLY DEPRECATED` banner does not qualify (see `_DEPRECATED_BANNER`).
   - `design/proposed/` names its own status in its path: a not-yet-built
     design describing a file that does not exist yet is not dangling, it is
     early.
   - A PARAGRAPH (not just the one line the path sits on) containing the word
     "RETIRED", "DEPRECATED", "SUPERSEDED", or "deleted", or the phrase
     "resolves in git history", is read as the same kind of deliberate
-    historical citation the superpowers exemption already covers — measured
-    against `design/09-decision-index.md`, whose own header states that a
-    decision whose subject is deleted is marked exactly this way and never
-    rewritten.
+    historical citation the superpowers exemption already covers —
+    `design/09-decision-index.md`'s own header states that a decision whose
+    subject is deleted is marked exactly this way and never rewritten.
   - A path that is a LITERAL (non-glob) entry in `.gitignore` is a generated
     artifact, not a moved one — `nora/version.json` is built at image time and
     is `unavailable` by design in a source checkout (ARCHITECTURE.md says so
@@ -57,11 +53,9 @@ What survives all of that and still does not resolve is pinned in
 `_KNOWN_DANGLING`, exactly like `_ALLOWED` / `_UNRESOLVABLE` elsewhere in this
 directory: a NEW dangling reference fails the gate, a fixed one must be
 dropped from the pin (checked below), and the pinned list itself is this
-gate's actual finding — real drift in `design/event-abstraction/`,
-`design/discord-music/`, `design/11-recall-and-threading.md`, and elsewhere,
-reported to the operator rather than mass-rewritten (some of it is a design
-brief predating the code it describes, not a broken link to fix by editing
-prose).
+gate's actual finding — drift reported to the operator rather than
+mass-rewritten (some of it is a design brief predating the code it describes,
+not a broken link to fix by editing prose).
 
 Positive control: a synthetic reference to a path that does not exist must be
 flagged; the same reference once the file exists must not be; a reference
@@ -126,13 +120,10 @@ _HISTORICAL_MARKERS = ("RETIRED", "DEPRECATED", "SUPERSEDED", "deleted", "resolv
 
 #: A whole-file historical record. **`PARTLY DEPRECATED` is deliberately NOT
 #: here.** A "partly" banner says one tier or section of the file is history and
-#: the rest still stands — treating it as a whole-file exemption unguarded 20 of
-#: the most-referenced design nodes under `design/dreamer-agent-loop/`,
-#: including the Standing documents. Reproduced 2026-09-08: a dangling reference
-#: injected into `26-standing.md`'s live Standing section, which its own banner
-#: calls unaffected, did not fail this gate. Paragraph-level markers
-#: (`_HISTORICAL_MARKERS`) carry the partly-deprecated case instead, which is
-#: the right grain: the banner scopes itself in prose, so the check should too.
+#: the rest still stands, so a whole-file exemption would leave the live
+#: sections unguarded. Paragraph-level markers (`_HISTORICAL_MARKERS`) carry the
+#: partly-deprecated case instead, which is the right grain: the banner scopes
+#: itself in prose, so the check should too.
 _DEPRECATED_BANNER = re.compile(r">\s*\*\*DEPRECATED")
 
 _LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
@@ -151,15 +142,13 @@ def _paragraphs(markdown: str) -> list[tuple[int, list[str]]]:
     and each TABLE ROW on its own.
 
     A table row is one record, not a sentence of a paragraph. Treated as one
-    blank-line-delimited block, a whole table was one «paragraph», so a
-    historical marker on ONE row exempted every other row in it: marking
-    DEC-145 deprecated (2026-09-24) silently unguarded R-83's and DEC-146's
-    live references in `design/09-decision-index.md`.
+    blank-line-delimited block, a whole table would be one «paragraph», and a
+    historical marker on ONE row would exempt every other row in it.
 
-    A LIST ITEM starts a new paragraph for the same reason (2026-09-24): an
-    unbroken bulleted list was one block, so "deleted" in one bullet of
-    AGENTS.md's "Never" list exempted all 84 lines of it. Continuation lines
-    (indented, not themselves a bullet) stay with their item."""
+    A LIST ITEM starts a new paragraph for the same reason: an unbroken
+    bulleted list would be one block, and "deleted" in one bullet would exempt
+    the whole list. Continuation lines (indented, not themselves a bullet) stay
+    with their item."""
     paragraphs: list[tuple[int, list[str]]] = []
     current: list[str] = []
     start = 1
@@ -293,23 +282,15 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "accepted, so only its Status line may change; its Context text keeps "
         "naming the file as it was. checked 2026-10-08 (`git log -- deploy/drop`)"
     ),
-    # --- hidden by a NEIGHBOURING table row until 2026-09-24, TRIAGED (#422) ---
+    # --- found once table rows were split out of their table ---
     #
-    # A table was one «paragraph» to this gate, so one row carrying a
-    # historical marker exempted every row in its table. Splitting rows out
-    # (`_paragraphs`) surfaced these 15; each was checked with `git log
-    # --follow` / `git log -S` for whether the code moved, was renamed, or
-    # was deleted. Fourteen resolved (a `deleted 2026-...` reference note
-    # added to the ROW that cited them, never a neighbour — the
-    # decision-index header says a row is MARKED, not rewritten — so those
-    # rows now carry their own `_HISTORICAL_MARKERS` hit and are dropped from
-    # this dict); the last five of those fourteen sat in DEC-76 and DEC-84,
-    # left pinned by #494 while `mikeng-io/governance-claims-482` was editing
-    # those same rows concurrently, and triaged the same way once that branch
-    # merged (#497, 2026-09-25). `nora/agent/disclosure.py` (DEC-124) stays
-    # pinned: it was never built — DEC-124's own row names it as a
-    # prospective housekeeping move, not a path that ever existed, so no
-    # "deleted" marker fits it.
+    # `_paragraphs` treats each table row as its own record, so a marker on one
+    # row no longer exempts its neighbours. A row whose cited code was deleted
+    # carries its own `_HISTORICAL_MARKERS` hit (the decision-index header says a
+    # row is MARKED, not rewritten) and needs no entry here.
+    # `nora/agent/disclosure.py` (DEC-124) stays pinned: it was never built —
+    # DEC-124's own row names it as a prospective housekeeping move, not a path
+    # that ever existed, so no "deleted" marker fits it.
     ("design/09-decision-index.md", "nora/agent/disclosure.py"): (
         "never built; DEC-124's row names `nora/agent/disclosure.py` "
         "prospectively — 'a housekeeping step for whoever builds the first "
@@ -326,11 +307,10 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ): (
         "planned file, created by P10 (Instagram link parsing); drop this entry in that PR"
     ),
-    # --- hidden by a NEIGHBOURING list item until 2026-09-24 ---
+    # --- found once list items were split out of their list ---
     #
-    # A bulleted list was one «paragraph», so a marker in one bullet exempted
-    # every bullet in the list. Splitting items out (`_paragraphs`) surfaced
-    # these; each is a design record naming the code of its day.
+    # `_paragraphs` treats each list item as its own record; each of these is a
+    # design record naming the code of its day.
     ("design/evaluation/10-the-scenario-map.md", "evals/rebuilt/__main__.py"): (
         "the old CLI, recorded as deleted in the same bullet (capitalized "
         "'Deleted.', which the lowercase marker does not match)"
@@ -344,14 +324,13 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ),
     # --- the self-reference bundle, DEC-193 ---
     #
-    # The ingest-script pin was dropped when DEC-193 was built (2026-09-23,
-    # `scripts/ingest_self_asset.py` exists). What remains is history.
+    # `scripts/ingest_self_asset.py` exists. What remains is history.
     ("design/self-reference/00-overview.md", "design/proposed/31-self-reference.md"): (
         "the single-file draft this bundle replaced; deleted when it was "
         "restructured into design/self-reference/, and the line records that "
         "history (see _index.yaml `revision`)"
     ),
-    # --- the one-path rebuild, 2026-09-21 (design/evaluation/11 §1.3) ---
+    # --- the one-path rebuild ---
     #
     # The old harness `evals/rebuilt/runner.py` and the pre-port corpus copies
     # under `evals/cases/` and `evals/adversarial/` are deleted; the live
@@ -380,7 +359,7 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
              "evals/cases/participation/participation.yaml", "participation.yaml"),
         )
     },
-    # --- the old eval layer, deleted 2026-09-18 (design/evaluation Step 5) ---
+    # --- the old eval layer ---
     #
     # These are HISTORY, not broken links: each describes what was true when it
     # was written, and `evals/run.py` was the CLI at the time. Pinned rather
@@ -388,11 +367,9 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # names the code of its day is not drift, and mass-rewriting prose to chase
     # a delete loses the record of what the delete removed.
     #
-    # The OPERATOR-facing docs were fixed instead, because those tell somebody
-    # to run a command: `docs/runbook.md`, `docs/eval-sop.md`,
-    # `docs/CONVENTIONS.md` and the `make eval-*` targets now name
-    # `python -m evals` (2026-09-20, `10-the-scenario-map.md` §15/16 — the
-    # corpus port superseded `python -m evals.rebuilt` in turn).
+    # The OPERATOR-facing docs (`docs/runbook.md`, `docs/eval-sop.md`,
+    # `docs/CONVENTIONS.md`, the `make eval-*` targets) name `python -m evals`,
+    # because those tell somebody to run a command.
     **{
         (doc, "evals/run.py"): (
             "the old eval CLI, deleted 2026-09-18; this line records what was "
@@ -407,9 +384,8 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
             "design/evaluation/06-first-full-run.md",
         )
     },
-    # The eval-layer modules RE-HOMED into `tests/` on 2026-09-18 — they were
-    # in `nora/` and `evals/` only because of an import contract that no longer
-    # binds anything. These references name where the code WAS.
+    # The eval-layer modules live in `tests/`; these references name where the
+    # code was before.
     ("ARCHITECTURE.md", "evals/harness.py"): (
         "re-homed into `tests/` 2026-09-18; the reference records where "
         "it lived (design/evaluation Step 5)"
@@ -611,9 +587,7 @@ def test_every_doc_reference_resolves_or_is_a_known_finding() -> None:
 
     # Positive control: a walk that stopped matching anything would report an
     # empty offender set too — indistinguishable from "checked and clean"
-    # without this. Measured 2026-09-08: ~420 root-anchored path references
-    # across the tracked docs (after the doctrine-prefix / superpowers /
-    # design-proposed / gitignore tightening above).
+    # without this.
     assert total_candidates >= 350, (
         f"only matched {total_candidates} root-anchored doc path references — "
         "the extraction likely stopped matching; fix candidate_references "
@@ -673,11 +647,10 @@ def test_a_deprecated_paragraph_suppresses_the_reference_it_contains() -> None:
 
 
 def test_a_deprecated_table_row_does_not_exempt_the_live_row_beside_it() -> None:
-    """A table row is its own record (2026-09-24). While a whole table was
-    one «paragraph», marking DEC-145 deprecated silently unguarded R-83's and
-    DEC-146's live references in the decision index. Two adjacent rows: the
-    deprecated one's path is suppressed, the live one's is still reported —
-    each assertion is the other's control."""
+    """A table row is its own record: a historical marker on one row must not
+    unguard its neighbours' live references in the decision index. Two adjacent
+    rows: the deprecated one's path is suppressed, the live one's is still
+    reported — each assertion is the other's control."""
     markdown = (
         "| id | decision |\n"
         "|---|---|\n"
@@ -692,12 +665,10 @@ def test_a_deprecated_table_row_does_not_exempt_the_live_row_beside_it() -> None
 
 
 def test_a_historical_list_item_does_not_exempt_the_live_item_beside_it() -> None:
-    """A list item is its own record, the same way a table row is. While an
-    unbroken bulleted list was one «paragraph», the word "deleted" in one
-    bullet of AGENTS.md's "Never" list (about GC-tracked objects) exempted the
-    whole 84-line list, and a citation of a test deleted 2026-09-16 sat in it
-    unflagged for eight days (found 2026-09-24). Two adjacent bullets: the
-    historical one's path is suppressed, the live one's is still reported."""
+    """A list item is its own record, the same way a table row is: the word
+    "deleted" in one bullet must not exempt the rest of an unbroken bulleted
+    list. Two adjacent bullets: the historical one's path is suppressed, the
+    live one's is still reported."""
     markdown = (
         "- Never trust an attribute that was deleted: "
         "`nora/historical_item_module_for_this_test.py`.\n"

@@ -142,10 +142,10 @@ async def test_honcho_being_down_does_not_prevent_startup(env):
 
 
 async def test_a_broken_migration_refuses_to_start(env, monkeypatch):
-    """`run_migrations` used to be the only fatal startup step not wrapped in
-    `StartupError` handling: an Alembic failure exited with a raw traceback
-    instead of `startup failed: ...`. A DATABASE_URL pointing nowhere reachable
-    is a reliable way to make `command.upgrade` fail."""
+    """`run_migrations` is wrapped in `StartupError` handling: an Alembic failure
+    exits with `startup failed: ...`, not a raw traceback. A DATABASE_URL
+    pointing nowhere reachable is a reliable way to make `command.upgrade`
+    fail."""
     monkeypatch.setenv(
         "DATABASE_URL", "postgresql+asyncpg://bad:bad@127.0.0.1:1/nope"
     )
@@ -173,11 +173,9 @@ async def test_shutdown_closes_the_omniroute_client(env):
 
 async def test_the_prune_sweep_actually_prunes(pg_url, monkeypatch):
     """Proves `runtime.prune_loop` — the sweep `App.run` wires in via
-    `nora.app.runtime` (moved there from `__main__._prune_loop` in Task 7,
-    wired into `App.run` in Task 8) — runs and calls `store.prune_all`, not
-    merely that the coroutine exists. `append` stopped pruning inline in
-    Task 4, so this sweep is the only thing left that enforces the retention
-    window in production."""
+    `nora.app.runtime` — runs and calls `store.prune_all`, not merely that the
+    coroutine exists. `append` does not prune inline, so this sweep is the only
+    thing that enforces the retention window in production."""
     import asyncio
     import contextlib
 
@@ -200,11 +198,8 @@ async def test_the_prune_sweep_actually_prunes(pg_url, monkeypatch):
         task = asyncio.create_task(
             prune_loop(store, metrics, interval_seconds=main_module.PRUNE_INTERVAL_SECONDS)
         )
-        # Poll the CONDITION (the row count actually dropping), not the clock.
-        # The previous form slept a fixed 0.1s over a 0.01s sweep interval —
-        # true on an idle loop, false on a loaded one: observed failing
-        # (`assert 10 == 3`) 1 run in 3 on an otherwise unchanged tree under a
-        # full serial `make gate` against a real Postgres container (#180).
+        # Poll the CONDITION (the row count actually dropping), not the clock:
+        # a fixed sleep is true on an idle loop and false on a loaded one.
         # The timeout is a DEADLOCK GUARD, not a measurement.
         try:
             deadline = asyncio.get_running_loop().time() + 5.0
@@ -308,7 +303,7 @@ async def test_the_retention_sweep_is_spawned_when_the_flag_is_on(env, monkeypat
 
 async def test_the_memory_index_drain_is_spawned_at_the_configured_interval(env, monkeypatch):
     """`App.run` spawns `memory_drain_loop` with `[memory_index]
-    drain_seconds` (60-build-step-3 S4): the queue a failed projection fills
+    drain_seconds`: the queue a failed projection fills
     is drained by the nora process, not only by analytics."""
     import asyncio
     import contextlib
@@ -385,14 +380,10 @@ async def _run_briefly_and_record_dream_wiring(env, monkeypatch) -> list[dict]:
 async def test_the_dream_loop_is_not_spawned_when_the_dreamer_is_off(env, monkeypatch):
     """A new subsystem does not switch itself on.
 
-    **This used to assert BOTH `[dreamer]` and `[language]`, and the second
-    half was the defect written down as a requirement.** The clock belongs to
-    the runtime; a tier flag never selected whether it ran. Asserting the tier
-    flag made the coupling look intended, and it is why `[dreamer] enabled =
-    true` could ship inert with a green suite behind it — the runtime was
-    merged as "on", never ticked for five days, and nothing here noticed
-    because nothing here asked. `[language]` is deleted; the condition is one
-    flag and the assertion names one."""
+    The clock belongs to the runtime; a tier flag never selects whether it
+    runs. The condition is one flag and the assertion names one: asserting a
+    tier flag too would make the coupling look intended, and let `[dreamer]
+    enabled = true` ship inert with a green suite behind it."""
     import tomllib
 
     cfg = tomllib.loads(env.read_text())
@@ -408,17 +399,16 @@ async def test_the_dream_loop_is_not_spawned_when_the_dreamer_is_off(env, monkey
 async def test_the_dream_loop_is_spawned_by_the_dreamer_flag_alone(
     env, monkeypatch,
 ):
-    """**The case that was silently false, and the reason this branch exists.**
+    """**The dreamer flag alone spawns the clock.**
 
-    `[dreamer] enabled = true` is the live production configuration, and until
-    2026-08-27 it spawned nothing: the runtime, its adaptors, budgets and
-    instructions were all built and the clock was gated on a TIER's flag. The
-    only evidence was one ERROR line in `nora.log`, and the last real `dream
-    tick` was five days old.
+    `[dreamer] enabled = true` is the live production configuration and must
+    spawn the clock: the runtime, its adaptors, budgets and instructions are
+    built, and the clock is not gated on a TIER's flag, which would leave one
+    ERROR line in `nora.log` as the only evidence.
 
-    The clock's own five numbers moved into `[dreamer]` with the language
-    tier's deletion, so this also asserts they reach the spawn — a flag that
-    starts a loop on numbers from nowhere is the same defect one level down."""
+    The clock's own numbers live in `[dreamer]`, so this also asserts they reach
+    the spawn — a flag that starts a loop on numbers from nowhere is the same
+    defect one level down."""
     import tomllib
 
     import tomli_w
@@ -446,9 +436,8 @@ async def test_the_dream_loop_is_spawned_by_the_dreamer_flag_alone(
 # the right class while reading the wrong env var is a silent way to answer
 # `unavailable` forever.
 #
-# They used to observe the client through the language tier's
-# `LexemeObserver._search`. That tier is deleted, so they observe it where it
-# still lands: the `ToolRegistry` the reply path builds `web_search` from.
+# They observe the client where it lands: the `ToolRegistry` the reply path
+# builds `web_search` from.
 
 
 @pytest.mark.parametrize(
@@ -481,7 +470,7 @@ async def test_build_app_builds_the_search_backend_the_config_names(
 async def test_build_app_leaves_search_unwired_when_the_selected_backend_is_keyless(
     env, monkeypatch,
 ):
-    """The control, and the one that would have shipped broken: Tavily's key is
+    """The control: Tavily's key is
     present and Exa's is not, so a branch that resolved the key before reading
     `provider` would build a working-looking Exa client on Tavily's credential
     and 401 on every call. Off means `None`, and both tools answer
@@ -538,12 +527,12 @@ async def test_app_run_spawns_the_lazy_adoption_backfill(env, monkeypatch):
 
 
 async def test_app_run_starts_a_listener_for_every_adapter_not_just_signal(env, monkeypatch):
-    """`App.run` used to build a single-element `SupervisedAdapter` list out of
-    `deps.adapter`, so a second enabled platform was built and identity-resolved
-    at startup and then never had `listen()` called — present in `/health`, deaf
-    in practice. `runtime.start_adapters`/`supervise_adapter` were already
-    generic over any number of adapters; this pins the call site to the whole
-    registry.
+    """`App.run` supervises EVERY adapter in the registry, not a single-element
+    `SupervisedAdapter` list built from `deps.adapter`: a second enabled
+    platform is built and identity-resolved at startup, and must also have
+    `listen()` called or it is present in `/health` but deaf in practice.
+    `runtime.start_adapters`/`supervise_adapter` are generic over any number of
+    adapters; this pins the call site to the whole registry.
 
     A second adapter is inserted into the live registry rather than enabled
     through config, because building a real `DiscordAdapter` would need a bot
@@ -596,7 +585,7 @@ async def test_app_run_starts_a_listener_for_every_adapter_not_just_signal(env, 
         await app.shutdown()
 
 
-# ---- the restart floor (the Cognition cut-over's PR-7) -----------------------
+# ---- the restart floor -------------------------------------------------------
 
 async def _run_briefly(app, *, until, polls: int = 100) -> None:
     import asyncio

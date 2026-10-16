@@ -1,4 +1,3 @@
-# tests/test_events_service.py
 from __future__ import annotations
 
 import uuid
@@ -105,7 +104,7 @@ async def test_update_event_resolves_venue_once_via_route_source():
     assert updated.venue_place_id == "ChIJfake123"
     assert updated.venue_rating == 4.5
     assert updated.venue_resolved_at == NOW
-    # `maps_url` is synthesized by GatheringService itself (Fix 3) — the route
+    # `maps_url` is synthesized by GatheringService itself — the route
     # source never returns it — from the RESOLVED name, url-quoted.
     assert updated.venue_maps_url == (
         "https://www.google.com/maps/search/?api=1&query=Soi%2029%20Thai%20Kitchen"
@@ -195,7 +194,7 @@ async def test_suggest_venue_ranks_by_mention_and_fails_closed_when_empty():
     assert out.status == "ok"
     assert out.candidates[0].venue_text == "Soi 29"
     assert out.candidates[0].source == "mention_frequency"
-    assert out.route_hints is None  # reserved, always None — spec §5.1
+    assert out.route_hints is None  # reserved, always None
 
 
 async def test_suggest_venue_nothing_found_when_every_person_is_empty():
@@ -228,7 +227,7 @@ async def test_create_event_raises_when_two_open_events_already_exist():
     # Directly insert a second PROPOSED event, bypassing the doctrine check
     # the `create_event` TOOL is expected to have already run — this
     # method's own raise is a last-resort backstop, not the primary
-    # mechanism (spec §3.1).
+    # mechanism.
     second = Gathering(
         id=uuid.uuid4(),
         conversation_id="signal:group-1",
@@ -258,7 +257,7 @@ async def test_create_event_raises_when_two_open_events_already_exist():
         )
 
 
-# ── Fix I1: past PROPOSED events must not lock out create_event forever ────
+# ── past PROPOSED events must not lock out create_event forever ─────────────
 
 
 def _proposed_event(*, title: str, when: datetime | None) -> Gathering:
@@ -318,7 +317,7 @@ async def test_create_event_still_refuses_on_two_future_open_events():
         )
 
 
-# ── Fix I2: updating/RSVPing a CANCELLED event must refuse, not re-arm ─────
+# ── updating/RSVPing a CANCELLED event must refuse, not re-arm ──────────────
 
 
 async def test_update_event_refuses_on_a_cancelled_event():
@@ -363,9 +362,9 @@ async def test_rsvp_refuses_on_a_cancelled_event():
         )
 
 
-# ── B1: EVERY terminal status refuses, not just CANCELLED
-# (40-register.md §3: "Any status before `happened` may be revised... No
-# further statuses" once one is reached). Parametrized over the domain's
+# ── EVERY terminal status refuses, not just CANCELLED
+# (any status before `happened` may be revised; no further statuses once a
+# terminal one is reached). Parametrized over the domain's
 # OWN `TERMINAL_STATUSES` — never a hand-copied list here — so a status
 # later added to the enum is covered by construction, not by remembering to
 # update this file too. ─────────────────────────────────────────────────
@@ -417,7 +416,7 @@ async def test_rsvp_refuses_on_every_terminal_status(terminal):
     assert exc_info.value.status is terminal
 
 
-# ── Fix I5: event ids are conversation-scoped on every write verb ──────────
+# ── event ids are conversation-scoped on every write verb ───────────────────
 
 
 async def test_update_event_refuses_a_mismatched_conversation_id():
@@ -485,13 +484,13 @@ async def test_suggest_venue_refuses_a_mismatched_conversation_id():
         )
 
 
-# ── Fix I4: the FULL R-28 screen-call-screen sandwich, not just the half ───
+# ── the FULL R-28 screen-call-screen sandwich, not just the half ────────────
 
 
 async def test_venue_resolution_refuses_a_query_naming_a_known_person():
     """«Tyler's place» must not reach Google as a venue query — the same
     person-name half of R-28 `place_info` already enforces, now shared via
-    `nora.agent.security.screen_and_resolve_place` (Fix I4)."""
+    `nora.agent.security.screen_and_resolve_place`."""
     svc = _service()
     ev = await svc.create_event(
         conversation_id="signal:group-1",
@@ -512,11 +511,10 @@ async def test_venue_resolution_refuses_a_query_naming_a_known_person():
 
 
 async def test_venue_resolution_strips_a_google_returned_name_that_trips_the_screen():
-    """Fix I4's return-path screen: a Google-returned `name`/`address` that
-    itself trips `scan_identifiers`/`looks_like_coordinate` must be
-    stripped before it is persisted — `_resolve_venue` used to write
-    Google's raw fields straight into `venue_name`/`venue_address` with no
-    screen at all."""
+    """The return-path screen: a Google-returned `name`/`address` that itself
+    trips `scan_identifiers`/`looks_like_coordinate` must be stripped before it
+    is persisted, so `_resolve_venue` never writes Google's raw fields into
+    `venue_name`/`venue_address` unscreened."""
     route_source = _FakeRouteSource(
         {
             "status": "ok",
@@ -629,8 +627,8 @@ async def test_get_event_for_person_returns_none_for_unknown_event():
     assert out is None
 
 
-# ── B3(a): search_events finds a legacy unit_id="" event through the
-# unit's own rooms, and never another unit's ────────────────────────────
+# ── search_events finds a legacy unit_id="" event through the unit's own
+# rooms, and never another unit's ───────────────────────────────────────────
 
 
 def _legacy_event(*, conversation_id: str, title: str) -> Gathering:

@@ -1,13 +1,13 @@
 """`SummonsLedger` has two implementations, so it gets one suite both pass.
 
 The property the table exists for is that a public summons is answered at
-most once (design/instagram-adoption/19): claimed on the summons CARD's
-message id before anything is read, and of two concurrent claims on one card
-exactly one wins; the comment the card resolves to is bound once and stays
-unique across rows, so two cards for one comment get one answer. The rest is
-what the consumer reads back: `awaiting_flush` (a LIVE `staged` row, never a
-dry-run one), and the boot sweep, which turns a row a dead process left
-`claimed` into `failed` and never into a retry.
+most once: claimed on the summons CARD's message id before anything is read,
+and of two concurrent claims on one card exactly one wins; the comment the card
+resolves to is bound once and stays unique across rows, so two cards for one
+comment get one answer. The rest is what the consumer reads back:
+`awaiting_flush` (a LIVE `staged` row, never a dry-run one), and the boot
+sweep, which turns a row a dead process left `claimed` into `failed` and never
+into a retry.
 
 Database scoped to the MODULE and truncated between tests (AGENTS.md).
 """
@@ -133,7 +133,7 @@ async def test_only_a_claimed_row_can_be_bound(ledger):
 
 async def test_every_state_in_the_vocabulary_can_be_written(ledger):
     """The SQL CHECK and `SUMMONS_STATES` agree: each final state is
-    writable (the new `unresolved` among them)."""
+    writable (`unresolved` among them)."""
     for state in SUMMONS_STATES:
         if state in OPEN_STATES:
             continue

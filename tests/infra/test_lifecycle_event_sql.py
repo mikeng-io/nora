@@ -1,5 +1,5 @@
 """The lifecycle audit's SQL runs against the real `computer_events` table
-(design/sandbox-runtime §12, DEC-262).
+(DEC-262).
 
 `deploy/computer/lifecycle_event.py` writes the rows `nora-computer` records
 (create, recreate, computerd start, token rotation, policy-log read, destroy,

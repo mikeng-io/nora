@@ -1,23 +1,20 @@
-"""Every chat platform in the id vocabulary must round-trip through the
-persons FILE parser — derived from the vocabulary, not hand-listed.
+"""Every chat platform in the id vocabulary must round-trip through the persons FILE parser —
+derived from the vocabulary, not hand-listed.
 
-WHY THIS EXISTS. Instagram shipped with its kinds declared in
-`nora.domain.identity._ID_KINDS` and its field missing from
-`nora.persons_file`'s model. Both halves passed their own tests, the whole
-8529-test suite was green, and the defect surfaced as **Nora crash-looping at
-startup in production** the first time a real `identity.toml` carried an
-`[[persons.<id>.instagram]]` block: `Extra inputs are not permitted`. Signal,
-Discord and WhatsApp went down with her, because a person-mapping error is
-fatal for every platform at once.
+WHY THIS EXISTS. A platform whose kinds are declared in `nora.domain.identity._ID_KINDS`
+but whose field is missing from `nora.persons_file`'s model passes both halves' own tests,
+and surfaces as **Nora crash-looping at startup in production** the first time a real
+`identity.toml` carries that platform's `[[persons.<id>.<platform>]]` block:
+`Extra inputs are not permitted`. Every platform goes down with her, because a
+person-mapping error is fatal for every platform at once.
 
-Nothing caught it because nothing ever fed a real block to the parser.
-`identity.example.toml` documents every platform with every block **commented
-out**, so a gate over that file reads zero accounts for zero platforms and
-passes on an empty set — which is exactly what it did.
+Nothing else feeds a real block to the parser. `identity.example.toml` documents every
+platform with every block **commented out**, so a gate over that file reads zero accounts
+for zero platforms and passes on an empty set.
 
-The list is DERIVED from `_ID_KINDS` so that adding a platform to the
-vocabulary and forgetting the file model is caught here rather than by an
-operator watching a container restart.
+The list is DERIVED from `_ID_KINDS` so that adding a platform to the vocabulary and
+forgetting the file model is caught here rather than by an operator watching a container
+restart.
 """
 
 from __future__ import annotations

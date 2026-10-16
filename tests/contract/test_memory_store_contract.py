@@ -1,14 +1,13 @@
 """The `MemoryStore` contract — one behavioural suite BOTH implementations pass
 (CLAUDE.md: a port never gains a second implementation, including a test fake,
-without a shared contract suite; council 2026-08-07).
+without a shared contract suite).
 
-This is the write path Honcho v2 (design/24) rides, and the ONE write a backfill
-cannot undo — Honcho keeps derived conclusions, not the source text. Its fakes
-were the exact mechanism by which three dead Honcho endpoints shipped invisibly
-(`ensure_session` POSTing to a LIST endpoint, the dead `peer_card`, `parse_event`
-requiring `method`): each hid because a fake invented a shape no live probe
-checked. This suite binds `FakeMemoryStore` to `HonchoClient`'s real behaviour so
-that class of drift turns a test red.
+This is the write path Honcho rides, and the ONE write a backfill cannot undo
+— Honcho keeps derived conclusions, not the source text. A fake that invents
+a shape no live probe checked hides a dead endpoint (`ensure_session` POSTing
+to a LIST endpoint, the dead `peer_card`, `parse_event` requiring `method`).
+This suite binds `FakeMemoryStore` to `HonchoClient`'s real behaviour so that
+class of drift turns a test red.
 
 The two are driven through a small adapter each exposes: the store, a `landed()`
 view of what was fed as `(peer_id, text, conversation_id)`, and a `break_it()`
@@ -133,8 +132,7 @@ async def test_feed_lands_the_message_under_the_given_peer(adapter):
 
 async def test_feed_returns_false_when_it_cannot_land_and_never_raises(adapter):
     """Best-effort by contract (the caller counts a failure and moves on). The
-    Honcho failure is a session that cannot be created — the exact shape that
-    once returned False without posting for the deployment's whole life."""
+    Honcho failure is a session that cannot be created."""
     adapter.break_it()
     result = await adapter.store.feed(peer_id="miles", text="x", conversation_id="g1")
     assert result is False
@@ -143,8 +141,8 @@ async def test_feed_returns_false_when_it_cannot_land_and_never_raises(adapter):
 
 async def test_feed_and_ensure_peer_are_keyword_only(adapter):
     """The port is keyword-only; a positional call must fail loudly, not bind the
-    wrong argument. `tests/fakes.py`'s older fake drifted positional and hid it —
-    this pins both implementations to the port's shape."""
+    wrong argument. A fake that drifted positional would hide it — this pins
+    both implementations to the port's shape."""
     with pytest.raises(TypeError):
         await adapter.store.feed("miles", "x", "g1")           # type: ignore[misc]
     with pytest.raises(TypeError):
@@ -162,7 +160,7 @@ async def test_metadata_rides_the_message_without_touching_the_text(adapter):
 
 
 async def test_chat_returns_the_reasoned_string_when_there_is_something_to_say(adapter):
-    """The dialectic verb, now on the port (design/24 §4): both implementations
+    """The dialectic verb: both implementations
     return a non-empty string when the store can reason, so `ask_memory` gets an
     answer. Without this in the shared suite, `chat` joins `representation` as a
     port method whose fake behaviour is bound to nothing real — the drift class
@@ -182,7 +180,7 @@ async def test_chat_is_none_when_there_is_nothing_to_say(adapter):
 
 
 async def test_search_returns_peer_content_pairs_and_is_empty_when_nothing_matches(adapter):
-    """The raw-message search verb (design/24 §S.3), on the port so both backends
+    """The raw-message search verb, on the port so both backends
     agree: seeded messages come back as (peer_id, content) pairs, and an unseeded
     search is empty (never None, never a raised error) — the caller's roster
     filter and R-18 screen run on top of that.
@@ -205,16 +203,16 @@ async def test_a_search_that_could_not_run_is_distinguishable_from_one_that_foun
     """The bit that cannot be recovered downstream, pinned on the PORT so a
     backend cannot quietly drop it.
 
-    `search` used to return a bare list and answer `[]` for a transport failure,
-    a >=400, a malformed body AND a genuine miss. `search_memory` reported all
-    four as `nothing_found` — «I couldn't find anything like that in what's been
-    said here» — and counted it `ok`. An ERROR reading as a PASS, which R-27
-    exists to forbid, invisible because "nothing matched" is a true-sounding
-    sentence for a search nobody ran.
+    `search` answers `[]` for a genuine miss only; a transport failure, a >=400
+    and a malformed body must be distinguishable from it. Otherwise
+    `search_memory` would report all four as `nothing_found` — «I couldn't find
+    anything like that in what's been said here» — and count it `ok`. An ERROR
+    reading as a PASS, which R-27 exists to forbid, invisible because "nothing
+    matched" is a true-sounding sentence for a search nobody ran.
 
-    Putting an `except` in the CALLER did not fix it either: the adapter catches
-    everything itself, so that handler was unreachable code that read as a fix
-    (external review, 2026-08-11). The signal has to come from the backend."""
+    An `except` in the CALLER cannot fix it: the adapter catches everything
+    itself, so that handler would be unreachable code that reads as a fix. The
+    signal has to come from the backend."""
     adapter.seed_message("miles", "打邊爐 tonight?")
     adapter.break_search()
 

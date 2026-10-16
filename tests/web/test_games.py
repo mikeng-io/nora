@@ -5,12 +5,11 @@ way). Reverting the never-raises-a-raw-exception rule or the non-200/
 non-JSON handling turns a test here red — the fake answers wrong the way
 the real host would.
 
-`SERVERS_BODY` below matches the real shape captured live from
-`https://orion.tail0a1b2c3d.ts.net/pulse/api/v1/servers` on 2026-08-18 (the
-full `ContainerMetricsSchema` cgroup fields `app/src/lib/api/games.ts`
-validates client-side), after `PULSE_API_TOKEN` — bearer-authed, and
-distinct from the LLM tool-calling path's `PULSE_MCP_TOKEN` — was found to
-already be present in `.env`.
+`SERVERS_BODY` below matches the real shape of Pulse's
+`/pulse/api/v1/servers` (the full `ContainerMetricsSchema` cgroup fields
+`app/src/lib/api/games.ts` validates client-side). `PULSE_API_TOKEN` is
+bearer-authed, and distinct from the LLM tool-calling path's
+`PULSE_MCP_TOKEN`.
 """
 
 from __future__ import annotations

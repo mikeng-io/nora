@@ -1,5 +1,5 @@
 """`Life360Client` — auth, token cache, and the 403/challenge discipline
-(design/19 §4, DEC-55).
+(DEC-55).
 
 Every scenario runs offline against a local `aiohttp` server that behaves like
 Life360 — INCLUDING the shapes that make this hard (CLAUDE.md: never a fake that
@@ -10,12 +10,12 @@ answers every request the same way):
   token endpoint 405s on a GET and the members endpoint 405s on a POST, like the
   real host, and an unknown path 404s;
 * the token endpoint REQUIRES the Basic client credential and the app
-  User-Agent (the study's missing ingredient) — omit either and it 403s, exactly
-  the way the real endpoint refuses a client that does not look like the app;
+  User-Agent — omit either and it 403s, exactly the way the real endpoint
+  refuses a client that does not look like the app;
 * the members endpoint can return the 403 (ban signal) and the non-JSON
-  challenge PAGE the study named as the app-update breakage;
+  challenge PAGE an app-update breakage produces;
 * the server records every request, so a test can prove the client does NOT
-  re-auth-loop — the ban risk (§4.1).
+  re-auth-loop — the ban risk.
 
 The load-bearing test is `test_a_persistent_403_backs_off_and_never_loops`:
 reverting the one-re-auth-per-read discipline turns it red.
@@ -99,12 +99,11 @@ class _Life360:
         self.requests.append("token")
         auth = request.headers.get("Authorization", "")
         # The real endpoint refuses a client that does not look like the app: it
-        # needs the Basic client credential AND the KOKO app User-Agent (the
-        # study's load-bearing ingredient). Assert the UA VALUE, not just its
-        # presence (council 2026-08-07 MEDIUM): aiohttp sends a default UA on
-        # every request, so `"User-Agent" not in headers` was vacuous — dropping
-        # the KOKO UA plumbing entirely would have kept every test green while
-        # the real host started 403ing.
+        # needs the Basic client credential AND the KOKO app User-Agent. Assert
+        # the UA VALUE, not just its presence: aiohttp sends a default UA on
+        # every request, so `"User-Agent" not in headers` is vacuous — dropping
+        # the KOKO UA plumbing entirely would keep every test green while the
+        # real host 403s.
         if not auth.startswith("Basic ") or request.headers.get("User-Agent") != UA:
             return web.json_response({"errorMessage": "not authorized"}, status=403)
         form = await request.post()
@@ -125,7 +124,7 @@ class _Life360:
         return web.json_response({"circles": [{"id": "c1", "name": "Ridgeline"}]})
 
     async def places(self, request: web.Request) -> web.Response:
-        """The places endpoint, shaped like the live probe (2026-08-07): string
+        """The places endpoint, shaped like the live probe: string
         coordinates, `circleId` echoed, nullable type fields."""
         self.requests.append("places")
         if (refused := _refused(self, request)) is not None:
@@ -246,8 +245,7 @@ async def test_a_members_body_over_the_log_cap_still_parses(life360):
     ignores. The FULL body must parse; only the LOGGED copy is bounded. Parse a
     truncated slice instead and every genuine response is shredded mid-document
     and misread as the challenge PAGE — green in tests, zero fixes in production
-    (Kimi review 2026-08-07, the 61-day shape). Reverting `http.py` to parse
-    `text[:_MAX_BODY]` turns this red."""
+    Reverting `http.py` to parse `text[:_MAX_BODY]` turns this red."""
     fake, base = life360
     for m in fake.members_body["members"]:
         m["padding"] = "x" * 1500          # push the serialised body well past 2 KB
@@ -261,7 +259,7 @@ async def test_the_token_is_cached_across_reads(life360):
     client = _client(base)
     await client.read_circle(circle_id="c1", now_ms=NOW_MS)
     await client.read_circle(circle_id="c1", now_ms=NOW_MS)
-    # ONE token POST, TWO member GETs — the token is cached in memory (§4).
+    # ONE token POST, TWO member GETs — the token is cached in memory.
     assert fake.requests.count("token") == 1
     assert fake.requests.count("members") == 2
 
@@ -283,7 +281,7 @@ async def test_a_stale_token_403_reauths_once_and_succeeds(life360):
 
 
 async def test_a_persistent_403_backs_off_and_never_loops(life360):
-    """R-31-adjacent / §4.1 — the ban-risk guard. A members endpoint that always
+    """The ban-risk guard. A members endpoint that always
     403s must NOT trigger an unbounded re-auth loop: at most one re-auth per
     read, an alarm, and `auth_failures` climbing so the collector can back off.
     Revert the one-re-auth-per-read discipline and the token-POST count explodes."""
@@ -305,11 +303,10 @@ async def test_a_persistent_403_backs_off_and_never_loops(life360):
 
 
 async def test_a_429_is_ban_class_and_drives_the_backoff(life360):
-    """Kimi audit 2026-08-08: an explicit rate-limit (429) is the strongest
-    ban-class signal, but the client was 403-ONLY, so a 429 read through the
-    cadence unchanged. Now 429 → BANNED, `auth_failures` climbs (the collector
-    backs off), the alarm fires, and it does NOT re-auth (no credential POST
-    mid-throttle). Revert the 429 branch and this goes red."""
+    """An explicit rate-limit (429) is the strongest ban-class signal: 429 →
+    BANNED, `auth_failures` climbs (the collector backs off), the alarm fires,
+    and it does NOT re-auth (no credential POST mid-throttle). Revert the 429
+    branch and this goes red."""
     fake, base = life360
     fake.members_mode = "429"
     metrics = Metrics()
@@ -333,7 +330,7 @@ async def test_a_challenge_page_is_its_own_status_and_alarms(life360):
 
 async def test_an_empty_circle_reads_ok_with_no_members(life360):
     """The client returns ok+[] for an empty circle; the collector's canary — not
-    the client — decides an empty circle is suspicious (§4)."""
+    the client — decides an empty circle is suspicious."""
     fake, base = life360
     fake.members_mode = "empty"
     client = _client(base)
@@ -468,7 +465,7 @@ def test_classification_implausibly_large_speed_is_none():
     assert m.speed_kmh is None
 
 
-# ── read_places (design/23 §3) ───────────────────────────────────────────────
+# ── read_places ──────────────────────────────────────────────────────────────
 
 async def test_a_places_read_types_the_wire_and_trusts_the_asked_circle(life360):
     """The live-probed shape parses: string coordinates become floats, the
@@ -496,9 +493,9 @@ async def test_a_persistent_places_403_is_banned_and_never_loops(life360):
     # One places GET, one re-auth, one retry — never a loop.
     assert fake.requests.count("places") == 2
     assert fake.requests.count("token") == 2
-    # Council 2026-08-07 HIGH: the ban MUST alarm and increment auth_failures —
-    # the inline `PlacesRead(BANNED)` did neither, so a places-only 403 hammered
-    # the credential silently. Reverting `_places_banned` to inline reds this.
+    # The ban MUST alarm and increment auth_failures, or a places-only 403 would
+    # hammer the credential silently. Reverting `_places_banned` to an inline
+    # `PlacesRead(BANNED)` reds this.
     assert metrics.get("nora_presence_auth_alarms_total", reason="banned") == 1.0
     assert client.auth_failures >= 1
 
@@ -512,7 +509,7 @@ async def test_a_places_challenge_page_is_its_own_status(life360):
     assert metrics.get("nora_presence_auth_alarms_total", reason="challenge") == 1.0
 
 
-# ── token mode (2026-09-24): Life360 refused the password grant outright ─────
+# ── token mode: Life360 refuses the password grant outright ──────────────────
 
 STATIC = "tok-static-from-the-browser-cookie"
 

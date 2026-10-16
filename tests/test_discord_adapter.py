@@ -91,7 +91,7 @@ async def test_listen_parses_and_forwards_only_parseable_events(monkeypatch):
 
 
 async def test_an_edit_reaches_the_same_callback_marked_as_an_edit(monkeypatch):
-    """design/message-edits/03 §1: `on_raw_message_edit`'s message goes
+    """`on_raw_message_edit`'s message goes
     through the SAME parse as a new one, then is marked with its own snowflake
     as the target and stamped with `edited_at`. It reaches the one `on_message`
     every network feeds, where ingest routes it."""
@@ -139,7 +139,7 @@ async def test_an_edit_reaches_the_same_callback_marked_as_an_edit(monkeypatch):
 
 
 async def test_a_reaction_and_a_delete_reach_the_same_callback_as_touches(monkeypatch):
-    """design/cognition-loop/20 §1: the adapter wires the listener's touch
+    """The adapter wires the listener's touch
     callback and parses each raw event into a `Touch`; Nora's own reaction
     never reaches ingest (R-12)."""
     from types import SimpleNamespace
@@ -262,7 +262,7 @@ async def test_resolve_identity_returns_a_platform_identity(aiohttp_server):
 
 
 async def test_own_handle_reuses_the_startup_users_me_call(aiohttp_server):
-    """design/self-awareness/02/06: no extra per-turn network call — Discord's
+    """No extra per-turn network call — Discord's
     `own_handle` must answer from the SAME `/users/@me` response
     `resolve_identity()` fetches once, not a fresh request each time."""
     calls = 0
@@ -313,10 +313,9 @@ class _FakeSpeaker:
 
 async def test_voice_channel_send_goes_through_speaker_not_rest(aiohttp_server):
     """A SPOKEN turn must never hit the REST text path — it is answered aloud
-    through the audio-controller's `/stream` endpoint (design/voice-channel/07
-    §3). Routed on `ConversationTarget.voice` since 2026-09-17 (§12.2
-    reversed): the conversation is the guild's ordinary text room now, so the
-    room can no longer say which way to answer."""
+    through the audio-controller's `/stream` endpoint. Routed on
+    `ConversationTarget.voice`: the conversation is the guild's ordinary text
+    room, so the room cannot say which way to answer."""
 
     seen: list[str] = []
 
@@ -370,8 +369,8 @@ async def test_voice_channel_send_goes_through_speaker_not_rest(aiohttp_server):
 
 async def test_voice_channel_send_without_a_voice_session_falls_back_to_text(aiohttp_server):
     """No session for the guild (never joined), so speech cannot play — and
-    since 2026-09-17 the reply is POSTED instead of dropped (operator). Speech
-    is a surface of an ordinary room now, so the target IS a text channel.
+    the reply is POSTED instead of dropped. Speech is a surface of an ordinary
+    room, so the target IS a text channel.
 
     Asserted on the REST call, not just on `ok`: without a `/messages` route
     this test would pass on a failed fallback and prove nothing."""
@@ -405,8 +404,8 @@ async def test_voice_channel_send_without_a_voice_session_falls_back_to_text(aio
 
 
 async def test_a_voice_target_with_no_speaker_wired_falls_back_to_text(aiohttp_server):
-    """The unwired posture. Before the fallback this returned a refused send
-    and the answer was lost; the room can still read it."""
+    """The unwired posture: the send falls back to text, so the answer is not
+    lost and the room can still read it."""
 
     posted: list[str] = []
 
@@ -429,10 +428,9 @@ async def test_a_voice_target_with_no_speaker_wired_falls_back_to_text(aiohttp_s
 
 
 async def test_non_speakable_text_is_not_spoken_but_is_posted(aiohttp_server):
-    """design/voice-channel/01 §7 — a machine token must never be read aloud.
-    `speakable`'s docstring always said the caller should "send it text-only";
-    since 2026-09-17 one finally does, so a hash-bearing answer reaches the
-    room instead of vanishing into a silent-failure counter."""
+    """A machine token must never be read aloud. `speakable`'s docstring says the
+    caller should "send it text-only", and the caller does, so a hash-bearing
+    answer reaches the room instead of vanishing into a silent-failure counter."""
 
     posted: list[str] = []
 
@@ -465,14 +463,13 @@ async def test_non_speakable_text_is_not_spoken_but_is_posted(aiohttp_server):
 
 
 async def test_a_typed_turn_in_a_voice_enabled_room_still_goes_out_as_text(aiohttp_server):
-    """THE REGRESSION THIS GUARDS (design/voice-channel/07 §12.2, reversed
-    2026-09-17). A guild's speech now lands in its ordinary text room, so one
-    `conversation_id` carries BOTH surfaces. Routing on the room — the rule
-    before this reversal — would have answered every typed message in that
-    room aloud, and POSTed nothing to the channel the person was reading.
+    """A guild's speech lands in its ordinary text room, so one
+    `conversation_id` carries BOTH surfaces. Routing on the room would answer
+    every typed message in that room aloud, and POST nothing to the channel the
+    person was reading.
 
     `voice=False` is the default, so this is also the assertion that the
-    default did not quietly become "speak"."""
+    default does not become "speak"."""
 
     posted: list[str] = []
 
@@ -503,16 +500,15 @@ async def test_a_typed_turn_in_a_voice_enabled_room_still_goes_out_as_text(aioht
 
 
 async def test_a_recorded_guild_with_no_controller_is_never_synthesized(aiohttp_server):
-    """THE COST THIS GUARDS (found by review, 2026-09-17). `policy.toml`'s
-    `voice = true` and `[speech.tts] sidecars` are independent on purpose — a
-    guild's speech may be RECORDED with no controller able to play a reply.
-    That is exactly Zone 42's shipped configuration.
+    """`policy.toml`'s `voice = true` and `[speech.tts] sidecars` are independent
+    on purpose — a guild's speech may be RECORDED with no controller able to
+    play a reply.
 
-    The guard in `_send_voice` only asked whether a speaker and hub exist AT
-    ALL, and they do — for the OTHER guild. So every spoken turn in the
-    unwired guild billed MiniMax for a synthesis and discarded the audio.
-    Refused before the vendor call now; the answer still reaches the room as
-    text."""
+    A guard in `_send_voice` that only asks whether a speaker and hub exist AT
+    ALL passes, because they exist for the OTHER guild, and every spoken turn in
+    the unwired guild would bill MiniMax for a synthesis and discard the audio.
+    The send is refused before the vendor call; the answer still reaches the
+    room as text."""
 
     posted: list[str] = []
 

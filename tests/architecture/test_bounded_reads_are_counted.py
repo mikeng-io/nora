@@ -26,17 +26,15 @@ the "every declared site has a call site" direction is the load-bearing one
 here: it is what stops someone declaring the whole inventory up front and
 shipping sixteen series that mean nothing.
 
-PROBE (run 2026-08-29, production code only, anchors asserted to apply and to
-still parse):
-  - Added `"notes.search"` to `BoundSite` with no call site anywhere:
-    `test_every_declared_bound_site_has_a_call_site` FAILED naming it.
-    Restored.
-  - Changed `site="audit.recent"` to `site="audit.recnt"` at its call site:
-    `test_every_cut_site_is_declared` FAILED naming the typo. Restored.
-  - Removed the `over_fetch(...)` wrapper from `nora/infra/sql/audit.py`'s
+WHAT FALSIFIES EACH CHECK (production code only, anchors asserted to apply and
+to still parse):
+  - Adding `"notes.search"` to `BoundSite` with no call site anywhere:
+    `test_every_declared_bound_site_has_a_call_site` fails naming it.
+  - Changing `site="audit.recent"` to `site="audit.recnt"` at its call site:
+    `test_every_cut_site_is_declared` fails naming the typo.
+  - Removing the `over_fetch(...)` wrapper from `nora/infra/sql/audit.py`'s
     `recent`, leaving the `cut` in place — the shape that makes truncation
-    permanently unobservable: `test_a_cut_site_also_over_fetches` FAILED.
-    Restored.
+    permanently unobservable: `test_a_cut_site_also_over_fetches` fails.
 """
 
 from __future__ import annotations

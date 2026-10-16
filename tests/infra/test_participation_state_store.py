@@ -1,5 +1,5 @@
 """`SqlParticipationStateStore` — the participation trigger's per-room
-watermarks, across processes (migration 0056).
+watermarks, across processes.
 
 Single-store file, not a contract suite (there is one implementation). The
 database is MODULE-scoped per `test_tag_trace_store.py`'s pattern: one
@@ -66,7 +66,7 @@ async def engine(_participation_db: str) -> AsyncIterator[Any]:
     finally:
         async with eng.begin() as conn:
             # A reset, not a write: TRUNCATE is refused unless capture is off
-            # (migration 0068, nora.infra.sql.history.CAPTURE_SETTING).
+            # (nora.infra.sql.history.CAPTURE_SETTING).
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(
                 sa.text("truncate participation_window_state, messages, message_edit, "

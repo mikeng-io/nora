@@ -1,13 +1,10 @@
-"""A Cognition session's row in Postgres names the skill it ran with (step 4
-PR-1, `cognition-register-skill`).
+"""A Cognition session's row in Postgres names the skill it ran with.
 
-Every one of the 54 shadow sessions on the deploy host before this step reads
-`skill_versions = {}`: no skill was injected, and the column said so. The
-flip-day read-back (cut-over plan §5.1) tells a skill-injected session from one
-that was not by this column alone, so it is pinned where it is stored: one
-session through the production objective, prelude and `AgendaSkills`, against
-the real `SqlCognitionStore`, then `cognition_session.skill_versions` read
-back with SQL.
+A session with no skill injected reads `skill_versions = {}`. A read-back tells
+a skill-injected session from one that was not by this column alone, so it is
+pinned where it is stored: one session through the production objective,
+prelude and `AgendaSkills`, against the real `SqlCognitionStore`, then
+`cognition_session.skill_versions` read back with SQL.
 
 Rooms and words are placeholders.
 """

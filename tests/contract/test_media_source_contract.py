@@ -10,20 +10,19 @@ the whole point of the rule this file exists to satisfy: a stub returning bytes
 for anything would prove that the adapter can decode base64 and prove nothing
 about whether it asks signal-cli the right question. So the daemon below keys
 off `params.id` and returns the real not-found error for an id it does not
-hold — the shape observed from the live daemon on 2026-08-06:
+hold, in the shape the live daemon uses:
 
     {"jsonrpc":"2.0","error":{"code":-1,
      "message":"Could not find attachment with ID: nonexistent-probe"},"id":"p3"}
 
-and that error is provably distinct from an unimplemented method, which the
-same probe confirmed answers `-32601 "Method not implemented"`. Reverting
-`SignalMediaSource.fetch`'s method name to something signal-cli does not serve
-makes `test_a_missing_attachment_is_not_found` red rather than leaving it green
+and that error is provably distinct from an unimplemented method, which answers
+`-32601 "Method not implemented"`. Reverting `SignalMediaSource.fetch`'s method
+name to something signal-cli does not serve makes
+`test_a_missing_attachment_is_not_found` red rather than leaving it green
 against a daemon that says yes to everything.
 
 What no test here can establish is the shape of a SUCCESSFUL `getAttachment`
-result: no attachment has ever reached this deployment, so there is no id to
-fetch and the success case is fixtures only. The adapter accepts both plausible
+result: the success case is fixtures only. The adapter accepts both plausible
 shapes and counts anything else as `bad_payload`; see its docstring.
 """
 
@@ -144,9 +143,8 @@ async def test_every_implementation_declares_the_platform_it_is_bound_to(sources
 
 
 async def test_the_adapter_reads_a_bare_string_result_too(aiohttp_server):
-    """Both plausible `getAttachment` result shapes are accepted, because which
-    one signal-cli 0.14.7 actually returns cannot be verified here — no
-    attachment has ever arrived on this deployment."""
+    """Both plausible `getAttachment` result shapes are accepted, because no test
+    here can verify which one signal-cli 0.14.7 actually returns."""
     source = await _signal(aiohttp_server, held={HELD_ID: PAYLOAD}, result_shape="string")
     got = await source.fetch(ref=MediaRef(platform_id=HELD_ID))
     assert got.available is True
@@ -173,8 +171,7 @@ async def test_an_unreadable_result_shape_is_bad_payload_not_silence(aiohttp_ser
 
 async def test_calling_a_method_the_daemon_does_not_implement_is_not_success(aiohttp_server):
     """The negative control, as a test. If `fetch` ever asked for a method
-    signal-cli does not serve, the daemon answers -32601 and this stays red —
-    which is the property the live probe on 2026-08-06 established by hand."""
+    signal-cli does not serve, the daemon answers -32601 and this goes red."""
     server = await aiohttp_server(_daemon(held={HELD_ID: PAYLOAD}))
     source = SignalMediaSource(base_url=str(server.make_url("")))
     got = await source.fetch(ref=MediaRef(platform_id=HELD_ID))
@@ -194,17 +191,17 @@ async def test_bytes_over_the_ceiling_are_refused_even_when_the_size_was_not_dec
     assert got.reason == "too_large"
 
 
-# --- Stickers: `getSticker`, verified against the live daemon 2026-08-15 -----
+# --- Stickers: `getSticker` ---------------------------------------------------
 
 HELD_STICKER = ("8c6ce85a3156b8e498e1ba0e97bc6620", 15)
 STICKER_BYTES = b"RIFF\x00\x00\x00\x00WEBPVP8 sticker-ish"
 
 
 def _sticker_daemon(*, held: dict[tuple[str, int], bytes]):
-    """Answers per request, in signal-cli 0.14.7's OWN shapes (probed
-    2026-08-15). An unknown pack and an unknown index are the SAME error there,
-    so they are the same error here — a fake that distinguished them would
-    let the adapter claim a precision the daemon does not offer."""
+    """Answers per request, in signal-cli 0.14.7's OWN shapes. An unknown pack
+    and an unknown index are the SAME error there, so they are the same error
+    here — a fake that distinguished them would let the adapter claim a
+    precision the daemon does not offer."""
 
     async def rpc(request):
         payload = await request.json()
@@ -255,8 +252,8 @@ async def test_a_held_sticker_is_fetched_by_pack_and_index(aiohttp_server):
 
 
 async def test_an_unknown_sticker_is_not_found_not_a_crash(aiohttp_server):
-    """Unknown pack and unknown index are indistinguishable at this seam
-    (spec §1, finding 4) — one reason, not two labels implying precision."""
+    """Unknown pack and unknown index are indistinguishable at this seam — one
+    reason, not two labels implying precision."""
     server = await aiohttp_server(_sticker_daemon(held={}))
     source = SignalMediaSource(base_url=str(server.make_url("")))
 
@@ -268,10 +265,10 @@ async def test_an_unknown_sticker_is_not_found_not_a_crash(aiohttp_server):
 
 
 async def test_a_sticker_ref_never_calls_getattachment(aiohttp_server):
-    """The regression this guards: routing a sticker to `getAttachment` with an
-    empty id returns `no_id` and loses the sticker before the supported call is
-    ever made. The daemon above answers -32601 for any other method, so a
-    misrouted call is red rather than silently empty."""
+    """Routing a sticker to `getAttachment` with an empty id returns `no_id` and
+    loses the sticker before the supported call is ever made. The daemon above
+    answers -32601 for any other method, so a misrouted call is red rather than
+    silently empty."""
     server = await aiohttp_server(_sticker_daemon(held={HELD_STICKER: STICKER_BYTES}))
     source = SignalMediaSource(base_url=str(server.make_url("")))
 
@@ -462,13 +459,13 @@ async def test_discord_refuses_an_oversize_body_with_no_declared_length(aiohttp_
 
 
 async def test_discord_reads_a_chunked_body_to_completion(aiohttp_server):
-    """The live defect (2026-08-31): Discord's CDN streams attachments in
-    ~1.4 KB packets, and `StreamReader.read(n)` returns as soon as the FIRST
-    buffered chunk arrives — it does not wait for `n` bytes or EOF. A 2.3 MB
-    image was stored as 1.4 KB and the truncated body passed the post-read
-    size check. This response writes the body in several small chunks, so a
-    single-shot `read(max_bytes + 1)` returns only the first chunk and this
-    test goes red; the loop must read until EOF."""
+    """Discord's CDN streams attachments in ~1.4 KB packets, and
+    `StreamReader.read(n)` returns as soon as the FIRST buffered chunk arrives —
+    it does not wait for `n` bytes or EOF. A body read that way is truncated to
+    its first packet and still passes the post-read size check. This response
+    writes the body in several small chunks, so a single-shot
+    `read(max_bytes + 1)` returns only the first chunk and this test goes red;
+    the loop must read until EOF."""
     body = b"".join(bytes([i % 251]) * 1000 for i in range(10))  # 10 KB in 10 chunks
 
     async def cdn(request):
@@ -476,11 +473,10 @@ async def test_discord_reads_a_chunked_body_to_completion(aiohttp_server):
         await resp.prepare(request)
         for i in range(10):
             await resp.write(body[i * 1000:(i + 1) * 1000])
-            # A real CDN does not deliver all chunks in one flush; without
-            # this delay aiohttp coalesces the writes and `read(n)` happens
-            # to see the whole body, which is exactly why the old single-shot
-            # read passed its tests while production stored 1.4 KB of a 2.3 MB
-            # image. The delay makes the test exercise the real wire shape.
+            # A real CDN does not deliver all chunks in one flush; without this
+            # delay aiohttp coalesces the writes and `read(n)` happens to see the
+            # whole body, so a single-shot read would pass. The delay makes the
+            # test exercise the real wire shape.
             await asyncio.sleep(0.01)
         await resp.write_eof()
         return resp
@@ -535,10 +531,10 @@ async def test_discord_refuses_a_chunked_body_over_the_ceiling(aiohttp_server):
 
 IG_PHOTO = b"\xff\xd8\xff\xe0 instagram jpeg"
 
-# Every host observed serving media to this account in one week. They differ in
-# the PoP segment, which is why the allowlist matches a suffix — an exact set
-# goes stale the first time the account is served from another edge, and it
-# goes stale as a silent loss of every image.
+# Hosts observed serving media to this account. They differ in the PoP segment,
+# which is why the allowlist matches a suffix — an exact set goes stale the
+# first time the account is served from another edge, and it goes stale as a
+# silent loss of every image.
 MEASURED_CDN_HOSTS = (
     "scontent.fhkg3-1.fna.fbcdn.net",
     "instagram.fhkg3-1.fna.fbcdn.net",
@@ -584,11 +580,11 @@ def _watch_sockets(monkeypatch) -> list[str]:
 
 
 async def test_instagram_fetches_an_attachment_by_its_own_cdn_url(aiohttp_server):
-    """The bridge emits a directly fetchable CDN url on `media.url` — measured
-    returning 200 with no cookies, no user-agent and no referer, so the
-    signature in the url is the authorization and the url IS the handle. The
-    allowlist is pointed at the test server's loopback host, since a real
-    `scontent.*.fbcdn.net` socket cannot be opened from a test."""
+    """The bridge emits a directly fetchable CDN url on `media.url` — it returns
+    200 with no cookies, no user-agent and no referer, so the signature in the
+    url is the authorization and the url IS the handle. The allowlist is pointed
+    at the test server's loopback host, since a real `scontent.*.fbcdn.net`
+    socket cannot be opened from a test."""
     async def cdn(request):
         return web.Response(body=IG_PHOTO, content_type="image/jpeg")
 
@@ -653,8 +649,8 @@ async def test_instagram_refuses_a_lookalike_host_without_opening_a_socket(
 
 @pytest.mark.parametrize("host", MEASURED_CDN_HOSTS)
 async def test_instagram_admits_every_measured_cdn_host(monkeypatch, host):
-    """The four hosts measured on the live account all reach the socket step.
-    An exact-host allowlist would have admitted none of them a week later."""
+    """The observed hosts all reach the socket step. An exact-host allowlist
+    would admit none of them once the account is served from another edge."""
     opened = _watch_sockets(monkeypatch)
     source = InstagramMediaSource()
 
@@ -715,10 +711,10 @@ async def test_instagram_refuses_an_oversize_attachment(aiohttp_server):
 
 async def test_instagram_reads_a_chunked_body_to_completion(aiohttp_server):
     """`InstagramMediaSource._read_limited` is a COPY of Discord's, and the
-    defect it encodes (2026-08-31: a 2.3 MB image stored as its first 1.4 KB
-    packet) is the one thing that must never be re-derived from scratch. This
-    is the same case run against the second copy, so a drift between them is
-    red rather than silent."""
+    defect it encodes (a multi-packet body truncated to its first packet) is the
+    one thing that must never be re-derived from scratch. This is the same case
+    run against the second copy, so a drift between them is red rather than
+    silent."""
     body = b"".join(bytes([i % 251]) * 1000 for i in range(10))  # 10 KB in 10 chunks
 
     async def cdn(request):

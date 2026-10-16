@@ -156,8 +156,7 @@ def test_a_marked_database_holding_a_foreign_message_is_refused(loaded: str) -> 
 
 def test_a_projection_that_fails_fails_the_load(loaded: str, monkeypatch) -> None:
     """`_guarded` queues a failed projection and carries on; scored, the
-    missing nodes would read as misses (every third failing: recall 0.536
-    to 0.370 with verdict OK, review of #19)."""
+    missing nodes would read as misses, with an OK verdict."""
     real = memory_index._PROJECTORS["message"]
     calls = {"n": 0}
 

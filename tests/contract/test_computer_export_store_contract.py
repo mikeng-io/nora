@@ -1,7 +1,6 @@
-"""One suite, both implementations of `ComputerExportStore` (design/
-sandbox-runtime §6, §7). The shape of the event store's suite: the real
-Postgres `pg_url` fixture, migrated before the SQL store is built,
-parametrized alongside the in-memory fake.
+"""One suite, both implementations of `ComputerExportStore`. The shape of the
+event store's suite: the real Postgres `pg_url` fixture, migrated before the
+SQL store is built, parametrized alongside the in-memory fake.
 
 What is pinned: a row round-trips every field; `for_artifact` answers the
 FIRST export of an artifact (its owner), not the newest revision; an unknown

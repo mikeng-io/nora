@@ -89,15 +89,13 @@ def test_after_tool_does_not_count_a_failed_call():
 
 
 def test_after_tool_does_not_count_a_call_the_guard_cancelled():
-    """DEC-33, and a LIVE bug until it was written.
-
-    A vetoed call never ran, so it can have consumed nothing — but Strands
-    fires this hook for it anyway with `exception=None`, so the pre-DEC-33
-    `exception`-only check recorded it. With
-    `NATIVE_TOOLS["send_reply"].budget == 1` that made a `send_reply("")`
+    """DEC-33: a vetoed call never ran, so it can have consumed nothing — but
+    Strands fires this hook for it anyway with `exception=None`, so an
+    `exception`-only check would record it. With
+    `NATIVE_TOOLS["send_reply"].budget == 1` that would make a `send_reply("")`
     refused by R-4 spend the only reply the tag had: the model's own
-    correction then met R-7's budget check and was told "you already sent your
-    reply", and the group heard nothing at all.
+    correction would then meet R-7's budget check and be told "you already sent
+    your reply", and the group would hear nothing at all.
     """
     g = _guard()
     g._after_tool(FakeAfterEvent("load_transcript", cancel_message="You already called it."))
@@ -134,8 +132,8 @@ def test_register_hooks_subscribes_to_both_events():
     assert BeforeToolCallEvent in registered
     assert AfterToolCallEvent in registered
     assert BeforeModelCallEvent in registered
-    # A11: without the AFTER half the model-call counter has nothing to count
-    # completions with, and falls back to counting attempts (audit F12).
+    # Without the AFTER half the model-call counter has nothing to count
+    # completions with, and falls back to counting attempts.
     assert AfterModelCallEvent in registered
 
 
@@ -157,12 +155,11 @@ def test_a_call_that_raised_gives_its_reservation_back():
     """DEC-33's reservation is NOT budget — it is «this call is still running»
     — so it comes back on every path, including the one where the tool raised.
 
-    **This was live until 2026-08-21, and the reason it hid is the interesting
-    part.** `_after_tool`'s early return on `exception` sat ABOVE `release`, so
-    a raised call held its reservation for the rest of the tag. `counts` — the
-    thing `test_after_tool_does_not_count_a_failed_call` above asserts, and the
-    only half any test read — stayed correct throughout. Only `spent` was
-    wrong, and `spent` is what R-7's ceiling reads. The symptom was a model
+    **An early return on `exception` above `release` would let a raised call
+    hold its reservation for the rest of the tag.** `counts` — the thing
+    `test_after_tool_does_not_count_a_failed_call` above asserts, and the only
+    half any test read — would stay correct throughout. Only `spent` would be
+    wrong, and `spent` is what R-7's ceiling reads. The symptom is a model
     refused a call it was entitled to, on exactly the turns that had already
     gone wrong once.
 
@@ -184,8 +181,8 @@ def test_a_call_that_raised_gives_its_reservation_back():
 
 
 def test_a_cancelled_call_also_gives_its_reservation_back():
-    """The sibling path, which was already correct — pinned so the fix above
-    cannot be undone by someone restoring the old ordering for one branch."""
+    """The sibling path, pinned so the release above cannot be undone by
+    restoring an early return for one branch."""
     g = _guard()
 
     for _ in range(BUDGETS["load_transcript"]):
@@ -197,10 +194,10 @@ def test_a_cancelled_call_also_gives_its_reservation_back():
 
 def test_a_vetoed_call_does_not_release_a_siblings_reservation():
     """The ceiling has to hold WITHIN one parallel batch, and a veto in that
-    batch was reopening it (2026-08-21 review, measured on both guards).
+    batch must not reopen it.
 
     `reserve` runs only on the ADMITTED path, but the after-tool hook fires for
-    a VETOED call too. Releasing by NAME therefore let the vetoed call
+    a VETOED call too. Releasing by NAME would therefore let the vetoed call
     decrement a sibling's reservation:
 
         A admitted, B admitted     -> in_flight = 2, ceiling closed
@@ -208,10 +205,10 @@ def test_a_vetoed_call_does_not_release_a_siblings_reservation():
         C's after-hook releases    -> in_flight = 1
         D admitted                 -> a third call runs against a budget of 2
 
-    which is the 2026-08-13 nine-`place_info` trace `call_ledger` exists to
-    prevent, needing only one veto in the batch to reopen. Asserted through
-    `evaluate` rather than through the ledger, because the veto is where the
-    leak costs the model something."""
+    which is the over-budget parallel batch `call_ledger` exists to prevent,
+    needing only one veto in the batch to reopen. Asserted through `evaluate`
+    rather than through the ledger, because the veto is where the leak costs
+    the model something."""
     budget = BUDGETS["load_transcript"]
     g = _guard()
 

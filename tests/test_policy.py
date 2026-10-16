@@ -1,4 +1,4 @@
-"""`policy.toml` — the two allowlists and the grant predicate (design/10 §4)."""
+"""`policy.toml` — the two allowlists and the grant predicate."""
 
 import pytest
 
@@ -44,7 +44,7 @@ def _allowed(policy, conversation_id, person_id, platform="signal"):
     )
 
 
-# ── the grant predicate (§4.3) ───────────────────────────────────────────────
+# ── the grant predicate ──────────────────────────────────────────────────────
 
 
 def test_a_listed_person_in_a_listed_room_is_allowed(policy):
@@ -53,7 +53,7 @@ def test_a_listed_person_in_a_listed_room_is_allowed(policy):
 
 
 def test_an_unlisted_person_in_a_listed_room_is_refused(policy):
-    """A new group member is ignored until the operator adds them (§7.1)."""
+    """A new group member is ignored until the operator adds them."""
     assert _allowed(policy, GROUP, "stranger") is False
 
 
@@ -63,12 +63,11 @@ def test_a_listed_person_in_an_unlisted_room_is_refused(policy):
 
 
 def test_an_allowed_room_with_no_label_refuses_to_start(tmp_path):
-    """#200 part 2: `UnitRoom.label`/`label_for` both render a floor for an
-    unlabelled room rather than falling back to its id (R-18) — the right
-    failure mode for old data a render meets after the fact, but the wrong
-    one for a room the operator is adding today, where it silently makes two
-    unlabelled rooms read as one (#161). Refused at startup instead, the
-    same shape as a second home room."""
+    """`UnitRoom.label`/`label_for` both render a floor for an unlabelled room
+    rather than falling back to its id (R-18) — the right failure mode for old
+    data a render meets after the fact, but the wrong one for a room the
+    operator is adding today, where it silently makes two unlabelled rooms read
+    as one. Refused at startup instead, the same shape as a second home room."""
     body = TOML.replace('label    = "Work"\n', "")
     with pytest.raises(PolicyError, match="has no label"):
         load_policy(_write(tmp_path, body))
@@ -98,7 +97,7 @@ def test_platforms_do_not_leak_into_each_other(policy):
 
 def test_also_ids_match_identically(policy):
     """Telegram changes chat.id on supergroup migration and reports the old id
-    once; without also_ids the allowlist silently stops matching (§4.2)."""
+    once; without also_ids the allowlist silently stops matching."""
     assert _allowed(policy, "-987654321", "anyone", platform="telegram") is True
 
 
@@ -110,7 +109,7 @@ def test_dm_persons_are_parsed(policy):
     assert policy.dm_persons == frozenset({"miles"})
 
 
-# ── refusing to start (§4.1) ─────────────────────────────────────────────────
+# ── refusing to start ────────────────────────────────────────────────────────
 
 
 def test_an_empty_allowlist_refuses_to_start(tmp_path):
@@ -143,9 +142,9 @@ def test_an_unknown_key_is_refused(tmp_path):
 
 
 def test_a_room_description_is_optional_and_absent_by_default(policy):
-    """Issue #161's lever 2 ships EMPTY: the deployment's policy.toml has
-    never heard of `description`, and `extra = "forbid"` means a schema that
-    demanded it would refuse to start. Absent is `None`, not `""`."""
+    """`description` is optional: a policy.toml that has never heard of it must
+    load, and `extra = "forbid"` means a schema that demanded it would refuse to
+    start. Absent is `None`, not `""`."""
     convo = policy.conversation("signal", GROUP)
     assert convo is not None
     assert convo.description is None
@@ -221,7 +220,7 @@ def test_an_also_id_colliding_with_another_room_is_refused(tmp_path):
         load_policy(_write(tmp_path, body))
 
 
-# ── MCP tool allowlist (§2.3) ───────────────────────────────────────────────
+# ── MCP tool allowlist ──────────────────────────────────────────────────────
 
 
 def test_conversation_tools_defaults_to_empty(tmp_path):
@@ -269,7 +268,7 @@ def test_location_flag_defaults_false_and_parses_true(policy, tmp_path):
 
 
 def test_relevance_gate_flag_defaults_false_and_parses_true(policy, tmp_path):
-    """design/dreamer-agent-loop/36 §9: `relevance_gate` opts a room into the
+    """`relevance_gate` opts a room into the
     Relevance Gate's consideration of its untagged traffic. It DEFAULTS False
     (the fixture rooms set none) — being answerable when tagged has never
     implied being allowed to speak uncalled — and a room with
@@ -286,7 +285,7 @@ def test_relevance_gate_flag_defaults_false_and_parses_true(policy, tmp_path):
 
 
 def test_permissive_policy_opts_every_room_into_the_relevance_gate():
-    """The eval/testing double (design/dreamer-agent-loop/36 §9): a
+    """The eval/testing double: a
     harness that wires `RelevanceGatePolicy(permissive_policy())` must have the
     room gate OPEN so an untagged message can reach the gate and, on GO,
     the participation occasion.
@@ -296,7 +295,7 @@ def test_permissive_policy_opts_every_room_into_the_relevance_gate():
     assert permissive_policy().conversation("signal", "g1").relevance_gate is True
 
 
-# ── the home room and the proactive flag (design/dreamer-agent-loop/39 D2/D5) ─
+# ── the home room and the proactive flag ─────────────────────────────────────
 
 
 HOME_TOML = f"""
@@ -351,7 +350,7 @@ def test_the_home_room_is_keyed_by_unit(tmp_path):
 
 
 def test_proactive_is_checked_on_the_room_not_on_a_person(tmp_path):
-    """39 D5: the owner of a proactive row is the reserved ai_peer id, which
+    """The owner of a proactive row is the reserved ai_peer id, which
     `is_allowed` would refuse in every explicit-persons room. The flag is the
     grant, and it is deny-by-default in both directions: an unflagged room and
     an unlisted room both answer False."""
@@ -383,8 +382,8 @@ def test_the_permissive_policy_names_no_home_room():
 
 
 # --- `voice = true` -----------------------------------------------------------
-# design/voice-channel/07 §12.2, reversed 2026-09-17: a guild's spoken
-# utterances are recorded in the ONE room that claims them, resolved by GUILD.
+# A guild's spoken utterances are recorded in the ONE room that claims them,
+# resolved by GUILD.
 
 VOICE_GUILD = "100000000000000203"
 VOICE_ROOM = f"{VOICE_GUILD}/100000000000000204"
@@ -490,8 +489,8 @@ def test_voice_defaults_to_false(tmp_path):
 
 
 # --- `music_channel` ----------------------------------------------------------
-# design/discord-music/10-notification-routing.md: a guild's music ANNOUNCEMENTS
-# are posted in the SIBLING channel one of its rooms names, resolved by GUILD.
+# A guild's music ANNOUNCEMENTS are posted in the SIBLING channel one of its
+# rooms names, resolved by GUILD.
 #
 # A FIELD, not a `voice = true`-style flag, and the two reasons are what these
 # tests are really pinning: a dedicated music channel is not the discussion
@@ -530,12 +529,7 @@ def test_a_music_channel_that_is_itself_a_listed_room_refuses_to_start(tmp_path)
     rather than documented. A `[[conversations]]` entry answers questions
     about people; an announcement channel is written to and never read, so
     pointing one at a listed room puts the announcements back inside ingest
-    and makes the argument false.
-
-    This replaces a test that asserted the same property by comparing two of
-    this module's own literals — it could not fail, and meanwhile the loader
-    accepted exactly the configuration it claimed was impossible (audit,
-    2026-09-21)."""
+    and makes the argument false."""
     extra = f"""
 [[conversations]]
 platform = "discord"
@@ -571,8 +565,7 @@ def test_the_destination_is_not_a_listed_room_in_the_accepted_case(tmp_path):
 
 def test_an_unset_guild_has_no_music_channel(tmp_path):
     """`None` is the FALLBACK, not a refusal (contrast `voice_room`): the
-    announcement goes to the channel the session started in, which is what
-    every deployment did before this field existed."""
+    announcement goes to the channel the session started in."""
     policy = load_policy(_write(tmp_path, _music_toml(music_line="")))
 
     assert policy.music_channel_for("discord", MUSIC_GUILD) is None
@@ -620,10 +613,8 @@ music_channel = "{MUSIC_CHANNEL}"
     [
         "100000000000000204",   # no guild half at all
         "/100000000000000204",  # empty guild half
-        "100000000000000203/",  # empty CHANNEL half — the asymmetry the audit
-                                 # found: the voice block refused this and the
-                                 # music block did not, so `id = "<guild>/"`
-                                 # could declare a music_channel
+        "100000000000000203/",  # empty CHANNEL half: `id = "<guild>/"` must not
+                                 # be able to declare a music_channel
     ],
 )
 def test_a_malformed_declaring_room_id_refuses_to_start(tmp_path, declaring_id):
@@ -644,8 +635,8 @@ music_channel = "{MUSIC_CHANNEL}"
 
 
 #: Arabic-Indic digits spelling a plausible snowflake. `str.isdigit()` says yes
-#: AND `int()` parses them, so under the first implementation this routed —
-#: silently, while reading as something else entirely.
+#: AND `int()` parses them, so a validator built on `isdigit()` would route
+#: them — silently, while reading as something else entirely.
 _ARABIC_INDIC = "".join(chr(0x660 + int(d)) for d in "148038736983097399")
 
 
@@ -656,11 +647,11 @@ _ARABIC_INDIC = "".join(chr(0x660 + int(d)) for d in "148038736983097399")
         "#music",                          # a name is not a stable id
         "music",
         "1480387369830973999x",            # not all digits
-        "\u00b2",                              # superscripts: `str.isdigit()` said YES and
+        "\u00b2",                              # superscripts: `str.isdigit()` says YES and
         "\u00b9\u00b2\u00b3",                            # `int()` says no, so the line could never
                                            # route and failed at send time looking exactly
                                            # like a deleted channel — PASS standing in for
-                                           # ERROR (audit, 2026-09-21)
+                                           # ERROR
         _ARABIC_INDIC,
         "0",                               # parses; too short to be a snowflake
         "1" * 30,                          # parses; too long
@@ -669,7 +660,7 @@ _ARABIC_INDIC = "".join(chr(0x660 + int(d)) for d in "148038736983097399")
 def test_a_music_channel_that_is_not_a_bare_snowflake_refuses_to_start(tmp_path, bad):
     """ASCII decimal digits, 17-20 of them. The `<guild>/<channel>` pair is
     the dangerous-looking one — it reads plausibly — but the digit-lookalikes
-    are the ones that got past `str.isdigit()`, which is what this replaced."""
+    are the ones `str.isdigit()` would let through."""
     with pytest.raises(PolicyError, match="not a Discord channel id"):
         load_policy(_write(tmp_path, _music_toml(music_line=f'music_channel = "{bad}"')))
 

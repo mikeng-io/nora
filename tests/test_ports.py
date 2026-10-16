@@ -50,8 +50,8 @@ def test_send_result_can_express_a_retryable_failure():
 
 
 def test_engage_decision_carries_the_rationale_and_threshold():
-    """design/02 requires the classifier's reason to reach the prefill, and a bare
-    confidence is uninterpretable without the threshold it was compared against."""
+    """The classifier's reason must reach the prefill, and a bare confidence is
+    uninterpretable without the threshold it was compared against."""
     d = EngageDecision(engage=True, reason="trigger_text")
     assert d.engage and d.rationale is None and d.confidence is None
     c = EngageDecision(engage=True, reason="classifier",
@@ -79,7 +79,7 @@ def test_every_port_is_enumerated():
 
 
 def test_port_methods_are_keyword_only_after_self():
-    """Convention from spec §4.2: free extensibility forever. A positional parameter
+    """Convention: free extensibility forever. A positional parameter
     added to a port later is a breaking change at every call site.
 
     Checks every Protocol in nora.domain.ports (enumerated by `_all_ports()`, not a

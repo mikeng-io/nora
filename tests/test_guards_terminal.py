@@ -12,9 +12,8 @@ The probe this file exists to be: `test_a_second_verb_declared_terminal_ends_
 the_turn` drives the REAL loop with `now` marked terminal and asserts the model
 is called ONCE. Revert `_before_model` to asking `deliverer.delivered` and it
 goes red — the deliverer in that test has delivered nothing, and `now` has no
-side effect for it to observe. That is the whole content of the refactor: a
-second terminal verb (`design/proposed/15-gif-replies.md` §1's `send_gif`, or a
-distinct feed step on the tag path) is now a table edit, not a guard edit.
+side effect for it to observe. So a second terminal verb (`send_gif`, or a
+distinct feed step on the tag path) is a table edit, not a guard edit.
 """
 
 from __future__ import annotations
@@ -37,11 +36,10 @@ from tests.fakes import FixedModelSource, SinkSender
 RETRY = factory.build_retry_policy(timeout_seconds=30.0)
 TARGET = ConversationTarget("signal", "g1", "group")
 
-# The terminal verb's budget IS the message cap since DEC-42 — the turn ends
-# when no terminal verb can be called AGAIN, not when one has been called once.
-# `1` here therefore mirrors `send_reply`'s own budget and makes this file's
-# probes read exactly as they did before that change; `BUDGETS_TWICE` is the
-# same declaration with the cap raised, which is what multi-message does.
+# The terminal verb's budget IS the message cap (DEC-42) — the turn ends when no
+# terminal verb can be called AGAIN, not when one has been called once. `1`
+# here mirrors `send_reply`'s own budget; `BUDGETS_TWICE` is the same
+# declaration with the cap raised, which is what multi-message does.
 BUDGETS = {"now": 1}
 BUDGETS_TWICE = {"now": 2}
 
@@ -152,17 +150,15 @@ def test_replies_end_the_turn_at_the_cap_not_before():
     not on the first reply.
 
     A reply the deliverer REFUSED still spends one — it was RECORDED — so the
-    group sees the same silence either way; but a refused FIRST reply no longer
-    ends the turn, because messages remain. Once all are spent the turn is over
+    group sees the same silence either way; but a refused FIRST reply does not
+    end the turn, because messages remain. Once all are spent the turn is over
     and the (cap+1)th `send_reply` is already refused by the budget. If the
-    budget ever stops refusing that call, this is where the loss surfaces. (Was
-    `test_a_reply_the_deliverer_refused_still_ends_the_turn`, which pinned the
-    cap-of-1 behaviour DEC-32 shipped.)
+    budget ever stops refusing that call, this is where the loss surfaces.
 
     The cap is READ from the registry rather than written here. DEC-10 puts the
     number with the tool and DEC-32 requires exactly ONE of it; a literal in
     this test is a second copy that goes stale the next time an operator moves
-    the budget — which is precisely what happened at 3→6 (DEC-95)."""
+    the budget (DEC-95)."""
     cap = ToolRegistry().budgets()["send_reply"]
     assert cap >= 2, "this test needs headroom to distinguish 'not before' from 'at'"
     guard = ReplyGuard(
@@ -196,7 +192,7 @@ def test_every_spec_carries_the_declaration_the_registry_reports():
 
     `budgets()` has the same property (`tests/unit/test_tool_registry.py`), and
     for the same reason — DEC-10's "the number enforced and the number declared
-    are one object", now with a second field travelling the same road.
+    are one object", with a second field travelling the same road.
     """
     registry = ToolRegistry()
     specs = registry.specs(
@@ -318,12 +314,11 @@ async def test_the_same_turn_with_nothing_terminal_runs_to_the_cap():
     declaration is today's real one (`send_reply`), which `now` is not.
     """
     model = await _drive(terminal=ToolRegistry().terminal_tools())
-    # 4 -> 5 (#110, 2026-09-07). The LOOP still runs to exactly four — `turns`
-    # is 4 and nothing terminal ever stops it, which is the property this
-    # control exists to prove. The fifth call is the budget-exhaustion draft:
-    # a turn that ends `limit_turns` with nothing said is precisely the case
-    # #110 added, so this turn now gets one tool-less completion over what it
-    # gathered before the pipeline decides what the room reads.
+    # The LOOP runs to exactly four — `turns` is 4 and nothing terminal ever
+    # stops it, which is the property this control exists to prove. The fifth
+    # call is the budget-exhaustion draft: a turn that ends `limit_turns` with
+    # nothing said gets one tool-less completion over what it gathered before the
+    # pipeline decides what the room reads.
     #
     # Kept as a call count rather than relaxed to `>= 4`: the number IS the
     # assertion here, and it is also the cheapest place the extra cost of that
@@ -339,9 +334,9 @@ def test_a_terminal_tool_with_budget_left_does_not_end_the_turn():
     multi-message possible at all.
 
     Same guard, same terminal declaration, same single call — one different
-    number. Under DEC-32 the turn ended the instant a terminal verb ran, which
-    is why `send_reply` could never produce a second message however high its
-    budget went: the loop was cancelled before the model was asked again.
+    number. If the turn ended the instant a terminal verb ran, `send_reply`
+    could never produce a second message however high its budget went: the loop
+    would be cancelled before the model was asked again.
     """
     guard = _guard(terminal={"now"}, budgets=BUDGETS_TWICE)
     guard._after_tool(_AfterToolCall("now"))
@@ -364,8 +359,7 @@ def test_a_guard_told_nothing_is_terminal_does_not_end_the_turn_immediately():
 
     Without that check a guard with no terminal verbs would cancel before the
     FIRST model call — every tag silent, and silent is R-5's normal-looking
-    state. The pre-DEC-42 code could not have this bug (it only ever SET the
-    flag), which is exactly why it is worth a test now.
+    state.
     """
     event = _BeforeModelCall()
     _guard(terminal=frozenset())._before_model(event)

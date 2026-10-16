@@ -41,11 +41,9 @@ from nora.infra.vision import (
     vision_waves,
 )
 
-# The operator's settled settings (design/media-read-lane/07-timeout-derivation
-# .md §1). Asserted with the REAL numbers rather than round test ones, because
-# the defect being fixed was invisible at any other triple: at loop 360,
-# configured 120 and budget 4 the old formula derived 54 s, and nothing in the
-# suite looked at the configured value to notice it never took effect.
+# The operator's settled settings. Asserted with the REAL numbers rather than
+# round test ones: only at these values does a configured ceiling that never
+# takes effect show.
 OPERATOR_LOOP = 360.0
 OPERATOR_CONFIGURED = 120.0
 
@@ -78,7 +76,7 @@ class FakeMimo:
         self.auths.append(request.headers.get("Authorization", ""))
         self.sessions.append(request.headers.get("x-opencode-session", ""))
         if self.require_session and not self.sessions[-1]:
-            # OpenCode Go's real answer, probed 2026-09-24.
+            # OpenCode Go's real answer.
             return web.json_response({"type": "error", "error": {
                 "type": "MissingSessionID",
                 "message": (
@@ -90,10 +88,8 @@ class FakeMimo:
         # carried in the wrong content block: a real OpenAI-compatible gateway
         # rejects `data:audio/aac;…` inside `image_url`, it does not describe it.
         #
-        # That second half is why this fake was rewritten. It used to accept ANY
-        # `image_url` whose url began `data:`, so an audio payload smuggled into
-        # an image block passed its negative control — and the per-modality
-        # split shipped with a transport bug no test could see.
+        # Accepting ANY `image_url` whose url begins `data:` would let an audio
+        # payload smuggled into an image block pass its negative control.
         content = body.get("messages", [{}])[-1].get("content", [])
         parts = [p for p in (content if isinstance(content, list) else []) if isinstance(p, dict)]
         for part in parts:
@@ -158,8 +154,8 @@ def _client(
 ) -> VisionClient:
     """A client whose LOOP ceiling is wide enough not to bind.
 
-    The client derives its per-call ceiling now (`_call_timeout`) instead of
-    being handed one, so every scenario below must say what loop it is inside.
+    The client derives its per-call ceiling (`_call_timeout`) rather than being
+    handed one, so every scenario below must say what loop it is inside.
     300 s x 0.6 = 180 s over one wave, so `timeout_seconds` is what binds and
     each test's explicit value — including the 0.3 s the hang test needs — is
     the one that reaches `wait_for`. The derivation's own arithmetic is asserted
@@ -202,8 +198,8 @@ def _client_kimi(
 # settled pair and config.example.toml's own pair — the only two points in this
 # file where `configured` is SMALLER than `loop * 0.6 / waves`, i.e. where the
 # `min(configured, per_call)` actually binds. Every other pair here has the
-# derived value below `configured`, so the whole 48-case sweep passed with the
-# `min` deleted outright — the ceiling was untested. (Mutation sweep, 2026-09-23.)
+# derived value below `configured`, so the sweep alone passes with the `min`
+# deleted outright.
 @pytest.mark.parametrize(
     "loop,configured",
     [(30.0, 20.0), (30.0, 999.0), (10.0, 8.0), (8.0, 20.0), (360.0, 120.0), (120.0, 40.0)],
@@ -213,7 +209,7 @@ def _client_kimi(
 def test_the_waves_of_one_read_together_stay_under_the_loop(
     loop, configured, windows, concurrency,
 ):
-    """The blocker (§2/§6.2) in its WALL-CLOCK form: one call < loop is not
+    """The WALL-CLOCK form of the loop bound: one call < loop is not
     enough, because a video is cut into up to ten windows and one `media_fetch`
     awaits them in sequence. If the waves together outlast the loop's shared
     `wait_for`, the last of them is the loop's silent `invocation_timeout`
@@ -234,9 +230,7 @@ def test_the_waves_of_one_read_together_stay_under_the_loop(
     # THE CEILING MUST ACTUALLY BIND when it is the smaller of the two. Without
     # this the `min(configured, per_call)` could be deleted outright and this
     # test would stay green: with the parameters above, `per_call` is already
-    # below `configured`, so `derived <= configured` holds either way — the
-    # assertion was checking a coincidence. (Found by the mutation sweep,
-    # 2026-09-23: reverting the `min` left these 48 cases passing.)
+    # below `configured`, so `derived <= configured` holds either way.
     assert derived == min(configured, loop * VISION_LOOP_SHARE / waves)
     assert derived <= configured, "the configured value is a CEILING, never a floor"
     if configured < loop * VISION_LOOP_SHARE / waves:
@@ -255,19 +249,16 @@ def test_the_waves_of_one_read_together_stay_under_the_loop(
 
 
 def test_the_derived_timeout_honours_the_configured_value_at_the_instagram_window_count():
-    """THE REGRESSION THAT WOULD HAVE CAUGHT THE INERT 120.
+    """The configured ceiling must take effect when one window is read.
 
     An Instagram Reel, Story or Post is 90 seconds or less, so `cut_video`
     produces ONE window and one invocation runs ONE wave. At the operator's
     settled settings the configured 120 must therefore be what binds — the
     whole point of setting it.
 
-    The old formula divided by the `media_fetch` budget (4) and derived
-    `min(120, 360 * 0.6 / 4) = 54 s`, against a measured 90-second-window median
-    of ~41.6 s with 13 of 19 runs over 36 s. Roughly a third of reads degraded
-    on a ceiling that existed to remove exactly that failure, and the suite had
-    nothing that looked at whether `configured` ever took effect
-    (design/media-read-lane/07-timeout-derivation.md §5.2).
+    Dividing by the `media_fetch` budget (4) would derive
+    `min(120, 360 * 0.6 / 4) = 54 s`, cutting off the slower reads of a 90-second window
+    that the configured ceiling exists to allow.
     """
     derived = derive_vision_timeout(
         loop_timeout_seconds=OPERATOR_LOOP,
@@ -281,7 +272,7 @@ def test_the_derived_timeout_honours_the_configured_value_at_the_instagram_windo
 
 
 def test_a_long_clip_tightens_the_per_call_timeout():
-    """The protection the old formula was reaching for, on the right quantity.
+    """The loop protection, on the quantity that actually elapses.
 
     Ten windows is `VIDEO_MAX_CHUNKS` — fifteen minutes of clip — read one after
     another, so each window gets a tenth of the share and the invocation still
@@ -302,12 +293,9 @@ def test_the_client_derives_one_ceiling_per_wave_count(mimo):
     """`_call_timeout` is the path the CLIENT actually uses — the pure function
     above is only half the change.
 
-    Found by the mutation sweep (2026-09-23): reverting `_call_timeout` to
-    always derive for a single window left every other test in this file
-    GREEN, because they all call `derive_vision_timeout`/`vision_waves`
-    directly and never touch the client's own derivation. The wiring that
-    decides `windows=None` vs a real count — the whole reason `describe` grew
-    the parameter — was unguarded.
+    The other tests in this file call `derive_vision_timeout`/`vision_waves`
+    directly and never touch the client's own derivation; this one guards the
+    wiring that decides `windows=None` vs a real count.
 
     Asserts on the client's own ceiling, not on the function's: a `windows=None`
     read (image, voice note, the text pass) is one wave; a ten-window read is
@@ -334,27 +322,20 @@ def test_the_client_derives_one_ceiling_per_wave_count(mimo):
 
 
 def test_the_media_fetch_budget_is_not_an_input_to_the_derivation():
-    """THE INVERTED TEST. Its ancestor —
-    `test_the_budget_of_vision_calls_together_stays_under_the_loop` — asserted
-    `budget * derived < loop` and so PINNED the defect: it proved a property of
-    a quantity that never elapses.
+    """The `media_fetch` budget is not an input to the derived timeout.
 
     Four `media_fetch` calls in one turn run CONCURRENTLY. They occupy
     `max(their durations)` of wall clock, not the sum, so dividing a wall-clock
-    ceiling by their count shrank the result by a factor corresponding to no
+    ceiling by their count would shrink it by a factor corresponding to no
     elapsed time at all. `budget` bounds REFUSALS (DEC-10's count), not seconds.
 
-    So the assertion is now the negative one: the budget is not an input, and no
-    value of it may move the number. There is no `budget=` parameter left to
-    pass — this test states the property the signature enforces, in the terms an
-    operator raising `[llm.budgets] media_fetch` would ask it in.
+    There is no `budget=` parameter to pass — this test states the property the
+    signature enforces, in the terms an operator raising
+    `[llm.budgets] media_fetch` would ask it in.
     """
-    # The property is enforced by the SIGNATURE, so assert the signature. The
-    # first version of this test was parametrised over `budget` and asserted
-    # `derived == OPERATOR_CONFIGURED` — but its body never read the parameter,
-    # so it ran five IDENTICAL computations and proved nothing five times. A
-    # test that cannot see what it claims to measure is decoration; this reads
-    # the thing that actually changed.
+    # The property is enforced by the SIGNATURE, so assert the signature. A test
+    # parametrised over `budget` whose body never reads it would run identical
+    # computations and prove nothing.
     params = inspect.signature(derive_vision_timeout).parameters
     assert "budget" not in params, (
         "`budget` is back in the derivation's signature — budgeted calls run "
@@ -380,11 +361,10 @@ def test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart():
     """`VISION_WINDOW_CONCURRENCY` is the divisor's companion, and this is what
     stops the two from separating.
 
-    `waves = ceil(windows / concurrency)`. If `read_video_windows` grows a
-    bounded `asyncio.gather` (design/media-read-lane/01-chunk-parallelism.md)
-    while the constant stays 1, every window gets a ceiling derived for a serial
-    read — ten times tighter than the wall clock actually permits, and every
-    long clip starts timing out. If the constant rises while the loop stays
+    `waves = ceil(windows / concurrency)`. If `read_video_windows` grows a bounded
+    `asyncio.gather` while the constant stays 1, every window gets a ceiling derived
+    for a serial read — ten times tighter than the wall clock actually permits, and
+    every long clip starts timing out. If the constant rises while the loop stays
     sequential, the invariant this file proves is simply false.
 
     Read from the SOURCE rather than by timing the calls: the property is «these
@@ -394,20 +374,16 @@ def test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart():
     # CODE only, comments stripped. `read_video_windows`'s own comment NAMES
     # `asyncio.gather` — it explains that this guard exists and what moving the
     # two together would mean — so a substring check reads that explanation as
-    # the bug it warns about. This file's sibling test
+    # the bug it warns about. The sibling test
     # (`test_composition_hands_the_client_the_derivations_inputs_not_a_budget`)
-    # hit the identical trap and solved it the identical way; stripping is the
-    # house answer, not a local workaround.
+    # strips comments the same way.
     code = "\n".join(
         ln for ln in source.splitlines() if not ln.strip().startswith("#")
     )
     # EVERY way a window read can fan out, not just the one this file happens to
-    # name. The first version checked only `"gather" not in code`, and a
-    # `TaskGroup` fan-out walks straight through it: verified by injecting
-    # `async with asyncio.TaskGroup() ... create_task(ask(...))` into
-    # `read_video_windows`, which left this assertion GREEN while genuinely
-    # reading every window at once — the exact defect the test exists to catch.
-    # A guard that only knows one spelling of the thing it guards is decoration.
+    # name. Checking only `"gather" not in code` lets a `TaskGroup` fan-out walk
+    # straight through while genuinely reading every window at once. A guard that
+    # only knows one spelling of the thing it guards is decoration.
     fan_out = ("gather", "TaskGroup", "asyncio.wait", "ensure_future", "create_task")
     if VISION_WINDOW_CONCURRENCY == 1:
         found = [k for k in fan_out if k in code]
@@ -419,10 +395,7 @@ def test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart():
     else:
         # `code`, NOT `source`: both required strings already occur in this
         # function's own comment block, so grepping the unstripped text passes
-        # against a purely sequential loop — a second form of the same trap the
-        # default branch above was fixed for. (Independent review round 1,
-        # 2026-09-23: executed the committed body with concurrency 1/2/4 against
-        # the committed sequential function and all three passed.)
+        # against a purely sequential loop.
         assert "gather" in code, (
             f"VISION_WINDOW_CONCURRENCY is {VISION_WINDOW_CONCURRENCY} but the "
             f"window loop is still sequential — the divisor claims headroom the "
@@ -454,7 +427,7 @@ async def test_a_well_formed_image_is_described(mimo):
 # ---- the byte ceiling --------------------------------------------------------
 
 async def test_a_blob_over_the_byte_ceiling_is_never_sent(mimo):
-    """A byte ceiling below `media.max_bytes` (§2): over it, `too_large` and NO
+    """A byte ceiling below `media.max_bytes`: over it, `too_large` and NO
     request at all — the client must not ship a nine-figure body."""
     client = _client(mimo, max_bytes=len(RED_PNG) - 1)
     result = await client.describe(data=RED_PNG, media_type="image/png")
@@ -503,38 +476,26 @@ async def test_an_empty_answer_is_a_failure_not_a_blank_description(mimo):
 
 
 def test_composition_hands_the_client_the_derivations_inputs_not_a_budget():
-    """The wiring half of the fix, read from COMPOSITION'S OWN SOURCE.
+    """The wiring half, read from COMPOSITION'S OWN SOURCE.
 
-    This test used to assert the opposite — that composition resolved
-    `media_fetch`'s budget through `ToolRegistry.budgets()` and fed it to
-    `derive_vision_timeout`. That wiring was correct about the SECOND-READER
-    hazard it was written for (R-33: `[llm.budgets]` moving R-7's ceiling while
-    the timeout still divided by the raw table) and wrong about the quantity:
-    the budget counts calls that OVERLAP, and a wall-clock ceiling must not be
-    divided by those at all.
+    The budget counts calls that OVERLAP, and a wall-clock ceiling must not be
+    divided by those, so composition does not feed `media_fetch`'s budget to
+    `derive_vision_timeout`;
+    `test_the_media_fetch_budget_is_not_an_input_to_the_derivation` states that
+    property. The budget is resolved through `budgets()` at `tool_registry`, for
+    the refusal ceiling it genuinely bounds.
 
-    **Its second half is gone rather than adjusted.** It looped over
-    `[llm.budgets]` overrides asserting `budget * per_call < loop` — a property
-    of a quantity that no longer exists, since the budget is not an input to the
-    derivation and `derive_vision_timeout` has no `budget=` parameter to pass.
-    Keeping it would have meant re-deriving the concurrent count somewhere to
-    multiply by, which is the defect wearing a test's clothes.
-    `test_the_media_fetch_budget_does_not_move_the_derived_timeout` states what
-    replaced it. The budget is still resolved through `budgets()` — at
-    `tool_registry`, for the refusal ceiling it genuinely bounds — just not here.
-
-    What composition must do now is hand the client the derivation's INPUTS,
-    because the divisor (the window count) is only known per request: it comes
-    from `cut_video`, which runs a process after this object is built. Reading
-    the source is the only way to see that wiring; a test that built its own
-    client would be true by construction (external review, 2026-08-11)."""
+    Composition hands the client the derivation's INPUTS, because the divisor
+    (the window count) is only known per request: it comes from `cut_video`,
+    which runs a process after this object is built. Reading the source is the
+    only way to see that wiring; a test that built its own client would be true
+    by construction."""
     source = (Path(__file__).resolve().parents[1]
               / "nora" / "app" / "composition.py").read_text()
     call = source[source.index("vision_client = VisionClient("):]
     call = call[:call.index("\n    )")]
-    # CODE only. The comment above the arguments explains the defect by naming
-    # the budget that was removed, and a substring check would read that as the
-    # bug still being wired.
+    # CODE only. The comment above the arguments names the budget that is not
+    # wired, and a substring check would read that as the budget being wired.
     call = "\n".join(ln for ln in call.splitlines() if not ln.strip().startswith("#"))
 
     assert "loop_timeout_seconds=tier.timeout_seconds" in call, (
@@ -562,7 +523,7 @@ def test_composition_hands_the_client_the_derivations_inputs_not_a_budget():
     )
 
 
-# ---- the per-modality model override (2026-08-17 spec) ----------------------
+# ---- the per-modality model override ----------------------------------------
 
 async def test_a_per_call_model_overrides_the_configured_one(mimo):
     """The seam the split promises: naming a model for a modality must actually
@@ -581,26 +542,23 @@ async def test_a_per_call_model_overrides_the_configured_one(mimo):
 
 
 async def test_the_configured_model_is_used_when_no_override_is_given(mimo):
-    """The existing call shape keeps its exact behaviour: `media_fetch` before
-    this split passed no model, and must still reach the configured one."""
+    """A call that names no model reaches the configured one."""
     await _client(mimo).describe(data=RED_PNG, media_type="image/png")
     assert mimo.requests[-1]["model"] == "opencode-go/mimo-v2.5"
 
 
-# ---- the payload shape per modality (2026-08-17 spec, review round 1) --------
+# ---- the payload shape per modality -----------------------------------------
 
 def _block_types(body: dict) -> list[str]:
     return [p.get("type") for p in body["messages"][-1]["content"] if isinstance(p, dict)]
 
 
 async def test_audio_is_sent_as_an_input_audio_block(mimo):
-    """The finding that made the first cut of this split a false promise: the
-    model override chose WHICH model, but every modality was still shipped in an
-    `image_url` block, so enabling audio sent `data:audio/aac;…` as an image and
-    the gateway 400'd. «A flag and a model name» was untrue at the transport.
+    """Each modality is shipped in its own content block: shipping audio in an
+    `image_url` block sends `data:audio/aac;…` as an image and the gateway 400s.
 
-    Asserted against what the fake gateway RECEIVED, and the fake now rejects
-    media in the wrong block, so this cannot pass by agreeing with itself.
+    Asserted against what the fake gateway RECEIVED, and the fake rejects media
+    in the wrong block, so this cannot pass by agreeing with itself.
     """
     result = await _client(mimo).describe(data=RED_PNG, media_type="audio/mpeg")
     assert result.available, result.reason
@@ -653,12 +611,11 @@ async def test_a_wildcard_subtype_is_refused_before_the_request(mimo):
 
 
 async def test_each_modalitys_prompt_reaches_the_gateway(mimo):
-    """`DESCRIBE_PROMPTS` had no test at all: `media_fetch` never passes a
-    prompt, so selection happens inside this client — and every test that saw a
-    non-image replaced this client with a stub, making the assertion vacuous.
+    """`DESCRIBE_PROMPTS` selection happens inside this client, because
+    `media_fetch` never passes a prompt.
 
     Each leg asserts ITS OWN outcome and that the request count grew by
-    exactly one BEFORE looking at the prompt text (#392): under `make gate`'s
+    exactly one BEFORE looking at the prompt text: under `make gate`'s
     parallel load the video leg's preprocessing can fail or time out, so
     `describe` returns without calling the gateway and `requests[-1]` is still
     the PRIOR leg's request. Checked this way, that reads as a video
@@ -679,7 +636,7 @@ async def test_each_modalitys_prompt_reaches_the_gateway(mimo):
     assert mimo.requests[-1]["messages"][-1]["content"][0]["text"] == DESCRIBE_PROMPTS["video"]
 
 
-# ---- provider routing (2026-08-30): kimi direct lane ------------------------
+# ---- provider routing: kimi direct lane -------------------------------------
 
 async def test_a_kimi_provider_without_a_direct_client_fails_closed(mimo):
     """A `provider="kimi"` request on a client with NO direct client is a
@@ -697,12 +654,12 @@ async def test_a_kimi_provider_without_a_direct_client_fails_closed(mimo):
 
 
 async def test_a_kimi_provider_uses_the_direct_client(mimo):
-    """The kimi request must hit its direct client, and its body must carry the
-    same media block an omniroute request would — the transport changed, the
-    payload did not. The fake records BOTH the body and the Authorization
-    header (FakeMimo.auths); `_client_kimi` gives each client its own key, so
-    the bearer key proves WHICH client travelled — a silent regression to the
-    omniroute client would carry `Bearer omniroute-key` and go red."""
+    """The kimi request must hit its direct client, and its body must carry the same
+    media block an omniroute request would — only the transport differs. The fake
+    records BOTH the body and the Authorization header (FakeMimo.auths);
+    `_client_kimi` gives each client its own key, so the bearer key proves WHICH
+    client travelled — a silent regression to the omniroute client would carry
+    `Bearer omniroute-key` and go red."""
     result = await _client_kimi(mimo).describe(
         data=RED_PNG, media_type="video/mp4", provider="kimi",
     )
@@ -714,9 +671,9 @@ async def test_a_kimi_provider_uses_the_direct_client(mimo):
 
 
 async def test_the_default_provider_is_still_omniroute(mimo):
-    """A caller that never names a provider (every one before 2026-08-30)
-    keeps travelling through the gateway client — unchanged behaviour. The
-    bearer key carried by the request proves it used the omniroute client."""
+    """A caller that never names a provider travels through the gateway
+    client. The bearer key carried by the request proves it used the omniroute
+    client."""
     result = await _client_kimi(mimo).describe(data=RED_PNG, media_type="image/png")
     assert result.available, result.reason
     assert len(mimo.requests) == 1
@@ -761,8 +718,7 @@ async def test_an_opencode_go_provider_travels_its_own_direct_client(mimo):
 
 
 async def test_the_client_built_by_composition_sends_the_session_header(mimo, monkeypatch):
-    """design/media-read-lane/03 §3's verification obligation: the client
-    COMPOSITION builds — not one constructed here — must carry a fresh
+    """The client COMPOSITION builds — not one constructed here — must carry a fresh
     `x-opencode-session` on every request, because OpenCode Go answers
     `400 MissingSessionID` without one. The fake refuses exactly like the real
     endpoint, so a lane built without the hook fails this as an unavailable
@@ -796,13 +752,12 @@ async def test_the_client_built_by_composition_sends_the_session_header(mimo, mo
     assert len(set(mimo.sessions)) == 2, "each request carries its OWN session id"
 
 
-# ---- the enclosing turn's deadline bounds a read (DEC-197 review) ------------
+# ---- the enclosing turn's deadline bounds a read (DEC-197) -------------------
 #
 # `derive_vision_timeout` bounds ONE invocation. Reads the model issues in
 # SEPARATE loop turns run one after another and add up — three one-window reads
 # at 120 s are the whole of a 360 s loop — and a heartbeat turn runs under 120 s,
-# not the `[llm]` loop this client is built from. Langfuse: 6 of 11 multi-read
-# turns issued their reads one after another.
+# not the `[llm]` loop this client is built from.
 
 def test_a_read_takes_at_most_the_share_of_what_is_left_of_the_turn():
     from nora.domain.turn_deadline import turn_deadline
@@ -838,9 +793,9 @@ async def test_a_heartbeat_sized_turn_cuts_a_slow_read_short(mimo):
 
 
 async def test_describe_hands_its_window_count_to_the_ceiling(mimo, monkeypatch):
-    """The link the #403 review found unpinned: `describe(windows=10)` must reach
+    """`describe(windows=10)` must reach
     `wait_for` with the ten-window ceiling (360 x 0.6 / 10 = 21.6 s), not the
-    one-window 120 — a `describe` that ignored `windows` passed every test."""
+    one-window 120 — a `describe` that ignored `windows` would pass every other test."""
     from nora.infra.vision import client as client_module
 
     seen: list[float] = []
@@ -860,10 +815,9 @@ async def test_describe_hands_its_window_count_to_the_ceiling(mimo, monkeypatch)
 # ---- speech is asked for on the live look too (DEC-197) ----------------------
 
 async def test_the_live_look_asks_for_what_is_said_in_audio_and_video(mimo):
-    """`DESCRIBE_PROMPTS` is the `media_fetch` family; reverting it to the old
-    «the gist, never the words» wording left every test green (DEC-197
-    review), because the one prompt test compared the request to the constant
-    itself. Asserted on the body the endpoint RECEIVED."""
+    """`DESCRIBE_PROMPTS` is the `media_fetch` family and asks for speech on the
+    live look. Asserted on the body the endpoint RECEIVED, not by comparing the
+    request to the constant itself."""
     client = _client(mimo)
     await client.describe(data=b"ID3audio", media_type="audio/mpeg")
     await client.describe(data=RED_PNG, media_type="video/mp4")
@@ -878,7 +832,7 @@ async def test_the_live_look_asks_for_what_is_said_in_audio_and_video(mimo):
 
 
 async def test_a_direct_lane_with_no_key_sends_nothing_anywhere(mimo, monkeypatch):
-    """Design 05 §5's contract, end to end: composition with the lane's key
+    """End to end: composition with the lane's key
     UNSET, then a read through that lane — `unavailable`, and ZERO requests
     reach the gateway client (an OmniRoute fallback would drop the video and
     answer about the text it did receive)."""

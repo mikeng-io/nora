@@ -47,7 +47,7 @@ def test_resolve_is_platform_scoped(persons):
 
 
 def test_a_second_id_kind_for_the_same_person_resolves_to_them_too(persons):
-    """§3.2: any listed id resolves to the person — a hidden phone number
+    """Any listed id resolves to the person — a hidden phone number
     still resolves via the uuid Nora saw and the operator confirmed."""
     ref = persons.resolve("signal", "8185b8fa-359a-4c0a-c6ed-24814dc655bb")
     assert ref is not None
@@ -55,7 +55,7 @@ def test_a_second_id_kind_for_the_same_person_resolves_to_them_too(persons):
 
 
 def test_a_life360_member_id_resolves_to_the_same_person(persons):
-    """design/19 §3: a person's Life360 circle-member UUID binds to the SAME
+    """A person's Life360 circle-member UUID binds to the SAME
     person_id as their Signal number, so the presence collector can name a live
     circle member as one of Nora's people and join presence to memory on one
     key. Both ids land on `miles`."""
@@ -125,16 +125,14 @@ def test_a_bad_pulse_id_kind_is_a_startup_failure(tmp_path):
 # ------------------------------------------------------- instagram `username`
 
 def test_an_instagram_username_is_readable_as_the_handle_for_its_fbid(tmp_path):
-    """`username` has been an accepted, never-matchable `instagram` metadata
-    key since design/instagram-adoption/02 (`nora.domain.identity.
-    metadata_keys("instagram")`) — this is its first reader. Proves the two
+    """`username` is an accepted, never-matchable `instagram` metadata key
+    (`nora.domain.identity.metadata_keys("instagram")`). Proves the two
     id-vocabulary declarations this repo splits across `nora.domain.identity`
     (the allowed keys) and `nora.persons_file` (the pydantic shape that must
-    accept them) are still in sync: `_check_account` raises `PersonsError`
-    (via pydantic) the moment either one drops `username`, so this test would
-    go red on that mismatch before it ever reached a live identity.toml —
-    the exact class of startup crash a prior change shipped by adding an id
-    kind to one file and not the other (see this task's own safety note)."""
+    accept them) are in sync: `_check_account` raises `PersonsError`
+    (via pydantic) the moment either one drops `username`, so this test goes
+    red on that mismatch before it reaches a live identity.toml — the class of
+    startup crash caused by adding an id kind to one file and not the other."""
     p = tmp_path / "identity.toml"
     p.write_text(
         '[persons.miles]\nname = "Miles Novak"\n'
@@ -148,8 +146,8 @@ def test_an_instagram_username_is_readable_as_the_handle_for_its_fbid(tmp_path):
 
 
 def test_an_instagram_fbid_with_no_username_on_file_has_no_handle(tmp_path):
-    """The ordinary, EXPECTED state until an operator opts a person in —
-    `identity.example.toml` already shows `username` as optional metadata,
+    """The ordinary, EXPECTED state until an operator opts a person in:
+    `identity.example.toml` shows `username` as optional metadata,
     and the caller (`nora.agent.outbound._mentions`) must degrade to today's
     plain-text mention rather than raise or guess one."""
     p = tmp_path / "identity.toml"
@@ -238,8 +236,8 @@ def test_the_same_id_twice_under_the_same_person_is_not_a_duplicate_failure(tmp_
 
 
 def test_the_same_life360_member_id_across_two_circles_is_not_a_duplicate_failure(tmp_path):
-    """One physical Life360 account can sit in several circles (design/19 §3)
-    — `member_id` is per-ACCOUNT, not per-circle, so it legitimately repeats
+    """One physical Life360 account can sit in several circles —
+    `member_id` is per-ACCOUNT, not per-circle, so it legitimately repeats
     across blocks as long as `circle_id` differs. The generic copy-paste
     guard (`test_...same_id_twice...`, above) must not fire on this
     intentional pattern."""
@@ -355,7 +353,7 @@ def test_loads_identity_toml(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# design/10 §7.3 — hard break on the old shorthand
+# hard break on the old shorthand
 # ---------------------------------------------------------------------------
 
 
@@ -396,7 +394,7 @@ def test_an_unknown_id_kind_for_a_platform_is_a_startup_failure(tmp_path):
 
 
 def test_every_platform_in_the_preview_toml_is_accepted(tmp_path):
-    """design/10-preview-identity.toml's shape, matched exactly."""
+    """The preview identity TOML's shape is accepted, matched exactly."""
     p = tmp_path / "identity.toml"
     p.write_text(
         "[persons.miles]\n"
@@ -422,21 +420,20 @@ def test_every_platform_in_the_preview_toml_is_accepted(tmp_path):
     assert persons.resolve("signal", "8185b8fa-359a-4c0a-c6ed-24814dc655bb") is not None
     assert persons.resolve("telegram", "123456789") is not None
     # A username is ACCEPTED in the file (so it stays readable) and never
-    # INDEXED — a renameable handle must not resolve a person (operator
-    # 2026-08-14). Both platforms' usernames are present in the TOML above, so
-    # these prove the exclusion rather than an omission.
+    # INDEXED — a renameable handle must not resolve a person. Both platforms'
+    # usernames are present in the TOML above, so these prove the exclusion
+    # rather than an omission.
     assert persons.resolve("signal", "miles.42") is None
     assert persons.resolve("telegram", "pinegrove") is None
     assert persons.resolve("discord", "100000000000000003") is not None
     assert persons.resolve("whatsapp", "+85212345678") is not None
 
 
-# ── many accounts per platform (design/10 §3, the multi-account baseline) ────
+# ── many accounts per platform ───────────────────────────────────────────────
 # A person holding several accounts on ONE platform is the ordinary case, not
 # an edge case: a dual-SIM personal/work pair, a second Discord, a burner
 # Telegram. This is a different axis from many ID FORMS of one account (phone /
-# uuid / username), which the tests above already cover — the original schema
-# conflated the two and had nowhere to put the second account.
+# uuid / username), which the tests above already cover.
 
 
 def _write(tmp_path, body: str):
@@ -477,7 +474,7 @@ def test_two_accounts_on_one_platform_resolve_to_the_same_person(tmp_path):
 
 def test_a_label_is_never_matchable(tmp_path):
     """`label` is operator-authored free text. If it reached the reverse index
-    a spoofable string would become a resolvable identity (design/10 §1.3)."""
+    a spoofable string would become a resolvable identity."""
     persons = load_persons(_write(tmp_path, TWO_ACCOUNTS))
     assert persons.resolve("signal", "personal") is None
     assert persons.resolve("signal", "business") is None
@@ -486,7 +483,7 @@ def test_a_label_is_never_matchable(tmp_path):
 
 def test_the_retired_single_table_form_names_its_replacement(tmp_path):
     """pydantic's own "Input should be a valid list" names neither the new
-    shape nor why it changed; §7.3 set the precedent that this file's breaks
+    shape nor why it changed; this file's breaks
     get a readable error."""
     body = '[persons.miles]\nname = "Miles"\n[persons.miles.signal]\nphone = "+852111"\n'
     with pytest.raises(PersonsError, match=r"array of tables"):
@@ -595,10 +592,9 @@ def test_an_alias_never_resolves_a_sender(tmp_path):
 
     A nickname is hand-written by the operator and a display name is settable
     by anyone, so letting either resolve a sender would hand identity to
-    whoever can type it (design/10 §1.3). The property holds structurally —
-    `aliases` sits on the person, not inside a platform account block, so the
-    index loop cannot reach it — but structure is not a test, and this was
-    previously unpinned despite being claimed.
+    whoever can type it. The property holds structurally — `aliases` sits on
+    the person, not inside a platform account block, so the index loop cannot
+    reach it — but structure is not a test, so this pins it.
     """
     p = _write(tmp_path, (
         '[persons.miles_novak]\nname = "Miles"\naliases = ["阿Miles", "俊爺", "norty"]\n'
@@ -673,7 +669,7 @@ def test_name_transcript_resolves_per_platform(tmp_path):
     assert out[0].person_name is None
 
 
-# ── direct messages: addressed from identity.toml alone (operator rule 2026-10-05) ──
+# ── direct messages: addressed from identity.toml alone ──
 
 _DIRECT_TOML = """
 [persons.miles]

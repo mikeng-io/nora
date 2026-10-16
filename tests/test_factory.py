@@ -32,12 +32,11 @@ def _guard() -> ReplyGuard:
 
 
 def test_create_client_is_a_plain_constructor_not_a_memoized_singleton():
-    """DEC-13: `create_client` used to memoize onto a module-level `_CLIENT`
-    global and return the same object on every call. That global is gone —
-    "one client for the whole process" is now a property of composition-root
+    """DEC-13: `create_client` keeps no module-level `_CLIENT` global.
+    "One client for the whole process" is a property of composition-root
     *call discipline* (`build_dependencies` calls this exactly once and
     threads the result through `Dependencies.client`), not of this
-    function, so two direct calls now legitimately return two different
+    function, so two direct calls legitimately return two different
     instances."""
     a = factory.create_client(base_url=BASE_URL, api_key=API_KEY)
     b = factory.create_client(base_url=BASE_URL, api_key=API_KEY)
@@ -64,14 +63,13 @@ def test_model_provider_carries_the_tier_params():
 def test_the_default_tool_choice_is_still_required_after_it_became_a_parameter():
     """THE thing that must not move (DEC-21, and `tool_choice`'s own module).
 
-    `tool_choice` is a parameter now, because the Dreamer's loop ends by the
+    `tool_choice` is a parameter because the Dreamer's loop ends by the
     model declining to call anything and under `"required"` that is unreachable.
-    Every TAG-path call site takes the default, and the default is the measured
-    one: under `"auto"` on a first call the model answers in prose 5/6 —
-    not a tool call, not a message, Nora silent while the turn looks
-    successful (design/16 §2.1). A default that drifted to `"auto"` would ship
-    exactly that, and no other test in this repo asserts on the value a
-    default-argument call produces.
+    Every TAG-path call site takes the default, and the default is `FIRST_CALL`:
+    under `"auto"` on a first call the model can answer in prose — not a tool
+    call, not a message, Nora silent while the turn looks successful. A default
+    that drifted to `"auto"` would ship exactly that, and no other test in this
+    repo asserts on the value a default-argument call produces.
 
     Pinned against `FIRST_CALL` AND against the literal, because `FIRST_CALL`
     changing value is one of the ways this regresses.
@@ -111,11 +109,10 @@ def test_build_limits_matches_r8():
 def test_build_limits_takes_the_loop_budget_and_never_the_per_call_ceiling():
     """R-24, at this function's own level.
 
-    `output_tokens` used to BE `max_tokens` — the loop was allowed to emit
-    exactly what one call was allowed to emit, and measured calls emitted
-    99.8% of it (3,993 of 4,000). There is no longer a `max_tokens` parameter
-    to pass, which is what makes the regression unspellable rather than merely
-    unlikely: the only way back is to change the signature.
+    The loop's `output_tokens` is independent of a call's `max_tokens`: there is
+    no `max_tokens` parameter to pass, which is what makes the conflation
+    unspellable rather than merely unlikely: the only way back is to change the
+    signature.
     """
     import inspect
 
@@ -150,8 +147,7 @@ def test_create_agent_is_stateless_by_construction():
 def test_agent_name_defaults_to_nora_and_flows_to_the_trace_identity():
     """`cfg.agent.name` becomes BOTH the Strands span name and the agent_id, so a
     cloned agent ("delia") traces under its own lineage. The default reproduces
-    today's "nora" span exactly — no saved Langfuse view is orphaned by the
-    section's arrival (2026-08-08)."""
+    today's "nora" span exactly, so no saved Langfuse view is orphaned."""
     model = factory.create_model_provider(
         model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
     )
@@ -307,7 +303,7 @@ def _read_only_tools() -> list:
     """Strands tool objects named for the registry's DERIVED read-only set.
 
     Named from `read_only_tools()` rather than hand-listed, which is the whole
-    mechanism (the spec's own act-verb list was four short). Stand-ins rather
+    mechanism (a hand-written act-verb list can fall short). Stand-ins rather
     than the registry's real objects because `ToolRegistry.build` wants a tag's
     worth of collaborators and this file is about the constructor, not the
     table."""
@@ -355,7 +351,7 @@ def test_the_dream_agent_has_no_skill_layer():
     Both halves: no plugin installed, and no tool the plugin would have
     registered. `create_agent(skills_dir=...)` is what would put either there,
     and this constructor has no such parameter to pass — see the signature test
-    below, which is what makes the regression unspellable rather than merely
+    below, which is what makes it unspellable rather than merely
     absent."""
     agent = _dream_agent()
     assert "skills" not in agent.tool_names
@@ -377,12 +373,12 @@ def test_the_dream_agent_takes_none_of_the_tag_paths_welded_parameters():
 
     params = set(inspect.signature(factory.create_dream_agent).parameters)
     assert params.isdisjoint({"pre_fill", "skills_dir", "tool_call_log"})
-    # `reasoning_watch` (issue #325) is the one parameter BOTH constructors
+    # `reasoning_watch` is the one parameter BOTH constructors
     # take, and it is admitted here rather than excluded because it is not a
     # tag-path concern that leaked: it observes the request shape the Chat
     # Completions transport strips reasoning from, which is a property of the
     # TRANSPORT and belongs to every loop that speaks through it. The Dreamer
-    # is in fact the path most exposed to it as of 2026-09-17 — see
+    # is the path most exposed to it — see
     # `docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md`. The three
     # names above stay unspellable; this one is deliberately spellable on both.
     assert params == {"model", "system_prompt", "tools", "guard",
@@ -420,7 +416,7 @@ def test_the_dream_agent_is_stateless_by_construction():
 
 
 def test_two_dream_agents_share_no_state():
-    """D4 again, at the second constructor: fresh agent per dream run. Two runs
+    """D4, at the second constructor: fresh agent per dream run. Two runs
     overlap the same way two tags do, so the per-run objects that carry mutable
     state — the message list and the retry strategy — must not be shared."""
     a, b = _dream_agent(), _dream_agent()
@@ -492,7 +488,7 @@ def test_wiring_skills_registers_the_activation_tool():
 
 
 def test_wiring_skills_injects_metadata_not_bodies():
-    """Progressive disclosure (design/12 §1): the prompt gains each skill's NAME
+    """Progressive disclosure: the prompt gains each skill's NAME
     and when-to-load line, and the body arrives only on activation — never here."""
     prompt = _inject(_agent(skills_dir=SKILLS_DIR))
     assert "<available_skills>" in prompt
@@ -506,7 +502,7 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
     directory `create_agent` was given. `AgentSkills.skills` resolves a name by
     pure dict lookup against the operator-loaded set — exactly as restrictive as
     `nora.skills.loader.SkillStore.resolve` — so a message naming a path, a URL
-    or an inline blob is a dict miss, never a new source (design/12 §2).
+    or an inline blob is a dict miss, never a new source.
 
     The plugin is constructed here EXACTLY as `factory.create_agent` constructs
     it (`AgentSkills(str(skills_dir), strict=False)`), driven against a real
@@ -522,11 +518,8 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
 
     # Only the operator's skills loaded; naming one is the intended activation.
     # (the operator directory's skills, sorted alphabetically by the loader;
-    # image-generation joined 2026-09-23, DEC-193, computer-use 2026-10-01,
-    # design/sandbox-runtime S3a, and document-creation the same day, ADR 0020.
-    # `self-description` moved into
-    # `nora/doctrine/core/identity.md` on 2026-09-17 and `personalization` into
-    # `nora/doctrine/rooms/conduct.md` on 2026-09-24, ADR 0016.)
+    # `self-description` and `personalization` live in doctrine, not skills,
+    # ADR 0016.)
     assert [s.name for s in plugin.get_available_skills(agent)] == [
         "computer-use", "document-creation", "image-generation", "navigation",
         "video-generation"]
@@ -568,13 +561,12 @@ def test_the_model_spec_still_defaults_to_required():
 
 
 def test_a_model_source_hands_out_the_tool_choice_its_spec_declares():
-    """The gap between Task 2.4 and Task 2.5, closed: giving
-    `create_model_provider` a parameter was not enough, because `ModelSource`
-    is what actually builds the provider and it was hard-coded to the tag
-    path's value. A Dreamer built off the tag path's source would run its
-    read-only loop under `"required"` — and a loop with no terminal verb can
-    never stop under `"required"`, which is the entire reason `DreamGuard`
-    exists."""
+    """`create_model_provider` taking a `tool_choice` parameter is not enough:
+    `ModelSource` is what actually builds the provider, so it must hand out the
+    value its spec declares rather than the tag path's. A Dreamer built off the tag
+    path's source would run its read-only loop under `"required"` — and a loop
+    with no terminal verb can never stop under `"required"`, which is the entire
+    reason `DreamGuard` exists."""
     from nora.agent.factory import ModelSource, ModelSpec
 
     class _Client:

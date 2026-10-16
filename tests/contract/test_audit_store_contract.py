@@ -64,8 +64,8 @@ async def test_recent_limit_takes_the_newest(store):
 
 
 async def test_recent_before_takes_the_newest_strictly_before_the_bound(store):
-    """design/self-awareness/08 §2: the transcript tools' `before`. Exclusive
-    at the bound, newest `limit` below it, oldest-first, one conversation."""
+    """The transcript tools' `before`: exclusive at the bound, newest `limit` below it,
+    oldest-first, one conversation."""
     for i in range(6):
         await store.append(message=_msg(body=f"m{i}", ts=i * 10))
     await store.append(message=_msg(conv="g2", body="other", ts=5))
@@ -117,9 +117,8 @@ def _with_link(conv="g1", ts=1, file_id=_FILE_ID) -> NormalizedMessage:
 
 
 async def test_file_links_are_stored_beside_the_row_and_read_back(store):
-    """design/external-files §1: both stores write the same
-    `external_files_json` text (one domain function), every transcript read
-    carries it, and `external_file_rows` is `media_rows`' shape over it."""
+    """Both stores write the same `external_files_json` text (one domain function), every
+    transcript read carries it, and `external_file_rows` is `media_rows`' shape over it."""
     from nora.domain.external_files import external_files_json
 
     expected = external_files_json(_with_link().external_files)
@@ -155,12 +154,12 @@ async def test_recent_with_a_zero_limit_is_empty(store):
 
 
 async def test_recent_with_a_negative_limit_is_empty(store):
-    """The regression this guards: SQLAlchemy renders `.limit(-1)` as
-    `LIMIT -1`, which the old SQLite backend treated as unbounded rather than
-    zero (Postgres errors on it), so a naive `SqlRecordStore.recent(limit=-1)`
-    would dump or crash instead of returning none. `FakeRecordStore` already
-    returned `[]` here; `SqlRecordStore` must short-circuit rather than issue
-    that query."""
+    """`SqlRecordStore.recent(limit=-1)` returns none, like `FakeRecordStore`.
+
+    SQLAlchemy renders `.limit(-1)` as `LIMIT -1`, which an unbounded-on-negative backend
+    treats as unbounded rather than zero (Postgres errors on it), so a naive
+    implementation would dump or crash. `SqlRecordStore` must short-circuit rather than
+    issue that query."""
     await store.append(message=_msg())
     assert await store.recent(conversation_id="g1", limit=-1) == []
 
@@ -191,12 +190,11 @@ async def test_depth_to_is_scoped_to_the_conversation(store):
 
 
 async def test_depth_to_on_a_duplicated_ts_matches_recents_own_tie_break(store):
-    """Two rows can legitimately share a `ts` (design/11 §2.2's own caveat).
-    `depth_to` must count through to the LAST of them in `recent`'s own
-    `ts DESC, id DESC` order — the older row by insertion, since a smaller
-    `id` sorts after a larger one for a tied `ts` — because that is the row
-    `nora.agent.prefill._by_ts` resolves a quote to (`setdefault` over an
-    oldest-first list keeps the first-seen, i.e. lowest-id, row)."""
+    """Two rows can legitimately share a `ts`. `depth_to` must count through to the LAST of
+    them in `recent`'s own `ts DESC, id DESC` order (the older row by insertion, since a
+    smaller `id` sorts after a larger one for a tied `ts`), because that is the row
+    `nora.agent.prefill._by_ts` resolves a quote to (`setdefault` over an oldest-first
+    list keeps the first-seen, i.e. lowest-id, row)."""
     await store.append(message=_msg(body="older", ts=5))
     await store.append(message=_msg(body="newer-same-ts", ts=5))
     await store.append(message=_msg(body="after", ts=6))
@@ -231,11 +229,10 @@ async def test_set_delivery_outcome_updates_only_the_matching_row(store):
 
 
 async def test_set_delivery_outcome_corrects_the_rows_timestamp(store):
-    """Bug B (design/11 §2.3). `Deliverer` stamps `time.time()` locally at
-    record-first time; Signal assigns its own sent-timestamp and that is what a
-    reply's `quote.id` points at. The correction rides the post-send update
-    that already existed — no second write, so WAL's single writer is
-    untouched and A9's record-first ordering is preserved."""
+    """`Deliverer` stamps `time.time()` locally at record-first time; Signal assigns its own
+    sent-timestamp and that is what a reply's `quote.id` points at. The correction rides
+    the post-send update, with no second write, so WAL's single writer is untouched and
+    the record-first ordering is preserved."""
     row_id = await store.append(message=_msg(ts=1785950108283))
     await store.set_delivery_outcome(
         row_id=row_id, status=DeliveryStatus.SENT, ts=1785950108291,
@@ -256,7 +253,7 @@ async def test_set_delivery_outcome_on_an_unknown_row_is_a_silent_no_op(store):
 
 
 # ---------------------------------------------------------------------------
-# quoted_ts — the parent pointer, written in the SAME insert (design/11 §2.2)
+# quoted_ts — the parent pointer, written in the SAME insert
 # ---------------------------------------------------------------------------
 
 
@@ -282,10 +279,9 @@ async def test_quoted_ts_needs_no_extra_argument_because_it_rides_the_message(st
 
 
 async def test_row_ids_are_positive_and_start_at_one(store):
-    """The id sequence starts at 1 (SQLite AUTOINCREMENT then, a Postgres
-    sequence now). A 0-based fake would make the first id falsy, so any
-    `if row_id:` would behave differently against the fake than against
-    production — the drift this suite exists to prevent."""
+    """The id sequence starts at 1 (a Postgres sequence). A 0-based fake would make the first
+    id falsy, so any `if row_id:` would behave differently against the fake than against
+    production, the drift this suite exists to prevent."""
     assert await store.append(message=_msg()) == 1
     assert await store.append(message=_msg(ts=2)) == 2
 
@@ -350,9 +346,9 @@ async def test_unattributed_honours_its_limit(store):
 
 
 async def test_unattributed_with_a_non_positive_limit_is_empty(store):
-    """Same trap `recent` documents: `.limit(-1)` was SQLite's unbounded
-    `LIMIT -1` (Postgres errors on it), so a naive implementation dumps or
-    crashes; the store must short-circuit."""
+    """Same trap `recent` documents: `.limit(-1)` is unbounded on some backends (Postgres
+    errors on it), so a naive implementation dumps or crashes; the store must
+    short-circuit."""
     await store.append(message=_msg())
     assert await store.unattributed(limit=0) == []
     assert await store.unattributed(limit=-1) == []
@@ -388,13 +384,11 @@ async def test_unattributed_carries_the_platform_for_re_resolution(store):
 
 
 async def test_unattributed_carries_the_full_envelope(store):
-    """`nora persons pending` reads a sender's OTHER id forms out of
-    `raw_json`: under sealed sender the same account arrives as a phone number
-    on one message and as an ACI on another, and `sender_id` alone therefore
-    lists one account as two pending entries. `FakeRecordStore` used to record
-    `raw_json` as None, which nothing noticed while nothing read it back — it
-    would have let every pending-sender test pass against a store production
-    does not have."""
+    """`nora persons pending` reads a sender's OTHER id forms out of `raw_json`: under sealed
+    sender the same account arrives as a phone number on one message and as an ACI on
+    another, and `sender_id` alone therefore lists one account as two pending entries.
+    `FakeRecordStore` must record `raw_json`, or every pending-sender test passes against
+    a store production does not have."""
     envelope = {"envelope": {"source": "+852111", "sourceUuid": "u-1"}}
     await store.append(message=_msg(raw=envelope))
     row = (await store.unattributed(limit=10))[0]
@@ -455,11 +449,10 @@ async def test_since_returns_human_rows_ascending_after_a_cursor(store):
 
 
 async def test_since_including_nora_returns_nora_rows_ascending_after_a_cursor(store):
-    """The standing fold's read (design/standing-watermark/20): the same cursor
-    shape as `since`, but Nora's OWN rows are included — the fold needs her
-    replies to re-judge her position, and `since` must keep excluding them for
-    the Dreamer. One method, one difference, and this test pins exactly that
-    difference against BOTH implementations."""
+    """The standing fold's read: the same cursor shape as `since`, but Nora's OWN rows are
+    included, because the fold needs her replies to re-judge her position, and `since`
+    must keep excluding them for the Dreamer. One method, one difference, and this test
+    pins exactly that difference against BOTH implementations."""
     ids = []
     for i, (body, is_nora) in enumerate(
         [("a", False), ("b", True), ("c", False), ("d", True)], start=1
@@ -504,15 +497,14 @@ def test_both_implementations_satisfy_the_port():
 
 
 async def test_an_unattributed_row_carries_its_custody_index(store):
-    """`UnattributedRow.media_json` (issue #116). These rows are FED TO HONCHO
-    by lazy adoption, and on master a photo's description and a voice note's
-    words rode in `body` — so a back-filled row reached memory with them. The
-    join keys on `media_json` and NEVER on the body (a handle in prose is
-    forgeable), so without this column adoption could not join at all and every
-    repaired row reached memory as `[image a3f2c1]` and nothing else.
+    """`UnattributedRow.media_json`. These rows are FED TO HONCHO by lazy adoption, so a
+    back-filled row must reach memory with its photo description or voice words. The join
+    keys on `media_json` and NEVER on the body (a handle in prose is forgeable), so
+    without this column adoption could not join at all and every repaired row would reach
+    memory as `[image a3f2c1]` and nothing else.
 
-    Selecting seven columns where the row now has eight leaves the whole suite
-    green, which is why this is asserted rather than assumed."""
+    Selecting seven columns where the row has eight leaves the whole suite green, which is
+    why this is asserted rather than assumed."""
     blob = MediaBlob(
         sha256="a3f2c1" + "0" * 58, media_type="image/png", size=4)
     await store.append(message=NormalizedMessage(
@@ -527,7 +519,7 @@ async def test_an_unattributed_row_carries_its_custody_index(store):
     assert blob.sha256 in rows[0].media_json
 
 
-# ── edits (design/message-edits/01) ──────────────────────────────────────────
+# ── edits ──────────────────────────────────────────────────────────────────
 
 
 def _edit(body: str, ts: int, *, conv="g1", sender="+852111", raw=None,
@@ -574,8 +566,8 @@ async def test_since_reads_fold_edits_too(store):
 
 
 async def test_an_edit_is_found_by_the_platforms_handle(store):
-    """WhatsApp, Instagram and Discord name the edited message by their own
-    handle, which `append` now stores from `NormalizedMessage.message_id`."""
+    """WhatsApp, Instagram and Discord name the edited message by their own handle, which
+    `append` stores from `NormalizedMessage.message_id`."""
     base = _msg(platform="whatsapp", body="hi", ts=10)
     row = await store.append(message=dataclasses.replace(base, message_id="3EB0A"))
     found = await store.find_edited(
@@ -680,10 +672,10 @@ async def test_an_edit_that_could_not_see_mentions_records_unknown(store):
 
 
 async def test_a_second_signal_edit_naming_the_first_edits_timestamp_finds_the_message(store):
-    """A Signal client edits the revision in front of it, so a second edit can
-    name the FIRST EDIT's sent-timestamp. Matching the original's `ts` alone
-    made every edit after the first an orphan (live 2026-09-24). Still keyed
-    on the author: another sender's edit at that timestamp finds nothing."""
+    """A Signal client edits the revision in front of it, so a second edit can name the FIRST
+    EDIT's sent-timestamp. Matching the original's `ts` alone would orphan every edit
+    after the first. Still keyed on the author: another sender's edit at that timestamp
+    finds nothing."""
     row = await store.append(message=_msg(body="v1", ts=1))
     await store.append_edit(message_id=row, message=_edit("v2", 7))
     found = await store.find_edited(
@@ -719,7 +711,7 @@ async def test_quoted_ts_of_points_a_revision_at_its_message(store):
 
 
 # ---------------------------------------------------------------------------
-# activity — how busy a room is, for `room_list` (design/self-awareness/07)
+# activity — how busy a room is, for `room_list`
 # ---------------------------------------------------------------------------
 
 
@@ -759,10 +751,9 @@ async def test_activity_of_a_room_with_no_human_rows_is_zero_and_no_time(store):
 
 
 async def test_activity_counts_distinct_speakers_in_the_window(store):
-    """People, not rows (design/self-awareness/07): asked which group has the
-    most PEOPLE talking, a message count lets one person account for twenty
-    lines. Distinct speakers at or after the cutoff; Nora is not one of them;
-    a speaker seen only before the cutoff does not count."""
+    """People, not rows: asked which group has the most PEOPLE talking, a message count lets
+    one person account for twenty lines. Distinct speakers at or after the cutoff; Nora is
+    not one of them; a speaker seen only before the cutoff does not count."""
     for ts, sender in [(20, "+852111"), (21, "+852111"), (22, "+852111"),
                        (25, "+852222"), (5, "+852333")]:
         await store.append(message=_msg(ts=ts, sender=sender))
@@ -808,7 +799,7 @@ async def test_activity_last_ts_is_not_bounded_by_the_window(store):
     assert (got.count, got.last_ts) == (0, 3)
 
 
-# ── reactions and deletes (design/cognition-loop/20-observe.md §1, step 1) ────
+# ── reactions and deletes ──────────────────────────────────────────────────
 
 
 def _touch(kind: str, *, ts: int, sender: str = "+852222", emoji: str = "",

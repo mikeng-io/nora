@@ -1,6 +1,6 @@
 """Qwen3-VL-Embedding-2B Q4_K_M through llama-server: every prompt's token ids
 are the official tokenizer's for the official sequence, or the item is an
-`unsupported` ERROR before any vector is asked for (design/unified-memory/20).
+`unsupported` ERROR before any vector is asked for.
 
 The official ids are golden: `tests/fixtures/qwen3vl_token_golden.json` was
 generated from the pinned tokenizer.json (its sha256 is in the file) on the

@@ -1,4 +1,4 @@
-"""`SqlCultureStore` — the chain is the tier (design/culture-tier).
+"""`SqlCultureStore` — the chain is the tier.
 
 Single-store file, not a contract suite (there is one implementation). The
 database is MODULE-scoped per `test_tag_trace_store.py`'s pattern: one

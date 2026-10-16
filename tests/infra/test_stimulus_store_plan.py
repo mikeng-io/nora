@@ -6,7 +6,7 @@ the evaluator's per-tick read must be answered from indexes, never by
 scanning a unit's history. The contract suite proves the answer; this proves
 the plan: with sequential scans priced out, each branch of the pending read
 ranges over its own index, and the last-activity read probes its own. The
-single predicate the pending read replaced (`NOT (id <= t AND coalesce(...)
+single predicate the pending read avoids (`NOT (id <= t AND coalesce(...)
 <= m)`, under `ORDER BY id LIMIT`) plans as a walk of `idx_stimulus_unit_id`
 from the start of the unit's history with the predicate as a filter — no Seq
 Scan, and no use of the due or undated index — which is what reddens this.

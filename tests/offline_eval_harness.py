@@ -11,43 +11,33 @@ Two drive modes, mutually exclusive on `run_case`:
 - **Live (`live=True`)** — Nora's actual model through the actual Strands loop
   (`tests.offline_eval_support.build_live_runner` + `nora.app.agent_runner.
   LiveAgentRunner`, which wraps `nora.agent.factory.create_agent`/`invoke` — the
-  same code path production runs), reaching the network. This is what
-  `evals/run.py --suite journeys` and `--suite participation` drive.
+  same code path production runs), reaching the network. Nothing in `evals/`
+  drives `run_case`; `python -m evals <corpus>` runs through `evals.backbone`.
 
-  **The adversarial suites do NOT drive this.** This sentence used to say they
-  did; they call `evals.run._invoke_agent`, which builds a bare `Agent` on
-  `doctrine.text` with no prefill and no tools, and never enters `run_case`.
-  The claim was read and believed on 2026-09-17 and a doctrine change merged on
-  it. The
-  graph around the model stays fakes (db/memory/adapter) so a live run measures
-  the MODEL's behaviour without touching a real platform or store; `--skills`
-  and `--seed-production` (see `run_case`) close specific production-shape gaps
-  on demand, still with zero writes to the real stores.
+  The graph around the model stays fakes (db/memory/adapter) so a live run
+  measures the MODEL's behaviour without touching a real platform or store;
+  `--skills` and `--seed-production` (see `run_case`) close specific
+  production-shape gaps on demand, still with zero writes to the real stores.
 
 Design note (this file's `run_case`/`Case` are design guidance, not pinned by
 `tests/test_evals_gate.py` — that test only exercises `Trajectory` + the evaluators):
 `run_case` builds its own pipeline graph from `tests.offline_pipeline.build_offline_pipeline`
-plus `nora.testing`'s fakes, rather than reusing `tests/integration/harness.py` —
-`evals/` may import `nora.app` and `nora.testing` and nothing else from `nora/`, and
-may not import `tests/` at all (`tests/test_boundaries.py`). The live-model branch
-exists NOW (added with the `LiveAgentRunner`; the docstring's older claim that it
-"does NOT reach out to a real model" was true for the original Task 40 wiring and
-was overtaken — see `nora/app/agent_runner.py` and the `live=True` path in
-`run_case` below); what remains deferred is only per-dataset (`--suite
-trigger/no_trigger/all`) live wiring, which still runs scripted.
+plus `nora.testing`'s fakes, rather than reusing `tests/integration/harness.py`.
+The live-model branch
+is the `live=True` path in `run_case` below (see `nora/app/agent_runner.py`);
+per-dataset (`--suite trigger/no_trigger/all`) live wiring is not done and still
+runs scripted.
 
-`FakeRecordStore`/`FakeMemoryStore` replace `run_case`'s earlier real (tmp) SQLite
-audit store: nothing here is pytest-gated (see the module note above), and the
-evaluators only ever read the returned `Trajectory` — not persisted rows — so an
-in-memory double is equivalent for this harness's purpose and drops the tmp-dir/
-migration machinery `tests/integration/harness.py` needs for its own, broader,
+`FakeRecordStore`/`FakeMemoryStore` stand in for a real audit store: nothing
+here is pytest-gated (see the module note above), and the evaluators only ever
+read the returned `Trajectory` — not persisted rows — so an in-memory double is
+equivalent for this harness's purpose and avoids the tmp-dir/migration
+machinery `tests/integration/harness.py` needs for its own, broader,
 fault-injection-capable test suite.
 
-MOVED from `evals/harness.py` 2026-09-18. It runs a case through the real
-pipelines with a SCRIPTED model and no network, which the rebuilt layer
-cannot do — `nora.subject.obtain` always composes the real graph against a
-real database and a real provider. Two unit tests need that, and one of
-them is R-97's only named test.
+It runs a case through the real pipelines with a SCRIPTED model and no network,
+which `nora.subject.obtain` cannot do: it always composes the real graph against
+a real database and a real provider. R-97's only named test needs that.
 """
 
 from __future__ import annotations
@@ -121,12 +111,9 @@ def _configured_trigger() -> str:
     raise RuntimeError("no config declares [engagement.trigger] text")
 
 
-# DERIVED from the config, not transcribed from it. The comment here used to
-# say «kept in sync with config.example.toml's engagement.trigger.text» above
-# the value `"nora.000"`, while that file — and the deployment — both say
-# `"nora"`. So `evals/corpora/no_trigger.yaml` was a corpus of near-misses for a
-# trigger no deployment runs, and four of its twelve cases actually TAGGED
-# under the real one (2026-09-09). A hand-copied vocabulary is what drifts.
+# DERIVED from the config, not transcribed from it: a hand-copied value drifts
+# from the trigger the deployment runs, and `evals/corpora/no_trigger.yaml` is
+# a corpus of near-misses, meaningful only against that trigger.
 TRIGGER_TEXT = _configured_trigger()
 
 # The harness drives `group_event(body=...)` with its DEFAULTS — conversation "g1",
@@ -148,17 +135,12 @@ class Trajectory:
     honcho_feeds: int = 0
     prefill_sufficient: bool = True
     # HOW the agent loop ended, read back off `nora_llm_stop_reason_total`
-    # (live runs only; None in scripted mode, which has no loop to end).
+    # (None when no stop reason was recorded).
     #
-    # Added 2026-08-10 because its ABSENCE made a root-cause analysis
-    # unfalsifiable: `high` reasoning produced 3x the silent turns of `none`,
-    # the obvious hypothesis was the loop hitting `limit_output_tokens`, and
-    # grepping the eval log for it returned zero — which looked like evidence
-    # and was nothing of the kind, because the harness never recorded a stop
-    # reason at all. A null result from an instrument that cannot measure the
-    # thing is not a null result (CLAUDE.md). `end_turn` with no reply and
-    # `limit_output_tokens` are completely different failures and were
-    # indistinguishable from here.
+    # Recorded because without it a silent turn cannot be attributed:
+    # `end_turn` with no reply and `limit_output_tokens` are completely
+    # different failures. A null result from an instrument that cannot measure
+    # the thing is not a null result (CLAUDE.md).
     stop_reason: str | None = None
     #: WHY the room heard nothing, read off `nora_silent_failures_total{reason}`.
     #:
@@ -195,14 +177,14 @@ class Trajectory:
     #: doctrine calibration, the second is a broken output contract. Empty
     #: string when she genuinely produced nothing.
     unrouted_prose: str = ""
-    #: The run's OWN `Metrics()` instance (R-99, design/social-per-network/
-    #: 30-link-owner-registry.md), for a case whose evidence is a fine-grained
-    #: counter no other `Trajectory` field carries — `nora_guard_vetoes_total
-    #: {rule="R-99"}` fired, or `nora_tool_calls_total{tool=...}` did NOT (the
-    #: tool body never ran). `None` is not a real state this harness produces
-    #: — `run_case` always sets it — but the type stays optional so a case
-    #: assembled by hand elsewhere (`test_the_deterministic_evaluators.py`)
-    #: is not forced to invent one it does not have.
+    #: The run's OWN `Metrics()` instance (R-99), for a case whose evidence is a
+    #: fine-grained counter no other `Trajectory` field carries —
+    #: `nora_guard_vetoes_total{rule="R-99"}` fired, or
+    #: `nora_tool_calls_total{tool=...}` did NOT (the tool body never ran).
+    #: `None` is not a real state this harness produces — `run_case` always
+    #: sets it — but the type stays optional so a case assembled by hand
+    #: elsewhere (`test_the_deterministic_evaluators.py`) is not forced to
+    #: invent one it does not have.
     metrics: Metrics | None = None
 
 
@@ -213,7 +195,7 @@ class Case:
     expected_output: str | None = None
     trigger: bool = True
     prefill_sufficient: bool = True
-    # The participation suite (design/dreamer-agent-loop/35 §9 gaps 1-2):
+    # The participation suite:
     # `expect` is the verdict the determination must reach — "speak" or
     # "silence" — graded on `Trajectory.sent` (see `evals.evaluators.
     # ParticipationVerdict` for why `sent`, not `tool_calls`). `seed` is the
@@ -225,11 +207,9 @@ class Case:
     seed: dict | None = None
     #: How many times to run this case. `1` is one draw of a stochastic
     #: process, and a suite of one-draw cases reports a number that is not
-    #: reproducible: the participation audit (2026-09-08) found
-    #: `commitment-followup-known` spoke 1 time in 5 with five distinct tool
-    #: sets, while the aggregate looked stable only because the other cases
-    #: were saturated at silence. `evals/relevance_gate.py` has carried this
-    #: since it was written; the flip gate had not.
+    #: reproducible: a case can speak on one draw and stay silent on the next
+    #: while the aggregate looks stable only because the other cases are
+    #: saturated at silence.
     sample: int = 1
 
     @classmethod
@@ -260,11 +240,10 @@ def load_cases(path: Path | str) -> list[Case]:
 async def _drain(background) -> None:
     """Await every background task spawned so far — ambient memory-feeds,
     spawned tags, AND `EngagementPipeline`'s post-reply exchange feed all land
-    in the same shared `BackgroundTasks` now (`EngagementPipeline` takes an
-    injected `spawn` instead of rolling its own private task set;
-    `tests.offline_pipeline.build_offline_pipeline` wires both pipelines' spawns to
-    this one `background.spawn`) — including ones spawned by tasks that are
-    themselves still in flight.
+    in the same shared `BackgroundTasks` (`EngagementPipeline` takes an injected
+    `spawn`; `tests.offline_pipeline.build_offline_pipeline` wires both
+    pipelines' spawns to this one `background.spawn`) — including ones spawned
+    by tasks that are themselves still in flight.
 
     Mirrors `tests/integration/harness.py::Harness.drain` exactly (same
     `asyncio.sleep(0)`-after-`gather` shape, for the same reason: a task's own
@@ -401,12 +380,11 @@ def _tool_calls_from_metrics(metrics: Metrics) -> list[str]:
     that refused a person name still reached for place_info. But this counts only
     calls that reached the tool body: a call `ReplyGuard` VETOES first (R-7 budget,
     an unknown/hallucinated name) records `nora_guard_vetoes_total{rule}` — NO
-    `tool` label — and is invisible here (external review, 2026-08-10). So the
-    reconstructed count is a LOWER BOUND on attempts, capped by the ReplyGuard
-    budgets: `ConvergesInBudget` therefore cannot see the worst flail (a tool
-    hammered past its budget), and a journey budget ≥ a tool's guard budget can
-    never fail on that tool. Good enough for tool-CHOICE grading, not for a true
-    attempt count.
+    `tool` label — and is invisible here. So the reconstructed count is a LOWER
+    BOUND on attempts, capped by the ReplyGuard budgets: `ConvergesInBudget`
+    therefore cannot see the worst flail (a tool hammered past its budget), and a
+    journey budget ≥ a tool's guard budget can never fail on that tool. Good enough
+    for tool-CHOICE grading, not for a true attempt count.
     """
     calls: list[str] = []
     for (name, labels), value in metrics.snapshot().items():
@@ -431,9 +409,9 @@ def _build_body(case: Case) -> str:
 
 
 class _MutableClock:
-    """The participation trigger's clock (design §3.5): the harness advances it
-    past `settle_seconds` between noting the message and closing the window, so
-    a case runs in milliseconds rather than wall-clock seconds. Monotonic-shaped
+    """The participation trigger's clock: the harness advances it past
+    `settle_seconds` between noting the message and closing the window, so a
+    case runs in milliseconds rather than wall-clock seconds. Monotonic-shaped
     (`float` seconds), matching `ParticipationTrigger`'s `clock` type."""
 
     def __init__(self, start: float = 1_000_000.0) -> None:
@@ -476,24 +454,23 @@ async def run_case(
         rows, real Honcho cards/conclusions) while all writes stay fake.
       - `skills_dir` turns the DEC-50 on-demand skill layer ON, mirroring
         production's `cfg.doctrine.dir.parent / "skills"`. None (default)
-        leaves it inert, as before a PR — so plain gate runs measure exactly
-        what they always measured.
+        leaves it inert, so plain gate runs are unaffected.
     """
     turns = script or []
     tool_calls = [name for turn in turns for name, _ in turn.tool_calls]
-    # A participation case (design §9): the incoming message is UNTAGGED, noted
+    # A participation case: the incoming message is UNTAGGED, noted
     # by the real `RelevanceGatePolicy`/`ParticipationTrigger`, and exactly one
     # determination runs through the real `FirePath.speak` once the harness
     # clock settles the window. The verdict is read off `Trajectory.sent`.
     participation = case.expect is not None
-    # ONE read of the wall clock for the whole case (issue #213), the same
+    # ONE read of the wall clock for the whole case, the same
     # "interpret once" discipline `build_prefill` uses for its own clock: the
     # seeded transcript's base AND the judged line's own timestamp below come
     # from this SAME `now_ms`, so the ordering between them is by
     # CONSTRUCTION rather than by two reads of the clock happening to agree.
     now_ms = int(datetime.now(UTC).timestamp() * 1000)
     if case.seed is not None:
-        # Per-case seed (§9 gap 2) — built nora-side so every tier row lands in
+        # Per-case seed — built nora-side so every tier row lands in
         # the eval unit (the footgun: unit-keyed rows seeded anywhere
         # else silently never render).
         seed = seed_from_dict(case.seed, now_ms=now_ms)
@@ -556,10 +533,10 @@ async def run_case(
         # shipped `config.toml`/`config.example.toml` production reads, so a
         # tier off in the deployment stays `None` in the eval too rather than
         # rendering a block production never would. In-memory doubles, never
-        # the real SQL stores (`evals/` may not import `nora.infra`).
+        # the real SQL stores: an eval run writes nothing real.
         #
         # EXCEPT the participation suite, which wires both
-        # UNCONDITIONALLY: the grounded-value gate (§3②) is meaningless with
+        # UNCONDITIONALLY: the grounded-value gate is meaningless with
         # the tiers off, and the knowledge-cut twins must differ ONLY in seed
         # content — a twin with the tier absent entirely would be a different
         # prompt SHAPE, not a cut fact. An enabled-but-empty tier still renders
@@ -575,7 +552,7 @@ async def run_case(
                     notes_store.notes[note.id] = note
                     notes_store.revisions[revision.id] = revision
             if standing_store is not None and seed.standing is not None:
-                # Remapped onto the eval room's own key (S4) — `seed.standing`
+                # Remapped onto the eval room's own key — `seed.standing`
                 # carries whatever room production last folded, which is never
                 # the eval room's own conversation id.
                 await standing_store.write(standing=dataclasses.replace(
@@ -605,20 +582,19 @@ async def run_case(
                 if live else FakeAgentRunner(turns)
             )
         participation_clock = _MutableClock() if participation else None
-        # Live mode wires the canned backends (F4) so the routing gate's siblings
+        # Live mode wires the canned backends so the routing gate's siblings
         # answer `ok` and a leak is a real choice, not a fallback artifact. Scripted
         # mode keeps the bare registry — its tool_calls come from the script.
         # `notes=` is what lets `note_read`/`note_search` answer. Without it
-        # the four note tools were registered against a `None` store and said
-        # `unavailable`, so a seeded note reached the prompt only as a
-        # title-and-description index line — and two of the three knowledge-cut
-        # twins could not flip.
+        # the note tools are registered against a `None` store and say
+        # `unavailable`, so a seeded note reaches the prompt only as a
+        # title-and-description index line and knowledge-cut twins cannot flip.
         tool_registry = (
             build_eval_tool_registry(notes=notes_store) if live else None
         )
         # Live mode also names the room so `saved_places`/`where_is` clear the R-31
         # subset gate (the room {miles} ⊆ the eval circle {miles}); scripted mode
-        # leaves the room unavailable, as before.
+        # leaves the room unavailable.
         roster = (
             FakeRosterSource(groups={_EVAL_GROUP_ID: (frozenset({_EVAL_MEMBER_ID}),)})
             if live else None
@@ -636,15 +612,14 @@ async def run_case(
             body = _build_body(case)
             # Mirrors tests/integration/harness.py::_HandlerView.on_event: parse the
             # raw signal-cli-shaped event the same way SignalAdapter.listen() would
-            # internally (Trap B moved that step off IngestPipeline and onto the
-            # adapter), then dispatch only if it parsed to something.
+            # internally, then dispatch only if it parsed to something.
             #
-            # `ts=` is EXPLICIT for a participation case (issue #213) — never
+            # `ts=` is EXPLICIT for a participation case — never
             # `group_event`'s bare `ts=1` default. Stamped at the SAME `now_ms`
             # `seed_from_dict` above ended its own window one step before, so
             # the untagged line under judgement lands strictly after every
             # seeded row: the newest thing `FakeRecordStore.recent`'s
-            # `(ts, id)` sort sees, rendered LAST, never `#1` sorted above a
+            # `(ts, id)` sort sees, rendered LAST, never sorted first above a
             # window it is 56 years older than. A non-participation case
             # (`tool_calls`/tag-suite driven) keeps the bare default: nothing
             # here renders an age for those, and `ts=1` is what the rest of
@@ -655,7 +630,7 @@ async def run_case(
             if message is not None:
                 await dispatcher.on_message(message)
             if participation and trigger is not None:
-                # The quiescence window (§3.5): noting the message opened it;
+                # The quiescence window: noting the message opened it;
                 # advance past the settle window and close it, which runs the
                 # ONE determination for the whole window through FirePath.speak.
                 assert participation_clock is not None
@@ -665,19 +640,17 @@ async def run_case(
         finally:
             await audit.aclose()
 
-        # HER feeds, counted by PEER rather than by a text prefix. This read
-        # `"[Nora]" in f[1]` — a prefix DEC-36 deleted when Honcho moved to
-        # one-speaker-per-peer streams, so no such string exists anywhere in
-        # `nora/` and the count was structurally 0. Vacuously passing today
-        # (nothing delivers on this path); a guaranteed FAIL pointing at Honcho
-        # instead of at the harness the moment it does.
+        # HER feeds, counted by PEER rather than by a text prefix: Honcho takes
+        # one-speaker-per-peer streams (DEC-36), so no `"[Nora]"` prefix exists
+        # anywhere in `nora/` and a prefix count would be structurally 0.
+        # Vacuously true while nothing delivers on this path.
         feeds = len([f for f in memory.fed if f[0] == cfg.memory.ai_peer])
         sent = list(adapter.texts)
         # Live mode has no script to read tool intent from — reconstruct it from
         # what the tools actually recorded this run (see the helper's caveat).
         # Read UNCONDITIONALLY. `nora_llm_stop_reason_total` is incremented by
         # the production stages for a scripted agent exactly as for a live one,
-        # so gating this read on `live` made None mean two different things —
+        # so gating this read on `live` would make None mean two different things —
         # "the model was never invoked" on the live path, and "scripted" on the
         # other. `ParticipationVerdict` treats a None as an ERROR rather than a
         # correct silence, and that is only sound if None has one meaning.
@@ -686,14 +659,12 @@ async def run_case(
         stop_reason = _stop_reason_from_metrics(metrics)
         silent_failures = _silent_failures_from_metrics(metrics)
         participation_silence = _participation_silence_from_metrics(metrics)
-        # WHAT ACTUALLY RAN, on both paths. This was live-only, and offline it
-        # fell back to the names in the SCRIPT — so every offline evaluator was
-        # grading the script rather than the run. `NoSendWithoutTrigger` then
-        # asserted «send_reply called 0 times» about a list the harness had
-        # been handed: mutating `nora.tag.is_tagged` to return True for every
-        # message left `--suite no_trigger` green and exiting 0 (verified
-        # 2026-09-09), and the same vacuity made three of the four trigger
-        # evaluators constants.
+        # WHAT ACTUALLY RAN, on both paths. Falling back to the names in the
+        # SCRIPT would make every offline evaluator grade the script rather
+        # than the run: `NoSendWithoutTrigger` would assert «send_reply called
+        # 0 times» about a list the harness had been handed, and mutating
+        # `nora.tag.is_tagged` to return True for every message would leave
+        # `--suite no_trigger` green.
         #
         # A scripted turn drives the REAL tool registry, so the counters move
         # for it too — the same thing that made `stop_reason` readable offline.

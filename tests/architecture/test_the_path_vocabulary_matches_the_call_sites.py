@@ -1,19 +1,17 @@
 """Every `audience` a `deliver.build` call site can pass is a DECLARED one.
 
 `audience` labels `nora_silent_failures_total`, `nora_llm_latency_seconds` and
-`nora_llm_stop_reason_total`, and since issue #325 it is also
-`reasoning_strip_log.path` — the column an operator groups by to ask which loop
-is losing its reasoning.
+`nora_llm_stop_reason_total`, and it is also `reasoning_strip_log.path` — the column
+an operator groups by to ask which loop is losing its reasoning.
 
-**This gate exists because the vocabulary was wrong in every document at once.**
-`nora_reasoning_strip_total`'s help text (the one a Grafana panel renders), the
-migration's docstring, the runbook and ADR 0013 all said
-«tag / participation / dreamer:<adaptor>». `nora/app/fire.py` was already
-sending `heartbeat` — every reminder and gathering turn, which is tool-using
-and multi-turn — and `proactive`. Anyone filtering
-`WHERE path IN ('tag','participation')` off that documentation dropped the
-reminder path in silence. The sibling label `outcome` was derived from a
-`Literal` precisely so it could not drift; `path` was hand-written beside it.
+**This gate exists because a hand-written vocabulary drifts from the call
+sites.** `nora/app/fire.py` sends `heartbeat` — every reminder and gathering
+turn, which is tool-using and multi-turn — and `proactive`, besides
+«tag / participation / dreamer:<adaptor>». Anyone filtering
+`WHERE path IN ('tag','participation')` off documentation that omits them drops
+the reminder path in silence. The sibling label `outcome` is derived from a
+`Literal` precisely so it cannot drift; `path` is declared in
+`nora.domain.audience` and checked here.
 
 **Derived from the CALL SITES, not from a list.** The check walks every
 `deliver.build(...)` under `nora/` — there is no registry of callers here, so a
@@ -181,9 +179,7 @@ def test_every_declared_speaking_audience_is_actually_reachable() -> None:
 
 def test_the_resolver_can_see_the_call_sites_it_is_checking() -> None:
     """THE POSITIVE CONTROL. A resolver that resolved nothing would report «no
-    undeclared audiences» with total confidence — which is the state this
-    property was already in when `heartbeat` and `proactive` shipped
-    undocumented."""
+    undeclared audiences» with total confidence."""
     values, blind = _audiences()
 
     assert not blind, (
@@ -206,8 +202,8 @@ def test_the_declared_constants_and_the_literal_cannot_drift() -> None:
     it are what the call sites import. Nothing makes those agree except this.
 
     A `Literal` narrowed without the constants (or the reverse) would leave the
-    help text describing one set while the code passed another — which is the
-    exact failure this module was written for, one layer in."""
+    help text describing one set while the code passed another — the failure
+    this module exists for, one layer in."""
     constants = {
         audience_names.TAG, audience_names.HEARTBEAT,
         audience_names.PARTICIPATION, audience_names.PROACTIVE,

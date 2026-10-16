@@ -1,5 +1,5 @@
 """`row_history` and its trigger: every in-place table is append-only in
-system time (design/cognition-loop/10-tiers.md §8, migration `0068`).
+system time (migration `0068`).
 
 Against a real Postgres, because the property lives in the database: a
 trigger, a partial unique index and a migration's backfill. What each test
@@ -230,15 +230,14 @@ async def test_the_backfill_dates_what_each_row_proves(pg_url: str, engine: Any)
     assert states(await _held(engine, "reminders", at(6))) == {
         fired: "done", cancelled: "cancelled",
     }
-    # the head the chain ends on IS the live row, for every backfilled table
-    # — up to a key a LATER migration added after this row's head version was
-    # written (0075_withdrawal's `unsupported_at`, added with no row_history
-    # catch-up): such a key is simply ABSENT from `head`, not `null`, and the
-    # read side (`nora.infra.sql.snapshot_at._insert_sql`,
-    # `jsonb_populate_recordset`) already treats an absent key as the
-    # column's own default — NULL here, since neither column added since
-    # this backfill carries a server default. A key `head` is missing must
-    # therefore be NULL in `live`, never some other value.
+    # the head the chain ends on IS the live row, for every backfilled table,
+    # up to a key a LATER migration added without a row_history catch-up
+    # (0075_withdrawal's `unsupported_at`): such a key is ABSENT from `head`,
+    # not `null`, and the read side (`nora.infra.sql.snapshot_at._insert_sql`,
+    # `jsonb_populate_recordset`) treats an absent key as the column's own
+    # default, NULL here since the columns added since this backfill carry no
+    # server default. A key `head` is missing must therefore be NULL in `live`,
+    # never some other value.
     async with engine.connect() as conn:
         for table in ("note", "reminders"):
             live_rows = (await conn.execute(sa.text(

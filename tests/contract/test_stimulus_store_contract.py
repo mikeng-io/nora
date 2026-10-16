@@ -1,5 +1,4 @@
-"""Shared contract for the stimulus store (design/cognition-loop/20-observe.md §3).
-Every implementation runs every test.
+"""Shared contract for the stimulus store. Every implementation runs every test.
 
 Two implementations: `nora.infra.sql.stimuli.SqlStimulusStore` over real
 Postgres, and `nora.testing.stimuli.InMemoryStimulusStore`. The evaluator's unit
@@ -10,7 +9,7 @@ the SQL does, and this suite is what says it does.
 its newest wake row, never a row rewritten; a stimulus is consumed when its id
 AND its pending-since time are both at or under that row's. The second bound
 is what keeps a `self`/`time` stimulus due later pending across an earlier wake
-(20 §3: «pending only from its due time»).
+(«pending only from its due time»).
 
 The database is built ONCE for this module and truncated between tests
 (AGENTS.md, «A contract suite scopes its database to the MODULE»).
@@ -140,7 +139,7 @@ async def test_the_newest_wake_is_the_watermark(store):
 
 
 async def test_a_stimulus_due_later_stays_pending_across_an_earlier_wake(store):
-    """20 §3: a self-wake set for 19:40 does not count at 15:00, and a wake at
+    """A self-wake set for 19:40 does not count at 15:00, and a wake at
     15:00 does not consume it, though its id is under the watermark."""
     due = NOW + 60_000
     later = await store.append(
@@ -397,14 +396,14 @@ async def test_a_random_run_of_wakes_claims_every_stimulus_exactly_once(store, s
 async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus(
     store, seed, limit,
 ):
-    """The same invariant under what production does to it (the strongest-tier
-    review of #646): TRACKED wakes (each awaits an outcome), 30% of which FAIL and
-    10% of which EXPIRE (no outcome row: a kill), closes that CARRY stimuli back
-    (waiting or not) and release them later, and a `limit` small enough to
-    TRUNCATE the read. A failed or expired wake claims nothing (the watermark falls
-    back over it); a closed one claims its set; so every stimulus is claimed by a
-    closing wake or is still pending, and one claimed twice was carried back.
-    Both stores run every seed; the SQL one is the one that has to hold."""
+    """The same invariant under what production does to it: TRACKED wakes (each
+    awaits an outcome), 30% of which FAIL and 10% of which EXPIRE (no outcome
+    row: a kill), closes that CARRY stimuli back (waiting or not) and release
+    them later, and a `limit` small enough to TRUNCATE the read. A failed or
+    expired wake claims nothing (the watermark falls back over it); a closed one
+    claims its set; so every stimulus is claimed by a closing wake or is still
+    pending, and one claimed twice was carried back. Both stores run every seed;
+    the SQL one is the one that has to hold."""
     import random
 
     from nora.domain.ports import NewCarry, NewWakeOutcome
@@ -499,11 +498,10 @@ async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulu
 async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in_both_stores(
     store, limit,
 ):
-    """Store parity (the strongest-tier review of #646): the in-memory view cut
-    unclaimed ids with `[:limit]` while SQL read them past the limit. Now the
-    range read, the carried and the unclaimed all sit under ONE bound, oldest
-    first, in both, so a truncated read can never hide an older stimulus behind a
-    newer one."""
+    """Store parity: the range read, the carried and the unclaimed all sit under
+    ONE bound, oldest first, in both stores, so a truncated read can never hide
+    an older stimulus behind a newer one (cutting unclaimed ids with `[:limit]`
+    in one store while the other reads past the limit would break this)."""
     from nora.domain.ports import NewCarry, NewWakeOutcome
 
     ids = [await store.append(stimulus=_msg(f"messages:{i}"), recorded_at_ms=NOW)
@@ -524,9 +522,9 @@ async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in
 
 
 async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_reads(store):
-    """`record_wake` cast `json.dumps(detail)` to jsonb, so every row was a jsonb
-    STRING and `detail->'unclaimed'` read NULL in a query. It writes the object;
-    a row written the old way (a string) still reads, in both stores."""
+    """`record_wake` writes `detail` as a jsonb OBJECT, so `detail->'unclaimed'`
+    is queryable; a row whose detail is a jsonb string still reads, in both
+    stores."""
     m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
     await store.record_wake(wake=NewWake(
@@ -545,7 +543,7 @@ async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_read
             "FROM cognition_wake ORDER BY id DESC LIMIT 1"
         ))).one()
         assert (typed.d, typed.u) == ("object", "array")
-        # A row as the old code wrote it: a jsonb string holding the JSON.
+        # A legacy row: a jsonb string holding the JSON.
         await conn.execute(sa.text(
             "UPDATE cognition_wake SET detail = to_jsonb(detail::text) "
             "WHERE id = (SELECT max(id) FROM cognition_wake)"

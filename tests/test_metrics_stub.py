@@ -1,8 +1,7 @@
 """The `Metrics` wrapper's own behaviour — the stub interface M4/M5 record
 through. Exercises real declared metric names only: prometheus-client
-requires every series to be declared (name + labelnames) upfront, so unlike
-the old hand-rolled store, an arbitrary undeclared name like `"x"` can no
-longer be invented on the fly.
+requires every series to be declared (name + labelnames) upfront, so an
+arbitrary undeclared name like `"x"` cannot be invented on the fly.
 """
 
 from nora.obs.metrics import Metrics

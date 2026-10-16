@@ -1,4 +1,4 @@
-"""Tests for the best-effort Honcho v3 write path (nora/infra/honcho/client.py, spec §C.5).
+"""Tests for the best-effort Honcho v3 write path (nora/infra/honcho/client.py).
 
 Every scenario below is offline: a local aiohttp.test_utils.TestServer stands in for
 Honcho, so no live network is required (and none of these carry the `network` marker).
@@ -48,14 +48,14 @@ def _owned_acme() -> web.Response:
 def test_workspace_router_maps_conversations_and_falls_back_to_the_default():
     """DEC-214: a conversation resolves through its unit to that unit's
     Honcho workspace and named scope. Without `[units]` (not strict) anything
-    unknown falls back to the single default, UNSCOPED — the pre-hierarchy
-    behaviour every harness relies on."""
+    unknown falls back to the single default, UNSCOPED — the behaviour every
+    harness relies on."""
     r = WorkspaceRouter(
         "nora", unit_workspaces={"work": "acme"},
         conversation_units={"g-work": "work"},
     )
     # Not strict (no `[units]`): the unit's workspace, but NO scope — reads
-    # stay exactly as unscoped as before DEC-214 until `[units]` is written.
+    # stay unscoped until `[units]` is written.
     assert r.for_conversation("g-work") == HonchoRoute("acme")
     assert r.for_unit("work") == HonchoRoute("acme")
     assert r.for_conversation("g-unmapped") == HonchoRoute("nora")
@@ -106,8 +106,7 @@ async def test_feed_routes_every_call_to_the_conversations_workspace(server_fact
 
 
 async def test_an_unmapped_conversation_and_a_unit_recall_route_apart(server_factory):
-    """The behaviour-preserving half: an unmapped room (no `[units]`) goes to
-    the single default workspace, exactly as before the hierarchy. And, once
+    """An unmapped room (no `[units]`) goes to the single default workspace. And, once
     `[units]` exists, a recall naming a UNIT goes to that unit's workspace,
     scoped to it."""
     paths: list[str] = []
@@ -162,19 +161,14 @@ async def test_feed_creates_a_session_then_posts_the_message_batch(server_factor
     client = HonchoClient(base_url, "nora")
 
     assert await client.feed(peer_id="miles", text="hello", conversation_id="c1") is True
-    # The session is created at the WORKSPACE level. This test previously
-    # asserted `/peers/miles/sessions`, which is a LIST endpoint — it answers
-    # 200 with a pagination envelope carrying no `id`, so `ensure_session`
-    # returned None, `feed` returned False before posting anything, and Honcho
-    # received nothing for the entire life of the deployment. The test passed
-    # throughout, because it was written against the implementation rather
-    # than the API and its fake server answered whatever was asked of it.
+    # The session is created at the WORKSPACE level: `/peers/miles/sessions` is a
+    # LIST endpoint that answers 200 with a pagination envelope carrying no `id`,
+    # so `ensure_session` would return None and `feed` would post nothing.
     #
-    # Two `.../peers` POSTs precede the message: the observer config (design/24
-    # §4) that makes Honcho DERIVE Nora's model of the speaker — Nora joins the
-    # session as an observer at creation, the human as observable on their feed.
-    # Without them the (nora → person) pair never derives and every recall reads
-    # empty (proven live 2026-08-07).
+    # Two `.../peers` POSTs precede the message: the observer config that makes
+    # Honcho DERIVE Nora's model of the speaker — Nora joins the session as an
+    # observer at creation, the human as observable on their feed. Without them
+    # the (nora → person) pair never derives and every recall reads empty.
     assert calls == [
         ("POST", "/v3/workspaces/nora/sessions"),
         ("POST", "/v3/workspaces/nora/sessions/sess-1/peers"),      # nora: observe_others
@@ -322,19 +316,17 @@ async def test_different_peers_are_not_serialised_behind_one_lock(monkeypatch):
 
 
 async def test_the_session_is_created_at_the_workspace_level(server_factory):
-    """The bug that made Honcho a no-op for the deployment's entire life.
+    """The session is created at the workspace level, not through a list endpoint.
 
     `POST /peers/{id}/sessions` is a LIST endpoint on the real server: it
-    answers **200** with a pagination envelope and no `id`. `ensure_session`
-    read `.get("id")` off that, got None, and `feed` returned False before
-    posting anything — silently, because feeding is best-effort by contract
-    and the caller only counts a failure. Both feed counters sat at 0.0 and
-    nothing else noticed.
+    answers **200** with a pagination envelope and no `id`. Reading
+    `.get("id")` off that gives None and `feed` returns False before posting
+    anything — silently, because feeding is best-effort by contract and the
+    caller only counts a failure.
 
-    The old test could not have caught it: its fake answered every path with a
-    created session, so it asserted the implementation back to itself. This
-    fake answers the way the LIVE server does — verified against it — which is
-    what makes the URL load-bearing here.
+    This fake answers the way the LIVE server does, which is what makes the URL
+    load-bearing here: a fake that answered every path with a created session
+    would assert the implementation back to itself.
     """
     calls: list[str] = []
 
@@ -359,13 +351,13 @@ async def test_a_list_shaped_session_response_is_not_mistaken_for_a_created_one(
 
     server_factory,
 ):
-    """The bug that made Honcho a no-op for the deployment's entire life.
+    """A 200 from the list endpoint is not a created session.
 
     `POST /peers/{id}/sessions` is a LIST endpoint: it answers **200** with a
-    pagination envelope and no `id`. `ensure_session` read `.get("id")` off it,
-    got None, and `feed` returned False before posting anything — silently,
+    pagination envelope and no `id`, so `ensure_session` gets None from
+    `.get("id")` and `feed` returns False before posting anything — silently,
     because feeding is best-effort by contract and the caller just counts a
-    failure. Both feed counters sat at 0.0 and nothing else noticed.
+    failure.
 
     A 200 that is not a created session must NOT be treated as one.
     """
@@ -386,10 +378,9 @@ async def test_a_list_shaped_session_response_is_not_mistaken_for_a_created_one(
 
 
 async def test_chat_returns_the_synthesised_content(server_factory):
-    """The DIALECTIC verb (Honcho v2, design/24 §4): `POST /peers/{id}/chat`
+    """The DIALECTIC verb (Honcho v2): `POST /peers/{id}/chat`
     with `{query, reasoning_level}` → `{"content": "<answer>"}`. Distinct from
-    `representation`, which returns raw conclusions; chat REASONS. Probe-verified
-    endpoint + fields against the live instance 2026-08-07."""
+    `representation`, which returns raw conclusions; chat REASONS."""
     bodies: list[dict] = []
 
     async def handler(request: web.Request) -> web.Response:
@@ -406,10 +397,9 @@ async def test_chat_returns_the_synthesised_content(server_factory):
 
 
 async def test_a_base64_group_id_becomes_a_honcho_legal_session_id(server_factory):
-    """live 2026-08-08: a Signal group id is standard base64 (`+` `/` `=`), and
-    Honcho's session-create rejects anything but `^[a-zA-Z0-9_-]+$` with a 422 —
-    which silently broke the ENTIRE feed/recall path on the real group (offline
-    tests used clean ids like "c1" and never saw it). The session key is now
+    """A Signal group id is standard base64 (`+` `/` `=`), and Honcho's
+    session-create rejects anything but `^[a-zA-Z0-9_-]+$` with a 422, which
+    would break the ENTIRE feed/recall path for that group. The session key is
     sanitised base64→url-safe; reverting the sanitiser sends the raw `+/=` and
     turns this red."""
     session_ids: list[str] = []
@@ -430,7 +420,7 @@ async def test_a_base64_group_id_becomes_a_honcho_legal_session_id(server_factor
 
 
 async def test_the_observer_config_retries_after_a_transient_failure(server_factory):
-    """review C1: the ai_peer observe-config must RETRY on a dropped add-peers
+    """The ai_peer observe-config must RETRY on a dropped add-peers
     POST, like the human-speaker config does — not run once at session creation
     and cache the session as done. A single transient failure otherwise leaves
     Nora a non-observer of the session for the whole process, and every recall
@@ -462,7 +452,7 @@ async def test_the_observer_config_retries_after_a_transient_failure(server_fact
 async def test_search_parses_the_message_list_and_drops_media_placeholders(server_factory):
     """`POST /search` returns a LIST (not the dict every other endpoint returns);
     `search` has its own parse → (peer_id, content) pairs, dropping media-only
-    (`￼`) and blank lines. design/24 §S.3."""
+    (`￼`) and blank lines."""
     async def handler(request: web.Request) -> web.Response:
         if request.path.endswith("/search"):
             body = await request.json()
@@ -491,13 +481,13 @@ async def test_a_failed_search_reports_unreachable_and_never_raises(server_facto
     # NOT `== []`. A 500 means the search did not run, and that has to be
     # distinguishable from a search that ran and matched nothing — otherwise
     # `search_memory` tells the group «nothing was said here» when Honcho is
-    # down (external review, 2026-08-11).
+    # down.
     assert out.reachable is False
     assert out.hits == ()
 
 
 async def test_search_scopes_to_the_conversations_session_not_the_workspace(server_factory):
-    """Kimi audit 2026-08-08: a conversation_id session-scopes the search to THIS
+    """A conversation_id session-scopes the search to THIS
     channel — `/sessions/nora-conv-<safe>/search`, NOT the workspace-wide `/search`
     — so a roster member's PRIVATE DM words can't surface into this room. The
     base64 group id is sanitised into the session key on the way."""
@@ -517,11 +507,11 @@ async def test_search_scopes_to_the_conversations_session_not_the_workspace(serv
 
 
 async def test_chat_sends_the_observed_peer_as_target_and_the_chosen_depth(server_factory):
-    """`peer_id`=observer, `target`=observed (design/24 §4): `ask_memory` reads
+    """`peer_id`=observer, `target`=observed: `ask_memory` reads
     Nora's model of a person via `chat(peer_id="nora", target="miles_novak", …)`, and
     the model's chosen `reasoning_level` rides the body. Pins the WIRE — reverting
     the client's `if target is not None` or the reasoning_level pass-through turns
-    this red (review I2, 2026-08-08)."""
+    this red."""
     bodies: list[dict] = []
 
     async def handler(request: web.Request) -> web.Response:

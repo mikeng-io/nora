@@ -196,7 +196,7 @@ async def test_the_detail_refuses_a_bad_id_and_an_unknown_person(world_client):
 async def test_removing_a_person_from_a_room_revokes_access_on_the_next_read(world_client):
     # The rooms are read from the policy object at the moment of each request, never
     # cached. The object itself is loaded at startup (policy.toml needs a restart), so in
-    # production a removal takes effect at the next restart: design/artifact §25.
+    # production a removal takes effect at the next restart.
     client, world = world_client
     url = f"/app/v1/documents/{world.ids['a']}?personId=mei"
     assert (await client.get(url)).status == 200

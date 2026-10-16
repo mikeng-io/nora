@@ -1,10 +1,10 @@
 """Every write to an indexed table projects, and only the projector writes the
-index (design/unified-memory/60-build-step-3.md S1, 25-memory-graph.md §7).
+index.
 
-25 §7: «if a store's write path has no `project()` call, its rows are absent
-from search». Nothing fails when that happens: the write works, the search
-answers without the row, and nobody can tell a miss from an absence. So the
-rule is held here, from source, the way `test_in_place_writes_keep_history.py`
+If a store's write path has no `project()` call, its rows are absent from
+search. Nothing fails when that happens: the write works, the search answers
+without the row, and nobody can tell a miss from an absence. So the rule is
+held here, from source, the way `test_in_place_writes_keep_history.py`
 holds history: every function under `nora/` (outside the migrations) that
 writes a table in `nora.infra.sql.memory_index.INDEXED_WRITES` must itself
 call `project`, `drop`, `reproject_media`, or for the Rollup's episodes
@@ -18,7 +18,7 @@ constant, or raw SQL naming the table (`INSERT INTO t`, `UPDATE t SET`,
 (`nora/infra/sql/notes.py`'s module docstring quotes its compare-and-swap).
 A write whose table is a variable cannot be seen from
 source: `nora.infra.sql.snapshot_at.seed` copies `messages` that way, into a
-sandbox whose index is empty and reads `never` until a rebuild (60 §0.5).
+sandbox whose index is empty and reads `never` until a rebuild.
 """
 
 from __future__ import annotations
@@ -331,7 +331,7 @@ def test_each_write_form_is_recognised() -> None:
     assert {table for _, table, _ in _scan(ast.parse(code))} == {
         "messages", "media_objects", "message_edit",
     }
-    # The two shapes that used to escape the scan, each alone.
+    # The two shapes the scan must not miss, each alone.
     assert _scan(ast.parse("def f():\n    sa.update(schema.MESSAGES)\n")) == [
         ("f", "messages", False),
     ]
@@ -347,8 +347,8 @@ def test_each_write_form_is_recognised() -> None:
 
 
 def test_only_a_memory_index_call_counts_as_projecting() -> None:
-    """A method that merely shares a name (`self._cache.drop`) used to pass
-    for a projection. Only the `memory_index` module's own functions count,
+    """A method that merely shares a name (`self._cache.drop`) is not a
+    projection. Only the `memory_index` module's own functions count,
     however they are imported."""
     def projects(code: str) -> bool:
         return all(p for _, _, p in _scan(ast.parse(code)))

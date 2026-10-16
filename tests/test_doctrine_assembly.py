@@ -17,22 +17,17 @@ def _bodies(assembled: str) -> list[str]:
     return _SECTION_RE.findall(assembled)
 
 
-# `tests/fixtures/doctrine_assembled_at_rename.txt` lived here for two commits
-# and is deleted with this one. Its job was to prove the rename moved no prose
-# and the frontmatter commit moved no prose; both were verified against it and
-# both are recorded in their commit messages. Keeping it past the commit that
-# deliberately rewrites the prose would have turned it into a second copy of
-# files that hot-reload — a golden the operator has to regenerate every time she
-# edits `voice.md`, which is exactly the friction DEC-29 does not want. What
-# replaces it is `test_doctrine_content.py`'s assertions about WHERE each moved
-# line landed.
+# No golden of the shipped doctrine is kept: it would be a second copy of files
+# that hot-reload, regenerated every time the operator edits `voice.md`, which is
+# the friction DEC-29 avoids. `test_doctrine_content.py` asserts WHERE each line
+# landed instead.
 
 
 def test_without_a_generated_block_there_is_no_capability_section_at_all():
     """Never a placeholder, and never a stale one. If nothing generated it, the
     prompt says nothing about capability rather than something out of date.
-    DEC-150: nothing ever generates it now — this is simply the always-true
-    state, and the test is the invariant that keeps it that way."""
+    DEC-150: nothing generates it, so this is the always-true state, and the
+    test is the invariant that keeps it that way."""
     doctrine = DoctrineStore(SHIPPED, canary="C", strict=True, metrics=Metrics()).get()
     assert [s.name for s in doctrine.sections] == \
         ["identity", "belonging", "voice", "conduct", "pictures", "constraints",
@@ -40,11 +35,11 @@ def test_without_a_generated_block_there_is_no_capability_section_at_all():
 
 
 def test_version_is_not_paid_for_on_every_call():
-    """design/17 §5b: `version` is build metadata and does not belong in the prompt.
+    """`version` is build metadata and does not belong in the prompt.
 
-    It is still in frontmatter — `Doctrine.versions()` reads it for the log line
-    that says which doctrine answered a tag — it just is not sent to the model
-    any more. There is nothing she can do with it except reason about it.
+    It stays in frontmatter — `Doctrine.versions()` reads it for the log line
+    that says which doctrine answered a tag — but is not sent to the model.
+    There is nothing she can do with it except reason about it.
     """
     shipped = DoctrineStore(SHIPPED, canary="C", strict=True, metrics=Metrics()).get()
     assert "version=" not in shipped.doctrine_text
@@ -148,17 +143,16 @@ def test_loaded_at_is_populated(doctrine_dir):
 
 
 def test_the_assembled_doctrine_is_byte_stable(doctrine_dir):
-    """The safety net for the loader extraction (Phase 1 Task 1.2).
+    """A golden of `_assemble`'s output over the fixture corpus.
 
     Properties-only assertions cannot catch a refactor that changes a single
     newline in `_assemble` — and that newline lands in the live system prompt
     and in `doctrine_sha256`, which every trace's provenance is bound to. The
     golden is over the FIXTURE corpus, never the shipped doctrine: those files
     are operator-edited and bind-mounted, so a golden over them would be red on
-    every legitimate edit, which is exactly why
-    `tests/fixtures/doctrine_assembled_at_rename.txt` was deleted (see the note
-    at the top of this file). A synthetic corpus this file already owns has no
-    such cost — it changes only when `doctrine_dir` above changes.
+    every legitimate edit (see the note at the top of this file). A synthetic
+    corpus this file already owns has no such cost — it changes only when
+    `doctrine_dir` above changes.
     """
     store = _store(doctrine_dir)
     golden = (FIXTURES / "doctrine_assembly_golden.txt").read_text(encoding="utf-8")

@@ -12,9 +12,8 @@ def _persons(*refs: PersonRef) -> Persons:
 
 
 async def test_returns_only_the_callers_own_entry_not_everyone_elses():
-    """User-scoped (operator, 2026-08-19): a caller resolved to `miles` must
-    never see `ada`'s memory, reversing the original v1 "showcase everyone
-    to everyone" design (2026-08-17-nora-web-design.md §2)."""
+    """User-scoped: a caller resolved to `miles` must never see `ada`'s memory
+    (no "showcase everyone to everyone")."""
     honcho = FakeMemoryStore(
         conclusions={"miles": ["likes climbing", "works in fintech"], "ada": ["plays guitar"]},
         cards={"miles": ["Name: Miles Novak"], "ada": ["Name: Ada"]},

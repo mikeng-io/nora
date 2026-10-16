@@ -1,6 +1,5 @@
 """`/app/v1/documents/{id}/revisions`: a document's history, one old revision, and a
-restore that publishes an old spec as a NEW revision (design/artifact §34, DEC row in
-design/09-decision-index.md).
+restore that publishes an old spec as a NEW revision.
 
 The world is `test_documents_api`'s: the real `rooms_named` over a real `Policy`, so the
 history is gated by the same rule as the document itself, not by a stub."""
@@ -284,7 +283,7 @@ async def test_restore_of_a_spec_this_build_refuses_is_refused_not_stored(histor
     assert len(await _numbers(world)) == 5
 
 
-# ------------------------------------------------- after the merge with #686 (design §34)
+# ------------------------------------------------- the room label, restore races, the checker
 async def test_history_carries_the_room_label_only_for_a_viewer_in_that_room(history_client):
     # The detail payload's rule (`_room_label`): a creator outside the room reads the
     # document and its history, but is not told what the room is called.

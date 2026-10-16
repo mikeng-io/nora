@@ -1,34 +1,31 @@
 """`SqlNoteStore.merge_into` resolves BOTH notes' open proactive reminders
-onto the survivor's single slot, inside the fold's own transaction (issue
-#158 residue, PR #517's own gap, #520 review round 1's blocker).
+onto the survivor's single slot, inside the fold's own transaction.
 
 TRUE OF POSTGRES ONLY, so this cannot live in
 `tests/contract/test_note_store_contract.py`: that suite's harness never
 wires a `FakeReminderStore` into the `InMemoryNoteStore` param it also runs
 (see `nora/testing/note_store.py`'s `merge_into` docstring — that double CAN
-model this now, just not through the shared harness), and
+model this, just not through the shared harness), and
 `uq_reminders_proactive_open_note` (migration 0064) is a real Postgres index
 with no in-memory equivalent regardless.
 
 THE DEFECT THIS GUARDS AGAINST: the index keys on the RAW note id a
-proactive row's `payload` carries. Before this fix, folding two notes that
-each held an open row left both rows alone — neither row's OWN note id ever
-collided, so the index never objected — and both then forwarded to the
+proactive row's `payload` carries. Folding two notes that each held an open
+row without resolving them leaves both rows alone — neither row's OWN note id
+ever collides, so the index never objects — and both then forward to the
 survivor through `nora.app.proactive_screen`'s `successor()` chase and both
-fired. Reachable through the Cognition session's `note_merge` (formerly only
-under `[notes] merge_mode = "on"`, deleted 2026-10-03, DEC-277).
+fire. Reachable through the Cognition session's `note_merge` (DEC-277).
 
-THE BLOCKER A FIRST REVIEW ROUND FOUND: re-pointing `note_id` alone leaves
-`revision_id` naming a revision of the RETIRED duplicate — not in the
-survivor's chain at all — which makes `tag_path_progressed_since_wake`
-(walked from `ProactiveScreen.refusal`'s normal, non-`_follow_survivor`
-branch, since the row now names the survivor directly) fall through to the
-note's ROOT revision and return `True` the moment it meets any tag-path
-write, which is nearly every note's creation. A forwarded reminder was
-being CANCELLED, not delivered. `test_a_repointed_row_fires_when_nothing_
-moved_since_it_was_linked` is the falsification for that: revert
-`_repoint_stmt` to move only `note_id` and it goes red on `ProactiveScreen.
-refusal` returning a cancellation instead of `None`.
+`revision_id` must move too: re-pointing `note_id` alone leaves `revision_id`
+naming a revision of the RETIRED duplicate — not in the survivor's chain at
+all — which makes `tag_path_progressed_since_wake` (walked from
+`ProactiveScreen.refusal`'s normal, non-`_follow_survivor` branch, since the
+row now names the survivor directly) fall through to the note's ROOT revision
+and return `True` the moment it meets any tag-path write, which is nearly
+every note's creation. A forwarded reminder would be CANCELLED, not delivered.
+`test_a_repointed_row_fires_when_nothing_moved_since_it_was_linked` guards
+that: moving only `note_id` makes `ProactiveScreen.refusal` return a
+cancellation instead of `None`.
 """
 
 from __future__ import annotations
@@ -142,11 +139,11 @@ async def test_only_the_duplicate_has_an_open_row_is_repointed(stores) -> None:
     assert got.outcome is None
     assert got.payload is not None
     assert got.payload["note_id"] == survivor.id, "re-pointed to the survivor"
-    # THE BLOCKER: `revision_id` must move onto the FOLD's own new revision,
-    # not stay on the duplicate's (which is not in the survivor's chain —
-    # see the module docstring). Falsification: `_repoint_stmt` moving only
-    # `note_id` leaves this asserting `duplicate.head_revision_id`, which
-    # used to pass and hid a row that would be wrongly cancelled at fire time.
+    # `revision_id` must move onto the FOLD's own new revision, not stay on the
+    # duplicate's (which is not in the survivor's chain — see the module
+    # docstring). Falsification: `_repoint_stmt` moving only `note_id` leaves
+    # this asserting `duplicate.head_revision_id`, and hides a row that would be
+    # wrongly cancelled at fire time.
     assert got.payload["revision_id"] == fold.id
     assert got.payload["note_title"] == "Neway booking", (
         "the rest of the payload survives the JSONB merge untouched"
@@ -185,8 +182,7 @@ async def test_both_open_rows_resolve_to_one_earliest_due_on_the_survivor(
 
     Falsification: skip the resolution entirely (comment out the call in
     `merge_into`) and this fails on `open_rows` — two rows survive, one still
-    pointing at the retired duplicate — which is the exact production defect
-    (issue #158 residue)."""
+    pointing at the retired duplicate."""
     notes, reminders, _engine = stores
     survivor = await _make_note(notes, title="Saturday dinner")
     duplicate = await _make_note(notes, title="Neway booking")
@@ -261,8 +257,7 @@ async def test_both_rows_firing_neither_is_cancelled(stores) -> None:
     Falsification: cancel the loser unconditionally (drop the `state ==
     FIRING` exemption) and `still_firing_loser.state` reads `CANCELLED`; or
     keep the exemption but still try to re-point the keeper, and this
-    raises `IntegrityError` (23505) instead of leaving both alone — the bug
-    a first version of this fix shipped with, caught on norty."""
+    raises `IntegrityError` (23505) instead of leaving both alone."""
     notes, reminders, _engine = stores
     survivor = await _make_note(notes, title="Saturday dinner")
     duplicate = await _make_note(notes, title="Neway booking")
@@ -301,16 +296,16 @@ async def test_both_rows_firing_neither_is_cancelled(stores) -> None:
 async def test_a_repointed_row_fires_when_nothing_moved_since_it_was_linked(
     stores,
 ) -> None:
-    """The BLOCKER's own falsification. A row on the duplicate, re-pointed
-    onto the survivor by a fold with no intervening tag-path write, must
-    FIRE at `ProactiveScreen.refusal` — `None` — not be cancelled.
+    """A row on the duplicate, re-pointed onto the survivor by a fold with no
+    intervening tag-path write, must FIRE at `ProactiveScreen.refusal` —
+    `None` — not be cancelled.
 
-    Before the `revision_id` fix this returned `(CANCELLED,
-    "cancelled_note_moved")`: `tag_path_progressed_since_wake` walked from
-    the survivor's head down through `parent_revision_id`, never found the
-    duplicate's stale `revision_id` among the survivor's own ancestors, and
-    fell to the note's root revision — `established_by="tag:miles"` (`_make_
-    note`'s own default) — which reads as tag-path progress on ANY note.
+    A stale `revision_id` would make `tag_path_progressed_since_wake` walk from
+    the survivor's head down through `parent_revision_id`, never find the
+    duplicate's `revision_id` among the survivor's own ancestors, and fall to
+    the note's root revision — `established_by="tag:miles"` (`_make_note`'s own
+    default) — which reads as tag-path progress on ANY note, so the row would
+    come back `(CANCELLED, "cancelled_note_moved")`.
     """
     notes, reminders, _engine = stores
     survivor = await _make_note(notes, title="Saturday dinner")
@@ -375,7 +370,7 @@ async def test_a_repointed_row_is_cancelled_moved_when_the_survivor_moved_first(
 
 
 async def test_a_stale_survivor_row_does_not_win_the_collision(stores) -> None:
-    """Round 3 (the parity suite's S6), on Postgres. The SURVIVOR's own row
+    """Mirrors the parity suite's stale-survivor case, on Postgres. The SURVIVOR's own row
     was linked, then a person revised the survivor, then the duplicate's row
     was linked (after that write, so it is live). The survivor's row is due
     first, so an unclassified tie-break would keep it and cancel the live

@@ -1,44 +1,23 @@
 """Every collaborator await inside a held conversation slot is bounded.
 
-`nora/engagement/stages/debrief.py` has had this validator, derived from its
-own parameter names, since the slot-hold ceiling was found understated by 2x.
-`nora/ingest/stages/standing_event.py` runs the SAME fold, holds the SAME
-`ConversationSlots` lock, and had none — so when the media join (issue #116)
-landed in both, the debrief's version was caught and bounded in the same commit
-and this one shipped unbounded. Two independent reviewers found it, from two
-directions.
-
-**That was round three, and this file used to claim it was the last.** Its own
-first paragraph said `standing_event` held "the only unbounded await on a
-slot-held path in the repo" — a sentence about the WHOLE repo, checked against
-one module, which is the shape of claim this directory exists to refuse. Round
-four arrived on 2026-09-17: `ReasoningStripWatch.flush` (issue #325) awaited a
-store INSERT from `invoke.run`, `FirePath._invoke` and three exits of
-`DreamerRuntime._sample`, all outside the `wait_for` that bounds the model
-loop, and this gate could not see any of it. Confirmed by probe, not by
-reading: with a store that awaits `sleep(3600)`, `invoke.run` had not returned
-1.5s after the model loop finished, on a 30s turn timeout.
-
-So the walk is now over a DECLARED REGISTRY of slot-held entry points rather
-than one import, and adding a module to it is one line. The sentence that
-cannot be checked has been deleted rather than re-asserted: what this file
-knows is that the entries below are bounded, and the registry is what a reviewer
-has to think about.
+The walk is over a DECLARED REGISTRY of slot-held entry points, and adding a
+module to it is one line. What this file knows is that the entries below are
+bounded; a slot-held path that is not registered is not checked, and the
+registry is what a reviewer has to think about.
 
 **Why bounding matters more here than tidiness.** `MediaJoin.enrich` catches
 exceptions, not hangs. A wedged `media_objects` does not raise — it does not
-answer — and the `finally: slots.release_and_dispatch(key)` below cannot run
+answer — and the `finally: slots.release_and_dispatch(key)` cannot run
 until the await returns. That is one conversation's rollup slot held
 indefinitely, on a path nobody is watching.
 
 **Derived, not listed.** Within each registered module the receiver set is
-DERIVED — from what the slot-held functions are HANDED (`standing_event`), or
-from what the class was CONSTRUCTED with (`reasoning_strip`, where the store
-arrives through `__init__` and is reached as `self._store`). A collaborator a
-registered module gains is caught the moment it is awaited, rather than when
-somebody remembers to extend a list. That derivation is the half that matters:
-the debrief's own v2 was a hardcoded regex and caught exactly what it had been
-written against.
+DERIVED — from what the slot-held functions are HANDED, or from what the class
+was CONSTRUCTED with (`reasoning_strip`, where the store arrives through
+`__init__` and is reached as `self._store`). A collaborator a registered
+module gains is caught the moment it is awaited, rather than when somebody
+remembers to extend a list. That derivation is the half that matters: a
+hardcoded regex catches exactly what it was written against.
 """
 
 from __future__ import annotations
@@ -64,7 +43,7 @@ class _Module(NamedTuple):
 
     `held` names the functions that run under the lock. `receivers_from` says
     where the collaborator NAMES are derived from — `"params"` for a module of
-    functions handed their collaborators (`standing_event`), `"init"` for a
+    functions handed their collaborators, `"init"` for a
     class constructed with them and reaching them as `self._<name>`
     (`reasoning_strip`). Neither spells the collaborators out.
     """
@@ -76,13 +55,11 @@ class _Module(NamedTuple):
 
 
 #: THE REGISTRY. Adding a module is one line; the entries are what a reviewer
-#: has to think about, and a slot-held path that is not here is not checked —
-#: which is the honest statement this file can make, unlike the repo-wide
-#: claim its first version made and round four falsified.
+#: has to think about, and a slot-held path that is not here is not checked.
 #:
-#: `flush` is `reasoning_strip`'s whole surface that touches a store, and every
-#: one of its five callers awaits it with the slot held: `invoke.run`,
-#: `FirePath._invoke`, and three exits of `DreamerRuntime._sample`.
+#: `flush` is `reasoning_strip`'s whole surface that touches a store, and its
+#: callers await it with the slot held: `invoke.run`, `FirePath._invoke` and
+#: the exits of `DreamerRuntime._sample`.
 _MODULES: tuple[_Module, ...] = (
     _Module(
         "reasoning_strip", reasoning_strip, frozenset({"flush"}), "init",
@@ -99,9 +76,8 @@ def _real_timeout(call: ast.Call) -> bool:
 
     `asyncio.wait_for(x, timeout=None)` waits forever — it is the documented
     way to say «no timeout» — so a scan that stopped at «is there a wait_for
-    ancestor» let round three's slot-deadlock fix be defeated by one word while
-    its own gate stayed green. That is exactly the failure the fix's docstring
-    describes, reintroduced through the instrument written to prevent it.
+    ancestor» would let a slot-deadlock fix be defeated by one word while its
+    own gate stayed green.
     """
     args = [k.value for k in call.keywords if k.arg == "timeout"]
     if len(call.args) > 1:
@@ -150,12 +126,10 @@ def _store_fields(annotation: object) -> set[str]:
     collaborator (`StandingStore`, `RecordStore`, …) — this repo's own naming
     convention for a store port (`nora.domain.ports`), so `wiring.store` is
     recognised as reaching a real store the same way
-    `wiring.record_store.since_including_nora(...)` already is, without
-    hand-naming "wiring" or "store" literally. A field whose type is not
-    store-shaped (`display_name: str`, `store_timeout_seconds: float`)
-    contributes nothing — the distinction a hand-written name list would
-    have to get right by hand, and did not (`read_culture(timeout_seconds=
-    wiring.store_timeout_seconds)` matched a first draft of this walk)."""
+    `wiring.record_store.since_including_nora(...)` is, without hand-naming
+    "wiring" or "store" literally. A field whose type is not store-shaped
+    (`display_name: str`, `store_timeout_seconds: float`) contributes nothing,
+    which a hand-written name list would have to get right by hand."""
     if not dataclasses.is_dataclass(annotation):
         return set()
     out: set[str] = set()
@@ -232,21 +206,15 @@ def _module_awaits(entry: _Module) -> list[tuple[str, bool]]:
             continue
         f = node.func
         if isinstance(f, ast.Name) and f.id not in entry.held:
-            # `standing_revise` (design/cognition-loop/70-migration.md step 3
-            # row 3b) is a WRITE VERB: a plain function, not a method on a
-            # collaborator, that takes `store=` as a keyword and makes its
-            # own bounded store call inside itself
-            # (`nora.infra.sql.standing_revise`'s own docstring). A call
-            # shaped `f.value.id.attr` cannot see it — it is a bare `Name`
-            # call (`standing_revise(store=wiring.store, ...)` in
-            # `standing_event._fold_batch`) — so a collaborator handed as a
-            # KEYWORD ARGUMENT to an awaited bare-name call counts too, the
-            # same rule `test_the_slot_hold_counts_every_store_await_the_
-            # stage_makes` (`tests/unit/test_debrief.py`) already added for
-            # the debrief stage's own walk when this verb first moved the
-            # write behind it; without this branch the walk here went blind
-            # to it the same way (round five of the finding this file's own
-            # docstring already tells the history of).
+            # A write verb such as `standing_revise` is a plain function, not a
+            # method on a collaborator: it takes `store=` as a keyword and makes
+            # its own bounded store call inside itself. A call shaped
+            # `f.value.id.attr` cannot see it — it is a bare `Name` call
+            # (`standing_revise(store=wiring.store, ...)`) — so a collaborator
+            # handed as a KEYWORD ARGUMENT to an awaited bare-name call counts
+            # too, the same rule `test_the_slot_hold_counts_every_store_await_
+            # the_stage_makes` (`tests/unit/test_debrief.py`) applies to the
+            # debrief stage's own walk.
             if not _inside_held(node):
                 continue
             bounded = _in_wait_for(node, parents)
@@ -256,14 +224,13 @@ def _module_awaits(entry: _Module) -> list[tuple[str, bool]]:
                 # Two shapes of "the receiver is a keyword argument": a bare
                 # name (`store=store`, debrief's own param) and one level of
                 # attribute access on a bundling object (`store=wiring.store`,
-                # `standing_event`'s — the collaborators arrive bundled in
-                # `Wiring` there, not as individual parameters). The second
-                # shape is checked against `container_fields`, the
-                # store-shaped fields `Wiring` actually declares, not against
-                # "is the base name a receiver" alone — that weaker check
-                # also matched `read_culture(timeout_seconds=wiring.
-                # store_timeout_seconds)`, a plain float, as though it were a
-                # collaborator.
+                # a module whose collaborators arrive bundled in `Wiring`, not
+                # as individual parameters). The second shape is checked
+                # against `container_fields`, the store-shaped fields `Wiring`
+                # actually declares, not against "is the base name a receiver"
+                # alone — that weaker check would match
+                # `read_culture(timeout_seconds=wiring.store_timeout_seconds)`,
+                # a plain float, as though it were a collaborator.
                 if isinstance(kw.value, ast.Name) and kw.value.id in receivers:
                     out.append((f"{f.id}({kw.arg}={kw.value.id})", bounded))
                     break
@@ -325,14 +292,12 @@ def test_every_slot_held_collaborator_await_is_bounded() -> None:
 
 
 def test_the_validator_can_see_the_calls_it_is_checking() -> None:
-    """THE POSITIVE CONTROL, and the reason the debrief's own validator was
-    rewritten twice: a walk that found nothing would report «no unbounded
-    awaits» with total confidence.
+    """THE POSITIVE CONTROL: a walk that found nothing would report «no
+    unbounded awaits» with total confidence.
 
-    The registry holds one module since DEC-277 deleted the standing-event
-    stage and the debrief's media join left this path, so the control names
-    the one await that remains: the reasoning-strip row write, whose absence
-    would look like a pass."""
+    The registry holds one module (DEC-277), so the control names the one
+    await that remains: the reasoning-strip row write, whose absence would look
+    like a pass."""
     found = _slot_held_awaits()
 
     assert len(found) >= 1, f"the walk went thin — it found only {found}"
@@ -367,7 +332,7 @@ def test_a_wait_for_with_no_timeout_does_not_count_as_bounded() -> None:
     """The gate's own instrument, checked before its output is read.
 
     `asyncio.wait_for(x, timeout=None)` waits forever, and a scan that stopped
-    at «is there a wait_for ancestor» reported it as bounded — so the fix above
+    at «is there a wait_for ancestor» would report it as bounded, so the bound
     could be defeated by one word with this file still green. Driven through
     the same predicate the walk uses, on synthetic source, because the
     production text has (correctly) no such call to find."""

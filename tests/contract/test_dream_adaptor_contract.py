@@ -3,23 +3,14 @@
 Shipped with ONE implementation — a fake — for the reason
 `tests/contract/test_dream_sink_contract.py` states for the same situation: a
 port declared with nothing exercising it is a shape nobody has checked is
-satisfiable. Another joins by adding one `IMPLEMENTATIONS` entry.
+satisfiable. Another joins by adding one `IMPLEMENTATIONS` entry, and
+`test_every_registered_implementation_is_exercised` stops the map shrinking
+in silence — a shrink leaves the suite green and faster, which is the only
+kind nobody notices.
 
-**THE GAP THIS FILE USED TO DECLARE IS CLOSED (2026-09-11, issue #63).** The
-knowledge tier's three adaptors were the real entries here and went with that
-tier, leaving one fake; the note tier's two — `NoteCandidateAdaptor` and
-`NoteCuratorAdaptor` — had never been in this map at all, so the suite
-measured the SHAPE and no production behaviour, which is CLAUDE.md's "if
-reverting the code under test doesn't turn the test red, the test is
-decorative" written as a dict with one key. All three shipped adaptors are
-entries now, and `test_every_registered_implementation_is_exercised` is what
-stops the map shrinking back in silence — a shrink leaves the suite green and
-faster, which is the only kind nobody notices.
-
-**The rule this file is built against, inherited from the sink suite where it
-was learned four times over:** anything the shared suite needs that is not on
-`DreamAdaptor` itself must be supplied PER IMPLEMENTATION, never hard-coded
-once and assumed to fit whoever joins next. Two things need it here:
+**The rule this file is built against:** anything the shared suite needs that
+is not on `DreamAdaptor` itself must be supplied PER IMPLEMENTATION, never
+hard-coded once and assumed to fit whoever joins next. Two things need it here:
 
 1. **Legal envelope items.** `accept` takes
    `Sequence[Mapping[str, object]]` — one adaptor's item shape is not
@@ -35,8 +26,7 @@ once and assumed to fit whoever joins next. Two things need it here:
 `accept` drops rather than raises; `commit(key, ())` is legal and distinct from
 not calling `commit` at all; `tools` narrows the read-only ceiling rather than
 widening it; `objective` names a file that actually exists. A test that asserted
-what a term or a predicate looked like would be the one-tier-vocabulary defect
-the sink suite found in itself, rebuilt here.
+what a term or a predicate looked like would be a one-tier-vocabulary defect.
 
 **`_FakeAdaptor` stays HERE rather than in `nora/testing/`**, the same rule
 that binds `_FakeDreamSink` to its suite: `nora/testing/fakes.py` stands in for
@@ -126,7 +116,7 @@ class _FakeAdaptor:
     objective = "culture"
     envelope_key = "observations"
     tools = frozenset({"load_transcript", "now"})
-    #: `DreamAdaptor.store_calls_per_tick` (issue #60) — the runtime reads it
+    #: `DreamAdaptor.store_calls_per_tick` — the runtime reads it
     #: to bound `inputs` and `commit`. One sink call in `commit`, none in
     #: `inputs`; declared rather than defaulted because the port requires it
     #: and `test_an_implementation_satisfies_the_protocol` reads it.
@@ -185,10 +175,9 @@ def _fake_empty_commits(_adaptor: object, sink: object) -> int:
 class _Impl:
     """One implementation's entry.
 
-    A dataclass rather than the sibling suite's positional tuple: that file's
-    own comment records an entry growing from one field to six and an
-    overloaded `None` having to be split out, and a named field is what makes
-    the seventh addition cheap instead of a re-read of every call site.
+    A dataclass rather than the sibling suite's positional tuple: a named
+    field makes adding the next one cheap instead of a re-read of every call
+    site.
     """
 
     build: Callable[[], tuple[object, object]]
@@ -196,21 +185,17 @@ class _Impl:
     make_malformed_item: Callable[[], Mapping[str, object]]
     written: Callable[[object, object], int]
     #: `None` when this adaptor's `commit` reaches no sink at all. Not a skip
-    #: and not a shrug: the deleted entity-resolution adaptors called
-    #: `attach_alias` once per resolution and had no `DreamSink` to hand an
-    #: empty batch to, so «the empty commit reaches the sink» was a property
-    #: they could not have rather than one they failed. The field says which,
-    #: so a new adaptor has to answer the question rather than inherit an
-    #: answer.
+    #: and not a shrug: an adaptor with no `DreamSink` has no empty batch to
+    #: hand one, so «the empty commit reaches the sink» is a property it
+    #: cannot have rather than one it fails. The field says which, so a new
+    #: adaptor has to answer the question rather than inherit an answer.
     empty_commits: Callable[[object, object], int] | None = None
     #: Run after `build` and before any contract test. `accept` on an adaptor
     #: whose parse is HANDLE-BASED is meaningless without the render that
-    #: assigned the handles (the deleted entity-resolution adaptors were the
-    #: case).
+    #: assigned the handles.
     prepare: Callable[[object], Awaitable[None]] | None = None
-    #: The adaptor's `AdaptorGrant` (design/dreamer-agent-loop/39 D3) — the
-    #: SAME object the composition root hands the runtime, never a copy. The
-    #: default is no grant, which is every adaptor but one.
+    #: The adaptor's `AdaptorGrant` — the SAME object the composition root
+    #: hands the runtime, never a copy. The default is no grant.
     grant: AdaptorGrant = field(default_factory=AdaptorGrant)
 
 
@@ -257,10 +242,10 @@ def impl(ctx):
 
 def _proposals(payloads: Sequence[object]) -> tuple[Proposal, ...]:
     """The runtime's job, done by hand: wrap each parsed payload with the
-    provenance only the runtime knows. `accept` returning payloads rather than
-    `Proposal`s is a deliberate deviation from the plan's sketch — an adaptor
-    cannot know the instruction digest, the model, or the run id — and this
-    helper is where the contract stands in for that step."""
+    provenance only the runtime knows. `accept` returns payloads rather than
+    `Proposal`s — an adaptor cannot know the instruction digest, the model, or
+    the run id — and this helper is where the contract stands in for that
+    step."""
     return tuple(
         Proposal(
             payload=payload, instruction_sha256=SHA, model="deepseek-v4-flash",
@@ -326,11 +311,8 @@ def test_the_objective_names_a_file_that_exists(adaptor):
 def test_the_envelope_key_is_declared(adaptor):
     """Declared per adaptor rather than fixed at one shared literal, because it
     is half of a promise whose other half lives in the objective text. Asserted
-    as non-empty only: the two ROOM objectives disagree today — `room-language`
-    names `observations` in its body and `room-exchange` names nothing at all —
-    so a test binding this field to the objective's prose would fail on
-    correct, shipped text. Phase 3's re-partition is what makes that binding
-    checkable; until then this is the honest assertion."""
+    as non-empty only: this test does not check the binding to the objective's
+    prose."""
     assert isinstance(adaptor.envelope_key, str)
     assert adaptor.envelope_key
 
@@ -402,9 +384,8 @@ async def test_committing_nothing_is_a_legal_call_that_reaches_the_sink(
     """The decay path, and the reason it cannot be optimised away.
 
     `commit(key, ())` is `nothing_found` — «I looked and there was nothing» —
-    and a sink may act on it: `LanguageConsolidator` rescores even for an empty
-    batch, because decay is time-driven and the 24h fire condition exists
-    precisely to fade a dormant room's lexicon. The runtime NOT calling
+    and a sink may act on it, because decay is time-driven: a sink that fades
+    state over time must see the empty commit. The runtime NOT calling
     `commit` is the third state, `unavailable`. Treating an empty sequence as
     "nothing to do, skip the call" collapses them, silently drops decay, and
     turns a wiring gap into a false negative.
@@ -413,11 +394,9 @@ async def test_committing_nothing_is_a_legal_call_that_reaches_the_sink(
     value, because a return of 0 is exactly what "never called" would also look
     like — which is the confusion the test exists to rule out.
 
-    `impl.empty_commits is None` marks an adaptor with no sink to reach (the
-    deleted entity-resolution adaptors wrote an alias per resolution and had
-    no `DreamSink` at all), so the decay argument above does not apply to
-    it. The empty commit must still be LEGAL and still return 0 — that half
-    is asserted for every implementation."""
+    `impl.empty_commits is None` marks an adaptor with no sink to reach, so the
+    decay argument above does not apply to it. The empty commit must still be
+    LEGAL and still return 0 — that half is asserted for every implementation."""
     before = None if impl.empty_commits is None else impl.empty_commits(
         adaptor, backing)
 
@@ -446,11 +425,10 @@ async def test_commit_returns_rows_written_not_proposals_offered(
 
 
 async def test_inputs_renders_a_real_batch(adaptor):
-    """Exercised with a REAL `TranscriptRow` rather than a stand-in, and the
-    reason is a defect this test caught while being written: the fake read
-    `row.text`, which does not exist — the field is `body`, and it is
-    `str | None`. Every other test here calls `inputs` with an empty batch, so
-    the attribute error was invisible until a row was actually rendered.
+    """Exercised with a REAL `TranscriptRow` rather than a stand-in: the field
+    is `body`, and it is `str | None`, which a stand-in would let an adaptor
+    get wrong. Every other test here calls `inputs` with an empty batch, so an
+    attribute error would be invisible until a row was actually rendered.
 
     That is the shape of the whole file: an adaptor's `inputs` runs once per
     tick against rows nobody is watching, so an attribute that only exists in
@@ -469,8 +447,7 @@ async def test_inputs_renders_a_real_batch(adaptor):
     # An adaptor whose input is not the message batch (the fact adjudicator
     # reads the candidate table) correctly renders nothing for any batch at
     # all, so requiring non-empty here would demand a prompt that says "there
-    # is nothing to do" and pay a model call for it. That is the defect this
-    # assertion used to hide (observed live 2026-08-21).
+    # is nothing to do" and pay a model call for it.
 
 
 async def test_inputs_tolerates_a_row_with_no_body(adaptor):
@@ -494,17 +471,16 @@ async def test_inputs_renders_an_empty_batch_without_raising(adaptor):
 
 
 # ---------------------------------------------------------------------------
-# the egress screen — the step every adaptor suite in this repo used to skip
+# the egress screen — the step a direct call to `accept` skips
 # ---------------------------------------------------------------------------
 #
 # `DreamerRuntime.run` does `screen(...)` and hands only the KEPT items to
-# `accept`. Every unit suite called `accept` directly, so the real screen never
-# ran — and `dream_screen._offence` walks every string reachable in an item
+# `accept`. A suite that calls `accept` directly never runs the real screen —
+# and `dream_screen._offence` walks every string reachable in an item
 # while `egress._UUID` matches any hyphenated uuid. An adaptor whose objective
 # asks the model to echo a row id back therefore has EVERY item dropped: the
 # tick fires, spends a model call, `accept` receives `()`, `commit` writes 0,
-# and the run reports `ok`. THREE adaptors shipped that way (issue #63), and
-# eighteen tests passed over one of them.
+# and the run reports `ok`.
 #
 # The wrong fix, stated so nobody reaches for it: the adaptor path is not
 # exempted from `dream_screen`. That screen is the R-18/R-28 floor — nothing
@@ -524,7 +500,7 @@ def _screened(adaptor, items):
 async def test_a_legal_batch_survives_the_runtimes_own_egress_screen(
     adaptor, backing, impl
 ):
-    """**The test that would have caught it**, parameterised over every
+    """**The egress-screen test**, parameterised over every
     registered adaptor rather than written once per tier.
 
     Driven in the RUNTIME's order — screen, then `accept`, then `commit` —
@@ -567,12 +543,11 @@ async def test_inputs_renders_nothing_the_egress_screen_would_reject(
     and `screen` will drop that envelope.
 
     **It is only as good as the double behind it, and that is a real bound on
-    this test.** `InMemoryNoteStore` mints uuid-SHAPED ids exactly because of
-    this defect (`_shaped_id`'s own comment: it minted `note-1` until
-    2026-08-28 and that one divergence hid the whole thing). A future adaptor
-    whose store double mints `row-1` would pass here and fail in production —
-    so the rule the fakes already follow is load-bearing, and this docstring is
-    where it is written down for whoever adds the next one.
+    this test.** `InMemoryNoteStore` mints uuid-SHAPED ids (`_shaped_id`) exactly
+    because of this defect: a double minting `note-1` would hide it. A future
+    adaptor whose store double mints `row-1` would pass here and fail in
+    production — so the rule the fakes already follow is load-bearing, and this
+    docstring is where it is written down for whoever adds the next one.
     """
     row = TranscriptRow(
         id=41, sender_id="p1", sender_name="Ada", ts=1_000, body="big walk 今晚?",
@@ -615,9 +590,7 @@ def test_the_screen_would_catch_an_identifier_if_one_were_there():
 
 
 def test_every_registered_implementation_is_exercised():
-    """The run-that-ran control for the map itself. This suite spent the
-    period after the knowledge tier's deletion with ONE entry — a fake — and
-    its own docstring flagged that as a known gap rather than the shipped
-    state. A silently shrinking map makes every test in this file vacuous, and
-    the shrink is invisible: the suite stays green, faster."""
+    """The run-that-ran control for the map itself. A silently shrinking map
+    makes every test in this file vacuous, and the shrink is invisible: the
+    suite stays green, faster."""
     assert set(IMPLEMENTATIONS) >= {"fake"}, sorted(IMPLEMENTATIONS)

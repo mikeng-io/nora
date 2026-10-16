@@ -1,17 +1,17 @@
-"""A SIGTERM stops nora gracefully and a session killed by it releases its claim (the
-Cognition cut-over's PR-7).
+"""A SIGTERM stops nora gracefully and a session killed by it releases its claim.
 
-**The question the planner could not answer: does SIGTERM reach `App.run`?** It reached
-the process (`uv run`, the image's entrypoint, forwards it) and, with no handler, killed
-it on the spot: `finally` never ran, so `App.shutdown` and `CognitionShutdown` were
-unreachable and a session in flight left its wake open. `docker stop` sends SIGTERM and
-nora restarted 2 to 24 times a day. These tests send a REAL SIGTERM to a REAL process
-(`sigterm_probe`: `nora.__main__.run_until_stopped`, the real wake loop, evaluator and
-session runner, over real Postgres; only the model is a fake) and read the claim back
+**The question: does SIGTERM reach `App.run`?** It reaches the process (`uv
+run`, the image's entrypoint, forwards it) and, with no handler, kills it on the
+spot: `finally` never runs, so `App.shutdown` and `CognitionShutdown` are
+unreachable and a session in flight leaves its wake open. `docker stop` sends
+SIGTERM. These tests send a REAL SIGTERM to a REAL process (`sigterm_probe`:
+`nora.__main__.run_until_stopped`, the real wake loop, evaluator and session
+runner, over real Postgres; only the model is a fake) and read the claim back
 from the database.
 
-The control (`test_without_a_handler...`) is `main()` as it was: same process, same
-signal, and the wake is left open, the exit is the signal's, and `shutdown` never ran.
+The control (`test_without_a_handler...`) is `main()` without the handler: same
+process, same signal, and the wake is left open, the exit is the signal's, and
+`shutdown` never ran.
 """
 
 from __future__ import annotations
@@ -192,7 +192,7 @@ def test_a_second_signal_ends_the_process_at_once(pg_url):
 
 
 def test_without_a_handler_sigterm_kills_the_process_and_leaves_the_wake_open(pg_url):
-    """THE CONTROL: `main()` before `run_until_stopped`. Same process, same signal."""
+    """THE CONTROL: `main()` without `run_until_stopped`. Same process, same signal."""
     probe = _Probe(pg_url, mode="block", grace=1.5, legacy=True)
     try:
         probe.wait_for("READY")

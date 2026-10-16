@@ -19,13 +19,11 @@ from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
 TARGET = ConversationTarget("signal", "g1", "group")
-# MARKDOWN IS PART OF THE FIXTURE, deliberately (fail-closed audit 2026-08-10).
-# The real doctrine files are Markdown — voice.md alone carries 10 `**bold**`
-# spans and every file has `#` headings — and this fixture used to be one plain
-# sentence with none. That is structurally why the DEC-82 strip looked
-# guard-STRENGTHENING in tests while weakening R-6 against the real doctrine: a
-# haystack with no emphasis cannot express the asymmetry. CLAUDE.md's "make the
-# fake behave like the real server" applies to fixtures too.
+# MARKDOWN IS PART OF THE FIXTURE, deliberately. The real doctrine files are
+# Markdown (`**bold**` spans, `#` headings), and a plain-sentence haystack with
+# no emphasis cannot express the DEC-82 asymmetry: stripping markdown looks
+# guard-STRENGTHENING in tests while weakening R-6 against the real doctrine.
+# The fake must behave like the real thing, fixtures included.
 GUARDRAIL_BODY = (
     "# Guardrails\n\n"
     "You never post an **error message**, a **stack trace**, or a failure notice at all."
@@ -51,8 +49,8 @@ def doctrine(tmp_path):
 #: The cap every test below runs against unless it says otherwise — read from
 #: the ONE table that declares it (DEC-32), never spelled `1` here. If the
 #: budget is raised in `nora.agent.tools`, `test_deliverer_latch_is_single_shot`
-#: below is meant to follow it rather than pin a number the rest of the system
-#: no longer enforces.
+#: below follows it rather than pinning a number the rest of the system does not
+#: enforce.
 MESSAGE_CAP = NATIVE_TOOL_BUDGETS["send_reply"]
 
 
@@ -108,13 +106,11 @@ async def test_happy_path_records_then_sends(store, doctrine):
 
 
 async def test_deliverer_latch_is_single_shot(store, doctrine):
-    """R-2b, revised in place rather than replaced (DEC-40).
+    """R-2b (DEC-40): the latch is bounded by `message_cap`.
 
-    The latch is bounded by `message_cap`, and at the declared cap it refuses
-    the next attempt however the previous ones went. The name and the rule
-    registration are unchanged because the INVARIANT is unchanged — a tag
-    cannot produce unbounded output — and at today's cap of 1 that reads
-    exactly as it always did: one message, then refusal.
+    At the declared cap it refuses the next attempt however the previous ones
+    went. The INVARIANT is that a tag cannot produce unbounded output; at a cap
+    of 1 that reads as one message, then refusal.
 
     Asserted against `MESSAGE_CAP` rather than the literal 1, so this test
     tracks the table instead of freezing it. Spell `1` here and raising the
@@ -141,19 +137,18 @@ async def test_the_latch_counts_attempts_not_successes(store, doctrine):
 
 # ── the cap, above 1: what multi-message actually buys ──────────────────────
 #
-# `message_cap` is `NATIVE_TOOLS["send_reply"].budget` in production and it is
-# 1 today, so the tests below pass the number directly. That is not a second
-# source of truth — it is how this file asks what happens WHEN the operator
-# raises it, which is a question the shipped value cannot answer while it is 1.
+# `message_cap` is `NATIVE_TOOLS["send_reply"].budget` in production, so the
+# tests below pass the number directly. That is not a second source of truth —
+# it is how this file asks what happens WHEN the operator raises the cap, which
+# the shipped value cannot answer.
 
 
 async def test_a_raised_cap_lets_one_tag_send_several_messages(store, doctrine):
-    """The feature, at the layer that used to make it impossible.
+    """Multi-message at the layer that enforces R-2.
 
-    `Deliverer` is where R-2 really lived (design/16 §4): the guard's budget
-    check refuses the (cap+1)th call first, but the latch below it refused the
-    SECOND unconditionally, so a raised budget alone would have moved the
-    refusal without removing it.
+    The guard's budget check refuses the (cap+1)th call first; the `Deliverer`
+    latch below it must also honour the cap, or a raised budget alone would move
+    the refusal without removing it.
     """
     sink = SinkSender()
     d = _deliverer(store, doctrine, sink, message_cap=3)
@@ -174,7 +169,7 @@ async def test_a_raised_cap_is_still_a_cap(store, doctrine):
 
 
 async def test_every_message_is_recorded_and_scanned_on_its_own(store, doctrine):
-    """R-6's canary and R-18's egress scan run PER MESSAGE (design/16 §4).
+    """R-6's canary and R-18's egress scan run PER MESSAGE.
 
     The probe is a turn whose SECOND message carries a phone number: a guard
     that ran once per turn would clear the first message and wave the rest
@@ -262,7 +257,7 @@ async def test_send_failure_marks_the_row_failed_and_does_not_retry(store, doctr
 
 
 async def test_audit_write_failure_means_no_send(store, doctrine, monkeypatch):
-    """Record-first: no audit row ⇒ no send (spec B.3)."""
+    """Record-first: no audit row ⇒ no send."""
     sink = SinkSender()
     m = Metrics()
 
@@ -312,17 +307,17 @@ async def test_metrics_count_a_delivered_reply(store, doctrine):
     assert m.get("nora_replies_total", status="sent") == 1
 
 
-# ── Bug B: Nora's row must be joinable by a reply's quote (design/11 §2.3) ───
+# ── Nora's row must be joinable by a reply's quote ───────────────────────────
 
 
 async def test_noras_row_carries_the_platform_timestamp_so_a_reply_can_join_it(
     store, doctrine,
 ):
     """The row is stamped locally at record-first time, then CORRECTED on the
-    post-send update that already existed. Without the correction a reply TO
-    Nora — the most common reply in a group where Nora is tagged — points at a
-    `quote.id` that is milliseconds away from any row Nora stored (8 ms, on the
-    one live example), so an exact join resolves everyone except her.
+    post-send update. Without the correction a reply TO Nora — the most common
+    reply in a group where Nora is tagged — points at a `quote.id` that is
+    milliseconds away from any row Nora stored, so an exact join resolves
+    everyone except her.
     """
     platform_ts = 1785950108291
     sink = SinkSender(timestamp=platform_ts)
@@ -366,10 +361,9 @@ async def _deliver_text(text, store, doctrine):
 
 
 async def test_a_reply_carrying_someones_phone_number_is_refused(store, doctrine):
-    """The operator's own framing: "if someone asks you what my phone number
-    is, it will probably leak out easily". `constraints.md` forbids relaying it,
-    but that is a request to a model. This is the part that does not depend on
-    the model complying — and Nora legitimately holds the material, since the
+    """A request to relay a phone number: `constraints.md` forbids it, but that
+    is a request to a model. This is the part that does not depend on the model
+    complying — and Nora legitimately holds the material, since the
     transcript she reasons over carries real sender ids."""
     ok, sink, m = await _deliver_text("佢個號碼係 +85290000101 呀", store, doctrine)
     assert ok is False
@@ -416,12 +410,10 @@ async def test_a_key_kept_verbatim_in_a_memo_is_still_refused_in_a_reply(store, 
 
 
 async def test_a_reply_naming_a_model_is_delivered_after_the_veto_was_disabled(store, doctrine):
-    """The model-name veto is OFF (operator decision 2026-08-31, see
-    `egress.py`): a reply that names a model — including relaying what a
-    `social_fetch` post said about one — must reach the group. The identifier
-    floor is unchanged and is covered by the three tests above; this asserts
-    the exact regression the first live social_fetch trace hit (the reply
-    quoting "Opus 5" was refused in full)."""
+    """The model-name veto is OFF (see `egress.py`): a reply that names a model
+    — including relaying what an `x_read` post said about one — must reach
+    the group. The identifier floor is covered by the three tests above; this
+    asserts a reply quoting "Opus 5" is not refused."""
     ok, sink, m = await _deliver_text("個 post 話 Opus 5 好差", store, doctrine)
     assert ok is True
     assert len(sink.sent) == 1, "a reply naming a model is deliverable now"
@@ -441,10 +433,10 @@ async def test_ordinary_cantonese_with_a_bare_number_still_sends(store, doctrine
 
 async def test_a_delivered_reply_settles_the_indicator_immediately(store, doctrine):
     """THE PROBE. The observer must be told INSIDE `deliver`, at the point the
-    group can see the message — not by the pipeline afterwards. Measured live:
-    the agent loop always makes one more model call after `send_reply`, so
-    settling at end-of-turn put a median 14.9 s gap between the reply landing
-    and the ✅ appearing.
+    group can see the message — not by the pipeline afterwards. The agent
+    loop always makes one more model call after `send_reply`, so settling at
+    end-of-turn would leave a long gap between the reply landing and the ✅
+    appearing.
 
     Delete the `self._on_delivered.settle()` call and this reds."""
     obs = _RecordingObserver()
@@ -474,7 +466,7 @@ async def test_a_failed_send_never_settles_the_indicator(store, doctrine):
 
 async def test_a_deliverer_with_no_observer_still_delivers(store, doctrine):
     """The collaborator is optional and defaults to a no-op — the fire path and
-    every test that predates DEC-83 construct one without it."""
+    tests that do not care about settling construct a `Deliverer` without it."""
     d = _deliverer(store, doctrine, SinkSender())
     assert await d.deliver("好") is True
 
@@ -560,12 +552,10 @@ async def test_markdown_is_stripped_before_the_leak_guard_runs(store, doctrine):
     """DEC-82 ordering, R-6 direction ONE: stripping REVEALS a doctrine span
     that emphasis had broken up.
 
-    The first version of this test was DECORATIVE (review 2026-08-10) — it wrapped
-    the whole body as `**{GUARDRAIL_BODY}**`, which still contains the body
-    verbatim, so `LeakGuard`'s 40-char sliding window matched with or without the
-    strip and the test stayed green when the production change was reverted. The
-    emphasis has to sit INSIDE the span, closer together than `min_span`, so that
-    no un-stripped window is verbatim.
+    Wrapping the whole body as `**{GUARDRAIL_BODY}**` would be DECORATIVE: it
+    still contains the body verbatim, so `LeakGuard`'s 40-char sliding window
+    matches with or without the strip. The emphasis has to sit INSIDE the span,
+    closer together than `min_span`, so that no un-stripped window is verbatim.
 
     Delete the strip and this reds."""
     metrics = Metrics()
@@ -584,8 +574,7 @@ async def test_the_leak_guard_still_sees_a_span_the_strip_would_hide(store, doct
 
     `_MD_HEADING` deletes the `# ` that the raw doctrine haystack still carries,
     so a verbatim quote straddling a heading matches BEFORE the strip and not
-    after. Measured on the real doctrine, that was 293 voice.md spans silently
-    un-blocked. Neither form is a superset of the other, so checking only the
+    after. Neither form is a superset of the other, so checking only the
     stripped text is a hole in a fail-closed guard.
 
     Drop the `or self._leak.check(drafted)` and this reds."""
@@ -600,18 +589,17 @@ async def test_the_leak_guard_still_sees_a_span_the_strip_would_hide(store, doct
 
 
 async def test_emphasis_cannot_smuggle_an_identifier_past_r18(store, doctrine):
-    """THE PROBE for the R-18 bypass (fail-closed audit 2026-08-10).
+    """THE PROBE for the R-18 bypass.
 
     Every identifier pattern is `\\b`-anchored. Removing an asterisk BETWEEN two
     word characters joins them and destroys the boundary, so a real number or ACI
-    wrapped in emphasis scanned CLEAN after stripping and would have been sent to
-    the group — the unrecoverable leak `nora.agent.egress` exists to prevent.
+    wrapped in emphasis would scan CLEAN after stripping and be sent to the
+    group — the unrecoverable leak `nora.agent.egress` exists to prevent.
 
-    Under CONVERSION the hole is identical and the outcome would have been
-    worse: the asterisks still go, so the boundary is still destroyed, and the
-    ACI would have reached the group in bold. Asserted against
-    `render_markdown(...).text` — the exact bytes `deliver` composes — rather
-    than against a lookalike transformation.
+    Under CONVERSION the hole is identical: the asterisks still go, so the
+    boundary is still destroyed, and the ACI would reach the group in bold.
+    Asserted against `render_markdown(...).text` — the exact bytes `deliver`
+    composes — rather than against a lookalike transformation.
 
     Drop the `or scan_reply(drafted)` and this reds."""
     metrics = Metrics()
@@ -673,8 +661,8 @@ async def test_the_composed_mention_reaches_the_adapter(store, doctrine):
 
     PROBE: drop the `mentions=` argument from `Deliverer.deliver`'s
     `adapter.send` call and this goes red while every other test in this file
-    stays green — which is the whole reason it is here rather than left to the
-    composer's own suite.
+    stays green — which is why it is here rather than in the composer's own
+    suite.
     """
     sink = SinkSender()
     composer = _Composer(
@@ -729,8 +717,8 @@ async def test_a_composer_that_raises_still_sends_the_plain_message(store, doctr
 
 async def test_no_composer_at_all_sends_exactly_what_it_always_did(store, doctrine):
     """The `composer=None` path — the offline/eval compositions, and every
-    `Deliverer` in this file that predates the feature. It must be the SAME
-    message, which is the argument for the parameter having a default at all."""
+    `Deliverer` in this file that omits it. It must be the SAME message, which
+    is the argument for the parameter having a default at all."""
     sink = SinkSender()
     d = _deliverer(store, doctrine, sink)
 
@@ -739,18 +727,16 @@ async def test_no_composer_at_all_sends_exactly_what_it_always_did(store, doctri
     assert sink.sent_mentions == [()]
 
 
-# ── DEC-89 at the CONSUMER, not just the class (pre-deploy review 2026-08-10) ─
+# ── DEC-89 at the CONSUMER, not just the class ───────────────────────────────
 
 
 async def test_deliver_appends_the_link_the_reply_earned(store, doctrine):
-    """THE PROBE the feature shipped without.
+    """THE PROBE that `deliver()` actually uses `LinkCarry`.
 
     `test_links_carry.py` tests `LinkCarry` in isolation and the architecture
-    test pins the WIRING, but nothing tested `deliver()` actually using it —
-    mutation-testing found that deleting the `self._links.apply(...)` call from
-    `Deliverer.deliver` left the whole suite green. That is DEC-42's
-    "present, wired, inert" failure one layer down, and it is the seam the two
-    known cross-feature findings live in.
+    test pins the WIRING, but only this test fails if the
+    `self._links.apply(...)` call is deleted from `Deliverer.deliver` — DEC-42's
+    "present, wired, inert" failure one layer down.
 
     Delete the call and this reds."""
     links = LinkCarry()
@@ -769,8 +755,8 @@ async def test_a_link_never_rescues_an_empty_reply(store, doctrine):
     """The ordering property DEC-89 claims, asserted at the consumer.
 
     `apply` runs AFTER R-4 precisely so an empty reply plus a link on offer is
-    still an empty reply. Move the call above the R-4 branch and this reds —
-    which mutation-testing showed nothing else catches."""
+    still an empty reply. Move the call above the R-4 branch and this reds; no
+    other test catches that."""
     metrics = Metrics()
     links = LinkCarry()
     links.offer(anchor="燒烤堂", url="https://links.example.net/9DpAk8g")
@@ -796,10 +782,10 @@ async def test_a_reply_that_does_not_name_the_place_gets_no_link(store, doctrine
 
 
 async def test_a_reply_carrying_a_coordinate_pair_is_blocked(store, doctrine):
-    """DEC-156: where_been/where_is results carry lat/lng now, so the reply
-    screen blocks the coordinate PAIR — the material is in the model's
-    context for the first time and a sloppy turn could echo it (R-28's
-    speech half is enforced here, not just in the docstring)."""
+    """DEC-156: where_been/where_is results carry lat/lng, so the reply screen
+    blocks the coordinate PAIR — the material is in the model's context and a
+    sloppy turn could echo it (R-28's speech half is enforced here, not just in
+    the docstring)."""
     sink = SinkSender()
     d = _deliverer(store, doctrine, sink)
 

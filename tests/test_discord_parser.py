@@ -269,13 +269,12 @@ def test_unparseable_input_is_skipped_not_raised():
     ],
 )
 def test_a_turn_with_no_text_is_rendered_not_dropped(kwargs, expected):
-    """The defect this closes, found by review 2026-08-14.
+    """A text-less turn renders a placeholder rather than vanishing.
 
-    `_body_parts` was a copy of Signal's MINUS its sticker branch — and that
-    branch exists on the Signal side precisely because dropping a sticker made
-    a sticker-only message vanish and the sender watched Nora ignore something
-    they had clearly sent. Discord has more ways to send a text-less turn than
-    Signal does, so the same defect was reintroduced here and was wider.
+    On the Signal side a sticker branch exists precisely because dropping a
+    sticker made a sticker-only message vanish, and the sender watched Nora
+    ignore something they had clearly sent. Discord has more ways to send a
+    text-less turn than Signal does, so the same defect would be wider here.
 
     The cost is not one ignored message: a dropped turn never reaches the audit
     store, so Nora later reasons over a transcript with a hole she cannot see.
@@ -294,13 +293,9 @@ def test_a_turn_with_genuinely_nothing_is_still_dropped():
 
 
 def test_a_captioned_sticker_keeps_both_halves():
-    """OVERTURNS the previous behaviour deliberately (spec §3.2). This test
-    used to assert the body was `"haha"` alone — the sticker vanished — on the
-    premise that a placeholder is 'the fallback for an empty body, not an
-    annotation on every message'. That premise was right while a sticker was an
-    unreadable blank. Once it is understood it is not an annotation, it is
-    content, and the message means something different without it. A caption
-    plus a booster is the exact case this feature was asked for."""
+    """A sticker is content, not an annotation: the message means something
+    different without it, so a caption plus a sticker keeps both halves and
+    the body is not just the caption."""
     result = parse_discord_message(
         _message(content="haha", stickers=[_sticker(StickerFormatType.png)]),
         own_id=OWN_ID,
@@ -341,7 +336,7 @@ def test_a_sticker_name_never_reaches_the_body():
     assert result.body == "[sticker]"
 
 
-# ── reactions and deletes (design/cognition-loop/20-observe.md §1) ──────────
+# ── reactions and deletes ───────────────────────────────────────────────────
 
 
 @dataclass

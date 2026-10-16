@@ -1,11 +1,10 @@
-"""The pinned audio-controller endpoint semantics (design/voice-channel/07
-§3) — driven through the REAL `VoiceControllerClient` over real HTTP against
-`nora/testing/voice.py`'s `FakeVoiceController`, the in-suite controller that
-implements the phase-1 state machine (single guild, one serialized
-connection, generation-scoped verbs, replace-not-enqueue play) AND its
-wrong-call shapes (missing `guild_id`, wrong channel, non-object body — the
-validations `deploy/voice-sidecar/src/controller.mjs` enforces, which the
-2026-09-16 audit caught the old fake NOT enforcing).
+"""The pinned audio-controller endpoint semantics — driven through the REAL
+`VoiceControllerClient` over real HTTP against `nora/testing/voice.py`'s
+`FakeVoiceController`, the in-suite controller that implements the state
+machine (single guild, one serialized connection, generation-scoped verbs,
+replace-not-enqueue play) AND its wrong-call shapes (missing `guild_id`, wrong
+channel, non-object body — the validations
+`deploy/voice-sidecar/src/controller.mjs` enforces).
 
 This suite is what the Node-side controller must agree with: if the real
 controller and this fake ever disagree, one of them is off-contract.
@@ -38,22 +37,21 @@ async def controller(aiohttp_client):
 
 
 async def _join(client: VoiceControllerClient) -> str:
-    """CN-1 (2026-09-16 audit): a FRESH `request_id` every call, never a
-    fixed constant. `FakeVoiceController` deliberately does not emulate
-    the real controller's 5-minute `request_id` retry memo (its own
-    docstring says so) — reusing one request_id across two `_join()` calls
-    used to pass here (a second call for the same id runs as an ordinary
-    fresh join against the fake) while it would fail against
-    `controller.mjs`, which returns the FIRST call's memoized response
-    (the SAME generation) for a repeated id, not a new join. Any test that
-    joins more than once — e.g. `test_exit_invalidates_the_generation`'s
-    rejoin — needs the second call to actually reach the handler."""
+    """A FRESH `request_id` every call, never a fixed constant.
+    `FakeVoiceController` deliberately does not emulate the real controller's
+    5-minute `request_id` retry memo (its own docstring says so) — reusing one
+    request_id across two `_join()` calls would pass here (a second call for the
+    same id runs as an ordinary fresh join against the fake) while it would fail
+    against `controller.mjs`, which returns the FIRST call's memoized response
+    (the SAME generation) for a repeated id, not a new join. Any test that joins
+    more than once — e.g. `test_exit_invalidates_the_generation`'s rejoin —
+    needs the second call to actually reach the handler."""
     state = await client.join(GUILD, CHANNEL, request_id=str(uuid4()))
     return state["generation"]
 
 
 async def test_a_second_play_replaces_the_first(controller):
-    """REPLACE semantics (§3.2): the second play supersedes the first — a
+    """REPLACE semantics: the second play supersedes the first — a
     fresh playback_id makes the old one stale for any later callback."""
     fake, client, _ = controller
     generation = await _join(client)
@@ -69,7 +67,7 @@ async def test_a_second_play_replaces_the_first(controller):
 
 
 async def test_play_accepts_the_optional_resumable_flag(controller):
-    """§5 position policy: `resumable` is an optional boolean the
+    """Position policy: `resumable` is an optional boolean the
     controller reads when present (a live source gets NO resume after
     speech preemption)."""
     fake, client, _ = controller
@@ -112,10 +110,9 @@ async def test_join_elsewhere_is_a_conflict(controller):
 
 
 async def test_join_while_idle_admits_any_channel_in_the_guild(controller):
-    """The reversal, at the contract boundary. `hub.join` is called with the
-    CALLER'S channel, which after 2026-09-17 can be any of the guild's — the
-    old fake answered 400 for every one but the configured channel, which
-    would have made this whole path untestable and unusable."""
+    """`hub.join` is called with the CALLER'S channel, which can be any of the
+    guild's; the fake must accept every one, not only a configured channel, or
+    this whole path would be untestable."""
     fake, client, _ = controller
 
     state = await client.join(GUILD, "a-channel-nobody-configured", request_id="r")
@@ -125,7 +122,7 @@ async def test_join_while_idle_admits_any_channel_in_the_guild(controller):
 
 
 async def test_a_join_without_a_guild_id_is_rejected(controller):
-    """The drift the audit caught: the real controller compares
+    """The real controller compares
     `body.guild_id !== guildId`, so a join MISSING `guild_id` is a 400
     `wrong_guild` — the fake must refuse it the same way, or nora-side
     callers could learn a body shape the real controller rejects."""
@@ -155,7 +152,7 @@ async def test_a_non_object_body_is_rejected(controller):
 
 
 async def test_music_stop_keeps_the_connection(controller):
-    """`/music/stop` ≠ leaving (§3.2): after a stop, a play with the SAME
+    """`/music/stop` ≠ leaving: after a stop, a play with the SAME
     generation still succeeds."""
     fake, client, _ = controller
     generation = await _join(client)
@@ -220,7 +217,7 @@ async def test_every_generation_scoped_verb_rejects_a_stale_generation(controlle
 
 
 async def test_a_wrong_guild_is_rejected(controller):
-    """Single-guild scope (§12.5): any other guild_id is a 400, surfaced as
+    """Single-guild scope: any other guild_id is a 400, surfaced as
     `VoiceControllerRejected` carrying the controller's reason."""
     _fake, client, _ = controller
 
@@ -239,7 +236,7 @@ async def test_a_volume_out_of_range_is_rejected(controller):
 
 
 async def test_resume_during_speech_is_a_409(controller):
-    """§5 rule 4: speech owns the pipeline; a music resume (like a pause)
+    """Speech owns the pipeline; a music resume (like a pause)
     while it does is undefined and rejected LOUDLY — surfaced to nora as
     `GenerationConflict` carrying `pause_during_speech`, never applied."""
     fake, client, _ = controller
@@ -263,7 +260,7 @@ async def test_resume_during_speech_is_a_409(controller):
 
 
 async def test_status_carries_the_reconciliation_fields(controller):
-    """The snapshot nora's hub reconciles from (§3.3/§9): `generation`,
+    """The snapshot nora's hub reconciles from: `generation`,
     `playback_id`, `last_event_seq` (the outbox bookmark the gap guard
     compares against), `state_write_ok`, and the player's
     `position_policy` (approximate-seek posture: a revive seeks to the cut)."""
@@ -292,11 +289,11 @@ async def test_stream_speech_encodes_the_audio(controller):
 
 
 async def test_stream_rejects_with_unavailable_once_the_speech_queue_is_full(aiohttp_client):
-    """FG-2 (2026-09-16 audit): the bounded speech queue's 503
-    `speech_queue_full` must actually be reachable through the fake, and
-    the client must surface it as `VoiceControllerUnavailable` — not just
-    documented in `VoiceControllerClient.stream()`'s docstring while dead
-    in the fake. A small `speech_queue_max` keeps the test fast."""
+    """The bounded speech queue's 503 `speech_queue_full` must be reachable
+    through the fake, and the client must surface it as
+    `VoiceControllerUnavailable` — not just be documented in
+    `VoiceControllerClient.stream()`'s docstring while dead in the fake. A small
+    `speech_queue_max` keeps the test fast."""
     speech_queue_max = 2
     fake = FakeVoiceController(GUILD, CHANNEL, speech_queue_max=speech_queue_max)
     test_client = await aiohttp_client(fake.app())

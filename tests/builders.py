@@ -50,9 +50,8 @@ def make_limits(**kw: Any) -> LimitsConfig:
 
 
 def make_logging_config(**kw: Any) -> LoggingConfig:
-    # No `path` since 2026-09-09: the log goes to stdout and the key was removed
-    # from the model, so there is nothing left to resolve against a base
-    # directory. The context argument stays because `model_validate` is how the
+    # No `path`: the log goes to stdout, so there is nothing to resolve against
+    # a base directory. The context argument stays because `model_validate` is how the
     # rest of these builders construct config models.
     data = {"level": "INFO", "format": "json", **kw}
     return LoggingConfig.model_validate(data, context={"base": REPO_ROOT})
@@ -67,7 +66,7 @@ def make_tracing_config(**kw: Any) -> TracingConfig:
 def copy_example_config(tmp_path: Path) -> Path:
     """Copy the committed template into `tmp_path` and return the copy's path.
 
-    R-B (issue #113, `docs/CONVENTIONS.md` «Test structure»): this is the ONE
+    R-B (`docs/CONVENTIONS.md` «Test structure»): this is the ONE
     place in the suite that knows the template's name. A test reaches it
     through the `example_config_path` / `example_config` fixtures in
     `tests/conftest.py` — never by spelling `config.example.toml` itself — and

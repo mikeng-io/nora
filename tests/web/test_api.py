@@ -147,7 +147,7 @@ async def test_memory_route_returns_only_the_requested_person(client):
 
 
 async def test_memory_route_with_no_person_id_returns_empty_not_everyone(client):
-    """User-scoped (operator, 2026-08-19): an unscoped request must never
+    """User-scoped: an unscoped request must never
     fall back to showing every whitelisted person's data."""
     resp = await client.get("/app/v1/memory")
     assert resp.status == 200

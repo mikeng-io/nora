@@ -75,10 +75,10 @@ class CountingVision:
         self.calls = 0
         self.description = description
         self.available = True
-        # The PROMPT, kept because the one security invariant this branch
-        # deliberately breaks — the authored frame around a caller-supplied
-        # question — is only checkable here. A double that recorded call counts
-        # alone made `prompt = question` (no frame at all) a green change.
+        # The PROMPT is recorded because the authored frame around a
+        # caller-supplied question is only checkable here. A double that
+        # recorded call counts alone would stay green on `prompt = question`
+        # (no frame at all).
         self.prompts: list[str] = []
 
     async def describe(self, *, data: bytes, media_type: str,
@@ -134,11 +134,11 @@ async def wiring(tmp_path, pg_url):
     def build(*, vision_source=vision, blob_store=blobs, vision_cache=cache,
               describe_models=None, describe_providers=None, media_store=None,
               video_readings=None, video_max_chunks=None, video_chunk_seconds=None):
-        # Image-only by default, which is the shipped configuration: audio and
-        # video are wired but inert until a model is named for them. A NAMED
-        # model, not "": since the split an empty model means «not configured»
-        # and is answered `unavailable`, so "" here would turn every image test
-        # into a describer-off test.
+        # Image-only by default, the shipped configuration: audio and video are
+        # wired but inert until a model is named for them. The model is NAMED,
+        # not "": an empty model means «not configured» and is answered
+        # `unavailable`, so "" here would turn every image test into a
+        # describer-off test.
         describe_models = (
             {"image": "test/image-model"} if describe_models is None else describe_models
         )
@@ -201,7 +201,7 @@ async def test_an_image_in_the_conversation_is_described(wiring):
     assert wiring["vision"].calls == 1
 
 
-# ---- the generic URL path (DEC-56 extension, 2026-08-31) --------------------
+# ---- the generic URL path (DEC-56) -------------------------------------------
 # A `media_fetch(url=…)` ingestion is the cross-tool read path: ANY tool that
 # surfaces an image/video URL — x_read media rows, web_fetch page images,
 # a future tool — funnels into the same describe pipeline. The downloader is a
@@ -218,7 +218,7 @@ async def test_a_url_is_downloaded_and_described_like_a_code(wiring, monkeypatch
     assert out["description"] == "A red one-pixel square."
     # NO reusable code: URL bytes are never stored in this conversation's
     # media_json, so a code the model could hand back would not resolve on a
-    # later call (external audit finding, 2026-08-31).
+    # later call.
     assert out["code"] is None
     assert wiring["vision"].calls == 1
 
@@ -230,8 +230,8 @@ async def _fake_download(monkeypatch, data=RED_PNG, media_type="image/png"):
 
 
 async def test_a_looked_at_web_picture_is_kept_and_gets_a_code(wiring, monkeypatch):
-    """design/artifact §35: the picture Nora chose to look at goes into custody
-    as a `fetched` row born in THIS room, so a document's Image can name it."""
+    """The picture Nora chose to look at goes into custody as a `fetched` row
+    born in THIS room, so a document's Image can name it."""
     await _fake_download(monkeypatch)
     index = FakeMediaObjectStore([])
     out = await _call(wiring["build"](media_store=index), url="https://x.com/pic.png")
@@ -265,8 +265,8 @@ async def test_a_picture_first_indexed_in_another_room_gets_no_code(wiring, monk
 async def test_a_kept_picture_is_found_and_sent_only_in_the_room_that_kept_it(
     wiring, monkeypatch,
 ):
-    """Review of #693: a `fetched` row used to be library-global, so a picture
-    kept in one room could be found and sent from any other."""
+    """A `fetched` row is scoped to the room it was born in: a picture kept in
+    one room cannot be found or sent from any other."""
     await _fake_download(monkeypatch)
     index = FakeMediaObjectStore([])
     mine = wiring["build_all"](media_store=index)
@@ -282,8 +282,8 @@ async def test_a_kept_picture_is_found_and_sent_only_in_the_room_that_kept_it(
 
 
 async def test_a_kept_picture_resolves_by_its_code_in_media_fetch(wiring, monkeypatch):
-    """Review of #693: the code the result hands back must work for a follow-up
-    look, though a kept picture has no message row."""
+    """The code the result hands back works for a follow-up look, though a
+    kept picture has no message row."""
     await _fake_download(monkeypatch)
     index = FakeMediaObjectStore([])
     tools = wiring["build_all"](media_store=index)
@@ -381,7 +381,7 @@ async def test_a_non_http_url_is_refused(wiring, monkeypatch):
     assert calls == []
 
 
-# ---- an Instagram PAGE link is routed, never downloaded (2026-09-24) -------
+# ---- an Instagram PAGE link is routed, never downloaded ---------------------
 #
 # A reel, post, story or profile link is an HTML page. `media_fetch` answers
 # it at once, naming `instagram_read`, whose result hands each item's file
@@ -432,8 +432,9 @@ async def test_an_instagram_page_link_is_routed_even_with_media_unconfigured(wir
     "www.instagram.com/p/SynthPost_2/",
 ])
 async def test_a_page_link_without_a_scheme_gets_the_page_link_note(wiring, monkeypatch, url):
-    """It used to fall to «that doesn't look like a link I can open», which
-    sent her nowhere. Read the way `instagram_read` reads a pasted link."""
+    """A scheme-less link is routed like any other: «that doesn't look like a
+    link I can open» would send her nowhere. Read the way `instagram_read`
+    reads a pasted link."""
     calls: list[str] = []
 
     async def fake_download(got: str) -> tuple[bytes, str]:
@@ -598,7 +599,7 @@ async def test_a_mobile_linkedin_link_is_refused_and_asks_for_the_www_link(
 @pytest.mark.parametrize("url", [
     # A LinkedIn post: recognised by the parser, never claimed — linkedin_read
     # cannot read one from its link, and media_fetch may still find media on
-    # the page (design 30, "Design" §"Types").
+    # the page.
     "https://www.linkedin.com/posts/synth-person-01_synthetic-activity-9000000000000000001/",
     "https://lnkd.in/synthShort2",  # a shortener, not LinkedIn's own page
     "https://media.licdn.com/dms/image/synthetic.jpg",  # LinkedIn's own CDN file
@@ -628,13 +629,11 @@ async def test_code_and_url_together_or_neither_is_nothing_found(wiring):
 
 
 async def test_a_code_beside_an_instagram_page_url_is_never_redirected(wiring):
-    """`NativeTool.link_inputs`'s `unless="code"` (design 30, PR 1) must hold:
-    a `code` given alongside an Instagram page `url` is judged by
-    `media_fetch`'s OWN "exactly one target" refusal, never by the link-owner
-    registry's redirect — the old inline guard's own condition (`url and not
-    code`) before it moved. Reverting `unless="code"` sends this to the
-    Instagram redirect note instead, which 132 other tests never exercise
-    (none pairs a real `code` with an Instagram page `url`)."""
+    """`NativeTool.link_inputs`'s `unless="code"` must hold: a `code` given
+    alongside an Instagram page `url` is judged by `media_fetch`'s OWN "exactly
+    one target" refusal, never by the link-owner registry's redirect.
+    Reverting `unless="code"` sends this to the Instagram redirect note
+    instead; no other test pairs a real `code` with an Instagram page `url`."""
     out = await _call(
         wiring["build"](), code=PNG_SHA[:6], url="https://www.instagram.com/p/SynthPost01/",
     )
@@ -674,7 +673,7 @@ async def test_the_bracketed_marker_resolves_too(wiring):
     assert out["status"] == "ok"
 
 
-# ---- the cache: no second MiMo call for the same content hash (§3, criterion 5)
+# ---- the cache: no second MiMo call for the same content hash ----------------
 
 async def test_a_second_fetch_of_the_same_hash_makes_no_mimo_call(wiring):
     """The cache is keyed by sha256, checked before any MiMo call. Reverting the
@@ -698,10 +697,10 @@ async def test_the_cache_survives_across_tags_not_just_within_one(wiring):
     assert wiring["vision"].calls == 1
 
 
-# ---- VisionCache as a read-through over the durable store (Task 10) ----------
-# The defect this closes: the LRU is per-process, so every deploy threw away
-# every description and the next sighting of every image paid MiMo again. Nora
-# restarts often; stickers repeat over weeks.
+# ---- VisionCache as a read-through over the durable store --------------------
+# The LRU is per-process, so without the durable store every restart drops
+# every description and the next sighting of an image pays MiMo again. Stickers
+# repeat over weeks.
 
 async def test_a_cold_process_still_hits_the_durable_store():
     store = FakeMediaDescriptionStore()
@@ -781,7 +780,7 @@ async def test_media_fetch_threads_the_real_model_name_not_a_hardcoded_one(wirin
     assert descriptions.remembered_models == ["opencode-go/mimo-v2.5"]
 
 
-# ---- the untrusted-egress screen, on EVERY serve (§4, criterion 6) -----------
+# ---- the untrusted-egress screen, on EVERY serve -----------------------------
 
 async def test_a_transcribed_uuid_is_screened_out_even_on_a_cache_hit(wiring):
     """`scan_identifiers` runs on every SERVE, not once at store time, so a cache
@@ -824,7 +823,7 @@ async def test_a_transcribed_e164_number_is_screened_out(wiring):
     assert "+85290000101" not in repr(out)
 
 
-# ---- resolution: scope, window, ambiguity (§1, criterion 1) ------------------
+# ---- resolution: scope, window, ambiguity ------------------------------------
 
 async def test_a_handle_from_another_conversation_is_nothing_found(wiring):
     """R-21: resolved WITHIN this conversation's media_json only. An image in g2
@@ -844,7 +843,7 @@ async def test_a_bare_image_with_no_handle_is_nothing_found(wiring):
 
 
 async def test_two_blobs_sharing_the_prefix_are_ambiguous_never_pick_first(wiring):
-    """24 bits collide (§1). Two DISTINCT blobs sharing the 6-hex handle is a
+    """24 bits collide. Two DISTINCT blobs sharing the 6-hex handle is a
     question, not a default — ambiguous, listing both, and no MiMo call."""
     a = "abcdef" + "0" * 58
     b = "abcdef" + "1" * 58
@@ -865,17 +864,15 @@ async def test_the_same_blob_in_two_rows_is_not_an_ambiguity(wiring):
     assert out["status"] == "ok"
 
 
-# ---- non-image blobs, before any MiMo call (§4, criterion 4) -----------------
+# ---- non-image blobs, before any MiMo call -----------------------------------
 
-# `test_a_voice_note_is_not_an_image_before_any_mimo_call` MOVED and SPLIT
-# (2026-08-17 spec). It asserted one status for two different situations, which
-# the per-modality split separates: a voice note with audio switched off is now
-# `unavailable` (a wiring gap — «I couldn't check»), while a blob no describer
-# reads stays `not_an_image`. Both assertions, including the «before any model
-# call» half this one existed for, live in `tests/test_media_describers.py`.
+# A voice note with audio switched off is `unavailable` (a wiring gap — «I
+# couldn't check»), while a blob no describer reads is `not_an_image`. Both
+# assertions, including «before any model call», live in
+# `tests/test_media_describers.py`.
 
 
-# ---- unavailable: absent, corrupt, and the wiring gate (§4/§5, criterion 3) --
+# ---- unavailable: absent, corrupt, and the wiring gate -----------------------
 
 async def test_an_absent_blob_is_unavailable_not_nothing_found(wiring):
     """The row names a blob whose bytes are not in the store — `store.get`
@@ -931,7 +928,7 @@ async def test_the_store_going_down_is_unavailable_not_a_raise(wiring, monkeypat
     assert out["status"] == "unavailable"
 
 
-# ---- inert-by-config: the gate (§5) ------------------------------------------
+# ---- inert-by-config: the gate -----------------------------------------------
 
 async def test_no_blob_store_is_unavailable_the_inert_by_config_shape(wiring):
     """`[media] enabled=false` or no key → no blob store → the tool answers
@@ -958,7 +955,7 @@ async def test_a_stored_image_is_read_only_within_scope_and_screened_on_serve(wi
       un-resolvable here — `nothing_found`, never described. Widening the resolver
       past `bound_conversation_id` would pull another room's photo across the
       boundary.
-    * UNTRUSTED EGRESS (design/14 §2.1). An ACI/UUID the vision model transcribed
+    * UNTRUSTED EGRESS. An ACI/UUID the vision model transcribed
       off the image is dropped with a note, on the FIRST serve and on the cache
       hit alike — reverting the `scan_identifiers` screen puts the id in the
       result. The per-call vision timeout and byte ceiling that keep a slow MiMo
@@ -986,23 +983,13 @@ async def test_a_stored_image_is_read_only_within_scope_and_screened_on_serve(wi
 
 
 def test_the_advertised_schema_names_the_parameter_code(wiring):
-    """The regression guard for the defect that motivated the rename.
-
-    A live trace (Langfuse, 2026-08-10) shows the model calling this tool with
-    `{"code": "bae370"}` and failing schema validation, because the parameter
-    was `handle` while the docstring says "the short code" four times. The model
-    used the word the prose uses.
+    """The schema names the parameter `code`, the word the prose uses.
 
     Every other test here calls `tool._tool_func(**kw)` directly, which bypasses
-    Strands and therefore bypasses the SCHEMA — the exact surface that failed.
-    Renaming the parameter back turns those tests red on a TypeError, so the
-    rename is guarded, but nothing asserted what is actually advertised to the
-    model. This does.
-
-    The generic surface (DEC-56 extension, 2026-08-31) adds `url` — the
-    cross-tool read path — so the schema now advertises BOTH parameters, with
-    neither required (exactly one at call time; the tool answers
-    `nothing_found` for zero or two).
+    Strands and therefore bypasses the SCHEMA. This one asserts what is
+    actually advertised to the model: BOTH `code` and `url` (the cross-tool
+    read path), with neither required (exactly one at call time; the tool
+    answers `nothing_found` for zero or two).
     """
     spec = wiring["build"]().tool_spec
     schema = spec["inputSchema"]["json"]
@@ -1018,7 +1005,7 @@ def test_the_advertised_schema_names_the_parameter_code(wiring):
     assert "http" in schema["properties"]["url"]["description"]
 
 
-# ---- MediaComprehender (issue #116): bytes to a comprehension ---------------
+# ---- MediaComprehender: bytes to a comprehension -----------------------------
 # One model pass, three fields. These tests pin the adapter's own contract in
 # isolation; the job that schedules it is `tests/unit/test_media_comprehension.py`.
 
@@ -1171,8 +1158,8 @@ async def test_summarize_is_a_text_call_and_never_a_second_listen():
 
     assert got.available is True
     assert client.calls == [], "no vision call for a transcript already held"
-    # The words ride in a `media_text` block that says what they are (step 4c of
-    # design/context-assembly/04): the transcript is data, not the question's tail.
+    # The words ride in a `media_text` block that says what they are: the
+    # transcript is data, not the question's tail.
     # Pinned to the byte, through the shared wrapper rather than a copy of it.
     assert client.completions == [
         wrap_outside_text("media_text", _SUMMARIZE_SOURCE, "喂你今日得唔得閒啊"),
@@ -1193,7 +1180,7 @@ async def test_summarize_with_no_text_model_is_a_wiring_gap():
     assert got.reason == "no_text_describer"
 
 
-# ---- the two layers (issue #116) -------------------------------------------
+# ---- the two layers ----------------------------------------------------------
 #
 # Layer 1 serves what the spawned comprehension already read at ingest — no
 # model call, no wait, and the SAME reading the transcript rendered a line of,
@@ -1252,7 +1239,7 @@ async def test_an_uncomprehended_medium_still_falls_through_to_a_live_read(wirin
 
 
 async def test_a_shared_items_thumbnail_is_looked_at_only_when_asked(wiring):
-    """The on-demand half of the 2026-09-24 operator rule, end to end: an
+    """The on-demand rule, end to end: an
     Instagram share with no link (a post or reel with a link keeps none) is
     parsed, its thumbnail goes through REAL custody with the
     REAL comprehension job wired, and no model reads it at ingest. Then
@@ -1321,19 +1308,17 @@ async def test_a_shared_items_thumbnail_is_looked_at_only_when_asked(wiring):
     assert out["note"].endswith(_COVER_NOTE)
 
 
-# ---- a shared item's cover says it is one (2026-09-24) -----------------------
+# ---- a shared item's cover says it is one -----------------------------------
 #
-# The live failure: a reel shared into a room arrived as a `[shared reel …]`
-# line and its still picture. Asked "what is in this reel", she fetched the
-# picture, read one frame, and told the room she could not see the clip,
-# with the link to it in the same line. The transcript now says `[cover
-# image …]`, and these pin the other half: the RESULT says what it served.
+# A reel shared into a room arrives as a `[shared reel …]` line and its still
+# picture. The transcript labels the picture `[cover image …]`, and the RESULT
+# says what it served too, so one frame is never answered as the whole reel.
 
 async def _append_shared_cover(store, *, sha256: str, ts: int = 100) -> None:
     """A share as custody records it: the line, the cover placeholder, and a
     blob whose role says it is the cover. The line has no link, the only
-    shape that still keeps a cover; a row stored before that (a link AND a
-    cover) is served by the same role, which is all `media_fetch` reads."""
+    shape that keeps a cover; a row with a link AND a cover is served by the
+    same role, which is all `media_fetch` reads."""
     blob = MediaBlob(
         sha256=sha256, media_type="image/png", size=len(RED_PNG), role="cover",
     )
@@ -1345,10 +1330,9 @@ async def _append_shared_cover(store, *, sha256: str, ts: int = 100) -> None:
 
 
 async def _append_linked_cover(store, *, sha256: str, line: str, ts: int = 100) -> None:
-    """A row whose line carries the item's link AND its cover: the LEGACY
-    shape of a post or reel share (stored before the parser stopped keeping
-    that thumbnail), and the CURRENT shape of a story share, which keeps its
-    cover by design."""
+    """A row whose line carries the item's link AND its cover: the shape of a
+    post or reel share stored by an older parser, and of a story share, which
+    keeps its cover by design."""
     blob = MediaBlob(
         sha256=sha256, media_type="image/png", size=len(RED_PNG), role="cover",
     )
@@ -1371,10 +1355,9 @@ _LEGACY_LINES = {
 async def test_a_stale_cover_beside_its_post_or_reel_link_is_refused_before_any_look(
     wiring, link,
 ):
-    """The legacy shape: a stored row with the item's link AND its cover.
-    Serving the cover is the live failure (one frame answered as the reel),
-    so the code is refused before any reading, stored or fresh, and the note
-    names the link to open instead."""
+    """A stored row with the item's link AND its cover. Serving the cover
+    would answer one frame as the reel, so the code is refused before any
+    reading, stored or fresh, and the note names the link to open instead."""
     await _append_linked_cover(wiring["store"], sha256=PNG_SHA, line=_LEGACY_LINES[link])
     # A stored reading exists too, so a refusal here is not the layers
     # having nothing to serve.
@@ -1494,14 +1477,13 @@ async def test_a_withheld_cover_keeps_both_sentences(wiring):
 
 
 async def test_an_ordinary_photo_carries_no_cover_note(wiring):
-    """The negative, on a row with no `role` at all, which is every row
-    written before the role existed."""
+    """The negative, on a row with no `role` at all."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
 
     out = await _call(wiring["build"](), code=PNG_SHA[:6])
 
     assert out["status"] == "ok"
-    # ADR 0015 §3: every description carries the how-to-report note; only
+    # (ADR 0015) every description carries the how-to-report note; only
     # the cover clause is absent.
     assert _COVER_NOTE not in out["note"]
 
@@ -1516,7 +1498,7 @@ async def test_bytes_that_were_also_sent_as_a_photo_are_not_called_a_cover(wirin
     out = await _call(wiring["build"](), code=PNG_SHA[:6])
 
     assert out["status"] == "ok"
-    # ADR 0015 §3: every description carries the how-to-report note; only
+    # (ADR 0015) every description carries the how-to-report note; only
     # the cover clause is absent.
     assert _COVER_NOTE not in out["note"]
 
@@ -1580,9 +1562,9 @@ async def test_layer_2_writes_nothing_to_either_cache_tier(wiring):
 
 
 async def test_layer_2_is_screened_on_the_way_out_like_every_other_serve(wiring):
-    """The authored-prompt invariant is broken here deliberately, and the
-    barrier that makes it acceptable is unchanged: `scan_identifiers` runs on
-    EVERY serve, this one included."""
+    """Layer 2 breaks the authored-prompt invariant deliberately; the barrier
+    that makes it acceptable is that `scan_identifiers` runs on EVERY serve,
+    this one included."""
     uuid = "12345678-1234-1234-1234-1234567890ab"
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     wiring["vision"].description = f"The form says account {uuid}."
@@ -1600,14 +1582,13 @@ async def test_layer_2_is_screened_on_the_way_out_like_every_other_serve(wiring)
 async def test_the_schema_advertises_the_question_parameter(wiring):
     """The model can only reach layer 2 through the schema. Every other test
     here calls `tool._tool_func(**kw)` directly, which bypasses Strands and
-    therefore bypasses the schema — the exact surface that failed once before
-    (the `handle`/`code` rename)."""
+    therefore bypasses the schema."""
     schema = wiring["build"]().tool_spec["inputSchema"]["json"]
     assert "question" in schema["properties"]
     assert "required" not in schema
 
 
-# ---- the deliberate look chunks too (issue #117) ----------------------------
+# ---- the deliberate look chunks too ------------------------------------------
 
 
 class _WindowVision:
@@ -1618,8 +1599,8 @@ class _WindowVision:
         self.answers = answers
         self.calls: list[bytes] = []
         #: The `windows` each call carried — the serial factor the client's
-        #: per-call ceiling divides by. Recorded because a `media_fetch` that
-        #: dropped it passed every test (#403 post-merge review).
+        #: per-call ceiling divides by. Recorded so a `media_fetch` that drops
+        #: it fails a test.
         self.windows: list[int | None] = []
 
     async def describe(self, *, data: bytes, media_type: str,
@@ -1655,13 +1636,11 @@ def _ffmpeg(duration: str):
 async def test_media_fetch_reads_a_clip_in_windows_and_admits_what_it_missed(
     wiring, monkeypatch,
 ):
-    """**The DELIBERATE look chunks too.** This path used to run
-    `preprocess_media`, whose single view is capped at `VIDEO_MAX_SECONDS` — so
-    the surface Nora reaches for when she CHOOSES to look read the first two
-    minutes of a ten-minute clip and answered as though it had watched the whole
-    thing, with no metric and no caveat. Fixing the ingest path and leaving this
-    one would have left the same silent partial read on the half a human
-    actually asks for.
+    """**The DELIBERATE look chunks too.** `preprocess_media`'s single view is
+    capped at `VIDEO_MAX_SECONDS`: reading only the first two minutes of a
+    ten-minute clip and answering as though it had watched the whole thing, with
+    no metric and no caveat, is the silent partial read the surface Nora reaches
+    for when she CHOOSES to look must not have.
 
     Both halves are asserted: every window reaches a model with its own
     timecode, AND the ceiling that binds is said in the answer."""
@@ -1683,12 +1662,11 @@ async def test_media_fetch_reads_a_clip_in_windows_and_admits_what_it_missed(
 
     assert out["status"] == "ok"
     # 20 minutes at the shipped 90s/10-window geometry: ten windows read, and
-    # the ceiling binds on the rest. Master read ONE view of the first two
-    # minutes and said nothing.
+    # the ceiling binds on the rest.
     assert len(vision.calls) == 10, "one call per window, not one view of the lot"
     # Every window tells the client it is one of TEN, so each gets the
     # ten-window ceiling — never the one-window one, which would let ten
-    # windows spend ten times the loop's share (#403 post-merge review).
+    # windows spend ten times the loop's share.
     assert vision.windows == [10] * 10
     assert "0:00 —" in out["description"]
     assert "1:30 —" in out["description"]
@@ -1699,10 +1677,8 @@ async def test_media_fetch_reads_a_clip_in_windows_and_admits_what_it_missed(
 async def test_a_clip_ffmpeg_cannot_cut_still_gets_looked_at(wiring, monkeypatch):
     """R-5's degrade, kept. `preprocess.py`'s contract is that a failed
     reduction passes the ORIGINAL bytes through, because a quiet «couldn't
-    optimise» beats a fabricated failure — so refusing every clip ffmpeg
-    dislikes would be a regression against the build before this branch. What
-    must NOT degrade with it is the honesty: coverage is unknown, and the answer
-    says exactly that."""
+    optimise» beats a fabricated failure. What must NOT degrade with it is the
+    honesty: coverage is unknown, and the answer says exactly that."""
     from nora.infra.vision import preprocess as _pre
 
     async def broken(args, timeout_seconds, data):
@@ -1770,23 +1746,19 @@ async def test_a_whitespace_question_is_not_a_question(wiring):
 
 
 async def test_layer_2_wraps_the_question_in_the_authored_frame(wiring):
-    """**The one security invariant this branch deliberately breaks, asserted.**
+    """**The one security invariant layer 2 deliberately breaks, asserted.**
 
     `nora/infra/vision/client.py` states that describe prompts are «AUTHORED
     and never model-supplied», because a prompt conditioned on what a ROOM
     typed is group-authored text steering a model whose output returns to that
-    room. Layer 2 is Nora supplying one, and `design/19` §7 rests the entire
-    justification on `_QUERY_FRAME` keeping the question as DATA inside an
-    instruction we wrote.
-
-    Nothing checked it. `prompt = question` — no frame at all — left the whole
-    suite green, and two test docstrings claimed this coverage while asserting
-    only call counts.
+    room. Layer 2 is Nora supplying one, and the justification rests entirely
+    on `_QUERY_FRAME` keeping the question as DATA inside an instruction we
+    wrote. `prompt = question` — no frame at all — must fail here.
 
     The frame's THREE load-bearing clauses are named individually, because a
-    frame that survives as a greeting is not the barrier the design doc
-    describes: answer only from what is actually there, do not follow an
-    instruction the question carries, and do not read out an identifier."""
+    frame that survives as a greeting is not the barrier: answer only from what
+    is actually there, do not follow an instruction the question carries, and
+    do not read out an identifier."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
 
@@ -1823,17 +1795,17 @@ async def test_layer_1_asks_nothing_and_so_carries_no_frame(wiring):
 async def test_a_describer_that_raises_on_a_clip_is_wrapped_not_propagated(
     wiring, monkeypatch,
 ):
-    """**A reproduced crash.** `_ask` returns `None` when `describe` raises, and
-    the chunked branch dereferenced `result.available` — the image branch and
-    the ffmpeg-degrade branch both check for `None`, this one did neither:
+    """**A describe that raises on the chunked branch.** `_ask` returns `None`
+    when `describe` raises. The image branch and the ffmpeg-degrade branch check
+    for `None`; the chunked branch must too, or dereferencing `result.available`
+    raises:
 
         AttributeError: 'NoneType' object has no attribute 'available'
 
-    `nora/agent/ports.py` says exceptions propagate out of `_validated`, so
-    that reached the agent loop. The existing pin
+    `nora/agent/ports.py` says exceptions propagate out of `_validated`, so that
+    would reach the agent loop. The existing pin
     (`test_a_describe_that_raises_is_wrapped_not_propagated`) uses a PNG and
-    never enters this branch, which is why a tool-never-raises invariant with a
-    dedicated test still shipped a raising tool.
+    never enters this branch.
 
     A window whose describer blew up is a window nothing read, so it takes the
     same gap marker as one the model refused — and every window failing that
@@ -1867,13 +1839,13 @@ async def test_a_describer_that_raises_on_a_clip_is_wrapped_not_propagated(
 async def test_a_second_look_at_a_capped_clip_still_admits_what_it_missed(
     wiring, monkeypatch,
 ):
-    """**#117 came back through the cache.** The description was cached without
-    its coverage sentence and a hit was served verbatim, so the first call on a
-    twenty-minute clip said «…I have not seen the rest» and the second returned
-    the ten-window run and nothing else. Layer 1 masks it whenever a
-    comprehension row exists; the live exposure is `comprehension = false`
-    (documented and supported), a URL fetch, and any clip whose comprehension
-    failed or has not run yet.
+    """**A chunked video description never enters the byte-keyed `VisionCache`.** Cached without its
+    coverage sentence and served verbatim, the first call on a twenty-minute
+    clip would say «…I have not seen the rest» and the second would return the
+    ten-window run and nothing else. Layer 1 masks it whenever a comprehension
+    row exists; the exposure is `comprehension = false` (documented and
+    supported), a URL fetch, and any clip whose comprehension failed or has not
+    run yet.
 
     Caching it WITH the caveat is worse, not better: raise `chunk_max` and a
     stale «I have not seen the rest» is served from the durable table forever
@@ -1907,7 +1879,7 @@ async def test_a_second_look_at_a_capped_clip_still_admits_what_it_missed(
 
 async def test_a_still_is_still_cached(wiring):
     """The control for the exclusion above: an image's description IS a pure
-    function of its bytes, so it caches exactly as it always has — the second
+    function of its bytes, so it caches — the second
     look makes no model call."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     cache = VisionCache()
@@ -1938,14 +1910,14 @@ async def test_layer_1_carries_the_caveat_too(wiring):
 
 
 async def test_load_transcript_renders_media_the_way_the_prefill_does(wiring):
-    """**The eighth transcript builder.** On master `messages.body` carried the
-    description, so this path had it. Behind a join the prefill performs and
-    this tool does not, the identical blob renders
-    `[image a3f2c1: a plate of noodles - …]` inside `<group_transcript>` and
-    `[image a3f2c1]` with nothing after it in the tool result — IN THE SAME
-    PROMPT. That is the disagreeing-renderers bug this tool's own comments say
-    it exists not to reproduce, and it is worse than a name: a bare handle
-    reads as «nobody has looked at this», which is a claim about the record."""
+    """**The transcript this tool builds carries the description.** The prefill
+    joins media custody, so the identical blob renders
+    `[image a3f2c1: a plate of noodles - …]` inside `<group_transcript>`; a path
+    without that join would render `[image a3f2c1]` with nothing after it in the
+    tool result — IN THE SAME PROMPT. That is the disagreeing-renderers bug this
+    tool's own comments say it exists not to reproduce, and it is worse than a
+    name: a bare handle reads as «nobody has looked at this», which is a claim
+    about the record."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
     join = MediaJoin(store=index, screen=scan_identifiers, metrics=Metrics())
@@ -1978,11 +1950,11 @@ async def test_load_transcript_with_no_join_wired_renders_the_stored_body(
 async def test_a_question_carrying_an_identifier_never_reaches_the_provider(
     wiring,
 ):
-    """**Layer 2's question is an ARGUMENT to a third party** (operator,
-    2026-09-08). `nora/agent/egress.py` names one as never safe, and
-    `web_search` screens its query before the call for exactly that reason; two
-    egress points in one process with two different rules is how the next
-    contributor learns the wrong precedent.
+    """**Layer 2's question is an ARGUMENT to a third party.**
+    `nora/agent/egress.py` names one as never safe, and `web_search` screens its
+    query before the call for exactly that reason; two egress points in one
+    process with two different rules is how the next contributor learns the
+    wrong precedent.
 
     What it buys is narrow and worth stating: the media bytes reach that
     provider on every read anyway, so the screen adds nothing for an identifier
@@ -2042,13 +2014,13 @@ async def test_a_screened_question_is_refused_rather_than_stripped(wiring):
     assert "description" not in out, "a stripped question was answered anyway"
 
 
-# ---- ADR 0015 §3: how to report a status rides in the result ----------------
+# ---- ADR 0015: how to report a status rides in the result -------------------
 
 _DASHES = ("—", "–")
 
 
 async def test_every_non_ok_status_carries_a_note(wiring, monkeypatch):
-    """ADR 0015 §3/§6: the description only NAMES the statuses; what to say for
+    """The description only NAMES the statuses (ADR 0015); what to say for
     each is the result's `note`. Every non-ok path is driven here, so a path
     that loses its note (the reporting rule for that status) goes red."""
     async def dead_download(url: str) -> tuple[bytes, str]:
@@ -2109,13 +2081,11 @@ async def test_an_ok_note_rides_only_with_a_description(wiring):
 
 
 def test_the_reading_note_says_what_she_is_reading_and_never_asks_for_a_report():
-    """design/proposed/32-shared-media-register.md: the note used to say
-    «Report it as what it looks like», and in the 14 days before 2026-09-26
-    a tagged answer about shared media opened by translating the reading back,
-    item by item, to the person who had sent it (16 of 18). The note now says
-    what the reading IS (notes for her, so she sees it too) and that the
-    sender has usually seen the thing; the hedge stays. Reverting the note
-    reddens this."""
+    """The note says what the reading IS (notes for her, so she sees it too) and
+    that the sender has usually seen the thing; the hedge stays. It must not
+    tell her to «Report it as what it looks like», which makes a tagged answer
+    about shared media translate the reading back, item by item, to the person
+    who sent it. Reverting the note reddens this."""
     note = _MEDIA_READING_NOTE
     assert "report" not in note.lower()
     assert "so you can see it too" in note
@@ -2126,10 +2096,10 @@ def test_the_reading_note_says_what_she_is_reading_and_never_asks_for_a_report()
 
 # ---- the video reading cache (migration 0061) --------------------------------
 #
-# A video used to be re-read on EVERY ask: the sha256 cache excluded it (#117),
-# and a clip by URL has no stored comprehension. The cache below is keyed on
-# everything a reading depends on, so what it must prove is both halves — a
-# repeat is free, and any change of input is a miss, never a stale hit.
+# The sha256 cache excludes video and a clip by URL has no stored comprehension,
+# so without this cache EVERY ask re-reads the clip. It is keyed on everything a
+# reading depends on, so what it must prove is both halves — a repeat is free,
+# and any change of input is a miss, never a stale hit.
 
 def _video_download(monkeypatch, data: bytes = b"reel-bytes"):
     async def fake_download(url: str) -> tuple[bytes, str]:
@@ -2140,8 +2110,8 @@ def _video_download(monkeypatch, data: bytes = b"reel-bytes"):
 async def test_a_second_look_at_the_same_url_clip_makes_no_model_call(
     wiring, monkeypatch,
 ):
-    """The live case (2026-09-24): an Instagram story by URL, one 90 s window,
-    re-read in full on every «what's on my story»."""
+    """An Instagram story by URL, one 90 s window: a repeat ask is not re-read
+    in full."""
     from nora.infra.vision import preprocess as _pre
     from nora.testing import FakeVideoReadingStore
 
@@ -2185,7 +2155,7 @@ async def test_a_room_clip_with_no_ingest_reading_is_cached_too(wiring, monkeypa
 
 
 async def test_a_raised_chunk_ceiling_misses_and_reads_again(wiring, monkeypatch):
-    """#117's stale-caveat trap: a reading cut short by `chunk_max` must not be
+    """The stale-caveat trap: a reading cut short by `chunk_max` must not be
     served after the ceiling is raised — the geometry is in the key."""
     from nora.infra.vision import preprocess as _pre
     from nora.testing import FakeVideoReadingStore
@@ -2285,7 +2255,7 @@ def test_the_video_reading_cache_is_wired_from_composition_to_the_tool():
 
 
 
-# ---- the video reading cache: every input is in the key (DEC-198 review) ------
+# ---- the video reading cache: every input is in the key (DEC-198) ------------
 
 def _cached_build(wiring, vision, readings, **kw):
     kw.setdefault("describe_models", {"video": "mimo-v2.6-flash"})
@@ -2400,7 +2370,7 @@ def _flaky_ffmpeg(*, duration: str | None = "100.0", silent: bool = False,
 async def test_a_read_of_a_degraded_cut_is_served_but_never_cached(
     wiring, monkeypatch, failure,
 ):
-    """The review's M1: a timed-out ffmpeg looks exactly like a real refusal,
+    """A timed-out ffmpeg looks exactly like a real refusal,
     so any cut that is not the one these bytes always produce is NOT cached —
     or a transient hiccup is frozen in for good. The worst case is `silent`:
     the audible encode timed out, the silent retry worked, and the reading of

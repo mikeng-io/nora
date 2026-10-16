@@ -1,16 +1,13 @@
-"""Conformance: today's concrete classes must satisfy the ports they'll be injected as.
+"""Conformance: the concrete classes must satisfy the ports they are injected as.
 
 This is what makes the ports real rather than aspirational. Where a class does NOT
-yet conform, the gap is asserted explicitly with the phase that closes it — so the
-divergence is tracked, not forgotten.
+conform, the gap is asserted explicitly, so the divergence is tracked, not
+forgotten.
 
-No known-gap pin remains here for `PlatformAdapter`: the platforms phase closed all
-five gaps between it and `SignalAdapter` (four behavioural — `resolve_identity()`,
-`send()`, `health()`, `listen()` — plus a fifth found while closing those four: the
-port declared `name: str` where every concrete type said `platform`).
-`test_signal_adapter_satisfies_platform_adapter` below is the phase's real
-acceptance test — the point of the whole phase was making this `isinstance` call
-return `True`.
+`PlatformAdapter` has no known-gap pin: `SignalAdapter` matches it on
+`resolve_identity()`, `send()`, `health()`, `listen()` and the `platform`
+attribute. `test_signal_adapter_satisfies_platform_adapter` below is the real
+acceptance test — the `isinstance` call must return `True`.
 """
 
 import inspect
@@ -42,8 +39,7 @@ def test_fake_memory_store_satisfies_memory_store():
     `isinstance` against a `runtime_checkable` `Protocol` checks method names
     only (see `test_runtime_checkable_protocols_only_check_method_names` below);
     unlike `HonchoClient`, `FakeMemoryStore` is also keyword-only exactly like the
-    port. It is the suite's only memory fake — `tests/fakes.py::FakeHoncho`, an
-    older uncontracted copy, was folded into it (R-C, issue #113)."""
+    port. It is the suite's only memory fake (R-C)."""
     assert isinstance(FakeMemoryStore(), MemoryStore)
 
 
@@ -75,14 +71,12 @@ def test_signal_adapter_health_satisfies_the_port_shape():
 
 
 def test_signal_adapter_listen_satisfies_the_port_shape():
-    """Replaces `test_signal_adapter_listen_gap_to_on_message_is_known`, which pinned
-    `listen()` taking a positional `on_event` dict callback — the fourth of the
-    platforms phase's five gaps closing. `listen()` now takes a keyword-only
-    `on_message` callback over `NormalizedMessage`; parsing moved inside the adapter
+    """`listen()` takes a keyword-only `on_message` callback over
+    `NormalizedMessage`; parsing happens inside the adapter
     (`nora.platform.signal.parser.parse_event`, called from `SignalAdapter.listen`
-    itself), off `IngestPipeline` entirely (Trap B). `SignalAdapter.parse` came off
-    the public surface as part of the same change — the port deliberately has no
-    `parse()` (see `nora.domain.ports`'s module docstring)."""
+    itself), not in `IngestPipeline`. `SignalAdapter.parse` is not on the public
+    surface — the port deliberately has no `parse()` (see `nora.domain.ports`'s
+    module docstring)."""
     params = inspect.signature(SignalAdapter.listen).parameters
     assert "on_message" in params
     assert params["on_message"].kind is inspect.Parameter.KEYWORD_ONLY
@@ -90,41 +84,36 @@ def test_signal_adapter_listen_satisfies_the_port_shape():
 
 
 def test_signal_adapter_satisfies_platform_adapter():
-    """The fifth gap, found while closing the other four (see this module's
-    docstring): the port declared `name: str`, `SignalAdapter` has `platform`.
-    `isinstance(adapter, PlatformAdapter)` was `False` even after
-    `resolve_identity()`/`send()`/`health()`/`listen()` all matched — this is
-    the assertion that was actually `False` until the port's attribute was
-    renamed to `platform`. This IS the phase's headline goal: `SignalAdapter`
-    genuinely satisfies `PlatformAdapter`, not just method-by-method in
-    isolation."""
+    """The port's attribute is `platform`, as `SignalAdapter` has it:
+    `isinstance(adapter, PlatformAdapter)` is `True` only when
+    `resolve_identity()`/`send()`/`health()`/`listen()` AND the attribute all match.
+    This is the headline assertion: `SignalAdapter` genuinely satisfies
+    `PlatformAdapter`, not just method-by-method in isolation."""
     assert isinstance(SignalAdapter("http://x", "+1", metrics=Metrics()), PlatformAdapter)
 
 
 def test_discord_adapter_satisfies_platform_adapter():
-    """The registry's second concrete adapter (design/discord-integration/) —
-    same headline goal as the Signal assertion above, proven independently
-    rather than assumed from the Protocol declaration alone."""
+    """The registry's second concrete adapter — same headline goal as the Signal
+    assertion above, proven independently rather than assumed from the Protocol
+    declaration alone."""
     assert isinstance(DiscordAdapter("tok"), PlatformAdapter)
 
 
 def test_whatsapp_adapter_satisfies_platform_adapter():
-    """The registry's third concrete adapter (design/whatsapp-adoption/) —
-    same headline goal as the Signal and Discord assertions above. A port
-    never gains a second implementation without the shared contract suite
-    covering it (CLAUDE.md); this is the name-level floor, and
+    """The registry's third concrete adapter — same headline goal as the Signal and
+    Discord assertions above. A port never gains a second implementation without the
+    shared contract suite covering it (CLAUDE.md); this is the name-level floor, and
     `test_send_contract.py`/`test_reaction_contract.py` carry the behaviour."""
     assert isinstance(WhatsAppAdapter("http://x"), PlatformAdapter)
 
 
 def test_instagram_adapter_satisfies_platform_adapter():
-    """The registry's fourth concrete adapter (design/instagram-adoption/).
+    """The registry's fourth concrete adapter.
 
-    It is the one adapter with a state the port does not name — DEGRADED
-    (`01` §Degradation, M0) — and it still has to be an ordinary
-    `PlatformAdapter` in that state, because the whole point is that it stays
-    REGISTERED. A degraded adapter that stopped satisfying the port would be
-    refused by the registry after all, one layer later."""
+    It is the one adapter with a state the port does not name — DEGRADED — and it
+    still has to be an ordinary `PlatformAdapter` in that state, because the whole
+    point is that it stays REGISTERED. A degraded adapter that stopped satisfying the
+    port would be refused by the registry after all, one layer later."""
     healthy = InstagramAdapter("http://x")
     degraded = InstagramAdapter("http://x")
     degraded.degrade("checkpointed")
@@ -177,11 +166,10 @@ def test_the_media_ports_conform_in_both_implementations(tmp_path):
 def test_the_reminder_stores_conform_to_the_port():
     """`ReminderStore`'s two implementations, at the name level.
 
-    This entry was MISSING while every other port had one, and the gap was not
-    covered by anything else: mypy's scoped strict override lists
+    Nothing else covers this: mypy's scoped strict override lists
     `nora/domain nora/config.py nora/app nora/infra nora/presence`, so
     `nora.testing.reminders` and `tests/` are both outside it. A method renamed
-    or dropped on either side would have passed all four gates in silence —
+    or dropped on either side would pass every other gate in silence —
     including the behavioural suite, whose `store` fixture only ever reaches the
     methods it happens to call.
 
@@ -217,7 +205,7 @@ def test_the_reverse_geocoder_backends_conform_to_the_port():
 
 
 def test_hko_provider_satisfies_the_weather_provider_port():
-    """`HkoWeatherProvider` is `WeatherProvider`'s only implementation today; the
+    """`HkoWeatherProvider` is `WeatherProvider`'s only implementation; the
     port exists so another region's provider plugs in behind the `weather` tool
     with a shared contract. `isinstance` against the `runtime_checkable` Protocol
     checks the `current` method name; the behavioural contract (fail-soft, the
@@ -261,8 +249,8 @@ def test_the_media_object_store_conforms_to_the_port():
 
 
 def test_both_search_adapters_satisfy_the_search_provider_port():
-    """`SearchProvider` (DEC-73, extended DEC-116) has TWO implementations since
-    DEC-157 — which is what the port was for: another backend plugs in behind
+    """`SearchProvider` (DEC-73, DEC-116, DEC-157) has TWO implementations, which is
+    what the port is for: another backend plugs in behind
     `web_search`/`web_fetch` and the tools cannot tell which answered.
 
     `isinstance` against the `runtime_checkable` Protocol only checks the
@@ -281,7 +269,7 @@ def test_both_search_adapters_satisfy_the_search_provider_port():
 
 
 def test_the_image_generator_adapter_satisfies_the_port():
-    """`XaiImageGenerator` (DEC-137, design/proposed/29) is `ImageGenerator`'s
+    """`XaiImageGenerator` (DEC-137) is `ImageGenerator`'s
     first implementation — the name-level floor every other port gets. The
     behavioural contract (3-state result, reason mapping, fail-closed
     custody) is `tests/contract/test_image_generator_contract.py`; the shape
@@ -296,7 +284,7 @@ def test_the_image_generator_adapter_satisfies_the_port():
 
 
 def test_the_online_now_ports_conform_in_both_implementations():
-    """`SteamPresenceProvider` and `VoicePresenceSource` (design/online-status/),
+    """`SteamPresenceProvider` and `VoicePresenceSource`,
     both implementations each — the name-level floor every other port gets.
     `DiscordVoicePresence(adapter=DiscordAdapter("tok"))` constructs without a
     live client the same way `test_discord_adapter_satisfies_platform_adapter`

@@ -1,4 +1,3 @@
-# tests/test_event_tools.py (this file also gets the doctrine test in Task 10 — start it now)
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -34,8 +33,8 @@ def test_all_six_event_tools_are_registered():
 
 
 async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
-    """R-52: create_event fail-closes on ambiguity — spec §3.1's
-    'more than one open event' case — rather than silently picking one or
+    """R-52: create_event fail-closes on ambiguity (the
+    'more than one open event' case) rather than silently picking one or
     creating a duplicate."""
     from nora.app.gatherings import AmbiguousOpenGatheringsError
 
@@ -70,7 +69,7 @@ async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
         )
 
 
-# ── Fix I6: tool-LAYER translation coverage — the closures in
+# ── tool-LAYER translation coverage — the closures in
 # `nora.agent.tools`, not `GatheringService` itself, which the two tests above
 # never touch. `_tools()`/`_room()` mirror `tests/test_web_fetch_tool.py`'s
 # lightweight `ToolRegistry(...).specs(...)` pattern — no database, no real
@@ -231,7 +230,7 @@ async def test_update_event_translates_a_cancelled_event_fix_i2():
 
 
 async def test_list_events_and_create_event_bind_to_the_bound_conversation_id():
-    """Fix I6: `list_events`/`create_event` must bind to THIS room's
+    """`list_events`/`create_event` must bind to THIS room's
     `bound_conversation_id`, never a client-suppliable value — an event
     that exists in a DIFFERENT conversation must not appear."""
     events = _events_service()
@@ -264,7 +263,7 @@ async def test_update_event_refuses_an_event_from_another_conversation_fix_i5():
     assert out["status"] == "refused"
 
 
-# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+# ── ADR 0015: how to report a status rides in the result ────────────────────
 
 
 class _Raising:
@@ -289,7 +288,7 @@ class _Raising:
 
 
 async def test_every_non_ok_event_status_carries_a_note():
-    """ADR 0015 §3/§6: the six descriptions only NAME their statuses; how to
+    """The six descriptions only NAME their statuses (ADR 0015); how to
     report each is the result's `note`. Every non-ok code path is driven, so
     one that loses its note, or grows a dash, goes red."""
     from nora.domain.gatherings import (
@@ -423,9 +422,9 @@ async def test_event_set_status_moves_through_the_lifecycle_and_bumps_the_revisi
     assert ev.status.value == "happened"
 
 
-# ── The tag path's event writes cite the message that raised the turn (the
-# review of PR #669: an event with no edge is out of the withdrawal cascade's
-# reach). The ids are the Room's (code's own knowledge), never a tool argument.
+# ── The tag path's event writes cite the message that raised the turn (an event
+# with no edge is out of the withdrawal cascade's reach). The ids are the Room's
+# (code's own knowledge), never a tool argument.
 
 
 async def test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn():

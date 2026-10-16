@@ -1,4 +1,4 @@
-"""The 2026-09-25 hazard, against a real Postgres: a run whose migration
+"""The shared-database hazard, against a real Postgres: a run whose migration
 head is AHEAD of the shared `<source>_blank` template must never move that
 shared database's own alembic version — it must build and migrate a
 PRIVATE copy instead, and drop it when the run ends.
@@ -13,12 +13,12 @@ migrations/versions/` directory, and the point of an integration test is
 that nothing about Alembic itself is faked).
 
 **Revert-proved, not merely observed.** A shared database that happens not
-to have moved proves nothing on its own — the old, unguarded code would
-also have left it unmoved if nobody had touched `nora_eval_blank` in
-between. The test therefore also calls `nora.infra.sql.run_migrations`
-directly against the SAME shared database afterwards and shows THAT does
-move its version — the thing `_blank_template` is now built never to do on
-its own, reproduced on demand rather than assumed.
+to have moved proves nothing on its own — unguarded code would also leave it
+unmoved if nobody had touched `nora_eval_blank` in between. The test therefore
+also calls `nora.infra.sql.run_migrations` directly against the SAME shared
+database afterwards and shows THAT does move its version — the thing
+`_blank_template` is built never to do on its own, reproduced on demand rather
+than assumed.
 """
 
 from __future__ import annotations
@@ -135,8 +135,8 @@ async def test_a_branch_ahead_run_never_migrates_the_shared_template(
     assert blank_name in _databases(pg_admin)
     assert current_revision(blank_url) == before  # still unmoved after cleanup
 
-    # REVERT-PROVE: the same shared database, migrated directly (the OLD
-    # code's own call, `run_migrations(url)` unconditionally) DOES move —
+    # REVERT-PROVE: the same shared database, migrated directly (the unguarded
+    # call, `run_migrations(url)` unconditionally) DOES move —
     # proving the guard is what held it still above, not some unrelated
     # reason Alembic left it alone.
     run_migrations(blank_url)

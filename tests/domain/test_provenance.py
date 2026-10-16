@@ -1,5 +1,5 @@
 """`nora.domain.provenance.instruction_sha256` — the one hash the Dreamer's
-four tables stamp (2026-08-20 instruction-substrate spec §4.3).
+four tables stamp.
 
 Every assertion here is about a way the digest could FAIL to distinguish two
 instruction sets, because a stamp that collides is worse than no stamp: it
@@ -23,7 +23,7 @@ def test_a_digest_is_64_lowercase_hex_characters():
 
 
 def test_one_part_is_the_plain_sha256_of_that_text():
-    """The single-part case is what every adaptor writes TODAY (an inline
+    """The single-part case is what every adaptor writes (an inline
     constant), so it must be reproducible by hand from a row's stamp alone —
     `sha256sum` on the constant, nothing bespoke."""
     text = "You are reading a batch of messages…"

@@ -1,20 +1,19 @@
 """Integration harness: real pipelines, real db, real guards — fake model, fake senders.
 
-Shared wiring for every M5 scenario. `build_handler` is the single entry point: it
-assembles a real `IngestPipeline` + `EngagementPipeline`, glued by a real `Dispatcher`
-(`nora.app.dispatch`), against a real (throwaway) Postgres database and the real, already-validated
-doctrine files, with only the model and the outbound sender faked. This is Task 8's
-cutover from the deleted `Handler`: the wiring below is the harness-side mirror of
-`nora.app.composition.build_dependencies`, using `nora.testing`/local fakes wherever
-`build_dependencies` would use a real collaborator.
+Shared wiring for every scenario. `build_handler` is the single entry point: it
+assembles a real `IngestPipeline` + `EngagementPipeline`, glued by a real
+`Dispatcher` (`nora.app.dispatch`), against a real (throwaway) Postgres
+database and the real, already-validated doctrine files, with only the model
+and the outbound sender faked. The wiring below is the harness-side mirror of
+`nora.app.composition.build_dependencies`, using `nora.testing`/local fakes
+wherever `build_dependencies` would use a real collaborator.
 
-`ScriptedTurn`, `FakeAgentRunner`, and `group_event` moved to `nora.testing` in Task
-10 (Phase 3): `evals/harness.py` needed the same scripted-model double and event
-builder without importing `tests/`, so there is one definition, imported here and
-there. The ingest+engagement+dispatcher wiring tail itself moved to
-`tests.offline_pipeline.build_offline_pipeline` for the same reason — `evals/` may import
-`nora.app` and `nora.testing` only, so that function is what it calls instead of
-duplicating this module's pipeline assembly.
+`ScriptedTurn`, `FakeAgentRunner`, and `group_event` live in `nora.testing`,
+one definition shared with the offline eval harness. The
+ingest+engagement+dispatcher wiring tail lives in
+`tests.offline_pipeline.build_offline_pipeline`, which `run_case` in
+`tests/offline_eval_harness.py` calls instead of duplicating this module's
+pipeline assembly.
 """
 
 from __future__ import annotations
@@ -66,8 +65,8 @@ _DEFAULT_IDENTITY_TOML = (
 class _StoreProxy:
     """Delegates everything to a real store; subclasses break exactly one method.
 
-    This replaces `monkeypatch.setattr(db, "append", ...)`, which stopped
-    working when the store became an injected object instead of a module.
+    The store is an injected object, so a fault is injected by subclassing
+    rather than by patching a module attribute.
     """
 
     def __init__(self, inner):
@@ -120,25 +119,22 @@ class _HarnessAdapter(SinkSender):
 
 class _HandlerView:
     """Thin test-side view combining `Dispatcher.on_message` with direct access
-    to the conversation slots, for the R-9/R-10 tests that used to read the
-    deleted `Handler`'s own in-flight set and now read `h.handler.slots`.
+    to the conversation slots, for the R-9/R-10 tests that read
+    `h.handler.slots`.
 
-    `on_event` keeps its pre-phase-4 name and raw-dict-in shape deliberately:
-    every test in this suite already calls `h.handler.on_event(group_event(...))`,
-    and this method is what stands in for the SSE loop that, in production, now
-    lives inside `SignalAdapter.listen` — parsing the raw event and dropping it
-    silently if it parses to `None`, then calling `Dispatcher.on_message` with
-    the result, exactly like the adapter's internal `_on_event` does (Trap B,
-    docs/superpowers/plans/2026-08-05-nora-phase4-platforms.md). `IngestPipeline`
-    no longer accepts raw dicts at all, so this parse-then-dispatch step cannot
-    move into `Dispatcher` itself.
+    `on_event` keeps a raw-dict-in shape deliberately: every test in this suite
+    calls `h.handler.on_event(group_event(...))`, and this method is what stands
+    in for the SSE loop that, in production, lives inside `SignalAdapter.listen` —
+    parsing the raw event and dropping it silently if it parses to `None`, then
+    calling `Dispatcher.on_message` with the result, exactly like the adapter's
+    internal `_on_event` does. `IngestPipeline` accepts no raw dicts, so this
+    parse-then-dispatch step cannot move into `Dispatcher` itself.
 
     This is a proxy, not a retention: `slots` is a `@property` returning the
     SAME `ConversationSlots` the pipeline was built with and releases into on
     every exit path (`nora/engagement/pipeline.py`'s `finally`) — nothing is
-    copied or accumulated here. That distinction matters:
-    `Handler._guards`/`_prefills` were lists that grew forever; this is a live
-    view into already-bounded state.
+    copied or accumulated here, so this is a live view into already-bounded
+    state.
     """
 
     def __init__(
@@ -169,9 +165,9 @@ class Harness:
     # Port, not the concrete SqlRecordStore: under db_append_fails/context_read_fails
     # this is a _StoreProxy subclass instead (see the two subclasses above).
     store: RecordStore
-    # The reasoning-continuity retention store (Task 6) — sharing `store`'s own
-    # engine (see its construction in `build_handler`), so `store.aclose()`
-    # tears it down too. Exposed for the tests that assert a driven tag left a
+    # The reasoning-continuity retention store — sharing `store`'s own engine
+    # (see its construction in `build_handler`), so `store.aclose()` tears it
+    # down too. Exposed for the tests that assert a driven tag left a
     # retrievable `TagTrace` row.
     tag_trace_store: SqlTagTraceStore
     # Cumulative call log fed by every `FakeAgentRunner` this harness has ever used
@@ -183,9 +179,9 @@ class Harness:
     _tmp_path: Path
     _identity_toml: str
     _register: Callable[[Harness], None] | None = None
-    # The participation occasion's quiescence trigger (design/dreamer-agent-loop/35),
-    # None unless `participation_script` was given. Tests drive
-    # `close_due_windows()` directly against the injected clock — never a sleep.
+    # The participation occasion's quiescence trigger, None unless
+    # `participation_script` was given. Tests drive `close_due_windows()`
+    # directly against the injected clock — never a sleep.
     participation_trigger: ParticipationTrigger | None = None
 
     async def aclose(self) -> None:
@@ -214,12 +210,12 @@ class Harness:
     async def drain(self) -> None:
         """Await every background task spawned so far — ambient memory-feeds,
         spawned tags, AND `EngagementPipeline`'s post-reply exchange feed all
-        land in the same shared `BackgroundTasks` now (Important 2's fix:
-        `EngagementPipeline` takes an injected `spawn` instead of rolling its
-        own private task set, so `tests.offline_pipeline.build_offline_pipeline`
-        wires both pipelines' spawns to the one `background.spawn` — see
-        `nora/engagement/pipeline.py`'s `spawn` constructor parameter) —
-        including ones spawned by tasks that are themselves still in flight.
+        land in the same shared `BackgroundTasks`: `EngagementPipeline` takes an
+        injected `spawn` instead of rolling its own private task set, so
+        `tests.offline_pipeline.build_offline_pipeline` wires both pipelines'
+        spawns to the one `background.spawn` (see `nora/engagement/pipeline.py`'s
+        `spawn` constructor parameter) — including ones spawned by tasks that are
+        themselves still in flight.
 
         Deliberately loops with `asyncio.sleep(0)` after each `gather`, not just
         `while pending: await gather(*pending)`: a task's own coroutine can finish
@@ -235,11 +231,10 @@ class Harness:
 
     def set_script(self, script) -> None:
         """Swap the active model runner in place, for a second tag in the same
-        Harness (statelessness scenario 9: the model is stateless across invocations).
+        Harness (the model is stateless across invocations).
 
-        Private-attribute reassignment on `EngagementPipeline`, mirroring what the
-        pre-phase-3 harness did to `Handler._invoke_fn` — a test-harness-only seam,
-        not a production hook.
+        Private-attribute reassignment on `EngagementPipeline` — a test-harness-only
+        seam, not a production hook.
         """
         new_runner = script if isinstance(script, FakeAgentRunner) \
             else FakeAgentRunner(script, on_call=self._calls.append)
@@ -321,8 +316,8 @@ async def build_handler(
     (wrapped into a `FakeAgentRunner` for you), or `None` (wrapped into an empty,
     zero-turn `FakeAgentRunner`). `EngagementPipeline` always gets a non-`None`
     `runner` from this factory, so `nora.app.agent_runner.LiveAgentRunner`'s real,
-    live-network branch is unreachable from this test suite by construction (that
-    is Task 4's dedicated `@pytest.mark.network` smoke test's job).
+    live-network branch is unreachable from this test suite by construction (a
+    dedicated `@pytest.mark.network` smoke test covers that branch).
 
     `tool_registry` is threaded straight to `build_offline_pipeline`, which
     otherwise builds a bare `ToolRegistry()` (every tool inert/`unavailable`).
@@ -330,17 +325,17 @@ async def build_handler(
     `VersionManifest` pointed at a real stamp — passes one wired with the
     collaborator it cares about, and everything else stays inert.
 
-    `fault` injects exactly one dependency failure (spec B.3/R-5's silent-failure
+    `fault` injects exactly one dependency failure (R-5's silent-failure
     matrix) into an otherwise-normal build; `fault=None` (the default) leaves every
     other caller's behavior unchanged.
 
     `participation_script`, when given, wires the participation occasion the way
-    the composition root does (design/dreamer-agent-loop/35): the rooms named in
-    `participation_rooms` get `relevance_gate = true` in policy.toml, a REAL
-    `FirePath` is built with the scripted model as its `participation_runner`,
-    and a `ParticipationTrigger` over the engagement pipeline's own slots is
-    handed to the dispatcher — so an untagged message in an opted-in room is
-    NOTED, and nothing runs until the test closes the window itself with
+    the composition root does: the rooms named in `participation_rooms` get
+    `relevance_gate = true` in policy.toml, a REAL `FirePath` is built with the
+    scripted model as its `participation_runner`, and a `ParticipationTrigger`
+    over the engagement pipeline's own slots is handed to the dispatcher — so an
+    untagged message in an opted-in room is NOTED, and nothing runs until the
+    test closes the window itself with
     `harness.participation_trigger.close_due_windows()` (the clock is
     `participation_clock`, injected for the same reason `Debounce`'s is).
     """
@@ -361,7 +356,7 @@ async def build_handler(
     # still refuses an UNMAPPED sender, which is the behaviour these tests care
     # about preserving. Each room is its OWN unit: six Signal rooms in one unit
     # breach DEC-105's one-room-per-platform rule, which `load_policy` refuses
-    # since DEC-214.
+    # (DEC-214).
     policy_path = tmp_path / "policy.toml"
     policy_path.write_text(
         'default = "deny"\n'
@@ -369,7 +364,7 @@ async def build_handler(
             f'[[conversations]]\nplatform = "signal"\nid = "{cid}"\n'
             f'label = "{cid}"\npersons = "*"\nunit = "room-{cid}"\n'
             + (
-                # The participation occasion's room opt-in (35 §7): only present
+                # The participation occasion's room opt-in: only present
                 # when the scenario wired a participation runner at all.
                 "relevance_gate = true\n"
                 if participation_script is not None and cid in participation_rooms
@@ -412,7 +407,7 @@ async def build_handler(
     if script is None:
         # Never leave the runner unset: an empty FakeAgentRunner keeps EngagementPipeline's
         # `runner` non-None so `LiveAgentRunner`'s real, live-network branch is unreachable
-        # from this suite by construction (Task 4's dedicated @pytest.mark.network test
+        # from this suite by construction (a dedicated @pytest.mark.network test
         # covers that branch).
         runner = FakeAgentRunner([], delay=delay, raises=raises, on_call=calls.append)
     elif isinstance(script, FakeAgentRunner):
@@ -442,10 +437,8 @@ async def build_handler(
             final_text="   ", bypass_guard=True)], on_call=calls.append)
     elif fault == "no_send_call":
         # `final_text=""` — a turn that produces NOTHING, which is what "no
-        # script" should mean. It carried the word "silent" until DEC-93, when
-        # prose without a `send_reply` call started being recovered and
-        # delivered: every scenario that just wanted a quiet turn would have
-        # started sending the word "silent" to its group.
+        # script" should mean. Prose without a `send_reply` call is recovered and
+        # delivered (DEC-93), so any placeholder text here would be sent to the group.
         runner = FakeAgentRunner([ScriptedTurn(final_text="")], on_call=calls.append)
     elif fault == "leak_guard_trips":
         # A >=40-char verbatim span of nora/doctrine/core/constraints.md's body, read live so
@@ -460,7 +453,7 @@ async def build_handler(
     elif fault == "send_fails":
         adapter._succeed = False   # SinkSender's existing succeed flag, flipped post-construction
     elif fault == "db_append_fails":
-        # Both the ambient path and Deliverer now go through the same injected `store` —
+        # Both the ambient path and Deliverer go through the same injected `store` —
         # failing every write would break ambient ingest too, not just the tag path this
         # fault means to exercise. `_FailingAppendStore` fails only is_nora=True appends
         # (Deliverer's), so ambient writes still succeed.
@@ -471,11 +464,11 @@ async def build_handler(
         doctrine_store.get(applies_to="tag")     # warm the last-good cache before corrupting
         (doctrine_copy_dir / "core" / "constraints.md").write_text("not valid doctrine content\n")
 
-    # The participation occasion's runner (design/dreamer-agent-loop/35): built
-    # BEFORE the pipeline so it can be threaded into `build_offline_pipeline`,
-    # which then builds the real FirePath + quiescence trigger itself — the one
-    # definition of that wiring, shared with `evals/` (which may not import
-    # `nora.app.fire` to build its own).
+    # The participation occasion's runner: built BEFORE the pipeline so it can
+    # be threaded into `build_offline_pipeline`, which then builds the real
+    # FirePath + quiescence trigger itself — the one definition of that wiring,
+    # shared with `evals/` (which may not import `nora.app.fire` to build its
+    # own).
     participation_runner = None
     if participation_script is not None:
         participation_runner = (
@@ -486,7 +479,7 @@ async def build_handler(
     dispatcher, engagement, background, participation_trigger = build_offline_pipeline(
         cfg, adapter=adapter, audit=store, memory=honcho_double, persons=persons,
         doctrine_store=doctrine_store, runner=runner, metrics=metrics,
-        # None by default, which is what every scenario before DEC-86 wanted:
+        # None by default, which is what a scenario with no roster needs:
         # `Room` reports an absent source as UNAVAILABLE, never as an empty room,
         # so the room-scoped tools degrade honestly. A scenario that needs Nora
         # to TAG somebody has to say who is actually in the group — and the

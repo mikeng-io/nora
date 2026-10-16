@@ -91,7 +91,7 @@ async def wiring(pg_url, tmp_path):
         await store.append(message=NormalizedMessage("signal", "g1", "group", "+852111",
                                                       "Miles", i, f"m{i}", {}))
     # A second, unrelated conversation with its own rows — the cross-group
-    # leak probe (Task 1) needs a real second group to prove load_transcript
+    # leak probe needs a real second group to prove load_transcript
     # cannot be steered into it by a model-supplied conversation_id.
     for i in range(3):
         await store.append(message=NormalizedMessage("signal", "g2", "group", "+852222",
@@ -137,19 +137,18 @@ def test_every_declared_tool_is_built(wiring):
         "who_said",
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "send_to",
-        # design/self-awareness/07: the room tools.
+        # The room tools.
         "room_list", "room_read",
-        # design/cognition-loop/15-map.md §4: the Record under lineage.
+        # The Record under lineage.
         "record_query",
-        # design/cognition-loop/25 §5, 50 §2: built here like every closure; only a
-        # Dreamer loop is OFFERED them (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
+        # Built here like every closure; only a Dreamer loop is OFFERED them
+        # (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
         "rollup_read", "standing_read", "character_read",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         # `search_memory_workspace` IS built here — `build_tools` builds every
         # closure. Which ones a ROOM sees is `ToolScope`'s decision, applied
-        # by `ToolRegistry.surface()` (design/tool-catalogue, phase B), and the
-        # Dreamer-only cut (#350) is pinned there:
+        # by `ToolRegistry.surface()`, and the Dreamer-only cut is pinned there:
         # tests/unit/test_tool_registry.py (`dreamer - tag`).
         "search_memory_workspace",
         "calculate", "transit", "route",
@@ -159,66 +158,66 @@ def test_every_declared_tool_is_built(wiring):
         "reverse_geocode",
         # DEC-155: the derived-presence history tool (where someone HAS BEEN).
         "where_been",
-        # design/27 §4.3: where someone usually is, from the Tier 4 forecast.
+        # Where someone usually is, from the Tier 4 forecast.
         "routine_read",
-        # design/online-status/: live digital activity (online / playing /
+        # Live digital activity (online / playing /
         # voice) — exercised in tests/unit/test_online_now.py.
         "online_now",
         "media_fetch",
-        # design/external-files §3: a shared file link, read as text.
+        # A shared file link, read as text.
         "file_fetch",
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
-        # x_read and x_search (DEC-201, replacing DEC-151's social_fetch):
+        # x_read and x_search (DEC-201):
         # READ-ONLY X via the host bridge.
         "x_read", "x_search",
         # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
         # the same host bridge, inert unless [social.linkedin] enabled.
         "linkedin_read", "linkedin_search",
-        # instagram_read (design/instagram-adoption/18): a person's Instagram
+        # instagram_read: a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
-        # instagram_search (design/instagram-adoption/18, P11): Instagram
+        # instagram_search: Instagram
         # accounts matching free text, over the instagram-bridge.
         "instagram_search",
         "weather",
-        # TD open-data parking vacancy (data.gov.hk hk-td-tis_5, 2026-08-31).
+        # TD open-data parking vacancy (data.gov.hk hk-td-tis_5).
         "parking_status",
         # Google Nearby Search parking discovery around a named place/position.
         "find_parking",
         # The six music verbs are built here too. The Discord-only cut
-        # (2026-09-16) is `ToolScope`'s, pinned by
+        # is `ToolScope`'s, pinned by
         # `test_non_discord_catalog_omits_music_tools`.
         "play_music", "skip_music", "top_music", "stop_music",
         "music_status", "set_music_volume",
-        # design/tool-catalogue/02 — the loader. Built for every turn;
+        # The loader. Built for every turn;
         # `surface()` hands it to the model only when something is deferred.
         "load_tools",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "event_propose", "event_revise", "event_rsvp", "event_set_status",
         "event_search", "suggest_venue",
-        # Nora's computer (design/sandbox-runtime §4, DEC-243).
+        # Nora's computer (DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",
-        # design/browser-runtime B2: built here; offered only with a browser runner.
+        # Built here; offered only with a browser runner.
         "computer_browse",
-        # design/artifact §26: a document is published to the web app, read back to edit.
+        # A document is published to the web app, read back to edit.
         "document_publish", "document_read", "document_set_status",
-        # design/subagent §3 (DEC-283).
+        # Subagents (DEC-283).
         "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
-        # design/video-generation: built here; offered only when `[video_gen]` is wired.
+        # Built here; offered only when `[video_gen]` is wired.
         "video_create",
-        # design/subagent §4d: the worker's own place-keeper.
+        # The worker's own place-keeper.
         "checkpoint_update",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
-        # The note tier's four verbs (note-tier spec §5.2/§6).
+        # The note tier's four verbs.
         "note_read", "note_search", "note_create", "note_update",
         # DEC-306: one kept memo of the unit.
         "memo_read",
-        # The remember verb — the conclusion write lane (2026-08-30).
+        # The remember verb — the conclusion write lane.
         "remember",
         # The unit-wide memory variant of `search_memory`.
     }
@@ -230,8 +229,7 @@ def test_read_peer_card_is_gone_from_the_table():
     room-scoped, so a model that guessed another person's id pulled their card
     across conversation boundaries. It is deleted. This pins the deletion in
     the two places a tool can exist: `NATIVE_TOOLS` (what makes a tool callable
-    at all — R-7 default-denies anything absent) and the budgets table. (The
-    capability block that used to be a third assertion was deleted in DEC-150.)
+    at all — R-7 default-denies anything absent) and the budgets table.
     Re-adding the tool turns this red."""
     from nora.agent.tools import NATIVE_TOOLS
 
@@ -248,10 +246,10 @@ def test_exactly_these_tools_are_cacheable():
         # room/person disclosure decision baked into the moment it ran, the
         # same exemption shape as `web_search`/`web_fetch`.
         "music_status", "x_read", "x_search",
-        # instagram_search (design/instagram-adoption/18, P11): free text in,
+        # instagram_search: free text in,
         # public accounts out, no roster or Tier 0 decision in the answer.
         "instagram_search",
-        # where_been is deliberately NOT cacheable (Kimi audit B1): its R-31
+        # where_been is deliberately NOT cacheable: its R-31
         # gate runs against the live roster, and the recall log replays
         # verbatim with no guard re-check.
     }
@@ -278,16 +276,15 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     `inputSchema` is what Strands actually sends the model, derived from the
     callable by `FunctionToolMetadata.extract_metadata`, so this is the only
     assertion that fails if a conversation parameter comes back under any name
-    or any default. Task 1's cross-group read leak lived in exactly such a
-    parameter, and the first real tag died because the model could not guess
-    the value of one.
+    or any default. A conversation parameter lets the model steer a read
+    into another group, or kills the tag when it cannot guess the value.
     """
     for name, tool in wiring["tools"].items():
         properties = set(tool.tool_spec["inputSchema"]["json"].get("properties") or {})
         assert not properties & {"conversation_id", "conversation_type"}, (
             f"{name} makes the model invent a conversation nothing reads"
         )
-    # `before` (design/self-awareness/08 §2) is not a value she must invent:
+    # `before` is not a value she must invent:
     # it is a time the person SAID («yesterday») or one printed on a row she
     # was handed (`when`), the same class as `reply_to` below. A value nobody
     # can read, or a time after now, reads the newest rows exactly as before.
@@ -324,27 +321,21 @@ def _flat(name: str) -> str:
 
 
 def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(wiring):
-    """DEC-92's tool-surface half, MOVED 2026-09-24 (operator: «keep the voice
-    in voice.md»).
+    """DEC-92's tool-surface half: `send_reply`'s schema carries no style block.
 
-    DEC-92 restated three doctrine rules on `send_reply`'s schema (length, the
-    chatbot tail, caving on a fact), with DEC-89's link line beside them, on
-    the argument that a docstring is read at the moment the reply is written.
-    That block is gone from the schema: how she sounds is `voice.md`'s, what
-    she does is `conduct.md`'s, and the description carries delivery and its
-    result contract (ADR 0015 §3, Level 3). This pins both halves of the move:
-    every rule is still stated in the file that owns its kind, and the schema
-    no longer carries a second copy of any of them.
+    How she sounds is `voice.md`'s, what she does is `conduct.md`'s, and the
+    description carries delivery and its result contract (ADR 0015 §3, Level 3).
+    This pins both halves: every rule (length, the chatbot tail, caving on a
+    fact, with DEC-89's link line beside them) is stated in the file that owns
+    its kind, and the schema carries no second copy of any of them.
 
-    NOT a claim that it works, the same posture DEC-92 shipped under. Whether
-    the rules hold from the system prompt alone, without the at-the-moment
-    restatement, is unmeasured and is the reversal condition.
+    NOT a claim that it works. Whether the rules hold from the system prompt
+    alone, without an at-the-moment restatement, is unmeasured and is the
+    reversal condition.
     """
     voice = _flat("voice")
-    # The law lines moved out of conduct.md into rooms/constraints.md in step 2
-    # (design/context-plan/11 §6, 2026-10-12), and the capability rule was
-    # rewritten there to its must-hold fact (its old text predated the cognition
-    # loop) while keeping DEC-90's concrete examples.
+    # The law lines live in rooms/constraints.md, and the capability rule there
+    # states its must-hold fact while keeping DEC-90's concrete examples.
     law = " ".join((_DOCTRINE / "rooms" / "constraints.md").read_text().split())
     # Length: short by default, and looking a lot up is not content.
     assert "一兩句已經答到差唔多所有嘢" in voice
@@ -397,12 +388,11 @@ def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(w
 
 
 async def test_load_transcript_reads_the_bound_conversation_and_nothing_else(wiring):
-    """Task 1's PROBE, now unrepresentable as an argument.
+    """The cross-group PROBE, unrepresentable as an argument.
 
     The tools are bound to `g1` and `g2` holds another group's rows. There is
-    no longer any input by which the model could ask for `g2` — the parameter
-    that used to shadow the closure's bound value is gone — so the leak is
-    closed by construction. This still asserts on the returned rows rather than
+    no input by which the model could ask for `g2`, so the leak is closed by
+    construction. This still asserts on the returned rows rather than
     on the signature: what matters is that g2's messages never come back.
     """
     rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
@@ -415,18 +405,18 @@ async def test_load_transcript_returns_only_model_relevant_fields(wiring):
     rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     # No raw_json, no ids. `reply_to` is absent rather than null on an
     # unthreaded row — see test_load_transcript_omits_reply_to_* below.
-    # `when`, never the raw `ts` (design/self-awareness/08 §1): the epoch
-    # integer was unreadable as a time and is a handle R-18 keeps off the wire.
+    # `when`, never the raw `ts`: the epoch integer is unreadable as a time and
+    # is a handle R-18 keeps off the wire.
     assert set(rows[0]) == {"sender", "body", "when"}
 
 
 async def test_load_transcript_names_speakers_the_same_way_the_prefill_does(wiring):
-    """DEC-80's THIRD renderer, which the first pass missed (both 2026-08-10
-    reviews). `store.recent` hands back rows with `person_name` unset, so without
-    the projection this tool renders the self-set Signal profile name while the
-    prefill, `group_members` and `lookup_person` all render the identity one.
+    """DEC-80's THIRD renderer. `store.recent` hands back rows with
+    `person_name` unset, so without the projection this tool renders the
+    self-set Signal profile name while the prefill, `group_members` and
+    `lookup_person` all render the identity one.
 
-    That reproduces the original bug INSIDE ONE CONTEXT WINDOW, on the path that
+    That reproduces the two-names defect INSIDE ONE CONTEXT WINDOW, on the path that
     exists precisely for looking further back than the prefill: one prompt would
     hold 「Miles」 in the prefilled lines and 「陳志明 Chi Ming」 in these rows.
 
@@ -445,8 +435,8 @@ async def test_load_transcript_names_speakers_the_same_way_the_prefill_does(wiri
 
 async def test_load_transcript_keeps_the_profile_name_for_an_unmapped_speaker(wiring):
     """The same fallback `prefill._label` uses, so the two renderers cannot
-    disagree in EITHER direction. `who()` used to collapse an unmapped account to
-    "unknown" where the prefill kept their profile name — a second, quieter way
+    disagree in EITHER direction. `who()` must not collapse an unmapped account to
+    "unknown" where the prefill keeps their profile name — a second, quieter way
     for one person to have two names in one prompt."""
     store = wiring["store"]
     await store.append(message=NormalizedMessage(
@@ -458,7 +448,7 @@ async def test_load_transcript_keeps_the_profile_name_for_an_unmapped_speaker(wi
 
 
 async def test_load_transcript_marks_a_reply_with_the_name_it_answers(wiring):
-    """design/11 §2.6: if the prefilled transcript teaches `[A ↳ B]` and
+    """If the prefilled transcript teaches `[A ↳ B]` and
     `load_transcript` returns un-threaded rows, the older messages look
     structurally different and the model reads a missing arrow as «not a
     reply». JSON, not the arrow — a tool returns data; the arrow is prompt
@@ -505,9 +495,9 @@ async def test_load_transcript_names_nora_the_same_way_in_reply_to_as_in_sender(
 
 
 async def test_load_transcript_clamps_a_hostile_limit(wiring, monkeypatch):
-    """`limit` is a model-supplied argument. The old SQLite backend rendered
-    `LIMIT -1` as unbounded rather than zero — a full-conversation dump into
-    context — and Postgres rejects a negative LIMIT outright; either way the
+    """`limit` is a model-supplied argument. SQLite renders `LIMIT -1`
+    as unbounded rather than zero — a full-conversation dump into context — and
+    Postgres rejects a negative LIMIT outright; either way the
     clamp owns the bound, and `limit=0` is equally meaningless. This
     asserts what `load_transcript` actually sends downstream — independent of
     whatever the store itself does with a non-positive limit — so it fails if
@@ -532,10 +522,9 @@ async def test_load_transcript_clamps_the_top_end_to_the_declared_ceiling(wiring
     """The other end of the same clamp, and the expensive one (R-24).
 
     `limit` is MODEL-supplied and nothing downstream bounds it — `store.recent`
-    serves whatever it is handed. Measured 2026-08-06, `load_transcript(200)` cost
-    6,592 tokens per call and stayed in context for every later call of the
-    loop; at `budget: 2` that was 13,184 tokens, more than half the
-    `total_tokens = 24000` in force at the time. This asserts what actually
+    serves whatever it is handed. A `load_transcript(200)` call costs thousands
+    of tokens and stays in context for every later call of the loop, and the
+    tool's budget multiplies that. This asserts what actually
     reaches the store, not what the tool returns, so it fails even on a
     conversation too short to notice the difference.
     """
@@ -603,7 +592,7 @@ def test_strip_media_markers_covers_all_marker_shapes():
         ("[audio] [voice note] [document abc123] [file] 其他種類", "    其他種類"),
         ("正常文字", "正常文字"),
         ("[image a3f2c1][image bbccdd] 連續", " 連續"),
-        # A shared item's still picture (2026-09-24). The alternation is built
+        # A shared item's still picture. The alternation is built
         # from `LABELS`, so a label the transcript can carry is one a reply
         # cannot leak.
         ("[cover image c0de01] 封面", " 封面"),
@@ -629,19 +618,18 @@ OTHER_ACI = "0f8ab3c1-7d22-4e10-8b41-9c5e6f7a8b90"
 async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_resolves(
     wiring,
 ):
-    """DEC-88. The @-mention MECHANISM landed with DEC-86 and the model was
-    never told it exists; this is the join between the two, and the join is
-    what can rot silently.
+    """DEC-88. The @-mention MECHANISM (DEC-86) and the model's knowledge that it
+    exists are two things; this is the join between them, and the join is what
+    can rot silently.
 
     Two halves, asserted against EACH OTHER rather than each against a literal:
 
     1. `send_reply`'s SCHEMA, the string Strands actually sends, must carry a
-       worked `@handle` example. Since 2026-09-24 it is on the `text`
-       argument, as what the tool does with an @ in its input: the style
-       block it used to sit in moved to the doctrine, and DEC-147 keeps
-       handles out of the doctrine. DEC-78/DEC-82 measured that a maxim in the
-       doctrine does not move behaviour and the matched surface does, so an
-       affordance the schema never shows is an affordance the model never has.
+       worked `@handle` example. It is on the `text` argument, as what the
+       tool does with an @ in its input: DEC-147 keeps handles out of the
+       doctrine, and DEC-78/DEC-82 found that a maxim in the doctrine does not
+       move behaviour and the matched surface does, so an affordance the schema
+       never shows is an affordance the model never has.
     2. `nora.agent.outbound.OutboundComposer` must RESOLVE that exact written
        form. The example is lifted OUT of the description and driven through
        the real composer, so `@[Jordan]`, `<@jordan>`, `@ Jordan`, or a parser whose
@@ -703,24 +691,20 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
 
 
 def test_a_second_message_must_earn_its_place():
-    """The burst-restatement defect, measured live 2026-09-22 in the Signal
-    "Friends" room: one inbound message produced ONE `tag start` and FOUR
-    `send_reply` calls, all four restating the same point
-    ("I have no IG, and if I made one I'd still be alone") in different
-    wordings, not DEC-95's reaction/hit/twist burst.
+    """A second message must have a purpose: one inbound message must not
+    produce several `send_reply` calls restating the same point in different
+    wordings (not DEC-95's reaction/hit/twist burst).
 
-    The budget was never the defect: `ReplyGuard._before_model` already
-    relaxes `tool_choice` to `auto` after the first send, so the model could
-    already have stopped. Nothing told it what a SECOND message is FOR, so it
-    spent the budget it had on rephrasing.
+    The budget is not the defect: `ReplyGuard._before_model` already relaxes
+    `tool_choice` to `auto` after the first send, so the model can stop. What it
+    needs is to be told what a SECOND message is FOR; otherwise it spends the
+    budget it has on rephrasing.
 
-    MOVED 2026-09-24 from `send_reply`'s schema to `conduct.md` (operator:
-    «keep the voice in voice.md»): how many messages a reply becomes is what
-    she does, which `voice.md`'s `not_here` sends to conduct. This does not
-    measure whether the wording changes behaviour, from either surface; it
-    pins that the judgement is stated, in the section about the shape of a
-    reply, so an edit cannot silently drop it back to the shape that shipped
-    this incident.
+    The judgement lives in `conduct.md`, not in `send_reply`'s schema: how many
+    messages a reply becomes is what she does, which `voice.md`'s `not_here`
+    sends to conduct. This does not measure whether the wording changes
+    behaviour; it pins that the judgement is stated, in the section about the
+    shape of a reply, so an edit cannot silently drop it.
     """
     section = " ".join(
         (_DOCTRINE / "rooms" / "conduct.md").read_text()
@@ -758,10 +742,10 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
 
 
 async def test_the_tools_without_a_counter_of_their_own_now_have_one(wiring):
-    """`nora_room_lookups_total{tool,status}` covered three of them; these had
-    nothing, so "did she ever call load_transcript" was unanswerable from
-    `/metrics` as well as from the log. Same `{tool, status}` shape rather than
-    bespoke series."""
+    """`nora_room_lookups_total{tool,status}` covers three of them; these use the
+    same `{tool, status}` shape rather than bespoke series, so "did she ever
+    call load_transcript" is answerable from `/metrics` as well as from the
+    log."""
     tools, metrics = wiring["tools"], wiring["metrics"]
     await _call(tools["now"])
     await _call(tools["load_transcript"], limit=40)
@@ -772,8 +756,8 @@ async def test_the_tools_without_a_counter_of_their_own_now_have_one(wiring):
 
 async def test_the_new_counter_never_double_counts_a_room_scoped_tool(wiring):
     """Metric names are append-only and `nora_room_lookups_total` is already
-    alerted on (R-22), so the three tools that had a counter keep exactly the
-    one they had. A tool appearing in both series would silently double every
+    alerted on (R-22), so the three tools with that counter keep exactly
+    the one they have. A tool appearing in both series would silently double every
     dashboard that sums tool volume."""
     tools, metrics = wiring["tools"], wiring["metrics"]
     await _call(tools["group_members"])
@@ -787,9 +771,10 @@ async def test_the_new_counter_never_double_counts_a_room_scoped_tool(wiring):
 async def test_a_tool_that_could_not_answer_is_counted_apart_from_one_that_did(
     wiring, monkeypatch,
 ):
-    """R-22's distinction, applied to the four tools that never had it. A
-    counter that reported `ok` for a `load_transcript` whose store was down would
-    be the `peer_card` failure again — a green series over a dead path."""
+    """R-22's distinction, applied to the tools counted in
+    `nora_tool_calls_total`. A counter that reported `ok` for a `load_transcript`
+    whose store was down would be the `peer_card` failure again — a green series
+    over a dead path."""
     metrics = wiring["metrics"]
 
     async def boom(*a, **kw):
@@ -808,7 +793,7 @@ async def test_a_refused_send_is_not_counted_as_a_sent_one(wiring):
     make `send_reply` volume look like reply volume.
 
     The cap is read from the registry (DEC-10/DEC-32 keep exactly one copy of
-    that number) — a literal here rotted at 3→6, DEC-95."""
+    that number) — a literal here would rot the next time the cap moves."""
     from nora.agent.registry import ToolRegistry
 
     tools, metrics = wiring["tools"], wiring["metrics"]
@@ -824,10 +809,9 @@ async def test_a_refused_send_is_not_counted_as_a_sent_one(wiring):
 
 # ---- calculate ---------------------------------------------------------------
 #
-# The evaluator itself is exercised in tests/unit/test_arithmetic.py, against
-# the measurements that motivated it. What is asserted here is only what the
-# TOOL adds: the wiring, the counter, and the two things the tool is
-# responsible for that the pure function is not.
+# The evaluator itself is exercised in tests/unit/test_arithmetic.py. What is
+# asserted here is only what the TOOL adds: the wiring, the counter, and the two
+# things the tool is responsible for that the pure function is not.
 
 
 async def test_calculate_hands_back_the_expression_beside_the_result(wiring):
@@ -924,7 +908,7 @@ async def test_a_calculate_ok_note_appears_only_with_a_split(wiring):
 
 
 async def test_weather_is_unavailable_without_a_provider(wiring):
-    """The wiring path the review flagged: this fixture wires no `weather_source`
+    """The wiring path: this fixture wires no `weather_source`
     (the offline/`[weather]` off shape), so the closure must answer `unavailable`
     — never crash, never a bare empty — the same inert-by-config state keyless
     `route` gives (R-5)."""
@@ -1138,7 +1122,7 @@ async def test_a_fire_turn_never_asks_the_picker(wiring):
     assert picker.asked == [] and wiring["sink"].sent_attachments == [()]
 
 
-# ---- generate_image (DEC-137, design/proposed/29) -------------------------
+# ---- generate_image (DEC-137) -------------------------
 
 
 class _ImageGenerator:
@@ -1303,8 +1287,8 @@ async def test_media_send_unknown_handle_is_nothing_found(wiring):
 
 async def test_media_send_collision_is_ambiguous(wiring):
     """DEC-138: a 6-hex prefix collision is a QUESTION, never a default —
-    the old images_resend silently picked the first; media_send must refuse
-    exactly like media_fetch does."""
+    media_send must refuse exactly like media_fetch does,
+    never silently pick the first."""
     store = FakeMediaObjectStore([
         _make_image(sha256="aabbcc14575433319544445555667788" * 2, prompt="cat one"),
         _make_image(sha256="aabbcc99998888777766665555444433" * 2, prompt="cat two"),
@@ -1679,8 +1663,8 @@ def _unit_memory_tools(wiring, **over):
         metrics=over.pop("metrics", wiring["metrics"]),
         room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         question="who is here", context_window=40,
-        # `dream_adaptor` is what SHIPS this verb at all (#350): it is
-        # Dreamer-only, and a tag-path build no longer carries it. Naming an
+        # `dream_adaptor` is what SHIPS this verb at all: it is
+        # Dreamer-only, and a tag-path build does not carry it. Naming an
         # adaptor here is not decoration — drop it and `tools` has no
         # `search_memory_workspace` to call.
         unit_for=lambda *_a: "ws-main", dream_adaptor="proactive", **over,
@@ -1709,7 +1693,7 @@ async def test_search_memory_workspace_filters_by_the_address_book(wiring):
     assert out["results"] == [{"who": "Miles", "said": "big walk 聽日朝早"}]
     # No room passed — Honcho's WORKSPACE endpoint — but NARROWED to the
     # run's unit (DEC-214): the client scopes the workspace search to that
-    # unit's named scope, so it no longer reaches every unit.
+    # unit's named scope, so it does not reach every unit.
     assert honcho.calls[0]["conversation_id"] is None
     assert honcho.calls[0]["unit"] == "ws-main"
     # The room verb's marker of a DEGRADED view has no meaning here: there is
@@ -1772,18 +1756,13 @@ async def test_find_parking_unavailable_without_route_source(wiring):
     assert out["status"] == "unavailable"
 
 
-# ---- a HOLD is not a REFUSAL (2026-09-09) -----------------------------------
+# ---- a HOLD is not a REFUSAL ------------------------------------------------
 #
 # `Deliverer.deliver` answers False both when a guard refuses a send and when
-# the participation cooldown or the shadow gate HOLDS one. `send_reply`
-# returned that bool straight to the model, so a held reply read as "it did not
-# go" — and the model did the sensible thing and rewrote it shorter.
-#
-# Measured on the deployment: one participation turn called `send_reply` four
-# times, each draft shorter than the last (Langfuse trace 5cb76676…, four
-# `send_reply` TOOL spans each followed by its own `execute_event_loop_cycle`).
-# Four extra model calls, and four near-identical drafts on `held_texts` that
-# made the shadow review unreadable — you could not tell which one she meant.
+# the participation cooldown or the shadow gate HOLDS one. Returned straight to
+# the model, that bool makes a held reply read as "it did not go", and the model
+# rewrites it shorter: extra model calls, and near-identical drafts on
+# `held_texts` that make the shadow review unreadable.
 
 
 def _held_tools(wiring):
@@ -1841,27 +1820,19 @@ async def test_send_reply_still_says_refused_when_a_guard_stops_it(wiring):
 
 
 def test_the_note_schemas_do_not_teach_her_a_phrase_to_say_out_loud(wiring):
-    """Issue #226. Asked point-blank what she had changed, she answered by
-    explaining the mechanism — that the room's 「open note」 was still unsettled.
-    That is nobody's phrase but the tool layer's: `note_update`'s schema said
-    «Call this when an open note's content changes», and a schema is the
-    surface the model matches on (DEC-78 measured a schema-token change moving
-    routing 0/16 → 16/16 where an always-on doctrine maxim moved nothing).
+    """Asked what she changed, she must not answer by explaining the mechanism
+    (that the room's 「open note」 was still unsettled). That phrase is nobody's
+    but the tool layer's, and a schema is the surface the model matches on
+    (DEC-78 found a schema-token change moving routing 0/16 → 16/16 where an
+    always-on doctrine maxim moved nothing). A ban in `voice.md` would compete
+    with the phrase in her own tool schema, so the phrase is absent from the
+    schema instead. The tools' CONTRACT is untouched — the three states, the
+    read-before-write latch, the argument descriptions — and this pins the
+    vocabulary.
 
-    A ban in `voice.md` would have been competing with the phrase in her own
-    tool schema, so the phrase goes instead. The tools' CONTRACT is untouched —
-    the three states, the read-before-write latch, the argument descriptions —
-    and this pins the vocabulary.
-
-    **Only the phrase moves, and the replacement stays concrete**, which is not
-    a stylistic note: a first attempt replaced it with «when what one of these
-    is keeping track of changes» and the act suite's `a01` speak rate fell to
-    4/15 and 5/15 against a baseline that ran 5 to 12 of 15. That is inside a very
-    wide noise band and so proves nothing about the vaguer wording, but it is
-    the direction DEC-78 measured in the other direction (a schema-token change
-    moved routing 0/16 → 16/16), and a docstring that opens on a dangling «one
-    of these» costs legibility for nothing. «a note's content» drops the phrase
-    and keeps the referent.
+    **Only the phrase moves, and the replacement stays concrete**: a docstring
+    that opens on a dangling «one of these» costs legibility for nothing. «a
+    note's content» drops the phrase and keeps the referent.
 
     Asserted on `tool_spec["description"]`, which is what Strands actually
     sends, not on `__doc__`.
@@ -1881,18 +1852,18 @@ def test_the_note_schemas_do_not_teach_her_a_phrase_to_say_out_loud(wiring):
         assert state.strip("`") in update
 
 
-# ---- a note title survives the trip through the index (2026-09-10) ----------
+# ---- a note title survives the trip through the index -----------------------
 
 
 def test_a_note_handle_round_trips_through_an_escaped_index():
     """The title IS the handle, and every index escapes what it renders (R-13):
     `note_render` and the proactive `<open_notes>` both put it through
-    `escape`. So a note called «Dinner & drinks» reached the model as
-    «Dinner &amp;amp; drinks» — and `note_read`/`note_update`/`remind` tell it to
-    type the title back "exactly as `<notes>` shows it", then refused that
-    string because the stored title has no entity in it.
+    `escape`. So a note called «Dinner & drinks» must not reach the model as
+    «Dinner &amp;amp; drinks»: `note_read`/`note_update`/`remind` tell it to
+    type the title back "exactly as `<notes>` shows it", and the stored title
+    has no entity in it.
 
-    The cost was more than a refused call. A proactive `remind` written without
+    The cost of a refused call is more than a retry. A proactive `remind` written without
     its `note_id` falls through `ProactiveScreen` to the flag-only path, so the
     cancellation that fires when a note has moved on never runs — the decision
     becomes unlinkable rather than merely retried.
@@ -1905,7 +1876,7 @@ def test_a_note_handle_round_trips_through_an_escaped_index():
 
 
 def test_the_handle_still_ignores_case_and_surrounding_space():
-    """The properties that were already there, kept alongside the new one — a
+    """The properties that hold alongside it — a
     model that types the line back with a trailing space, or in another case,
     has not named a different note."""
     assert note_handle("  Dinner & Drinks  ") == note_handle("dinner & drinks")
@@ -1913,13 +1884,10 @@ def test_the_handle_still_ignores_case_and_surrounding_space():
 
 def test_a_quote_finds_the_platform_id_under_EITHER_spelling():
     """Discord and WhatsApp key the platform's own message id `id`; Instagram's
-    bridge event keys it `message_id`. Reading only `id` meant every threaded
-    reply the model made on Instagram went out UNTHREADED — delivered, marked
+    bridge event keys it `message_id`. Reading only `id` would send every threaded
+    reply the model makes on Instagram out UNTHREADED — delivered, marked
     `sent`, no visual thread, and nothing logged, because a missing quote id is
     a documented degradation rather than an error.
-
-    Found by audit, not by anyone noticing, which is what a silent degradation
-    earns you.
 
     PROBE: drop `message_id` from the tuple and the Instagram case reds.
     """

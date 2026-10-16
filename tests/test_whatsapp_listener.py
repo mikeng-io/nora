@@ -91,7 +91,7 @@ async def test_a_heartbeat_updates_last_event_at_without_reaching_on_event(aioht
 
 async def test_a_dropped_event_logs_a_warning_and_is_not_delivered(aiohttp_server, caplog):
     """Audit rows were lost upstream and nothing here can recover them —
-    drop-and-count (design 01, review M1) — so it is LOUD, and it is not a
+    drop-and-count — so it is LOUD, and it is not a
     message."""
     server = await aiohttp_server(await _sse_app(
         ['data: {"type":"dropped","dropped_total":17}\n\n',

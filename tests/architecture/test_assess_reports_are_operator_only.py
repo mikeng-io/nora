@@ -1,9 +1,8 @@
-"""Assess REPORTS ONLY (design/cognition-loop/15-map.md §6, 55-self.md §1,
-DEC-240): it writes `assess_report` and nothing else, and nothing on a turn's
-path reads it back. Pinned by import graph: no tool, prefill or engagement
-module in `nora/` imports `nora.infra.sql.assess`, `nora.app.assess_dq` or
-`nora.app.assess_run` — the whole surface those modules expose stays
-reachable only from the CLI command that runs them and this repo's tests."""
+"""Assess REPORTS ONLY (DEC-240): it writes `assess_report` and nothing else, and nothing on
+a turn's path reads it back. Pinned by import graph: no tool, prefill or engagement module
+in `nora/` imports `nora.infra.sql.assess`, `nora.app.assess_dq` or `nora.app.assess_run`
+— the whole surface those modules expose stays reachable only from the CLI command that
+runs them and this repo's tests."""
 
 from __future__ import annotations
 

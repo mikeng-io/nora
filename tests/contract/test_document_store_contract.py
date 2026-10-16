@@ -251,8 +251,8 @@ async def test_a_naive_clock_never_leaves_the_store(store):
 
 
 async def test_a_page_past_the_end_or_out_of_bounds_is_an_empty_page_on_both_stores(store):
-    # A 30-digit `page` reached the SQL store as an OFFSET it could not take and was a
-    # 500, while the fake answered an empty page (review of PR 654). Both now clamp.
+    # A 30-digit `page` would reach the SQL store as an OFFSET it cannot take; both
+    # implementations clamp it.
     await _make(store)
     rooms = frozenset({ROOM})
     for limit, offset in ((10, 10**30), (10, 2**63), (10**9, 0), (-5, 0), (10, -7)):
@@ -657,7 +657,7 @@ async def test_a_state_change_waits_for_a_revision_in_flight(request):
         await engine.dispose()
 
 
-# --------------------------------------------------------------- one revision (§34)
+# --------------------------------------------------------------- one revision
 async def test_one_revision_is_its_own_snapshot_and_never_the_current_one(store):
     doc_id = await _make(store, title="v1", sha=SHA_A)
     await store.add_revision(

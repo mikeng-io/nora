@@ -1,4 +1,4 @@
-"""`route` — Google routing + place resolution (design/14 §3, §5.2; DEC-46, R-28).
+"""`route` — Google routing + place resolution (DEC-46, R-28).
 
 Every scenario here is offline, against a local `aiohttp` server that behaves
 like the two real Google endpoints — INCLUDING the shapes they return for the
@@ -19,7 +19,7 @@ served both the same way would prove nothing. So the fake below:
   by R-28 reached NEITHER endpoint.
 
 Payload shapes are trimmed copies of the live v2 responses (天水圍站 → Yoho,
-TRANSIT, 358 s, captured 2026-08-06): `duration` is `"358s"`, `distanceMeters`
+TRANSIT, 358 s): `duration` is `"358s"`, `distanceMeters`
 an int, transit legs carry `transitLine.nameShort` / `.vehicle.type` /
 `.agencies[].name` and `stopDetails` with RFC 3339 times.
 """
@@ -60,8 +60,8 @@ PLACES = {
     ],
     # A genuinely ambiguous name — a CATEGORY, not a place: several DISTINCT
     # hotpot restaurants scattered across districts. Three distinct far results
-    # (the top plus two others) is what `MIN_AMBIGUOUS_OTHERS` calls a fork,
-    # after the live data showed a single runner-up is usually the same place.
+    # (the top plus two others) is what `MIN_AMBIGUOUS_OTHERS` calls a fork; a
+    # single runner-up is usually the same place.
     "打邊爐": [
         {"id": "hp1", "displayName": {"text": "旺角打邊爐"},
          "formattedAddress": "Mong Kok", "location": {"latitude": 22.410, "longitude": 114.124}},
@@ -73,7 +73,7 @@ PLACES = {
     ],
     # A named landmark that returns a bilingual DUPLICATE of the same place plus
     # itself — one far runner-up only, so it must resolve to the top hit, not to
-    # a spurious «which one». This is the 香港迪士尼樂園 shape, measured live.
+    # a spurious «which one». This is the 香港迪士尼樂園 shape.
     "迪士尼": [
         {"id": "disney_zh", "displayName": {"text": "香港迪士尼樂園"},
          "formattedAddress": "Lantau", "location": {"latitude": 22.3130, "longitude": 114.0413}},
@@ -196,7 +196,7 @@ async def test_a_real_route_is_ok_with_typed_legs(google):
 
 async def test_no_route_is_not_unavailable(google):
     """Google was reached and returned no way to connect the two points — a
-    DIFFERENT answer from «I could not check» (design/14 §3)."""
+    DIFFERENT answer from «I could not check»."""
     google.no_route = True
     out = await google.client.route("天水圍站", "孤島")
     assert out["status"] == "no_route"
@@ -233,7 +233,7 @@ async def test_a_dining_destination_returns_typed_fields_unwrapped(google):
     assert info["price_level"] == "PRICE_LEVEL_MODERATE"
     assert info["open_now"] is True
     # Typed — no free-text block is wrapped here at all, and no free-text
-    # review field is present (design/14 §2.1; the field mask omits reviews).
+    # review field is present (the field mask omits reviews).
     body = json.dumps(out, ensure_ascii=False)
     for wrapper in ("<transit_remark", "<fetched_page", "<social_post"):
         assert wrapper not in body, wrapper
@@ -255,7 +255,7 @@ async def test_the_field_mask_names_only_rendered_fields(google):
     assert "transitDetails" in mask
 
 
-# ---- arrive_by: the first time_shiftable tool --------------------------------
+# ---- arrive_by: a time_shiftable tool --------------------------------
 
 async def test_arrive_by_is_sent_as_arrival_time_for_transit(google):
     await google.client.route(
@@ -275,7 +275,7 @@ async def test_arrive_by_is_ignored_for_driving(google):
     assert google.last_routes_body["travelMode"] == "DRIVE"
 
 
-# ---- transit sub-preferences: the intent a person names (audit 2026-08-07) ---
+# ---- transit sub-preferences: the intent a person names ---
 
 async def test_a_named_transit_sub_mode_becomes_allowed_travel_modes(google):
     """「by MTR」 restricts to heavy rail — SUBWAY+TRAIN, NOT `RAIL` (which the
@@ -344,7 +344,7 @@ async def test_arrive_by_wins_when_both_times_are_given(google):
 
 async def test_a_malformed_time_is_dropped_not_sent(google):
     """RFC 3339 validated at the boundary — a malformed or model-invented
-    timestamp is omitted, never POSTed to Google (Kimi review, finding 1)."""
+    timestamp is omitted, never POSTed to Google."""
     await google.client.route("天水圍站", "Yoho Mall", depart_after="whenever")
     assert "departureTime" not in google.last_routes_body
     await google.client.route("天水圍站", "Yoho Mall", arrive_by="8pm-ish")
@@ -368,8 +368,7 @@ async def test_colocated_points_are_one_place_not_an_ambiguity(google):
 
 async def test_a_scattered_category_is_candidates_not_a_guess(google):
     """打邊爐 is a CATEGORY — hotpot places across several districts — so it
-    returns candidates for the model to ask about, never a silent pick
-    (design/14 §5.2)."""
+    returns candidates for the model to ask about, never a silent pick."""
     res = await google.client._resolver.resolve("打邊爐")
     assert res.status == "ambiguous"
     assert set(res.could_be) == {"旺角打邊爐", "元朗打邊爐", "銅鑼灣打邊爐"}
@@ -378,7 +377,7 @@ async def test_a_scattered_category_is_candidates_not_a_guess(google):
 async def test_a_named_landmark_with_a_bilingual_duplicate_resolves_to_the_top(google):
     """香港迪士尼樂園 returns its Chinese and English names as two points ~400 m
     apart — the SAME resort, not a fork. A single far runner-up resolves to the
-    top hit rather than a spurious «which one» (the live 2026-08-07 shape that
+    top hit rather than a spurious «which one» (the live shape that
     `MIN_AMBIGUOUS_OTHERS` exists for)."""
     res = await google.client._resolver.resolve("迪士尼")
     assert res.status == "ok"
@@ -473,8 +472,8 @@ class _RecordingClient:
 async def test_a_route_naming_a_person_is_refused_before_egress():
     """R-28. A route query with a person's name or nickname in origin/
     destination is refused BEFORE any HTTP call — 「由陳生屋企去我公司」 must
-    never resolve a person to a home address and send it to Google (design/14
-    §2.2). Revert the person block in `nora.agent.tools.route` and this reaches
+    never resolve a person to a home address and send it to Google.
+    Revert the person block in `nora.agent.tools.route` and this reaches
     the client instead: the assertion that `client.calls` is empty is exactly
     the probe.
     """
@@ -505,7 +504,7 @@ async def test_an_identifier_in_a_route_argument_is_refused_before_egress():
 
 
 async def test_a_raw_coordinate_in_a_route_argument_is_refused_before_egress():
-    """R-28 / design/19 §5, council #4: a raw lat,lng — the shape a stored Life360
+    """R-28: a raw lat,lng — the shape a stored Life360
     position has — must never leave in a route argument. Refused before any HTTP
     call; revert `_looks_like_coordinate` in `nora.agent.tools.route` and the
     coordinate reaches the client (the empty `client.calls` is the probe). A real
@@ -529,7 +528,7 @@ async def test_the_tool_forwards_the_transit_preferences_to_the_client():
     """The tool wrapper must FORWARD by/prefer/depart_after to the client. Revert
     the pass-through in `nora.agent.tools.route` and this goes red — without it
     the feature ships inert while every body-assertion test (which calls the
-    client directly) stays green (Kimi review 2026-08-07, finding 2)."""
+    client directly) stays green."""
     client = _RecordingClient()
     wiring = _tool_wiring(client)
     await _call(
@@ -540,7 +539,7 @@ async def test_the_tool_forwards_the_transit_preferences_to_the_client():
         "by": "mtr", "prefer": "less_walking",
         "depart_after": "2026-08-07T18:00:00+08:00",
         # No presence wired in this fixture → the saved-places layer passes
-        # None through, the as-today shape (design/23 §4).
+        # None through, the as-today shape.
         "local_places": None,
     }
 
@@ -599,7 +598,7 @@ async def test_the_tool_screens_an_identifier_out_of_a_candidate_list():
     assert out["destination_could_be"] == ["元朗打邊爐"]
 
 
-# ── the household saved-places layer (design/23 §4, DEC-60) ──────────────────
+# ── the household saved-places layer (DEC-60) ──────────────────
 
 async def test_a_saved_place_hit_skips_google_places_entirely(google):
     """«Home» in `local_places` resolves locally: the name never reaches the
@@ -632,7 +631,7 @@ async def test_an_unsaved_name_falls_through_to_the_public_lookup(google):
     assert sorted(places_calls) == ["places:Yoho Mall", "places:天水圍站"]
 
 
-# ── the Google Maps deep link (operator ask 2026-08-07) ──────────────────────
+# ── the Google Maps deep link ──────────────────────
 
 async def test_an_ok_route_carries_a_maps_link_built_from_the_asked_words(google):
     """`maps_url` is the Maps URLs API deep link for the same trip, built from
@@ -679,7 +678,7 @@ async def test_place_info_maps_link_is_the_full_google_url(google):
     assert out["maps_url"].startswith("https://www.google.com/maps/search/")
 
 
-# ── place_info: Google's structured rating, no scrape (2026-08-07) ────────────
+# ── place_info: Google's structured rating, no scrape ────────────
 
 async def test_place_info_returns_the_google_rating(google):
     """The reliable «好唔好味» answer: Google's own rating/price/open-now for a
@@ -695,7 +694,7 @@ async def test_place_info_returns_the_google_rating(google):
 
 async def test_place_info_ambiguous_asks_which(google):
     """A category name (several distinct places) is `ambiguous` with candidates —
-    never a guessed pick (design/14 §5.2)."""
+    never a guessed pick."""
     out = await google.client.place_info("打邊爐")
     assert out["status"] == "ambiguous"
     assert len(out["could_be"]) >= 2
@@ -707,7 +706,7 @@ async def test_place_info_not_found_is_distinct_from_unavailable(google):
 
 
 async def test_locate_returns_the_coordinate_for_a_service_and_place_info_still_does_not(google):
-    """design/artifact §40: `locate` is the ONE method that returns a coordinate, for
+    """`locate` is the ONE method that returns a coordinate, for
     `DocumentService`, and `place_info` (the tool's) is unchanged (DEC-24)."""
     located = await google.client.locate("Yoho Mall")
     assert located["status"] == "ok" and located["name"] == "YOHO Mall"
@@ -744,7 +743,7 @@ async def test_place_info_tool_answers_a_real_place(google):
     assert out["rating"] == 4.2
 
 
-# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+# ── ADR 0015: how to report a status rides in the result ─────────────────
 
 _DASHES = ("—", "–")
 
@@ -793,7 +792,7 @@ async def test_every_non_ok_route_carries_a_dash_free_note(google):
 
 
 async def test_an_ok_route_note_carries_the_link_rule_with_the_link(google):
-    """«Paste maps_url exactly» left the description; it arrives with the
+    """«Paste maps_url exactly» is not in the description; it arrives with the
     link it is about, beside the client's own leg-reading note."""
     out = await _call(_tool_wiring(google.client)["route"],
                       origin="天水圍站", destination="Yoho Mall")

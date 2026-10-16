@@ -1,10 +1,10 @@
-"""The `remember` tool (2026-08-30) — the ONE write lane for a settled
-person-fact, as a Honcho conclusion under (observer=nora, observed=tagger).
+"""The `remember` tool — the ONE write lane for a settled person-fact, as a
+Honcho conclusion under (observer=nora, observed=tagger).
 
 The store contract (`tests/contract/test_memory_store_contract.py`) already
 covers the memory port; fakes mirror it. What THIS file tests is the tool
-layer's side of the three-state honesty contract — the whole reason the tool
-exists is that Nora used to say 「記低咗」 and write nowhere, so `ok` versus
+layer's side of the three-state honesty contract — the tool exists so that
+Nora never says 「記低咗」 and writes nowhere, so `ok` versus
 `refused` versus `unavailable` must each be a REAL, pinned outcome (R-27):
 - `ok` is the only state in which she may claim to have remembered;
 - a missing tagger is identity failure, `refused`, never a guess-peer write;
@@ -137,11 +137,11 @@ async def test_remember_keeps_the_fact_text_verbatim():
     assert honcho.writes[0][2] == "我下個月返新工"  # stripped, not wrapped
 
 
-# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+# ── ADR 0015: how to report a status rides in the result ─────────────────
 
 async def test_every_non_ok_status_carries_a_note_that_nothing_was_saved():
     """The description only NAMES the statuses. «Never claim 記低咗 on a
-    refusal or an outage» moved out of it, so every non-ok path must now say
+    refusal or an outage» rides in the result, so every non-ok path must say
     in its own `note` that nothing was saved, dash-free."""
     cases = {
         "refused/no_tagger": (_tools(tagger=None), "屋企有兩隻貓"),
@@ -159,7 +159,7 @@ async def test_every_non_ok_status_carries_a_note_that_nothing_was_saved():
 
 
 async def test_only_the_ok_note_licenses_saying_it_was_remembered():
-    """«Say 記低咗 only when it is saved» is an output rule (ADR 0015 §3): it
+    """«Say 記低咗 only when it is saved» is an output rule (ADR 0015): it
     rides on `ok`, and no refusal or outage note offers the word as allowed."""
     ok = await _tools()["remember"](content="屋企有兩隻貓")
     assert "Only now may you say 記低咗" in ok["note"]

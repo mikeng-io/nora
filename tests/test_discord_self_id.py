@@ -32,9 +32,9 @@ async def test_derive_identity_returns_the_bots_own_id_and_never_its_username(me
     assert primary == "100000000000000100"
     assert Identifier("discord", "user_id", "100000000000000100") in identifiers
     # The snowflake ALONE — a renameable handle is never a matchable
-    # identity (operator 2026-08-14): only the phone number / user id is
-    # stable. The /users/@me response DOES carry a username (the fixture
-    # returns one), so this asserts it is dropped, not merely absent.
+    # identity: only the phone number / user id is stable. The /users/@me
+    # response DOES carry a username (the fixture returns one), so this asserts
+    # it is dropped, not merely absent.
     assert {i.kind for i in identifiers} == {"user_id"}
     # Value-level, not just kind-level: a mistake that added the username as
     # a SECOND "user_id"-kind identifier would pass the kind check above
@@ -43,7 +43,7 @@ async def test_derive_identity_returns_the_bots_own_id_and_never_its_username(me
 
 
 async def test_derive_identity_also_returns_the_rendered_handle(me_server):
-    """The handle `<presence>` wants (design/self-awareness/02/06), read off
+    """The handle `<presence>` wants, read off
     the SAME response `derive_identity` already fetches — never a second
     call. `nora/domain/identity.py`'s no-username rule (above) covers the
     identifiers; this covers the display-text side of the same response."""
@@ -87,9 +87,9 @@ async def test_derive_identity_raises_when_the_body_has_no_id(aiohttp_server):
 # ---- render_handle: the live-vs-declared precedence's formatting half ------
 #
 # `discriminator = "0"` is what Discord reports for every account migrated to
-# unique usernames (2023); `derive_identity_also_returns_the_rendered_handle`
+# unique usernames; `derive_identity_also_returns_the_rendered_handle`
 # above pins the pre-migration, numbered-tag shape (`discriminator = "1234"`, a
-# stand-in for the four-digit tag measured live on 2026-09-24; 0001-9999).
+# stand-in for the four-digit tag measured live; 0001-9999).
 
 
 def test_render_handle_with_a_real_discriminator_keeps_the_tag():

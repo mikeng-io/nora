@@ -1,5 +1,5 @@
 """Migration `0071_rollup_builds` on a database that already holds presence
-Rollup rows (design/cognition-loop/70-migration.md §5, the rows marked 2).
+Rollup rows.
 
 The rows the wall-clock rollup wrote become ONE build, `legacy`, current —
 so every reader reads what it read before the migration until the analytics

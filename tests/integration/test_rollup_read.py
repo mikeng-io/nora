@@ -1,7 +1,6 @@
-"""`rollup_read` over a REAL Rollup build (design/cognition-loop/25-rollup.md
-§5, 10-tiers.md §3; migration step 3, PR B «what she can read»).
+"""`rollup_read` over a REAL Rollup build.
 
-The world is the step-2 gate's own: two members' fixes and polls, their unit's
+The world is the rollup gate's own: two members' fixes and polls, their unit's
 messages, replies, reactions and Nora's sends, folded by the real builder
 (`tests/integration/test_rollup_builds.py`). The store reads what that build
 holds, and the tool reads it under lineage for the room it is bound to.
@@ -188,8 +187,8 @@ async def test_a_row_resolves_by_its_own_key_after_it_is_read(engine, built):
     ("daybook", "rollup_daybook", "person_id"), ("stay", "presence_stays", "subject_id"),
 ])
 async def test_a_superseded_build_is_never_read(engine, built, kind, table, column):
-    """A rebuild switches the pointer and keeps the old rows (25 §2); the read
-    is the CURRENT build's alone, for a unit rollup and a person-scoped one."""
+    """A rebuild switches the pointer and keeps the old rows; the read is the
+    CURRENT build's alone, for a unit rollup and a person-scoped one."""
     store = SqlRollupRead(engine)
     first = (await store.read(_q(kind))).rows
     second_build = await _runner(engine).rebuild(through_ms=_WATERMARK)
@@ -204,7 +203,7 @@ async def test_a_superseded_build_is_never_read(engine, built, kind, table, colu
 
 
 async def test_a_message_hidden_after_a_build_stops_counting_at_the_next_one(engine, built):
-    """Withdrawal (10 §2 rule 7): the unit rollups' inputs exclude hidden
+    """Withdrawal: the unit rollups' inputs exclude hidden
     messages, so a hidden message is absent from the row once it is
     recomputed, and `through` says how fresh the rows read are."""
     store = SqlRollupRead(engine)
@@ -240,9 +239,9 @@ async def test_the_interval_overlaps_and_the_page_says_when_there_is_more(engine
 
 
 async def test_a_history_past_ninety_days_is_readable_where_where_been_stops(engine, built):
-    """25 §5: `rollup_read` supersedes `where_been`'s 90-day cap. A stay 200
-    days before now is returned; the presence store's own window read clamps
-    at 90 and does not hold it."""
+    """`rollup_read` is not capped at `where_been`'s 90 days. A stay 200 days
+    before now is returned; the presence store's own window read clamps at 90
+    and does not hold it."""
     old_start = int(NOW.timestamp() * 1000) - 200 * DAY
     async with engine.begin() as conn:
         build = (await conn.execute(sa.text(
@@ -331,9 +330,9 @@ async def test_a_room_that_may_not_be_shown_a_row_is_told_rows_were_left_out_and
     engine, built, tmp_path,
 ):
     """Room 2 is not location-trusted: every stay and co-location rests on
-    `presence` (10 §3), which needs the room's flag AND the guard. It gets no
-    row, no place and no time, and is told rows exist that it may not see, in
-    a note that does not describe them."""
+    `presence`, which needs the room's flag AND the guard. It gets no row, no
+    place and no time, and is told rows exist that it may not see, in a note
+    that does not describe them."""
     tool = _tool(engine, tmp_path, room_id="group-2", platform="discord", roster=_ADA_ONLY)
     for kind in ("stay", "trip"):
         result = await _call(tool, kind=kind, subject="Ada", interval=f"{DAY0}/{DAY1}")
@@ -422,7 +421,7 @@ async def test_every_call_is_counted_by_its_status(engine, built, tmp_path):
         assert metrics.get("nora_tool_calls_total", tool="rollup_read", status=status) == 1
 
 
-# ---- an empty subject is never «everyone» (review of #647, M2) -----------------------------------
+# ---- an empty subject is never «everyone» --------------------------------------------------------
 
 def _permissive(monkeypatch):
     """Lineage that shows every row, so it cannot mask a filter that went missing:

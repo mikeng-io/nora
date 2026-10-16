@@ -1,4 +1,4 @@
-"""E.7 criterion 5: every rule R-1…R-17 has a passing named test."""
+"""Every rule in `RULE_TESTS` has a passing named test."""
 
 import hashlib
 import re
@@ -40,26 +40,23 @@ _R90_PERSONS = Persons(
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# The named test the spec's B.1 table assigns to each rule.
+# The named test that enforces each rule.
 RULE_TESTS = {
-    # R-1's SECOND clause, revised (design/dreamer-agent-loop/35) — the first
-    # revision of "ambient traffic never reaches the agent". Untagged messages
-    # may now reach the agent ONLY under the participation occasion's gating:
-    # an operator-opted-in room, one quiescence-closed window, one evaluation
-    # through `FirePath.speak`. The renamed test keeps the original pin
-    # (ordinary ambient traffic constructs ZERO agents) and its sibling pins
-    # the exception's gating.
+    # R-1: untagged ambient traffic reaches the agent ONLY under the participation
+    # occasion's gating: an operator-opted-in room, one quiescence-closed window,
+    # one evaluation through `FirePath.speak`. The named test pins that ordinary
+    # ambient traffic constructs ZERO agents; its sibling pins the exception's
+    # gating.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
-    # R-1b: R-1's FIRST clause, revised. `nora.app.fire.FirePath` made "only the
+    # R-1b: the send-path clause of R-1. `nora.app.fire.FirePath` makes "only the
     # tagging path may cause a send" false — a fire turn is a send not caused by
-    # a tag. R-1 keeps its entry rather than losing it (the DEC-40 precedent
-    # below): its test asserts the ambient clause. But it harnesses
-    # only ambient input, so it stays green no matter how many non-tag send paths
-    # exist, which makes it no brake at all on the revised clause. R-1b is that
-    # brake: `Deliverer` is the only caller of `adapter.send`, it is constructed
-    # only by `deliver.build`, and `deliver.build` has exactly two callers — the
-    # tag pipeline and the fire path. The participation occasion changes NOTHING
-    # here: it goes through `FirePath.speak`, so the two callers remain two.
+    # a tag. R-1's test harnesses only ambient input, so it stays green no matter
+    # how many non-tag send paths exist and is no brake on this clause. R-1b is
+    # that brake: `Deliverer` is the only caller of `adapter.send`, it is
+    # constructed only by `deliver.build`, and `deliver.build` has exactly two
+    # callers — the tag pipeline and the fire path. The participation occasion
+    # changes NOTHING here: it goes through `FirePath.speak`, so the two callers
+    # remain two.
     "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_send_reply_past_the_cap_is_cancelled",
     "R-2b": "test_deliverer_latch_is_single_shot",
@@ -79,23 +76,20 @@ RULE_TESTS = {
     "R-12": "test_self_tag_ignored",
     "R-13": "test_prefill_escapes_angle_brackets",
     "R-13b": "test_forged_closing_tag_is_escaped",
-    # R-13c: R-13's rule on the LINE axis rather than the tag axis, and a new
-    # key rather than a rewrite of R-13 for the DEC-40 precedent above — both
-    # named tests still assert exactly what they were registered for, and what
-    # they never asserted is this. `escape` closes the block boundary; a newline
-    # in a row's body forges a whole ROW inside the block, with its own `#n`
-    # handle and somebody else's name on it. Measured on the relevance gate
-    # (99b34e4): a forged line took it to `go` 5/5 and stayed 5/5 against a
-    # hardened instruction, so the brake is the renderer's.
+    # R-13c: R-13's rule on the LINE axis rather than the tag axis, a separate
+    # key because the two R-13 tests never asserted it. `escape` closes the block
+    # boundary; a newline in a row's body forges a whole ROW inside the block,
+    # with its own `#n` handle and somebody else's name on it. The brake is the
+    # renderer's, not the instruction's.
     #
-    # TWO shapes close it, and the transcript now uses the second. On a LINE,
-    # the brake is `nora.domain.prompt.one_line` — applied by `render_rows` to
-    # every accessor, on every one of the eight line grammars in the tree, and
+    # TWO shapes close it. On a LINE, the brake is `nora.domain.prompt.one_line`
+    # — applied by `render_rows` to every accessor, on every one of the eight
+    # line grammars in the tree, and
     # `tests/architecture/test_one_row_renders_one_line.py` is what stops the
     # ninth shipping without it. In the tag prefill's `<group_transcript>` there
-    # are no lines any more: `render_messages` gives each message its own `<m>`
-    # element, so the forgery needs a `</m>` and `escape` is what refuses it.
-    # The named test below reads that block, so it asserts the second shape.
+    # are no lines: `render_messages` gives each message its own `<m>` element,
+    # so the forgery needs a `</m>` and `escape` is what refuses it. The named
+    # test below reads that block, so it asserts the second shape.
     "R-13c": "test_a_message_cannot_forge_another_message",
     "R-15": "test_no_redundant_read_fails_when_prefill_was_sufficient",
     "R-16": "test_secret_never_logged_in_the_message",
@@ -115,38 +109,32 @@ RULE_TESTS = {
     # R-28: the OUTBOUND egress boundary for routing. A route query contains two
     # locations that leave the host to Google; a person's name or a resolved
     # position in origin/destination is a hard block, refused before any HTTP
-    # call (design/14 §2.2, DEC-46). design/14 §2.3 reserved R-27/R-28 for
-    # grounding; R-27 went to transit, so this is R-28 — search/fetch, when they
-    # ship, take the next free number.
+    # call (DEC-46).
     "R-28": "test_a_route_naming_a_person_is_refused_before_egress",
-    # R-2/R-2b keep their entries rather than gaining new ones: DEC-40 revised
-    # the RULE (one message became `send_reply`'s budget) and both named tests
-    # were rewritten in place to assert the revised invariant, which is what
-    # `design/proposed/16-multi-message-replies.md` §6.7 asks for. A new key
-    # would leave the old one pointing at a rule nobody enforces.
+    # R-2/R-2b: DEC-40 made `send_reply`'s budget the rule (not one message), and
+    # both named tests assert that invariant. A new key would leave the old one
+    # pointing at a rule nobody enforces.
     "R-25": "test_a_turn_cut_off_between_messages_is_counted_as_partial",
     # R-29: a skill source is operator configuration only. `SkillStore.resolve`
     # is a pure name lookup, so a message can name a skill the operator shipped
     # (the intended activation) but can never introduce a new source — item 6
-    # can never reach item 5 (design/12 §2, DEC-48).
+    # can never reach item 5 (DEC-48).
     "R-29": "test_a_message_can_name_a_skill_but_never_load_one",
-    # R-29: a second tag for a conversation already handling one is QUEUED, not
+    # R-30: a second tag for a conversation already handling one is QUEUED, not
     # dropped — three people tagging at once each get a reply, in FIFO order,
-    # while different conversations still run concurrently. Next free number
-    # after R-28 (R-26 is reserved by design/proposed/18 for the unshipped
-    # context-budget work), DEC-48. See `nora.engagement.queue`.
+    # while different conversations still run concurrently (DEC-48). See
+    # `nora.engagement.queue`.
     "R-30": "test_three_tags_for_one_conversation_are_answered_in_fifo_order",
-    # R-31: the presence disclosure seam is fail-closed (design/19 §5, DEC-54).
-    # `whereis` refuses to disclose a circle member's position into a
-    # conversation whose people are NOT a subset of the circle — a REFUSAL, not
-    # a silent omission. This is the INVERSE of the room tools' R-21 and nothing
-    # else in Nora enforced it; the reviews were explicit that «the same rule the
-    # roster uses» was an overstatement. Next free number after R-30.
+    # R-31: the presence disclosure seam is fail-closed (DEC-54). `whereis`
+    # refuses to disclose a circle member's position into a conversation whose
+    # people are NOT a subset of the circle — a REFUSAL, not a silent omission.
+    # This is the INVERSE of the room tools' R-21, and nothing else in Nora
+    # enforces it.
     "R-31": "test_whereis_refuses_to_disclose_outside_the_circle",
-    # R-32: the collector is a change-recorder, not a sampler (design/19 §1,
-    # DEC-55). A row is written only when a member's `ts` advances, so two reads
-    # of an UNMOVED member produce ONE row — the property that makes presence a
-    # time-series of distinct fixes rather than a duplication of every poll.
+    # R-32: the collector is a change-recorder, not a sampler (DEC-55). A row is
+    # written only when a member's `ts` advances, so two reads of an UNMOVED
+    # member produce ONE row — the property that makes presence a time-series of
+    # distinct fixes rather than a duplication of every poll.
     "R-32": "test_an_unmoved_member_is_recorded_once",
     # R-33: media_fetch reads a stored image back through MiMo-V2.5, scoped to
     # THIS conversation's custody over a bounded window, cached by content hash
@@ -154,27 +142,20 @@ RULE_TESTS = {
     # llm.timeout_seconds, provably < the loop budget) and byte ceiling. The
     # MiMo description is untrusted egress — identifier-screened like `about`,
     # with the honest caveat that a bare local number is a residual risk equal
-    # to R-18's. AMENDED by DEC-114 (2026-08-17): no longer "image only,
-    # `not_an_image` for the rest" — a describable modality with no describer
-    # configured is `unavailable` (a wiring gap, R-27), and only a blob no
-    # describer reads is still `not_an_image`. Inert-by-config behind
-    # [media] enabled. Next free number after the presence pair R-31/R-32
-    # (R-26 is still reserved by design/proposed/18). See DEC-56.
+    # to R-18's. A describable modality with no describer configured is
+    # `unavailable` (a wiring gap, R-27); only a blob no describer reads is
+    # `not_an_image` (DEC-114). Inert-by-config behind [media] enabled. See
+    # DEC-56.
     "R-33": "test_a_stored_image_is_read_only_within_scope_and_screened_on_serve",
-    # R-34 RETIRED (DEC-73, 2026-08-08): it was the `fetch` fence — "may open only
-    # a URL a search returned this turn" — defence-in-depth for the SSRF surface a
-    # self-hosted Firecrawl created by fetching a model-chosen URL. `web_fetch` and
-    # Firecrawl are gone (Tavily searches from its own servers and is never handed
-    # a URL), so there is no fence and no rule; the number is not reused.
+    # R-34 is retired (DEC-73); the number is not reused.
     # R-35: saved-place resolution is subset-scoped and falls through, never
-    # refuses (design/23 §4.1, DEC-60). A room that is not a verified subset of
+    # refuses (DEC-60). A room that is not a verified subset of
     # the circle resolves NO household place name — silently, so an outsider
     # cannot learn a guarded name EXISTS (the deliberate inverse of R-31's loud
     # refusal: there the subject is a person's position and silence would lie;
     # here the dictionary entry's existence is itself the secret).
     "R-35": "test_a_non_subset_room_resolves_no_saved_place",
-    # R-36…R-39: reminders + the heartbeat (DEC-70). The next free numbers after
-    # R-35; R-26 is still reserved by design/proposed/18.
+    # R-36…R-39: reminders + the heartbeat (DEC-70).
     #
     # R-36: a reminder NEVER fires early. The tick's batch is `due_at <= now` and
     # nothing else — no rounding, no "close enough", no catch-up window. It is
@@ -185,25 +166,23 @@ RULE_TESTS = {
     # R-37: a row fires ONCE, ever. Taking a row is a compare-and-set on
     # `state = 'pending'` inside the statement, not a read-then-write: `due()` is
     # a query rather than a claim, and the tick awaits a turn per group before it
-    # reaches the later rows, so a cancel landing in that window must win. With
-    # `mark` doing the take it did not, and a cancelled row went
-    # CANCELLED -> FIRING -> DONE and was spoken.
+    # reaches the later rows, so a cancel landing in that window must win.
     "R-37": "test_claim_is_a_compare_and_set_from_pending",
     # R-37b: the same rule across a CRASH, where it is a decision rather than a
-    # mechanism (§8.2). A row left FIRING resolves to FAILED and is never
+    # mechanism. A row left FIRING resolves to FAILED and is never
     # re-queued: nothing links a row to the message it may already have
     # delivered, so re-queueing double-sends anything that died after egress.
     # At-most-once — losing one reminder visibly beats saying it twice.
     "R-37b": "test_sweep_resolves_firing_rows_to_failed",
-    # R-38: only a MAPPED person may create a reminder (§12). `requester_person_id`
-    # is what the fire-time policy re-check runs against, so an unmapped sender
+    # R-38: only a MAPPED person may create a reminder. `requester_person_id` is
+    # what the fire-time policy re-check runs against, so an unmapped sender
     # has no owner to write and inventing one would put unprompted speech into a
     # room under nobody's name. Enforced at `remind()` and re-checked at fire
     # time, because identity.toml loads once at startup and the horizon is 30 days.
     "R-38": "test_remind_refuses_an_unmapped_requester",
-    # R-39: `remind` refuses on a FIRE TURN — the structural bar on recurrence
-    # (§7.1, §9). Without it Nora re-arms her own reminder each time one comes
-    # due, and none of §9's caps can stop her: `max_pending_per_requester` counts
+    # R-39: `remind` refuses on a FIRE TURN — the structural bar on recurrence.
+    # Without it Nora re-arms her own reminder each time one comes due, and none
+    # of the reminder caps can stop her: `max_pending_per_requester` counts
     # PENDING rows and the fire has already freed one before the replacement is
     # written. The flag is turn PROVENANCE (`fire_turn`), threaded from
     # `ToolRegistry.build`, because a fire turn is otherwise a well-formed turn
@@ -222,30 +201,20 @@ RULE_TESTS = {
     # a currently-passing gate (DEC-75's own text records the measured
     # failure rate; the test below only pins that the corpus exists).
     "R-41": "test_r41_is_covered_by_the_identity_grounding_corpus",
-    # R-42 was removed 2026-10-16 (DEC-314): its subject, the startup version
-    # announcement, went with the announcer; releases are GitHub Releases cut by
-    # release-please. The index row carries the RETIRED banner; the rule is not
-    # renumbered.
-    # R-43: a compute job is delivered AT MOST ONCE, ever — the same
-    # discipline R-37/R-37b hold for reminders, applied to the third
-    # Occasion (DEC-99). The next free number after R-42.
+    # R-42 is retired (DEC-314); the number is not reused.
+    # R-43: a compute job is delivered AT MOST ONCE, ever — the same discipline
+    # R-37/R-37b hold for reminders, applied to the third Occasion (DEC-99).
     "R-43": "test_a_job_never_delivered_twice",
-    # R-45 was removed 2026-10-01 (S3b): its subject, the artifact tool's
-    # empty-context nudge, went with the tool. The DEC-101 index row carries the
-    # DEPRECATED banner; the rule is not renumbered. R-44 was withdrawn earlier
-    # (2026-08-14), so neither number is reused.
-    # design/discord-integration/ — a reply leaves on the platform its tag
-    # arrived on; an unroutable platform refuses rather than falling back.
+    # R-44 and R-45 are retired; the numbers are not reused.
+    # R-46: a reply leaves on the platform its tag arrived on; an unroutable
+    # platform refuses rather than falling back.
     "R-46": "test_a_discord_tag_is_answered_on_discord_not_signal",
     # R-47: the circle is who may be asked about; the room is only who may be
     # told. Scoping the target to room membership answered «nobody here goes by
     # that» about a friend Nora knows and can locate.
     "R-47": "test_a_circle_member_who_is_not_in_the_room_can_still_be_asked_about",
     # R-48: only a cacheable tool's successful call ever gets logged for later
-    # recall (tool-recall-log spec). Renumbered from a first-draft R-46 at
-    # merge time (2026-08-14) — R-46/R-47 above landed on master first, from
-    # a concurrent branch that minted them independently for an unrelated
-    # decision (Discord routing).
+    # recall.
     "R-48": "test_a_non_cacheable_tool_is_never_logged",
     # R-49 (DEC-105): a relay crosses into another room only within one
     # unit, only for somebody allowed in both, and only under their name.
@@ -254,109 +223,81 @@ RULE_TESTS = {
     # tool that would fetch it again points at the block instead. The duplicate
     # is the whole risk the block carries, so the guard is the named rule.
     "R-50": "test_about_the_tagger_points_at_the_block_instead_of_fetching_it",
-    # R-90 (issue #116): `messages.body` carries a media label and a handle
-    # and nothing else; the comprehension is joined at RENDER time, in the
-    # context assembler, and `scan_identifiers` runs on every render. The
-    # durable body is read verbatim by two consumers with opposite needs, so a
-    # description in it made "Honcho detailed, transcript short" structurally
-    # impossible.
-    #
-    # NOT R-89, which looked free: R-89 was minted INSIDE DEC-159's row body
-    # rather than as a row of its own, so the CLAUDE.md duplicate check (whose
-    # trailing `\|` only reads real rows) reported it clear. Re-reading the
-    # index at merge time is what caught it — exactly the war-story that rule
-    # is written from.
+    # R-90: `messages.body` carries a media label and a handle and nothing else;
+    # the comprehension is joined at RENDER time, in the context assembler, and
+    # `scan_identifiers` runs on every render. The durable body is read verbatim
+    # by two consumers with opposite needs, so a description in it would make
+    # "Honcho detailed, transcript short" structurally impossible.
     "R-90": "test_r90_the_body_carries_the_handle_and_the_render_carries_the_reading",
-    # R-51: a media description is never invented (sticker spec §6, widened to
-    # every medium by issue #116). Every way the comprehension pass can fail to
-    # produce one — a timeout, an unreadable format, an empty answer — must
-    # leave the bare `[image a3f2c1]` placeholder, never a blank
-    # `[image a3f2c1: ]` and never a guessed sentence. Next free number after
-    # R-50.
+    # R-51: a media description is never invented. Every way the comprehension
+    # pass can fail to produce one — a timeout, an unreadable format, an empty
+    # answer — must leave the bare `[image a3f2c1]` placeholder, never a blank
+    # `[image a3f2c1: ]` and never a guessed sentence.
     "R-51": "test_r51_a_media_description_is_never_invented",
     # R-53 (DEC-123): a source that is SILENT on the question is not a source
     # that denies it. Behavioural, the same shape as R-14 and R-41 — asserted
-    # by `rooms/constraints.md` § Say only what you found (until 2026-10-12
-    # `conduct.md`'s "What a source does not say"), measured by the corpus,
-    # NOT a currently-passing gate. R-27's three-state discipline is enforced
-    # on tool RESULTS; this is the same discipline one level up, on INFERENCE
-    # OVER results, where nothing enforced it: a scoped article's omission was
-    # read as a denial and overturned a correct sourced answer (audit F7,
-    # 2026-08-17 02:16 UTC). Next free number after R-52.
+    # by `rooms/constraints.md` § Say only what you found, measured by the
+    # corpus, NOT a currently-passing gate. R-27's three-state discipline is
+    # enforced on tool RESULTS; this is the same discipline one level up, on
+    # INFERENCE OVER results, where nothing enforced it: a scoped article's
+    # omission read as a denial overturns a correct sourced answer.
     "R-53": "test_r53_is_covered_by_the_source_scope_corpus",
-    # R-56 (DEC-133, the Dreamer runtime). R-55 was taken by the note tier's
-    # read-before-write latch, which landed first — re-read the index at MERGE
-    # time, not at claim time.: the Dreamer may LOOK and may not
-    # ACT. A background process that can speak to the group unprompted — or set
-    # a reminder, or write to the events store — with nobody waiting on it is a
+    # R-56 (DEC-133, the Dreamer runtime): the Dreamer may LOOK and may not ACT.
+    # A background process that can speak to the group unprompted — or set a
+    # reminder, or write to the events store — with nobody waiting on it is a
     # categorically different and more dangerous thing than one that can only
     # read, so this is a property of the runtime rather than a setting an
     # operator could get wrong.
     #
     # Points at the DERIVED set's own pin rather than a second copy of the
-    # assertion. R-54 was the example cited here until 2026-09-07; it was
-    # deprecated with the knowledge tier and its test is gone, so the pattern
-    # is stated on its own terms rather than by pointing at a dead row.
-    # `read_only_tools()` is computed from a field on each tool, and the test
-    # named here measures the computed set against the act verbs — so a tool
-    # added tomorrow is classified by whoever adds it and cannot silently join
-    # the Dreamer's ceiling. The specification's own hand-written list of act
-    # verbs was four short when it was checked, which is the best available
-    # argument for the mechanism and the reason the hand-list lives in the TEST
-    # while the code derives.
+    # assertion. `read_only_tools()` is computed from a field on each tool, and
+    # the test named here measures the computed set against the act verbs — so a
+    # tool added tomorrow is classified by whoever adds it and cannot silently
+    # join the Dreamer's ceiling. The hand-written list of act verbs lives in
+    # the TEST while the code derives.
     "R-56": "test_no_act_verb_is_ever_read_only",
-    # R-57: the block on a `where_is`-disclosed address entering `route` used
-    # to live only in `nora/skills/navigation/SKILL.md` prose — unenforced any
-    # turn the skill didn't load (confirmed live: the F1/Fung/Clara trace
-    # that prompted this rule never called `skills` at all). `route`'s R-28
-    # screen catches an identifier, a raw coordinate, a known person's name;
-    # this is the fourth case, and it can only be caught by PROVENANCE — a
-    # plain address is indistinguishable from a typed place by shape — so
-    # `where_is` and `route` now share one turn-scoped set
-    # (`_disclosed_live_addresses`) instead of a single shape screen.
+    # R-57: the block on a `where_is`-disclosed address entering `route` is
+    # enforced in code; `nora/skills/navigation/SKILL.md` prose alone is
+    # unenforced on any turn the skill doesn't load. `route`'s R-28 screen
+    # catches an identifier, a raw coordinate, a known person's name; this is
+    # the fourth case, and it can only be caught by PROVENANCE — a plain address
+    # is indistinguishable from a typed place by shape — so `where_is` and
+    # `route` share one turn-scoped set (`_disclosed_live_addresses`) instead of
+    # a single shape screen.
     "R-57": "test_a_disclosed_live_position_is_refused_as_a_route_argument_in_an_untrusted_room",
-    # R-58: the deployed signal-cli (0.14.7) never emits `voiceNote` over
-    # JSON-RPC at all (confirmed by decompiling the shipped jar — the fix is
-    # merged upstream but unreleased), so Signal's parser falls back to the
-    # filename Signal's own recorder generates. That fallback is gated on the
-    # resolved media type ALSO being audio/* — `nora/ingest/stages/media.py`
-    # trusts `ref.voice_note` alone to route bytes to local STT (DEC-131), so
-    # a bare filename match would let a sender route ANY attachment there by
-    # naming it right, even one `label_for` still displays as `[file]`.
+    # R-58: the deployed signal-cli never emits `voiceNote` over JSON-RPC, so
+    # Signal's parser falls back to the filename Signal's own recorder generates.
+    # That fallback is gated on the resolved media type ALSO being audio/* —
+    # `nora/ingest/stages/media.py` trusts `ref.voice_note` alone to route bytes
+    # to local STT (DEC-131), so a bare filename match would let a sender route
+    # ANY attachment there by naming it right, even one `label_for` still
+    # displays as `[file]`.
     "R-58": "test_a_matching_filename_on_a_non_audio_attachment_is_not_a_voice_note",
-    # R-52 (DEC-117): `create_event` fail-closes on ambiguity — spec §3.1's
-    # "more than one open event" case — refusing rather than guessing which
-    # of two-or-more already-open events is meant.
+    # R-52 (DEC-117): `create_event` fail-closes on ambiguity — more than one
+    # open event — refusing rather than guessing which of two-or-more
+    # already-open events is meant.
     "R-52": "test_r52_two_open_events_refuses_a_third_rather_than_guessing",
-    # R-55 (note-tier spec §6.2): a note revision is VETOED unless `note_read`
-    # succeeded for that note in the same turn. The injected index carries
-    # title + description only — enough to know a note exists, nowhere near
-    # enough to revise one — and `note_update` replaces the note's rendered
-    # body, so a revision written blind destroys the arrangement the tier
-    # exists to hold. Next free number after R-54. The named test asserts
-    # through `ReplyGuard.evaluate`'s refusal rather than by reading the
+    # R-55: a note revision is VETOED unless `note_read` succeeded for that note
+    # in the same turn. The injected index carries title + description only —
+    # enough to know a note exists, nowhere near enough to revise one — and
+    # `note_update` replaces the note's rendered body, so a revision written
+    # blind destroys the arrangement the tier exists to hold. The named test
+    # asserts through `ReplyGuard.evaluate`'s refusal rather than by reading the
     # latch set: the set is invisible to the model, the veto is where a miss
-    # costs something, and a test that reads the set goes green against a
-    # latch that never vetoes anything.
+    # costs something, and a test that reads the set goes green against a latch
+    # that never vetoes anything.
     "R-55": "test_r55_a_revision_is_vetoed_when_this_turn_never_read_the_note",
-    # R-59 (design/discord-music/03-state-and-persistence.md, "Connect
-    # trigger — and its rejection"): starting a NEW music session for a
-    # guild requires the requester to be in a voice channel; an existing
-    # session is never gated this way (only STARTING one names a
-    # destination channel). Renumbered from R-57 on merge (2026-08-23): R-57
-    # and R-58 were independently claimed by two other sessions in the same
-    # window (see those two entries above) — re-verified at merge time and
-    # R-59/R-60 confirmed free.
+    # R-59: starting a NEW music session for a guild requires the requester to
+    # be in a voice channel; an existing session is never gated this way (only
+    # STARTING one names a destination channel).
     "R-59": "test_r59_play_refused_when_requester_not_in_voice_and_no_player_exists",
-    # R-60 (same document, "Disconnect behavior"): a voice channel emptying
-    # of humans disconnects immediately, no grace period — distinct from
-    # timer 2 (queue empty, nothing playing -> idle-timeout leave), covered
-    # by the sibling tests `test_queue_emptying_schedules_an_idle_
+    # R-60: a voice channel emptying of humans disconnects immediately, no grace
+    # period — distinct from timer 2 (queue empty, nothing playing -> idle-timeout
+    # leave), covered by the sibling tests `test_queue_emptying_schedules_an_idle_
     # disconnect` and `test_a_new_track_before_the_idle_timeout_cancels_
-    # the_pending_disconnect` in the same file. Renumbered from R-58 on the
-    # same merge as R-59, for the same collision.
+    # the_pending_disconnect` in the same file.
     "R-60": "test_r60_a_voice_channel_emptied_of_humans_disconnects_immediately",
-    # R-61 (design/discord-music/07-agent-tool.md): Nora's agent music tools
+    # R-61: Nora's agent music tools
     # (play_music/skip_music/top_music/stop_music/music_status) are
     # Discord-only and never guess an identity to act on. Off Discord, with no
     # `MusicToolBridge` wired, or with a tagger identity.toml maps to no
@@ -366,7 +307,7 @@ RULE_TESTS = {
     # underneath (`DiscordMusicToolBridge` calls the identical
     # `MusicPlayerManager.play`), never re-implemented or bypassed here.
     "R-61": "test_music_verbs_are_absent_off_discord",
-    # R-62 (design/discord-music/08-autoplay.md): when a Discord music
+    # R-62: when a Discord music
     # queue empties with nothing next, MusicPlayer._advance may seed ONE
     # autoplay pick from TrackSource.related() before falling back to the
     # ordinary idle-timeout behaviour, gated by [music] autoplay_enabled
@@ -374,7 +315,7 @@ RULE_TESTS = {
     # idle -- never retried or substituted with a guess.
     "R-62": "test_autoplay_enqueues_and_plays_a_related_track_when_the_queue_empties",
     "R-63": "test_autoplay_skips_tracks_already_played_this_session",
-    # R-64 (design/discord-music/08-autoplay.md): with [music]
+    # R-64: with [music]
     # autoplay_prewarm_seconds above 0, MusicPlayer resolves the NEXT
     # autoplay pick (Mix lookup AND its playable stream) before the
     # current track ends, so the track-end advance plays the prewarmed
@@ -384,39 +325,29 @@ RULE_TESTS = {
     # R-65: a dead voice connection tears the session down like a stop
     # instead of stranding now-playing state.
     "R-65": "test_a_dead_voice_connection_tears_down_the_session",
-    # R-66 was removed 2026-09-16: its subject (`DiscordVoiceSession`'s
-    # voice-death monitor) was deleted when DEC-187 moved the voice
-    # connection into the audio-controller, which detects death itself and
-    # reports it as a `voice-death` event. The index row carries the
-    # DEPRECATED banner; the rule is not renumbered.
+    # R-66 is retired; the number is not reused.
     # R-67: a completed prewarm that answered EMPTY gets ONE live `related()`
     # retry at the actual track end, never more -- only if the live answer is
     # also empty does the chain fall through to idle (R-62's "never retried"
     # discipline applied to the LIVE answer; the bound of one makes a loop
-    # unreachable). External audit Codex MAJOR-1 (2026-08-26) first made the
-    # prewarm's empty the FINAL answer; the live failure of 2026-09-01 --
-    # autoplay went permanently silent after a transient empty prewarm Mix
-    # that had recovered by track end -- bounded that to one retry.
+    # unreachable). Without the retry, a transient empty prewarm Mix that had
+    # recovered by track end would leave autoplay silent for good.
     "R-67": "test_an_empty_prewarm_is_retried_once_at_track_end",
     # R-68: every transition that can touch a guild's MusicPlayer runs under
     # that guild's lock -- skip/stop/channel-empty/idle-timeout join
-    # play()/on_track_finished()/on_voice_death() so a natural track-end,
-    # the voice-death monitor, and a user command can never interleave
-    # (external audit Codex MAJOR-2). resume_from_persisted's voice.play()
-    # and the dead-voice teardown's session delete are both exception-safe
-    # (Codex MAJOR-3/4).
+    # play()/on_track_finished()/on_voice_death() so a natural track-end, a
+    # voice-death event, and a user command can never interleave.
+    # resume_from_persisted's voice.play() and the dead-voice teardown's session
+    # delete are both exception-safe.
     "R-68": "test_a_dead_voice_connection_tears_down_the_session",
     # R-88: the most recent track that ACTUALLY started is persisted as
     # `music_session.last_played_*` and survives the queue emptying, so a
     # boot-time resume that finds nothing playing re-seeds the autoplay
     # chain from it instead of sitting silent in a live voice channel.
-    # (Numbered at gate-cleanup time: the change landed 2026-09-01
-    # mislabelled "R-67", colliding with the prewarm rule above.)
     "R-88": "test_advance_seeds_autoplay_from_last_played_when_nothing_playing",
-    # R-89 (DEC-159, #109): a series may not repeat faster than
+    # R-89 (DEC-159): a series may not repeat faster than
     # `[reminders] min_interval_seconds`, and the tool REFUSES rather than
-    # clamping — a silently shortened series is the same broken promise the
-    # issue was opened about.
+    # clamping — a silently shortened series is a broken promise.
     "R-89": "test_an_every_minute_ask_is_refused_with_something_she_can_say",
     # R-69 names the FIRST of four tests (the naming convention this dict
     # follows), and it is the one whose failure is unrecoverable: an exception
@@ -427,39 +358,24 @@ RULE_TESTS = {
     # and the stage's own `BaseException` catch — are named in the decision
     # index row.
     "R-69": "test_a_debrief_that_blows_up_still_releases_the_lock",
-    # R-70 names the test that would have PREVENTED the defect rather than the
-    # one that detects a hang: the budget was wrong in prose (60+20 against an
-    # [llm] timeout that is 120 and required-with-no-default, omitting the two
-    # store calls entirely), and this is the gate that now refuses exactly that
-    # arithmetic. The hang tests and the window pair are named in the index row.
+    # R-70 names the test that PREVENTS the defect rather than the one that
+    # detects a hang: it refuses a hold budget the timeouts do not fit. The hang
+    # tests and the window pair are named in the index row.
     "R-70": "test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit",
-    # R-71 and R-72 were removed 2026-09-24: their subjects — the per-turn
-    # `TurnVerdict` and the two re-derivation triggers it fed — were deleted
-    # with the debrief's grounding verdict (design/standing-compact/). The
-    # index rows carry the DEPRECATED banner; the rules are not renumbered.
-    # R-73's debrief/standing-fold enforcement (this repo's own
-    # `test_an_identifier_never_reaches_the_collector` /
-    # `test_a_coordinate_in_the_answer_never_reaches_the_collector`) was
-    # DELETED 2026-09-19, moving the fold onto strands.telemetry — see
-    # `design/09-decision-index.md`'s R-73 row for the narrowing note and
-    # `docs/observability.md`'s "Known gaps" for the disclosed consequence.
-    # The PRINCIPLE still holds and is still enforced elsewhere; this points
-    # at `who_said`'s enforcement instead, which the decision index's own
-    # R-73 row already cited as a second satisfying test.
+    # R-71 and R-72 are retired; the numbers are not reused.
+    # R-73 points at `who_said`'s enforcement of the principle; the decision
+    # index's R-73 row cites that test as a satisfying one.
     "R-73": "test_neither_the_words_nor_a_line_reaches_the_collector",
     # R-76 names the CHILD test rather than either drop test, and that is the
     # deliberate choice: «ingest is not exported» is the symptom everyone
     # remembers, but the rule a future change breaks is that the decision is
     # about ROOTS. Applying it per-span looks like a simplification, passes the
     # ingest tests, and silently punches holes in every real turn's trace where
-    # its stages used to be. That test declares a CHILD `plumbing` under a
+    # its stages are. That test declares a CHILD `plumbing` under a
     # `generation` root and requires it exported anyway; the two drop tests and
     # the two engagement ones are named in the index row.
     "R-76": "test_a_generation_root_keeps_the_plumbing_underneath_it",
-    # R-81 was removed 2026-09-24: the attribution-aware grounding rubric it
-    # guarded lived in the verdict's objective (`standing-verdict.md`), deleted
-    # with the verdict (design/standing-compact/). The index row carries the
-    # DEPRECATED banner; the rule is not renumbered.
+    # R-81 is retired; the number is not reused.
     # R-82 names the fail-closed branch rather than the happy path, because it
     # is the clause a future change is most likely to "simplify": an empty
     # window LOOKS like an empty room, and `nothing_found` reads as the more
@@ -469,89 +385,80 @@ RULE_TESTS = {
     # failure `who_said` was built to stop. The window-not-the-store test, the
     # DEC-24 schema test and the span tests are named in the index row.
     "R-82": "test_an_unread_window_is_unavailable_never_nothing_found",
-    # R-83 names the CARVE-OUT test rather than the tagging one. Both halves
-    # ship in the same `conduct.md` section bump, but only one of them is the
-    # rule: the tagging clause is a mechanism joined to a position that already
-    # existed, while the carve-out is the branch that did not exist at all —
-    # and it is the half a rewrite loses, because the paragraph it sits under
-    # reads as complete without it (the same failure mode R-53's third clause
-    # has, recorded in `test_conduct_separates_a_source_that_is_silent…`).
+    # R-83 names the CARVE-OUT test rather than the tagging one. Only one of the
+    # two halves is the rule: the tagging clause is a mechanism joined to a
+    # position that already existed, while the carve-out is the branch that did
+    # not exist at all — and it is the half a rewrite loses, because the
+    # paragraph it sits under reads as complete without it (the same failure
+    # mode R-53's third clause has, recorded in
+    # `test_conduct_separates_a_source_that_is_silent…`).
     "R-83": "test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim",
-    # R-84: the music message table. The named test is the module that pins
-    # every string the table renders — a wording change to ANY music surface
-    # now has to land there, so the diff shows it.
+    # R-84: the music message table. The named test is the module that pins every
+    # string the table renders — a wording change to ANY music surface has to
+    # land there, so the diff shows it.
     "R-84": "test_now_playing_line_carries_title_and_url",
     # R-86 (DEC-151, DEC-201): every social read tool is read-only at three
-    # layers, and the
-    # named test DERIVES all three from the code — the bridge's allowlist
-    # against OpenCLI's write verbs, the tool's (platform, what) vocabulary
-    # against that allowlist, and the NativeTool declaration — so a hand-edit
-    # to any one layer that drifts from the others goes red.
+    # layers, and the named test DERIVES all three from the code — the bridge's
+    # allowlist against OpenCLI's write verbs, the tool's (platform, what)
+    # vocabulary against that allowlist, and the NativeTool declaration — so a
+    # hand-edit to any one layer that drifts from the others goes red.
     "R-86": "test_r86_social_reads_are_read_only_at_three_layers",
-    # R-87 (design/standing-watermark): Standing folds read SINCE a row-id
-    # watermark (`since_including_nora`, capped at [standing] fold_batch), not
-    # the reply path's recency window — a conversation that passes 40 messages
-    # between tags must not lose the middle. The named test drives the real
-    # stage through a store holding 60 rows and asserts the fold's prompt
-    # reaches the row the old 40-row window would have clipped.
+    # R-87: Standing folds read SINCE a row-id watermark
+    # (`since_including_nora`, capped at [standing] fold_batch), not the reply
+    # path's recency window — a conversation that passes 40 messages between
+    # tags must not lose the middle. The named test drives the real stage
+    # through a store holding 60 rows and asserts the fold's prompt reaches the
+    # row a 40-row window would clip.
     "R-87": "test_r87_the_standing_fold_reads_since_a_row_id_watermark",
-    # R-91 (issue #160): one memory ration for the whole Dreamer pass, spent
-    # across `about`/`ask_memory`/`search_memory_workspace`/`lookup_person`
-    # together and answered — R-27 `unavailable` — rather than vetoed. The
-    # named test runs the REAL Strands loop, because the property is what the
-    # MODEL gets back: an error result is a correction, and a model corrects by
-    # retrying, which is the loop the ceiling exists to end.
+    # R-91: one memory ration for the whole Dreamer pass, spent across
+    # `about`/`ask_memory`/`search_memory_workspace`/`lookup_person` together and
+    # answered — R-27 `unavailable` — rather than vetoed. The named test runs the
+    # REAL Strands loop, because the property is what the MODEL gets back: an
+    # error result is a correction, and a model corrects by retrying, which is
+    # the loop the ceiling exists to end.
     "R-91": "test_a_third_memory_read_is_answered_unavailable_and_the_pass_completes",
-    # R-92 was removed 2026-09-16: the ducking mixer it guarded went with
-    # `DuckSource`/`CrossfadeSource` when DEC-187 replaced duck-and-restore
-    # with a hard cut inside the audio-controller. The index row carries the
-    # DEPRECATED banner; the rule is not renumbered.
+    # R-92 is retired; the number is not reused.
     # R-93 (DEC-187): ONE Discord voice connection, owned by the
     # audio-controller — nothing in nora's production tree opens a voice
     # connection or holds a VoiceClient. The named test is the architecture
     # gate that fails the build if one creeps back.
     "R-93": "test_nora_never_opens_a_discord_voice_connection",
-    # R-94 (DEC-187, §10 B3): end-music and leave-voice are separate
+    # R-94 (DEC-187): end-music and leave-voice are separate
     # lifecycles — `/music stop` and idle expiry end the session, but the
     # voice connection STAYS; only `/discord exit`, an emptied channel and
     # voice-death destroy it.
     "R-94": "test_music_stop_is_end_music_and_stays_connected",
-    # R-95 (DEC-187, §3.3 B5): a `track-finished` naming a superseded
+    # R-95 (DEC-187): a `track-finished` naming a superseded
     # playback_id is the old track's tail — the staleness check runs UNDER
     # the guild lock against the currently-expected playback, and the queue
     # never advances twice.
     "R-95": "test_a_track_end_for_a_superseded_playback_does_not_advance",
-    # R-96 (DEC-187, §12.2/§12.3): voice commands pass a pure gate — guild
-    # member + caller physically in a voice channel + that channel's GUILD in
-    # `voice_guild_ids` — and auto-join joins the CALLER's channel or rejects
-    # `not_in_allowed_guild`. Guild-scoped since 2026-09-17 (§12.2 reversed):
-    # a server's voice channels are not a list anyone can keep true. The named
-    # test is the full matrix.
+    # R-96 (DEC-187): voice commands pass a pure gate — guild member + caller
+    # physically in a voice channel + that channel's GUILD in `voice_guild_ids` —
+    # and auto-join joins the CALLER's channel or rejects `not_in_allowed_guild`.
+    # The gate is guild-scoped because a server's voice channels are not a list
+    # anyone can keep true. The named test is the full matrix.
     "R-96": "test_the_join_decision_matrix",
-    # R-97 (issue #216, design/dreamer-agent-loop/35 §3②/§10.5): a turn nobody
-    # asked for does not take the floor to report an absence. The named test is
-    # the five silence twins driven with the trajectory the live suite measured
-    # once #213 made its ages honest — four of them false-spoke, and reverting
-    # either production line puts all four back in the room.
+    # R-97: a turn nobody asked for does not take the floor to report an absence.
+    # The named test is the five silence twins driven with the trajectory the
+    # live suite measures; four of them false-speak if either production line is
+    # reverted.
     "R-97": "test_the_five_silence_twins_stay_silent",
-    # R-98 (design/instagram-adoption/18, P5): a story is read only for a Tier 0
-    # person. The named test asserts on the fake bridge's OWN request log that
-    # no story request was sent for a person in no room, beside a positive
-    # control showing the same person's profile does reach the bridge.
+    # R-98: a story is read only for a Tier 0 person. The named test asserts on
+    # the fake bridge's OWN request log that no story request was sent for a
+    # person in no room, beside a positive control showing the same person's
+    # profile does reach the bridge.
     "R-98": "test_a_story_for_someone_in_no_room_is_refused_and_never_requested",
-    # R-99 (design/social-per-network/30-link-owner-registry.md): a tool call
-    # carrying an argument its own signature does not declare is refused
-    # before Strands' generated pydantic model can silently drop it — live
-    # traffic showed `media_fetch` called twice with `file=`, arriving empty
-    # both times. The named test drives the REAL guard hooks through
-    # `FakeAgentRunner` and asserts both halves: the tool body never runs, and
-    # the refusal names the unknown argument and what the tool actually
-    # accepts.
+    # R-99: a tool call carrying an argument its own signature does not declare
+    # is refused before Strands' generated pydantic model can silently drop it.
+    # The named test drives the REAL guard hooks through `FakeAgentRunner` and
+    # asserts both halves: the tool body never runs, and the refusal names the
+    # unknown argument and what the tool actually accepts.
     "R-99": "test_the_veto_fires_before_the_tool_body_ever_runs",
-    # R-100 (design/artifact §39): a link to one of OUR documents is minted by a tool, never
-    # authored by the model. The named test drives the real `Deliverer` through `deliver.build`
-    # with the carrier armed and asserts the made-up link never reaches the adapter while the
-    # rest of what she said does, and it is counted.
+    # R-100: a link to one of OUR documents is minted by a tool, never authored
+    # by the model. The named test drives the real `Deliverer` through
+    # `deliver.build` with the carrier armed and asserts the made-up link never
+    # reaches the adapter while the rest of what she said does, and it is counted.
     "R-100": "test_a_reply_with_a_made_up_link_is_sent_without_it_and_counted",
     # Nobody outside identity.toml is sent, or recorded from, a direct message.
     "R-101": "test_a_dm_to_an_address_not_in_identity_toml_is_refused",
@@ -580,10 +487,9 @@ def test_r41_is_covered_by_the_identity_grounding_corpus():
     """R-41 is behavioural: asserted by conduct.md, measured by this corpus.
 
     Unlike R-14, this corpus is NOT currently a passing gate — DEC-75 records
-    that the shipped doctrine wording still fabricates on 3/3 of its ambiguous
-    cases (the grounded judge's number; the earlier "0/3" was the BLIND judge
-    failing to detect it). This test pins that the measurement exists and is
-    findable, not that the rule holds; see DEC-75 for the honest number.
+    that the shipped doctrine wording still fabricates on its ambiguous cases.
+    This test pins that the measurement exists and is findable, not that the
+    rule holds; see DEC-75 for the number.
     """
     assert (ROOT / "evals" / "corpora" / "identity_grounding.yaml").exists()
 
@@ -592,44 +498,41 @@ def test_r53_is_covered_by_the_source_scope_corpus():
     """R-53 is behavioural: asserted by conduct.md, measured by this corpus.
 
     Same posture as R-41 above, and for the same reason. The corpus replays the
-    2026-08-17 incident's SHAPE — a source narrower than the question, whose
+    SHAPE of a real incident — a source narrower than the question, whose
     silence about the rest was read as a denial — with the game and the objects
     changed so a pass cannot be a memory of the real one, plus two controls: a
     source that genuinely denies (she may overturn) and a source that covers the
     question at the right scope (she answers plainly). Without those, a fix that
     overcorrected into hedging everything would score as a pass.
 
-    It is deliberately NOT in `evals/run.py`'s gated `adversarial` corpus: it is
-    a measured record of the doctrine gap, not a gate the shipped doctrine is
-    known to clear. It IS selectable — `--suite source_scope`, since 2026-09-17
-    (#227) — because being ungated and being unrunnable are different decisions
-    and only the first was made. This test pins that the measurement exists and
-    is findable, not that the rule holds.
+    It is a measured record of the doctrine gap, not a gate the shipped doctrine
+    is known to clear. It IS selectable —
+    `python -m evals source_scope` — because being ungated and being unrunnable
+    are different things. This test pins that the measurement exists and is
+    findable, not that the rule holds.
     """
     assert (ROOT / "evals" / "corpora" / "source_scope.yaml").exists()
 
 
 def test_r83_is_covered_by_the_being_contradicted_corpus():
     """R-83 is behavioural: asserted by conduct.md and voice.md, measured by this
-    corpus (2026-09-13, issue #227).
+    corpus.
 
-    Until this corpus existed, `test_r83_the_anti_cave_position_is_scoped_to_a_
-    checked_claim` above said so in its own docstring — it measures that the
-    position is STATED and where, not that the model follows it. #227 is what a
-    stated-but-unmeasured position looks like in a live room: she gave an answer
-    about herself, somebody put a bare name in front of her two hours later with
-    nothing behind it, and she conceded and then supplied detail nobody had given
-    her. All four surfaces that should have held her were in her prompt.
+    `test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim` above
+    measures that the position is STATED and where, not that the model follows
+    it. A stated position is not a followed one: she gave an answer about
+    herself, somebody put a bare name in front of her hours later with nothing
+    behind it, and she conceded and then supplied detail nobody had given her,
+    with all four surfaces that should have held her in her prompt.
 
     Same posture as R-41 and R-53: the corpus carries the bare-assertion cases and
     BOTH controls — real evidence arriving (updating is correct) and a claim she
     never grounded (R-83's own carve-out, where neither holding nor conceding is
     right) — so a fix that overcorrected into never moving cannot score as a pass.
-    It is deliberately NOT in `evals/run.py`'s gated `adversarial` corpus: a
-    measured record of the gap, not a gate the shipped doctrine is known to
-    clear. `--suite being_contradicted` runs it (2026-09-17, #227); `--repeat N`
-    is how it is read, because one window is not a rate. This test pins that the
-    measurement exists and is findable, not that the rule holds.
+    It is a measured record of the gap, not a gate the shipped doctrine is known
+    to clear. `python -m evals being_contradicted` runs it; one window is not a
+    rate. This test pins that the measurement exists and is findable, not that
+    the rule holds.
     """
     assert (ROOT / "evals" / "corpora" / "being_contradicted.yaml").exists()
 
@@ -668,12 +571,10 @@ async def test_r51_a_media_description_is_never_invented():
     a blank description, and none writes a guessed one. An ERROR is never a
     PASS.
 
-    **The rule widened with the mechanism** (issue #116). It used to be about
-    stickers, because stickers were the only thing ever read; every medium is
-    read now, and the way a failure has to look is the same for all of them.
-    Asserted at the STORE rather than at a body: nothing written is what makes
-    every later render show the bare handle, which is the property the rule is
-    actually about.
+    The rule covers every medium, not only stickers: the way a failure has to
+    look is the same for all of them. Asserted at the STORE rather than at a
+    body: nothing written is what makes every later render show the bare handle,
+    which is the property the rule is actually about.
 
     The positive control is the last block: the same job, the same wiring, an
     interpreter that DOES answer — so this cannot be passing because nothing
@@ -729,29 +630,15 @@ async def test_r51_a_media_description_is_never_invented():
 
 
 def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
-    """DEC-112. Measured 2026-08-17: `recall_lookups` was reached for 0 times
-    across 30 consecutive live turns while the log it reads held 21 rows, and
-    she retracted four sourced, correct answers as 老作 rather than read them
-    back. The cause was its `when` clause, which sold the tool as a COST saving
-    — «call this before re-running…» — and being called a liar does not feel
-    like being about to re-search.
+    """DEC-112. `recall_lookups` is offered as her EVIDENCE, not only as a cache.
+    A `when` clause that sold the tool as a COST saving — «call this before
+    re-running…» — left it unread while she retracted sourced, correct answers as
+    老作 rather than read them back; being called a liar does not feel like being
+    about to re-search.
 
-    DEC-150 deleted the `when` clause and the capability block it fed. The
-    evidence framing survives in the tool's SCHEMA docstring — the single
-    source of truth for what the tool is for — and the position lives in
-    `conduct.md`. Revert either and this goes red.
-
-    The conduct.md assertions below were re-pinned to the compressed
-    (35293bb5) phrasing; the positions are unchanged.
-    RE-POINTED 2026-09-22 (conduct v27, operator). `conduct.md` is now written in
-    English throughout: the file describes what she DOES, so which language a
-    clause happened to be in recorded who wrote it and when, nothing more.
-    (`voice.md` stays Cantonese because that file IS a specimen of the register
-    it teaches; this one is not.) Quoted SPEECH stays Cantonese everywhere,
-    because a quoted utterance is a specimen too, so the anchors below move to
-    the English prose and keep the Cantonese wherever it is something somebody
-    says. Every position is unchanged and the token cost went UP by 66, which is
-    the honest reason this was done for clarity and not for compression.
+    The evidence framing lives in the tool's SCHEMA docstring — the single source
+    of truth for what the tool is for — and the position lives in `conduct.md`.
+    Revert either and this goes red.
     """
     import inspect
 
@@ -774,8 +661,7 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     assert "re-running" in doc, doc
 
     conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
-    # The law half of «Being contradicted» moved word for word to
-    # rooms/constraints.md in step 2 (design/context-plan/11 §6, 2026-10-12).
+    # The law half of «Being contradicted» lives in rooms/constraints.md.
     law = (ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text()
     section = law.split("# When you are told you are wrong", 1)[1].split("\n# ", 1)[0]
     # The prose is hard-wrapped, so every phrase below spans a newline in the
@@ -818,25 +704,24 @@ def _doctrine(name: str) -> str:
 
 
 def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
-    """R-83 / DEC-147. Measured 2026-08-28, live: Nora told a group member he
-    had said 「收隊」. Somebody else had. She never looked — she matched the most
-    aggressive strings in the room onto the person who was denying her — and
-    then three surfaces built for a DIFFERENT case held her there: this file's
-    own «not remembering having checked is not evidence that you did not
-    check» (DEC-112), `voice.md`'s 「冇錯就冇嘢認 … 企硬」, and `send_reply`'s
-    «never invent a mistake you did not make just to have something to
-    concede» (DEC-92). Each is right for a claim with a lookup behind it. Put
-    together they convert an UNGROUNDED assertion into a defended one, because
-    not one of them has a branch for «I never grounded this».
+    """R-83 / DEC-147. The failure: Nora attributes a statement to a group member
+    without looking, matching the most aggressive strings in the room onto the
+    person who is denying her, and then three surfaces built for a DIFFERENT case
+    hold her there: this file's own «not remembering having checked is not
+    evidence that you did not check» (DEC-112), `voice.md`'s 「冇錯就冇嘢認 …
+    企硬」, and `send_reply`'s «never invent a mistake you did not make just to
+    have something to concede» (DEC-92). Each is right for a claim with a lookup
+    behind it. Put together they convert an UNGROUNDED assertion into a defended
+    one, because not one of them has a branch for «I never grounded this».
 
     The branch is R-27's three states read off her own record: found is `ok`
     and she holds it; not found — or not readable — is `unavailable`, and
     going to look, or letting it drop, is the reply. That is R-5's temperament
     («silence beats a wrong answer») on the contradiction path, which is the
-    one place nothing had wired it.
+    one place nothing else wires it.
 
-    Pinned as a POSITION and not as the incident's nouns, the same way R-53 is,
-    so it cannot be satisfied by a sentence about 收隊:
+    Pinned as a POSITION and not as one example's nouns, the same way R-53 is,
+    so it cannot be satisfied by a sentence naming the example's words:
 
       1. holding is conditional — it is what checking bought,
       2. a claim she cannot find herself having grounded is not one she stands
@@ -847,8 +732,7 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     stance would satisfy any presence check on the three moves above while
     quietly undoing DEC-112 and DEC-123, so the clauses that hold her on a
     CHECKED claim are asserted still present, on both sides of the DEC-92
-    split. The third of that armour that used to sit on the tool surface moved
-    into the doctrine on 2026-09-24, and is pinned by
+    split. The third of that armour sits in the doctrine and is pinned by
     `tests/test_tools.py::test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema`;
     it is deliberately not re-asserted here, because two copies of one literal
     is the unguarded-copy failure this repo keeps paying for.
@@ -858,26 +742,18 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     measures that the position is stated, and where. It does not measure that
     the model follows it; `evals/corpora/being_contradicted.yaml` does, and
     `test_r83_is_covered_by_the_being_contradicted_corpus` below pins that the
-    corpus exists. That corpus was written because the position being stated on
-    four surfaces did not stop #227 — DEC-78/DEC-92's finding that prose alone
-    does not move behaviour now has a reading to be tested against here too.
+    corpus exists. The corpus exists because a position stated on four surfaces
+    is not a followed one (DEC-78/DEC-92: prose alone does not move behaviour).
 
-    The conduct.md assertions below were re-pinned to the compressed
-    (35293bb5) phrasing; the positions are unchanged.
-    RE-POINTED 2026-09-22 (conduct v27, operator). `conduct.md` is now written in
-    English throughout: the file describes what she DOES, so which language a
-    clause happened to be in recorded who wrote it and when, nothing more.
-    (`voice.md` stays Cantonese because that file IS a specimen of the register
-    it teaches; this one is not.) Quoted SPEECH stays Cantonese everywhere,
-    because a quoted utterance is a specimen too, so the anchors below move to
-    the English prose and keep the Cantonese wherever it is something somebody
-    says. Every position is unchanged and the token cost went UP by 66, which is
-    the honest reason this was done for clarity and not for compression.
+    `conduct.md` is written in English; `voice.md` stays Cantonese because that
+    file IS a specimen of the register it teaches. Quoted SPEECH stays Cantonese
+    everywhere, so the anchors below are English prose and keep the Cantonese
+    wherever it is something somebody says.
     """
     voice = _doctrine("voice")
-    # Since step 2 (design/context-plan/11 §6, 2026-10-12) the law lines of
-    # «Being contradicted» live in rooms/constraints.md § When you are told you
-    # are wrong; the practice line (「我去睇返」) stays in conduct.md.
+    # The law lines of «Being contradicted» live in rooms/constraints.md § When
+    # you are told you are wrong; the practice line (「我去睇返」) stays in
+    # conduct.md.
     law = " ".join((ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text().split())
 
     # The carve-out lives in the section that owns whether a challenge should
@@ -919,32 +795,24 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
 
 
 def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
-    """DEC-147's other half. `conduct.md`'s 評判 section has said since v11 that
-    the losing side is why she is there, to be told to their face and tagged
-    rather than reported on (the clauses are asserted below, in string
-    literals, so this paragraph does not become a second copy of them), and
-    `send_reply`'s schema has taught since DEC-86 that an `@` written
-    immediately before the name the room uses for somebody makes a real tag.
-    Nothing joined them: the position lived in one surface and its only
-    mechanism in another, and in the 2026-08-28 incident she addressed nobody
-    at all. 「tag 返佢」 read as a manner of speaking, which is exactly how a
-    verdict about somebody gets delivered past them.
+    """DEC-147's other half. `conduct.md`'s 評判 section says the losing side is
+    why she is there, to be told to their face and tagged rather than reported
+    on (the clauses are asserted below, in string literals, so this paragraph
+    does not become a second copy of them), and `send_reply`'s schema teaches
+    (DEC-86) that an `@` written immediately before the name the room uses for
+    somebody makes a real tag. The position lives in one surface and its only
+    mechanism in another, so unless the doctrine joins them 「tag 返佢」 reads as
+    a manner of speaking, which is exactly how a verdict about somebody gets
+    delivered past them.
 
-    The doctrine now says what a tag IS, in one sentence, with no worked
-    example and no name — DEC-96's rule, that every concrete example becomes a
-    closed set, applies to a handle as much as to an emoji. The example belongs
-    on the schema, where `tests/test_tools.py::
+    The doctrine says what a tag IS, in one sentence, with no worked example and
+    no name — DEC-96's rule, that every concrete example becomes a closed set,
+    applies to a handle as much as to an emoji. The example belongs on the
+    schema, where `tests/test_tools.py::
     test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_resolves` drives it
     through the real composer; the doctrine carries the position only.
-    RE-POINTED 2026-09-22 (conduct v27, operator). `conduct.md` is now written in
-    English throughout: the file describes what she DOES, so which language a
-    clause happened to be in recorded who wrote it and when, nothing more.
-    (`voice.md` stays Cantonese because that file IS a specimen of the register
-    it teaches; this one is not.) Quoted SPEECH stays Cantonese everywhere,
-    because a quoted utterance is a specimen too, so the anchors below move to
-    the English prose and keep the Cantonese wherever it is something somebody
-    says. Every position is unchanged and the token cost went UP by 66, which is
-    the honest reason this was done for clarity and not for compression.
+    `conduct.md` is written in English; quoted SPEECH stays Cantonese, so the
+    anchors below are English prose.
     """
     section = " ".join(
         (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
@@ -962,9 +830,7 @@ def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
 
     # POSITIVE CONTROL — the verdict position it hangs off is still there. If a
     # rewrite keeps the mechanism and loses 「唔好淨係報導」, the sentence
-    # becomes formatting advice. (The 35293bb5 compress reworded the clause
-    # from 「唔好企喺度報導」 to 「唔好淨係報導」 — same position; the
-    # mechanism sentence above is what was restored.)
+    # becomes formatting advice.
     assert "you do not just report who was right and who was wrong" in section, section
 
     # The doctrine states the position and NOT the example: a handle written
@@ -977,11 +843,8 @@ def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
 
 
 def test_r86_social_reads_are_read_only_at_three_layers():
-    """R-86 / DEC-151, extended to EVERY social tool by design/instagram-
-    adoption/18 §"Read-only, at three layers", and renamed from
-    `test_r86_social_fetch_…` when DEC-201 retired `social_fetch` into
-    `x_read` and `x_search` (the decision index and `RULE_TESTS` name it by
-    this name). Social tools read
+    """R-86 / DEC-151, DEC-201: every social tool is read-only. The decision index
+    and `RULE_TESTS` name this test by this name. Social tools read
     content a model can be prompt-injected by, over backends that also serve
     writes — OpenCLI drives an AUTHENTICATED browser with `twitter post`/
     `like`/`follow`/`delete`; the instagram-bridge serves `/send`, `/react`, …
@@ -1006,10 +869,9 @@ def test_r86_social_reads_are_read_only_at_three_layers():
 
     The derivation is TOTAL: every pair a tool can construct is served by
     exactly one backend, every pair a backend serves is constructed by exactly
-    one tool (no Instagram read ever has two tools, 18 §"What happens to
-    social_fetch"). Since P11 OpenCLI serves X only: no `instagram` key is
-    left in `READ_ONLY_ALLOWLIST`, and the X tools construct no Instagram
-    pair at all.
+    one tool (no Instagram read has two tools). OpenCLI serves X and
+    LinkedIn only: no `instagram` key is in `READ_ONLY_ALLOWLIST`, and the X
+    tools construct no Instagram pair at all.
     """
     from nora.agent import tools as tools_module
     from nora.infra.social import EXCEPTION_ROUTES, bridge_server
@@ -1021,8 +883,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     }
 
     # Layer 2: every command the bridge can spawn is disjoint from OpenCLI's
-    # write verbs (the set in `bridge_server.OPENCLI_WRITE_VERBS`, verified
-    # against `opencli list -f json` 1.8.7 on 2026-08-30).
+    # write verbs (the set in `bridge_server.OPENCLI_WRITE_VERBS`).
     for _site, command in bridge_server.READ_ONLY_ALLOWLIST.values():
         assert command not in bridge_server.OPENCLI_WRITE_VERBS, (
             f"the bridge can spawn a WRITE verb: {command}"
@@ -1053,12 +914,11 @@ def test_r86_social_reads_are_read_only_at_three_layers():
         "has two backends"
     )
 
-    # P11 (design/instagram-adoption/17): OpenCLI serves X only. Asserted on
-    # the KEYS, not derived from the vocabulary, because the cutover this
-    # guards is exactly an allowlist row left behind after its tool moved:
-    # the host would still spawn an Instagram command for anything that
-    # asked, and the derivation above would read that as a missing tool
-    # rather than a leftover backend.
+    # OpenCLI serves no Instagram read. Asserted on the KEYS, not derived from
+    # the vocabulary, because the cutover this guards is exactly an allowlist
+    # row left behind after its tool moved: the host would still spawn an
+    # Instagram command for anything that asked, and the derivation above would
+    # read that as a missing tool rather than a leftover backend.
     assert not [
         key for key in bridge_server.READ_ONLY_ALLOWLIST if key[0] == "instagram"
     ], "OpenCLI still serves an Instagram read"
@@ -1091,12 +951,11 @@ async def write_prior(store) -> None:
 
 
 async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
-    """R-87 (design/standing-watermark). The standing fold reads
+    """R-87. The standing fold reads
     `since_including_nora(after_id=last_folded_row_id, limit=fold_batch)` —
     everything since the last fold, capped at the batch — NOT the reply path's
-    recency window. The defect this fixes: a conversation that passes 40
-    messages between tags used to lose the middle, because the fold only ever
-    saw the last `window` (40) rows.
+    recency window. A conversation that passes 40 messages between tags must not
+    lose the middle, which a fold over only the last `window` (40) rows would.
 
     Driven through the REAL debrief stage with a prior that carries a
     watermark of 10 and a store holding 60 rows: the fold's prompt must
@@ -1155,7 +1014,7 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
         timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=60,
     )
     # The prompt must reach back past any 40-row window: rows 11-20 are the
-    # stretch a window fold clipped, and they are the whole point.
+    # stretch a window fold would clip, and they are the whole point.
     joined = client.prompts[0]
     assert "m11" in joined, "the fold must read the stretch since the watermark"
     assert "m60" in joined
