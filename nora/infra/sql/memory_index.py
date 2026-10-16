@@ -97,7 +97,6 @@ to tell `ok` from `partial`.
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import logging
 import re
 from collections.abc import Awaitable, Callable, Iterable
@@ -1814,15 +1813,28 @@ async def embed_counts(
 class _Source(NamedTuple):
     id: int
     kind: str
-    text_md5: str
+    text: str
     sha256: str | None
     embed_input: str
-    held: bool
 
 
-def _md5(text: str) -> str:
-    """Postgres' `md5(text)`: the hex digest of the text's UTF-8 bytes."""
-    return hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()
+def _input_key(kind: str, text: str, sha256: str | None) -> str:
+    """What a worker result is made from, as far as one key says: an
+    attachment's file, any other node's text. Equal keys are the identity
+    `adopt_worker_state` copies on."""
+    return (sha256 or "") if kind == "media" else text
+
+
+def _adoptable(node: Any, source: _Source) -> bool:
+    """Of a source row with `node`'s key: whether its result was made from
+    `node`'s input. An attachment's vector made from its bytes, or from a
+    reading equal to `node`'s (the projector's keep rule, `_input_changed`);
+    any other node's from its text, never an attachment's."""
+    if node.kind == "media":
+        return source.kind == "media" and (
+            source.embed_input == "bytes" or node.text == source.text
+        )
+    return source.kind != "media" and source.embed_input == "text"
 
 
 async def adopt_worker_state(
@@ -1857,61 +1869,35 @@ async def adopt_worker_state(
         node.embedding.is_(None),
         sa.or_(node.embed_attempts >= EMBED_MAX_ATTEMPTS, node.embed_error == "empty"),
     )
-    found = [_Source(*r) for r in await source.execute(
-        sa.select(
-            node.id, node.kind, sa.func.md5(node.text), node.sha256, node.embed_input,
-            sa.case((held, True), else_=False),
-        ).where(sa.or_(held, terminal), node.embed_input.isnot(None))
+    by_input: dict[str, list[_Source]] = {}
+    for r in await source.execute(
+        sa.select(node.id, node.kind, node.text, node.sha256, node.embed_input)
+        .where(sa.or_(held, terminal), node.embed_input.isnot(None))
         # A vector before a failure, then the oldest: one choice per input.
         .order_by(sa.case((held, 0), else_=1), node.id)
-    )]
-    by_bytes: dict[str, list[_Source]] = {}
-    by_text: dict[str, list[_Source]] = {}
-    for row in found:
-        if row.kind == "media":
-            by_bytes.setdefault(row.sha256 or "", []).append(row)
-        elif row.embed_input == "text":
-            by_text.setdefault(row.text_md5, []).append(row)
-    pairs: list[tuple[int, int]] = []
+    ):
+        row = _Source(*r)
+        by_input.setdefault(_input_key(row.kind, row.text, row.sha256), []).append(row)
+    adopted: dict[int, list[int]] = {}
     for t in await target.execute(
         sa.select(node.id, node.kind, node.text, node.sha256).where(
             node.embedding.is_(None), node.embed_attempts == 0, *_embeddable(),
         )
     ):
-        digest = _md5(t.text)
-        if t.kind == "media":
-            match = [r for r in by_bytes.get(t.sha256 or "", ())
-                     if r.embed_input == "bytes" or r.text_md5 == digest]
-        else:
-            match = by_text.get(digest, [])
-        if match:
-            pairs.append((t.id, match[0].id))
-    for i in range(0, len(pairs), batch):
-        chunk: dict[int, list[int]] = {s: [] for _, s in pairs[i:i + batch]}
-        for target_id, source_id in pairs[i:i + batch]:
-            chunk[source_id].append(target_id)
-        rows = (await source.execute(
+        candidates = by_input.get(_input_key(t.kind, t.text, t.sha256), ())
+        match = next((r for r in candidates if _adoptable(t, r)), None)
+        if match is not None:
+            adopted.setdefault(match.id, []).append(t.id)
+    ids = list(adopted)
+    for i in range(0, len(ids), batch):
+        for r in await source.execute(
             sa.select(
-                node.id, node.text, node.sha256, node.embed_input,
-                sa.cast(node.embedding, sa.Text).label("vector"), node.embedding_model,
-                node.embedded_at, node.embed_attempts, node.embed_error,
-            ).where(node.id.in_(list(chunk)))
-        )).all()
-        for r in rows:
-            # The identity again, held by the UPDATE itself: a match made on a
-            # digest lands only where the input is equal, never merely hashed so.
-            same = (
-                sa.and_(node.kind == "media", node.sha256 == r.sha256)
-                if r.embed_input == "bytes"
-                else sa.and_(node.text == r.text, sa.or_(
-                    node.kind != "media", node.sha256 == r.sha256,
-                ))
-            )
+                node.id, node.embed_input, sa.cast(node.embedding, sa.Text).label("vector"),
+                node.embedding_model, node.embedded_at, node.embed_attempts, node.embed_error,
+            ).where(node.id.in_(ids[i:i + batch]))
+        ):
             await target.execute(
-                sa.update(MEMORY_NODE).where(
-                    node.id.in_(chunk[r.id]), node.embedding.is_(None),
-                    node.embed_attempts == 0, same,
-                ).values(
+                sa.update(MEMORY_NODE).where(node.id.in_(adopted[r.id])).values(
                     embedding=(
                         None if r.vector is None
                         else sa.cast(sa.literal(r.vector, sa.Text), HALFVEC(EMBEDDING_DIMENSIONS))
