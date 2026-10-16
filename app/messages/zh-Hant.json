@@ -252,7 +252,11 @@
     "status": {
       "proposed": "提議中",
       "confirmed": "已確定",
-      "cancelled": "取消咗"
+      "cancelled": "取消咗",
+      "staged": "未提出",
+      "happened": "搞咗",
+      "lapsed": "冇下文",
+      "evicted": "已移除"
     },
     "back": "約",
     "notFoundTitle": "唔係你嘅約",

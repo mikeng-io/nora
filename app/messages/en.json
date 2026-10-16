@@ -252,7 +252,11 @@
     "status": {
       "proposed": "Proposed",
       "confirmed": "Confirmed",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "staged": "Not yet proposed",
+      "happened": "Happened",
+      "lapsed": "Lapsed",
+      "evicted": "Removed"
     },
     "back": "Plans",
     "notFoundTitle": "Not one of your plans",

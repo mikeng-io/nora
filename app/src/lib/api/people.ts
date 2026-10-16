@@ -46,7 +46,9 @@ export const PlanSchema = z.object({
   title: z.string(),
   when: z.string().nullable(),
   venue: VenueSchema,
-  status: z.enum(["proposed", "confirmed", "cancelled"]),
+  // Every `GatheringStatus` the backend can send (nora/domain/gatherings.py).
+  // A status missing here fails the whole list's parse and blanks the page.
+  status: z.enum(["staged", "proposed", "confirmed", "happened", "cancelled", "lapsed", "evicted"]),
   created_by: z.string(),
   created_at: z.string(),
 });

@@ -8,8 +8,11 @@ const ONGOING_MS = 3 * 60 * 60 * 1000;
 
 export const planTime = (p: Pick<Plan, "when">) => (p.when ? Date.parse(p.when) : null);
 
+// A plan that is over or off is past whatever its date says.
+const ENDED: ReadonlySet<Plan["status"]> = new Set(["happened", "cancelled", "lapsed", "evicted"]);
+
 export function isUpcoming(p: Plan, now: number): boolean {
-  if (p.status === "cancelled") return false;
+  if (ENDED.has(p.status)) return false;
   const at = planTime(p);
   return at === null ? true : at >= now - ONGOING_MS;
 }
@@ -68,7 +71,7 @@ export function planToIcs(p: Plan, now = Date.now()): string | null {
     `SUMMARY:${icsEscape(p.title)}`,
     where ? `LOCATION:${icsEscape(where)}` : null,
     mapsUrl(p) ? `URL:${mapsUrl(p)}` : null,
-    p.status === "proposed" ? "STATUS:TENTATIVE" : "STATUS:CONFIRMED",
+    p.status === "confirmed" || p.status === "happened" ? "STATUS:CONFIRMED" : "STATUS:TENTATIVE",
     "END:VEVENT",
     "END:VCALENDAR",
   ].filter(Boolean);
