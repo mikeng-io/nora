@@ -55,7 +55,7 @@ imports:
 # whole suite, so it is never weaker than full-gate on a change it cannot
 # scope. `full-gate` is the whole suite, serial, unconditionally.
 gate: lint typecheck imports
-	@if git diff --name-only origin/master -- deploy/instagram-bridge | grep -q . \
+	@if ! git diff --quiet origin/master -- deploy/instagram-bridge 2>/dev/null \
 		|| git ls-files --others --exclude-standard -- deploy/instagram-bridge | grep -q .; then \
 		$(MAKE) --no-print-directory bridge; \
 	else echo "bridge: deploy/instagram-bridge untouched, skipped"; fi
@@ -66,7 +66,8 @@ full-gate: lint typecheck imports bridge test
 # --- the Go instagram-bridge -------------------------------------------------
 # Nothing else builds it before an image does: the 2026-10-14 history scrub
 # rewrote every `chan` keyword in it to a pseudonym and master stayed red for
-# two days without a signal. `gate` runs it when the diff touches the bridge.
+# two days without a signal. `gate` runs it when the diff touches the bridge,
+# or when that diff cannot be computed (fail closed). Needs a Go toolchain.
 bridge:
 	cd deploy/instagram-bridge && go vet ./... && go test ./...
 
