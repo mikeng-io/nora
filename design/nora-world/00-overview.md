@@ -49,8 +49,8 @@ boundary the Notebook already has.
 The world's own rows each have a place in the data model
 (`10-world-as-a-view.md` §4): Nora's placement choices and the assets made
 for them are her acts in the Record; a person's avatar and hides are their
-acts in the Record; the projection's placements are a rebuildable cache; the
-scene is the View, never stored.
+acts in the Record; the projection's placements are computed at assembly and
+never stored; the scene is the View.
 
 ## 3. Who decides what
 

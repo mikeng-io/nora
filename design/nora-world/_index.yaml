@@ -9,7 +9,7 @@ description: >
   observation of a person, and a withdrawn entry takes its object with it.
   Its own rows are placed in the data model: her placement choices and their
   assets and people's avatar choices are acts in the Record, projected
-  placements a cache, the scene a View. Nora decides what should exist by writing a
+  placements computed at assembly and never stored, the scene a View. Nora decides what should exist by writing a
   short spec; a deferred-job pipeline turns the spec into a 3D item (library
   search, a picture on a stock object, or Hunyuan3D on Modal as the last
   resort), checks it with a vision model, and caches it. Avatars have two

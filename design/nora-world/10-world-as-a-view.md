@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Nora World: the world as a View of the Notebook"
-description: "One world per unit, the read boundary (DEC-231). How each Notebook tier and Rollup aggregate takes form in it; where the world's own rows sit in the data model (her acts and people's acts are Record, projected placements are a cache, the scene is a View); who writes each; and how Nora decides what to make real through a world_place act."
+description: "One world per unit, the read boundary (DEC-231). How each Notebook tier and Rollup aggregate takes form in it; where the world's own rows sit in the data model (her acts and people's acts are Record; projected placements are computed at assembly and never stored; the scene is a View); who writes each; and how Nora decides what to make real through a world_place act."
 tags: [nora, world, view, notebook, rollup, unit, withdrawal, cognition]
 timestamp: '2026-10-16'
 status: proposed
@@ -64,9 +64,8 @@ element needs per-person understanding, it goes through Character.
   from the View, so its object disappears on the next assembly. A forget
   request reaches the world with no world-specific code.
 - **As of a past date.** The Notebook and the Record are append-only in
-  system time (`10-tiers.md` §8), and the projection's cache (§4) is
-  recomputed from them, so the world can be assembled as of T. That costs a
-  recomputation of the cache for T, not a new store.
+  system time (`10-tiers.md` §8), and the projection is a pure function of
+  them (§5), so the world can be assembled as of T with no extra store.
 
 ## 4. The world's own rows, placed in the data model
 
@@ -75,29 +74,36 @@ element needs per-person understanding, it goes through Character.
 | a `world_place` call | Record (her acts), like her generated images (`05-data-model.md` §1a) | Cognition, through the verb | entry id, the spec, the asset chosen, district and cell; append-only |
 | an asset | Record (her acts: an artifact) | the asset pipeline, for her act | the GLB in object storage, its spec, thumbnail, check result (`30-asset-pipeline.md`) |
 | a person's avatar choice, and each item they hide | Record (that person's acts) | the person, through the portal | their VRM, and hides by item; append-only |
-| a projected placement | outside the layers: a cache, like `geocode_cache` | the projection, code | entry id, stock asset, district, cell; rebuildable, never evidence, never cited |
 | the scene a viewer gets | View | the one View builder (`05-data-model.md` §6) | assembled at read time; never stored |
+
+**Projected placements are not stored.** The projection (§5) is a pure
+function of an entry's id, kind and district, evaluated by the View builder
+at assembly, so there is no cache to read back and nothing to rebuild.
 
 **Precedence.** For one entry, Nora's latest `world_place` act wins over the
 projected placement. A person's hide wins over both, for that person's avatar.
 
-**What a rebuild loses.** Dropping the cache loses only projected placements,
-which the projection recomputes. Nora's choices and people's choices and
-hides are Record and are never dropped by a rebuild; deleting them is a
-forget, with its cascade, not a reset.
+**Who reads these rows.** They are Record like her other acts, and evidence
+of what was placed or chosen:
 
-These rows are evidence only of what was placed or hidden. No read verb
-returns them to a turn or a Cognition session until a ruling says so
-(`50-open-questions.md` §6): the world is an output, and a placement says
-where an object stands, not anything about the person.
+- Cognition reads its unit's current `world_place` acts as part of its View,
+  the way it sees its own earlier acts, so it can change or retire them. An
+  entry may cite them like any Record row.
+- People's avatar choices and hides are read by the View builder to draw the
+  scene. Whether a Cognition session may read hides as a signal about the
+  person is open (`50-open-questions.md` §6); until a ruling, its View
+  declares no slice that includes them.
+
+Deleting any of these rows is a forget, with its cascade, never a reset.
 
 ## 5. Who decides what is made real
 
 Two paths, built in this order:
 
-1. **The projection (code).** A deterministic mapping from the View to the
-   cache, per the table in §2. Each new entry gets a stock placement in its
-   district from a fixed rule. This makes the world true to the Notebook, but
+1. **The projection (code).** A pure function, per the table in §2: an
+   entry's kind picks a stock asset and its id picks a free cell in its
+   district by a fixed rule. It runs inside the View builder and stores
+   nothing. This makes the world true to the Notebook, but
    it is a mirror, not a choice.
 2. **`world_place` (Nora).** A verb for Cognition: place, change or retire an
    object for an entry, with a short spec of how it should look. Things then
