@@ -150,8 +150,9 @@ PROJECTION_OUTCOMES: tuple[str, ...] = get_args(ProjectionOutcome)
 #: `nora_memory_search_total`'s `status`, and what `memory_search` answers while
 #: `[memory_index] enabled`: `partial` while a rebuild has not
 #: completed, the projection queue is not empty, the search fell back to the
-#: lexical seed (no embedder, or it failed), or embeddable nodes still wait
-#: for a vector of the current model, never `nothing_found`;
+#: lexical seed (no embedder, or it failed), or embeddable nodes have waited
+#: past a fresh line's window for a vector of the current model (a backlog,
+#: `IndexState.fresh`), never `nothing_found`;
 #: `unavailable` on any error (fail closed).
 SearchStatus = Literal["ok", "nothing_found", "partial", "unavailable"]
 SEARCH_STATUSES: tuple[str, ...] = get_args(SearchStatus)
@@ -317,19 +318,24 @@ class IndexState:
     projection queue's length now; with a model fingerprint asked for, the
     vector coverage too, counted within the search's scope when one
     is given: `embedded`, the live embeddable nodes holding a vector of that
-    model; `unembedded`, those still waiting for one; and `given_up`, those
-    the worker gave up on (`EMBED_MAX_ATTEMPTS`). A given-up node waits for
-    nothing the worker will do, so it does not hold answers `partial`; the
-    lexical seed reads it instead (`MemoryIndexRead.seed`'s `given_up_of`).
-    A node that failed as `empty` (an attachment with no reading and no
-    bytes to embed) waits for its input to change, and is in none of the
-    three."""
+    model; `unembedded`, those still waiting for one; `given_up`, those
+    the worker gave up on (`EMBED_MAX_ATTEMPTS`); and `fresh`, those of the
+    `unembedded` holding a text that have owed their vector (`owed_since`)
+    for less than the window the caller asked for (`index_state`'s
+    `fresh_seconds`), which the worker's next ticks will embed and the
+    lexical seed reads meanwhile. A given-up node waits for nothing the worker will do, so it does
+    not hold answers `partial`, and a fresh one is normal operation; the
+    lexical seed reads both (`MemoryIndexRead.seed`'s `unembedded_of`).
+    `unembedded - fresh` is the backlog. A node that failed as `empty` (an
+    attachment with no reading and no bytes to embed) waits for its input
+    to change, and is in none of the four."""
 
     status: str
     queue: int
     embedded: int = 0
     unembedded: int = 0
     given_up: int = 0
+    fresh: int = 0
 
 
 # --- exact seeds -------------------------------------------------------------
@@ -488,12 +494,13 @@ class MemoryIndexRead(Protocol):
 
     async def seed(
         self, terms: Sequence[str], scope: MemoryScope, *, limit: int,
-        given_up_of: str | None = None,
+        unembedded_of: str | None = None,
     ) -> list[Seed]:
         """In-scope, non-hub nodes whose text holds the terms (pg_trgm word
         similarity, or containment), best first. A hub never seeds. With
-        `given_up_of`, only the embeddable nodes the worker gave up on with
-        no vector of that model: the dense seed cannot reach them."""
+        `unembedded_of`, only the embeddable nodes holding no vector of that
+        model (waiting for one, or given up on): the dense seed cannot reach
+        them."""
         ...
 
     async def dense(
@@ -532,7 +539,10 @@ class MemoryIndexRead(Protocol):
 
     async def index_state(
         self, *, model: str | None = None, scope: MemoryScope | None = None,
+        fresh_seconds: float = 0.0,
     ) -> IndexState:
         """The index's state; with `model`, its vector coverage as well,
-        within `scope` when given (else over every node)."""
+        within `scope` when given (else over every node), counting as
+        `fresh` the waiting nodes with a text that have owed their vector
+        for less than `fresh_seconds` (none at 0)."""
         ...
