@@ -478,18 +478,33 @@ detail is [unified-memory/25](../unified-memory/25-memory-graph.md) §7a.
    now name a social item's medium; a medium's type for the embedder is read
    from `media_objects.media_type`, since it has no message.
 2. *Its scope.* Person-scoped like a stay: `persons` is the author, no unit
-   and no room, readable only where a room lists them. Not the presence
-   rule. Tagged and mentioned people get no `persons` entry and no edge.
+   and no room, readable only where a room lists them. The item is not under
+   the presence rule; its tagged place is (decision 4). Tagged and mentioned
+   people get no `persons` entry and no edge.
 3. *The off switch.* Filtered at read: the `memory_search` tool computes the
    listed persons with `social = false` per read, and every index read
    leaves their social nodes out, an item recorded before the switch
    included. The projector stays pure.
 4. *Its text.* The caption, verbatim like a message body: an @mention inside
-   it is the author's own text, as in a message. Never `location`, never the
-   tagged or mentioned handles, and (amended the same day, operator) never
-   `alt_text`: the network's generated alt text is typically phrased with the
-   place and the tagged handles, which would bring back what leaving out
-   `location` keeps out; 0 of 32 live rows held one, so nothing is lost.
+   it is the author's own text, as in a message. Never the tagged or
+   mentioned handles, and (amended the same day, operator) never `alt_text`:
+   the network's generated alt text is typically phrased with the place and
+   the tagged handles; 0 of 32 live rows held one, so nothing is lost.
+   **The location is searchable** (operator, 2026-10-17: «should a post's
+   location tag be searchable in Nora's memory? — yes»; this reverses the
+   original «never `location`»). A tagged place is one the author published,
+   and still their whereabouts, so it is gated as a stay is: a
+   `social_location` node of its own, keyed like the item and `attached_to`
+   it, in scope only where the author passes presence (the room's `location`
+   flag AND the live DisclosureGuard, `PRESENCE_KINDS`). Where presence
+   fails the item is still found by its caption and media, and its place
+   neither matches a search nor is rendered. It is not in the item's text,
+   because a read cannot gate part of a node. Alt text stays out: it was not
+   ruled on, and it would carry the place past that gate. Detail:
+   [unified-memory/25](../unified-memory/25-memory-graph.md) §7a item 4. No
+   social source records a location yet (`SqlSocialStreamStore.insert_item`
+   takes one; the poller passes none), so the node exists only once one
+   does.
 5. *The verb.* No new category and no tool-text change: social items are in
    `kinds=media`, and the answer's `kind` says what an item is («Instagram
    story») with its `age`.

@@ -1,7 +1,8 @@
 """The social stream's projection into the memory index (design/cognition-loop/
 22 §9, the operator's rulings): one `social` node per item and one
 `social_media` node per medium, `attached_to` it, both their author's
-(`persons`, no unit, no room); projected by every write of `social_item`,
+(`persons`, no unit, no room), and a `social_location` node for the place
+it is tagged with, `attached_to` it; projected by every write of `social_item`,
 `social_item_state` and `social_perception` in its own transaction, and by a
 reading landing on the bytes; dropped by a gone or hidden state; rebuilt to
 the same nodes; and `story_frame_embedded`, what `StoryMediaExpiry` reads.
@@ -87,10 +88,13 @@ def _item(item_id: str = "9001", *, kind: str = "post", caption: str | None = "p
     )
 
 
-async def _insert(store: SqlSocialStreamStore, item: SocialItem, shas: tuple[str, ...]) -> None:
+async def _insert(
+    store: SqlSocialStreamStore, item: SocialItem, shas: tuple[str, ...], *,
+    location: str | None = LOCATION,
+) -> None:
     assert await store.insert_item(
         item, person=PERSON, origin="poll", seen_at=T0, media_ref=",".join(shas),
-        location=LOCATION, tagged=("@tagged_one",), mentioned=("@mentioned_one",),
+        location=location, tagged=("@tagged_one",), mentioned=("@mentioned_one",),
     )
 
 
@@ -131,6 +135,7 @@ async def test_a_carousel_is_one_item_node_and_a_media_node_per_medium(engine):
         )
     assert await _edges(engine) == {
         ("social", sid, "authored_by", "person", PERSON),
+        ("social_location", sid, "attached_to", "social", sid),
         ("social_media", _media_id(sid, A), "attached_to", "social", sid),
         ("social_media", _media_id(sid, B), "attached_to", "social", sid),
         ("social_media", _media_id(sid, A), "shared_by", "person", PERSON),
@@ -139,16 +144,46 @@ async def test_a_carousel_is_one_item_node_and_a_media_node_per_medium(engine):
     assert metrics.get("nora_memory_projection_total", kind="social", outcome="ok") == 1
 
 
-async def test_location_alt_text_tags_and_mentions_are_never_in_the_text(engine):
+async def test_alt_text_tags_and_mentions_are_in_no_node_and_the_place_only_in_its_own(
+    engine,
+):
     """The network's alt text is phrased with the place and the tagged
-    handles, so it is left out with them."""
+    handles, so it would carry the place past the presence gate: it enters
+    no node. The place is in its own node only, never the item's or a
+    medium's text."""
     store = SqlSocialStreamStore(engine)
     await _insert(store, _item(kind="story_frame", collab=True), (A,))
-    texts = [n.text for n in (await _nodes(engine)).values()]
-    assert any(t.startswith("Instagram story, co-authored") for t in texts)
-    for t in texts:
-        assert LOCATION not in t and "tagged_one" not in t and "mentioned_one" not in t
-        assert "two cups" not in t
+    nodes = await _nodes(engine)
+    assert any(n.text.startswith("Instagram story, co-authored") for n in nodes.values())
+    for key, n in nodes.items():
+        assert "tagged_one" not in n.text and "mentioned_one" not in n.text
+        assert "two cups" not in n.text
+        if key[0] != "social_location":
+            assert LOCATION not in n.text
+
+
+async def test_a_tagged_place_is_its_own_node_of_the_author_and_goes_with_the_item(engine):
+    """The place is gated at read by presence (`PRESENCE_KINDS`), so it is a
+    node apart from the item: the author's, no unit and no room, its text the
+    place as recorded. An item with no place has none; a hidden item takes
+    its place with it."""
+    store = SqlSocialStreamStore(engine)
+    await _insert(store, _item("9001"), (A,), location=f"  {LOCATION} ")
+    await _insert(store, _item("9002"), (B,), location=None)
+    await _insert(store, _item("9003"), (C,), location="   ")
+    nodes = await _nodes(engine)
+    place = nodes[("social_location", "instagram:9001")]
+    assert (place.text, place.persons, place.unit, place.origin_room, place.sha256) == (
+        LOCATION, [PERSON], None, None, None,
+    )
+    assert LOCATION not in nodes[("social", "instagram:9001")].text
+    assert [k for k in nodes if k[0] == "social_location"] == [
+        ("social_location", "instagram:9001"),
+    ], "no place recorded, no node"
+
+    await store.record_state(network="instagram", item_id="9001", state="hidden")
+    assert ("social_location", "instagram:9001") not in await _nodes(engine)
+    assert not [e for e in await _edges(engine) if e[0] == "social_location"]
 
 
 async def test_a_reading_landing_reprojects_the_item_and_its_medium(engine):

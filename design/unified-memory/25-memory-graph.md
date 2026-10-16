@@ -68,7 +68,7 @@ set, each with its writer:
 | `authored_by` | message, social item, her artifact → person (Nora for her own) | ingestion |
 | `in_room` | message, link, entry → room | ingestion, write verb |
 | `shared_by` | link, media, a social item's medium → person | ingestion; the social stream's projection |
-| `attached_to` | media → message or link; link → message; a social item's medium → its social item | ingestion; the media lane for a reel read from a link (§6 step 3); the social stream's projection (§7a) |
+| `attached_to` | media → message or link; link → message; a social item's medium, and its tagged place, → its social item | ingestion; the media lane for a reel read from a link (§6 step 3); the social stream's projection (§7a) |
 | `during` | message, media → episode | Rollup builder |
 | `about` | entry → entity (person, room, unit, Nora, place) | write verb |
 | `cites` | an entry that stores citations (memo, event, lesson, Persona line; a note once built; never Standing) → Record row, Rollup key or episode | write verb |
@@ -290,7 +290,7 @@ The only other new moving part is the embedding worker.
 | Record | message | the body, re-projected on edit | yes |
 | Record | media attachment `(message, sha256)` | the reading copied in from `media_objects.{title,description,content}` (keyed by `sha256`, no room, UPSERTed; there is no `media_descriptions` table); scoped by its message | yes: the reading's text, and the image or video itself if a multimodal embedder qualifies ([20](20-embedding-bakeoff.md)) |
 | Record | link | URL, caption, preview text | yes |
-| Record | social item, and each of its media `(item, sha256)` (§7a) | the item: what it is («Instagram story»), caption, and its media's readings; a medium: its reading. Never `alt_text`, `location`, `tagged` or `mentioned` | yes: the item from its text once it holds more than its label; a medium from its bytes if an image, else from its reading |
+| Record | social item, each of its media `(item, sha256)`, and its tagged place (§7a) | the item: what it is («Instagram story»), caption, and its media's readings; a medium: its reading; the tagged place: `location` as recorded, readable only where the author passes presence. Never `alt_text`, `tagged` or `mentioned` | yes: the item from its text once it holds more than its label; a medium from its bytes if an image, else from its reading; the tagged place from its text |
 | Record | `persona_dispute`, `feedback` item | the speaker's words | lexical only |
 | Record | her own artifacts (a document she wrote, an image she generated) | title, text or generation prompt | yes |
 | Rollup | outing, stay, trip | a rendered line: who, the place label, when | lexical only |
@@ -328,8 +328,8 @@ text by a model (§2).
 Operator rulings of 2026-10-16, answering
 [cognition-loop/22](../cognition-loop/22-social-stream.md) §9. The code is
 `nora.infra.sql.memory_index` (`_project_social`, `story_frame_embedded`),
-`nora.infra.sql.memory_read` and `nora.agent.memory_search`; migration
-`0110_memory_social`.
+`nora.infra.sql.memory_read` and `nora.agent.memory_search`; migrations
+`0110_memory_social` and, for the tagged place (item 4), `0113_memory_social_location`.
 
 1. **The node mirrors an attachment.** One `social` node per `social_item`,
    keyed `network:item_id`, and one `social_media` node per medium of it,
@@ -348,8 +348,8 @@ Operator rulings of 2026-10-16, answering
    its reading (the attachment rule, `embeds_bytes`).
 2. **Scope: the author's, like a stay.** `persons` is the item's person, no
    unit, no room (`PERSON_SCOPED_KINDS`): readable only in a room that lists
-   them, in any unit. Not the presence rule: a social item carries no
-   lineage. Tagged and mentioned handles get no `persons` entry and no edge;
+   them, in any unit. The item is not under the presence rule: it carries
+   no lineage. Its tagged place is (item 4). Tagged and mentioned handles get no `persons` entry and no edge;
    the author is `authored_by` (the item) and `shared_by` (each medium).
 3. **The off switch is applied at READ.** `MemoryScope.social_off` holds the
    listed persons whose `identity.toml` block sets `social = false`, computed
@@ -360,15 +360,41 @@ Operator rulings of 2026-10-16, answering
    social node naming one of them, inside every read, so an item recorded
    before the switch is out too and switching it back needs no rebuild. The
    projector stays pure.
-4. **Text: the caption, verbatim; never `alt_text` or `location`.** Nor the
-   tagged or mentioned handles. The caption is indexed like a message body:
-   an @mention in it is the author's own text, and the answer's identifier
-   screen (`scan_identifiers`: a phone number, a UUID, a key) withholds an
-   item whole only for those, as for any other text. Alt text was ruled out
-   the same day (operator): the network's generated alt text is typically
-   phrased with the place and the tagged handles, which would bring back
-   what leaving out `location` keeps out (0 of 32 live rows held one).
-5. **No new `kinds` category, no tool-text change.** Both kinds are in
+4. **Text: the caption, verbatim; never `alt_text`; the location in a gated
+   node of its own.** Nor the tagged or mentioned handles. The caption is
+   indexed like a message body: an @mention in it is the author's own text,
+   and the answer's identifier screen (`scan_identifiers`: a phone number, a
+   UUID, a key) withholds an item whole only for those, as for any other
+   text. Alt text was ruled out the same day (operator): the network's
+   generated alt text is typically phrased with the place and the tagged
+   handles (0 of 32 live rows held one).
+
+   **The location** was first left out with it, and is searchable since the
+   operator's ruling of 2026-10-17 («should a post's location tag be
+   searchable in Nora's memory? — yes»). A tagged place is one the author
+   published, and still a person's whereabouts, so it is read under the
+   rule a stay is: a `social_location` node, keyed `network:item_id` like
+   its item, `attached_to` it, the author's (`persons`, no unit, no room),
+   its text the `location` column as recorded, and embedded from it. It is in
+   `PRESENCE_KINDS` beside the episodes, so `in_scope` and `_in_scope` admit
+   it only where every person of it is in `presence_persons`: the room's
+   `location` flag AND the live DisclosureGuard. A separate node, not a line
+   of the item's text, because scope is decided per node: a read that could
+   only take or leave the whole item would have to hide the post to hide its
+   place. So where presence fails the item is found by its caption and its
+   media, and its place is never seeded, never a neighbour and never in the
+   rendered answer; where it passes, a search on the place finds the place
+   node and reaches the item one `attached_to` hop away, and the answer's
+   `kind` says «Instagram tagged place». It is in
+   `KINDS_BY_CATEGORY["media"]` with its item and opted out with it
+   (`social_off`). Alt text stays out: it was not ruled on, and it would
+   carry the place past the gate. No social source records a `location` yet:
+   the column is written only through `SqlSocialStreamStore.insert_item`'s
+   `location`, which the poller does not pass, so the node is built and
+   tested and waits for a source. Items recorded with a location before
+   `0113` are put on the projection queue by that migration and re-projected
+   by the drain loop; no rebuild is needed.
+5. **No new `kinds` category, no tool-text change.** All three kinds are in
    `KINDS_BY_CATEGORY["media"]`. The answer says what an item is and how old
    it is: its `kind` is the label («Instagram story»), a medium's is
    «Instagram picture or video», and `age` is from `taken_at`. A medium gets

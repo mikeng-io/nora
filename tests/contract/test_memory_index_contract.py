@@ -484,3 +484,56 @@ async def test_every_read_leaves_out_an_opted_out_persons_social_nodes(load: Loa
     assert ("social_media", "instagram:1:" + "a1" * 32) in {nb.node.key for nb in found}
     gone = await index.neighbours([("social", "instagram:1")], OFF)
     assert {nb.node.key for nb in gone} == {("person", "kit")}, "a hub stays a neighbour"
+
+
+#: (node, in scope for SCOPE). A social item's tagged place is a node of its
+#: own, gated as a stay is: in scope only where its author passes presence
+#: (kit does here, sam does not). The items themselves are not gated by it.
+LOCATED: list[tuple[IndexedNode, bool]] = [
+    (IndexedNode("social", "instagram:1", "Instagram post\npicnic plans", 10,
+                 persons=("kit",)), True),
+    (IndexedNode("social_location", "instagram:1", "Lantern Cove", 10,
+                 persons=("kit",)), True),
+    (IndexedNode("social", "instagram:2", "Instagram post\npicnic plans", 9,
+                 persons=("sam",)), True),
+    (IndexedNode("social_location", "instagram:2", "Lantern Cove", 9,
+                 persons=("sam",)), False),
+]
+NO_PRESENCE = replace(SCOPE, presence_persons=frozenset())
+
+
+def test_the_python_predicate_gates_a_tagged_place_by_presence() -> None:
+    assert [in_scope(n, SCOPE) for n, _ in LOCATED] == [ok for _, ok in LOCATED]
+    assert [n.key for n, _ in LOCATED if in_scope(n, NO_PRESENCE)] == [
+        ("social", "instagram:1"), ("social", "instagram:2"),
+    ]
+
+
+async def test_every_read_gates_a_tagged_place_by_presence_and_keeps_its_item(
+    load: Load,
+) -> None:
+    """The SQL filter and the Python one agree, inside each read: a tagged
+    place is seeded, matched exactly, found dense and reached as a neighbour
+    only where its author passes presence; its item is found by its caption
+    either way."""
+    vectors = {n.key: (M, _unit((0, 1.0))) for n, _ in LOCATED}
+    index = await load(
+        [n for n, _ in LOCATED],
+        [("social_location", f"instagram:{i}", "attached_to", "social", f"instagram:{i}")
+         for i in (1, 2)],
+        vectors=vectors,
+    )
+    kit_place = {("social_location", "instagram:1")}
+    for scope, want in ((SCOPE, kit_place), (NO_PRESENCE, set())):
+        assert {s.node.key for s in await index.seed(["Lantern"], scope, limit=50)} == want
+        assert {s.node.key for s in await index.exact(
+            [ExactTerm("Lantern Cove")], scope, limit=50)} == want
+        assert {s.node.key for s in await index.dense(
+            _unit((0, 1.0)), scope, model=M, limit=50) if s.node.kind == "social_location"
+        } == want
+        assert {s.node.key for s in await index.seed(["picnic"], scope, limit=50)} == {
+            ("social", "instagram:1"), ("social", "instagram:2"),
+        }, "the item stays findable by its caption"
+    reached = await index.neighbours([("social", "instagram:1"), ("social", "instagram:2")], SCOPE)
+    assert {nb.node.key for nb in reached} == kit_place
+    assert await index.neighbours([("social", "instagram:1")], NO_PRESENCE) == []

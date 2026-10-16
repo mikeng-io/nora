@@ -680,13 +680,17 @@ def _shown(node: IndexedNode) -> tuple[str, str]:
     """An item's kind as the answer says it, and its text. A social item says
     what it is, its node text's first line (`social_label`: «Instagram
     story»), and the rest is its text; a medium of one says it is a picture
-    or video of the network's. Every other kind is its kind."""
+    or video of the network's, and its location that it is a tagged place.
+    Every other kind is its kind."""
     if node.kind == "social":
         label, _, rest = node.text.partition("\n")
         return label or "social item", rest
     if node.kind == "social_media":
         network = node.source_id.partition(":")[0]
         return f"{network.capitalize()} picture or video", node.text
+    if node.kind == "social_location":
+        network = node.source_id.partition(":")[0]
+        return f"{network.capitalize()} tagged place", node.text
     return node.kind, node.text
 
 
