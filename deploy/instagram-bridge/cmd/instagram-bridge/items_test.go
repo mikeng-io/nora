@@ -27,6 +27,7 @@ type itemsBody struct {
 		MediaType     int    `json:"media_type"`
 		Caption       string `json:"caption"`
 		CarouselCount int    `json:"carousel_count"`
+		Collab        bool   `json:"collab"`
 	} `json:"items"`
 	NextCursor *string `json:"next_cursor"`
 }
@@ -355,11 +356,13 @@ func TestItemsOwnerMustBeNamedAndMustBeTheIGID(t *testing.T) {
 		node string
 		want int
 	}{
-		"no owner anywhere":    {`{"code":"SynthPost09","pk":"2009","id":"2009","taken_at":1,"media_type":1}`, 502},
-		"user.pk differs":      {`{"code":"SynthPost09","pk":"2009","id":"2009_246967358","user":{"pk":"999"},"taken_at":1,"media_type":1}`, 502},
-		"owner.pk differs":     {`{"code":"SynthPost09","pk":"2009","owner":{"pk":"999"},"taken_at":1,"media_type":1}`, 502},
-		"only user.pk, right":  {`{"code":"SynthPost09","pk":"2009","id":"2009","user":{"pk":"246967358"},"taken_at":1,"media_type":1}`, 200},
-		"only owner.id, right": {`{"code":"SynthPost09","pk":"2009","owner":{"id":"246967358"},"taken_at":1,"media_type":1}`, 200},
+		"no owner anywhere":                 {`{"code":"SynthPost09","pk":"2009","id":"2009","taken_at":1,"media_type":1}`, 502},
+		"user.pk differs":                   {`{"code":"SynthPost09","pk":"2009","id":"2009_246967358","user":{"pk":"999"},"taken_at":1,"media_type":1}`, 502},
+		"owner.pk differs":                  {`{"code":"SynthPost09","pk":"2009","owner":{"pk":"999"},"taken_at":1,"media_type":1}`, 502},
+		"only user.pk, right":               {`{"code":"SynthPost09","pk":"2009","id":"2009","user":{"pk":"246967358"},"taken_at":1,"media_type":1}`, 200},
+		"only owner.id, right":              {`{"code":"SynthPost09","pk":"2009","owner":{"id":"246967358"},"taken_at":1,"media_type":1}`, 200},
+		"collab, igid a co-author":          {`{"code":"SynthPost09","pk":"2009","id":"2009_999","user":{"pk":"999"},"coauthor_producers":[{"pk":"246967358"}],"taken_at":1,"media_type":1}`, 200},
+		"collab, igid not among co-authors": {`{"code":"SynthPost09","pk":"2009","id":"2009_999","user":{"pk":"999"},"coauthor_producers":[{"pk":"555"}],"taken_at":1,"media_type":1}`, 502},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := getItems(t, newTestBridge(t, &fakeIG{TimelineBody: page(tc.node)}), fakeig.TimelineOwnerIGID, "")
@@ -444,5 +447,19 @@ func TestItemsErrorsBesideThePageStillReadThePage(t *testing.T) {
 	rec = getItems(t, newTestBridge(t, &fakeIG{TimelineBody: []byte(checkpoint)}), fakeig.TimelineOwnerIGID, "")
 	if rec.Code != http.StatusConflict {
 		t.Errorf("a checkpoint beside data answered %d, want 409", rec.Code)
+	}
+}
+
+// Measured 2026-10-16: most of one member's grid was collaboration posts
+// another account owns. They are listed, marked collab; the member's own
+// posts are not.
+func TestItemsMarksACollaborationPost(t *testing.T) {
+	page := []byte(`{"data":{"xdt_api__v1__feed__user_timeline_graphql_connection":{"edges":[` +
+		`{"node":{"code":"SynthCollab1","pk":"2010","id":"2010_999","user":{"pk":"999"},"coauthor_producers":[{"pk":"246967358"}],"taken_at":2,"media_type":2,"product_type":"clips"}},` +
+		`{"node":{"code":"SynthOwn1","pk":"2011","id":"2011_246967358","user":{"pk":"246967358"},"taken_at":1,"media_type":1}}` +
+		`],"page_info":{"end_cursor":null,"has_next_page":false}}}}`)
+	body := decodeItems(t, getItems(t, newTestBridge(t, &fakeIG{TimelineBody: page}), fakeig.TimelineOwnerIGID, ""))
+	if len(body.Items) != 2 || !body.Items[0].Collab || body.Items[1].Collab {
+		t.Errorf("items = %+v, want the collab marked and the own post not", body.Items)
 	}
 }

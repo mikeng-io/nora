@@ -11,7 +11,8 @@
         "kind": "reel",
         "media_type": 2,
         "caption": "synthetic reel caption",
-        "carousel_count": 0
+        "carousel_count": 0,
+        "collab": false
       },
       {
         "code": "SynthPost02",
@@ -20,7 +21,8 @@
         "kind": "post",
         "media_type": 8,
         "caption": "",
-        "carousel_count": 3
+        "carousel_count": 3,
+        "collab": false
       }
     ],
     "next_cursor": "synthetic-cursor-1"
