@@ -420,18 +420,20 @@ def _clip(text: str, limit: int) -> str:
     return text[:limit - 1].rstrip() + "…"
 
 
-#: An `@handle` in a caption: an Instagram username's characters, not after
-#: an ASCII name character (an email address). The lookbehind is ASCII on
-#: purpose: `\w` matches CJK, and `你好@someone` is a handle. Read after NFKC,
-#: so a full-width `＠` is an `@`.
-_HANDLE = re.compile(r"(?<![A-Za-z0-9_.@+\-])@([A-Za-z0-9_][A-Za-z0-9_.]{0,29})")
+#: An `@` and the username characters after it, wherever it stands: no
+#: lookbehind, so nothing before the `@` (a CJK character, `-`, `.`, `+`, a
+#: letter) lets a handle through. Read after NFKC, so a full-width at sign is
+#: an `@`. An email's domain is matched too and redacted like any handle:
+#: fail closed.
+_HANDLE = re.compile(r"@([A-Za-z0-9_][A-Za-z0-9_.]*)")
 
 
 def _caption(
     text: str | None, *, person: str, owners: Callable[[str], frozenset[str]],
 ) -> str:
-    """The caption, every `@handle` in it but the author's own written `@…`,
-    then clipped to `SOCIAL_CAPTION_CHARS`. A handle names somebody who never
+    """The caption, NFKC-normalized, every `@handle` in it but the author's
+    own written `@…` (an email address's domain too), then clipped to
+    `SOCIAL_CAPTION_CHARS`. A handle names somebody who never
     chose to be in this account, and it is an identifier on a network; whose
     handle it is comes from `identity.toml` (`owners`), so one nobody
     recorded is redacted too."""

@@ -61,7 +61,7 @@ KEYS = {
 SWIM = "a1" * 32
 LEAK = "b2" * 32
 #: Whose Instagram username a handle is, as `identity.toml` records it.
-HANDLES = {"ada.swims": frozenset({"ada"}), "bo.runs": frozenset({"bo"})}
+HANDLES = {"ada.swims": frozenset({"ada"}), "bo_runs": frozenset({"bo"})}
 
 
 @pytest.fixture
@@ -132,7 +132,7 @@ def _cites(out: str) -> list[str]:
 async def test_a_social_only_wake_renders_its_items_and_may_cite_one(social) -> None:
     store, engine = social
     await _record(store, "9001", media=SWIM,
-                  caption="dawn swim with @bo.runs, photos by @ada.swims")
+                  caption="dawn swim with @bo_runs, photos by @ada.swims")
     await _perceived(engine, SWIM, "someone swimming in the sea at sunrise")
     adaptor = _session(store)
 
@@ -148,7 +148,7 @@ async def test_a_social_only_wake_renders_its_items_and_may_cite_one(social) -> 
     assert "2026-10-05" in out and "2d ago" in out
     # Another person's handle is redacted; the author's own stays.
     assert ">dawn swim with @…, photos by @ada.swims</item>" in out
-    assert "bo.runs" not in out
+    assert "bo_runs" not in out
     # Never the location, the network's alt text, or a tagged or mentioned handle.
     for absent in ("Placeholder Square", "alt text", "tagged.friend", "mentioned.friend"):
         assert absent not in out, absent
@@ -312,17 +312,23 @@ async def test_items_recorded_under_a_former_id_are_the_persons_own(social) -> N
     assert await adaptor.evidence.count(key=CY_KEY, after=0) == 0
 
 
-async def test_a_handle_after_cjk_or_written_full_width_is_redacted(social) -> None:
+async def test_every_handle_but_the_authors_own_is_redacted_whatever_precedes_it(social) -> None:
     """Captions here are Cantonese: a handle written straight after a CJK
-    character, or with a full-width `＠`, names somebody just the same. An
-    email address is not a handle."""
+    character, or with a full-width at sign, names somebody just the same, and
+    so does one after `-`, `.` or `+`. Nothing before the `@` lets a handle
+    through; an email's domain is redacted too (fail closed)."""
     store, _engine = social
+    fullwidth = "\uff20"
     await _record(store, "9201", caption=(
-        "同你好@bo.runs 去游水，影相＠bo.runs，email me@example.com，我係@ada.swims"
+        f"同你好@bo_runs 去游水，影相{fullwidth}bo_runs，"
+        "a-@bo_runs a.@bo_runs a+@bo_runs x@bo_runs，email me@example.com，"
+        "我係@ada.swims"
     ))
     out = await _wake(_session(store))
 
-    assert "bo.runs" not in out
+    assert "bo_runs" not in out and "example.com" not in out
     # NFKC also writes full-width punctuation half-width.
-    assert "同你好@… 去游水,影相@…" in out
-    assert "me@example.com" in out and "@ada.swims" in out
+    assert "同你好@… 去游水,影相@…," in out
+    assert "a-@… a.@… a+@… x@…," in out
+    assert "email me@…," in out
+    assert "@ada.swims" in out

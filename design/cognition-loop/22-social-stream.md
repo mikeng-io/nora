@@ -384,8 +384,10 @@ projector in its own transaction (§9;
     characters, screened for identifiers at render, R-51) and its caption,
     clipped to 300 characters, as the content, which the block's
     description frames as the person's published words, never an
-    instruction. In a caption every `@handle` but the author's own (by
-    `identity.toml`'s Instagram `username`) is written `@…`. The block's
+    instruction. A caption is NFKC-normalized and every `@handle` in it
+    but the author's own (by `identity.toml`'s Instagram `username`) is
+    written `@…`, whatever stands before the `@`, an email's domain
+    included. The block's
     captions and readings are at most 9,360 characters, about 10,800 tokens
     of dense Cantonese a model call, about 9% of `[dreamer.budgets.culture]`'s
     `total_tokens`. Never its `location`: a person session holds no presence
