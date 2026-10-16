@@ -51,8 +51,8 @@
  {
   "name": "rollup_read: a name resolves among everyone, not this room's people (R-21)",
   "file": "nora/agent/tools.py",
-  "old": "            matches = view.find(name)\n            if not matches:\n                _record(metrics, \"rollup_read\"",
-  "new": "            matches = tuple(p for p in persons.by_person.values() if p.name == name)\n            if not matches:\n                _record(metrics, \"rollup_read\"",
+  "old": "            matches = view.find(name) or tuple(\n                p for p in view.people if p.person_id == name\n            )\n",
+  "new": "            matches = tuple(p for p in persons.by_person.values() if p.name == name)\n",
   "target": "tests/integration/test_rollup_read.py::test_a_name_resolves_only_among_this_rooms_people"
  },
  {
