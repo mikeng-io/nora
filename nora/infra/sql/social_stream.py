@@ -28,7 +28,8 @@ list read carrying its probe's counts. A probe that made a list read due does
 not advance them, so a list read that fails leaves the rise still due.
 
 **What is read is filtered here, once** (§2). Every read of items for
-perception, for a stimulus or for the Rollup's daybook leaves out an item
+perception, for a stimulus, for the Rollup's daybook or for a person's
+Character session leaves out an item
 whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `gone` or `hidden` state row. The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
@@ -47,7 +48,7 @@ Postgres.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -67,15 +68,20 @@ from nora.domain.social_stream import (
     ItemState,
     Origin,
     PerceptionOutcome,
+    PersonSocialItem,
     PollStage,
+    Reading,
     SocialItem,
     cursor_is_bad,
+    from_us,
+    to_us,
 )
 from nora.infra.sql import memory_index
 from nora.infra.sql.blob_refs import held_elsewhere
 from nora.infra.sql.memory_index import current_place, social_source_id
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
+    MEDIA_OBJECTS,
     SOCIAL_ITEM,
     SOCIAL_ITEM_STATE,
     SOCIAL_PERCEPTION,
@@ -211,7 +217,7 @@ class Relist:
 
 
 class SqlSocialStreamStore:
-    """The stream's five tables, as nineteen verbs."""
+    """The stream's five tables, as twenty-one verbs."""
 
     def __init__(
         self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
@@ -730,6 +736,86 @@ class SqlSocialStreamStore:
                 announced=frozenset(r.announced or ()),
             )
         return list(reads.values())
+
+    # -- the reader: a person's Character session (§6) -------------------------
+    #
+    # Positioned by `recorded_at`, which follows commit order here: the poller
+    # is the one writer and records items one transaction at a time.
+    # ponytail: a second concurrent writer could commit an earlier
+    # `recorded_at` after a later one was read; a serial column if one appears.
+
+    async def polled_count(self, *, persons: Sequence[str], after_us: int) -> int:
+        """How many readable items of one person (recorded under any of
+        `persons`: their id and every retired one) a poll recorded after
+        `after_us` (microseconds since the epoch, `to_us`): their wake
+        pressure on Character. A back-filled item never counts: a back-fill
+        of 50 items is history, not 50 items of news (§6)."""
+        i = SOCIAL_ITEM
+        stmt = sa.select(sa.func.count()).select_from(i).where(
+            *self._readable(), i.c.person.in_(list(persons)), i.c.origin == "poll",
+            i.c.recorded_at > from_us(after_us),
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(stmt)).scalar_one())
+
+    async def person_items(
+        self, *, persons: Sequence[str], after_us: int, limit: int,
+    ) -> list[PersonSocialItem]:
+        """The OLDEST `limit` readable items of one person (recorded under any
+        of `persons`: their id and every retired one) recorded after
+        `after_us`, polled and back-filled alike, in the order recorded, each
+        with what perception made of its media in `media_ref`'s order (a
+        medium nothing has read yet has an empty reading). The read ends
+        before a microsecond it would split, so a cursor advanced to its last
+        item skips none. Handed in that order and resumed from the
+        last one handed, every item is handed once, however many arrive at
+        once (a back-fill records 50)."""
+        if limit <= 0:
+            return []
+        i = SOCIAL_ITEM
+        cols = (
+            i.c.id, i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at,
+            i.c.origin, i.c.caption, i.c.media_ref, i.c.recorded_at,
+        )
+        mine = [*self._readable(), i.c.person.in_(list(persons))]
+        m = MEDIA_OBJECTS
+        async with self._engine.connect() as conn:
+            rows = list((await conn.execute(
+                sa.select(*cols)
+                .where(*mine, i.c.recorded_at > from_us(after_us))
+                .order_by(i.c.recorded_at, i.c.id)
+                .limit(limit + 1)
+            )).all())
+            if len(rows) > limit:
+                # A cursor at the last one handed must skip nothing recorded in
+                # the same microsecond: when the next row shares it, stop short
+                # of that microsecond, or, when every row is in it, take all of it.
+                last = rows[limit - 1].recorded_at
+                if rows[limit].recorded_at != last:
+                    rows = rows[:limit]
+                else:
+                    rows = [r for r in rows if r.recorded_at < last] or list(
+                        (await conn.execute(
+                            sa.select(*cols).where(*mine, i.c.recorded_at == last)
+                            .order_by(i.c.id)
+                        )).all())
+            shas = sorted({sha for r in rows for sha in _media(r.media_ref)})
+            read = {
+                r.sha256: Reading(r.title, r.description, r.content)
+                for r in (await conn.execute(
+                    sa.select(m.c.sha256, m.c.title, m.c.description, m.c.content)
+                    .where(m.c.sha256.in_(shas))
+                )).all()
+            } if shas else {}
+        return [
+            PersonSocialItem(
+                network=r.network, item_id=r.item_id, kind=r.kind, collab=r.collab,
+                taken_at=r.taken_at, origin=r.origin, caption=r.caption,
+                readings=tuple(read.get(sha, Reading()) for sha in _media(r.media_ref)),
+                recorded_us=to_us(r.recorded_at),
+            )
+            for r in rows
+        ]
 
     # -- a story frame's bytes (§5) --------------------------------------------
 

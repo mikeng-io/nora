@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from enum import StrEnum
 from typing import Literal, get_args
 
@@ -519,3 +519,50 @@ def bytes_due(
     if now >= expires_at + timedelta(days=keep_days) and perceived and embedded:
         return "embedded"
     return None
+
+
+# -- what Character reads (§6) ---------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Reading:
+    """What perception made of one medium of an item: the three comprehension
+    fields `media_objects` holds for its bytes, empty when nothing read them."""
+
+    title: str = ""
+    description: str = ""
+    content: str = ""
+
+
+@dataclass(frozen=True)
+class PersonSocialItem:
+    """One of a person's readable social items as their Character session is
+    handed it (`SqlSocialStreamStore.person_items`): what it is, when it was
+    posted, their caption and what perception made of its media. Never its
+    `location`, `alt_text`, tagged or mentioned handles."""
+
+    network: str
+    item_id: str
+    kind: str
+    collab: bool
+    taken_at: datetime
+    origin: Origin
+    caption: str | None
+    readings: tuple[Reading, ...] = ()
+    #: When it was recorded, in microseconds since the epoch: the position a
+    #: person session's social cursor advances to once it is handed.
+    recorded_us: int = 0
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def to_us(moment: datetime) -> int:
+    """`moment` in whole microseconds since the epoch, exactly (a float
+    timestamp loses the last digit)."""
+    return (moment - _EPOCH) // timedelta(microseconds=1)
+
+
+def from_us(us: int) -> datetime:
+    """The inverse of `to_us`."""
+    return _EPOCH + timedelta(microseconds=us)

@@ -432,6 +432,9 @@ class _KeyEvidence(Protocol):
     lately, `AdaptorSchedule.seed_at_head`'s reason). The cursor is whatever
     integer the kind counts by (a Record id, a revision count): the loop only
     stores it and hands it back as `after`.
+
+    An evidence may also define `settle(key=...)`, awaited after the
+    watermark advances, for a second cursor of its own (`PersonEvidence`).
     """
 
     async def count(self, *, key: str, after: int) -> int: ...
@@ -1014,6 +1017,12 @@ async def _dream_evidence_once(
         consolidator_name=adaptor.name, scope_id=key,
         last_message_id=max(cursor, watermark),
     )
+    # Evidence with a second cursor (a person's social items) moves it on the
+    # same rule, after the watermark: a crash between the two hands those
+    # items again, never skips them.
+    settle = getattr(evidence, "settle", None)
+    if settle is not None:
+        await traced_read("character", "settle", settle(key=key))
     return outcome.status
 
 

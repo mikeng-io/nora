@@ -1356,8 +1356,9 @@ VIDEO_READINGS = sa.Table(
 # The Dreamer's cursor, one row per (consolidator, scope). GENERIC on purpose:
 # "how far has this consumer read" is identical for any consolidator.
 #
-# `last_message_id` is `sa.Integer`, matching `messages.id` — which is INT4
-# because it COUNTS UP (see this module's docstring). `updated_at` is
+# `last_message_id` is `sa.BigInteger` (0115): wide enough for a Record id
+# (`messages.id`, INT4, which COUNTS UP: see this module's docstring) and for
+# a person session's social cursor, a microsecond count. `updated_at` is
 # `DateTime(timezone=True)`, NOT epoch-ms: the dream cycle compares it against
 # `now` in SQL (`age(watermark) > 24h`), the same case `reminders.due_at` is.
 CONSOLIDATION_WATERMARK = sa.Table(
@@ -1365,7 +1366,7 @@ CONSOLIDATION_WATERMARK = sa.Table(
     METADATA,
     sa.Column("consolidator_name", sa.Text, primary_key=True),
     sa.Column("scope_id", sa.Text, primary_key=True),
-    sa.Column("last_message_id", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("last_message_id", sa.BigInteger, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.text("now()")),
 )
