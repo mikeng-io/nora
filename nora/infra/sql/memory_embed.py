@@ -18,7 +18,9 @@ image type, or a social item's medium whose bytes custody recorded as one
 embedded from its bytes, read from the blob store; any other node,
 and an image whose bytes Nora no longer holds, from its text as a document.
 The store records which (`embed_input`), so only a change to THAT input
-clears the vector.
+clears the vector. A social item whose text is its label alone (no caption,
+no reading yet) is recorded `empty`, not embedded (`nothing_to_embed`): a
+reading landing changes its text and frees it.
 
 **No node escapes the bookkeeping, and none loops.** Every failure of one
 node, an unexpected exception included, is recorded on it: its
@@ -53,7 +55,12 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.memory_index import ATTACHMENT_KINDS, EmbedOutcome, embeds_bytes
+from nora.domain.memory_index import (
+    ATTACHMENT_KINDS,
+    EmbedOutcome,
+    embeds_bytes,
+    nothing_to_embed,
+)
 from nora.domain.ports import BlobStore
 from nora.infra.embedder import (
     EmbedderRejectedError,
@@ -173,7 +180,7 @@ class MemoryEmbedWorker:
             if vector is None:
                 # Not an image, or an image whose bytes are no longer held:
                 # its text, as a document.
-                if not item.text.strip():
+                if nothing_to_embed(item.kind, item.text):
                     await self._failed(item, "empty", by_bytes=False)
                     return "empty"
                 embedded = await self._embedder.embed_document(item.text)

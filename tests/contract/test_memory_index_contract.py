@@ -47,6 +47,7 @@ SCOPE = MemoryScope(
     listed_here=frozenset({"kit", "sam"}), people_here=frozenset({"kit", "sam"}),
     exclude_strict=False, presence_persons=frozenset({"kit"}),
     room_persons={"signal:b": frozenset({"kit", "sam"}), "signal:c": frozenset({"sam"})},
+    social_off=frozenset(),
 )
 
 #: (node, in scope for SCOPE)
@@ -174,12 +175,12 @@ async def test_a_strict_room_drops_every_node_that_excludes_anyone(load: Load) -
     strict = MemoryScope(
         units=SCOPE.units, rooms=SCOPE.rooms, listed_here=frozenset({"kit"}),
         people_here=frozenset({"kit"}), exclude_strict=True,
-        presence_persons=frozenset({"kit"}),
+        presence_persons=frozenset({"kit"}), social_off=frozenset(),
     )
     loose = MemoryScope(
         units=SCOPE.units, rooms=SCOPE.rooms, listed_here=frozenset({"kit"}),
         people_here=frozenset({"kit"}), exclude_strict=False,
-        presence_persons=frozenset({"kit"}),
+        presence_persons=frozenset({"kit"}), social_off=frozenset(),
     )
     assert ("note", "n3") not in {s.node.key for s in await index.seed(
         ["surprise"], strict, limit=50)}

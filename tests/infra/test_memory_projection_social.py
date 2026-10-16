@@ -121,7 +121,7 @@ async def test_a_carousel_is_one_item_node_and_a_media_node_per_medium(engine):
 
     nodes = await _nodes(engine)
     item = nodes[("social", sid)]
-    assert item.text == "Instagram post\npicnic plans\ntwo cups on a blanket"
+    assert item.text == "Instagram post\npicnic plans", "never the alt text"
     assert (item.persons, item.unit, item.origin_room) == ([PERSON], None, None)
     assert item.at_ms == int(T0.timestamp() * 1000)
     for sha in (A, B):
@@ -139,13 +139,16 @@ async def test_a_carousel_is_one_item_node_and_a_media_node_per_medium(engine):
     assert metrics.get("nora_memory_projection_total", kind="social", outcome="ok") == 1
 
 
-async def test_location_tags_and_mentions_are_never_in_the_text(engine):
+async def test_location_alt_text_tags_and_mentions_are_never_in_the_text(engine):
+    """The network's alt text is phrased with the place and the tagged
+    handles, so it is left out with them."""
     store = SqlSocialStreamStore(engine)
-    await _insert(store, _item(kind="story_frame", caption=None, alt=None, collab=True), (A,))
+    await _insert(store, _item(kind="story_frame", collab=True), (A,))
     texts = [n.text for n in (await _nodes(engine)).values()]
     assert any(t.startswith("Instagram story, co-authored") for t in texts)
     for t in texts:
         assert LOCATION not in t and "tagged_one" not in t and "mentioned_one" not in t
+        assert "two cups" not in t
 
 
 async def test_a_reading_landing_reprojects_the_item_and_its_medium(engine):

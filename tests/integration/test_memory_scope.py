@@ -179,6 +179,7 @@ async def _search(
         search = MemorySearch(SqlMemoryIndex(engine), metrics or Metrics())
     return await search.search(
         query=query, person_id=person, target=_target(room), depth="low", now_ms=NOW,
+        social_off=(),
     )
 
 

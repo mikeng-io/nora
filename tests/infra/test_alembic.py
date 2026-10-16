@@ -843,3 +843,44 @@ def test_0092_drops_orphan_delete_and_goes_back_down_recreating_it_empty(pg_url)
         engine.dispose()
     run_migrations(pg_url)
     assert not _orphan_delete_exists(pg_url)
+
+
+def test_0110_downgrade_leaves_no_social_row_the_older_code_cannot_read(pg_url):
+    """Below 0110 the projector has no `social` kind: a queued social row
+    would raise in every drain and hold every search `partial`, and a node or
+    edge of either kind would break the older CHECK. The downgrade removes
+    all three, and the chain reaches head again."""
+    from alembic import command as alembic_command
+
+    run_migrations(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO memory_node (kind, source_id, persons) VALUES "
+                "('social', 'instagram:1', ARRAY['member-a']), "
+                "('social_media', 'instagram:1:' || repeat('a', 64), ARRAY['member-a'])"
+            ))
+            conn.execute(sa.text(
+                "INSERT INTO memory_edge (src_kind, src_id, rel, dst_kind, dst_id, provenance) "
+                "VALUES ('social', 'instagram:1', 'authored_by', 'person', 'member-a', 't')"
+            ))
+            conn.execute(sa.text(
+                "INSERT INTO memory_projection_queue (kind, source_id, last_error) VALUES "
+                "('social', 'instagram:1', 'X'), ('message', '7', 'X')"
+            ))
+        alembic_command.downgrade(alembic_config(pg_url), "0109_blob_tombstone")
+        with engine.connect() as conn:
+            left = [
+                conn.execute(sa.text(q)).scalar_one() for q in (
+                    "SELECT count(*) FROM memory_node WHERE kind LIKE 'social%'",
+                    "SELECT count(*) FROM memory_edge WHERE src_kind LIKE 'social%'",
+                    "SELECT count(*) FROM memory_projection_queue WHERE kind LIKE 'social%'",
+                    "SELECT count(*) FROM memory_projection_queue WHERE kind = 'message'",
+                )
+            ]
+    finally:
+        engine.dispose()
+    assert left == [0, 0, 0, 1], "only the social rows go"
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()

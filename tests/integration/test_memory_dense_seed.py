@@ -63,6 +63,7 @@ _SCOPE = MemoryScope(
     units=("u1",), rooms=("signal:b", "signal:c"), listed_here=frozenset({"kit", "rin"}),
     people_here=frozenset({"kit", "rin"}), exclude_strict=False,
     presence_persons=frozenset(), room_persons={},
+    social_off=frozenset(),
 )
 _RIN = PersonRef("rin", "Rin", "rin")
 _KIT = PersonRef("kit", "Kit", "kit")
@@ -156,7 +157,7 @@ async def _search(
     return await MemorySearch(
         SqlMemoryIndex(engine), metrics or Metrics(), embedder=embedder, model=MODEL,
     ).search(query=query, person_id=None, target=_TARGET, depth="low", now_ms=NOW,
-             people=people)
+             people=people, social_off=())
 
 
 def _ids(found: MemorySearchResult) -> list[str]:

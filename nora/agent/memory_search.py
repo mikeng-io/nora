@@ -105,7 +105,6 @@ from nora.domain.external_files import render_file_links
 from nora.domain.lineage import PRESENCE, ROW, Lineage, LineageEntry, RenderRoom
 from nora.domain.media import HANDLE_CHARS
 from nora.domain.memory_index import (
-    ATTACHMENT_KINDS,
     EPISODE_KINDS,
     ExactTerm,
     IndexedNode,
@@ -317,7 +316,7 @@ def terms_of(query: str) -> list[str]:
 
 
 def scope_for(
-    target: RenderRoom, *, own_room: bool = False, social_off: Collection[str] = (),
+    target: RenderRoom, *, social_off: Collection[str], own_room: bool = False,
 ) -> MemoryScope | None:
     """The reading room's scope, from the live policy (`target.rooms`) and
     its live roster (`target.live`); `None` for a room outside the policy,
@@ -333,7 +332,8 @@ def scope_for(
 
     `social_off` are the persons whose `identity.toml` block sets `social =
     false`: none of their social items is read (design/cognition-loop/22 §2),
-    whenever it was recorded."""
+    whenever it was recorded. Required with no default: a caller that
+    forgot it would read every opted-out person's items."""
     here = target.room
     if here is None:
         return None
@@ -539,7 +539,7 @@ class MemorySearch:
         depth: str = DEFAULT_DEPTH, now_ms: int, people: Sequence[PersonRef] = (),
         kinds: Sequence[str] = (), since_ms: int | None = None,
         until_ms: int | None = None, own_room: bool = False,
-        social_off: Collection[str] = (),
+        social_off: Collection[str],
     ) -> MemorySearchResult:
         """`people` are the persons the caller can name here (the room's
         resolved roster); the names of those this room lists are the exact
@@ -547,8 +547,8 @@ class MemorySearch:
         that person and narrows the search to them; `kinds` (node kinds),
         `since_ms` and `until_ms` narrow it too (the module docstring), all
         inside the index's reads. `own_room` reads the reading room alone
-        (`scope_for`); `social_off` are the persons whose social items no read
-        may return."""
+        (`scope_for`); `social_off` (required, never defaulted) are the
+        persons whose social items no read may return."""
         def admits(node: IndexedNode) -> bool:
             lineage = Lineage.from_json(node.lineage)
             return section_permits(lineage.section(ROW), target, origin=None)
@@ -618,11 +618,13 @@ def _path(path: Sequence[Step]) -> list[str]:
 
 
 def _handle(node: IndexedNode) -> str | None:
-    """What a person or a tool can name the item by: a medium's handle (an
-    attachment's or a social item's), an entry's title (its first line). A
-    message, an episode, an account and a social item have none: their ids
-    are not something said in a chat (R-18)."""
-    if node.kind in ATTACHMENT_KINDS and node.sha256:
+    """What a person or a tool can name the item by: an attachment's media
+    handle, an entry's title (its first line). A message, an episode, an
+    account and a social item have none: their ids are not something said in
+    a chat (R-18). Nor has a social item's medium: `media_fetch` resolves
+    only this chat's media, so its handle would fail as if it were not
+    there."""
+    if node.kind == "media" and node.sha256:
         return node.sha256[:HANDLE_CHARS]
     if node.kind in ("note", "memo", "event"):
         return node.text.split("\n", 1)[0].strip() or None

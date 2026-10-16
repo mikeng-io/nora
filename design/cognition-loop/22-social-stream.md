@@ -405,8 +405,7 @@ the operator on 2026-10-16 (memory-index owner) and built the same day; the
 detail is [unified-memory/25](../unified-memory/25-memory-graph.md) §7a.
 
 1. *The node.* Both, like a room attachment: one `social` node per item (its
-   text a label for what it is, the caption, the alt text and its media's
-   readings) and one `social_media` node per `(item, sha256)`, `attached_to`
+   text a label for what it is, the caption and its media's readings) and one `social_media` node per `(item, sha256)`, `attached_to`
    the item, so a carousel is several. 25 §2's `attached_to` and `shared_by`
    now name a social item's medium; a medium's type for the embedder is read
    from `media_objects.media_type`, since it has no message.
@@ -417,11 +416,19 @@ detail is [unified-memory/25](../unified-memory/25-memory-graph.md) §7a.
    listed persons with `social = false` per read, and every index read
    leaves their social nodes out, an item recorded before the switch
    included. The projector stays pure.
-4. *Its text.* `caption` and `alt_text` yes; `location` never, and never the
-   tagged or mentioned handles.
+4. *Its text.* The caption, verbatim like a message body: an @mention inside
+   it is the author's own text, as in a message. Never `location`, never the
+   tagged or mentioned handles, and (amended the same day, operator) never
+   `alt_text`: the network's generated alt text is typically phrased with the
+   place and the tagged handles, which would bring back what leaving out
+   `location` keeps out; 0 of 32 live rows held one, so nothing is lost.
 5. *The verb.* No new category and no tool-text change: social items are in
    `kinds=media`, and the answer's `kind` says what an item is («Instagram
    story») with its `age`.
+
+**Known limit.** A collab post is scoped and opt-out-checked by the polled
+author only: `collab` records that another account owns it, not who, so the
+co-owner's listing and `social = false` are not consulted.
 
 A gone or hidden item has no node; every write of `social_item`,
 `social_item_state` and `social_perception` re-projects its item. What is

@@ -52,6 +52,11 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Derived rows (NOT_RESTORED): a rebuild on the older code writes none.
+    # A queued social row would raise KeyError in the older drain on every
+    # pass and hold every search `partial`.
+    op.execute(
+        "DELETE FROM memory_projection_queue WHERE kind IN ('social', 'social_media')"
+    )
     op.execute(
         "DELETE FROM memory_edge WHERE src_kind IN ('social', 'social_media') "
         "OR dst_kind IN ('social', 'social_media')"

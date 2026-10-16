@@ -54,6 +54,7 @@ __all__ = [
     "in_scope",
     "is_latin",
     "narrowed",
+    "nothing_to_embed",
     "social_label",
 ]
 
@@ -251,7 +252,9 @@ class MemoryScope:
     presence_persons: frozenset[str]
     room_persons: Mapping[str, frozenset[str]] = field(default_factory=dict)
     only: MemoryFilter | None = None
-    social_off: frozenset[str] = frozenset()
+    # Required, keyword-only and with no default: a scope that forgot the
+    # opt-outs would read them all (fail open), so every builder must say.
+    social_off: frozenset[str] = field(kw_only=True)
 
     def rooms_listing(self, person: str) -> tuple[str, ...]:
         """The scope's rooms that list `person`, for the listed-room rule."""
@@ -385,6 +388,17 @@ def exact_pattern(term: str) -> str:
 _SOCIAL_KIND_WORDS: Mapping[str, str] = {
     "story_frame": "story", "post": "post", "reel": "reel", "thread_post": "post",
 }
+
+
+def nothing_to_embed(kind: str, text: str) -> bool:
+    """Whether a node's text holds nothing worth a vector: no text, or a
+    social item's label line alone (no caption, no reading yet). Every such
+    item would get the same few-word vector, crowding dense search; it is
+    recorded `empty` instead, found lexically by its label, and embedded once
+    a reading lands and changes its text."""
+    if not text.strip():
+        return True
+    return kind == "social" and not text.partition("\n")[2].strip()
 
 
 def social_label(network: str, kind: str, *, collab: bool = False) -> str:

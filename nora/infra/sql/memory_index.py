@@ -74,12 +74,14 @@ one `social_media` node per medium of it, `(item, sha256)` in `media_ref`'s
 order, `attached_to` the item: a carousel is several. Both are their
 author's: `persons` is the item's person, no unit and no room, so they are
 readable only in a room that lists that person (`PERSON_SCOPED_KINDS`). The
-item's text is what it is (`social_label`: «Instagram story»), its caption,
-its alt text and the reading of each medium (`media_objects`, keyed by the
-bytes, whichever pass wrote it); a medium's text is its reading, and an image
-is embedded from its bytes like an attachment. Never the item's `location`,
-and never its `tagged` or `mentioned` handles, which get no edge either:
-only the author is a person here (`authored_by`, `shared_by`). An item with
+item's text is what it is (`social_label`: «Instagram story»), its caption
+verbatim (the author's own text, as a message body is) and the reading of
+each medium (`media_objects`, keyed by the bytes, whichever pass wrote it); a
+medium's text is its reading, and an image is embedded from its bytes like
+an attachment. Never the item's `location`, never its `alt_text` (the
+network's generated alt text is phrased with the place and the tagged
+handles), and never its `tagged` or `mentioned` handles, which get no edge
+either: only the author is a person here (`authored_by`, `shared_by`). An item with
 a `social_item_state` row (gone or hidden) has no node, like a hidden
 message. A person's `social = false` is not read here: the projector is pure,
 and the read leaves their items out (`MemoryScope.social_off`), so switching
@@ -519,7 +521,7 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     stated = sa.exists().where(st.c.network == i.c.network, st.c.item_id == i.c.item_id)
     row = (await conn.execute(
         sa.select(
-            i.c.person, i.c.kind, i.c.taken_at, i.c.caption, i.c.alt_text, i.c.media_ref,
+            i.c.person, i.c.kind, i.c.taken_at, i.c.caption, i.c.media_ref,
             i.c.collab, stated.label("stated"),
         ).where(i.c.network == network, i.c.item_id == item_id)
     )).first()
@@ -543,11 +545,12 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
         }
     at_ms = int(row.taken_at.timestamp() * 1000)
     persons = [row.person]
-    # Never `location`, `tagged` or `mentioned` (the module docstring).
+    # Never `alt_text`, `location`, `tagged` or `mentioned` (the module
+    # docstring).
     await _upsert_node(
         conn, kind="social", source_id=source_id, persons=persons, at_ms=at_ms,
         text=_text(
-            social_label(network, row.kind, collab=row.collab), row.caption, row.alt_text,
+            social_label(network, row.kind, collab=row.collab), row.caption,
             *(readings.get(sha, "") for sha in wanted.values()),
         ),
     )

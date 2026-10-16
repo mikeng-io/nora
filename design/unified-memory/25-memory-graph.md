@@ -290,7 +290,7 @@ The only other new moving part is the embedding worker.
 | Record | message | the body, re-projected on edit | yes |
 | Record | media attachment `(message, sha256)` | the reading copied in from `media_objects.{title,description,content}` (keyed by `sha256`, no room, UPSERTed; there is no `media_descriptions` table); scoped by its message | yes: the reading's text, and the image or video itself if a multimodal embedder qualifies ([20](20-embedding-bakeoff.md)) |
 | Record | link | URL, caption, preview text | yes |
-| Record | social item, and each of its media `(item, sha256)` (§7a) | the item: what it is («Instagram story»), caption, alt text, and its media's readings; a medium: its reading. Never `location`, `tagged` or `mentioned` | yes: the item from its text; a medium from its bytes if an image, else from its reading |
+| Record | social item, and each of its media `(item, sha256)` (§7a) | the item: what it is («Instagram story»), caption, and its media's readings; a medium: its reading. Never `alt_text`, `location`, `tagged` or `mentioned` | yes: the item from its text once it holds more than its label; a medium from its bytes if an image, else from its reading |
 | Record | `persona_dispute`, `feedback` item | the speaker's words | lexical only |
 | Record | her own artifacts (a document she wrote, an image she generated) | title, text or generation prompt | yes |
 | Rollup | outing, stay, trip | a rendered line: who, the place label, when | lexical only |
@@ -338,10 +338,14 @@ Operator rulings of 2026-10-16, answering
    attachment's room, its type and its drop are all read off its message, and
    a social item has no message. The item's text is a label for what it is
    (`social_label`: «Instagram story», «Instagram post, co-authored»), the
-   caption, the alt text and its media's readings (`media_objects`, keyed by
-   the bytes); a medium's text is its reading. The item is embedded from its
-   text; a medium from its bytes when custody recorded an image type, else
-   from its reading (the attachment rule, `embeds_bytes`).
+   caption and its media's readings (`media_objects`, keyed by the bytes); a
+   medium's text is its reading. The item is embedded from its text, but
+   only once it holds more than its label: a label alone (no caption, no
+   reading yet) would give every such item the same vector, so the worker
+   records it `empty` (`nothing_to_embed`), lexical search still finds it by
+   its label, and a reading landing changes its text and frees it. A medium
+   is embedded from its bytes when custody recorded an image type, else from
+   its reading (the attachment rule, `embeds_bytes`).
 2. **Scope: the author's, like a stay.** `persons` is the item's person, no
    unit, no room (`PERSON_SCOPED_KINDS`): readable only in a room that lists
    them, in any unit. Not the presence rule: a social item carries no
@@ -350,19 +354,29 @@ Operator rulings of 2026-10-16, answering
 3. **The off switch is applied at READ.** `MemoryScope.social_off` holds the
    listed persons whose `identity.toml` block sets `social = false`, computed
    per read by the `memory_search` tool from the identity it holds
-   (`nora.infra` reads no identity). `in_scope` and `_in_scope` leave out every
+   (`nora.infra` reads no identity). It is required with no default on
+   `MemoryScope`, `scope_for` and `MemorySearch.search`, so a new caller
+   cannot omit it and read everything. `in_scope` and `_in_scope` leave out every
    social node naming one of them, inside every read, so an item recorded
    before the switch is out too and switching it back needs no rebuild. The
    projector stays pure.
-4. **Text: caption and alt text yes, `location` never.** Nor the tagged or
-   mentioned handles. A caption is the author's own published text and can
-   still carry a handle, as a message body can; the answer's identifier
+4. **Text: the caption, verbatim; never `alt_text` or `location`.** Nor the
+   tagged or mentioned handles. The caption is indexed like a message body:
+   an @mention in it is the author's own text, and the answer's identifier
    screen (`scan_identifiers`: a phone number, a UUID, a key) withholds an
-   item whole only for those, as for any other text.
+   item whole only for those, as for any other text. Alt text was ruled out
+   the same day (operator): the network's generated alt text is typically
+   phrased with the place and the tagged handles, which would bring back
+   what leaving out `location` keeps out (0 of 32 live rows held one).
 5. **No new `kinds` category, no tool-text change.** Both kinds are in
    `KINDS_BY_CATEGORY["media"]`. The answer says what an item is and how old
    it is: its `kind` is the label («Instagram story»), a medium's is
-   «Instagram picture or video», and `age` is from `taken_at`.
+   «Instagram picture or video», and `age` is from `taken_at`. A medium gets
+   no media handle: `media_fetch` resolves only the chat's own media, so a
+   handle would fail as if nothing were there.
+
+**Known limit.** A collab post is scoped and opt-out-checked by the polled
+author only: `collab` records that another account owns it, not who.
 
 **Deletion and visibility.** An item with any `social_item_state` row (gone
 or hidden) has no nodes, like a hidden message. Every write of `social_item`,
