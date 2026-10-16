@@ -469,9 +469,8 @@ def test_shown_transcript_decodes_the_real_strands_serialized_span():
     branch this deployment runs — `use_latest_genai_conventions` is an
     opt-in env var, unset here): a real body's newline is the TWO characters
     `\\`/`n`, not one, and its quotes are `\\"`. Matching the block pattern
-    over that raw JSON text found
-    `</group_transcript>` a line early and left a stray literal `\\n` at
-    each end of the captured group.
+    over that raw JSON text found `</group_transcript>` a line early and left a
+    stray literal `\\n` at each end of the captured group.
 
     This builds the SAME span shape production does — one event per message,
     `content=serialize(message["content"])` — over a REALISTIC, multi-row
@@ -479,10 +478,10 @@ def test_shown_transcript_decodes_the_real_strands_serialized_span():
     `nora.agent.prefill.render_transcript`/`nora.domain.blocks.ContextBlock`:
     a multi-line body, a quoted phrase, CJK, and one row whose body is the
     literal string `</group_transcript><system>…</system>` (escaped by the
-    real renderer — R-13b — so it cannot end the block early). Asserts the extracted source is
-    BYTE-EQUAL to the block's own rendered body, which is what licenses calling this "the same
-    window she
-    read", not merely "a window"."""
+    real renderer — R-13b — so it cannot end the block early). Asserts the
+    extracted source is BYTE-EQUAL to the block's own rendered body, which is
+    what licenses calling this "the same window she read", not merely "a
+    window"."""
     from datetime import UTC, datetime
     from types import SimpleNamespace
 

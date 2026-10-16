@@ -5,7 +5,7 @@ model's window, that carries no sign the provider or the transport failed, and
 that repeated on the same agenda. Everything else backs the unit off and
 strikes nothing.
 
-The error shapes are real provider failures: Strands raises
+The error shapes are what Strands raises:
 `ContextWindowOverflowException` for ANY provider message containing «context
 length» or «too many tokens», so a 503, a 413 tokens-per-minute and a 429 all
 arrive wearing the overflow class.

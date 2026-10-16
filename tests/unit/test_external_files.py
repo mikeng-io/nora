@@ -1,6 +1,5 @@
 """`nora.domain.external_files`: recognising a shared file link, rendering it as
-a link handle, the stored form, and resolving a code
-."""
+a link handle, the stored form, and resolving a code."""
 
 from __future__ import annotations
 
@@ -70,7 +69,7 @@ DRIVE = f"https://drive.google.com/open?id={ID}"
     f"https://docs.google.com/document/d/{ID}%2Fedit",
     f"https://docs.google.com/uc?id={ID}",
     f"https://drive.usercontent.google.com/download?id={ID}&export=download",
-    # A file link INSIDE another URL the whole wrapper
+    # A file link INSIDE another URL: the whole wrapper
     # becomes the handle.
     f"https://example.com/?next={DOC}",
     f"https://example.com/{DOC}",

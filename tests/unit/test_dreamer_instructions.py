@@ -280,7 +280,7 @@ def write_skill(root, *, name="plans", version=1, body="\nSkill body.\n\n", file
 
 def test_a_prelude_replaces_the_doctrine_for_the_objective_it_names_only(tree):
     """Cognition reads its own prelude; every other adaptor's text and digest are
-    those of the shared doctrine."""
+    unchanged by the prelude."""
     before = _store(tree).for_objective("room-exchange")
     write_prelude(tree)
     store = _store(tree)

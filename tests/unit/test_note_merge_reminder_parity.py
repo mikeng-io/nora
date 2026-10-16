@@ -4,8 +4,9 @@ row, left un-re-pointed, at its own real fire time. `merge_into` is not
 allowed a second opinion — it is answering the SAME question early, using a
 DIFFERENT read path (chains it happens to have open in its own transaction
 rather than `notes.read`/`successor`/`revision_chain`), so the two paths can
-drift: a merge-time check that read only the survivor's chain, where the
-fire-time path reads the duplicate's own chain FIRST, then the survivor's.
+drift. A merge-time check that read only the survivor's chain would disagree
+with the fire-time path, which reads the duplicate's own chain FIRST, then the
+survivor's.
 
 This module is `tests/unit/test_note_merge_repoints_reminders_fake.py`'s
 sibling, not a replacement: that file pins each of `merge_into`'s branches
@@ -13,10 +14,11 @@ in isolation (does it cancel, does it re-point, does it skip a firing
 collision). This file pins the CROSS-CHECK: whatever `merge_into` decided,
 running the fire-time screen on the un-re-pointed row (the world as it
 would look if the fold never touched reminders at all) must reach the
-identical verdict. Six scenarios (S1-S6): S1, S2 and S6 exposed real defects;
-S3-S5 match on both paths and are kept so the parity check itself is proven
-to distinguish agreement from disagreement — a check that always passes
-proves nothing.
+identical verdict. Seven scenarios (S1-S7): S1, S2 and S6 exposed real defects;
+S7 pins that the duplicate-moved step does not live only inside
+`_follow_survivor`; S3-S5 match on both paths and are kept so the parity check
+itself is proven to distinguish agreement from disagreement — a check that
+always passes proves nothing.
 """
 
 from __future__ import annotations

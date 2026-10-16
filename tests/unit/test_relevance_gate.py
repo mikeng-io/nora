@@ -67,8 +67,7 @@ class _Client:
 
 
 class _Hangs:
-    """A model that never answers — the shape `ModelClient`'s contract permits
-    .
+    """A model that never answers — the shape `ModelClient`'s contract permits.
 
     An hour rather than a few seconds on purpose: the gate's ceiling is what
     the test measures, so the sleep has to be long enough that a bound taken
@@ -162,7 +161,7 @@ def _standing(body: str | None = None, fail: bool = False):
     double.
 
     A fake defined in a test module is invisible to that port's contract suite
-    by construction, which is the whole reason the rule exists
+    by construction, which is the whole reason the rule exists.
 
     `fail=True` is the R-27 case the gate must tell apart from "no position":
     an unreadable store is «I could not check», never «there is none».
@@ -612,7 +611,7 @@ async def test_a_timeout_raised_beneath_the_gate_keeps_its_own_label():
     """The deployed client takes its own `wait_for` (the architecture suite
     requires it), so in production the `TimeoutError` is raised BELOW the
     gate's bound rather than by it. Both arms have to land on `timeout` or the
-    label describes a code path the deployment does not take ."""
+    label describes a code path the deployment does not take."""
     metrics = Metrics()
     gate = _gate(_Client(TimeoutError()), metrics=metrics)
     got = await gate.decide(platform="discord", conversation_id="g/1")

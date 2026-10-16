@@ -147,9 +147,8 @@ class _Adaptor:
     uses_watermark = True
     objective = "room-language"
     envelope_key = "observations"
-    #: `DreamAdaptor.store_calls_per_tick` 1 keeps the
-    #: default bound at one `store_timeout_seconds`, which every fake
-    #: below returns inside.
+    #: `DreamAdaptor.store_calls_per_tick` is 1, which keeps the default bound
+    #: at one `store_timeout_seconds`, which every fake below returns inside.
     store_calls_per_tick = 1
 
     def __init__(
@@ -473,8 +472,7 @@ async def test_a_well_formed_empty_return_is_nothing_found_and_still_commits(
     """The decay path. `commit(key, ())` is a REAL call a sink may act on:
     a sink whose state decays on a clock rather than on new input needs the
     empty call to do it, so treating an empty result as "nothing to do, skip
-    the call" silently fades nothing. The note curator's expiry sweep is such a
-    sink."""
+    the call" silently fades nothing."""
     sink = _Sink()
     runtime, metrics = _runtime(monkeypatch, raw='{"observations": []}')
 
@@ -792,7 +790,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # (`lineage.render_room`), so a unit-keyed run without a home room has none.
         "character_read",
         # `online_now` answers about the ROOM's own
-        # members — the invoking conversation's roster is its input domain
+        # members — the invoking conversation's roster is its input domain,
         # which a unit-keyed Dreamer tick does not have.
         # The PROACTIVE decide turn reaches it through the home-room grant
         # with its per-build input-domain override, never through
@@ -1199,14 +1197,13 @@ def test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room():
     redden a test.
     `test_without_a_grant_the_build_is_byte_for_byte_the_old_one` passes
     `unit="friends"` and populates `home_rooms`, so it exercises the unit
-    branch only, and the one ungranted scope-keyed adaptor shipped
-    (`NoteCandidateAdaptor`) declares `tools = frozenset()`, so `build`
-    returns at the `if not wanted` guard before any room is constructed.
+    branch only; and a scope-keyed `build` that asks for no tool returns at
+    the `if not wanted` guard before any room is constructed.
 
-    It goes live the moment a scope-keyed adaptor declares a tool without a
-    grant — the drift `AdaptorGrant` exists to stop — so the pin is on the
-    ROOM's SHAPE rather than on a byte comparison: what must hold is
-    «closed», not «identical to the call I happened to record»."""
+    This test asks for a tool with no grant, the drift `AdaptorGrant` exists
+    to stop, so the pin is on the ROOM's SHAPE rather than on a byte
+    comparison: what must hold is «closed», not «identical to the call I
+    happened to record»."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
         registry=registry, store=None, persons=None, honcho=None,

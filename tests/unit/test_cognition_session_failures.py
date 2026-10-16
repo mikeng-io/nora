@@ -1,5 +1,5 @@
 """What a session's verbs do when a store fails part-way, and when the model's tool
-calls run at the same time .
+calls run at the same time.
 
 **Part-way failures.** The pace verbs are not ledger-only: `wake_at`, `wake_move` and
 `wake_cancel` change a real `self` stimulus as well as the ledger. A failure after the

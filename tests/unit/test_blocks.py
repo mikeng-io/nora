@@ -391,8 +391,8 @@ def test_a_call_site_cannot_write_the_blocks_OWN_framing_through_attrs():
     normalisation short of its claim: XML allows whitespace around `=`, so
     `description ="…"` is a `description` attribute to any reader.
     """
+    # The last three keys bypass a bare `in` test.
     for key in ("description", "fields",
-    # Keys that bypass a bare `in` test.
                 "description ", ' x" description', "\ndescription"):
         with pytest.raises(ValueError):
             ContextBlock(name="notes", order=1, body="x", attrs=((key, "EVIL"),))

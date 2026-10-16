@@ -224,7 +224,7 @@ class MediaComprehension:
             # work CAN contain a generation, and every branch below this line is a
             # model call — `MediaInterpreter.describe` for a photo or a clip,
             # `.summarize` for a voice note's transcript — so the span is declared
-            # `generation`, not `plumbing`. `root=True` keeps it its OWN trace: it
+            # `generation`, not `plumbing`. `attached(None)` keeps it its OWN trace: it
             # does not hold `ingest.media` open.
             with attached(None), span(
                 "comprehend",

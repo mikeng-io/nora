@@ -1,5 +1,5 @@
 """`CharacterNoraAdaptor` — her own account in one unit, from how its people
-responded to her .
+responded to her.
 
 The property this piece exists for is the ECHO RULE: her own words alone never
 ground a change to her Character. A revision citing only her sends is refused by the verb.

@@ -1,11 +1,11 @@
 """`feedback.run` — the tag path's semantic write: NORA's replies under the Nora
 aiPeer, into the conversation's session (Honcho v2).
 
-It feeds only Nora's side (the tagger's own message would duplicate the ambient memory_feed,
-DEC-36); the human side is fed by
-`nora.ingest.stages.memory_feed`, so these tests assert that her sent
-messages go under the aiPeer, EACH of them (multi-message safe), into the right
-conversation, and DEC-36 still holds — a human's peer never receives her words.
+It feeds only Nora's side (the tagger's own message would duplicate the ambient
+memory_feed, DEC-36); the human side is fed by `nora.ingest.stages.memory_feed`,
+so these tests assert that her sent messages go under the aiPeer, EACH of them
+(multi-message safe), into the right conversation, and DEC-36 still holds — a
+human's peer never receives her words.
 """
 
 from __future__ import annotations

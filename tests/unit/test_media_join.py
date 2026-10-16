@@ -278,7 +278,7 @@ async def test_the_cost_is_measured_only_when_the_join_actually_ran():
     # adoption's 1000-row backfill and a tag window in one series, where the
     # batch paths (the exact ones where N is not 1) saturate `+Inf` and the tag
     # path is the only thing anybody can read. Asserted on the LATENCY series
-# as well as the count, because they are two separate observations.
+    # as well as the count, because they are two separate observations.
     await join.enrich([_row("[image a3f2c1]")], path="adoption")
     rendered = metrics.render()
     assert 'nora_media_join_seconds_count{path="adoption"} 1.0' in rendered

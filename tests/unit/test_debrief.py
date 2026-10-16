@@ -391,11 +391,10 @@ def test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding
 
 
 async def test_a_second_overflow_writes_nothing_and_the_prior_position_stands():
-    """Fail-closed: an over-long body that survives the retry is not written. Truncating here
-    would be the silent eviction
-    that turns a rolling position into a recent summary; writing the over-long
-    body would be refused by the database anyway. A coherent stale position
-    beats a sentence cut in half."""
+    """Fail-closed: an over-long body that survives the retry is not written.
+    Truncating here would be the silent eviction that turns a rolling position
+    into a recent summary; writing the over-long body would be refused by the
+    database anyway. A coherent stale position beats a sentence cut in half."""
     store = InMemoryStandingStore()
     await store.write(standing=Standing(
         platform="signal", conversation_id="g1", body="the old position",
@@ -728,8 +727,9 @@ async def test_a_normal_fold_advances_the_watermark_to_the_last_row_read():
 
 # --- one call, the prior every turn, a plain count ------------------------
 
-# A fold count the tests below straddle: no fold-count threshold may withhold
-# the prior at or around it.
+# The default of the retired `[standing] rebuild_after_folds` re-derivation
+# ceiling, kept as the fold count the tests below straddle: no fold-count
+# threshold may withhold the prior at or around it.
 _OLD_CEILING = 20
 
 
@@ -1076,9 +1076,9 @@ async def test_a_dead_turn_still_revises_the_position():
 
 
 async def test_the_fold_writes_the_position_and_nothing_else():
-    """The debrief compresses the room's position; it does not create notes. It
-    never sees the unit's open notes and could only create, so every rewording
-    would be a new note that never got revised.
+    """The debrief compresses the room's position; it does not create notes. A
+    debrief that created notes, blind to the unit's open notes, could only
+    create, so every rewording would be a new note that never got revised.
 
     Two halves. `run` is handed no note collaborator at all, so there is no
     path from a fold to the note store to leave switched on. And a model that
@@ -1149,9 +1149,8 @@ def _objective_body() -> str:
 
 def test_the_objective_says_a_finding_is_never_a_commitment():
     """«A finding is a finding»: web text shown at 4000 characters could
-    otherwise be written as her own promise, and a promise in `<standing>` is read on every later
-    turn
-    as hers."""
+    otherwise be written as her own promise, and a promise in `<standing>` is
+    read on every later turn as hers."""
     body = _objective_body()
     assert "when and where I found it" in body
     assert (

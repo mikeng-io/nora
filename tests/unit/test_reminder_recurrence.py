@@ -544,11 +544,11 @@ def test_a_long_outage_resumes_a_sub_day_series_instead_of_ending_it():
 def test_a_long_outage_on_an_interval_calendar_series_does_not_overshoot():
     """The `// rule.interval` in `_floor_index`'s calendar branches.
 
-    Dropping it from all four would leave other tests green. An every-3-days series ten days behind
-    would then floor at index 10 instead of 3 and silently consume six occurrences the requester
-    asked for —
-    `rule.count` spends them either way, so the series would end six firings
-    early with nothing raised.
+    Dropping it from all four would leave other tests green. An every-3-days
+    series ten days behind would then floor at index 10 instead of 3 and
+    silently consume six occurrences the requester asked for — `rule.count`
+    spends them either way, so the series would end six firings early with
+    nothing raised.
     """
     hk = ZoneInfo(HK)
     anchor = datetime(2026, 1, 5, 9, 0, tzinfo=hk).astimezone(UTC)
@@ -567,7 +567,7 @@ def test_a_long_outage_on_an_interval_calendar_series_does_not_overshoot():
 
 
 def test_an_until_bound_ends_a_sub_day_series_at_the_right_occurrence():
-    """`plan_successor` and `until` on a SUB-DAY rule , the two halves tested together.
+    """`plan_successor` and `until` on a SUB-DAY rule: the two halves tested together.
 
     Testing `until` only through `occurrence_at`, or `plan_successor` with no `until`, would miss a
     series that ends early because of `until`.

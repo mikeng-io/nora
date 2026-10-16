@@ -1,7 +1,6 @@
 """`scripts/google_auth.py` asks for every Google service's scope at once and
 nothing else, offline, with a consent screen every time, no earlier grants
-folded in, and refuses a grant that could write undeclared
-."""
+folded in, and refuses a grant that could write undeclared."""
 
 from __future__ import annotations
 

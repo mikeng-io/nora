@@ -16,7 +16,7 @@ Four properties, and each is a mutation entry in
 1. the block RENDERS, and only on the participation occasion;
 2. the turn makes no read of her own representation: the `<self>` block
    (her Character · Nora account) stands where `<self_card>` was;
-   3. the hedge is `<peer_history>`'s clause for clause — «undated, therefore
+3. the hedge is `<peer_history>`'s clause for clause — «undated, therefore
    not standing» included, which is the whole of what keeps a remembered joke
    («the room calls me 管理員») a record rather than a standing directive;
 4. it is BOUNDED on both axes and FAIL-SOFT on every axis: a Honcho failure

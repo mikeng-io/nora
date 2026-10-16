@@ -526,8 +526,8 @@ async def test_the_read_is_its_own_trace_and_reaches_the_collector(
     would hold the ingest trace open for as long as a chunked video read takes.
     `attached(None)` detaches first.
 
-    The span declares `generation` via `generation(root=True)`, not `plumbing`,
-    so the sampler keeps it. Every branch under this span is a model call, so
+    The span declares `TRACE_KIND: "generation"`, not `plumbing`, so the
+    sampler keeps it. Every branch under this span is a model call, so
     R-76 keeps it. The fixture is built with production's own sampler, and:
 
       * it is EXPORTED — a root declaring `generation` is kept; and
@@ -562,11 +562,10 @@ async def test_the_read_is_its_own_trace_and_reaches_the_collector(
         "held open for as long as a video read takes"
     )
     assert spans["comprehend"].parent is None, "the comprehension span is not a root"
-    # The R-76 root declaration: `generation` is declared via
-    # `generation(root=True)`. This span is not itself a model-invoke span
-    # (there is no child one for the vision call either; see
-    # `nora.agent.telemetry`'s module docstring), only the root a model call
-    # CAN happen under.
+    # The R-76 root declaration: the span's `TRACE_KIND` is `generation`. This
+    # span is not itself a model-invoke span (there is no child one for the
+    # vision call either; see `nora.agent.telemetry`'s module docstring), only
+    # the root a model call CAN happen under.
     assert spans["comprehend"].attributes[TRACE_KIND] == "generation"
 
 

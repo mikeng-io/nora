@@ -25,7 +25,7 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # what turns a small index back into a full schema dump. Each line is ADR
 # 0007's L1 paragraph (what + WHEN), pinned by
 # `test_the_opening_paragraph_is_an_l1`. The ceiling is deliberately not sized
-# to the current value: it leaves about five lines of headroom over the real
+# to the current value: it leaves headroom over the real
 # block. Raise it only for a new tool, from the MEASURED block and with the
 # tool's own line count, never for a line rewritten to fit; `MEAN_CEILING`
 # below binds per-line drift.
@@ -143,8 +143,8 @@ def test_confusable_pairs_are_discriminated_in_the_catalogue_itself():
 
     `where_is`/`where_been` is the pair most easily confused: unless `where_is`
     says RIGHT NOW, both lines read as questions about the past. The other three
-    discriminate already; they are pinned
-    so a docstring edit cannot quietly remove the distinction.
+    discriminate already; they are pinned so a docstring edit cannot quietly
+    remove the distinction.
     """
     by_name = {line.split(" — ")[0][2:]: line for line in _lines()}
 

@@ -145,8 +145,8 @@ def test_a_second_concurrent_tag_for_the_same_conversation_is_queued_not_dropped
 
 def test_a_tag_arriving_at_a_full_queue_is_dropped_with_its_own_counter():
     """R-30's flood bound: when the queue is already at the slots' `maxlen`, the
-    NEWEST arrival is shed — a distinct outcome and a distinct counter from both
-    the debounce drop."""
+    NEWEST arrival is shed — a distinct outcome and a distinct counter from the
+    debounce drop."""
     metrics = Metrics()
     slots = _slots(held=(G1,), depth=QUEUE_MAX)
     identity = _identity()

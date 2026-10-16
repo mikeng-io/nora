@@ -1,10 +1,12 @@
-"""Information parity of the Cognition prompt: the FORMAT changed, and nothing it said was lost.
+"""Information parity of the Cognition prompt: the FORMAT changed, and nothing it
+said was lost.
 
 The oracle is the capture of the OLD format
-(`tests/fixtures/cognition_render_pre3b_baseline.json`, never regenerated). The cases are the
-ones that capture was made from (`test_cognition_render_goldens.CASES`), rendered now through
-the NEW renderer. Each side is read into FACTS, by what it is (the old by pattern over its
-lines, the new by parsing it as XML, which is itself a property: every case renders
+(`tests/fixtures/cognition_render_pre3b_baseline.json`, never regenerated). The
+cases are the ones that capture was made from
+(`test_cognition_render_goldens.CASES`), rendered now through the NEW renderer.
+Each side is read into FACTS, by what it is (the old by pattern over its lines,
+the new by parsing it as XML, which is itself a property: every case renders
 well-formed), and the facts are compared:
 
 * every message id, author, time with its relative age, edit flag and cue;

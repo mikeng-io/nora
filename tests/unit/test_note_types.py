@@ -158,7 +158,7 @@ def test_an_empty_title_is_refused():
 
 
 def test_an_empty_description_is_refused():
-    """`description` is the when-to-reach-for-this line, the skills-loader shape
+    """`description` is the when-to-reach-for-this line, the skills-loader shape.
     Without it the index says a note exists and nothing about
     when it matters."""
     with pytest.raises(ValueError, match="description"):

@@ -444,8 +444,10 @@ def _() -> str:
 @_case("budget-drops-exactly-one-earlier-message")
 def _() -> str:
     stims, recs = _chatty(count=5, width=80)
-    # A literal, not a value measured from the format under test, so the budget
-    # is the same whatever the rendering.
+    # 645 is the old format's `need - 40` for these five rows (685 characters of
+    # old lines): a literal, so the budget is the same whatever the rendering.
+    # Only the old format drops exactly one message at it; the parity test
+    # treats every `budget-*` case as a tight budget.
     return _render(stims, _g(*recs), budget=cr.RenderBudget(
         record_chars=645, min_item_chars=50,
     ))

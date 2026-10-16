@@ -753,11 +753,11 @@ async def test_no_preview_source_means_no_card_and_no_failure():
 
 # ------------------------------------------------- styles beside mentions (DEC-82)
 #
-# A mention range and a style range are
-# produced by DIFFERENT code, at different times, over one string — the styles
-# by `render_markdown` before the guards run, the mentions by `compose` after —
-# and Signal renders a mismatch rather than rejecting it. Everything below is
-# written so that an off-by-one in EITHER producer is visible.
+# A mention range and a style range are produced by DIFFERENT code, at
+# different times, over one string — the styles by `render_markdown` before the
+# guards run, the mentions by `compose` after — and Signal renders a mismatch
+# rather than rejecting it. Everything below is written so that an
+# off-by-one in EITHER producer is visible.
 
 
 async def test_a_bold_span_and_a_mention_index_the_same_final_string():

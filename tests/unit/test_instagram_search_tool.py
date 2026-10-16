@@ -360,7 +360,7 @@ async def test_an_identifier_or_coordinate_never_leaves_in_a_search(world, query
 
 
 async def test_every_request_is_a_get_on_the_accounts_resource(world):
-    """Read-only at the client layer : the
+    """Read-only at the client layer: the
     bridge also serves writes, so on this path the client is what keeps them
     out of reach."""
     fake, search = world()

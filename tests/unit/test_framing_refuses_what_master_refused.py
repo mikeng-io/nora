@@ -7,8 +7,8 @@ put the literal «None» or «5» to the model, where
 case below raises the exception named here; the builders must raise the same
 one, never render a widened input.
 
-The header fields master ESCAPED (`escape(x)` takes any object) keep accepting
-any object: that is not a widening, and the goldens hold their bytes.
+The header fields the replaced code escaped (`escape(x)` takes any object) keep
+accepting any object: that is not a widening, and the goldens hold their bytes.
 """
 
 from __future__ import annotations

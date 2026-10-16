@@ -83,7 +83,7 @@ async def test_it_cites_only_what_its_rooms_cultures_cite_and_writes_under_the_u
 
 async def test_no_citable_room_culture_or_no_new_revision_calls_no_model():
     """A room culture written without the verb cites nothing, so a unit account
-    could rest on nothing: no model call and no new revision."""
+    could rest on nothing: no model call. No new revision means none either."""
     store = InMemoryCultureStore()
     await store.append(key="room-a", body="old, uncited", written_at=T0, established_by="x")
     assert await _adaptor(store).inputs(key=KEY, batch=("room-a",)) == ""

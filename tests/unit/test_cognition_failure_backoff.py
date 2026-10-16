@@ -67,7 +67,7 @@ async def _run(rig: Rig, *, ticks: int, chatty: bool) -> None:
 
 
 def _unguarded() -> WakePolicy:
-    """The behaviour before the fix: the cooldown and nothing else."""
+    """The cooldown alone, no backoff."""
     return dataclasses.replace(
         POLICY, backoff_max_seconds=POLICY.cooldown_seconds, max_consecutive_failures=10**9,
     )
@@ -134,7 +134,7 @@ def test_the_failed_mark_is_the_newest_failed_wakes_watermark():
     assert only_infra == (1, 0, None)
 
 
-# ---- the measured day ------------------------------------------------------------
+# ---- the positive control ------------------------------------------------------------
 
 async def test_an_always_failing_agenda_without_the_fix_is_288_sessions_a_day():
     """The positive control: the measurement means something only if the same

@@ -92,12 +92,12 @@ BLANK_PAYLOADS = {
 #: Builders with no member-authored content at all, excluded from the corpus
 #: with the reason rather than left unlisted.
 #:
-#: `prefill.header` is the CACHED message — the large cached prefix
-#: — and it holds the catalogue of what she can see, never
-#: any of it. `BlockKey`'s whole docstring is the argument for why: one volatile
-#: byte in that message ends the prefix hit for everything after it. A builder
-#: that renders nothing a member typed has nothing for this file to say about
-#: it, and that is the property, not a gap.
+#: `prefill.header` is the CACHED message — the large cached prefix — and it
+#: holds the catalogue of what she can see, never any of it. `BlockKey`'s whole
+#: docstring is the argument for why: one volatile byte in that message ends the
+#: prefix hit for everything after it. A builder that renders nothing a member
+#: typed has nothing for this file to say about it, and that is the property,
+#: not a gap.
 _NO_MEMBER_CONTENT = {"prefill.header"}
 
 #: `(builder, payload)` pairs where something UPSTREAM of the renderer refuses

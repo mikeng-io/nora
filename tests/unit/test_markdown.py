@@ -235,8 +235,8 @@ def test_a_render_that_raises_degrades_to_the_draft_with_no_styles(monkeypatch):
     ["**投資**", "## 推介", "###", "*", "3 * 4", "**a *b* c**", "😅 **好正**"],
 )
 def test_no_non_empty_reply_is_ever_rendered_empty(text):
-    """Because the reverse is the obvious guess: this cannot rescue R-4 and it
-    cannot CAUSE it either."""
+    """DEC-82's promise: rendering cannot rescue R-4 and it cannot CAUSE it
+    either."""
     assert render_markdown(text).text.strip()
 
 

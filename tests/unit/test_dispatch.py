@@ -1,4 +1,4 @@
-"""`Dispatcher`'s room-verdict branch .
+"""`Dispatcher`'s room-verdict branch.
 
 An untagged message in an opted-in room arrives with
 `EngageDecision(engage=False, relevance_gate=True)`. It is NOT a tag admission:

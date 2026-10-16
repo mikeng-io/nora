@@ -398,7 +398,7 @@ async def test_the_automatic_comprehension_question_asks_for_speech():
     the transport it travelled: the configured `opencode-go` lane.
 
     The identity-number request rides with it (the operator's line: phone, ID
-    and account numbers ). It is a request to a
+    and account numbers). It is a request to a
     model, not a screen; the DEC row records the exposure that remains."""
     client = _ChunkingVision()
     comprehender = MediaComprehender(

@@ -261,7 +261,7 @@ async def test_with_no_public_url_nothing_is_armed_and_no_link_is_touched() -> N
 
 
 async def test_the_link_goes_with_one_message_not_every_message_of_the_turn() -> None:
-    """The note is not appended to every message of a turn, the canned fallback
+    """The link is not appended to every message of a turn, the canned fallback
     included: a message that carried it settles it; the next one does not."""
     adapter = _FakeAdapter()
     handle = _handle(adapter, Metrics())

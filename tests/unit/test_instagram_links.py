@@ -103,9 +103,9 @@ def test_a_story_ring_link_has_no_frame_id():
 
 
 def test_the_transcript_render_keeps_its_measured_shapes():
-    """The adapter passes `story_ring=False`: a shared item's kind applies to the
-    three-segment story form only, so a two-segment one keeps no label (the
-    adapter renders it as `post`)."""
+    """The adapter passes `story_ring=False`: only the three-segment story form
+    is labelled; a two-segment one gets no label (the adapter renders it as
+    `post`)."""
     ring = "https://www.instagram.com/stories/some.account/"
     assert link_shape(ring) == "story"
     assert link_shape(ring, story_ring=False) is None

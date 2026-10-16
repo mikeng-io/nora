@@ -383,7 +383,7 @@ def test_concurrent_resolves_do_not_each_build_a_replacement() -> None:
 def test_the_default_extractors_rotate() -> None:
     """Pins the WIRING, not just the class: rotation that `_default_extractor`
     does not actually use repairs nothing, and the tests above would stay
-    green without it."""
+    green even if the default did not rotate."""
     assert isinstance(_default_extractor(), _RotatingExtractor)
     assert isinstance(_default_flat_extractor(), _RotatingExtractor)
 

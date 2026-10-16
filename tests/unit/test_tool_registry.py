@@ -198,7 +198,7 @@ def test_the_registry_exposes_every_declared_tool():
         # the Tier 4 forecast behind where_been's own guard.
         "routine_read",
         # the LIVE digital-activity tool (who is
-        # online / playing / in voice right now) — the proactive cross-check.
+        # online / playing / in voice right now), used by the proactive decide turn.
         "online_now",
         "media_fetch",
         # a shared file link, read as text.
@@ -300,7 +300,7 @@ def test_budgets_match_todays_table():
         "now": 4, "load_transcript": 4,
         # 3 — the cap on how many messages one tag may send (DEC-42, DEC-95).
         # 3 holds a word to a second person alongside the first reply; a
-        # higher cap has been spent on rewordings of one point. Still the spam
+        # higher cap invites rewordings of one point. Still the spam
         # cap: `turns` and the token ceiling are far away, so this number is
         # the only thing bounding one inbound message's outbound volume.
             "send_reply": 3, "search_gifs": 1, "send_gif": 1,
@@ -963,7 +963,7 @@ READ_ONLY = frozenset({
     # R-86 extended: the same three layers,
     # with a client that only ever issues GET.
     "instagram_read",
-    # R-86 again : a one-row vocabulary, and the same GET-only client.
+    # R-86 again: a one-row vocabulary, and the same GET-only client.
     "instagram_search",
     # reads a file in the room's own workspace and
     # writes nothing there (its audit row is a log of the call, like

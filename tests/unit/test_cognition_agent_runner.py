@@ -1,4 +1,4 @@
-"""`LiveCognitionAgentRunner` a failure or a timeout is
+"""`LiveCognitionAgentRunner`: a failure or a timeout is
 RAISED, never swallowed into a normal `CognitionRunResult`.
 
 `CognitionSessionRunner` records a session `failed`/`timeout` only when the

@@ -81,8 +81,8 @@ class _ReasoningCapturingRunner(FakeAgentRunner):
 
 async def test_reasoning_content_survives_into_a_retained_tag_trace():
     """Drive a scripted turn whose assistant message includes a
-    `reasoningContent` block through the real extraction+retention path
-, then read the trace back and assert the block is present.
+    `reasoningContent` block through the real extraction+retention path,
+    then read the trace back and assert the block is present.
 
     Red-on-revert drill: comment out
     the `reasoningContent` block in `_ReasoningCapturingRunner.invoke` above,

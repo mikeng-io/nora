@@ -1,7 +1,7 @@
 """`route` takes back a place a presence read NAMED this turn: «a home of
-theirs» becomes routable with no handle in
-any result, resolved server side behind the SAME R-31 guard as the read that
-named it, and its coordinate never reaches the model, the reply or a link."""
+theirs» becomes routable with no handle in any result, resolved server side
+behind the SAME R-31 guard as the read that named it, and its
+coordinate never reaches the model, the reply or a link."""
 
 from __future__ import annotations
 

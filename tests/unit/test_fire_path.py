@@ -1902,10 +1902,10 @@ def fire_spans():
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-# The RAW slot, not `get_tracer_provider()`: with no provider set that
-# returns the global PROXY, and restoring the proxy into the slot makes it
-# resolve to itself, so every later `get_tracer` in the same worker
-# recurses.
+    # The RAW slot, not `get_tracer_provider()`: with no provider set that
+    # returns the global PROXY, and restoring the proxy into the slot makes it
+    # resolve to itself, so every later `get_tracer` in the same worker
+    # recurses.
     previous = trace._TRACER_PROVIDER
     trace._TRACER_PROVIDER = provider
     try:

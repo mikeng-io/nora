@@ -1644,7 +1644,7 @@ async def test_the_reply_does_not_wait_for_the_reaction():
     .placed.wait(), timeout=1.5)` before replying, time out, and continue:
     `emojis` and the task-tracking check both still pass, because the
     reaction is still exactly as unresolved as before, yet the reply was 1.5s
-    late. `elapsed < 1.0` is kept for exactly that: 4x the 0.23s wall-clock
+    late. `elapsed < 1.0` is kept for exactly that: 4x the 0.23s
     wall-clock flake a loaded box shows, so it catches a bounded wait of
     >= 1.0s. It does NOT catch one under 1.0s — nothing in this test does.
 

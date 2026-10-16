@@ -781,9 +781,9 @@ async def test_a_write_failure_never_changes_what_the_trigger_decides() -> None:
 
 
 async def test_without_a_store_nothing_survives_a_restart() -> None:
-    """The dormant default, pinned rather than assumed: with `store=None` this class is stateless —
-    every offline and eval wiring
-    gets that, and a change to it would be a change to what they measure."""
+    """The dormant default, pinned rather than assumed: with `store=None` this class keeps its
+    cursors in memory only — every offline and eval wiring gets that, and a
+    change to it would be a change to what they measure."""
     clock = _Clock()
     first = _trigger(_Speak(outcome=SENT), clock)
     first.note_message(_msg())
