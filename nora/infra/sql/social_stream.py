@@ -952,3 +952,15 @@ class SqlSocialStreamStore:
             await conn.execute(sa.insert(BLOB_TOMBSTONE).values(
                 sha256=sha256, kind="story_frame", reason=reason, deleted_at=deleted_at,
             ))
+
+
+def readable_social_store(
+    engine: AsyncEngine, persons: Any, *, metrics: Any = None,
+) -> SqlSocialStreamStore:
+    """The social stream's store for every reader: the poller's,
+    `social_read`'s, a person's Character session's and the Rollup's. It
+    leaves out each item of a person whose `identity.toml` block sets
+    `social = false`, under their current id and every retired one
+    (`Persons.social_off_ids`). The one store built without it is the story
+    expiry's, which deletes every person's frames' bytes at their bound."""
+    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)

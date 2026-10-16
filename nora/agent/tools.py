@@ -3132,12 +3132,27 @@ _SOCIAL_ITEM_CUT = (
     "An item with `more_seen` had more pictures or videos than are shown; "
     "`seen` covers the first of them only."
 )
-#: Several people go by the name asked; `could_be` names each one so that
-#: naming it again reads that person alone.
+#: Several people go by the name asked; `could_be`, when given, names each
+#: one so that naming it again reads that person alone.
 _AMBIGUOUS_PERSON = (
     "More than one person here goes by that. Ask which one, or call again "
     "with one of could_be."
 )
+#: Several people go by the name asked and nothing they are called tells them
+#: apart, so there is nothing to call again with.
+_AMBIGUOUS_ASK = "More than one person here goes by that. Ask which one."
+
+
+def _ambiguous_person(
+    matches: Sequence[PersonRef], among: Sequence[PersonRef], *, by_id: bool,
+) -> dict:
+    """`ambiguous`, with `could_be` only when every candidate has something
+    that names them alone: a list that offers some and not others would read
+    as the whole set (`room.tell_apart`; ids only where `by_id`)."""
+    labels = tell_apart(matches, among, by_id=by_id)
+    if any(label is None for label in labels):
+        return {"status": "ambiguous", "note": _AMBIGUOUS_ASK}
+    return {"status": "ambiguous", "could_be": labels, "note": _AMBIGUOUS_PERSON}
 _SOCIAL_WITHHELD = (
     "Some items carry something that can't be repeated here and are not "
     "shown. Do not read the rest as complete."
@@ -5581,6 +5596,11 @@ def build_tool_specs(
     # THIS room's people (R-21), so «not here» and «nobody» are one answer.
     # Neither tool writes, builds or folds: the read is a SELECT.
 
+    # A person id reaches the model, and is taken back as a name, only in a
+    # Cognition session, whose reads already cite rows by their keys. A tag
+    # turn's model is never handed one (instagram-adoption/18).
+    by_id = dream_adaptor == COGNITION_ADAPTOR
+
     async def _lineage_target(tool: str) -> tuple[RenderRoom, RoomFacts, Any] | None:
         """This room's `RenderRoom` with its live roster read, the room's own
         facts and the roster view; `None` (counted) when the room is not in
@@ -5661,20 +5681,17 @@ def build_tool_specs(
                 _record(metrics, "rollup_read", "nothing_found", reason="subject")
                 return {"status": "nothing_found", "note": _ROLLUP_NO_PERSON}
         for name in [] if everyone else names:
-            # By name (`view.find`), or by the person id `could_be` gives for
-            # two people who share every name they go by.
+            # By name (`view.find`), or, in Cognition, by the person id
+            # `could_be` gives for two people who share every name they go by.
             matches = view.find(name) or tuple(
-                p for p in view.people if p.person_id == name
+                p for p in view.people if by_id and p.person_id == name
             )
             if not matches:
                 _record(metrics, "rollup_read", "nothing_found", reason="subject")
                 return {"status": "nothing_found", "note": _ROLLUP_NO_PERSON}
             if len(matches) > 1:
                 _record(metrics, "rollup_read", "ambiguous")
-                return {
-                    "status": "ambiguous", "could_be": tell_apart(matches, view.people),
-                    "note": _AMBIGUOUS_PERSON,
-                }
+                return _ambiguous_person(matches, view.people, by_id=by_id)
             people.append(matches[0])
         subjects = tuple(dict.fromkeys(persons.subject_id_for(p.person_id) for p in people))
         try:
@@ -5872,17 +5889,14 @@ def build_tool_specs(
             if entry_permits(LineageEntry(SOCIAL, subject=pid), target, origin=None)
         ]
         matches = find_by_name(listed, str(person)) or tuple(
-            ref for ref in listed if ref.person_id == str(person).strip()
+            ref for ref in listed if by_id and ref.person_id == str(person).strip()
         )
         if not matches:
             _record(metrics, "social_read", "nothing_found", reason="person")
             return {"status": "nothing_found", "note": _SOCIAL_NO_PERSON}
         if len(matches) > 1:
             _record(metrics, "social_read", "ambiguous")
-            return {
-                "status": "ambiguous", "could_be": tell_apart(matches, listed),
-                "note": _AMBIGUOUS_PERSON,
-            }
+            return _ambiguous_person(matches, listed, by_id=by_id)
         who = matches[0]
         # Every id their items may be recorded under: an item recorded before
         # a rename carries the retired id.

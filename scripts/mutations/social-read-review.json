@@ -42,25 +42,25 @@
   "target": "tests/unit/test_tool_selection_cognition_corpus.py::test_no_real_name_or_quoted_message_appears_in_any_case_input"
  },
  {
-  "name": "4 composition: the reader store drops opted_out",
-  "file": "nora/app/composition.py",
+  "name": "4 helper: the reader store drops opted_out",
+  "file": "nora/infra/sql/social_stream.py",
   "old": "    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)\n",
   "new": "    return SqlSocialStreamStore(engine, metrics=metrics)\n",
-  "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/infra/test_social_read.py::test_an_opted_out_person_stays_out_under_a_retired_id tests/infra/test_social_read.py::test_a_person_who_opted_out_is_never_read_even_where_they_are_listed"
+  "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/infra/test_social_read.py::test_an_opted_out_person_stays_out_under_a_retired_id tests/architecture/test_social_reads_exclude_every_opted_out_id.py"
  },
  {
-  "name": "4 composition: the opt-out leaves out the current id only",
-  "file": "nora/app/composition.py",
+  "name": "4 helper: the opt-out leaves out the current id only",
+  "file": "nora/infra/sql/social_stream.py",
   "old": "    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)\n",
   "new": "    return SqlSocialStreamStore(engine, opted_out=frozenset(p for p in persons.by_person if persons.social_off(p)), metrics=metrics)\n",
-  "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/infra/test_social_read.py::test_an_opted_out_person_stays_out_under_a_retired_id"
+  "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/architecture/test_social_reads_exclude_every_opted_out_id.py"
  },
  {
   "name": "4 composition: social_read's store is built beside the helper, without opted_out",
   "file": "nora/app/composition.py",
   "old": "        social_items=readable_social_store(engine, persons),\n",
   "new": "        social_items=SqlSocialStreamStore(engine),\n",
-  "target": "tests/unit/test_social_store_wiring.py::test_only_the_helper_and_the_story_expiry_build_the_store"
+  "target": "tests/architecture/test_social_reads_exclude_every_opted_out_id.py::test_every_social_reader_is_built_through_the_helper"
  },
  {
   "name": "5 store: items_of reads the first id only",
@@ -93,30 +93,30 @@
  {
   "name": "7 social_read: namesakes offered by bare name",
   "file": "nora/agent/tools.py",
-  "old": "                \"status\": \"ambiguous\", \"could_be\": tell_apart(matches, listed),\n",
-  "new": "                \"status\": \"ambiguous\", \"could_be\": [p.name for p in matches],\n",
+  "old": "            return _ambiguous_person(matches, listed, by_id=by_id)\n",
+  "new": "            return {\"status\": \"ambiguous\", \"could_be\": [p.name for p in matches]}\n",
   "target": "tests/infra/test_social_read.py::test_two_people_with_one_name_are_offered_by_what_tells_them_apart"
  },
  {
   "name": "7 social_read: a person id does not resolve",
   "file": "nora/agent/tools.py",
-  "old": "        matches = find_by_name(listed, str(person)) or tuple(\n            ref for ref in listed if ref.person_id == str(person).strip()\n        )\n",
+  "old": "        matches = find_by_name(listed, str(person)) or tuple(\n            ref for ref in listed if by_id and ref.person_id == str(person).strip()\n        )\n",
   "new": "        matches = find_by_name(listed, str(person))\n",
   "target": "tests/infra/test_social_read.py::test_two_people_with_one_name_are_offered_by_what_tells_them_apart"
  },
  {
   "name": "7 rollup_read: namesakes offered by bare name",
   "file": "nora/agent/tools.py",
-  "old": "                    \"status\": \"ambiguous\", \"could_be\": tell_apart(matches, view.people),\n",
-  "new": "                    \"status\": \"ambiguous\", \"could_be\": [p.name for p in matches],\n",
-  "target": "tests/unit/test_rollup_read_namesakes.py::test_namesakes_are_offered_by_what_tells_them_apart"
+  "old": "                return _ambiguous_person(matches, view.people, by_id=by_id)\n",
+  "new": "                return {\"status\": \"ambiguous\", \"could_be\": [p.name for p in matches]}\n",
+  "target": "tests/unit/test_rollup_read_namesakes.py::test_in_cognition_namesakes_are_offered_by_what_tells_them_apart"
  },
  {
   "name": "7 rollup_read: a person id does not resolve",
   "file": "nora/agent/tools.py",
-  "old": "            matches = view.find(name) or tuple(\n                p for p in view.people if p.person_id == name\n            )\n",
+  "old": "            matches = view.find(name) or tuple(\n                p for p in view.people if by_id and p.person_id == name\n            )\n",
   "new": "            matches = view.find(name)\n",
-  "target": "tests/unit/test_rollup_read_namesakes.py::test_namesakes_are_offered_by_what_tells_them_apart"
+  "target": "tests/unit/test_rollup_read_namesakes.py::test_in_cognition_namesakes_are_offered_by_what_tells_them_apart"
  },
  {
   "name": "7 tell_apart: always the person id",
@@ -138,5 +138,26 @@
   "old": "        no `gone` or `hidden` state row.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n            s.c.state.in_(HIDING_STATES),\n        )\n",
   "new": "        no `gone` or `hidden` state row.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n        )\n",
   "target": "tests/infra/test_social_read.py::test_a_changed_tag_shows_the_new_place_and_a_removed_one_shows_none"
+ },
+ {
+  "name": "9 tag turn: an indistinguishable namesake is offered by person id",
+  "file": "nora/agent/tools.py",
+  "old": "    by_id = dream_adaptor == COGNITION_ADAPTOR\n",
+  "new": "    by_id = True\n",
+  "target": "tests/unit/test_rollup_read_namesakes.py::test_on_a_tag_turn_no_person_id_is_offered_or_taken tests/infra/test_social_read.py::test_outside_cognition_no_person_id_is_offered_or_taken"
+ },
+ {
+  "name": "9 tell_apart: the id fallback ignores by_id",
+  "file": "nora/agent/room.py",
+  "old": "            p.person_id if by_id else None,\n",
+  "new": "            p.person_id,\n",
+  "target": "tests/unit/test_rollup_read_namesakes.py::test_on_a_tag_turn_no_person_id_is_offered_or_taken tests/unit/test_rollup_read_namesakes.py::test_tell_apart_prefers_a_name_that_is_theirs_alone"
+ },
+ {
+  "name": "9 ambiguous: could_be offers the names it has and drops the rest",
+  "file": "nora/agent/tools.py",
+  "old": "    if any(label is None for label in labels):\n        return {\"status\": \"ambiguous\", \"note\": _AMBIGUOUS_ASK}\n",
+  "new": "    labels = [label for label in labels if label is not None]\n",
+  "target": "tests/unit/test_rollup_read_namesakes.py::test_on_a_tag_turn_no_person_id_is_offered_or_taken"
  }
 ]

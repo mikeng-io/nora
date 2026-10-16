@@ -25,10 +25,10 @@ from nora.agent.room import Room
 from nora.agent.social_read import SOCIAL_ITEM_CHARS, SOCIAL_READ_MAX
 from nora.agent.tools import build_tools
 from nora.agent.whereis import Circle
-from nora.app.composition import readable_social_store
+from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.social_stream import MediaItem, SocialItem
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.social_stream import SqlSocialStreamStore
+from nora.infra.sql.social_stream import SqlSocialStreamStore, readable_social_store
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
@@ -161,7 +161,9 @@ def _store(engine, persons) -> SqlSocialStreamStore:
     return readable_social_store(engine, persons)
 
 
-def _tool(engine, tmp_path, *, room_id="ROOM-A", wired=True, metrics=None):
+def _tool(engine, tmp_path, *, room_id="ROOM-A", wired=True, metrics=None,
+          adaptor=COGNITION_ADAPTOR):
+    """Built as a Cognition session builds it, `social_read`'s one surface."""
     (tmp_path / "policy.toml").write_text(_POLICY)
     policy = load_policy(tmp_path / "policy.toml")
     persons = _persons(tmp_path)
@@ -175,6 +177,7 @@ def _tool(engine, tmp_path, *, room_id="ROOM-A", wired=True, metrics=None):
         clock=lambda: NOW,
         social_items=_store(engine, persons) if wired else None,
         lineage=LineagePolicy.from_policy(policy, circles=(circle,)),
+        dream_adaptor=adaptor,
     )
     return {t.tool_name: t for t in tools}["social_read"]
 
@@ -353,6 +356,14 @@ async def test_two_people_with_one_name_are_offered_by_what_tells_them_apart(eng
     wong = await _call(tool, person="Ada Wong")
     assert [i["caption"] for i in first["items"]] == ["the first Ada's"]
     assert [i["caption"] for i in wong["items"]] == ["Ada Wong's"]
+
+
+async def test_outside_cognition_no_person_id_is_offered_or_taken(engine, tmp_path):
+    await _seed(engine, "1", person="p1", caption="the first Ada's")
+    tool = _tool(engine, tmp_path, room_id="ROOM-N", adaptor="")
+    got = await _call(tool, person="Ada")
+    assert got["status"] == "ambiguous" and "could_be" not in got
+    assert (await _call(tool, person="p1"))["status"] == "nothing_found"
 
 
 async def test_an_id_outside_the_rooms_people_reads_nothing(engine, tmp_path):

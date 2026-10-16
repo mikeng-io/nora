@@ -1,10 +1,9 @@
 """How the composition root builds the social stream's stores.
 
-Every reader's store (the poller's, `social_read`'s and Character's) is
-`readable_social_store`, which leaves out an opted-out person's items under
-their current id and every retired one; the one store built without it is the
-story expiry's, which deletes every person's frames' bytes. And each social
-stimulus binds a room of its unit that lists its author
+`readable_social_store` leaves out an opted-out person's items under their
+current id and every retired one (that every reader is built through it is
+`tests/architecture/test_social_reads_exclude_every_opted_out_id.py`). And
+each social stimulus binds a room of its unit that lists its author
 (`social_person_rooms`). Ids and names are placeholders.
 """
 
@@ -15,7 +14,8 @@ import inspect
 from types import SimpleNamespace
 
 import nora.app.composition as composition
-from nora.app.composition import readable_social_store, social_person_rooms
+from nora.app.composition import social_person_rooms
+from nora.infra.sql.social_stream import readable_social_store
 from nora.persons import load_persons
 
 
@@ -27,29 +27,6 @@ def test_a_reader_store_leaves_out_an_opted_out_person_under_every_id(tmp_path):
     persons = load_persons(tmp_path / "identity.toml")
     store = readable_social_store(object(), persons)
     assert store._opted_out == persons.social_off_ids() == frozenset({"cy", "cy_old"})
-
-
-def test_only_the_helper_and_the_story_expiry_build_the_store():
-    """A store built beside the helper would read without the opt-out."""
-    tree = ast.parse(inspect.getsource(composition))
-    helper = next(
-        n for n in ast.walk(tree)
-        if isinstance(n, ast.FunctionDef) and n.name == "readable_social_store"
-    )
-    inside = {id(n) for n in ast.walk(helper)}
-    built = [
-        n for n in ast.walk(tree)
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-        and n.func.id == "SqlSocialStreamStore" and id(n) not in inside
-    ]
-    # The expiry's: the engine alone, by design (it reads every person's frames).
-    assert [(len(n.args), [k.arg for k in n.keywords]) for n in built] == [(1, [])]
-    readers = [
-        n for n in ast.walk(tree)
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-        and n.func.id == "readable_social_store"
-    ]
-    assert len(readers) == 3
 
 
 def _conv(id, unit, persons, *, home=False):

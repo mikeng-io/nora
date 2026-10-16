@@ -193,7 +193,7 @@ from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.revisions import SqlRevisionStore
 from nora.infra.sql.rollup_read import SqlRollupRead
-from nora.infra.sql.social_stream import SqlSocialStreamStore
+from nora.infra.sql.social_stream import SqlSocialStreamStore, readable_social_store
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.stimuli import SqlStimulusStore
@@ -925,18 +925,6 @@ def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
         unit_culture_key(unit): UnitKey(unit=unit, rooms=tuple(rooms))
         for unit, rooms in rooms_of.items()
     }
-
-
-def readable_social_store(
-    engine: Any, persons: Any, *, metrics: Any = None,
-) -> SqlSocialStreamStore:
-    """The social stream's store for every reader: the poller's,
-    `social_read`'s and a person's Character session's. It leaves out each
-    item of a person whose `identity.toml` block sets `social = false`, under
-    their current id and every retired one (`Persons.social_off_ids`). The one
-    store built without it is the story expiry's, which deletes every
-    person's frames' bytes at their bound."""
-    return SqlSocialStreamStore(engine, opted_out=persons.social_off_ids(), metrics=metrics)
 
 
 def social_person_units(allowlist: Any) -> dict[str, tuple[str, ...]]:
