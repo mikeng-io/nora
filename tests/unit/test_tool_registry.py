@@ -323,7 +323,7 @@ def test_budgets_match_todays_table():
         "ask_memory": 4, "search_memory": 4,
         # DEC-316: the graph surface's memory verb, offered instead of the two
         # above while `[memory_index] enabled`; `ask_memory`'s number.
-        "memory_search": 4,
+        "memory_search": 8,
         # 2: the same shape `ask_memory`'s own
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.

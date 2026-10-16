@@ -295,15 +295,24 @@ sub-agent worker); the two never sit side by side.
 | surface | flag | memory verbs offered |
 |---|---|---|
 | Honcho (production, the rollback) | off | `ask_memory`, `search_memory`, `search_memory_workspace`, `who_said`, plus `about`, `remember`, `load_transcript` |
-| graph | on | `memory_search`, plus `about`, `remember`, `load_transcript` |
+| graph | on | `memory_search`, plus `load_transcript` |
 
 - **No Honcho behind `memory_search`.** It is the retrieval service of §4
   and nothing else. `ask_memory` no longer reads the index: with the flag on
   it is not offered.
-- **`about`, `remember` and `load_transcript` stay on both.** The first two
-  are the profile read and the memory write, which Persona (steps 5 to 8)
-  and step 9 replace; they are not search. `load_transcript` is the in-room
-  scroll-back.
+- **The graph surface holds no Honcho tool (operator ruling 2026-10-17,
+  option a).** `about` (the profile read) and `remember` (the person-fact
+  write) read and write Honcho, so they are on the Honcho surface only. A
+  profile question on the graph surface is `memory_search` with `person`.
+  The graph surface has no person-fact write verb until Persona (steps 5 to
+  8) and step 9 give it one; `note_create` keeps an open question, not a
+  settled fact. `load_transcript` reads the room's own rows and stays on
+  both.
+- **Doctrine still names the Honcho tools.** Lines that tell her to record a
+  fact about the speaker, or to ask `about`, `ask_memory` or
+  `search_memory`, are surface-agnostic and stay while production runs the
+  Honcho surface. They need graph-surface wording before the flag goes on
+  (listed in the PR that landed this ruling).
 - **`who_said` is deprecated.** It is absent from the graph surface:
   `memory_search` names who said each hit, and `load_transcript` reads
   around it. It is deleted with the rest of the Honcho surface at step 9.
@@ -332,6 +341,12 @@ sub-agent worker); the two never sit side by side.
   on the other surface is refused per case.
 - **Before the flag goes on.** Per-pass search capacity is lower on the
   graph surface: a tag or fire turn had `ask_memory` 4 + `search_memory` 4 +
-  `who_said` 4 calls and has `memory_search` 4; the culture and
-  character-person passes now spend it inside `max_memory_calls`. Measure it
-  first.
+  `who_said` 4 calls and has `memory_search` 8; the culture and
+  character-person passes now spend it inside `max_memory_calls`.
+- **`memory_search`'s budget is 8 (2026-10-17).** Measured on 40 days of
+  Honcho-surface Langfuse traces: of 35 tag turns with any memory call, 9
+  made 5 to 7 across `ask_memory`, `search_memory`,
+  `search_memory_workspace` and `who_said` combined, and a
+  `dreamer:proactive` pass made up to 8. At 4, about 1 in 4 memory-using tag
+  turns would be cut short. A cap is a ceiling, not a reservation, so the
+  headroom costs nothing on a turn that does not use it.
