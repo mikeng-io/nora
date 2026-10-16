@@ -84,7 +84,7 @@ From [20](20-embedding-bakeoff.md) and PRs #22 and #24:
 |---|---|---|
 | **V1** | migration `0106_memory_vectors`: `memory_node.embedding halfvec(2048)`, `embedding_model text` (the fingerprint: model file hash plus format version), `embedded_at`, `embed_attempts`, `embed_error`, `embed_input` (§1.1); the HNSW expression index; a partial index on the unembedded embeddable nodes, in the pick's order; drop `embedding`. An `embedder` compose service (llama.cpp server with the bake-off's flags, §1.7, the model files bind-mounted read-only, threads capped so turns keep the CPU). `nora/infra/embedder.py`: the one client, over the one formatter `nora/domain/embedder_input.py`. The embedding worker in the runtime's drain loop: a batch per tick, a failure counted and backed off, given up after 8 (§1.5), never a hot loop. `nora memory rebuild --embeddings-only` and a media throttle sized from the measured media count | the upsert clears a vector when its recorded input changes and keeps it otherwise; a poisoned image, an unexpected exception and an oversized text are each one node's recorded failure; a restarted server's new marker still embeds; the worker fills NULLs and records the model; an embedder error leaves the node NULL and counted; a node from another model reads as unembedded; the HNSW index exists and the planner uses it; the bake-off adapter and production format a query, a document and an image identically; schema-parity, row-history and single-head tests |
 | **V2** | S5 seeds: **dense** (the two-stage search, scope inside the scan, `hnsw.iterative_scan` so a scoped search still returns its 50) and **exact** (a literal handle, URL, id or listed person's name contained in the node: the first five pinned ahead of every dense hit, operator 2026-10-16; §4.1). Trigram similarity remains only as the fallback when the embedder is down, and the answer is then `partial`. Coverage: while embeddable nodes are unembedded, the answer is `partial` | the scope suite again with dense seeds; an exact name match ranks above a closer dense neighbour; embedder down gives `partial` with lexical results, never `nothing_found`; an out-of-scope node never returned however near its vector |
-| **V3** | the acceptance run: deploy (asked first), backfill, `[memory_index] enabled = true` in a sandbox, `conversational_recall` no worse than 7/8; `tool_selection --memory-index` re-run on the built index (on an empty index every `memory_search` answers `partial` with no items, so sibling calls after it cannot be judged, PR #32). Then the **adaptive cut** (operator, 2026-10-16): from the cosine spread of labelled hits and misses on the built index, set the dense relevance floor and a score-gap stop, and replace `RESULT_LIMIT = 10` with a token budget (about 2,000 tokens of packet text, not the embedder's 2,000-token input cut of §1; at least one item before the identifier screen, which can still withhold it); `PINNED_LIMIT`, now derived from `RESULT_LIMIT`, becomes its own value (a count or a share of the budget) so half the answer still goes by score; the walk's floor and the `about` seed's 0.6 are set in the same step. `RESULT_LIMIT` is a temporary cap until then | the eval read-back; the cosine spread recorded here |
+| **V3** | the acceptance run: deploy (asked first), backfill, `[memory_index] enabled = true` in a sandbox, `conversational_recall` no worse than 7/8; `tool_selection --memory-index` re-run on the built index (on an empty index every `memory_search` answers `partial` with no items, so sibling calls after it cannot be judged, PR #32). Then the **adaptive cut** (operator, 2026-10-16): from the cosine spread of labelled hits and misses on the built index, set the dense relevance floor and a score-gap stop, and replace `RESULT_LIMIT = 10` with a token budget (about 2,000 tokens of packet text, not the embedder's 2,000-token input cut of §1; at least one item before the identifier screen, which can still withhold it); `PINNED_LIMIT`, now derived from `RESULT_LIMIT`, becomes its own value (a count or a share of the budget) so half the answer still goes by score; the walk's floor and the `about` seed's 0.6 are set in the same step. `RESULT_LIMIT` is a temporary cap until then. **The cut as built: §6** | the eval read-back; the cosine spread recorded here (§6) |
 
 **V3's harness (2026-10-16).** Two things stood between V3 and a reading.
 The eval runs on the deploy host, where `embedder:8080` does not resolve and
@@ -126,13 +126,14 @@ What V2 decided where the plan above left room (DEC-315; the code is
 `nora.infra.sql.memory_read` and `nora.agent.memory_search`):
 
 1. **Three seeds, in order.** Exact hits are seeded first, and the first
-   `PINNED_LIMIT` of them (5, half of `RESULT_LIMIT`), the most terms held
+   `PINNED_LIMIT` of them (5, half of `RESULT_LIMIT`; its own value since
+   §6), the most terms held
    and then the nearest, are **pinned**: each ranks ahead of every other hit
    in the answer (operator, 2026-10-16). An exact hit past those ranks by
    its cosine to the question, as a dense hit does. The review of #31 found
    that with every exact hit pinned, ten literal matches of one name filled
    all ten slots and even a dense hit at cosine 1.0 never showed; half the
-   answer now always goes by score. Then dense, the question embedded once
+   answer then went by score (since §6, all but the five pinned). Then dense, the question embedded once
    with the query instruction. The trigram seed runs when there is no query
    vector, and beside the dense seed over the nodes holding no vector of
    the current model, waiting for one or given up on (§4.5). This replaces 25 §4 step 2's «fused by reciprocal rank»: there is
@@ -182,7 +183,8 @@ What V2 decided where the plan above left room (DEC-315; the code is
    its filter.
 4. **Score.** A dense seed's relevance is its cosine. An exact seed's is 1
    (literal containment, which is what the lexical seed also scores 1). The
-   walk's floor stays at 0.1. **Consequence:** a dense search returns its
+   walk's floor stays at 0.1 (in V2; V3 floors a cosine-scored seed at
+   0.38 and keeps 0.1 for hops, §6). **Consequence, in V2:** a dense search returns its
    nearest even when nothing is relevant, so `nothing_found` comes only
    from an empty scope or vectors orthogonal to the question. A higher
    floor needs the cosine distribution of real hits and misses, which V3
@@ -191,7 +193,8 @@ What V2 decided where the plan above left room (DEC-315; the code is
    fixed 0.6** (`PERSON_SEED_SCORE`, a node `about` the named person) is
    unchanged and may outrank a true dense hit, whose cosine is typically
    0.3 to 0.6. It is a V3 measurement item beside the floor: read the
-   cosines of real hits off the backfilled index, then set both.
+   cosines of real hits off the backfilled index, then set both. **Set in
+   V3 (§6):** a dense floor of 0.38 and an `about` score of 0.45.
 5. **Statuses.** The answer is `partial` in three cases:
    - the seeds were lexical. That happens when `[memory_index] embed` is
      off (so `enabled` on with `embed` off answers `partial` every time),
@@ -350,3 +353,87 @@ sub-agent worker); the two never sit side by side.
   `dreamer:proactive` pass made up to 8. At 4, about 1 in 4 memory-using tag
   turns would be cut short. A cap is a ceiling, not a reservation, so the
   headroom costs nothing on a turn that does not use it.
+
+## 6. V3's adaptive cut, as built (2026-10-17)
+
+What the cut was set from, and what it is. The code is
+`nora.agent.memory_search` (`DENSE_FLOOR`, `PACKET_TOKENS`, `SCORE_GAP`,
+`MIN_RESULTS`, `RESULT_MAX`, `PINNED_LIMIT`, `PERSON_SEED_SCORE`), and the
+constants' comments cite the numbers below.
+
+**Measured** on the backfilled production index (8,481 vectors of the
+current model, read-only), in the scope of the two Signal rooms the
+`conversational_recall` cases use, full 2048 cosine, the query embedded by
+production's `LlamaEmbedder.embed_query`. Ids, scores and counts only.
+
+1. **The labelled recall cases cannot calibrate a dense cut.** Each
+   `conversational_recall` case that names messages, media or a note (six,
+   two phrasings each, n=12) asks by time or deixis («the photo just now»,
+   «tomorrow», «Sunday afternoon»): its evidence ranked between 293rd and
+   6,178th of 350 to 6,722 in-scope vectors, at cosine 0.07 to 0.36, while
+   the same question's 50 nearest scored 0.40 to 0.66. Neither note the
+   cases name could be read at its instant in production: one is retired,
+   the other was revised after it, so its node is dated later. They are reached by `since`/`until`
+   and the window, never by meaning, so they bound nothing here.
+2. **Known items (n=143).** For a random sample of nodes in the two scopes
+   (60 messages, 20 media readings, 20 social items, 20 social media, 18
+   character sketches, 3 notes, 2 lessons), a model (`nora-gate`) wrote the
+   short query someone would type to find the node again; the node is the
+   labelled hit, every other node a miss. A known item has one true hit, so
+   a near-duplicate counts as a miss: the miss figures are an upper bound.
+   - hit rank: 1st in 85, 2nd to 5th in 26, 6th to 10th in 10, 11th to
+     20th in 6, 21st to 50th in 4, past 50 (unreachable by the dense seed)
+     in 12.
+   - hit cosine: min 0.298, p10 0.460, p25 0.525, median 0.647, p75 0.719,
+     p90 0.770, max 0.857. Of the 127 ranked in the top 20, the lowest was
+     0.387.
+   - non-hits in the top 50 (n=7,019): p10 0.352, median 0.443, p90 0.567,
+     max 0.781. The best non-hit per query: median 0.597, p90 0.706.
+   - drop from a hit to the next item: median 0.055, p75 0.116; between
+     neighbouring non-hits in a top 20 (n=2,733): median 0.003, p90 0.017,
+     max 0.295.
+3. **Questions about nothing held (n=20,** ten phrasings in two rooms, such
+   as an Antarctic expedition or a ballet ticket): best cosine 0.33 to 0.55
+   (median 0.46), tenth 0.31 to 0.47, fiftieth 0.28 to 0.44. **This model's
+   cosines cluster high**: no floor separates a weak true hit from the best
+   of nothing (hit p10 0.46 against that median 0.46), so the floor only
+   trims tails.
+4. **Rendered size** (2,131 items rendered by `render_packet` for 52 queries,
+   `estimate_tokens` over the item's JSON): p10 52 tokens, median 60, p90
+   100, max 329; the fixed part (kind, age, room, path) about 49.
+
+**Set**, by replaying candidate cuts over the measured ranked lists (the
+walk's own ranking, age decay included), then **run as built** on the same
+index against master's search for the same 143 queries:
+
+| rule | value | why |
+|---|---|---|
+| dense floor, on a seed scored by its cosine (dense, or exact past the pins) | 0.38 | under every hit ranked in a top 20 (lowest 0.387, a margin of 0.007 on queries easier than a member's own); 3 of the 20 empty questions then seed nothing and answer `nothing_found`, none of the 143 with a hit does |
+| ... except inside a date window (`since`, `until`) | the walk's 0.1 | a question asked by time shares few words with its answer: the recall cases' evidence scored 0.07 to 0.36 (item 1), and the window already narrowed it; with the floor, the one line in the window answered `nothing_found` (review of this PR) |
+| walk floor: every hop, a lexical search, the lexical seed beside a dense one | 0.1, unchanged | a hop's relevance is its seed's times the weights: a median hit (0.65) reaches the outing it was said during (`during`, 0.5) at 0.32, and an episode has no vector, so a cosine floor on hops would cut every episode (review of this PR); a lexical score is a share of terms held, another scale |
+| budget | 2,000 tokens of rendered items | known item shown, as built: **107**, master's ten: **98** (and every one of master's 98 among the 107); a median 20 items and 1,930 tokens a packet, master's 1,020. Replayed: 97 at 1,000, 111 at 1,500, 112 at 2,000, 115 at 2,500. The replay ran on lists the old walk ranked and kept hops a dropped seed would no longer reach, so it reads 5 high; the floor on every hop, as first built, showed 118 because it also cut every episode (review of this PR) |
+| score-gap stop | a drop over 0.2 in relevance from one unpinned item to the next | replayed, it shortened 4 of 163 lists and cost none its hit; 0.15 on the age-decayed rank cost 7 |
+| minimum | 3 items, over the gap and the budget, not the floor | a sparse question still shows its best few. The V3 row asked for one item before the identifier screen; this counts items after it, so a withheld hit never stands in for one |
+| hard cap | 30 | at 52 tokens (the 10th percentile) the budget admits about 38; a safety cap |
+| pinned | 5, its own value; always shown, outside the gap and the budget | about a sixth of the budget |
+| `about` seed | 0.45, was 0.6 | 0.6 sat level with the best non-hit (median 0.597) and above four in ten true hits, so twenty newest stays or trips of a named person outranked them; 0.45 is under nine in ten, over the floor |
+
+The cut is in `render_packet`, where an item's size is known. A withheld
+item is screened first and takes no part in it: it spends no budget, is
+not one of the minimum and is no baseline for the next drop. The cut never
+empties a list holding an item the screen lets through, so `ok`, `partial`,
+`nothing_found` and `unavailable` keep their meaning (R-27). The floor can
+empty one, never past a pinned literal, which scores 1. One visible change:
+the packet now draws on up to 30 hits, so a search whose first ten were all
+withheld (the tool's `withheld`) can now answer `ok` with later ones. The
+search hands the packet its best 30 before the screen, so a withheld hit
+still takes one of those 30.
+
+**Ceilings.** n is small: 143 known items from two rooms, model-written
+queries (easier than a member's own words, so a real question's hit
+scores lower: the floor is 0.007 under the lowest hit measured, no margin
+for that), 20 empty questions. The
+`about` score has no labelled person query behind it, only the scale. The
+reading that would reopen it: a live or eval `memory_search` whose true
+hit scored under 0.38, or a packet that hits the budget with the answer
+past it.
