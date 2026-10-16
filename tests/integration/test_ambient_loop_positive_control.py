@@ -81,8 +81,8 @@ room per platform, DEC-105), served by its own `FakeAdapter` passed as
 `extra_adapters`. With no adapter for its platform a send there would raise
 instead of being recorded, and assertion 5 would pass vacuously. Because the
 home room has its own adapter, "zero sends into the home room" is a measurement
-rather than a tautology, and `test_5_*` checks that the pipeline routes the home
-room's platform to that adapter.
+rather than a tautology, and `test_5_*` checks that both the engagement pipeline
+and the participation `FirePath` route the home room's platform to that adapter.
 """
 
 from __future__ import annotations
@@ -295,8 +295,9 @@ class _Journey:
     sent_after_tag: tuple[tuple[str, str], ...] = ()
     #: every send of the whole run, on either adapter, `(conversation_id, text)`
     sent_all: tuple[tuple[str, str], ...] = ()
-    #: the adapter the engagement pipeline routes the home room's platform to
-    home_route: Any = None
+    #: the adapters the engagement pipeline and the participation `FirePath`
+    #: route the home room's platform to
+    home_routes: tuple[Any, ...] = ()
     #: the fold's INPUT, as the debrief stage rendered it
     fold_input: str = ""
 
@@ -494,7 +495,11 @@ async def _drive(tmp_path: Path) -> _Journey:
     )
 
     journey.sent_all = _sends(adapter, home_adapter)
-    journey.home_route = _engagement._adapter_for(home_adapter.platform)
+    assert trigger is not None
+    journey.home_routes = (
+        _engagement._adapter_for(home_adapter.platform),
+        trigger._speak.__self__._adapter_for(home_adapter.platform),
+    )
     await audit.aclose()
     return journey
 
@@ -742,8 +747,11 @@ def test_5_nothing_was_ever_sent_into_the_home_room(journey: _Journey) -> None:
     thread lives in.
 
     Non-vacuous because the home room's platform is routed to its own
-    recording adapter (asserted first): a send there would be recorded, not
-    raised.
+    recording adapter on both send paths (asserted first): a send there would be
+    recorded, not raised. The exact-equality check on `sent_all` is the broad
+    guard. The `HOME_ROOM` filters are narrower: the pipeline runs on
+    `permissive_policy()`, so nothing here knows `HOME_ROOM` is the unit's home
+    room, and those filters catch only a send or row addressed to that id.
 
     SCOPE. This covers the paths this journey drives: ingest, the
     participation turn, the tag turn and the fold. The proactive ACT turn is
@@ -751,7 +759,7 @@ def test_5_nothing_was_ever_sent_into_the_home_room(journey: _Journey) -> None:
     "the tag and participation paths did not misroute", not as a claim about
     the proactive path.
     """
-    assert journey.home_route is journey.home_adapter, (
+    assert all(route is journey.home_adapter for route in journey.home_routes), (
         "the home room's platform must route to its own recording adapter, or "
         "'nothing was sent there' cannot fail"
     )

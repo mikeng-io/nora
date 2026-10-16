@@ -105,6 +105,8 @@ def build_offline_pipeline(
     platform, a send there raises instead of being recorded, and the assertion passes
     vacuously.
     """
+    if adapter.platform in (extra_adapters or {}):
+        raise ValueError(f"extra_adapters may not replace the {adapter.platform!r} adapter")
     adapters = {adapter.platform: adapter, **(extra_adapters or {})}
     metrics = metrics or Metrics()
     background = BackgroundTasks()
@@ -126,9 +128,9 @@ def build_offline_pipeline(
         )
     if extra_engage_policies:
         policy = CompositePolicy((policy, *extra_engage_policies))
-    # `<presence>` — the production reader over this harness's own policy and adapter, so
+    # `<presence>` — the production reader over this harness's own policy and adapters, so
     # an eval prompt carries the block a production turn carries: the network, the
-    # harness's (empty) room table, the fake adapter's health, and the handles
+    # harness's (empty) room table, the fake adapters' health, and the handles
     # `config.evaluation.toml` declares.
     presence_reader = PresenceReader(
         policy=permissive_policy(), adapters=adapters,
@@ -219,8 +221,7 @@ def build_offline_pipeline(
         # than as an empty room — so the three room-scoped tools degrade
         # honestly here instead of claiming the group is empty. A harness that
         # wants to exercise them passes a `RosterSource`.
-        # One platform's roster, keyed by the adapter's own platform — the
-        # same shape `adapters` above takes, for the same reason.
+        # The replayed platform's roster only, keyed by that adapter's platform.
         rosters={adapter.platform: roster_source} if roster_source else {},
         slots=slots,
         # `None` by default: most offline/eval scenarios have no retention store and don't
