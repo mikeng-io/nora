@@ -14,6 +14,11 @@ Four reads, every one a GET (nothing here can mark a story seen):
   reels, newest first, `collab` marking a post another account owns.
 * `read_item` → `GET /posts/{shortcode}`: the media of one listed item.
 
+`healthy` → `GET /health`: True only for a 200 whose `session` is
+`authenticated`. The bridge answers it from its own state, with no upstream
+call; a checkpointed session still answers 200, so the status alone says
+nothing.
+
 **Failures are typed, not raised** (`Failed`, by the bridge's error envelope,
 `deploy/instagram-bridge/internal/transport/http/errors.go`): 409 `needs_human`
 halts the login; 502 `upstream_rejected` and 429 back it off; 501 `stale_query`
@@ -61,6 +66,11 @@ log = logging.getLogger("nora.social.instagram_source")
 
 _UNAVAILABLE = Failed(FailureKind.UNAVAILABLE)
 
+#: The one `/health` session state in which the login can read
+#: (`nora.platform.instagram.self_id.AUTHENTICATED`, which this layer may not
+#: import). Matched positively: a state never heard of is not healthy.
+_AUTHENTICATED = "authenticated"
+
 _T = TypeVar("_T")
 
 
@@ -90,6 +100,9 @@ class InstagramSocialSource:
     async def read_item(self, *, ref: ItemRef) -> SocialItem | Failed:
         return await self._guarded("post", self._read_item(ref))
 
+    async def healthy(self) -> bool:
+        return await self._guarded("health", self._healthy()) is True
+
     async def _guarded(self, what: str, call: Awaitable[_T]) -> _T | Failed:
         """The never-raises backstop: a transport error or a contract violation
         degrades to `unavailable`."""
@@ -98,6 +111,11 @@ class InstagramSocialSource:
         except Exception:
             log.exception("instagram social source %s read failed", what)
             return _UNAVAILABLE
+
+    async def _healthy(self) -> bool:
+        status, payload = await self._get("/health")
+        return status == 200 and isinstance(payload, dict) \
+            and payload.get("session") == _AUTHENTICATED
 
     async def _probe(self, account: Account) -> Probe | Failed:
         if not _IGID_RE.fullmatch(account.id):
@@ -190,8 +208,10 @@ class InstagramSocialSource:
             and _is_cdn_url(row.get("url"))
         )
         if not media:
+            # Recorded without media rather than failed: the post exists, and
+            # a failure here would keep the list read incomplete and re-read
+            # the same post on every probe.
             log.warning("instagram bridge post carried no usable media")
-            return _UNAVAILABLE
         caption = payload.get("caption")
         taken = _when(payload.get("taken_at"))
         return SocialItem(

@@ -752,7 +752,8 @@ bridge_url = "http://127.0.0.1:19826"
 # `igid` ([[persons.<id>.instagram]]): reads name a person, never a handle. A
 # person with no igid answers "no Instagram account on file", one with two is
 # ambiguous, and a story is read only for someone listed in a group room of
-# policy.toml, on a turn where somebody asked.
+# policy.toml: by instagram_read on a turn where somebody asked, or by the
+# poller of [social.poll] below.
 #
 # Keep `enabled` written out so a mistyped key in this section is caught at load.
 enabled = false
@@ -775,6 +776,23 @@ mode = "dry_run"
 # poll_seconds                # deprecated, ignored
 # max_age_minutes = 60.0      # an older summons is recorded stale, never answered
 # handle = "noraexample"      # her username, removed from the question
+
+[social.poll]
+# The social stream's poller: each member's Instagram account (a person listed in
+# a group room of policy.toml, with exactly one igid in identity.toml) is probed,
+# and their story or their newest posts and reels are read only when the probe
+# says something changed. New items are recorded with their media in custody.
+# Needs [social.instagram] enabled (refused at load otherwise). It reads through
+# the login Nora's Instagram messaging uses: a checkpoint halts it until the
+# bridge reports the session healthy again.
+enabled = false
+# tick_seconds = 600.0            # how often the poller looks for members due
+# floor_minutes = 30.0            # no member probed more often than this
+# ceiling_hours = 6.0             # every member probed at least this often
+# hourly_budget = 60              # upstream calls per hour for the login (a probe costs 2)
+# back_off_start_minutes = 15.0   # first pause after a rejected or rate-limited call
+# back_off_max_hours = 6.0        # the pause doubles up to this, until a clean probe
+# jitter_seconds = 10.0           # random pause of up to this before each call
 
 [social.linkedin]
 # linkedin_read and linkedin_search (DEC-201): read-only LinkedIn through the same

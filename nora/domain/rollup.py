@@ -927,6 +927,7 @@ class HealthRow:
     event: str
     outcome: str
     at_ms: int
+    detail: str = ""
 
 
 def polls_healthy(

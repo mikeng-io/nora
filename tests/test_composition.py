@@ -1517,6 +1517,32 @@ async def test_the_summons_consumer_is_spawned_with_both_flags_on_and_no_poller_
         await deps.background.cancel_all()
 
 
+async def test_the_social_poller_is_built_only_when_enabled(cfg, monkeypatch):
+    """`[social.poll] enabled = false` is the shipped state, and off builds no
+    poller for `__main__` to start. On, it reads through the Instagram bridge
+    with the same custody every room's media takes."""
+    from nora.app.social_poller import SocialPoller
+
+    monkeypatch.setenv("MEDIA_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
+    deps = await build_dependencies(override_config(cfg, {"social.instagram.enabled": True}))
+    try:
+        assert deps.social_poller is None
+    finally:
+        await deps.background.cancel_all()
+
+    deps = await build_dependencies(override_config(cfg, {
+        "social.instagram.enabled": True, "social.poll.enabled": True,
+    }))
+    try:
+        poller = deps.social_poller
+        assert isinstance(poller, SocialPoller)
+        assert poller._source.network == "instagram"
+        assert isinstance(poller._media, InstagramMediaSource)
+        assert poller._blobs is deps.blobs
+    finally:
+        await deps.background.cancel_all()
+
+
 async def test_cognition_off_builds_no_stimulus_stage_and_no_evaluator(cfg):
     """`[cognition] enabled = false` is the shipped default: nothing is written
     to `stimulus`, no evaluator is spawned. Adapter health is recorded anyway —

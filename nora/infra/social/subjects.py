@@ -33,6 +33,8 @@ import logging
 from collections.abc import Sequence
 from typing import Protocol
 
+from ...domain.ports import SocialSubjectIndex
+from ...domain.social_stream import Account, Member
 from ...persons import Persons
 
 log = logging.getLogger("nora.social.subjects")
@@ -90,14 +92,34 @@ class PersonsSubjectIndex:
         counting it would make every person in `identity.toml` Tier 0 the
         moment the operator opened one room, which is a reach decision nobody
         made. `[dm] persons` is not a room and does not count either."""
+        listed = self._listed()
+        return listed is not None and person_id in listed
+
+    async def members(self) -> frozenset[str] | None:
+        """Tier 0 (`is_tier_zero`'s own rule, so the two cannot disagree)
+        less every person whose `identity.toml` block sets `social = false`.
+        `None` when either file could not be read."""
+        listed = self._listed()
+        if listed is None:
+            return None
         try:
-            return any(
-                convo.persons is not None and person_id in convo.persons
-                for convo in self._policy.conversations
+            return frozenset(p for p in listed if not self._persons.social_off(p))
+        except Exception:
+            log.exception("subject index: social switch read failed")
+            return None
+
+    def _listed(self) -> frozenset[str] | None:
+        """Every person LISTED by id in the `persons` of at least one
+        configured room, or `None` when the policy could not be read."""
+        try:
+            return frozenset(
+                person
+                for convo in self._policy.conversations if convo.persons is not None
+                for person in convo.persons
             )
         except Exception:
-            log.exception("subject index: tier check failed")
-            return False
+            log.exception("subject index: membership read failed")
+            return None
 
     async def person_for_igid(self, *, igid: str) -> str | None:
         """The person that igid belongs to, or `None` — the reverse lookup the
@@ -115,3 +137,28 @@ class PersonsSubjectIndex:
         except Exception:
             log.exception("subject index: reverse lookup failed")
             return None
+
+
+async def instagram_roster(subjects: SocialSubjectIndex) -> tuple[Member, ...] | None:
+    """The members the social poller reads on Instagram: each member with
+    exactly ONE igid on file, ordered by person id. `None` when the index
+    could not be read.
+
+    A member with no igid is not polled there. One with several is not polled
+    either: the poll's marker and counts are kept per person, and two accounts
+    under one person would overwrite each other's; which one is meant is the
+    operator's to say in `identity.toml`, the rule `SocialRouter` applies to a
+    story read (`ambiguous`, never a pick)."""
+    members = await subjects.members()
+    if members is None:
+        return None
+    out: list[Member] = []
+    for person in sorted(members):
+        igids = await subjects.igids_for(person_id=person)
+        if igids is None:
+            return None
+        if len(igids) == 1:
+            out.append(Member(person=person, account=Account(id=next(iter(igids)))))
+        elif igids:
+            log.warning("social roster: a member holds %d igids and is not polled", len(igids))
+    return tuple(out)

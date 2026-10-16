@@ -2025,7 +2025,9 @@ class FakeSocialSubjectIndex:
         *,
         out_of_reach: frozenset[str] = frozenset(),
         unavailable: bool = False,
+        social_off: frozenset[str] = frozenset(),
     ) -> None:
+        self.social_off = social_off
         # One igid (a str) or several (a frozenset) per person, normalised to
         # sets so every method reads one shape.
         self.igids: dict[str, frozenset[str]] = {
@@ -2054,6 +2056,12 @@ class FakeSocialSubjectIndex:
         if self.unavailable:
             return None
         return next((pid for pid, held in self.igids.items() if igid in held), None)
+
+    async def members(self) -> frozenset[str] | None:
+        """Every person `is_tier_zero` answers True for, less `social_off`."""
+        if self.unavailable:
+            return None
+        return frozenset(self.igids) - self.out_of_reach - self.social_off
 
 
 class FakeInstagramAccountLookup:

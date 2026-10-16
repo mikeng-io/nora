@@ -376,7 +376,7 @@ async def test_a_person_known_elsewhere_but_not_in_this_room_is_nothing_found(wo
     assert fake.calls == []
 
 
-# ---- a story is opened only for a person who asked ------------------------------
+# ---- the live tool opens a story only for a person who asked ---------------------
 
 
 @pytest.mark.parametrize(
@@ -385,10 +385,12 @@ async def test_a_person_known_elsewhere_but_not_in_this_room_is_nothing_found(wo
     ids=["fire_turn", "dreamer"],
 )
 async def test_a_story_is_never_opened_in_a_turn_nobody_asked_for(world, turn):
-    """Nora does not read people's stories unprompted (a privacy choice;
-    whether the author sees the view is unmeasured), so a background pass
-    (a reminder or proactive fire turn, a Dreamer run with a home room) must
-    never open one. `refused` before anything is resolved or sent.
+    """Members' stories are read by the ingestion poller, for members only
+    (design/cognition-loop/20-observe.md §2;
+    `tests/integration/test_social_poller.py::test_the_poller_reads_stories_for_members_only`).
+    The live `instagram_read` tool is not that poller: in a turn nobody asked
+    for (a reminder or proactive fire turn, a Dreamer run with a home room) it
+    still never opens one. `refused` before anything is resolved or sent.
 
     Positive control: the SAME turn reads Quinn's profile, which stays
     allowed, so the empty story log is the rule and not a turn that cannot

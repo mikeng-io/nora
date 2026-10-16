@@ -128,6 +128,9 @@ class Persons:
     # `nora.app.memory_routing`'s job, because it needs the policy and the
     # config as well as this file.
     honcho_workspaces: dict[str, str] = field(default_factory=dict)
+    # Every person_id whose block sets `social = false`: the social stream
+    # reads nothing of theirs.
+    _social_off: frozenset[str] = field(default_factory=frozenset)
 
     def subject_id_for(self, person_id: str) -> str:
         """The stable id to derive analytics under. Resolves a RETIRED
@@ -258,6 +261,11 @@ class Persons:
         `KeyError`. A set, for `instagram_igids`' reason: choosing among
         several is the caller's question, and the room scopes it."""
         return self._instagram_usernames.get(instagram_username_key(handle), frozenset())
+
+    def social_off(self, person_id: str) -> bool:
+        """True when `person_id`'s block sets `social = false`: the social
+        stream polls none of their accounts. An unknown person is not off."""
+        return person_id in self._social_off
 
     def instagram_igids(self, person_id: str) -> frozenset[str]:
         """Every Instagram `igid` (the public/social id) recorded for
@@ -488,4 +496,5 @@ def load_persons(path: Path) -> Persons:
             name: binding.honcho_workspace
             for name, binding in parsed.workspaces.items()
         },
+        _social_off=frozenset(pid for pid, entry in parsed.persons.items() if not entry.social),
     )

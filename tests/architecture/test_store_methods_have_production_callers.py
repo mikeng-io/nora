@@ -191,41 +191,11 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "(12-schemas.md §3's `Changes`, 'every revision: field, from, to, "
         "mode, why, when'), not built at step 2b.",
     ),
-    ("social_stream.py", "insert_item"): _Pin(
-        "deferred_consumer",
-        "The social stream's Record (design/cognition-loop/22-social-stream.md "
-        "§8): the poller that calls it is the next build step, so the store "
-        "ships ahead of its one consumer.",
-    ),
-    ("social_stream.py", "record_poll"): _Pin(
-        "deferred_consumer",
-        "The social stream's Record (design/cognition-loop/22-social-stream.md "
-        "§8): the poller that calls it is the next build step, so the store "
-        "ships ahead of its one consumer.",
-    ),
-    ("social_stream.py", "record_state"): _Pin(
-        "deferred_consumer",
-        "The social stream's Record (design/cognition-loop/22-social-stream.md "
-        "§8): the poller that calls it is the next build step, so the store "
-        "ships ahead of its one consumer.",
-    ),
-    ("social_stream.py", "read_marker"): _Pin(
-        "deferred_consumer",
-        "The social stream's Record (design/cognition-loop/22-social-stream.md "
-        "§8): the poller that calls it is the next build step, so the store "
-        "ships ahead of its one consumer.",
-    ),
-    ("social_stream.py", "last_counts"): _Pin(
-        "deferred_consumer",
-        "The social stream's Record (design/cognition-loop/22-social-stream.md "
-        "§8): the poller that calls it is the next build step, so the store "
-        "ships ahead of its one consumer.",
-    ),
     ("social_stream.py", "item_state"): _Pin(
         "deferred_consumer",
-        "The social stream's Record (design/cognition-loop/22-social-stream.md "
-        "§8): the poller that calls it is the next build step, so the store "
-        "ships ahead of its one consumer.",
+        "An item's current state, the join every read of social items makes "
+        "(design/cognition-loop/22-social-stream.md §5). The poller writes "
+        "states; nothing reads social items yet.",
     ),
     ("standing.py", "write_if_unchanged"): _Pin(
         "operator_script",

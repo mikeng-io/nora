@@ -98,6 +98,11 @@ class _PersonEntry(BaseModel):
     # inferred — an operator states a merge happened; the analytics rollup
     # (nora.analytics) never guesses one from timing/proximity alone.
     former_person_ids: list[str] = Field(default_factory=list)
+    # The social stream's per-person off switch (design/cognition-loop/
+    # 20-observe.md §2). `false` stops the poller probing or reading any of
+    # this person's accounts on any network. On by default: a member is
+    # anyone listed in a room, and this is how one is taken back out.
+    social: bool = True
     # One dict per ACCOUNT (the baseline case, not an edge case); the keys
     # inside are that account's id KINDS plus the never-matched `label`.
     #

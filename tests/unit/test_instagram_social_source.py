@@ -262,12 +262,14 @@ async def test_read_item_carries_the_media_and_the_refs_identity(bridge) -> None
     assert fake.calls[0][1] == "/posts/CmiJBr2LAAB"
 
 
-async def test_read_item_with_no_usable_media_is_unavailable(bridge) -> None:
+async def test_read_item_with_no_usable_media_is_the_item_without_media(bridge) -> None:
+    """Off-CDN media is dropped, never fetched; the post is still an item."""
     fake, source = bridge
     fx = copy.deepcopy(fixture("posts_carousel_ok.json"))
     fx["body"]["items"] = [{"kind": "image", "url": "https://evil.test/a.jpg"}]
     fake.answers["post"] = fx
-    assert await source.read_item(ref=_REF) == Failed(FailureKind.UNAVAILABLE)
+    got = await source.read_item(ref=_REF)
+    assert isinstance(got, SocialItem) and got.media == ()
 
 
 @pytest.mark.parametrize("route, call", [
