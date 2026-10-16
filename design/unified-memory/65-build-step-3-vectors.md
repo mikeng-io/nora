@@ -200,9 +200,9 @@ What V2 decided where the plan above left room (DEC-315; the code is
      against /props, the worker's rule), or when no node holds a current
      vector yet;
    - the embedding worker has a **backlog in the search's scope**: a live
-     embeddable node has waited longer than `BACKLOG_TICKS` (3) drain
-     periods (`[memory_index] drain_seconds`, 60 s, so 180 s) for a vector
-     of the current model. This includes nodes holding another model's
+     embeddable node has owed a vector of the current model for longer
+     than `BACKLOG_TICKS` (3) drain periods (`[memory_index]
+     drain_seconds`, 60 s, so 180 s). This includes nodes holding another model's
      vector and failing nodes in backoff once they are that old. A node
      waiting in another unit does not count (review of #31: one pending
      node anywhere made every search `partial`);
@@ -219,8 +219,18 @@ What V2 decided where the plan above left room (DEC-315; the code is
    holding no current vector, waiting or given up, with the scope and the
    question's narrowing inside the scan as for every seed, and a wait
    inside the window does not make the answer `partial`. The window is
-   measured from `projected_at` on the database's clock, which a
-   re-projection that changes the input resets. Why three periods: the
+   measured from `memory_node.owed_since` (migration 0111) on the
+   database's clock: written with the row and reset only where the
+   projector clears the vector because its input changed
+   (`_cleared_when`). Not from `projected_at`, which every re-projection
+   resets whether the input changed or not, so a failing node re-projected
+   regularly would look fresh forever and a rebuild would make a whole
+   backlog fresh (review of #69). A model clear keeps `owed_since`, so a
+   cleared index is a backlog at once, which it is. Only a node holding a
+   text is fresh: an attachment with no reading, embeddable from its
+   bytes, is reached by no seed until its vector lands, so it counts as a
+   backlog from the start (review of #69: as `fresh` it turned master's
+   `partial` into `nothing_found`). Why three periods: the
    worker sleeps a period, drains, then embeds a batch, so a node written
    just after a pick waits out that batch, a sleep and the next drain,
    under two periods while it keeps up; the third is margin for a slow
@@ -228,11 +238,24 @@ What V2 decided where the plan above left room (DEC-315; the code is
    model) or failing the node. By age, not by a share of the scope: a
    share means different things in a room of fifty nodes and a unit of
    forty thousand, while a wait past three ticks is the property itself.
-   Ceilings: a burst of fresh nodes (an import) reads `ok` for up to three
-   periods, reachable only by its words meanwhile; the eval sandbox, where
-   no worker runs, reads an unadopted node as fresh for three periods
-   after its rebuild. A question with no search terms cannot read a
-   waiting node by its words, so one waiting node then answers `partial`.
+   **The trade, accepted:** for up to three periods a fresh line is
+   reachable only by the words it shares with the question, so a reworded
+   question about it can answer `nothing_found`. Acceptable because a line
+   said within the last ~3 minutes is in the turn's own visible
+   transcript, which she reads before any search; the alternative held
+   almost every live answer `partial`. Ceiling: a burst of fresh nodes (an
+   import) reads `ok` for up to three periods, reachable only by its words
+   meanwhile. The eval sandbox, where no worker runs, carries the
+   deployment's wait (`adopt_worker_state`): a node whose input the source
+   still owes a vector for takes the source's `owed_since`, any other the
+   earlier of its own and its instant, so a sandbox is never kinder than
+   production. A question with no search terms cannot read a waiting or
+   given-up node by its words, so one such node then answers `partial`.
+   With `kinds`, whether the seed over unvectored nodes runs is counted
+   on the scope without the kinds, which the bridge pass reads.
+   Cost: that seed filters a bitmap scan over the scope, about 10 ms in
+   steady state and about 720 ms with a full backlog, the same as the
+   lexical fallback.
    `memory_search` without the tick (`drain_seconds` unwired) treats
    every wait as a backlog, the safe side; composition wires it.
 

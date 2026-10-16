@@ -23,8 +23,8 @@
  {
   "name": "the walk runs the seed over waiting nodes, not only when some are given up",
   "file": "nora/agent/memory_search.py",
-  "old": "unembedded=state.unembedded + state.given_up > 0,",
-  "new": "unembedded=state.given_up > 0,",
+  "old": "unembedded=seeding.unembedded + seeding.given_up > 0,",
+  "new": "unembedded=seeding.given_up > 0,",
   "target": "tests/integration/test_memory_dense_seed.py::test_a_line_just_said_is_found_by_its_words_and_the_answer_is_ok"
  },
  {
@@ -51,7 +51,7 @@
  {
   "name": "a question with no terms cannot read a waiting node: partial",
   "file": "nora/agent/memory_search.py",
-  "old": "(backlog > 0 or (state.unembedded > 0 and not terms))",
+  "old": "(backlog > 0 or unread)",
   "new": "(backlog > 0)",
   "target": "tests/integration/test_memory_dense_seed.py::test_a_line_just_said_is_found_by_its_words_and_the_answer_is_ok"
  },
@@ -65,8 +65,8 @@
  {
   "name": "fresh counts only nodes projected within the window",
   "file": "nora/infra/sql/memory_index.py",
-  "old": "sa.and_(owed, node.projected_at > since)",
-  "new": "sa.and_(owed, sa.true())",
+  "old": "sa.and_(owed, node.text != \"\", node.owed_since > since)",
+  "new": "sa.and_(owed, node.text != \"\", sa.true())",
   "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
  },
  {
@@ -79,8 +79,8 @@
  {
   "name": "the fake: no window, nothing fresh",
   "file": "nora/testing/memory_index.py",
-  "old": "fresh = waiting & self.fresh if fresh_seconds > 0 else set()",
-  "new": "fresh = waiting & self.fresh",
+  "old": "} if fresh_seconds > 0 else set()",
+  "new": "} if True else set()",
   "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
  },
  {
@@ -89,5 +89,75 @@
   "old": "                drain_seconds=cfg.memory_index.drain_seconds,\n",
   "new": "",
   "target": "tests/test_composition.py::test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick"
+ },
+ {
+  "name": "review 1: an attachment with no text is never fresh (store)",
+  "file": "nora/infra/sql/memory_index.py",
+  "old": "sa.and_(owed, node.text != \"\", node.owed_since > since)",
+  "new": "sa.and_(owed, node.owed_since > since)",
+  "target": "tests/integration/test_memory_dense_seed.py::test_a_fresh_attachment_with_no_text_is_never_fresh"
+ },
+ {
+  "name": "review 1: the same rule, held by the contract",
+  "file": "nora/infra/sql/memory_index.py",
+  "old": "sa.and_(owed, node.text != \"\", node.owed_since > since)",
+  "new": "sa.and_(owed, node.owed_since > since)",
+  "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
+ },
+ {
+  "name": "review 1: the fake counts only a node with a text as fresh",
+  "file": "nora/testing/memory_index.py",
+  "old": "k for k in waiting & self.fresh if self.nodes[k].text",
+  "new": "k for k in waiting & self.fresh",
+  "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
+ },
+ {
+  "name": "review 2: the wait is measured from owed_since, not projected_at",
+  "file": "nora/infra/sql/memory_index.py",
+  "old": "sa.and_(owed, node.text != \"\", node.owed_since > since)",
+  "new": "sa.and_(owed, node.text != \"\", node.projected_at > since)",
+  "target": "tests/integration/test_memory_vectors.py::test_a_wait_is_owed_from_the_last_input_change_never_from_a_reprojection"
+ },
+ {
+  "name": "review 2: a re-projection of the same input keeps owed_since",
+  "file": "nora/infra/sql/memory_index.py",
+  "old": "(changed, sa.func.clock_timestamp()), else_=node.owed_since,",
+  "new": "(changed, sa.func.clock_timestamp()), else_=sa.func.clock_timestamp(),",
+  "target": "tests/integration/test_memory_vectors.py::test_a_wait_is_owed_from_the_last_input_change_never_from_a_reprojection"
+ },
+ {
+  "name": "review 2: an input change restarts owed_since",
+  "file": "nora/infra/sql/memory_index.py",
+  "old": "(changed, sa.func.clock_timestamp()), else_=node.owed_since,",
+  "new": "(changed, node.owed_since), else_=node.owed_since,",
+  "target": "tests/integration/test_memory_vectors.py::test_a_wait_is_owed_from_the_last_input_change_never_from_a_reprojection"
+ },
+ {
+  "name": "review 2: the sandbox carries the source's wait",
+  "file": "nora/infra/sql/memory_index.py",
+  "old": "            sa.update(MEMORY_NODE).where(node.id.in_(ids)).values(owed_since=value)",
+  "new": "            sa.update(MEMORY_NODE).where(sa.false()).values(owed_since=value)",
+  "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_sandbox_carries_the_sources_wait_so_it_is_never_kinder"
+ },
+ {
+  "name": "review 2: an unmatched sandbox node is bounded by its own instant",
+  "file": "nora/infra/sql/memory_index.py",
+  "old": "        .values(owed_since=sa.func.least(node.owed_since, bound))",
+  "new": "        .values(owed_since=node.owed_since)",
+  "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_sandbox_carries_the_sources_wait_so_it_is_never_kinder"
+ },
+ {
+  "name": "review 4: given-up nodes and a question with no terms is partial",
+  "file": "nora/agent/memory_search.py",
+  "old": "unread = state.unembedded + state.given_up > 0 and not terms",
+  "new": "unread = state.unembedded > 0 and not terms",
+  "target": "tests/integration/test_memory_dense_seed.py::test_a_given_up_node_and_a_question_with_no_terms_is_partial"
+ },
+ {
+  "name": "review 5: with kinds, the seed flag is counted on the bridge scope",
+  "file": "nora/agent/memory_search.py",
+  "old": "            seeding = state if bridge is None else await self._index.index_state(",
+  "new": "            seeding = state if True else await self._index.index_state(",
+  "target": "tests/unit/test_memory_search.py::test_with_kinds_a_line_waiting_for_its_vector_still_bridges_to_an_outing"
  }
 ]

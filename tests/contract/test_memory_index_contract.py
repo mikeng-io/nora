@@ -110,7 +110,8 @@ Load = Callable[..., Awaitable[MemoryIndexRead]]
 @pytest.fixture(params=["fake", "sql"])
 async def load(request: Any) -> AsyncIterator[Load]:
     """`load(nodes, edges, vectors={key: (model, vector)}, given_up={key},
-    fresh={key})`: `fresh` nodes are projected now, every other a day ago."""
+    fresh={key})`: `fresh` nodes have owed their vector since now, every
+    other since a day ago."""
     if request.param == "fake":
         async def fake(
             nodes: list[IndexedNode], edges: list[Any], vectors: Vectors | None = None,
@@ -139,7 +140,8 @@ async def load(request: Any) -> AsyncIterator[Load]:
                     lineage=n.lineage if n.lineage is not None else [], state=n.state,
                     embedding=vector, embedding_model=model,
                     embed_attempts=EMBED_MAX_ATTEMPTS if n.key in given_up else 0,
-                    projected_at=(
+                    sha256=n.sha256,
+                    owed_since=(
                         sa.func.clock_timestamp() if n.key in fresh
                         else sa.func.clock_timestamp() - sa.text("interval '1 day'")
                     ),
@@ -338,16 +340,18 @@ async def test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_
         IndexedNode("message", "old-wait", "ramen again", 4, origin_room="signal:b"),
         IndexedNode("message", "given-up", "ramen night", 3, origin_room="signal:b"),
         IndexedNode("message", "fresh-elsewhere", "ramen too", 6, unit="u2"),
+        # Embeddable from its bytes, but no seed reads it: never fresh.
+        IndexedNode("media", "1:abc", "", 7, origin_room="signal:b", sha256="ab" * 32),
     ]
     index = await load(
         nodes, [], {("message", "done"): (M, Q)}, frozenset({("message", "given-up")}),
         frozenset({("message", "just-said"), ("message", "fresh-elsewhere"),
-                   ("message", "done"), ("message", "given-up")}),
+                   ("message", "done"), ("message", "given-up"), ("media", "1:abc")}),
     )
     assert await index.index_state(model=M, scope=SCOPE, fresh_seconds=180) \
-        == IndexState("complete", 0, 1, 2, 1, 1)
+        == IndexState("complete", 0, 1, 3, 1, 1)
     # No window: nothing is fresh, every wait is a backlog.
-    assert await index.index_state(model=M, scope=SCOPE) == IndexState("complete", 0, 1, 2, 1)
+    assert await index.index_state(model=M, scope=SCOPE) == IndexState("complete", 0, 1, 3, 1)
     found = await index.seed(["ramen"], SCOPE, limit=10, unembedded_of=M)
     assert [s.node.source_id for s in found] == ["just-said", "old-wait", "given-up"]
 

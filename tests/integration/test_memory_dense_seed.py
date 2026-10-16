@@ -152,11 +152,11 @@ async def _node(
 
 
 async def _age(engine: Any, *sids: str) -> None:
-    """Projected an hour ago: a node still without a vector is then a
+    """Owing its vector for an hour: a node still without one is then a
     backlog, past `BACKLOG_TICKS` drain periods."""
     async with engine.begin() as conn:
         await conn.execute(sa.update(MEMORY_NODE).where(MEMORY_NODE.c.source_id.in_(sids))
-                           .values(projected_at=sa.func.clock_timestamp()
+                           .values(owed_since=sa.func.clock_timestamp()
                                    - sa.text("interval '1 hour'")))
 
 
@@ -398,6 +398,27 @@ async def test_a_line_just_said_is_found_by_its_words_and_the_answer_is_ok(
     await _age(engine, "just-said")
     found = await _search(engine, q, embedder=FakeQueryEmbedder({q: FAR}))
     assert (found.status, _ids(found)) == ("partial", ["just-said"])
+
+
+async def test_a_fresh_attachment_with_no_text_is_never_fresh(engine: Any) -> None:
+    """An attachment with no reading is embeddable from its bytes, so it
+    waits for a vector, but no seed reads it until the vector lands: it is
+    not searched, so the answer is never `nothing_found`."""
+    await _node(engine, "mine", "second", MID)
+    await _node(engine, "1:abc", "", None, kind="media", sha256="ab" * 32,
+                origin_room="signal:b")
+    found = await _search(engine, "nothing near",
+                          embedder=FakeQueryEmbedder({"nothing near": FAR}))
+    assert (found.status, found.hits) == ("partial", ())
+
+
+async def test_a_given_up_node_and_a_question_with_no_terms_is_partial(engine: Any) -> None:
+    """No dense seed reaches a given-up node and a question with no search
+    terms runs no lexical one: it was not searched."""
+    await _node(engine, "mine", "second", FAR)
+    await _node(engine, "gave-up", "the ramen crawl plan", None, attempts=EMBED_MAX_ATTEMPTS)
+    found = await _search(engine, "what was that")
+    assert (found.status, found.hits) == ("partial", ())
 
 
 async def test_an_attachment_with_nothing_to_embed_does_not_hold_it_partial(

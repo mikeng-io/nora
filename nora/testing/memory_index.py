@@ -15,8 +15,9 @@ read is an exact cosine search, which the store's two-stage search equals on
 any set no larger than its candidates; given-up nodes (`given_up`) are what
 the store counts at `EMBED_MAX_ATTEMPTS`, and `seed(unembedded_of=...)`
 reads them with every other embeddable node holding no vector of that
-model. The fake has no clock: `fresh` are the waiting nodes projected
-within any positive `fresh_seconds` window, every other waiting node has
+model. The fake has no clock: `fresh` are the waiting nodes that have owed
+their vector for less than any positive `fresh_seconds` window (counted
+only with a text, as the store counts them), every other waiting node has
 waited longer. The fake has no `empty` failures (an `IndexedNode` carries no
 `embed_error`). `bag_of_words` is a toy embedding
 (one hashed axis per word) under which cosine tracks shared words, so a
@@ -244,7 +245,10 @@ class FakeMemoryIndex:
         current = {n.key for n in nodes if self.vectors.get(n.key, ("", []))[0] == model}
         given_up = {n.key for n in nodes if n.key in self.given_up} - current
         waiting = {n.key for n in nodes} - current - given_up
-        fresh = waiting & self.fresh if fresh_seconds > 0 else set()
+        # Fresh only where the lexical seed can read it: a text.
+        fresh = {
+            k for k in waiting & self.fresh if self.nodes[k].text
+        } if fresh_seconds > 0 else set()
         return IndexState(
             self.state.status, self.state.queue, embedded=len(current),
             unembedded=len(waiting), given_up=len(given_up), fresh=len(fresh),

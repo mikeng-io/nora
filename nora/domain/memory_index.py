@@ -320,9 +320,10 @@ class IndexState:
     is given: `embedded`, the live embeddable nodes holding a vector of that
     model; `unembedded`, those still waiting for one; `given_up`, those
     the worker gave up on (`EMBED_MAX_ATTEMPTS`); and `fresh`, those of the
-    `unembedded` projected within the window the caller asked for
-    (`index_state`'s `fresh_seconds`), which the worker's next ticks will
-    embed. A given-up node waits for nothing the worker will do, so it does
+    `unembedded` holding a text that have owed their vector (`owed_since`)
+    for less than the window the caller asked for (`index_state`'s
+    `fresh_seconds`), which the worker's next ticks will embed and the
+    lexical seed reads meanwhile. A given-up node waits for nothing the worker will do, so it does
     not hold answers `partial`, and a fresh one is normal operation; the
     lexical seed reads both (`MemoryIndexRead.seed`'s `unembedded_of`).
     `unembedded - fresh` is the backlog. A node that failed as `empty` (an
@@ -542,6 +543,6 @@ class MemoryIndexRead(Protocol):
     ) -> IndexState:
         """The index's state; with `model`, its vector coverage as well,
         within `scope` when given (else over every node), counting as
-        `fresh` the waiting nodes projected less than `fresh_seconds` ago
-        (none at 0)."""
+        `fresh` the waiting nodes with a text that have owed their vector
+        for less than `fresh_seconds` (none at 0)."""
         ...

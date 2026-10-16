@@ -85,7 +85,7 @@ nodes no vector reaches yet.
 - **`index_state`** counts the vector coverage within the search's scope
   (`_in_scope`), so a node waiting in another unit does not hold this
   room's answers `partial`; with `fresh_seconds`, how many of the waiting
-  nodes were projected within that window (`IndexState.fresh`).
+  nodes with a text have owed their vector for less (`IndexState.fresh`).
 """
 
 from __future__ import annotations

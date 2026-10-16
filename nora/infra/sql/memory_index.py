@@ -1295,11 +1295,20 @@ def _cleared_when(changed: sa.ColumnElement[bool]) -> dict[str, Any]:
     """SET values that clear the vector and the worker's bookkeeping where
     `changed` holds and keep them where it does not: a node whose
     embedded input changed is unembedded again, and the worker finds it
-    through `idx_memory_node_unembedded`."""
+    through `idx_memory_node_unembedded`. `owed_since` restarts with it."""
     node = MEMORY_NODE.c
     return {
-        name: sa.case((changed, 0 if name == "embed_attempts" else sa.null()), else_=node[name])
-        for name in _EMBED_COLUMNS
+        **{
+            name: sa.case(
+                (changed, 0 if name == "embed_attempts" else sa.null()), else_=node[name],
+            )
+            for name in _EMBED_COLUMNS
+        },
+        # The vector is owed from the moment its input changed; a
+        # re-projection of the same input keeps the wait it has.
+        "owed_since": sa.case(
+            (changed, sa.func.clock_timestamp()), else_=node.owed_since,
+        ),
     }
 
 
@@ -1974,8 +1983,10 @@ class EmbedCounts(NamedTuple):
     last failed as `empty` (an attachment with no reading, whose bytes are
     not an image's or not held): those wait for their input, not the
     worker. `fresh`, of those waiting and neither given up nor `empty`, how
-    many were projected within `embed_counts`' `fresh_seconds` (0 unless
-    asked)."""
+    many hold a text (so the lexical seed can read them) and have owed their
+    vector (`owed_since`) for less than `embed_counts`' `fresh_seconds` (0
+    unless asked). An attachment with no reading, embeddable from its bytes,
+    is never fresh: nothing reads it until its vector lands."""
 
     embedded: int
     pending: int
@@ -1991,7 +2002,7 @@ async def embed_counts(
 ) -> EmbedCounts:
     """`EmbedCounts` over every node, or over those `where` also holds (the
     search passes its scope, `nora.infra.sql.memory_read`). `fresh_seconds`
-    is measured on the database's clock, the one `projected_at` is written
+    is measured on the database's clock, the one `owed_since` is written
     with."""
     node = MEMORY_NODE.c
     # IS NOT DISTINCT FROM, so a NULL model is «not current», never NULL.
@@ -2011,7 +2022,7 @@ async def embed_counts(
             sa.func.count().filter(sa.and_(~current, node.embed_attempts > 0)),
             sa.func.count().filter(sa.and_(~current, given_up)),
             sa.func.count().filter(sa.and_(~current, ~given_up, node.embed_error == "empty")),
-            sa.func.count().filter(sa.and_(owed, node.projected_at > since)),
+            sa.func.count().filter(sa.and_(owed, node.text != "", node.owed_since > since)),
         ).where(*_embeddable(), *where)
     )).one()
     return EmbedCounts(*(int(v) for v in row))
@@ -2072,7 +2083,8 @@ async def adopt_worker_state(
     vector, or an `empty` failure, never moves to another file that shares
     its text. Matched on the input alone, never on `(kind, source_id)`: the
     snapshot path renumbers every row it writes, and an id says nothing about
-    what was embedded."""
+    what was embedded. A node still owing its vector afterwards takes the
+    source's wait for it (`_adopt_owed_since`)."""
     node = MEMORY_NODE.c
     held = sa.and_(node.embedding.isnot(None), node.embedding_model == model)
     terminal = sa.and_(
@@ -2117,3 +2129,52 @@ async def adopt_worker_state(
                     embed_input=r.embed_input,
                 )
             )
+    await _adopt_owed_since(source, target, model=model)
+
+
+async def _adopt_owed_since(
+    source: AsyncConnection, target: AsyncConnection, *, model: str,
+) -> None:
+    """Give `target`'s nodes still owing a vector the wait they have in
+    `source`, so a sandbox is never kinder than the deployment it copies: a
+    `rebuild` writes every node now, which would read a whole backlog as
+    fresh (`EmbedCounts.fresh`). A node whose input the source also owes a
+    vector for takes the earliest `owed_since` of those; any other, the
+    earlier of its own and its instant (`at_ms`), migration 0111's bound. A
+    source older than 0111 gives that same bound from its own rows."""
+    node = MEMORY_NODE.c
+    bound = sa.func.least(node.projected_at, sa.func.to_timestamp(node.at_ms / 1000.0))
+    has = bool((await source.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'memory_node' "
+        "AND column_name = 'owed_since')"
+    ))).scalar_one())
+    since = node.owed_since if has else bound
+    owing = sa.and_(
+        sa.or_(node.embedding.is_(None), node.embedding_model.is_distinct_from(model)),
+        node.embed_attempts < EMBED_MAX_ATTEMPTS, node.embed_error.is_distinct_from("empty"),
+        *_embeddable(),
+    )
+    owed: dict[tuple[bool, str], Any] = {}
+    for r in await source.execute(
+        sa.select(node.kind, node.text, node.sha256, since.label("since")).where(owing)
+    ):
+        key = (r.kind in ATTACHMENT_KINDS, _input_key(r.kind, r.text, r.sha256))
+        if key not in owed or r.since < owed[key]:
+            owed[key] = r.since
+    unadopted = sa.and_(node.embedding.is_(None), node.embed_attempts == 0, *_embeddable())
+    await target.execute(
+        sa.update(MEMORY_NODE).where(unadopted)
+        .values(owed_since=sa.func.least(node.owed_since, bound))
+    )
+    by_since: dict[Any, list[int]] = {}
+    for t in await target.execute(
+        sa.select(node.id, node.kind, node.text, node.sha256).where(unadopted)
+    ):
+        found = owed.get((t.kind in ATTACHMENT_KINDS, _input_key(t.kind, t.text, t.sha256)))
+        if found is not None:
+            by_since.setdefault(found, []).append(t.id)
+    for value, ids in by_since.items():
+        await target.execute(
+            sa.update(MEMORY_NODE).where(node.id.in_(ids)).values(owed_since=value)
+        )

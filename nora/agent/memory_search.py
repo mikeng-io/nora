@@ -81,14 +81,17 @@ empty answer; `partial`, whatever was found, when the index is not
 `complete`, its projection queue is not empty, the seeds were lexical (the
 fallback above), or the embedding worker has a BACKLOG in this search's
 scope: a live embeddable node that has waited longer than
-`BACKLOG_TICKS` drain periods for a vector of the current model. A node
-projected within that window is normal operation, not a backlog: the next
-tick embeds it, and until then the lexical seed reads it, so it is
-searched. Nor does a node the worker gave up on count (one poisoned file
-would hold every answer `partial` for good; the lexical seed reads it
-too), nor an attachment that failed as `empty`, which waits for its
-reading. A question with no search terms cannot reach a waiting node by
-its words, so one waiting node then answers `partial` too. So an
+`BACKLOG_TICKS` drain periods for a vector of the current model, counted
+from when its vector became owed (`owed_since`, reset only when its input
+changes, never by a re-projection). A node with a text that has owed its
+vector for less is normal operation, not a backlog: the next tick embeds
+it, and until then the lexical seed reads it, so it is searched. An
+attachment with no text is never fresh, since nothing reads it. Nor does
+a node the worker gave up on count (one poisoned file would hold every
+answer `partial` for good; the lexical seed reads it too), nor an
+attachment that failed as `empty`, which waits for its reading. A
+question with no search terms cannot reach a waiting or given-up node by
+its words, so one such node then answers `partial` too. So an
 unfinished index is never «you never said that»; `nothing_found` only
 from a complete index in which every node in scope was searched; `ok`.
 
@@ -598,6 +601,11 @@ class MemorySearch:
             state = await self._index.index_state(
                 model=self._model, scope=scope, fresh_seconds=self._fresh_seconds,
             )
+            # The seed over unvectored nodes runs on the bridge pass too, so
+            # it is wanted when the scope WITHOUT the kinds holds any.
+            seeding = state if bridge is None else await self._index.index_state(
+                model=self._model, scope=bridge,
+            )
             names = [n for p in people if p.person_id in scope.listed_here for n in _names(p)]
             vector: list[float] | None = None
             # The lexical seed is the fallback: no embedder, or no node
@@ -614,7 +622,7 @@ class MemorySearch:
                 self._index, scope, terms=terms,
                 person_id=person_id, hops=HOPS_BY_DEPTH.get(depth, 2), admits=admits,
                 exact=exact_terms_of(query, names), vector=vector, model=self._model,
-                unembedded=state.unembedded + state.given_up > 0, embedded=state.embedded,
+                unembedded=seeding.unembedded + seeding.given_up > 0, embedded=state.embedded,
                 metrics=self._metrics,
                 bridge=bridge,
             )
@@ -626,12 +634,14 @@ class MemorySearch:
             (h for h in hits if not wanted or h.node.kind in wanted),
             key=lambda h: (-h.pin, -h.score * _decay(h.node.at_ms, now_ms), h.node.key),
         )[:RESULT_LIMIT]
-        # A fresh node is read by its words; a backlog, or a waiting node a
-        # question with no terms cannot read, is what the dense seed missed.
+        # A fresh node is read by its words; a backlog, or an unvectored node
+        # (waiting or given up) a question with no terms cannot read, is what
+        # the dense seed missed.
         backlog = state.unembedded - state.fresh
+        unread = state.unembedded + state.given_up > 0 and not terms
         incomplete = (
             state.status != "complete" or state.queue > 0 or lexical
-            or (vector is not None and (backlog > 0 or (state.unembedded > 0 and not terms)))
+            or (vector is not None and (backlog > 0 or unread))
         )
         status: SearchStatus = (
             "partial" if incomplete else "ok" if ranked else "nothing_found"

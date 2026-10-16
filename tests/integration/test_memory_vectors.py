@@ -131,6 +131,42 @@ async def test_an_edit_clears_the_vector_and_an_unchanged_reprojection_keeps_it(
             assert row.embedding is None and row.embed_attempts == 0
 
 
+async def test_a_wait_is_owed_from_the_last_input_change_never_from_a_reprojection(engine):
+    """`owed_since` restarts only when the input a vector is made from
+    changes. A re-projection of the same text (a later write to the row)
+    keeps the wait, so a node waiting since long ago never reads as fresh
+    again; an edit owes a new vector from now."""
+    store = SqlRecordStore(engine)
+    mid = await store.append(message=_message("the lantern festival plan"))
+    key = ("message", str(mid))
+    where = (MEMORY_NODE.c.kind == "message", MEMORY_NODE.c.source_id == str(mid))
+
+    async def fresh() -> int:
+        async with engine.connect() as conn:
+            return (await memory_index.embed_counts(
+                conn, MODEL, *where, fresh_seconds=180)).fresh
+
+    assert await fresh() == 1
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(MEMORY_NODE).where(*where).values(
+            owed_since=sa.func.clock_timestamp() - sa.text("interval '1 hour'"),
+            projected_at=sa.func.clock_timestamp() - sa.text("interval '1 hour'"),
+        ))
+    before = (await _nodes(engine))[key]
+
+    # The same text re-projected: projected_at moves, the wait does not.
+    await store.set_person_id(row_id=mid, person_id="member-a")
+    after = (await _nodes(engine))[key]
+    assert after.projected_at > before.projected_at
+    assert after.owed_since == before.owed_since
+    assert await fresh() == 0
+
+    # An edit changes the input: a new vector is owed from now.
+    await store.append_edit(message_id=mid, message=_message("the lantern plan, moved", ts=2000))
+    assert (await _nodes(engine))[key].owed_since > before.owed_since
+    assert await fresh() == 1
+
+
 async def test_an_image_keeps_its_vector_when_its_reading_lands_and_a_video_does_not(
     engine, llama,
 ):
