@@ -169,7 +169,7 @@ def test_a_daybook_splits_a_stay_across_local_midnight_and_counts_the_day():
     assert d20.home_ms == 7 * _H and d20.stay_ms == 16 * _H
     assert d20.rooms == {"discord:d1": 1, "signal:g1": 2}
     assert (d20.messages, d20.reactions) == (3, 1)
-    assert d20.items_posted is None  # social items are step 5's: not an input yet
+    assert d20.items_posted is None  # no social input was given: not an input
     assert not d20.silent and not d19.silent
     assert ("message", None, "discord:d1") in d20.lineage
     assert ("presence", "a", None) in d20.lineage

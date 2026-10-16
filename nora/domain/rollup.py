@@ -518,6 +518,26 @@ class ReactionFact:
 
 
 @dataclass(frozen=True)
+class SocialFact:
+    """One social item a member posted (a post, reel or story frame), as the
+    daybook reads it: the person it is recorded under and its `taken_at`."""
+
+    person_id: str
+    ts: int
+
+
+@dataclass(frozen=True)
+class SocialInput:
+    """The social items a daybook counts, and from when each person's accounts
+    have been observed (`observed_from`, epoch ms of the first answered poll).
+    A person absent from `observed_from` was never observed: no account on any
+    network, or their social switch is off."""
+
+    items: tuple[SocialFact, ...] = ()
+    observed_from: Mapping[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Daybook:
     unit: str
     person_id: str
@@ -534,11 +554,15 @@ class Daybook:
     valid_from_ms: int
     valid_to_ms: int
     as_of_ms: int
+    #: Social items taken that local day; None when the person's accounts were
+    #: not observed yet that day (not an input), 0 when observed and none.
     items_posted: int | None = None
 
     @property
     def lineage(self) -> tuple[LineageEntry, ...]:
         entries = list(message_lineage(*self.rooms))
+        if self.items_posted is not None:
+            entries.append(LineageEntry("social", self.person_id, None))
         if self.stays or self.colocation_ms:
             entries.extend(presence_lineage(self.person_id, *self.with_persons))
         return tuple(entries)
@@ -554,20 +578,26 @@ def daybooks(
     unit: str, members: Sequence[str], *, stays: Sequence[StaySpan],
     found: Sequence[Colocation], outings_found: Sequence[Outing],
     messages: Sequence[MessageFact], reactions: Sequence[ReactionFact],
-    as_of_ms: int, tz_name: str = LOCAL_TZ,
+    as_of_ms: int, tz_name: str = LOCAL_TZ, social: SocialInput | None = None,
 ) -> list[Daybook]:
     """One row per member per local date on which the Record or the rollups
     below hold anything for them, up to the date `as_of_ms` falls on (a day
     still running is a row too; it is recomputed as the day fills). No upward
-    input: a daybook counts outings, never events attended."""
+    input: a daybook counts outings, never events attended.
+
+    `items_posted` counts `social.items` by the local date of `taken_at`. A
+    day with none is 0 once the person's accounts were observed that day
+    (`social.observed_from`) and None before, or for a person never observed:
+    None is «not an input», 0 is «looked, none»."""
     member_set = set(members)
+    social = social or SocialInput()
     per: dict[tuple[str, str], dict[str, Any]] = {}
 
     def slot(person: str, day: str) -> dict[str, Any]:
         return per.setdefault((person, day), {
             "stays": [], "stay_ms": 0, "home_ms": 0, "coloc_ms": 0,
             "with": set(), "outings": 0, "rooms": {}, "messages": 0, "reactions": 0,
-            "newest": None,
+            "items": 0, "newest": None,
         })
 
     def seen(row: dict[str, Any], ts: int) -> None:
@@ -624,12 +654,20 @@ def daybooks(
         row["reactions"] += 1
         row["rooms"].setdefault(r.room, 0)
         seen(row, r.ts)
+    for item in social.items:
+        if item.person_id not in member_set:
+            continue
+        row = slot(item.person_id, local_date(item.ts, tz_name))
+        row["items"] += 1
+        seen(row, min(item.ts, as_of_ms))
     last_day = local_date(as_of_ms, tz_name)
     out: list[Daybook] = []
     for (person, day), row in sorted(per.items()):
         if day > last_day:
             continue
         d0, d1 = local_day_bounds(day, tz_name)
+        since = social.observed_from.get(person)
+        observed = since is not None and day >= local_date(since, tz_name)
         out.append(Daybook(
             unit=unit, person_id=person, local_date=day,
             stays=tuple(sorted(row["stays"], key=lambda x: (x["from"], x["to"]))),
@@ -639,6 +677,7 @@ def daybooks(
             messages=row["messages"], reactions=row["reactions"],
             valid_from_ms=d0, valid_to_ms=d1,
             as_of_ms=row["newest"] if row["newest"] is not None else d0,
+            items_posted=row["items"] if row["items"] or observed else None,
         ))
     return out
 
@@ -1047,6 +1086,8 @@ __all__ = [
     "Response",
     "ResponseEvidence",
     "SendFact",
+    "SocialFact",
+    "SocialInput",
     "StaySpan",
     "StoredCorridor",
     "Tie",
