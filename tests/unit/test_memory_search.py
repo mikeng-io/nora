@@ -597,6 +597,10 @@ def test_a_recent_weak_hit_does_not_end_the_answer_before_an_older_strong_one() 
     assert len(_packet([_hit(i, s) for i, s in enumerate(scores)])) == len(scores)
     # Nothing strong after the weak one: the drop still ends the answer.
     assert len(_packet([_hit(i, s) for i, s in enumerate([0.8, 0.79, 0.78, 0.3, 0.29])])) == 3
+    # A withheld hit is no promise of a strong one to come: the cliff holds.
+    secret = _hit(5, 0.95, "call +85291234567")
+    hits = [_hit(i, s) for i, s in enumerate([0.8, 0.79, 0.78, 0.3])] + [secret]
+    assert len(_packet(hits)) == 3
 
 
 def test_a_social_item_ages_by_its_own_half_life() -> None:
