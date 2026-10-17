@@ -5,8 +5,9 @@ enabled` (the registry holding a `MemorySearch`) selects the graph's,
 `memory_search`; off (the shipped default, and the rollback) it is the
 Honcho surface: `ask_memory`, `search_memory`,
 `search_memory_workspace`, `who_said`, `about` and `remember`. The graph
-surface holds no Honcho tool at all: no `about`,
-no `remember`. `load_transcript` reads the room's own rows and is on both.
+surface holds no Honcho tool at all: no `about`. `remember` is on both, a
+Honcho conclusion off the graph and a Persona `told` line on it (DEC-317);
+`load_transcript` reads the room's own rows and is on both.
 
 Pinned at every place tools are assembled, each through its own production
 builder: a tag, a fire turn, the Cognition session, each Dreamer adaptor that
@@ -30,7 +31,7 @@ from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.subagent_tools import SubagentToolSource
-from nora.agent.tools import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
+from nora.agent.tools import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS, build_tool_specs
 from nora.app.cognition_wiring import read_surface, read_tools_for
 from nora.domain.cognition_session import Room as AgendaRoom
 from nora.language.character import CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_PERSON_TOOLS
@@ -56,21 +57,21 @@ def test_memory_verbs_cover_both_surfaces() -> None:
     assert HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS <= MEMORY_VERBS
 
 #: What each assembly point offers of `MEMORY_VERBS`, per surface. The graph
-#: column is the Honcho column with every Honcho tool taken out (`about` and
-#: `remember` included) and `memory_search` put in where that place had a
-#: Honcho search verb. The
+#: column is the Honcho column with every Honcho tool taken out (`about`
+#: included; `remember` stays, as the Persona write) and `memory_search` put
+#: in where that place had a Honcho search verb. The
 #: worker holds no `memory_search`: it reads the unit's other rooms, and the
 #: worker's reach is its one room (`NOT_LOOKUPS`).
 EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     "tag": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
                           "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "load_transcript"}),
+        True: frozenset({"memory_search", "remember", "load_transcript"}),
     },
     "fire": {
         False: frozenset({"ask_memory", "search_memory", "who_said", "about",
                           "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "load_transcript"}),
+        True: frozenset({"memory_search", "remember", "load_transcript"}),
     },
     "cognition": {
         False: frozenset({"ask_memory", "search_memory", "search_memory_workspace",
@@ -192,12 +193,28 @@ def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
     persons: Any, where: str,
 ) -> None:
     """`[memory_index]` on: `memory_search`, and none of `ask_memory`,
-    `search_memory`, `search_memory_workspace`, `who_said`, `about` or
-    `remember`: no Honcho tool at all."""
+    `search_memory`, `search_memory_workspace`, `who_said` or `about`: no
+    Honcho tool at all (`remember` there is the Persona write, below)."""
     offered = _built(where, True, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][True]
     assert not offered & HONCHO_MEMORY_TOOLS
-    assert not offered & {"about", "remember"}
+    assert "about" not in offered
+
+
+@pytest.mark.parametrize(("graph", "closure"), [(False, "remember"), (True, "remember_told")])
+def test_remember_is_the_persona_write_on_the_graph_and_honchos_off_it(
+    persons: Any, graph: bool, closure: str,
+) -> None:
+    """One name, two writes: off the graph `remember` is Honcho's conclusion,
+    on it the Persona `told` line, never the Honcho closure under the graph."""
+    specs = build_tool_specs(
+        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        metrics=Metrics(), room=_room(persons), question="", context_window=40,
+        transit_source=None,
+        memory_retrieval=MemorySearch(FakeMemoryIndex([]), Metrics()) if graph else None,
+    )
+    assert [s.call.__name__ for s in specs if s.name == "remember"] == [closure]
 
 
 def test_cognition_takes_the_memory_surface_from_the_registry() -> None:

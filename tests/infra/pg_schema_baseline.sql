@@ -144,6 +144,8 @@ $$;
 );
 );
 );
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -232,6 +234,8 @@ ADD CONSTRAINT note_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_attempt_pkey PRIMARY KEY (id);
 ADD CONSTRAINT otp_challenge_pkey PRIMARY KEY (challenge_id);
 ADD CONSTRAINT participation_window_state_pkey PRIMARY KEY (platform, conversation_id);
+ADD CONSTRAINT persona_line_pkey PRIMARY KEY (id);
+ADD CONSTRAINT persona_pkey PRIMARY KEY (key);
 ADD CONSTRAINT pk_document_revision PRIMARY KEY (document_id, revision);
 ADD CONSTRAINT presence_corridor_speed_pkey PRIMARY KEY (subject_id, corridor_id, hour_of_week);
 ADD CONSTRAINT presence_corridors_pkey PRIMARY KEY (id);
@@ -370,6 +374,8 @@ ALTER TABLE ONLY public.note_revision
 ALTER TABLE ONLY public.otp_attempt
 ALTER TABLE ONLY public.otp_challenge
 ALTER TABLE ONLY public.participation_window_state
+ALTER TABLE ONLY public.persona
+ALTER TABLE ONLY public.persona_line
 ALTER TABLE ONLY public.presence_corridor_speed
 ALTER TABLE ONLY public.presence_corridors
 ALTER TABLE ONLY public.presence_derived_places
@@ -492,6 +498,7 @@ CACHE 1
 CACHE 1
 CACHE 1
 CACHE 1
+CASE
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
 CONSTRAINT ck_assess_report_kind CHECK ((kind = 'nightly_dq'::text)),
@@ -577,6 +584,28 @@ CONSTRAINT ck_otp_challenge_code_hash CHECK ((code_hash ~ '^[0-9a-f]{64}$'::text
 CONSTRAINT ck_otp_challenge_expiry CHECK ((expires_at > issued_at)),
 CONSTRAINT ck_otp_challenge_platform CHECK ((platform = ANY (ARRAY['signal'::text, 'whatsapp'::text]))),
 CONSTRAINT ck_otp_challenge_purpose CHECK ((purpose = ANY (ARRAY['sign_in'::text, 'adopt'::text])))
+CONSTRAINT ck_persona_entity_kind CHECK ((entity_kind = ANY (ARRAY['human'::text, 'nora'::text, 'agent'::text, 'room'::text, 'unit'::text]))),
+CONSTRAINT ck_persona_has_a_key CHECK ((length(btrim(key)) > 0)),
+CONSTRAINT ck_persona_has_a_unit CHECK ((length(btrim(unit)) > 0)),
+CONSTRAINT ck_persona_line_abduced_explains CHECK (((mode <> 'abduced'::text) OR (cardinality(draws_on) >= 1))),
+CONSTRAINT ck_persona_line_cites CHECK ((cardinality(citations) >= 1)),
+CONSTRAINT ck_persona_line_deduced_premises CHECK (((mode <> 'deduced'::text) OR ((cardinality(citations) + cardinality(draws_on)) >= 2))),
+CONSTRAINT ck_persona_line_draws_on CHECK (((mode = ANY (ARRAY['deduced'::text, 'abduced'::text])) OR (cardinality(draws_on) = 0))),
+CONSTRAINT ck_persona_line_has_a_unit CHECK ((length(btrim(unit)) > 0)),
+CONSTRAINT ck_persona_line_kind_part CHECK ((((part = 'identity'::text) AND (kind = ANY (ARRAY['name'::text, 'role'::text, 'relationship'::text, 'attribute'::text, 'instruction'::text, 'purpose'::text, 'norm'::text]))) OR ((part = 'character'::text) AND (kind = 'trait'::text)) OR ((part = 'hypothesis'::text) AND (kind = 'explanation'::text)))),
+CONSTRAINT ck_persona_line_mode_part CHECK ((((part = 'identity'::text) AND (mode = ANY (ARRAY['told'::text, 'deduced'::text]))) OR ((part = 'character'::text) AND (mode = ANY (ARRAY['deduced'::text, 'induced'::text]))) OR ((part = 'hypothesis'::text) AND (mode = 'abduced'::text)))),
+CONSTRAINT ck_persona_line_names_its_writer CHECK ((length(btrim(written_by_session)) > 0)),
+CONSTRAINT ck_persona_line_not_self CHECK (((supersedes IS NULL) OR (supersedes <> id))),
+CONSTRAINT ck_persona_line_part CHECK ((part = ANY (ARRAY['identity'::text, 'character'::text, 'hypothesis'::text]))),
+CONSTRAINT ck_persona_line_prediction CHECK (
+CONSTRAINT ck_persona_line_state CHECK ((state = ANY (ARRAY['current'::text, 'disputed'::text, 'outranked'::text, 'hidden'::text, 'superseded'::text, 'retired'::text, 'refuted'::text]))),
+CONSTRAINT ck_persona_line_support_count CHECK ((support_count >= 1)),
+CONSTRAINT ck_persona_line_text CHECK (((length(btrim(text)) > 0) AND (length(text) <= 300))),
+CONSTRAINT ck_persona_line_told_by CHECK (((mode = 'told'::text) = (told_by IS NOT NULL))),
+CONSTRAINT ck_persona_line_verdict CHECK (((verdict IS NULL) OR (verdict = ANY (ARRAY['open'::text, 'confirmed'::text, 'refuted'::text, 'expired'::text, 'unknown'::text])))),
+CONSTRAINT ck_persona_line_verdict_by CHECK (((verdict_by IS NULL) = (verdict_at IS NULL))),
+CONSTRAINT ck_persona_line_verdict_part CHECK (((part = 'hypothesis'::text) = (verdict IS NOT NULL)))
+CONSTRAINT ck_persona_revision CHECK ((revision >= 0))
 CONSTRAINT ck_reasoning_strip_log_counts CHECK (((continuation_calls >= 1) AND (continuation_calls <= model_calls) AND (strip_calls >= 0) AND (strip_calls <= continuation_calls) AND (stripped_blocks >= 0) AND ((strip_calls = 0) = (stripped_blocks = 0)))),
 CONSTRAINT ck_reasoning_strip_log_tag_id_not_empty CHECK (((tag_id IS NULL) OR (tag_id <> ''::text)))
 CONSTRAINT ck_reminders_recurrence CHECK ((((recurrence = 'none'::text) AND (recurrence_tz IS NULL) AND (recurrence_count IS NULL) AND (recurrence_until IS NULL) AND (series_id IS NULL) AND (series_anchor_at IS NULL) AND (occurrence = 0)) OR ((recurrence <> 'none'::text) AND (recurrence_tz IS NOT NULL) AND (recurrence_count >= 1) AND (series_id IS NOT NULL) AND (series_anchor_at IS NOT NULL) AND (occurrence >= 0) AND (occurrence < recurrence_count)))),
@@ -769,6 +798,7 @@ CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
 CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
 CREATE INDEX idx_otp_challenge_person ON public.otp_challenge USING btree (person_id, purpose, issued_at);
+CREATE INDEX idx_persona_line_key ON public.persona_line USING btree (persona_key, written_at);
 CREATE INDEX idx_presence_corridors_build_subject ON public.presence_corridors USING btree (build_id, subject_id);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
 CREATE INDEX idx_presence_derived_places_build_subject ON public.presence_derived_places USING btree (build_id, subject_id);
@@ -866,6 +896,8 @@ CREATE TABLE public.note_revision (
 CREATE TABLE public.otp_attempt (
 CREATE TABLE public.otp_challenge (
 CREATE TABLE public.participation_window_state (
+CREATE TABLE public.persona (
+CREATE TABLE public.persona_line (
 CREATE TABLE public.presence_corridor_speed (
 CREATE TABLE public.presence_corridors (
 CREATE TABLE public.presence_derived_places (
@@ -930,6 +962,7 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.music
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.note FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.note_candidate FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.participation_window_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('platform', 'conversation_id');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.persona FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_corridors FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_derived_places FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.presence_fixes FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -970,6 +1003,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.music_session
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.note FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.note_candidate FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.participation_window_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.persona FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_corridors FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_derived_places FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.presence_fixes FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -997,6 +1031,7 @@ CREATE UNIQUE INDEX uq_computer_sessions_open_scope ON public.computer_sessions 
 CREATE UNIQUE INDEX uq_lesson_revision_seq ON public.lesson_revision USING btree (lesson_id, seq);
 CREATE UNIQUE INDEX uq_memo_revision_seq ON public.memo_revision USING btree (memo_id, seq);
 CREATE UNIQUE INDEX uq_otp_attempt_ok ON public.otp_attempt USING btree (challenge_id) WHERE ok;
+CREATE UNIQUE INDEX uq_persona_line_supersedes ON public.persona_line USING btree (supersedes) WHERE (supersedes IS NOT NULL);
 CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 CREATE UNIQUE INDEX uq_rollup_build_current ON public.rollup_build USING btree (status) WHERE (status = 'current'::text);
 CREATE UNIQUE INDEX uq_row_history_open ON public.row_history USING btree (table_name, row_key) WHERE (superseded_at IS NULL);
@@ -1006,6 +1041,7 @@ CREATE UNIQUE INDEX uq_stimulus_rollup_ref ON public.stimulus USING btree (unit,
 CREATE UNIQUE INDEX uq_stimulus_social_ref ON public.stimulus USING btree (unit, ref) WHERE (kind = 'social'::text);
 CREATE UNIQUE INDEX uq_stimulus_time_ref ON public.stimulus USING btree (unit, ref) WHERE (kind = 'time'::text);
 DECLARE
+ELSE ((prediction IS NULL) AND (prediction_observable IS NULL) AND (prediction_window_end IS NULL))
 END
 END
 END
@@ -1022,6 +1058,7 @@ END IF;
 END IF;
 END IF;
 END LOOP;
+END),
 ERRCODE = 'insufficient_privilege';
 ERRCODE = 'insufficient_privilege';
 FOREACH col IN ARRAY TG_ARGV LOOP
@@ -1233,6 +1270,7 @@ UPDATE row_history SET superseded_at = at, superseded_by = version_id
 UPDATE row_history SET superseded_at = at, superseded_by = version_id
 VALUES (version_id, TG_TABLE_NAME, new_key, lower(TG_OP), new_image, at);
 VALUES (version_id, TG_TABLE_NAME, old_key, 'delete', old_image, at);
+WHEN (mode = 'abduced'::text) THEN ((prediction IS NOT NULL) AND (prediction_observable IS NOT NULL) AND (prediction_window_end IS NOT NULL))
 WHERE table_name = TG_TABLE_NAME AND row_key = new_key
 WHERE table_name = TG_TABLE_NAME AND row_key = old_key
 account text NOT NULL,
@@ -1260,6 +1298,7 @@ anchor_entity_ids text[] DEFAULT '{}'::text[] NOT NULL,
 announced_at timestamp with time zone NOT NULL,
 artifact_id text,
 artifact_id text,
+as_of bigint,
 as_of bigint,
 as_of bigint,
 as_of bigint,
@@ -1339,6 +1378,7 @@ circle_id text NOT NULL,
 circle_id text NOT NULL,
 circle_id text NOT NULL,
 citations text[] DEFAULT '{}'::text[] NOT NULL,
+citations text[] NOT NULL,
 citations text[] NOT NULL,
 citations text[] NOT NULL,
 citations text[] NOT NULL,
@@ -1461,6 +1501,7 @@ doctrine_sha256 text,
 doctrine_text text NOT NULL,
 document_id uuid NOT NULL,
 document_id uuid NOT NULL,
+draws_on uuid[] DEFAULT '{}'::uuid[] NOT NULL,
 dst_id text NOT NULL,
 dst_kind text NOT NULL,
 due_at timestamp with time zone NOT NULL,
@@ -1482,6 +1523,7 @@ emoji text NOT NULL,
 ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
 entity_id uuid NOT NULL
+entity_kind text NOT NULL,
 error text,
 established_by text NOT NULL,
 established_by text NOT NULL,
@@ -1499,6 +1541,7 @@ event_id uuid,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
+exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
@@ -1633,6 +1676,7 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+id uuid NOT NULL,
 image jsonb NOT NULL,
 image_id text,
 instruction_sha256 text NOT NULL,
@@ -1657,9 +1701,11 @@ item_id text NOT NULL,
 item_index integer NOT NULL,
 items_posted integer
 key text NOT NULL,
+key text NOT NULL,
 kind text CONSTRAINT signal_kind_not_null NOT NULL,
 kind text DEFAULT 'miss'::text NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
+kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
@@ -1692,6 +1738,7 @@ last_seen_at bigint,
 last_seen_ts bigint NOT NULL,
 last_seen_ts bigint NOT NULL,
 last_send_at bigint,
+last_supported_at bigint,
 last_tag_id text NOT NULL,
 last_wake_revision_id uuid,
 last_window_end_at bigint NOT NULL,
@@ -1768,6 +1815,7 @@ message_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
 message_ids integer[] NOT NULL,
 messages integer NOT NULL,
 messages jsonb NOT NULL,
+mode text NOT NULL,
 mode text NOT NULL,
 mode text NOT NULL,
 mode text NOT NULL,
@@ -1855,6 +1903,7 @@ params_sha256 text NOT NULL,
 parent_revision_id uuid,
 parent_revision_id uuid,
 parent_revision_id uuid,
+part text NOT NULL,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
@@ -1885,6 +1934,7 @@ person_id text,
 person_id text,
 person_id text,
 person_id text,
+persona_key text NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] NOT NULL,
 persons text[] NOT NULL,
@@ -1920,6 +1970,9 @@ pos_rank integer NOT NULL,
 pos_recorded_ms bigint NOT NULL,
 predicate text NOT NULL,
 predicate text NOT NULL,
+prediction text,
+prediction_observable text,
+prediction_window_end bigint,
 premise_fact_id uuid NOT NULL,
 probe text,
 projected_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -2011,6 +2064,7 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone NOT NULL,
 recurrence text DEFAULT 'none'::text NOT NULL,
 recurrence_count integer,
@@ -2049,6 +2103,7 @@ retire_reason text,
 retired_at bigint,
 retired_by text,
 revised boolean DEFAULT false NOT NULL,
+revision integer DEFAULT 0 NOT NULL,
 revision integer NOT NULL,
 revisit_at bigint,
 rooms jsonb NOT NULL,
@@ -2143,6 +2198,7 @@ state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
+state text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
@@ -2185,6 +2241,8 @@ superseded_by bigint,
 superseded_by bigint,
 superseded_by uuid,
 supersedes text,
+supersedes uuid,
+support_count integer NOT NULL,
 surface text NOT NULL,
 surface_form text NOT NULL,
 survivor_id uuid NOT NULL,
@@ -2207,6 +2265,7 @@ task_sha256 text DEFAULT ''::text NOT NULL,
 text text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
 text text NOT NULL,
+text text NOT NULL,
 through_ms bigint DEFAULT 0 NOT NULL,
 through_stimulus_id bigint CONSTRAINT cognition_wake_through_signal_id_not_null NOT NULL,
 through_stimulus_id bigint NOT NULL,
@@ -2220,6 +2279,7 @@ title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
 title text,
+told_by text,
 tool text NOT NULL,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
@@ -2261,12 +2321,15 @@ unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
 unit text,
 unit text,
 unit_id text DEFAULT ''::text NOT NULL,
 units text[] DEFAULT '{}'::text[] NOT NULL,
 unprojected integer DEFAULT 0 NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
+updated_at bigint NOT NULL,
 updated_at bigint NOT NULL,
 updated_at bigint NOT NULL,
 updated_at bigint NOT NULL,
@@ -2313,6 +2376,9 @@ venue_text text,
 venue_text text,
 verb text NOT NULL,
 verdict text NOT NULL,
+verdict text,
+verdict_at bigint,
+verdict_by text,
 version text NOT NULL,
 version text,
 version_id := nextval('row_history_id_seq');
@@ -2342,8 +2408,10 @@ written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,
+written_at bigint NOT NULL,
 written_at timestamp with time zone NOT NULL,
 written_by text DEFAULT 'tag'::text NOT NULL,
 written_by text NOT NULL,
+written_by_session text NOT NULL,
 || ' would bypass row_history; delete the rows (they are kept as history) '
 || 'or SET LOCAL nora.row_history = ''off'' deliberately';

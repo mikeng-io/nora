@@ -1214,14 +1214,10 @@ cases:
   # the group case expects the reply and forbids the two writes the turn must
   # not make; "she wrote nothing at all" is not expressible as a criterion.
   # NOT RUN when written: the eval owner runs them on master and the branch.
-  # `remember` is a Honcho tool, so the own-fact case is Honcho-surface only:
-  # the graph surface holds no Honcho tool (DEC-316, ruling 2026-10-17) and
-  # no person-fact write verb. Its counterpart there is shaped like the group
-  # case: what the speaker said is kept without a write, and a note keeps an
-  # open question, never a settled fact (DEC-316), so the turn replies and
-  # makes none of the writes it holds. What the reply SAYS (that it will be
-  # kept, not 「記低咗」 nor 「記唔到」) is ungraded: this corpus has no judge and
-  # ToolRouteGrader reads only the tools that ran.
+  # `remember` is on both memory surfaces, a different write on each: a Honcho
+  # conclusion off the graph, a Persona `told` line on it (operator ruling
+  # 2026-10-17, design/unified-memory/45). So the own-fact case runs on both,
+  # and on each a note is not where a settled fact goes (DEC-316).
   - name: route_keep_group_fact_is_not_remember
     entry: tag
     expect: reply
@@ -1238,26 +1234,25 @@ cases:
     metadata: {tools: [remember], not_tools: [note_create], memory_surface: honcho}
     snapshot: *room_a
 
-  - name: route_keep_own_fact_on_graph_writes_no_note
+  - name: route_keep_own_fact_on_graph_is_remember
     entry: tag
     expect: reply
     mention: true
     input: 記低 我食素
-    metadata: {tools: [send_reply], not_tools: [note_create, note_update, remind], memory_surface: graph}
+    metadata: {tools: [remember], not_tools: [note_create, note_update, remind], memory_surface: graph}
     snapshot: *room_a
 
   # --- memory_search (DEC-316, operator ruling 2026-10-16) ----------------------
   # `[memory_index] enabled` selects ONE memory surface: the graph's
   # (`memory_search`) or Honcho's (`ask_memory`, `search_memory`,
-  # `search_memory_workspace`, `who_said`, `about`, `remember`), never both.
-  # `load_transcript` is on both. These cases measure
+  # `search_memory_workspace`, `who_said`, `about`), never both.
+  # `load_transcript` and `remember` are on both. These cases measure
   # `memory_search`'s routing against the neighbours on its own surface it
   # could take from, or lose to: `where_been` (where someone's phone has
   # been), `media_search` (pictures by what they show) and `lookup_person` (who
-  # a name in this chat is). `about` and `remember` are Honcho tools and are
-  # not on the graph surface at all (operator ruling 2026-10-17), so no graph
-  # case names them: a profile question there is `memory_search` with
-  # `person`. The time and kind cases also check the narrowing reaches the
+  # a name in this chat is). `about` is a Honcho tool and is not on the graph
+  # surface at all (operator ruling 2026-10-17), so no graph case names it: a
+  # profile question there is `memory_search` with `person`. The time and kind cases also check the narrowing reaches the
   # call (`args_include`).
   #
   # `memory_surface: graph` runs only under `python -m evals --memory-index`;

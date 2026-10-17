@@ -187,6 +187,7 @@ from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.otp import SqlOtpStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
+from nora.infra.sql.persona import SqlPersonaStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.record_query import SqlRecordQuery
@@ -2952,6 +2953,9 @@ async def build_dependencies(
             )
             if cfg.memory_index.enabled else None
         ),
+        # The graph surface's `remember` writes a Persona `told` line
+        # (design/unified-memory/45); wired with `memory_search`, never alone.
+        persona=SqlPersonaStore(engine) if cfg.memory_index.enabled else None,
         lineage=lineage,
         # The current Rollup build's rows and the Standing head. SELECTs, so no
         # flag. The Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the
