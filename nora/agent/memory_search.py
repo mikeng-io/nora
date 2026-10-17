@@ -1,6 +1,8 @@
 """The one retrieval service over the memory index: scope, seed, expand hop by
 hop, rank, and an evidence packet with the path that reached each item.
-`memory_search` calls it while `[memory_index] enabled`.
+`memory_search` calls it while `[memory_index] enabled`, and so does the tag
+path's pre-fetch (`nora.engagement.context`, the `<recalled>` block), from the
+message's own seeds, cut at `PREFETCH_TOKENS`.
 
 **1. Scope, per read, from the live policy** (`scope_for`). The unit is the
 read boundary (DEC-231): the reading room's unit, every room of it,
@@ -35,7 +37,11 @@ path is cut at its first out-of-scope node.
   up on. No vector reaches either, and their words still can.
 - **About**: for a named person this room lists, the in-scope nodes `about`
   them (an exact reference). A person this room does not list
-  seeds nothing.
+  seeds nothing. The pre-fetch seeds its speaker and the persons the message
+  mentions this way without narrowing to them (`walk`'s `about`).
+- **Media**: the pre-fetch's attached pictures, by their bytes: the in-scope
+  nodes holding the same sha256, pinned ahead of the literal pins and
+  sharing `PINNED_LIMIT` with them.
 
 A hub never seeds.
 
@@ -561,8 +567,8 @@ async def walk(
     the listed-room rule) WITHOUT narrowing anything to them: the pre-fetch's
     speaker and the persons the message mentions. `media` are the sha256s of
     the pictures the message carries: the nodes holding the same bytes seed
-    as exact references, pinned ahead of the literal ones and sharing their
-    `PINNED_LIMIT`."""
+    as exact references, at most `PINNED_LIMIT` of them, every one pinned
+    ahead of the literal ones, which take the pins left."""
     reached: dict[tuple[str, str], Hit] = {}
     # A seed scored by its cosine has the cosine's floor; a lexical seed and
     # every hop keep the walk's (an episode has no vector: a hop reaches it).
@@ -592,10 +598,12 @@ async def walk(
     media_pins = 0
     for sc in (scope,) if bridge is None else (scope, bridge):
         first = sc is scope
-        if media:
-            for node in await index.media(media, sc, limit=EXACT_LIMIT):
-                pinned = first and media_pins < PINNED_LIMIT
-                if keep(node, 1.0, (Step(node.kind, how="exact"),), seed_floor) and pinned:
+        if media and first:
+            # Pinned, every one: a picture's earlier sharings have no
+            # cosine to rank by, so one past the pins would sit at 1.0 above
+            # every scored hit. Read only as many as there are pins.
+            for node in await index.media(media, sc, limit=PINNED_LIMIT):
+                if keep(node, 1.0, (Step(node.kind, how="exact"),), seed_floor):
                     # Above every literal pin: the picture itself was handed over.
                     reached[node.key].pin = 2 * PINNED_LIMIT - media_pins
                     media_pins += 1

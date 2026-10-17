@@ -8,7 +8,9 @@ seeds and renders one `<recalled>` block through `render_packet`, cut at
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import (
@@ -100,14 +102,16 @@ def _search(index: FakeMemoryIndex, metrics: Metrics) -> MemorySearch:
 async def _assemble(
     index: FakeMemoryIndex | None, msg: NormalizedMessage, *,
     audit: FakeRecordStore | None = None, metrics: Metrics | None = None,
+    persons: Persons = _PERSONS, clock: Any = None,
 ) -> TagContext:
     metrics = metrics or Metrics()
     policy = _policy()
     assembler = TranscriptInjection(
         audit=audit or FakeRecordStore(), memory=_Memory(),  # type: ignore[arg-type]
-        persons=_PERSONS, context_window=10, metrics=metrics, policy=policy,
+        persons=persons, context_window=10, metrics=metrics, policy=policy,
         lineage=LineagePolicy.from_policy(policy),
         memory_search=_search(index, metrics) if index is not None else None,
+        clock=clock,
     )
     return await assembler.assemble(request=_request(msg))
 
@@ -263,6 +267,9 @@ async def test_picture_pins_share_the_literal_pins_limit() -> None:
         IndexedNode("media", f"a{i}", f"poster {i}", OLD - i, origin_room=ROOM, sha256=SHA)
         for i in range(3)
     ] + [
+        # Another unit's sharing of the same picture: out of scope.
+        IndexedNode("media", "far", "poster", OLD, origin_room="signal:x", sha256=SHA),
+    ] + [
         IndexedNode("message", f"m{i}", f"see https://x.example/p {i}", OLD - i,
                     origin_room=ROOM)
         for i in range(PINNED_LIMIT)
@@ -293,3 +300,110 @@ async def test_the_tag_path_cuts_at_the_prefetch_budget() -> None:
     spent = sum(estimate_tokens(json.dumps(i, ensure_ascii=False)) for i in ctx.recalled)
     assert len(ctx.recalled) > MIN_RESULTS
     assert PREFETCH_TOKENS - 300 < spent <= PREFETCH_TOKENS
+
+
+async def test_more_sharings_of_a_picture_than_pins_never_outrank_the_rest() -> None:
+    """A picture's earlier sharings carry no cosine; one past the pins would
+    rank at 1.0 above every scored hit. So only as many are read as there
+    are pins, and every one is pinned."""
+    index = FakeMemoryIndex(
+        [IndexedNode("media", f"a{i}", f"poster {i}", OLD - i, origin_room=ROOM, sha256=SHA)
+         for i in range(PINNED_LIMIT + 3)],
+    )
+    target = RenderRoom(
+        room=RoomFacts("signal", frozenset({"g1"}), "u1", frozenset({"miles"})),
+        live=LiveRoom(person_ids=frozenset({"miles"})),
+    )
+    scope = scope_for(target, social_off=())
+    assert scope is not None
+    hits = await walk(
+        index, scope, terms=[], person_id=None, hops=0, admits=lambda n: True, media=[SHA],
+    )
+    assert len(hits) == PINNED_LIMIT and all(h.pin for h in hits)
+
+
+async def test_an_opted_out_persons_social_items_stay_out() -> None:
+    """`social = false` (identity.toml) holds for the pre-fetch as for the
+    tool: their social items are never read."""
+    node = IndexedNode("social", "instagram:1", "Instagram post\nramen crawl pics", OLD,
+                       persons=("kit",))
+    index = FakeMemoryIndex([node], embed_model=MODEL)
+    assert _texts(await _assemble(index, _msg())) == ["ramen crawl pics"]
+    off = replace(_PERSONS, _social_off=frozenset({"kit"}))
+    assert _texts(await _assemble(index, _msg(), persons=off)) == []
+
+
+async def test_a_listed_persons_name_in_the_message_pins_what_names_them() -> None:
+    index = FakeMemoryIndex(
+        [IndexedNode("note", "n1", "Kit owes the deposit", OLD, unit="u1")],
+    )
+    ctx = await _assemble(index, _msg("nora.000 what about Kit"))
+    assert [i["path"] for i in ctx.recalled] == [["note (exact)"]]
+
+
+async def test_an_unlisted_mention_seeds_nothing() -> None:
+    persons = replace(
+        _PERSONS,
+        by_person={**_PERSONS.by_person,
+                   "rin": PersonRef(person_id="rin", name="Rin", honcho_peer_id="rin")},
+        index={**_PERSONS.index, ("signal", "rin-uuid"): "rin"},
+    )
+    index = FakeMemoryIndex(
+        [IndexedNode("note", "n1", "Rin's birthday plan", OLD, unit="u1")],
+        [("note", "n1", "about", "person", "rin")],
+    )
+    ctx = await _assemble(index, _msg("nora.000 hm", mentions=frozenset({"rin-uuid"})),
+                          persons=persons)
+    assert ctx.recalled == ()
+
+
+async def test_the_messages_own_attachment_is_not_recalled() -> None:
+    index = FakeMemoryIndex(
+        [IndexedNode("media", "own", "the one just sent", 5_000, origin_room=ROOM,
+                     sha256=SHA),
+         IndexedNode("media", "before", "shared before", OLD, origin_room=ROOM, sha256=SHA)],
+    )
+    ctx = await _assemble(index, _msg(
+        "nora.000 this", media=(MediaBlob(SHA, "image/jpeg", 1),),
+    ))
+    assert _texts(ctx) == ["shared before"]
+
+
+async def test_a_render_that_raises_is_no_block_and_counted_not_a_dead_turn() -> None:
+    metrics = Metrics()
+    index = FakeMemoryIndex(
+        [IndexedNode("message", "1", "ramen crawl", 10**16, origin_room="signal:g2")],
+        embed_model=MODEL,
+    )
+    ctx = await _assemble(index, _msg(), metrics=metrics)
+    assert ctx.recalled == ()
+    assert metrics.get("nora_errors_total", stage="tag_prefetch") == 1
+
+
+async def test_the_prefetch_reads_the_graphs_clock() -> None:
+    """A harness at a fixed instant dates and ranks the block at that
+    instant, as every other component does."""
+    at = datetime(2026, 1, 1, tzinfo=UTC)
+    index = FakeMemoryIndex(
+        [IndexedNode("message", "1", "ramen crawl", int((at - timedelta(days=2)).timestamp()
+                                                          * 1000), origin_room="signal:g2")],
+        embed_model=MODEL,
+    )
+    ctx = await _assemble(index, _msg(), clock=lambda: at)
+    assert "(2d ago)" in ctx.recalled[0]["age"]
+
+
+async def test_a_search_past_its_bound_is_no_block_and_counted(monkeypatch: Any) -> None:
+    import asyncio
+
+    from nora.engagement import context
+
+    class _Stuck(FakeMemoryIndex):
+        async def index_state(self, **_: Any) -> Any:
+            await asyncio.sleep(60)
+
+    monkeypatch.setattr(context, "PREFETCH_TIMEOUT_SECONDS", 0.05)
+    metrics = Metrics()
+    ctx = await _assemble(_Stuck([]), _msg(), metrics=metrics)
+    assert ctx.recalled == ()
+    assert metrics.get("nora_errors_total", stage="tag_prefetch") == 1

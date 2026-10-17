@@ -2121,7 +2121,7 @@ async def build_dependencies(
     )
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
-        memory_search=memory_search,
+        memory_search=memory_search, clock=clock,
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
         # SAME policy.toml instance the ingest pipeline and `EngagementPipeline`
         # are given below — the assembler needs it for one thing only, naming

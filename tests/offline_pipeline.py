@@ -170,6 +170,8 @@ def build_offline_pipeline(
         # `<recalled>`, the pre-fetch — `None`: no memory index here; the live
         # eval subject builds the real search through composition.
         memory_search=None,
+        # The wall clock, as the rest of this harness reads it.
+        clock=None,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
