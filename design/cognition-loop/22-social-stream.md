@@ -632,7 +632,7 @@ author only: `collab` records that another account owns it, not who, so the
 co-owner's listing and `social = false` are not consulted.
 
 A gone or hidden item has no node; every write of `social_item`,
-`social_item_state` and `social_perception` re-projects its item. What is
+`social_item_state` and `social_perception` re-projects its item.
 `StoryMediaExpiry` asks `nora.infra.sql.memory_index.story_frame_embedded`
 which of its perceived frames are embedded under the deployed embedder, so a
 frame both perceived and embedded loses its bytes at the first bound; a frame
