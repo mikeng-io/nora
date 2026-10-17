@@ -8,6 +8,7 @@ for its own injected XML, with the label replaced by the sentence.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 
@@ -148,6 +149,12 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("peer_card", 20, "person"),
     ("peer_history", 30, "person"),
     ("people_in_window", 35, "room"),
+    # THE PRE-FETCH (design/unified-memory/00 step 3b): what her memory holds
+    # that this message touches, searched by code from its own seeds. Beside
+    # the memory of the people talking it will replace on the graph surface,
+    # and before the unit's open questions. `turn`: it is searched from one
+    # message. Renders only where `TagContext.recalled` is filled.
+    ("recalled", 36, "turn"),
     ("notes", 40, "unit"),
     # WHAT THE GROUP SETTLED AND KEEPS (DEC-306): unit-wide like `notes`, right
     # after them, titles and ids only. Renders only where `TagContext.memos` is
@@ -661,6 +668,22 @@ def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
     )
 
 
+def _recalled_block(ctx: TagContext) -> ContextBlock | None:
+    """`<recalled>`: the pre-fetch's items, one JSON object a line, exactly
+    as `memory_search` answers with them (`render_packet` built and cut them
+    in the assembler; nothing is re-rendered here). Escaped like every
+    group-derived block; `json.dumps` already keeps each on one line."""
+    if not ctx.recalled:
+        return None
+    body = "\n".join(
+        escape(json.dumps(item, ensure_ascii=False)) for item in ctx.recalled
+    )
+    return _block(
+        "recalled", body=body,
+        attrs=(("partial", "yes"),) if ctx.recalled_partial else (),
+    )
+
+
 def _lineage(ctx: TagContext) -> DerivedView | None:
     """Which derived rows this room may be shown. `None` when lineage is off
     for this context (no target, or `[lineage] mode = "off"`): every block
@@ -953,6 +976,7 @@ def build_prefill(
             _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
             _transcript_block(ctx, display_name, clock, context_window),
             _spoken_turn_block(ctx),
+            _recalled_block(ctx),
         ])
         # WHICH blocks were actually built (non-empty body, `assemble`'s own
         # test; see `_declared`'s docstring for why a block with nothing to
