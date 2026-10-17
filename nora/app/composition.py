@@ -3834,8 +3834,19 @@ async def build_dependencies(
                     culture=culture_store,
                     evidence=PersonEvidence(
                         store=SqlCharacterEvidence(engine), keys=person_keys,
+                        # Their social items are evidence too (design/
+                        # cognition-loop/22 §6), read whether or not the poller
+                        # runs, opted-out persons left out by the store.
+                        social=SqlSocialStreamStore(
+                            engine, opted_out=persons.social_off_ids(),
+                        ),
+                        former_ids=persons.former_ids_for,
                     ),
                     keys=person_keys, metrics=metrics,
+                    screen=scan_identifiers,
+                    render_chars=cfg.media.comprehension_render_chars,
+                    # A caption keeps only the author's own @handle.
+                    handle_owners=persons.instagram_username_owners,
                 ),
             )
 

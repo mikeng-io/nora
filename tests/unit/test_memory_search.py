@@ -549,3 +549,222 @@ def test_the_opt_outs_are_never_defaulted() -> None:
     assert param.default is inspect.Parameter.empty
     assert param.kind is inspect.Parameter.KEYWORD_ONLY
     assert {f.name for f in dataclasses.fields(MemoryScope) if f.kw_only} == {"social_off"}
+
+
+# --- the adaptive cut (design/unified-memory/65 §6) ------------------------------------------
+
+
+def _hit(i: int, score: float, text: str = "ramen", pin: int = 0) -> memory_search.Hit:
+    node = _msg(f"{i:03}", text)
+    return memory_search.Hit(node, score, (memory_search.Step("message", how="matched"),),
+                             pin=pin)
+
+
+def _packet(hits: list[memory_search.Hit]) -> list[dict]:
+    items, _ = render_packet(hits, name_of=str, room_label=lambda k: "B",
+                             now=datetime.fromtimestamp(NOW / 1000, UTC))
+    return items
+
+
+def _cost(item: dict) -> int:
+    import json
+
+    from nora.language.computer_render import estimate_tokens
+    return estimate_tokens(json.dumps(item, ensure_ascii=False))
+
+
+def test_the_packet_stops_at_its_token_budget() -> None:
+    from nora.agent.memory_search import PACKET_TOKENS, RESULT_MAX
+    hits = [_hit(i, 0.7 - i * 0.001, "ramen " * 60) for i in range(RESULT_MAX)]
+    items = _packet(hits)
+    spent = sum(_cost(i) for i in items)
+    assert 3 < len(items) < RESULT_MAX
+    assert spent <= PACKET_TOKENS < spent + _cost(_packet(hits[len(items):])[0])
+
+
+def test_a_steep_drop_in_relevance_ends_the_answer() -> None:
+    from nora.agent.memory_search import SCORE_GAP
+    scores = [0.8, 0.79, 0.78, 0.77, 0.77 - SCORE_GAP - 0.01, 0.5]
+    assert [i["text"] for i in _packet([_hit(i, s) for i, s in enumerate(scores)])] == [
+        "ramen"] * 4
+
+
+def test_a_recent_weak_hit_does_not_end_the_answer_before_an_older_strong_one() -> None:
+    """The rank is age-decayed and the gap is read on relevance, so a recent
+    weak hit can sit between strong ones. The drop is read against the best
+    still to come: an older hit of high relevance after it is still shown."""
+    scores = [0.8, 0.79, 0.78, 0.3, 0.75, 0.74]
+    assert len(_packet([_hit(i, s) for i, s in enumerate(scores)])) == len(scores)
+    # Nothing strong after the weak one: the drop still ends the answer.
+    assert len(_packet([_hit(i, s) for i, s in enumerate([0.8, 0.79, 0.78, 0.3, 0.29])])) == 3
+    # A withheld hit is no promise of a strong one to come: the cliff holds.
+    secret = _hit(5, 0.95, "call +85291234567")
+    hits = [_hit(i, s) for i, s in enumerate([0.8, 0.79, 0.78, 0.3])] + [secret]
+    assert len(_packet(hits)) == 3
+
+
+def test_a_social_item_ages_by_its_own_half_life() -> None:
+    """A social item is dated by when it was posted, often years before the
+    room heard of it: it decays by `SOCIAL_HALF_LIFE_DAYS`, every other kind
+    by `HALF_LIFE_DAYS`."""
+    from nora.agent.memory_search import HALF_LIFE_DAYS, SOCIAL_HALF_LIFE_DAYS, _decay
+    from nora.domain.memory_index import SOCIAL_KINDS
+    days = 500
+    at = NOW - days * 86_400_000
+    assert SOCIAL_HALF_LIFE_DAYS > HALF_LIFE_DAYS
+    for kind in SOCIAL_KINDS:
+        node = IndexedNode(kind, "instagram:1", "a picnic", at)
+        assert _decay(node, NOW) == pytest.approx(0.5 ** (days / SOCIAL_HALF_LIFE_DAYS))
+    for kind in ("message", "media", "note"):
+        node = IndexedNode(kind, "1", "a picnic", at)
+        assert _decay(node, NOW) == pytest.approx(0.5 ** (days / HALF_LIFE_DAYS))
+    assert _decay(IndexedNode("social", "instagram:1", "a picnic", None), NOW) == 0.5
+
+
+def test_the_best_few_show_whatever_the_gap_or_the_budget() -> None:
+    from nora.agent.memory_search import MIN_RESULTS, PACKET_TOKENS
+    # A cliff after every item.
+    scores = [0.9, 0.65, 0.4, 0.15, 0.14]
+    assert len(_packet([_hit(i, s) for i, s in enumerate(scores)])) == MIN_RESULTS
+    # Each item alone over the budget (its places, which no text cut bounds).
+    big = []
+    for i in range(5):
+        h = _hit(i, 0.6)
+        h.places = {f"{i}{j}" + "拉" * 100 for j in range(PACKET_TOKENS // 90)}
+        big.append(h)
+    assert _cost(_packet(big[:1])[0]) > PACKET_TOKENS
+    assert len(_packet(big)) == MIN_RESULTS
+
+
+def test_pinned_hits_are_kept_past_the_budget_and_no_gap_is_read_from_them() -> None:
+    from nora.agent.memory_search import PACKET_TOKENS, PINNED_LIMIT
+    big = "拉" * PACKET_TOKENS
+    pinned = [_hit(i, 1.0, big, pin=PINNED_LIMIT - i) for i in range(PINNED_LIMIT)]
+    assert len(_packet(pinned)) == PINNED_LIMIT
+    # A pin scores 1; the dense hits after it at 0.5 are not a cliff.
+    small = [_hit(i, 1.0, pin=3 - i) for i in range(3)]
+    dense = [_hit(10 + i, 0.5 - i * 0.01) for i in range(4)]
+    assert len(_packet(small + dense)) == 7
+
+
+def test_the_answer_never_passes_its_cap() -> None:
+    from nora.agent.memory_search import RESULT_MAX
+    assert len(_packet([_hit(i, 0.7) for i in range(RESULT_MAX + 5)])) == RESULT_MAX
+
+
+async def test_with_a_query_vector_the_dense_floor_drops_a_far_neighbour() -> None:
+    """Under `DENSE_FLOOR` a dense neighbour is not an answer: with nothing
+    else in scope the index has nothing to say."""
+    from nora.agent.memory_search import DENSE_FLOOR
+    from nora.testing.memory_index import cosine
+    q = "ramen crawl tonight with friends downtown after work"
+    far = _msg("far", "ramen")
+    near = _msg("near", "ramen crawl tonight with friends")
+    assert cosine(bag_of_words(q), bag_of_words(far.text)) < DENSE_FLOOR
+    assert cosine(bag_of_words(q), bag_of_words(near.text)) >= DENSE_FLOOR
+    found = await _search(FakeMemoryIndex([far, near], embed_model=M), q)
+    assert [h.node.source_id for h in found.hits] == ["near"]
+    alone = await _search(FakeMemoryIndex([far], embed_model=M), q)
+    assert (alone.status, alone.hits) == ("nothing_found", ())
+
+
+async def test_a_pinned_literal_survives_the_dense_floor() -> None:
+    """A real hit set is never turned into `nothing_found` by the floor when
+    an exact reference holds: the pin scores 1 whatever its cosine."""
+    named = _msg("named", "Rin")
+    rin = PersonRef("kit", "Rin", "kit")
+    found = await _search(FakeMemoryIndex([named], embed_model=M),
+                          "did Rin ever book that ramen place downtown", people=(rin,))
+    assert found.status == "ok"
+    assert [h.node.source_id for h in found.hits] == ["named"] and found.hits[0].pin > 0
+
+
+async def test_a_line_waiting_for_its_vector_keeps_the_lexical_floor() -> None:
+    """Beside a dense seed, the lexical seed over unvectored nodes scores by
+    words held (one of three: 0.33), which the dense floor would drop."""
+    fresh = _msg("2", "noodle place")
+    index = FakeMemoryIndex([_msg("1", "zzz"), fresh], embed_model=M, fresh=[fresh.key])
+    del index.vectors[fresh.key]
+    found = await MemorySearch(
+        index, Metrics(), embedder=FakeQueryEmbedder(), model=M, drain_seconds=60.0,
+    ).search(query="noodle soup tonight", person_id=None, target=_target(), depth="low",
+             now_ms=NOW, social_off=())
+    assert [(h.node.source_id, round(h.score, 2)) for h in found.hits] == [("2", 0.33)]
+    assert found.status == "ok"
+
+
+async def test_a_dense_seed_still_reaches_the_outing_it_was_said_during() -> None:
+    """The cosine floor is a seed's, not a hop's: an outing has no vector,
+    and a message at a typical true hit's cosine reaches it through
+    `during` (0.5) well under `DENSE_FLOOR`."""
+    from nora.agent.memory_search import DENSE_FLOOR
+    from nora.testing.memory_index import cosine
+    said = _msg("1", "ramen at the night market")
+    outing = IndexedNode("outing", "o1", "outing", NOW, unit="u1", persons=("kit",),
+                         lineage=[["presence", "kit", None]])
+    index = FakeMemoryIndex([said, outing], [("message", "1", "during", "outing", "o1")],
+                            embed_model=M)
+    q = "where did we eat ramen at the night market with everyone last weekend"
+    near = cosine(bag_of_words(q), bag_of_words(said.text))
+    assert near >= DENSE_FLOOR and near * 0.5 < DENSE_FLOOR
+    found = await MemorySearch(index, Metrics(), embedder=FakeQueryEmbedder(), model=M).search(
+        query=q, person_id=None, target=_target(), depth="low", now_ms=NOW,
+        kinds=("outing",), social_off=())
+    assert (found.status, [h.node.source_id for h in found.hits]) == ("ok", ["o1"])
+
+
+def test_a_withheld_hit_takes_no_part_in_the_cut() -> None:
+    """Screened before the cut: it is not one of the best few, spends no
+    budget and is no baseline for the next hit's drop."""
+    from nora.agent.memory_search import MIN_RESULTS
+    # Rank is relevance times age decay, so a newer hit can rank below an
+    # older one of higher relevance. Read as a baseline, the withheld 0.95
+    # would make the 0.66 after it a cliff.
+    secret = _hit(3, 0.95, "call +85291234567")
+    hits = [_hit(0, 0.7), _hit(1, 0.69), _hit(2, 0.68), secret, _hit(4, 0.66)]
+    items, withheld = render_packet(hits, name_of=str, room_label=lambda k: "B",
+                                    now=datetime.fromtimestamp(NOW / 1000, UTC))
+    assert withheld == 1 and len(items) == 4 > MIN_RESULTS
+
+
+async def test_inside_a_date_window_the_best_seeds_are_kept_whatever_their_cosine() -> None:
+    """A question asked by time shares few words with what answers it: the
+    window narrows it, and the cosine floor there would say «you never said
+    that» about the one line in the window."""
+    from nora.agent.memory_search import DENSE_FLOOR
+    from nora.testing.memory_index import cosine
+    sent = _msg("1", "look at this photo", at=NOW - 60_000)
+    q = "what was that photo you sent just now"
+    assert cosine(bag_of_words(q), bag_of_words(sent.text)) < DENSE_FLOOR
+    index = FakeMemoryIndex([sent], embed_model=M)
+
+    async def search(since_ms: int | None) -> MemorySearchResult:
+        return await MemorySearch(index, Metrics(), embedder=FakeQueryEmbedder(), model=M).search(
+            query=q, person_id=None, target=_target(), depth="low", now_ms=NOW,
+            since_ms=since_ms, social_off=())
+
+    windowed = await search(NOW - 600_000)
+    assert (windowed.status, [h.node.source_id for h in windowed.hits]) == ("ok", ["1"])
+    assert (await search(None)).status == "nothing_found"  # the floor, outside a window
+
+
+async def test_the_lexical_fallback_keeps_the_lexical_floor() -> None:
+    """With no query vector the seeds are lexical: one term of three held
+    scores 0.33, under the cosine floor and over the lexical one."""
+    found = await _lexical(FakeMemoryIndex([_msg("1", "noodle place")]), "noodle soup tonight")
+    assert [(h.node.source_id, round(h.score, 2)) for h in found.hits] == [("1", 0.33)]
+
+
+async def test_an_exact_hit_past_the_pins_needs_the_cosine_floor() -> None:
+    """Past the pinned ones an exact hit competes on its cosine, floor and all."""
+    from nora.agent.memory_search import DENSE_FLOOR, PINNED_LIMIT
+    from nora.testing.memory_index import cosine
+    q = "did Rin say the ramen crawl downtown was good tonight"
+    near = [_msg(f"n{i}", f"Rin ramen crawl downtown good tonight {i}", at=NOW - i)
+            for i in range(PINNED_LIMIT)]
+    bare = _msg("bare", "Rin", at=NOW - 3_600_000)
+    assert cosine(bag_of_words(q), bag_of_words(bare.text)) < DENSE_FLOOR
+    rin = PersonRef("kit", "Rin", "kit")
+    found = await _search(FakeMemoryIndex([*near, bare], embed_model=M), q, people=(rin,))
+    assert sum(1 for h in found.hits if h.pin) == PINNED_LIMIT
+    assert "bare" not in {h.node.source_id for h in found.hits}

@@ -568,7 +568,7 @@ CONSTRAINT ck_memory_index_state_one_row CHECK (id),
 CONSTRAINT ck_memory_index_state_status CHECK ((status = ANY (ARRAY['never'::text, 'building'::text, 'complete'::text])))
 CONSTRAINT ck_memory_node_embed_input CHECK (((embed_input IS NULL) OR (embed_input = ANY (ARRAY['text'::text, 'bytes'::text])))),
 CONSTRAINT ck_memory_node_has_a_scope CHECK (((kind = ANY (ARRAY['person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text])) OR (unit IS NOT NULL) OR (origin_room IS NOT NULL) OR (cardinality(persons) > 0))),
-CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text, 'social'::text, 'social_media'::text]))),
+CONSTRAINT ck_memory_node_kind CHECK ((kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'outing'::text, 'stay'::text, 'trip'::text, 'person'::text, 'room'::text, 'unit'::text, 'nora'::text, 'place'::text, 'social'::text, 'social_media'::text, 'social_location'::text]))),
 CONSTRAINT ck_memory_node_state CHECK ((state = ANY (ARRAY['live'::text, 'retired'::text, 'superseded'::text])))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
@@ -594,13 +594,14 @@ CONSTRAINT ck_self_tension_source CHECK ((source = 'lesson'::text))
 CONSTRAINT ck_social_item_has_an_id CHECK ((length(btrim(item_id)) > 0)),
 CONSTRAINT ck_social_item_kind CHECK ((kind = ANY (ARRAY['story_frame'::text, 'post'::text, 'reel'::text, 'thread_post'::text]))),
 CONSTRAINT ck_social_item_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
-CONSTRAINT ck_social_item_state_state CHECK ((state = ANY (ARRAY['gone'::text, 'hidden'::text])))
+CONSTRAINT ck_social_item_state_place CHECK (((place IS NULL) OR (state = 'place'::text))),
+CONSTRAINT ck_social_item_state_state CHECK ((state = ANY (ARRAY['gone'::text, 'hidden'::text, 'place'::text])))
 CONSTRAINT ck_social_item_story_frame_expires CHECK (((kind <> 'story_frame'::text) OR (expires_at IS NOT NULL)))
 CONSTRAINT ck_social_perception_calls CHECK ((calls >= 0)),
 CONSTRAINT ck_social_perception_origin CHECK ((origin = ANY (ARRAY['poll'::text, 'backfill'::text]))),
 CONSTRAINT ck_social_perception_outcome CHECK ((outcome = ANY (ARRAY['ok'::text, 'nothing_found'::text, 'unavailable'::text, 'failed'::text, 'capped'::text])))
 CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text, 'abandoned'::text, 'unavailable'::text]))),
-CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text])))
+CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text, 'relist'::text])))
 CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
@@ -752,7 +753,7 @@ CREATE INDEX idx_memory_node_embedding_256 ON public.memory_node USING hnsw (((p
 CREATE INDEX idx_memory_node_origin_room ON public.memory_node USING btree (origin_room);
 CREATE INDEX idx_memory_node_sha256 ON public.memory_node USING btree (sha256);
 CREATE INDEX idx_memory_node_text_trgm ON public.memory_node USING gin (text public.gin_trgm_ops);
-CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id DESC) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'social'::text, 'social_media'::text])));
+CREATE INDEX idx_memory_node_unembedded ON public.memory_node USING btree (embed_attempts, id DESC) WHERE ((embedding IS NULL) AND (state = 'live'::text) AND (kind = ANY (ARRAY['message'::text, 'media'::text, 'note'::text, 'memo'::text, 'event'::text, 'lesson'::text, 'character'::text, 'social'::text, 'social_media'::text, 'social_location'::text])));
 CREATE INDEX idx_memory_node_unit ON public.memory_node USING btree (unit);
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
@@ -1678,7 +1679,7 @@ last_fired_at bigint NOT NULL,
 last_fix_id integer DEFAULT 0 NOT NULL,
 last_folded_row_id bigint,
 last_folded_row_id bigint,
-last_message_id integer DEFAULT 0 NOT NULL,
+last_message_id bigint DEFAULT 0 NOT NULL,
 last_played_locator text,
 last_played_source text,
 last_played_title text,
@@ -1888,6 +1889,7 @@ persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] NOT NULL,
 persons text[] NOT NULL,
 phase text NOT NULL,
+place text,
 place_id integer NOT NULL,
 place_id integer NOT NULL,
 place_id integer,

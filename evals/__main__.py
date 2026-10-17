@@ -14,6 +14,7 @@ import signal
 import statistics
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ from evals.scenarios import (
     census,
     experiment_for,
     load_corpus,
+    selected_cases,
 )
 from evals.subject_config import materialise
 from nora.subject import (
@@ -102,6 +104,70 @@ CORPUS_CLASS: dict[str, str] = {
 #: The entry points that honour `metadata.print_input` — render the model
 #: call's input, record it as `shown`, and call no model.
 _PRINTS_INPUT = frozenset({"standing"})
+
+
+#: What one draw costs, in seconds, for the run budget below. Unjudged is
+#: MEASURED on one corpus only: the mean draw of `tool_selection
+#: --memory-index --sample 3` on the deploy host (n=259 draws, 46 s, of which
+#: a mean 15.7 s was the sandbox's index build, which a repeat draw reuses,
+#: `nora.subject.sandbox_index.IndexCache`). Every other corpus and the Honcho
+#: surface are unmeasured and take the same figure. Judged is ~211 s a draw
+#: at the default judge samples (`.agents/skills/nora-eval`); the judge's
+#: share of it, 211 - 46, is split evenly per judge sample, so
+#: `--judge-samples` scales it.
+UNJUDGED_DRAW_SECONDS = 46
+JUDGED_DRAW_SECONDS = 211
+JUDGE_SAMPLE_SECONDS = (JUDGED_DRAW_SECONDS - UNJUDGED_DRAW_SECONDS) / DEFAULT_SAMPLES
+
+#: The longest run `python -m evals` starts without `--allow-long`. The deploy
+#: host has ONE eval lock (`/tmp/nora-eval.lock`), shared by every session:
+#: a run that holds it past an hour blocks every other session's PR.
+BUDGET_MINUTES = 60
+
+
+@dataclass(frozen=True)
+class Estimate:
+    """A run's size and its cost bound, before any draw."""
+
+    cases: int
+    sample: int
+    draws: int
+    seconds: int
+
+    @property
+    def minutes(self) -> float:
+        return self.seconds / 60
+
+    def line(self) -> str:
+        return (
+            f"estimate: {self.cases} cases x {self.sample} samples x 1 arm = "
+            f"{self.draws} draws, ~{self.minutes:.0f} min"
+        )
+
+
+def estimate(
+    selection: list[tuple[int, bool]], sample: int, judge_samples: int = DEFAULT_SAMPLES,
+) -> Estimate:
+    """`selection` is one `(cases, judged)` per corpus the run draws."""
+    cases = sum(n for n, _ in selection)
+    judged_draw = UNJUDGED_DRAW_SECONDS + judge_samples * JUDGE_SAMPLE_SECONDS
+    seconds = round(sum(
+        n * sample * (judged_draw if judged else UNJUDGED_DRAW_SECONDS)
+        for n, judged in selection
+    ))
+    return Estimate(cases=cases, sample=sample, draws=cases * sample, seconds=seconds)
+
+
+def over_budget(est: Estimate, *, allow_long: bool) -> str | None:
+    """Why a run this size is refused, or None when it may start."""
+    if allow_long or est.minutes <= BUDGET_MINUTES:
+        return None
+    return (
+        f"~{est.minutes:.0f} min is over the {BUDGET_MINUTES}-minute budget. The "
+        "deploy host's eval lock is shared, so a run that holds it past an hour "
+        "blocks every other session. Narrow it with --case or --class, or lower "
+        "--sample; pass --allow-long only when the operator asked for a full run"
+    )
 
 
 def _list_corpora() -> None:
@@ -522,6 +588,11 @@ def main() -> int:
              "and a source holding the model's vectors (make eval-source); "
              "each sandbox's index is built and gets the source's vectors",
     )
+    ap.add_argument(
+        "--allow-long", action="store_true",
+        help=f"start a run estimated over {BUDGET_MINUTES} minutes. Only when the "
+             "operator asked for a full run: the host's eval lock is shared",
+    )
     ap.add_argument("--context-arm", choices=("full", "rules", "flash"), default="full",
                     help="experiment-only tag exposure filter; retrieval stays unchanged")
     ap.add_argument("--context-report", type=Path,
@@ -658,6 +729,22 @@ def main() -> int:
 
             if args.print_input:
                 return _print_input(names[0], args.print_input, source_url=source_url)
+            # THE BUDGET, before any draw (and before the graph surface's
+            # checks): the size of what this run would draw, and a refusal over
+            # `BUDGET_MINUTES` unless the operator asked for it.
+            try:
+                est = estimate([
+                    (len(selected_cases(n, only=only, memory_index=graph)),
+                     bool(args.judge) and n in JUDGED_CORPORA)
+                    for n in names
+                ], args.sample, args.judge_samples)
+            except ValueError as exc:
+                print(f"refusing to run: {exc}", file=sys.stderr)
+                return 2
+            print(est.line())
+            if (why := over_budget(est, allow_long=args.allow_long)) is not None:
+                print(f"refusing to run: {why}", file=sys.stderr)
+                return 2
             if graph:
                 try:
                     for line in graph_surface_lines(

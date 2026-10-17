@@ -3,7 +3,7 @@ type: design
 title: "Character, Lessons and Standing — what an entity is like, what she has learned, where she stands; and the two slow adaptors"
 description: "Character per entity (person, room, unit, Nora) as one shape, written only by the Character adaptor; why it is not memory (Honcho); Nora's own Character beside the doctrine; Standing widened from room to unit and person, its head no longer a lossy fold; the echo rule; correction by the subject; disclosure per section; and the two slow adaptors, Character and Lessons, with the lesson guards."
 tags: [nora, character, culture, standing, self, persons, social-cognition]
-timestamp: '2026-09-28'
+timestamp: '2026-10-17'
 edges:
   - {dst: 10-tiers, rel: depends_on, provenance: asserted}
 ---
@@ -37,7 +37,10 @@ unit, on the same machinery as a person's or Nora's. **Amended by DEC-249**
 ([05](05-data-model.md) §5): evidence is only the Record and the Rollup. The
 Register rows and members' Characters named in "evidence it reads" above are
 read as context and linked, never cited; an account cites Record ids and
-Rollup keys. The same holds for Standing below, which links to Character and
+Rollup keys. A person's social items are Record rows (`social_item`) and are
+cited by their own id, `social:<network>:<item id>`; built 2026-10-17 with the
+`<social_items>` block and their place in the person's wake
+([22](22-social-stream.md) §6). The same holds for Standing below, which links to Character and
 Lessons and cites the Record and Rollup.
 
 Character is descriptive. What Nora has learned to *do* in a unit ("two

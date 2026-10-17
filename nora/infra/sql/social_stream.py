@@ -8,6 +8,13 @@ verb is one transaction. Every table is APPEND-ONLY, so there is no UPDATE and
 no DELETE here: an item is written once, and what changes about it is a row in
 `social_item_state`, or a tombstone once its bytes are gone.
 
+**An item's tagged place can change** (§5): the author adds, edits or removes
+the tag after the item was recorded. `social_item.location` is the place as
+first recorded; each later change is a `place` state row carrying the new
+place (`place`, NULL when the tag was removed). The current place is the
+latest `place` row's, else the recorded one (`current_places`). A `place` row
+never hides an item: only `gone` and `hidden` do (`HIDING_STATES`).
+
 **The dedupe is Postgres's.** `insert_item` is `ON CONFLICT (network, item_id)
 DO NOTHING` and answers whether the row was new, so two pollers recording the
 same frame cannot both think it is theirs, and only a new item goes on to
@@ -21,9 +28,10 @@ list read carrying its probe's counts. A probe that made a list read due does
 not advance them, so a list read that fails leaves the rise still due.
 
 **What is read is filtered here, once** (§2). Every read of items for
-perception, for a stimulus or for the Rollup's daybook leaves out an item
+perception, for a stimulus, for the Rollup's daybook or for a person's
+Character session leaves out an item
 whose person has `social = false` (`opted_out`, given at construction) and an
-item with a `social_item_state` row (gone or hidden). The poller's own dedupe
+item with a `gone` or `hidden` state row. The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
 
 **The memory index follows every write** (design/cognition-loop/22 §9):
@@ -40,10 +48,10 @@ Postgres.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
@@ -52,20 +60,28 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.rollup import SocialFact, SocialInput
 from nora.domain.social_stream import (
+    HIDING_STATES,
+    PLACE_STATE,
     SOCIAL_READ_REF,
     ByteDeletionReason,
     Counts,
+    ItemState,
     Origin,
     PerceptionOutcome,
+    PersonSocialItem,
     PollStage,
+    Reading,
     SocialItem,
     cursor_is_bad,
+    from_us,
+    to_us,
 )
 from nora.infra.sql import memory_index
 from nora.infra.sql.blob_refs import held_elsewhere
-from nora.infra.sql.memory_index import social_source_id
+from nora.infra.sql.memory_index import current_place, social_source_id
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
+    MEDIA_OBJECTS,
     SOCIAL_ITEM,
     SOCIAL_ITEM_STATE,
     SOCIAL_PERCEPTION,
@@ -74,7 +90,6 @@ from nora.infra.sql.schema import (
 )
 
 Stage = PollStage
-ItemState = Literal["gone", "hidden"]
 
 #: Probe outcomes that carry no answer from the platform: the call failed, or
 #: the login was halted or backed off on it.
@@ -183,8 +198,26 @@ class Backfill:
     last_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class Relist:
+    """Where one person's re-walk of their recorded items stands (§5): the
+    once-only walk that re-lists what the back-fill recorded, so each item's
+    tagged place is compared. `cursor` is where the next page starts (None:
+    the first page); `pages` how many were read; `oldest` the taken time of
+    their oldest recorded item, which a page reaching past ends the walk;
+    `failures` and `rejected` as `Backfill`'s."""
+
+    oldest: datetime | None
+    cursor: str | None = None
+    pages: int = 0
+    done: bool = False
+    rejected: int = 0
+    failures: int = 0
+    last_at: datetime | None = None
+
+
 class SqlSocialStreamStore:
-    """The stream's five tables, as nineteen verbs."""
+    """The stream's five tables, as twenty-one verbs."""
 
     def __init__(
         self, engine: AsyncEngine, *, opted_out: frozenset[str] = frozenset(),
@@ -196,9 +229,12 @@ class SqlSocialStreamStore:
 
     def _readable(self) -> list[Any]:
         """An item a reader may see: its person has not opted out, and it has
-        no `social_item_state` row (gone or hidden)."""
+        no `gone` or `hidden` state row."""
         i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE
-        stated = sa.exists().where(s.c.network == i.c.network, s.c.item_id == i.c.item_id)
+        stated = sa.exists().where(
+            s.c.network == i.c.network, s.c.item_id == i.c.item_id,
+            s.c.state.in_(HIDING_STATES),
+        )
         where: list[Any] = [~stated]
         if self._opted_out:
             where.append(i.c.person.not_in(sorted(self._opted_out)))
@@ -265,6 +301,34 @@ class SqlSocialStreamStore:
                 conn, "social", social_source_id(network, item_id), metrics=self._metrics,
             )
 
+    async def record_place(self, *, network: str, item_id: str, place: str | None) -> None:
+        """Append that an item's tagged place is now `place` (None: the tag
+        was removed), and re-project it, so the index searches the current
+        place and nothing else."""
+        async with self._engine.begin() as conn:
+            await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
+                network=network, item_id=item_id, state=PLACE_STATE, place=place,
+            ))
+            await memory_index.project(
+                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
+            )
+
+    async def current_places(
+        self, *, network: str, item_ids: list[str],
+    ) -> dict[str, str | None]:
+        """Each recorded item among `item_ids` → its current tagged place: the
+        latest `place` row's, else the place it was recorded with. An id not
+        recorded is absent."""
+        if not item_ids:
+            return {}
+        i = SOCIAL_ITEM
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(i.c.item_id, current_place(i).label("place"))
+                .where(i.c.network == network, i.c.item_id.in_(item_ids))
+            )).all()
+        return {r.item_id: r.place for r in rows}
+
     async def read_marker(self, *, network: str, person: str) -> int | None:
         """The probe value that led to this person's last completed story read,
         or None when none has completed."""
@@ -329,7 +393,10 @@ class SqlSocialStreamStore:
         s = SOCIAL_ITEM_STATE
         stmt = (
             sa.select(s.c.state)
-            .where(s.c.network == network, s.c.item_id == item_id)
+            .where(
+                s.c.network == network, s.c.item_id == item_id,
+                s.c.state.in_(HIDING_STATES),
+            )
             .order_by(s.c.recorded_at.desc(), s.c.id.desc())
             .limit(1)
         )
@@ -468,6 +535,47 @@ class SqlSocialStreamStore:
             for person in listed
         }
 
+    async def relists(self, *, network: str) -> dict[str, Relist]:
+        """Where each person with a recorded item stands in the re-walk of
+        their items (§5), read off their `relist` rows as `backfills` reads
+        the back-fill's: a page read (`read_ok`) moves the cursor and ends the
+        walk when it carries none; `abandoned` ends it; failures since the
+        last page read count toward `cursor_is_bad`, which ends it too."""
+        p, i = SOCIAL_POLL, SOCIAL_ITEM
+        rows_stmt = (
+            sa.select(p.c.person, p.c.outcome, p.c.cursor, p.c.recorded_at)
+            .where(p.c.network == network, p.c.stage == "relist")
+            .order_by(p.c.recorded_at, p.c.id)
+        )
+        oldest_stmt = (
+            sa.select(i.c.person, sa.func.min(i.c.taken_at))
+            .where(i.c.network == network)
+            .group_by(i.c.person)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(rows_stmt)).all()
+            oldest = dict((await conn.execute(oldest_stmt)).tuples().all())
+        out = {person: Relist(oldest=at) for person, at in oldest.items()}
+        for r in rows:
+            was = out.get(r.person, Relist(oldest=None))
+            if r.outcome == "abandoned":
+                out[r.person] = replace(was, done=True, last_at=r.recorded_at)
+            elif r.outcome == "read_ok":
+                out[r.person] = replace(
+                    was, cursor=r.cursor, pages=was.pages + 1, done=r.cursor is None,
+                    rejected=0, failures=0, last_at=r.recorded_at,
+                )
+            elif r.outcome in ("error", "backed_off"):
+                rejected = was.rejected + (r.outcome == "backed_off")
+                failures = was.failures + 1
+                out[r.person] = replace(
+                    was, rejected=rejected, failures=failures, last_at=r.recorded_at,
+                    done=was.done or cursor_is_bad(rejected=rejected, failures=failures),
+                )
+            else:
+                out[r.person] = replace(was, last_at=r.recorded_at)
+        return out
+
     # -- the readers: perception and the stimulus -----------------------------
 
     async def unperceived(self, *, since: datetime, limit: int) -> list[Unperceived]:
@@ -601,6 +709,7 @@ class SqlSocialStreamStore:
                 ~sa.exists().where(
                     SOCIAL_ITEM_STATE.c.network == other.c.network,
                     SOCIAL_ITEM_STATE.c.item_id == other.c.item_id,
+                    SOCIAL_ITEM_STATE.c.state.in_(HIDING_STATES),
                 ),
             )
             where.append(~waiting)
@@ -627,6 +736,86 @@ class SqlSocialStreamStore:
                 announced=frozenset(r.announced or ()),
             )
         return list(reads.values())
+
+    # -- the reader: a person's Character session (§6) -------------------------
+    #
+    # Positioned by `recorded_at`, which follows commit order here: the poller
+    # is the one writer and records items one transaction at a time.
+    # ponytail: a second concurrent writer could commit an earlier
+    # `recorded_at` after a later one was read; a serial column if one appears.
+
+    async def polled_count(self, *, persons: Sequence[str], after_us: int) -> int:
+        """How many readable items of one person (recorded under any of
+        `persons`: their id and every retired one) a poll recorded after
+        `after_us` (microseconds since the epoch, `to_us`): their wake
+        pressure on Character. A back-filled item never counts: a back-fill
+        of 50 items is history, not 50 items of news (§6)."""
+        i = SOCIAL_ITEM
+        stmt = sa.select(sa.func.count()).select_from(i).where(
+            *self._readable(), i.c.person.in_(list(persons)), i.c.origin == "poll",
+            i.c.recorded_at > from_us(after_us),
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(stmt)).scalar_one())
+
+    async def person_items(
+        self, *, persons: Sequence[str], after_us: int, limit: int,
+    ) -> list[PersonSocialItem]:
+        """The OLDEST `limit` readable items of one person (recorded under any
+        of `persons`: their id and every retired one) recorded after
+        `after_us`, polled and back-filled alike, in the order recorded, each
+        with what perception made of its media in `media_ref`'s order (a
+        medium nothing has read yet has an empty reading). The read ends
+        before a microsecond it would split, so a cursor advanced to its last
+        item skips none. Handed in that order and resumed from the
+        last one handed, every item is handed once, however many arrive at
+        once (a back-fill records 50)."""
+        if limit <= 0:
+            return []
+        i = SOCIAL_ITEM
+        cols = (
+            i.c.id, i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at,
+            i.c.origin, i.c.caption, i.c.media_ref, i.c.recorded_at,
+        )
+        mine = [*self._readable(), i.c.person.in_(list(persons))]
+        m = MEDIA_OBJECTS
+        async with self._engine.connect() as conn:
+            rows = list((await conn.execute(
+                sa.select(*cols)
+                .where(*mine, i.c.recorded_at > from_us(after_us))
+                .order_by(i.c.recorded_at, i.c.id)
+                .limit(limit + 1)
+            )).all())
+            if len(rows) > limit:
+                # A cursor at the last one handed must skip nothing recorded in
+                # the same microsecond: when the next row shares it, stop short
+                # of that microsecond, or, when every row is in it, take all of it.
+                last = rows[limit - 1].recorded_at
+                if rows[limit].recorded_at != last:
+                    rows = rows[:limit]
+                else:
+                    rows = [r for r in rows if r.recorded_at < last] or list(
+                        (await conn.execute(
+                            sa.select(*cols).where(*mine, i.c.recorded_at == last)
+                            .order_by(i.c.id)
+                        )).all())
+            shas = sorted({sha for r in rows for sha in _media(r.media_ref)})
+            read = {
+                r.sha256: Reading(r.title, r.description, r.content)
+                for r in (await conn.execute(
+                    sa.select(m.c.sha256, m.c.title, m.c.description, m.c.content)
+                    .where(m.c.sha256.in_(shas))
+                )).all()
+            } if shas else {}
+        return [
+            PersonSocialItem(
+                network=r.network, item_id=r.item_id, kind=r.kind, collab=r.collab,
+                taken_at=r.taken_at, origin=r.origin, caption=r.caption,
+                readings=tuple(read.get(sha, Reading()) for sha in _media(r.media_ref)),
+                recorded_us=to_us(r.recorded_at),
+            )
+            for r in rows
+        ]
 
     # -- a story frame's bytes (§5) --------------------------------------------
 

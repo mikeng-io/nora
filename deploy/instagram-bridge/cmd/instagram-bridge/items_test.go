@@ -20,15 +20,17 @@ import (
 
 type itemsBody struct {
 	Items []struct {
-		Code          string `json:"code"`
-		PK            string `json:"pk"`
-		TakenAt       int64  `json:"taken_at"`
-		Kind          string `json:"kind"`
-		MediaType     int    `json:"media_type"`
-		Caption       string `json:"caption"`
-		CarouselCount int    `json:"carousel_count"`
-		Collab        bool   `json:"collab"`
-		AltText       string `json:"alt_text"`
+		Code          string  `json:"code"`
+		PK            string  `json:"pk"`
+		TakenAt       int64   `json:"taken_at"`
+		Kind          string  `json:"kind"`
+		MediaType     int     `json:"media_type"`
+		Caption       string  `json:"caption"`
+		CarouselCount int     `json:"carousel_count"`
+		Collab        bool    `json:"collab"`
+		AltText       string  `json:"alt_text"`
+		Location      *string `json:"location"`
+		LocationKnown *bool   `json:"location_known"`
 		Items         []struct {
 			Kind            string   `json:"kind"`
 			URL             string   `json:"url"`
@@ -118,6 +120,21 @@ func TestItemsMapsReelsPostsAndTheCursor(t *testing.T) {
 	}
 	if plain.Kind != "post" || plain.Caption != "" {
 		t.Errorf("captionless post = %+v", plain)
+	}
+	// A tagged place is its name only; an item with none says "", present.
+	if plain.Location == nil || *plain.Location != "Placeholder Square" {
+		t.Errorf("tagged post location = %v, want its place's name", plain.Location)
+	}
+	if reel.Location == nil || *reel.Location != "" {
+		t.Errorf("untagged reel location = %v, want \"\", present", reel.Location)
+	}
+	for _, it := range []struct {
+		name  string
+		known *bool
+	}{{"tagged", plain.LocationKnown}, {"untagged", reel.LocationKnown}} {
+		if it.known == nil || !*it.known {
+			t.Errorf("%s item location_known = %v, want true, present", it.name, it.known)
+		}
 	}
 	if body.NextCursor == nil || *body.NextCursor != "synthetic-cursor-1" {
 		t.Errorf("next_cursor = %v, want the page's end_cursor", body.NextCursor)
@@ -505,5 +522,39 @@ func TestItemsMarksACollaborationPost(t *testing.T) {
 	body := decodeItems(t, getItems(t, newTestBridge(t, &fakeIG{TimelineBody: page}), fakeig.TimelineOwnerIGID, ""))
 	if len(body.Items) != 2 || !body.Items[0].Collab || body.Items[1].Collab {
 		t.Errorf("items = %+v, want the collab marked and the own post not", body.Items)
+	}
+}
+
+// A tag of the wrong shape is an UNKNOWN place, never "no tag" and never a
+// refused page: the location rides on the item, and the page is still a true
+// list of items. A null location is no tag.
+func TestItemsAMalformedLocationIsNoLocationNotARefusedPage(t *testing.T) {
+	const good = `"location": {"pk": "3002", "name": "Placeholder Square", "lat": 0.0, "lng": 0.0}`
+	if !strings.Contains(fakeig.TimelineFirstPageJSON, good) {
+		t.Fatal("the fixture no longer carries the tagged post this test rewrites")
+	}
+	for name, bad := range map[string]string{
+		"a string":            `"location": "x"`,
+		"a name not a string": `"location": {"name": 5}`,
+		"a list":              `"location": []`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeIG{TimelineBody: []byte(strings.Replace(fakeig.TimelineFirstPageJSON, good, bad, 1))}
+			body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
+			if len(body.Items) != 3 {
+				t.Fatalf("got %d items, want the page's 3", len(body.Items))
+			}
+			got := body.Items[2]
+			if got.Location == nil || *got.Location != "" ||
+				got.LocationKnown == nil || *got.LocationKnown {
+				t.Errorf("location = %v known = %v, want \"\" and unknown", got.Location, got.LocationKnown)
+			}
+		})
+	}
+	f := &fakeIG{TimelineBody: []byte(strings.Replace(
+		fakeig.TimelineFirstPageJSON, good, `"location": null`, 1))}
+	body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
+	if got := body.Items[2]; got.LocationKnown == nil || !*got.LocationKnown || *got.Location != "" {
+		t.Errorf("a null location = %+v, want no tag, known", got)
 	}
 }

@@ -70,6 +70,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"instagram-bridge/internal/domain"
 
@@ -289,6 +290,56 @@ type storyItemWire struct {
 		Candidates []mediaCandidate `json:"candidates"`
 	} `json:"image_versions2"`
 	VideoVersions []mediaCandidate `json:"video_versions"`
+	// StoryLocations are the frame's location stickers, each wrapping the
+	// tagged place. UNMEASURED on this document: kept raw and read leniently
+	// (storyLocation), so a frame with another shape never fails the story;
+	// it carries an UNKNOWN place, never "no tag".
+	StoryLocations json.RawMessage `json:"story_locations"`
+}
+
+// placeOf is a tagged place out of Instagram's location object
+// (`{"name": ..., "pk": ..., "lat": ..., "lng": ...}`): its trimmed name, and
+// whether the field could be read. Absent or null is no tag (`"", true`). An
+// object with a non-empty string name is that place. Anything else (another
+// type, no name, a name that is not a string or is blank) is UNKNOWN
+// (`"", false`): a shape the bridge does not read must never pass for "the
+// author removed the tag", nor refuse the page or story it rides on. Only the
+// name is read: the coordinates are never forwarded.
+func placeOf(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", true
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil {
+		return "", false
+	}
+	var name string
+	if json.Unmarshal(obj["name"], &name) != nil {
+		return "", false
+	}
+	if name = strings.TrimSpace(name); name == "" {
+		return "", false
+	}
+	return name, true
+}
+
+// storyLocation is the first location sticker's place: absent, null or an
+// empty list is no tag; the first sticker whose place reads is that place;
+// stickers none of which reads, or a value that is not a list, are UNKNOWN.
+func storyLocation(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", true
+	}
+	var stickers []map[string]json.RawMessage
+	if json.Unmarshal(raw, &stickers) != nil {
+		return "", false
+	}
+	for _, s := range stickers {
+		if name, ok := placeOf(s["location"]); ok && name != "" {
+			return name, true
+		}
+	}
+	return "", len(stickers) == 0
 }
 
 // looseID is a wire id read as text whatever its JSON type, with no shape
@@ -423,6 +474,7 @@ func storyFrame(item *storyItemWire) domain.StoryItem {
 		ExpiringAt: item.ExpiringAt,
 		AltText:    item.AccessibilityCaption,
 	}
+	out.Location, out.LocationKnown = storyLocation(item.StoryLocations)
 	if item.Caption != nil {
 		out.Caption = item.Caption.Text
 	}

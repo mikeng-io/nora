@@ -20,13 +20,38 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from enum import StrEnum
 from typing import Literal, get_args
 
 #: A story lives 24 hours; a frame that arrives without an expiry of its own is
 #: given the platform's bound.
 STORY_LIFETIME_SECONDS = 86_400
+
+#: The longest tagged place kept, in characters. A place's name is a few
+#: words; anything longer is not one, and is cut rather than stored whole.
+LOCATION_MAX_CHARS = 120
+
+
+#: The states that hide a recorded item (`social_item_state`) from every
+#: reader and the memory index.
+ItemState = Literal["gone", "hidden"]
+HIDING_STATES: tuple[str, ...] = get_args(ItemState)
+#: The state a change of an item's tagged place is recorded as: it carries the
+#: new place, NULL when the tag was removed, and hides nothing.
+PLACE_STATE = "place"
+
+
+def published_location(value: object) -> str | None:
+    """A tagged place's name as the author published it, made safe to keep:
+    one line (every run of whitespace or control characters one space),
+    trimmed, cut to `LOCATION_MAX_CHARS`; None when there is none. It is the
+    author's words and stays data: it is stored and indexed as text, never
+    rendered into an instruction."""
+    if not isinstance(value, str):
+        return None
+    flat = " ".join("".join(c if c.isprintable() else " " for c in value).split())
+    return flat[:LOCATION_MAX_CHARS].rstrip() or None
 
 
 class Cap(StrEnum):
@@ -107,6 +132,11 @@ class StoryFrame:
     thumbnail_url: str | None = None
     caption: str | None = None
     alt_text: str | None = None
+    #: The place a location sticker tags it with (`published_location`).
+    location: str | None = None
+    #: False when the source could not read its place: `location` is then
+    #: None without meaning "no tag".
+    location_known: bool = True
 
 
 @dataclass(frozen=True)
@@ -157,7 +187,7 @@ ItemKind = Literal["story_frame", "post", "reel"]
 #: A `social_poll` row's stage: the probe, or one of the reads. `backfill` is
 #: a page of a member's history (§7): their first list read, and each page
 #: paged back from it.
-PollStage = Literal["probe", "story", "items", "item", "backfill"]
+PollStage = Literal["probe", "story", "items", "item", "backfill", "relist"]
 POLL_STAGES: tuple[str, ...] = get_args(PollStage)
 
 #: A `social_poll` row's outcome. A probe's is `Due.outcome`; a read is
@@ -248,6 +278,13 @@ class SocialItem:
     alt_text: str | None
     media: tuple[MediaItem, ...]
     collab: bool = False
+    #: The place the item is tagged with (`published_location`), None when it
+    #: carries none.
+    location: str | None = None
+    #: False when the source could not read its place (an unknown shape, or a
+    #: bridge too old to say): `location` is then None without meaning "no
+    #: tag", and no place change is recorded from it.
+    location_known: bool = True
 
 
 def frame_item(*, network: str, account: str, frame: StoryFrame) -> SocialItem:
@@ -256,6 +293,7 @@ def frame_item(*, network: str, account: str, frame: StoryFrame) -> SocialItem:
         network=network, item_id=frame.item_id, account=account, kind="story_frame",
         taken_at=frame.taken_at, expires_at=frame.expires_at, caption=frame.caption,
         alt_text=frame.alt_text, media=(MediaItem(kind=frame.kind, url=frame.url),),
+        location=frame.location, location_known=frame.location_known,
     )
 
 
@@ -481,3 +519,50 @@ def bytes_due(
     if now >= expires_at + timedelta(days=keep_days) and perceived and embedded:
         return "embedded"
     return None
+
+
+# -- what Character reads (§6) ---------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Reading:
+    """What perception made of one medium of an item: the three comprehension
+    fields `media_objects` holds for its bytes, empty when nothing read them."""
+
+    title: str = ""
+    description: str = ""
+    content: str = ""
+
+
+@dataclass(frozen=True)
+class PersonSocialItem:
+    """One of a person's readable social items as their Character session is
+    handed it (`SqlSocialStreamStore.person_items`): what it is, when it was
+    posted, their caption and what perception made of its media. Never its
+    `location`, `alt_text`, tagged or mentioned handles."""
+
+    network: str
+    item_id: str
+    kind: str
+    collab: bool
+    taken_at: datetime
+    origin: Origin
+    caption: str | None
+    readings: tuple[Reading, ...] = ()
+    #: When it was recorded, in microseconds since the epoch: the position a
+    #: person session's social cursor advances to once it is handed.
+    recorded_us: int = 0
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def to_us(moment: datetime) -> int:
+    """`moment` in whole microseconds since the epoch, exactly (a float
+    timestamp loses the last digit)."""
+    return (moment - _EPOCH) // timedelta(microseconds=1)
+
+
+def from_us(us: int) -> datetime:
+    """The inverse of `to_us`."""
+    return _EPOCH + timedelta(microseconds=us)

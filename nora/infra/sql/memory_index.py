@@ -78,12 +78,20 @@ item's text is what it is (`social_label`: «Instagram story»), its caption
 verbatim (the author's own text, as a message body is) and the reading of
 each medium (`media_objects`, keyed by the bytes, whichever pass wrote it); a
 medium's text is its reading, and an image is embedded from its bytes like
-an attachment. Never the item's `location`, never its `alt_text` (the
-network's generated alt text is phrased with the place and the tagged
-handles), and never its `tagged` or `mentioned` handles, which get no edge
-either: only the author is a person here (`authored_by`, `shared_by`). An item with
-a `social_item_state` row (gone or hidden) has no node, like a hidden
-message. A person's `social = false` is not read here: the projector is pure,
+an attachment. The item's `location`, the place it is tagged with, is a
+`social_location` node of its own, keyed like the item and `attached_to` it,
+its text the item's CURRENT place (`current_place`: the latest `place` state
+row's, else the place it was recorded with), so a changed tag re-projects the
+node's text and a removed one drops the node: never in the item's text, because it is a
+person's whereabouts, and a read gates it as it gates a stay
+(`PRESENCE_KINDS`), which it could not do to part of a node. An item with no
+location has no such node. Never its `alt_text` (the network's generated alt
+text is phrased with the place and the tagged handles, so it would carry the
+place past that gate), and never its `tagged` or `mentioned` handles, which
+get no edge either: only the author is a person here (`authored_by`,
+`shared_by`). An item with
+a `gone` or `hidden` state row has no node, like a hidden message; a `place`
+row hides nothing. A person's `social = false` is not read here: the projector is pure,
 and the read leaves their items out (`MemoryScope.social_off`), so switching
 it back needs no rebuild.
 
@@ -141,6 +149,7 @@ from nora.domain.memory_index import (
     social_label,
 )
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
+from nora.domain.social_stream import HIDING_STATES, PLACE_STATE
 from nora.infra.sql.schema import (
     CULTURE,
     CULTURE_REVISION,
@@ -176,10 +185,12 @@ __all__ = [
     "REBUILD_LOCK_KEY",
     "EmbedCounts",
     "Embeddable",
+    "IndexImage",
     "IndexStatus",
     "RebuildRefusedError",
     "RebuildReport",
     "adopt_worker_state",
+    "apply_index_image",
     "clear_embeddings",
     "drain_queue",
     "drop",
@@ -187,6 +198,8 @@ __all__ = [
     "embed_failed",
     "embed_pick",
     "embed_store",
+    "image_digest",
+    "index_image",
     "index_status",
     "media_types",
     "project",
@@ -515,14 +528,39 @@ def _social_media_ids(item: str, shas: Iterable[str]) -> dict[str, str]:
     return {_attachment_id(item, sha): sha for sha in dict.fromkeys(shas)}
 
 
+def _hidden(i: Any) -> Any:
+    """Whether the `social_item` row `i` has a `gone` or `hidden` state row."""
+    st = SOCIAL_ITEM_STATE
+    return sa.exists().where(
+        st.c.network == i.c.network, st.c.item_id == i.c.item_id,
+        st.c.state.in_(HIDING_STATES),
+    )
+
+
+def current_place(i: Any) -> Any:
+    """The `social_item` row `i`'s current tagged place, in SQL: the latest
+    `place` state row's (NULL when that change removed the tag), else the
+    place it was recorded with."""
+    st = SOCIAL_ITEM_STATE
+    placed = sa.and_(
+        st.c.network == i.c.network, st.c.item_id == i.c.item_id,
+        st.c.state == PLACE_STATE,
+    )
+    latest = (
+        sa.select(st.c.place).where(placed)
+        .order_by(st.c.recorded_at.desc(), st.c.id.desc()).limit(1)
+        .scalar_subquery()
+    )
+    return sa.case((sa.exists().where(placed), latest), else_=i.c.location)
+
+
 async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     network, _, item_id = source_id.partition(":")
-    i, st = SOCIAL_ITEM, SOCIAL_ITEM_STATE
-    stated = sa.exists().where(st.c.network == i.c.network, st.c.item_id == i.c.item_id)
+    i = SOCIAL_ITEM
     row = (await conn.execute(
         sa.select(
             i.c.person, i.c.kind, i.c.taken_at, i.c.caption, i.c.media_ref,
-            i.c.collab, stated.label("stated"),
+            i.c.collab, current_place(i).label("location"), _hidden(i).label("stated"),
         ).where(i.c.network == network, i.c.item_id == item_id)
     )).first()
     if row is None or row.stated:
@@ -545,8 +583,8 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
         }
     at_ms = int(row.taken_at.timestamp() * 1000)
     persons = [row.person]
-    # Never `alt_text`, `location`, `tagged` or `mentioned` (the module
-    # docstring).
+    # Never `alt_text`, `location`, `tagged` or `mentioned` in the item's
+    # text; the location is its own node, below (the module docstring).
     await _upsert_node(
         conn, kind="social", source_id=source_id, persons=persons, at_ms=at_ms,
         text=_text(
@@ -556,7 +594,7 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     )
     held = set((await conn.execute(
         sa.select(MEMORY_EDGE.c.src_id).where(
-            MEMORY_EDGE.c.rel == "attached_to",
+            MEMORY_EDGE.c.rel == "attached_to", MEMORY_EDGE.c.src_kind == "social_media",
             MEMORY_EDGE.c.dst_kind == "social", MEMORY_EDGE.c.dst_id == source_id,
         )
     )).scalars())
@@ -565,6 +603,18 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     edges: list[Edge] = [
         ("social", source_id, "authored_by", "person", row.person, "social_item.person"),
     ]
+    location = (row.location or "").strip()
+    if location:
+        await _upsert_node(
+            conn, kind="social_location", source_id=source_id, persons=persons,
+            at_ms=at_ms, text=location,
+        )
+        edges.append((
+            "social_location", source_id, "attached_to", "social", source_id,
+            "social_item.location",
+        ))
+    else:
+        await _delete(conn, "social_location", [source_id])
     for media, sha in wanted.items():
         await _upsert_node(
             conn, kind="social_media", source_id=media, persons=persons, at_ms=at_ms,
@@ -575,7 +625,10 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
             ("social_media", media, "shared_by", "person", row.person, "social_item.person"),
         ]
     ends: list[tuple[str, str]] = []
-    for kind, ids in (("social", [source_id]), ("social_media", list(wanted))):
+    for kind, ids in (
+        ("social", [source_id]), ("social_media", list(wanted)),
+        ("social_location", [source_id]),
+    ):
         if ids:
             ends += await _delete_edges(conn, sa.and_(
                 MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids),
@@ -1198,6 +1251,9 @@ _PRESENCE: dict[str, sa.Table] = {"stay": PRESENCE_STAYS, "trip": PRESENCE_TRIPS
 #: A kind whose media go with it, and their kind: a message's attachments, a
 #: social item's media.
 _CARRIES: dict[str, str] = {"message": "media", "social": "social_media"}
+#: A kind whose node of another kind shares its key and goes with it: a
+#: social item's tagged place.
+_KEYED_WITH: dict[str, str] = {"social": "social_location"}
 
 
 # --- the queue ---------------------------------------------------------------
@@ -1414,6 +1470,8 @@ async def _drop(conn: AsyncConnection, kind: str, ids: list[str]) -> None:
             )
         )).scalars())
         await _delete(conn, _CARRIES[kind], attachments)
+    if kind in _KEYED_WITH:
+        await _delete(conn, _KEYED_WITH[kind], ids)
     await _delete(conn, kind, ids)
 
 
@@ -1606,13 +1664,7 @@ def _source_of(kind: str) -> Any:
     if kind == "character":
         return sa.exists().where(CULTURE.c.key == node)
     if kind == "social":
-        st = SOCIAL_ITEM_STATE
-        return sa.exists().where(
-            _social_key() == node,
-            ~sa.exists().where(
-                st.c.network == SOCIAL_ITEM.c.network, st.c.item_id == SOCIAL_ITEM.c.item_id,
-            ),
-        )
+        return sa.exists().where(_social_key() == node, ~_hidden(SOCIAL_ITEM))
     table = {"note": NOTE, "memo": MEMO, "lesson": LESSON, "event": EVENTS}[kind]
     return sa.exists().where(table.c.id == sa.cast(node, pg.UUID(as_uuid=False)))
 
@@ -2178,3 +2230,161 @@ async def _adopt_owed_since(
         await target.execute(
             sa.update(MEMORY_NODE).where(node.id.in_(ids)).values(owed_since=value)
         )
+
+
+# --- an eval sandbox's index, built once and applied again ------------------
+
+#: What a build decides, per node: every column but the two wall-clock ones
+#: (`projected_at`, `owed_since`), which `apply_index_image` re-derives the
+#: way a build would. The vector and the row id ride after them: the id
+#: because a read breaks ties on it (`memory_read`).
+_IMAGE_NODE_COLUMNS = (
+    "kind", "source_id", "unit", "origin_room", "persons", "exclude_persons", "lineage",
+    "sha256", "text", "at_ms", "state", "embedding_model", "embedded_at", "embed_attempts",
+    "embed_error", "embed_input",
+)
+_IMAGE_EDGE_COLUMNS = ("src_kind", "src_id", "rel", "dst_kind", "dst_id", "provenance")
+_IMAGE_QUEUE_COLUMNS = ("kind", "source_id", "attempts", "last_error")
+
+
+@dataclass(frozen=True, slots=True)
+class IndexImage:
+    """The four `memory_*` tables of one database as a build left them, minus
+    wall-clock columns, each table in a fixed order, and where the node id
+    sequence stands. Two databases whose index a build made identically have
+    equal images, so `image_digest` is the content hash an eval reuse is
+    proven against."""
+
+    #: `_IMAGE_NODE_COLUMNS`, the vector as text (None when absent), then the
+    #: row id; in id order, the order a build wrote them.
+    nodes: tuple[tuple[Any, ...], ...]
+    edges: tuple[tuple[Any, ...], ...]
+    queue: tuple[tuple[Any, ...], ...]
+    #: `memory_index_state`'s status and unprojected count, or ("never", 0).
+    status: str
+    unprojected: int
+    #: `memory_node`'s id sequence: (last_value, is_called), so the next node
+    #: a turn's write projects takes the id it would after a build.
+    sequence: tuple[int, bool] = (1, False)
+
+
+def image_digest(image: IndexImage) -> str:
+    """A sha256 over the whole image, so only a hash and counts ever leave it."""
+    import hashlib
+    import json
+
+    blob = json.dumps(
+        [image.nodes, image.edges, image.queue, image.status, image.unprojected,
+         image.sequence],
+        sort_keys=True, default=str, separators=(",", ":"),
+    )
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+async def index_image(conn: AsyncConnection) -> IndexImage:
+    """`conn`'s index as an `IndexImage`."""
+    node, edge, queue = MEMORY_NODE.c, MEMORY_EDGE.c, MEMORY_PROJECTION_QUEUE.c
+    nodes = tuple(sorted(
+        (tuple(r) for r in await conn.execute(sa.select(
+            *(node[c] for c in _IMAGE_NODE_COLUMNS),
+            sa.cast(node.embedding, sa.Text).label("vector"), node.id,
+        ))),
+        key=lambda r: r[-1],
+    ))
+    edges = tuple(sorted(tuple(r) for r in await conn.execute(
+        sa.select(*(edge[c] for c in _IMAGE_EDGE_COLUMNS))
+    )))
+    queued = tuple(sorted(
+        (tuple(r) for r in await conn.execute(
+            sa.select(*(queue[c] for c in _IMAGE_QUEUE_COLUMNS))
+        )),
+        key=lambda r: (r[0], r[1]),
+    ))
+    state = (await conn.execute(
+        sa.select(MEMORY_INDEX_STATE.c.status, MEMORY_INDEX_STATE.c.unprojected)
+    )).first()
+    status, unprojected = ("never", 0) if state is None else (str(state[0]), int(state[1]))
+    # NULL until the sequence has handed out a value: (1, False), its start.
+    last = (await conn.execute(sa.text(
+        "SELECT pg_sequence_last_value(pg_get_serial_sequence('memory_node', 'id')::regclass)"
+    ))).scalar_one()
+    seq = (1, False) if last is None else (int(last), True)
+    return IndexImage(
+        nodes, edges, queued, status, unprojected, seq,
+    )
+
+
+async def apply_index_image(
+    source: AsyncConnection, target: AsyncConnection, image: IndexImage, *, model: str,
+) -> None:
+    """Make `target`'s index what `image` holds, as if `rebuild` and then
+    `adopt_worker_state` from `source` had run on it.
+
+    For an eval sandbox (`nora.subject.sandbox_index`) whose rows are those a
+    sandbox `image` was built on already held, row ids included: the caller
+    proves that, before (the digest of the index live projection wrote while
+    seeding, ids and sequence included) and after (`rebuild(dry_run=True)`
+    counts the same sources per kind and drops nothing). The rows a build
+    decides are copied, a new node under the id the build gave it, in id
+    order, and the id sequence is left where the build left it; the
+    wall-clock columns are written as the build writes them. A node live
+    projection already wrote keeps its `owed_since` unless its input differs
+    from the image's (the upsert's own `_cleared_when` rule); a new node is
+    written now; then `source`'s wait is adopted for every node still owed
+    (`_adopt_owed_since`), exactly as `adopt_worker_state` ends."""
+    node, edge = MEMORY_NODE.c, MEMORY_EDGE.c
+    wanted = {(r[0], r[1]) for r in image.nodes}
+    extra = [
+        r.id for r in await target.execute(sa.select(node.id, node.kind, node.source_id))
+        if (r.kind, r.source_id) not in wanted
+    ]
+    for i in range(0, len(extra), _CHUNK):
+        await target.execute(sa.delete(MEMORY_NODE).where(node.id.in_(extra[i:i + _CHUNK])))
+    params = {c: sa.bindparam(f"p_{c}", type_=MEMORY_NODE.c[c].type) for c in _IMAGE_NODE_COLUMNS}
+    stmt = pg_insert(MEMORY_NODE).values(
+        **params,
+        id=sa.bindparam("p_id", type_=sa.BigInteger),
+        embedding=sa.cast(sa.bindparam("p_vector", type_=sa.Text), HALFVEC(EMBEDDING_DIMENSIONS)),
+    )
+    changed = _input_changed(stmt.excluded.text, stmt.excluded.sha256)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_memory_node_kind_source",
+        set_={
+            **{c: stmt.excluded[c] for c in _IMAGE_NODE_COLUMNS if c not in ("kind", "source_id")},
+            "embedding": stmt.excluded.embedding,
+            "projected_at": sa.func.clock_timestamp(),
+            "owed_since": _cleared_when(changed)["owed_since"],
+        },
+    )
+    rows = [
+        {**{f"p_{c}": v for c, v in zip(_IMAGE_NODE_COLUMNS, r[:-2], strict=True)},
+         "p_vector": r[-2], "p_id": r[-1]}
+        for r in image.nodes
+    ]
+    for i in range(0, len(rows), _CHUNK):
+        await target.execute(stmt, rows[i:i + _CHUNK])
+    edges = set(image.edges)
+    key = sa.tuple_(*(edge[c] for c in _IMAGE_EDGE_COLUMNS[:5]))
+    stale = [
+        tuple(r)[:5]
+        for r in await target.execute(sa.select(*(edge[c] for c in _IMAGE_EDGE_COLUMNS)))
+        if tuple(r) not in edges
+    ]
+    for i in range(0, len(stale), _CHUNK):
+        await target.execute(sa.delete(MEMORY_EDGE).where(key.in_(stale[i:i + _CHUNK])))
+    await _insert_edges(target, list(image.edges))
+    await target.execute(sa.delete(MEMORY_PROJECTION_QUEUE))
+    if image.queue:
+        await target.execute(pg_insert(MEMORY_PROJECTION_QUEUE).values([
+            dict(zip(_IMAGE_QUEUE_COLUMNS, r, strict=True)) for r in image.queue
+        ]))
+    now = sa.func.clock_timestamp()
+    await _set_state(
+        target, status=image.status, started_at=now, finished_at=now,
+        unprojected=image.unprojected,
+    )
+    await target.execute(
+        sa.text("SELECT setval(pg_get_serial_sequence('memory_node', 'id'), :v, :called)"),
+        {"v": image.sequence[0], "called": image.sequence[1]},
+    )
+    await _adopt_owed_since(source, target, model=model)

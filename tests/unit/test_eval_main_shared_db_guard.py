@@ -414,7 +414,10 @@ def test_main_resolves_the_memory_surface_from_the_generated_config(
     monkeypatch.setattr(
         m, "_run_one", lambda *a, **k: seen.append(k["memory_index"]) or True,
     )
-    _set_argv(monkeypatch, "tool_selection", *(["--memory-index"] if flag else []))
+    # `--allow-long`: the whole corpus is over the run budget, which is not
+    # what this pins (`test_eval_main_budget`).
+    _set_argv(monkeypatch, "tool_selection", "--allow-long",
+              *(["--memory-index"] if flag else []))
     assert m.main() == 0
     assert seen == [graph]
     out = capsys.readouterr().out
@@ -450,7 +453,7 @@ def test_a_graph_surface_run_refuses_before_any_draw(monkeypatch, capsys, tmp_pa
     monkeypatch.setattr(m, "graph_surface_lines", _refuse)
     ran: list[bool] = []
     monkeypatch.setattr(m, "_run_one", lambda *a, **k: ran.append(True) or True)
-    _set_argv(monkeypatch, "tool_selection", "--memory-index")
+    _set_argv(monkeypatch, "tool_selection", "--memory-index", "--allow-long")
     assert m.main() == 2
     assert ran == []
     assert "refusing to run: the eval source holds no vector" in capsys.readouterr().err

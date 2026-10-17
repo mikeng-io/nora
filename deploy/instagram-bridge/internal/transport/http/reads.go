@@ -289,6 +289,14 @@ type storyItem struct {
 	// image. Free, already on the delta, and often enough to answer a question
 	// without any fetch or vision call at all.
 	AltText string `json:"alt_text,omitempty"`
+	// Location is the name of the place a location sticker tags the frame
+	// with, "" when it carries none. Always present: an older bridge that
+	// sends no key is told apart from "no tag".
+	Location string `json:"location"`
+	// LocationKnown is false when the frame carried stickers the bridge could
+	// not read: its place is unknown, and `location` is "" without meaning
+	// "no tag".
+	LocationKnown bool `json:"location_known"`
 }
 
 // storyBody is the 200 shape.
@@ -346,6 +354,13 @@ type timelineItem struct {
 	Items []postItem `json:"items"`
 	// AltText is Instagram's own description of the image, "" when none.
 	AltText string `json:"alt_text"`
+	// Location is the name of the place the item is tagged with, "" when
+	// none.
+	Location string `json:"location"`
+	// LocationKnown is false when the item carried a `location` the bridge
+	// could not read: its place is unknown, and `location` is "" without
+	// meaning "no tag".
+	LocationKnown bool `json:"location_known"`
 }
 
 // itemsBody is the 200 shape, on the list conventions `GET /accounts`
@@ -362,7 +377,8 @@ func itemsOf(p domain.TimelinePage) itemsBody {
 			Code: it.Code, PK: it.PK, TakenAt: it.TakenAt, Kind: it.Kind,
 			MediaType: it.MediaType, Caption: it.Caption,
 			CarouselCount: it.CarouselCount, Collab: it.Collab,
-			Items: postItemsOf(it.Items), AltText: it.AltText,
+			Items: postItemsOf(it.Items), AltText: it.AltText, Location: it.Location,
+			LocationKnown: it.LocationKnown,
 		})
 	}
 	return itemsBody{Items: items, NextCursor: p.NextCursor}

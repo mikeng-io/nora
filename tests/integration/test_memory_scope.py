@@ -25,7 +25,9 @@ every seed runs the same filter inside its own scan.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -34,10 +36,11 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nora.agent.memory_search import MemorySearch, MemorySearchResult
+from nora.agent.memory_search import MemorySearch, MemorySearchResult, render_packet
 from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
 from nora.domain.memory_index import EMBEDDED_KINDS
 from nora.domain.models import NormalizedMessage
+from nora.domain.social_stream import MediaItem, SocialItem
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memo import SqlMemoStore
@@ -49,6 +52,7 @@ from nora.infra.sql.schema import (
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
 )
+from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.obs.metrics import Metrics
 from nora.testing.memory_index import FakeQueryEmbedder, bag_of_words
 
@@ -104,7 +108,8 @@ async def engine(_db: str) -> AsyncIterator[Any]:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             for table in (
                 "messages", "memo", "memo_revision", "row_history", "memory_node",
-                "memory_edge", "memory_projection_queue",
+                "memory_edge", "memory_projection_queue", "social_item",
+                "social_item_state", "social_perception",
             ):
                 await conn.execute(sa.text(f'TRUNCATE "{table}" CASCADE'))
         await eng.dispose()
@@ -184,6 +189,7 @@ async def _anchor(engine: Any) -> None:
 async def _search(
     engine: Any, query: str, *, seeds: str, room: RoomFacts = _B,
     person: str | None = None, metrics: Metrics | None = None, embed: bool = True,
+    target: RenderRoom | None = None,
 ) -> MemorySearchResult:
     if seeds in ("dense", "fresh"):
         if seeds == "fresh":
@@ -196,8 +202,8 @@ async def _search(
     else:
         search = MemorySearch(SqlMemoryIndex(engine), metrics or Metrics())
     return await search.search(
-        query=query, person_id=person, target=_target(room), depth="low", now_ms=NOW,
-        social_off=(),
+        query=query, person_id=person, target=target or _target(room), depth="low",
+        now_ms=NOW, social_off=(),
     )
 
 
@@ -353,6 +359,71 @@ async def test_a_named_person_seeds_only_where_this_room_lists_them(
     found = await _search(engine, seeds=seeds, query="", person="kit")
     assert ("event", "ev-2") in _keys(found)
     assert not _keys(await _search(engine, seeds=seeds, query="", room=_C, person="kit"))
+
+
+# --- (l): a social item's tagged place is gated by presence -------------------
+
+
+async def _post(engine: Any, *, caption: str, location: str, alt: str) -> None:
+    """Kit's post, written THROUGH the store, so the index holds what the
+    live projection wrote."""
+    taken = datetime.fromtimestamp((NOW - 7_200_000) / 1000, tz=UTC)
+    assert await SqlSocialStreamStore(engine).insert_item(
+        SocialItem(
+            network="instagram", item_id="9001", account="10000001", kind="post",
+            taken_at=taken, expires_at=None, caption=caption, alt_text=alt,
+            media=(MediaItem("image", "https://example.invalid/x"),),
+        ),
+        person="kit", origin="poll", seen_at=taken, location=location,
+    )
+
+
+def _rendered(result: MemorySearchResult) -> str:
+    items, _ = render_packet(
+        result.hits, name_of=lambda p: p, room_label=lambda r: r,
+        now=datetime.fromtimestamp(NOW / 1000, tz=UTC),
+    )
+    return json.dumps(items, ensure_ascii=False)
+
+
+#: B lists Kit and has `location` on, but a person outside the
+#: location-sharing circle is in it now: the DisclosureGuard denies.
+_B_STRANGER = RenderRoom(
+    room=_B, rooms=_ROOMS, circles=_CIRCLES,
+    live=LiveRoom(person_ids=frozenset({"kit", "sam", "rin", "stranger"})),
+)
+
+
+async def test_l_a_tagged_place_matches_and_renders_where_presence_passes(
+    engine: Any, seeds: str,
+) -> None:
+    await _post(engine, caption="picnic plans", location="Lantern Cove",
+                alt="two cups at Lantern Cove")
+    found = await _search(engine, seeds=seeds, query="lantern cove")
+    place = ("social_location", "instagram:9001")
+    assert place in _keys(found)
+    assert ("social", "instagram:9001") in _keys(found), "the place reaches its item"
+    assert '"kind": "Instagram tagged place", "age"' in _rendered(found)
+    assert "Lantern Cove" in _rendered(found)
+
+
+async def test_l_a_tagged_place_neither_matches_nor_renders_where_presence_fails(
+    engine: Any, seeds: str,
+) -> None:
+    """B2 has `location` off; in B a stranger is present, which the guard
+    denies. The item is still found by its caption in both, and its place is
+    neither a hit, a neighbour, nor a word of the rendered answer; nor is the
+    alt text, which names the place too."""
+    await _post(engine, caption="picnic plans", location="Lantern Cove",
+                alt="two cups at Lantern Cove")
+    for where in ({"room": _B2}, {"target": _B_STRANGER}):
+        by_place = await _search(engine, seeds=seeds, query="lantern cove", **where)
+        assert not [k for k in _keys(by_place) if k[0] == "social_location"]
+        assert "Lantern" not in _rendered(by_place)
+        by_caption = await _search(engine, seeds=seeds, query="picnic plans", **where)
+        assert ("social", "instagram:9001") in _keys(by_caption)  # positive control
+        assert not [k for k in _keys(by_caption) if k[0] == "social_location"]
+        assert "Lantern" not in _rendered(by_caption)
 
 
 # --- (k): partial and unavailable ----------------------------------------------

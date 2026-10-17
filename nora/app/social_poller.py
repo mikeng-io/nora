@@ -46,6 +46,21 @@ the rows. A first page read again only to find its cursor (the person's first
 list read predates the back-fill) records nothing: an item new on it is the
 poll's. Back-filled items raise no stimulus.
 
+**A tagged place follows the author** (§5). Every page and story read
+compares each item it lists that is already recorded with that item's
+current place (`SqlSocialStreamStore.current_places`) and appends a `place`
+state row only where they differ: a tag added, edited or removed after the
+item was recorded. It reuses the read already made. An item whose place the
+source could not read is skipped, and a read carrying no place at all records
+no removal (`_follow_places`). So that items recorded
+before places were compared get theirs, a member whose back-fill is done is
+re-walked ONCE (`relist` rows), after the back-fill and on its budget rule,
+at most `relist_pages_per_tick` pages a tick, one per member: newest first, recording no new
+item (an item new on it is the poll's), and ending at the grid's end, at a
+page reaching past their oldest recorded item, or after `relist_max_pages`
+pages. Where each member stands is read off their `relist` rows
+(`SqlSocialStreamStore.relists`), so a restart reads no page twice.
+
 **What stops it** (§4, keyed on `Failed.kind`): `halt` stops every call for
 the login until `SocialSource.healthy` says the session can read, and is
 never retried on the tick, and a cleared halt resumes on the back-off
@@ -77,6 +92,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
 import time
 import uuid
@@ -113,7 +129,7 @@ from nora.domain.social_stream import (
     decide,
     frame_item,
 )
-from nora.infra.sql.social_stream import Backfill, SqlSocialStreamStore
+from nora.infra.sql.social_stream import Backfill, Relist, SqlSocialStreamStore
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.social_poller")
@@ -130,6 +146,20 @@ _LASTING = frozenset({FailureKind.NOT_FOUND, FailureKind.UNSUPPORTED})
 #: the igid and the username before they leave, so on a back-fill page it is
 #: the cursor.
 _REFUSED_REQUEST = "invalid_id"
+
+#: A list page's items, as the web client asks for them (the bridge's
+#: `timelinePageSize`).
+LIST_PAGE_ITEMS = 12
+#: The re-walk's pages per member beyond what the back-fill can have recorded
+#: (`relist_max_pages`): one page of news recorded on top of it.
+RELIST_EXTRA_PAGES = 1
+
+
+def relist_max_pages(backfill_max_items: int) -> int:
+    """The re-walk's last page per member: the pages the back-fill's items
+    fill, and `RELIST_EXTRA_PAGES` more. No walk is longer, whatever an old
+    pinned post makes their oldest recorded item."""
+    return math.ceil(backfill_max_items / LIST_PAGE_ITEMS) + RELIST_EXTRA_PAGES
 
 #: The members to poll on the source's network, or None when they could not be
 #: read (`nora.infra.social.subjects.instagram_roster` for Instagram).
@@ -244,7 +274,9 @@ class SocialPoller:
             if stop is not None:
                 self._skip(stop)
                 return
-        await self._backfill(roster)
+        if await self._backfill(roster) is not None:
+            return
+        await self._relist(roster)
 
     # -- the login -------------------------------------------------------------
 
@@ -431,6 +463,7 @@ class SocialPoller:
         for item in frames:
             if item.item_id not in known:
                 await self._insert(member, item, now, read_id=read_id)
+        await self._follow_places(frames)
         shown = {f.item_id for f in frames}
         live = await self._store.live_frames(network=self._network, person=member.person, now=now)
         for item_id in sorted(live - shown):
@@ -484,6 +517,7 @@ class SocialPoller:
         known = await self._store.known_items(
             network=self._network, item_ids=[i.item_id for i in page.items],
         )
+        await self._follow_places(page.items)
         seen = set(known)
         horizon = self._clock() - timedelta(days=self._settings.backfill_max_days)
         count = 0
@@ -525,14 +559,14 @@ class SocialPoller:
 
     # -- the back-fill -----------------------------------------------------------
 
-    async def _backfill(self, roster: Sequence[Member]) -> None:
+    async def _backfill(self, roster: Sequence[Member]) -> SkipReason | None:
         """One page for each member whose back-fill is not done, least
         recently paged first, up to the tick's cap, with what the probes and
         due reads left (§7). A halt or a back-off ends it, as it ends the
-        tick."""
+        tick: it answers why, and the tick makes no further call."""
         cap = self._settings.backfill_pages_per_tick
         if cap <= 0 or Cap.LIST_ITEMS not in self._source.capabilities:
-            return
+            return None
         standing = await self._store.backfills(network=self._network)
         waiting = sorted(
             (m for m in roster
@@ -549,9 +583,9 @@ class SocialPoller:
         reserve = len(roster) * (self._source.probe_cost + 1)
         for member in waiting[:cap]:
             if not self._may_read(Cap.LIST_ITEMS, "items", self._clock()):
-                return
+                return None
             if not self._afford(1 + reserve):
-                return
+                return None
             try:
                 stop = await self._backfill_page(member, standing[member.person])
             except Exception:
@@ -560,7 +594,8 @@ class SocialPoller:
                 continue
             if stop is not None:
                 self._skip(stop)
-                return
+                return stop
+        return None
 
     async def _backfill_page(self, member: Member, at: Backfill) -> SkipReason | None:
         self._listed.add(member.person)
@@ -597,15 +632,109 @@ class SocialPoller:
         # The first page read again (the person's first list read predates the
         # back-fill) gives its cursor only: an item on it not yet recorded is
         # new since their last list read, and is the poll's, as news.
-        recorded = 0 if at.cursor is None else await self._record_page(
-            member, page, origin="backfill", read_id=read_id, backfilled=at.items,
-        )
+        if at.cursor is None:
+            recorded = 0
+            await self._follow_places(page.items)
+        else:
+            recorded = await self._record_page(
+                member, page, origin="backfill", read_id=read_id, backfilled=at.items,
+            )
         await self._record(
             member, "backfill", "read_ok", ms, read_id=read_id,
             cursor=self._onward(
                 page, backfilled=at.items + recorded, paged=at.cursor is not None,
             ),
         )
+        return None
+
+    # -- tagged places -----------------------------------------------------------
+
+    async def _follow_places(self, items: Sequence[SocialItem]) -> None:
+        """Append a `place` row for each item of one read (a page or a story)
+        that is already recorded and whose tagged place differs from its
+        current one (§5): no upstream call, the read is the one just made.
+
+        Never from an unknown place (`location_known` false): a shape the
+        source could not read is not "the tag was removed". And a read that
+        carries no place at all records no removal: were the source to stop
+        reading places altogether, every tagged item it re-lists would
+        otherwise lose its place at once. A tag the author really removed is
+        recorded by a later read that carries any place."""
+        known = [i for i in items if i.location_known]
+        if not known:
+            return
+        current = await self._store.current_places(
+            network=self._network, item_ids=[i.item_id for i in known],
+        )
+        carries = any(i.location for i in known)
+        for item in known:
+            if item.item_id not in current or current[item.item_id] == item.location:
+                continue
+            if item.location is None and not carries:
+                continue
+            await self._store.record_place(
+                network=self._network, item_id=item.item_id, place=item.location,
+            )
+
+    async def _relist(self, roster: Sequence[Member]) -> None:
+        """One re-walk page for each member whose back-fill is done and whose
+        re-walk is not, least recently paged first, up to
+        `relist_pages_per_tick` pages, after the back-fill and on its budget
+        rule: the lowest priority of the tick."""
+        cap = self._settings.relist_pages_per_tick
+        if cap <= 0 or Cap.LIST_ITEMS not in self._source.capabilities:
+            return
+        backed_off = self._back_off_until is not None and self._clock() < self._back_off_until
+        if self._halted or backed_off:
+            # Its caller stops on the back-fill's halt or back-off; this holds
+            # for any other path that leaves the login stopped.
+            return
+        standing = await self._store.backfills(network=self._network)
+        walks = await self._store.relists(network=self._network)
+        waiting = sorted(
+            (m for m in roster
+             if (b := standing.get(m.person)) is not None and b.done
+             and (r := walks.get(m.person)) is not None and not r.done
+             and m.person not in self._listed),
+            key=lambda m: (walks[m.person].last_at or datetime.min.replace(tzinfo=UTC),
+                           m.person),
+        )
+        reserve = len(roster) * (self._source.probe_cost + 1)
+        for member in waiting[:cap]:
+            if not self._may_read(Cap.LIST_ITEMS, "items", self._clock()):
+                return
+            if not self._afford(1 + reserve):
+                return
+            try:
+                stop = await self._relist_page(member, walks[member.person])
+            except Exception:
+                log.exception("social re-walk of one member failed; the tick continues")
+                self._metrics.inc("nora_errors_total", stage="social_poller")
+                continue
+            if stop is not None:
+                self._skip(stop)
+                return
+
+    async def _relist_page(self, member: Member, at: Relist) -> SkipReason | None:
+        self._listed.add(member.person)
+        page, ms = await self._call(
+            "relist", 1,
+            lambda: self._source.list_items(account=member.account, after=at.cursor),
+        )
+        if isinstance(page, Failed):
+            stop = await self._failed(member, "relist", page, ms)
+            if page.detail == _REFUSED_REQUEST:
+                await self._record_failure(member, "relist", "abandoned", 0)
+            return stop
+        await self._recovered("items")
+        await self._follow_places(page.items)
+        past = at.oldest is not None and any(i.taken_at < at.oldest for i in page.items)
+        onward = (
+            None if page.next_cursor is None or past
+            or at.pages + 1 >= relist_max_pages(self._settings.backfill_max_items)
+            else page.next_cursor
+        )
+        await self._record(member, "relist", "read_ok", ms, cursor=onward)
         return None
 
     async def _abandon(self, member: Member) -> None:
@@ -689,7 +818,7 @@ class SocialPoller:
         media_ref = await self._keep(item, now)
         await self._store.insert_item(
             item, person=member.person, origin=origin, seen_at=now, media_ref=media_ref,
-            read_id=read_id,
+            location=item.location, read_id=read_id,
         )
 
     async def _keep(self, item: SocialItem, now: datetime) -> str | None:

@@ -50,6 +50,7 @@ const MeasuredStoryJSON = `{"data":{"xdt_api__v1__feed__reels_media":{"reels_med
      "media_type": 1, "has_liked": false,
      "caption": {"text": "synthetic story caption"},
      "accessibility_caption": "a photo of a plate",
+     "story_locations": [{"x": 0.5, "y": 0.5, "location": {"pk": "3001", "name": " Placeholder Harbour ", "lat": 0.0, "lng": 0.0}}],
      "image_versions2": {"candidates": [
        {"width": 640, "height": 1136, "url": "https://cdn/small.jpg"},
        {"width": 1080, "height": 1920, "url": "https://cdn/large.jpg"}]}},
@@ -94,6 +95,7 @@ const TimelineFirstPageJSON = `{"data":{"xdt_api__v1__feed__user_timeline_graphq
     {"node": {"code": "SynthPost03", "pk": "2003", "id": "2003_246967358", "user": {"pk": "246967358"}, "taken_at": 1790000100,
       "caption": null, "media_type": 1, "product_type": "feed",
       "accessibility_caption": "a photo of a plate",
+      "location": {"pk": "3002", "name": "Placeholder Square", "lat": 0.0, "lng": 0.0},
       "image_versions2": {"candidates": [{"width": 1080, "height": 1350, "url": "https://cdn/p3.jpg"}]}}}
   ],
   "page_info": {"end_cursor": "synthetic-cursor-1", "has_next_page": true}

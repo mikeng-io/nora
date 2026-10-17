@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from nora.agent.egress import scan_identifiers
 from nora.domain.culture import CultureRevision, RoomMessage, character_key
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.domain.ports import Proposal
@@ -52,6 +53,7 @@ def _adaptor(
         culture=store or InMemoryCultureStore(),
         evidence=PersonEvidence(store=InMemoryCharacterEvidence(), keys={KEY: PK}),
         keys={KEY: PK}, metrics=metrics, clock=lambda: NOW,
+        screen=scan_identifiers, render_chars=240,
     )
 
 
@@ -76,7 +78,8 @@ async def test_the_session_is_handed_its_account_its_rooms_and_its_messages_by_i
                        written_at=T0, established_by="dream:culture:x",
                        citations=("57",))
     out = await _adaptor(store).inputs(key=KEY, batch=BATCH)
-    names = [name for name, _o, _k in _BLOCKS if name not in ("about_unit", "episodes")]
+    names = [name for name, _o, _k in _BLOCKS
+             if name not in ("about_unit", "episodes", "social_items")]
     positions = [out.index(f"<{name} ") for name in names]
     assert positions == sorted(positions), out
     assert 'name="Ada"' in out and "阿Ada" in out
@@ -251,3 +254,17 @@ async def test_a_person_with_messages_is_counted_from_their_watermark_as_before(
     assert await evidence.count(key=KEY, after=0) == 1
     assert await evidence.count(key=KEY, after=0) == 1
     assert store.afters == [0, 0]
+
+
+def test_a_composite_item_ids_numbers_in_the_body_are_refused():
+    """A story frame's id is `<digits>_<digits>`: either half written into
+    the account is an item number in the body, as a message number is."""
+    from nora.domain.culture import Citable, check_revision
+
+    shown = Citable(social=frozenset({"instagram:3001_4002"}))
+    for body in ("posts a lot (3001)", "posts a lot, see 4002", "see 3001_4002"):
+        refusal = check_revision(body=body, citations=("social:instagram:3001_4002",),
+                                 citable=shown)
+        assert refusal is not None and refusal.reason == "ids_in_body", body
+    assert check_revision(body="posts a lot", citations=("social:instagram:3001_4002",),
+                          citable=shown) is None

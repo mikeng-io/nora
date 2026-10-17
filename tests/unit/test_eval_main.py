@@ -96,3 +96,51 @@ def test_positions_prints_each_draws_written_position_and_its_length(capsys):
     assert "      | 搵到三間，send 咗一間。" in out
     assert "the fold's own input" not in out
     assert "[ERROR] residue-x#2  (none)" in out
+
+
+def test_the_estimate_counts_draws_and_bounds_their_cost():
+    """Per corpus, cases x samples x that corpus's measured per-draw cost."""
+    from evals.__main__ import JUDGED_DRAW_SECONDS, UNJUDGED_DRAW_SECONDS, estimate
+
+    est = estimate([(2, False), (1, True)], 3)
+    assert (est.cases, est.sample, est.draws) == (3, 3, 9)
+    assert est.seconds == 6 * UNJUDGED_DRAW_SECONDS + 3 * JUDGED_DRAW_SECONDS
+    assert est.line() == (
+        f"estimate: 3 cases x 3 samples x 1 arm = 9 draws, ~{est.seconds / 60:.0f} min"
+    )
+    # The judge's share scales with --judge-samples; at the default it is 211 s.
+    one = estimate([(1, True)], 1, judge_samples=1).seconds
+    assert estimate([(1, True)], 1, judge_samples=5).seconds > JUDGED_DRAW_SECONDS > one
+    assert estimate([(1, False)], 1, judge_samples=5).seconds == UNJUDGED_DRAW_SECONDS
+
+
+def test_the_run_that_held_the_lock_all_night_is_refused_unless_allowed():
+    """tool_selection on the graph surface, every case x 3, holds the host's
+    one eval lock for hours: refused, naming the way out. The same run starts
+    with --allow-long, and two cases x 3 start without it."""
+    from evals.__main__ import BUDGET_MINUTES, estimate, over_budget
+    from evals.scenarios import selected_cases
+
+    cases = len(selected_cases("tool_selection", memory_index=True))
+    full = estimate([(cases, False)], 3)
+    assert full.minutes > BUDGET_MINUTES
+    why = over_budget(full, allow_long=False)
+    assert why is not None and "--case" in why and "--allow-long" in why
+    assert over_budget(full, allow_long=True) is None
+    assert over_budget(estimate([(2, False)], 3), allow_long=False) is None
+
+
+def test_the_budget_edge_is_inclusive():
+    from evals.__main__ import BUDGET_MINUTES, UNJUDGED_DRAW_SECONDS, Estimate, over_budget
+
+    at = Estimate(cases=1, sample=1, draws=1, seconds=BUDGET_MINUTES * 60)
+    assert over_budget(at, allow_long=False) is None
+    over = Estimate(cases=1, sample=1, draws=1, seconds=BUDGET_MINUTES * 60 + UNJUDGED_DRAW_SECONDS)
+    assert over_budget(over, allow_long=False) is not None
+
+
+def test_a_case_the_run_cannot_draw_is_refused_before_the_estimate():
+    from evals.scenarios import selected_cases
+
+    with pytest.raises(ValueError, match="no active case named"):
+        selected_cases("tool_selection", only=frozenset({"no-such-case"}))

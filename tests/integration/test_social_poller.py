@@ -16,6 +16,7 @@ Database scoped to the MODULE and truncated between tests (AGENTS.md).
 from __future__ import annotations
 
 import copy
+import dataclasses
 import functools
 import json
 from collections.abc import AsyncIterator, Iterator
@@ -31,7 +32,7 @@ import sqlalchemy as sa
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.app.social_poller import SocialPoller
+from nora.app.social_poller import SocialPoller, relist_max_pages
 from nora.config import SocialPollConfig
 from nora.domain.social_stream import (
     Failed,
@@ -121,7 +122,11 @@ class World:
         return SocialPoller(
             source=self.source, store=self.store, health=self.health,
             roster=functools.partial(instagram_roster, self.subjects),
-            settings=SocialPollConfig(enabled=True, jitter_seconds=0, **settings),
+            # The re-walk is off unless a test asks for it: the back-fill's
+            # tests count the back-fill's own pages.
+            settings=SocialPollConfig(
+                enabled=True, jitter_seconds=0, **{"relist_pages_per_tick": 0, **settings},
+            ),
             metrics=self.metrics, media=self.media, blobs=self.blobs,
             media_objects=self.media_objects, clock=self.clock,
         )
@@ -336,6 +341,29 @@ async def test_a_story_is_read_once_per_marker_value(world) -> None:
         "a read that found nothing is complete: it advanced the marker"
     )
     assert await world.store.read_marker(network="instagram", person="ada") == 200
+
+
+async def test_a_tagged_place_is_recorded_for_a_post_a_reel_and_a_story_frame(world) -> None:
+    """The source's `location` reaches `social_item.location` on every kind
+    the poller records; an untagged item records none."""
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(marker=100, posts=3)
+    tagged = dataclasses.replace(post(world, "p1"), location="Placeholder Square")
+    reel = dataclasses.replace(post(world, "r1"), kind="reel", location="Placeholder Pier")
+    world.source.pages[ADA] = Page(items=(tagged, reel, post(world, "p2")), next_cursor=None)
+    world.source.stories[ADA] = story(
+        dataclasses.replace(frame("f1", world.clock), location="Placeholder Harbour"),
+    )
+    held(world, "f1")
+    await world.poller().tick()
+    async with world.engine.connect() as conn:
+        rows = dict((await conn.execute(
+            sa.select(SOCIAL_ITEM.c.item_id, SOCIAL_ITEM.c.location),
+        )).tuples().all())
+    assert rows == {
+        "p1": "Placeholder Square", "r1": "Placeholder Pier", "p2": None,
+        "f1": "Placeholder Harbour",
+    }
 
 
 async def test_a_failed_list_read_leaves_the_rise_due_on_the_next_probe(world) -> None:
@@ -837,7 +865,7 @@ async def test_a_post_with_no_usable_media_is_recorded_and_not_read_again(world)
             source=InstagramSocialSource(base_url=str(server.make_url("")), timeout_seconds=5),
             store=world.store, health=world.health,
             roster=functools.partial(instagram_roster, FakeSocialSubjectIndex({"ada": ADA})),
-            settings=SocialPollConfig(enabled=True, jitter_seconds=0),
+            settings=SocialPollConfig(enabled=True, jitter_seconds=0, relist_pages_per_tick=0),
             metrics=world.metrics, clock=world.clock,
         )
         await poller.tick()
@@ -1101,7 +1129,7 @@ async def test_a_first_page_read_again_leaves_a_new_post_to_the_poll(world) -> N
     )
     quiet(world, BEA)
     new = post(world, "new", age=timedelta(hours=1))
-    old = post(world, "old", age=timedelta(days=5))
+    old = tagged(post(world, "old", age=timedelta(days=5)), "Placeholder Square")
     world.source.pages[ADA] = Page(items=(new, old), next_cursor=f"{ADA}-c1")
     world.source.after[f"{ADA}-c1"] = Page(items=(), next_cursor=None)
     world.source.probes[ADA] = probe(posts=2)
@@ -1110,6 +1138,9 @@ async def test_a_first_page_read_again_leaves_a_new_post_to_the_poll(world) -> N
     await poller.tick()
     assert world.source.cursors == [None, None], "bea's first read, then ada's page 1 again"
     assert "new" not in await world.items(), "the re-read took the cursor only"
+    assert await places(world) == [("old", "Placeholder Square")], (
+        "it still compares the places of what it re-listed"
+    )
 
     world.clock.at(hours=6, minutes=1)
     await poller.tick()
@@ -1199,3 +1230,201 @@ async def test_the_item_limit_holds_on_the_first_page(world) -> None:
     assert await backfilled(world, "ada") == 5
     assert world.source.cursors == [None, None], "the limit was reached on page 1"
     assert ended(world, "max_items") == 1
+
+
+# ---- tagged places ------------------------------------------------------------
+
+
+async def places(world: World) -> list[tuple[str, str | None]]:
+    """Every `place` state row, oldest first: (item, new place)."""
+    s = SOCIAL_ITEM_STATE
+    async with world.engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(s.c.item_id, s.c.place).where(s.c.state == "place")
+            .order_by(s.c.recorded_at, s.c.id),
+        )).all()
+    return [(r.item_id, r.place) for r in rows]
+
+
+def tagged(item: SocialItem, place: str | None) -> SocialItem:
+    return dataclasses.replace(item, location=place)
+
+
+async def test_a_relisted_item_records_a_place_change_in_both_directions(world) -> None:
+    """A list read re-lists an item already recorded: a tag added, edited or
+    removed since is a `place` row; an unchanged one is none."""
+    quiet(world, BEA)
+    p1 = post(world, "p1")
+    # Another post whose tag never changes: every page carries a place.
+    anchor = tagged(post(world, "p0", age=timedelta(days=2)), "Placeholder Hill")
+    world.source.probes[ADA] = probe(posts=1)
+    world.source.pages[ADA] = Page(items=(p1, anchor), next_cursor=None)
+    poller = world.poller()
+    await poller.tick()
+    assert "p1" in await world.items() and await places(world) == []
+
+    steps: list[str | None] = ["Placeholder Square", "Placeholder Pier", None, None]
+    for n, place in enumerate(steps, start=2):
+        world.source.probes[ADA] = probe(posts=n)
+        world.source.pages[ADA] = Page(items=(tagged(p1, place), anchor), next_cursor=None)
+        world.clock.at(hours=6 * (n - 1))
+        await poller.tick()
+    assert world.source.reads("items").count(ADA) == 5, "one list read each time, nothing more"
+    assert await places(world) == [
+        ("p1", "Placeholder Square"), ("p1", "Placeholder Pier"), ("p1", None),
+    ], "added, edited, removed; the unchanged last read appends nothing"
+
+
+async def test_no_removal_from_an_unknown_place_or_a_read_that_carries_no_place(
+    world,
+) -> None:
+    """An item whose place the source could not read records nothing; nor
+    does a page that re-lists tagged items and carries no place at all, which
+    is what one upstream shape change would look like."""
+    quiet(world, BEA)
+    p1 = tagged(post(world, "p1"), "Placeholder Square")
+    p2 = tagged(post(world, "p2", age=timedelta(days=2)), "Placeholder Pier")
+    world.source.probes[ADA] = probe(posts=2)
+    world.source.pages[ADA] = Page(items=(p1, p2), next_cursor=None)
+    poller = world.poller()
+    await poller.tick()
+    assert await places(world) == []
+
+    unknown = dataclasses.replace(p1, location=None, location_known=False)
+    world.source.probes[ADA] = probe(posts=3)
+    world.source.pages[ADA] = Page(items=(unknown, p2), next_cursor=None)
+    world.clock.at(hours=6)
+    await poller.tick()
+    assert await places(world) == [], (
+        "an unknown place is not a removal, on a page that carries a place"
+    )
+
+    world.source.probes[ADA] = probe(posts=4)
+    world.source.pages[ADA] = Page(items=(tagged(p1, None), tagged(p2, None)), next_cursor=None)
+    world.clock.at(hours=12)
+    await poller.tick()
+    assert await places(world) == [], "a page carrying no place removes none"
+
+    world.source.probes[ADA] = probe(posts=5)
+    world.source.pages[ADA] = Page(items=(tagged(p1, None), p2), next_cursor=None)
+    world.clock.at(hours=18)
+    await poller.tick()
+    assert world.source.reads("items").count(ADA) == 4
+    assert await places(world) == [("p1", None)], "a page carrying a place removes one"
+
+
+async def walked(world: World, poller: SocialPoller) -> list[str | None]:
+    """The cursors the re-walk read: every list read after the back-fill's."""
+    await ticks(world, poller, 10)
+    return list(world.source.cursors)
+
+
+async def test_a_story_read_records_a_place_change_of_a_frame_it_shows_again(world) -> None:
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(marker=100)
+    world.source.stories[ADA] = story(frame("f1", world.clock))
+    held(world, "f1")
+    poller = world.poller()
+    await poller.tick()
+    assert "f1" in await world.items() and await places(world) == []
+
+    world.source.probes[ADA] = probe(marker=200)
+    world.source.stories[ADA] = story(
+        dataclasses.replace(frame("f1", world.clock), location="Placeholder Harbour"),
+    )
+    world.clock.at(hours=6)
+    await poller.tick()
+    assert world.source.reads("story") == [ADA, ADA]
+    assert await places(world) == [("f1", "Placeholder Harbour")]
+
+
+async def test_the_rewalk_gives_recorded_items_their_place_once(world) -> None:
+    """Items recorded before places were compared (a back-fill run by a
+    poller with no re-walk), then a restart onto one with it: one re-walk
+    lists them again, newest first, and each gains its place; it ends at the
+    grid's end and never runs again."""
+    quiet(world, BEA)
+    grid(world, ADA, 30)
+    poller = world.poller()
+    await poller.tick()
+    await ticks(world, poller, 3)
+    assert world.source.cursors == [None, None, f"{ADA}-c1", f"{ADA}-c2"], "the back-fill"
+    assert await backfilled(world, "ada") == 30 and await places(world) == []
+
+    # The network now lists every item with a tag.
+    first = world.source.pages[ADA]
+    assert isinstance(first, Page)
+    world.source.pages[ADA] = Page(
+        items=tuple(tagged(i, f"Placeholder {i.item_id}") for i in first.items),
+        next_cursor=first.next_cursor,
+    )
+    for cursor, page in list(world.source.after.items()):
+        assert isinstance(page, Page)
+        world.source.after[cursor] = Page(
+            items=tuple(tagged(i, f"Placeholder {i.item_id}") for i in page.items),
+            next_cursor=page.next_cursor,
+        )
+    cursors = await walked(world, world.poller(relist_pages_per_tick=2))
+    assert cursors[4:] == [None, f"{ADA}-c1", f"{ADA}-c2"], "three pages once, then nothing"
+    got = await places(world)
+    assert len(got) == 30 and all(place == f"Placeholder {item}" for item, place in got)
+    assert [r[:2] for r in await world.polls("ada")][-1] == ("relist", "read_ok")
+
+
+async def test_the_rewalk_ends_at_its_page_cap_whatever_an_old_pinned_post_says(
+    world,
+) -> None:
+    """A pinned post years old makes the member's oldest recorded item older
+    than any page reaches, so the walk ends at `relist_max_pages` pages."""
+    quiet(world, BEA)
+    grid(world, ADA, 120)
+    first = world.source.pages[ADA]
+    assert isinstance(first, Page)
+    pinned = post(world, "pinned", age=timedelta(days=4000))
+    world.source.pages[ADA] = Page(items=(pinned, *first.items), next_cursor=first.next_cursor)
+    poller = world.poller()
+    await poller.tick()
+    await ticks(world, poller, 6)
+    before = len(world.source.cursors)
+    cursors = await walked(world, world.poller(relist_pages_per_tick=2))
+    assert len(cursors) - before == relist_max_pages(50) == 6
+    assert cursors[before:] == [None, *(f"{ADA}-c{n}" for n in range(1, 6))]
+
+
+async def test_a_halting_backfill_page_ends_the_tick_before_any_rewalk_page(world) -> None:
+    """A back-fill page that halts the login (`needs_human`) is the tick's
+    last call: a member waiting for the re-walk is not read after it."""
+    grid(world, BEA, 5)
+    grid(world, ADA, 30)
+    world.source.after[f"{ADA}-c1"] = Failed(FailureKind.HALT, "needs_human")
+    poller = world.poller(relist_pages_per_tick=2)
+    await poller.tick()
+    assert world.source.cursors == [None, None], "each member's first list read"
+    await ticks(world, poller, 1)
+    assert world.source.cursors == [None, None, f"{ADA}-c1"], (
+        "the halting page, and no re-walk page of bea's after it"
+    )
+    assert "halted" in world.transitions()
+
+
+async def test_the_rewalk_reads_nothing_while_the_login_is_halted_or_backed_off(world) -> None:
+    """The re-walk checks the login itself, whichever path reaches it."""
+    quiet(world, ADA)
+    grid(world, BEA, 5)
+    poller = world.poller(relist_pages_per_tick=2)
+    await poller.tick()
+    roster = await instagram_roster(world.subjects)
+    assert roster is not None
+    before = list(world.source.cursors)
+    poller._listed = set()  # as at a later tick's start
+
+    poller._back_off_until = world.clock.now + timedelta(hours=1)
+    await poller._relist(roster)
+    poller._back_off_until = None
+    poller._halted = True
+    await poller._relist(roster)
+    assert world.source.cursors == before
+
+    poller._halted = False
+    await poller._relist(roster)
+    assert world.source.cursors == [*before, None], "positive control: bea's first re-walk page"

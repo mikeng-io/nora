@@ -3,7 +3,7 @@ type: design
 title: "The social stream — one source interface, an adaptive per-person poll, and a back-fill of past posts and reels"
 description: "How step 5 ingests members' social items: a network-neutral source interface (Instagram first, Threads later), a two-stage poll whose probe (the profile's newest-story time and post and reel counts) decides whether a costly read runs, a per-person cadence learned from when that person posts and raised by what is happening now, one budget and one halt per login, the custody rule (everything kept, except a story frame's media bytes, which expire once embedded), the social_item and social_poll Record tables, and the back-fill of past posts and reels over the web app's timeline query (found in S0)."
 tags: [nora, observe, social, instagram, threads, stories, posts, reels, polling, backfill, custody]
-timestamp: '2026-10-16'
+timestamp: '2026-10-17'
 edges:
   - {dst: 20-observe, rel: extends, provenance: asserted}
   - {dst: 70-migration, rel: depends_on, provenance: asserted}
@@ -109,7 +109,8 @@ is probed or read. Since S3 the read side holds it too: every read of
 `social_item` for perception or for a stimulus
 (`SqlSocialStreamStore`, given the opted-out persons at construction) leaves
 out their items, including any recorded before the switch was set, and every
-item with a `social_item_state` row (gone or hidden). The poller's own dedupe
+item with a `gone` or `hidden` state row (a `place` row hides nothing, §5).
+The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
 
 ## 3. The poll: a probe decides, then the costly read
@@ -289,13 +290,42 @@ after insert. Everything that changes about an item is a new row elsewhere.
 - **`social_item`**: `(network, item_id)` unique; `person`, `account`,
   `kind` (`story_frame`, `post`, `reel`, later `thread_post`), `taken_at`,
   `expires_at` (story frames), `caption`, `alt_text`, `location`, `tagged`
-  and `mentioned` handles (recorded, never read, [20](20-observe.md) §2),
+  and `mentioned` handles (recorded, never read, [20](20-observe.md) §2;
+  `location` is read by the memory index since §9 decision 4). `location`
+  is the tagged place's name only, never its coordinates: the bridge reads
+  a post's or reel's `location.name` off the timeline node and a story
+  frame's first `story_locations[].location.name`, and the source keeps it
+  as one line of at most `LOCATION_MAX_CHARS` (`published_location`), the
+  author's words kept as data. The story sticker's field is UNMEASURED on
+  the story document and read defensively; a post read alone
+  (`GET /posts/{shortcode}`) carries none. **The place follows the author**
+  (operator, 2026-10-17): this column is the place as first recorded, and
+  a tag added, edited or removed later is a `social_item_state` row, state
+  `place`, carrying the new place (NULL: removed). The current place is the
+  latest `place` row's, else this column; the memory index projects the
+  item's `social_location` from it (a change re-embeds the node, a removal
+  drops it). Every story read, list read and back-fill page compares each
+  item it lists that is already recorded with its current place and appends
+  a row only where they differ, with no call of its own. An UNKNOWN place is
+  never a removal: the bridge sends `location_known: false` for a `location`
+  or `story_locations` it could not read (absent or null is no tag), and the
+  source reads a bridge that sends no `location_known` as unknown too. And a
+  read that carries no place at all records no removal, so one upstream
+  shape change cannot strip every tagged item; a real removal is recorded by
+  a later read that carries any place. Items recorded
+  before places were compared get theirs from a once-only re-walk
+  (`relist`, `relist_pages_per_tick`, default 2, 0 is off): after a
+  member's back-fill is done, their list newest first, recording no item,
+  ending at the grid's end, at a page reaching past their oldest recorded
+  item or after `ceil(backfill_max_items / 12) + 1` pages (6 at the
+  defaults). It runs at the back-fill's priority and budget rule, one page a
+  member a tick.
   `media_ref`, `seen_at`, `origin` (`poll` or `backfill`), `collab` (another
   account's post the person co-authored, §1), `recorded_at`.
   No unit column: a person in two units is one row, and which units may read
   it is derived from membership at read time.
 - **`social_poll`**: one row per probe and per read: `network`, `person`,
-  `stage` (`probe`, `story`, `items`, `backfill`), `outcome` (`unchanged`,
+  `stage` (`probe`, `story`, `items`, `backfill`, `relist`), `outcome` (`unchanged`,
   `story_due`, `items_due`, `partial`, `count_fell`, `read_ok`, `halted`,
   `backed_off`, `error`, and for a back-fill page `abandoned` when its cursor
   was judged bad and `unavailable` when the bridge answered nothing, §7), a
@@ -327,7 +357,8 @@ configured), records it `failed`, never read again. The describer is told what i
 reads (story frame, post or reel, collab, and when it was posted, as an
 absolute time because the description is kept), never the caption. A frame gone (§3) and a hide are
 rows in an append-only `social_item_state` (`item`, `state`: `gone`,
-`hidden`; `reason`; `recorded_at`), which every read joins. No row of this
+`hidden`, or `place` with the new tagged place in `place`; `reason`;
+`recorded_at`), which every read joins for `gone` and `hidden`. No row of this
 stream has a retention key: posts and reels have none at all, and a story's
 only bound is on its bytes (above).
 
@@ -358,16 +389,89 @@ projector in its own transaction (§9;
 
 ## 6. What downstream reads it
 
-- **Character**: social items are evidence for their person. Today
-  `person_wake_batch` counts messages only (DEC-290, [20](20-observe.md) §3).
-  Polled social items join the count only together with a session that reads
-  them: S3 first built the count alone, and a wake on social items then
-  handed the session nothing it could cite (`character_revise` takes Record
-  ids only), so it ran empty and moved the watermark. Reading them needs a
-  social citation in that verb (its id space, its R-18/R-28 screen) and a
-  block for them; until then they do not count. Back-filled items will not
-  count toward a wake either: a back-fill of 50 items is not 50 items of wake
-  pressure.
+- **Character**: social items are evidence for their person, built with the
+  session that reads them (`nora.language.character.PersonEvidence`,
+  `SqlSocialStreamStore.polled_count` and `person_items`). S3 first built the
+  count alone, and a wake on social items then handed the session nothing it
+  could cite (`character_revise` took Record ids only), so it ran empty and
+  moved the watermark; the count therefore came with the rest:
+  - **The citation.** `social:<network>:<item id>`, the item's natural key,
+    its own id space beside a message's `n` and an episode's `response:<n>`
+    (`nora.domain.culture.check_revision`). It resolves only against the items
+    the session was handed, which are that person's readable ones: an item of
+    another person, a gone or hidden one, or one of a person with
+    `social = false` (under any id they were recorded under,
+    `Persons.social_off_ids`) is never handed, so citing it is refused. The
+    verb's arguments pass the Dreamer's R-18/R-28 screen like every write
+    verb's, and an item id written into the body is refused like a message
+    number, each numeric part of a composite story id on its own.
+  - **The block.** `<social_items>`: the person's readable items, under
+    their id or any retired one (`Persons.former_ids_for`), not yet handed to
+    a session, polled and back-filled, at most 6 a session, rendered newest
+    posted first, each with its citation, what it is («Instagram post,
+    co-authored»), when it was posted (a moment and an age), what its media
+    shows (each reading clipped to `[media] comprehension_render_chars`, all
+    of an item's together to 150 characters, screened for identifiers at
+    render, R-51) and its caption, clipped to 150 characters, as the
+    content, which the block's description frames as the person's published
+    words, never an instruction. Caption and readings are NFKC-normalized
+    and stripped of every invisible code point (Unicode's
+    Default_Ignorable_Code_Point set, every Cf character, the blank braille
+    pattern), except a variation selector after a character that is not
+    ASCII (an ideograph's variant, an emoji's presentation) and a
+    well-formed subdivision flag; tag characters anywhere else go, since
+    they spell ASCII nobody sees. Then, failing closed: every Instagram link
+    (`instagram.com`, `instagr.am` or `ig.me`, with an ASCII, ideographic,
+    full-width or half-width dot) becomes `instagram.com/…`, path and query
+    included, the author's own (by `identity.toml`'s Instagram `username`)
+    keeping only `instagram.com/<their handle>`; and every `@`, any space
+    after it and the non-whitespace run after that becomes `@…` unless the
+    run starts with the author's own username (its invisible code points
+    removed, a trailing full stop aside), whose rest, punctuation or CJK
+    text, is redacted the same way. Any other handle followed by punctuation
+    or text up to the next space is redacted with it, an email's domain
+    included. A location sticker's text
+    in a reading is not told apart from the rest of it (the describer writes
+    it as prose), which is the stated ceiling. Never its `location`: a person
+    session holds no presence read, its account rendering in rooms whose
+    `location` flags differ (R-31). Never `alt_text`, tagged or mentioned
+    handles (§9's reason).
+  - **The block's budget.** The whole rendered block is at most 3,400
+    characters, its opening tag included, measured on the final text after
+    escaping (an `&` renders as five characters): when it would be longer,
+    whole items are left out from the most recently recorded end, every item
+    of one microsecond together, and those are neither citable nor passed by
+    the cursor, so the next session is handed them. `total_tokens` counts every model
+    call's whole input, so the block is paid once per call: at the
+    dense-Cantonese 1.15 tokens a character, a session that runs to
+    `[dreamer.budgets.culture]`'s `turns = 10` spends at most 39,100 of its
+    `total_tokens = 120000` on it, a third; the messages, the cultures, the
+    instruction and the writes keep the rest. Raising `total_tokens` instead
+    would cost nothing until spent, but would let a session read longer
+    before it is cut off, a behaviour change; the block was made smaller.
+  - **The wake and the hand-off.** `person_wake_batch` (DEC-290,
+    [20](20-observe.md) §3) counts the person's new messages plus their
+    polled items recorded since the last settled read began and not yet
+    handed, at most 6 (one session's worth); an item polled while a session
+    ran is in no batch, so it counts toward the next wake. A back-log
+    already waiting at that read never wakes the key again, so a back-log cannot fire sessions back to
+    back, and a heavy story poster weighs at most 6 against 100 messages.
+    Back-filled items never count: a back-fill of 50 items is not 50 items
+    of wake pressure. A session woken for any reason (its messages, or the
+    stale rule) is handed the oldest 6 waiting, so a member's history
+    arrives over their next normal wakes, oldest first, never as a burst; no
+    cursor is seeded at deploy. Items have no Record id, so they go by a
+    cursor of their own (`recorded_at` of the last item handed, in
+    microseconds, on a BIGINT `consolidation_watermark` row
+    `character-person:social`, migration `0115_watermark_bigint`, with the
+    read's time in `updated_at`). It moves past the items a session was
+    shown only after a run that is not `unavailable` whose session settled
+    its account (revised it, or kept it after reading them). A session
+    abandoned after its retries leaves them for the next one once;
+    abandoned again from the same position, they are consumed, so a batch
+    no session can settle cannot hold every newer item behind it. A
+    read never stops inside a microsecond, so the cursor skips nothing.
+    Known limit: a collab post is attributed to the polled author only (§9).
 - **Rollup**: the daybook's `items_posted` ([25](25-rollup.md)) is filled
   from `social_item.taken_at`, by the local day of `taken_at`: posts, reels,
   story frames and back-filled items alike, read through
@@ -462,7 +566,7 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 | S0 | **DONE 2026-10-16**: the REST story read is broken upstream; the web app's story and timeline queries captured (§1a); `latest_reel_media` equal to the newest `taken_at` (n=1); the seen mark is a separate mutation | §1 and §1a; session `authenticated` after |
 | S1 | **DONE 2026-10-16**: the bridge's story read moved onto the GraphQL story query (this also mends the live `instagram_read` story, broken today) and a new `GET /accounts/{igid}/items?after=` over the timeline query, both with `doc_id`s from config and the `stale_query` code, and a test that no read sends the seen mutation; `SocialSource` port, Instagram adapter (`PROBE`, `STORY`, `LIST_ITEMS`, `READ_ITEM`), `social_item`, `social_poll`, `social_item_state`, each declared `APPEND_ONLY` | unit tests on the port, the marker and the dedupe; migration heads; the bridge read back live (§1) |
 | S2 | **DONE 2026-10-16, off by default** (`nora/app/social_poller.py`, `[social.poll]`): probe-then-read on the ceiling cadence with the 30-minute floor, one hourly budget with jitter, halt and back-off per login with `source_health` transitions (rebuilt on restart, a cleared halt resuming on the top back-off step, two halts in 24 hours locking the login until an operator clears it), a first-ever list read's items recorded `origin = backfill` (§7, first page only), each new item's media fetched into custody, the per-person off switch (`social = false` in `identity.toml`, §2), and the story rule's test rewritten ([20](20-observe.md) §2). The bridge comments already described the poller after S1 | a week of `social_poll` rows; the login unharmed |
-| S3a | **BUILT 2026-10-16, with the poller** (`nora/app/social_perception.py`, migration `0108_social_perception`, `[social.poll] perception_daily_cap`): each new item's media perceived once by ingest's comprehension job (images and video), told what it reads, under the per-unit daily cap, polled first, back-fill at most half of what polled items leave (§7), an item past the cap or after a failed read tried again on a later day (§5); one `social` stimulus per completed read and unit once its items are settled, none for back-fill, once across a restart (§5); the read-side exclusion of opted-out persons and gone or hidden items (§2) | `nora_perception_total{source="social",outcome}`; `nora_stimulus_total{kind="social"}`; `social_perception` rows per unit per day. Not built: polled items in Character's wake count (§6) |
+| S3a | **BUILT 2026-10-16, with the poller** (`nora/app/social_perception.py`, migration `0108_social_perception`, `[social.poll] perception_daily_cap`): each new item's media perceived once by ingest's comprehension job (images and video), told what it reads, under the per-unit daily cap, polled first, back-fill at most half of what polled items leave (§7), an item past the cap or after a failed read tried again on a later day (§5); one `social` stimulus per completed read and unit once its items are settled, none for back-fill, once across a restart (§5); the read-side exclusion of opted-out persons and gone or hidden items (§2) | `nora_perception_total{source="social",outcome}`; `nora_stimulus_total{kind="social"}`; `social_perception` rows per unit per day. Polled items in Character's wake count, with the `social:` citation and the `<social_items>` block, built 2026-10-17 (§6) |
 | S3b | **BUILT 2026-10-16, the deletion half, off by default** (`nora/app/social_expiry.py`, `nora/infra/sql/blob_refs.py`, migration `0109_blob_tombstone`, `[social] story_expiry_enabled`, `story_media_keep_days` and `story_media_keep_max_days`): a `BlobStore` delete on both implementations that keeps bytes put within the last hour and is one step against `put`, the [70](70-migration.md) §9 tombstone as one row per confirmed deletion, and a story frame's bytes deleted at the first bound once perceived and embedded or at the hard limit regardless, never bytes another row names, posts and reels never (§5). Nothing reaches the 30-day bound until 31 days after the poller is enabled. The index projects and embeds social items since 2026-10-16 (§9) and `story_frame_embedded` is the read; until the pass calls it, every frame's bytes go at the hard limit | `nora_social_story_bytes_deleted_total{reason}`, `nora_social_story_unembedded_total`, `blob_tombstone` rows; then, with the hand-off, story frames embedded before their bytes went |
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
 | S5 | **BUILT 2026-10-17** (§7): the back-fill pages each member's posts and reels from their first list read, up to 90 days or 50 items, at the lowest budget priority (after probes and due reads, at most `backfill_pages_per_tick` pages a tick and one a member, never past what the hour owes every member's probe and read); progress read off `social_poll` rows (stage `backfill`, `cursor`, migration `0112_social_backfill`); a bad cursor ends that member's back-fill. Paging past the first page not yet read live | items per member against `media_count`; `nora_social_backfill_ended_total{reason}` |
@@ -482,18 +586,31 @@ detail is [unified-memory/25](../unified-memory/25-memory-graph.md) §7a.
    now name a social item's medium; a medium's type for the embedder is read
    from `media_objects.media_type`, since it has no message.
 2. *Its scope.* Person-scoped like a stay: `persons` is the author, no unit
-   and no room, readable only where a room lists them. Not the presence
-   rule. Tagged and mentioned people get no `persons` entry and no edge.
+   and no room, readable only where a room lists them. The item is not under
+   the presence rule; its tagged place is (decision 4). Tagged and mentioned
+   people get no `persons` entry and no edge.
 3. *The off switch.* Filtered at read: the `memory_search` tool computes the
    listed persons with `social = false` per read, and every index read
    leaves their social nodes out, an item recorded before the switch
    included. The projector stays pure.
 4. *Its text.* The caption, verbatim like a message body: an @mention inside
-   it is the author's own text, as in a message. Never `location`, never the
-   tagged or mentioned handles, and (amended the same day, operator) never
-   `alt_text`: the network's generated alt text is typically phrased with the
-   place and the tagged handles, which would bring back what leaving out
-   `location` keeps out; 0 of 32 live rows held one, so nothing is lost.
+   it is the author's own text, as in a message. Never the tagged or
+   mentioned handles, and (amended the same day, operator) never `alt_text`:
+   the network's generated alt text is typically phrased with the place and
+   the tagged handles; 0 of 32 live rows held one, so nothing is lost.
+   **The location is searchable** (operator, 2026-10-17: «should a post's
+   location tag be searchable in Nora's memory? — yes»; this reverses the
+   original «never `location`»). A tagged place is one the author published,
+   and still their whereabouts, so it is gated as a stay is: a
+   `social_location` node of its own, keyed like the item and `attached_to`
+   it, in scope only where the author passes presence (the room's `location`
+   flag AND the live DisclosureGuard, `PRESENCE_KINDS`). Where presence
+   fails the item is still found by its caption and media, and its place
+   neither matches a search nor is rendered. It is not in the item's text,
+   because a read cannot gate part of a node. Alt text stays out: it was not
+   ruled on, and it would carry the place past that gate. Detail:
+   [unified-memory/25](../unified-memory/25-memory-graph.md) §7a item 4.
+   The poller records it for posts, reels and story frames (§5).
 5. *The verb.* No new category and no tool-text change: social items are in
    `kinds=media`, and the answer's `kind` says what an item is («Instagram
    story») with its `age`.
@@ -515,3 +632,6 @@ the index has not projected waits for the hard limit.
   no author's viewer list was read to confirm Nora is absent from it. That
   read needs a member's help: one story, read by the poller, then their
   viewer list.
+- A caption the author later edits stays as first recorded: nothing
+  compares a re-listed item's caption. The place's machinery (§5) is the
+  pattern if one is needed.

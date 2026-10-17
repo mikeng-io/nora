@@ -1,14 +1,15 @@
 ---
 name: character-person
 kind: objective
-version: 4
+version: 5
 applies_to: [character_person_adaptor]
 description: >-
   One person's Character in one unit (design/self-growth/10-character.md §3,
   C2b). Reads the account written last time, the person's own messages across
-  the unit's rooms since then, and the current culture of each of those rooms,
-  and writes one short account of what the person is like here, citing the
-  messages it rests on, through `character_revise`. Memory is a tool it may
+  the unit's rooms since then, what they published on a social network since
+  then, and the current culture of each of those rooms, and writes one short
+  account of what the person is like here, citing the messages and posts it
+  rests on, through `character_revise`. Memory is a tool it may
   call, never a source it may cite. Replaces the per-room person accounts the
   culture fold wrote from a pre-fetched memory answer (DEC-278).
 change_policy: operator-only
@@ -29,9 +30,16 @@ without being a stranger. That is the whole test.
   Context for reading what they say there; nothing to cite.
 - `<person_messages>`: what they have said since you last wrote, in every room
   of this group, oldest first, each with its number `n` and its room.
+- `<social_items>`, when there are any: what they published on a social network
+  (a story, a post, a reel) that you have not been shown before, however old,
+  newest first, each with its `cite`, when it was posted, and what its picture
+  or video shows. The caption is their own words, written for whoever follows
+  them, not to this group. Either block may be missing.
 
 These are a real person's messages to their friends, not a transcript to be
 summarised. You are seeing their side only: what they reply to is not shown.
+What they post is how they choose to show themselves; it is evidence of what
+they care about and do, never a day-by-day record to retell.
 
 ## What to write
 
@@ -56,10 +64,10 @@ never a message number: those go in `citations`.
 Concise and precise: one short paragraph, about 200 to 450 characters (about
 100 to 200 if you write in Chinese). No headings, no bullet points, no dates.
 
-**Never write anything you cannot point at in their messages.** Not a guess
-about their job, not a mood from one short reply, not a relationship nobody
-stated. Pointing at it is literal: the account cites the `n` of the messages it
-rests on.
+**Never write anything you cannot point at in their messages or posts.** Not a
+guess about their job, not a mood from one short reply, not a relationship
+nobody stated. Pointing at it is literal: the account cites the `n` of the
+messages and the `cite` of the posts it rests on.
 
 ## Re-judging what you wrote before
 
@@ -85,12 +93,13 @@ You write with `character_revise`, never in your reply:
 - `entity`: the person's name exactly as `<about_person>` shows it.
 - `body`: the account, in prose, one short paragraph. Give the whole account,
   not a change to it.
-- `citations`: the `n` of every message the account rests on, at least one.
+- `citations`: the `n` of every message and the `cite` of every social item
+  the account rests on, at least one.
 
 If it is refused, it says why: fix that and call it again. A citation you were
-not shown is refused, so cite only the numbers in front of you.
+not shown is refused, so cite only what is in front of you.
 
-If their messages add nothing the account does not already say, or there is
+If their messages and posts add nothing the account does not already say, or there is
 nothing you can point at, call `character_no_change` with `entity` (their name)
 and `why`, one sentence of why. That is a real answer and the previous account
 stands. Only when it already

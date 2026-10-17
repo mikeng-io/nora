@@ -28,6 +28,7 @@ __all__ = [
     "NODE_STATES",
     "PERSON_RELATIONS",
     "PERSON_SCOPED_KINDS",
+    "PRESENCE_KINDS",
     "PROJECTION_OUTCOMES",
     "RELATIONS",
     "SEARCH_STATUSES",
@@ -62,6 +63,8 @@ __all__ = [
 #: one attachment, `(message, sha256)`, never the bytes. `social` is one
 #: social item (a story frame, a post, a reel), `(network, item_id)`, and
 #: `social_media` one medium of it, `(item, sha256)`: a carousel is several.
+#: `social_location` is the place an item is tagged with, keyed like its item,
+#: apart from the item so that a read can gate it alone (`PRESENCE_KINDS`).
 #: A medium of a social item is its own kind, not a `media`, because
 #: everything about an attachment is read off its message (its room, its type
 #: in `messages.media_json`, its drop with the message) and a social item has
@@ -69,7 +72,7 @@ __all__ = [
 NodeKind = Literal[
     "message", "media", "note", "memo", "event", "lesson", "character",
     "outing", "stay", "trip", "person", "room", "unit", "nora", "place",
-    "social", "social_media",
+    "social", "social_media", "social_location",
 ]
 NODE_KINDS: tuple[str, ...] = get_args(NodeKind)
 
@@ -96,7 +99,7 @@ NODE_STATES: tuple[str, ...] = ("live", "retired", "superseded")
 #: feedback, also lexical only there, have no node kind yet.
 EMBEDDED_KINDS: tuple[str, ...] = (
     "message", "media", "note", "memo", "event", "lesson", "character",
-    "social", "social_media",
+    "social", "social_media", "social_location",
 )
 
 #: The kinds that are one medium, keyed by the `sha256` of its bytes: an
@@ -107,7 +110,7 @@ ATTACHMENT_KINDS: tuple[str, ...] = ("media", "social_media")
 #: The social stream's kinds (design/cognition-loop/22). A person's
 #: `social = false` (`identity.toml`) keeps every one of theirs out of every
 #: read (`MemoryScope.social_off`), including those recorded before the switch.
-SOCIAL_KINDS: tuple[str, ...] = ("social", "social_media")
+SOCIAL_KINDS: tuple[str, ...] = ("social", "social_media", "social_location")
 
 #: `nora_memory_embed_total`'s `outcome`, one per node the embedding worker
 #: tried. `ok` stored a vector; `unavailable` the embedder (or the
@@ -163,9 +166,21 @@ EPISODE_KINDS: tuple[str, ...] = ("outing", "stay", "trip")
 
 #: The person-only kinds: no unit and no room, readable where a room lists
 #: their person. Any other node with neither a unit nor a room is
-#: never in scope. A social item and its media are their author's: no unit
-#: column, so which units may read one is the rooms that list the author.
-PERSON_SCOPED_KINDS: tuple[str, ...] = ("stay", "trip", "social", "social_media")
+#: never in scope. A social item, its media and its location are their
+#: author's: no unit column, so which units may read one is the rooms that
+#: list the author.
+PERSON_SCOPED_KINDS: tuple[str, ...] = (
+    "stay", "trip", "social", "social_media", "social_location",
+)
+
+#: The kinds that say where a person was: the Rollup episodes, and the place
+#: a social item is tagged with. A node of one is in scope only where every
+#: person of it passes presence (`MemoryScope.presence_persons`: the room's
+#: `location` flag AND the live DisclosureGuard). A tagged place is one the
+#: author published, and still their whereabouts, so it is gated as a stay
+#: is; the item itself is not, and stays findable by its caption and its
+#: media wherever its author is listed.
+PRESENCE_KINDS: tuple[str, ...] = (*EPISODE_KINDS, "social_location")
 
 
 #: `memory_search`'s `kinds` (the tool's `Literal`): five plain categories a
@@ -174,12 +189,13 @@ PERSON_SCOPED_KINDS: tuple[str, ...] = ("stay", "trip", "social", "social_media"
 #: she wrote down herself (a note, a memo, a lesson, a Character account),
 #: `places` is where people went (an outing, a stay, a trip), and `media`
 #: holds a member's social items with the pictures and videos shared in
-#: rooms. Hubs are never a category: they are never returned.
+#: rooms (an item's tagged place with it). Hubs are never a category: they
+#: are never returned.
 MemoryKind = Literal["messages", "media", "notes", "events", "places"]
 MEMORY_KINDS: tuple[str, ...] = get_args(MemoryKind)
 KINDS_BY_CATEGORY: Mapping[str, tuple[str, ...]] = {
     "messages": ("message",),
-    "media": ("media", "social", "social_media"),
+    "media": ("media", "social", "social_media", "social_location"),
     "notes": ("note", "memo", "lesson", "character"),
     "events": ("event",),
     "places": ("outing", "stay", "trip"),
@@ -233,8 +249,9 @@ class MemoryScope:
       an unmapped account, an unreadable or degraded roster): any node with
       an `exclude_persons` is out (`nora.agent.lineage.excluded`'s rule).
     - `presence_persons`: listed persons whose presence passes here (the
-      room's `location` flag AND the live DisclosureGuard): an episode is in
-      scope only if every person of it is one.
+      room's `location` flag AND the live DisclosureGuard): an episode, or a
+      social item's tagged place (`PRESENCE_KINDS`), is in scope only if
+      every person of it is one.
     - `room_persons`: each room of the unit and the persons it lists, for the
       listed-room rule (evidence about P only from rooms that list P).
     - `only`: the question's narrowing (`MemoryFilter`), applied by every
@@ -441,7 +458,7 @@ def in_scope(node: IndexedNode, scope: MemoryScope) -> bool:
     if node.kind in SOCIAL_KINDS and set(node.persons) & scope.social_off:
         return False
     return not (
-        node.kind in EPISODE_KINDS and not set(node.persons) <= scope.presence_persons
+        node.kind in PRESENCE_KINDS and not set(node.persons) <= scope.presence_persons
     )
 
 
