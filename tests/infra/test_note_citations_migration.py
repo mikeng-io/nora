@@ -1,6 +1,7 @@
 """Migration `0116_note_citations` backfills what every stored note revision
 cites, and queues every note for the drain to re-project with its `cites`
-edges, so a note written before the column is reached like one written after."""
+edges, so a note written before the column is reached like one written after.
+Its downgrade takes the `cites` edges the older code would never draw."""
 
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ async def _two_notes(url: str) -> tuple[str, str, str]:
             established_by="tag:p1", now_ms=10, anchor_date=20261020,
         )
         revision = await store.append_revision(
-            unit="unit-a", note_id=note.id, body="a legacy body [7] with [no key]",
+            unit="unit-a", note_id=note.id, body="a legacy body [3] that ends [7]",
             parent_revision_id=note.head_revision_id, established_by="tag:p1", now_ms=20,
         )
         bare = await store.create(
@@ -42,11 +43,17 @@ async def _two_notes(url: str) -> tuple[str, str, str]:
 def test_the_backfill_stores_each_revision_s_citations_and_queues_every_note(pg_url):
     first, second, bare = asyncio.run(_two_notes(pg_url))
     cfg = alembic_config(pg_url)
-    command.downgrade(cfg, "0115_watermark_bigint")
     engine = sa.create_engine(sync_url_for(pg_url))
     try:
         with engine.begin() as conn:
             conn.execute(sa.text("DELETE FROM memory_projection_queue"))
+            cites = "SELECT count(*) FROM memory_edge WHERE src_kind = 'note' AND rel = 'cites'"
+            # Positive control at head: the live projection drew them.
+            assert conn.execute(sa.text(cites)).scalar_one() > 0
+        command.downgrade(cfg, "0115_watermark_bigint")
+        with engine.connect() as conn:
+            # The older code projects a note with no `cites` edge.
+            assert conn.execute(sa.text(cites)).scalar_one() == 0
         command.upgrade(cfg, "head")
         with engine.connect() as conn:
             cited = dict(conn.execute(sa.text(

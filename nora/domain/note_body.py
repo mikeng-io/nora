@@ -253,24 +253,30 @@ def rollup_keys_in(text: str) -> frozenset[str]:
 
 
 def citations_in(text: str) -> tuple[str, ...]:
-    """Every id and Rollup key a text cites, as a revision's `citations`
-    column holds them (`nora.domain.memo.citations_of`'s form: ids as digits,
-    keys as `rollup(...)`, each once, in the text's order). Read with
-    `cited_ids_in`'s and `rollup_keys_in`'s patterns, so the column a note
-    revision stores is what its lineage and the carry-forward check already
-    read as cited, and a stored body that predates the schema still answers."""
+    """What a stored body cites, as a revision's `citations` column holds it:
+    `nora.domain.memo.citations_of`'s form and order (per line its ids, then
+    its Rollup keys; ids as digits, keys as `rollup(...)`; each once).
+
+    Read off each line's TRAILING bracket group only, the one group
+    `parse_note_body` checks against what the write was shown, so on a body
+    that parsed this is exactly `citations_of` of the parse, and a bracket
+    inside a line's text is never a citation. Read with a pattern rather than
+    the parser, so a stored body that predates the schema answers too."""
     seen: dict[str, None] = {}
-    for group in _BRACKET_GROUP.findall(text):
+    for line in text.splitlines():
+        m = _CITED.match(line.strip())
+        if m is None:
+            continue
+        group = m.group("ids")
         shape = _ROLLUP_KEY.sub("K", group)
         if not _IDS_OR_KEYS.match(shape):
             continue
-        keys = iter(_ROLLUP_KEY.findall(group))
         for token in shape.split(","):
-            token = token.strip()
-            if token.isdigit():
+            if token.strip().isdigit():
                 seen.setdefault(str(int(token)), None)
-            elif (key := next(keys).strip()):
-                seen.setdefault(f"rollup({key})", None)
+        for key in _ROLLUP_KEY.findall(group):
+            if key.strip():
+                seen.setdefault(f"rollup({key.strip()})", None)
     return tuple(seen)
 
 

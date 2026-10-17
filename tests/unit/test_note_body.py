@@ -296,15 +296,18 @@ def test_a_group_mixing_ids_and_rollup_keys_yields_both_and_a_key_s_commas_are_n
 def test_a_note_revision_s_citations_are_what_a_memo_s_column_would_hold():
     """`note_revision.citations` is `memo_revision.citations`' form, read off
     the stored body: on a body that parses, exactly what the memo verbs store
-    from the parse; on one that does not, what the brackets cite."""
+    from the parse (a line's ids, then its keys); a bracket inside a line's
+    text was never checked against what the write was shown, so it is never a
+    citation; on a body that does not parse, each line's trailing brackets."""
     mixed = (
-        f"## Decided\n## Open\n- which restaurant [4812, rollup({KEY})]\n"
-        f"- whether Ben is in [4815]\n- and Ada again [4812]\n"
+        f"## Decided\n## Open\n- which restaurant [rollup({KEY}), 4812]\n"
+        f"- which [999999] room [4815]\n- and Ada again [4812]\n"
     )
     for text, shown in ((CONFORMANT, SHOWN), (mixed, WITH_KEYS)):
         assert citations_in(text) == citations_of(parse_note_body(text, shown=shown))
     assert citations_in(mixed) == ("4812", f"rollup({KEY})", "4815")
-    assert citations_in("a legacy body [12] with [no key] and [#4] [ 007 ]") == ("12", "7")
+    assert citations_in("a legacy [12] body\n- with [no key]\n- and [#4] [ 007 ]") == ("7",)
+    assert citations_in("- an empty key [rollup(), 5]") == ("5",)
     assert citations_in("## Decided\n## Open\n") == ()
 
 
