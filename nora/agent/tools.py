@@ -721,7 +721,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # the household's saved names don't decay. Not terminal.
     #
     # `level=2` (ADR 0015 §3): L1 plus one selection constraint (where someone
-    # works or lives is this tool, not `about` or `search_memory`). How to use
+    # works or lives is this tool, not a memory read). How to use
     # the names rides in the `ok` result's `note`.
     "saved_places": NativeTool(1,
                                source_tier="remembered", read_only=True,
@@ -6129,6 +6129,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         It returns what matches, with each item's age and how it was found. The
         other arguments narrow it to one person, a span of dates or some kinds
         of memory. Asked what you know about someone, set `person` to them.
+        Reading everything said on a day or span, with no topic to look for,
+        is `record_query`.
 
         SHOULD: write `query` yourself, as what you are looking for, not the raw
         tag message.
@@ -6877,8 +6879,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         PERSONAL name.
 
         A personal name is one Google doesn't know: home, someone's home, work,
-        school. Asked where someone works or lives, use this, not `about` or
-        `search_memory`.
+        school. Asked where someone works or lives, use this, not a memory read.
 
         Returns `status`: ok or unavailable, with a `note` on how to report it.
         """
@@ -10452,7 +10453,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         conversation and no other tool covers it. Returns ranked links with a
         snippet each.
 
-        Other tools come first: `transit`, `route`, `weather`, `about` for a
+        Other tools come first: `transit`, `route`, `weather`, memory for a
         person you know, `place_info` for a shop's hours or rating, and
         `parking_status` or `find_parking` for car park vacancy.
 
