@@ -4815,7 +4815,7 @@ IDX_BLOB_TOMBSTONE_SHA = sa.Index(
 )
 
 
-# `persona` / `persona_line` (migration `0116_persona`, design/unified-memory/45
+# `persona` / `persona_line` (migration `0117_persona`, design/unified-memory/45
 # §1): one account per entity, kept as typed lines. `persona` is the account
 # and changes in place (`revision`, bumped by every committed write, is the
 # compare-and-set a session writes against), so it keeps `row_history`.

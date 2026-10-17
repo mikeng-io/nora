@@ -123,7 +123,7 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # 0082_computer_sessions: a session is
     # continued and expired in place; its versions are what it was at T.
     "computer_sessions": ("id",),
-    # 0116_persona: an account's head, its `revision` bumped by every write.
+    # 0117_persona: an account's head, its `revision` bumped by every write.
     "persona": ("key",),
 }
 
@@ -148,7 +148,7 @@ APPEND_ONLY: dict[str, str] = {
     # 0100_lessons: a lesson is an identity, and every change to it a revision.
     "lesson": "recorded_at",
     "lesson_revision": "recorded_at",
-    # 0116_persona: a Persona line; a change is a new row that supersedes it.
+    # 0117_persona: a Persona line; a change is a new row that supersedes it.
     "persona_line": "recorded_at",
     # 0101_self_tension: a refused lesson and the law it pulled against.
     "self_tension": "recorded_at",

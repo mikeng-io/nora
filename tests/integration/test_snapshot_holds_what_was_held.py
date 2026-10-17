@@ -238,7 +238,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "created_at": T0, "updated_at": T0, "last_activity_at": T0,
         "actor": "tag", "created_by_tag": f"t{i}",
     },
-    # 0116_persona: an account's head, its revision bumped by each write.
+    # 0117_persona: an account's head, its revision bumped by each write.
     "persona": lambda i: {
         "key": f"u#character:p{i}", "entity_kind": "human", "unit": "u",
         "revision": 1, "updated_at": MS0 + i,
@@ -355,7 +355,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "citations": [str(n + 1)], "state": "active", "written_at": MS0 + n,
         "established_by": "test",
     },
-    # 0116_persona: one told line.
+    # 0117_persona: one told line.
     "persona_line": lambda n: {
         "id": _uuid("pl", n), "persona_key": f"u#character:p{n}", "part": "identity",
         "kind": "attribute", "text": f"fact {n}", "mode": "told", "citations": [str(n + 1)],

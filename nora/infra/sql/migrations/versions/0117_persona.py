@@ -13,11 +13,11 @@ rules that need the evidence or the other lines are
 foreign key between the two, for the reason `0084_documents` gives. Nothing
 renders these rows before the switch (step 8).
 
-Follows `0115_watermark_bigint`. `uv run alembic heads` must print exactly
+Follows `0116_note_citations`. `uv run alembic heads` must print exactly
 ONE line.
 
-Revision ID: 0116_persona
-Revises: 0115_watermark_bigint
+Revision ID: 0117_persona
+Revises: 0116_note_citations
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0116_persona"
-down_revision = "0115_watermark_bigint"
+revision = "0117_persona"
+down_revision = "0116_note_citations"
 branch_labels = None
 depends_on = None
 

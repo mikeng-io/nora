@@ -8,7 +8,7 @@ other than their writer (§3), the build's prerequisites are listed (§4),
 shadow changes no prompt (§6, §8), and the coverage gate fails closed (§6).
 
 **§1 to §4's storage and write built 2026-10-17 (00 «Sequence» step 5,
-DEC-317)**: `persona`, `persona_line` (migration `0116_persona`), the judge
+DEC-317)**: `persona`, `persona_line` (migration `0117_persona`), the judge
 `nora.domain.persona.plan_write` and the one write path
 `nora.infra.sql.persona.SqlPersonaStore.persona_write`. What the build
 settled that this node left open is marked «Built» where it applies. The
