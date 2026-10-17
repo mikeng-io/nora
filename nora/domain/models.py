@@ -633,6 +633,16 @@ class TagContext:
     # while `[subagent]` is off, in a room with no job in the window, and in every harness
     # that wires no reader: the block then renders nothing.
     subagents: SubagentsView | None = None
+    # `<recalled>`, the pre-fetch (design/unified-memory/00 step 3b, 25 §5):
+    # the memory index searched from this message's own seeds before the
+    # turn, as `nora.agent.memory_search.render_packet`'s items (the same
+    # shape `memory_search` answers with), cut at `PREFETCH_TOKENS`. Tag turn
+    # on the graph memory surface only (`[memory_index] enabled`); `()` on the
+    # Honcho surface, on a failed or empty search, and in every harness that
+    # wires no search: the block then renders nothing. `recalled_partial` is
+    # the search's `partial`: the index was still being built.
+    recalled: tuple[dict[str, Any], ...] = ()
+    recalled_partial: bool = False
     # The rows READ, when the prompt shows fewer of them (`[store] prompt_window`).
     # `transcript` is what `<group_transcript>` renders and what `#n` / `reply_to`
     # index; this is the deeper read a LOOKUP (`who_said`) searches. Empty means

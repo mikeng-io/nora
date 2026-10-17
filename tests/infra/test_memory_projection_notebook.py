@@ -36,6 +36,7 @@ from nora.infra.sql.schema import (
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
     NOTE,
+    NOTE_REVISION,
 )
 from nora.subject.knowledge import _seed_note_with_id
 
@@ -117,6 +118,13 @@ async def _edges(engine: Any, kind: str, sid: str) -> set[tuple[str, str, str, s
     return {tuple(r) for r in rows}
 
 
+async def _citations(engine: Any, revision_id: str) -> list[str]:
+    async with engine.connect() as conn:
+        return list((await conn.execute(
+            sa.select(NOTE_REVISION.c.citations).where(NOTE_REVISION.c.id == revision_id)
+        )).scalar_one())
+
+
 async def _note(store: SqlNoteStore, title: str, body: str, now_ms: int = 10) -> Note:
     return await store.create(
         unit=_UNIT, title=title, description="an open question",
@@ -154,6 +162,7 @@ async def test_a_note_is_projected_through_its_revisions_and_retirement(engine):
     assert await _edges(engine, "note", note.id) == {
         ("note", note.id, "in_room", "room", _ROOM),
         ("note", note.id, "tracks", "event", event_id),
+        ("note", note.id, "cites", "message", "1"),
     }
 
     successor = await _note(store, "Friday dinner, booked", "- booked [1]")
@@ -202,6 +211,49 @@ async def test_a_merge_projects_the_survivor_and_the_folded_duplicate(engine):
     )
 
 
+async def test_a_note_cites_what_its_head_revision_cites(engine):
+    """Step 4 of the unified-memory sequence: a note revision stores its
+    citations as a memo revision does, and the index draws `cites` edges from
+    the HEAD's, so a walk out of a cited message reaches the note. A revision
+    that stops citing a message takes its edge away; a merge's folded body
+    cites what both notes rested on."""
+    first, second = await _said(engine), await _said(engine, "or saturday?")
+    store = SqlNoteStore(engine)
+    note = await _note(
+        store, "Weekend dinner",
+        f"## Decided\n## Open\n- which day [{first}, rollup(outing|x|a/b)]",
+    )
+    assert await _citations(engine, note.head_revision_id) == [first, "rollup(outing|x|a/b)"]
+    cites = {e for e in await _edges(engine, "note", note.id) if e[2] == "cites"}
+    assert cites == {
+        ("note", note.id, "cites", "message", first),
+        ("note", note.id, "cites", "outing", "x|a/b"),
+    }
+
+    revision = await store.append_revision(
+        unit=_UNIT, note_id=note.id, body=f"## Decided\n## Open\n- which day [{second}]",
+        parent_revision_id=note.head_revision_id, established_by="tag:member-a", now_ms=20,
+    )
+    assert await _citations(engine, revision.id) == [second]
+    cites = {e for e in await _edges(engine, "note", note.id) if e[2] == "cites"}
+    assert cites == {("note", note.id, "cites", "message", second)}
+
+    other = await _note(store, "Weekend dinners", f"## Decided\n## Open\n- who [{first}]")
+    folded = await store.merge_into(
+        unit=_UNIT, survivor_id=note.id, survivor_head=revision.id,
+        duplicate_id=other.id, duplicate_head=other.head_revision_id,
+        body=f"## Decided\n## Open\n- which day [{second}]\n- who [{first}]",
+        anchor_date=20261020, revisit_at=99, reset_strikes=False,
+        established_by="cognition", now_ms=30,
+    )
+    assert await _citations(engine, folded.id) == [second, first]
+    cites = {e for e in await _edges(engine, "note", note.id) if e[2] == "cites"}
+    assert cites == {
+        ("note", note.id, "cites", "message", second),
+        ("note", note.id, "cites", "message", first),
+    }
+
+
 async def test_a_seeded_sandbox_note_is_projected(engine):
     note = Note(
         id=str(uuid4()), unit=_UNIT, title="Seeded question", description="seeded",
@@ -213,6 +265,8 @@ async def test_a_seeded_sandbox_note_is_projected(engine):
     )
     node = (await _nodes(engine))[("note", note.id)]
     assert (node.unit, node.text) == (_UNIT, "Seeded question\n- seeded body [1]")
+    assert await _citations(engine, note.head_revision_id) == ["1"]
+    assert ("note", note.id, "cites", "message", "1") in await _edges(engine, "note", note.id)
 
 
 async def test_a_memo_cites_messages_and_is_retired_when_withdrawn(engine):
@@ -336,7 +390,7 @@ async def test_a_venue_is_located_in_its_district_and_city_and_goes_when_nothing
 ):
     """Step 3a: the venue's stored areas become place hubs named by them and
     a `located_in` chain venue -> district -> city. A second event at the same
-    venue with no area (resolved before 0116) leaves the chain alone. When no
+    venue with no area (resolved before 0118) leaves the chain alone. When no
     event names the venue any more, it goes, and the district and city with
     it: nothing else lies in them. A rebuild from empty writes exactly what
     live projection wrote."""

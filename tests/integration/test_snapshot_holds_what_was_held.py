@@ -238,6 +238,11 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "created_at": T0, "updated_at": T0, "last_activity_at": T0,
         "actor": "tag", "created_by_tag": f"t{i}",
     },
+    # 0117_persona: an account's head, its revision bumped by each write.
+    "persona": lambda i: {
+        "key": f"u#character:p{i}", "entity_kind": "human", "unit": "u",
+        "revision": 1, "updated_at": MS0 + i,
+    },
 }
 
 #: The column each revision moves, and to what.
@@ -250,6 +255,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "note": ("strikes", lambda i: 1 + i),
     "culture": ("updated_at", lambda i: MS0 + 1000 + i),
     "computer_sessions": ("objective", lambda i: f"task {i}, continued"),
+    "persona": ("revision", lambda i: 2 + i),
     "standing": ("body", lambda i: f"revised position {i}"),
     "reminders": ("state", lambda i: "cancelled"),
     "compute_jobs": ("state", lambda i: "firing"),
@@ -288,7 +294,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "note_revision": lambda n: {
         "id": _uuid("nr", n), "note_id": _uuid("note", 0), "body": f"body {n}",
-        "written_at": MS0 + n, "established_by": "test",
+        "written_at": MS0 + n, "established_by": "test", "citations": [],
     },
     "standing_revision": lambda n: {
         "platform": "signal", "conversation_id": "g0", "body": f"pos {n}",
@@ -348,6 +354,13 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("lr", n), "lesson_id": _uuid("ls", n), "seq": 1, "body": f"lesson {n}",
         "citations": [str(n + 1)], "state": "active", "written_at": MS0 + n,
         "established_by": "test",
+    },
+    # 0117_persona: one told line.
+    "persona_line": lambda n: {
+        "id": _uuid("pl", n), "persona_key": f"u#character:p{n}", "part": "identity",
+        "kind": "attribute", "text": f"fact {n}", "mode": "told", "citations": [str(n + 1)],
+        "told_by": f"p{n}", "state": "current", "support_count": 1, "unit": "u",
+        "written_at": MS0 + n, "written_by_session": "test",
     },
     # 0103_memos (DEC-306): a kept memo, and one revision of it.
     "memo": lambda n: {

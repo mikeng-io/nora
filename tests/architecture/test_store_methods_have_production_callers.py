@@ -145,6 +145,14 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    ("persona.py", "account_heads"): _Pin(
+        "deferred_consumer",
+        "A Persona account as it stands, the lines a session is shown with "
+        "their handles. Persona step 5 built the store and its one write; "
+        "the reader is the Persona adaptor's session (design/unified-memory/45 "
+        "§4, 00 «Sequence» step 6), which is the next build. Until then the "
+        "tests read the account back through it.",
+    ),
     ("culture.py", "chain"): _Pin(
         "deferred_consumer",
         "The revision chain, newest first, walked through parent links. The "
@@ -269,7 +277,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",
         "memory_read.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "otp.py",
-        "participation_state.py", "presence.py",
+        "participation_state.py", "persona.py", "presence.py",
         "reasoning_strip.py", "record_query.py",
         "reminders.py", "revisions.py", "rollup_read.py", "rollups.py",
         "snapshot_at.py", "social_stream.py",

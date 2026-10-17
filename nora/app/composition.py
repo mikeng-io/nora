@@ -187,6 +187,7 @@ from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.otp import SqlOtpStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
+from nora.infra.sql.persona import SqlPersonaStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.record_query import SqlRecordQuery
@@ -2094,8 +2095,34 @@ async def build_dependencies(
     def note_platform_for(cid: str, unit: str) -> str | None:
         return note_platforms.get((cid, unit))
 
+    # `[memory_index] enabled` (ships off): the one retrieval service, held
+    # by the tag path's pre-fetch (`<recalled>`) and by the tool registry's
+    # `memory_search` below, one instance for both; `None` keeps the Honcho
+    # surface and no pre-fetch.
+    memory_search = (
+        MemorySearch(
+            SqlMemoryIndex(engine), metrics,
+            # `[memory_index] embed`: dense and exact seeds, the
+            # lexical seed only as the fallback; off, every answer is
+            # the fallback's `partial`.
+            embedder=LlamaEmbedder(
+                cfg.memory_index.embedder_url,
+                timeout_seconds=QUERY_TIMEOUT_SECONDS,
+                query_model_file=model_file(cfg.memory_index.embedder_model),
+            ) if cfg.memory_index.embed else None,
+            model=(
+                fingerprint(cfg.memory_index.embedder_model)
+                if cfg.memory_index.embed else None
+            ),
+            # The embedding worker's tick: a node waiting less than a
+            # few of them is fresh, not a backlog that answers `partial`.
+            drain_seconds=cfg.memory_index.drain_seconds,
+        )
+        if cfg.memory_index.enabled else None
+    )
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
+        memory_search=memory_search, clock=clock,
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
         # SAME policy.toml instance the ingest pipeline and `EngagementPipeline`
         # are given below — the assembler needs it for one thing only, naming
@@ -2940,27 +2967,11 @@ async def build_dependencies(
         # `[memory_index] enabled` (ships off):
         # one memory surface: `memory_search` over the index; off, the Honcho
         # verbs as before (DEC-316, `nora.agent.tools.GRAPH_MEMORY_TOOLS`).
-        memory_search=(
-            MemorySearch(
-                SqlMemoryIndex(engine), metrics,
-                # `[memory_index] embed`: dense and exact seeds, the
-                # lexical seed only as the fallback; off, every answer is
-                # the fallback's `partial`.
-                embedder=LlamaEmbedder(
-                    cfg.memory_index.embedder_url,
-                    timeout_seconds=QUERY_TIMEOUT_SECONDS,
-                    query_model_file=model_file(cfg.memory_index.embedder_model),
-                ) if cfg.memory_index.embed else None,
-                model=(
-                    fingerprint(cfg.memory_index.embedder_model)
-                    if cfg.memory_index.embed else None
-                ),
-                # The embedding worker's tick: a node waiting less than a
-                # few of them is fresh, not a backlog that answers `partial`.
-                drain_seconds=cfg.memory_index.drain_seconds,
-            )
-            if cfg.memory_index.enabled else None
-        ),
+        # Built once above: the assembler's pre-fetch holds the same one.
+        memory_search=memory_search,
+        # The graph surface's `remember` writes a Persona `told` line
+        # (design/unified-memory/45); wired with `memory_search`, never alone.
+        persona=SqlPersonaStore(engine) if memory_search is not None else None,
         lineage=lineage,
         # The current Rollup build's rows and the Standing head. SELECTs, so no
         # flag. The Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the

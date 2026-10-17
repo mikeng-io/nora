@@ -79,7 +79,7 @@ async def test_nearest_within_picks_the_closer_of_two_cached_points(store):
 async def test_area_within_reads_the_nearest_row_that_names_an_area(store):
     """An outing is placed by the areas of the nearest cached geocode
     (`nora.analytics.units`): a closer row with no area (one cached before
-    0116) is passed over, a row beyond the radius is never read, and none
+    0118) is passed over, a row beyond the radius is never read, and none
     within it is None, never a guess."""
     area = PlaceArea(district="旺角 / Mong Kok", city="九龍 / Kowloon")
     await store.put(lat_rounded=1.0, lng_rounded=2.0, address="no area")

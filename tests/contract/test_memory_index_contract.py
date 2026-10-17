@@ -205,6 +205,22 @@ async def test_about_returns_in_scope_nodes_about_the_person(load: Load) -> None
     assert {n.key for n in found} == {("note", "n1"), ("stay", "s1")}
 
 
+async def test_media_returns_in_scope_nodes_holding_the_bytes_newest_first(
+    load: Load,
+) -> None:
+    sha, other = "ab" * 32, "cd" * 32
+    index = await load([
+        IndexedNode("media", "a1", "poster", 5, origin_room="signal:b", sha256=sha),
+        IndexedNode("media", "a2", "poster again", 9, origin_room="signal:c", sha256=sha),
+        IndexedNode("media", "a3", "poster", 7, origin_room="signal:d", sha256=sha),
+        IndexedNode("media", "a4", "a menu", 8, origin_room="signal:b", sha256=other),
+    ], [])
+    found = await index.media([sha], SCOPE, limit=50)
+    assert [n.key for n in found] == [("media", "a2"), ("media", "a1")]
+    assert await index.media([], SCOPE, limit=50) == []
+    assert [n.key for n in await index.media([sha], SCOPE, limit=1)] == [("media", "a2")]
+
+
 async def test_neighbours_both_directions_hubs_kept_out_of_scope_and_dangling_dropped(
     load: Load,
 ) -> None:

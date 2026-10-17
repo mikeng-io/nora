@@ -342,7 +342,7 @@ class Gathering:
     field_meta: tuple[FieldMeta, ...] = ()
     #: The areas the resolved venue lies in (`nora.domain.ports.PlaceArea`),
     #: resolved with it from Google's address components (migration
-    #: `0116_place_area`); the memory index's `located_in` chain.
+    #: `0118_place_area`); the memory index's `located_in` chain.
     venue_district: str | None = None
     venue_city: str | None = None
 

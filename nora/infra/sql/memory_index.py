@@ -55,12 +55,12 @@ them. A pre-C2b ROOM-keyed person account is never indexed:
 it was written from one room's messages, and a unit scope would
 show it in every room of the unit.
 
-**`cites` comes only from a stored citations column**: memos,
+**`cites` comes only from a stored citations column**: notes, memos,
 lessons and Character revisions. A message id becomes an edge to its
 message node; a `rollup(outing|stay|trip|...)` key an edge to that episode's
 key, as cited. A key of a kind with no node (a co-location, daybook,
-tie or response) and a `response:<n>` episode are skipped. Notes and events store no
-citations (a note's sit in its body's brackets), so they have none.
+tie or response) and a `response:<n>` episode are skipped. Events store no
+citations column, so they have none.
 
 **What a Rollup episode is.** An outing, a stay or a trip of the
 CURRENT build, keyed by its citation `(subject, interval)`
@@ -773,7 +773,7 @@ async def _project_note(conn: AsyncConnection, source_id: str) -> None:
         sa.select(
             NOTE.c.unit, NOTE.c.title, NOTE.c.established_in, NOTE.c.retired_at,
             NOTE.c.replaced_by, NOTE.c.event_id, NOTE.c.exclude_persons,
-            NOTE_REVISION.c.body, NOTE_REVISION.c.written_at,
+            NOTE_REVISION.c.body, NOTE_REVISION.c.citations, NOTE_REVISION.c.written_at,
         )
         .select_from(NOTE.join(NOTE_REVISION, NOTE_REVISION.c.id == NOTE.c.head_revision_id))
         .where(NOTE.c.id == source_id)
@@ -803,6 +803,7 @@ async def _project_note(conn: AsyncConnection, source_id: str) -> None:
         edges.append((
             "note", str(row.replaced_by), "supersedes", "note", source_id, "note.replaced_by",
         ))
+    edges += _cites("note", source_id, row.citations, "note_revision.citations")
     await _entry_edges(conn, "note", source_id, edges)
 
 
@@ -913,7 +914,7 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
             "event", source_id, "about", "place", row.venue_place_id, "events.venue_place_id",
         ))
         # The venue's own `located_in`, replaced only by a row that names an
-        # area: an event resolved before 0116 leaves another's chain alone.
+        # area: an event resolved before 0118 leaves another's chain alone.
         within = await _place_in(
             conn, "place", row.venue_place_id, row.venue_district, row.venue_city,
             "events.venue_district",

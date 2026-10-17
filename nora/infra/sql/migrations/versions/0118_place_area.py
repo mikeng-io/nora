@@ -15,11 +15,11 @@ Three stores gain the two columns, each beside the place it describes:
 Nullable, no backfill: a row resolved before this has no area, and the memory
 index gives its place no `located_in` edge until it is resolved again.
 
-Follows `0115_watermark_bigint`. `uv run alembic heads` must print exactly ONE
+Follows `0117_persona`. `uv run alembic heads` must print exactly ONE
 line.
 
-Revision ID: 0116_place_area
-Revises: 0115_watermark_bigint
+Revision ID: 0118_place_area
+Revises: 0117_persona
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0116_place_area"
-down_revision = "0115_watermark_bigint"
+revision = "0118_place_area"
+down_revision = "0117_persona"
 branch_labels = None
 depends_on = None
 

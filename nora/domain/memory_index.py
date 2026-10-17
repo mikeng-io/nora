@@ -565,6 +565,14 @@ class MemoryIndexRead(Protocol):
         first: the exact-reference seeds of a named person."""
         ...
 
+    async def media(
+        self, sha256s: Sequence[str], scope: MemoryScope, *, limit: int,
+    ) -> list[IndexedNode]:
+        """In-scope nodes holding one of `sha256s` (the bytes of an attached
+        picture, wherever it was shared before), newest first: the
+        exact-reference seeds of the media a message carries."""
+        ...
+
     async def places(self, query: str, *, limit: int) -> list[IndexedNode]:
         """The place hubs `query` names (`place_named`): a venue, a district,
         a city. A hub carries no scope and is never returned to a reader; a

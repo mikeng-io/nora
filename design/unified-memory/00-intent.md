@@ -193,7 +193,7 @@ index and Honcho's exit are now listed in their order.
    outing places. Nothing holds a place hierarchy today, and saved places
    stay out (R-35). Until this lands, "near Mong Kok" reaches only what names
    Mong Kok.
-   **Built 2026-10-17** (migration `0116_place_area`, DEC-313 amended): an
+   **Built 2026-10-17** (migration `0118_place_area`, DEC-313 amended): an
    event's venue takes its district and city from the Geocoding API by the
    venue's place id; an outing at no saved place takes them from the
    geocode cache near its centre (the cache its labels come from, never a
@@ -206,12 +206,37 @@ index and Honcho's exit are now listed in their order.
    planning model decides what to load. It uses the adaptive cut of
    [65](65-build-step-3-vectors.md) V3 with a smaller budget (its figure set here, from the same measured spread), and 25 §5's
    pre-fetch recall (below 0.7 reopens the design) is its acceptance measure.
+   **Built 2026-10-17** (`nora.engagement.context`'s `_prefetch`, the
+   `<recalled>` block): on the graph surface the tag path runs
+   `MemorySearch.search` from the message's words, its speaker and the
+   persons it @-mentions (seeded by what is about them, never narrowed to
+   them), and the pictures it carries (by their bytes, pinned within
+   `PINNED_LIMIT`); the room is the read's scope. The packet is
+   `render_packet`'s, less what the shown transcript already carries, at
+   **`PREFETCH_TOKENS` = 1,500**: 65 §6's replay found the known item for
+   97 of 143 at 1,000 tokens, 111 at 1,500 and 112 at 2,000, so 1,500 is the
+   knee (all but one of the full budget's finds for three quarters of its
+   text). Off with the flag. Not covered: fire turns (no member's message to
+   seed from), and the live roster (the pre-fetch reads without it, the safe
+   side: a presence episode or a node excluding someone stays out, and
+   `memory_search` reads them). **The recall acceptance measure is deferred**
+   until the whole system is built (operator, 2026-10-17): no eval or replay
+   has run on it; unit and integration tests are how it landed.
 4. **Note citations.** `note_create` / `note_update` gain citations like
-   memos, lessons and events. `note_revision` has no citations column today
-   (`nora/infra/sql/schema.py`, the `note_revision` table), so this is a schema
-   and verb change, not a projection.
+   memos, lessons and events. `note_revision` had no citations column
+   (`nora/infra/sql/schema.py`, the `note_revision` table), so this was a
+   schema and verb change, not a projection.
+   **Built 2026-10-17** (migration `0116_note_citations`): every note write
+   (`note_create`, `note_update`, `note_merge`, the tag path's) stores what its
+   body cites in `note_revision.citations`, in `memo_revision.citations`' form,
+   read off each line's trailing citation, the one the writer held to the
+   note-body grammar (the grammar a memo body passes too); the index draws
+   the head's `cites` edges, and stored revisions were backfilled and their
+   notes queued for re-projection.
 5. **Persona schema and `persona_write`** ([45](45-persona-adaptor.md) §1–§4),
-   with the build prerequisites listed in 45 §4.
+   with the build prerequisites listed in 45 §4. **Built 2026-10-17
+   (DEC-317)**, with the turn's `remember` on the graph surface writing
+   `told` lines through it (operator ruling 2026-10-17).
 6. **The Persona adaptor in shadow, and the backfill** ([35](35-persona.md)
    §4, [45](45-persona-adaptor.md) §6): Persona is written under a shadow key,
    every prompt is unchanged, Honcho's feed keeps running.

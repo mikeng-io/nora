@@ -252,6 +252,34 @@ def rollup_keys_in(text: str) -> frozenset[str]:
     )
 
 
+def citations_in(text: str) -> tuple[str, ...]:
+    """What a stored body cites, as a revision's `citations` column holds it:
+    `nora.domain.memo.citations_of`'s form and order (per line its ids, then
+    its Rollup keys; ids as digits, keys as `rollup(...)`; each once).
+
+    Read off each line's TRAILING bracket group only, the one group
+    `parse_note_body` checks against what the write was shown, so on a body
+    that parsed this is exactly `citations_of` of the parse, and a bracket
+    inside a line's text is never a citation. Read with a pattern rather than
+    the parser, so a stored body that predates the schema answers too."""
+    seen: dict[str, None] = {}
+    for line in text.splitlines():
+        m = _CITED.match(line.strip())
+        if m is None:
+            continue
+        group = m.group("ids")
+        shape = _ROLLUP_KEY.sub("K", group)
+        if not _IDS_OR_KEYS.match(shape):
+            continue
+        for token in shape.split(","):
+            if token.strip().isdigit():
+                seen.setdefault(str(int(token)), None)
+        for key in _ROLLUP_KEY.findall(group):
+            if key.strip():
+                seen.setdefault(f"rollup({key.strip()})", None)
+    return tuple(seen)
+
+
 #: The rules that are about a body's FORM, as against its evidence: what
 #: `in_schema_form` holds a stored body to. The rest (`unknown_id`,
 #: `cites_nora`, `misattributed`, `unknown_owner`) need the rows the writer was

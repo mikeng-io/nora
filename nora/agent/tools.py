@@ -104,6 +104,7 @@ from ..domain.computer_sessions import (
     progress_text,
     shown_status,
 )
+from ..domain.culture import character_key
 from ..domain.documents import is_handle as _is_document_handle
 from ..domain.external_files import (
     DELETED,
@@ -198,6 +199,11 @@ from ..domain.notes import (
     has_duplicate_open_title,
     note_handle,
 )
+from ..domain.persona import LINE_MAX_CHARS as PERSONA_LINE_MAX_CHARS
+from ..domain.persona import Account as PersonaAccount
+from ..domain.persona import AddOp as PersonaAddOp
+from ..domain.persona import PersonaCitable, PersonaWriter
+from ..domain.persona import Said as PersonaSaid
 from ..domain.ports import (
     BrowserRunner,
     CultureReader,
@@ -264,6 +270,7 @@ from ..obs.logging import current_tag_id
 from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
 from .character_read import account_key, person_named, room_named, rooms_listing
+from .dream_screen import offence as _dream_offence
 from .egress import scan_reply
 from .lineage import LineagePolicy, entry_permits
 
@@ -281,7 +288,7 @@ from .link_owners import LinkClaim, LinkInput, LinkOwner
 from .link_owners import owner_of as _owner_of
 from .link_owners import redirect as _link_redirect
 from .links import LinkCarry
-from .memory_search import MemorySearch, render_packet
+from .memory_search import MemorySearch, render_packet, room_label
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .rollup_read import iso as rollup_iso
@@ -966,9 +973,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # its `person`, `since`, `until` and
     # `kinds` applied inside the index's reads. No Honcho behind it. It is
     # offered only while `[memory_index] enabled`, and then `ask_memory`,
-    # `search_memory`, `search_memory_workspace`, `who_said`, `about` and
-    # `remember` are not (`GRAPH_MEMORY_TOOLS`, `HONCHO_MEMORY_TOOLS`): one
-    # memory surface at a time, never both.
+    # `search_memory`, `search_memory_workspace`, `who_said` and `about` are
+    # not (`GRAPH_MEMORY_TOOLS`, `HONCHO_MEMORY_TOOLS`): one memory surface at
+    # a time, never both. `remember` is on both, a different write on each.
     #
     # 8: it replaces three Honcho verbs budgeted 4 each (`ask_memory`,
     # `search_memory`, `search_memory_workspace`). Measured on Honcho-surface
@@ -1525,6 +1532,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # question or later: remember, note_create or remind). Its one non-English
     # string is the trigger 記低; «say 記低咗 only when saved» is an output
     # rule and rides in the `ok` result's `note`.
+    # On the graph surface the same name is `remember_told`, a Persona `told`
+    # line (design/unified-memory/45), with the same declaration: one write,
+    # confirmed, never retried, level 2.
     "remember": NativeTool(1,
                            side_effect_state="confirmed", idempotency="non_idempotent",
                            retry="never",
@@ -4537,6 +4547,37 @@ _MEMORY_BAD_SPAN: Mapping[str, str] = MappingProxyType({
     "note": "That span ends before it starts, so I didn't search. Swap since and "
             "until and call again.",
 })
+_PERSONA_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
+    "status": "unavailable",
+    "note": "I couldn't keep that right now, so nothing was saved. Say so, never "
+            "say 記低咗, and don't write it down as a note instead.",
+})
+
+#: The note for each Persona refusal the turn's `remember` can meet; any other
+#: reason takes the generic refusal note.
+_PERSONA_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
+    "instruction_not_subject": "Nothing was saved: only they can tell me how they "
+                               "want to be treated. Say so.",
+    "unlisted_room": "Nothing was saved: they are not one of this room's members, so "
+                     "what is said about them here is not mine to keep. Say so.",
+    "over_cap": "Nothing was saved: I already hold as much as I keep about them. "
+                "Say you couldn't keep this one.",
+    "identifier": "Nothing was saved: it carries a number or handle I never keep. "
+                  "Say it without that, then call again.",
+    "coordinate": "Nothing was saved: it carries a location I never keep. Say it "
+                  "without that, then call again.",
+    "ids_in_text": "Nothing was saved: a message number is not a fact. Say the fact "
+                   "itself, then call again.",
+})
+
+
+def _persona_screen(text: str) -> str | None:
+    """The Dreamer's R-18/R-28 egress screen on one Persona text: the
+    refusal reason, or `None`."""
+    found = _dream_offence({"text": text})
+    return None if found is None else found[0]
+
+
 _MEMORY_BAD_KIND: Mapping[str, str] = MappingProxyType({
     "status": "unavailable",
     "note": "I don't know that kind of memory, so I didn't search. Use messages, "
@@ -4555,17 +4596,17 @@ _MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType({
 #: fire, Cognition, every Dreamer adaptor and the sub-agent worker alike).
 #: Off (the default, and the rollback): the Honcho tools. On:
 #: `memory_search`, and no Honcho tool at all (DEC-316):
-#: `about` (the profile read) and `remember` (the person-fact write) are
-#: Honcho's, so they sit on the Honcho surface alone. A profile question on
-#: the graph is `memory_search` with `person`; the graph surface has no
-#: person-fact write verb (`note_create` keeps an open question, not a
-#: settled fact). `load_transcript` reads the room's own rows and is on both.
+#: `about` (the profile read) is Honcho's, so it sits on the Honcho surface
+#: alone; a profile question on the graph is `memory_search` with `person`.
+#: `remember` (the person-fact write) is on BOTH, built from one of two
+#: closures: Honcho's conclusion off the graph, a Persona `told` line on it
+#: (DEC-317). `load_transcript` reads the room's own rows
+#: and is on both too.
 #: `who_said` is deprecated: the graph surface does without it
 #: (`memory_search` names who said each hit, `load_transcript` reads around
 #: it), and it goes with the rest of the Honcho surface at step 9.
 HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset({
-    "ask_memory", "search_memory", "search_memory_workspace", "who_said",
-    "about", "remember",
+    "ask_memory", "search_memory", "search_memory_workspace", "who_said", "about",
 })
 GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search"})
 #: The Dreamer adaptors whose `memory_search` reads their OWN room alone
@@ -4750,6 +4791,9 @@ def build_tool_specs(
     # shipped default, offline, eval) is the Honcho path.
     memory_retrieval: MemorySearch | None = None,
     all_memory_surfaces: bool = False,
+    # The Persona write (design/unified-memory/45): the graph surface's
+    # `remember` writes a `told` line through it. `None` answers `unavailable`.
+    persona: PersonaWriter | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -6034,11 +6078,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     def _index_room_label(key: str) -> str:
         """A room key as she reads it: its policy label, else its network."""
-        platform, _, cid = key.partition(":")
-        for r in lineage.rooms if lineage is not None else ():
-            if r.platform == platform and cid in r.ids:
-                return r.label or platform_name(r.platform)
-        return "another room"
+        return room_label(lineage.rooms if lineage is not None else (), key)
 
     async def _memory_search_index(
         search: MemorySearch, text: str, ref: PersonRef | None, view: RoomView,
@@ -13348,6 +13388,126 @@ Args:
             "note": "It is saved. Only now may you say 記低咗.",
         }
 
+    async def remember_told(
+        content: str, person: str = "",
+        kind: Literal["attribute", "name", "role", "relationship", "instruction"] = "attribute",
+    ) -> dict:
+        """Record a settled fact about someone here. Call this when somebody
+tells you something about themselves or another member that is now TRUE.
+
+The trigger word is «記低». It keeps what was told, who told it and the
+message it was said in, in your long-term memory of that person. A fact
+about the group is not this tool: your notebook keeps it after this turn,
+so say it will be kept. An open question nothing settles is `note_create`;
+something later is `remind`.
+
+Returns `status`: ok, refused, not_found, ambiguous or unavailable, with a
+`note` on how to report it.
+
+Args:
+    content: The fact itself, one line, in the teller's own words.
+    person: Who it is about, as named here. Leave empty when it is the
+        speaker.
+    kind: attribute (the default), name (what they are called), role,
+        relationship (to someone else) or instruction (how they want to be
+        treated, which only they can give)."""
+        # The graph surface's `remember` (DEC-317): the
+        # Persona `told` line, through the one write path and its judge
+        # (`nora.domain.persona.plan_write`). The Honcho surface keeps
+        # `remember` above; `build_tool_specs` registers one or the other.
+        tagger = room.tagger
+        if tagger is None:
+            _record(metrics, "remember", "refused", reason="no_tagger")
+            return {
+                "status": "refused",
+                "note": "Nothing was saved: I don't know who you are well enough "
+                        "to say who told me. Say you can't, and don't guess.",
+            }
+        text = content.strip()
+        if not text:
+            _record(metrics, "remember", "refused", reason="empty")
+            return {
+                "status": "refused",
+                "note": "Nothing was saved: there's no fact in that. Say the "
+                        "fact itself, one line, then call again.",
+            }
+        if len(text) > PERSONA_LINE_MAX_CHARS:
+            _record(metrics, "remember", "refused", reason="too_long")
+            return {
+                "status": "refused",
+                "note": f"Nothing was saved: one fact fits in {PERSONA_LINE_MAX_CHARS} "
+                        "characters. Say it shorter, then call again.",
+            }
+        cites = room.trigger_message_ids
+        unit = _unit()
+        if persona is None or lineage is None or unit is None or not cites:
+            # A wiring gap, or a turn no Record message raised (a told line
+            # cites the message it was said in): «I couldn't», never a save.
+            _record(metrics, "remember", "unavailable", reason="unwired")
+            return dict(_PERSONA_UNAVAILABLE)
+        subject = tagger
+        if person.strip():
+            view = await room.scope()
+            if not view.available:
+                _record(metrics, "remember", "unavailable", reason="roster")
+                return dict(_PERSONA_UNAVAILABLE)
+            matches = view.find(person)
+            if not matches:
+                miss = _miss(person, view)
+                _record(metrics, "remember", miss["status"], candidates=0)
+                return miss
+            if len(matches) > 1:
+                _record(metrics, "remember", "ambiguous", candidates=len(matches))
+                return {
+                    "status": "ambiguous", **_asked_about(person),
+                    "could_be": [p.name for p in matches],
+                    "note": "More than one person here goes by that. Ask which one.",
+                }
+            subject = matches[0]
+        now_ms = _now_ms()
+        try:
+            target = lineage.render_room(
+                platform=room.platform, conversation_id=bound_conversation_id)
+            listed = target.room.persons if target.room is not None else None
+            here = bound_conversation_id
+            said = PersonaSaid(ts=now_ms, person_id=tagger.person_id, room=here)
+            result = await persona.persona_write(
+                account=PersonaAccount(
+                    key=character_key(unit, subject.person_id), entity_kind="human",
+                    unit=unit, subject=subject.person_id,
+                ),
+                ops=(PersonaAddOp(
+                    part="identity", kind=kind, text=text, mode="told",
+                    citations=tuple(str(n) for n in cites), told_by=tagger.person_id,
+                ),),
+                citable=PersonaCitable(
+                    messages=dict.fromkeys(cites, said),
+                    # Evidence about a person counts only if said in a room they
+                    # are listed in (35 §3); a `*` room lists nobody by name.
+                    listed_rooms=(frozenset({here}) if listed is not None
+                                  and subject.person_id in listed else frozenset()),
+                ),
+                now_ms=now_ms, written_by_session="tag", screen=_persona_screen,
+                apply_decay=False,
+            )
+        except Exception:
+            log.exception("remember (persona) failed")
+            _record(metrics, "remember", "unavailable")
+            return dict(_PERSONA_UNAVAILABLE)
+        if result.status == "ok":
+            _record(metrics, "remember", "ok")
+            return {
+                "status": "ok", "person": subject.name,
+                "note": "It is saved. Only now may you say 記低咗.",
+            }
+        if result.status == "conflict":
+            _record(metrics, "remember", "unavailable", reason="conflict")
+            return dict(_PERSONA_UNAVAILABLE)
+        reason = result.refusals[0].reason if result.refusals else "refused"
+        _record(metrics, "remember", "refused", reason=reason)
+        return {"status": "refused", "note": _PERSONA_REFUSED_NOTES.get(
+            reason, "Nothing was saved. Say you couldn't keep it, and don't say 記低咗.")}
+
     def _held_to_schema(tool: str, body: str, *, carried: frozenset[int]) -> str | dict:
         """The tag path's body held to the note-body schema: her `[#n]`
         positions mapped to the row ids her transcript showed, then parsed
@@ -16089,7 +16249,8 @@ Args:
         _spec("memo_read", memo_read),
         _spec("note_create", note_create),
         _spec("note_update", note_update),
-        _spec("remember", remember),
+        *((_spec("remember", remember_told),) if memory_retrieval is not None
+          else (_spec("remember", remember),)),
         _spec("computer_run", computer_run),
         _spec("computer_read", computer_read),
         _spec("computer_write", computer_write),
@@ -16323,6 +16484,7 @@ def build_tools(
     video: VideoDesk | None = None,
     video_ref_kinds: frozenset[str] = frozenset(),
     memory_retrieval: MemorySearch | None = None,
+    persona: PersonaWriter | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -16378,5 +16540,6 @@ def build_tools(
         subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds,
         memory_retrieval=memory_retrieval,
+        persona=persona,
     )
     return [adapt(spec) for spec in specs]

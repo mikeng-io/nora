@@ -217,6 +217,18 @@ class FakeMemoryIndex:
         out.sort(key=lambda n: (-(n.at_ms or 0), n.key))
         return out[:max(0, limit)]
 
+    async def media(
+        self, sha256s: Sequence[str], scope: MemoryScope, *, limit: int,
+    ) -> list[IndexedNode]:
+        self._check("media")
+        wanted = {s for s in sha256s if s}
+        out = [
+            n for n in self.nodes.values()
+            if n.sha256 in wanted and n.kind not in HUB_KINDS and self._admits(n, scope)
+        ]
+        out.sort(key=lambda n: (-(n.at_ms or 0), n.key))
+        return out[:max(0, limit)]
+
     async def places(self, query: str, *, limit: int) -> list[IndexedNode]:
         self._check("places")
         found = [

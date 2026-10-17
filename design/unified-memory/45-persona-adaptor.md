@@ -7,6 +7,13 @@ line-to-line citations become links (§3), hypotheses are graded by something
 other than their writer (§3), the build's prerequisites are listed (§4),
 shadow changes no prompt (§6, §8), and the coverage gate fails closed (§6).
 
+**§1 to §4's storage and write built 2026-10-17 (00 «Sequence» step 5,
+DEC-317)**: `persona`, `persona_line` (migration `0117_persona`), the judge
+`nora.domain.persona.plan_write` and the one write path
+`nora.infra.sql.persona.SqlPersonaStore.persona_write`. What the build
+settled that this node left open is marked «Built» where it applies. The
+adaptor (§4's session), rendering (§5) and the gates (§6) are not built.
+
 ## 0. This reverses "prose, no schema", deliberately
 
 Character accounts today are prose with no section schema:
@@ -74,6 +81,26 @@ the old one.
 The lines are also index nodes, and their citations, `about`, `supersedes`
 and `draws_on` become edges inside the write's own `begin()` block
 ([25](25-memory-graph.md) §7).
+
+**Built (2026-10-17), and what it settled:**
+
+- **The account is the chain heads.** Append-only means an old row is never
+  re-stated as `superseded`: a row is superseded when another row names it
+  in `supersedes` (unique, so a line is superseded once and two racing
+  writers cannot both land). `superseded` stays in the vocabulary and is
+  never written.
+- **`draws_on` also carries the traits a hypothesis explains.** §3 requires
+  an abduced line to explain a current induced trait, and a line id is never
+  a citation, so the link is `draws_on`; it is empty for told and induced
+  lines (a CHECK).
+- **`written_at`** (epoch ms) is the row's own time; `recorded_at` is system
+  time, as on every append-only table. `lineage` is not a column: lineage is
+  off and the unit is the boundary (35 §3).
+- **The shadow is the tables themselves.** Keys are today's culture keys in
+  a new table that nothing renders, so a separate shadow key adds nothing;
+  the switch (step 8) is what makes these rows render.
+- **Not projected into the index yet.** A node is a `memory_search` hit, and
+  shadow changes no prompt (§6); lines join the index at the switch.
 
 ## 2. The parts, their kinds and their caps
 
@@ -209,6 +236,23 @@ persona_no_change(entity, why)
 
 There is no `verdict` op (amended 2026-10-15): the adaptor that wrote a
 hypothesis cannot grade it (§3).
+
+**Built (2026-10-17):** `add` and `revise` take `conflicts_with: "P2"`, the
+one way a writer says two lines conflict; code ranks the two by §3's
+precedence, marks the lower `outranked`, keeps both, and refuses a conflict
+between lines of the same rank (revise or retire instead) or with a
+hypothesis. Revising an `outranked` line without naming a conflict leaves it
+`outranked`; once the line that beat it is gone, the way back is to retire it
+and add the claim afresh, which lands `current`. A `keep` without citations writes nothing and is not
+re-evidence, so it does not stop a trait decaying. Handles `P1`, `P2`, ...
+number the held lines (`current`, `disputed`, `outranked`) part by part,
+oldest first (`nora.domain.persona.handles_for`). The write takes the
+revision the session read its handles at, and a write against a newer one is
+a `conflict` that applies nothing. Prerequisites 1 to 3 are built:
+`PersonaCitable` maps each cited row and episode to `(ts, person, room)`,
+cites Rollup aggregates as `rollup:<kind>:<subject>` and episodes as
+`response:<id>`, and counts days in HKT. Prerequisite 4, the stimulus wake,
+is the adaptor's (step 6).
 
 Every op is validated against §2 and §3 before any is applied. One refused
 op refuses the call, with each refusal's reason and handle, and nothing is
