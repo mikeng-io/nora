@@ -380,7 +380,7 @@ kinds in order (`story_frame,collab:post`), `at_ms` when the newest was
 posted. The stimulus table keeps one `social` row per `(unit, ref)` (`0108`),
 so a restart announces nothing twice. A session's agenda shows it as
 `<social at="...">Ada posted 2 story frames</social>`; what the items show is
-not pushed into the agenda: that is `social_items` (§6), not built.
+not pushed into the agenda: that is `social_read` (§6).
 
 The memory index (design/unified-memory) projects `social_item` like any
 other store, since 2026-10-16: each of this stream's writes calls the
@@ -478,7 +478,18 @@ projector in its own transaction (§9;
   `SqlSocialStreamStore.posted`, so a gone or hidden item and every item of a
   person with `social = false` are left out like any other read. **Built**
   (S6, §8); the posting histogram of §4 is the same input and is not.
-- **Cognition**: `social_items(person, interval)` ([15](15-map.md) §4).
+- **Cognition**: `social_items(person, interval)` ([15](15-map.md) §4),
+  **built 2026-10-17 as `social_read`** (S7, §8): a session reads one
+  person's recorded items in an interval, newest first, through the room its
+  agenda item is bound to. A `social` stimulus binds a room of its unit that
+  lists the author, the home room when it does, so the person its agenda line
+  names is one that room can read. §2's rules hold at the read: only a room
+  that lists the author reads their items, under their current id and every
+  retired one; an opted-out person's and a gone or hidden item never; and a
+  location only where the room may place the author. A name resolves by the
+  roster's one matching rule (name, first and last names, aliases) or by
+  person id; two people it fits are offered each by a name only they go by,
+  else their id. No item is citable from this read: the result has no id.
 
 ## 7. The back-fill of past posts and reels
 
@@ -571,6 +582,7 @@ whose `media_count` read 281 in S0 is 24 pages at that size; the depth limit sto
 | S4 | the learned cadence and the raise | median probe-to-`taken_at` lag before and after, from `social_poll` and `social_item` |
 | S5 | **BUILT 2026-10-17** (§7): the back-fill pages each member's posts and reels from their first list read, up to 90 days or 50 items, at the lowest budget priority (after probes and due reads, at most `backfill_pages_per_tick` pages a tick and one a member, never past what the hour owes every member's probe and read); progress read off `social_poll` rows (stage `backfill`, `cursor`, migration `0112_social_backfill`); a bad cursor ends that member's back-fill. Paging past the first page not yet read live | items per member against `media_count`; `nora_social_backfill_ended_total{reason}` |
 | S6 | **BUILT 2026-10-17**: the daybook's `items_posted` counts a person's readable items by the local day of `taken_at` (`SqlSocialStreamStore.posted`, `nora.domain.rollup.daybooks`); 0 once the person's accounts have been observed that day, NULL before their first answered `social_poll`, for a person with no account and for one who opted out; a back-filled item reaches its past day on the next run, the rollup recomputing every day from the Record; `CODE_VERSION` bumped so the build in force is rebuilt | `tests/integration/test_rollup_social.py` |
+| S7 | **BUILT 2026-10-17**: `social_read`, Cognition's read of this Record (§6; [15](15-map.md) §4 has the shape): `SqlSocialStreamStore.items_of` under the store's `_readable` rule, the `social` lineage predicate for who, the `presence` predicate for a location, bounded at 20 items and 6000 characters | `tool_selection_cognition`'s three `social_read` cases, master and branch |
 
 S4 needs a week of S2's rows to learn from.
 
@@ -620,7 +632,7 @@ author only: `collab` records that another account owns it, not who, so the
 co-owner's listing and `social = false` are not consulted.
 
 A gone or hidden item has no node; every write of `social_item`,
-`social_item_state` and `social_perception` re-projects its item. What is
+`social_item_state` and `social_perception` re-projects its item.
 `StoryMediaExpiry` asks `nora.infra.sql.memory_index.story_frame_embedded`
 which of its perceived frames are embedded under the deployed embedder, so a
 frame both perceived and embedded loses its bytes at the first bound; a frame

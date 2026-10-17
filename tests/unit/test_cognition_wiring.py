@@ -77,7 +77,7 @@ def test_every_tool_the_session_would_wire_exists_and_is_read_only():
 def test_the_designs_tools_the_tree_does_not_have_are_named_missing_not_dropped():
     surface = read_surface(
         read_only=READ_ONLY, enabled_flags=FLAGS_ON, registry_withheld=frozenset())
-    assert surface.missing == {"social_items"}
+    assert surface.missing == set()
     assert surface.wired | surface.missing | surface.withheld == COGNITION_READ_CATALOGUE
 
 

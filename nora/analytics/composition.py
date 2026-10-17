@@ -23,7 +23,7 @@ from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
-from nora.infra.sql.social_stream import SqlSocialStreamStore
+from nora.infra.sql.social_stream import readable_social_store
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -235,7 +235,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
     unit_rollups = UnitRollups(
         store=rollups, config=unit_config, units=units, people=people,
         stimuli=SqlStimulusStore(engine), metrics=metrics,
-        social=SqlSocialStreamStore(engine, opted_out=persons.social_off_ids()),
+        social=readable_social_store(engine, persons),
     )
     runner = RollupRunner(
         mobility=mobility, rollups=rollups, config=rollup_config,

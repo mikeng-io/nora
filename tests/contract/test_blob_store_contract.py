@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -31,8 +33,31 @@ from nora.testing import FakeBlobStore
 PAYLOAD = b"\x89PNG\r\n\x1a\n not really a png"
 
 
+class Clock:
+    """Real time plus an offset a test moves: what `delete` measures idle
+    time against, in every store. A put is still stamped when it happens
+    (a file's mtime, an object's server-side `LastModified`)."""
+
+    def __init__(self) -> None:
+        self.offset = 0.0
+
+    def advance(self, seconds: float) -> None:
+        self.offset += seconds
+
+    def seconds(self) -> float:
+        return time.time() + self.offset
+
+    def now(self) -> datetime:
+        return datetime.now(UTC) + timedelta(seconds=self.offset)
+
+
+@pytest.fixture
+def clock() -> Clock:
+    return Clock()
+
+
 @pytest.fixture(params=["filesystem", "fake", "rustfs"])
-def store(request, tmp_path) -> BlobStore:
+def store(request, tmp_path, clock) -> BlobStore:
     if request.param == "filesystem":
         # The production store encrypts at rest (DEC-47), so the contract fixture
         # gives it a key. Every port behaviour below — put returns the PLAINTEXT
@@ -41,7 +66,9 @@ def store(request, tmp_path) -> BlobStore:
         # and not a plaintext variant. The at-rest-ciphertext property itself is
         # FilesystemBlobStore-specific and lives in tests/unit/test_media_encryption.py,
         # the same split test_media_source_contract.py draws for its Signal-only wire shapes.
-        return FilesystemBlobStore(tmp_path / "media", cipher=BlobCipher(bytes(range(32))))
+        return FilesystemBlobStore(
+            tmp_path / "media", cipher=BlobCipher(bytes(range(32))), clock=clock.seconds,
+        )
     if request.param == "rustfs":
         # getfixturevalue, not a direct parameter, so rustfs_client's session
         # container is never started for the "filesystem"/"fake" runs — the
@@ -49,11 +76,11 @@ def store(request, tmp_path) -> BlobStore:
         client = request.getfixturevalue("rustfs_client")
         store = RustfsBlobStore(
             s3_client=client, bucket="contract-test",
-            cipher=BlobCipher(bytes(range(32))),
+            cipher=BlobCipher(bytes(range(32))), clock=clock.now,
         )
         store.ensure_bucket()
         return store
-    return FakeBlobStore()
+    return FakeBlobStore(clock=clock.seconds)
 
 
 async def test_put_returns_the_sha256_of_the_content(store):
@@ -107,12 +134,13 @@ async def test_a_key_that_is_not_a_sha256_is_refused_not_resolved(store):
             await store.get(key=bad)
 
 
-async def test_delete_drops_idle_bytes_and_says_what_it_did(store):
+async def test_delete_drops_idle_bytes_and_says_what_it_did(store, clock):
     """A story frame's bytes go at their bound (cognition-loop/22 §5). After
     `deleted`, `get` is None; a second `delete` answers `absent`, so a
     deletion retried after a restart is safe and says the bytes are gone."""
     key = await store.put(data=PAYLOAD)
     other = await store.put(data=b"kept")
+    clock.advance(_GAP)   # idle: past any store's stamp resolution
     assert await store.delete(key=key, idle_seconds=0) == "deleted"
     assert await store.get(key=key) is None
     assert await store.delete(key=key, idle_seconds=0) == "absent"
@@ -125,16 +153,28 @@ async def test_bytes_put_within_the_idle_window_are_kept(store):
     assert await store.get(key=key) == PAYLOAD
 
 
-async def test_putting_held_bytes_again_counts_as_a_put(store):
+#: The idle window the re-put test uses, and the real gap between its two
+#: puts: both well above an object's `LastModified` resolution (whole
+#: seconds), and the gap past the window plus that resolution, so the first
+#: put's stamp alone is out of the window whichever second it fell in.
+_WINDOW = 2.0
+_GAP = 3.5
+
+
+async def test_putting_held_bytes_again_counts_as_a_put(store, clock):
     """The race a deletion must not win: a writer stores bytes the store
     already holds, and has not yet written the row naming them. Its `put`
-    must make the bytes recent, or a deletion in that gap takes them."""
+    must make the bytes recent, or a deletion in that gap takes them.
+
+    The gap between the puts is real time: a store stamps a put when it
+    happens (rustfs on its own clock), so only a later put can show a later
+    stamp. The control moves the clock instead of sleeping again."""
     key = await store.put(data=PAYLOAD)
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(_GAP)
     assert await store.put(data=PAYLOAD) == key
-    assert await store.delete(key=key, idle_seconds=1.0) == "kept"
-    await asyncio.sleep(1.5)
-    assert await store.delete(key=key, idle_seconds=1.0) == "deleted", "the control"
+    assert await store.delete(key=key, idle_seconds=_WINDOW) == "kept"
+    clock.advance(_GAP)
+    assert await store.delete(key=key, idle_seconds=_WINDOW) == "deleted", "the control"
 
 
 async def test_delete_refuses_a_key_that_is_not_a_sha256(store):

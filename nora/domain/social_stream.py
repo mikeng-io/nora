@@ -521,6 +521,24 @@ def bytes_due(
     return None
 
 
+@dataclass(frozen=True)
+class RecordedItem:
+    """One recorded item as a reader is shown it (design/cognition-loop/22 §6):
+    what it is, when it was posted, its caption, where it was tagged, and the
+    readings of its media (each medium's title and description, in its
+    order; empty while none is perceived). Never the account, the tagged or
+    mentioned handles, the alt text or a media address."""
+
+    network: str
+    kind: ItemKind
+    collab: bool
+    taken_at: datetime
+    expires_at: datetime | None
+    caption: str | None
+    location: str | None
+    perception: tuple[str, ...] = ()
+
+
 # -- what Character reads (§6) ---------------------------------------------------
 
 
