@@ -4836,6 +4836,9 @@ PERSONA = sa.Table(
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("revision", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_at", sa.BigInteger, nullable=False),
+    # When the account's own session last settled it (`apply_decay`): a
+    # turn's `told` line written after it is pending (0118).
+    sa.Column("settled_at", sa.BigInteger),
     sa.CheckConstraint("length(btrim(key)) > 0", name="ck_persona_has_a_key"),
     sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_persona_has_a_unit"),
     sa.CheckConstraint(

@@ -43,6 +43,7 @@ from nora.infra.sql.schema import (
     CULTURE_REVISION,
     MESSAGES,
     ROLLUP_RESPONSE,
+    ROLLUP_TIE,
 )
 
 __all__ = ["SqlCharacterEvidence"]
@@ -121,6 +122,52 @@ class SqlCharacterEvidence:
         out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
         out.reverse()
         return out, int(cursor or after)
+
+    async def rows_by_id(self, *, ids: Sequence[int]) -> list[RoomMessage]:
+        """The Record rows `ids` names that are not hidden, each with its
+        room: what a Persona session needs to check a citation an older
+        account carried (its time, speaker and room, 45 §4)."""
+        if not ids:
+            return []
+        stmt = (transcript_select().add_columns(MESSAGES.c.conversation_id)
+                .where(MESSAGES.c.id.in_(list(ids))).order_by(MESSAGES.c.id))
+        async with self._engine.connect() as conn:
+            found = (await conn.execute(stmt)).all()
+        return [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in found]
+
+    async def tie_totals(
+        self, *, unit: str, person_id: str,
+    ) -> list[tuple[str, int, int, int, int, int, int]]:
+        """One person's Rollup ties in `unit`'s current build, summed over every
+        week: `(other person, replies out, replies in, mentions out, mentions
+        in, reactions out, reactions in)`, most replies first. Never
+        `colocation_ms`: a Persona session holds no presence (R-31)."""
+        t = ROLLUP_TIE.c
+        mine = t.person_a == person_id
+        other = sa.case((mine, t.person_b), else_=t.person_a)
+
+        def out(ab: Any, ba: Any) -> Any:
+            return sa.func.sum(sa.case((mine, ab), else_=ba))
+
+        stmt = (
+            sa.select(
+                other.label("other"),
+                out(t.replies_ab, t.replies_ba).label("ro"),
+                out(t.replies_ba, t.replies_ab).label("ri"),
+                out(t.mentions_ab, t.mentions_ba).label("mo"),
+                out(t.mentions_ba, t.mentions_ab).label("mi"),
+                out(t.reactions_ab, t.reactions_ba).label("xo"),
+                out(t.reactions_ba, t.reactions_ab).label("xi"),
+            )
+            .where(t.build_id == current_build_id(), t.unit == unit,
+                   sa.or_(t.person_a == person_id, t.person_b == person_id))
+            .group_by(other)
+        )
+        async with self._engine.connect() as conn:
+            found = (await conn.execute(stmt)).all()
+        rows = [(r.other, int(r.ro), int(r.ri), int(r.mo), int(r.mi), int(r.xo), int(r.xi))
+                for r in found]
+        return sorted(rows, key=lambda r: (-(r[1] + r[2]), r[0]))
 
     # -- corrections (Lessons L4) ---------------------------------------------
 

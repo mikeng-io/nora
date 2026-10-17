@@ -54,6 +54,7 @@ __all__ = [
     "MODES_BY_PART",
     "PARTS",
     "PERSONA_HKT",
+    "PERSONA_OUTCOMES",
     "PERSONA_REFUSALS",
     "ROLLUP_AGGREGATE_KINDS",
     "STATES",
@@ -139,6 +140,12 @@ PERSONA_HKT = timezone(timedelta(hours=8), "HKT")
 #: The Rollup kinds whose aggregate key a line may cite (`rollup:<kind>:<subject>`).
 #: `response` is cited per episode instead (`response:<send id>`).
 ROLLUP_AGGREGATE_KINDS = frozenset({"colocation", "outing", "daybook", "tie"})
+
+#: Every value `nora_persona_session_total{outcome}` may carry: `written` (a
+#: session's write landed rows), `kept` (it settled with none), `refused` (one
+#: call of a verb was refused), `unsettled` (it ended without settling, so the
+#: batch is held) and `abandoned` (the third unsettled run of one batch).
+PERSONA_OUTCOMES = frozenset({"written", "kept", "refused", "unsettled", "abandoned"})
 
 #: Why a write was refused, as the `reason` the writer reads.
 PERSONA_REFUSALS = frozenset({
@@ -325,11 +332,12 @@ class PersonaWriteResult:
 
 class PersonaWriter(Protocol):
     """The one Persona write (`nora.infra.sql.persona.SqlPersonaStore`):
-    judged by `plan_write` inside its own transaction."""
+    judged by `plan_write` inside its own transaction, every text through the
+    store's own egress screen."""
 
     async def persona_write(
         self, *, account: Account, ops: Sequence[PersonaOp], citable: PersonaCitable,
-        now_ms: int, written_by_session: str, screen: Callable[[str], str | None],
+        now_ms: int, written_by_session: str,
         apply_decay: bool, expected_revision: int | None = None,
     ) -> PersonaWriteResult: ...
 
@@ -374,6 +382,19 @@ def _opt_str(value: object) -> str | None:
     return text or None
 
 
+def _window_end(value: object) -> int | None:
+    """A prediction window's end as a writer may give it: epoch ms, or a
+    `YYYY-MM-DD` day, which is the END of that day in HKT. Raises
+    `ValueError` on anything else, which `parse_ops` refuses as malformed."""
+    if value is None:
+        return None
+    if isinstance(value, int) or (isinstance(value, str) and value.strip().isdigit()):
+        return int(value)
+    day = date.fromisoformat(str(value).strip())
+    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), PERSONA_HKT)
+    return int(end.timestamp() * 1000) - 1
+
+
 def parse_ops(raw: object) -> tuple[tuple[PersonaOp, ...], tuple[PersonaRefusal, ...]]:
     """The ops a writer sent, typed, or why each one could not be read. A
     malformed op refuses the call like any other refusal."""
@@ -394,14 +415,14 @@ def parse_ops(raw: object) -> tuple[tuple[PersonaOp, ...], tuple[PersonaRefusal,
             continue
         try:
             if kind == "add":
-                window = item.get("prediction_window_end")
+                window = _window_end(item.get("prediction_window_end"))
                 ops.append(AddOp(
                     part=str(item["part"]), kind=str(item["kind"]), text=str(item["text"]),
                     mode=str(item["mode"]), citations=citations, draws_on=draws_on,
                     told_by=_opt_str(item.get("told_by")),
                     prediction=_opt_str(item.get("prediction")),
                     prediction_observable=_opt_str(item.get("prediction_observable")),
-                    prediction_window_end=None if window is None else int(window),
+                    prediction_window_end=window,
                     conflicts_with=_opt_str(item.get("conflicts_with")),
                 ))
             elif kind == "keep":

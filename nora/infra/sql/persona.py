@@ -85,8 +85,12 @@ def chain_heads(lines: Sequence[PersonaLine]) -> tuple[tuple[PersonaLine, ...], 
 
 
 class SqlPersonaStore:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, screen: Callable[[str], str | None]) -> None:
+        """`screen` is the R-18/R-28 egress screen every line's texts pass
+        (`nora.agent.dream_screen.text_offence` in production): held here so
+        every writer is screened the same way, and none can forget it."""
         self._engine = engine
+        self._screen = screen
 
     async def account_heads(self, *, key: str) -> tuple[PersonaLine, ...]:
         """The account as it stands: every chain head, in every state."""
@@ -96,9 +100,36 @@ class SqlPersonaStore:
             rows = (await conn.execute(stmt)).all()
         return chain_heads([_line(r) for r in rows])[0]
 
+    async def account_state(self, *, key: str) -> tuple[int, int | None]:
+        """The account's revision (0 when it has never been written: what a
+        session's write is compared against, `persona_write`'s
+        `expected_revision`) and when its session last settled it (`None`:
+        never, so its first session is the backfill, 35 §4)."""
+        async with self._engine.connect() as conn:
+            found = (await conn.execute(
+                sa.select(PERSONA.c.revision, PERSONA.c.settled_at).where(PERSONA.c.key == key)
+            )).one_or_none()
+        return (0, None) if found is None else (int(found.revision), found.settled_at)
+
+    async def pending_told(self, *, key: str) -> int:
+        """How many `told` lines a turn (`written_by_session = 'tag'`) wrote
+        into this account since its session last settled it
+        (`persona.settled_at`): the stimulus that wakes the session at once
+        (45 §4)."""
+        settled = (
+            sa.select(PERSONA.c.settled_at).where(PERSONA.c.key == key).scalar_subquery()
+        )
+        stmt = sa.select(sa.func.count()).select_from(PERSONA_LINE).where(
+            PERSONA_LINE.c.persona_key == key,
+            PERSONA_LINE.c.written_by_session == "tag",
+            PERSONA_LINE.c.written_at > sa.func.coalesce(settled, -1),
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(stmt)).scalar_one())
+
     async def persona_write(
         self, *, account: Account, ops: Sequence[PersonaOp], citable: PersonaCitable,
-        now_ms: int, written_by_session: str, screen: Callable[[str], str | None],
+        now_ms: int, written_by_session: str,
         apply_decay: bool, expected_revision: int | None = None,
     ) -> PersonaWriteResult:
         """Judge and apply one write atomically (45 §4). `expected_revision`
@@ -107,7 +138,7 @@ class SqlPersonaStore:
         try:
             return await self._write(
                 account=account, ops=ops, citable=citable, now_ms=now_ms,
-                written_by_session=written_by_session, screen=screen,
+                written_by_session=written_by_session,
                 apply_decay=apply_decay, expected_revision=expected_revision,
             )
         except sa.exc.IntegrityError as exc:
@@ -117,7 +148,7 @@ class SqlPersonaStore:
 
     async def _write(
         self, *, account: Account, ops: Sequence[PersonaOp], citable: PersonaCitable,
-        now_ms: int, written_by_session: str, screen: Callable[[str], str | None],
+        now_ms: int, written_by_session: str,
         apply_decay: bool, expected_revision: int | None,
     ) -> PersonaWriteResult:
         async with self._engine.connect() as conn:
@@ -146,20 +177,26 @@ class SqlPersonaStore:
             heads, aliases = chain_heads([_line(r) for r in rows])
             plan = plan_write(
                 account=account, heads=heads, ops=ops, citable=citable, now_ms=now_ms,
-                written_by_session=written_by_session, screen=screen,
+                written_by_session=written_by_session, screen=self._screen,
                 apply_decay=apply_decay, aliases=aliases,
             )
             if plan.refused:
                 await trans.rollback()
                 return PersonaWriteResult(
                     status="refused", revision=head.revision, refusals=plan.refusals)
+            revision = head.revision
+            changed: dict[str, Any] = {}
             if plan.inserts:
                 await conn.execute(sa.insert(PERSONA_LINE), [_values(x) for x in plan.inserts])
-            revision = head.revision + 1
-            await conn.execute(
-                sa.update(PERSONA).where(PERSONA.c.key == account.key)
-                .values(revision=revision, updated_at=now_ms)
-            )
+                revision += 1
+                changed = {"revision": revision, "updated_at": now_ms}
+            if apply_decay:
+                # A decaying write is a session settling the account; a turn's
+                # never decays (45 §4), so its lines stay pending.
+                changed["settled_at"] = now_ms
+            if changed:
+                await conn.execute(
+                    sa.update(PERSONA).where(PERSONA.c.key == account.key).values(**changed))
             await trans.commit()
         return PersonaWriteResult(
             status="ok", revision=revision, written=tuple(x.id for x in plan.inserts))

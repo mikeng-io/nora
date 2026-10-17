@@ -179,6 +179,14 @@ changes before then.
 The script is idempotent and refuses to run against a database that already
 has Persona rows, so it cannot run twice by accident.
 
+**Built (2026-10-17), for step 1:** there is no separate script. The Persona
+adaptor's first session on an account is the backfill: until a session first
+settles the account (`persona.settled_at` is NULL) it is handed the Character
+head and the rows that head cited, and never again after, which is what
+"cannot run twice" asks for, per account rather than per database. A turn's
+`told` line landing first does not skip it. Turning on `[persona] enabled`
+runs it: a key that never ran wakes on its first tick with any evidence.
+
 ## 5. A deleted message makes nobody forget (operator, 2026-10-15)
 
 A message deleted on the platform sets `messages.hidden_at`. It is hidden:

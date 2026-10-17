@@ -605,6 +605,8 @@ NATIVELY_AUTHORED = {
     "character-unit",
     # Her own Character session.
     "character-nora",
+    # A person's Persona session, in shadow (DEC-317).
+    "persona-person",
     # The Lessons session.
     "lessons",
     # The doctrine check: an instrument's instruction, read through

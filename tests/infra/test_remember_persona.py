@@ -59,7 +59,7 @@ async def store(pg_url):
     run_migrations(pg_url)
     engine = create_sql_engine(pg_url)
     try:
-        yield SqlPersonaStore(engine)
+        yield SqlPersonaStore(engine, screen=lambda _t: None)
     finally:
         await engine.dispose()
 
@@ -161,7 +161,7 @@ async def test_a_member_the_room_does_not_list_is_refused(persons: Any, store: A
     lineage = LineagePolicy(rooms=(only_miles,), _by_id={("signal", GROUP): only_miles})
     result = await _call(_remember(persons, store, lineage=lineage), content="x",
                          person="Tyler")
-    assert result["status"] == "refused"
+    assert result["status"] == "refused" and "not one of this room's members" in result["note"]
     assert await store.account_heads(key=f"{UNIT}#character:tyler_cortez") == ()
 
 

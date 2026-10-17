@@ -52,6 +52,8 @@ CONVERTED = {
     "nora/ingest/relevance_gate.py": "the window the gate decides on",
     "nora/language/culture.py": "the batch the culture fold reads",
     "nora/language/character.py": "a person's own lines a Character session reads",
+    "nora/language/persona.py":
+        "a person's own lines and the episodes they answered a Persona session reads",
     "nora/language/lessons.py": "her sends and their quoted replies a Lessons session reads",
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",

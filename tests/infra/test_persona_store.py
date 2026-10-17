@@ -45,7 +45,7 @@ async def env(pg_url):
     run_migrations(pg_url)
     engine = create_sql_engine(pg_url)
     try:
-        yield SimpleNamespace(engine=engine, store=SqlPersonaStore(engine))
+        yield SimpleNamespace(engine=engine, store=SqlPersonaStore(engine, screen=_no_offence))
     finally:
         await engine.dispose()
 
@@ -58,7 +58,7 @@ def _told(text: str, cite: str = "101") -> AddOp:
 async def _write(env, ops, **kw):
     return await env.store.persona_write(
         account=ACCOUNT, ops=ops, citable=CITABLE, now_ms=kw.pop("now", NOW),
-        written_by_session="test", screen=_no_offence, apply_decay=False, **kw)
+        written_by_session="test", apply_decay=False, **kw)
 
 
 async def test_a_committed_write_is_the_accounts_new_head(env) -> None:

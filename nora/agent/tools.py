@@ -270,7 +270,6 @@ from ..obs.logging import current_tag_id
 from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
 from .character_read import account_key, person_named, room_named, rooms_listing
-from .dream_screen import offence as _dream_offence
 from .egress import scan_reply
 from .lineage import LineagePolicy, entry_permits
 
@@ -4569,13 +4568,6 @@ _PERSONA_REFUSED_NOTES: Mapping[str, str] = MappingProxyType({
     "ids_in_text": "Nothing was saved: a message number is not a fact. Say the fact "
                    "itself, then call again.",
 })
-
-
-def _persona_screen(text: str) -> str | None:
-    """The Dreamer's R-18/R-28 egress screen on one Persona text: the
-    refusal reason, or `None`."""
-    found = _dream_offence({"text": text})
-    return None if found is None else found[0]
 
 
 _MEMORY_BAD_KIND: Mapping[str, str] = MappingProxyType({
@@ -13487,8 +13479,7 @@ Args:
                     listed_rooms=(frozenset({here}) if listed is not None
                                   and subject.person_id in listed else frozenset()),
                 ),
-                now_ms=now_ms, written_by_session="tag", screen=_persona_screen,
-                apply_decay=False,
+                now_ms=now_ms, written_by_session="tag", apply_decay=False,
             )
         except Exception:
             log.exception("remember (persona) failed")

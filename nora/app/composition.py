@@ -34,6 +34,7 @@ from opentelemetry.util.types import AttributeValue
 from nora.agent import factory, tool_choice
 from nora.agent.browse import BrowseAgentRunner, BrowseSettings
 from nora.agent.dream_screen import offence as dream_offence
+from nora.agent.dream_screen import text_offence
 from nora.agent.dreamer import (
     TOOL_RESULT_CAPS,
     AdaptorBudget,
@@ -250,6 +251,11 @@ from nora.language.lessons import (
     LessonEvidence,
     LessonsAdaptor,
     LessonsKey,
+)
+from nora.language.persona import (
+    PERSONA_PERSON_ADAPTOR_NAME,
+    PersonaEvidence,
+    PersonaPersonAdaptor,
 )
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
@@ -965,7 +971,7 @@ def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
     return {
         character_key(unit, person_id): PersonKey(
             unit=unit, person=refs[person_id], rooms=tuple(rooms_of[unit]),
-            home=homes[0],
+            home=homes[0], listed=tuple(homes),
         )
         for (unit, person_id), homes in listing.items()
     }
@@ -2962,7 +2968,8 @@ async def build_dependencies(
         memory_search=memory_search,
         # The graph surface's `remember` writes a Persona `told` line
         # (design/unified-memory/45); wired with `memory_search`, never alone.
-        persona=SqlPersonaStore(engine) if memory_search is not None else None,
+        persona=(SqlPersonaStore(engine, screen=text_offence)
+                 if memory_search is not None else None),
         lineage=lineage,
         # The current Rollup build's rows and the Standing head. SELECTs, so no
         # flag. The Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the
@@ -3911,6 +3918,39 @@ async def build_dependencies(
                 ),
             )
 
+            # PERSONA · PERSON, in shadow (design/unified-memory/45 §4): one
+            # session per (unit, listed person), on the person's Character
+            # wake plus a turn's `told` line; it writes `persona_line`, which
+            # nothing renders until the switch. Inside the culture block: it
+            # reads the Character head and the rooms' cultures.
+            if cfg.persona.enabled:
+                persona_store = SqlPersonaStore(engine, screen=text_offence)
+                persona_reads = SqlCharacterEvidence(engine)
+                dream_schedules = {
+                    **dream_schedules,
+                    PERSONA_PERSON_ADAPTOR_NAME: AdaptorSchedule(
+                        min_interval_seconds=cfg.culture.stale_seconds,
+                        wake_batch=cfg.culture.person_wake_batch,
+                        batch_limit=cfg.culture.person_wake_batch,
+                    ),
+                }
+                dream_adaptors = (
+                    *dream_adaptors,
+                    PersonaPersonAdaptor(
+                        persona=persona_store, culture=culture_store,
+                        evidence=PersonaEvidence(
+                            store=persona_reads, persona=persona_store, keys=person_keys,
+                            wake_batch=cfg.culture.person_wake_batch,
+                        ),
+                        reads=persona_reads, keys=person_keys,
+                        name_of=lambda pid: (
+                            ref.name if pid and (ref := persons.by_person.get(pid)) is not None
+                            else "someone"
+                        ),
+                        clock_ms=_now_ms, metrics=metrics,
+                    ),
+                )
+
         # LESSONS: one session per unit, woken by
         # closed response episodes, writing through the book's checked verbs.
         # Gated on `[lessons] enabled` alone (off by default).
@@ -4100,6 +4140,9 @@ async def build_dependencies(
             # rooms that lists the person (`CharacterPersonAdaptor.tool_room`),
             # resolved through `scope_rooms` exactly as the room fold's are.
             CHARACTER_PERSON_ADAPTOR_NAME: culture_grant(),
+            # The Persona session stands where the person's Character session
+            # does (`PersonaPersonAdaptor.tool_room`), with the same reads.
+            PERSONA_PERSON_ADAPTOR_NAME: culture_grant(),
         }
         # `DreamBudgetConfig` -> `AdaptorBudget`, through the ONE named
         # converter (`_adaptor_budget` above): the same five numbers across the
@@ -4114,7 +4157,8 @@ async def build_dependencies(
         # needs no new block for it. The Lessons session too: a handed batch
         # and a few checked writes.
         if "culture" in dream_budgets:
-            for name in (*CHARACTER_ADAPTOR_NAMES, LESSONS_ADAPTOR_NAME):
+            for name in (*CHARACTER_ADAPTOR_NAMES, LESSONS_ADAPTOR_NAME,
+                         PERSONA_PERSON_ADAPTOR_NAME):
                 dream_budgets.setdefault(name, dream_budgets["culture"])
         # An adaptor with no block of its own. `budget_for` returns a freshly
         # constructed default rather than a shared constant (DEC-13 forbids a

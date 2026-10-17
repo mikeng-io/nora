@@ -405,6 +405,14 @@ _MUST_SEE: dict[str, frozenset[str]] = {
     "CharacterUnitAdaptor": frozenset({
         "self._culture.head", "self._culture.append",
     }),
+    # A person's Persona session: the account (revision, lines, pending `told` lines),
+    # the Character head and the rows it cited, the ties and the rooms' cultures in; one
+    # judged write out, in `commit` (its verbs only stage).
+    "PersonaPersonAdaptor": frozenset({
+        "self._persona.account_state", "self._persona.account_heads",
+        "self._persona.pending_told", "self._culture.head", "self._reads.rows_by_id",
+        "self._reads.tie_totals", "self._persona.persona_write",
+    }),
     # Lessons: the held lessons in, and the horizon's retirements out. Its verbs write
     # through the book during the loop, outside `inputs`/`commit`, and are not awaited in
     # this class.

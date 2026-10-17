@@ -260,6 +260,27 @@ repaired for the model (today's `check_revision` pattern). A session that
 settles nothing holds its batch, and the third time for the same batch it is
 given up (DEC-280).
 
+**Built (2026-10-17, step 6), and what it settled:** `PersonaPersonAdaptor`
+(`nora/language/persona.py`, objective `persona-person`) is a new adaptor
+beside `character-person`, not a rename: Character keeps rendering until the
+switch, so both run in shadow. It is off unless `[persona] enabled`. Its
+wake is Character's rule over the rooms that list the person, plus the
+stimulus: a turn's `told` line (`written_by_session = 'tag'`) written after
+the account's session last settled (`persona.settled_at`, migration
+`0118_persona_settled_at`) counts as a full batch. Every settle, a
+`persona_no_change` included, sets `settled_at`, so one told line wakes one
+session. It is handed its held lines by handle, the person's messages with
+their age, the episodes they answered (`response:<id>`), their Rollup ties
+summed over the current build (`rollup:tie:<unit>|<a>,<b>`, never
+co-location, R-31) and the rooms' cultures. The verbs judge a write against
+the lines the session was shown and STAGE it; `commit` writes it, judged
+again in the store's transaction against the revision the session read, so
+a write landing meanwhile is a `conflict` that writes nothing, and the next
+wake reads the new account. Not built yet: the `mentions` input (the index
+has no `mentions` edges), disputes, the verdict judge, `about` over Persona,
+and the eval (§7). Each input is one item type and one block, so another
+source (a person's social items) adds without reshaping the adaptor.
+
 ## 5. Rendering
 
 One block per entity in the turn, replacing `peer_card`, `peer_history` and

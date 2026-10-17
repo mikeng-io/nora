@@ -195,6 +195,7 @@ CONVERTED = (
     "nora/language/subagent_render.py",
     "nora/language/culture.py",
     "nora/language/character.py",
+    "nora/language/persona.py",
     "nora/language/lessons.py",
     "nora/language/lesson_render.py",
     "nora/language/doctrine_check.py",

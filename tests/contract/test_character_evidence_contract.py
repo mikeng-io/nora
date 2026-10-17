@@ -125,6 +125,17 @@ async def test_the_read_is_the_newest_lines_oldest_first_and_the_cursor_is_the_n
     assert nothing == [] and unmoved == ids[6]
 
 
+async def test_rows_by_id_are_the_visible_rows_named_with_their_room(seeded):
+    """What a Persona session checks an older account's citation against: the
+    rows asked for, ascending, each with its room; a hidden one is gone and an
+    id nothing holds is skipped."""
+    store, ids = seeded
+    got = await store.rows_by_id(ids=[ids[6], ids[0], ids[4], 9_999_999])
+    assert [(m.row.id, m.room, m.row.person_id) for m in got] == [
+        (ids[0], "room-a", "ada"), (ids[6], "room-b", "ada")]
+    assert await store.rows_by_id(ids=[]) == []
+
+
 @pytest.fixture(params=["memory", "sql"])
 async def revisions(request: Any) -> AsyncIterator[Any]:
     rows = [("room-a", 1), ("room-b", 2), ("room-c", 3), ("room-a", 4)]
@@ -435,3 +446,66 @@ async def test_the_social_cursor_starts_at_zero_moves_forward_only_and_is_its_ow
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text("truncate consolidation_watermark"))
         await engine.dispose()
+
+
+#: (build current?, unit, a, b, replies_ab, replies_ba, mentions_ab,
+#: mentions_ba, reactions_ab, reactions_ba); `a < b`, as the Rollup stores a pair.
+_TIES = [
+    (True, "friends", "ada", "bo", 3, 1, 1, 0, 2, 0),
+    (True, "friends", "ada", "bo", 0, 2, 4, 0, 1, 0),
+    (True, "friends", "ada", "cy", 0, 0, 0, 0, 5, 5),
+    (True, "wedding", "ada", "bo", 50, 50, 0, 0, 0, 0),
+    (False, "friends", "ada", "bo", 90, 90, 0, 0, 0, 0),
+    (True, "friends", "bo", "cy", 7, 7, 0, 0, 0, 0),
+]
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def ties(request: Any) -> AsyncIterator[Any]:
+    if request.param == "memory":
+        fake = InMemoryCharacterEvidence()
+        for current, unit, a, b, *counts in _TIES:
+            fake.add_tie(unit=unit, person_a=a, person_b=b, counts=tuple(counts),
+                         current=current)
+        yield fake
+        return
+    from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_TIE
+
+    engine = create_sql_engine(request.getfixturevalue("_db"))
+    try:
+        async with engine.begin() as conn:
+            builds = {}
+            for current in (False, True):
+                builds[current] = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+                    code_version="v", params_sha256="p",
+                    status="current" if current else "superseded",
+                ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+            for week, (current, unit, a, b, ra, rb, ma, mb, xa, xb) in enumerate(_TIES):
+                await conn.execute(sa.insert(ROLLUP_TIE).values(
+                    build_id=builds[current], unit=unit, lineage=[], valid_from_ms=0,
+                    valid_to_ms=1, as_of_ms=1, person_a=a, person_b=b,
+                    iso_week=f"2026-W{week:02d}", replies_ab=ra, replies_ba=rb,
+                    mentions_ab=ma, mentions_ba=mb, reactions_ab=xa, reactions_ba=xb,
+                    colocation_ms=123_456,
+                ))
+        yield SqlCharacterEvidence(engine)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text("truncate rollup_tie, rollup_build cascade"))
+        await engine.dispose()
+
+
+async def test_a_persons_ties_are_summed_from_their_side_in_the_current_build(ties):
+    """Every week of a pair folds into one tie, read from the person's side
+    whichever of the pair they are; another unit, a superseded build and a
+    pair without them are not theirs; most replies first."""
+    assert await ties.tie_totals(unit="friends", person_id="ada") == [
+        ("bo", 3, 3, 5, 0, 3, 0),
+        ("cy", 0, 0, 0, 0, 5, 5),
+    ]
+    assert await ties.tie_totals(unit="friends", person_id="bo") == [
+        ("cy", 7, 7, 0, 0, 0, 0),
+        ("ada", 3, 3, 0, 5, 0, 3),
+    ]
+    assert await ties.tie_totals(unit="friends", person_id="dee") == []

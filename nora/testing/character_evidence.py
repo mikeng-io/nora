@@ -41,6 +41,7 @@ class InMemoryCharacterEvidence:
         self._episodes: list[tuple[str, Episode, bool]] = []
         self._last_run: dict[tuple[str, str], int] = {}
         self._social_cursor: dict[tuple[str, str], tuple[int, int]] = {}
+        self._ties: list[tuple[str, str, str, tuple[int, int, int, int, int, int], bool]] = []
 
     def add_episode(self, *, unit: str, episode: Episode, open_: bool = False) -> None:
         """One `response` episode of the current build; `open_` is one whose
@@ -139,6 +140,39 @@ class InMemoryCharacterEvidence:
             ts=ts, is_nora=is_nora, hidden=hidden, quoted_ts=quoted_ts,
             mentions=mentions,
         ))
+
+    def add_tie(
+        self, *, unit: str, person_a: str, person_b: str,
+        counts: tuple[int, int, int, int, int, int], current: bool = True,
+    ) -> None:
+        """One week's Rollup tie between two people, `counts` as
+        `(replies_ab, replies_ba, mentions_ab, mentions_ba, reactions_ab,
+        reactions_ba)`; `current=False` is a row of a superseded build."""
+        self._ties.append((unit, person_a, person_b, counts, current))
+
+    async def tie_totals(
+        self, *, unit: str, person_id: str,
+    ) -> list[tuple[str, int, int, int, int, int, int]]:
+        """`SqlCharacterEvidence.tie_totals`: summed over every week of the
+        current build, from `person_id`'s side, most replies first."""
+        sums: dict[str, list[int]] = {}
+        for u, a, b, c, current in self._ties:
+            if u != unit or not current or person_id not in (a, b):
+                continue
+            other, mine = (b, c) if a == person_id else (a, (c[1], c[0], c[3], c[2], c[5], c[4]))
+            acc = sums.setdefault(other, [0] * 6)
+            for i, n in enumerate(mine):
+                acc[i] += n
+        rows = [(o, *v) for o, v in sums.items()]
+        return sorted(rows, key=lambda r: (-(r[1] + r[2]), r[0]))  # type: ignore[return-value]
+
+    async def rows_by_id(self, *, ids: Sequence[int]) -> list[RoomMessage]:
+        """`SqlCharacterEvidence.rows_by_id`: the visible rows `ids` names,
+        ascending."""
+        wanted = set(ids)
+        return [RoomMessage(room=m.room, row=self._row(m))
+                for m in sorted(self._messages, key=lambda m: m.id)
+                if m.id in wanted and not m.hidden]
 
     @staticmethod
     def _row(m: _Message) -> TranscriptRow:
