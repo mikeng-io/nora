@@ -6133,6 +6133,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         It returns what matches, with each item's age and how it was found. The
         other arguments narrow it to one person, a span of dates or some kinds
         of memory. Asked what you know about someone, set `person` to them.
+        Reading everything said over a span of time, such as one day, is
+        `record_query`.
 
         SHOULD: write `query` yourself, as what you are looking for, not the raw
         tag message.

@@ -645,7 +645,18 @@ cases:
     expect: reply
     mention: true
     input: 之前有冇人提過想去露營？邊個講㗎？
-    metadata: {tools: [record_query], not_tools: [who_said, search_memory]}
+    metadata: {tools: [record_query], not_tools: [who_said, search_memory], memory_surface: honcho}
+    snapshot: *room_a
+
+  # The same question on the graph surface (DEC-316). `memory_search` there
+  # finds what was said and who said it, so either read answers it; neither
+  # Honcho neighbour exists on this surface to be named in `not_tools`.
+  - name: route_record_query_who_mentioned_on_graph
+    entry: tag
+    expect: reply
+    mention: true
+    input: 之前有冇人提過想去露營？邊個講㗎？
+    metadata: {tools: [record_query, memory_search], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_record_query_english_interval
