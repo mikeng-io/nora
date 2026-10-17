@@ -589,6 +589,34 @@ def test_a_steep_drop_in_relevance_ends_the_answer() -> None:
         "ramen"] * 4
 
 
+def test_a_recent_weak_hit_does_not_end_the_answer_before_an_older_strong_one() -> None:
+    """The rank is age-decayed and the gap is read on relevance, so a recent
+    weak hit can sit between strong ones. The drop is read against the best
+    still to come: an older hit of high relevance after it is still shown."""
+    scores = [0.8, 0.79, 0.78, 0.3, 0.75, 0.74]
+    assert len(_packet([_hit(i, s) for i, s in enumerate(scores)])) == len(scores)
+    # Nothing strong after the weak one: the drop still ends the answer.
+    assert len(_packet([_hit(i, s) for i, s in enumerate([0.8, 0.79, 0.78, 0.3, 0.29])])) == 3
+
+
+def test_a_social_item_ages_by_its_own_half_life() -> None:
+    """A social item is dated by when it was posted, often years before the
+    room heard of it: it decays by `SOCIAL_HALF_LIFE_DAYS`, every other kind
+    by `HALF_LIFE_DAYS`."""
+    from nora.agent.memory_search import HALF_LIFE_DAYS, SOCIAL_HALF_LIFE_DAYS, _decay
+    from nora.domain.memory_index import SOCIAL_KINDS
+    days = 500
+    at = NOW - days * 86_400_000
+    assert SOCIAL_HALF_LIFE_DAYS > HALF_LIFE_DAYS
+    for kind in SOCIAL_KINDS:
+        node = IndexedNode(kind, "instagram:1", "a picnic", at)
+        assert _decay(node, NOW) == pytest.approx(0.5 ** (days / SOCIAL_HALF_LIFE_DAYS))
+    for kind in ("message", "media", "note"):
+        node = IndexedNode(kind, "1", "a picnic", at)
+        assert _decay(node, NOW) == pytest.approx(0.5 ** (days / HALF_LIFE_DAYS))
+    assert _decay(IndexedNode("social", "instagram:1", "a picnic", None), NOW) == 0.5
+
+
 def test_the_best_few_show_whatever_the_gap_or_the_budget() -> None:
     from nora.agent.memory_search import MIN_RESULTS, PACKET_TOKENS
     # A cliff after every item.

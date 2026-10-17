@@ -73,7 +73,8 @@ stops early when a hop keeps nothing (adaptive depth), at `NODE_BUDGET`
 nodes, or at the hop count `depth` asks for, never past `HOP_CEILING`.
 
 **4. Rank** the pinned exact hits first, then the rest, each by relevance
-times age decay (`HALF_LIFE_DAYS`). **5. Return** the
+times age decay (`HALF_LIFE_DAYS`, a social item's
+`SOCIAL_HALF_LIFE_DAYS`). **5. Return** the
 best items, cut adaptively as they are rendered (`render_packet`): the
 pinned ones always, then in rank order until a token budget
 (`PACKET_TOKENS`) is spent or the relevance drops by more than `SCORE_GAP`,
@@ -128,6 +129,7 @@ from nora.domain.lineage import PRESENCE, ROW, Lineage, LineageEntry, RenderRoom
 from nora.domain.media import HANDLE_CHARS
 from nora.domain.memory_index import (
     EPISODE_KINDS,
+    SOCIAL_KINDS,
     ExactTerm,
     IndexedNode,
     MemoryFilter,
@@ -235,7 +237,10 @@ PACKET_TOKENS = 2_000
 #: under 0.017 nine times in ten (2,733 pairs, 65 §6), so 0.2 stops only
 #: after a standout: replayed over the 163 measured queries it shortened 4
 #: and cost none its hit. On relevance, not on the age-decayed rank, whose
-#: drops mix age with meaning: 0.15 on that rank cost seven hits.
+#: drops mix age with meaning: 0.15 on that rank cost seven hits. Against the
+#: best relevance still to come, not the next hit's: the rank is decayed, so
+#: a recent weak hit can sit just ahead of an older strong one (4 of 36
+#: the 36 misses of the run 65 §6 reports stopped there).
 SCORE_GAP = 0.2
 #: However tight the budget or steep the drop, a search that found anything
 #: shows its best few: the first this many items the identifier screen
@@ -253,6 +258,15 @@ RESULT_MAX = 30
 PERSON_SEED_SCORE = 0.45
 #: Age decay: an item this many days old ranks at half its relevance.
 HALF_LIFE_DAYS = 180.0
+#: The half-life of a social item (`SOCIAL_KINDS`). It is dated by when it
+#: was posted, often years before the room heard of it (in the index a social
+#: item is a median 491 days old, its medium 630; a message 28), so at
+#: `HALF_LIFE_DAYS` a strong match ranked below the 30 kept. Replayed on 143
+#: known items, sampled and asked as 65 §6 did: 180 showed 115, 365 115,
+#: 730 118, 1095 120, no decay 124, against master's 114. No decay showed
+#: every social item and pushed a message out of the packet; 1095 lost none
+#: master showed.
+SOCIAL_HALF_LIFE_DAYS = 1095.0
 #: Characters of one item's text in the packet.
 TEXT_CHARS = 600
 #: How many drain periods (`[memory_index] drain_seconds`, the embedding
@@ -492,11 +506,12 @@ def _listed_room_rule(person: str, via: IndexedNode, scope: MemoryScope) -> bool
     return person in scope.room_persons.get(via.origin_room, frozenset())
 
 
-def _decay(at_ms: int | None, now_ms: int) -> float:
-    if at_ms is None:
+def _decay(node: IndexedNode, now_ms: int) -> float:
+    if node.at_ms is None:
         return 0.5
-    days = max(0.0, (now_ms - at_ms) / 86_400_000)
-    return math.pow(0.5, days / HALF_LIFE_DAYS)
+    days = max(0.0, (now_ms - node.at_ms) / 86_400_000)
+    half = SOCIAL_HALF_LIFE_DAYS if node.kind in SOCIAL_KINDS else HALF_LIFE_DAYS
+    return math.pow(0.5, days / half)
 
 
 async def walk(
@@ -711,7 +726,7 @@ class MemorySearch:
         wanted = frozenset(kinds)
         ranked = sorted(
             (h for h in hits if not wanted or h.node.kind in wanted),
-            key=lambda h: (-h.pin, -h.score * _decay(h.node.at_ms, now_ms), h.node.key),
+            key=lambda h: (-h.pin, -h.score * _decay(h.node, now_ms), h.node.key),
         )[:RESULT_MAX]
         # A fresh node is read by its words; a backlog, or an unvectored node
         # (waiting or given up) a question with no terms cannot read, is what
@@ -791,16 +806,26 @@ def render_packet(
     withheld = 0
     spent = 0
     last: float | None = None  # the previous unpinned hit's relevance
-    for h in hits:
+    # Screened WHOLE, before the cut: an identifier straddling `TEXT_CHARS`
+    # would otherwise leave as a fragment the screen cannot recognise (R-18).
+    # A withheld hit takes no part in the cut.
+    screened = [bool(h.node.text and scan_identifiers(h.node.text) is not None) for h in hits]
+    # The best relevance from each hit on, over the unpinned hits the screen
+    # passes. The rank is age-decayed, so a recent weak hit can sit ahead of
+    # an older strong one: the drop is read against the best still to come,
+    # never against the next hit alone.
+    ahead = [0.0] * (len(hits) + 1)
+    for i in range(len(hits) - 1, -1, -1):
+        h = hits[i]
+        mine = h.score if not h.pin and not screened[i] else 0.0
+        ahead[i] = max(mine, ahead[i + 1])
+    for i, h in enumerate(hits):
         if len(items) >= RESULT_MAX:
             break
-        # Screened WHOLE, before the cut: an identifier straddling
-        # `TEXT_CHARS` would otherwise leave as a fragment the screen cannot
-        # recognise (R-18). A withheld hit takes no part in the cut.
-        if h.node.text and scan_identifiers(h.node.text) is not None:
+        if screened[i]:
             withheld += 1
             continue
-        steep = not h.pin and last is not None and last - h.score > SCORE_GAP
+        steep = not h.pin and last is not None and last - ahead[i] > SCORE_GAP
         if not h.pin and len(items) >= MIN_RESULTS and steep:
             break
         if not h.pin:
