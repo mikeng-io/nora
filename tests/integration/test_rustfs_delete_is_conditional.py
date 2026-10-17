@@ -12,6 +12,7 @@ stops honouring the header, that test says so before a race does.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -24,6 +25,13 @@ BUCKET = "conditional-delete"
 DATA = b"a story frame's bytes"
 
 
+def _a_minute_on() -> datetime:
+    """A clock a minute ahead: every object put during a test is idle to it,
+    past `LastModified`'s whole-second resolution, so a `kept` answer can
+    only come from the conditional delete."""
+    return datetime.now(UTC) + timedelta(minutes=1)
+
+
 @pytest.fixture
 def store(rustfs_client: Any) -> RustfsBlobStore:
     s = RustfsBlobStore(
@@ -33,11 +41,17 @@ def store(rustfs_client: Any) -> RustfsBlobStore:
     return s
 
 
-async def test_idle_bytes_are_deleted_then_absent(store: RustfsBlobStore) -> None:
+async def test_idle_bytes_are_deleted_then_absent(
+    rustfs_client: Any, store: RustfsBlobStore,
+) -> None:
+    later = RustfsBlobStore(
+        s3_client=rustfs_client, bucket=BUCKET, cipher=BlobCipher(bytes(range(32))),
+        clock=_a_minute_on,
+    )
     key = await store.put(data=DATA)
-    assert await store.delete(key=key, idle_seconds=0) == "deleted"
+    assert await later.delete(key=key, idle_seconds=0) == "deleted"
     assert await store.get(key=key) is None
-    assert await store.delete(key=key, idle_seconds=0) == "absent"
+    assert await later.delete(key=key, idle_seconds=0) == "absent"
 
 
 async def test_recently_put_bytes_are_kept(store: RustfsBlobStore) -> None:
@@ -71,7 +85,7 @@ async def test_an_object_replaced_between_head_and_delete_is_not_deleted(
     key = await store.put(data=DATA)
     racing = RustfsBlobStore(
         s3_client=_ReplacedBeforeDelete(rustfs_client, BlobCipher(bytes(range(32))).seal(DATA)),
-        bucket=BUCKET, cipher=BlobCipher(bytes(range(32))),
+        bucket=BUCKET, cipher=BlobCipher(bytes(range(32))), clock=_a_minute_on,
     )
     assert await racing.delete(key=key, idle_seconds=0) == "kept"
     assert await store.get(key=key) == DATA, "the writer's bytes survive"

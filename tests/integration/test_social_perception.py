@@ -114,13 +114,13 @@ class World:
         )
 
     def perception(self, *, cap: int = 200, batch: int = 50,
-                   comprehension: bool = True) -> SocialPerception:
+                   comprehension: bool = True, rooms: Any = None) -> SocialPerception:
         return SocialPerception(
             store=self.store, media_objects=self.media_objects,
             comprehension=self.comprehension() if comprehension else None,
             stimuli=SqlStimulusStore(self.engine), units=UNITS, daily_cap=cap, tz=HK,
             chunk_seconds=90, chunk_max=10, tick_seconds=600, metrics=self.metrics,
-            batch=batch, clock=self.clock,
+            batch=batch, rooms=rooms, clock=self.clock,
         )
 
     async def seed(
@@ -463,6 +463,16 @@ async def test_a_unit_whose_stimulus_is_missing_still_gets_it(world) -> None:
     )
     await world.perception().tick()
     assert sorted(r.unit for r in await world.stimuli()) == ["family", "friends"]
+
+
+async def test_each_units_stimulus_names_the_room_there_that_lists_the_author(world) -> None:
+    """The session reads a social read through the room its stimulus names
+    (`composition.social_person_rooms`): a room of that unit listing the
+    author. A unit with no room named for them binds its home room."""
+    await world.seed("p1")
+    await world.perception(rooms={("ada", "friends"): ("signal", "side-room")}).tick()
+    rows = {r.unit: (r.platform, r.conversation_id) for r in await world.stimuli()}
+    assert rows == {"friends": ("signal", "side-room"), "family": (None, None)}
 
 
 async def test_a_read_older_than_the_window_wakes_no_unit_added_since(world) -> None:

@@ -102,6 +102,7 @@ from .tools import (
     RecordQuerySource,
     RollupReadSource,
     RoomDirectory,
+    SocialItemsSource,
     StandingHeadSource,
     build_tool_specs,
     hot_tools,
@@ -264,6 +265,8 @@ class ToolRegistry:
         standing_head: StandingHeadSource | None = None,
         # `character_read`'s culture store (`[culture] enabled`): `None` withholds it.
         culture: CultureReader | None = None,
+        # `social_read`'s read of the social stream's Record: `None` withholds it.
+        social_items: SocialItemsSource | None = None,
         # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools
         # call. Without it the registry withholds them from every turn.
         subagent: SubagentDesk | None = None,
@@ -298,6 +301,7 @@ class ToolRegistry:
         self._rollup = rollup
         self._standing_head = standing_head
         self._culture = culture
+        self._social_items = social_items
         # Tools no turn is offered in this process: `record_query` without its
         # Record read (`[record_query] enabled = false`, the shipped default).
         # Withheld from every surface and from the gate's digest, so an
@@ -311,6 +315,7 @@ class ToolRegistry:
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
             | (frozenset() if culture is not None else frozenset({"character_read"}))
+            | (frozenset() if social_items is not None else frozenset({"social_read"}))
             | (frozenset() if memos is not None else frozenset({"memo_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
             | (frozenset() if browser is not None else frozenset({"computer_browse"}))
@@ -1074,6 +1079,7 @@ class ToolRegistry:
             rollup=self._rollup,
             standing_head=self._standing_head,
             culture=self._culture,
+            social_items=self._social_items,
             versions=self._versions,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,

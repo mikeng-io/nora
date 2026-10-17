@@ -104,6 +104,7 @@ class SocialPerception:
         tick_seconds: float,
         metrics: Metrics,
         batch: int = 50,
+        rooms: Mapping[tuple[str, str], tuple[str, str]] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -112,6 +113,10 @@ class SocialPerception:
         self._comprehension = comprehension
         self._stimuli = stimuli
         self._units = units
+        # `(person, unit) -> (platform, conversation_id)`: the room each
+        # stimulus binds (`composition.social_person_rooms`). A pair with none
+        # binds the unit's home room.
+        self._rooms = rooms or {}
         self._cap = daily_cap
         self._tz = tz
         self._chunk_seconds = chunk_seconds
@@ -288,10 +293,12 @@ class SocialPerception:
             at_ms = int(max(i.taken_at for i in read.items).timestamp() * 1000)
             now_ms = int(self._clock().timestamp() * 1000)
             for unit in units:
+                platform, conversation_id = self._rooms.get((read.person, unit), (None, None))
                 sid = await self._stimuli.append(
                     stimulus=NewStimulus(
                         unit=unit, kind="social", item=stimulus_item,
                         ref=f"{SOCIAL_READ_REF}:{read.read_id}", at_ms=at_ms,
+                        platform=platform, conversation_id=conversation_id,
                         person_id=read.person, cues=cues,
                     ),
                     recorded_at_ms=now_ms,

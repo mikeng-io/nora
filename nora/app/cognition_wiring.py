@@ -56,11 +56,12 @@ COGNITION_OBJECTIVE = "cognition"
 
 #: The read tools named for a session. Some do not exist in the
 #: tree yet (`read_surface` reports which); the rest are read-only rows of the
-#: tool table.
+#: tool table. `social_read` is the map's `social_items(person, interval)`
+#: under ADR 0015 §1's `<domain>_<verb>` name.
 COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the warehouse queries
     "record_query", "rollup_read", "event_search", "memo_read", "character_read",
-    "standing_read", "social_items",
+    "standing_read", "social_read",
     # the tiers' reads that already exist
     "where_been", "routine_read", "note_read", "note_search",
     # memory
@@ -97,8 +98,10 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
     "standing_read": "SQL SELECT of one `standing` head and the newest "
                      "`standing_revision` row (its id only); counters only. It folds, "
                      "revises and migrates nothing. No write.",
-    "social_items": "not built yet; audit it when it lands (an ingested-items read "
-                    "must not fetch from the network).",
+    "social_read": "SQL SELECT of one person's `social_item` rows and their media's "
+                   "`media_objects` readings (`SqlSocialStreamStore.items_of`); "
+                   "counters only. It fetches nothing from the network and "
+                   "perceives nothing. No write.",
     "where_been": "SQL read of derived presence (stays, trips, places) and the "
                   "newest raw fix; counters only. No write, and no refresh of the "
                   "live fix (that is `where_is`, not held).",
