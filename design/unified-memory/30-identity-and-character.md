@@ -177,6 +177,9 @@ entry citing the message. The tier is the one the statement's question names:
 | something open or dated ("Japan in March") | Register · note or event | Cognition |
 
 `remember` (today a Honcho `conclude`) becomes that Record item and stimulus.
+*(Superseded for the first row on 2026-10-17, DEC-317: on the graph surface
+`remember` writes the `told` identity line itself, through the Persona
+write's judge; [35](35-persona.md) §1. The memo and note rows stand.)*
 
 **Correct.** Nothing is overwritten:
 

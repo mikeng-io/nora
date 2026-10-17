@@ -514,10 +514,18 @@ def _check_line(
         return PersonaRefusal("draws_on_unexpected", "`draws_on` is for a deduced line's "
                               "premises or the traits a hypothesis explains")
     if line.mode != "abduced" and (
-        line.prediction or line.prediction_observable or line.prediction_window_end
+        line.prediction is not None or line.prediction_observable is not None
+        or line.prediction_window_end is not None
     ):
         return PersonaRefusal("prediction_unexpected", "a prediction belongs to a hypothesis")
 
+    if line.kind == "instruction" and (
+        account.subject is None or line.told_by != account.subject
+    ):
+        # 35 §2: an instruction is told by its subject, never someone else's
+        # and never deduced (a deduced line has no `told_by`).
+        return PersonaRefusal("instruction_not_subject", "an instruction is told by "
+                              "the person it is about, never by someone else or deduced")
     if line.mode == "told":
         if not evidence.messages or evidence.rollup_keys or (
             len(evidence.said) != len(evidence.messages)
@@ -529,11 +537,6 @@ def _check_line(
         if any(s.person_id != line.told_by for _, s in evidence.messages):
             return PersonaRefusal("told_by_not_speaker", "`told_by` is not who said the "
                                   "cited message")
-        if line.kind == "instruction" and (
-            account.subject is None or line.told_by != account.subject
-        ):
-            return PersonaRefusal("instruction_not_subject", "an instruction is told by "
-                                  "the person it is about, never by someone else")
     elif line.mode == "deduced":
         if any(p.mode == "abduced" for p in premises):
             return PersonaRefusal("premise_abduced", "a hypothesis is not a premise")
@@ -613,6 +616,9 @@ def plan_write(
             if line_id is None:
                 return PersonaRefusal("unknown_line", f"{handle!r} in `draws_on` is not a "
                                       "line you were shown", i)
+            if line_id in touched and line_id not in after:
+                return PersonaRefusal("premise_not_current", f"{handle} changes in this "
+                                      "call; rest on it in a later one", i)
             out.append(by_id[line_id])
         return out
 
@@ -627,12 +633,23 @@ def plan_write(
     ) -> tuple[int, int]:
         """`support_count` and `last_supported_at` after this evidence: a
         Rollup aggregate supports as of now, a row as of when it was said."""
-        stamps = [s.ts for s in ev.said] + ([now_ms] if ev.rollup_keys else [])
         if old is None:
+            stamps = [s.ts for s in ev.said] + ([now_ms] if ev.rollup_keys else [])
             return max(1, len(set(cites))), max(stamps, default=now_ms)
+        # Only evidence the line did not already rest on supports it anew:
+        # re-citing what it cited is not re-evidence (45 §2's decay).
         fresh = set(cites) - set(old.citations)
+        stamps = [_stamp(c) for c in fresh]
         stamps.append(old.last_supported_at or old.written_at)
         return old.support_count + len(fresh), max(stamps)
+
+    def _stamp(citation: str) -> int:
+        episode = _EPISODE.fullmatch(citation)
+        if citation.isdigit() and int(citation) in citable.messages:
+            return citable.messages[int(citation)].ts
+        if episode is not None and int(episode.group(1)) in citable.episodes:
+            return citable.episodes[int(episode.group(1))].ts
+        return now_ms  # a Rollup aggregate supports as of now
 
     for i, op in enumerate(ops):
         if isinstance(op, RetireOp):
@@ -690,7 +707,7 @@ def plan_write(
                 h for h, lid in handles.items() if lid in carried)
             cites = op.citations
             candidate_fields = {
-                "text": op.text if op.text is not None else old.text,
+                "text": op.text.strip() if op.text is not None else old.text,
                 "mode": op.mode or old.mode,
                 "citations": tuple(dict.fromkeys(cites)),
             }
@@ -769,14 +786,28 @@ def plan_write(
         return PersonaPlan(refusals=tuple(refusals))
 
     if apply_decay:
+        decayed: set[str] = set()
         for line in list(after.values()):
-            if (line.part == "character" and line.state in HELD_STATES
-                    and line.id in by_id
-                    and (line.last_supported_at or line.written_at) < now_ms - TRAIT_DECAY_MS):
+            fresh_add = line.id not in by_id and line.supersedes is None
+            if (line.part != "character" or line.state not in HELD_STATES or fresh_add
+                    or (line.last_supported_at or line.written_at) >= now_ms - TRAIT_DECAY_MS):
+                continue
+            after.pop(line.id)
+            if line.id in by_id:  # untouched: its successor retires it
                 gone = successor(line, state="retired")
+                decayed.add(line.id)
+            else:  # rewritten in this call with no newer evidence: retire that row
+                gone = replace(line, state="retired")
+                inserts[inserts.index(line)] = gone
+                decayed.add(line.supersedes or line.id)
+            if line.id in by_id:
                 inserts.append(gone)
-                after.pop(line.id)
-                after[gone.id] = gone
+            after[gone.id] = gone
+        for line in inserts:
+            if line.state in HELD_STATES and decayed & set(line.draws_on):
+                refusals.append(PersonaRefusal(
+                    "premise_not_current", "a line this call adds rests on a trait that "
+                    "decays at this session; re-evidence the trait or rest on another"))
 
     for part, cap in CAPS.items():
         def counted(lines: Sequence[PersonaLine], part: str = part) -> int:

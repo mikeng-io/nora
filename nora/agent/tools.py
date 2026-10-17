@@ -13400,12 +13400,13 @@ Args:
 tells you something about themselves or another member that is now TRUE.
 
 The trigger word is «記低». It keeps what was told, who told it and the
-message it was said in, in your long-term memory of that person. One about the
-group your notebook keeps after this turn, so say it will be kept; an open
-question nothing settles is `note_create`, something later is `remind`.
+message it was said in, in your long-term memory of that person. A fact
+about the group is not this tool: your notebook keeps it after this turn,
+so say it will be kept. An open question nothing settles is `note_create`;
+something later is `remind`.
 
-Returns `status`: ok, refused or unavailable, with a `note` on how to
-report it.
+Returns `status`: ok, refused, not_found, ambiguous or unavailable, with a
+`note` on how to report it.
 
 Args:
     content: The fact itself, one line, in the teller's own words.

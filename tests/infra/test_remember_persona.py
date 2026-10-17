@@ -9,6 +9,7 @@ about the speaker or another listed member. The judge's own rules are
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,6 +19,7 @@ from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.domain.lineage import RoomFacts
+from nora.domain.persona import PersonaWriteResult
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.persona import SqlPersonaStore
@@ -127,5 +129,49 @@ async def test_without_the_store_or_a_message_to_cite_it_is_unavailable(
     tool = _remember(persons, store, wired=case != "unwired",
                      trigger=() if case == "no_message" else (41,))
     result = await _call(tool, content="vegetarian")
-    assert result["status"] == "unavailable" and "記低咗" in result["note"]
+    assert result["status"] == "unavailable" and "never say 記低咗" in result["note"]
     assert await store.account_heads(key=f"{UNIT}#character:miles_novak") == ()
+
+
+async def test_without_a_known_speaker_nothing_is_saved(persons: Any, store: Any) -> None:
+    room = Room(
+        platform="signal", conversation_id=GROUP,
+        roster_source=FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)}),
+        persons=persons, tagger=None, self_ids=NORA, trigger_message_ids=(41,),
+    )
+    tool = {t.tool_name: t for t in build_tools(
+        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
+        question="", context_window=40, lineage=_LINEAGE, supplied_unit=UNIT,
+        memory_retrieval=MemorySearch(FakeMemoryIndex([]), Metrics()), persona=store,
+    )}["remember"]
+    result = await _call(tool, content="vegetarian")
+    assert result["status"] == "refused" and result["note"].startswith("Nothing was saved")
+    assert await store.account_heads(key=f"{UNIT}#character:miles_novak") == ()
+
+
+async def test_someone_not_in_this_room_is_not_found(persons: Any, store: Any) -> None:
+    result = await _call(_remember(persons, store), content="x", person="Elsewhere")
+    assert result["status"] == "not_found"
+
+
+async def test_a_member_the_room_does_not_list_is_refused(persons: Any, store: Any) -> None:
+    only_miles = RoomFacts("signal", frozenset({GROUP}), UNIT, frozenset({"miles_novak"}))
+    lineage = LineagePolicy(rooms=(only_miles,), _by_id={("signal", GROUP): only_miles})
+    result = await _call(_remember(persons, store, lineage=lineage), content="x",
+                         person="Tyler")
+    assert result["status"] == "refused"
+    assert await store.account_heads(key=f"{UNIT}#character:tyler_cortez") == ()
+
+
+@pytest.mark.parametrize("outcome", ["raises", "conflict"])
+async def test_a_failing_store_is_unavailable_never_ok(persons: Any, outcome: str) -> None:
+    async def persona_write(**_kw: Any) -> PersonaWriteResult:
+        if outcome == "raises":
+            raise RuntimeError("database gone")
+        return PersonaWriteResult(status="conflict", revision=3)
+
+    result = await _call(_remember(persons, SimpleNamespace(persona_write=persona_write)),
+                         content="vegetarian")
+    assert result["status"] == "unavailable" and "never say 記低咗" in result["note"]

@@ -5,6 +5,7 @@ taken out. The store's transaction and CHECKs are `tests/infra/test_persona_stor
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 
 import pytest
@@ -377,3 +378,70 @@ def test_handles_name_held_lines_only() -> None:
 def test_a_malformed_call_is_refused(raw) -> None:
     _ops, refusals = parse_ops(raw)
     assert refusals and refusals[0].reason == "malformed"
+
+
+# --- review round: rules that hold across ops in one call -------------------------
+
+
+def test_an_instruction_is_never_deduced() -> None:
+    op = AddOp(part="identity", kind="instruction", text="x", mode="deduced",
+               citations=("101", "102"))
+    assert _reasons(_plan([op])) == ["instruction_not_subject"]
+    told = (_line(1, part="identity", kind="instruction", mode="told", told_by=SUBJECT),)
+    revise = ReviseOp(line="P1", citations=("101", "102"), mode="deduced")
+    assert _reasons(_plan([revise], told)) == ["instruction_not_subject"]
+
+
+def test_a_premise_retired_earlier_in_the_call_is_not_current() -> None:
+    plan = _plan([RetireOp(line="P1", why="gone"), _deduced(draws=("P1",))], (_line(1),))
+    assert _reasons(plan) == ["premise_not_current"]
+
+
+def test_a_hypothesis_cannot_explain_a_trait_that_decays_in_the_same_call() -> None:
+    stale = (_line(1, last=NOW - TRAIT_DECAY_MS - 1),)
+    assert _reasons(_plan([_abduced()], stale, decay=True)) == ["premise_not_current"]
+    assert not _plan([_abduced()], stale, decay=False).refused
+
+
+def test_re_citing_old_evidence_does_not_stop_a_trait_decaying() -> None:
+    stale = _line(1, last=NOW - TRAIT_DECAY_MS - 1)
+    old = replace(stale, citations=("101",))
+    plan = _plan([KeepOp(line="P1", citations=("101",))], (old,), decay=True)
+    assert [x.state for x in plan.inserts] == ["retired"]
+
+
+def test_a_revision_is_stored_stripped() -> None:
+    plan = _plan([ReviseOp(line="P1", citations=("101", "102", "103"),
+                           text="y" * 290 + " " * 40)], (_line(1),))
+    assert plan.inserts[0].text == "y" * 290
+
+
+def test_a_revision_keeps_premises_revised_since_through_their_chain() -> None:
+    premise = _line(1)
+    newer = replace(premise, id="00000000-0000-0000-0000-000000000099",
+                    supersedes=premise.id)
+    deduced = replace(_line(2, mode="deduced"), draws_on=(premise.id,),
+                      citations=("101",))
+    plan = plan_write(
+        account=HUMAN, heads=(newer, deduced),
+        ops=[ReviseOp(line=next(h for h, i in handles_for((newer, deduced)).items()
+                                if i == deduced.id), citations=("102",))],
+        citable=CITABLE, now_ms=NOW, written_by_session="t", screen=lambda _t: None,
+        apply_decay=False, aliases={premise.id: newer.id},
+    )
+    assert not plan.refused and plan.inserts[0].draws_on == (newer.id,)
+
+
+def test_fields_that_belong_to_another_mode_are_refused() -> None:
+    told_by = AddOp(part="character", kind="trait", text="x", mode="induced",
+                    citations=("101", "102", "103"), told_by=SUBJECT)
+    assert _reasons(_plan([told_by])) == ["told_by_unexpected"]
+    assert _reasons(_plan([_told(prediction_window_end=0)])) == ["prediction_unexpected"]
+    drawn = AddOp(part="character", kind="trait", text="x", mode="induced",
+                  citations=("101", "102", "103"), draws_on=("P1",))
+    assert _reasons(_plan([drawn], (_line(1),))) == ["draws_on_unexpected"]
+
+
+def test_a_retirement_says_why_and_names_a_shown_line() -> None:
+    assert _reasons(_plan([RetireOp(line="P1", why=" ")], (_line(1),))) == ["retire_why"]
+    assert _reasons(_plan([RetireOp(line="P7", why="x")], (_line(1),))) == ["unknown_line"]

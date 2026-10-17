@@ -242,7 +242,8 @@ one way a writer says two lines conflict; code ranks the two by §3's
 precedence, marks the lower `outranked`, keeps both, and refuses a conflict
 between lines of the same rank (revise or retire instead) or with a
 hypothesis. Revising an `outranked` line without naming a conflict leaves it
-`outranked`. A `keep` without citations writes nothing and is not
+`outranked`; once the line that beat it is gone, the way back is to retire it
+and add the claim afresh, which lands `current`. A `keep` without citations writes nothing and is not
 re-evidence, so it does not stop a trait decaying. Handles `P1`, `P2`, ...
 number the held lines (`current`, `disputed`, `outranked`) part by part,
 oldest first (`nora.domain.persona.handles_for`). The write takes the
