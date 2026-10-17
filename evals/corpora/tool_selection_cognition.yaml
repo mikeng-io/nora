@@ -272,10 +272,15 @@ cases:
     metadata: {tools: [social_read], not_tools: [rollup_read, record_query]}
     snapshot: *room_a
 
-  - name: cognition_social_read_vs_event_search_what_a_reel_showed
+  # Beside an event: the agenda names one, so reading it is right, and
+  # `character_read` is an orientation read nearly every Cognition session
+  # makes (5 of 5 draws of the story case above, which passed). Neither is a
+  # wrong turn here, so neither is a `not_tools`; forbidding them failed every
+  # draw while every draw read the reel with `social_read`.
+  - name: cognition_social_read_beside_event_what_a_reel_showed
     entry: dreamer
     category: cognition
     expect: reply
     input: "Miles posted a reel; event E1 is Miles's birthday dinner tonight"
-    metadata: {tools: [social_read], not_tools: [event_search, character_read]}
+    metadata: {tools: [social_read], not_tools: [record_query]}
     snapshot: *room_a

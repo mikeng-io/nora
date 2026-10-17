@@ -25,8 +25,8 @@ _COGNITION_CATALOGUE = frozenset({
     # DEC-306: the memo verbs, the memo read, and the retire a settled note's
     # memo is followed by.
     "memo_write", "memo_revise", "memo_withdraw", "memo_read", "note_retire",
-    # `social_read` and the account and event reads it is measured against.
-    "social_read", "character_read", "event_search",
+    # `social_read`, measured against `record_query` and `rollup_read` above.
+    "social_read",
 })
 
 
@@ -81,9 +81,11 @@ def test_each_new_read_is_measured_against_the_sibling_it_is_confusable_with():
     """`rollup_read`, `standing_read` and `social_read` each have routing
     cases against their confusable siblings: `rollup_read` against
     `record_query` and `where_been`, `standing_read` against
-    `note_read`/`note_search`, `social_read` against `record_query`,
-    `rollup_read`, `character_read` and `event_search`, and the order a
-    revision needs (read before `standing_revise`)."""
+    `note_read`/`note_search`, `social_read` against `record_query` and
+    `rollup_read`, and the order a revision needs (read before
+    `standing_revise`). `character_read` and `event_search` are not
+    `social_read`'s siblings: a Cognition session reads them to orient
+    itself, so a case forbidding them fails on a right session."""
     by_name = {c.name: c.metadata for c in load_corpus(NAME)}
     against = {
         tool: {n for m in by_name.values() if tool in m["tools"] for n in m.get("not_tools", [])}
@@ -91,8 +93,6 @@ def test_each_new_read_is_measured_against_the_sibling_it_is_confusable_with():
     }
     assert {"record_query", "where_been"} <= against["rollup_read"]
     assert {"note_read", "note_search"} <= against["standing_read"]
-    assert {"record_query", "rollup_read", "character_read", "event_search"} <= (
-        against["social_read"]
-    )
+    assert {"record_query", "rollup_read"} <= against["social_read"]
     ordered = by_name["cognition_standing_read_before_standing_revise"]
     assert ordered["before"] == {"standing_read": ["standing_revise"]}
