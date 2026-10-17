@@ -1,7 +1,7 @@
 ---
 name: cognition-register
 kind: skill
-version: 4
+version: 5
 applies_to: [cognition_session]
 description: >-
   The note, event and reminder judgement the Cognition session writes with,
@@ -145,6 +145,6 @@ out has no right moment today.
 
 Not worth it: anything settled, anything you already raised, or anything that would only
 restate the note. Before you set one, read the note and
-ask memory about the people it names (`about`), so the moment you choose fits how they
+ask memory about the people it names, so the moment you choose fits how they
 usually settle things. One reminder per thing, few a day, on most looks none: a friend who
 speaks every day is muted.
