@@ -188,7 +188,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "not be read (a raise, or the bounded read timing out). A room never "
         "folded is not an error and moves nothing. The <self> read "
         "(design/self-growth/20) is stage=\"tag_self\", "
-        "stage=\"fire_self\" and stage=\"cognition_self\", on the same terms.",
+        "stage=\"fire_self\" and stage=\"cognition_self\", on the same terms. "
+        "The <recalled> pre-fetch (design/unified-memory/00 step 3b) is "
+        "stage=\"tag_prefetch\": a memory search that failed, timed out or "
+        "could not be rendered, so the turn went on without the block.",
         ("stage", "platform"),
     ),
     _CounterSpec(

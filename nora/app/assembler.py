@@ -14,7 +14,11 @@ so a shared helper in the same package needs no new edge in the import graph.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import datetime
+
 from nora.agent.lineage import LineagePolicy
+from nora.agent.memory_search import MemorySearch
 from nora.agent.whereis import circles_from_persons
 from nora.config import Config
 from nora.domain.media_join import MediaJoin
@@ -70,6 +74,8 @@ def build_assembler(
     documents: DocumentsContextReader | None = None,
     subagents: SubagentsContextReader | None = None,
     memos: MemoStore | None = None,
+    memory_search: MemorySearch | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -120,4 +126,12 @@ def build_assembler(
         # `<subagents>`. TAG PATH ONLY: the fire path is given no such reader.
         # `None` while `[subagent]` is off, which renders no block.
         subagents=subagents,
+        # `<recalled>`, the pre-fetch (design/unified-memory/00 step 3b): the
+        # SAME `MemorySearch` the tool registry's `memory_search` holds.
+        # `None` on the Honcho surface (`[memory_index] enabled = false`),
+        # which renders no block.
+        memory_search=memory_search,
+        # The graph's one clock, so the pre-fetch dates and ranks its items
+        # at the instant every other component reads.
+        clock=clock,
     )
