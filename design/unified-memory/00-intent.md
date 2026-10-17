@@ -228,7 +228,9 @@ index and Honcho's exit are now listed in their order.
    the head's `cites` edges, and stored revisions were backfilled and their
    notes queued for re-projection.
 5. **Persona schema and `persona_write`** ([45](45-persona-adaptor.md) §1–§4),
-   with the build prerequisites listed in 45 §4.
+   with the build prerequisites listed in 45 §4. **Built 2026-10-17
+   (DEC-317)**, with the turn's `remember` on the graph surface writing
+   `told` lines through it (operator ruling 2026-10-17).
 6. **The Persona adaptor in shadow, and the backfill** ([35](35-persona.md)
    §4, [45](45-persona-adaptor.md) §6): Persona is written under a shadow key,
    every prompt is unchanged, Honcho's feed keeps running.

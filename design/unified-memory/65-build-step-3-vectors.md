@@ -305,11 +305,13 @@ sub-agent worker); the two never sit side by side.
   it is not offered.
 - **The graph surface holds no Honcho tool (operator ruling 2026-10-17,
   option a).** `about` (the profile read) and `remember` (the person-fact
-  write) read and write Honcho, so they are on the Honcho surface only. A
+  write) read and write Honcho, so they are on the Honcho surface only
+  (`remember` amended by DEC-317, below). A
   profile question on the graph surface is `memory_search` with `person`.
-  The graph surface has no person-fact write verb until Persona (steps 5 to
-  8) and step 9 give it one; `note_create` keeps an open question, not a
-  settled fact. `load_transcript` reads the room's own rows and stays on
+  The graph surface had no person-fact write verb until Persona gave it one:
+  **since step 5 (DEC-317, operator ruling 2026-10-17) `remember` is on both
+  surfaces, and on the graph it writes a Persona `told` line**; `note_create`
+  keeps an open question, not a settled fact. `load_transcript` reads the room's own rows and stays on
   both.
 - **Doctrine still names the Honcho tools.** Lines that tell her to record a
   fact about the speaker, or to ask `about`, `ask_memory` or

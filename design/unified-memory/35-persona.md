@@ -53,9 +53,17 @@ DEC-249 is amended in two places only:
 - §2: per-person facts live in Persona, not in Memory (Honcho).
 
 **One writer.** The Character adaptor, renamed the Persona adaptor, writes all
-three parts (DEC-249 rule 3). The tag turn writes none of it (rule 4): a
+three parts (DEC-249 rule 3). ~~The tag turn writes none of it (rule 4): a
 "remember this" or "that's wrong" is a Record item plus a stimulus, as 30 §7
-describes.
+describes.~~ **Amended 2026-10-17 (operator, DEC-317):** Honcho's `remember`
+exists because it updated her understanding of a person, so on the graph
+surface `remember` returns as the Persona write. When someone tells her
+something about a person, the turn writes a `told` line (who told it, about
+whom, citing the message) through the same write path and judge the adaptor
+uses ([45](45-persona-adaptor.md) §3), so its rules hold for a turn's line
+as for a session's. It writes `told` lines only, never a deduction,
+induction or hypothesis, and never retires or revises: weighing stays the
+adaptor's. "That's wrong" is still a Record item plus a stimulus (§2).
 
 **Collectives.** A room's or the unit's Culture (cognition-loop/10 §5) is
 already Character's machinery for a collective, so it is that collective's

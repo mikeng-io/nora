@@ -72,10 +72,10 @@ surface, what `[memory_index] enabled = false` offers (the default, and
 production). With it on, the memory graph's surface replaces it: one search
 verb, `memory_search` (search every room of the unit by question, person,
 dates and kinds; the index, no Honcho behind it), and none of `ask_memory`,
-`search_memory`, `search_memory_workspace`, `who_said`, `about` or
-`remember`: the graph surface holds no Honcho tool. A profile question there
-is `memory_search` with `person`, and it has no person-fact write verb.
-`load_transcript` is on both. `who_said` is deprecated: the
+`search_memory`, `search_memory_workspace`, `who_said` or `about`: the graph
+surface holds no Honcho tool. A profile question there is `memory_search`
+with `person`. `remember` is on both: a Honcho conclusion off the graph, a
+Persona `told` line on it (DEC-317). `load_transcript` is on both. `who_said` is deprecated: the
 graph surface does without it, and it goes with the rest of the Honcho
 surface at step 9.
 
