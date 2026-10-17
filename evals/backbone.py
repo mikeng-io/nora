@@ -79,6 +79,7 @@ from nora.domain.note_body import (
 )
 from nora.subject import (
     DrawWorkspace,
+    IndexCache,
     SubjectSpec,
     draw_workspace,
     index_sandbox,
@@ -358,6 +359,10 @@ _SPEND: list[dict[str, Any]] = []
 #: Every draw's Honcho workspace in this process, with what its create and
 #: delete cost. Process state for `_SPEND`'s reason.
 _DRAWS: list[DrawWorkspace] = []
+
+#: The graph surface's built sandbox indexes, for this run's later draws
+#: (`nora.subject.sandbox_index.IndexCache`).
+_INDEX_CACHE = IndexCache()
 
 
 def drain_draws() -> list[DrawWorkspace]:
@@ -1597,9 +1602,18 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 # by production's rebuild and holding the source's vectors
                 # where the input is identical, or the draw is refused
                 # (`nora.subject.sandbox_index`). One line per sandbox.
+                # Built once per key and applied to the next draw seeded alike
+                # (`IndexCache`): the key declares what decided the rows, and
+                # `index_sandbox` adds the digest of what seeding projected.
                 built = await index_sandbox(
                     subject.database_url, source_url=spec.source_url,
                     model_id=subject.cfg.memory_index.embedder_model,
+                    cache=_INDEX_CACHE,
+                    key=(
+                        spec.full_restore, room, before_ms, port.delivers_input,
+                        json.dumps(md.get("documents") or [], sort_keys=True),
+                        tuple(varied_lessons(md)),
+                    ),
                 )
                 print(f"  {case.name}: {built.line()}", flush=True)
             exporter = _prefill_capture()

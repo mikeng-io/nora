@@ -185,10 +185,12 @@ __all__ = [
     "REBUILD_LOCK_KEY",
     "EmbedCounts",
     "Embeddable",
+    "IndexImage",
     "IndexStatus",
     "RebuildRefusedError",
     "RebuildReport",
     "adopt_worker_state",
+    "apply_index_image",
     "clear_embeddings",
     "drain_queue",
     "drop",
@@ -196,6 +198,8 @@ __all__ = [
     "embed_failed",
     "embed_pick",
     "embed_store",
+    "image_digest",
+    "index_image",
     "index_status",
     "media_types",
     "project",
@@ -2226,3 +2230,140 @@ async def _adopt_owed_since(
         await target.execute(
             sa.update(MEMORY_NODE).where(node.id.in_(ids)).values(owed_since=value)
         )
+
+
+# --- an eval sandbox's index, built once and applied again ------------------
+
+#: What a build decides, per node: every column but the row id and the two
+#: wall-clock ones (`projected_at`, `owed_since`), which `apply_index_image`
+#: re-derives the way a build would. The vector rides beside them as text.
+_IMAGE_NODE_COLUMNS = (
+    "kind", "source_id", "unit", "origin_room", "persons", "exclude_persons", "lineage",
+    "sha256", "text", "at_ms", "state", "embedding_model", "embedded_at", "embed_attempts",
+    "embed_error", "embed_input",
+)
+_IMAGE_EDGE_COLUMNS = ("src_kind", "src_id", "rel", "dst_kind", "dst_id", "provenance")
+_IMAGE_QUEUE_COLUMNS = ("kind", "source_id", "attempts", "last_error")
+
+
+@dataclass(frozen=True, slots=True)
+class IndexImage:
+    """The four `memory_*` tables of one database as a build left them, minus
+    row ids and wall-clock columns, each table in a fixed order. Two
+    databases whose index a build made identically have equal images, so
+    `image_digest` is the content hash an eval reuse is proven against."""
+
+    #: `_IMAGE_NODE_COLUMNS`, then the vector as text (None when absent).
+    nodes: tuple[tuple[Any, ...], ...]
+    edges: tuple[tuple[Any, ...], ...]
+    queue: tuple[tuple[Any, ...], ...]
+    #: `memory_index_state`'s status and unprojected count, or ("never", 0).
+    status: str
+    unprojected: int
+
+
+def image_digest(image: IndexImage) -> str:
+    """A sha256 over the whole image, so only a hash and counts ever leave it."""
+    import hashlib
+    import json
+
+    blob = json.dumps(
+        [image.nodes, image.edges, image.queue, image.status, image.unprojected],
+        sort_keys=True, default=str, separators=(",", ":"),
+    )
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+async def index_image(conn: AsyncConnection) -> IndexImage:
+    """`conn`'s index as an `IndexImage`."""
+    node, edge, queue = MEMORY_NODE.c, MEMORY_EDGE.c, MEMORY_PROJECTION_QUEUE.c
+    nodes = tuple(sorted(
+        (tuple(r) for r in await conn.execute(sa.select(
+            *(node[c] for c in _IMAGE_NODE_COLUMNS),
+            sa.cast(node.embedding, sa.Text).label("vector"),
+        ))),
+        key=lambda r: (r[0], r[1]),
+    ))
+    edges = tuple(sorted(tuple(r) for r in await conn.execute(
+        sa.select(*(edge[c] for c in _IMAGE_EDGE_COLUMNS))
+    )))
+    queued = tuple(sorted(
+        (tuple(r) for r in await conn.execute(
+            sa.select(*(queue[c] for c in _IMAGE_QUEUE_COLUMNS))
+        )),
+        key=lambda r: (r[0], r[1]),
+    ))
+    state = (await conn.execute(
+        sa.select(MEMORY_INDEX_STATE.c.status, MEMORY_INDEX_STATE.c.unprojected)
+    )).first()
+    status, unprojected = ("never", 0) if state is None else (str(state[0]), int(state[1]))
+    return IndexImage(nodes, edges, queued, status, unprojected)
+
+
+async def apply_index_image(
+    source: AsyncConnection, target: AsyncConnection, image: IndexImage, *, model: str,
+) -> None:
+    """Make `target`'s index what `image` holds, as if `rebuild` and then
+    `adopt_worker_state` from `source` had run on it.
+
+    For an eval sandbox (`nora.subject.sandbox_index`) whose rows are those a
+    sandbox `image` was built on already held: the caller proves that,
+    before (the index live projection wrote while seeding) and after
+    (`rebuild(dry_run=True)` drops nothing). The rows a build decides are
+    copied; the wall-clock columns are written as the build writes them. A
+    node live projection already wrote keeps its row id and its
+    `owed_since` unless its input differs from the image's (the upsert's own
+    `_cleared_when` rule); a new node is written now; then `source`'s wait
+    is adopted for every node still owed (`_adopt_owed_since`), exactly as
+    `adopt_worker_state` ends."""
+    node, edge = MEMORY_NODE.c, MEMORY_EDGE.c
+    wanted = {(r[0], r[1]) for r in image.nodes}
+    extra = [
+        r.id for r in await target.execute(sa.select(node.id, node.kind, node.source_id))
+        if (r.kind, r.source_id) not in wanted
+    ]
+    for i in range(0, len(extra), _CHUNK):
+        await target.execute(sa.delete(MEMORY_NODE).where(node.id.in_(extra[i:i + _CHUNK])))
+    params = {c: sa.bindparam(f"p_{c}", type_=MEMORY_NODE.c[c].type) for c in _IMAGE_NODE_COLUMNS}
+    stmt = pg_insert(MEMORY_NODE).values(
+        **params,
+        embedding=sa.cast(sa.bindparam("p_vector", type_=sa.Text), HALFVEC(EMBEDDING_DIMENSIONS)),
+    )
+    changed = _input_changed(stmt.excluded.text, stmt.excluded.sha256)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_memory_node_kind_source",
+        set_={
+            **{c: stmt.excluded[c] for c in _IMAGE_NODE_COLUMNS if c not in ("kind", "source_id")},
+            "embedding": stmt.excluded.embedding,
+            "projected_at": sa.func.clock_timestamp(),
+            "owed_since": _cleared_when(changed)["owed_since"],
+        },
+    )
+    rows = [
+        {**{f"p_{c}": v for c, v in zip(_IMAGE_NODE_COLUMNS, r[:-1], strict=True)},
+         "p_vector": r[-1]}
+        for r in image.nodes
+    ]
+    for i in range(0, len(rows), _CHUNK):
+        await target.execute(stmt, rows[i:i + _CHUNK])
+    edges = set(image.edges)
+    key = sa.tuple_(*(edge[c] for c in _IMAGE_EDGE_COLUMNS[:5]))
+    stale = [
+        tuple(r)[:5]
+        for r in await target.execute(sa.select(*(edge[c] for c in _IMAGE_EDGE_COLUMNS)))
+        if tuple(r) not in edges
+    ]
+    for i in range(0, len(stale), _CHUNK):
+        await target.execute(sa.delete(MEMORY_EDGE).where(key.in_(stale[i:i + _CHUNK])))
+    await _insert_edges(target, list(image.edges))
+    await target.execute(sa.delete(MEMORY_PROJECTION_QUEUE))
+    if image.queue:
+        await target.execute(pg_insert(MEMORY_PROJECTION_QUEUE).values([
+            dict(zip(_IMAGE_QUEUE_COLUMNS, r, strict=True)) for r in image.queue
+        ]))
+    now = sa.func.clock_timestamp()
+    await _set_state(
+        target, status=image.status, started_at=now, finished_at=now,
+        unprojected=image.unprojected,
+    )
+    await _adopt_owed_since(source, target, model=model)

@@ -43,25 +43,49 @@ production reads `ok`.
 answers `partial`, exactly as production does for a node the worker has not
 reached yet. The new line a turn's case delivers is one: production embeds
 it on the next drain tick, after the turn has searched.
+
+**Built once, applied again** (`IndexCache`). Draws of one case, and cases
+anchored on the same room and instant, seed identical rows, so a build on
+each costs ~16 s a draw (measured mean, n=259) for an index equal to the first.
+With a cache, the first build's result (`memory_index.IndexImage`) is kept
+and applied to the next sandbox whose key matches; the key is:
+
+- what the caller declares about the sandbox's rows (`index_sandbox`'s
+  `key`: the room, the instant, the seeding path and the rows a case seeds
+  itself), the source and the model, and the source's coverage;
+- MEASURED, the digest of the index live projection already wrote while the
+  sandbox was seeded (every store write projects, `memory_index`), so a seed
+  that differs in any projected row, or in an id (a lesson's uuid4), misses
+  and is built.
+
+Applied, it is checked again before it counts: `rebuild(dry_run=True)` must
+project the same sources per kind as the first build and drop nothing (a
+node whose source this sandbox does not hold), or the draw is refused. Then
+the coverage is read back and held to the floor, per draw, exactly as a
+build is. What a reuse writes differently from a build is wall-clock only:
+`apply_index_image` says how it re-derives `projected_at` and `owed_since`.
 """
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from collections import OrderedDict
+from collections.abc import Hashable
+from dataclasses import dataclass, field
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nora.infra.embedder import EmbedderUnavailableError, LlamaEmbedder, fingerprint, model_file
 from nora.infra.sql import create_readonly_sql_engine, create_sql_engine, memory_index
-from nora.infra.sql.memory_index import EmbedCounts
+from nora.infra.sql.memory_index import EmbedCounts, IndexImage
 
 __all__ = [
     "COVERAGE_FLOOR",
     "EMBEDDER_FROM_HOST",
     "Coverage",
     "GraphIndexRefusedError",
+    "IndexCache",
     "SandboxIndex",
     "check_served_model",
     "index_sandbox",
@@ -124,12 +148,47 @@ class SandboxIndex:
     coverage: Coverage
     source: Coverage
     seconds: float
+    #: Applied from `IndexCache` rather than built on this sandbox.
+    reused: bool = False
 
     def line(self) -> str:
+        how = "reused" if self.reused else "built"
         return (
             f"memory index: {self.coverage.line()} "
-            f"(source {self.source.ratio:.3f}), built in {self.seconds:.1f}s"
+            f"(source {self.source.ratio:.3f}), {how} in {self.seconds:.1f}s"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _Built:
+    image: IndexImage
+    #: The first build's `RebuildReport.projected`: sources walked per kind.
+    projected: dict[str, int]
+
+
+@dataclass
+class IndexCache:
+    """Built indexes, by key (module docstring), most recent `size` kept.
+
+    Per process, so per run: a run's draws of one case are adjacent
+    (`evals.backbone.sampled`), so a small `size` holds every hit while an
+    image (a few thousand nodes, each with its vector as text) stays a few
+    tens of MB."""
+
+    size: int = 4
+    _entries: OrderedDict[Hashable, _Built] = field(default_factory=OrderedDict)
+
+    def get(self, key: Hashable) -> _Built | None:
+        built = self._entries.get(key)
+        if built is not None:
+            self._entries.move_to_end(key)
+        return built
+
+    def put(self, key: Hashable, built: _Built) -> None:
+        self._entries[key] = built
+        self._entries.move_to_end(key)
+        while len(self._entries) > self.size:
+            self._entries.popitem(last=False)
 
 
 async def _has_vectors(conn: AsyncConnection) -> bool:
@@ -184,26 +243,61 @@ def refuse_low_coverage(sandbox: Coverage, source: Coverage) -> None:
         )
 
 
-async def index_sandbox(database_url: str, *, source_url: str, model_id: str) -> SandboxIndex:
+async def index_sandbox(
+    database_url: str, *, source_url: str, model_id: str,
+    cache: IndexCache | None = None, key: Hashable = (),
+) -> SandboxIndex:
     """Project the sandbox's index, adopt the source's vectors of `model_id`
     (`[memory_index] embedder_model`), and read the coverage back; refused
-    under the floor (module docstring)."""
+    under the floor (module docstring). With `cache`, an index already built
+    for the same `key` and the same seeded index is applied instead of
+    built, and checked before its coverage is read."""
     started = time.monotonic()
     model = fingerprint(model_id)
     source_cov = await source_coverage(source_url, model_id)
     target = create_sql_engine(database_url)
     source = create_readonly_sql_engine(source_url)
+    reused = False
+    projected: dict[str, int] = {}
     try:
-        await memory_index.rebuild(target)
-        async with source.connect() as src, target.begin() as dst:
-            await memory_index.adopt_worker_state(src, dst, model=model)
+        cache_key: Hashable = None
+        built = None
+        if cache is not None:
+            async with target.connect() as conn:
+                seeded = memory_index.image_digest(await memory_index.index_image(conn))
+            cache_key = (source_url, model, source_cov, key, seeded)
+            built = cache.get(cache_key)
+        if built is not None:
+            async with source.connect() as src, target.begin() as dst:
+                await memory_index.apply_index_image(src, dst, built.image, model=model)
+            check = await memory_index.rebuild(target, dry_run=True)
+            dropped = {k: n for k, n in check.dropped.items() if n}
+            if dropped or check.projected != built.projected:
+                raise GraphIndexRefusedError(
+                    "the index applied from an earlier build does not fit this "
+                    f"sandbox (it would drop {dropped or 'nothing'}; sources per kind "
+                    f"{check.projected} against the build's {built.projected}); a "
+                    "reuse must equal a build"
+                )
+            reused = True
+        else:
+            projected = dict((await memory_index.rebuild(target)).projected)
+            async with source.connect() as src, target.begin() as dst:
+                await memory_index.adopt_worker_state(src, dst, model=model)
         async with target.connect() as conn:
             coverage = Coverage.of(await memory_index.embed_counts(conn, model))
+            image = (
+                await memory_index.index_image(conn)
+                if cache is not None and not reused else None
+            )
     finally:
         await source.dispose()
         await target.dispose()
     refuse_low_coverage(coverage, source_cov)
-    return SandboxIndex(coverage, source_cov, time.monotonic() - started)
+    if cache is not None and image is not None:
+        # Only a build that passed its floor is kept.
+        cache.put(cache_key, _Built(image, projected))
+    return SandboxIndex(coverage, source_cov, time.monotonic() - started, reused=reused)
 
 
 async def check_served_model(url: str, model_id: str) -> str:
