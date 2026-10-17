@@ -270,16 +270,29 @@ no saved place takes them from the geocode cache near its centre (R-35: an
 outing at a saved place is never placed). `project()` writes a district and
 a city hub keyed by level and name (`district:旺角 / Mong Kok`), the venue
 `located_in` its district, the district in its city, and the outing
-`located_in` its district directly (an outing has no venue node). A place
-hub nothing reaches any more goes with its `located_in` edges, so a rebuild
+`located_in` its district directly (an outing has no venue node). An area
+needs both languages, or it is none (its name is its hub's identity), and
+every area name passes R-28's screen before it is stored (a name carrying an
+identifier or a coordinate is dropped), venue and geocode cache alike. The
+chain is derived from the stores, not from the order of writes: a venue lies
+in every district its events were resolved in, a district in every city its
+sources pair it with, recomputed for whatever a write touches; a place hub
+nothing reaches any more goes with its `located_in` edges, so a rebuild
 equals live. The read: a place hub whose name (either language) the question
 holds as an exact reference **anchors** the walk, with the places inside it
 two levels down, at an exact seed's relevance; the first hop leaves from
 them inward only (never out to the city around a district), each step
-weighted `located_in` 0.7, and an anchor is never returned. The outing is
-reached by its own `located_in` edge, not by `during`. A place a hop
-reaches is still a hub: the anchor is the only exception to §4's hub rule
-(DEC-313, amended).
+weighted `located_in` 0.7, and an anchor is never returned. Anchors are not
+selected before the scope reads what they reach: every one is a frontier
+key up to a ceiling of 500, and a walk that meets it answers `partial`.
+The hop spends its node budget strongest parent first, and the hits one step
+from a named place are one tier for the answer's gap cut, so the event at a
+venue is not cut behind the outings located straight in the district. The
+outing is reached by its own `located_in` edge, not by `during`. A place a
+hop reaches is still a hub: the anchor is the only exception to §4's hub
+rule (DEC-313, amended). `nora memory backfill-places` (dry run unless
+`--apply`, rate-limited, idempotent) gives the venues and cached geocodes
+resolved before 0118 their areas; outings take them at the next Rollup tick.
 
 ## 7. When each node and edge is written
 

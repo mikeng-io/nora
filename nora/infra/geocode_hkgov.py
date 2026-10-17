@@ -33,6 +33,7 @@ from nora.infra.geocode import CachingBilingualGeocoder, Geocoded
 
 if TYPE_CHECKING:
     from nora.domain.ports import GeocodeCacheStore
+    from nora.infra.geocode import AreaScreen
 
 log = logging.getLogger("nora.geocode")
 
@@ -53,8 +54,9 @@ class HKGovGeocoder(CachingBilingualGeocoder):
         lang_zh: str = "zh",
         lang_en: str = "en",
         cache_store: GeocodeCacheStore | None = None,
+        area_screen: AreaScreen | None = None,
     ) -> None:
-        super().__init__(cache_store=cache_store)
+        super().__init__(cache_store=cache_store, area_screen=area_screen)
         self._service_url = service_url
         self._token = token
         self._timeout_seconds = timeout_seconds

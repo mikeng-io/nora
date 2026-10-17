@@ -74,6 +74,35 @@ class SqlGeocodeCacheStore:
             # comes up, never the current answer.
             log.exception("geocode_cache write failed; the address is not cached")
 
+    async def without_area(self, *, limit: int) -> list[tuple[float, float]]:
+        """Cached coordinates whose row names no area (written before 0118),
+        oldest first: `nora memory backfill-places`' work list. Raises on a
+        read failure: a backfill that cannot read must not report «none»."""
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(GEOCODE_CACHE.c.lat_rounded, GEOCODE_CACHE.c.lng_rounded)
+                .where(GEOCODE_CACHE.c.district.is_(None), GEOCODE_CACHE.c.city.is_(None))
+                .order_by(GEOCODE_CACHE.c.resolved_at, GEOCODE_CACHE.c.lat_rounded,
+                          GEOCODE_CACHE.c.lng_rounded)
+                .limit(limit)
+            )).all()
+        return [(float(r.lat_rounded), float(r.lng_rounded)) for r in rows]
+
+    async def set_area(self, *, lat_rounded: float, lng_rounded: float, area: PlaceArea) -> bool:
+        """Write `area` onto a row that names none; the address and its
+        `resolved_at` are left as they are. False when the row is gone or
+        already names an area (a concurrent `put`), so a re-run writes
+        nothing twice. Raises on a write failure."""
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                sa.update(GEOCODE_CACHE).where(
+                    GEOCODE_CACHE.c.lat_rounded == lat_rounded,
+                    GEOCODE_CACHE.c.lng_rounded == lng_rounded,
+                    GEOCODE_CACHE.c.district.is_(None), GEOCODE_CACHE.c.city.is_(None),
+                ).values(district=area.district, city=area.city)
+            )
+        return bool(result.rowcount)
+
     async def nearest_within(
         self, *, lat: float, lng: float, radius_m: float
     ) -> str | None:

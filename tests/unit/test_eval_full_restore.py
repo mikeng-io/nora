@@ -212,6 +212,22 @@ def test_a_full_restore_subject_builds_no_geocoder_even_with_the_keys_set(
     assert reverse_geocoder(hkgov, _KEYED, cache_store=None) is None
 
 
+def test_both_composed_geocoders_screen_the_areas_they_keep(tmp_path, monkeypatch) -> None:
+    """`reverse_geocoder` hands each backend the R-28 area screen venue areas
+    pass (`screened_area`); without it a backend keeps no areas at all."""
+    from nora.app.composition import reverse_geocoder
+    from nora.app.gatherings import screened_area
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    google = reverse_geocoder(_built(tmp_path / "google", None), _KEYED, cache_store=None)
+    hkgov = reverse_geocoder(_built(tmp_path / "hkgov", {
+        "presence.geocode_provider": "hkgov",
+        "presence.hkgov_geocode_url": "https://example.invalid/reverseGeocode",
+    }), _KEYED, cache_store=None)
+    for geo in (google, hkgov):
+        assert geo is not None and geo._area_screen is screened_area  # type: ignore[attr-defined]
+
+
 async def test_a_full_restore_refuses_while_the_no_geocoder_name_is_set(seams, monkeypatch) -> None:
     monkeypatch.setenv(NO_GEOCODER_ENV, "someone-set-it")
     with pytest.raises(ValueError, match=NO_GEOCODER_ENV):

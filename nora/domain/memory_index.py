@@ -409,9 +409,11 @@ def exact_pattern(term: str) -> str:
     return f"(?<![{_WORDISH}]){re.escape(term)}(?![{_WORDISH}])"
 
 
-#: The shortest part of a place's name that counts as naming it: one Chinese
-#: character or two Latin letters name nothing (`中`, `MK`).
+#: The shortest part of a place's name that counts as naming it, by script:
+#: one Chinese character names nothing (`中`), nor do two Latin letters
+#: (`MK`, which a word like `mk2` or an initialism in passing would hold).
 _PLACE_NAME_MIN = 2
+_PLACE_NAME_MIN_LATIN = 3
 
 
 def place_named(name: str, query: str) -> bool:
@@ -420,7 +422,8 @@ def place_named(name: str, query: str) -> bool:
     a Latin part on its own, `Mong Kok` and not `Mong Kokomo`; a Chinese part
     as a substring, `旺角` in `旺角有咩食`), in any case."""
     return any(
-        len(part) >= _PLACE_NAME_MIN and exact_holds(part, query)
+        len(part) >= (_PLACE_NAME_MIN_LATIN if is_latin(part) else _PLACE_NAME_MIN)
+        and exact_holds(part, query)
         for part in (p.strip() for p in name.split(" / "))
     )
 

@@ -845,6 +845,12 @@ async def test_an_outing_is_located_in_the_cached_area_of_its_place(pg_url):
             sa.select(MEMORY_NODE.c.text).where(MEMORY_NODE.c.kind == "place")
         )).scalars())
     assert texts == {"旺角 / Mong Kok", "九龍 / Kowloon"}
+    live = await _edges(engine, rel="located_in")
+    async with engine.begin() as conn:
+        await conn.execute(sa.delete(MEMORY_EDGE))
+        await conn.execute(sa.delete(MEMORY_NODE))
+    await memory_index.rebuild(engine)
+    assert await _edges(engine, rel="located_in") == live
     await engine.dispose()
 
 

@@ -84,6 +84,21 @@ class _RouteSource(Protocol):
     async def place_info(self, name: str) -> dict[str, Any]: ...
 
 
+def screened_area(area: PlaceArea | None) -> PlaceArea | None:
+    """`area` with each name that carries an identifier or a coordinate
+    dropped (R-28, the return-path screen `_resolve_place` gives Google's
+    name and address); None when nothing is left."""
+    if area is None:
+        return None
+
+    def clean(name: str | None) -> str | None:
+        if not name or scan_identifiers(name) is not None or looks_like_coordinate(name):
+            return None
+        return name
+
+    return PlaceArea(district=clean(area.district), city=clean(area.city)) or None
+
+
 class _PlaceAreas(Protocol):
     """A resolved venue's areas by its Google place id
     (`nora.infra.geocode.GoogleGeocoder.area_of_place`); None on a failure."""
@@ -519,15 +534,7 @@ class GatheringService:
         except Exception:
             log.exception("venue area lookup failed; the venue keeps no area")
             return None
-        if area is None:
-            return None
-
-        def clean(name: str | None) -> str | None:
-            if not name or scan_identifiers(name) is not None or looks_like_coordinate(name):
-                return None
-            return name
-
-        return PlaceArea(district=clean(area.district), city=clean(area.city)) or None
+        return screened_area(area)
 
     async def _resolve_place(
         self, text: str, *, person_names: frozenset[str] | None = None,

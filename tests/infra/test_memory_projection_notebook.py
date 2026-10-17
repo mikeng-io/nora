@@ -435,6 +435,69 @@ async def test_a_venue_is_located_in_its_district_and_city_and_goes_when_nothing
     assert not {e for e in await _all_edges(engine) if e[2] == "located_in"}
 
 
+async def _live_then_rebuilt(engine: Any) -> tuple[Any, Any]:
+    """The index as live writes left it, and as a rebuild from empty writes it."""
+    live = {k: n.text for k, n in (await _nodes(engine)).items()}, await _all_edges(engine)
+    async with engine.begin() as conn:
+        await conn.execute(sa.delete(MEMORY_EDGE))
+        await conn.execute(sa.delete(MEMORY_NODE))
+    await memory_index.rebuild(engine)
+    return live, ({k: n.text for k, n in (await _nodes(engine)).items()},
+                  await _all_edges(engine))
+
+
+async def test_a_venue_an_event_leaves_keeps_the_chain_the_others_give_it(engine):
+    """The chain is derived from the store, not from which write landed last:
+    an event resolved with an area moves away from a venue another event
+    (resolved before 0118, no area) still names, and the venue then lies in
+    nothing, exactly as a rebuild from the store writes it."""
+    await _said(engine)
+    store = SqlGatheringStore(engine)
+    moved = await store.create(_event(
+        venue_district="旺角 / Mong Kok", venue_city="九龍 / Kowloon",
+    ))
+    await store.create(_event(people=(), exclude_persons=()))
+    await store.update(replace(
+        moved, venue_place_id="place-2", venue_name="Elsewhere",
+        venue_district=None, venue_city=None,
+    ))
+    live, rebuilt = await _live_then_rebuilt(engine)
+    assert ("place", "place-1") in live[0]
+    assert not {e for e in live[1] if e[2] == "located_in"}
+    assert live == rebuilt
+
+
+async def test_a_district_two_sources_place_in_two_cities_lies_in_both_until_one_goes(engine):
+    """Two venues pair one district with two cities (a geocoder disagreeing
+    with itself): the district lies in both, whichever was written last, and
+    when one venue's event moves away the other city goes with it. Live and
+    rebuilt agree at each step."""
+    await _said(engine)
+    store = SqlGatheringStore(engine)
+    first = await store.create(_event(
+        venue_district="旺角 / Mong Kok", venue_city="九龍 / Kowloon",
+    ))
+    await store.create(_event(
+        venue_place_id="place-9", venue_name="Other", venue_district="旺角 / Mong Kok",
+        venue_city="新界 / New Territories", people=(), exclude_persons=(),
+    ))
+    live, rebuilt = await _live_then_rebuilt(engine)
+    assert {e[4] for e in live[1] if e[:3] == ("place", _MK, "located_in")} == {
+        _KLN, "city:新界 / New Territories",
+    }
+    assert live == rebuilt
+    await store.update(replace(
+        first, venue_place_id="place-2", venue_name="Elsewhere",
+        venue_district=None, venue_city=None,
+    ))
+    live, rebuilt = await _live_then_rebuilt(engine)
+    assert {e[4] for e in live[1] if e[:3] == ("place", _MK, "located_in")} == {
+        "city:新界 / New Territories",
+    }
+    assert ("place", _KLN) not in live[0]
+    assert live == rebuilt
+
+
 async def test_an_event_with_no_unit_is_scoped_to_its_room(engine):
     """A row from before `0074` carries `unit_id = ''`: its room, not every
     unit's, and a room the Record cannot name matches no read."""

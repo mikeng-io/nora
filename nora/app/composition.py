@@ -280,7 +280,7 @@ from .fire import (
     relay_occasion,
     reminder_occasion,
 )
-from .gatherings import GatheringService, room_event_shown
+from .gatherings import GatheringService, room_event_shown, screened_area
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
@@ -4540,13 +4540,15 @@ def reverse_geocoder(
             return HKGovGeocoder(
                 service_url=cfg.presence.hkgov_geocode_url, token=hkgov_token,
                 lang_zh=cfg.presence.hkgov_lang_zh, lang_en=cfg.presence.hkgov_lang_en,
-                cache_store=cache_store,
+                cache_store=cache_store, area_screen=screened_area,
             )
         return None
     maps_key = environ.get(cfg.presence.geocode_api_key_env, "")
     if maps_key:
         from nora.infra.geocode import GoogleGeocoder
-        return GoogleGeocoder(api_key=maps_key, cache_store=cache_store)
+        return GoogleGeocoder(
+            api_key=maps_key, cache_store=cache_store, area_screen=screened_area,
+        )
     return None
 
 

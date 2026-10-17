@@ -18,6 +18,7 @@ from nora.agent.memory_search import (
     MemorySearch,
     MemorySearchResult,
     exact_terms_of,
+    place_anchors,
     render_packet,
     scope_for,
     terms_of,
@@ -57,10 +58,11 @@ async def _walk(
 ):
     scope = scope_for(_target(), social_off=())
     assert scope is not None
+    anchors, _cut = await place_anchors(index, query, scope)
     return {
         h.node.key: h for h in await walk(
             index, scope, terms=terms_of(query), person_id=person, hops=hops,
-            admits=admits, query=query,
+            admits=admits, anchors=anchors,
         )
     }
 
@@ -174,10 +176,13 @@ async def test_near_a_named_district_reaches_what_lies_in_it_through_its_venues(
         memory_search.PLACE_SEED_SCORE * memory_search.REL_WEIGHT["located_in"]
         * memory_search.REL_WEIGHT["about"],
     )
-    # The same question in Chinese names the same place.
-    assert set(await _walk(_places(), "旺角有咩好食", hops=1)) == {
-        ("event", "e1"), ("outing", "o1"),
-    }
+    # The same question in Chinese names the same place. In one hop nothing
+    # reached is expanded, so where each hit is comes from the anchor that
+    # reached it alone, not from a later hop back to its place hub.
+    one = await _walk(_places(), "旺角有咩好食", hops=1)
+    assert set(one) == {("event", "e1"), ("outing", "o1")}
+    assert one[("event", "e1")].places == {"Langham Place"}
+    assert one[("outing", "o1")].places == {"旺角 / Mong Kok"}
 
 
 async def test_without_the_located_in_chain_a_district_reaches_nothing() -> None:
@@ -203,6 +208,85 @@ async def test_a_named_venue_never_widens_to_its_district_and_a_reached_place_st
         ("event", "e1"),
     }
     assert set(await _walk(_places(), "lunch sunday", hops=4)) == {("event", "e2")}
+
+
+async def test_near_a_district_the_venues_event_is_not_cut_behind_its_outings() -> None:
+    """The event at a venue in Mong Kok pays a `located_in` weight the
+    outings located in Mong Kok do not (0.42 against 0.7, past `SCORE_GAP`).
+    Both answer the place named, so they are one tier for the answer's gap
+    cut and the event is rendered after three outings."""
+    kit = [["presence", "kit", None]]
+    index = _places()
+    for i in range(2, 4):
+        index.nodes[("outing", f"o{i}")] = IndexedNode(
+            "outing", f"o{i}", "outing", NOW - i * 86_400_000, unit="u1", persons=("kit",),
+            lineage=kit,
+        )
+        index.edges.append(("outing", f"o{i}", "located_in", "place", "district:旺角 / Mong Kok"))
+    found = await _lexical(index, "a restaurant near Mong Kok")
+    assert ("event", "e1") in {h.node.key for h in found.hits}
+    items, _ = render_packet(
+        found.hits, name_of=str, room_label=lambda k: "B",
+        now=datetime.fromtimestamp(NOW / 1000, UTC),
+    )
+    assert [i["kind"] for i in items].count("outing") == 3
+    assert "event" in [i["kind"] for i in items]
+
+
+async def test_a_named_places_neighbours_are_kept_before_a_crowd_of_weak_seeds() -> None:
+    """`NODE_BUDGET` is spent strongest parent first: twenty weak lexical
+    seeds with two memos each would fill it before the anchor's event if the
+    hop took neighbours in key order."""
+    mk = "district:旺角 / Mong Kok"
+    nodes = [IndexedNode("place", mk, "旺角 / Mong Kok"),
+             IndexedNode("place", "ChIJ-langham", "Langham Place"),
+             IndexedNode("event", "e1", "friday plan", NOW, unit="u1")]
+    edges = [("place", "ChIJ-langham", "located_in", "place", mk),
+             ("event", "e1", "about", "place", "ChIJ-langham")]
+    for i in range(20):
+        nodes.append(_msg(f"m{i}", f"dinner talk {i}"))
+        for j in range(2):
+            nodes.append(IndexedNode("memo", f"memo{i}-{j}", "a memo", NOW, unit="u1"))
+            edges.append(("memo", f"memo{i}-{j}", "cites", "message", f"m{i}"))
+    hits = await _walk(FakeMemoryIndex(nodes, edges), "dinner near Mong Kok", hops=2)
+    assert len(hits) == memory_search.NODE_BUDGET
+    assert ("event", "e1") in hits
+
+
+async def test_venues_out_of_scope_take_no_anchor_slot_and_a_ceiling_cut_is_partial(
+    monkeypatch,
+) -> None:
+    """Six venues of another unit sort ahead of six of this unit by id: every
+    one anchors (no choice is made before the scope reads them), so all six
+    of this unit's dinners are reached. A walk that meets `PLACE_CEILING`
+    answers `partial`, never a silent cut."""
+    mk = "district:旺角 / Mong Kok"
+    nodes = [IndexedNode("place", mk, "旺角 / Mong Kok")]
+    edges = []
+    for prefix, unit, ev in (("A-other", "u2", "x"), ("B-mine", "u1", "e")):
+        for i in range(6):
+            nodes += [IndexedNode("place", f"{prefix}-{i}", f"{prefix} {i}"),
+                      IndexedNode("event", f"{ev}{i}", "a dinner", NOW, unit=unit)]
+            edges += [("place", f"{prefix}-{i}", "located_in", "place", mk),
+                      ("event", f"{ev}{i}", "about", "place", f"{prefix}-{i}")]
+    index = FakeMemoryIndex(nodes, edges, embed_model=M)
+    hits = await _walk(index, "a restaurant near Mong Kok", hops=2)
+    assert set(hits) == {("event", f"e{i}") for i in range(6)}
+
+    async def status() -> str:
+        found = await MemorySearch(
+            index, Metrics(), embedder=FakeQueryEmbedder(), model=M,
+        ).search(query="a restaurant near Mong Kok", person_id=None, target=_target(),
+                 depth="low", now_ms=NOW, social_off=())
+        return found.status
+
+    assert await status() == "ok"  # positive control: dense, complete, nothing cut
+    monkeypatch.setattr(memory_search, "PLACE_CEILING", 5)
+    scope = scope_for(_target(), social_off=())
+    assert scope is not None
+    anchors, cut = await place_anchors(index, "a restaurant near Mong Kok", scope)
+    assert cut and len(anchors) == 5
+    assert await status() == "partial"
 
 
 async def test_the_listed_room_rule() -> None:

@@ -242,7 +242,9 @@ async def test_places_are_the_place_hubs_the_question_names_and_a_place_hub_desc
     """Step 3a: `places` returns the place hubs whose «中文 / English» name
     (either part) the question holds as an exact reference does, whatever
     their scope (a hub has none), and nothing else: not a hub of another
-    kind, not a nameless place, not a name inside a longer word. From a
+    kind, not a nameless place, not a name inside a longer word, not a name
+    too short to name anything (one Chinese character, two Latin letters).
+    From a
     place on the frontier, `neighbours` reaches what lies in it (a contained
     place, an in-scope outing) and not an out-of-scope one."""
     mk = IndexedNode("place", "district:旺角 / Mong Kok", "旺角 / Mong Kok")
@@ -251,6 +253,7 @@ async def test_places_are_the_place_hubs_the_question_names_and_a_place_hub_desc
     index = await load(
         [mk, venue, IndexedNode("place", "v2", ""), IndexedNode("person", "kit"),
          IndexedNode("place", "district:Mong", "Mong"),
+         IndexedNode("place", "district:MK", "MK"), IndexedNode("place", "city:中", "中"),
          IndexedNode("outing", "o1", "outing", 1, unit="u1", persons=("kit",), lineage=kit),
          IndexedNode("outing", "o2", "outing", 1, unit="u2", persons=("kit",), lineage=kit)],
         [("place", "v1", "located_in", "place", mk.source_id),
@@ -265,6 +268,7 @@ async def test_places_are_the_place_hubs_the_question_names_and_a_place_hub_desc
         venue.key,
     ]
     assert await index.places("", limit=5) == []
+    assert await index.places("lunch in MK, 中環", limit=5) == []
     found = await index.neighbours([mk.key], SCOPE)
     assert {(nb.rel, nb.outgoing, nb.node.key) for nb in found} == {
         ("located_in", False, venue.key), ("located_in", False, ("outing", "o1")),

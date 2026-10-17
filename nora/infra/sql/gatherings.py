@@ -280,6 +280,18 @@ class SqlGatheringStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
 
+    async def without_venue_area(self, *, limit: int) -> list[Gathering]:
+        """Events whose resolved venue names no area (resolved before 0118),
+        oldest first: `nora memory backfill-places`' work list."""
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(EVENTS).where(
+                    EVENTS.c.venue_place_id.isnot(None),
+                    EVENTS.c.venue_district.is_(None), EVENTS.c.venue_city.is_(None),
+                ).order_by(EVENTS.c.created_at, EVENTS.c.id).limit(limit)
+            )).all()
+        return [_row_to_event(r) for r in rows]
+
     async def update(
         self, event: Gathering, *, base_revision_id: UUID | None = None,
         evidence: EventEvidence | None = None,

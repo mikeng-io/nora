@@ -66,7 +66,7 @@ interval, so `places` is mostly reached from what was said during one.
   author, an event's venue), and never put on the next frontier. Two hops
   through a person reach everything ever said about them, which is a search
   on the person, not an expansion of the question. **Its one exception is a
-  place the question names** (step 3a, `_anchors`): «near Mong Kok» anchors
+  place the question names** (step 3a, `place_anchors`): «near Mong Kok» anchors
   the walk at the Mong Kok place node and the places `located_in` it (a
   district's venues; a city's districts and theirs), and the first hop
   leaves from them, inward only: the event `about` a venue there, the outing
@@ -147,6 +147,7 @@ from nora.domain.memory_index import (
     MemoryFilter,
     MemoryIndexRead,
     MemoryScope,
+    Neighbour,
     QueryEmbedder,
     SearchStatus,
     Seed,
@@ -326,8 +327,11 @@ PLACE_SEED_SCORE = 1.0
 #: How far a named place descends `located_in` before the hops: a city to its
 #: districts to their venues.
 PLACE_DEPTH = 2
-#: The most places that anchor one walk, the named ones and those inside them.
-PLACE_LIMIT = 10
+#: The most places that anchor one walk, the named ones and those inside them:
+#: a ceiling, not a selection. The hops from them are read through the scope,
+#: so an anchor reaching nothing in scope costs a key and takes no slot; a
+#: walk that meets the ceiling answers `partial`, never a silent cut.
+PLACE_CEILING = 500
 _DEFAULT_WEIGHT = 0.5
 
 #: Words that carry no search: the question's grammar, not its subject.
@@ -526,6 +530,15 @@ class Hit:
     people: set[str] = field(default_factory=set)
     places: set[str] = field(default_factory=set)
     pin: int = 0
+    #: The relevance the answer's gap cut reads (`render_packet`), when it is
+    #: not `score`: every hit one step from a named place reads the best of
+    #: them (`_tiered`), so the venue's event is not cut behind the outings
+    #: located in the district straight away.
+    tier: float | None = None
+
+    @property
+    def relevance(self) -> float:
+        return self.score if self.tier is None else self.tier
 
 
 @dataclass(frozen=True, slots=True)
@@ -558,7 +571,8 @@ async def walk(
     exact: Sequence[ExactTerm] = (), vector: Sequence[float] | None = None,
     model: str | None = None, unembedded: bool = False, embedded: int = 0,
     metrics: Any = None, bridge: MemoryScope | None = None,
-    about: Sequence[str] = (), media: Sequence[str] = (), query: str = "",
+    about: Sequence[str] = (), media: Sequence[str] = (),
+    anchors: Mapping[tuple[str, str], Hit] | None = None,
 ) -> list[Hit]:
     """Seed, then expand hop by hop (module docstring). `exact` are the
     literal references, the first `PINNED_LIMIT` of them pinned; with a
@@ -586,10 +600,10 @@ async def walk(
     as exact references, at most `PINNED_LIMIT` of them, every one pinned
     ahead of the literal ones, which take the pins left.
 
-    `query` names places (`MemoryIndexRead.places`): each named place, and
-    the places `located_in` it down `PLACE_DEPTH` levels, ANCHORS the walk
-    (`_anchors`). An anchor is never a hit and never returned; the hops
-    leave from it, so «near Mong Kok» reaches the event at a venue in Mong
+    `anchors` are the places the question names and those inside them
+    (`place_anchors`): they ANCHOR the walk. An anchor is never a hit and
+    never returned; the hops leave from it, the strongest parent's
+    neighbours first, so «near Mong Kok» reaches the event at a venue in Mong
     Kok and the outing located in it, each in scope or not reached."""
     reached: dict[tuple[str, str], Hit] = {}
     # A seed scored by its cosine has the cosine's floor; a lexical seed and
@@ -666,7 +680,7 @@ async def walk(
                 if _listed_room_rule(pid, node, scope):
                     keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),), seed_floor)
     hop_scope = bridge if bridge is not None else scope
-    anchors = await _anchors(index, query, hop_scope) if query.strip() else {}
+    anchors = anchors or {}
 
     frontier = [
         *sorted(reached.values(), key=lambda h: -h.score)[:FRONTIER_WIDTH],
@@ -677,8 +691,16 @@ async def walk(
             break
         found = await index.neighbours([h.node.key for h in frontier], hop_scope)
         added: list[Hit] = []
-        for nb in sorted(found, key=lambda n: (n.via, n.rel, n.node.key)):
-            parent = reached.get(nb.via) or anchors.get(nb.via)
+
+        def parent_of(nb: Neighbour) -> Hit | None:
+            return reached.get(nb.via) or anchors.get(nb.via)
+
+        # The strongest parent's neighbours first, so `NODE_BUDGET` is spent
+        # on them: a named place's before a weak seed's.
+        found = [nb for nb in found if parent_of(nb) is not None]
+        found.sort(key=lambda n: (-_score(parent_of(n)), n.via, n.rel, n.node.key))
+        for nb in found:
+            parent = parent_of(nb)
             if parent is None:
                 continue
             if nb.node.is_hub:
@@ -702,36 +724,66 @@ async def walk(
         if not added:
             break  # adaptive: this hop found nothing above the floor
         frontier = sorted(added, key=lambda h: -h.score)[:FRONTIER_WIDTH]
-    return list(reached.values())
+    return _tiered(list(reached.values()))
 
 
-async def _anchors(
+def _score(hit: Hit | None) -> float:
+    return 0.0 if hit is None else hit.score
+
+
+def _tiered(hits: list[Hit]) -> list[Hit]:
+    """The hits one step from a named place (the event at a venue in the
+    district, the outing located in it) are one tier for the answer's gap
+    cut: each reads the best relevance among them. They answer the place the
+    question named equally; the venue hop costs the event a `located_in`
+    weight the outing does not pay, and that is no reason to cut it."""
+    near = [
+        h for h in hits
+        if h.path and h.path[0].how == "named"
+        and sum(1 for s in h.path if s.kind != "place") == 1
+    ]
+    best = max((h.score for h in near), default=None)
+    for h in near:
+        h.tier = best
+    return hits
+
+
+async def place_anchors(
     index: MemoryIndexRead, query: str, scope: MemoryScope,
-) -> dict[tuple[str, str], Hit]:
+) -> tuple[dict[tuple[str, str], Hit], bool]:
     """The places `query` names, each at `PLACE_SEED_SCORE`, and the places
     `located_in` them, `PLACE_DEPTH` levels down, each a `located_in` weight
-    below the place it lies in; at most `PLACE_LIMIT`, the named first.
+    below the place it lies in; and whether `PLACE_CEILING` cut them.
 
     The one exception to the hub rule (DEC-313, amended for step 3a): a place
     hub is a hop's frontier here, and only INWARD, to what lies in it, never
     out to the city around it (that would widen «Mong Kok» to all of Kowloon)
     and never from a place a hop reached (that is a search on the place, not
     the question's). A hub carries no scope and an anchor is never returned:
-    every node the hops reach from one passes the index's scope."""
-    named = await index.places(query, limit=PLACE_LIMIT)
-    level = [Hit(n, PLACE_SEED_SCORE, (Step(n.kind, how="named"),)) for n in named]
+    every node the hops reach from one passes the index's scope, so nothing
+    is chosen among anchors before the scope reads them."""
+    if not query.strip():
+        return {}, False
+    named = await index.places(query, limit=PLACE_CEILING + 1)
+    cut = len(named) > PLACE_CEILING
+    level = [
+        Hit(n, PLACE_SEED_SCORE, (Step(n.kind, how="named"),)) for n in named[:PLACE_CEILING]
+    ]
     anchors = {h.node.key: h for h in level}
     for _ in range(PLACE_DEPTH):
-        if not level or len(anchors) >= PLACE_LIMIT:
+        if not level:
             break
         found = await index.neighbours([h.node.key for h in level], scope)
         inner: list[Hit] = []
         for nb in sorted(found, key=lambda n: (n.via, n.node.key)):
             if (
                 nb.rel != "located_in" or nb.outgoing or nb.node.kind != "place"
-                or nb.node.key in anchors or len(anchors) >= PLACE_LIMIT
+                or nb.node.key in anchors
             ):
                 continue
+            if len(anchors) >= PLACE_CEILING:
+                cut = True
+                break
             parent = anchors[nb.via]
             hit = Hit(
                 nb.node, parent.score * REL_WEIGHT["located_in"],
@@ -740,7 +792,7 @@ async def _anchors(
             anchors[hit.node.key] = hit
             inner.append(hit)
         level = inner
-    return anchors
+    return anchors, cut
 
 
 class MemorySearch:
@@ -825,13 +877,16 @@ class MemorySearch:
                     log.warning("memory search: no query vector (%s)", type(exc).__name__)
                     lexical = True
             terms = terms_of(query)
+            anchors, cut = await place_anchors(
+                self._index, query, bridge if bridge is not None else scope,
+            )
             hits = await walk(
                 self._index, scope, terms=terms,
                 person_id=person_id, hops=HOPS_BY_DEPTH.get(depth, 2), admits=admits,
                 exact=exact_terms_of(query, names), vector=vector, model=self._model,
                 unembedded=seeding.unembedded + seeding.given_up > 0, embedded=state.embedded,
                 metrics=self._metrics,
-                bridge=bridge, about=about, media=media, query=query,
+                bridge=bridge, about=about, media=media, anchors=anchors,
             )
         except Exception as exc:  # noqa: BLE001 — fail closed: «I couldn't check»
             log.warning("memory search failed (%s)", type(exc).__name__)
@@ -847,7 +902,7 @@ class MemorySearch:
         backlog = state.unembedded - state.fresh
         unread = state.unembedded + state.given_up > 0 and not terms
         incomplete = (
-            state.status != "complete" or state.queue > 0 or lexical
+            state.status != "complete" or state.queue > 0 or lexical or cut
             or (vector is not None and (backlog > 0 or unread))
         )
         status: SearchStatus = (
@@ -925,7 +980,8 @@ def render_packet(
     each hit while the packet stays within `budget` (`PACKET_TOKENS`, or
     the pre-fetch's `PREFETCH_TOKENS`) and the unpinned
     hit before it is within `SCORE_GAP` of the best relevance from this hit
-    on (`SCORE_GAP`), the first
+    on (`SCORE_GAP`; a hit's `Hit.relevance`, one tier for the hits one step
+    from a named place), the first
     `MIN_RESULTS` items whatever either says, and never more than
     `RESULT_MAX`. A withheld hit costs nothing and is not counted."""
     items: list[dict[str, Any]] = []
@@ -943,7 +999,7 @@ def render_packet(
     ahead = [0.0] * (len(hits) + 1)
     for i in range(len(hits) - 1, -1, -1):
         h = hits[i]
-        mine = h.score if not h.pin and not screened[i] else 0.0
+        mine = h.relevance if not h.pin and not screened[i] else 0.0
         ahead[i] = max(mine, ahead[i + 1])
     for i, h in enumerate(hits):
         if len(items) >= RESULT_MAX:
@@ -955,7 +1011,7 @@ def render_packet(
         if not h.pin and len(items) >= MIN_RESULTS and steep:
             break
         if not h.pin:
-            last = h.score
+            last = h.relevance
         kind, body = _shown(h.node)
         text = render_file_links(body[:TEXT_CHARS]) if body else ""
         places = sorted(p for p in h.places if scan_identifiers(p) is None)
