@@ -46,6 +46,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import (
     MEMORY_EDGE,
     MEMORY_INDEX_STATE,
@@ -107,7 +108,8 @@ async def engine(_db: str) -> AsyncIterator[Any]:
         async with eng.begin() as conn:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             for table in (
-                "messages", "memo", "memo_revision", "row_history", "memory_node",
+                "messages", "memo", "memo_revision", "note", "note_revision",
+                "row_history", "memory_node",
                 "memory_edge", "memory_projection_queue", "social_item",
                 "social_item_state", "social_perception",
             ):
@@ -250,6 +252,27 @@ async def test_c_an_in_unit_target_is_reached_with_its_path(engine: Any, seeds: 
     assert paths[("memo", memo)] == [("message", None, True), ("memo", "cites", False)]
     assert paths[("message", target)] == [
         ("message", None, True), ("memo", "cites", False), ("message", "cites", True),
+    ]
+    assert found.status == _settled(seeds)
+
+
+async def test_c_a_note_is_reached_from_a_message_it_cites(engine: Any, seeds: str) -> None:
+    """A note's citations are a column as a memo's are (unified-memory step 4),
+    so the walk out of a cited message reaches the note and, through it, the
+    other message it rests on."""
+    seed = await _say(engine, "b", "ramen crawl tonight", "kit")
+    target = await _say(engine, "b2", "bring cash for the stall", "rin")
+    note = await SqlNoteStore(engine).create(
+        unit="u1", title="night out", description="where the crawl ends",
+        uncertainty="the last stop", closing_condition="someone names it",
+        established_in="b", body=f"## Decided\n## Open\n- last stop [{seed}, {target}]",
+        established_by="cognition:u1", now_ms=NOW - 1000, anchor_date=20261020,
+    )
+    found = await _search(engine, seeds=seeds, query="ramen crawl")
+    paths = _paths(found)
+    assert paths[("note", note.id)] == [("message", None, True), ("note", "cites", False)]
+    assert paths[("message", target)] == [
+        ("message", None, True), ("note", "cites", False), ("message", "cites", True),
     ]
     assert found.status == _settled(seeds)
 

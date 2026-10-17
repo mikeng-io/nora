@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
+from nora.domain.note_body import citations_in
 from nora.domain.notes import Note
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
@@ -651,6 +652,7 @@ async def _seed_note_with_id(
             id=note.head_revision_id, note_id=note.id, body=body,
             parent_revision_id=None, written_at=written_at,
             established_by=established_by, instruction_sha256=None, model=None,
+            citations=list(citations_in(body)),
         ))
         # The sandbox's index holds what the case seeds, as production's would.
         await memory_index.project(conn, "note", note.id)

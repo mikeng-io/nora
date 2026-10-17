@@ -201,9 +201,16 @@ index and Honcho's exit are now listed in their order.
    [65](65-build-step-3-vectors.md) V3 with a smaller budget (its figure set here, from the same measured spread), and 25 §5's
    pre-fetch recall (below 0.7 reopens the design) is its acceptance measure.
 4. **Note citations.** `note_create` / `note_update` gain citations like
-   memos, lessons and events. `note_revision` has no citations column today
-   (`nora/infra/sql/schema.py`, the `note_revision` table), so this is a schema
-   and verb change, not a projection.
+   memos, lessons and events. `note_revision` had no citations column
+   (`nora/infra/sql/schema.py`, the `note_revision` table), so this was a
+   schema and verb change, not a projection.
+   **Built 2026-10-17** (migration `0116_note_citations`): every note write
+   (`note_create`, `note_update`, `note_merge`, the tag path's) stores what its
+   body cites in `note_revision.citations`, in `memo_revision.citations`' form,
+   read off each line's trailing citation, the one the writer held to the
+   note-body grammar (the grammar a memo body passes too); the index draws
+   the head's `cites` edges, and stored revisions were backfilled and their
+   notes queued for re-projection.
 5. **Persona schema and `persona_write`** ([45](45-persona-adaptor.md) §1–§4),
    with the build prerequisites listed in 45 §4. **Built 2026-10-17
    (DEC-317)**, with the turn's `remember` on the graph surface writing
