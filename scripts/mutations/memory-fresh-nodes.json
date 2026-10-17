@@ -86,7 +86,7 @@
  {
   "name": "composition wires the worker tick",
   "file": "nora/app/composition.py",
-  "old": "                drain_seconds=cfg.memory_index.drain_seconds,\n",
+  "old": "            drain_seconds=cfg.memory_index.drain_seconds,\n",
   "new": "",
   "target": "tests/test_composition.py::test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick"
  },

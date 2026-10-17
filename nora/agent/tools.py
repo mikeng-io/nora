@@ -288,7 +288,7 @@ from .link_owners import LinkClaim, LinkInput, LinkOwner
 from .link_owners import owner_of as _owner_of
 from .link_owners import redirect as _link_redirect
 from .links import LinkCarry
-from .memory_search import MemorySearch, render_packet
+from .memory_search import MemorySearch, render_packet, room_label
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .rollup_read import iso as rollup_iso
@@ -6078,11 +6078,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     def _index_room_label(key: str) -> str:
         """A room key as she reads it: its policy label, else its network."""
-        platform, _, cid = key.partition(":")
-        for r in lineage.rooms if lineage is not None else ():
-            if r.platform == platform and cid in r.ids:
-                return r.label or platform_name(r.platform)
-        return "another room"
+        return room_label(lineage.rooms if lineage is not None else (), key)
 
     async def _memory_search_index(
         search: MemorySearch, text: str, ref: PersonRef | None, view: RoomView,

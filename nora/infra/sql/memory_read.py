@@ -415,6 +415,23 @@ class SqlMemoryIndex:
             rows = (await conn.execute(stmt)).all()
         return [_node(r) for r in rows]
 
+    async def media(
+        self, sha256s: Sequence[str], scope: MemoryScope, *, limit: int,
+    ) -> list[IndexedNode]:
+        wanted = sorted({s for s in sha256s if s})
+        if not wanted or limit <= 0:
+            return []
+        n = MEMORY_NODE.alias("n")
+        stmt = (
+            sa.select(*_columns(n))
+            .where(n.c.sha256.in_(wanted), _in_scope(n, scope))
+            .order_by(n.c.at_ms.desc().nulls_last(), n.c.kind, n.c.source_id)
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_node(r) for r in rows]
+
     async def neighbours(
         self, frontier: Sequence[tuple[str, str]], scope: MemoryScope,
     ) -> list[Neighbour]:

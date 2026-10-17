@@ -20,14 +20,24 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Sequence
-from typing import Any, Protocol
+from collections.abc import Callable, Sequence
+from datetime import datetime
+from typing import Any, NamedTuple, Protocol
 
+from nora.agent.clock import local_now
 from nora.agent.lineage import LineagePolicy
+from nora.agent.memory_search import (
+    PREFETCH_TOKENS,
+    MemorySearch,
+    MemorySearchResult,
+    render_packet,
+    room_label,
+)
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import CultureRevision, nora_character_key, unit_culture_key
 from nora.domain.documents_context import DocumentsView
 from nora.domain.external_files import render_file_links
+from nora.domain.lineage import RenderRoom
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
 from nora.domain.models import (
@@ -45,6 +55,7 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
+from nora.domain.rollup import room_key
 from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
 from nora.domain.subagents_context import SubagentsView
@@ -86,6 +97,30 @@ class StandingNotesReader(Protocol):
         ...
 
 
+class _Prefetch(NamedTuple):
+    """One pre-fetch search, and the two values its render needs."""
+
+    target: RenderRoom
+    found: MemorySearchResult
+    now: datetime
+
+
+#: The pre-fetch's bound: the embedder's own query timeout (10 s,
+#: `nora.infra.embedder.QUERY_TIMEOUT_SECONDS`) and a few seconds for the
+#: walk's reads, which the engine does not bound. Past it the turn goes on
+#: without the block, counted, as a slow culture read does.
+#: ponytail: a fixed bound read from no trace yet; size it from the
+#: `store.memory_index.prefetch` span's latency once the flag is on.
+PREFETCH_TIMEOUT_SECONDS = 12.0
+
+#: What the shown transcript already carries, so the pre-fetch never spends
+#: its budget showing it again: this room's messages and their attachments.
+#: ponytail: dropped after the search's own cut (`RESULT_MAX`, the pins), so
+#: a shown row can take a slot there; pass the window into the search if a
+#: block comes up short for it.
+_TRANSCRIPT_KINDS = frozenset({"message", "media"})
+
+
 class TranscriptInjection:
     """Satisfies `nora.domain.ports.ContextAssembler`."""
 
@@ -113,8 +148,19 @@ class TranscriptInjection:
         documents: DocumentsContextReader | None = None,
         subagents: SubagentsContextReader | None = None,
         memos: MemoStore | None = None,
+        memory_search: MemorySearch | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._audit = audit
+        # `<recalled>`, the pre-fetch: the SAME retrieval service the tool
+        # registry's `memory_search` holds, `None` on the Honcho surface
+        # (`[memory_index] enabled = false`) and in every harness that wires
+        # none, which renders no block.
+        self._memory_search = memory_search
+        # The graph's one clock (`build_dependencies`' `clock`), so a harness
+        # at a fixed instant ranks and dates the pre-fetch at that instant.
+        # `None` is the wall clock.
+        self._clock = clock or local_now
         # `<memos>` (DEC-306): the unit's kept memos, unit-wide like `notes`.
         # `None` renders no block.
         self._memos_store = memos
@@ -222,7 +268,7 @@ class TranscriptInjection:
             presence,
             culture,
             (unit_culture, self_account, lessons),
-            (computer, documents, subagents, memos),
+            (computer, documents, subagents, memos, prefetch),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._recent_with_character(msg, ref),
@@ -241,6 +287,7 @@ class TranscriptInjection:
                 self._documents(msg),
                 self._subagents(msg),
                 self._memos(msg),
+                self._prefetch(msg, ref),
             ),
         )
 
@@ -265,6 +312,7 @@ class TranscriptInjection:
         # same as the shown ones. Empty when nothing was cut.
         shown = self._shown(transcript, msg)
         lookup = tuple(transcript) if len(shown) < len(transcript) else ()
+        recalled = self._recalled(prefetch, msg, shown)
 
         return TagContext(
             tag_id=request.tag_id,
@@ -287,6 +335,9 @@ class TranscriptInjection:
             computer=computer,
             documents=documents,
             subagents=subagents,
+            recalled=recalled,
+            recalled_partial=bool(recalled) and prefetch is not None
+            and prefetch.found.status == "partial",
             # A pure lookup (policy.toml, identity.toml), no read: the room's
             # listed persons and their aliases for `<room_members>`.
             room_members=self._room_members(msg),
@@ -297,6 +348,112 @@ class TranscriptInjection:
                 if self._lineage is not None else None
             ),
         )
+
+    async def _prefetch(
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+    ) -> _Prefetch | None:
+        """The pre-fetch's search (design/unified-memory/00 step 3b, 25 §5):
+        `memory_search`'s own retrieval, run by code from the message's seeds,
+        with no model choosing what to load. The seeds are the message's:
+        its words (the dense, lexical and exact seeds: URLs, handles, ids, a
+        listed person's name), the speaker and the persons it @-mentions
+        (seeded by what is about them, never narrowed to them), and the
+        pictures it carries (by their bytes). The room is the read's scope,
+        the unit's under the listed-room rule (`scope_for`); a room is a hub
+        and seeds nothing itself.
+
+        Read with no live roster, the safe side `scope_for` takes for it: a
+        node excluding someone and a presence episode stay out here, and
+        `memory_search` reads them with the roster. `None`: no search wired
+        (the Honcho surface), a room outside the policy, nothing to seed
+        from. `MemorySearch.search` never raises (any failure is its counted
+        `unavailable`), so this is safe inside the gather."""
+        if self._memory_search is None or self._lineage is None:
+            return None
+        target = self._lineage.render_room(
+            platform=msg.platform, conversation_id=msg.conversation_id,
+        )
+        if target.room is None:
+            return None
+        listed = target.room.persons
+        mentioned = [
+            r.person_id for v in sorted(msg.mentions)
+            if (r := self._persons.resolve(msg.platform, v)) is not None
+        ]
+        about = list(dict.fromkeys(
+            ([ref.person_id] if ref is not None else []) + mentioned,
+        ))
+        media = [b.sha256 for b in msg.media_blobs]
+        query = render_file_links(msg.body or "")[:500]
+        if not (query.strip() or about or media):
+            return None
+        # In the process's own zone, the zone of the clock line her prompt
+        # opens on, so an item's date reads on the same calendar.
+        now = self._clock().astimezone()
+        try:
+            found = await asyncio.wait_for(traced_read(
+                "memory_index", "prefetch", self._memory_search.search(
+                    query=query, person_id=None, target=target,
+                    now_ms=int(now.timestamp() * 1000), people=self._room_members(msg),
+                    social_off=self._persons.social_off_ids(listed or ()),
+                    about=about, media=media,
+                ),
+                count=lambda r: len(r.hits),
+            ), timeout=PREFETCH_TIMEOUT_SECONDS)
+        except Exception:  # noqa: BLE001 — the bound, or anything else: no block, counted
+            log.warning("memory pre-fetch did not answer; continuing without it")
+            self._metrics.inc("nora_errors_total", stage="tag_prefetch", platform=msg.platform)
+            return None
+        if found.status == "unavailable":
+            self._metrics.inc("nora_errors_total", stage="tag_prefetch", platform=msg.platform)
+        return _Prefetch(target, found, now)
+
+    def _recalled(
+        self, prefetch: _Prefetch | None, msg: NormalizedMessage,
+        shown: Sequence[TranscriptRow],
+    ) -> tuple[dict[str, Any], ...]:
+        """The pre-fetch's items: its hits less what the shown transcript
+        already carries (this room's messages and attachments from its
+        oldest row on, the message being answered included), rendered and
+        cut by `render_packet`, the one renderer `memory_search` answers
+        through, at `PREFETCH_TOKENS`. Nothing for an `unavailable` or
+        `nothing_found` search: no block, never one saying nothing is held.
+        Runs after the gather, so it is guarded here: a render that raises
+        (an item dated out of range) is no block and counted, never a dead
+        turn."""
+        if prefetch is None or prefetch.found.status not in ("ok", "partial"):
+            return ()
+        try:
+            return self._render_recalled(prefetch, msg, shown)
+        except Exception:
+            log.exception("memory pre-fetch render failed; continuing without it")
+            self._metrics.inc("nora_errors_total", stage="tag_prefetch", platform=msg.platform)
+            return ()
+
+    def _render_recalled(
+        self, prefetch: _Prefetch, msg: NormalizedMessage,
+        shown: Sequence[TranscriptRow],
+    ) -> tuple[dict[str, Any], ...]:
+        here = room_key(msg.platform, msg.conversation_id)
+        since = min((row.ts for row in shown), default=msg.timestamp)
+        hits = [
+            h for h in prefetch.found.hits
+            if not (
+                h.node.kind in _TRANSCRIPT_KINDS and h.node.origin_room == here
+                and h.node.at_ms is not None and h.node.at_ms >= since
+            )
+        ]
+
+        def name_of(person_id: str) -> str:
+            found = self._persons.by_person.get(person_id)
+            return found.name if found is not None else "someone"
+
+        items, _withheld = render_packet(
+            hits, name_of=name_of,
+            room_label=lambda key: room_label(prefetch.target.rooms, key),
+            now=prefetch.now, budget=PREFETCH_TOKENS,
+        )
+        return tuple(items)
 
     def _room_members(self, msg: NormalizedMessage) -> tuple[PersonRef, ...]:
         """This room's listed persons, for `<room_members>`; empty for a room
