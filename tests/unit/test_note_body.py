@@ -17,11 +17,13 @@ from pathlib import Path
 
 import pytest
 
+from nora.domain.memo import citations_of
 from nora.domain.note_body import (
     RULES,
     NoteBodyError,
     Shown,
     ShownMessage,
+    citations_in,
     cited_ids_in,
     parse_note_body,
     rollup_key,
@@ -289,6 +291,21 @@ def test_a_group_mixing_ids_and_rollup_keys_yields_both_and_a_key_s_commas_are_n
     assert rollup_keys_in(text) == {KEY, coloc}
     assert rollup_keys_in("a legacy body [12] with [no key] rollup(stay|x|a/b)") == frozenset()
     assert cited_ids_in("[rollup(stay|p_ada|a/b), x]") == frozenset()
+
+
+def test_a_note_revision_s_citations_are_what_a_memo_s_column_would_hold():
+    """`note_revision.citations` is `memo_revision.citations`' form, read off
+    the stored body: on a body that parses, exactly what the memo verbs store
+    from the parse; on one that does not, what the brackets cite."""
+    mixed = (
+        f"## Decided\n## Open\n- which restaurant [4812, rollup({KEY})]\n"
+        f"- whether Ben is in [4815]\n- and Ada again [4812]\n"
+    )
+    for text, shown in ((CONFORMANT, SHOWN), (mixed, WITH_KEYS)):
+        assert citations_in(text) == citations_of(parse_note_body(text, shown=shown))
+    assert citations_in(mixed) == ("4812", f"rollup({KEY})", "4815")
+    assert citations_in("a legacy body [12] with [no key] and [#4] [ 007 ]") == ("12", "7")
+    assert citations_in("## Decided\n## Open\n") == ()
 
 
 def test_a_rollup_row_does_not_say_who_said_a_line():

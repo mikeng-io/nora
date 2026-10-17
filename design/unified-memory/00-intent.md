@@ -204,6 +204,12 @@ index and Honcho's exit are now listed in their order.
    memos, lessons and events. `note_revision` has no citations column today
    (`nora/infra/sql/schema.py`, the `note_revision` table), so this is a schema
    and verb change, not a projection.
+   **Built 2026-10-17** (migration `0116_note_citations`): every note write
+   (`note_create`, `note_update`, `note_merge`, the tag path's) stores what its
+   body cites in `note_revision.citations`, in `memo_revision.citations`' form,
+   read off the body once the writer has held it to the note-body grammar
+   (the grammar a memo body passes too); the index draws the head's `cites` edges, and stored revisions were
+   backfilled and their notes queued for re-projection.
 5. **Persona schema and `persona_write`** ([45](45-persona-adaptor.md) §1–§4),
    with the build prerequisites listed in 45 §4.
 6. **The Persona adaptor in shadow, and the backfill** ([35](35-persona.md)
