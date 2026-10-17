@@ -2099,6 +2099,20 @@ async def test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick(c
 
 
 @pytest.mark.parametrize("graph", [False, True])
+async def test_the_prefetch_holds_the_tools_search_only_on_the_graph_surface(cfg, graph):
+    """`<recalled>` (design/unified-memory/00 step 3b): the tag path's
+    assembler holds the SAME `MemorySearch` the registry's `memory_search`
+    does under `[memory_index] enabled`, and none off it, so the Honcho
+    surface runs no pre-fetch."""
+    deps = await build_dependencies(override_config(
+        cfg, {"memory_index.enabled": graph},
+    ))
+    search = deps.engagement._tool_registry._memory_search
+    assert deps.engagement._context._memory_search is search
+    assert (search is not None) is graph
+
+
+@pytest.mark.parametrize("graph", [False, True])
 async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path, graph):
     """DEC-316, through the real composition: `[memory_index] enabled` picks
     the session's memory verbs exactly as it picks every other occasion's.

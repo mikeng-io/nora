@@ -1,6 +1,8 @@
 """The one retrieval service over the memory index: scope, seed, expand hop by
 hop, rank, and an evidence packet with the path that reached each item.
-`memory_search` calls it while `[memory_index] enabled`.
+`memory_search` calls it while `[memory_index] enabled`, and so does the tag
+path's pre-fetch (`nora.engagement.context`, the `<recalled>` block), from the
+message's own seeds, cut at `PREFETCH_TOKENS`.
 
 **1. Scope, per read, from the live policy** (`scope_for`). The unit is the
 read boundary (DEC-231): the reading room's unit, every room of it,
@@ -35,7 +37,11 @@ path is cut at its first out-of-scope node.
   up on. No vector reaches either, and their words still can.
 - **About**: for a named person this room lists, the in-scope nodes `about`
   them (an exact reference). A person this room does not list
-  seeds nothing.
+  seeds nothing. The pre-fetch seeds its speaker and the persons the message
+  mentions this way without narrowing to them (`walk`'s `about`).
+- **Media**: the pre-fetch's attached pictures, by their bytes: the in-scope
+  nodes holding the same sha256, pinned ahead of the literal pins and
+  sharing `PINNED_LIMIT` with them.
 
 A hub never seeds.
 
@@ -73,7 +79,8 @@ stops early when a hop keeps nothing (adaptive depth), at `NODE_BUDGET`
 nodes, or at the hop count `depth` asks for, never past `HOP_CEILING`.
 
 **4. Rank** the pinned exact hits first, then the rest, each by relevance
-times age decay (`HALF_LIFE_DAYS`). **5. Return** the
+times age decay (`HALF_LIFE_DAYS`, a social item's
+`SOCIAL_HALF_LIFE_DAYS`). **5. Return** the
 best items, cut adaptively as they are rendered (`render_packet`): the
 pinned ones always, then in rank order until a token budget
 (`PACKET_TOKENS`) is spent or the relevance drops by more than `SCORE_GAP`,
@@ -124,10 +131,11 @@ from typing import Any
 from nora.agent.egress import scan_identifiers
 from nora.agent.lineage import section_permits
 from nora.domain.external_files import render_file_links
-from nora.domain.lineage import PRESENCE, ROW, Lineage, LineageEntry, RenderRoom
+from nora.domain.lineage import PRESENCE, ROW, Lineage, LineageEntry, RenderRoom, RoomFacts
 from nora.domain.media import HANDLE_CHARS
 from nora.domain.memory_index import (
     EPISODE_KINDS,
+    SOCIAL_KINDS,
     ExactTerm,
     IndexedNode,
     MemoryFilter,
@@ -141,6 +149,7 @@ from nora.domain.memory_index import (
 from nora.domain.models import PersonRef
 from nora.domain.prompt import stamp
 from nora.domain.rollup import room_key
+from nora.domain.self_presence import platform_name
 from nora.language.computer_render import estimate_tokens
 
 __all__ = [
@@ -153,12 +162,14 @@ __all__ = [
     "MIN_RESULTS",
     "PACKET_TOKENS",
     "PINNED_LIMIT",
+    "PREFETCH_TOKENS",
     "RESULT_MAX",
     "SCORE_GAP",
     "MemorySearch",
     "MemorySearchResult",
     "exact_terms_of",
     "render_packet",
+    "room_label",
     "scope_for",
     "terms_of",
 ]
@@ -221,7 +232,8 @@ EXACT_LIMIT = 10
 PINNED_LIMIT = 5
 #: The answer, cut adaptively as it is rendered (`render_packet`): the hits in
 #: rank order until the next would take the packet past `PACKET_TOKENS`, or
-#: its relevance drops more than `SCORE_GAP` below the hit before it, never
+#: relevance drops more than `SCORE_GAP` below the hit before it with nothing
+#: stronger still to come, never
 #: past `RESULT_MAX`; the pinned hits always, and at least `MIN_RESULTS`
 #: whatever the budget or the gap. Run on the production index for 143
 #: known-item queries (65 §6), this showed the known item for 107, the old
@@ -230,12 +242,26 @@ PINNED_LIMIT = 5
 #: the same lists: 1,000 tokens found 97, 1,500 found 111, 2,000 found 112,
 #: 2,500 found 115 for a quarter more text every call.
 PACKET_TOKENS = 2_000
-#: A drop in relevance from one unpinned hit to the next past which the rest
-#: is another topic. Between neighbouring non-hits in a top 20 the drop was
-#: under 0.017 nine times in ten (2,733 pairs, 65 §6), so 0.2 stops only
-#: after a standout: replayed over the 163 measured queries it shortened 4
-#: and cost none its hit. On relevance, not on the age-decayed rank, whose
-#: drops mix age with meaning: 0.15 on that rank cost seven hits.
+#: The pre-fetch block's budget (`nora.engagement.context`, design
+#: unified-memory/00 step 3b): the same cut as `memory_search`'s answer, run
+#: from the message's own seeds before the turn, on a smaller budget because
+#: it rides every tag turn on the graph surface whether or not she needs it.
+#: Set from the same replay as `PACKET_TOKENS` (65 §6, 143 known items):
+#: 1,000 tokens found 97, 1,500 found 111, 2,000 found 112. 1,500 is the knee:
+#: it keeps all but one of the full budget's finds for three quarters of its
+#: text, where 1,000 loses fourteen. A miss here is not a dead end:
+#: `memory_search` reads the rest at the full budget.
+PREFETCH_TOKENS = 1_500
+#: A drop in relevance from one unpinned hit past which the rest is another
+#: topic. Between neighbouring non-hits in a top 20 the drop was under 0.017
+#: nine times in ten (2,733 pairs, 65 §6), so 0.2 stops only after a
+#: standout: read against the next hit alone, it shortened 4 of the 163
+#: measured queries and cost none its hit. On relevance, not on the
+#: age-decayed rank, whose drops mix age with meaning: 0.15 on that rank cost
+#: seven hits. The drop is read against the best relevance still to come, not
+#: the next hit's: the rank is decayed, so a recent weak hit can sit just
+#: ahead of an older strong one, and 4 of the 36 misses of the run 65 §6
+#: reports stopped there.
 SCORE_GAP = 0.2
 #: However tight the budget or steep the drop, a search that found anything
 #: shows its best few: the first this many items the identifier screen
@@ -253,6 +279,16 @@ RESULT_MAX = 30
 PERSON_SEED_SCORE = 0.45
 #: Age decay: an item this many days old ranks at half its relevance.
 HALF_LIFE_DAYS = 180.0
+#: The half-life of a social item (`SOCIAL_KINDS`). It is dated by when it
+#: was posted, often years before the room heard of it (in the index a social
+#: item is a median 491 days old, its medium 630; a message 28), so at
+#: `HALF_LIFE_DAYS` a strong match ranked below the 30 kept. Replayed on 143
+#: known items, sampled and asked as 65 §6 did, each with the gap read
+#: above: 180 showed 115, 365 115, 730 118, 1095 120, no decay 124, against
+#: 114 for 180 with the gap read against the next hit. No decay showed
+#: every social item and pushed a message out of the packet; 1095 lost none
+#: master showed.
+SOCIAL_HALF_LIFE_DAYS = 1095.0
 #: Characters of one item's text in the packet.
 TEXT_CHARS = 600
 #: How many drain periods (`[memory_index] drain_seconds`, the embedding
@@ -492,11 +528,12 @@ def _listed_room_rule(person: str, via: IndexedNode, scope: MemoryScope) -> bool
     return person in scope.room_persons.get(via.origin_room, frozenset())
 
 
-def _decay(at_ms: int | None, now_ms: int) -> float:
-    if at_ms is None:
+def _decay(node: IndexedNode, now_ms: int) -> float:
+    if node.at_ms is None:
         return 0.5
-    days = max(0.0, (now_ms - at_ms) / 86_400_000)
-    return math.pow(0.5, days / HALF_LIFE_DAYS)
+    days = max(0.0, (now_ms - node.at_ms) / 86_400_000)
+    half = SOCIAL_HALF_LIFE_DAYS if node.kind in SOCIAL_KINDS else HALF_LIFE_DAYS
+    return math.pow(0.5, days / half)
 
 
 async def walk(
@@ -505,6 +542,7 @@ async def walk(
     exact: Sequence[ExactTerm] = (), vector: Sequence[float] | None = None,
     model: str | None = None, unembedded: bool = False, embedded: int = 0,
     metrics: Any = None, bridge: MemoryScope | None = None,
+    about: Sequence[str] = (), media: Sequence[str] = (),
 ) -> list[Hit]:
     """Seed, then expand hop by hop (module docstring). `exact` are the
     literal references, the first `PINNED_LIMIT` of them pinned; with a
@@ -523,7 +561,14 @@ async def walk(
     one: a message reaches the outing it was said during, and an episode
     has no vector of its own. The hops run on `bridge`; the caller keeps
     only the asked kinds in the answer (`MemorySearch.search`). Dates and a
-    person narrow every read of both, and only the first pass pins."""
+    person narrow every read of both, and only the first pass pins.
+
+    `about` are persons seeded like `person_id` (the nodes about each, under
+    the listed-room rule) WITHOUT narrowing anything to them: the pre-fetch's
+    speaker and the persons the message mentions. `media` are the sha256s of
+    the pictures the message carries: the nodes holding the same bytes seed
+    as exact references, at most `PINNED_LIMIT` of them, every one pinned
+    ahead of the literal ones, which take the pins left."""
     reached: dict[tuple[str, str], Hit] = {}
     # A seed scored by its cosine has the cosine's floor; a lexical seed and
     # every hop keep the walk's (an episode has no vector: a hop reaches it).
@@ -549,12 +594,23 @@ async def walk(
         reached[node.key] = Hit(node, score, path)
         return True
 
+    seeded_about = list(dict.fromkeys(p for p in (person_id, *about) if p))
+    media_pins = 0
     for sc in (scope,) if bridge is None else (scope, bridge):
         first = sc is scope
+        if media and first:
+            # Pinned, every one: a picture's earlier sharings have no
+            # cosine to rank by, so one past the pins would sit at 1.0 above
+            # every scored hit. Read only as many as there are pins.
+            for node in await index.media(media, sc, limit=PINNED_LIMIT):
+                if keep(node, 1.0, (Step(node.kind, how="exact"),), seed_floor):
+                    # Above every literal pin: the picture itself was handed over.
+                    reached[node.key].pin = 2 * PINNED_LIMIT - media_pins
+                    media_pins += 1
         if exact:
             literal = await index.exact(exact, sc, limit=EXACT_LIMIT, vector=vector, model=model)
             for i, s in enumerate(literal):
-                pinned = first and i < PINNED_LIMIT
+                pinned = first and i < PINNED_LIMIT - media_pins
                 # Past the pinned ones, an exact hit competes on its cosine
                 # like a dense hit; with no vector to compare, on its literal 1.
                 score = s.score if pinned or s.near is None else s.near
@@ -578,12 +634,14 @@ async def walk(
             keep(s.node, s.score, (Step(s.node.kind, how="matched"),), seed_floor)
         for s in lexical:
             keep(s.node, s.score, (Step(s.node.kind, how="matched"),))
-        if person_id and person_id in scope.listed_here:
-            for node in await index.about(person_id, sc, limit=SEED_LIMIT):
+        for pid in seeded_about:
+            if pid not in scope.listed_here:
+                continue
+            for node in await index.about(pid, sc, limit=SEED_LIMIT):
                 # The listed-room rule holds for an exact-reference seed too:
                 # an entry about P said in a room that does not list P is not
                 # evidence about P.
-                if _listed_room_rule(person_id, node, scope):
+                if _listed_room_rule(pid, node, scope):
                     keep(node, PERSON_SEED_SCORE, (Step(node.kind, how="about"),), seed_floor)
     hop_scope = bridge if bridge is not None else scope
 
@@ -649,7 +707,8 @@ class MemorySearch:
         depth: str = DEFAULT_DEPTH, now_ms: int, people: Sequence[PersonRef] = (),
         kinds: Sequence[str] = (), since_ms: int | None = None,
         until_ms: int | None = None, own_room: bool = False,
-        social_off: Collection[str],
+        social_off: Collection[str], about: Sequence[str] = (),
+        media: Sequence[str] = (),
     ) -> MemorySearchResult:
         """`people` are the persons the caller can name here (the room's
         resolved roster); the names of those this room lists are the exact
@@ -658,7 +717,9 @@ class MemorySearch:
         `since_ms` and `until_ms` narrow it too (the module docstring), all
         inside the index's reads. `own_room` reads the reading room alone
         (`scope_for`); `social_off` (required, never defaulted) are the
-        persons whose social items no read may return."""
+        persons whose social items no read may return. `about` (persons) and
+        `media` (sha256s) seed without narrowing (`walk`): the pre-fetch's
+        speaker, the persons a message mentions and the pictures it carries."""
         def admits(node: IndexedNode) -> bool:
             lineage = Lineage.from_json(node.lineage)
             return section_permits(lineage.section(ROW), target, origin=None)
@@ -703,7 +764,7 @@ class MemorySearch:
                 exact=exact_terms_of(query, names), vector=vector, model=self._model,
                 unembedded=seeding.unembedded + seeding.given_up > 0, embedded=state.embedded,
                 metrics=self._metrics,
-                bridge=bridge,
+                bridge=bridge, about=about, media=media,
             )
         except Exception as exc:  # noqa: BLE001 — fail closed: «I couldn't check»
             log.warning("memory search failed (%s)", type(exc).__name__)
@@ -711,7 +772,7 @@ class MemorySearch:
         wanted = frozenset(kinds)
         ranked = sorted(
             (h for h in hits if not wanted or h.node.kind in wanted),
-            key=lambda h: (-h.pin, -h.score * _decay(h.node.at_ms, now_ms), h.node.key),
+            key=lambda h: (-h.pin, -h.score * _decay(h.node, now_ms), h.node.key),
         )[:RESULT_MAX]
         # A fresh node is read by its words; a backlog, or an unvectored node
         # (waiting or given up) a question with no terms cannot read, is what
@@ -773,9 +834,20 @@ def _shown(node: IndexedNode) -> tuple[str, str]:
     return node.kind, node.text
 
 
+def room_label(rooms: Sequence[RoomFacts], key: str) -> str:
+    """A packet item's room key as she reads it: the policy room's label,
+    else its network; «another room» for a key no policy room holds. Never
+    the key itself (R-18)."""
+    platform, _, cid = key.partition(":")
+    for r in rooms:
+        if r.platform == platform and cid in r.ids:
+            return r.label or platform_name(r.platform)
+    return "another room"
+
+
 def render_packet(
     hits: Sequence[Hit], *, name_of: Callable[[str], str],
-    room_label: Callable[[str], str], now: datetime,
+    room_label: Callable[[str], str], now: datetime, budget: int = PACKET_TOKENS,
 ) -> tuple[list[dict[str, Any]], int]:
     """The evidence packet and how many items were withheld
     for carrying an identifier. Names, room labels and handles only: never a
@@ -783,24 +855,36 @@ def render_packet(
 
     `hits` in rank order; the answer is cut here, where an item's size is
     known (the module docstring's step 5): a pinned hit is always kept, then
-    each hit while the packet stays within `PACKET_TOKENS` and its relevance
-    is within `SCORE_GAP` of the unpinned hit before it, the first
+    each hit while the packet stays within `budget` (`PACKET_TOKENS`, or
+    the pre-fetch's `PREFETCH_TOKENS`) and the unpinned
+    hit before it is within `SCORE_GAP` of the best relevance from this hit
+    on (`SCORE_GAP`), the first
     `MIN_RESULTS` items whatever either says, and never more than
     `RESULT_MAX`. A withheld hit costs nothing and is not counted."""
     items: list[dict[str, Any]] = []
     withheld = 0
     spent = 0
     last: float | None = None  # the previous unpinned hit's relevance
-    for h in hits:
+    # Screened WHOLE, before the cut: an identifier straddling `TEXT_CHARS`
+    # would otherwise leave as a fragment the screen cannot recognise (R-18).
+    # A withheld hit takes no part in the cut.
+    screened = [bool(h.node.text and scan_identifiers(h.node.text) is not None) for h in hits]
+    # The best relevance from each hit on, over the unpinned hits the screen
+    # passes. The rank is age-decayed, so a recent weak hit can sit ahead of
+    # an older strong one: the drop is read against the best still to come,
+    # never against the next hit alone.
+    ahead = [0.0] * (len(hits) + 1)
+    for i in range(len(hits) - 1, -1, -1):
+        h = hits[i]
+        mine = h.score if not h.pin and not screened[i] else 0.0
+        ahead[i] = max(mine, ahead[i + 1])
+    for i, h in enumerate(hits):
         if len(items) >= RESULT_MAX:
             break
-        # Screened WHOLE, before the cut: an identifier straddling
-        # `TEXT_CHARS` would otherwise leave as a fragment the screen cannot
-        # recognise (R-18). A withheld hit takes no part in the cut.
-        if h.node.text and scan_identifiers(h.node.text) is not None:
+        if screened[i]:
             withheld += 1
             continue
-        steep = not h.pin and last is not None and last - h.score > SCORE_GAP
+        steep = not h.pin and last is not None and last - ahead[i] > SCORE_GAP
         if not h.pin and len(items) >= MIN_RESULTS and steep:
             break
         if not h.pin:
@@ -824,7 +908,7 @@ def render_packet(
             item["places"] = places
         item["path"] = _path(h.path)
         cost = estimate_tokens(json.dumps(item, ensure_ascii=False))
-        if not h.pin and len(items) >= MIN_RESULTS and spent + cost > PACKET_TOKENS:
+        if not h.pin and len(items) >= MIN_RESULTS and spent + cost > budget:
             break
         spent += cost
         items.append(item)

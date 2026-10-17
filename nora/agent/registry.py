@@ -37,6 +37,7 @@ from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
 from ..domain.memo import MemoStore
 from ..domain.models import TranscriptRow
+from ..domain.persona import PersonaWriter
 from ..domain.ports import (
     BlobStore,
     BrowserRunner,
@@ -281,12 +282,17 @@ class ToolRegistry:
         # `[memory_index] enabled` (ships off): the retrieval service
         # `memory_search` answers from, and the switch between the two memory
         # surfaces (DEC-316): wired, every build offers `memory_search` and no
-        # Honcho tool (`about` and `remember` included); `None` keeps the
-        # Honcho surface.
+        # Honcho tool (`about` included; `remember` is on both surfaces, a
+        # Persona write here and Honcho's there); `None` keeps the Honcho
+        # surface.
         # Process-lifetime like `record`.
         memory_search: MemorySearch | None = None,
+        # The Persona write the graph surface's `remember` makes (a `told`
+        # line, design/unified-memory/45). Wired with `memory_search`.
+        persona: PersonaWriter | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
+        self._persona = persona
         self._external_files = external_files
         self._memory_search = memory_search
         self._record = record
@@ -1068,6 +1074,7 @@ class ToolRegistry:
             rooms=self._rooms,
             record=self._record,
             memory_retrieval=self._memory_search,
+            persona=self._persona,
             lineage=self._lineage,
             rollup=self._rollup,
             standing_head=self._standing_head,

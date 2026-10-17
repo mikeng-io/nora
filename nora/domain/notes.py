@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from xml.sax.saxutils import unescape
 
 from nora.domain.lineage import Lineage
+from nora.domain.note_body import citations_in
 from nora.domain.prompt import one_line
 
 #: The injected index carries one line per note on EVERY tag, so these are
@@ -413,6 +414,13 @@ class NoteRevision:
     # `0036_note_revision_provenance`.
     instruction_sha256: str | None = None
     model: str | None = None
+
+    @property
+    def citations(self) -> tuple[str, ...]:
+        """What this revision cites, as `note_revision.citations` stores it
+        (`citations_in`): derived from the body every writer has already held
+        to the schema, so the column and the body cannot disagree."""
+        return citations_in(self.body)
 
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():

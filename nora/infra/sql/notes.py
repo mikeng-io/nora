@@ -458,6 +458,7 @@ class SqlNoteStore:
             established_by=revision.established_by,
             instruction_sha256=revision.instruction_sha256,
             model=revision.model,
+            citations=list(revision.citations),
             **derived,
         ))
         await memory_index.project(conn, "note", note.id)
@@ -711,6 +712,7 @@ class SqlNoteStore:
             established_by=revision.established_by,
             instruction_sha256=revision.instruction_sha256,
             model=revision.model,
+            citations=list(revision.citations),
             **derived,
         ))
         await memory_index.project(conn, "note", note_id)
@@ -1081,6 +1083,7 @@ class SqlNoteStore:
                 established_by=revision.established_by,
                 instruction_sha256=revision.instruction_sha256,
                 model=revision.model,
+                citations=list(revision.citations),
                 **derived,
             ))
             retired = await conn.execute(

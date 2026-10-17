@@ -720,6 +720,7 @@ async def test_the_database_refuses_a_body_over_the_ceiling(_notes_db) -> None:
                     id=rev_id, note_id=note_id, body="x" * 32001,
                     parent_revision_id=None, written_at=NOW,
                     established_by="tag:miles",
+                    citations=[],
                 ))
         assert "note_revision_body_fits_the_ceiling_check" in str(caught.value), (
             f"refused, but not by the ceiling CHECK: {caught.value}"
@@ -757,6 +758,7 @@ async def test_the_database_accepts_a_body_between_the_two_numbers(
                 id=rev_id, note_id=note_id, body="x" * 16000,
                 parent_revision_id=None, written_at=NOW,
                 established_by="tag:miles",
+                citations=[],
             ))
             stored = (await conn.execute(
                 sa.select(sa.func.length(NOTE_REVISION.c.body))

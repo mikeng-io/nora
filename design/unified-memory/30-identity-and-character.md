@@ -71,7 +71,9 @@ differ in every property a tier is cut by:
 One adaptor writing two tiers is the existing pattern: Cognition writes both
 Register and Standing. **The tag turn never writes Identity** (DEC-249 rule 4:
 speaking turns only read Views, and change the Notebook by raising a
-stimulus); see §7.
+stimulus); see §7. *(Amended 2026-10-17, DEC-317: on the graph surface the
+turn's `remember` writes a `told` line through the Persona write's judge;
+[35](35-persona.md) §1.)*
 
 Identity also needs `told` and `deduced`, which cognition-loop/10 §4 allows
 only in Register and Standing. Its "allowed in" column is amended by this
@@ -175,6 +177,9 @@ entry citing the message. The tier is the one the statement's question names:
 | something open or dated ("Japan in March") | Register · note or event | Cognition |
 
 `remember` (today a Honcho `conclude`) becomes that Record item and stimulus.
+*(Superseded for the first row on 2026-10-17, DEC-317: on the graph surface
+`remember` writes the `told` identity line itself, through the Persona
+write's judge; [35](35-persona.md) §1. The memo and note rows stand.)*
 
 **Correct.** Nothing is overwritten:
 

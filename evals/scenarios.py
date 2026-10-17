@@ -447,6 +447,41 @@ MEMORY_INDEX_OVERRIDES: dict[str, object] = {
 }
 
 
+def selected_cases(
+    name: str, *, only: frozenset[str] | None = None, memory_index: bool = False,
+) -> list[Case]:
+    """The cases of corpus `name` a run draws, before sampling: `only`'s, on
+    the resolved memory surface (`experiment_for` says why each filter).
+    Refused (ValueError) when `only` names a case the run cannot draw."""
+    cases = load_corpus(name)
+    if only is not None:
+        # NAMED cases only. A re-measurement asks about the cases that moved,
+        # and paying for a whole corpus to re-draw four of them is how a
+        # sample count gets chosen by budget instead of by the question.
+        # Refused by name when a name matches nothing: a typo that silently
+        # selected zero cases would report a clean corpus.
+        known = {c.name for c in cases}
+        missing = sorted(only - known)
+        if missing:
+            raise ValueError(
+                f"{name}: no active case named {missing}; it may be parked, "
+                f"or misspelt. Active: {sorted(known)}"
+            )
+        cases = [c for c in cases if c.name in only]
+    # One memory surface per arm (`MEMORY_SURFACES`). A case NAMED with
+    # `--case` on the other arm is refused, never silently dropped: that run
+    # would report a clean corpus it never drew.
+    arm = "graph" if memory_index else "honcho"
+    other = sorted(c.name for c in cases if c.metadata.get("memory_surface") not in (None, arm))
+    if only is not None and other:
+        raise ValueError(
+            f"{name}: {other} route on the other memory surface; "
+            + ("drop --memory-index" if memory_index else "pass --memory-index")
+        )
+    cases = [c for c in cases if c.metadata.get("memory_surface") in (None, arm)]
+    return cases
+
+
 def experiment_for(
     name: str, *, source_url: str, judge: Any = None, sample: int = 1,
     only: frozenset[str] | None = None, memory_index: bool = False,
@@ -474,32 +509,7 @@ def experiment_for(
     """
     from evals.backbone import sampled
 
-    cases = load_corpus(name)
-    if only is not None:
-        # NAMED cases only. A re-measurement asks about the cases that moved,
-        # and paying for a whole corpus to re-draw four of them is how a
-        # sample count gets chosen by budget instead of by the question.
-        # Refused by name when a name matches nothing: a typo that silently
-        # selected zero cases would report a clean corpus.
-        known = {c.name for c in cases}
-        missing = sorted(only - known)
-        if missing:
-            raise ValueError(
-                f"{name}: no active case named {missing}; it may be parked, "
-                f"or misspelt. Active: {sorted(known)}"
-            )
-        cases = [c for c in cases if c.name in only]
-    # One memory surface per arm (`MEMORY_SURFACES`). A case NAMED with
-    # `--case` on the other arm is refused, never silently dropped: that run
-    # would report a clean corpus it never drew.
-    arm = "graph" if memory_index else "honcho"
-    other = sorted(c.name for c in cases if c.metadata.get("memory_surface") not in (None, arm))
-    if only is not None and other:
-        raise ValueError(
-            f"{name}: {other} route on the other memory surface; "
-            + ("drop --memory-index" if memory_index else "pass --memory-index")
-        )
-    cases = [c for c in cases if c.metadata.get("memory_surface") in (None, arm)]
+    cases = selected_cases(name, only=only, memory_index=memory_index)
     if sample > 1:
         cases = [draw for base in cases for draw in sampled(base, sample)]
     spec = Spec(
@@ -508,7 +518,7 @@ def experiment_for(
         judge=judge if name in JUDGED_CORPORA else None,
         full_restore=name in FULL_RESTORE_CORPORA,
         overrides=dict(MEMORY_INDEX_OVERRIDES) if memory_index else None,
-        memory_surface=arm,
+        memory_surface="graph" if memory_index else "honcho",
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
     experiment = Experiment(cases=cases, evaluators=[grader])

@@ -44,9 +44,9 @@ No run answers WHY a case fails. Before any run, one of these holds:
 Deterministic failure (every draw FAILs, on every arm) is an input, framing or
 labelling defect: never answer it with more samples. The before arm of a
 confirming run is its baseline; a standalone re-baseline or higher-n re-run
-"to see where we are" is not work unless the operator asks. Before launching,
-compute cases x n x arms x ~211s (judged) and state it; over 60 minutes, cut
-the selection or ask.
+"to see where we are" is not work unless the operator asks. `python -m evals` prints its
+`estimate:` and refuses (rc 2) a run over 60 min (~46 s a draw, ~211 s judged); narrow it. The
+lock is shared, past an hour it blocks every other PR: `--allow-long` only if the operator asked.
 
 ## Where it runs
 
@@ -179,7 +179,7 @@ A delegated agent told "run the eval if you can" burns tokens waiting (2026-10-0
 hours of poll loops, a second arm queued before the first was read). The brief
 carries the budget and the ending:
 
-- State cases x n x arms x ~211s (judged); the agent stops at it and reports.
+- State each arm's `estimate:` line; never `--allow-long` unless the operator asked.
 - Launch with `run_in_background` (Tool notes) and END the turn. No sleep-polling,
   no holding a subagent open: the parent reads `/tmp/eval-<arm>.rc` at the
   computed finish, then the log.

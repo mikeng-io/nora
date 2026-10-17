@@ -546,6 +546,14 @@ class MemoryIndexRead(Protocol):
         first: the exact-reference seeds of a named person."""
         ...
 
+    async def media(
+        self, sha256s: Sequence[str], scope: MemoryScope, *, limit: int,
+    ) -> list[IndexedNode]:
+        """In-scope nodes holding one of `sha256s` (the bytes of an attached
+        picture, wherever it was shared before), newest first: the
+        exact-reference seeds of the media a message carries."""
+        ...
+
     async def neighbours(
         self, frontier: Sequence[tuple[str, str]], scope: MemoryScope,
     ) -> list[Neighbour]:
